@@ -1,6 +1,53 @@
 # Feature Build Plan: Farm Commerce Service Gaps
 
-This plan covers the missing capabilities identified in repository review and proposes an implementation sequence across backend (`Medusa` modules/APIs), vendor/admin panels, storefront, and operations tooling.
+_Last updated: 2026-02-23_
+
+This plan covers the missing capabilities identified in repository review and proposes an implementation sequence across backend (Medusa modules/APIs), vendor/admin panels, storefront, and operations tooling.
+
+> **Companion document:** See `WORK_ORDER.md` for the executable, dependency-ordered task list derived from this plan.
+
+---
+
+## Current State Summary
+
+The platform is a Medusa 2.x monorepo with 4 surfaces (backend, admin-panel, vendor-panel, storefront) and 40 custom backend modules spanning marketplace, commerce, agriculture, community economy, and Hawala finance domains. Key status as of 2026-02-23:
+
+| Area | Status |
+|---|---|
+| Backend compilation | Green |
+| Backend unit tests + coverage gate | Green |
+| Admin panel lint + tests | Green (staged baseline; `lint:strict` debt remains) |
+| Vendor panel lint + typecheck + tests | Green (staged baseline; route-level type debt remains) |
+| Storefront lint | Green (informational warnings only) |
+| Phase 0 foundations | Complete (ADRs, contracts, feature flags, queue topics, observability baseline) |
+| Phase 1 runtime wiring | Started (module gates, queue handlers, route-boundary schema validation) |
+| Open-source enablement | Complete (CONTRIBUTING, CODE_OF_CONDUCT, issue templates, CI, labels, governance, funding) |
+| Release validation | Automated (script + CI gate on `release/*` branches) |
+
+### What Exists vs. What's Missing
+
+| Capability | Backend Module | Vendor/Admin UI | Storefront UI | Status |
+|---|---|---|---|---|
+| Vendor onboarding / `/sell` route | `seller-extension`, `vendor-verification` | Basic signup | `/sell` route exists | Partial — no TTFLL wizard |
+| Product listing (standard) | Core Medusa + `product-archetype` | Product CRUD exists | Product pages exist | Functional |
+| Digital products | `digital-product`, `digital-product-fulfillment` | Workflows exist | Routes exist | Functional |
+| Hawala finance | `hawala-ledger`, `payout-breakdown` | Vendor/admin dashboards | Wallet routes | Functional |
+| POS | — | — | — | Not started |
+| Weight pricing | — | — | — | Not started |
+| Channel sync | — | — | — | Not started |
+| Pick/pack | — | — | — | Not started |
+| Invoicing | — | — | — | Not started |
+| Merchant support | — | — | — | Not started |
+| Fraud/risk monitoring | — | — | — | Not started |
+| Managed onboarding program | — | — | — | Not started |
+| Marketing guidance | — | — | — | Not started |
+| Academy/training | — | — | — | Not started |
+| Website build services | — | — | — | Not started |
+| Promotional tools suite | — | — | — | Not started |
+| E-book/webinar resources | — | — | — | Not started |
+| CSV product import | `woocommerce-import` (WooCommerce only) | — | — | Partial — no generic CSV |
+
+---
 
 ## Goals
 
@@ -15,440 +62,374 @@ This plan covers the missing capabilities identified in repository review and pr
 - **Operational visibility**: every feature ships with dashboard views, audit logs, and metrics.
 - **Phased rollout**: start with MVP + feature flags, then automate.
 - **Multi-channel by default**: storefront, mobile web/PWA, social integrations, and POS sync on a shared product/order/inventory event model.
+- **Tech debt hygiene**: no new `any` types, no new lint violations against the strict ruleset, tests required for new modules.
 
 ---
 
 ## Priority Override: Vendor Activation Fast-Track (TTFLL)
 
-If the immediate business priority is **"get vendors signed up and get at least 1 product/service live as fast as possible,"** then the north-star metric for execution is:
+The immediate business priority is **"get vendors signed up and get at least 1 product/service live as fast as possible."** The north-star metric is:
 
-- **Time to First Live Listing (TTFLL)**
+> **Time to First Live Listing (TTFLL)**
 
-This track should run before or in parallel with larger platform modules.
+This track runs before and in parallel with larger platform modules.
 
-### Repository check snapshot (current)
+### What Already Exists
 
-- Managed onboarding appears in Phase 3, but there is no explicit **TTFLL-first 4-step launch wizard** spec in this plan.
-- Existing docs reference vendor onboarding and payouts, but there is no explicit requirement here to **defer payout setup until first sale**.
-- No explicit **48-hour activation follow-up automation** requirements are captured in this plan.
-- No explicit **one-click import (CSV as v1)** requirement is captured in this plan.
+- `/sell` storefront route is present and renders.
+- `seller-extension` and `vendor-verification` backend modules are functional.
+- Vendor panel has basic product CRUD.
+- Payout infrastructure (Hawala + Stripe) is operational.
 
-### Activation Sprint A (1–2 weeks): launch-first onboarding
+### What's Missing for TTFLL
 
-**Status: ACTIVE (immediate execution)**
+- No 4-step listing wizard in vendor panel.
+- No minimal-fields signup flow (current flow includes non-essential fields).
+- No auto-redirect from signup completion to first-listing wizard.
+- No wizard autosave/resume.
+- No step-level analytics/funnel tracking.
+- No CSV import path (only WooCommerce-specific import exists).
+- No pre-filled listing templates.
+- No 48-hour follow-up automation.
+- No payout-deferral logic (payout setup is not gated, but also not explicitly deferred).
 
-#### Sprint A implementation board
+### Activation Sprint A: Launch-First Onboarding
 
-- [ ] A1. Reduce signup to required fields only (`email`, `password/magic-link`, `store_name`).
-- [ ] A2. Auto-redirect new vendors into `First Listing` wizard after signup completion.
-- [ ] A3. Implement Step 1 selling-type selector (`physical`, `digital`, `service`, `event/class`).
-- [ ] A4. Implement Step 2 minimal product form (title, price, description, one image).
-- [ ] A5. Implement Step 3 delivery setup by selling type (simple defaults only).
-- [ ] A6. Implement Step 4 publish screen with celebration, storefront URL, copy-link, share CTAs.
-- [ ] A7. Add `Advanced` accordion for optional fields (SKU, variants, SEO, advanced inventory).
-- [ ] A8. Add persistent reassurance copy: "You can edit this anytime."
-- [ ] A9. Add wizard autosave + resume support.
-- [ ] A10. Add step analytics events and funnel dashboard for drop-off tracking.
+**Priority: P0 — Execute immediately**
 
-#### Sprint A release gates (ship blockers)
+| ID | Task | Depends On | Surface |
+|---|---|---|---|
+| A1 | Reduce signup to required fields only (`email`, `password/magic-link`, `store_name`) | — | vendor-panel |
+| A2 | Auto-redirect new vendors into First Listing wizard after signup | A1 | vendor-panel |
+| A3 | Step 1: selling-type selector (`physical`, `digital`, `service`, `event/class`) | A2 | vendor-panel |
+| A4 | Step 2: minimal product form (title, price, description, one image) | A3 | vendor-panel, backend |
+| A5 | Step 3: delivery setup by selling type (simple defaults) | A4 | vendor-panel, backend |
+| A6 | Step 4: publish screen with celebration, storefront URL, copy-link, share CTAs | A5 | vendor-panel |
+| A7 | Advanced accordion for optional fields (SKU, variants, SEO, inventory) | A4 | vendor-panel |
+| A8 | Persistent reassurance copy: "You can edit this anytime" | A3 | vendor-panel |
+| A9 | Wizard autosave + resume support | A3 | vendor-panel |
+| A10 | Step analytics events and funnel dashboard | A3 | vendor-panel, backend |
 
-- [ ] G1. Median TTFLL <= 5 minutes in staging test cohort.
-- [ ] G2. >= 40% test cohort conversion from signup to first live listing in-session.
-- [ ] G3. Step-level telemetry visible in analytics for all four wizard steps.
+**Release gates (ship blockers):**
+- Median TTFLL <= 5 minutes in staging test cohort.
+- >= 40% test cohort conversion from signup to first live listing in-session.
+- Step-level telemetry visible in analytics for all four wizard steps.
 
-1. **60-second signup (minimal fields only)**
-   - Required: email, password/magic link, store name.
-   - Defer tax/compliance/payout profile completion to post-listing milestones.
+### Activation Sprint B: Scale Listing Velocity
 
-2. **Auto-redirect into a 4-step listing wizard**
-   - Step 1: selling type selector (physical, digital, service, event/class).
-   - Step 2: minimal product creation (title, price, description, one image).
-   - Step 3: delivery setup simplified by listing type.
-   - Step 4: publish + celebration state with storefront link and share actions.
+**Priority: P1 — Start after Sprint A ships**
 
-3. **Friction controls (required for MVP)**
-   - Hide advanced product fields (SKU, variants, SEO, complex inventory) under an expandable "Advanced" section.
-   - Persistent reassurance copy: "You can edit this anytime."
-   - Progress saved automatically between wizard steps.
+| ID | Task | Depends On | Surface |
+|---|---|---|---|
+| B1 | Generic CSV import path with downloadable template and error report | A4 | vendor-panel, backend |
+| B2 | Pre-filled listing templates (produce, handmade, digital, service) | A3 | vendor-panel |
+| B3 | Launch Assist Mode (concierge intake flow) | B1 | vendor-panel, backend |
+| B4 | Auto-good storefront baseline (default banner, starter theme) | A6 | storefront |
+| B5 | Payout barrier removal (defer payout setup until first sale) | — | backend, vendor-panel |
 
-4. **Immediate value reveal**
-   - Post-publish screen includes copy-link CTA, share buttons, and simple earnings potential explainer.
-
-**Activation Sprint A exit criteria**
-- Median TTFLL <= 5 minutes for first-time vendors.
-- >= 40% of new signups publish at least one listing within first session.
-- Step-level funnel instrumentation available for all 4 wizard steps.
-
-### Activation Sprint B (2–4 weeks): scale listing velocity
-
-5. **One-click import path (v1 CSV)**
-   - Add "Already selling elsewhere? Import your products" entry point.
-   - CSV mapping flow with downloadable template and error report.
-   - Backlog connectors: Shopify/Etsy/TikTok Shop exports.
-
-6. **Pre-filled listing templates**
-   - Farm produce, handmade goods, digital download, coaching service templates.
-   - Template selector sits before Step 2 and auto-fills relevant fields.
-
-7. **Launch Assist Mode**
-   - Optional intake flow (website link, photos, description) to support concierge or semi-automated listing drafting.
-
-8. **Auto-good storefront baseline**
-   - Default banner, non-empty layout blocks, and starter theme applied automatically at first publish.
-
-9. **Payout barrier removal**
-   - Listing/publishing allowed without payout onboarding.
-   - Enforce payout setup only when vendor reaches first sale/first payout threshold.
-
-**Activation Sprint B exit criteria**
+**Exit criteria:**
 - >= 25% reduction in signup drop-off before first publish.
 - >= 30% of new vendors publish 3+ listings in first 14 days.
 
-### Activation Sprint C (2 weeks): retention automation and incentives
+### Activation Sprint C: Retention Automation
 
-10. **48-hour follow-up automation**
-   - Branch A: signed up but no listing -> help/tutorial/support CTA.
-   - Branch B: one listing live -> nudge to add two more listings.
+**Priority: P1 — Start after Sprint B ships**
 
-11. **Dashboard micro-coaching**
-   - "Your next step to make money" cards tied to activation state.
+| ID | Task | Depends On | Surface |
+|---|---|---|---|
+| C1 | 48-hour follow-up automation (Branch A: no listing; Branch B: 1 listing) | A10 | backend |
+| C2 | Dashboard micro-coaching cards tied to activation state | A10 | vendor-panel |
+| C3 | Early-vendor incentives framework (badge, reduced fee, spotlight) | — | backend, vendor-panel, storefront |
+| C4 | Movement-first onboarding narrative (mission + earnings copy) | A6 | vendor-panel |
 
-12. **Early-vendor incentives framework**
-   - Badge, reduced fee window, newsletter highlight, social spotlight toggles.
-
-13. **Movement-first onboarding narrative**
-   - Onboarding copy explicitly combines earnings value + community-powered commerce mission.
-
-**Activation Sprint C exit criteria**
+**Exit criteria:**
 - Re-engagement rate improves for vendors inactive after signup.
 - Email-to-action conversion measurable for both 48-hour branches.
 
-### TTFLL measurement pack (must ship with Sprint A)
+### TTFLL Measurement Pack (ships with Sprint A)
 
-- Signup -> first listing publish conversion.
+- Signup -> first listing publish conversion rate.
 - Average and median TTFLL.
-- Drop-off at each wizard step.
-- % vendors publishing more than 3 listings.
+- Drop-off rate at each wizard step.
+- % vendors publishing 3+ listings within 14 days.
 
 ---
 
-## Open-Source Project Enablement Track (Repo Health)
+## Phase 0: Foundations & Architecture — COMPLETE
 
-### Repository check snapshot (current)
+All Phase 0 deliverables have been implemented:
 
-- ✅ `CONTRIBUTING.md` present at repository root.
-- ✅ `CODE_OF_CONDUCT.md` present at repository root.
-- ✅ `.github/ISSUE_TEMPLATE/` present (`bug_report.yml`, `feature_request.yml`).
-- ✅ `.github/PULL_REQUEST_TEMPLATE.md` present.
-- ✅ `ROADMAP.md` present.
-- ✅ `.github/FUNDING.yml` sponsorship metadata present.
-- ✅ CI workflow exists at `.github/workflows/ci.yml` with lint/test/security automation.
-- ✅ Coverage artifact reporting enabled in CI (`backend-coverage` upload).
-- ✅ Label taxonomy metadata is codified in `.github/labels.yml` and enforced by `.github/workflows/label-sync.yml`.
+- Domain model contracts and JSON schemas: `docs/contracts/phase0/domain-contracts.schema.json`
+- ADRs: `docs/adr/ADR-0001-event-driven-sync.md`, `docs/adr/ADR-0002-idempotency-and-consistency-windows.md`
+- Feature flag registry: `backend/src/shared/feature-flags.ts`
+- Queue topics + DLQ policies: `backend/src/shared/queue-topics.ts`
+- Observability baseline and SLO targets: `docs/observability/PHASE1_SLO_DASHBOARDS.md`
 
-### Build-plan additions (if not yet implemented)
-
-1. Add contributor docs bundle:
-   - `CONTRIBUTING.md`
-   - `CODE_OF_CONDUCT.md`
-   - README updates for architecture/deploy/help pathways.
-
-2. Add contribution workflow templates:
-   - `.github/ISSUE_TEMPLATE/bug_report.yml`
-   - `.github/ISSUE_TEMPLATE/feature_request.yml`
-   - `.github/PULL_REQUEST_TEMPLATE.md`
-
-3. Extend quality automation:
-   - Keep CI lint/test gates on PRs.
-   - Add dependency/security scanning and optional coverage reporting.
-
-4. Publish roadmap + governance docs:
-   - `ROADMAP.md` with short/mid/long horizon milestones.
-   - `docs/GOVERNANCE.md` with roles and decision process.
-
-5. Add contributor-growth mechanics:
-   - Label taxonomy (`good first issue`, `help wanted`, `priority`).
-   - Maintainer triage SOP for first-time contributors.
-
-6. Add sustainability and trust signals:
-   - `.github/FUNDING.yml` and/or `SPONSORS.md`.
-   - README badges (build/license/issues/coverage as available).
-
-7. Improve repository information architecture:
-   - Consolidate docs navigation under `docs/README.md` index.
-   - Add high-level architecture diagram and per-surface quickstart links (backend/admin/vendor/storefront).
+Phase 1 runtime wiring has started (module gates, queue contract-based job handlers, route-boundary schema validation).
 
 ---
 
-## Phase 0 (2 weeks): Foundations & Architecture
+## Phase 1: Core Commerce Operations
 
-### 0.1 Domain model alignment
-- Define canonical entities and events:
-  - `SalesChannel` (storefront, POS, social, marketplace feed)
-  - `InventoryLedgerEvent` and `OrderSyncEvent`
-  - `WeightPriceRule`
-  - `PickPackBatch`
-  - `Invoice`
-  - `MerchantCase` and `RiskAlert`
-  - `OnboardingProgram`, `TrainingAsset`, `PromoCampaign`
-- Add ADR docs for event-driven sync, idempotency, and eventual consistency windows.
+### 1) POS for In-Person Market/Pickup Sales
 
-### 0.2 Platform prerequisites
-- Add feature flags for each capability.
-- Add queue topics and dead-letter policies for critical flows (payments, inventory sync, invoice issuance).
-- Add observability baseline: traces, structured logs, and SLO dashboards.
+**Status: Not started | Priority: P1 | Depends on: Phase 0 (complete)**
 
-**Exit criteria**
-- Approved architecture docs.
-- Data contracts and JSON schemas committed.
-- Feature flags wired in backend and UIs.
-
----
-
-## Phase 1 (4–6 weeks): Core Commerce Operations
-
-## 1) POS for in-person market/pickup sales
-
-### Scope
+#### Scope
 - Vendor-facing POS app mode (tablet-friendly in vendor panel).
 - Offline-tolerant cart capture and queued sync.
 - Cash/card split tenders, receipt generation, pickup tags.
 
-### Backend
+#### Backend
 - New `pos` module:
-  - `pos_session`, `pos_device`, `pos_transaction`, `cash_drawer_count` models.
+  - Models: `pos_session`, `pos_device`, `pos_transaction`, `cash_drawer_count`.
   - APIs: open/close session, ring sale, void/refund, end-of-day report.
 - Integrate with existing order pipeline as `sales_channel = POS`.
+- Wire to feature flag `FF_POS_ENABLED`.
 
-### Frontend
+#### Frontend
 - Vendor panel POS route (`/pos`) with quick product search, weighted item entry, discount buttons.
 - Printable receipt template + QR order lookup.
 
-### Ops
+#### Ops
 - Device setup guide and market-day checklist.
 
-**MVP acceptance**
-- Complete sale in < 20 seconds median.
+#### Acceptance Criteria
+- Complete sale in < 20s median.
 - End-of-day reconciliation report generated.
+- POS transactions visible in admin order list with `POS` channel tag.
+- Offline cart capture syncs correctly when connectivity resumes.
 
-## 2) Sell-by-weight pricing
+### 2) Sell-by-Weight Pricing
 
-### Scope
+**Status: Not started | Priority: P1 | Depends on: Phase 0 (complete)**
+
+#### Scope
 - Price-per-unit-weight products (lb/kg), tare support, min increment rules.
 - Optional estimated-at-checkout, final-at-fulfillment adjustment flow.
 
-### Backend
+#### Backend
 - Extend product/pricing schema:
   - `pricing_mode = fixed | weight`
-  - `weight_unit`, `price_per_unit`, `min_weight`, `step_weight`, `average_weight`.
+  - Fields: `weight_unit`, `price_per_unit`, `min_weight`, `step_weight`, `average_weight`.
 - Add workflow for capture/finalization delta charge or adjustment.
+- Wire to feature flag `FF_WEIGHT_PRICING_ENABLED`.
 
-### Frontend
+#### Frontend
 - Vendor product editor for weight rules.
-- Storefront UI for “estimated total” and post-fulfillment final total.
-- POS support for direct scale/weight input.
+- Storefront UI for "estimated total" and post-fulfillment final total.
+- POS support for direct scale/weight input (couples with POS feature).
 
-**MVP acceptance**
+#### Acceptance Criteria
 - Weight product can be listed, sold, fulfilled, and invoiced correctly.
+- Storefront displays "estimated" label for weight-priced items.
+- Final charge adjustment workflow fires on fulfillment completion.
 
-## 3) Real-time inventory/order sync across channels
+### 3) Real-Time Inventory/Order Sync Across Channels
 
-### Scope
+**Status: Not started | Priority: P1 | Depends on: Phase 0 (complete), benefits from POS**
+
+#### Scope
 - Explicit event-driven sync and channel state visibility.
 
-### Backend
+#### Backend
 - `channel-sync` module:
   - Event bus consumers for order placement/cancellation/return and inventory adjustments.
-  - Conflict resolution strategy (last-write with vector/version + retry queue).
+  - Conflict resolution: last-write with vector/version + retry queue.
   - Channel health state and lag metrics.
+- Wire to feature flag `FF_CHANNEL_SYNC_ENABLED`.
 
-### Frontend
+#### Frontend
 - Vendor/admin sync dashboard with lag, errors, and replay controls.
-- Product-level “channel sync status” indicator.
+- Product-level "channel sync status" indicator.
 
-### Documentation
-- Add clear “real-time sync” language + guarantees (e.g., < 5s target, fallback < 60s).
-
-**MVP acceptance**
-- Inventory update reflected across enabled channels within SLA.
+#### Acceptance Criteria
+- Inventory update reflected across enabled channels within SLA (< 5s target, < 60s fallback).
 - Retry + dead-letter replay workflow available.
+- Sync lag visible in dashboard with alerting.
 
 ---
 
-## Phase 2 (3–5 weeks): Fulfillment & Financial Operations
+## Phase 2: Fulfillment & Financial Operations
 
-## 4) Pick-and-pack lists (explicit feature)
+### 4) Pick-and-Pack Lists
 
-### Scope
+**Status: Not started | Priority: P2 | Depends on: Phase 1 (channel sync for multi-channel batching)**
+
+#### Scope
 - Batch generation by delivery date/zone/order cycle.
 - Pick list, pack slip, substitution and short-pick handling.
 
-### Backend
+#### Backend
 - New `fulfillment-ops` module:
-  - `pick_pack_batch`, `pick_item`, `pack_confirmation`, `substitution_log`.
+  - Models: `pick_pack_batch`, `pick_item`, `pack_confirmation`, `substitution_log`.
   - APIs for create/assign/complete batches.
 
-### Frontend
+#### Frontend
 - Vendor tablet-optimized pick workflow (barcode optional).
 - Print/export CSV/PDF for labels and slips.
 
-**MVP acceptance**
+#### Acceptance Criteria
 - Batch can be generated, picked, packed, and completion updates order state.
+- Substitution logs are recorded and visible to customer.
+- PDF export works for all batch sizes tested.
 
-## 5) Invoicing (full feature)
+### 5) Invoicing
 
-### Scope
+**Status: Not started | Priority: P2 | Depends on: Hawala/Stripe integration (exists)**
+
+#### Scope
 - Draft/final invoices, tax breakdown, payment terms, partial payments, credits.
 
-### Backend
+#### Backend
 - `invoicing` module:
-  - `invoice`, `invoice_line`, `credit_note`, `payment_application`.
+  - Models: `invoice`, `invoice_line`, `credit_note`, `payment_application`.
   - Number sequencing, PDF rendering, email dispatch.
   - Hooks to Hawala/Stripe records.
+- Wire to feature flag `FF_INVOICING_ENABLED`.
 
-### Frontend
+#### Frontend
 - Vendor: create/send invoice, mark paid, issue credit.
 - Admin: invoice oversight and aging report.
-- Customer: invoice history and downloads.
+- Customer: invoice history and downloads via storefront.
 
-**MVP acceptance**
+#### Acceptance Criteria
 - Invoice lifecycle end-to-end with email + PDF + payment reconciliation.
+- Sequential invoice numbering is gap-free.
+- Audit log captures all invoice state transitions.
 
-## 6) Merchant support as a dedicated capability
+### 6) Merchant Support
 
-### Scope
+**Status: Not started | Priority: P2 | Depends on: None (can start independently)**
+
+#### Scope
 - Support case management + SLAs + escalation.
 
-### Backend
+#### Backend
 - `merchant-support` module:
-  - `merchant_case`, `case_note`, `case_tag`, `sla_timer`, `case_event`.
-- Integrate with Rocket.Chat/email for threaded communication.
+  - Models: `merchant_case`, `case_note`, `case_tag`, `sla_timer`, `case_event`.
+- Integrate with Rocket.Chat/email for threaded communication (Rocket.Chat integration partially exists in storefront messaging).
 
-### Frontend
-- Vendor “Support” center (open case, attach files, track status).
+#### Frontend
+- Vendor "Support" center (open case, attach files, track status).
 - Admin support console with queues and assignment.
 
-**MVP acceptance**
+#### Acceptance Criteria
 - Case intake to resolution flow with SLA breach alerts.
+- Cases are searchable and filterable by status/tag.
+- Email notifications fire on case state changes.
 
-## 7) Fraud monitoring (explicit capability)
+### 7) Fraud Monitoring
 
-### Scope
+**Status: Not started | Priority: P2 | Depends on: Hawala system (exists), Order pipeline (exists)**
+
+#### Scope
 - Rules engine + risk scoring + review queue.
 
-### Backend
+#### Backend
 - `risk` module:
   - Real-time checks on order/payment/account events.
   - Rules: velocity, mismatched geo, unusual amount, repeated payment failure.
-  - `risk_alert` and decision outcomes.
+  - Models: `risk_alert` and decision outcomes.
+- Wire to feature flag `FF_FRAUD_MONITORING_ENABLED`.
 
-### Frontend
+#### Frontend
 - Admin risk dashboard with approve/hold/reject actions.
 - Explainability panel per alert.
 
-**MVP acceptance**
-- Risk alerts generated in real-time and tied to operational actions.
+#### Acceptance Criteria
+- Risk alerts generated in real-time and tied to operational actions (hold order, flag account).
+- False-positive rate trackable via dashboard.
+- Alert resolution audit trail is immutable.
 
 ---
 
-## Phase 3 (4–6 weeks): Service Programs & Enablement
+## Phase 3: Service Programs & Enablement
 
-## 8) Managed onboarding team workflow
+### 8) Managed Onboarding Team Workflow
 
-### Scope
-- Convert basic wizard into managed success program.
+**Status: Not started | Priority: P3 | Depends on: Sprint A TTFLL wizard (as foundation)**
 
-### Backend
-- `onboarding-success` module:
-  - `onboarding_cohort`, `onboarding_task`, `owner_assignment`, `milestone`.
-  - Auto-task templates by seller type.
+#### Backend
+- `onboarding-success` module: `onboarding_cohort`, `onboarding_task`, `owner_assignment`, `milestone`.
+- Auto-task templates by seller type.
 
-### Frontend
+#### Frontend
 - Vendor: progress tracker, scheduled calls, required docs checklist.
 - Admin: onboarding manager board, workload balancing.
 
-**MVP acceptance**
+#### Acceptance Criteria
 - Every new merchant gets assigned onboarding plan + owner + milestone tracking.
 
-## 9) Marketing guidance / social best-practice program
+### 9) Marketing Guidance / Social Best-Practice Program
 
-### Scope
-- Embedded playbooks and performance nudges.
+**Status: Not started | Priority: P3 | Depends on: None**
 
-### Backend
-- `marketing-guidance` module:
-  - `playbook`, `checklist`, `campaign_recommendation`, `content_template`.
+#### Backend
+- `marketing-guidance` module: `playbook`, `checklist`, `campaign_recommendation`, `content_template`.
 
-### Frontend
-- Vendor Marketing Hub with channel-specific checklists (Instagram/Facebook/TikTok/email).
+#### Frontend
+- Vendor Marketing Hub with channel-specific checklists.
 - KPI cards: post cadence, CTR proxy, conversion uplift.
 
-**MVP acceptance**
+#### Acceptance Criteria
 - Vendor can follow guided checklist and launch first campaign.
 
-## 10) Academy training/workshops program
+### 10) Academy Training/Workshops Program
 
-### Scope
-- Learning center with courses, workshops, certifications.
+**Status: Not started | Priority: P3 | Depends on: None**
 
-### Backend
-- `academy` module:
-  - `course`, `lesson`, `workshop_event`, `attendance`, `certificate`.
+#### Backend
+- `academy` module: `course`, `lesson`, `workshop_event`, `attendance`, `certificate`.
 - Webinar provider integration (Zoom/Jitsi) and recording links.
 
-### Frontend
+#### Frontend
 - Vendor learning portal + workshop calendar + progress tracking.
 
-**MVP acceptance**
+#### Acceptance Criteria
 - Publish course, run workshop, issue completion certificate.
 
-## 11) Custom farm website build included (service productization)
+### 11) Custom Farm Website Build (Service Productization)
 
-### Scope
-- Productized professional services workflow.
+**Status: Not started | Priority: P3 | Depends on: None**
 
-### Backend
-- `website-services` module:
-  - `website_package`, `brief_form`, `milestone`, `handoff`.
-- Intake-to-delivery pipeline with approvals.
+#### Backend
+- `website-services` module: `website_package`, `brief_form`, `milestone`, `handoff`.
 
-### Frontend
+#### Frontend
 - Vendor onboarding add-on selection + project status page.
 - Admin project operations board.
 
-**MVP acceptance**
+#### Acceptance Criteria
 - Website build request can be scoped, tracked, and delivered.
 
-## 12) Promotional tools suite
+### 12) Promotional Tools Suite
 
-### Scope
-- Coupons, bundles, referral codes, seasonal campaigns, abandoned cart nudges.
+**Status: Not started | Priority: P3 | Depends on: Product listing (exists), Analytics baseline**
 
-### Backend
+#### Backend
 - Extend promotions domain with campaign orchestration and audience segments.
 - Attribution fields for campaign performance.
 
-### Frontend
+#### Frontend
 - Vendor campaign builder (templates + scheduling).
 - Analytics dashboard for promo performance.
 
-**MVP acceptance**
+#### Acceptance Criteria
 - Merchant can launch and measure a promo campaign end-to-end.
 
-## 13) E-books/webinars support resources
+### 13) E-Books/Webinars Support Resources
 
-### Scope
-- Resource library with gated downloads and webinar events.
+**Status: Not started | Priority: P3 | Depends on: None**
 
-### Backend
-- `resources` module:
-  - `resource_asset`, `resource_category`, `download_event`, `webinar_event`, `registration`.
+#### Backend
+- `resources` module: `resource_asset`, `resource_category`, `download_event`, `webinar_event`, `registration`.
 
-### Frontend
+#### Frontend
 - Public resource center + merchant-only downloadable library.
 - Registration and reminder flow for webinars.
 
-**MVP acceptance**
+#### Acceptance Criteria
 - Upload e-book, host webinar registration, capture engagement analytics.
 
 ---
@@ -469,25 +450,55 @@ This track should run before or in parallel with larger platform modules.
 - Update product docs and README feature matrix with explicit capability language.
 - Add runbooks for support, fulfillment, and risk ops.
 
+### Tech Debt (Ongoing)
+- Admin panel: burn down `lint:strict` violations incrementally.
+- Vendor panel: resolve remaining route-level typecheck mismatches.
+- Backend: expand unit test coverage for new modules (enforce coverage threshold in CI).
+- Storefront: address QA follow-up for static internal-link route validation.
+
 ---
 
-## Suggested Release Sequencing
+## Open-Source Project Enablement Track — COMPLETE
 
-## Activation Now (Week 0–2)
-- Sprint A (launch-first onboarding)
+All open-source readiness items have been implemented:
 
-## Release A (Weeks 1–6)
+- CONTRIBUTING.md, CODE_OF_CONDUCT.md present.
+- Issue templates (bug_report.yml, feature_request.yml) and PR template present.
+- CI workflow with lint/test/security automation.
+- Coverage artifact reporting.
+- ROADMAP.md and docs/GOVERNANCE.md with roles and decision process.
+- Label taxonomy in .github/labels.yml with sync workflow.
+- .github/FUNDING.yml sponsorship metadata.
+- Maintainer triage SOP.
+
+### Remaining Improvement Opportunities
+- Consolidate docs navigation under `docs/README.md` index.
+- Add high-level architecture diagram and per-surface quickstart links.
+- Add README badges (build status, license, coverage).
+
+---
+
+## Release Sequencing
+
+### Activation Now (Weeks 1–2)
+- Sprint A: TTFLL wizard + minimal signup + analytics pack
+
+### Release A (Weeks 3–8)
+- Sprint B: CSV import + templates + payout deferral
 - POS MVP
 - Weight pricing MVP
-- Channel sync MVP
 
-## Release B (Weeks 7–11)
+### Release B (Weeks 9–14)
+- Sprint C: Retention automation
+- Channel sync MVP
 - Pick-and-pack MVP
 - Invoicing MVP
+
+### Release C (Weeks 15–20)
 - Merchant support MVP
 - Fraud monitoring MVP
 
-## Release C (Weeks 12–18)
+### Release D (Weeks 21–28)
 - Managed onboarding program
 - Marketing guidance hub
 - Academy/workshops
@@ -499,22 +510,29 @@ This track should run before or in parallel with larger platform modules.
 
 ## Resourcing (Suggested)
 
-- **Backend**: 3 engineers
-- **Frontend**: 2 engineers (vendor/admin/storefront)
-- **Data/Platform**: 1 engineer
-- **Design/Product**: 1 designer + 1 PM
-- **Ops Enablement**: 1 support lead + 1 onboarding specialist (for process definition)
+| Role | Count | Focus |
+|---|---|---|
+| Backend engineer | 3 | Module development, API design, workflow implementation |
+| Frontend engineer | 2 | Vendor panel, admin panel, storefront changes |
+| Data/Platform engineer | 1 | Analytics, sync infrastructure, observability |
+| Designer | 1 | TTFLL wizard, POS interface, dashboard UX |
+| Product manager | 1 | Prioritization, acceptance criteria, stakeholder alignment |
+| Support/Ops lead | 1 | Process definition for merchant support + onboarding |
 
 ---
 
 ## Success Metrics
 
-- POS share of orders and checkout time
-- Inventory sync SLA attainment and error rate
-- Pick/pack accuracy and fulfillment lead time
-- Invoice payment cycle time / aging reduction
-- Support first response and resolution SLAs
-- Fraud chargeback rate and prevented loss
-- Onboarding time-to-first-sale
-- Training completion rates and merchant retention
-- Promo campaign adoption and incremental GMV
+| Metric | Target | Phase |
+|---|---|---|
+| Median TTFLL | <= 5 minutes | Sprint A |
+| First-session publish rate | >= 40% | Sprint A |
+| 14-day multi-listing rate | >= 30% publish 3+ | Sprint B |
+| POS checkout time | < 20s median | Phase 1 |
+| Inventory sync latency | p95 < 5s | Phase 1 |
+| Pick/pack accuracy | >= 99% | Phase 2 |
+| Invoice payment cycle | Measurable baseline | Phase 2 |
+| Support first-response SLA | Defined and tracked | Phase 2 |
+| Fraud chargeback rate | Measurable baseline | Phase 2 |
+| Training completion rate | >= 50% of active vendors | Phase 3 |
+| Promo campaign GMV uplift | Measurable baseline | Phase 3 |
