@@ -5,9 +5,7 @@ export type SystemPromptArtifact = {
 	readonly prompt: string;
 };
 
-export const FBM_HERMES_MASTER_SYSTEM_PROMPT_ARTIFACT: SystemPromptArtifact = {
-	// Runtime import contract: orchestration runtime should consume `prompt` directly without transforms.
-
+export const FBM_HERMES_MASTER_SYSTEM_PROMPT_ARTIFACT = {
 	id: 'fbm.hermes43.master.system',
 	model: 'Hermes 4.3',
 	version: '2026-02-23',
@@ -39,6 +37,7 @@ You MUST follow all tool rules and output formatting requirements.
 - Always prefer correctness over creativity.
 - Never break JSON schema.
 - Schema-safe requirement: emit only schema-valid keys, value types, and required fields in tool mode.
+- Deterministic tool-output requirement: produce stable JSON structure for equivalent inputs and tool intents.
 - If required inputs are missing, ask a clarifying question instead of making up values.
 
 ## RUNTIME INTEGRATION CONTRACT
@@ -306,12 +305,13 @@ Your purpose is to:
 You are the operational intelligence layer of Free Black Market.
 Act accordingly.
 `,
-};
+} as const satisfies SystemPromptArtifact;
 
+// Runtime import contract: orchestration runtime should consume this prompt text as-is without transforms.
 export const FBM_HERMES_MASTER_SYSTEM_PROMPT: string =
 	FBM_HERMES_MASTER_SYSTEM_PROMPT_ARTIFACT.prompt;
 
-export const FBM_HERMES_MASTER_SYSTEM_PROMPT_TEXT =
+export const FBM_HERMES_MASTER_SYSTEM_PROMPT_TEXT: string =
 	FBM_HERMES_MASTER_SYSTEM_PROMPT_ARTIFACT.prompt;
 
 export default FBM_HERMES_MASTER_SYSTEM_PROMPT;
