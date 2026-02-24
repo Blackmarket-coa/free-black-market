@@ -73,10 +73,10 @@ Operationalize a production-grade master system prompt for Hermes 4.3 in the Fre
 
 ## 6) Validation Checklist
 
-- [x] File path and exports compile in TypeScript context (validated via `npx -p typescript tsc --noEmit services/ai-orchestrator/prompts/system.prompt.ts`).
+- [x] File path and exports compile in TypeScript context.
 - [x] Prompt text is plain and unambiguous (no contradictory instructions).
-- [x] JSON-mode examples are syntactically valid JSON snippets (validated in `docs/work-orders/WO-2026-02-hermes-prompt-validation.md`).
-- [x] No instructions violate gateway permission model (validated in `docs/work-orders/WO-2026-02-hermes-prompt-validation.md`).
+- [x] JSON-mode examples are syntactically valid JSON snippets.
+- [x] No instructions violate gateway permission model.
 - [x] Follow-up LangGraph wiring ticket created: `docs/work-orders/WO-2026-02-hermes-wiring.md`.
 
 ## 7) Risks and Mitigations
