@@ -1,7 +1,7 @@
 # Work Order: Hermes 4.3 Prompt Runtime Wiring + Conformance Validation
 
 - **Work Order ID:** WO-2026-02-HERMES-WIRING
-- **Status:** Ready for implementation
+- **Status:** Implemented in repository (pending CI/default-branch merge)
 - **Priority:** P1 (runtime reliability + safety enforcement)
 - **Related WO:** `WO-2026-02-HERMES-PROMPT`
 - **Source artifact:** `services/ai-orchestrator/prompts/system.prompt.ts`
@@ -46,10 +46,10 @@ Wire the finalized Hermes 4.3 master prompt artifact into orchestration runtime 
 
 ## Validation Checklist
 
-- [ ] Runtime import path points directly to `services/ai-orchestrator/prompts/system.prompt.ts`.
-- [ ] No runtime wrapper mutates mode/safety/schema prompt semantics.
-- [ ] Schema-conformance tests added and passing in CI.
-- [ ] Destructive-confirmation regression tests added and passing in CI.
+- [x] Runtime import path points directly to `services/ai-orchestrator/prompts/system.prompt.ts` (via `services/ai-orchestrator/langgraph/supervisor-agent.entrypoint.ts`).
+- [x] No runtime wrapper mutates mode/safety/schema prompt semantics (entrypoint injects canonical prompt verbatim).
+- [x] Schema-conformance tests added and passing locally (`pnpm -s test:hermes-langgraph`).
+- [x] Destructive-confirmation regression tests added and passing locally (`pnpm -s test:hermes-langgraph`).
 - [ ] Docs updated with integration contract + related WO links.
 
 ## Definition of Done
