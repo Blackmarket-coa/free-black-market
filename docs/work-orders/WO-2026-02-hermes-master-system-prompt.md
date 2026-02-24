@@ -1,7 +1,7 @@
 # Work Order: Hermes 4.3 Master System Prompt Integration
 
 - **Work Order ID:** WO-2026-02-HERMES-PROMPT
-- **Status:** Ready for implementation
+- **Status:** Implemented (prompt artifact complete; wiring follow-up ticket prepared)
 - **Priority:** P1 (platform capability + safety hardening)
 - **Requested by:** Product/AI Operations
 - **Target component:** `services/ai-orchestrator/prompts/system.prompt.ts`
@@ -73,11 +73,11 @@ Operationalize a production-grade master system prompt for Hermes 4.3 in the Fre
 
 ## 6) Validation Checklist
 
-- [ ] File path and exports compile in TypeScript context.
-- [ ] Prompt text is plain and unambiguous (no contradictory instructions).
-- [ ] JSON-mode examples are syntactically valid JSON snippets.
-- [ ] No instructions violate gateway permission model.
-- [ ] Follow-up LangGraph wiring ticket created.
+- [x] File path and exports compile in TypeScript context.
+- [x] Prompt text is plain and unambiguous (no contradictory instructions).
+- [x] JSON-mode examples are syntactically valid JSON snippets.
+- [x] No instructions violate gateway permission model.
+- [x] Follow-up LangGraph wiring ticket created: `docs/work-orders/WO-2026-02-hermes-wiring.md`.
 
 ## 7) Risks and Mitigations
 
@@ -90,7 +90,7 @@ Operationalize a production-grade master system prompt for Hermes 4.3 in the Fre
 
 ## 8) Follow-up Work Order (Recommended)
 
-Create WO-2026-02-HERMES-WIRING to:
+Created `WO-2026-02-HERMES-WIRING` (see `docs/work-orders/WO-2026-02-hermes-wiring.md`) to:
 
 1. Inject this prompt into LangGraph supervisor/agent entrypoint.
 2. Add JSON-schema conformance tests for tool-call responses.
@@ -100,4 +100,4 @@ Create WO-2026-02-HERMES-WIRING to:
 
 - Prompt artifact merged to default branch.
 - Work order accepted by AI Platform owner.
-- Follow-up wiring ticket created and linked.
+- Follow-up wiring ticket created and linked: `docs/work-orders/WO-2026-02-hermes-wiring.md`.
