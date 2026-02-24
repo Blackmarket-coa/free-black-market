@@ -1,18 +1,19 @@
 {
-	"packageManager": "pnpm@10.13.1",
-	"dependencies": {
-		"@medusajs/js-sdk": "^2.13.1",
-		"@medusajs/types": "^2.13.1",
-		"@mikro-orm/cli": "6.4.16",
-		"@mikro-orm/core": "6.4.16",
-		"@mikro-orm/knex": "6.4.16",
-		"@mikro-orm/migrations": "6.4.16",
-		"@tanstack/react-query": "^5.90.20"
-	},
-	"devDependencies": {
-		"@types/node": "^25.0.10"
-	},
-	"scripts": {
-		"check:vendor-completeness": "node scripts/check-vendor-completeness.mjs"
-	}
+  "packageManager": "pnpm@10.13.1",
+  "dependencies": {
+    "@medusajs/js-sdk": "^2.13.1",
+    "@medusajs/types": "^2.13.1",
+    "@mikro-orm/cli": "6.4.16",
+    "@mikro-orm/core": "6.4.16",
+    "@mikro-orm/knex": "6.4.16",
+    "@mikro-orm/migrations": "6.4.16",
+    "@tanstack/react-query": "^5.90.20"
+  },
+  "devDependencies": {
+    "@types/node": "^25.0.10"
+  },
+  "scripts": {
+    "check:vendor-completeness": "node scripts/check-vendor-completeness.mjs",
+    "validate:hermes-prompt": "node scripts/validate-hermes-prompt.mjs"
+  }
 }
