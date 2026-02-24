@@ -77,6 +77,22 @@ export async function POST(
   try {
     const { additional_data, ...productData } = req.body as any
 
+    if (Array.isArray(productData?.variants)) {
+      productData.variants = productData.variants.map((variant: any) => {
+        const prices = Array.isArray(variant?.prices)
+          ? variant.prices.filter((price: any) => {
+              const amount = Number(price?.amount)
+              return Number.isFinite(amount) && amount >= 0
+            })
+          : variant?.prices
+
+        return {
+          ...variant,
+          prices,
+        }
+      })
+    }
+
     const { result } = await createProductsWorkflow(req.scope).run({
       input: {
         products: [productData],
@@ -114,7 +130,10 @@ export async function POST(
     })
   } catch (error: any) {
     console.error(`Error creating product for seller ${resolvedSellerId}:`, error)
-    res.status(500).json({
+    const status =
+      error?.type === "invalid_data" || error?.name === "MedusaError" ? 400 : 500
+
+    res.status(status).json({
       message: "Failed to create product",
       error: error.message,
     })
