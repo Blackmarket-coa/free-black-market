@@ -3,6 +3,71 @@ import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils"
 import { createProductsWorkflow } from "@medusajs/medusa/core-flows"
 import { SELLER_MODULE } from "@mercurjs/b2c-core/modules/seller"
 
+type VariantPrice = {
+  amount?: number | string | null
+  currency_code?: string | null
+}
+
+function validateAndNormalizeVariantPrices(variants: any[] = []) {
+  const errors: string[] = []
+
+  const normalizedVariants = variants.map((variant: any, variantIndex: number) => {
+    if (!Array.isArray(variant?.prices)) {
+      return variant
+    }
+
+    const normalizedPrices = variant.prices.map((price: VariantPrice, priceIndex: number) => {
+      const normalizedAmount = Number(price?.amount)
+
+      if (!Number.isFinite(normalizedAmount) || normalizedAmount < 0) {
+        errors.push(
+          `variants[${variantIndex}].prices[${priceIndex}].amount must be a non-negative number`
+        )
+      }
+
+      if (!price?.currency_code) {
+        errors.push(
+          `variants[${variantIndex}].prices[${priceIndex}].currency_code is required`
+        )
+      }
+
+      return {
+        ...price,
+        amount: normalizedAmount,
+      }
+    })
+
+    return {
+      ...variant,
+      prices: normalizedPrices,
+    }
+  })
+
+  return {
+    errors,
+    variants: normalizedVariants,
+  }
+}
+
+function getErrorStatus(error: any) {
+  const knownStatus =
+    error?.statusCode ||
+    error?.status_code ||
+    error?.status ||
+    error?.cause?.statusCode ||
+    error?.cause?.status_code
+
+  if (typeof knownStatus === "number" && knownStatus >= 400 && knownStatus < 600) {
+    return knownStatus
+  }
+
+  if (error?.type === "invalid_data" || error?.name === "MedusaError") {
+    return 400
+  }
+
+  return 500
+}
+
 async function linkSellerInventoryItems(
   req: MedusaRequest,
   sellerId: string,
@@ -46,11 +111,7 @@ async function linkSellerInventoryItems(
   )
 }
 
-
-export async function POST(
-  req: MedusaRequest,
-  res: MedusaResponse
-) {
+export async function POST(req: MedusaRequest, res: MedusaResponse) {
   const query = req.scope.resolve(ContainerRegistrationKeys.QUERY)
   const remoteLink = req.scope.resolve(ContainerRegistrationKeys.REMOTE_LINK)
   const sellerId = (req as any)._seller_id || (req as any).auth_context?.actor_id
@@ -77,6 +138,20 @@ export async function POST(
   try {
     const { additional_data, ...productData } = req.body as any
 
+    if (Array.isArray(productData?.variants)) {
+      const { errors, variants } = validateAndNormalizeVariantPrices(productData.variants)
+
+      if (errors.length) {
+        return res.status(400).json({
+          message: "Failed to create product",
+          error: "Invalid variant price payload",
+          details: errors,
+        })
+      }
+
+      productData.variants = variants
+    }
+
     const { result } = await createProductsWorkflow(req.scope).run({
       input: {
         products: [productData],
@@ -102,9 +177,19 @@ export async function POST(
     const { data: products } = await query.graph({
       entity: "product",
       fields: [
-        "id", "title", "subtitle", "status", "description", "handle",
-        "thumbnail", "collection_id", "type_id", "metadata",
-        "images.*", "variants.*", "variants.prices.*",
+        "id",
+        "title",
+        "subtitle",
+        "status",
+        "description",
+        "handle",
+        "thumbnail",
+        "collection_id",
+        "type_id",
+        "metadata",
+        "images.*",
+        "variants.*",
+        "variants.prices.*",
       ],
       filters: { id: createdProduct.id },
     })
@@ -113,10 +198,22 @@ export async function POST(
       product: products?.[0] || createdProduct,
     })
   } catch (error: any) {
-    console.error(`Error creating product for seller ${resolvedSellerId}:`, error)
-    res.status(500).json({
+    const status = getErrorStatus(error)
+
+    console.error("Error creating product for seller", {
+      sellerId: resolvedSellerId,
+      status,
+      message: error?.message,
+      type: error?.type,
+      name: error?.name,
+      stack: error?.stack,
+      cause: error?.cause,
+    })
+
+    res.status(status).json({
       message: "Failed to create product",
-      error: error.message,
+      error: error?.message || "Unknown error",
+      type: error?.type,
     })
   }
 }
