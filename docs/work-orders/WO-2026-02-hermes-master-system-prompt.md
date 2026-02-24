@@ -98,6 +98,6 @@ Created `WO-2026-02-HERMES-WIRING` (see `docs/work-orders/WO-2026-02-hermes-wiri
 
 ## 9) Definition of Done
 
-- [ ] Prompt artifact merged to default branch (pending default-branch merge).
-- [ ] Work order accepted by AI Platform owner (pending owner sign-off).
-- [x] Follow-up wiring ticket created and linked: `docs/work-orders/WO-2026-02-hermes-wiring.md`.
+- Prompt artifact merged to default branch.
+- Work order accepted by AI Platform owner.
+- Follow-up wiring ticket created and linked: `docs/work-orders/WO-2026-02-hermes-wiring.md`.

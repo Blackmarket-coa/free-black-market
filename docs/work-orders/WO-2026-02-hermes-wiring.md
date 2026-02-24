@@ -1,7 +1,7 @@
 # Work Order: Hermes 4.3 Prompt Runtime Wiring + Conformance Validation
 
 - **Work Order ID:** WO-2026-02-HERMES-WIRING
-- **Status:** Implemented in repository (pending CI/default-branch merge)
+- **Status:** Ready for implementation
 - **Priority:** P1 (runtime reliability + safety enforcement)
 - **Related WO:** `WO-2026-02-HERMES-PROMPT`
 - **Source artifact:** `services/ai-orchestrator/prompts/system.prompt.ts`

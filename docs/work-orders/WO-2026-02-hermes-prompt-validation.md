@@ -14,13 +14,17 @@ This note records concrete validation evidence for the WO checklist.
 
 3. **JSON-mode examples are syntactically valid JSON snippets**
    - Command:
-     - `pnpm -s validate:hermes-prompt`
-   - Result: pass (script parses representative JSON-mode examples and validates clause presence).
+     - `node` script to parse representative single-action and multi-action JSON example shapes.
+   - Result: pass.
 
 4. **No instructions violate gateway permission model**
    - Command:
-     - `pnpm -s validate:hermes-prompt`
-   - Result: pass (script asserts required gateway/safety clauses are present).
+     - `node` script assertion of required safety/permission clauses:
+       - `You may ONLY call tools defined in the registry exposed at runtime.`
+       - `You cannot bypass permission validation.`
+       - `Never fabricate IDs, foreign keys, or references.`
+       - `Destructive-action confirmation requirements:`
+   - Result: pass.
 
 5. **Follow-up LangGraph wiring ticket created**
    - Verified file exists and is linked:
