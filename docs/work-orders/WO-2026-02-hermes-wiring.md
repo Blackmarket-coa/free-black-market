@@ -50,7 +50,7 @@ Wire the finalized Hermes 4.3 master prompt artifact into orchestration runtime 
 - [x] No runtime wrapper mutates mode/safety/schema prompt semantics (entrypoint injects canonical prompt verbatim).
 - [x] Schema-conformance tests added and passing locally (`pnpm -s test:hermes-langgraph`).
 - [x] Destructive-confirmation regression tests added and passing locally (`pnpm -s test:hermes-langgraph`).
-- [ ] Docs updated with integration contract + related WO links.
+- [x] Docs updated with integration contract + related WO links (`WO-2026-02-hermes-master-system-prompt.md`, `WO-2026-02-hermes-prompt-validation.md`).
 
 ## Definition of Done
 
