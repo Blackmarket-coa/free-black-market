@@ -1,7 +1,7 @@
 # Work Order: Hermes 4.3 Prompt Runtime Wiring + Conformance Validation
 
 - **Work Order ID:** WO-2026-02-HERMES-WIRING
-- **Status:** Ready for implementation
+- **Status:** Implemented (runtime wiring + validation complete; awaiting release-process closure)
 - **Priority:** P1 (runtime reliability + safety enforcement)
 - **Related WO:** `WO-2026-02-HERMES-PROMPT`
 - **Source artifact:** `services/ai-orchestrator/prompts/system.prompt.ts`
@@ -58,3 +58,8 @@ Wire the finalized Hermes 4.3 master prompt artifact into orchestration runtime 
 - CI green for new conformance/regression tests.
 - Runtime docs updated.
 - WO-2026-02-HERMES-WIRING linked from WO-2026-02-HERMES-PROMPT and release notes.
+
+
+## Follow-on Work
+
+- Vendor end-to-end runtime path implementation is tracked in `docs/work-orders/WO-2026-02-hermes-vendor-runtime-integration.md` (`WO-2026-02-HERMES-VENDOR-RUNTIME`).
