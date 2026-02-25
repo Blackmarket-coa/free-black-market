@@ -27,8 +27,33 @@ const isProductDraftRequest = (question: string) => {
   return PRODUCT_DRAFT_KEYWORDS.some((keyword) => normalized.includes(keyword))
 }
 
-const getGeneralAssistantReply = (question: string) => {
+const getGeneralAssistantReply = (question: string, history: ChatMessage[]) => {
   const normalized = question.toLowerCase()
+  const previousUserMessage = [...history]
+    .reverse()
+    .find((message) => message.role === "user")
+    ?.content.toLowerCase()
+
+  if (
+    normalized.includes("upload") &&
+    (normalized.includes("photo") ||
+      normalized.includes("photos") ||
+      normalized.includes("image") ||
+      normalized.includes("images") ||
+      previousUserMessage?.includes("product") ||
+      previousUserMessage?.includes("listing"))
+  ) {
+    return "You can upload photos from your product form: open Products, create or edit a product, then go to the Media section and select Upload images. You can add multiple photos, reorder them, and mark one as the thumbnail before saving."
+  }
+
+  if (
+    normalized.includes("hello") ||
+    normalized.includes("hi") ||
+    normalized.includes("hey") ||
+    normalized.includes("how are you")
+  ) {
+    return "Hi! I’m doing great and ready to help. Ask me anything about operations, finance, market strategy, or product listings, and I’ll keep the conversation contextual."
+  }
 
   if (
     normalized.includes("logistics") ||
@@ -78,7 +103,7 @@ const getGeneralAssistantReply = (question: string) => {
     return "Yes — I can provide practical business recommendations across operations, pricing, product mix, and growth strategy. Share your goals, timeline, and constraints so I can tailor the advice."
   }
 
-  return "Yes — I can answer general questions about logistics, supply and demand, finance, market analysis, and business recommendations, plus validate product draft payloads for listing creation."
+  return "Yes — I can answer general questions, continue contextual conversations, and help with logistics, supply and demand, finance, market analysis, business recommendations, plus product draft payload validation."
 }
 
 export const VendorHermesChat = () => {
@@ -89,7 +114,7 @@ export const VendorHermesChat = () => {
       id: 1,
       role: "assistant",
       content:
-        "Hi! I’m Hermes. Ask about logistics, supply and demand, finance, market analysis, and business strategy — or describe a product draft and I’ll validate a vendor-safe payload.",
+        "Hi! I’m Hermes. I can have general conversation, respond to context, and help with logistics, supply and demand, finance, market analysis, and business strategy — or validate a vendor-safe product draft payload.",
     },
   ])
 
@@ -125,7 +150,7 @@ export const VendorHermesChat = () => {
         {
           id: userMessage.id + 1,
           role: "assistant",
-          content: getGeneralAssistantReply(trimmed),
+          content: getGeneralAssistantReply(trimmed, messages),
         },
       ])
 
