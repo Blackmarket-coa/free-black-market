@@ -96,10 +96,8 @@ export const AdminChat = () => {
     <Drawer open={open} onOpenChange={handleOnOpen}>
       <Drawer.Trigger asChild>
         <IconButton
-          variant="secondary"
-          size="large"
-          className="fixed bottom-6 right-6 z-50 rounded-full shadow-elevation-flyout"
-          aria-label="Open admin chat"
+          variant="transparent"
+          className="text-ui-fg-muted hover:text-ui-fg-subtle"
         >
           <ChatBubble />
         </IconButton>
