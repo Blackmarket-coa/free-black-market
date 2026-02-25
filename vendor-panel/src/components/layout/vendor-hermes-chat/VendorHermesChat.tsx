@@ -10,6 +10,41 @@ interface ChatMessage {
   content: string
 }
 
+const PRODUCT_DRAFT_KEYWORDS = [
+  "product",
+  "draft",
+  "listing",
+  "catalog",
+  "price",
+  "inventory",
+  "sku",
+  "title",
+  "description",
+]
+
+const isProductDraftRequest = (question: string) => {
+  const normalized = question.toLowerCase()
+  return PRODUCT_DRAFT_KEYWORDS.some((keyword) => normalized.includes(keyword))
+}
+
+const getGeneralAssistantReply = (question: string) => {
+  const normalized = question.toLowerCase()
+
+  if (normalized.includes("shipping")) {
+    return "For shipping setup, start in Shipping Profiles and Locations. I can also help you draft product details once shipping is configured."
+  }
+
+  if (normalized.includes("payout") || normalized.includes("payment")) {
+    return "For payouts or payments, review your payout account and subscription settings. If you share the issue, I can suggest the next troubleshooting steps."
+  }
+
+  if (normalized.includes("order")) {
+    return "For order questions, go to Orders to inspect status, fulfillment, and payment details. Tell me the exact order problem and I can guide you step-by-step."
+  }
+
+  return "Yes — I can answer general vendor portal questions (orders, shipping, payouts, setup) and I can validate product draft payloads when you want to create or refine listings."
+}
+
 export const VendorHermesChat = () => {
   const [open, setOpen] = useState(false)
   const [prompt, setPrompt] = useState("")
@@ -18,14 +53,16 @@ export const VendorHermesChat = () => {
       id: 1,
       role: "assistant",
       content:
-        "Hi! I’m Hermes. Describe the product draft you want and I’ll validate a vendor-safe draft payload.",
+        "Hi! I’m Hermes. Ask general vendor portal questions, or describe a product draft and I’ll validate a vendor-safe payload.",
     },
   ])
 
   const { mutateAsync, isPending } = useVendorHermesRuntime()
 
   const nextId = useMemo(() => {
-    return messages.length ? Math.max(...messages.map((message) => message.id)) + 1 : 1
+    return messages.length
+      ? Math.max(...messages.map((message) => message.id)) + 1
+      : 1
   }, [messages])
 
   const handleSubmit = async (event: FormEvent) => {
@@ -45,6 +82,19 @@ export const VendorHermesChat = () => {
 
     setMessages((current) => [...current, userMessage])
     setPrompt("")
+
+    if (!isProductDraftRequest(trimmed)) {
+      setMessages((current) => [
+        ...current,
+        {
+          id: userMessage.id + 1,
+          role: "assistant",
+          content: getGeneralAssistantReply(trimmed),
+        },
+      ])
+
+      return
+    }
 
     try {
       const result = await mutateAsync({
@@ -73,7 +123,7 @@ export const VendorHermesChat = () => {
           role: "assistant",
           content:
             assistantReply ||
-            "Draft payload validated. You can continue with more product details.",
+            "Draft payload validated. Share more details if you want a better product draft.",
         },
       ])
     } catch (error) {
@@ -111,7 +161,7 @@ export const VendorHermesChat = () => {
         </Drawer.Header>
         <Drawer.Body className="flex h-full flex-col gap-y-4 overflow-hidden px-4">
           <Text className="text-ui-fg-subtle">
-            Ask for a product draft and Hermes will run vendor-safe validation.
+            Ask general questions or request product draft validation.
           </Text>
 
           <div className="bg-ui-bg-subtle border-ui-border-base flex flex-1 flex-col gap-y-2 overflow-y-auto rounded-lg border p-3">
@@ -133,7 +183,7 @@ export const VendorHermesChat = () => {
             <input
               value={prompt}
               onChange={(event) => setPrompt(event.target.value)}
-              placeholder="Describe your product draft..."
+              placeholder="Ask a question or describe a product draft..."
               className="bg-ui-bg-field border-ui-border-base text-ui-fg-base flex-1 rounded-lg border px-3 py-2"
             />
             <Button type="submit" isLoading={isPending}>
