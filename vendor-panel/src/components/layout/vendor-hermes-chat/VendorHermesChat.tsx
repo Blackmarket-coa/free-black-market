@@ -135,7 +135,7 @@ export const VendorHermesChat = () => {
         {
           id: userMessage.id + 1,
           role: "assistant",
-          content: `I couldn’t validate that product draft request: ${message}`,
+          content: `I couldn’t validate that request: ${message}`,
         },
       ])
     }
