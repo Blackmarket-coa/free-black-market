@@ -50,6 +50,9 @@ const DEFAULT_DESTRUCTIVE_ACTIONS = new Set<string>([
 	'import_products_overwrite',
 ])
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+	typeof value === 'object' && value !== null && !Array.isArray(value)
+
 const hasType = (value: unknown, type: PrimitiveType): boolean => {
 	if (type === 'array') {
 		return Array.isArray(value)
@@ -82,8 +85,15 @@ export const buildLangGraphSupervisorEntrypoint = (
 				}
 			}
 
+			if (!isRecord(toolCall.parameters)) {
+				return {
+					ok: false,
+					errors: ['Tool parameters must be a JSON object'],
+				}
+			}
+
 			for (const requiredField of schema.required) {
-				if (!(requiredField in toolCall.parameters)) {
+				if (!Object.hasOwn(toolCall.parameters, requiredField)) {
 					errors.push(`Missing required parameter: ${requiredField}`)
 				}
 			}
