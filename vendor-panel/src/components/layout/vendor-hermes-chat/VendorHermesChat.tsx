@@ -30,19 +30,55 @@ const isProductDraftRequest = (question: string) => {
 const getGeneralAssistantReply = (question: string) => {
   const normalized = question.toLowerCase()
 
-  if (normalized.includes("shipping")) {
-    return "For shipping setup, start in Shipping Profiles and Locations. I can also help you draft product details once shipping is configured."
+  if (
+    normalized.includes("logistics") ||
+    normalized.includes("shipping") ||
+    normalized.includes("fulfillment") ||
+    normalized.includes("delivery")
+  ) {
+    return "Absolutely. I can help with logistics planning, shipping profiles, fulfillment workflows, and delivery operations. Share your current setup and constraints, and I can suggest practical next steps."
   }
 
-  if (normalized.includes("payout") || normalized.includes("payment")) {
-    return "For payouts or payments, review your payout account and subscription settings. If you share the issue, I can suggest the next troubleshooting steps."
+  if (
+    normalized.includes("supply") ||
+    normalized.includes("demand") ||
+    normalized.includes("inventory") ||
+    normalized.includes("stock")
+  ) {
+    return "Yes — I can help with supply-and-demand questions, including inventory balancing, stock planning, and demand signals. If you provide your product type and sales patterns, I can recommend an approach."
   }
 
-  if (normalized.includes("order")) {
-    return "For order questions, go to Orders to inspect status, fulfillment, and payment details. Tell me the exact order problem and I can guide you step-by-step."
+  if (
+    normalized.includes("finance") ||
+    normalized.includes("financial") ||
+    normalized.includes("margin") ||
+    normalized.includes("profit") ||
+    normalized.includes("cash flow") ||
+    normalized.includes("payout") ||
+    normalized.includes("payment")
+  ) {
+    return "I can help with business finance topics such as pricing, margin checks, payout and cash-flow planning, and break-even thinking. If you share numbers, I can walk through a structured analysis."
   }
 
-  return "Yes — I can answer general vendor portal questions (orders, shipping, payouts, setup) and I can validate product draft payloads when you want to create or refine listings."
+  if (
+    normalized.includes("market") ||
+    normalized.includes("competition") ||
+    normalized.includes("trend") ||
+    normalized.includes("positioning")
+  ) {
+    return "I can support market analysis too: competitor comparisons, trend interpretation, positioning ideas, and opportunity sizing. Tell me your target customer and category for more specific guidance."
+  }
+
+  if (
+    normalized.includes("recommend") ||
+    normalized.includes("strategy") ||
+    normalized.includes("business") ||
+    normalized.includes("growth")
+  ) {
+    return "Yes — I can provide practical business recommendations across operations, pricing, product mix, and growth strategy. Share your goals, timeline, and constraints so I can tailor the advice."
+  }
+
+  return "Yes — I can answer general questions about logistics, supply and demand, finance, market analysis, and business recommendations, plus validate product draft payloads for listing creation."
 }
 
 export const VendorHermesChat = () => {
@@ -53,7 +89,7 @@ export const VendorHermesChat = () => {
       id: 1,
       role: "assistant",
       content:
-        "Hi! I’m Hermes. Ask general vendor portal questions, or describe a product draft and I’ll validate a vendor-safe payload.",
+        "Hi! I’m Hermes. Ask about logistics, supply and demand, finance, market analysis, and business strategy — or describe a product draft and I’ll validate a vendor-safe payload.",
     },
   ])
 
@@ -161,7 +197,7 @@ export const VendorHermesChat = () => {
         </Drawer.Header>
         <Drawer.Body className="flex h-full flex-col gap-y-4 overflow-hidden px-4">
           <Text className="text-ui-fg-subtle">
-            Ask general questions or request product draft validation.
+            Ask general business questions or request product draft validation.
           </Text>
 
           <div className="bg-ui-bg-subtle border-ui-border-base flex flex-1 flex-col gap-y-2 overflow-y-auto rounded-lg border p-3">
@@ -183,7 +219,7 @@ export const VendorHermesChat = () => {
             <input
               value={prompt}
               onChange={(event) => setPrompt(event.target.value)}
-              placeholder="Ask a question or describe a product draft..."
+              placeholder="Ask about logistics, demand, finance, market strategy, or describe a product draft..."
               className="bg-ui-bg-field border-ui-border-base text-ui-fg-base flex-1 rounded-lg border px-3 py-2"
             />
             <Button type="submit" isLoading={isPending}>
