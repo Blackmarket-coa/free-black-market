@@ -10,6 +10,17 @@ interface ChatMessage {
   content: string
 }
 
+const escapeRegExp = (value: string) =>
+  value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+
+const hasPhrase = (text: string, phrase: string) => {
+  const matcher = new RegExp(`\\b${escapeRegExp(phrase)}\\b`, "i")
+  return matcher.test(text)
+}
+
+const includesAnyPhrase = (text: string, phrases: string[]) =>
+  phrases.some((phrase) => hasPhrase(text, phrase))
+
 const PRODUCT_DRAFT_KEYWORDS = [
   "product",
   "draft",
@@ -23,8 +34,7 @@ const PRODUCT_DRAFT_KEYWORDS = [
 ]
 
 const isProductDraftRequest = (question: string) => {
-  const normalized = question.toLowerCase()
-  return PRODUCT_DRAFT_KEYWORDS.some((keyword) => normalized.includes(keyword))
+  return includesAnyPhrase(question, PRODUCT_DRAFT_KEYWORDS)
 }
 
 const getGeneralAssistantReply = (question: string, history: ChatMessage[]) => {
@@ -32,73 +42,60 @@ const getGeneralAssistantReply = (question: string, history: ChatMessage[]) => {
   const previousUserMessage = [...history]
     .reverse()
     .find((message) => message.role === "user")
-    ?.content.toLowerCase()
+    ?.content
 
   if (
-    normalized.includes("upload") &&
-    (normalized.includes("photo") ||
-      normalized.includes("photos") ||
-      normalized.includes("image") ||
-      normalized.includes("images") ||
-      previousUserMessage?.includes("product") ||
-      previousUserMessage?.includes("listing"))
+    hasPhrase(normalized, "upload") &&
+    (includesAnyPhrase(normalized, ["photo", "photos", "image", "images"]) ||
+      includesAnyPhrase(previousUserMessage ?? "", ["product", "listing"]))
   ) {
     return "You can upload photos from your product form: open Products, create or edit a product, then go to the Media section and select Upload images. You can add multiple photos, reorder them, and mark one as the thumbnail before saving."
   }
 
+  if (hasPhrase(normalized, "upload")) {
+    return "You can upload from the relevant form in vendor panel (for products, use the Media section). If you tell me what you want to upload—images, CSV, or documents—I can give exact steps."
+  }
+
   if (
-    normalized.includes("hello") ||
-    normalized.includes("hi") ||
-    normalized.includes("hey") ||
-    normalized.includes("how are you")
+    includesAnyPhrase(normalized, ["hello", "hi", "hey", "how are you"])
   ) {
     return "Hi! I’m doing great and ready to help. Ask me anything about operations, finance, market strategy, or product listings, and I’ll keep the conversation contextual."
   }
 
   if (
-    normalized.includes("logistics") ||
-    normalized.includes("shipping") ||
-    normalized.includes("fulfillment") ||
-    normalized.includes("delivery")
+    includesAnyPhrase(normalized, ["logistics", "shipping", "fulfillment", "delivery"])
   ) {
     return "Absolutely. I can help with logistics planning, shipping profiles, fulfillment workflows, and delivery operations. Share your current setup and constraints, and I can suggest practical next steps."
   }
 
   if (
-    normalized.includes("supply") ||
-    normalized.includes("demand") ||
-    normalized.includes("inventory") ||
-    normalized.includes("stock")
+    includesAnyPhrase(normalized, ["supply", "demand", "inventory", "stock"])
   ) {
     return "Yes — I can help with supply-and-demand questions, including inventory balancing, stock planning, and demand signals. If you provide your product type and sales patterns, I can recommend an approach."
   }
 
   if (
-    normalized.includes("finance") ||
-    normalized.includes("financial") ||
-    normalized.includes("margin") ||
-    normalized.includes("profit") ||
-    normalized.includes("cash flow") ||
-    normalized.includes("payout") ||
-    normalized.includes("payment")
+    includesAnyPhrase(normalized, [
+      "finance",
+      "financial",
+      "margin",
+      "profit",
+      "cash flow",
+      "payout",
+      "payment",
+    ])
   ) {
     return "I can help with business finance topics such as pricing, margin checks, payout and cash-flow planning, and break-even thinking. If you share numbers, I can walk through a structured analysis."
   }
 
   if (
-    normalized.includes("market") ||
-    normalized.includes("competition") ||
-    normalized.includes("trend") ||
-    normalized.includes("positioning")
+    includesAnyPhrase(normalized, ["market", "competition", "trend", "positioning"])
   ) {
     return "I can support market analysis too: competitor comparisons, trend interpretation, positioning ideas, and opportunity sizing. Tell me your target customer and category for more specific guidance."
   }
 
   if (
-    normalized.includes("recommend") ||
-    normalized.includes("strategy") ||
-    normalized.includes("business") ||
-    normalized.includes("growth")
+    includesAnyPhrase(normalized, ["recommend", "strategy", "business", "growth"])
   ) {
     return "Yes — I can provide practical business recommendations across operations, pricing, product mix, and growth strategy. Share your goals, timeline, and constraints so I can tailor the advice."
   }
