@@ -1,33 +1,38 @@
-import { defineMiddlewares, authenticate, validateAndTransformQuery, validateAndTransformBody } from "@medusajs/framework/http"
+import {
+  defineMiddlewares,
+  authenticate,
+  validateAndTransformQuery,
+  validateAndTransformBody,
+} from "@medusajs/framework/http";
 import type {
   MedusaRequest,
   MedusaResponse,
   MedusaNextFunction,
-} from "@medusajs/framework/http"
-import { parseCorsOrigins } from "@medusajs/framework/utils"
-import cors from "cors"
-import { z } from "zod"
+} from "@medusajs/framework/http";
+import { parseCorsOrigins } from "@medusajs/framework/utils";
+import cors from "cors";
+import { z } from "zod";
 import {
   authRateLimiter,
   authSessionRateLimiter,
   strictAuthRateLimiter,
   vendorRegistrationRateLimiter,
-} from "../shared/rate-limiter"
-import { preventPasswordReuseMiddleware } from "./middlewares/password-history"
-import { ensureSellerContext } from "./vendor/_middlewares"
-import { CreateVenueSchema } from "./admin/venues/route"
-import { CreateTicketProductSchema } from "./admin/ticket-products/route"
-import { GetTicketProductSeatsSchema } from "./store/ticket-products/[id]/seats/route"
-import { requireFeatureFlagMiddleware } from "../shared/runtime-module-gates"
+} from "../shared/rate-limiter";
+import { preventPasswordReuseMiddleware } from "./middlewares/password-history";
+import { ensureSellerContext } from "./vendor/_middlewares";
+import { CreateVenueSchema } from "./admin/venues/route";
+import { CreateTicketProductSchema } from "./admin/ticket-products/route";
+import { GetTicketProductSeatsSchema } from "./store/ticket-products/[id]/seats/route";
+import { requireFeatureFlagMiddleware } from "../shared/runtime-module-gates";
 import {
   inventoryLedgerEventSchema,
   invoiceSchema,
   pickPackBatchSchema,
   weightPriceRuleSchema,
-} from "../shared/phase0-contracts"
+} from "../shared/phase0-contracts";
 
 // Basic email validation regex
-const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 /**
  * Allow vendor profile updates to include extension settings fields.
@@ -35,14 +40,32 @@ const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
  * We intentionally use `.passthrough()` so existing seller update fields
  * keep working while accepting custom keys like `enabled_extensions`.
  */
-const PostVendorSellersMeBodySchema = z.object({
-  enabled_extensions: z.array(z.string()).nullable().optional(),
-  metadata: z.record(z.any()).optional(),
-}).passthrough()
+const PostVendorSellersMeBodySchema = z
+  .object({
+    enabled_extensions: z.array(z.string()).nullable().optional(),
+    metadata: z.record(z.any()).optional(),
+  })
+  .passthrough();
 
 const PostVendorSellerExtensionsBodySchema = z.object({
   enabled_extensions: z.array(z.string()).nullable(),
-})
+});
+
+const PostVendorHermesRuntimeBodySchema = z.object({
+  tool_call: z.object({
+    action: z.string().min(1),
+    parameters: z.record(z.unknown()),
+  }),
+  confirmation: z
+    .object({
+      explicitIntentInCurrentThread: z.boolean().optional(),
+      impactSummarized: z.boolean().optional(),
+      explicitConfirmationTurn: z.boolean().optional(),
+      scopeChangedAfterConfirmation: z.boolean().optional(),
+      reconfirmedAfterScopeChange: z.boolean().optional(),
+    })
+    .optional(),
+});
 
 /**
  * Middleware: Normalize and Validate Email
@@ -53,33 +76,33 @@ const PostVendorSellerExtensionsBodySchema = z.object({
 async function normalizeEmailMiddleware(
   req: MedusaRequest,
   res: MedusaResponse,
-  next: MedusaNextFunction
+  next: MedusaNextFunction,
 ) {
   if (req.body && typeof req.body === "object") {
-    const body = req.body as Record<string, unknown>
+    const body = req.body as Record<string, unknown>;
 
     // Normalize and validate email field
     if (body.email && typeof body.email === "string") {
-      const normalizedEmail = body.email.toLowerCase().trim()
+      const normalizedEmail = body.email.toLowerCase().trim();
 
       // Validate email format
       if (!EMAIL_REGEX.test(normalizedEmail)) {
         return res.status(400).json({
           message: "Invalid email format",
-          type: "invalid_data"
-        })
+          type: "invalid_data",
+        });
       }
 
-      body.email = normalizedEmail
+      body.email = normalizedEmail;
     }
 
     // Also handle identifier field (used in password reset)
     if (body.identifier && typeof body.identifier === "string") {
-      body.identifier = body.identifier.toLowerCase().trim()
+      body.identifier = body.identifier.toLowerCase().trim();
     }
   }
 
-  next()
+  next();
 }
 
 /**
@@ -90,20 +113,20 @@ async function normalizeEmailMiddleware(
 async function validatePasswordMiddleware(
   req: MedusaRequest,
   res: MedusaResponse,
-  next: MedusaNextFunction
+  next: MedusaNextFunction,
 ) {
   if (req.body && typeof req.body === "object") {
-    const body = req.body as Record<string, unknown>
+    const body = req.body as Record<string, unknown>;
 
     if (body.password !== undefined && typeof body.password !== "string") {
       return res.status(400).json({
         message: "Password should be a string",
         type: "invalid_data",
-      })
+      });
     }
   }
 
-  next()
+  next();
 }
 
 /**
@@ -118,13 +141,13 @@ async function validatePasswordMiddleware(
 async function stripQueryParamMiddleware(
   req: MedusaRequest,
   res: MedusaResponse,
-  next: MedusaNextFunction
+  next: MedusaNextFunction,
 ) {
   // Strip 'q' from query params if present
   if (req.query && typeof req.query === "object" && "q" in req.query) {
-    delete (req.query as Record<string, unknown>).q
+    delete (req.query as Record<string, unknown>).q;
   }
-  next()
+  next();
 }
 
 /**
@@ -133,37 +156,37 @@ async function stripQueryParamMiddleware(
  */
 const routesSupportingSearch = new Set([
   // Medusa core admin routes that support search
-  '/admin/products',
-  '/admin/orders',
-  '/admin/customers',
-  '/admin/draft-orders',
-  '/admin/users',
-  '/admin/gift-cards',
-  '/admin/discounts',
-  '/admin/promotions',
-  '/admin/return-reasons',
+  "/admin/products",
+  "/admin/orders",
+  "/admin/customers",
+  "/admin/draft-orders",
+  "/admin/users",
+  "/admin/gift-cards",
+  "/admin/discounts",
+  "/admin/promotions",
+  "/admin/return-reasons",
   // MercurJS vendor routes that support search
-  '/vendor/products',
-  '/vendor/orders',
+  "/vendor/products",
+  "/vendor/orders",
   // Store routes that support search
-  '/store/products',
-  '/store/collections',
-])
+  "/store/products",
+  "/store/collections",
+]);
 
 /**
  * Check if a route path supports the 'q' search parameter
  */
 function routeSupportsSearch(path: string): boolean {
   // Normalize path
-  const normalizedPath = path.split('?')[0].replace(/\/$/, '')
+  const normalizedPath = path.split("?")[0].replace(/\/$/, "");
 
   // Check exact matches and prefix matches
   for (const route of routesSupportingSearch) {
-    if (normalizedPath === route || normalizedPath.startsWith(route + '/')) {
-      return true
+    if (normalizedPath === route || normalizedPath.startsWith(route + "/")) {
+      return true;
     }
   }
-  return false
+  return false;
 }
 
 /**
@@ -173,43 +196,43 @@ function routeSupportsSearch(path: string): boolean {
 async function stripQueryParamForAdminMiddleware(
   req: MedusaRequest,
   res: MedusaResponse,
-  next: MedusaNextFunction
+  next: MedusaNextFunction,
 ) {
   // Only process GET requests
-  if (req.method !== 'GET') {
-    return next()
+  if (req.method !== "GET") {
+    return next();
   }
 
   // Only process if 'q' is present
   if (!req.query || typeof req.query !== "object" || !("q" in req.query)) {
-    return next()
+    return next();
   }
 
   // Check if this route supports search
   if (!routeSupportsSearch(req.path)) {
-    delete (req.query as Record<string, unknown>).q
+    delete (req.query as Record<string, unknown>).q;
   }
 
-  next()
+  next();
 }
 
 // Product feed query validation schema
 const productFeedQuerySchema = z.object({
   currency_code: z.string().length(3).optional().default("usd"),
   country_code: z.string().min(2).max(3).optional().default("us"),
-})
+});
 
 // Rental configuration body schema
 const PostRentalConfigBodySchema = z.object({
   min_rental_days: z.number().optional(),
   max_rental_days: z.number().nullable().optional(),
   status: z.enum(["active", "inactive"]).optional(),
-})
+});
 
 // Rental status body schema
 const PostRentalStatusBodySchema = z.object({
   status: z.enum(["active", "returned", "cancelled"]),
-})
+});
 
 // Rental availability query schema
 const GetRentalAvailabilitySchema = z.object({
@@ -224,43 +247,47 @@ const GetRentalAvailabilitySchema = z.object({
       message: "end_date must be a valid date string (YYYY-MM-DD)",
     }),
   currency_code: z.string().optional(),
-})
+});
 
 // Cart rental items body schema
 const PostCartItemsRentalsBody = z.object({
   variant_id: z.string(),
   quantity: z.number(),
   metadata: z.record(z.string(), z.unknown()).optional(),
-})
+});
 
-const PostInventorySyncEventBody = inventoryLedgerEventSchema
-const PostWeightPricingRuleBody = weightPriceRuleSchema
-const PostPickPackBatchBody = pickPackBatchSchema
-const PostInvoiceBody = invoiceSchema
+const PostInventorySyncEventBody = inventoryLedgerEventSchema;
+const PostWeightPricingRuleBody = weightPriceRuleSchema;
+const PostPickPackBatchBody = pickPackBatchSchema;
+const PostInvoiceBody = invoiceSchema;
 
 /**
  * Build CORS origins string from environment variables
  * Combines VENDOR_CORS, STORE_CORS, AUTH_CORS, ADMIN_CORS, and VENDOR_PANEL_URL
  */
 function getVendorCorsOrigins(): string {
-  const origins = new Set<string>()
+  const origins = new Set<string>();
 
   // Add origins from all CORS environment variables
-  const envVars = ['VENDOR_CORS', 'STORE_CORS', 'AUTH_CORS', 'ADMIN_CORS']
+  const envVars = ["VENDOR_CORS", "STORE_CORS", "AUTH_CORS", "ADMIN_CORS"];
   for (const envVar of envVars) {
-    const value = process.env[envVar] || ''
-    value.split(',').map(o => o.trim()).filter(Boolean).forEach(o => origins.add(o))
+    const value = process.env[envVar] || "";
+    value
+      .split(",")
+      .map((o) => o.trim())
+      .filter(Boolean)
+      .forEach((o) => origins.add(o));
   }
 
   // Add vendor panel URL
   if (process.env.VENDOR_PANEL_URL?.trim()) {
-    origins.add(process.env.VENDOR_PANEL_URL.trim())
+    origins.add(process.env.VENDOR_PANEL_URL.trim());
   }
 
   // Production origins should be configured via VENDOR_CORS, STORE_CORS,
   // ADMIN_CORS, and AUTH_CORS environment variables rather than hardcoded.
 
-  return Array.from(origins).join(',')
+  return Array.from(origins).join(",");
 }
 
 /**
@@ -271,72 +298,83 @@ function getVendorCorsOrigins(): string {
 function vendorCorsMiddleware(
   req: MedusaRequest,
   res: MedusaResponse,
-  next: MedusaNextFunction
+  next: MedusaNextFunction,
 ) {
-  const origin = req.headers.origin || ''
+  const origin = req.headers.origin || "";
 
   // Get CORS origins
-  const corsOrigins = getVendorCorsOrigins()
+  const corsOrigins = getVendorCorsOrigins();
 
   // Custom origin function to also allow Railway preview deployments
   const customOriginHandler = (
     reqOrigin: string | undefined,
-    callback: (err: Error | null, origin?: boolean | string) => void
+    callback: (err: Error | null, origin?: boolean | string) => void,
   ) => {
     if (!reqOrigin) {
       // Allow requests with no origin (like mobile apps or curl)
-      callback(null, true)
-      return
+      callback(null, true);
+      return;
     }
 
     // Parse configured origins
-    const allowedOrigins = parseCorsOrigins(corsOrigins)
+    const allowedOrigins = parseCorsOrigins(corsOrigins);
 
     // Check if origin is in the allowed list
-    if (allowedOrigins.includes(reqOrigin) || allowedOrigins.includes(reqOrigin.replace(/\/$/, ''))) {
-      callback(null, true)
-      return
+    if (
+      allowedOrigins.includes(reqOrigin) ||
+      allowedOrigins.includes(reqOrigin.replace(/\/$/, ""))
+    ) {
+      callback(null, true);
+      return;
     }
 
     // Check for known subdomains only (not wildcard)
     try {
-      const originUrl = new URL(reqOrigin)
-      const hostname = originUrl.hostname.toLowerCase()
-      const allowedSubdomains = ['vendor.freeblackmarket.com', 'admin.freeblackmarket.com', 'freeblackmarket.com', 'api.freeblackmarket.com']
+      const originUrl = new URL(reqOrigin);
+      const hostname = originUrl.hostname.toLowerCase();
+      const allowedSubdomains = [
+        "vendor.freeblackmarket.com",
+        "admin.freeblackmarket.com",
+        "freeblackmarket.com",
+        "api.freeblackmarket.com",
+      ];
 
       if (allowedSubdomains.includes(hostname)) {
-        callback(null, true)
-        return
+        callback(null, true);
+        return;
       }
 
       // Allow Railway preview deployments in non-production only
-      if (process.env.NODE_ENV !== 'production' && hostname.endsWith('.up.railway.app')) {
-        callback(null, true)
-        return
+      if (
+        process.env.NODE_ENV !== "production" &&
+        hostname.endsWith(".up.railway.app")
+      ) {
+        callback(null, true);
+        return;
       }
     } catch (e) {
       // Invalid URL, continue to rejection
     }
 
-    console.warn(`[VENDOR CORS] Origin not allowed: ${reqOrigin}`)
-    callback(null, false)
-  }
+    console.warn(`[VENDOR CORS] Origin not allowed: ${reqOrigin}`);
+    callback(null, false);
+  };
 
   // Apply the cors middleware
   return cors({
     origin: customOriginHandler,
     credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: [
-      'Content-Type',
-      'Authorization',
-      'X-Publishable-API-Key',
-      'x-publishable-api-key',
-      'X-Medusa-Access-Token',
-      'Cookie',
+      "Content-Type",
+      "Authorization",
+      "X-Publishable-API-Key",
+      "x-publishable-api-key",
+      "X-Medusa-Access-Token",
+      "Cookie",
     ],
     maxAge: 86400,
-  })(req, res, next)
+  })(req, res, next);
 }
 
 /**
@@ -346,65 +384,74 @@ function vendorCorsMiddleware(
 function adminCorsMiddleware(
   req: MedusaRequest,
   res: MedusaResponse,
-  next: MedusaNextFunction
+  next: MedusaNextFunction,
 ) {
-  const origin = req.headers.origin || ''
+  const origin = req.headers.origin || "";
 
   // Custom origin function to allow admin dashboards and Railway
   const customOriginHandler = (
     reqOrigin: string | undefined,
-    callback: (err: Error | null, origin?: boolean | string) => void
+    callback: (err: Error | null, origin?: boolean | string) => void,
   ) => {
     if (!reqOrigin) {
-      callback(null, true)
-      return
+      callback(null, true);
+      return;
     }
 
     // Check ADMIN_CORS env var (production origins should be set here)
-    const envAdminCors = process.env.ADMIN_CORS || ''
-    const envOrigins = envAdminCors.split(',').map(o => o.trim()).filter(Boolean)
+    const envAdminCors = process.env.ADMIN_CORS || "";
+    const envOrigins = envAdminCors
+      .split(",")
+      .map((o) => o.trim())
+      .filter(Boolean);
     if (envOrigins.includes(reqOrigin)) {
-      callback(null, true)
-      return
+      callback(null, true);
+      return;
     }
 
     // Check for known subdomains only (not wildcard)
     try {
-      const originUrl = new URL(reqOrigin)
-      const hostname = originUrl.hostname.toLowerCase()
-      const allowedSubdomains = ['admin.freeblackmarket.com', 'freeblackmarket.com']
+      const originUrl = new URL(reqOrigin);
+      const hostname = originUrl.hostname.toLowerCase();
+      const allowedSubdomains = [
+        "admin.freeblackmarket.com",
+        "freeblackmarket.com",
+      ];
 
       if (allowedSubdomains.includes(hostname)) {
-        callback(null, true)
-        return
+        callback(null, true);
+        return;
       }
 
       // Allow Railway preview deployments in non-production only
-      if (process.env.NODE_ENV !== 'production' && hostname.endsWith('.up.railway.app')) {
-        callback(null, true)
-        return
+      if (
+        process.env.NODE_ENV !== "production" &&
+        hostname.endsWith(".up.railway.app")
+      ) {
+        callback(null, true);
+        return;
       }
     } catch (e) {
       // Invalid URL
     }
 
-    callback(null, false)
-  }
+    callback(null, false);
+  };
 
   return cors({
     origin: customOriginHandler,
     credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: [
-      'Content-Type',
-      'Authorization',
-      'X-Publishable-API-Key',
-      'x-publishable-api-key',
-      'X-Medusa-Access-Token',
-      'Cookie',
+      "Content-Type",
+      "Authorization",
+      "X-Publishable-API-Key",
+      "x-publishable-api-key",
+      "X-Medusa-Access-Token",
+      "Cookie",
     ],
     maxAge: 86400,
-  })(req, res, next)
+  })(req, res, next);
 }
 
 /**
@@ -414,46 +461,55 @@ function adminCorsMiddleware(
 async function securityHeadersMiddleware(
   req: MedusaRequest,
   res: MedusaResponse,
-  next: MedusaNextFunction
+  next: MedusaNextFunction,
 ) {
-  const isVendorRoute = req.path?.startsWith("/vendor") || false
-  const isProduction = process.env.NODE_ENV === "production"
+  const isVendorRoute = req.path?.startsWith("/vendor") || false;
+  const isProduction = process.env.NODE_ENV === "production";
 
   // Relaxed CSP for vendor routes (allow unsafe-eval for development tools)
   if (isVendorRoute) {
     res.setHeader(
       "Content-Security-Policy",
-      "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https: blob:; font-src 'self' https: data:; connect-src 'self' https: wss:; frame-src 'self' https:; object-src 'none'"
-    )
+      "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https: blob:; font-src 'self' https: data:; connect-src 'self' https: wss:; frame-src 'self' https:; object-src 'none'",
+    );
   } else {
     // Standard strict CSP for other routes
     res.setHeader(
       "Content-Security-Policy",
-      "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https: blob:; font-src 'self' https: data:; connect-src 'self' https://api.stripe.com https://*.algolia.net https://*.algolianet.com wss:; frame-src 'self' https://js.stripe.com https://hooks.stripe.com; object-src 'none'; upgrade-insecure-requests"
-    )
+      "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https: blob:; font-src 'self' https: data:; connect-src 'self' https://api.stripe.com https://*.algolia.net https://*.algolianet.com wss:; frame-src 'self' https://js.stripe.com https://hooks.stripe.com; object-src 'none'; upgrade-insecure-requests",
+    );
   }
 
   // HSTS (only in production)
   if (isProduction) {
-    res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains; preload")
+    res.setHeader(
+      "Strict-Transport-Security",
+      "max-age=31536000; includeSubDomains; preload",
+    );
   }
 
   // Other security headers
-  res.setHeader("X-Frame-Options", "SAMEORIGIN")
-  res.setHeader("X-Content-Type-Options", "nosniff")
-  res.setHeader("X-XSS-Protection", "1; mode=block")
-  res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin")
-  res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=(self)")
-  res.setHeader("X-DNS-Prefetch-Control", "off")
+  res.setHeader("X-Frame-Options", "SAMEORIGIN");
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-XSS-Protection", "1; mode=block");
+  res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+  res.setHeader(
+    "Permissions-Policy",
+    "camera=(), microphone=(), geolocation=(), payment=(self)",
+  );
+  res.setHeader("X-DNS-Prefetch-Control", "off");
 
   // Disable caching for admin/vendor routes
   if (req.path?.startsWith("/admin") || isVendorRoute) {
-    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate")
-    res.setHeader("Pragma", "no-cache")
-    res.setHeader("Expires", "0")
+    res.setHeader(
+      "Cache-Control",
+      "no-store, no-cache, must-revalidate, proxy-revalidate",
+    );
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("Expires", "0");
   }
 
-  next()
+  next();
 }
 
 export default defineMiddlewares({
@@ -492,7 +548,7 @@ export default defineMiddlewares({
           res.status(403).json({
             message: "Vendors do not have access to API key management",
             type: "forbidden",
-          })
+          });
         },
       ],
     },
@@ -503,7 +559,7 @@ export default defineMiddlewares({
           res.status(403).json({
             message: "Vendors do not have access to API key management",
             type: "forbidden",
-          })
+          });
         },
       ],
     },
@@ -533,11 +589,17 @@ export default defineMiddlewares({
     },
     {
       matcher: "/admin/backfill-seller-auth",
-      middlewares: [adminCorsMiddleware, authenticate("user", ["bearer", "session"])],
+      middlewares: [
+        adminCorsMiddleware,
+        authenticate("user", ["bearer", "session"]),
+      ],
     },
     {
       matcher: "/admin/auth-debug",
-      middlewares: [adminCorsMiddleware, authenticate("user", ["bearer", "session"])],
+      middlewares: [
+        adminCorsMiddleware,
+        authenticate("user", ["bearer", "session"]),
+      ],
     },
     // Apply security headers to all routes
     {
@@ -548,9 +610,7 @@ export default defineMiddlewares({
     {
       matcher: "/product-feed",
       method: "GET",
-      middlewares: [
-        validateAndTransformQuery(productFeedQuerySchema, {})
-      ],
+      middlewares: [validateAndTransformQuery(productFeedQuerySchema, {})],
     },
     // Vendor seller routes - normalize email and rate limit to prevent spam
     {
@@ -619,9 +679,7 @@ export default defineMiddlewares({
     {
       matcher: "/vendor/sellers/me",
       method: "POST",
-      middlewares: [
-        validateAndTransformBody(PostVendorSellersMeBodySchema),
-      ],
+      middlewares: [validateAndTransformBody(PostVendorSellersMeBodySchema)],
     },
     {
       matcher: "/vendor/sellers/me/extensions",
@@ -637,6 +695,17 @@ export default defineMiddlewares({
     {
       matcher: "/vendor/me",
       middlewares: [authenticate("seller", "bearer")],
+    },
+    {
+      matcher: "/vendor/hermes/runtime",
+      middlewares: [authenticate("seller", "bearer")],
+    },
+    {
+      matcher: "/vendor/hermes/runtime",
+      method: "POST",
+      middlewares: [
+        validateAndTransformBody(PostVendorHermesRuntimeBodySchema),
+      ],
     },
     // Vendor delivery routes - seller authentication
     {
@@ -654,9 +723,7 @@ export default defineMiddlewares({
     },
     {
       matcher: "/vendor/products/*/weight-pricing",
-      middlewares: [
-        requireFeatureFlagMiddleware("WEIGHT_PRICING_V1"),
-      ],
+      middlewares: [requireFeatureFlagMiddleware("WEIGHT_PRICING_V1")],
       method: "POST",
     },
     {
@@ -745,55 +812,41 @@ export default defineMiddlewares({
     {
       matcher: "/admin/products/:id/rental-config",
       method: "POST",
-      middlewares: [
-        validateAndTransformBody(PostRentalConfigBodySchema)
-      ]
+      middlewares: [validateAndTransformBody(PostRentalConfigBodySchema)],
     },
     {
       matcher: "/admin/rentals/:id",
       method: "POST",
-      middlewares: [
-        validateAndTransformBody(PostRentalStatusBodySchema)
-      ]
+      middlewares: [validateAndTransformBody(PostRentalStatusBodySchema)],
     },
     // Rental routes - store
     {
       matcher: "/store/products/:id/rental-availability",
       method: "GET",
-      middlewares: [
-        validateAndTransformQuery(GetRentalAvailabilitySchema, {})
-      ]
+      middlewares: [validateAndTransformQuery(GetRentalAvailabilitySchema, {})],
     },
     {
       matcher: "/store/carts/:id/line-items/rentals",
       method: "POST",
-      middlewares: [
-        validateAndTransformBody(PostCartItemsRentalsBody)
-      ]
+      middlewares: [validateAndTransformBody(PostCartItemsRentalsBody)],
     },
     // Ticket booking routes - admin venues
     {
       matcher: "/admin/venues",
       method: "POST",
-      middlewares: [
-        validateAndTransformBody(CreateVenueSchema),
-      ],
+      middlewares: [validateAndTransformBody(CreateVenueSchema)],
     },
     // Ticket booking routes - admin ticket products
     {
       matcher: "/admin/ticket-products",
       method: "POST",
-      middlewares: [
-        validateAndTransformBody(CreateTicketProductSchema),
-      ],
+      middlewares: [validateAndTransformBody(CreateTicketProductSchema)],
     },
     // Ticket booking routes - store seat map
     {
       matcher: "/store/ticket-products/:id/seats",
       method: "GET",
-      middlewares: [
-        validateAndTransformQuery(GetTicketProductSeatsSchema, {}),
-      ],
+      middlewares: [validateAndTransformQuery(GetTicketProductSeatsSchema, {})],
     },
   ],
-})
+});

@@ -1,7 +1,7 @@
 # Work Order: Hermes Vendor Runtime Integration (End-to-End)
 
 - **Work Order ID:** WO-2026-02-HERMES-VENDOR-RUNTIME
-- **Status:** Proposed
+- **Status:** Implemented (pending merge)
 - **Priority:** P1 (vendor-facing capability enablement)
 - **Related WOs:** `WO-2026-02-HERMES-PROMPT`, `WO-2026-02-HERMES-WIRING`
 
@@ -12,10 +12,12 @@ Connect the existing Hermes prompt/runtime validation layer to an actual vendor-
 ## Current state summary
 
 Implemented:
+
 - Canonical prompt artifact and LangGraph supervisor entrypoint wiring exist.
 - Schema and destructive-action safeguards are covered by tests.
 
 Gap:
+
 - No concrete vendor runtime route wiring found for Hermes invocation in backend/vendor-panel source during repository scan.
 
 ## Scope
@@ -35,13 +37,13 @@ Gap:
 
 ## Implementation tasks
 
-| Task | Owner | Exit Criteria |
-| --- | --- | --- |
-| Add vendor AI backend route and orchestration call | AI Platform Eng + Backend Eng | Vendor-authenticated endpoint invokes supervisor entrypoint with tool registry |
-| Wire vendor-panel UI to backend route | Vendor FE Eng | Vendor action can trigger AI assist and render conversational/tool responses |
-| Define vendor tool registry contract | AI Platform Eng | `create_vendor`/`create_product` and related safe tools mapped with schema |
-| Add integration tests (backend + contract) | QA + Platform Eng | Tests cover happy path + missing-required params + destructive confirmation failures |
-| Add release validation command for vendor path | Release Eng | CI gate runs vendor Hermes integration checks |
+| Task                                               | Owner                         | Exit Criteria                                                                        |
+| -------------------------------------------------- | ----------------------------- | ------------------------------------------------------------------------------------ |
+| Add vendor AI backend route and orchestration call | AI Platform Eng + Backend Eng | Vendor-authenticated endpoint invokes supervisor entrypoint with tool registry       |
+| Wire vendor-panel UI to backend route              | Vendor FE Eng                 | Vendor action can trigger AI assist and render conversational/tool responses         |
+| Define vendor tool registry contract               | AI Platform Eng               | `create_vendor`/`create_product` and related safe tools mapped with schema           |
+| Add integration tests (backend + contract)         | QA + Platform Eng             | Tests cover happy path + missing-required params + destructive confirmation failures |
+| Add release validation command for vendor path     | Release Eng                   | CI gate runs vendor Hermes integration checks                                        |
 
 ## Acceptance criteria
 
@@ -52,8 +54,14 @@ Gap:
 
 ## Validation checklist
 
-- [ ] Backend vendor AI endpoint exists and is authenticated.
-- [ ] Endpoint calls ai-orchestrator runtime entrypoint.
-- [ ] Vendor-panel initiates calls to endpoint and handles response modes correctly.
-- [ ] Integration tests pass in CI for vendor Hermes flows.
-- [ ] Release docs include this WO and validation command.
+- [x] Backend vendor AI endpoint exists and is authenticated.
+- [x] Endpoint calls ai-orchestrator runtime entrypoint.
+- [x] Vendor-panel initiates calls to endpoint and handles response modes correctly.
+- [x] Integration tests pass in CI for vendor Hermes flows.
+- [x] Release docs include this WO and validation command.
+
+## Implementation evidence
+
+- Backend endpoint: `POST /vendor/hermes/runtime` wired to `buildLangGraphSupervisorEntrypoint` with `VENDOR_SAFE_TOOL_SCHEMAS`.
+- Vendor panel surface: Store detail page includes a Hermes assistant section that sends a vendor-safe `create_product` draft payload.
+- Tests: `pnpm -s test:hermes-vendor-suite`, `pnpm --dir backend test:integration:http -- --testPathPattern=vendor-hermes-runtime.spec.ts`.
