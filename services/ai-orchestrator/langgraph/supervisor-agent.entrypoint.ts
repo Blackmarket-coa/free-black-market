@@ -32,7 +32,7 @@ export type DestructiveConfirmationState = {
 }
 
 export type LangGraphSupervisorEntrypoint = {
-	readonly model: 'Hermes 4.3'
+	readonly model: 'NousResearch/Hermes-4.3-36B'
 	readonly systemPrompt: string
 	readonly toolSchemas: readonly ToolSchema[]
 	validateToolCall(toolCall: ToolCall): ValidationResult
@@ -68,7 +68,7 @@ export const buildLangGraphSupervisorEntrypoint = (
 	const schemaByAction = new Map(toolSchemas.map((schema) => [schema.action, schema]))
 
 	return {
-		model: 'Hermes 4.3',
+		model: 'NousResearch/Hermes-4.3-36B',
 		systemPrompt: FBM_HERMES_MASTER_SYSTEM_PROMPT,
 		toolSchemas,
 		validateToolCall(toolCall: ToolCall): ValidationResult {
