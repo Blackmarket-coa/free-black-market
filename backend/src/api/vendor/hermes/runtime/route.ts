@@ -1,10 +1,9 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http";
 import {
-  buildLangGraphSupervisorEntrypoint,
+  buildVendorHermesSupervisor,
   type DestructiveConfirmationState,
   type ToolCall,
-} from "../../../../../../services/ai-orchestrator/langgraph/supervisor-agent.entrypoint";
-import { VENDOR_SAFE_TOOL_SCHEMAS } from "../../../../../../services/ai-orchestrator/langgraph/vendor-tool-registry";
+} from "../../../../lib/hermes/runtime-supervisor";
 
 interface AuthContext {
   actor_id?: string;
@@ -34,9 +33,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     confirmation?: Partial<DestructiveConfirmationState>;
   };
 
-  const supervisor = buildLangGraphSupervisorEntrypoint(
-    VENDOR_SAFE_TOOL_SCHEMAS,
-  );
+  const supervisor = buildVendorHermesSupervisor();
   const validation = supervisor.validateToolCall(toolCall);
 
   if (!validation.ok) {
