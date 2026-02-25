@@ -114,3 +114,24 @@ test('enforces destructive-action confirmation regression rules', () => {
 	})
 	assert.equal(approved.ok, true)
 })
+
+
+test('rejects non-object parameters and prototype-only required keys', () => {
+	const entrypoint = buildLangGraphSupervisorEntrypoint(toolSchemas)
+
+	const nonObjectParameters = entrypoint.validateToolCall({
+		action: 'create_product',
+		parameters: null as unknown as Record<string, unknown>,
+	})
+	assert.equal(nonObjectParameters.ok, false)
+	assert.match(nonObjectParameters.errors.join(' | '), /Tool parameters must be a JSON object/)
+
+	const prototypeBackedParameters = Object.create({ title: 'Prototype Title', price: 9.99 })
+	const prototypeBypassAttempt = entrypoint.validateToolCall({
+		action: 'create_product',
+		parameters: prototypeBackedParameters as Record<string, unknown>,
+	})
+	assert.equal(prototypeBypassAttempt.ok, false)
+	assert.match(prototypeBypassAttempt.errors.join(' | '), /Missing required parameter: title/)
+	assert.match(prototypeBypassAttempt.errors.join(' | '), /Missing required parameter: price/)
+})
