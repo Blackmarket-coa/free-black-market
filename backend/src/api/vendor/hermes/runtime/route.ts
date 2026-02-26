@@ -42,19 +42,13 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     (req.body ?? {}) as VendorHermesRuntimeRequestBody;
 
   if (typeof chatMessage === "string" && chatMessage.trim().length > 0) {
-    const token = process.env.HUGGINGFACE_API_TOKEN;
-
-    if (!token) {
-      return res.status(503).json({
-        mode: "chat",
-        ok: false,
-        errors: [
-          "Hermes chat is not configured. Set HUGGINGFACE_API_TOKEN on the backend runtime.",
-        ],
-      });
-    }
-
     const userContent = chatMessage.trim();
+    const runtimeBaseUrl =
+      process.env.HERMES_CHAT_BASE_URL?.trim() || "http://127.0.0.1:11434/v1";
+    const runtimeModel =
+      process.env.HERMES_CHAT_MODEL?.trim() || "NousResearch/Hermes-4.3-36B";
+    const runtimeApiKey = process.env.HERMES_CHAT_API_KEY?.trim();
+
     const safeHistory = Array.isArray(history)
       ? history
           .filter(
@@ -79,17 +73,22 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       },
     ];
 
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
+
+    if (runtimeApiKey) {
+      headers.Authorization = `Bearer ${runtimeApiKey}`;
+    }
+
     try {
       const response = await fetch(
-        "https://router.huggingface.co/v1/chat/completions",
+        `${runtimeBaseUrl.replace(/\/$/, "")}/chat/completions`,
         {
           method: "POST",
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json",
-          },
+          headers,
           body: JSON.stringify({
-            model: "NousResearch/Hermes-4.3-36B",
+            model: runtimeModel,
             messages,
             max_tokens: 450,
             temperature: 0.4,
@@ -112,7 +111,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
           ok: false,
           errors: [
             payload?.error?.message ||
-              "Hermes upstream chat provider returned an error.",
+              "Hermes local chat runtime returned an error.",
           ],
         });
       }
@@ -123,7 +122,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
         return res.status(502).json({
           mode: "chat",
           ok: false,
-          errors: ["Hermes chat provider returned an empty response."],
+          errors: ["Hermes chat runtime returned an empty response."],
         });
       }
 
