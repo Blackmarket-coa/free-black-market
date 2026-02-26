@@ -321,7 +321,13 @@
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ { tool_call: $json.tool_call, confirmation: $json.confirmation } }}",
-        "options": {}
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true
+            }
+          }
+        }
       },
       "id": "Call_Backend_Runtime",
       "name": "Call backend /vendor/hermes/runtime",

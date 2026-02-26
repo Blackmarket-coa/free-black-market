@@ -3,7 +3,7 @@ import { Button, Drawer, Heading, IconButton, Text } from "@medusajs/ui"
 import { FormEvent, useMemo, useState } from "react"
 
 import { useVendorHermesRuntime } from "../../../hooks/api/hermes"
-import { getGeneralAssistantReply, isProductDraftRequest } from "./reply-routing"
+import { isProductDraftRequest } from "./reply-routing"
 
 interface ChatMessage {
   id: number
@@ -50,14 +50,43 @@ export const VendorHermesChat = () => {
     setPrompt("")
 
     if (!isProductDraftRequest(trimmed)) {
-      setMessages((current) => [
-        ...current,
-        {
-          id: userMessage.id + 1,
-          role: "assistant",
-          content: getGeneralAssistantReply(trimmed, messages),
-        },
-      ])
+      try {
+        const result = await mutateAsync({
+          chat_message: trimmed,
+          history: messages.slice(-6).map((message) => ({
+            role: message.role,
+            content: message.content,
+          })),
+        })
+
+        const assistantReply =
+          typeof result === "object" && result && "assistant_message" in result
+            ? String((result as { assistant_message?: string }).assistant_message ?? "")
+            : ""
+
+        setMessages((current) => [
+          ...current,
+          {
+            id: userMessage.id + 1,
+            role: "assistant",
+            content:
+              assistantReply ||
+              "I couldn’t generate a Hermes reply right now. Please try again.",
+          },
+        ])
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Hermes runtime request failed"
+
+        setMessages((current) => [
+          ...current,
+          {
+            id: userMessage.id + 1,
+            role: "assistant",
+            content: `I couldn’t answer that right now: ${message}`,
+          },
+        ])
+      }
 
       return
     }
