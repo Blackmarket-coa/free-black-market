@@ -19,12 +19,54 @@ interface VendorHermesRuntimeRequestBody {
   confirmation?: Partial<DestructiveConfirmationState>;
 }
 
+type RuntimeTransport = "openai_compatible" | "n8n_webhook";
+
 const DEFAULT_CONFIRMATION: DestructiveConfirmationState = {
   explicitIntentInCurrentThread: false,
   impactSummarized: false,
   explicitConfirmationTurn: false,
   scopeChangedAfterConfirmation: false,
   reconfirmedAfterScopeChange: false,
+};
+
+const HERMES_SYSTEM_MESSAGE =
+  "You are Hermes, a pragmatic vendor assistant. Give concise, actionable guidance for marketplace operations, finance, logistics, and business strategy.";
+
+const extractAssistantMessage = (payload: unknown): string | undefined => {
+  if (!payload || typeof payload !== "object") {
+    return undefined;
+  }
+
+  const openAiChoice = (payload as {
+    choices?: Array<{ message?: { content?: string } }>;
+  }).choices?.[0]?.message?.content;
+
+  if (typeof openAiChoice === "string" && openAiChoice.trim()) {
+    return openAiChoice.trim();
+  }
+
+  const n8nMessage = (payload as { assistant_message?: string }).assistant_message;
+  if (typeof n8nMessage === "string" && n8nMessage.trim()) {
+    return n8nMessage.trim();
+  }
+
+  const output = (payload as { output?: string }).output;
+  if (typeof output === "string" && output.trim()) {
+    return output.trim();
+  }
+
+  const message = (payload as { message?: string }).message;
+  if (typeof message === "string" && message.trim()) {
+    return message.trim();
+  }
+
+  const dataMessage = (payload as { data?: { assistant_message?: string } }).data
+    ?.assistant_message;
+  if (typeof dataMessage === "string" && dataMessage.trim()) {
+    return dataMessage.trim();
+  }
+
+  return undefined;
 };
 
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
@@ -48,6 +90,9 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     const runtimeModel =
       process.env.HERMES_CHAT_MODEL?.trim() || "NousResearch/Hermes-4.3-36B";
     const runtimeApiKey = process.env.HERMES_CHAT_API_KEY?.trim();
+    const runtimeTransport =
+      (process.env.HERMES_CHAT_TRANSPORT?.trim() as RuntimeTransport | undefined) ||
+      "openai_compatible";
 
     const safeHistory = Array.isArray(history)
       ? history
@@ -63,8 +108,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     const messages = [
       {
         role: "system",
-        content:
-          "You are Hermes, a pragmatic vendor assistant. Give concise, actionable guidance for marketplace operations, finance, logistics, and business strategy.",
+        content: HERMES_SYSTEM_MESSAGE,
       },
       ...safeHistory,
       {
@@ -81,28 +125,37 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       headers.Authorization = `Bearer ${runtimeApiKey}`;
     }
 
-    try {
-      const response = await fetch(
-        `${runtimeBaseUrl.replace(/\/$/, "")}/chat/completions`,
-        {
-          method: "POST",
-          headers,
-          body: JSON.stringify({
+    const normalizedBaseUrl = runtimeBaseUrl.replace(/\/$/, "");
+    const url =
+      runtimeTransport === "n8n_webhook"
+        ? normalizedBaseUrl
+        : `${normalizedBaseUrl}/chat/completions`;
+
+    const body =
+      runtimeTransport === "n8n_webhook"
+        ? {
+            model: runtimeModel,
+            system_prompt: HERMES_SYSTEM_MESSAGE,
+            chat_message: userContent,
+            history: safeHistory,
+            messages,
+          }
+        : {
             model: runtimeModel,
             messages,
             max_tokens: 450,
             temperature: 0.4,
-          }),
-        },
-      );
+          };
+
+    try {
+      const response = await fetch(url, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(body),
+      });
 
       const payload = (await response.json()) as {
         error?: { message?: string };
-        choices?: Array<{
-          message?: {
-            content?: string;
-          };
-        }>;
       };
 
       if (!response.ok) {
@@ -111,18 +164,20 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
           ok: false,
           errors: [
             payload?.error?.message ||
-              "Hermes local chat runtime returned an error.",
+              "Hermes chat runtime returned an upstream error.",
           ],
         });
       }
 
-      const assistantMessage = payload.choices?.[0]?.message?.content?.trim();
+      const assistantMessage = extractAssistantMessage(payload);
 
       if (!assistantMessage) {
         return res.status(502).json({
           mode: "chat",
           ok: false,
-          errors: ["Hermes chat runtime returned an empty response."],
+          errors: [
+            "Hermes chat runtime returned no assistant message in response payload.",
+          ],
         });
       }
 
