@@ -6,16 +6,24 @@ export type VendorHermesToolCall = {
   parameters: Record<string, unknown>
 }
 
-export type VendorHermesRuntimePayload = {
-  tool_call: VendorHermesToolCall
-  confirmation?: {
-    explicitIntentInCurrentThread?: boolean
-    impactSummarized?: boolean
-    explicitConfirmationTurn?: boolean
-    scopeChangedAfterConfirmation?: boolean
-    reconfirmedAfterScopeChange?: boolean
-  }
-}
+export type VendorHermesRuntimePayload =
+  | {
+      tool_call: VendorHermesToolCall
+      confirmation?: {
+        explicitIntentInCurrentThread?: boolean
+        impactSummarized?: boolean
+        explicitConfirmationTurn?: boolean
+        scopeChangedAfterConfirmation?: boolean
+        reconfirmedAfterScopeChange?: boolean
+      }
+    }
+  | {
+      chat_message: string
+      history?: Array<{
+        role: "assistant" | "user"
+        content: string
+      }>
+    }
 
 export const useVendorHermesRuntime = () => {
   return useMutation({
