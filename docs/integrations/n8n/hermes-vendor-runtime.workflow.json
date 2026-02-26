@@ -1,0 +1,557 @@
+{
+  "name": "Hermes Vendor Runtime Gateway",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "hermes/vendor/runtime",
+        "httpMethod": "POST",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "Webhook_In",
+      "name": "Webhook In",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -1240,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $json.body ?? $json;\nconst errors = [];\n\nif (!body || typeof body !== 'object' || Array.isArray(body)) {\n  errors.push('Request body is required and must be a JSON object.');\n}\n\nconst toolCall = body?.tool_call;\nif (!toolCall || typeof toolCall !== 'object' || Array.isArray(toolCall)) {\n  errors.push('tool_call object is required.');\n}\n\nif (typeof toolCall?.action !== 'string' || toolCall.action.trim().length === 0) {\n  errors.push('tool_call.action must be a non-empty string.');\n}\n\nif (!toolCall?.parameters || typeof toolCall.parameters !== 'object' || Array.isArray(toolCall.parameters)) {\n  errors.push('tool_call.parameters must be an object.');\n}\n\nconst confirmationInput = body?.confirmation ?? {};\nconst confirmation = {\n  explicitIntentInCurrentThread: Boolean(confirmationInput.explicitIntentInCurrentThread),\n  impactSummarized: Boolean(confirmationInput.impactSummarized),\n  explicitConfirmationTurn: Boolean(confirmationInput.explicitConfirmationTurn),\n  scopeChangedAfterConfirmation: Boolean(confirmationInput.scopeChangedAfterConfirmation),\n  reconfirmedAfterScopeChange: Boolean(confirmationInput.reconfirmedAfterScopeChange)\n};\n\nconst isValid = errors.length === 0;\n\nreturn [{\n  json: {\n    is_valid: isValid,\n    errors,\n    tool_call: toolCall ?? null,\n    confirmation,\n    request_meta: {\n      source: body?.source ?? 'n8n-webhook',\n      received_at: new Date().toISOString()\n    }\n  }\n}];"
+      },
+      "id": "Validate_Envelope",
+      "name": "Validate Envelope",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1020,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.is_valid }}"
+            }
+          ]
+        }
+      },
+      "id": "If_Envelope_Valid",
+      "name": "Envelope valid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -800,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "keepOnlySet": true,
+        "values": {
+          "number": [
+            {
+              "name": "statusCode",
+              "value": 400
+            }
+          ],
+          "boolean": [
+            {
+              "name": "ok",
+              "value": false
+            }
+          ],
+          "string": [
+            {
+              "name": "mode",
+              "value": "tool"
+            }
+          ],
+          "json": [
+            {
+              "name": "errors",
+              "value": "={{ $json.errors }}"
+            }
+          ]
+        }
+      },
+      "id": "Set_Envelope_Error",
+      "name": "Build envelope error response",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [
+        -580,
+        340
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "version": 2,
+                  "caseSensitive": true,
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.tool_call.action }}",
+                    "rightValue": "create_vendor",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "version": 2,
+                  "caseSensitive": true,
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.tool_call.action }}",
+                    "rightValue": "create_product",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "version": 2,
+                  "caseSensitive": true,
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.tool_call.action }}",
+                    "rightValue": "delete_product",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            }
+          ]
+        },
+        "fallbackOutput": 3
+      },
+      "id": "Route_Action",
+      "name": "Route Action",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [
+        -580,
+        20
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const params = $json.tool_call.parameters;\nconst required = ['business_name', 'contact_email', 'country_code'];\nconst optional = ['tax_id', 'phone', 'onboarding_notes'];\nconst allowed = new Set([...required, ...optional]);\nconst errors = [];\n\nfor (const field of required) {\n  if (!(field in params)) errors.push(`Missing required parameter: ${field}`);\n}\n\nfor (const [key, value] of Object.entries(params)) {\n  if (!allowed.has(key)) {\n    errors.push(`Unexpected parameter: ${key}`);\n    continue;\n  }\n  if (typeof value !== 'string') {\n    errors.push(`Invalid type for ${key}: expected string, received ${typeof value}`);\n  }\n}\n\nreturn [{ json: { ...$json, is_valid: errors.length === 0, errors } }];"
+      },
+      "id": "Validate_Create_Vendor",
+      "name": "Validate create_vendor",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -350,
+        -180
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const params = $json.tool_call.parameters;\nconst required = ['title', 'description', 'price', 'currency_code'];\nconst optional = ['category', 'inventory_quantity', 'sku'];\nconst allowed = new Set([...required, ...optional]);\nconst expectedTypes = {\n  title: 'string',\n  description: 'string',\n  price: 'number',\n  currency_code: 'string',\n  category: 'string',\n  inventory_quantity: 'number',\n  sku: 'string'\n};\nconst errors = [];\n\nfor (const field of required) {\n  if (!(field in params)) errors.push(`Missing required parameter: ${field}`);\n}\n\nfor (const [key, value] of Object.entries(params)) {\n  if (!allowed.has(key)) {\n    errors.push(`Unexpected parameter: ${key}`);\n    continue;\n  }\n  if (typeof value !== expectedTypes[key]) {\n    errors.push(`Invalid type for ${key}: expected ${expectedTypes[key]}, received ${typeof value}`);\n  }\n}\n\nreturn [{ json: { ...$json, is_valid: errors.length === 0, errors } }];"
+      },
+      "id": "Validate_Create_Product",
+      "name": "Validate create_product",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -350,
+        20
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const params = $json.tool_call.parameters;\nconst required = ['product_id'];\nconst optional = ['reason'];\nconst allowed = new Set([...required, ...optional]);\nconst errors = [];\n\nfor (const field of required) {\n  if (!(field in params)) errors.push(`Missing required parameter: ${field}`);\n}\n\nfor (const [key, value] of Object.entries(params)) {\n  if (!allowed.has(key)) {\n    errors.push(`Unexpected parameter: ${key}`);\n    continue;\n  }\n  if (typeof value !== 'string') {\n    errors.push(`Invalid type for ${key}: expected string, received ${typeof value}`);\n  }\n}\n\nconst c = $json.confirmation;\nif (!c.explicitIntentInCurrentThread) errors.push('Destructive action requires explicit intent in current thread');\nif (!c.impactSummarized) errors.push('Destructive action requires impact summary before execution');\nif (!c.explicitConfirmationTurn) errors.push('Destructive action requires explicit confirmation turn');\nif (c.scopeChangedAfterConfirmation && !c.reconfirmedAfterScopeChange) {\n  errors.push('Scope changed after confirmation; re-confirmation is required');\n}\n\nreturn [{ json: { ...$json, is_valid: errors.length === 0, errors } }];"
+      },
+      "id": "Validate_Delete_Product",
+      "name": "Validate delete_product",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -350,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "keepOnlySet": true,
+        "values": {
+          "number": [
+            {
+              "name": "statusCode",
+              "value": 400
+            }
+          ],
+          "boolean": [
+            {
+              "name": "ok",
+              "value": false
+            }
+          ],
+          "string": [
+            {
+              "name": "mode",
+              "value": "tool"
+            }
+          ],
+          "json": [
+            {
+              "name": "errors",
+              "value": "={{ [\"Tool action is not registered: \" + $json.tool_call.action] }}"
+            }
+          ]
+        }
+      },
+      "id": "Set_Unknown_Action_Error",
+      "name": "Build unknown action response",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [
+        -350,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.is_valid }}"
+            }
+          ]
+        }
+      },
+      "id": "If_Action_Valid",
+      "name": "Action payload valid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -120,
+        20
+      ]
+    },
+    {
+      "parameters": {
+        "keepOnlySet": true,
+        "values": {
+          "number": [
+            {
+              "name": "statusCode",
+              "value": 400
+            }
+          ],
+          "boolean": [
+            {
+              "name": "ok",
+              "value": false
+            }
+          ],
+          "string": [
+            {
+              "name": "mode",
+              "value": "tool"
+            }
+          ],
+          "json": [
+            {
+              "name": "errors",
+              "value": "={{ $json.errors }}"
+            }
+          ]
+        }
+      },
+      "id": "Set_Action_Error",
+      "name": "Build action validation response",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [
+        100,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.HERMES_BACKEND_URL || 'http://localhost:9000/vendor/hermes/runtime' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Authorization",
+              "value": "={{ $env.HERMES_VENDOR_AUTH_HEADER || '' }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { tool_call: $json.tool_call, confirmation: $json.confirmation } }}",
+        "options": {}
+      },
+      "id": "Call_Backend_Runtime",
+      "name": "Call backend /vendor/hermes/runtime",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        100,
+        20
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const statusCode = $json.statusCode ?? 200;\nconst body = $json.body ?? {};\nreturn [{ json: { statusCode, ...body } }];"
+      },
+      "id": "Normalize_Backend_Response",
+      "name": "Normalize backend response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        320,
+        20
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseCode": "={{ $json.statusCode || 200 }}"
+        }
+      },
+      "id": "Respond",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        540,
+        120
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook In": {
+      "main": [
+        [
+          {
+            "node": "Validate Envelope",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Envelope": {
+      "main": [
+        [
+          {
+            "node": "Envelope valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Envelope valid?": {
+      "main": [
+        [
+          {
+            "node": "Route Action",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build envelope error response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build envelope error response": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route Action": {
+      "main": [
+        [
+          {
+            "node": "Validate create_vendor",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Validate create_product",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Validate delete_product",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build unknown action response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate create_vendor": {
+      "main": [
+        [
+          {
+            "node": "Action payload valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate create_product": {
+      "main": [
+        [
+          {
+            "node": "Action payload valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate delete_product": {
+      "main": [
+        [
+          {
+            "node": "Action payload valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build unknown action response": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Action payload valid?": {
+      "main": [
+        [
+          {
+            "node": "Call backend /vendor/hermes/runtime",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build action validation response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build action validation response": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call backend /vendor/hermes/runtime": {
+      "main": [
+        [
+          {
+            "node": "Normalize backend response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize backend response": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "6d4a7acc-82f6-4eec-b4c0-39fcc9f6f0a6",
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "id": "HermesVendorRuntimeGateway",
+  "tags": []
+}
