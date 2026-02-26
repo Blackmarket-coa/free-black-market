@@ -28,18 +28,16 @@ This checklist tracks closure steps for Hermes AI integration work in this repos
 | ✅ | Local regression suite for Hermes LangGraph wiring passes. | AI Platform Eng / QA | `pnpm -s test:hermes-langgraph` |
 | ✅ | Vendor-panel -> backend -> ai-orchestrator end-to-end Hermes path is implemented and verified. | AI Platform Eng + Vendor FE Eng | `pnpm -s test:hermes-vendor-suite` + `docs/work-orders/WO-2026-02-hermes-vendor-runtime-integration.md` |
 | ⬜ | CI run on default branch is green with Hermes LangGraph tests included. | QA / Release | CI job link and passing status |
-| ⬜ | Release notes include `WO-2026-02-HERMES-WIRING` linkage. | AI Platform PM / Release | Release notes link and entry snippet |
+| ✅ | Release notes include `WO-2026-02-HERMES-WIRING` and `WO-2026-02-HERMES-VENDOR-RUNTIME` linkage. | AI Platform PM / Release | `docs/RELEASE_NOTES.md` Hermes AI integration closure entry |
 | ⬜ | Post-merge verification on default branch confirms no drift between prompt artifact and runtime import path. | AI Platform Eng | Re-run `pnpm -s test:hermes-langgraph` on default branch |
 
 ## What is still left for overall AI-use closure
 
 1. **Default-branch CI proof for Hermes tests**
    - Capture a green default-branch CI run that includes Hermes suites (`test:hermes-langgraph` and vendor runtime coverage).
-2. **Release-note linkage**
-   - Add release notes referencing both `WO-2026-02-HERMES-WIRING` and `WO-2026-02-HERMES-VENDOR-RUNTIME`.
-3. **Post-merge drift check on default branch**
+2. **Post-merge drift check on default branch**
    - Re-run `pnpm -s test:hermes-langgraph` on default branch after merge and attach evidence.
-4. **Close this checklist**
+3. **Close this checklist**
    - Mark the remaining unchecked rows complete once evidence links are attached.
 
 ## Recommended closure workflow
