@@ -10,6 +10,7 @@ This index organizes project docs by purpose.
 - `docs/adr/ADR-0002-idempotency-and-consistency-windows.md`
 - `docs/contracts/phase0/domain-contracts.schema.json`
 - `docs/PRODUCT_LISTING_UNIFICATION_PLAN.md`
+- `docs/VENDOR_PORTAL_IMPROVEMENT_PLAN.md`
 - `docs/WEBSITE_POSITIONING_ALIGNMENT_PLAN.md`
 
 ## Delivery Tracking & QA
