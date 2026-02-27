@@ -26,6 +26,11 @@ This roadmap provides directional planning for the MercurJS marketplace platform
 - Risk and trust systems expansion (fraud analytics, policy automation).
 - Governance and community economy feature depth.
 
+## Delivery Operating System
+
+- Project board and workflow baseline: `docs/PROJECT_OPERATING_SYSTEM.md`.
+- Weekly cadence and KPI dashboard definitions are tracked in the same operating-system document.
+
 ## Success Signals
 
 - Faster vendor activation and higher first-session publish rate.
