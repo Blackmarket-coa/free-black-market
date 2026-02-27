@@ -216,27 +216,23 @@ This aligns with:
 
 ---
 
-## Marketplace Model Decision (Critical)
+## Marketplace Model (Selected)
 
-A single decision should now be made because it changes trust, compliance, OPSEC, and roadmap sequencing:
+**Selected operating model: D) Hybrid (public entry + curated tiers).**
 
-- A) Public open marketplace
-- B) Curated vendor network
-- C) Backbone for specific aligned organizations
-- D) Hybrid (public entry + curated tiers)
-
-## Recommended default: D (Hybrid)
-
-Reasoning:
+This selection is now the default for roadmap execution because it:
 - Preserves growth potential from public onboarding.
 - Enables trust controls and OPSEC protections through tiered access.
 - Supports mission-aligned organizations without blocking independent vendors.
 - Allows compliance controls to scale by tier/risk profile.
 
-## Proposed tier structure (initial)
+## Tier structure (initial)
 - **Tier 0 (Public):** limited catalog + standard payment/risk controls.
 - **Tier 1 (Verified Vendor):** expanded limits, advanced fulfillment, donation routing.
 - **Tier 2 (Aligned Org/Network):** priority support, advanced automation, resilience tooling.
 
-## Immediate decision checkpoint
-- Confirm target model (A/B/C/D) before implementing donation settlement, onboarding verification depth, and permission defaults.
+## Execution implications of Hybrid model
+- Onboarding: public signup with progressive verification gates by tier.
+- Trust & compliance: risk controls, limits, and reporting requirements increase by tier.
+- OPSEC: sensitive operational capabilities restricted to verified tiers.
+- Feature rollout: donation settlement controls and automation permissions enabled per tier policy.
