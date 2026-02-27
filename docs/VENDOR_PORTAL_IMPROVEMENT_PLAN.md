@@ -1,265 +1,242 @@
-# Vendor Portal Improvement Plan (Research-Driven)
+# Free Black Market Vendor Portal Improvement Plan
 
-## Context
+## Product Positioning (Canonical)
 
-This plan translates recent user research into actionable improvements for the vendor portal. The core user need is to run a low-overhead, mostly dropship business with stronger logistics visibility, simpler supplier onboarding (including small independent suppliers), and practical compliance/finance tooling.
+**FreeBlackMarket.com is the production commerce layer for resilient, sovereign, low-capital marketplace operations.**
 
-The portal should prioritize:
+This plan treats Free Black Market as core infrastructure, not an experiment.
 
-1. Fast go-live for small operators.
-2. Low-cost operations and automation.
-3. Clear tax/reporting workflows.
-4. Flexible catalog sourcing (plugin-based + manual import).
-5. Multi-store management with strict permissions.
-6. Optional donation/tip checkout flows with transparent fund routing.
+### Core identity
 
----
+Free Black Market should be:
+- Vendor-first
+- Low-overhead
+- Dropship-compatible
+- Donation-enabled
+- Multi-store capable
+- Automation-ready
+- Eventually mesh-compatible via Blackout
 
-## Research Themes Mapped to Product Needs
+### Strategic differentiation
 
-### Theme A: Logistics fragility and fulfillment uncertainty
-
-**Observed pain**
-- Vendors worry about limited stock availability and disruptions.
-- They need alternatives to holding large inventory for long windows.
-
-**Portal implication**
-- Prioritize dropship + hybrid fulfillment flows.
-- Make supplier lead-times and inventory freshness visible.
-- Add low-stock and delayed-shipment alerts.
-
-### Theme B: Low finances and startup constraints
-
-**Observed pain**
-- Small operators cannot carry large upfront costs.
-- They need bulk/B2B access without expensive tooling.
-
-**Portal implication**
-- Keep onboarding cost low.
-- Support free/low-cost integrations first.
-- Ship manual CSV + API import options before premium connectors.
-
-### Theme C: Non-technical operator workflows
-
-**Observed pain**
-- Vendor succeeded before with plugin ecosystems and “good enough” imports.
-- Manual data import is acceptable if guided.
-
-**Portal implication**
-- Build no-code onboarding playbooks.
-- Add mapping templates and import validations.
-- Provide migration wizard from prior platforms.
-
-### Theme D: Trust/compliance and bookkeeping anxiety
-
-**Observed pain**
-- Tax state, legal status, and reporting are high stress.
-
-**Portal implication**
-- Provide ready-to-export sales/tax reports.
-- Offer integrations with bookkeeping tools.
-- Surface compliance checklist in onboarding.
+Mainstream platforms optimize for broad retail convenience.
+Free Black Market should optimize for **economic resilience**, **operator safety**, and **logistics adaptability**.
 
 ---
 
-## Capability Plan by User Questions
+## Build Priorities (Free Black Market Specific)
 
-## 1) Dropship model compatibility on platform
+## 1) Vendor Infrastructure (Non-negotiable)
 
-### Goal
-Enable a first-class dropship business model in vendor portal.
+### Must-have dashboard capabilities
+- Product management
+- Fulfillment type selection:
+  - Dropship
+  - Self-ship
+  - Local
+- Supplier attachment to products
+- Basic inventory tracking
+- Sales reporting (date range)
+- CSV export
 
-### Plan
-- Add fulfillment profile templates:
-  - `Dropship only`
-  - `Hybrid (local + dropship)`
-  - `Local inventory`
-- Add supplier-level SLA fields:
-  - handling time, ship regions, backorder policy, return policy.
-- Add order routing engine:
-  - auto-route order lines to supplier fulfillment endpoint/email workflow.
-- Add fallback mode:
-  - manual PO export when supplier has no integration.
+### Why this is first
+Without this baseline, serious vendors cannot launch or sustain operations.
 
-### Success metric
-- Vendor can publish and fulfill a dropship SKU without custom development.
+### Acceptance criteria
+- New vendor can publish at least one product and process at least one order end-to-end.
+- Vendor can export date-range sales CSV without support intervention.
 
-## 2) Supplier plugins + independent supplier support
+## 2) Dropship Engine (Phase 1.5)
 
-### Goal
-Support both plugin suppliers and “mom-and-pop” suppliers with no APIs.
+### MVP behavior (do not overengineer)
+- Order created.
+- System forwards order to supplier via:
+  - templated email **or**
+  - API call.
+- Fulfillment status updated either manually or by webhook.
 
-### Plan
-- Connector framework (tiered):
-  - Tier 1: native connectors for common catalog/fulfillment providers.
-  - Tier 2: CSV import/export with scheduled sync.
-  - Tier 3: email/portal automation templates for manual suppliers.
-- Supplier onboarding wizard:
-  - map SKU, price, inventory, lead-time, shipping class.
-- Import assistant:
-  - preview diff before publish and show validation warnings.
+### Supplier support tiers
+- Manual suppliers
+- Spreadsheet-based suppliers
+- API suppliers
 
-### Success metric
-- Independent suppliers can be onboarded in under 30 minutes with template + validation.
+### Acceptance criteria
+- A supplier with no API can still receive and fulfill orders through standardized email/CSV workflow.
+- At least one API supplier flow is operational for parity testing.
 
-## 3) Taxes, date-range sales reporting, bookkeeping integrations
+## 3) Financial Event Ledger (Critical trust layer)
 
-### Goal
-Reduce compliance overhead for non-accountant operators.
+### Requirement
+All commerce transactions should be recorded as immutable event objects.
 
-### Plan
-- Reporting module:
-  - date-range sales, refunds, tax collected, discounts, shipping revenue.
-  - export CSV + PDF summary packets.
-- Bookkeeping integrations:
-  - start with webhook + CSV bridge pattern.
-  - then direct integrations for popular SMB tools.
-- Finance dashboard:
-  - payout reconciliation and invoice status.
-- Compliance center:
-  - annual/quarterly filing reminder checklist.
+### Event outputs
+Generate vendor-facing and ops-facing reporting from the ledger:
+- Vendor payout reports
+- Donation totals
+- Platform fee summaries
+- Tax export CSV
 
-### Success metric
-- Vendor can produce monthly reconciliation package in <10 minutes.
+### Why this matters
+This reduces reconciliation failures and prevents accounting sync pain by making ledger events the source of truth.
 
-## 4) Checkout tip/donation option to third-party organizations
-
-### Goal
-Support optional tip/donation line item that routes outside merchant revenue.
-
-### Plan
-- Checkout donation widget:
-  - fixed amount and percentage options.
-  - buyer-selectable beneficiary from vetted organization list.
-- Settlement routing:
-  - split-payment flow where supported.
-  - fallback ledger model for periodic disbursement with audit log.
-- Transparency layer:
-  - receipt line item, settlement status, beneficiary reports.
-- Governance:
-  - beneficiary verification workflow and anti-fraud controls.
-
-### Success metric
-- Donation funds can be tracked end-to-end and excluded from merchant taxable revenue reports where appropriate.
-
-## 5) Automation and API inventory management
-
-### Goal
-Provide reliable automation for inventory/price updates.
-
-### Plan
-- Vendor API keys scoped by store and role.
-- Inventory endpoints + webhooks:
-  - stock updated, product updated, order placed, return created.
-- Sync policies:
-  - conflict resolution modes (`source of truth`, `last write wins`, `manual review`).
-- Observability:
-  - sync logs, retry queue, dead-letter UI.
-
-### Success metric
-- 95%+ inventory updates processed within SLA window and visible in sync logs.
-
-## 6) One account managing multiple storefronts/businesses
-
-### Goal
-Enable agency/owner workflows with strong boundaries between entities.
-
-### Plan
-- Org model:
-  - `User -> Organization -> Storefronts` hierarchy.
-- Role-based access:
-  - org owner, finance admin, operations manager, catalog editor, read-only analyst.
-- Billing model:
-  - per-store subscription ledger + consolidated invoice option.
-- Reporting scope:
-  - store-level P&L + org roll-up dashboard.
-- Context switching:
-  - clear store selector and session scoping to prevent mistakes.
-
-### Success metric
-- Single login can safely operate multiple storefronts with no data leakage.
-
-## 7) Onboarding support (sandbox, SDK, migration assistance)
-
-### Goal
-Decrease time-to-first-live-listing for technical and non-technical vendors.
-
-### Plan
-- Guided onboarding tracks:
-  - `No-code` (UI-only)
-  - `Technical` (API/SDK)
-- Sandbox mode:
-  - test checkout, fake payments, sample data seeds.
-- Migration toolkit:
-  - import templates, field mappers, post-import QA checklist.
-- Learning resources:
-  - quickstart docs, short videos, office hours/support queue.
-
-### Success metric
-- New vendor reaches first live product in under 1 business day.
+### Acceptance criteria
+- Payout, fee, donation, and tax exports reconcile to ledger totals for the same date range.
 
 ---
 
-## Phased Delivery Roadmap
+## Signature Capability: Donation Routing Engine
 
-## Phase 1 (0-6 weeks): Foundation for operator confidence
+## Checkout donation options
+At checkout, buyer can:
+- Add donation by percentage
+- Select a beneficiary organization from approved list
+- Round up order total
 
-- Dropship/hybrid fulfillment profiles.
-- CSV supplier import with mapping validation.
-- Basic sales/tax date-range reports.
-- MVP onboarding wizard + migration templates.
+## Settlement models
+- **Option 1 (preferred):** processor-level split payments where available.
+- **Option 2 (fallback):** platform donation bucket in ledger + scheduled batch disbursement.
 
-## Phase 2 (6-12 weeks): Automation and extensibility
+## Transparency requirement
+- Donation line visible in receipt and order timeline.
+- Beneficiary-level disbursement reporting.
+- Public donation transparency page (phase rollout) for legitimacy/trust.
 
-- Inventory/order webhooks + API key scopes.
-- Connector framework with first native supplier adapters.
-- Multi-store org hierarchy and role permissions.
-- Donation/tip widget MVP with internal ledger tracking.
-
-## Phase 3 (12-20 weeks): Scale and trust
-
-- Advanced reporting packs and bookkeeping connectors.
-- Donation split-settlement + beneficiary verification.
-- Sync observability dashboard and SLA analytics.
-- Formal partner onboarding for independent suppliers.
+### Acceptance criteria
+- Donation funds are auditable end-to-end and separable from vendor sales reporting.
 
 ---
 
-## UX and Product Requirements (Cross-Cutting)
+## Multi-Store Architecture
 
-- Keep setup progressive: basic mode first, advanced controls hidden.
-- Always include manual fallback paths (CSV/email) when APIs are unavailable.
-- Show plain-language guidance for taxes, filings, and reporting.
-- Expose reliability cues: sync status, last update time, and incident banners.
+## Tenancy model
+`User -> Organization -> Storefront(s)`
 
----
+## Example storefront set
+- Survival supplies
+- Artisan goods
+- Bulk B2B
 
-## Risks and Mitigations
+## Per-store controls
+- Separate branding and catalog
+- Separate reporting views
+- Shared login at org level
 
-- **Risk:** Regulatory differences for donations and tax treatment.
-  - **Mitigation:** Region-aware tax flags, legal review, auditable ledgers.
-- **Risk:** Supplier data quality issues (SKU mismatch, stale inventory).
-  - **Mitigation:** validation rules, scheduled reconciliation jobs, exception queue.
-- **Risk:** Multi-store role confusion.
-  - **Mitigation:** explicit permission matrix + visible store context indicator.
+## Required governance controls
+- Role-based permissions per storefront
+- Billing scope by storefront with optional org roll-up invoice
+- Explicit context-switch UX to prevent cross-store mistakes
 
----
-
-## KPI Scorecard
-
-- Time to first live listing.
-- Supplier onboarding completion rate.
-- % orders auto-routed to supplier without manual intervention.
-- Monthly report export completion rate.
-- Inventory sync success rate and mean processing latency.
-- Donation settlement accuracy and reconciliation time.
-- Multi-store admin task completion time.
+### Acceptance criteria
+- One user can manage multiple storefronts without data leakage across store boundaries.
 
 ---
 
-## Immediate Next Actions
+## Inventory Automation (After Stability)
 
-1. Confirm baseline platform support for dropship routing and multi-store tenancy.
-2. Define data contracts for supplier profile, donation ledger, and org/store RBAC.
-3. Ship Phase 1 as a pilot with 5-10 vendors representing mixed technical maturity.
-4. Measure KPI baseline and tune onboarding friction before Phase 2 connector expansion.
+After baseline dropship reliability is proven, implement:
+- Supplier inventory polling
+- Auto-disable out-of-stock SKUs
+- Threshold and exception alerts
+- Backup supplier logic
+
+Longer-term extensions:
+- Regional supplier routing
+- Crisis mode catalog substitution for constrained logistics windows
+
+### Acceptance criteria
+- Inventory sync latency and failure rates are observable and within SLA.
+
+---
+
+## Onboarding System (Adoption Multiplier)
+
+## Required onboarding assets
+- CSV importer
+- Storefront starter templates
+- Sandbox test mode
+- Migration helper with Shopify CSV compatibility
+
+### UX principle
+If onboarding is difficult, adoption fails regardless of feature depth.
+
+### Acceptance criteria
+- Vendor can import catalog from template and publish first listing in first session.
+
+---
+
+## What Not To Build Yet
+
+Defer until core commerce stability is proven:
+- Crypto payments
+- Full mesh integration
+- Complex governance voting systems
+- Heavy automation orchestration before demand validation
+
+First prove vendors can:
+- List
+- Sell
+- Get paid
+- Route donations
+- Dropship reliably
+
+---
+
+## Strategic Outcome
+
+If executed in this order, Free Black Market becomes:
+- A low-cost launchpad for small vendors
+- Resilience-oriented commerce infrastructure
+- A donation-enabled economic layer
+- A logistics-aware marketplace backbone
+
+This aligns with:
+- Automation ambitions
+- Mesh ambitions (later-stage)
+- Economic autonomy goals
+
+---
+
+## Realistic Build Order
+
+## Phase 1 (0-3 months)
+- Vendor dashboard baseline
+- Product and fulfillment type system
+- Manual dropship forwarding
+- Event ledger + core reporting
+
+## Phase 2 (3-6 months)
+- Donation routing engine
+- Multi-store architecture
+- CSV import/export hardening
+
+## Phase 3 (6-12 months)
+- Inventory automation
+- Public API hardening
+- Supplier redundancy logic
+
+---
+
+## Marketplace Model Decision (Critical)
+
+A single decision should now be made because it changes trust, compliance, OPSEC, and roadmap sequencing:
+
+- A) Public open marketplace
+- B) Curated vendor network
+- C) Backbone for specific aligned organizations
+- D) Hybrid (public entry + curated tiers)
+
+## Recommended default: D (Hybrid)
+
+Reasoning:
+- Preserves growth potential from public onboarding.
+- Enables trust controls and OPSEC protections through tiered access.
+- Supports mission-aligned organizations without blocking independent vendors.
+- Allows compliance controls to scale by tier/risk profile.
+
+## Proposed tier structure (initial)
+- **Tier 0 (Public):** limited catalog + standard payment/risk controls.
+- **Tier 1 (Verified Vendor):** expanded limits, advanced fulfillment, donation routing.
+- **Tier 2 (Aligned Org/Network):** priority support, advanced automation, resilience tooling.
+
+## Immediate decision checkpoint
+- Confirm target model (A/B/C/D) before implementing donation settlement, onboarding verification depth, and permission defaults.
