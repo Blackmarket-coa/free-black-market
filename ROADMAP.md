@@ -8,6 +8,7 @@ This roadmap provides directional planning for the MercurJS marketplace platform
 - Validation automation rollout (`scripts/release_validation.sh`) on release branches.
 - QA remediation and route-contract consistency for admin/vendor/storefront surfaces.
 - Open-source readiness package (contribution templates, governance, funding metadata).
+- Workstream A (Weeks 1–4): vendor dashboard baseline delivery (product CRUD/publish flow, fulfillment selector, supplier attachment, inventory thresholds, sales reports + CSV export, and vendor/admin scope UAT).
 
 ## Mid-term (3–9 months)
 

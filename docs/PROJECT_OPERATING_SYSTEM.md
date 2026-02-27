@@ -68,3 +68,21 @@ Stand up a baseline KPI dashboard with these metrics and definitions:
 - Review KPI trends in roadmap sync weekly.
 - Escalate KPI regressions to risk/compliance sync when thresholds are breached.
 - Keep KPI definitions versioned in this document to avoid drift.
+
+
+## 5) Workstream A — Vendor Dashboard Baseline (Weeks 1–4)
+
+### Build Tasks
+
+- Add product CRUD screens with draft/publish state.
+- Add fulfillment type selector (`dropship`, `self_ship`, `local`).
+- Add supplier attachment UI on product form.
+- Add inventory quantity + low-stock threshold fields.
+- Add sales report page with date filters.
+- Add CSV export action for filtered report data.
+
+### QA / UAT Tasks
+
+- UAT script: vendor creates product, sets fulfillment, publishes listing.
+- UAT script: vendor exports date-range sales CSV.
+- Verify role permissions for vendor/admin data scope.
