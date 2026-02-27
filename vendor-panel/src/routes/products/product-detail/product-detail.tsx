@@ -1,7 +1,9 @@
 import { useParams } from "react-router-dom"
 
+import { Badge, Container, Heading, Text } from "@medusajs/ui"
 import { TwoColumnPageSkeleton } from "../../../components/common/skeleton"
 import { TwoColumnPage } from "../../../components/layout/pages"
+import { SectionRow } from "../../../components/common/section"
 import { useProduct } from "../../../hooks/api/products"
 import { ProductGeneralSection } from "./components/product-general-section"
 import { ProductMediaSection } from "./components/product-media-section"
@@ -12,6 +14,12 @@ import { ProductVariantSection } from "./components/product-variant-section"
 import { useDashboardExtension } from "../../../extensions"
 import { ProductAdditionalAttributesSection } from "./components/product-additional-attribute-section/ProductAdditionalAttributesSection"
 import { PRODUCT_DETAIL_FIELDS } from "./constants"
+
+const FULFILLMENT_LABELS: Record<string, string> = {
+  dropship: "Dropship",
+  self_ship: "Self Ship",
+  local: "Local Pickup",
+}
 
 export const ProductDetail = () => {
   const { id } = useParams()
@@ -34,6 +42,16 @@ export const ProductDetail = () => {
     throw error
   }
 
+  const metadata = (product.metadata || {}) as Record<string, any>
+  const fulfillmentType = metadata.fulfillment_type as string | undefined
+  const supplierName = metadata.supplier_name as string | undefined
+  const inventoryQty = metadata.inventory_quantity as number | undefined
+  const lowStockThreshold = metadata.low_stock_threshold as number | undefined
+  const isLowStock =
+    inventoryQty != null &&
+    lowStockThreshold != null &&
+    inventoryQty <= lowStockThreshold
+
   return (
     <TwoColumnPage
       widgets={{
@@ -51,9 +69,64 @@ export const ProductDetail = () => {
         <ProductVariantSection product={product} />
       </TwoColumnPage.Main>
       <TwoColumnPage.Sidebar>
-        {/* <ProductShippingProfileSection product={product} /> */}
         <ProductOrganizationSection product={product} />
-        {/* <ProductAttributeSection product={product} /> */}
+        {/* Fulfillment & Supplier Section */}
+        <Container className="divide-y p-0">
+          <div className="flex items-center justify-between px-6 py-4">
+            <Heading level="h2">Fulfillment & Supplier</Heading>
+          </div>
+          <SectionRow
+            title="Fulfillment Type"
+            value={
+              fulfillmentType ? (
+                <Badge size="2xsmall">
+                  {FULFILLMENT_LABELS[fulfillmentType] || fulfillmentType}
+                </Badge>
+              ) : (
+                <Text className="text-ui-fg-muted" size="small">
+                  Not set
+                </Text>
+              )
+            }
+          />
+          <SectionRow
+            title="Supplier"
+            value={supplierName || undefined}
+          />
+        </Container>
+        {/* Inventory Section */}
+        <Container className="divide-y p-0">
+          <div className="flex items-center justify-between px-6 py-4">
+            <Heading level="h2">Inventory</Heading>
+          </div>
+          <SectionRow
+            title="Quantity"
+            value={
+              inventoryQty != null ? (
+                <div className="flex items-center gap-x-2">
+                  <Text size="small">{inventoryQty}</Text>
+                  {isLowStock && (
+                    <Badge size="2xsmall" color="orange">
+                      Low Stock
+                    </Badge>
+                  )}
+                </div>
+              ) : (
+                <Text className="text-ui-fg-muted" size="small">
+                  Not tracked
+                </Text>
+              )
+            }
+          />
+          <SectionRow
+            title="Low Stock Threshold"
+            value={
+              lowStockThreshold != null
+                ? String(lowStockThreshold)
+                : undefined
+            }
+          />
+        </Container>
         <ProductAdditionalAttributesSection product={product} />
       </TwoColumnPage.Sidebar>
     </TwoColumnPage>

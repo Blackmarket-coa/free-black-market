@@ -1,5 +1,6 @@
 import {
   Buildings,
+  ChartBar,
   CogSixTooth,
   CurrencyDollar,
   ReceiptPercent,
@@ -87,6 +88,12 @@ function getVendorNavigationConfig({
         mutual_aid: "Donations",
         garden: "Funds",
       },
+      // Always visible
+    },
+    {
+      icon: <ChartBar />,
+      label: "Sales Report",
+      to: "/sales-report",
       // Always visible
     },
     {
