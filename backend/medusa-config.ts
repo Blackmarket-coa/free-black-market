@@ -145,6 +145,7 @@ const getRedisOptions = () => {
 // Core platform modules (always loaded)
 const coreModules = [
   { resolve: './src/modules/seller-extension' },
+  { resolve: './src/modules/tenancy' },
   { resolve: './src/modules/product-archetype' },
   { resolve: './src/modules/password-history' },
 ]

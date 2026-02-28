@@ -85,3 +85,28 @@ export const removeCartId = async () => {
     maxAge: -1,
   });
 };
+
+
+export const getStorefrontContext = async () => {
+  const cookies = await nextCookies();
+  return {
+    organization_id: cookies.get('_fbm_org_id')?.value,
+    storefront_id: cookies.get('_fbm_storefront_id')?.value,
+  };
+};
+
+export const setStorefrontContext = async (ctx: { organization_id: string; storefront_id: string }) => {
+  const cookies = await nextCookies();
+  cookies.set('_fbm_org_id', ctx.organization_id, {
+    maxAge: 60 * 60 * 24 * 30,
+    httpOnly: true,
+    sameSite: 'strict',
+    secure: process.env.NODE_ENV === 'production',
+  });
+  cookies.set('_fbm_storefront_id', ctx.storefront_id, {
+    maxAge: 60 * 60 * 24 * 30,
+    httpOnly: true,
+    sameSite: 'strict',
+    secure: process.env.NODE_ENV === 'production',
+  });
+};

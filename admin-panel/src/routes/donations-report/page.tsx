@@ -1,17 +1,44 @@
+import { useCallback, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { Container, Heading, Text } from "@medusajs/ui"
 import { sdk } from "@lib/client"
+import { StorefrontSwitcher } from "@components/tenancy/storefront-switcher"
+import { StorefrontContext, withStorefrontHeaders } from "@lib/tenancy/context"
 
 export const DonationReportPage = () => {
-  const { data } = useQuery({
-    queryKey: ["donations-report"],
-    queryFn: () => sdk.client.fetch<{ report: any }>("/admin/donations/report"),
+  const [ctx, setCtx] = useState<StorefrontContext | null>(null)
+  const headers = withStorefrontHeaders(ctx)
+
+  const { data: orgs } = useQuery({
+    queryKey: ["tenancy-organizations"],
+    queryFn: () => sdk.client.fetch<{ organizations: any[] }>("/admin/tenancy/organizations"),
   })
+
+  const { data: storefronts } = useQuery({
+    queryKey: ["tenancy-storefronts"],
+    queryFn: () => sdk.client.fetch<{ storefronts: any[] }>("/admin/tenancy/storefronts"),
+  })
+
+  const { data } = useQuery({
+    queryKey: ["donations-report", ctx?.organizationId, ctx?.storefrontId],
+    queryFn: () => sdk.client.fetch<{ report: any }>("/admin/donations/report", { headers }),
+    enabled: Boolean(ctx),
+  })
+
+  const onContextChange = useCallback((next: StorefrontContext) => setCtx(next), [])
 
   return (
     <Container>
       <Heading>Donation Transparency Report</Heading>
-      <Text size="small" className="text-ui-fg-subtle">Internal transparency summary for accrued, disbursed, and outstanding donation balances.</Text>
+      <Text size="small" className="text-ui-fg-subtle">Internal transparency summary scoped to selected storefront context.</Text>
+
+      <div className="mt-4 mb-4">
+        <StorefrontSwitcher
+          organizations={orgs?.organizations || []}
+          storefronts={storefronts?.storefronts || []}
+          onContextChange={onContextChange}
+        />
+      </div>
 
       <div className="mt-4 grid grid-cols-3 gap-3">
         <div className="border rounded p-3">Accrued: {data?.report?.totals?.accrued ?? 0}</div>

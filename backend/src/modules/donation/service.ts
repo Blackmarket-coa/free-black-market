@@ -32,13 +32,14 @@ class DonationModuleService extends MedusaService({
       : beneficiaries.filter((b) => b.verification_status === "verified")
   }
 
-  async getTransparencySummary(start: Date, end: Date) {
+  async getTransparencySummary(start: Date, end: Date, storefront_id?: string) {
     const disbursements = await this.listDonationDisbursements()
     const beneficiaries = await this.listDonationBeneficiaries()
 
     const inRange = disbursements.filter((d) => {
       const createdAt = new Date(d.created_at)
-      return createdAt >= start && createdAt <= end
+      const storefrontMatches = storefront_id ? d.storefront_id === storefront_id : true
+      return storefrontMatches && createdAt >= start && createdAt <= end
     })
 
     const byBeneficiary = new Map<string, DonationAggregate>()

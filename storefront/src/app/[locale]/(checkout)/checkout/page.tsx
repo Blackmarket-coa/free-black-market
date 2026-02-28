@@ -9,7 +9,7 @@ import { retrieveCustomer } from "@/lib/data/customer"
 import { listCartShippingMethods } from "@/lib/data/fulfillment"
 import { listCartPaymentMethods } from "@/lib/data/payment"
 import { Metadata } from "next"
-import { getDonationSettings, listDonationBeneficiaries } from "@/lib/data/donations"
+import { getDonationSettings, listDonationBeneficiaries, listPublicStorefronts } from "@/lib/data/donations"
 import { notFound } from "next/navigation"
 import { Suspense } from "react"
 import { CheckoutProgress } from "@/components/molecules/CheckoutProgress/CheckoutProgress"
@@ -134,10 +134,13 @@ async function CheckoutPageContent({}) {
   const shippingMethods = await listCartShippingMethods(cart.id, false)
   const paymentMethods = await listCartPaymentMethods(cart.region?.id ?? "")
   const customer = await retrieveCustomer()
-  const [beneficiaries, donationSettings] = await Promise.all([
+  const [beneficiaries, donationSettingsResponse, storefronts] = await Promise.all([
     listDonationBeneficiaries(),
     getDonationSettings(),
+    listPublicStorefronts(),
   ])
+  const donationSettings = donationSettingsResponse.settings
+  const donationFeatureGates = donationSettingsResponse.feature_gates
 
   return (
     <PaymentWrapper cart={cart}>
@@ -159,7 +162,7 @@ async function CheckoutPageContent({}) {
           </div>
 
           <div className="lg:col-span-5">
-            <CartReview cart={cart} beneficiaries={beneficiaries} donationSettings={donationSettings} />
+            <CartReview cart={cart} beneficiaries={beneficiaries} donationSettings={donationSettings} storefronts={storefronts} donationFeatureGates={donationFeatureGates} />
           </div>
         </div>
       </main>
