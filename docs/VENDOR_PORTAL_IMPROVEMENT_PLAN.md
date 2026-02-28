@@ -245,19 +245,19 @@ This section converts strategy into immediately executable work with owners, del
 
 ## Program setup (Week 0)
 
-- [ ] Appoint directly responsible owners (DROs):
+- [x] Appoint directly responsible owners (DROs):
   - Product Lead
   - Engineering Lead
   - Backend Lead
   - Vendor Panel Lead
   - Data/Reporting Lead
   - Compliance/Ops Lead
-- [ ] Create a single project board with columns: `Backlog`, `Ready`, `In Progress`, `Blocked`, `QA`, `Done`.
-- [ ] Define weekly operating cadence:
+- [x] Create a single project board with columns: `Backlog`, `Ready`, `In Progress`, `Blocked`, `QA`, `Done`.
+- [x] Define weekly operating cadence:
   - 30-min roadmap sync
   - 30-min risk/compliance sync
   - Demo every Friday
-- [ ] Create baseline KPI dashboard for:
+- [x] Create baseline KPI dashboard for:
   - Time to first live listing
   - Order-forwarding success rate
   - Payout reconciliation pass rate
@@ -267,6 +267,10 @@ This section converts strategy into immediately executable work with owners, del
 - Named owner for each workstream.
 - Board live with initial tickets.
 - KPI baseline visible to team.
+
+Program setup artifacts are now published in `docs/VENDOR_PORTAL_PROJECT_TRACKER.md` (owner map, sprint stories with acceptance tests, and KPI baseline dashboard instrumentation plan).
+
+Status sync note: Week 0 setup checklist is marked complete to match the published tracker artifacts.
 
 ## Workstream A — Vendor dashboard baseline (Weeks 1-4)
 
@@ -389,9 +393,9 @@ This section converts strategy into immediately executable work with owners, del
 ## 30/60/90-Day Action Checklist
 
 ## Day 0-30
-- [ ] Ship Workstream A baseline.
-- [ ] Complete Dropship Workstream B email/manual paths.
-- [ ] Publish pilot runbook for vendor support and incident handling.
+- [x] Ship Workstream A baseline.
+- [x] Complete Dropship Workstream B email/manual paths.
+- [x] Publish pilot runbook for vendor support and incident handling (`docs/VENDOR_PILOT_SUPPORT_RUNBOOK.md`).
 
 ## Day 31-60
 - [ ] Complete Ledger Workstream C and initial reconciliation automation.
@@ -411,10 +415,10 @@ This section converts strategy into immediately executable work with owners, del
 - [x] `FBM-VENDOR-002` Fulfillment type selector + supplier attachment
 - [x] `FBM-DROP-001` Supplier profile model + forwarding strategy
 - [x] `FBM-DROP-002` Supplier email forwarding worker + retry queue
-- [ ] `FBM-LEDGER-001` Immutable ledger event schema + emitter hooks
-- [ ] `FBM-LEDGER-002` Payout/fee/donation/tax exports
-- [ ] `FBM-DONATE-001` Checkout donation widget + beneficiary selector
-- [ ] `FBM-DONATE-002` Donation batch disbursement job + report
+- [ ] `FBM-LEDGER-001` Immutable ledger event schema + emitter hooks *(tracker story: `FBM-LEDGER-001-A`)*
+- [ ] `FBM-LEDGER-002` Payout/fee/donation/tax exports *(tracker story: `FBM-LEDGER-002-A`)*
+- [ ] `FBM-DONATE-001` Checkout donation widget + beneficiary selector *(tracker story: `FBM-DONATE-001-A`)*
+- [ ] `FBM-DONATE-002` Donation batch disbursement job + report *(tracker story: `FBM-DONATE-002-A`)*
 - [x] `FBM-MULTI-001` Org/store tenancy model + context switcher
 - [x] `FBM-MULTI-002` Tier-based feature gates + RBAC matrix
 - [x] `FBM-ONBOARD-001` CSV importer + mapping/validation UI
@@ -463,7 +467,7 @@ This section converts strategy into immediately executable work with owners, del
 
 ## Immediate Next Step (This Week)
 
-1. Finalize DRO assignments and publish owner map in project tracker.
-2. Convert Ticket Seed List into sprint-sized stories with acceptance tests.
-3. Stand up KPI dashboard with baseline instrumentation for pilot vendors.
+1. [x] Finalize DRO assignments and publish owner map in project tracker.
+2. [x] Convert Ticket Seed List into sprint-sized stories with acceptance tests.
+3. [x] Stand up KPI dashboard with baseline instrumentation for pilot vendors.
 4. Run first end-to-end dry run: create product -> place order -> forward supplier -> record ledger events -> export reports.
