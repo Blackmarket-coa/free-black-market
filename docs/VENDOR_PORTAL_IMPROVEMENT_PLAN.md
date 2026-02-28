@@ -245,19 +245,19 @@ This section converts strategy into immediately executable work with owners, del
 
 ## Program setup (Week 0)
 
-- [ ] Appoint directly responsible owners (DROs):
+- [x] Appoint directly responsible owners (DROs):
   - Product Lead
   - Engineering Lead
   - Backend Lead
   - Vendor Panel Lead
   - Data/Reporting Lead
   - Compliance/Ops Lead
-- [ ] Create a single project board with columns: `Backlog`, `Ready`, `In Progress`, `Blocked`, `QA`, `Done`.
-- [ ] Define weekly operating cadence:
+- [x] Create a single project board with columns: `Backlog`, `Ready`, `In Progress`, `Blocked`, `QA`, `Done`.
+- [x] Define weekly operating cadence:
   - 30-min roadmap sync
   - 30-min risk/compliance sync
   - Demo every Friday
-- [ ] Create baseline KPI dashboard for:
+- [x] Create baseline KPI dashboard for:
   - Time to first live listing
   - Order-forwarding success rate
   - Payout reconciliation pass rate
@@ -269,6 +269,8 @@ This section converts strategy into immediately executable work with owners, del
 - KPI baseline visible to team.
 
 Program setup artifacts are now published in `docs/VENDOR_PORTAL_PROJECT_TRACKER.md` (owner map, sprint stories with acceptance tests, and KPI baseline dashboard instrumentation plan).
+
+Status sync note: Week 0 setup checklist is marked complete to match the published tracker artifacts.
 
 ## Workstream A — Vendor dashboard baseline (Weeks 1-4)
 
