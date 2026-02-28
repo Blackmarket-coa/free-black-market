@@ -12,10 +12,7 @@ const PUBLISHABLE_KEY = process.env.NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY || ""
 
 // Log configuration in development/server startup
 if (typeof window === "undefined") {
-  logger.info(
-    "[Medusa Config] Backend URL:",
-    MEDUSA_BACKEND_URL || "(not set)"
-  )
+  logger.info("[Medusa Config] Backend URL:", MEDUSA_BACKEND_URL || "(not set)")
   logger.info(
     "[Medusa Config] Publishable Key:",
     PUBLISHABLE_KEY ? `${PUBLISHABLE_KEY.slice(0, 20)}...` : "(not set)"
@@ -88,11 +85,15 @@ export async function medusaFetch<T>(
       throw error
     }
 
-    logger.error(
-      `[medusaFetch] Error fetching ${path}:`,
-      error?.message || error
-    )
-    logger.error(`[medusaFetch] Backend URL: ${MEDUSA_BACKEND_URL}`)
+    logger.error("[medusaFetch] Request failed", {
+      path,
+      method,
+      backendUrl: MEDUSA_BACKEND_URL,
+      status,
+      message: error?.message || String(error),
+      responseData: error?.response?.data || null,
+      cause: error?.cause || null,
+    })
     throw error
   }
 }
@@ -137,9 +138,10 @@ export async function fetchQuery(
       body: body ? JSON.stringify(body) : null,
     })
 
-    if (!res.ok) {
-      logger.error(`[fetchQuery] HTTP ${res.status} error for ${fullUrl}`)
-    }
+    const requestId =
+      res.headers.get("x-request-id") ||
+      res.headers.get("x-correlation-id") ||
+      null
 
     let data
     try {
@@ -148,10 +150,34 @@ export async function fetchQuery(
       data = { message: res.statusText || "Unknown error" }
     }
 
+    if (!res.ok) {
+      logger.error("[fetchQuery] Request failed", {
+        status: res.status,
+        statusText: res.statusText,
+        method,
+        url,
+        fullUrl,
+        query,
+        requestId,
+        backendMessage: data?.message || null,
+        backendType: data?.type || null,
+        backendCode: data?.code || null,
+        backendError: data?.error || null,
+      })
+    }
+
     return {
       ok: res.ok,
       status: res.status,
-      error: res.ok ? null : { message: data?.message },
+      requestId,
+      error: res.ok
+        ? null
+        : {
+            message: data?.message,
+            type: data?.type,
+            code: data?.code,
+            requestId,
+          },
       data: res.ok ? data : null,
     }
   } catch (error: any) {
