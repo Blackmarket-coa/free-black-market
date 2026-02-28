@@ -429,3 +429,41 @@ This section converts strategy into immediately executable work with owners, del
 - [ ] Gate 3: Donation disbursement variance = 0 across ledger and report totals.
 - [ ] Gate 4: No critical permission leakage findings in multi-store QA.
 - [ ] Gate 5: Median time to first live listing <= 1 business day.
+
+---
+
+## Dependency Map (Execution-Critical)
+
+- **Vendor dashboard (A)** depends on stable auth scopes and product schema finalization.
+- **Dropship engine (B)** depends on order lifecycle events and supplier profile model.
+- **Ledger/reporting (C)** depends on normalized event emission from checkout/refunds/payout paths.
+- **Donation routing (D)** depends on ledger event completeness and beneficiary verification workflow.
+- **Multi-store/tiering (E)** depends on org/store tenancy model and RBAC baseline.
+- **Onboarding/migration (F)** depends on catalog schema stability and import validation rules.
+
+**Sequencing rule:** do not start broad rollout of a downstream workstream until upstream dependencies have passed pilot gates.
+
+## Risk Register (Initial)
+
+| Risk | Likelihood | Impact | Mitigation | Owner |
+| --- | --- | --- | --- | --- |
+| Supplier forwarding failures from malformed templates | Medium | High | Template validation tests + retry/dead-letter queue + manual override workflow | Dropship Lead |
+| Ledger/report mismatch during refunds/partial captures | Medium | High | Golden dataset reconciliation tests + weekly close checklist | Data/Reporting Lead |
+| Donation fund commingling concerns | Low-Medium | High | Explicit ledger partitioning + disbursement controls + audit log exports | Compliance/Ops Lead |
+| Cross-store data exposure in shared sessions | Low | Critical | Strict org/store context boundary + permission integration tests | Vendor Panel Lead |
+| Slow vendor activation due to import friction | Medium | Medium | Preset mappings, inline validation, and first-session onboarding support | Product Lead |
+
+## KPI Targets (Pilot -> Phase 2)
+
+- **Time to first live listing:** <= 1 business day (pilot), <= 4 hours (Phase 2 target).
+- **Order forwarding success rate:** >= 95% (pilot), >= 98% (Phase 2 target).
+- **Reconciliation pass rate:** 100% weekly close for pilot and post-pilot.
+- **Donation disbursement latency:** <= 7 days in ledger batch mode.
+- **Cross-tenant leakage incidents:** 0 tolerated; any confirmed incident blocks rollout.
+
+## Immediate Next Step (This Week)
+
+1. Finalize DRO assignments and publish owner map in project tracker.
+2. Convert Ticket Seed List into sprint-sized stories with acceptance tests.
+3. Stand up KPI dashboard with baseline instrumentation for pilot vendors.
+4. Run first end-to-end dry run: create product -> place order -> forward supplier -> record ledger events -> export reports.
