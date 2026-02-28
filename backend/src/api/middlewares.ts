@@ -24,6 +24,7 @@ import { CreateVenueSchema } from "./admin/venues/route";
 import { CreateTicketProductSchema } from "./admin/ticket-products/route";
 import { GetTicketProductSeatsSchema } from "./store/ticket-products/[id]/seats/route";
 import { requireFeatureFlagMiddleware } from "../shared/runtime-module-gates";
+import { requireStorefrontContext } from "./middlewares/tenancy-context";
 import {
   inventoryLedgerEventSchema,
   invoiceSchema,
@@ -807,6 +808,30 @@ export default defineMiddlewares({
     {
       matcher: "/vendor/requests/*",
       middlewares: [authenticate("seller", "bearer")],
+    },
+    // Tenancy administration routes
+    {
+      matcher: "/admin/tenancy/*",
+      middlewares: [authenticate("user", ["bearer", "session"])],
+    },
+    // Hard storefront context boundary for donation + automation operations
+    {
+      matcher: "/admin/donations/beneficiaries",
+      middlewares: [authenticate("user", ["bearer", "session"]), requireStorefrontContext(["org_owner", "storefront_admin"])],
+    },
+    {
+      matcher: "/admin/donations/settings",
+      method: "GET",
+      middlewares: [authenticate("user", ["bearer", "session"]), requireStorefrontContext(["finance_viewer", "storefront_admin", "org_owner"])],
+    },
+    {
+      matcher: "/admin/donations/settings",
+      method: "POST",
+      middlewares: [authenticate("user", ["bearer", "session"]), requireStorefrontContext(["org_owner", "storefront_admin"], "tier2_aligned_org")],
+    },
+    {
+      matcher: "/admin/donations/report",
+      middlewares: [authenticate("user", ["bearer", "session"]), requireStorefrontContext(["finance_viewer", "storefront_admin", "org_owner"], "tier1_verified")],
     },
     // Rental routes - admin
     {

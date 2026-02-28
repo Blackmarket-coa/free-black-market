@@ -4,8 +4,23 @@ import PaymentButton from "./PaymentButton"
 import { CartItems } from "./CartItems"
 import { CartSummary } from "@/components/organisms"
 import { TrustWidget } from "@/components/sections/TrustWidget"
+import DonationPreferences from "./DonationPreferences"
+import StorefrontSwitcher from "./StorefrontSwitcher"
+import { DonationBeneficiary, PublicStorefront } from "@/lib/data/donations"
 
-const Review = ({ cart }: { cart: any }) => {
+const Review = ({
+  cart,
+  beneficiaries,
+  donationSettings,
+  storefronts,
+  donationFeatureGates,
+}: {
+  cart: any
+  beneficiaries: DonationBeneficiary[]
+  donationSettings: { default_percentage: number; round_up_enabled: boolean }
+  storefronts: PublicStorefront[]
+  donationFeatureGates?: { donation_routing: boolean; advanced_automation: boolean }
+}) => {
   const paidByGiftcard =
     cart?.gift_cards && cart?.gift_cards?.length > 0 && cart?.total === 0
 
@@ -14,7 +29,6 @@ const Review = ({ cart }: { cart: any }) => {
     cart.shipping_methods.length > 0 &&
     (cart.payment_collection || paidByGiftcard)
 
-  // Get producer name from first cart item's seller if available
   const firstSeller = cart?.items?.[0]?.product?.seller?.name
 
   return (
@@ -33,7 +47,22 @@ const Review = ({ cart }: { cart: any }) => {
         />
       </div>
 
-      {/* Trust Widget - Where Your Money Goes */}
+      <StorefrontSwitcher storefronts={storefronts} />
+
+      {donationFeatureGates?.donation_routing ? (
+        <DonationPreferences
+          cartTotal={cart?.total || 0}
+          beneficiaries={beneficiaries}
+          defaultPercent={donationSettings?.default_percentage || 0}
+          roundUpEnabled={Boolean(donationSettings?.round_up_enabled)}
+          initialMetadata={(cart?.metadata as Record<string, any>) || {}}
+        />
+      ) : (
+        <div className="w-full mb-6 border rounded-sm p-4 bg-gray-50 text-sm text-gray-600">
+          Donation routing is unavailable for the selected storefront tier.
+        </div>
+      )}
+
       <div className="w-full mb-6">
         <TrustWidget
           cartTotal={cart?.total || 0}
