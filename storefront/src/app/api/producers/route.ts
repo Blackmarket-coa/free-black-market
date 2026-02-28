@@ -10,8 +10,14 @@ export async function GET(request: NextRequest) {
 
     // Forward query params
     const forwardParams = [
-      "limit", "offset", "featured", "region", "search",
-      "lat", "lng", "radius_miles",
+      "limit",
+      "offset",
+      "featured",
+      "region",
+      "search",
+      "lat",
+      "lng",
+      "radius_miles",
     ]
     for (const param of forwardParams) {
       if (searchParams.has(param)) params.set(param, searchParams.get(param)!)
@@ -27,8 +33,28 @@ export async function GET(request: NextRequest) {
     })
 
     if (!response.ok) {
+      const errorText = await response.text().catch(() => "")
+      const requestId =
+        response.headers.get("x-request-id") ||
+        response.headers.get("x-correlation-id") ||
+        null
+
+      console.error("[storefront/api/producers] Backend request failed", {
+        status: response.status,
+        statusText: response.statusText,
+        requestId,
+        backendUrl: `${BACKEND_URL}/store/producers?${params}`,
+        query: Object.fromEntries(searchParams.entries()),
+        errorText: errorText || null,
+      })
+
       return NextResponse.json(
-        { producers: [], count: 0, message: "Could not fetch producers" },
+        {
+          producers: [],
+          count: 0,
+          message: "Could not fetch producers",
+          request_id: requestId,
+        },
         { status: response.status }
       )
     }
@@ -36,7 +62,11 @@ export async function GET(request: NextRequest) {
     const data = await response.json()
     return NextResponse.json(data)
   } catch (error) {
-    console.error("Error fetching producers:", error)
+    console.error("[storefront/api/producers] Unhandled error", {
+      backendUrl: `${BACKEND_URL}/store/producers`,
+      message: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined,
+    })
     return NextResponse.json(
       { producers: [], count: 0, message: "Internal error" },
       { status: 500 }

@@ -3,10 +3,7 @@ import { devLogger } from "../logger"
 
 // PUBLIC ROUTE CHECKER
 export const isPublicAuthRoute = (url: string) => {
-  return (
-    url.startsWith("/auth/") ||
-    url.startsWith("/vendor/auth")
-  )
+  return url.startsWith("/auth/") || url.startsWith("/vendor/auth")
 }
 
 // BACKEND CONFIG
@@ -20,9 +17,7 @@ const publishableHeader = publishableApiKey
 
 // AUTH TOKEN STORAGE
 export const getAuthToken = () =>
-  isBrowser
-    ? window.localStorage.getItem("medusa_auth_token") || ""
-    : ""
+  isBrowser ? window.localStorage.getItem("medusa_auth_token") || "" : ""
 
 export const getAuthTokenPayload = (): Record<string, unknown> | null => {
   if (!isBrowser) {
@@ -114,7 +109,9 @@ export const importProductsQuery = async (file: File) => {
   })
 }
 
-export const resolveOnlineStoreReferencesQuery = async (references: string[]) => {
+export const resolveOnlineStoreReferencesQuery = async (
+  references: string[]
+) => {
   return await fetchQuery("/vendor/products/resolve-references", {
     method: "POST",
     body: {
@@ -184,6 +181,10 @@ export const fetchQuery = async (
 
   if (!response.ok) {
     const contentType = response.headers.get("content-type") || ""
+    const requestId =
+      response.headers.get("x-request-id") ||
+      response.headers.get("x-correlation-id") ||
+      null
     const errorData = contentType.includes("application/json")
       ? await response.json().catch(() => ({}))
       : {}
@@ -191,12 +192,36 @@ export const fetchQuery = async (
       ? await response.text().catch(() => "")
       : ""
     const errorContext = `${method} ${url} (${response.status} ${response.statusText})`
+    const errorDetails = {
+      status: response.status,
+      statusText: response.statusText,
+      method,
+      url,
+      requestUrl,
+      requestId,
+      backendMessage: errorData.message || null,
+      backendType: errorData.type || null,
+      backendCode: errorData.code || null,
+      backendError: errorData.error || null,
+      backendDetails: errorData.details || null,
+      rawText: errorText || null,
+      timestamp: new Date().toISOString(),
+    }
+
+    if (import.meta.env.DEV) {
+      devLogger.error("[Vendor fetchQuery] Request failed", errorDetails)
+    }
+
     if (!isPublic && response.status === 401) {
       clearAuthToken()
     }
-    const baseMessage =
-      errorData.message || errorText || "Unknown server error"
-    throw new Error(`${baseMessage} (${errorContext})`)
+    const baseMessage = errorData.message || errorText || "Unknown server error"
+    const error = new Error(`${baseMessage} (${errorContext})`) as Error & {
+      details?: typeof errorDetails
+    }
+    error.details = errorDetails
+
+    throw error
   }
 
   return response.json()
