@@ -393,9 +393,9 @@ Status sync note: Week 0 setup checklist is marked complete to match the publish
 ## 30/60/90-Day Action Checklist
 
 ## Day 0-30
-- [ ] Ship Workstream A baseline.
-- [ ] Complete Dropship Workstream B email/manual paths.
-- [ ] Publish pilot runbook for vendor support and incident handling.
+- [x] Ship Workstream A baseline.
+- [x] Complete Dropship Workstream B email/manual paths.
+- [x] Publish pilot runbook for vendor support and incident handling (`docs/VENDOR_PILOT_SUPPORT_RUNBOOK.md`).
 
 ## Day 31-60
 - [ ] Complete Ledger Workstream C and initial reconciliation automation.
@@ -415,10 +415,10 @@ Status sync note: Week 0 setup checklist is marked complete to match the publish
 - [x] `FBM-VENDOR-002` Fulfillment type selector + supplier attachment
 - [x] `FBM-DROP-001` Supplier profile model + forwarding strategy
 - [x] `FBM-DROP-002` Supplier email forwarding worker + retry queue
-- [ ] `FBM-LEDGER-001` Immutable ledger event schema + emitter hooks
-- [ ] `FBM-LEDGER-002` Payout/fee/donation/tax exports
-- [ ] `FBM-DONATE-001` Checkout donation widget + beneficiary selector
-- [ ] `FBM-DONATE-002` Donation batch disbursement job + report
+- [ ] `FBM-LEDGER-001` Immutable ledger event schema + emitter hooks *(tracker story: `FBM-LEDGER-001-A`)*
+- [ ] `FBM-LEDGER-002` Payout/fee/donation/tax exports *(tracker story: `FBM-LEDGER-002-A`)*
+- [ ] `FBM-DONATE-001` Checkout donation widget + beneficiary selector *(tracker story: `FBM-DONATE-001-A`)*
+- [ ] `FBM-DONATE-002` Donation batch disbursement job + report *(tracker story: `FBM-DONATE-002-A`)*
 - [x] `FBM-MULTI-001` Org/store tenancy model + context switcher
 - [x] `FBM-MULTI-002` Tier-based feature gates + RBAC matrix
 - [x] `FBM-ONBOARD-001` CSV importer + mapping/validation UI

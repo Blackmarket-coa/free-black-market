@@ -88,6 +88,14 @@ Sprint length: **2 weeks**. Story points intentionally omitted pending first vel
   2. Only verified beneficiaries are selectable in production mode.
   3. Receipt includes donation line item and beneficiary name.
 
+#### Story `FBM-DONATE-002-A`: Donation batch disbursement job + report
+- **Parent:** `FBM-DONATE-002`
+- **Owner:** Compliance/Ops Lead
+- **Acceptance tests:**
+  1. Scheduled ledger-batch disbursement runs generate a signed disbursement batch ID and idempotency key.
+  2. Beneficiary disbursement report includes gross donated amount, fees (if any), net disbursed amount, and settlement status.
+  3. Weekly reconciliation confirms zero variance between ledger donation accrual totals and disbursed totals.
+
 #### Story `FBM-MULTI-002-A`: Tier gate enforcement regression suite
 - **Parent:** `FBM-MULTI-002`
 - **Owner:** Vendor Panel Lead
@@ -132,3 +140,18 @@ Dashboard: `Pilot Vendor Operations Baseline`
 
 - This document is the canonical owner map + sprint story breakdown reference for the vendor portal pilot.
 - Keep story status transitions in the project board; keep ownership, acceptance criteria, and KPI definitions here.
+
+
+## 5) Priority Ticket Clarifications (Inline Review Follow-up)
+
+The following parent tickets are explicitly queued as priority execution scope for the pilot:
+
+- `FBM-LEDGER-001` Immutable ledger event schema + emitter hooks -> implemented by Sprint 2 story `FBM-LEDGER-001-A`.
+- `FBM-LEDGER-002` Payout/fee/donation/tax exports -> implemented by Sprint 2 story `FBM-LEDGER-002-A`.
+- `FBM-DONATE-001` Checkout donation widget + beneficiary selector -> implemented by Sprint 3 story `FBM-DONATE-001-A`.
+- `FBM-DONATE-002` Donation batch disbursement job + report -> implemented by Sprint 3 story `FBM-DONATE-002-A`.
+
+Readiness requirement before moving each to `In Progress`:
+- API contract approved by Backend + Data/Reporting leads.
+- Acceptance test steps copied into tracker ticket description.
+- KPI impact field populated (`reconciliation_pass_rate` and/or `donation_settlement_latency`).
