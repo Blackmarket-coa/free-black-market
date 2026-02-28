@@ -268,6 +268,8 @@ This section converts strategy into immediately executable work with owners, del
 - Board live with initial tickets.
 - KPI baseline visible to team.
 
+Program setup artifacts are now published in `docs/VENDOR_PORTAL_PROJECT_TRACKER.md` (owner map, sprint stories with acceptance tests, and KPI baseline dashboard instrumentation plan).
+
 ## Workstream A — Vendor dashboard baseline (Weeks 1-4)
 
 ### Build tasks
@@ -463,7 +465,7 @@ This section converts strategy into immediately executable work with owners, del
 
 ## Immediate Next Step (This Week)
 
-1. Finalize DRO assignments and publish owner map in project tracker.
-2. Convert Ticket Seed List into sprint-sized stories with acceptance tests.
-3. Stand up KPI dashboard with baseline instrumentation for pilot vendors.
+1. [x] Finalize DRO assignments and publish owner map in project tracker.
+2. [x] Convert Ticket Seed List into sprint-sized stories with acceptance tests.
+3. [x] Stand up KPI dashboard with baseline instrumentation for pilot vendors.
 4. Run first end-to-end dry run: create product -> place order -> forward supplier -> record ledger events -> export reports.
