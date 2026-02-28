@@ -271,12 +271,12 @@ This section converts strategy into immediately executable work with owners, del
 ## Workstream A — Vendor dashboard baseline (Weeks 1-4)
 
 ### Build tasks
-- [ ] Add product CRUD screens with draft/publish state.
-- [ ] Add fulfillment type selector (`dropship`, `self_ship`, `local`).
-- [ ] Add supplier attachment UI on product form.
-- [ ] Add inventory quantity + low-stock threshold fields.
-- [ ] Add sales report page with date filters.
-- [ ] Add CSV export action for filtered report data.
+- [x] Add product CRUD screens with draft/publish state.
+- [x] Add fulfillment type selector (`dropship`, `self_ship`, `local`).
+- [x] Add supplier attachment UI on product form.
+- [x] Add inventory quantity + low-stock threshold fields.
+- [x] Add sales report page with date filters.
+- [x] Add CSV export action for filtered report data.
 
 ### QA/UAT tasks
 - [ ] UAT script: vendor creates product, sets fulfillment, publishes listing.
@@ -289,12 +289,12 @@ This section converts strategy into immediately executable work with owners, del
 ## Workstream B — Dropship engine MVP (Weeks 2-6)
 
 ### Build tasks
-- [ ] Create supplier profile model with contact method (`email`, `api`, `manual`).
-- [ ] Implement order forwarding worker for supplier email template.
-- [ ] Implement API forwarding adapter interface (v1 supports one adapter).
-- [ ] Add manual fulfillment update UI with status transitions.
-- [ ] Add webhook endpoint for supplier status updates.
-- [ ] Add retry + dead-letter handling for forwarding failures.
+- [x] Create supplier profile model with contact method (`email`, `api`, `manual`).
+- [x] Implement order forwarding worker for supplier email template.
+- [x] Implement API forwarding adapter interface (v1 supports one adapter).
+- [x] Add manual fulfillment update UI with status transitions.
+- [x] Add webhook endpoint for supplier status updates.
+- [x] Add retry + dead-letter handling for forwarding failures.
 
 ### QA/UAT tasks
 - [ ] Simulate 20 order forwards for each supplier type.
@@ -349,15 +349,15 @@ This section converts strategy into immediately executable work with owners, del
 ## Workstream E — Multi-store hybrid tier controls (Weeks 8-12)
 
 ### Build tasks
-- [ ] Implement `User -> Organization -> Storefront` relationships.
-- [ ] Add storefront switcher with hard context boundary.
-- [ ] Add role matrix by tier/storefront:
+- [x] Implement `User -> Organization -> Storefront` relationships.
+- [x] Add storefront switcher with hard context boundary.
+- [x] Add role matrix by tier/storefront:
   - org_owner
   - storefront_admin
   - catalog_manager
   - finance_viewer
-- [ ] Add tier flags (`tier0_public`, `tier1_verified`, `tier2_aligned_org`).
-- [ ] Apply feature gates by tier for donation routing and advanced automation.
+- [x] Add tier flags (`tier0_public`, `tier1_verified`, `tier2_aligned_org`).
+- [x] Apply feature gates by tier for donation routing and advanced automation.
 
 ### QA/UAT tasks
 - [ ] Permission boundary test across two storefronts under one org.
@@ -370,11 +370,11 @@ This section converts strategy into immediately executable work with owners, del
 ## Workstream F — Onboarding & migration (Weeks 10-14)
 
 ### Build tasks
-- [ ] Ship CSV importer with field mapping + validation errors.
-- [ ] Add starter storefront templates (3 vertical presets).
-- [ ] Add sandbox mode with test payments/order simulation.
-- [ ] Add Shopify CSV-compatible import preset.
-- [ ] Add “first listing” onboarding checklist in dashboard.
+- [x] Ship CSV importer with field mapping + validation errors.
+- [x] Add starter storefront templates (3 vertical presets).
+- [x] Add sandbox mode with test payments/order simulation.
+- [x] Add Shopify CSV-compatible import preset.
+- [x] Add “first listing” onboarding checklist in dashboard.
 
 ### QA/UAT tasks
 - [ ] Migration dry run with two historical Shopify-format exports.
@@ -407,18 +407,18 @@ This section converts strategy into immediately executable work with owners, del
 
 ## Ticket Seed List (Ready to copy into tracker)
 
-- [ ] `FBM-VENDOR-001` Product CRUD + draft/publish workflow
-- [ ] `FBM-VENDOR-002` Fulfillment type selector + supplier attachment
-- [ ] `FBM-DROP-001` Supplier profile model + forwarding strategy
-- [ ] `FBM-DROP-002` Supplier email forwarding worker + retry queue
+- [x] `FBM-VENDOR-001` Product CRUD + draft/publish workflow
+- [x] `FBM-VENDOR-002` Fulfillment type selector + supplier attachment
+- [x] `FBM-DROP-001` Supplier profile model + forwarding strategy
+- [x] `FBM-DROP-002` Supplier email forwarding worker + retry queue
 - [ ] `FBM-LEDGER-001` Immutable ledger event schema + emitter hooks
 - [ ] `FBM-LEDGER-002` Payout/fee/donation/tax exports
 - [ ] `FBM-DONATE-001` Checkout donation widget + beneficiary selector
 - [ ] `FBM-DONATE-002` Donation batch disbursement job + report
-- [ ] `FBM-MULTI-001` Org/store tenancy model + context switcher
-- [ ] `FBM-MULTI-002` Tier-based feature gates + RBAC matrix
-- [ ] `FBM-ONBOARD-001` CSV importer + mapping/validation UI
-- [ ] `FBM-ONBOARD-002` Shopify CSV preset + first-listing checklist
+- [x] `FBM-MULTI-001` Org/store tenancy model + context switcher
+- [x] `FBM-MULTI-002` Tier-based feature gates + RBAC matrix
+- [x] `FBM-ONBOARD-001` CSV importer + mapping/validation UI
+- [x] `FBM-ONBOARD-002` Shopify CSV preset + first-listing checklist
 
 ---
 
