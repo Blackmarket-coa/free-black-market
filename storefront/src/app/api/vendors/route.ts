@@ -45,8 +45,28 @@ export async function GET(request: NextRequest) {
     })
 
     if (!response.ok) {
+      const errorText = await response.text().catch(() => "")
+      const requestId =
+        response.headers.get("x-request-id") ||
+        response.headers.get("x-correlation-id") ||
+        null
+
+      console.error("[storefront/api/vendors] Backend request failed", {
+        status: response.status,
+        statusText: response.statusText,
+        requestId,
+        backendUrl: `${BACKEND_URL}/store/vendors?${params}`,
+        query: Object.fromEntries(searchParams.entries()),
+        errorText: errorText || null,
+      })
+
       return NextResponse.json(
-        { vendors: [], count: 0, message: "Could not fetch vendors" },
+        {
+          vendors: [],
+          count: 0,
+          message: "Could not fetch vendors",
+          request_id: requestId,
+        },
         { status: response.status }
       )
     }
@@ -54,7 +74,11 @@ export async function GET(request: NextRequest) {
     const data = await response.json()
     return NextResponse.json(data)
   } catch (error) {
-    console.error("Error fetching vendors:", error)
+    console.error("[storefront/api/vendors] Unhandled error", {
+      backendUrl: `${BACKEND_URL}/store/vendors`,
+      message: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined,
+    })
     return NextResponse.json(
       { vendors: [], count: 0, message: "Internal error" },
       { status: 500 }
