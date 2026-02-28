@@ -10,9 +10,11 @@ export class Migration20260228112000 extends Migration {
 
     this.addSql(`create table if not exists "tenancy_membership" ("id" text not null, "user_id" text not null, "organization_id" text not null, "storefront_id" text not null, "role" text check ("role" in ('org_owner', 'storefront_admin', 'catalog_manager', 'finance_viewer')) not null, "metadata" jsonb null, "created_at" timestamptz not null default now(), "updated_at" timestamptz not null default now(), "deleted_at" timestamptz null, constraint "tenancy_membership_pkey" primary key ("id"));`)
     this.addSql(`create index if not exists "IDX_tenancy_membership_lookup" on "tenancy_membership" ("user_id", "organization_id", "storefront_id");`)
+    this.addSql(`create table if not exists "tenancy_onboarding_state" ("id" text not null, "organization_id" text not null, "storefront_id" text not null, "first_listing_created" boolean not null default false, "payout_configured" boolean not null default false, "first_order_simulated" boolean not null default false, "metadata" jsonb null, "created_at" timestamptz not null default now(), "updated_at" timestamptz not null default now(), "deleted_at" timestamptz null, constraint "tenancy_onboarding_state_pkey" primary key ("id"));`)
   }
 
   override async down(): Promise<void> {
+    this.addSql(`drop table if exists "tenancy_onboarding_state" cascade;`)
     this.addSql(`drop table if exists "tenancy_membership" cascade;`)
     this.addSql(`drop table if exists "tenancy_storefront" cascade;`)
     this.addSql(`drop table if exists "tenancy_organization" cascade;`)
