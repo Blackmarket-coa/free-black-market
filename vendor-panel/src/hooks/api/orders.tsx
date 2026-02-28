@@ -488,3 +488,27 @@ export const useCancelOrderTransfer = (
     ...options,
   })
 }
+
+
+export const useManualFulfillmentTransition = (
+  orderId: string,
+  options?: UseMutationOptions<any, FetchError, {
+    supplier_id: string
+    next_status: "acknowledged" | "in_progress" | "shipped" | "delivered" | "canceled"
+    notes?: string
+  }>
+) => {
+  return useMutation({
+    mutationFn: (payload) =>
+      fetchQuery(`/vendor/orders/${orderId}/manual-fulfillment`, {
+        method: "POST",
+        body: payload,
+      }),
+    onSuccess: (data, variables, context) => {
+      queryClient.invalidateQueries({ queryKey: ordersQueryKeys.detail(orderId) })
+      queryClient.invalidateQueries({ queryKey: ordersQueryKeys.preview(orderId) })
+      options?.onSuccess?.(data, variables, context)
+    },
+    ...options,
+  })
+}

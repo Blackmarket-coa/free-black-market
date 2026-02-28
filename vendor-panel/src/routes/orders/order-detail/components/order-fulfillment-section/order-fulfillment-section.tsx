@@ -14,12 +14,14 @@ import {
 import { format } from "date-fns"
 import { useTranslation } from "react-i18next"
 import { Link, useNavigate } from "react-router-dom"
+import { useState } from "react"
 import { ActionMenu } from "../../../../../components/common/action-menu"
 import { Skeleton } from "../../../../../components/common/skeleton"
 import { Thumbnail } from "../../../../../components/common/thumbnail"
 import {
   useCancelOrderFulfillment,
   useMarkOrderFulfillmentAsDelivered,
+  useManualFulfillmentTransition,
 } from "../../../../../hooks/api/orders"
 import { useStockLocation } from "../../../../../hooks/api/stock-locations"
 import { formatProvider } from "../../../../../lib/format-provider"
@@ -252,6 +254,9 @@ const Fulfillment = ({
     order.id,
     fulfillment.id
   )
+  const [manualStatus, setManualStatus] = useState<"acknowledged" | "in_progress" | "shipped" | "delivered" | "canceled">("acknowledged")
+  const [manualNotes, setManualNotes] = useState("")
+  const { mutateAsync: transitionManualFulfillment } = useManualFulfillmentTransition(order.id)
 
   const showShippingButton =
     !fulfillment.canceled_at &&
@@ -461,6 +466,48 @@ const Fulfillment = ({
               {t("orders.fulfillment.markAsShipped")}
             </Button>
           )}
+        </div>
+      )}
+      {(order.metadata as Record<string, string> | undefined)?.supplier_id && (
+        <div className="bg-ui-bg-subtle border-t px-4 py-4 space-y-2">
+          <Text size="small" weight="plus">Manual supplier update</Text>
+          <div className="flex gap-2">
+            <select
+              value={manualStatus}
+              onChange={(e) => setManualStatus(e.target.value as typeof manualStatus)}
+              className="border rounded-md px-2 py-1"
+            >
+              <option value="acknowledged">Acknowledged</option>
+              <option value="in_progress">In progress</option>
+              <option value="shipped">Shipped</option>
+              <option value="delivered">Delivered</option>
+              <option value="canceled">Canceled</option>
+            </select>
+            <input
+              value={manualNotes}
+              onChange={(e) => setManualNotes(e.target.value)}
+              placeholder="Optional note"
+              className="border rounded-md px-2 py-1 flex-1"
+            />
+            <Button
+              variant="secondary"
+              onClick={async () => {
+                try {
+                  await transitionManualFulfillment({
+                    supplier_id: (order.metadata as Record<string, string>).supplier_id,
+                    next_status: manualStatus,
+                    notes: manualNotes || undefined,
+                  })
+                  toast.success("Manual fulfillment status updated")
+                  setManualNotes("")
+                } catch (e: any) {
+                  toast.error(e.message)
+                }
+              }}
+            >
+              Update
+            </Button>
+          </div>
         </div>
       )}
     </Container>

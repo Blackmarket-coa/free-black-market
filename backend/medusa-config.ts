@@ -181,6 +181,7 @@ const marketplaceModules = [
   { resolve: './src/modules/payout-breakdown' },
   { resolve: './src/modules/harvest-batches' },
   { resolve: './src/modules/vendor-rules' },
+  { resolve: './src/modules/supplier-forwarding' },
 ]
 
 // Community infrastructure modules
