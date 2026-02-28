@@ -4,8 +4,10 @@ import PaymentButton from "./PaymentButton"
 import { CartItems } from "./CartItems"
 import { CartSummary } from "@/components/organisms"
 import { TrustWidget } from "@/components/sections/TrustWidget"
+import DonationPreferences from "./DonationPreferences"
+import { DonationBeneficiary } from "@/lib/data/donations"
 
-const Review = ({ cart }: { cart: any }) => {
+const Review = ({ cart, beneficiaries, donationSettings }: { cart: any; beneficiaries: DonationBeneficiary[]; donationSettings: { default_percentage: number; round_up_enabled: boolean } }) => {
   const paidByGiftcard =
     cart?.gift_cards && cart?.gift_cards?.length > 0 && cart?.total === 0
 
@@ -32,6 +34,15 @@ const Review = ({ cart }: { cart: any }) => {
           discount_total={cart?.discount_total || 0}
         />
       </div>
+
+
+      <DonationPreferences
+        cartTotal={cart?.total || 0}
+        beneficiaries={beneficiaries}
+        defaultPercent={donationSettings?.default_percentage || 0}
+        roundUpEnabled={Boolean(donationSettings?.round_up_enabled)}
+        initialMetadata={(cart?.metadata as Record<string, any>) || {}}
+      />
 
       {/* Trust Widget - Where Your Money Goes */}
       <div className="w-full mb-6">

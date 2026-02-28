@@ -9,6 +9,7 @@ import { retrieveCustomer } from "@/lib/data/customer"
 import { listCartShippingMethods } from "@/lib/data/fulfillment"
 import { listCartPaymentMethods } from "@/lib/data/payment"
 import { Metadata } from "next"
+import { getDonationSettings, listDonationBeneficiaries } from "@/lib/data/donations"
 import { notFound } from "next/navigation"
 import { Suspense } from "react"
 import { CheckoutProgress } from "@/components/molecules/CheckoutProgress/CheckoutProgress"
@@ -133,6 +134,10 @@ async function CheckoutPageContent({}) {
   const shippingMethods = await listCartShippingMethods(cart.id, false)
   const paymentMethods = await listCartPaymentMethods(cart.region?.id ?? "")
   const customer = await retrieveCustomer()
+  const [beneficiaries, donationSettings] = await Promise.all([
+    listDonationBeneficiaries(),
+    getDonationSettings(),
+  ])
 
   return (
     <PaymentWrapper cart={cart}>
@@ -154,7 +159,7 @@ async function CheckoutPageContent({}) {
           </div>
 
           <div className="lg:col-span-5">
-            <CartReview cart={cart} />
+            <CartReview cart={cart} beneficiaries={beneficiaries} donationSettings={donationSettings} />
           </div>
         </div>
       </main>

@@ -172,6 +172,7 @@ const commerceModules = [
 // Financial/ledger modules
 const financialModules = [
   { resolve: './src/modules/hawala-ledger' },
+  { resolve: './src/modules/donation' },
 ]
 
 // FreeBlackMarket.com feature modules
