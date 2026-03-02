@@ -31,6 +31,7 @@ This index organizes project docs by purpose.
 
 ## Domain Analysis
 
+- `docs/VENDOR_FEATURE_MATRIX.md`
 - `docs/VENDOR_INVENTORY_MANAGEMENT_ANALYSIS.md`
 - `docs/VENDOR_INVENTORY_ROUTE_CONTRACT.md`
 
