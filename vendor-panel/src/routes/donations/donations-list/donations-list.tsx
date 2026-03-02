@@ -1,24 +1,31 @@
 import { useState } from "react"
-import { Outlet, useNavigate } from "react-router-dom"
-import { Container, Heading, Button, Text, Badge, Tabs } from "@medusajs/ui"
-import { Plus, Gift, CurrencyDollar } from "@medusajs/icons"
+import { Outlet } from "react-router-dom"
+import { Container, Heading, Button, Text, Badge, Tabs, Switch, Input, toast } from "@medusajs/ui"
+import { Gift, CurrencyDollar } from "@medusajs/icons"
 import { SingleColumnPage } from "../../../components/layout/pages"
 import { useDashboardExtension } from "../../../extensions"
 import { useVendorType } from "../../../providers/vendor-type-provider"
+import {
+  useDonationBeneficiaries,
+  useDonationReport,
+  useDonationSettings,
+  useUpdateDonationSettings,
+} from "../../../hooks/api/donations"
 
-/**
- * DonationsList - Donation management for gardens, kitchens, and mutual aid
- *
- * This page allows vendors to manage their donations,
- * including monetary and in-kind donations.
- */
 export function DonationsList() {
-  const navigate = useNavigate()
   const { vendorType } = useVendorType()
   const { getWidgets } = useDashboardExtension()
   const [activeTab, setActiveTab] = useState("received")
 
-  // Adjust terminology based on vendor type
+  const { data: settingsData } = useDonationSettings()
+  const { data: reportData } = useDonationReport()
+  const { data: beneficiariesData } = useDonationBeneficiaries()
+  const updateSettings = useUpdateDonationSettings()
+
+  const settings = settingsData?.settings
+  const report = reportData?.report
+  const beneficiaries = beneficiariesData?.beneficiaries || []
+
   const getTerminology = () => {
     switch (vendorType) {
       case "mutual_aid":
@@ -48,60 +55,86 @@ export function DonationsList() {
         after: getWidgets("donation.list.after"),
       }}
     >
-      <Container className="p-8">
-        {/* Header */}
-        <div className="flex items-center justify-between mb-8">
+      <Container className="p-8 space-y-8">
+        <div className="flex items-center justify-between">
           <div>
             <Heading level="h1" className="text-2xl font-serif text-warm-900">
               {terminology.title}
             </Heading>
-            <Text className="text-warm-600 mt-1">
-              {terminology.description}
-            </Text>
+            <Text className="text-warm-600 mt-1">{terminology.description}</Text>
           </div>
-          <Button
-            variant="primary"
-            onClick={() => navigate("/donations")}
-          >
-            <Plus className="mr-2" />
-            Record Donation
-          </Button>
+          <Badge color="blue">Donation settings enabled</Badge>
         </div>
 
-        {/* Summary Cards */}
-        <div className="grid grid-cols-3 gap-4 mb-8">
+        <div className="grid grid-cols-3 gap-4">
           <SummaryCard
-            label="This Month"
-            value="$0.00"
+            label="Accrued"
+            value={`$${((report?.totals?.accrued || 0) / 100).toFixed(2)}`}
             icon={<CurrencyDollar className="w-5 h-5" />}
             color="green"
           />
           <SummaryCard
-            label="In-Kind Items"
-            value="0"
+            label="Outstanding"
+            value={`$${((report?.totals?.outstanding || 0) / 100).toFixed(2)}`}
             icon={<Gift className="w-5 h-5" />}
             color="blue"
           />
           <SummaryCard
-            label="Donors"
-            value="0"
+            label="Beneficiaries"
+            value={String(beneficiaries.length)}
             icon={<Gift className="w-5 h-5" />}
             color="purple"
           />
         </div>
 
-        {/* Tabs */}
+        <div className="rounded-xl border p-4 space-y-3">
+          <Heading level="h3">Donation checkout settings</Heading>
+          <Text size="small" className="text-ui-fg-subtle">
+            Configure default donation percent and round-up behavior used by storefront checkout.
+          </Text>
+          <div className="grid grid-cols-2 gap-4 items-end">
+            <label className="block">
+              <Text size="small" className="mb-1">Default donation %</Text>
+              <Input
+                type="number"
+                min={0}
+                max={100}
+                step={0.5}
+                defaultValue={settings?.default_percentage ?? 0}
+                onBlur={(e) => {
+                  updateSettings.mutate(
+                    { default_percentage: Number(e.target.value || 0) },
+                    {
+                      onSuccess: () => toast.success("Donation default percentage updated"),
+                      onError: (error) => toast.error(error.message),
+                    }
+                  )
+                }}
+              />
+            </label>
+            <div className="flex items-center justify-between border rounded p-3">
+              <Text size="small">Enable round-up</Text>
+              <Switch
+                checked={Boolean(settings?.round_up_enabled)}
+                onCheckedChange={(checked) => {
+                  updateSettings.mutate(
+                    { round_up_enabled: checked },
+                    {
+                      onSuccess: () => toast.success("Round-up setting updated"),
+                      onError: (error) => toast.error(error.message),
+                    }
+                  )
+                }}
+              />
+            </div>
+          </div>
+        </div>
+
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           <Tabs.List>
-            <Tabs.Trigger value="received">
-              Received
-            </Tabs.Trigger>
-            <Tabs.Trigger value="distributed">
-              Distributed
-            </Tabs.Trigger>
-            <Tabs.Trigger value="donors">
-              Donors
-            </Tabs.Trigger>
+            <Tabs.Trigger value="received">Received</Tabs.Trigger>
+            <Tabs.Trigger value="distributed">Distributed</Tabs.Trigger>
+            <Tabs.Trigger value="beneficiaries">Beneficiaries</Tabs.Trigger>
           </Tabs.List>
 
           <Tabs.Content value="received" className="mt-6">
@@ -112,8 +145,13 @@ export function DonationsList() {
             <DonationsPlaceholder type="distributed" />
           </Tabs.Content>
 
-          <Tabs.Content value="donors" className="mt-6">
-            <DonorsPlaceholder />
+          <Tabs.Content value="beneficiaries" className="mt-6 space-y-2">
+            {beneficiaries.length ? beneficiaries.map((b: any) => (
+              <div key={b.id} className="rounded border p-3 flex items-center justify-between">
+                <Text>{b.name}</Text>
+                <Badge color={b.verification_status === "verified" ? "green" : "orange"}>{b.verification_status}</Badge>
+              </div>
+            )) : <DonorsPlaceholder />}
           </Tabs.Content>
         </Tabs>
       </Container>
@@ -122,17 +160,7 @@ export function DonationsList() {
   )
 }
 
-function SummaryCard({
-  label,
-  value,
-  icon,
-  color,
-}: {
-  label: string
-  value: string
-  icon: React.ReactNode
-  color: "green" | "blue" | "purple"
-}) {
+function SummaryCard({ label, value, icon, color }: { label: string; value: string; icon: JSX.Element; color: "green" | "blue" | "purple" }) {
   const colorClasses = {
     green: "bg-green-50 text-green-700",
     blue: "bg-blue-50 text-blue-700",
@@ -152,43 +180,24 @@ function SummaryCard({
 
 function DonationsPlaceholder({ type }: { type: "received" | "distributed" }) {
   return (
-    <div className="bg-warm-50 rounded-xl p-12 text-center">
-      <div className="max-w-md mx-auto">
-        <div className="w-16 h-16 bg-amber-100 rounded-full flex items-center justify-center mx-auto mb-4">
-          <Gift className="w-8 h-8 text-amber-600" />
-        </div>
-        <Heading level="h3" className="text-lg font-medium text-warm-900 mb-2">
-          No Donations {type === "received" ? "Recorded" : "Distributed"} Yet
-        </Heading>
-        <Text className="text-warm-600 mb-6">
-          {type === "received"
-            ? "Record donations as they come in to track your community support."
-            : "Track how donations are distributed to community members."}
-        </Text>
-        <Button variant="primary">
-          <Plus className="mr-2" />
-          {type === "received" ? "Record Donation" : "Log Distribution"}
-        </Button>
-      </div>
+    <div className="bg-warm-50 rounded-xl p-8 text-center">
+      <Heading level="h3" className="text-lg font-medium text-warm-900 mb-2">
+        No Donations {type === "received" ? "Recorded" : "Distributed"} Yet
+      </Heading>
+      <Text className="text-warm-600">
+        {type === "received"
+          ? "Record donations as they come in to track your community support."
+          : "Track how donations are distributed to community members."}
+      </Text>
     </div>
   )
 }
 
 function DonorsPlaceholder() {
   return (
-    <div className="bg-warm-50 rounded-xl p-12 text-center">
-      <div className="max-w-md mx-auto">
-        <div className="w-16 h-16 bg-purple-100 rounded-full flex items-center justify-center mx-auto mb-4">
-          <Gift className="w-8 h-8 text-purple-500" />
-        </div>
-        <Heading level="h3" className="text-lg font-medium text-warm-900 mb-2">
-          No Donors Yet
-        </Heading>
-        <Text className="text-warm-600 mb-6">
-          Donors who contribute to your organization will appear here.
-          You can send thank you notes and track their giving history.
-        </Text>
-      </div>
+    <div className="bg-warm-50 rounded-xl p-8 text-center">
+      <Heading level="h3" className="text-lg font-medium text-warm-900 mb-2">No Beneficiaries Yet</Heading>
+      <Text className="text-warm-600">Beneficiaries created by admins will appear here for donation routing.</Text>
     </div>
   )
 }
