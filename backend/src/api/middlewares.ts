@@ -718,7 +718,10 @@ export default defineMiddlewares({
     // Phase 1 rollout: runtime module gates
     {
       matcher: "/vendor/pos/*",
-      middlewares: [requireFeatureFlagMiddleware("POS_V1")],
+      middlewares: [
+        authenticate("seller", "bearer"),
+        requireFeatureFlagMiddleware("POS_V1"),
+      ],
     },
     {
       matcher: "/vendor/products/*/weight-pricing",
@@ -764,7 +767,10 @@ export default defineMiddlewares({
     },
     {
       matcher: "/vendor/invoices*",
-      middlewares: [requireFeatureFlagMiddleware("INVOICING_V1")],
+      middlewares: [
+        authenticate("seller", "bearer"),
+        requireFeatureFlagMiddleware("INVOICING_V1"),
+      ],
     },
     // Driver routes - driver authentication
     {

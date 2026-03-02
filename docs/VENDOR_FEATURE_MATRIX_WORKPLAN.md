@@ -199,6 +199,13 @@ Return:
 If a capability lacks end-to-end evidence, mark it partial and state exact missing artifact.
 ```
 
+
+### Phase 3 QA Checklist Status (latest pass)
+- [x] Type/lint/test/build run for touched packages (`backend`, `vendor-panel`).
+- [x] Contract smoke checks run for touched APIs (`/vendor/invoices*`, `/vendor/pos/*`, farm/harvest consistency and phase0 invoice schema tests).
+- [x] Role/permission validation verified at middleware layer (seller auth + feature gates for invoicing and POS).
+- [x] Docs evidence updated in `docs/VENDOR_FEATURE_MATRIX.md` and this workplan file.
+
 ## Suggested Execution Order
 
 1. Inventory & Delivery Zones
