@@ -1,7 +1,7 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { z } from "zod"
-import { DONATION_MODULE } from "../../../../../modules/donation"
-import DonationModuleService from "../../../../../modules/donation/service"
+import { DONATION_MODULE } from "../../../../modules/donation"
+import DonationModuleService from "../../../../modules/donation/service"
 
 const updateSettingsSchema = z.object({
   default_percentage: z.number().min(0).max(100).optional(),
