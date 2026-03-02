@@ -46,7 +46,7 @@ export const pickPackBatchSchema = z.object({
 export const invoiceSchema = z.object({
   invoice_id: z.string(),
   order_id: z.string(),
-  status: z.enum(["draft", "issued", "paid", "void"]),
+  status: z.enum(["draft", "issued", "sent", "paid", "void"]),
   total: z.number().int().min(0),
   currency_code: z.string().length(3),
   issued_at: z.string().datetime(),
