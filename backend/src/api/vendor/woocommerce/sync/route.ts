@@ -11,7 +11,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
   const sellerId = (req as any).auth_context?.actor_id;
 
   if (!sellerId) {
-    return res.status(401).json({ message: "Unauthorized" });
+    return res.status(401).json({ code: "INVENTORY_SYNC_UNAUTHORIZED", message: "Unauthorized" });
   }
 
   try {
@@ -26,6 +26,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
 
     if (connections.length === 0) {
       return res.status(404).json({
+        code: "INVENTORY_SYNC_CONNECTION_NOT_FOUND",
         message: "No WooCommerce connection found. Connect your store first.",
       });
     }
@@ -41,11 +42,13 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     });
 
     return res.json({
+      code: "INVENTORY_SYNC_COMPLETED",
       message: "Inventory sync completed",
       report: result.report,
     });
   } catch (error: any) {
     return res.status(500).json({
+      code: "INVENTORY_SYNC_FAILED",
       message: "Inventory sync failed",
       error: error.message,
     });
@@ -60,7 +63,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
   const sellerId = (req as any).auth_context?.actor_id;
 
   if (!sellerId) {
-    return res.status(401).json({ message: "Unauthorized" });
+    return res.status(401).json({ code: "INVENTORY_SYNC_UNAUTHORIZED", message: "Unauthorized" });
   }
 
   try {
@@ -87,6 +90,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     });
   } catch (error: any) {
     return res.status(500).json({
+      code: "INVENTORY_SYNC_STATUS_FAILED",
       message: "Failed to fetch sync status",
       error: error.message,
     });

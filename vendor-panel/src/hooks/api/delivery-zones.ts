@@ -58,6 +58,7 @@ export interface UpdateDeliveryZoneInput {
   }
   center_latitude?: number
   center_longitude?: number
+  radius_miles?: number
   base_delivery_fee?: number
   per_mile_fee?: number
   minimum_order?: number | null

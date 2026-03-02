@@ -3,6 +3,13 @@ import { inventoryLedgerEventSchema } from "../../../../shared/phase0-contracts"
 import { runQueueConsumer } from "../../../../shared/queue-runtime"
 import { requeueWithBackoff } from "../../../../shared/queue-requeue-adapter"
 
+const SYNC_ROUTE_EVENT_CODES = {
+  accepted: "INVENTORY_SYNC_ACCEPTED",
+  duplicate: "INVENTORY_SYNC_DUPLICATE",
+  retried: "INVENTORY_SYNC_RETRIED",
+  dead_lettered: "INVENTORY_SYNC_DEAD_LETTERED",
+} as const
+
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
   const payload = inventoryLedgerEventSchema.parse(req.body)
 
@@ -19,5 +26,13 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     },
   })
 
-  res.status(202).json({ result, topic: "inventory.sync.v1" })
+  const transition = payload.transition ?? "update"
+  const code = SYNC_ROUTE_EVENT_CODES[result.status]
+
+  res.status(202).json({
+    result,
+    code,
+    topic: "inventory.sync.v1",
+    transition,
+  })
 }
