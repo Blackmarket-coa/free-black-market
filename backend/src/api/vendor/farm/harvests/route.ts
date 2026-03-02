@@ -1,4 +1,5 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
+import { buildFarmHarvestConsistencyIssues } from "../consistency"
 
 // Type for agriculture service methods
 interface AgricultureServiceType {
@@ -136,6 +137,14 @@ export async function POST(
 
     const producerId = producerLinks[0].producer_id
 
+    const { data: producers } = await query.graph({
+      entity: "producer",
+      fields: ["id", "year_established", "country_code", "state"],
+      filters: { id: producerId },
+      pagination: { take: 1 },
+    })
+    const producerProfile = (producers && producers[0]) || {}
+
     const {
       crop_name,
       variety,
@@ -156,6 +165,20 @@ export async function POST(
       expected_yield_unit,
       visibility_status,
     } = req.body as Record<string, any>
+
+    const consistency_issues = buildFarmHarvestConsistencyIssues(producerProfile as any, {
+      year: year || new Date().getFullYear(),
+      harvest_date: harvest_date || null,
+      planted_date: planted_date || null,
+      field_name: field_name || null,
+    })
+
+    if (consistency_issues.length > 0) {
+      return res.status(400).json({
+        message: "Farm profile consistency checks failed",
+        consistency_issues,
+      })
+    }
 
     // Create the harvest
     const harvest = await agricultureService.createHarvests({
@@ -188,7 +211,7 @@ export async function POST(
       }
     })
 
-    res.status(201).json({ harvest })
+    res.status(201).json({ harvest, consistency_issues })
   } catch (error: any) {
     res.status(500).json({ 
       message: "Failed to create harvest", 
