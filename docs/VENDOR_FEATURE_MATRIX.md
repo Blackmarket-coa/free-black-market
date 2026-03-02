@@ -1,0 +1,33 @@
+# Vendor Feature Matrix
+
+This matrix is based on **repo-implemented artifacts** (routes, modules, and app code), not roadmap/tracker intent.
+
+**Legend**
+- ✅ Implemented evidence found in code
+- 🟡 Partial evidence (feature flags, extension points, or only one surface wired)
+- ❌ No clear implementation evidence found
+
+| Capability | Backend evidence | Vendor Panel evidence | Storefront evidence | Completion |
+|---|---|---|---|---|
+| Vendor registration/onboarding | `backend/src/api/auth/seller/register-request`, `backend/src/api/vendor/register`, `backend/src/api/vendor/registration-status` | `vendor-panel/src/routes/register`, `vendor-panel/src/routes/onboarding`, `vendor-panel/src/routes/pending-approval` | Seller-aware listing/filtering in `storefront/src/lib/listing/unified-products.ts` | ✅ |
+| Product management | `backend/src/api/vendor/products`, `backend/src/api/vendor/seller-products` | `vendor-panel/src/routes/products/*`, `vendor-panel/src/routes/product-variants/*`, `vendor-panel/src/routes/collections/*`, `vendor-panel/src/routes/categories/*` | Product listing/details flows under `storefront/src/lib/listing/unified-products.ts` and product/cart components | ✅ |
+| Inventory and reservations | `backend/src/api/vendor/inventory-sync`, `backend/src/api/vendor/inventory-sync/events` | `vendor-panel/src/routes/inventory/*`, `vendor-panel/src/routes/reservations/*` | Stock validation/handling in checkout helpers (`storefront/src/lib/helpers/order-error-formatter.ts`) | 🟡 |
+| Orders and fulfillment | `backend/src/api/vendor/orders`, `backend/src/api/vendor/deliveries`, `backend/src/api/vendor/pick-pack` | `vendor-panel/src/routes/orders/*`, `vendor-panel/src/routes/deliveries/*` | Cart/checkout/place-order flows in `storefront/src/components/sections/CartReview/*` | ✅ |
+| Delivery zones | `backend/src/api/vendor/delivery-zones`, `backend/src/api/store/delivery-zones` | `vendor-panel/src/routes/delivery-zones/*` | Delivery-zone store APIs exist; no direct vendor-management UI in storefront | 🟡 |
+| Donations | `backend/src/api/store/donations`, `backend/src/api/admin/donations` | `vendor-panel/src/routes/donations/*` | Store donation APIs exist; storefront UI evidence is limited in this repo snapshot | 🟡 |
+| Order cycles / subscriptions / seasons | `backend/src/api/vendor/order-cycles`, `backend/src/api/store/order-cycles`, `backend/src/api/store/subscriptions`, `backend/src/api/store/seasons` | `vendor-panel/src/routes/order-cycles/*` | No obvious dedicated customer-facing UI route in scanned storefront files | 🟡 |
+| Reviews and requests | `backend/src/api/vendor/requests`, `backend/src/api/store/requests` | `vendor-panel/src/routes/reviews/*`, `vendor-panel/src/routes/requests/*` | No obvious dedicated storefront review/request management UI in scanned files | 🟡 |
+| Messaging/support chat | `backend/src/api/vendor/rocketchat`, `backend/src/api/store/rocketchat` | `vendor-panel/src/routes/messages`, Rocket.Chat provider wiring in navigation | No clear storefront chat surface located | 🟡 |
+| Farm profile and harvest workflows | `backend/src/api/vendor/farm/*`, `backend/src/api/store/harvests`, `backend/src/modules/harvest` | `vendor-panel/src/routes/farm/*` | Store harvest APIs exist; customer UI evidence is limited in scanned storefront files | 🟡 |
+| Invoicing | `backend/src/api/vendor/invoices` | Navigation extension entry exists (`/finances?view=invoicing`) | No storefront invoicing surface found | 🟡 |
+| POS mode | No vendor POS API route found in `backend/src/api/vendor` | POS nav item is feature-flagged in `vendor-panel/src/hooks/navigation/use-vendor-navigation.tsx` | POS flag exists in `storefront/src/lib/feature-flags.ts` | 🟡 |
+
+## Method used for this matrix
+
+1. Enumerated route/module directories in:
+   - `backend/src/api`
+   - `backend/src/modules`
+   - `vendor-panel/src/routes`
+   - `storefront/src/app`, `storefront/src/components`, `storefront/src/lib`
+2. Marked capabilities as complete/partial only when implementation evidence was present in repo files.
+3. Avoided deriving status from planning/tracker docs.
