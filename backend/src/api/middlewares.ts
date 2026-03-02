@@ -800,6 +800,10 @@ export default defineMiddlewares({
       matcher: "/vendor/subscriptions/*",
       middlewares: [authenticate("seller", "bearer")],
     },
+    {
+      matcher: "/vendor/donations/*",
+      middlewares: [authenticate("seller", "bearer")],
+    },
     // Vendor requests routes - seller authentication
     {
       matcher: "/vendor/requests",

@@ -6,6 +6,7 @@ const links = {
     { label: 'Collective Buys', path: '/collective/demand-pools' },
     { label: 'Community Resources', path: '/community-resources' },
     { label: 'Feature Matrix', path: '/feature-matrix' },
+    { label: 'Community Donations', path: '/donations' },
     { label: 'Returns', path: '/user/returns' },
   ],
   about: [

@@ -14,6 +14,7 @@ export const inventoryLedgerEventSchema = z.object({
   variant_id: z.string(),
   delta: z.number().int(),
   reason: z.string(),
+  transition: z.enum(["create", "update", "reconcile"]).default("update"),
   channel: salesChannelSchema,
   idempotency_key: z.string().optional(),
 }).strict()

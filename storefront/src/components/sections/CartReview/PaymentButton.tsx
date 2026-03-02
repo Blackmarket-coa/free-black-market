@@ -67,12 +67,15 @@ const StripePaymentButton = ({
     try {
       const res = await placeOrder()
       if (!res.ok) {
-        setErrorMessage(res.error?.message)
+        setErrorMessage(orderErrorFormatter(res.error))
       }
     } catch (error: any) {
       if (error?.message !== "NEXT_REDIRECT") {
         setErrorMessage(
-          error?.message?.replace("Error setting up the request: ", "")
+          orderErrorFormatter({
+            ...error,
+            message: error?.message?.replace("Error setting up the request: ", ""),
+          })
         )
       }
     } finally {
@@ -175,12 +178,15 @@ const ManualTestPaymentButton = ({ notReady }: { notReady: boolean }) => {
     try {
       const res = await placeOrder()
       if (!res.ok) {
-        setErrorMessage(res.error?.message)
+        setErrorMessage(orderErrorFormatter(res.error))
       }
     } catch (error: any) {
       if (error?.message !== "NEXT_REDIRECT") {
         setErrorMessage(
-          error?.message?.replace("Error setting up the request: ", "")
+          orderErrorFormatter({
+            ...error,
+            message: error?.message?.replace("Error setting up the request: ", ""),
+          })
         )
       }
     } finally {

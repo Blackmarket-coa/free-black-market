@@ -127,6 +127,19 @@ export const useWooImportHistory = (
 
 // --- Sync ---
 
+
+export const useWooSyncStatus = (
+  options?: Omit<UseQueryOptions<any, FetchError, any>, "queryKey" | "queryFn">
+) => {
+  const { data, ...rest } = useQuery({
+    queryFn: () => fetchQuery("/vendor/woocommerce/sync", { method: "GET" }),
+    queryKey: wooConnectionQueryKeys.detail("sync-status"),
+    ...options,
+  })
+
+  return { ...data, ...rest }
+}
+
 export const useWooSync = (
   options?: UseMutationOptions<any, FetchError, void>
 ) => {
