@@ -1,4 +1,5 @@
 import { useState } from "react"
+import { useSearchParams } from "react-router-dom"
 import {
   ArrowDownTray,
   ArrowUpTray,
@@ -25,6 +26,7 @@ import {
   useAdvanceEligibility,
   useRequestAdvance,
 } from "../../hooks/api/hawala"
+import { useCreateInvoice, useInvoices, useUpdateInvoiceState } from "../../hooks/api/invoicing"
 
 const formatCurrency = (amount: number, currency = "USD") => {
   return new Intl.NumberFormat("en-US", {
@@ -418,8 +420,62 @@ const RecentTransactions = ({ transactions }: { transactions: Array<{
   )
 }
 
+
+const InvoicingSection = () => {
+  const { data } = useInvoices()
+  const createInvoice = useCreateInvoice()
+  const updateInvoice = useUpdateInvoiceState()
+  const [orderId, setOrderId] = useState("")
+  const [total, setTotal] = useState("0")
+
+  const onCreate = async () => {
+    try {
+      await createInvoice.mutateAsync({
+        order_id: orderId,
+        total: Number(total),
+        currency_code: "USD",
+        status: "draft",
+      })
+      toast.success("Invoice created")
+      setOrderId("")
+      setTotal("0")
+    } catch (e: any) {
+      toast.error(e?.message || "Failed to create invoice")
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <Heading level="h3">Invoicing</Heading>
+      <Text className="text-ui-fg-subtle">Lifecycle states: draft → sent → paid / void.</Text>
+      <div className="grid grid-cols-3 gap-3">
+        <Input placeholder="Order ID" value={orderId} onChange={(e) => setOrderId(e.target.value)} />
+        <Input type="number" placeholder="Total" value={total} onChange={(e) => setTotal(e.target.value)} />
+        <Button onClick={onCreate} isLoading={createInvoice.isPending}>Create Draft Invoice</Button>
+      </div>
+      <div className="space-y-2">
+        {(data?.invoices || []).map((invoice) => (
+          <div key={invoice.id} className="border rounded p-3 flex items-center justify-between">
+            <div>
+              <Text className="font-medium">{invoice.order_id}</Text>
+              <Text size="small">{formatCurrency(invoice.total, invoice.currency_code)} · {invoice.status}</Text>
+            </div>
+            <div className="flex gap-2">
+              {invoice.status === "draft" && <Button size="small" variant="secondary" onClick={() => updateInvoice.mutate({ id: invoice.id, status: "sent" })}>Send</Button>}
+              {invoice.status === "sent" && <Button size="small" variant="secondary" onClick={() => updateInvoice.mutate({ id: invoice.id, status: "paid" })}>Mark Paid</Button>}
+              {invoice.status !== "void" && <Button size="small" variant="transparent" onClick={() => updateInvoice.mutate({ id: invoice.id, status: "void" })}>Void</Button>}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 // Main Finances Page
 export const FinancesPage = () => {
+  const [searchParams] = useSearchParams()
+  const currentView = searchParams.get("view")
   const { dashboard, isPending, isError, error } = useVendorDashboard()
 
   if (isPending) {
@@ -444,6 +500,14 @@ export const FinancesPage = () => {
             {error ? String(error) : "Set up your vendor account to access financial features."}
           </Text>
         </div>
+      </Container>
+    )
+  }
+
+  if (currentView === "invoicing") {
+    return (
+      <Container className="p-8">
+        <InvoicingSection />
       </Container>
     )
   }

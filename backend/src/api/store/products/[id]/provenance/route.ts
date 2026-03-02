@@ -1,4 +1,5 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
+import { buildFarmHarvestConsistencyIssues } from "../../../vendor/farm/consistency"
 
 /**
  * GET /store/products/:id/provenance
@@ -223,6 +224,10 @@ export async function GET(
       }
     }
 
+    const consistency_issues = harvest
+      ? buildFarmHarvestConsistencyIssues(producer as any, harvest as any)
+      : []
+
     res.json({
       provenance: {
         producer: {
@@ -240,6 +245,7 @@ export async function GET(
         },
         harvest,
         lot,
+        consistency_issues,
       },
     })
   } catch (error: any) {

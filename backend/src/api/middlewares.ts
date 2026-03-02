@@ -27,7 +27,6 @@ import { requireFeatureFlagMiddleware } from "../shared/runtime-module-gates";
 import { requireStorefrontContext } from "./middlewares/tenancy-context";
 import {
   inventoryLedgerEventSchema,
-  invoiceSchema,
   pickPackBatchSchema,
   weightPriceRuleSchema,
 } from "../shared/phase0-contracts";
@@ -260,7 +259,6 @@ const PostCartItemsRentalsBody = z.object({
 const PostInventorySyncEventBody = inventoryLedgerEventSchema;
 const PostWeightPricingRuleBody = weightPriceRuleSchema;
 const PostPickPackBatchBody = pickPackBatchSchema;
-const PostInvoiceBody = invoiceSchema;
 
 /**
  * Build CORS origins string from environment variables
@@ -765,12 +763,8 @@ export default defineMiddlewares({
       ],
     },
     {
-      matcher: "/vendor/invoices",
-      method: "POST",
-      middlewares: [
-        requireFeatureFlagMiddleware("INVOICING_V1"),
-        validateAndTransformBody(PostInvoiceBody),
-      ],
+      matcher: "/vendor/invoices*",
+      middlewares: [requireFeatureFlagMiddleware("INVOICING_V1")],
     },
     // Driver routes - driver authentication
     {

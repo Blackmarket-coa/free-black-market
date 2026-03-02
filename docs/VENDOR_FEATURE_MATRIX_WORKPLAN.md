@@ -161,6 +161,11 @@ Provide tests or smoke checks and doc evidence updates.
 - Either add backend POS API support or formally map POS to existing order endpoints.
 - Ensure feature flag defaults and rollout strategy are documented.
 
+**Phase 3 rollout notes (implemented):**
+- `VITE_FF_INVOICING_V1` default remains disabled; enable per-vendor cohort after invoice lifecycle smoke checks.
+- `VITE_FF_POS_V1` default remains disabled; enable internal pilot first, then expand by vendor type once checkout/payment capture telemetry is green for 7 days.
+- Backend gates enforce `INVOICING_V1` and `POS_V1` at `/vendor/invoices*` and `/vendor/pos/*` before broad rollout.
+
 **AI prompt (phase batch)**
 ```text
 Execute Phase 3 vendor operations closure for Farm/Harvest, Invoicing, and POS.
