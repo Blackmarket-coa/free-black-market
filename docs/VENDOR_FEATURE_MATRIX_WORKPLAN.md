@@ -201,6 +201,11 @@ If a capability lacks end-to-end evidence, mark it partial and state exact missi
 
 
 ### Phase 3 QA Checklist Status (latest pass)
+### Gap closure evidence (automated route-flow tests)
+- Farm/Harvest → Storefront propagation: `backend/src/api/vendor/__tests__/farm-provenance-flow.unit.spec.ts` validates harvest consistency rejection and storefront provenance `consistency_issues` payload.
+- Invoicing lifecycle persistence flow: `backend/src/api/vendor/__tests__/invoices-route.unit.spec.ts` validates create → list → patch lifecycle through seller-metadata-backed storage behavior.
+- POS checkout receipt flow: `backend/src/api/vendor/__tests__/pos-checkout-route.unit.spec.ts` validates checkout capture response and receipt export payload shape.
+
 - [x] Type/lint/test/build run for touched packages (`backend`, `vendor-panel`).
 - [x] Contract smoke checks run for touched APIs (`/vendor/invoices*`, `/vendor/pos/*`, farm/harvest consistency and phase0 invoice schema tests).
 - [x] Role/permission validation verified at middleware layer (seller auth + feature gates for invoicing and POS).
