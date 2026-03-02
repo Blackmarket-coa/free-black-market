@@ -2,40 +2,13 @@ import { z } from "zod"
 import { AuthenticatedMedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { FOOD_DISTRIBUTION_MODULE } from "../../../../modules/food-distribution"
 import type FoodDistributionService from "../../../../modules/food-distribution/service"
-import { requireSellerId, notFound, validationError } from "../../../../shared"
+import { requireSellerId } from "../../../../shared"
+import { createDeliveryZoneSchema, updateDeliveryZoneSchema } from "../../../delivery-zones/contracts"
+import { detectDeliveryZoneConflicts } from "../conflict-utils"
 
 // ===========================================
 // VALIDATION SCHEMAS
 // ===========================================
-
-const updateZoneSchema = z.object({
-  name: z.string().min(1).max(100).optional(),
-  
-  // GeoJSON polygon boundary
-  boundary: z.object({
-    type: z.literal("Polygon"),
-    coordinates: z.array(z.array(z.tuple([z.number(), z.number()]))),
-  }).optional(),
-  
-  // Center point
-  center_latitude: z.number().min(-90).max(90).optional(),
-  center_longitude: z.number().min(-180).max(180).optional(),
-  
-  // Pricing
-  base_delivery_fee: z.number().min(0).optional(),
-  per_mile_fee: z.number().min(0).optional(),
-  minimum_order: z.number().min(0).nullable().optional(),
-  
-  // Service hours (per day)
-  service_hours: z.record(z.object({
-    open: z.string().regex(/^\d{2}:\d{2}$/),
-    close: z.string().regex(/^\d{2}:\d{2}$/),
-  })).nullable().optional(),
-  
-  // Status
-  active: z.boolean().optional(),
-  priority: z.number().int().min(0).optional(),
-})
 
 // ===========================================
 // GET /vendor/delivery-zones/:id
@@ -80,7 +53,7 @@ export async function POST(
     if (!sellerId) return
 
     const { id } = req.params
-    const data = updateZoneSchema.parse(req.body)
+    const data = updateDeliveryZoneSchema.parse(req.body)
     const foodDistribution = req.scope.resolve<FoodDistributionService>(FOOD_DISTRIBUTION_MODULE)
 
     // Verify zone exists
@@ -88,6 +61,40 @@ export async function POST(
     if (!existing) {
       res.status(404).json({ message: "Delivery zone not found" })
       return
+    }
+
+
+    const mergedCandidate = createDeliveryZoneSchema.parse({
+      name: data.name ?? existing.name,
+      code: existing.code,
+      boundary: data.boundary ?? existing.boundary,
+      center_latitude: data.center_latitude ?? existing.center_latitude,
+      center_longitude: data.center_longitude ?? existing.center_longitude,
+      base_delivery_fee:
+        data.base_delivery_fee ?? Number(existing.base_delivery_fee || 0) / 100,
+      per_mile_fee: data.per_mile_fee ?? Number(existing.per_mile_fee || 0) / 100,
+      minimum_order:
+        data.minimum_order === undefined
+          ? existing.minimum_order
+            ? Number(existing.minimum_order) / 100
+            : undefined
+          : data.minimum_order ?? undefined,
+      service_hours: data.service_hours ?? (existing.service_hours as Record<string, { open: string; close: string }> | undefined),
+      active: data.active ?? existing.active,
+      priority: data.priority ?? existing.priority,
+    })
+
+    const activeZones = await foodDistribution.listDeliveryZones({ active: true })
+    const conflicts = mergedCandidate.active
+      ? detectDeliveryZoneConflicts(mergedCandidate, activeZones as any, id)
+      : []
+
+    if (conflicts.length) {
+      return res.status(409).json({
+        code: "DELIVERY_ZONE_CONFLICT",
+        message: "Updated delivery zone overlaps with one or more active zones",
+        details: { conflicts },
+      })
     }
 
     // Prepare update data (convert dollars to cents)

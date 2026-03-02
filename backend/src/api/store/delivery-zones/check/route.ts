@@ -7,14 +7,7 @@ import type FoodDistributionService from "../../../../modules/food-distribution/
 // VALIDATION SCHEMAS
 // ===========================================
 
-const checkAvailabilitySchema = z.object({
-  // Customer location
-  latitude: z.number().min(-90).max(90),
-  longitude: z.number().min(-180).max(180),
-  
-  // Optional: specific producer to check
-  producer_id: z.string().optional(),
-})
+import { deliveryZoneCheckRequestSchema } from "../../../delivery-zones/contracts"
 
 // ===========================================
 // Haversine distance calculation
@@ -98,7 +91,7 @@ function isWithinZone(
   // If we have a polygon boundary, use that
   if (zone.boundary?.coordinates?.[0]) {
     const polygon = zone.boundary.coordinates[0]
-    const inZone = isPointInPolygon(customerLng, customerLat, polygon)
+    const inZone = isPointInPolygon(customerLat, customerLng, polygon)
     return { inZone, distance }
   }
   
@@ -172,7 +165,7 @@ function isWithinServiceHours(
 
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
   try {
-    const data = checkAvailabilitySchema.parse(req.body)
+    const data = deliveryZoneCheckRequestSchema.parse(req.body)
     const foodDistribution = req.scope.resolve<FoodDistributionService>(FOOD_DISTRIBUTION_MODULE)
     
     // Get all active delivery zones
@@ -183,6 +176,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     if (!zones.length) {
       res.json({
         available: false,
+        code: "DELIVERY_ZONES_UNAVAILABLE",
         reason: "No delivery zones are currently configured",
       })
       return
@@ -228,8 +222,10 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     if (!matchingZones.length) {
       res.json({
         available: false,
+        code: "DELIVERY_NOT_AVAILABLE",
         reason: "Outside delivery area. We don't currently deliver to your location.",
         suggestion: "You may be able to order for pickup instead.",
+        next_action: "switch_to_pickup",
       })
       return
     }
@@ -247,6 +243,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     
     res.json({
       available: true,
+      code: bestMatch.isOpen ? "DELIVERY_AVAILABLE" : "DELIVERY_ZONE_CLOSED",
       currently_open: bestMatch.isOpen,
       zone: {
         id: bestMatch.zone.id,
@@ -266,6 +263,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       message: bestMatch.isOpen 
         ? `Delivery available! Estimated ${bestMatch.estimatedTime}`
         : "Delivery zone found but currently closed. Check service hours.",
+      next_action: bestMatch.isOpen ? "continue_checkout" : "schedule_or_pickup",
     })
   } catch (error) {
     if (error instanceof z.ZodError) {

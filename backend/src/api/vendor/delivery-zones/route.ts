@@ -8,40 +8,8 @@ import { requireSellerId } from "../../../shared"
 // VALIDATION SCHEMAS
 // ===========================================
 
-const createZoneSchema = z.object({
-  name: z.string().min(1).max(100),
-  code: z.string().min(1).max(20).regex(/^[A-Z0-9-]+$/),
-  
-  // GeoJSON polygon boundary
-  boundary: z.object({
-    type: z.literal("Polygon"),
-    coordinates: z.array(z.array(z.tuple([z.number(), z.number()]))),
-  }),
-  
-  // Center point
-  center_latitude: z.number().min(-90).max(90),
-  center_longitude: z.number().min(-180).max(180),
-  
-  // Radius in miles (for simple circular zones)
-  radius_miles: z.number().min(0).max(100).optional(),
-  
-  // Pricing
-  base_delivery_fee: z.number().min(0).default(0),
-  per_mile_fee: z.number().min(0).default(0),
-  minimum_order: z.number().min(0).optional(),
-  
-  // Service hours (per day)
-  service_hours: z.record(z.object({
-    open: z.string().regex(/^\d{2}:\d{2}$/),
-    close: z.string().regex(/^\d{2}:\d{2}$/),
-  })).optional(),
-  
-  // Status
-  active: z.boolean().default(true),
-  priority: z.number().int().min(0).default(0),
-})
-
-const updateZoneSchema = createZoneSchema.partial()
+import { createDeliveryZoneSchema } from "../../delivery-zones/contracts"
+import { detectDeliveryZoneConflicts } from "./conflict-utils"
 
 const listZonesQuerySchema = z.object({
   active: z.coerce.boolean().optional(),
@@ -102,7 +70,7 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
     const sellerId = await requireSellerId(req, res)
     if (!sellerId) return
 
-    const data = createZoneSchema.parse(req.body)
+    const data = createDeliveryZoneSchema.parse(req.body)
     const foodDistribution = req.scope.resolve<FoodDistributionService>(FOOD_DISTRIBUTION_MODULE)
 
     // Check for duplicate code
@@ -110,6 +78,19 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
     if (existing.length > 0) {
       res.status(400).json({ message: "A zone with this code already exists" })
       return
+    }
+
+    const activeZones = await foodDistribution.listDeliveryZones({ active: true })
+    const conflicts = data.active
+      ? detectDeliveryZoneConflicts(data, activeZones as any)
+      : []
+
+    if (conflicts.length) {
+      return res.status(409).json({
+        code: "DELIVERY_ZONE_CONFLICT",
+        message: "Delivery zone overlaps with one or more active zones",
+        details: { conflicts },
+      })
     }
 
     // Create the zone
