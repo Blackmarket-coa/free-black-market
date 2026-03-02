@@ -1,5 +1,5 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
-import { buildFarmHarvestConsistencyIssues } from "../../../vendor/farm/consistency"
+import { buildFarmHarvestConsistencyIssues } from "../../../../vendor/farm/consistency"
 
 /**
  * GET /store/products/:id/provenance
