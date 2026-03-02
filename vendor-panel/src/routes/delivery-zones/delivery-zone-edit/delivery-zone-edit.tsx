@@ -10,6 +10,15 @@ import {
 } from "../../../hooks/api/delivery-zones"
 import { useVendorType } from "../../../providers/vendor-type-provider"
 
+
+const getConflictDetails = (error: any) => {
+  const conflicts = error?.details?.backendDetails?.conflicts
+  if (Array.isArray(conflicts)) {
+    return conflicts as Array<{ zone_name: string; zone_code: string; type: string }>
+  }
+  return []
+}
+
 /**
  * DeliveryZoneEdit - Edit an existing delivery zone
  */
@@ -20,6 +29,7 @@ export function DeliveryZoneEdit() {
 
   const { data, isLoading, error: loadError } = useDeliveryZone(id!)
   const { mutate: updateZone, isPending: isUpdating, error: updateError } = useUpdateDeliveryZone(id!)
+  const conflicts = getConflictDetails(updateError)
   const { mutate: deleteZone, isPending: isDeleting } = useDeleteDeliveryZone(id!)
 
   // Type-specific terminology

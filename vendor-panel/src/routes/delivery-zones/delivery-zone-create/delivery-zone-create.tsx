@@ -5,6 +5,15 @@ import { ArrowLeft } from "@medusajs/icons"
 import { useCreateDeliveryZone, CreateDeliveryZoneInput } from "../../../hooks/api/delivery-zones"
 import { useVendorType } from "../../../providers/vendor-type-provider"
 
+
+const getConflictDetails = (error: any) => {
+  const conflicts = error?.details?.backendDetails?.conflicts
+  if (Array.isArray(conflicts)) {
+    return conflicts as Array<{ zone_name: string; zone_code: string; type: string }>
+  }
+  return []
+}
+
 /**
  * DeliveryZoneCreate - Create a new delivery zone
  * 
@@ -17,6 +26,7 @@ export function DeliveryZoneCreate() {
   const navigate = useNavigate()
   const { features } = useVendorType()
   const { mutate: createZone, isPending, error } = useCreateDeliveryZone()
+  const conflicts = getConflictDetails(error)
 
   // Type-specific terminology
   const terminology = features.hasDeliveryZones 
@@ -384,10 +394,19 @@ export function DeliveryZoneCreate() {
 
         {/* Error Display */}
         {error && (
-          <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+          <div className="bg-red-50 border border-red-200 rounded-lg p-4 space-y-2">
             <Text className="text-sm text-red-800">
               {(error as any)?.message || "Failed to create delivery zone. Please try again."}
             </Text>
+            {conflicts.length > 0 && (
+              <ul className="list-disc pl-5 text-sm text-red-700">
+                {conflicts.map((conflict) => (
+                  <li key={`${conflict.zone_code}-${conflict.type}`}>
+                    Conflicts with {conflict.zone_name} ({conflict.zone_code}) due to {conflict.type.replaceAll("_", " ")}.
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
         )}
 
