@@ -1,6 +1,6 @@
 import { Button, ProgressStatus, ProgressTabs, toast } from "@medusajs/ui"
 import { HttpTypes } from "@medusajs/types"
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { useTranslation } from "react-i18next"
 import { Link } from "react-router-dom"
 import {
@@ -24,6 +24,7 @@ import { ProductCreateOrganizeForm } from "../product-create-organize-form"
 import { ProductCreateVariantsForm } from "../product-create-variants-form"
 import { usePricePreferences } from "../../../../../hooks/api/price-preferences"
 import { useRegions } from "../../../../../hooks/api"
+import { castNumber } from "../../../../../lib/cast-number"
 
 enum Tab {
   DETAILS = "details",
@@ -71,6 +72,19 @@ export const ProductCreateForm = ({
   const { price_preferences: pricePreferences } = usePricePreferences({
     limit: 9999,
   })
+  const regionsCurrencyMap = useMemo(() => {
+    if (!regions?.length) {
+      return {}
+    }
+
+    return regions.reduce(
+      (acc, region) => {
+        acc[region.id] = region.currency_code
+        return acc
+      },
+      {} as Record<string, string>
+    )
+  }, [regions])
 
   const form = useExtendableForm({
     defaultValues: {
@@ -165,7 +179,10 @@ export const ProductCreateForm = ({
       {
         ...payload,
         status: isDraftSubmission ? "draft" : "published",
-        images: uploadedMedia,
+        thumbnail: uploadedMedia.find((media) => media.isThumbnail)?.url,
+        images: uploadedMedia
+          .filter((media) => !media.isThumbnail)
+          .map((media) => ({ url: media.url })),
         weight: parseInt(payload.weight || "") || undefined,
         length: parseInt(payload.length || "") || undefined,
         height: parseInt(payload.height || "") || undefined,
@@ -182,20 +199,42 @@ export const ProductCreateForm = ({
         categories: payload.categories.map((cat) => ({
           id: cat,
         })),
-        variants: payload.variants.map((variant) => ({
-          ...variant,
-          sku: variant.sku === "" ? undefined : variant.sku,
-          manage_inventory: true,
-          allow_backorder: false,
-          should_create: undefined,
-          is_default: undefined,
-          inventory_kit: undefined,
-          inventory: undefined,
-          prices: Object.keys(variant.prices || {}).map((key) => ({
-            currency_code: key,
-            amount: parseFloat(variant.prices?.[key] as string),
-          })),
-        })),
+        variants: payload.variants.map((variant) => {
+          const prices = Object.entries(variant.prices || {})
+            .map(([currencyOrRegion, value]) => {
+              if (value === "" || value === undefined) {
+                return undefined
+              }
+
+              const amount = castNumber(value)
+
+              if (currencyOrRegion.startsWith("reg_")) {
+                return {
+                  rules: { region_id: currencyOrRegion },
+                  currency_code: regionsCurrencyMap[currencyOrRegion],
+                  amount,
+                }
+              }
+
+              return {
+                currency_code: currencyOrRegion,
+                amount,
+              }
+            })
+            .filter((price) => !!price)
+
+          return {
+            ...variant,
+            sku: variant.sku === "" ? undefined : variant.sku,
+            manage_inventory: true,
+            allow_backorder: false,
+            should_create: undefined,
+            is_default: undefined,
+            inventory_kit: undefined,
+            inventory: undefined,
+            prices,
+          }
+        }),
       },
       {
         onSuccess: (data) => {
