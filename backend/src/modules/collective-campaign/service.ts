@@ -245,7 +245,10 @@ class CollectiveCampaignModuleService extends MedusaService({
     })
 
     if (totalBackedAmount >= Number(campaign.campaign_goal)) {
-      await this.updateCampaigns({ id: input.campaign_id, status: CampaignStatus.FUNDED })
+      const [latestCampaign] = await this.listCampaigns({ id: input.campaign_id })
+      if (latestCampaign?.status === CampaignStatus.ACTIVE) {
+        await this.updateCampaigns({ id: input.campaign_id, status: CampaignStatus.FUNDED })
+      }
       await this.createPurchaseOrdersFromMaterialLines(input.campaign_id)
     }
 
@@ -279,7 +282,16 @@ class CollectiveCampaignModuleService extends MedusaService({
       delivery_status: "PENDING",
     }))
 
-    const pos = await this.createPurchaseOrders(payload)
+    let pos
+    try {
+      pos = await this.createPurchaseOrders(payload)
+    } catch (error) {
+      const recovered = await this.listPurchaseOrders({ campaign_id: campaignId })
+      if (recovered.length > 0) {
+        return recovered
+      }
+      throw error
+    }
 
     await this.updateCampaigns({
       id: campaignId,
