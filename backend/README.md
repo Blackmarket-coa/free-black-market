@@ -72,6 +72,43 @@ The `init-algolia` script runs before the backend starts and will:
 
 No manual index creation or configuration is required - everything happens automatically on backend startup!
 
+
+## Collective Campaign Module
+
+This backend includes a `collective-campaign` module for vendor-led campaign funding and sourcing workflows.
+
+### Scope
+
+The module supports:
+
+- Campaign creation for production runs and productive assets
+- Material line-item budgeting and campaign financial rollups
+- Backings (`PRE_ORDER` and `MICRO_INVESTOR`)
+- Purchase order creation from funded material lines
+- Vendor reputation tiers and maker-fee release tracking
+- Productive-asset token metadata and yield reporting
+
+### Store API Endpoints
+
+Routes are exposed under `/store/collective/campaigns`:
+
+- `GET /store/collective/campaigns`
+- `POST /store/collective/campaigns`
+- `GET /store/collective/campaigns/:id`
+- `PATCH /store/collective/campaigns/:id`
+- `POST /store/collective/campaigns/:id/backings`
+- `GET /store/collective/campaigns/:id/purchase-orders`
+
+### Rollout Notes
+
+Before enabling in production:
+
+1. Run migrations, including the PO uniqueness index migration:
+   - `Migration20260304120000CreateCollectiveCampaign`
+   - `Migration20260304123000CollectiveCampaignPoUniqueness`
+2. Validate auth behavior for vendor-owned purchase-order and campaign mutation routes.
+3. Execute campaign route + service unit tests and a staging smoke test for create -> back -> funded -> PO flow.
+
 ## What is Medusa
 
 Medusa is a set of commerce modules and tools that allow you to build rich, reliable, and performant commerce applications without reinventing core commerce logic. The modules can be customized and used to build advanced ecommerce stores, marketplaces, or any product that needs foundational commerce primitives. All modules are open-source and freely available on npm.
