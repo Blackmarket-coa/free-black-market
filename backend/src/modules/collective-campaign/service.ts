@@ -31,11 +31,11 @@ class CollectiveCampaignModuleService extends MedusaService({
     [CampaignStatus.FUNDED]: [CampaignStatus.SOURCING, CampaignStatus.ASSET_ACQUISITION, CampaignStatus.DISPUTED],
     [CampaignStatus.SOURCING]: [CampaignStatus.MATERIALS_RECEIVED, CampaignStatus.DISPUTED],
     [CampaignStatus.MATERIALS_RECEIVED]: [CampaignStatus.PRODUCING, CampaignStatus.DISPUTED],
-    [CampaignStatus.PRODUCING]: [CampaignStatus.FULFILLING, CampaignStatus.SELLING, CampaignStatus.DISPUTED],
+    [CampaignStatus.PRODUCING]: [CampaignStatus.FULFILLING, CampaignStatus.SELLING, CampaignStatus.YIELDING, CampaignStatus.DISPUTED],
     [CampaignStatus.FULFILLING]: [CampaignStatus.SELLING, CampaignStatus.COMPLETE, CampaignStatus.DISPUTED],
     [CampaignStatus.SELLING]: [CampaignStatus.COMPLETE, CampaignStatus.DISPUTED],
     [CampaignStatus.ASSET_ACQUISITION]: [CampaignStatus.ESTABLISHMENT, CampaignStatus.DISPUTED],
-    [CampaignStatus.ESTABLISHMENT]: [CampaignStatus.PRODUCING, CampaignStatus.DISPUTED],
+    [CampaignStatus.ESTABLISHMENT]: [CampaignStatus.PRODUCING, CampaignStatus.YIELDING, CampaignStatus.DISPUTED],
     [CampaignStatus.YIELDING]: [CampaignStatus.MATURE, CampaignStatus.DISPUTED],
     [CampaignStatus.DISPUTED]: [CampaignStatus.WIND_DOWN],
   }
@@ -252,14 +252,21 @@ class CollectiveCampaignModuleService extends MedusaService({
 
     const split = payoutPlan[tier]
     const targetPercentage = milestone === "MATERIALS_RECEIVED" ? split.materials : split.fulfillment
-    const releaseAmount = Number(campaign.maker_fee) * targetPercentage
+    const requestedReleaseAmount = Number(campaign.maker_fee) * targetPercentage
+    const releasableAmount = Math.max(
+      0,
+      Math.min(
+        requestedReleaseAmount,
+        Number(campaign.maker_fee) - Number(campaign.maker_fee_released_amount)
+      )
+    )
 
     await this.updateCampaigns({
       id: campaignId,
-      maker_fee_released_amount: Number(campaign.maker_fee_released_amount) + releaseAmount,
+      maker_fee_released_amount: Number(campaign.maker_fee_released_amount) + releasableAmount,
     })
 
-    return { campaign_id: campaignId, tier, milestone, release_amount: releaseAmount }
+    return { campaign_id: campaignId, tier, milestone, release_amount: releasableAmount }
   }
 
   async markCampaignFailed(campaignId: string) {
