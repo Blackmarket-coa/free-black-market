@@ -76,6 +76,58 @@ class CollectiveCampaignModuleService extends MedusaService({
     return updated
   }
 
+  async createCampaignWithMaterialLineItems(input: {
+    campaign: {
+      vendor_id: string
+      name: string
+      description: string
+      media?: Record<string, unknown>
+      campaign_type: CampaignType
+      batch_minimum?: number
+      funding_goal_override?: number
+      maker_fee: number
+      estimated_production_days?: number
+      shipping_per_unit?: number
+      pickup_enabled?: boolean
+      return_cap_multiplier?: number
+      asset_type?: string
+      productive_lifespan?: string
+      yield_per_cycle?: number
+      cycle_frequency?: string
+      time_to_first_yield_days?: number
+      compounding_profile?: string
+      projected_return_curve?: Record<string, unknown>
+      metadata?: Record<string, unknown>
+    }
+    material_line_items: Array<{
+      item_name: string
+      supplier_url: string
+      unit_cost_at_listing: number
+      quantity_per_output_unit?: number
+      quantity_per_full_campaign: number
+      auto_purchase_supported?: boolean
+      metadata?: Record<string, unknown>
+    }>
+  }) {
+    const campaign = await this.createCampaign(input.campaign)
+
+    try {
+      for (const lineItem of input.material_line_items) {
+        await this.addMaterialLineItem({ campaign_id: campaign.id, ...lineItem })
+      }
+
+      const [hydrated] = await this.listCampaigns({ id: campaign.id })
+      return hydrated
+    } catch (error) {
+      const lineItems = await this.listMaterialLineItems({ campaign_id: campaign.id })
+      for (const lineItem of lineItems) {
+        await this.deleteMaterialLineItems(lineItem.id)
+      }
+      await this.deleteCampaigns(campaign.id)
+      throw error
+    }
+  }
+
   async addMaterialLineItem(input: {
     campaign_id: string
     item_name: string
@@ -204,6 +256,11 @@ class CollectiveCampaignModuleService extends MedusaService({
     const [campaign] = await this.listCampaigns({ id: campaignId })
     if (!campaign) {
       throw new Error("Campaign not found")
+    }
+
+    const existingPurchaseOrders = await this.listPurchaseOrders({ campaign_id: campaignId })
+    if (existingPurchaseOrders.length > 0) {
+      return existingPurchaseOrders
     }
 
     const lineItems = await this.listMaterialLineItems({ campaign_id: campaignId })

@@ -47,60 +47,78 @@ const listCampaignSchema = z.object({
   offset: z.coerce.number().default(0),
 })
 
-export async function GET(req: MedusaRequest, res: MedusaResponse) {
-  const query = listCampaignSchema.parse(req.query)
-  const service = req.scope.resolve<CollectiveCampaignModuleService>(COLLECTIVE_CAMPAIGN_MODULE)
-  const campaigns = await service.listCampaigns({
-    status: query.status,
-    campaign_type: query.campaign_type,
-  }, {
-    take: query.limit,
-    skip: query.offset,
-  })
+const getErrorMessage = (error: unknown) => {
+  if (error instanceof Error) {
+    return error.message
+  }
+  if (typeof error === "string") {
+    return error
+  }
+  return "Unknown error"
+}
 
-  return res.json({ campaigns, count: campaigns.length, offset: query.offset, limit: query.limit })
+export async function GET(req: MedusaRequest, res: MedusaResponse) {
+  try {
+    const query = listCampaignSchema.parse(req.query)
+    const service = req.scope.resolve<CollectiveCampaignModuleService>(COLLECTIVE_CAMPAIGN_MODULE)
+    const campaigns = await service.listCampaigns({
+      status: query.status,
+      campaign_type: query.campaign_type,
+    }, {
+      take: query.limit,
+      skip: query.offset,
+    })
+
+    return res.json({ campaigns, count: campaigns.length, offset: query.offset, limit: query.limit })
+  } catch (error: unknown) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ error: "Validation failed", details: error.errors })
+    }
+    return res.status(500).json({ error: getErrorMessage(error) })
+  }
 }
 
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
-  const vendorId = (req as any).auth_context?.actor_id
-  if (!vendorId) {
-    return res.status(401).json({ error: "Unauthorized" })
-  }
+  try {
+    const vendorId = (req as any).auth_context?.actor_id
+    if (!vendorId) {
+      return res.status(401).json({ error: "Unauthorized" })
+    }
 
-  const body = createCampaignSchema.parse(req.body)
-  const service = req.scope.resolve<CollectiveCampaignModuleService>(COLLECTIVE_CAMPAIGN_MODULE)
+    const body = createCampaignSchema.parse(req.body)
+    const service = req.scope.resolve<CollectiveCampaignModuleService>(COLLECTIVE_CAMPAIGN_MODULE)
 
-  const campaign = await service.createCampaign({
-    vendor_id: vendorId,
-    name: body.name,
-    description: body.description,
-    media: body.media,
-    campaign_type: body.campaign_type,
-    batch_minimum: body.batch_minimum,
-    funding_goal_override: body.funding_goal_override,
-    maker_fee: body.maker_fee,
-    estimated_production_days: body.estimated_production_days,
-    shipping_per_unit: body.shipping_per_unit,
-    pickup_enabled: body.pickup_enabled,
-    return_cap_multiplier: body.return_cap_multiplier,
-    asset_type: body.asset_type,
-    productive_lifespan: body.productive_lifespan,
-    yield_per_cycle: body.yield_per_cycle,
-    cycle_frequency: body.cycle_frequency,
-    time_to_first_yield_days: body.time_to_first_yield_days,
-    compounding_profile: body.compounding_profile,
-    projected_return_curve: body.projected_return_curve,
-    metadata: body.metadata,
-  })
-
-  for (const lineItem of body.material_line_items) {
-    await service.addMaterialLineItem({
-      campaign_id: campaign.id,
-      ...lineItem,
+    const campaign = await service.createCampaignWithMaterialLineItems({
+      campaign: {
+        vendor_id: vendorId,
+        name: body.name,
+        description: body.description,
+        media: body.media,
+        campaign_type: body.campaign_type,
+        batch_minimum: body.batch_minimum,
+        funding_goal_override: body.funding_goal_override,
+        maker_fee: body.maker_fee,
+        estimated_production_days: body.estimated_production_days,
+        shipping_per_unit: body.shipping_per_unit,
+        pickup_enabled: body.pickup_enabled,
+        return_cap_multiplier: body.return_cap_multiplier,
+        asset_type: body.asset_type,
+        productive_lifespan: body.productive_lifespan,
+        yield_per_cycle: body.yield_per_cycle,
+        cycle_frequency: body.cycle_frequency,
+        time_to_first_yield_days: body.time_to_first_yield_days,
+        compounding_profile: body.compounding_profile,
+        projected_return_curve: body.projected_return_curve,
+        metadata: body.metadata,
+      },
+      material_line_items: body.material_line_items,
     })
+
+    return res.status(201).json({ campaign, backer_modes: Object.values(BackingMode) })
+  } catch (error: unknown) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ error: "Validation failed", details: error.errors })
+    }
+    return res.status(400).json({ error: getErrorMessage(error) })
   }
-
-  const [hydrated] = await service.listCampaigns({ id: campaign.id })
-
-  return res.status(201).json({ campaign: hydrated, backer_modes: Object.values(BackingMode) })
 }
