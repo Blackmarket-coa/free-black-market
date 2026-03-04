@@ -202,6 +202,7 @@ const collectiveModules = [
   { resolve: './src/modules/demand-pool' },
   { resolve: './src/modules/bargaining' },
   { resolve: './src/modules/buyer-network' },
+  { resolve: './src/modules/collective-campaign' },
 ]
 
 // Content/utility modules
