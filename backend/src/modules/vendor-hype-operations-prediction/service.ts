@@ -521,6 +521,61 @@ class VendorHypeOperationsPredictionService extends MedusaService({
     return created
   }
 
+
+  async processComputedPayoutsForSettlement(input: {
+    settlement_id: string
+    execution_run_id: string
+    processed_by?: string
+  }) {
+    const payouts = await this.listPredictionPayoutEntries({ settlement_id: input.settlement_id })
+
+    let credited = 0
+    let failed = 0
+    let skipped = 0
+
+    for (const payout of payouts) {
+      if (payout.payout_status !== PredictionPayoutStatus.COMPUTED) {
+        skipped += 1
+        continue
+      }
+
+      const baseMetadata = (payout.metadata as Record<string, unknown> | undefined) || {}
+      const auditMetadata = {
+        ...baseMetadata,
+        payout_processing: {
+          execution_run_id: input.execution_run_id,
+          processed_by: input.processed_by || "system",
+          processed_at: new Date().toISOString(),
+        },
+      }
+
+      if (!payout.is_winner || Number(payout.payout_amount) <= 0) {
+        failed += 1
+        await this.updatePredictionPayoutEntries({
+          id: payout.id,
+          payout_status: PredictionPayoutStatus.FAILED,
+          failure_reason: payout.failure_reason || "non_positive_or_non_winner_payout",
+          metadata: auditMetadata,
+        })
+        continue
+      }
+
+      credited += 1
+      await this.updatePredictionPayoutEntries({
+        id: payout.id,
+        payout_status: PredictionPayoutStatus.CREDITED,
+        metadata: auditMetadata,
+      })
+    }
+
+    return {
+      settlement_id: input.settlement_id,
+      credited,
+      failed,
+      skipped,
+    }
+  }
+
   async updateHypeProfile(id: string, updates: Record<string, unknown>) {
     await this.updateHypeProfiles({ id, ...updates })
     const [profile] = await this.listHypeProfiles({ id })
