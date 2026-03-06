@@ -15,7 +15,7 @@ const createRes = () => {
 
 describe("admin oracle-keys route", () => {
   it("rejects non-admin actor", async () => {
-    const req: any = { auth_context: { actor_type: "customer" }, scope: { resolve: jest.fn() } }
+    const req: any = { auth_context: { actor_type: "user" }, scope: { resolve: jest.fn() } }
     const res = createRes()
     await GET(req, res)
     expect(res.statusCode).toBe(403)

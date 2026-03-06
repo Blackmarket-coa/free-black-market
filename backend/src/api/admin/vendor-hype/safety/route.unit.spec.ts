@@ -14,6 +14,17 @@ const createRes = () => {
 }
 
 describe("admin safety route", () => {
+  it("rejects non-admin actor", async () => {
+    const req: any = {
+      auth_context: { actor_type: "user" },
+      body: { supporter_id: "cust_1", daily_position_limit: 5, risk_level: "medium" },
+      scope: { resolve: () => ({ upsertUserPredictionSafety: jest.fn() }) },
+    }
+    const res = createRes()
+    await POST(req, res)
+    expect(res.statusCode).toBe(403)
+  })
+
   it("upserts safety profile", async () => {
     const upsertUserPredictionSafety = jest.fn().mockResolvedValue({ id: "safe_1" })
     const req: any = {

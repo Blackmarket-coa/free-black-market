@@ -325,9 +325,7 @@ class VendorHypeOperationsPredictionService extends MedusaService({
         payout_unit: position.stake_unit,
         payout_status: failed
           ? PredictionPayoutStatus.FAILED
-          : winner
-            ? PredictionPayoutStatus.CREDITED
-            : PredictionPayoutStatus.COMPUTED,
+          : PredictionPayoutStatus.COMPUTED,
         is_winner: winner,
         failure_reason: failed ? "payout_cap_or_balance_violation" : null,
         metadata: { oracle_outcome_key: input.oracle_outcome_key },
