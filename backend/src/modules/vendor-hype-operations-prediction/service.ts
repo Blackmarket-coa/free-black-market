@@ -13,9 +13,6 @@ import {
   PredictionMode,
   PredictionPayoutEntry,
   PredictionPayoutStatus,
-  PredictionMarket,
-  PredictionMarketState,
-  PredictionMode,
   PredictionPosition,
   PredictionPositionStatus,
   PredictionSettlement,
@@ -63,8 +60,6 @@ class VendorHypeOperationsPredictionService extends MedusaService({
   }) {
     const [profile] = await this.createHypeProfiles([{ ...input, status: HypeProfileStatus.DRAFT }])
 
-    await this.createOpsFundingBuckets([
-      { profile_id: profile.id, code: OpsFundingBucketCode.OPS_CORE, name: "Operations Core", display_order: 10 },
     const defaultBuckets = [
       {
         profile_id: profile.id,
@@ -80,19 +75,6 @@ class VendorHypeOperationsPredictionService extends MedusaService({
       },
       { profile_id: profile.id, code: OpsFundingBucketCode.GROWTH, name: "Growth", display_order: 30 },
       { profile_id: profile.id, code: OpsFundingBucketCode.RESERVE, name: "Reserve", display_order: 40 },
-    ])
-      {
-        profile_id: profile.id,
-        code: OpsFundingBucketCode.GROWTH,
-        name: "Growth",
-        display_order: 30,
-      },
-      {
-        profile_id: profile.id,
-        code: OpsFundingBucketCode.RESERVE,
-        name: "Reserve",
-        display_order: 40,
-      },
     ]
 
     await this.createOpsFundingBuckets(defaultBuckets)
@@ -106,15 +88,10 @@ class VendorHypeOperationsPredictionService extends MedusaService({
       throw new Error(`Hype profile ${id} was not found`)
     }
 
-    if (!profile) {
-      throw new Error(`Hype profile ${id} was not found`)
-    }
-
     if (profile.status === HypeProfileStatus.ARCHIVED) {
       throw new Error("Archived hype profiles cannot be published")
     }
 
-    await this.updateHypeProfiles({ id, status: HypeProfileStatus.PUBLISHED, published_at: new Date() })
     await this.updateHypeProfiles({
       id,
       status: HypeProfileStatus.PUBLISHED,
@@ -348,9 +325,7 @@ class VendorHypeOperationsPredictionService extends MedusaService({
         payout_unit: position.stake_unit,
         payout_status: failed
           ? PredictionPayoutStatus.FAILED
-          : winner
-            ? PredictionPayoutStatus.CREDITED
-            : PredictionPayoutStatus.COMPUTED,
+          : PredictionPayoutStatus.COMPUTED,
         is_winner: winner,
         failure_reason: failed ? "payout_cap_or_balance_violation" : null,
         metadata: { oracle_outcome_key: input.oracle_outcome_key },
@@ -546,12 +521,59 @@ class VendorHypeOperationsPredictionService extends MedusaService({
     return created
   }
 
-    await this.updatePredictionMarkets({
-      id: input.market_id,
-      state: PredictionMarketState.SETTLED,
-    })
 
-    return settlement
+  async processComputedPayoutsForSettlement(input: {
+    settlement_id: string
+    execution_run_id: string
+    processed_by?: string
+  }) {
+    const payouts = await this.listPredictionPayoutEntries({ settlement_id: input.settlement_id })
+
+    let credited = 0
+    let failed = 0
+    let skipped = 0
+
+    for (const payout of payouts) {
+      if (payout.payout_status !== PredictionPayoutStatus.COMPUTED) {
+        skipped += 1
+        continue
+      }
+
+      const baseMetadata = (payout.metadata as Record<string, unknown> | undefined) || {}
+      const auditMetadata = {
+        ...baseMetadata,
+        payout_processing: {
+          execution_run_id: input.execution_run_id,
+          processed_by: input.processed_by || "system",
+          processed_at: new Date().toISOString(),
+        },
+      }
+
+      if (!payout.is_winner || Number(payout.payout_amount) <= 0) {
+        failed += 1
+        await this.updatePredictionPayoutEntries({
+          id: payout.id,
+          payout_status: PredictionPayoutStatus.FAILED,
+          failure_reason: payout.failure_reason || "non_positive_or_non_winner_payout",
+          metadata: auditMetadata,
+        })
+        continue
+      }
+
+      credited += 1
+      await this.updatePredictionPayoutEntries({
+        id: payout.id,
+        payout_status: PredictionPayoutStatus.CREDITED,
+        metadata: auditMetadata,
+      })
+    }
+
+    return {
+      settlement_id: input.settlement_id,
+      credited,
+      failed,
+      skipped,
+    }
   }
 
   async updateHypeProfile(id: string, updates: Record<string, unknown>) {
