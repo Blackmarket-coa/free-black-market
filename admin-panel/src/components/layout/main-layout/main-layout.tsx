@@ -22,7 +22,8 @@ import { Avatar, Divider, DropdownMenu, Text, clx } from "@medusajs/ui";
 import { Collapsible as RadixCollapsible } from "radix-ui";
 import { useTranslation } from "react-i18next";
 
-import { useStore } from "../../../hooks/api/store";
+import { useStore } from "../../../hooks/api/store"
+import { useMe } from "../../../hooks/api/users";
 import { Skeleton } from "../../common/skeleton";
 import { INavItem, NavItem } from "../../layout/nav-item";
 import { Shell } from "../../layout/shell";
@@ -182,6 +183,8 @@ const Header = () => {
 
 const useCoreRoutes = (): Omit<INavItem, "pathname">[] => {
   const { t } = useTranslation();
+  const { user } = useMe()
+  const isAdmin = (user as any)?.role ? (user as any).role === "admin" : true
 
   return [
     {
@@ -307,6 +310,15 @@ const useCoreRoutes = (): Omit<INavItem, "pathname">[] => {
         },
       ],
     },
+    ...(isAdmin
+      ? [
+          {
+            icon: <CurrencyDollar />,
+            label: "Vendor Hype Payout Audit",
+            to: "/vendor-hype/payout-audit",
+          },
+        ]
+      : []),
     {
       icon: <ChatBubble />,
       label: t("messages.domain"),
