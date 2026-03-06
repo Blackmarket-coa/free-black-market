@@ -9,6 +9,11 @@ describe("prediction payout processing failed subscriber", () => {
       processComputedPayoutsForSettlement: jest
         .fn()
         .mockResolvedValue({ settlement_id: "set_1", credited: 1, failed: 0, skipped: 0 }),
+  it("schedules payout retry with backoff", async () => {
+    const emit = jest.fn().mockResolvedValue(undefined)
+    const logger = { error: jest.fn(), warn: jest.fn() }
+    const service = {
+      listPredictionSettlements: jest.fn().mockResolvedValue([{ id: "set_1" }]),
     }
 
     await handler({
@@ -35,7 +40,7 @@ describe("prediction payout processing failed subscriber", () => {
 
   it("dead-letters and triggers incident when retries are exhausted", async () => {
     const emit = jest.fn().mockResolvedValue(undefined)
-    const logger = { error: jest.fn() }
+    const logger = { error: jest.fn(), warn: jest.fn() }
     const service = {
       listPredictionSettlements: jest.fn().mockResolvedValue([{ id: "set_1" }]),
     }

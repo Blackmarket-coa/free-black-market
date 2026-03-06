@@ -3,6 +3,9 @@ import { Modules } from "@medusajs/framework/utils"
 import { IEventBusModuleService } from "@medusajs/framework/types"
 import { VENDOR_HYPE_OPERATIONS_PREDICTION_MODULE } from "../modules/vendor-hype-operations-prediction"
 import VendorHypeOperationsPredictionService from "../modules/vendor-hype-operations-prediction/service"
+import { buildQueueEnvelope, QueueEnvelope } from "../shared/queue-runtime"
+import { QUEUE_TOPICS } from "../shared/queue-topics"
+import { requeueWithBackoff } from "../shared/queue-requeue-adapter"
 
 type PayoutProcessingFailedPayload = {
   market_id: string
@@ -12,7 +15,8 @@ type PayoutProcessingFailedPayload = {
   retry_attempt?: number
 }
 
-const MAX_RETRY_ATTEMPTS = 2
+const MAX_RETRY_ATTEMPTS = QUEUE_TOPICS.prediction_payout_processing.policy.retries
+const RETRY_BACKOFF_SECONDS = QUEUE_TOPICS.prediction_payout_processing.policy.backoffSeconds
 
 export default async function predictionPayoutProcessingFailedHandler({
   event,
@@ -146,6 +150,31 @@ export default async function predictionPayoutProcessingFailedHandler({
       },
     })
   }
+  const retryPayload = {
+    market_id: data.market_id,
+    settlement_ref: data.settlement_ref,
+    settlement_id: settlementId,
+    retry_attempt: retryAttempt + 1,
+  }
+
+  const envelope: QueueEnvelope<typeof retryPayload> = buildQueueEnvelope(
+    "prediction_payout_processing",
+    retryPayload,
+    retryAttempt + 1,
+    `${data.settlement_ref}:${retryAttempt + 1}`
+  )
+
+  await requeueWithBackoff(envelope, RETRY_BACKOFF_SECONDS, logger)
+
+  await eventBus.emit({
+    name: "prediction.payout.retry_scheduled",
+    data: {
+      ...retryPayload,
+      backoff_seconds: RETRY_BACKOFF_SECONDS,
+      next_retry_at: new Date(Date.now() + RETRY_BACKOFF_SECONDS * 1000).toISOString(),
+      dead_letter_topic: envelope.metadata.dead_letter_topic,
+    },
+  })
 }
 
 export const config: SubscriberConfig = {

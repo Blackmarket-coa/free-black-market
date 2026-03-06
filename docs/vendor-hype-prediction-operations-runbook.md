@@ -88,3 +88,28 @@ Immediate actions:
 ## Audit Query Endpoint
 - Admin audit endpoint: `GET /admin/vendor-hype/payouts/audit?execution_run_id=<id>`
 - Response includes summary counts and payout rows for the requested run id.
+
+
+### Sink Adapter Configuration
+- Configure metric sink endpoint via `OBSERVABILITY_METRIC_SINK_URL` (optional bearer token: `OBSERVABILITY_METRIC_SINK_API_KEY`).
+- Configure incident sink endpoint via `OBSERVABILITY_INCIDENT_SINK_URL` (optional bearer token: `OBSERVABILITY_INCIDENT_SINK_API_KEY`).
+- Subscriber adapters:
+  - `observability.metric.recorded` -> metric sink (Datadog/Grafana bridge).
+  - `observability.incident.triggered` -> incident sink (PagerDuty Events v2 bridge).
+
+### Retry Execution Contract
+- `prediction.payout.processing_failed` now schedules delayed retries and emits `prediction.payout.retry_scheduled`.
+- Queue topic contract: `prediction.payout.retry.execute.v1` with 60s backoff and 2 retries.
+- Retry worker subscriber consumes `prediction.payout.retry.execute` and emits either:
+  - `prediction.payout.retry_succeeded`
+  - or `prediction.payout.processing_failed` (for another retry / eventual DLQ).
+
+
+### Staging End-to-End Verification (Real Sinks)
+1. Set sink endpoints in staging:
+   - `OBSERVABILITY_METRIC_SINK_URL`, `OBSERVABILITY_METRIC_SINK_API_KEY`
+   - `OBSERVABILITY_INCIDENT_SINK_URL`, `OBSERVABILITY_INCIDENT_SINK_API_KEY`
+2. Trigger a controlled payout-processing success and verify Datadog/Grafana receives `prediction.payout.processed` metrics payload.
+3. Trigger controlled repeated payout failure until dead-letter and verify PagerDuty incident event is created with dedup key: `prediction-payout-<settlement_ref>`.
+4. Confirm retries are scheduled via `prediction.payout.retry_scheduled` and consumed by `prediction.payout.retry.execute`.
+5. Capture request/response payload samples and attach to on-call runbook evidence.
