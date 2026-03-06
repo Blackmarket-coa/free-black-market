@@ -41,6 +41,15 @@ export const QUEUE_TOPICS: Record<string, QueueTopicContract> = {
       deadLetterTopic: "invoice.issuance.dlq.v1",
     },
   },
+  prediction_payout_processing: {
+    topic: "prediction.payout.retry.execute.v1",
+    purpose: "Retry payout-processing for prediction settlements with backoff",
+    policy: {
+      retries: 2,
+      backoffSeconds: 60,
+      deadLetterTopic: "prediction.payout.retry.dlq.v1",
+    },
+  },
 }
 
 export const DLQ_TOPICS = Object.values(QUEUE_TOPICS).map((topic) => topic.policy.deadLetterTopic)

@@ -13,14 +13,13 @@ const settleSchema = z.object({
   oracle_nonce: z.string().min(12),
   oracle_timestamp: z.string().datetime(),
   oracle_expires_at: z.string().datetime(),
-  oracle_signature: z.string().min(10),
   dispute_window_ends_at: z.string().datetime().optional(),
   execution_run_id: z.string().optional(),
 })
 
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
   const actorType = (req as any).auth_context?.actor_type
-  if (actorType && actorType !== "user" && actorType !== "admin") {
+  if (actorType && actorType !== "admin") {
     return res.status(403).json({ error: "Forbidden" })
   }
 
