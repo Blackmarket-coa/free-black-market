@@ -35,6 +35,7 @@ This index organizes project docs by purpose.
 - `docs/VENDOR_FEATURE_MATRIX_WORKPLAN.md`
 - `docs/VENDOR_INVENTORY_MANAGEMENT_ANALYSIS.md`
 - `docs/VENDOR_INVENTORY_ROUTE_CONTRACT.md`
+- `docs/VENDOR_HYPE_OPERATIONS_PREDICTION_WHITEPAPER.md`
 
 ## Governance
 
