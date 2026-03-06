@@ -13,6 +13,7 @@ const settleSchema = z.object({
   oracle_nonce: z.string().min(12),
   oracle_timestamp: z.string().datetime(),
   oracle_expires_at: z.string().datetime(),
+  oracle_signature: z.string().min(10),
   dispute_window_ends_at: z.string().datetime().optional(),
   execution_run_id: z.string().optional(),
 })
