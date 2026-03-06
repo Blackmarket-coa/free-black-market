@@ -28,6 +28,7 @@ describe("VendorHypeOperationsPredictionService", () => {
         .fn()
         .mockResolvedValueOnce([existingPosition])
         .mockResolvedValueOnce([]),
+      listPredictionPositions: jest.fn().mockResolvedValue([existingPosition]),
       createPredictionPositions: jest.fn(),
     }
 
@@ -54,6 +55,11 @@ describe("VendorHypeOperationsPredictionService", () => {
           }),
         },
       },
+      { policyService: { evaluateMode: (mode: PredictionMode, jurisdiction: string) => ({
+        allowed: !(mode === PredictionMode.REGULATED_CASH && jurisdiction === "US"),
+        reason: "disabled",
+        policy_version: "phase_b_v1",
+      }) } },
       PredictionMode.REGULATED_CASH,
       "US"
     )

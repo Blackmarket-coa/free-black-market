@@ -20,6 +20,12 @@ describe("store vendor hype market positions route", () => {
       body: { outcome_option_key: "YES", stake_amount: 10, age_verified: false, self_excluded: false },
       headers: {},
       auth_context: { actor_id: "cust_1", actor_type: "customer" },
+  it("returns 400 if idempotency key is missing", async () => {
+    const req: any = {
+      params: { id: "m_1" },
+      body: { outcome_option_key: "YES", stake_amount: 10 },
+      headers: {},
+      auth_context: { actor_id: "cust_1" },
       scope: { resolve: () => ({}) },
     }
     const res = createRes()
@@ -27,6 +33,8 @@ describe("store vendor hype market positions route", () => {
     await POST(req, res)
 
     expect(res.statusCode).toBe(403)
+    expect(res.statusCode).toBe(400)
+    expect(res.body.error).toContain("idempotency_key")
   })
 
   it("uses Idempotency-Key header when body key not provided", async () => {
@@ -45,6 +53,13 @@ describe("store vendor hype market positions route", () => {
       headers: { "idempotency-key": "idem_hdr" },
       auth_context: { actor_id: "cust_1", actor_type: "customer" },
       scope: { resolve: () => ({ placePredictionPosition, listPredictionMarkets }) },
+
+    const req: any = {
+      params: { id: "m_1" },
+      body: { outcome_option_key: "YES", stake_amount: 10 },
+      headers: { "idempotency-key": "idem_hdr" },
+      auth_context: { actor_id: "cust_1" },
+      scope: { resolve: () => ({ placePredictionPosition }) },
     }
     const res = createRes()
 

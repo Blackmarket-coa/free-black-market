@@ -68,6 +68,7 @@ export default async function predictionSettlementRequestedHandler({
       metadata: { requested_by: data.requested_by },
     })
   } catch (error) {
+  if (!validateOracleSignature(data.oracle_payload, data.oracle_signature)) {
     await eventBus.emit({
       name: "prediction.settlement.rejected",
       data: {
@@ -80,6 +81,7 @@ export default async function predictionSettlementRequestedHandler({
   }
 
   const settlement = await service.settlePredictionMarket({
+  await service.settlePredictionMarket({
     market_id: data.market_id,
     settlement_ref: data.settlement_ref,
     oracle_outcome_key: data.oracle_outcome_key,
@@ -99,6 +101,7 @@ export default async function predictionSettlementRequestedHandler({
 
   const [market] = await service.listPredictionMarkets({ id: data.market_id })
   const payouts = await service.listPredictionPayoutEntries({ settlement_id: settlement.id })
+  const positions = await service.listPredictionPositions({ market_id: data.market_id })
 
   await eventBus.emit({
     name: "prediction.settlement.finalized",
@@ -109,6 +112,8 @@ export default async function predictionSettlementRequestedHandler({
       winners: payouts.filter((entry) => entry.is_winner).length,
       losers: payouts.filter((entry) => !entry.is_winner).length,
       failed_payouts: payouts.filter((entry) => entry.payout_status === "failed").length,
+      winners: positions.filter((position) => position.outcome_option_key === data.oracle_outcome_key).length,
+      losers: positions.filter((position) => position.outcome_option_key !== data.oracle_outcome_key).length,
       audit: {
         policy_version: market?.policy_version,
         execution_run_id: data.execution_run_id,
