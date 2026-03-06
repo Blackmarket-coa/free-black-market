@@ -184,6 +184,7 @@ const marketplaceModules = [
   { resolve: './src/modules/harvest-batches' },
   { resolve: './src/modules/vendor-rules' },
   { resolve: './src/modules/supplier-forwarding' },
+  { resolve: './src/modules/vendor-hype-operations-prediction' },
 ]
 
 // Community infrastructure modules
