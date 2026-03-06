@@ -14,6 +14,22 @@ const createRes = () => {
 }
 
 describe("admin oracle key rotate route", () => {
+  it("rejects non-admin actor", async () => {
+    const req: any = {
+      auth_context: { actor_type: "user" },
+      body: {
+        old_key_id: "k1",
+        new_key_id: "k2",
+        new_public_key_pem: "-----BEGIN PUBLIC KEY-----abc-----END PUBLIC KEY-----",
+        rotation_note: "ticket-123 approved",
+      },
+      scope: { resolve: () => ({ rotateOracleSigningKey: jest.fn() }) },
+    }
+    const res = createRes()
+    await POST(req, res)
+    expect(res.statusCode).toBe(403)
+  })
+
   it("rotates key with SOP response", async () => {
     const rotateOracleSigningKey = jest.fn().mockResolvedValue({ id: "k_2" })
     const req: any = {
