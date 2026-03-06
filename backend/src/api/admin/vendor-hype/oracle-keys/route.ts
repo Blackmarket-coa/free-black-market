@@ -16,7 +16,7 @@ const schema = z.object({
 
 const ensureAdmin = (req: MedusaRequest, res: MedusaResponse) => {
   const actorType = (req as any).auth_context?.actor_type
-  if (actorType && actorType !== "admin") {
+  if (actorType && actorType !== "admin" && actorType !== "user") {
     res.status(403).json({ error: "Forbidden" })
     return false
   }

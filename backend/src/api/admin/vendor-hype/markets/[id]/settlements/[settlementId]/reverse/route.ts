@@ -10,7 +10,7 @@ const reverseSchema = z.object({
 
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
   const actorType = (req as any).auth_context?.actor_type
-  if (actorType && actorType !== "admin") {
+  if (actorType && actorType !== "user" && actorType !== "admin") {
     return res.status(403).json({ error: "Forbidden" })
   }
 

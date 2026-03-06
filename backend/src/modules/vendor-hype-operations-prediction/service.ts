@@ -60,6 +60,8 @@ class VendorHypeOperationsPredictionService extends MedusaService({
   }) {
     const [profile] = await this.createHypeProfiles([{ ...input, status: HypeProfileStatus.DRAFT }])
 
+    await this.createOpsFundingBuckets([
+      { profile_id: profile.id, code: OpsFundingBucketCode.OPS_CORE, name: "Operations Core", display_order: 10 },
     const defaultBuckets = [
       {
         profile_id: profile.id,
@@ -325,7 +327,9 @@ class VendorHypeOperationsPredictionService extends MedusaService({
         payout_unit: position.stake_unit,
         payout_status: failed
           ? PredictionPayoutStatus.FAILED
-          : PredictionPayoutStatus.COMPUTED,
+          : winner
+            ? PredictionPayoutStatus.CREDITED
+            : PredictionPayoutStatus.COMPUTED,
         is_winner: winner,
         failure_reason: failed ? "payout_cap_or_balance_violation" : null,
         metadata: { oracle_outcome_key: input.oracle_outcome_key },
