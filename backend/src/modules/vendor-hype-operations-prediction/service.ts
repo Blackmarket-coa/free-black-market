@@ -13,9 +13,6 @@ import {
   PredictionMode,
   PredictionPayoutEntry,
   PredictionPayoutStatus,
-  PredictionMarket,
-  PredictionMarketState,
-  PredictionMode,
   PredictionPosition,
   PredictionPositionStatus,
   PredictionSettlement,
@@ -63,8 +60,6 @@ class VendorHypeOperationsPredictionService extends MedusaService({
   }) {
     const [profile] = await this.createHypeProfiles([{ ...input, status: HypeProfileStatus.DRAFT }])
 
-    await this.createOpsFundingBuckets([
-      { profile_id: profile.id, code: OpsFundingBucketCode.OPS_CORE, name: "Operations Core", display_order: 10 },
     const defaultBuckets = [
       {
         profile_id: profile.id,
@@ -80,19 +75,6 @@ class VendorHypeOperationsPredictionService extends MedusaService({
       },
       { profile_id: profile.id, code: OpsFundingBucketCode.GROWTH, name: "Growth", display_order: 30 },
       { profile_id: profile.id, code: OpsFundingBucketCode.RESERVE, name: "Reserve", display_order: 40 },
-    ])
-      {
-        profile_id: profile.id,
-        code: OpsFundingBucketCode.GROWTH,
-        name: "Growth",
-        display_order: 30,
-      },
-      {
-        profile_id: profile.id,
-        code: OpsFundingBucketCode.RESERVE,
-        name: "Reserve",
-        display_order: 40,
-      },
     ]
 
     await this.createOpsFundingBuckets(defaultBuckets)
@@ -106,15 +88,10 @@ class VendorHypeOperationsPredictionService extends MedusaService({
       throw new Error(`Hype profile ${id} was not found`)
     }
 
-    if (!profile) {
-      throw new Error(`Hype profile ${id} was not found`)
-    }
-
     if (profile.status === HypeProfileStatus.ARCHIVED) {
       throw new Error("Archived hype profiles cannot be published")
     }
 
-    await this.updateHypeProfiles({ id, status: HypeProfileStatus.PUBLISHED, published_at: new Date() })
     await this.updateHypeProfiles({
       id,
       status: HypeProfileStatus.PUBLISHED,
@@ -544,14 +521,6 @@ class VendorHypeOperationsPredictionService extends MedusaService({
     ])
 
     return created
-  }
-
-    await this.updatePredictionMarkets({
-      id: input.market_id,
-      state: PredictionMarketState.SETTLED,
-    })
-
-    return settlement
   }
 
   async updateHypeProfile(id: string, updates: Record<string, unknown>) {
