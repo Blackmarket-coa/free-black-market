@@ -1,6 +1,14 @@
 import handler from "../prediction-payout-processing-failed"
 
 describe("prediction payout processing failed subscriber", () => {
+  it("retries payout processing and emits success events", async () => {
+    const emit = jest.fn().mockResolvedValue(undefined)
+    const logger = { error: jest.fn() }
+    const service = {
+      listPredictionSettlements: jest.fn().mockResolvedValue([{ id: "set_1" }]),
+      processComputedPayoutsForSettlement: jest
+        .fn()
+        .mockResolvedValue({ settlement_id: "set_1", credited: 1, failed: 0, skipped: 0 }),
   it("schedules payout retry with backoff", async () => {
     const emit = jest.fn().mockResolvedValue(undefined)
     const logger = { error: jest.fn(), warn: jest.fn() }
@@ -26,7 +34,8 @@ describe("prediction payout processing failed subscriber", () => {
       },
     } as any)
 
-    expect(emit).toHaveBeenCalledWith(expect.objectContaining({ name: "prediction.payout.retry_scheduled" }))
+    expect(service.processComputedPayoutsForSettlement).toHaveBeenCalled()
+    expect(emit).toHaveBeenCalledWith(expect.objectContaining({ name: "prediction.payout.retry_succeeded" }))
   })
 
   it("dead-letters and triggers incident when retries are exhausted", async () => {

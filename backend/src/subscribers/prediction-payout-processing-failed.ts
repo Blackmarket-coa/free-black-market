@@ -31,16 +31,7 @@ export default async function predictionPayoutProcessingFailedHandler({
 
   const retryAttempt = data.retry_attempt || 0
 
-  logger.error(
-    `prediction.payout.processing_failed ${JSON.stringify({
-      market_id: data.market_id,
-      settlement_ref: data.settlement_ref,
-      settlement_id: data.settlement_id,
-      reason: data.reason,
-      retry_attempt: retryAttempt,
-      max_retry_attempts: MAX_RETRY_ATTEMPTS,
-    })}`
-  )
+  logger.error(`prediction.payout.processing_failed ${JSON.stringify({ market_id: data.market_id, settlement_ref: data.settlement_ref, settlement_id: data.settlement_id, reason: data.reason, retry_attempt: retryAttempt, max_retry_attempts: MAX_RETRY_ATTEMPTS })}`)
 
   await eventBus.emit({
     name: "observability.metric.recorded",
@@ -104,6 +95,61 @@ export default async function predictionPayoutProcessingFailedHandler({
     return
   }
 
+  try {
+    const summary = await service.processComputedPayoutsForSettlement({
+      settlement_id: settlementId,
+      execution_run_id: `payout_retry_${Date.now()}`,
+      processed_by: "retry-worker",
+    })
+
+    await eventBus.emit({
+      name: "prediction.payout.processed",
+      data: {
+        market_id: data.market_id,
+        settlement_ref: data.settlement_ref,
+        settlement_id: settlementId,
+        summary,
+      },
+    })
+
+    await eventBus.emit({
+      name: "prediction.payout.retry_succeeded",
+      data: {
+        market_id: data.market_id,
+        settlement_ref: data.settlement_ref,
+        settlement_id: settlementId,
+        retry_attempt: retryAttempt + 1,
+      },
+    })
+  } catch (error) {
+    await eventBus.emit({
+      name: "prediction.payout.dead_lettered",
+      data: {
+        market_id: data.market_id,
+        settlement_ref: data.settlement_ref,
+        settlement_id: settlementId,
+        reason: error instanceof Error ? error.message : "retry_failed",
+        retry_attempt: retryAttempt + 1,
+      },
+    })
+
+    await eventBus.emit({
+      name: "observability.incident.triggered",
+      data: {
+        provider: "pagerduty",
+        severity: "high",
+        service: "vendor-hype-prediction",
+        incident_key: `prediction-payout-${data.settlement_ref}`,
+        details: {
+          market_id: data.market_id,
+          settlement_ref: data.settlement_ref,
+          settlement_id: settlementId,
+          reason: error instanceof Error ? error.message : "retry_failed",
+          retry_attempt: retryAttempt + 1,
+        },
+      },
+    })
+  }
   const retryPayload = {
     market_id: data.market_id,
     settlement_ref: data.settlement_ref,
