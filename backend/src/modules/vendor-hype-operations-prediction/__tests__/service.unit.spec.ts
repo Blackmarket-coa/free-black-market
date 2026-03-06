@@ -31,8 +31,6 @@ describe("VendorHypeOperationsPredictionService", () => {
       ensureSupporterEligibility: jest.fn().mockResolvedValue({}),
       createPredictionPositions: jest.fn(),
       markSupporterParticipation: jest.fn().mockResolvedValue(undefined),
-      listPredictionPositions: jest.fn().mockResolvedValue([existingPosition]),
-      createPredictionPositions: jest.fn(),
     }
 
     const result = await VendorHypeOperationsPredictionService.prototype.placePredictionPosition.call(ctx, {
@@ -58,11 +56,6 @@ describe("VendorHypeOperationsPredictionService", () => {
           }),
         },
       },
-      { policyService: { evaluateMode: (mode: PredictionMode, jurisdiction: string) => ({
-        allowed: !(mode === PredictionMode.REGULATED_CASH && jurisdiction === "US"),
-        reason: "disabled",
-        policy_version: "phase_b_v1",
-      }) } },
       PredictionMode.REGULATED_CASH,
       "US"
     )
