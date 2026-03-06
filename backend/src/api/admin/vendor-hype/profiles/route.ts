@@ -19,7 +19,20 @@ const createSchema = z.object({
   metadata: z.record(z.unknown()).optional(),
 })
 
+const ensureAdminActor = (req: MedusaRequest, res: MedusaResponse) => {
+  const actorType = (req as any).auth_context?.actor_type
+  if (actorType && actorType !== "user" && actorType !== "admin") {
+    res.status(403).json({ error: "Forbidden" })
+    return false
+  }
+  return true
+}
+
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
+  if (!ensureAdminActor(req, res)) {
+    return
+  }
+
   const service = req.scope.resolve<VendorHypeOperationsPredictionService>(
     VENDOR_HYPE_OPERATIONS_PREDICTION_MODULE
   )
@@ -28,6 +41,10 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 }
 
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
+  if (!ensureAdminActor(req, res)) {
+    return
+  }
+
   const service = req.scope.resolve<VendorHypeOperationsPredictionService>(
     VENDOR_HYPE_OPERATIONS_PREDICTION_MODULE
   )

@@ -23,10 +23,14 @@ describe("admin settle prediction market route", () => {
         oracle_outcome_key: "YES",
         oracle_evidence_uri: "https://oracle.example/evidence/1",
         oracle_payload: { market: "m_1", outcome: "YES" },
-        oracle_signature: "sig_abcdef123456",
+        oracle_signature: "c2lnbmF0dXJlX2Jhc2U2NF9sb25nX3NpZ25hdHVyZV9mb3JfdGVzdA==",
+        oracle_key_id: "k1",
+        oracle_nonce: "nonce_123456789",
+        oracle_timestamp: new Date(Date.now() - 60_000).toISOString(),
+        oracle_expires_at: new Date(Date.now() + 60_000).toISOString(),
       },
       scope: { resolve: () => ({ emit }) },
-      auth_context: { actor_id: "admin_1" },
+      auth_context: { actor_id: "admin_1", actor_type: "admin" },
     }
 
     const res = createRes()
