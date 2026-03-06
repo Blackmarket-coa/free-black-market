@@ -14,6 +14,19 @@ const createRes = () => {
 }
 
 describe("admin settle prediction market route", () => {
+  it("rejects non-admin actor", async () => {
+    const req: any = {
+      params: { id: "m_1" },
+      body: {},
+      scope: { resolve: () => ({ emit: jest.fn() }) },
+      auth_context: { actor_id: "user_1", actor_type: "user" },
+    }
+
+    const res = createRes()
+    await POST(req, res)
+    expect(res.statusCode).toBe(403)
+  })
+
   it("emits settlement requested event", async () => {
     const emit = jest.fn().mockResolvedValue(undefined)
     const req: any = {
@@ -36,9 +49,7 @@ describe("admin settle prediction market route", () => {
     const res = createRes()
     await POST(req, res)
 
-    expect(emit).toHaveBeenCalledWith(
-      expect.objectContaining({ name: "prediction.settlement.requested" })
-    )
+    expect(emit).toHaveBeenCalledWith(expect.objectContaining({ name: "prediction.settlement.requested" }))
     expect(res.statusCode).toBe(202)
   })
 })

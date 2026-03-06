@@ -27,7 +27,7 @@ export const buildPayloadHash = (payload: Record<string, unknown>): string => {
   return createHash("sha256").update(canonicalize(payload)).digest("hex")
 }
 
-const parseTrustedKeys = (): Record<string, string> => {
+export const parseTrustedKeysFromEnv = (): Record<string, string> => {
   const raw = process.env.PREDICTION_ORACLE_PUBLIC_KEYS || ""
   const rows = raw
     .split(",")
@@ -40,12 +40,22 @@ const parseTrustedKeys = (): Record<string, string> => {
     if (id && pem) {
       keyMap[id] = Buffer.from(pem, "base64").toString("utf-8")
     }
+    const splitIndex = row.indexOf(":")
+    if (splitIndex <= 0) {
+      continue
+    }
+    const id = row.slice(0, splitIndex)
+    const pemEncoded = row.slice(splitIndex + 1)
+    keyMap[id] = Buffer.from(pemEncoded, "base64").toString("utf-8")
   }
 
   return keyMap
 }
 
-export const verifyOracleEnvelope = (input: OracleVerificationInput) => {
+export const verifyOracleEnvelope = (
+  input: OracleVerificationInput,
+  trustedKeys?: Record<string, string>
+) => {
   if (input.algorithm !== "ed25519") {
     return { ok: false, reason: "unsupported_algorithm" as const }
   }
@@ -55,8 +65,8 @@ export const verifyOracleEnvelope = (input: OracleVerificationInput) => {
     return { ok: false, reason: "expired_or_invalid_timestamp" as const }
   }
 
-  const trustedKeys = parseTrustedKeys()
-  const publicKeyPem = trustedKeys[input.keyId]
+  const keys = trustedKeys || parseTrustedKeysFromEnv()
+  const publicKeyPem = keys[input.keyId]
   if (!publicKeyPem) {
     return { ok: false, reason: "unknown_key_id" as const }
   }

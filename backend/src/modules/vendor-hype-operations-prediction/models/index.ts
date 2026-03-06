@@ -13,3 +13,8 @@ export { PredictionSettlementStatus } from "./prediction-settlement"
 export { default as PredictionPayoutEntry } from "./prediction-payout-entry"
 export { default as OracleVerificationReceipt } from "./oracle-verification-receipt"
 export { PredictionPayoutStatus } from "./prediction-payout-entry"
+
+export { default as OracleSigningKey } from "./oracle-signing-key"
+export { default as UserPredictionSafety } from "./user-prediction-safety"
+export { OracleSigningKeyStatus } from "./oracle-signing-key"
+export { SafetyRiskLevel } from "./user-prediction-safety"
