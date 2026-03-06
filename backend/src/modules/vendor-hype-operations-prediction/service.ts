@@ -14,6 +14,7 @@ import {
   PredictionSettlementStatus,
   PredictionStakeUnit,
 } from "./models"
+import { PredictionPolicyService } from "./policy-service"
 
 class VendorHypeOperationsPredictionService extends MedusaService({
   HypeProfile,
@@ -22,6 +23,7 @@ class VendorHypeOperationsPredictionService extends MedusaService({
   PredictionPosition,
   PredictionSettlement,
 }) {
+  private readonly policyService = new PredictionPolicyService()
   private readonly MARKET_STATE_TRANSITIONS: Record<PredictionMarketState, PredictionMarketState[]> = {
     [PredictionMarketState.DRAFT]: [PredictionMarketState.SCHEDULED, PredictionMarketState.VOIDED],
     [PredictionMarketState.SCHEDULED]: [PredictionMarketState.OPEN, PredictionMarketState.VOIDED],
@@ -106,7 +108,7 @@ class VendorHypeOperationsPredictionService extends MedusaService({
     description?: string
     mode?: PredictionMode
     jurisdiction_code: string
-    policy_version: string
+    policy_version?: string
     oracle_config_id: string
     starts_at: Date
     locks_at: Date
@@ -120,12 +122,16 @@ class VendorHypeOperationsPredictionService extends MedusaService({
     }
 
     const mode = input.mode || PredictionMode.NON_CASH
-    this.assertPolicyAllowed(mode, input.jurisdiction_code)
+    const policyDecision = this.policyService.evaluateMode(mode, input.jurisdiction_code)
+    if (!policyDecision.allowed) {
+      throw new Error(policyDecision.reason || "Prediction mode blocked by policy")
+    }
 
     const [market] = await this.createPredictionMarkets([
       {
         ...input,
         mode,
+        policy_version: input.policy_version || policyDecision.policy_version,
         state: PredictionMarketState.DRAFT,
       },
     ])
@@ -231,10 +237,60 @@ class VendorHypeOperationsPredictionService extends MedusaService({
     return settlement
   }
 
-  private assertPolicyAllowed(mode: PredictionMode, jurisdictionCode: string) {
-    if (mode === PredictionMode.REGULATED_CASH && jurisdictionCode.trim().toUpperCase() === "US") {
-      throw new Error("regulated_cash markets are disabled for US jurisdiction until licensing is complete")
+  async updateHypeProfile(id: string, updates: Record<string, unknown>) {
+    await this.updateHypeProfiles({ id, ...updates })
+    const [profile] = await this.listHypeProfiles({ id })
+    return profile
+  }
+
+  async deleteHypeProfile(id: string) {
+    await this.deleteHypeProfiles(id)
+  }
+
+  async listFundingBuckets(profileId: string) {
+    return this.listOpsFundingBuckets({ profile_id: profileId })
+  }
+
+  async upsertFundingBucket(input: {
+    id?: string
+    profile_id: string
+    code: OpsFundingBucketCode
+    name: string
+    description?: string
+    is_active?: boolean
+    display_order?: number
+    metadata?: Record<string, unknown>
+  }) {
+    if (input.id) {
+      await this.updateOpsFundingBuckets({
+        id: input.id,
+        profile_id: input.profile_id,
+        code: input.code,
+        name: input.name,
+        description: input.description,
+        is_active: input.is_active,
+        display_order: input.display_order,
+        metadata: input.metadata,
+      })
+      const [updated] = await this.listOpsFundingBuckets({ id: input.id })
+      return updated
     }
+
+    const [created] = await this.createOpsFundingBuckets([{
+      profile_id: input.profile_id,
+      code: input.code,
+      name: input.name,
+      description: input.description,
+      is_active: input.is_active ?? true,
+      display_order: input.display_order ?? 0,
+      metadata: input.metadata,
+    }])
+
+    return created
+  }
+
+  getPolicyDecision(mode: PredictionMode, jurisdictionCode: string) {
+    return this.policyService.evaluateMode(mode, jurisdictionCode)
   }
 }
 

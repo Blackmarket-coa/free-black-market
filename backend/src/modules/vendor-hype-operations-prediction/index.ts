@@ -8,3 +8,5 @@ export default Module(VENDOR_HYPE_OPERATIONS_PREDICTION_MODULE, {
 })
 
 export * from "./models"
+
+export * from "./policy-service"
