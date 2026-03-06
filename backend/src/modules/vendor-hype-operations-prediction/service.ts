@@ -341,6 +341,23 @@ class VendorHypeOperationsPredictionService extends MedusaService({
     }
 
     for (const position of positions) {
+      const status =
+        position.outcome_option_key === input.oracle_outcome_key
+          ? PredictionPositionStatus.WON
+          : PredictionPositionStatus.LOST
+      await this.updatePredictionPositions({ id: position.id, status })
+    }
+
+    await this.updatePredictionMarkets({
+      id: input.market_id,
+      state: PredictionMarketState.SETTLED,
+    })
+
+    if (payoutEntries.length) {
+      await this.createPredictionPayoutEntries(payoutEntries as any)
+    }
+
+    for (const position of positions) {
       await this.updatePredictionPositions({
         id: position.id,
         status:
