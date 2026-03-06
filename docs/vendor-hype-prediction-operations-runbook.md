@@ -70,3 +70,21 @@ Immediate actions:
 - Security anomalies (replay/signature tampering): Security + Platform on-call
 - Settlement processing failures: Backend + Data on-call
 - Payout processing failures: Backend + Finance operations
+
+## Centralized Metrics & Alerting Wiring
+- Subscriber `prediction-payout-processed` emits `observability.metric.recorded` for Datadog/Grafana ingestion.
+- Subscriber `prediction-payout-processing-failed` emits:
+  - `observability.metric.recorded`
+  - `observability.incident.triggered` (PagerDuty high severity when retries are exhausted)
+- Recommended threshold policy (from this runbook):
+  - `prediction.payout.processing_failed` > 5 in 10 minutes -> page on-call
+  - Any `prediction.payout.dead_lettered` -> immediate page
+
+## Retry and Dead-Letter Policy
+- Failed payout processing attempts are retried up to `MAX_RETRY_ATTEMPTS=2`.
+- On retry success, emit `prediction.payout.retry_succeeded`.
+- On retry exhaustion or unrecoverable error, emit `prediction.payout.dead_lettered` and trigger incident event.
+
+## Audit Query Endpoint
+- Admin audit endpoint: `GET /admin/vendor-hype/payouts/audit?execution_run_id=<id>`
+- Response includes summary counts and payout rows for the requested run id.
