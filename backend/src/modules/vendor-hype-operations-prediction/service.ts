@@ -60,8 +60,6 @@ class VendorHypeOperationsPredictionService extends MedusaService({
   }) {
     const [profile] = await this.createHypeProfiles([{ ...input, status: HypeProfileStatus.DRAFT }])
 
-    await this.createOpsFundingBuckets([
-      { profile_id: profile.id, code: OpsFundingBucketCode.OPS_CORE, name: "Operations Core", display_order: 10 },
     const defaultBuckets = [
       {
         profile_id: profile.id,
