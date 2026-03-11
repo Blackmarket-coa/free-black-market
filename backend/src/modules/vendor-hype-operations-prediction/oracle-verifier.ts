@@ -36,10 +36,6 @@ export const parseTrustedKeysFromEnv = (): Record<string, string> => {
 
   const keyMap: Record<string, string> = {}
   for (const row of rows) {
-    const [id, pem] = row.split(":")
-    if (id && pem) {
-      keyMap[id] = Buffer.from(pem, "base64").toString("utf-8")
-    }
     const splitIndex = row.indexOf(":")
     if (splitIndex <= 0) {
       continue

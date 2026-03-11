@@ -60,8 +60,6 @@ class VendorHypeOperationsPredictionService extends MedusaService({
   }) {
     const [profile] = await this.createHypeProfiles([{ ...input, status: HypeProfileStatus.DRAFT }])
 
-    await this.createOpsFundingBuckets([
-      { profile_id: profile.id, code: OpsFundingBucketCode.OPS_CORE, name: "Operations Core", display_order: 10 },
     const defaultBuckets = [
       {
         profile_id: profile.id,
@@ -325,11 +323,7 @@ class VendorHypeOperationsPredictionService extends MedusaService({
         supporter_id: position.supporter_id,
         payout_amount: cappedPayout,
         payout_unit: position.stake_unit,
-        payout_status: failed
-          ? PredictionPayoutStatus.FAILED
-          : winner
-            ? PredictionPayoutStatus.CREDITED
-            : PredictionPayoutStatus.COMPUTED,
+        payout_status: failed ? PredictionPayoutStatus.FAILED : PredictionPayoutStatus.COMPUTED,
         is_winner: winner,
         failure_reason: failed ? "payout_cap_or_balance_violation" : null,
         metadata: { oracle_outcome_key: input.oracle_outcome_key },
@@ -353,21 +347,6 @@ class VendorHypeOperationsPredictionService extends MedusaService({
       state: PredictionMarketState.SETTLED,
     })
 
-    if (payoutEntries.length) {
-      await this.createPredictionPayoutEntries(payoutEntries as any)
-    }
-
-    for (const position of positions) {
-      await this.updatePredictionPositions({
-        id: position.id,
-        status:
-          position.outcome_option_key === input.oracle_outcome_key
-            ? PredictionPositionStatus.WON
-            : PredictionPositionStatus.LOST,
-      })
-    }
-
-    await this.updatePredictionMarkets({ id: input.market_id, state: PredictionMarketState.SETTLED })
     return settlement
   }
 

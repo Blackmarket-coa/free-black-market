@@ -1,9 +1,9 @@
 import { SubscriberArgs, SubscriberConfig } from "@medusajs/framework"
-import { Modules } from "@medusajs/framework/utils"
 import { IEventBusModuleService } from "@medusajs/framework/types"
+import { Modules } from "@medusajs/framework/utils"
+import { verifyOracleEnvelope } from "../modules/vendor-hype-operations-prediction/oracle-verifier"
 import { VENDOR_HYPE_OPERATIONS_PREDICTION_MODULE } from "../modules/vendor-hype-operations-prediction"
 import VendorHypeOperationsPredictionService from "../modules/vendor-hype-operations-prediction/service"
-import { verifyOracleEnvelope } from "../modules/vendor-hype-operations-prediction/oracle-verifier"
 
 type SettlementRequestedPayload = {
   market_id: string
@@ -67,92 +67,11 @@ export default async function predictionSettlementRequestedHandler({
       signature_verified: true,
       metadata: { requested_by: data.requested_by },
     })
-  } catch (error) {
-  if (!validateOracleSignature(data.oracle_payload, data.oracle_signature)) {
-  const activeKeys = await service.listOracleSigningKeys({})
-  const keyMap: Record<string, string> = {}
-  for (const key of activeKeys) {
-    if (key.status === "active" || key.status === "retiring") {
-      keyMap[key.key_id] = key.public_key_pem
-    }
-  }
-
-  const verification = verifyOracleEnvelope(
-    {
-      payload: data.oracle_payload,
-      signature: data.oracle_signature,
-      keyId: data.oracle_key_id,
-      algorithm: "ed25519",
-      nonce: data.oracle_nonce,
-      signedAt: new Date(data.oracle_timestamp),
-      expiresAt: new Date(data.oracle_expires_at),
-    },
-    Object.keys(keyMap).length ? keyMap : undefined
-  )
-
-  if (!verification.ok) {
-    await eventBus.emit({
-      name: "prediction.settlement.rejected",
-      data: {
-        market_id: data.market_id,
-        settlement_ref: data.settlement_ref,
-        reason: error instanceof Error ? error.message : "oracle_receipt_record_failed",
-        reason: verification.reason,
-      },
-    })
-    return
-  }
-
-  const settlement = await service.settlePredictionMarket({
-  await service.settlePredictionMarket({
-    market_id: data.market_id,
-    settlement_ref: data.settlement_ref,
-    oracle_outcome_key: data.oracle_outcome_key,
-    oracle_evidence_uri: data.oracle_evidence_uri,
-    dispute_window_ends_at: data.dispute_window_ends_at
-      ? new Date(data.dispute_window_ends_at)
-      : undefined,
-    execution_run_id: data.execution_run_id,
-    executed_by: "operator",
-    metadata: {
-      oracle_payload: data.oracle_payload,
-      oracle_signature: data.oracle_signature,
-      oracle_key_id: data.oracle_key_id,
-      oracle_nonce: data.oracle_nonce,
-    },
-  })
-
-  const [market] = await service.listPredictionMarkets({ id: data.market_id })
-  const payouts = await service.listPredictionPayoutEntries({ settlement_id: settlement.id })
-  const positions = await service.listPredictionPositions({ market_id: data.market_id })
-  try {
-    await service.recordOracleVerificationReceipt({
-      market_id: data.market_id,
-      settlement_ref: data.settlement_ref,
-      key_id: data.oracle_key_id,
-      algorithm: "ed25519",
-      nonce: data.oracle_nonce,
-      payload_hash: verification.payloadHash || "",
-      signature: data.oracle_signature,
-      signed_at: new Date(data.oracle_timestamp),
-      expires_at: new Date(data.oracle_expires_at),
-      signature_verified: true,
-      metadata: { requested_by: data.requested_by },
-    })
 
     const settlement = await service.settlePredictionMarket({
       market_id: data.market_id,
       settlement_ref: data.settlement_ref,
       oracle_outcome_key: data.oracle_outcome_key,
-      winners: payouts.filter((entry) => entry.is_winner).length,
-      losers: payouts.filter((entry) => !entry.is_winner).length,
-      failed_payouts: payouts.filter((entry) => entry.payout_status === "failed").length,
-      winners: positions.filter((position) => position.outcome_option_key === data.oracle_outcome_key).length,
-      losers: positions.filter((position) => position.outcome_option_key !== data.oracle_outcome_key).length,
-      audit: {
-        policy_version: market?.policy_version,
-        execution_run_id: data.execution_run_id,
-        settled_by: data.requested_by,
       oracle_evidence_uri: data.oracle_evidence_uri,
       dispute_window_ends_at: data.dispute_window_ends_at
         ? new Date(data.dispute_window_ends_at)
