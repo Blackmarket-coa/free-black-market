@@ -52,4 +52,6 @@ Per work-order sequence, the next task is:
 
 > ✅ **Define blackout policy schema and storage location** — completed with versioned contract files at `docs/contracts/blackout-policy.schema.json` and `docs/contracts/examples/blackout-policy.example.json`.
 
-> ▶️ **Next:** implement centralized gate checks in promotion flow.
+> ✅ **Implement centralized gate checks in promotion flow** — completed by adding `blackout-gate` as a blocking CI job and wiring it into `release-validation` and `notify-deploy` dependencies, backed by `scripts/blackout-gate-check.mjs` and `config/release/blackout-policy.json`.
+
+> ▶️ **Next:** add exception/override approval capture.
