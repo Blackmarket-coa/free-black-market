@@ -1,0 +1,59 @@
+{
+  "schema_version": "1.0.0",
+  "policy_version": "1.0.0",
+  "default_behavior": "deny_during_blackout",
+  "time_zone": "UTC",
+  "windows": [
+    {
+      "id": "year-end-freeze-2026",
+      "name": "Year-end production freeze",
+      "start": "2026-12-20T00:00:00Z",
+      "end": "2027-01-03T23:59:59Z",
+      "environments": ["production"],
+      "recurrence": "none",
+      "state": "active",
+      "reason": "Year-end change freeze"
+    },
+    {
+      "id": "weekly-release-quiet-hours",
+      "name": "Weekly quiet hours",
+      "start": "2026-01-01T00:00:00Z",
+      "end": "2026-01-01T06:00:00Z",
+      "environments": ["production", "staging"],
+      "service_selectors": ["backend", "storefront"],
+      "recurrence": "weekly",
+      "state": "active",
+      "reason": "Reduce customer-facing risk during overnight support minimums"
+    }
+  ],
+  "exception_rules": [
+    {
+      "id": "security-hotfix",
+      "name": "Security hotfix exception",
+      "description": "Permit emergency security patching when CVSS threshold policy is met.",
+      "environments": ["production"],
+      "change_types": ["security", "hotfix"],
+      "requires_override": true
+    },
+    {
+      "id": "rollback-exception",
+      "name": "Rollback exception",
+      "description": "Permit rollback execution to restore service during active incidents.",
+      "environments": ["production", "staging"],
+      "change_types": ["rollback"],
+      "requires_override": false
+    }
+  ],
+  "approval": {
+    "min_approvals": 2,
+    "required_roles": ["release_manager", "sre_oncall"],
+    "ticket_reference_required": true,
+    "reason_required": true,
+    "max_override_duration_minutes": 240
+  },
+  "metadata": {
+    "owner_team": "platform-engineering",
+    "last_reviewed_at": "2026-03-14T00:00:00Z",
+    "change_ticket": "OPS-2048"
+  }
+}

@@ -1,0 +1,162 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://free-black-market/contracts/blackout-policy.schema.json",
+  "title": "Blackout Policy Contract",
+  "description": "Canonical policy contract for release blackout windows, scoped exemptions, and override approvals.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "policy_version",
+    "default_behavior",
+    "time_zone",
+    "windows",
+    "exception_rules",
+    "approval"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1.0.0"
+    },
+    "policy_version": {
+      "type": "string",
+      "description": "Version for policy data updates independent of schema versioning.",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "default_behavior": {
+      "type": "string",
+      "enum": ["deny_during_blackout"]
+    },
+    "time_zone": {
+      "type": "string",
+      "description": "IANA timezone used to interpret windows, for example UTC or America/New_York.",
+      "minLength": 1
+    },
+    "windows": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/BlackoutWindow"
+      }
+    },
+    "exception_rules": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/ExceptionRule"
+      }
+    },
+    "approval": {
+      "$ref": "#/$defs/ApprovalPolicy"
+    },
+    "metadata": {
+      "type": "object",
+      "properties": {
+        "owner_team": { "type": "string", "minLength": 1 },
+        "last_reviewed_at": { "type": "string", "format": "date-time" },
+        "change_ticket": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "Environment": {
+      "type": "string",
+      "enum": ["dev", "staging", "production"]
+    },
+    "BlackoutWindow": {
+      "type": "object",
+      "required": ["id", "name", "start", "end", "environments", "recurrence", "state"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "name": { "type": "string", "minLength": 1 },
+        "start": { "type": "string", "format": "date-time" },
+        "end": { "type": "string", "format": "date-time" },
+        "environments": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/Environment" },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "service_selectors": {
+          "type": "array",
+          "description": "Optional service IDs/slugs this window applies to. Omit for global scope.",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+        "recurrence": {
+          "type": "string",
+          "enum": ["none", "weekly", "monthly"]
+        },
+        "state": {
+          "type": "string",
+          "enum": ["active", "disabled"]
+        },
+        "reason": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": { "properties": { "recurrence": { "const": "none" } }, "required": ["recurrence"] },
+          "then": {
+            "properties": {
+              "start": { "type": "string", "format": "date-time" },
+              "end": { "type": "string", "format": "date-time" }
+            }
+          }
+        }
+      ]
+    },
+    "ExceptionRule": {
+      "type": "object",
+      "required": ["id", "name", "environments", "requires_override"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "name": { "type": "string", "minLength": 1 },
+        "description": { "type": "string" },
+        "environments": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/Environment" },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "service_selectors": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+        "change_types": {
+          "type": "array",
+          "description": "Release classifications allowed to request this exception.",
+          "items": {
+            "type": "string",
+            "enum": ["hotfix", "security", "compliance", "rollback", "data-repair"]
+          },
+          "uniqueItems": true
+        },
+        "requires_override": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "ApprovalPolicy": {
+      "type": "object",
+      "required": ["min_approvals", "required_roles", "ticket_reference_required", "reason_required"],
+      "properties": {
+        "min_approvals": { "type": "integer", "minimum": 1, "maximum": 5 },
+        "required_roles": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "enum": ["release_manager", "sre_oncall", "security_oncall", "platform_lead"]
+          },
+          "uniqueItems": true
+        },
+        "ticket_reference_required": { "type": "boolean" },
+        "reason_required": { "type": "boolean" },
+        "max_override_duration_minutes": { "type": "integer", "minimum": 1, "maximum": 1440 }
+      },
+      "additionalProperties": false
+    }
+  }
+}
