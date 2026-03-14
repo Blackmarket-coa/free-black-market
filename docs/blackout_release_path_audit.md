@@ -54,4 +54,6 @@ Per work-order sequence, the next task is:
 
 > ✅ **Implement centralized gate checks in promotion flow** — completed by adding `blackout-gate` as a blocking CI job and wiring it into `release-validation` and `notify-deploy` dependencies, backed by `scripts/blackout-gate-check.mjs` and `config/release/blackout-policy.json`.
 
-> ▶️ **Next:** add exception/override approval capture.
+> ✅ **Add exception/override approval capture** — completed by persisting a blackout decision artifact with approval evidence and actor metadata for each gate evaluation (`blackout-gate/decision-record.json`).
+
+> ▶️ **Next:** emit structured audit events + metrics.

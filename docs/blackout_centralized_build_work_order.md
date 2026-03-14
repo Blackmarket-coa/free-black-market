@@ -49,7 +49,8 @@ Current build activities can be initiated from multiple execution paths with inc
 - ✅ Task 1 complete: baseline release-path audit and gap map documented in `docs/blackout_release_path_audit.md`.
 - ✅ Task 2 complete: blackout policy schema and example versioned in `docs/contracts/blackout-policy.schema.json` and `docs/contracts/examples/blackout-policy.example.json`.
 - ✅ Task 3 complete: centralized gate checks wired into promotion flow via `.github/workflows/ci.yml` + `scripts/blackout-gate-check.mjs` with policy at `config/release/blackout-policy.json`.
-- ▶️ Next task: add exception/override approval capture.
+- ✅ Task 4 complete: exception/override approval capture added via blackout decision records (`blackout-gate/decision-record.json`) including approver roles/count, ticket, reason, actor, and commit/run context.
+- ▶️ Next task: emit structured audit events + metrics.
 
 ## Implementation Tasks
 

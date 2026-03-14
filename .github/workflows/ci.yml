@@ -285,9 +285,24 @@ jobs:
           BLACKOUT_OVERRIDE_ROLES: ${{ vars.BLACKOUT_OVERRIDE_ROLES || '' }}
           BLACKOUT_OVERRIDE_TICKET: ${{ vars.BLACKOUT_OVERRIDE_TICKET || '' }}
           BLACKOUT_OVERRIDE_REASON: ${{ vars.BLACKOUT_OVERRIDE_REASON || '' }}
+          BLACKOUT_ACTOR: ${{ github.actor }}
+          BLACKOUT_COMMIT_SHA: ${{ github.sha }}
+          BLACKOUT_RUN_ID: ${{ github.run_id }}
+          BLACKOUT_SOURCE_REF: ${{ github.ref }}
+          BLACKOUT_DECISION_OUTPUT: blackout-gate/decision-record.json
         run: |
           set -euo pipefail
+          mkdir -p blackout-gate
           node ./scripts/blackout-gate-check.mjs --policy config/release/blackout-policy.json
+
+      - name: Upload blackout gate decision artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: blackout-gate-decision-${{ github.run_id }}
+          path: blackout-gate/decision-record.json
+          if-no-files-found: warn
+          retention-days: 30
 
   test-integration:
     name: Integration Tests
