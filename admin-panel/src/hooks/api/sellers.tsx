@@ -297,6 +297,16 @@ export const useUpdateSeller = () => {
   });
 };
 
+export const useEmailSeller = (id: string) => {
+  return useMutation({
+    mutationFn: (data: { subject: string; message: string }) =>
+      sdk.client.fetch(`/admin/sellers/${id}/email`, {
+        method: "POST",
+        body: data,
+      }),
+  });
+};
+
 export const useSellerProducts = (
   id: string,
   query?: Record<string, string | number>,
