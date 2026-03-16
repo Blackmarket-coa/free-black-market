@@ -3,6 +3,7 @@
 import { useState } from "react"
 import Image from "next/image"
 import Link from "next/link"
+import FeeBreakdown from "@/components/sections/FeeBreakdown"
 
 // Inline SVG icons
 const CheckCircleIcon = ({ className = "" }: { className?: string }) => (
@@ -463,6 +464,9 @@ export default function SellPage() {
           </div>
         </div>
       </section>
+
+      {/* Trust & Transparency Section */}
+      <FeeBreakdown />
 
       {/* Trust & Transparency Section */}
       <section className="py-20 bg-gray-900 text-white">
