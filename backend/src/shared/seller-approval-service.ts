@@ -235,9 +235,9 @@ export class SellerApprovalService {
 
     const request = requests[0]
 
-    // Validate request is pending
-    if (request.status !== RequestStatus.PENDING) {
-      throw new Error(`Request has already been ${request.status}`)
+    // Allow approving previously rejected requests to recover accidental rejections.
+    if (request.status !== RequestStatus.PENDING && request.status !== RequestStatus.REJECTED) {
+      throw new Error(`Request cannot be approved from status ${request.status}`)
     }
 
     // Validate request type
@@ -529,9 +529,9 @@ export class SellerApprovalService {
 
     const request = requests[0]
 
-    // Validate request is pending
-    if (request.status !== RequestStatus.PENDING) {
-      throw new Error(`Request has already been ${request.status}`)
+    // Allow approving previously rejected requests to recover accidental rejections.
+    if (request.status !== RequestStatus.PENDING && request.status !== RequestStatus.REJECTED) {
+      throw new Error(`Request cannot be approved from status ${request.status}`)
     }
 
     // Use the dedicated rejectRequestWithReview method
@@ -565,9 +565,9 @@ export class SellerApprovalService {
 
     const request = requests[0]
 
-    // Validate request is pending
-    if (request.status !== RequestStatus.PENDING) {
-      throw new Error(`Request has already been ${request.status}`)
+    // Allow approving previously rejected requests to recover accidental rejections.
+    if (request.status !== RequestStatus.PENDING && request.status !== RequestStatus.REJECTED) {
+      throw new Error(`Request cannot be approved from status ${request.status}`)
     }
 
     // Build updated reviewer note

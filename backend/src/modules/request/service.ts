@@ -11,7 +11,7 @@ const VALID_TRANSITIONS: Record<RequestStatus, RequestStatus[]> = {
     RequestStatus.CANCELLED,
   ],
   [RequestStatus.ACCEPTED]: [RequestStatus.COMPLETED],
-  [RequestStatus.REJECTED]: [], // Terminal state
+  [RequestStatus.REJECTED]: [RequestStatus.ACCEPTED],
   [RequestStatus.COMPLETED]: [], // Terminal state
   [RequestStatus.CANCELLED]: [], // Terminal state
 }
