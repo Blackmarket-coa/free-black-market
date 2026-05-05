@@ -185,6 +185,9 @@ const marketplaceModules = [
   { resolve: './src/modules/vendor-rules' },
   { resolve: './src/modules/supplier-forwarding' },
   { resolve: './src/modules/vendor-hype-operations-prediction' },
+  { resolve: './src/modules/marketplace-listing' },
+  { resolve: './src/modules/marketplace-signing' },
+  { resolve: './src/modules/marketplace-webhooks' },
 ]
 
 // Community infrastructure modules
