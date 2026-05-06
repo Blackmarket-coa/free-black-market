@@ -846,6 +846,14 @@ export function getRouteMap({
               lazy: () => import("../../routes/creator-programs"),
             },
             {
+              path: "/creator-rewards",
+              errorElement: <ErrorBoundary />,
+              handle: {
+                breadcrumb: () => "Creator Rewards",
+              },
+              lazy: () => import("../../routes/creator-rewards"),
+            },
+            {
               path: "/messages",
               errorElement: <ErrorBoundary />,
               handle: {

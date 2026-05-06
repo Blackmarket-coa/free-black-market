@@ -261,6 +261,10 @@ const useCoreRoutes = (): Omit<INavItem, "pathname">[] => {
           label: "Programs",
           to: "/creator-programs",
         },
+        {
+          label: "Reward Pools",
+          to: "/creator-rewards",
+        },
       ],
     },
     {

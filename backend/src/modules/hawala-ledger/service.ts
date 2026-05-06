@@ -202,6 +202,108 @@ class HawalaLedgerModuleService extends MedusaService({
   }
 
   /**
+   * Get or create a CREATOR_REWARD_POOL account for a program (or
+   * platform-funded global pool when programId is null). Used to escrow
+   * funds for engagement-pool distributions.
+   */
+  async getOrCreateCreatorRewardPool(
+    poolId: string,
+    currencyCode: string = "USD"
+  ) {
+    const existing = await this.listLedgerAccounts({
+      account_type: "CREATOR_REWARD_POOL",
+      owner_type: "SYSTEM",
+      owner_id: poolId,
+    })
+    if (existing.length > 0) return existing[0]
+    return this.createAccount({
+      account_type: "CREATOR_REWARD_POOL",
+      owner_type: "SYSTEM",
+      owner_id: poolId,
+      currency_code: currencyCode,
+    })
+  }
+
+  /**
+   * Fund a creator reward pool from the funder's earnings (vendor) or the
+   * platform reserve (when funderSellerId is null). Used when a vendor
+   * opens a $X engagement pool for a program.
+   */
+  async fundCreatorRewardPool(args: {
+    poolId: string
+    funderSellerId: string | null
+    amountCents: number
+    currencyCode?: string
+    idempotencyKey?: string
+  }) {
+    if (args.amountCents <= 0) {
+      throw new Error("fundCreatorRewardPool amountCents must be > 0")
+    }
+    const currency = args.currencyCode || "USD"
+    const poolAccount = await this.getOrCreateCreatorRewardPool(args.poolId, currency)
+    let sourceAccount
+    if (args.funderSellerId) {
+      sourceAccount = await this.getOrCreateSellerEarnings(args.funderSellerId, currency)
+    } else {
+      sourceAccount = await this.getOrCreateSystemAccount("RESERVE")
+    }
+    return this.createTransfer({
+      debit_account_id: sourceAccount.id,
+      credit_account_id: poolAccount.id,
+      amount: args.amountCents / 100,
+      entry_type: "TRANSFER",
+      reference_type: "CREATOR_REWARD_POOL",
+      reference_id: args.poolId,
+      idempotency_key: args.idempotencyKey || `pool-fund-${args.poolId}`,
+      description: `Fund creator reward pool ${args.poolId}`,
+      metadata: {
+        pool_id: args.poolId,
+        funder_seller_id: args.funderSellerId,
+      },
+    })
+  }
+
+  /**
+   * Credit a creator's earnings from a funded reward pool. Reverses the
+   * usual commission flow direction: pool -> creator earnings.
+   */
+  async creditCreatorReward(args: {
+    poolId: string
+    creatorSellerId: string
+    amountCents: number
+    rewardPayoutId: string
+    currencyCode?: string
+    description?: string
+  }) {
+    if (args.amountCents <= 0) {
+      throw new Error("creditCreatorReward amountCents must be > 0")
+    }
+    const currency = args.currencyCode || "USD"
+    const poolAccount = await this.getOrCreateCreatorRewardPool(args.poolId, currency)
+    const creatorAccount = await this.getOrCreateCreatorEarnings(
+      args.creatorSellerId,
+      currency
+    )
+    return this.createTransfer({
+      debit_account_id: poolAccount.id,
+      credit_account_id: creatorAccount.id,
+      amount: args.amountCents / 100,
+      entry_type: "CREATOR_REWARD",
+      reference_type: "CREATOR_REWARD_POOL",
+      reference_id: args.poolId,
+      idempotency_key: `creator-reward-${args.rewardPayoutId}`,
+      description:
+        args.description ||
+        `Creator reward payout ${args.rewardPayoutId} from pool ${args.poolId}`,
+      metadata: {
+        pool_id: args.poolId,
+        reward_payout_id: args.rewardPayoutId,
+        creator_seller_id: args.creatorSellerId,
+      },
+    })
+  }
+
+  /**
    * Reverse a previously paid creator commission (e.g. on refund). Creates a
    * new ledger entry that flows funds creator -> vendor.
    */
