@@ -22,12 +22,24 @@ FROM node:${NODE_VERSION} AS build
 WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
+# Build-time placeholders: `pnpm run build` calls
+# `await-backend` + `launch-storefront build`, which polls
+# http://localhost:9000 for a publishable key. There's no backend during a
+# Docker build, so we invoke `next build` directly with placeholder
+# `NEXT_PUBLIC_*` values. The actual values are injected at run-time via
+# the Deployment's secretRef envFrom (`storefront-env`).
+ENV NEXT_PUBLIC_MEDUSA_BACKEND_URL=http://backend:9000
+ENV NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY=pk_local_publishable_key_set_at_runtime
+ENV NEXT_PUBLIC_BASE_URL=http://localhost:3000
+ENV NEXT_PUBLIC_DEFAULT_REGION=us
+ENV NEXT_PUBLIC_STRIPE_KEY=pk_test_local_for_build
+ENV REVALIDATE_SECRET=build-time-revalidate-secret-min-32-chars-x
 
 RUN corepack enable
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
-RUN pnpm run build
+RUN node_modules/.bin/next build
 
 # --- runtime stage -----------------------------------------------------------
 FROM node:${NODE_VERSION} AS runtime

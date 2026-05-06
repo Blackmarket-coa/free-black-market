@@ -20,6 +20,22 @@ paths = [
   '''pnpm-lock\.yaml$''',
   '''yarn\.lock$''',
   '''package-lock\.json$''',
+  # Build artefacts (gitignored, but if a developer scans locally with
+  # `--no-git` we don't want false positives on Next's per-build preview
+  # mode keys, k6 summaries, .medusa output, etc.).
+  '''.*/\.next/.*''',
+  '''.*/\.medusa/.*''',
+  '''.*/dist/.*''',
+  '''.*/storybook-static/.*''',
+  '''.*/coverage/.*''',
+  # Test fixtures / unit-test secrets: these are deterministic strings used
+  # to sign / verify HMACs in tests and are not secrets in any real sense.
+  '''.*/__tests__/.*\.(spec|test)\.(ts|tsx|js)$''',
+  '''.*/test/.*\.(spec|test)\.(ts|tsx|js)$''',
+  '''.*\.(spec|test)\.(ts|tsx|js)$''',
+  # CI workflows reference deterministic placeholder pub keys for the
+  # compose-stack e2e + perf jobs (pk_e2e_publishable_placeholder etc.).
+  '''.*/\.github/workflows/.*\.ya?ml$''',
 ]
 
 regexes = [
@@ -30,10 +46,14 @@ regexes = [
   '''pk_test_your[_a-z0-9]+''',
   '''pk_test_local_stripe_key_for_dev_only''',
   '''pk_test_replace_with_real_stripe_publishable_key''',
+  # CI / e2e / perf-job placeholders
+  '''pk_(e2e|perf|local|test)_[a-z0-9_]+''',
   # Resend documented placeholders
   '''re_[a-z]+_your[_a-z0-9]+''',
   # Stellar key documentation example
   '''Syour56characterstellarsecretkey''',
   # The literal "supersecret" only appears in audit-debt docs after Phase 1
   '''supersecret''',
+  # Marketplace webhook test fixtures
+  '''fbm_whsec_[a-f0-9]+''',
 ]

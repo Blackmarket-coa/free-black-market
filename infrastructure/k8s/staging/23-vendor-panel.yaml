@@ -1,0 +1,87 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vendor-panel
+  namespace: freeblackmarket-staging
+  labels:
+    app: vendor-panel
+    app.kubernetes.io/part-of: freeblackmarket
+    app.kubernetes.io/component: panel
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: vendor-panel
+  template:
+    metadata:
+      labels:
+        app: vendor-panel
+        app.kubernetes.io/part-of: freeblackmarket
+        app.kubernetes.io/component: panel
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 101
+        runAsGroup: 101
+        fsGroup: 101
+      containers:
+        - name: vendor-panel
+          image: __IMAGE_REGISTRY__/free-black-market-vendor-panel:__IMAGE_TAG__
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 80
+              protocol: TCP
+          envFrom:
+            - secretRef:
+                name: vendor-panel-env
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+            limits:
+              cpu: "200m"
+              memory: "128Mi"
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+            capabilities:
+              drop: ["ALL"]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vendor-panel
+  namespace: freeblackmarket-staging
+  labels:
+    app: vendor-panel
+spec:
+  type: ClusterIP
+  selector:
+    app: vendor-panel
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+      protocol: TCP

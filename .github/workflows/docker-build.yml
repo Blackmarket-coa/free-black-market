@@ -67,19 +67,24 @@ jobs:
             type=semver,pattern={{version}}
             type=raw,value=latest,enable={{is_default_branch}}
 
+      # docker/build-push-action with `provenance: true` produces a manifest
+      # list that the local docker daemon's image store cannot import via
+      # `load`. On PRs we don't push to the registry — we only verify the
+      # Dockerfile builds — so we skip both `load` and the manifest-list
+      # outputs. On push to main / tags / release branches we still publish
+      # with full provenance + SBOM attestations.
       - name: Build${{ github.event_name != 'pull_request' && ' & push' || '' }} image
         uses: docker/build-push-action@v6
         with:
           context: ${{ matrix.context }}
           file: ${{ matrix.context }}/Dockerfile
           push: ${{ github.event_name != 'pull_request' }}
-          load: ${{ github.event_name == 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=${{ matrix.app }}
           cache-to: type=gha,mode=max,scope=${{ matrix.app }}
-          provenance: true
-          sbom: true
+          provenance: ${{ github.event_name != 'pull_request' }}
+          sbom: ${{ github.event_name != 'pull_request' }}
 
       - name: Image build summary
         run: |
