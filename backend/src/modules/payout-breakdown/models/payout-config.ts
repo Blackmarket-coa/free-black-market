@@ -16,6 +16,8 @@ export enum FeeType {
   COOPERATIVE_FEE = "COOPERATIVE_FEE",     // Co-op membership fee
   PICKUP_DISCOUNT = "PICKUP_DISCOUNT",     // Discount for pickup
   CREATOR_COMMISSION = "CREATOR_COMMISSION", // Affiliate share to a creator
+  PLUGIN_DEVELOPER_FEE = "PLUGIN_DEVELOPER_FEE", // Share to plugin/theme/emoji-pack developer
+  REFERRAL_FEE = "REFERRAL_FEE",           // Generic referral share (distinct from creator commission)
 }
 
 /**
@@ -56,9 +58,18 @@ const PayoutConfig = model.define("payout_config", {
   
   // Community reinvestment percentage
   community_fund_percent: model.number().default(0),
-  
+
   // Community fund description
   community_fund_description: model.text().nullable(),
+
+  // === Plugin developer / Referral splits (BMC marketplace layer) ===
+
+  // Plugin/theme/emoji-pack developer share percentage of seller gross
+  plugin_developer_percent: model.number().default(0),
+
+  // Referral share percentage of seller gross (separate from creator commission;
+  // applies to generic referral programs, e.g. when no AffiliateLink exists)
+  referral_percent: model.number().default(0),
   
   // === Producer Payout ===
   

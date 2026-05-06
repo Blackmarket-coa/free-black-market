@@ -15,6 +15,7 @@ import {
 } from "./cookies"
 import { getRegion } from "./regions"
 import { parseVariantIdsFromError } from "@/lib/helpers/parse-variant-error"
+import { applyAttributionToCart } from "./attribution"
 
 /**
  * Retrieves a cart by its ID. If no ID is provided, it will use the cart ID from the cookies.
@@ -78,6 +79,16 @@ export async function getOrSetCart(countryCode: string) {
     await sdk.store.cart.update(cart.id, { region_id: region.id }, {}, headers)
     const cartCacheTag = await getCacheTag("carts")
     revalidateTag(cartCacheTag)
+  }
+
+  if (cart?.id) {
+    // Best-effort: stamp affiliate attribution onto the cart from the
+    // visitor's `_fbm_aff` cookie. Idempotent.
+    try {
+      await applyAttributionToCart(cart.id)
+    } catch {
+      // never block cart load on attribution failures
+    }
   }
 
   return cart

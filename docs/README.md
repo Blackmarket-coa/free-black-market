@@ -9,6 +9,10 @@ This index organizes project docs by purpose.
 - `docs/adr/ADR-0001-event-driven-sync.md`
 - `docs/adr/ADR-0002-idempotency-and-consistency-windows.md`
 - `docs/contracts/phase0/domain-contracts.schema.json`
+- `docs/contracts/marketplace-layer.md` — BMC marketplace-layer API contracts
+  (entitlements, affiliate attribution, group commerce, plugin/theme listings,
+  Blackout / Blackstar integration endpoints)
+- `docs/ENV_CONFIGURATION.md` — environment variable reference and validation
 - `docs/PRODUCT_LISTING_UNIFICATION_PLAN.md`
 - `docs/VENDOR_PORTAL_IMPROVEMENT_PLAN.md`
 - `docs/WEBSITE_POSITIONING_ALIGNMENT_PLAN.md`

@@ -51,6 +51,14 @@ const DEFAULT_FEE_LABELS: Record<FeeType, { label: string; description: string }
     label: "Creator Commission",
     description: "Affiliate share paid to the creator who referred this sale",
   },
+  [FeeType.PLUGIN_DEVELOPER_FEE]: {
+    label: "Plugin Developer",
+    description: "Share paid to the developer of the plugin / theme / emoji pack",
+  },
+  [FeeType.REFERRAL_FEE]: {
+    label: "Referral",
+    description: "Generic referral share for non-affiliate-program referrals",
+  },
 }
 
 /**
