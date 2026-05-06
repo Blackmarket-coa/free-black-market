@@ -1,0 +1,39 @@
+# Gitleaks configuration for free-black-market.
+# Extends the default ruleset and allowlists known-safe placeholder strings
+# in template / documentation files so legitimate examples don't trip CI.
+
+title = "free-black-market gitleaks config"
+
+# Inherit the upstream default ruleset.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Project-wide allowlist for documented placeholders & template files."
+paths = [
+  '''(?i)\.env\.template$''',
+  '''(?i)\.env\.staging\.template$''',
+  '''(?i)\.env\.railway\.template$''',
+  '''(?i)docs/.*\.md$''',
+  '''(?i).*README\.md$''',
+  '''(?i).*CHANGELOG\.md$''',
+  '''pnpm-lock\.yaml$''',
+  '''yarn\.lock$''',
+  '''package-lock\.json$''',
+]
+
+regexes = [
+  # CHANGE_ME_* placeholders enforced by scripts/assert-env.mjs
+  '''CHANGE_ME_[A-Za-z0-9_]+''',
+  # Documented Stripe test placeholders
+  '''sk_test_your[_a-z0-9]+''',
+  '''pk_test_your[_a-z0-9]+''',
+  '''pk_test_local_stripe_key_for_dev_only''',
+  '''pk_test_replace_with_real_stripe_publishable_key''',
+  # Resend documented placeholders
+  '''re_[a-z]+_your[_a-z0-9]+''',
+  # Stellar key documentation example
+  '''Syour56characterstellarsecretkey''',
+  # The literal "supersecret" only appears in audit-debt docs after Phase 1
+  '''supersecret''',
+]
