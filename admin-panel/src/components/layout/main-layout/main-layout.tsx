@@ -256,6 +256,12 @@ const useCoreRoutes = (): Omit<INavItem, "pathname">[] => {
       icon: <Star />,
       label: "Creators",
       to: "/creators",
+      items: [
+        {
+          label: "Programs",
+          to: "/creator-programs",
+        },
+      ],
     },
     {
       icon: <ReceiptPercent />,

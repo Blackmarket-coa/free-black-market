@@ -43,6 +43,41 @@ interface Attribution {
   hold_until: string | null
 }
 
+interface OpenProgram {
+  id: string
+  vendor_id: string
+  title: string
+  program_type: string
+  commission_percent: number | null
+  commission_flat_cents: number | null
+  sponsorship_flat_cents: number | null
+  pool_total_cents: number | null
+  cookie_window_days: number
+  currency_code: string
+  requires_kyc: boolean
+  min_followers: number | null
+  ends_at: string | null
+}
+
+interface MyApplication {
+  id: string
+  program_id: string
+  status: string
+  pitch: string | null
+  decided_at: string | null
+  decision_reason: string | null
+}
+
+interface MyDeal {
+  id: string
+  program_id: string
+  status: string
+  total_attributed_cents: number
+  total_paid_out_cents: number
+  default_affiliate_link_id: string | null
+  effective_until: string | null
+}
+
 const formatCents = (cents: number, currency = "USD") =>
   new Intl.NumberFormat("en-US", {
     style: "currency",
@@ -75,10 +110,16 @@ async function authedFetch<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const CreatorStudioPage = () => {
-  const [tab, setTab] = useState<"dashboard" | "links" | "earnings">("dashboard")
+  const [tab, setTab] = useState<
+    "dashboard" | "links" | "earnings" | "programs" | "deals"
+  >("dashboard")
   const [links, setLinks] = useState<AffiliateLink[]>([])
   const [rollup, setRollup] = useState<Rollup | null>(null)
   const [attributions, setAttributions] = useState<Attribution[]>([])
+  const [openPrograms, setOpenPrograms] = useState<OpenProgram[]>([])
+  const [myApplications, setMyApplications] = useState<MyApplication[]>([])
+  const [myDeals, setMyDeals] = useState<MyDeal[]>([])
+  const [pitchByProgram, setPitchByProgram] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(false)
 
   // Generate-link form
@@ -89,21 +130,64 @@ export const CreatorStudioPage = () => {
   const reload = async () => {
     setLoading(true)
     try {
-      const [{ links: l }, { rollup: r, attributions: a }] = await Promise.all([
+      const [
+        { links: l },
+        { rollup: r, attributions: a },
+        { open, applications, deals },
+      ] = await Promise.all([
         authedFetch<{ links: AffiliateLink[] }>("/v1/seller/creator/links?limit=50"),
         authedFetch<{ rollup: Rollup; attributions: Attribution[] }>(
           "/v1/seller/creator/earnings?limit=20"
         ),
+        authedFetch<{
+          open: OpenProgram[]
+          applications: MyApplication[]
+          deals: MyDeal[]
+        }>("/v1/seller/creator/programs"),
       ])
       setLinks(l)
       setRollup(r)
       setAttributions(a)
+      setOpenPrograms(open)
+      setMyApplications(applications)
+      setMyDeals(deals)
     } catch (err) {
       toast.error("Failed to load creator studio data", {
         description: (err as Error).message,
       })
     } finally {
       setLoading(false)
+    }
+  }
+
+  const applyToProgram = async (programId: string) => {
+    const pitch = pitchByProgram[programId]?.trim() || null
+    try {
+      await authedFetch(`/v1/seller/creator/programs/${programId}/apply`, {
+        method: "POST",
+        body: JSON.stringify({ pitch }),
+      })
+      toast.success("Application submitted")
+      setPitchByProgram((m) => {
+        const next = { ...m }
+        delete next[programId]
+        return next
+      })
+      await reload()
+    } catch (err) {
+      toast.error("Apply failed", { description: (err as Error).message })
+    }
+  }
+
+  const withdrawApplication = async (programId: string) => {
+    try {
+      await authedFetch(`/v1/seller/creator/programs/${programId}/apply`, {
+        method: "DELETE",
+      })
+      toast.success("Application withdrawn")
+      await reload()
+    } catch (err) {
+      toast.error("Withdraw failed", { description: (err as Error).message })
     }
   }
 
@@ -147,15 +231,29 @@ export const CreatorStudioPage = () => {
 
   return (
     <Container className="p-6 flex flex-col gap-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-2">
         <Heading level="h1">Creator Studio</Heading>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
           <Button
             variant={tab === "dashboard" ? "primary" : "secondary"}
             size="small"
             onClick={() => setTab("dashboard")}
           >
             Dashboard
+          </Button>
+          <Button
+            variant={tab === "programs" ? "primary" : "secondary"}
+            size="small"
+            onClick={() => setTab("programs")}
+          >
+            Find programs ({openPrograms.length})
+          </Button>
+          <Button
+            variant={tab === "deals" ? "primary" : "secondary"}
+            size="small"
+            onClick={() => setTab("deals")}
+          >
+            Deals ({myDeals.length})
           </Button>
           <Button
             variant={tab === "links" ? "primary" : "secondary"}
@@ -295,6 +393,135 @@ export const CreatorStudioPage = () => {
               </table>
             )}
           </div>
+        </div>
+      )}
+
+      {tab === "programs" && (
+        <div className="flex flex-col gap-3">
+          {openPrograms.length === 0 ? (
+            <Text className="text-ui-fg-subtle italic">
+              No open programs available right now. Check back later.
+            </Text>
+          ) : null}
+          {openPrograms.map((p) => {
+            const myApp = myApplications.find((a) => a.program_id === p.id)
+            return (
+              <div
+                key={p.id}
+                className="border border-ui-border-base rounded-md p-4"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex-1">
+                    <Heading level="h3">{p.title}</Heading>
+                    <Text className="text-xs text-ui-fg-subtle">
+                      {p.program_type} ·{" "}
+                      {p.commission_percent
+                        ? `${p.commission_percent}% commission`
+                        : p.sponsorship_flat_cents
+                        ? `flat ${formatCents(p.sponsorship_flat_cents)}`
+                        : p.pool_total_cents
+                        ? `pool ${formatCents(p.pool_total_cents)}`
+                        : "—"}{" "}
+                      · {p.cookie_window_days}d cookie
+                      {p.requires_kyc ? " · KYC required" : ""}
+                      {p.min_followers
+                        ? ` · ${p.min_followers.toLocaleString()}+ followers`
+                        : ""}
+                      {p.ends_at ? ` · ends ${formatDate(p.ends_at)}` : ""}
+                    </Text>
+                  </div>
+                </div>
+                {myApp ? (
+                  <div className="mt-2 flex items-center justify-between">
+                    <Text className="text-sm">
+                      Application status:{" "}
+                      <strong>{myApp.status}</strong>
+                      {myApp.decision_reason ? ` — ${myApp.decision_reason}` : ""}
+                    </Text>
+                    {myApp.status === "pending" ? (
+                      <Button
+                        size="small"
+                        variant="secondary"
+                        onClick={() => void withdrawApplication(p.id)}
+                      >
+                        Withdraw
+                      </Button>
+                    ) : null}
+                  </div>
+                ) : (
+                  <div className="mt-3 flex flex-col gap-2">
+                    <Textarea
+                      rows={2}
+                      placeholder="Why this fits your audience (optional pitch)"
+                      value={pitchByProgram[p.id] ?? ""}
+                      onChange={(e) =>
+                        setPitchByProgram((m) => ({
+                          ...m,
+                          [p.id]: e.target.value,
+                        }))
+                      }
+                    />
+                    <div>
+                      <Button
+                        size="small"
+                        onClick={() => void applyToProgram(p.id)}
+                      >
+                        Apply
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {tab === "deals" && (
+        <div className="border border-ui-border-base rounded-md p-4">
+          <Heading level="h2" className="mb-3">
+            My deals
+          </Heading>
+          {myDeals.length === 0 ? (
+            <Text className="text-ui-fg-subtle italic">
+              No active deals. Apply to a program to open one.
+            </Text>
+          ) : (
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-ui-fg-subtle border-b">
+                  <th className="py-2">Deal</th>
+                  <th className="py-2">Program</th>
+                  <th className="py-2">Status</th>
+                  <th className="py-2 text-right">Attributed</th>
+                  <th className="py-2 text-right">Paid out</th>
+                  <th className="py-2">Default link</th>
+                  <th className="py-2">Until</th>
+                </tr>
+              </thead>
+              <tbody>
+                {myDeals.map((d) => (
+                  <tr key={d.id} className="border-b">
+                    <td className="py-2 font-mono text-xs">{d.id}</td>
+                    <td className="py-2 font-mono text-xs">{d.program_id}</td>
+                    <td className="py-2">{d.status}</td>
+                    <td className="py-2 text-right">
+                      {formatCents(Number(d.total_attributed_cents))}
+                    </td>
+                    <td className="py-2 text-right">
+                      {formatCents(Number(d.total_paid_out_cents))}
+                    </td>
+                    <td className="py-2 font-mono text-xs">
+                      {d.default_affiliate_link_id ?? "—"}
+                    </td>
+                    <td className="py-2">
+                      {d.effective_until ? formatDate(d.effective_until) : "—"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </div>
       )}
 

@@ -105,6 +105,12 @@ function getVendorNavigationConfig({
       // panels until they opt in by setting vendor_type=creator.
     },
     {
+      icon: <Star />,
+      label: "Creator Programs",
+      to: "/programs",
+      showFor: (_, type) => type !== "creator",
+    },
+    {
       icon: <ShoppingCart />,
       label: t("orders.domain"),
       to: "/orders",

@@ -15,6 +15,13 @@ export const MARKETPLACE_WEBHOOK_EVENTS = [
   "creator.commission.reversed",
   "creator.commission.disqualified",
   "creator.attribution.fraud_flagged",
+  "creator.program.published",
+  "creator.application.submitted",
+  "creator.application.approved",
+  "creator.application.rejected",
+  "creator.deal.opened",
+  "creator.deal.violated",
+  "creator.deal.canceled",
 ] as const
 
 export type MarketplaceWebhookEvent = (typeof MARKETPLACE_WEBHOOK_EVENTS)[number]
