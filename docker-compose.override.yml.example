@@ -1,0 +1,32 @@
+# Copy to docker-compose.override.yml (gitignored) for dev-time bind mounts.
+# Compose merges this file automatically.
+
+services:
+  backend:
+    volumes:
+      - ./backend/src:/app/src:cached
+    command: ["pnpm", "dev"]
+
+  storefront:
+    volumes:
+      - ./storefront/src:/app/src:cached
+    command: ["pnpm", "dev"]
+
+  admin-panel:
+    # Run a Vite dev server instead of the static nginx image.
+    image: node:20-bookworm-slim
+    working_dir: /app
+    volumes:
+      - ./admin-panel:/app
+    command: ["sh", "-c", "corepack enable && pnpm install && pnpm dev"]
+    ports:
+      - "5173:5173"
+
+  vendor-panel:
+    image: node:20-bookworm-slim
+    working_dir: /app
+    volumes:
+      - ./vendor-panel:/app
+    command: ["sh", "-c", "corepack enable && pnpm install && pnpm dev"]
+    ports:
+      - "5174:5174"

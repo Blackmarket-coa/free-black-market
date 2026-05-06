@@ -371,12 +371,50 @@ const notificationModules = (() => {
 
 const isMedusaBuildCommand = process.argv.some(arg => arg === 'build')
 
+// Banned placeholder literals — rejected at boot in production.
+// Keep in sync with scripts/assert-env.mjs.
+const BANNED_SECRET_LITERALS = new Set<string>([
+  'supersecret',
+  'changeme',
+  'change-me',
+  'change_me',
+  'dev-only-secret-change-in-production-32chars',
+  'test',
+  'secret',
+  'password',
+])
+const BANNED_SECRET_PREFIXES = ['CHANGE_ME']
+const MIN_SECRET_LENGTH = 32
+
+const isBannedSecret = (value: string): boolean => {
+  const lower = value.trim().toLowerCase()
+  if (BANNED_SECRET_LITERALS.has(lower)) return true
+  return BANNED_SECRET_PREFIXES.some((p) => value.startsWith(p))
+}
+
 const getRequiredSecret = (envName: 'JWT_SECRET' | 'COOKIE_SECRET'): string => {
   const configured = process.env[envName]
-  if (configured) return configured
+  const isProduction = process.env.NODE_ENV === 'production'
 
-  if (process.env.NODE_ENV !== 'production' || isMedusaBuildCommand) {
-    if (process.env.NODE_ENV === 'production' && isMedusaBuildCommand) {
+  if (configured) {
+    if (isProduction && !isMedusaBuildCommand) {
+      if (isBannedSecret(configured)) {
+        throw new Error(
+          `${envName} is set to a banned placeholder value. Generate one with: ` +
+          `node -e "console.log(require('crypto').randomBytes(64).toString('hex'))"`
+        )
+      }
+      if (configured.length < MIN_SECRET_LENGTH) {
+        throw new Error(
+          `${envName} must be at least ${MIN_SECRET_LENGTH} characters in production (got ${configured.length}).`
+        )
+      }
+    }
+    return configured
+  }
+
+  if (!isProduction || isMedusaBuildCommand) {
+    if (isProduction && isMedusaBuildCommand) {
       console.warn(`[medusa-config] ${envName} is not set during build; using a temporary fallback secret for build-time config loading.`)
     }
     return 'dev-only-secret-change-in-production-32chars'
@@ -384,6 +422,23 @@ const getRequiredSecret = (envName: 'JWT_SECRET' | 'COOKIE_SECRET'): string => {
 
   throw new Error(`${envName} is required in production`)
 }
+
+// Production-only fail-closed check for the seeded admin password.
+// Skipped during the medusa build step (where envs are not yet provisioned).
+const assertAdminPassword = () => {
+  if (process.env.NODE_ENV !== 'production' || isMedusaBuildCommand) return
+  const value = process.env.MEDUSA_ADMIN_PASSWORD || ''
+  if (!value) {
+    throw new Error('MEDUSA_ADMIN_PASSWORD is required in production. Refusing to start with an empty admin password.')
+  }
+  if (isBannedSecret(value)) {
+    throw new Error('MEDUSA_ADMIN_PASSWORD matches a banned placeholder literal. Refusing to start.')
+  }
+  if (value.length < 12) {
+    throw new Error(`MEDUSA_ADMIN_PASSWORD must be at least 12 characters in production (got ${value.length}).`)
+  }
+}
+assertAdminPassword()
 
 module.exports = defineConfig({
   projectConfig: {

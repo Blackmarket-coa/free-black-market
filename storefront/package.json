@@ -9,9 +9,13 @@
     "build": "pnpm run wait && pnpm run launcher build",
     "start": "pnpm run launcher start",
     "lint": "next lint",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "assert-env": "node ../scripts/assert-env.mjs --app=storefront",
     "qa:routes": "node qa/validate-static-routes.mjs",
     "qa:internal-links": "pnpm qa:routes",
-    "release:check": "pnpm lint && pnpm qa:internal-links"
+    "release:check": "pnpm lint && pnpm typecheck && pnpm qa:internal-links"
   },
   "resolutions": {
     "glob": ">=10.5.0",
@@ -79,7 +83,8 @@
     "storybook": "^8.6.15",
     "storybook-next-intl": "^1.2.4",
     "tailwindcss": "^3.4.1",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^3.0.5"
   },
   "eslintConfig": {
     "extends": [

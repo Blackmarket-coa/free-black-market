@@ -1,0 +1,63 @@
+name: Load & Performance
+
+on:
+  schedule:
+    - cron: '0 4 * * *'  # nightly 04:00 UTC
+  push:
+    branches: ['release/**']
+  workflow_dispatch:
+    inputs:
+      duration:
+        description: 'k6 test duration (e.g. 1m, 5m)'
+        required: false
+        default: '1m'
+
+concurrency:
+  group: load-perf-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  k6:
+    name: k6 storefront load
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Bring up the stack
+        env:
+          NODE_ENV: development
+          MEDUSA_ADMIN_PASSWORD: perfadmin1234
+          NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY: pk_perf_publishable_placeholder
+        run: |
+          docker compose up -d --build backend storefront
+          for svc in backend storefront; do
+            for i in $(seq 1 60); do
+              status=$(docker inspect --format '{{.State.Health.Status}}' "free-black-market-$svc-1" 2>/dev/null || echo "starting")
+              if [ "$status" = "healthy" ]; then break; fi
+              echo "waiting for $svc ($i/60) — current status: $status"
+              sleep 5
+            done
+          done
+
+      - name: Run k6 scenario
+        uses: grafana/k6-action@v0.3.1
+        env:
+          K6_DURATION: ${{ inputs.duration || '1m' }}
+          BASE_URL: http://localhost:3000
+        with:
+          filename: perf/k6/storefront-browse.js
+          flags: --summary-export=perf/k6/summary.json
+
+      - name: Upload k6 summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: k6-summary
+          path: perf/k6/summary.json
+          retention-days: 30
+
+      - name: Tear down stack
+        if: always()
+        run: docker compose down -v

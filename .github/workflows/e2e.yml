@@ -1,0 +1,70 @@
+name: End-to-End
+
+on:
+  pull_request:
+    branches: [main, develop, 'release/**']
+  push:
+    branches: [main, 'release/**']
+  workflow_dispatch:
+
+concurrency:
+  group: e2e-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  playwright:
+    name: Playwright (compose stack)
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Playwright browsers
+        working-directory: e2e
+        run: |
+          npm install --no-audit --no-fund
+          npx playwright install --with-deps chromium
+
+      - name: Bring up the stack
+        env:
+          NODE_ENV: development
+          MEDUSA_ADMIN_PASSWORD: e2eadmin1234
+          NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY: pk_e2e_publishable_placeholder
+        run: |
+          docker compose up -d --build backend storefront admin-panel vendor-panel
+          # Wait for healthy.
+          for svc in backend storefront admin-panel vendor-panel; do
+            for i in $(seq 1 60); do
+              status=$(docker inspect --format '{{.State.Health.Status}}' "free-black-market-$svc-1" 2>/dev/null || echo "starting")
+              if [ "$status" = "healthy" ]; then break; fi
+              echo "waiting for $svc ($i/60) — current status: $status"
+              sleep 5
+            done
+          done
+          docker compose ps
+
+      - name: Run Playwright tests
+        working-directory: e2e
+        env:
+          STOREFRONT_URL: http://localhost:3000
+          ADMIN_URL: http://localhost:7000
+          VENDOR_URL: http://localhost:7001
+        run: npx playwright test
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: e2e/playwright-report
+          retention-days: 14
+
+      - name: Tear down stack
+        if: always()
+        run: docker compose down -v
