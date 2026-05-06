@@ -46,11 +46,10 @@ jobs:
     # Graph to be enabled. Public repos have it on by default; private
     # repos need GitHub Advanced Security. Until GHAS is provisioned for
     # this repo, the action errors with "Dependency review is not
-    # supported on this repository." Keep the job non-blocking so a
-    # missing GHAS license doesn't gate every PR; the gitleaks + Trivy
-    # + CodeQL gates still cover the security-baseline.
-    if: github.event_name == 'pull_request'
-    continue-on-error: true
+    # supported on this repository." Skip the job entirely on private /
+    # internal repos so the check is "skipped" instead of "failed";
+    # gitleaks + Trivy + CodeQL still cover the security baseline.
+    if: github.event_name == 'pull_request' && github.event.repository.visibility == 'public'
     steps:
       - name: Checkout
         uses: actions/checkout@v4
