@@ -98,6 +98,38 @@ async function getCountryCode(
   }
 }
 
+/**
+ * Apply creator-attribution cookies (visitor token + affiliate code) to the
+ * given response. Idempotent: existing visitor cookies are reused; the
+ * affiliate cookie is only refreshed when `?fbm_ref=<code>` is present.
+ */
+function applyAttributionCookies(request: NextRequest, response: NextResponse) {
+  const VISITOR_COOKIE = "_fbm_visitor"
+  const AFF_COOKIE = "_fbm_aff"
+  const COOKIE_MAX_AGE_DAYS = 90
+  const AFF_MAX_AGE_DAYS =
+    parseInt(process.env.NEXT_PUBLIC_CREATOR_ATTRIBUTION_DEFAULT_COOKIE_DAYS || "7", 10) || 7
+
+  // Visitor cookie: ensure one exists and is 90 days fresh.
+  if (!request.cookies.get(VISITOR_COOKIE)) {
+    response.cookies.set(VISITOR_COOKIE, crypto.randomUUID(), {
+      maxAge: COOKIE_MAX_AGE_DAYS * 24 * 60 * 60,
+      sameSite: "lax",
+      path: "/",
+    })
+  }
+
+  // Affiliate cookie: pin if `?fbm_ref=<short_code>` present in the URL.
+  const fbmRef = request.nextUrl.searchParams.get("fbm_ref")
+  if (fbmRef) {
+    response.cookies.set(AFF_COOKIE, `${fbmRef}.${Date.now()}`, {
+      maxAge: AFF_MAX_AGE_DAYS * 24 * 60 * 60,
+      sameSite: "lax",
+      path: "/",
+    })
+  }
+}
+
 export async function middleware(request: NextRequest) {
   // Short-circuit static assets
   if (request.nextUrl.pathname.includes(".")) {
@@ -108,9 +140,13 @@ export async function middleware(request: NextRequest) {
   const urlSegment = request.nextUrl.pathname.split("/")[1]
   const looksLikeLocale = /^[a-z]{2}$/i.test(urlSegment || "")
 
-  // Fast path: URL already has a locale segment and cache cookie exists
+  // Fast path: URL already has a locale segment and cache cookie exists.
+  // Still apply creator attribution cookies so /r/* redirects through the
+  // backend redirector or any direct ?fbm_ref= param keeps attributing.
   if (looksLikeLocale && cacheIdCookie) {
-    return NextResponse.next()
+    const fastResponse = NextResponse.next()
+    applyAttributionCookies(request, fastResponse)
+    return fastResponse
   }
 
   let response = NextResponse.next()
@@ -122,6 +158,8 @@ export async function middleware(request: NextRequest) {
       maxAge: 60 * 60 * 24,
     })
   }
+
+  applyAttributionCookies(request, response)
 
   const regionMap = await getRegionMap(cacheId)
   if (!regionMap.size) {

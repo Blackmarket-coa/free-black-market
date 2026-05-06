@@ -97,6 +97,14 @@ function getVendorNavigationConfig({
       // Always visible
     },
     {
+      icon: <Star />,
+      label: "Creator Studio",
+      to: "/creator-studio",
+      // Visible to all sellers; the page itself surfaces only the creator's
+      // own attributions and links so non-creator vendors will see empty
+      // panels until they opt in by setting vendor_type=creator.
+    },
+    {
       icon: <ShoppingCart />,
       label: t("orders.domain"),
       to: "/orders",

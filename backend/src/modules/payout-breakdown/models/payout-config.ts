@@ -15,6 +15,7 @@ export enum FeeType {
   TIP = "TIP",                             // Optional tip
   COOPERATIVE_FEE = "COOPERATIVE_FEE",     // Co-op membership fee
   PICKUP_DISCOUNT = "PICKUP_DISCOUNT",     // Discount for pickup
+  CREATOR_COMMISSION = "CREATOR_COMMISSION", // Affiliate share to a creator
 }
 
 /**

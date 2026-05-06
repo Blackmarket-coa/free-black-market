@@ -188,6 +188,7 @@ const marketplaceModules = [
   { resolve: './src/modules/marketplace-listing' },
   { resolve: './src/modules/marketplace-signing' },
   { resolve: './src/modules/marketplace-webhooks' },
+  { resolve: './src/modules/creator-attribution' },
 ]
 
 // Community infrastructure modules

@@ -81,6 +81,8 @@ class HawalaLedgerModuleService extends MedusaService({
       SETTLEMENT: "STL",
       RESERVE: "RSV",
       ESCROW: "ESC",
+      CREATOR_EARNINGS: "CRE",
+      CREATOR_REWARD_POOL: "CRP",
     }[accountType] || "GEN"
     
     const timestamp = Date.now().toString(36).toUpperCase()
@@ -106,6 +108,135 @@ class HawalaLedgerModuleService extends MedusaService({
       account_type: accountType,
       owner_type: "SYSTEM",
       owner_id: "system",
+    })
+  }
+
+  /**
+   * Get or create a SELLER_EARNINGS account for a vendor.
+   */
+  async getOrCreateSellerEarnings(sellerId: string, currencyCode: string = "USD") {
+    const existing = await this.listLedgerAccounts({
+      account_type: "SELLER_EARNINGS",
+      owner_type: "SELLER",
+      owner_id: sellerId,
+    })
+
+    if (existing.length > 0) {
+      return existing[0]
+    }
+
+    return this.createAccount({
+      account_type: "SELLER_EARNINGS",
+      owner_type: "SELLER",
+      owner_id: sellerId,
+      currency_code: currencyCode,
+    })
+  }
+
+  /**
+   * Get or create a CREATOR_EARNINGS account for a creator seller.
+   * Used by the creator-monetization platform to credit affiliate commissions.
+   */
+  async getOrCreateCreatorEarnings(creatorSellerId: string, currencyCode: string = "USD") {
+    const existing = await this.listLedgerAccounts({
+      account_type: "CREATOR_EARNINGS",
+      owner_type: "CREATOR",
+      owner_id: creatorSellerId,
+    })
+
+    if (existing.length > 0) {
+      return existing[0]
+    }
+
+    return this.createAccount({
+      account_type: "CREATOR_EARNINGS",
+      owner_type: "CREATOR",
+      owner_id: creatorSellerId,
+      currency_code: currencyCode,
+    })
+  }
+
+  /**
+   * Credit a creator's earnings account from a vendor's seller earnings.
+   *
+   * Hawala stores money in DOLLARS (decimal) while the creator-attribution
+   * module operates in cents. Callers MUST pass `amountCents` as integer cents;
+   * we divide by 100 to match the ledger's decimal convention (mirrors the
+   * pattern in hawala-order-payment.ts).
+   */
+  async creditCreatorCommission(args: {
+    vendorSellerId: string
+    creatorSellerId: string
+    amountCents: number
+    orderId: string
+    attributionId: string
+    currencyCode?: string
+    description?: string
+  }) {
+    if (args.amountCents <= 0) {
+      throw new Error("creditCreatorCommission amountCents must be > 0")
+    }
+
+    const currency = args.currencyCode || "USD"
+    const vendorAccount = await this.getOrCreateSellerEarnings(args.vendorSellerId, currency)
+    const creatorAccount = await this.getOrCreateCreatorEarnings(args.creatorSellerId, currency)
+
+    return this.createTransfer({
+      debit_account_id: vendorAccount.id,
+      credit_account_id: creatorAccount.id,
+      amount: args.amountCents / 100,
+      entry_type: "CREATOR_COMMISSION",
+      reference_type: "CREATOR_ATTRIBUTION",
+      reference_id: args.attributionId,
+      order_id: args.orderId,
+      idempotency_key: `creator-commission-${args.attributionId}`,
+      description:
+        args.description ||
+        `Creator commission for order ${args.orderId} (attribution ${args.attributionId})`,
+      metadata: {
+        attribution_id: args.attributionId,
+        creator_seller_id: args.creatorSellerId,
+        vendor_seller_id: args.vendorSellerId,
+      },
+    })
+  }
+
+  /**
+   * Reverse a previously paid creator commission (e.g. on refund). Creates a
+   * new ledger entry that flows funds creator -> vendor.
+   */
+  async reverseCreatorCommission(args: {
+    vendorSellerId: string
+    creatorSellerId: string
+    amountCents: number
+    orderId: string
+    attributionId: string
+    reason: string
+    currencyCode?: string
+  }) {
+    if (args.amountCents <= 0) {
+      throw new Error("reverseCreatorCommission amountCents must be > 0")
+    }
+
+    const currency = args.currencyCode || "USD"
+    const vendorAccount = await this.getOrCreateSellerEarnings(args.vendorSellerId, currency)
+    const creatorAccount = await this.getOrCreateCreatorEarnings(args.creatorSellerId, currency)
+
+    return this.createTransfer({
+      debit_account_id: creatorAccount.id,
+      credit_account_id: vendorAccount.id,
+      amount: args.amountCents / 100,
+      entry_type: "REFUND",
+      reference_type: "CREATOR_ATTRIBUTION",
+      reference_id: args.attributionId,
+      order_id: args.orderId,
+      idempotency_key: `creator-commission-reversal-${args.attributionId}`,
+      description: `Reversed creator commission for order ${args.orderId}: ${args.reason}`,
+      metadata: {
+        attribution_id: args.attributionId,
+        reversal: true,
+        reason: args.reason,
+      },
     })
   }
 

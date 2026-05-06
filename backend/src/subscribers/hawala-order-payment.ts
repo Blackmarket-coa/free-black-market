@@ -3,6 +3,8 @@ import { HAWALA_LEDGER_MODULE } from "../modules/hawala-ledger"
 import HawalaLedgerModuleService from "../modules/hawala-ledger/service"
 import { PAYOUT_BREAKDOWN_MODULE } from "../modules/payout-breakdown"
 import PayoutBreakdownService from "../modules/payout-breakdown/service"
+import { CREATOR_ATTRIBUTION_MODULE } from "../modules/creator-attribution"
+import type CreatorAttributionService from "../modules/creator-attribution/service"
 
 /**
  * Convert cents (integer) to dollars (decimal)
@@ -108,6 +110,27 @@ export default async function hawalaOrderPaymentSubscriber({
     const platformFeePercent = await payoutService.getEffectivePlatformFee(sellerId)
     const platformFeeAmount = totalAmount * (platformFeePercent / 100)
 
+    // Look up creator attribution (idempotent — created earlier by
+    // attribute-order-on-placed subscriber, but we look it up rather than
+    // depending on subscriber ordering).
+    let creatorCommissionCents = 0
+    let creatorSellerId: string | undefined
+    try {
+      const attributionService = container.resolve<CreatorAttributionService>(
+        CREATOR_ATTRIBUTION_MODULE
+      )
+      const attributions = await attributionService.listOrderAttributions({
+        order_id: orderId,
+      })
+      const attribution = attributions[0]
+      if (attribution) {
+        creatorCommissionCents = Number(attribution.commission_amount_cents) || 0
+        creatorSellerId = attribution.creator_seller_id
+      }
+    } catch (attributionError) {
+      console.warn(`[Hawala] Could not look up creator attribution for order ${orderId}:`, attributionError)
+    }
+
     // Store the breakdown for this order (for transparency reporting)
     try {
       const breakdown = await payoutService.calculateBreakdown({
@@ -115,6 +138,8 @@ export default async function hawalaOrderPaymentSubscriber({
         sellerId,
         orderId,
         currencyCode: order.currency_code,
+        creatorCommissionCents,
+        creatorSellerId,
       })
       await payoutService.storeOrderBreakdown(
         orderId,

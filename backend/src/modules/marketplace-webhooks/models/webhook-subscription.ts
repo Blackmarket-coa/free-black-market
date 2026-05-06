@@ -9,6 +9,12 @@ export const MARKETPLACE_WEBHOOK_EVENTS = [
   "creator.payout.completed",
   "listing.signed_bundle.published",
   "creator.account.suspended",
+  "creator.commission.earned",
+  "creator.commission.held",
+  "creator.commission.approved",
+  "creator.commission.reversed",
+  "creator.commission.disqualified",
+  "creator.attribution.fraud_flagged",
 ] as const
 
 export type MarketplaceWebhookEvent = (typeof MARKETPLACE_WEBHOOK_EVENTS)[number]
