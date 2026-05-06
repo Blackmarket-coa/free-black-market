@@ -51,3 +51,109 @@ See the templates:
 - `vendor-panel/.env.template`
 
 The fail-closed validator (`scripts/assert-env.mjs`) is invoked at boot for backend and storefront and refuses to start when banned placeholder values are detected.
+
+## First-time setup
+
+Items in this section are configured **outside** the repo and must exist before the deploy workflows can succeed. Confirm with the user / platform team which already exist; the rows in the **Cluster-external setup** section below track the off-repo state of each.
+
+### Repository secrets (Settings → Secrets and variables → Actions)
+
+| Secret | Used by | Format |
+|--------|---------|--------|
+| `STAGING_KUBE_CONFIG_DATA` | `staging-deploy.yml` | base64-encoded kubeconfig with cluster-admin or namespaced rights for `freeblackmarket-staging` |
+| `PRODUCTION_KUBE_CONFIG_DATA` | `prod-deploy.yml` | base64-encoded kubeconfig for `freeblackmarket-production` |
+| `GITLEAKS_LICENSE` | `security.yml` (gitleaks job) | optional; lifts the org-scan rate limit |
+| `BACKEND_URL` | `ci.yml` `release-validation` job | full URL of the integration backend (no trailing slash) |
+| `STORE_TOKEN` | `release-validation` | publishable / store API token |
+| `VENDOR_TOKEN` | `release-validation` | vendor JWT |
+| `ADMIN_TOKEN` | `release-validation` | admin JWT |
+
+Encode a kubeconfig with `cat ~/.kube/config-prod | base64 -w0`; paste the result into the secret's value field. Do not commit kubeconfigs.
+
+### GitHub environments (Settings → Environments)
+
+| Environment | Required reviewers | URL | Used by |
+|-------------|--------------------|-----|---------|
+| `staging` | ≥ 1 (any platform engineer) | `https://staging.freeblackmarket.com` | `staging-deploy.yml` |
+| `production` | ≥ 2 (on-call commander + engineering manager) | `https://freeblackmarket.com` | `prod-deploy.yml` |
+
+Enable "Wait timer: 5 min" on `production` so a deploy can be cancelled before pods roll.
+
+### GHCR (GitHub Container Registry)
+
+The first run of `docker-build.yml` after a push to `main` creates four image repositories:
+
+```
+ghcr.io/<org>/free-black-market-backend
+ghcr.io/<org>/free-black-market-storefront
+ghcr.io/<org>/free-black-market-admin-panel
+ghcr.io/<org>/free-black-market-vendor-panel
+```
+
+The workflow's `GITHUB_TOKEN` already has `packages: write` (declared at the top of `docker-build.yml`). After the first push, switch each package to **Internal** in `https://github.com/orgs/<org>/packages/container/<name>/settings` so the cluster can pull without a registry credential.
+
+If the cluster is in a different network and cannot pull from GHCR directly, create an `imagePullSecret` and reference it in each Deployment's `spec.template.spec.imagePullSecrets`.
+
+### External Secrets Operator (recommended)
+
+The K8s manifests under `infrastructure/k8s/{staging,production}/10-externalsecrets.yaml` declare four `ExternalSecret` resources per environment that read from a `ClusterSecretStore` named `cluster-secret-store`. Install ESO once per cluster:
+
+```bash
+helm repo add external-secrets https://charts.external-secrets.io
+helm install external-secrets external-secrets/external-secrets -n external-secrets --create-namespace
+# Then create the ClusterSecretStore pointing at your secret backend (AWS SM /
+# Vault / GCP SM / 1Password / Doppler) — see ESO docs for the provider stanza.
+```
+
+If ESO is not (yet) installed, delete `10-externalsecrets.yaml` from the manifests directory before the workflow runs and provision the four Secrets manually:
+
+```bash
+kubectl -n freeblackmarket-staging create secret generic backend-env \
+  --from-literal=JWT_SECRET=... \
+  --from-literal=COOKIE_SECRET=... \
+  --from-literal=DATABASE_URL=... \
+  # … all keys per the env templates …
+```
+
+Repeat for `storefront-env`, `admin-panel-env`, `vendor-panel-env`.
+
+### DNS prerequisites
+
+The deploy workflows hit these URLs as smoke tests immediately after rollout. Each must resolve to the cluster's load-balancer IP (or a global anycast / CDN that proxies to it) before the first deploy:
+
+| Environment | Hostnames |
+|-------------|-----------|
+| Staging | `staging.freeblackmarket.com`, `staging-admin.freeblackmarket.com`, `staging-vendor.freeblackmarket.com`, `staging-api.freeblackmarket.com` |
+| Production | `freeblackmarket.com`, `admin.freeblackmarket.com`, `vendor.freeblackmarket.com`, `api.freeblackmarket.com` |
+
+cert-manager + the `letsencrypt-prod` `ClusterIssuer` annotated in the Ingress objects will issue the TLS certificates on first request.
+
+### First-time-setup checklist (operator)
+
+- [ ] Kubeconfigs base64-encoded and uploaded to repo secrets (`STAGING_KUBE_CONFIG_DATA`, `PRODUCTION_KUBE_CONFIG_DATA`).
+- [ ] GitHub environments `staging` and `production` configured with reviewers.
+- [ ] `GITLEAKS_LICENSE` set (optional).
+- [ ] Release-validation tokens (`BACKEND_URL`, `STORE_TOKEN`, `VENDOR_TOKEN`, `ADMIN_TOKEN`) set.
+- [ ] GHCR image repos visible after first `docker-build.yml` run; visibility set to Internal.
+- [ ] External Secrets Operator installed in both clusters; `ClusterSecretStore` named `cluster-secret-store` reachable.
+- [ ] DNS records for all 8 hostnames above point at the right LB.
+- [ ] cert-manager installed; `letsencrypt-prod` `ClusterIssuer` exists.
+
+## Cluster-external setup
+
+These items are configured outside the cluster (or outside the repo) and the deploy workflows / runbooks reference them. Each row tracks whether the user has confirmed it exists.
+
+| Item | Referenced by | Confirmed |
+|------|---------------|-----------|
+| PagerDuty rotation "Free Black Market" | `runbooks/ON_CALL.md` | _pending — confirm with user_ |
+| Slack `#freeblackmarket-alerts` | `runbooks/INCIDENT_RESPONSE.md`, `OBSERVABILITY.md` | _pending_ |
+| Slack `#freeblackmarket-oncall` | `runbooks/ON_CALL.md` | _pending_ |
+| Slack `#freeblackmarket-engineering` | `runbooks/RELEASE.md` | _pending_ |
+| Status page at `status.freeblackmarket.com` | `runbooks/INCIDENT_RESPONSE.md` | _pending_ |
+| Sentry projects per app + DSN distribution | `OBSERVABILITY.md` | _pending_ |
+| Grafana org folder `freeblackmarket` + 5 dashboards | `OBSERVABILITY.md`, `infrastructure/observability/grafana/README.md` | _pending_ |
+| DB managed-snapshot policy (daily, 30 d retention) | `runbooks/BACKUP_RESTORE.md` | _pending_ |
+| Cross-region MinIO/S3 replication on the media bucket | `runbooks/DR.md` | _pending_ |
+| Route 53 / Cloudflare failover record sets | `runbooks/DR.md` | _pending_ |
+
+When an item is confirmed, replace `_pending_` with the date and the operator who verified it (e.g. `2026-05-08 — alice`).
