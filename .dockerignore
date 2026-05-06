@@ -1,0 +1,19 @@
+# Repo-root ignores for any image whose build context happens to be the repo root
+# (currently none; per-app Dockerfiles use their own context). Kept as a guardrail
+# so a future root-context build never ships secrets or the repo's git history.
+.git
+.gitignore
+node_modules
+**/node_modules
+**/dist
+**/.next
+**/.medusa
+**/coverage
+**/storybook-static
+**/.env
+**/.env.*
+!**/.env.template
+!**/.env.staging.template
+**/*.log
+e2e/test-results
+e2e/playwright-report

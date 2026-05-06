@@ -1,6 +1,9 @@
 import type { NextConfig } from "next"
 
 const nextConfig: NextConfig = {
+  // Enable a self-contained build output so the production Dockerfile can
+  // copy `.next/standalone` instead of installing the full dep tree at runtime.
+  output: "standalone",
   typescript: {
     ignoreBuildErrors: true,
   },
