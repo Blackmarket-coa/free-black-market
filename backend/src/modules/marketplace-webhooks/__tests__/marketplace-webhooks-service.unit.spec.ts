@@ -11,7 +11,10 @@ describe("marketplace-webhooks service helpers", () => {
     expect(signWithSecret(secret, body)).toBe(expected)
   })
 
-  it("exports the three contract events", () => {
+  it("exports the three original contract events alongside any extensions", () => {
+    // The list grows as new modules add events (creator-attribution,
+    // creator-program, creator-rewards, service-program, etc.). Assert the
+    // original three are still present and that there are no duplicates.
     expect(MARKETPLACE_WEBHOOK_EVENTS).toEqual(
       expect.arrayContaining([
         "creator.payout.completed",
@@ -19,6 +22,7 @@ describe("marketplace-webhooks service helpers", () => {
         "creator.account.suspended",
       ])
     )
-    expect(MARKETPLACE_WEBHOOK_EVENTS.length).toBe(3)
+    const unique = new Set(MARKETPLACE_WEBHOOK_EVENTS)
+    expect(unique.size).toBe(MARKETPLACE_WEBHOOK_EVENTS.length)
   })
 })

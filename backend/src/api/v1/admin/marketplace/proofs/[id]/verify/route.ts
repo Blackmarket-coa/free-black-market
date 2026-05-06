@@ -1,0 +1,37 @@
+import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
+import { WORK_VERIFICATION_MODULE } from "../../../../../../../modules/work-verification"
+import type WorkVerificationService from "../../../../../../../modules/work-verification/service"
+import { ProofVerificationMethod } from "../../../../../../../modules/work-verification/models"
+import { MARKETPLACE_WEBHOOKS_MODULE } from "../../../../../../../modules/marketplace-webhooks"
+import type MarketplaceWebhooksService from "../../../../../../../modules/marketplace-webhooks/service"
+
+export async function POST(req: MedusaRequest, res: MedusaResponse) {
+  const id = (req.params as { id?: string })?.id
+  if (!id) {
+    return res.status(400).json({ message: "Missing id", type: "invalid_request" })
+  }
+  const wv = req.scope.resolve<WorkVerificationService>(WORK_VERIFICATION_MODULE)
+  const list = await wv.listProofArtifacts({ id })
+  const proof = list[0]
+  if (!proof) {
+    return res.status(404).json({ message: "Proof not found", type: "not_found" })
+  }
+  const updated = await wv.manuallyVerify({
+    proofId: id,
+    verifierId: "admin",
+    method: ProofVerificationMethod.ADMIN_REVIEW,
+  })
+  try {
+    const webhooks = req.scope.resolve<MarketplaceWebhooksService>(
+      MARKETPLACE_WEBHOOKS_MODULE
+    )
+    await webhooks.dispatch("service.proof.verified", proof.owner_seller_id, {
+      proof_id: id,
+      context_type: proof.context_type,
+      context_id: proof.context_id,
+    })
+  } catch (err) {
+    console.error("[admin/proof/verify] webhook failed", err)
+  }
+  return res.status(200).json({ proof: updated })
+}

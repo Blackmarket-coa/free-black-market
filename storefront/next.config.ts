@@ -17,6 +17,7 @@ const nextConfig: NextConfig = {
   // Security headers
   async headers() {
     return [
+      // Default: deny iframe embedding for the whole site.
       {
         source: "/:path*",
         headers: [
@@ -39,6 +40,39 @@ const nextConfig: NextConfig = {
           {
             key: "Permissions-Policy",
             value: "camera=(), microphone=(), geolocation=()",
+          },
+        ],
+      },
+      // Creator embeddable widget: explicitly relax frame-ancestors so any
+      // origin can iframe `/creators/[handle]/widget`. Origin allowlisting is
+      // enforced on the backend via the AffiliateLink.allowed_origins field
+      // when the widget redirects back through /r/:shortCode.
+      {
+        source: "/:locale/creators/:handle/widget",
+        headers: [
+          {
+            key: "X-Frame-Options",
+            value: "ALLOWALL",
+          },
+          {
+            key: "Content-Security-Policy",
+            value: "frame-ancestors *",
+          },
+        ],
+      },
+      // Embed JS bundle: served as a static asset; allow CORS so any site
+      // can <script src="..."> it. The bundle itself is the same origin as
+      // the iframe target so X-Frame-Options doesn't apply.
+      {
+        source: "/embed/:path*",
+        headers: [
+          {
+            key: "Access-Control-Allow-Origin",
+            value: "*",
+          },
+          {
+            key: "Cache-Control",
+            value: "public, max-age=300",
           },
         ],
       },

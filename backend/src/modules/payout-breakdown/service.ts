@@ -47,6 +47,10 @@ const DEFAULT_FEE_LABELS: Record<FeeType, { label: string; description: string }
     label: "Pickup Discount",
     description: "Savings for picking up your order",
   },
+  [FeeType.CREATOR_COMMISSION]: {
+    label: "Creator Commission",
+    description: "Affiliate share paid to the creator who referred this sale",
+  },
 }
 
 /**
@@ -67,6 +71,12 @@ export interface BreakdownInput {
   orderId?: string
   currencyCode?: string
   pickupDiscount?: number    // Discount for pickup (cents, negative)
+  // Creator-monetization extension. When set, this commission is funded out
+  // of the seller's gross (i.e. it reduces the producer's net), keeping the
+  // customer-facing total unchanged.
+  creatorCommissionCents?: number
+  creatorSellerId?: string
+  creatorName?: string
 }
 
 class PayoutBreakdownService extends MedusaService({
@@ -137,6 +147,7 @@ class PayoutBreakdownService extends MedusaService({
       communityFund: number
       tax: number
       tip: number
+      creatorCommission: number
     }
     sellerBreakdown: Array<{
       sellerId: string
@@ -159,33 +170,48 @@ class PayoutBreakdownService extends MedusaService({
     let totalSubtotal = input.subtotal
     let totalToProducers = 0
     let totalPlatformFees = 0
-    
+    let totalCreatorCommission = 0
+
     // Handle multi-seller or single-seller
     const sellers = input.sellerBreakdown || [{
       sellerId: input.sellerId || "unknown",
       subtotal: input.subtotal,
       sellerName: undefined,
     }]
-    
+
+    // Creator commission is currently single-creator-per-order and funded out
+    // of the first seller's gross. Multi-seller commission splitting can be
+    // added later — for now allocate the full commission to the first seller.
+    const creatorCommissionTotal = Math.max(0, Math.floor(input.creatorCommissionCents || 0))
+    let creatorRemaining = creatorCommissionTotal
+
     for (const seller of sellers) {
       const platformFeePercent = await this.getEffectivePlatformFee(seller.sellerId)
       const platformFee = Math.round(seller.subtotal * (platformFeePercent / 100))
-      const producerAmount = seller.subtotal - platformFee
-      
+
       // Check for additional community contribution from seller
       const sellerSettings = await this.getSellerSettings(seller.sellerId)
       const additionalCommunity = sellerSettings?.additional_community_contribution || 0
       const communityFromSeller = Math.round(seller.subtotal * (additionalCommunity / 100))
-      
-      totalToProducers += producerAmount - communityFromSeller
+
+      // Allocate creator commission against this seller's slice (capped at
+      // remaining gross after platform fee + community).
+      const sellerGrossAfterPlatform = Math.max(0, seller.subtotal - platformFee - communityFromSeller)
+      const creatorForSeller = Math.min(creatorRemaining, sellerGrossAfterPlatform)
+      creatorRemaining -= creatorForSeller
+
+      const producerAmount = seller.subtotal - platformFee - communityFromSeller - creatorForSeller
+
+      totalToProducers += producerAmount
       totalPlatformFees += platformFee
-      
+      totalCreatorCommission += creatorForSeller
+
       sellerTotals.push({
         sellerId: seller.sellerId,
         sellerName: seller.sellerName,
         gross: seller.subtotal,
-        fees: platformFee,
-        net: producerAmount - communityFromSeller,
+        fees: platformFee + creatorForSeller,
+        net: producerAmount,
       })
     }
     
@@ -222,6 +248,18 @@ class PayoutBreakdownService extends MedusaService({
         label: DEFAULT_FEE_LABELS[FeeType.PLATFORM_FEE].label,
         description: DEFAULT_FEE_LABELS[FeeType.PLATFORM_FEE].description,
         recipient: "Platform",
+      })
+    }
+
+    // Creator commission item (when an attributed creator referred this sale)
+    if (totalCreatorCommission > 0) {
+      items.push({
+        type: FeeType.CREATOR_COMMISSION,
+        amount: totalCreatorCommission,
+        percent: Math.round((totalCreatorCommission / customerPaid) * 100),
+        label: DEFAULT_FEE_LABELS[FeeType.CREATOR_COMMISSION].label,
+        description: DEFAULT_FEE_LABELS[FeeType.CREATOR_COMMISSION].description,
+        recipient: input.creatorName ?? "Creator",
       })
     }
     
@@ -293,6 +331,7 @@ class PayoutBreakdownService extends MedusaService({
         communityFund,
         tax: input.tax || 0,
         tip: input.tip || 0,
+        creatorCommission: totalCreatorCommission,
       },
       sellerBreakdown: sellerTotals,
     }
@@ -320,6 +359,7 @@ class PayoutBreakdownService extends MedusaService({
       total_community_fund: breakdown.totals.communityFund,
       total_tax: breakdown.totals.tax,
       total_tip: breakdown.totals.tip,
+      total_creator_commission: breakdown.totals.creatorCommission ?? 0,
       seller_breakdown: breakdown.sellerBreakdown as unknown as Record<string, unknown>,
     })
   }
@@ -337,6 +377,7 @@ class PayoutBreakdownService extends MedusaService({
       communityFund: number
       tax: number
       tip: number
+      creatorCommission: number
     }
     sellerBreakdown: Array<{
       sellerId: string
@@ -347,13 +388,13 @@ class PayoutBreakdownService extends MedusaService({
     }>
   } | null> {
     const breakdowns = await this.listOrderPayoutBreakdowns({ order_id: orderId })
-    
+
     if (breakdowns.length === 0) {
       return null
     }
-    
+
     const breakdown = breakdowns[0]
-    
+
     return {
       items: (breakdown.breakdown_items as Record<string, unknown>) as unknown as BreakdownItem[],
       totals: {
@@ -364,6 +405,7 @@ class PayoutBreakdownService extends MedusaService({
         communityFund: Number(breakdown.total_community_fund),
         tax: Number(breakdown.total_tax),
         tip: Number(breakdown.total_tip),
+        creatorCommission: Number((breakdown as any).total_creator_commission ?? 0),
       },
       sellerBreakdown: (breakdown.seller_breakdown as Record<string, unknown>) as unknown as Array<{
         sellerId: string

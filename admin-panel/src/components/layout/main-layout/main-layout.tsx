@@ -14,6 +14,7 @@ import {
   Shopping,
   ShoppingCart,
   SquaresPlus,
+  Star,
   Sun,
   Tag,
   Users,
@@ -250,6 +251,26 @@ const useCoreRoutes = (): Omit<INavItem, "pathname">[] => {
       icon: <Sun />,
       label: "Producers",
       to: "/producers",
+    },
+    {
+      icon: <Star />,
+      label: "Creators",
+      to: "/creators",
+      items: [
+        {
+          label: "Programs",
+          to: "/creator-programs",
+        },
+        {
+          label: "Reward Pools",
+          to: "/creator-rewards",
+        },
+      ],
+    },
+    {
+      icon: <SquaresPlus />,
+      label: "Services",
+      to: "/services",
     },
     {
       icon: <ReceiptPercent />,

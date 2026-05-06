@@ -50,7 +50,10 @@ const OrderPayoutBreakdown = model.define("order_payout_breakdown", {
   
   // Total tip
   total_tip: model.bigNumber().default(0),
-  
+
+  // Total creator commission (affiliate share funded out of seller gross)
+  total_creator_commission: model.bigNumber().default(0),
+
   // === Per-Seller Breakdown ===
   // For multi-vendor orders
   seller_breakdown: model.json(), // Array<{ seller_id, amount, fees }>

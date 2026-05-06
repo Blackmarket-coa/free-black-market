@@ -70,6 +70,30 @@ export const RouteMap: RouteObject[] = [
             lazy: () => import("../../routes/sales-report"),
           },
           {
+            path: "creator-studio",
+            errorElement: <ErrorBoundary />,
+            handle: {
+              breadcrumb: () => "Creator Studio",
+            },
+            lazy: () => import("../../routes/creator-studio"),
+          },
+          {
+            path: "programs",
+            errorElement: <ErrorBoundary />,
+            handle: {
+              breadcrumb: () => "Creator Programs",
+            },
+            lazy: () => import("../../routes/programs"),
+          },
+          {
+            path: "services",
+            errorElement: <ErrorBoundary />,
+            handle: {
+              breadcrumb: () => "Services",
+            },
+            lazy: () => import("../../routes/services"),
+          },
+          {
             path: "/requests",
             errorElement: <ErrorBoundary />,
             handle: {

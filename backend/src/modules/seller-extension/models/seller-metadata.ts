@@ -24,6 +24,16 @@ export enum VendorType {
   MAKER = "maker",
   RESTAURANT = "restaurant",
   MUTUAL_AID = "mutual_aid",
+  CREATOR = "creator",
+}
+
+/**
+ * Creator profile fields used by the creator-monetization platform.
+ * Only meaningful when `vendor_type === CREATOR`.
+ */
+export interface CreatorAudienceGeo {
+  // ISO-3166-1 alpha-2 country code -> share (0..1) of the creator's audience
+  [countryCode: string]: number
 }
 
 /**
@@ -129,6 +139,13 @@ const SellerMetadata = model.define("seller_metadata", {
   
   // Vendor-selected dashboard extensions (feature keys)
   enabled_extensions: model.json().nullable(),
+
+  // Creator-specific fields (used when vendor_type === CREATOR)
+  creator_handle: model.text().nullable(),
+  creator_bio: model.text().nullable(),
+  creator_niches: model.json().nullable(), // string[]
+  creator_total_followers: model.number().default(0),
+  creator_audience_geo: model.json().nullable(), // CreatorAudienceGeo
 
   // Metadata for additional extensions
   metadata: model.json().nullable(),

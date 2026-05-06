@@ -188,6 +188,13 @@ const marketplaceModules = [
   { resolve: './src/modules/marketplace-listing' },
   { resolve: './src/modules/marketplace-signing' },
   { resolve: './src/modules/marketplace-webhooks' },
+  { resolve: './src/modules/creator-attribution' },
+  { resolve: './src/modules/creator-program' },
+  { resolve: './src/modules/content-platform' },
+  { resolve: './src/modules/creator-rewards' },
+  { resolve: './src/modules/service-program' },
+  { resolve: './src/modules/work-verification' },
+  { resolve: './src/modules/order-subcontract' },
 ]
 
 // Community infrastructure modules

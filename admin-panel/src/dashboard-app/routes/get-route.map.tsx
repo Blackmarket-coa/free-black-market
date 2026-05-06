@@ -830,6 +830,38 @@ export function getRouteMap({
               ],
             },
             {
+              path: "/creators",
+              errorElement: <ErrorBoundary />,
+              handle: {
+                breadcrumb: () => "Creators",
+              },
+              lazy: () => import("../../routes/creators"),
+            },
+            {
+              path: "/creator-programs",
+              errorElement: <ErrorBoundary />,
+              handle: {
+                breadcrumb: () => "Creator Programs",
+              },
+              lazy: () => import("../../routes/creator-programs"),
+            },
+            {
+              path: "/creator-rewards",
+              errorElement: <ErrorBoundary />,
+              handle: {
+                breadcrumb: () => "Creator Rewards",
+              },
+              lazy: () => import("../../routes/creator-rewards"),
+            },
+            {
+              path: "/services",
+              errorElement: <ErrorBoundary />,
+              handle: {
+                breadcrumb: () => "Services",
+              },
+              lazy: () => import("../../routes/services"),
+            },
+            {
               path: "/messages",
               errorElement: <ErrorBoundary />,
               handle: {

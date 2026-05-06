@@ -81,6 +81,8 @@ class HawalaLedgerModuleService extends MedusaService({
       SETTLEMENT: "STL",
       RESERVE: "RSV",
       ESCROW: "ESC",
+      CREATOR_EARNINGS: "CRE",
+      CREATOR_REWARD_POOL: "CRP",
     }[accountType] || "GEN"
     
     const timestamp = Date.now().toString(36).toUpperCase()
@@ -106,6 +108,371 @@ class HawalaLedgerModuleService extends MedusaService({
       account_type: accountType,
       owner_type: "SYSTEM",
       owner_id: "system",
+    })
+  }
+
+  /**
+   * Get or create a SELLER_EARNINGS account for a vendor.
+   */
+  async getOrCreateSellerEarnings(sellerId: string, currencyCode: string = "USD") {
+    const existing = await this.listLedgerAccounts({
+      account_type: "SELLER_EARNINGS",
+      owner_type: "SELLER",
+      owner_id: sellerId,
+    })
+
+    if (existing.length > 0) {
+      return existing[0]
+    }
+
+    return this.createAccount({
+      account_type: "SELLER_EARNINGS",
+      owner_type: "SELLER",
+      owner_id: sellerId,
+      currency_code: currencyCode,
+    })
+  }
+
+  /**
+   * Get or create a CREATOR_EARNINGS account for a creator seller.
+   * Used by the creator-monetization platform to credit affiliate commissions.
+   */
+  async getOrCreateCreatorEarnings(creatorSellerId: string, currencyCode: string = "USD") {
+    const existing = await this.listLedgerAccounts({
+      account_type: "CREATOR_EARNINGS",
+      owner_type: "CREATOR",
+      owner_id: creatorSellerId,
+    })
+
+    if (existing.length > 0) {
+      return existing[0]
+    }
+
+    return this.createAccount({
+      account_type: "CREATOR_EARNINGS",
+      owner_type: "CREATOR",
+      owner_id: creatorSellerId,
+      currency_code: currencyCode,
+    })
+  }
+
+  /**
+   * Credit a creator's earnings account from a vendor's seller earnings.
+   *
+   * Hawala stores money in DOLLARS (decimal) while the creator-attribution
+   * module operates in cents. Callers MUST pass `amountCents` as integer cents;
+   * we divide by 100 to match the ledger's decimal convention (mirrors the
+   * pattern in hawala-order-payment.ts).
+   */
+  async creditCreatorCommission(args: {
+    vendorSellerId: string
+    creatorSellerId: string
+    amountCents: number
+    orderId: string
+    attributionId: string
+    currencyCode?: string
+    description?: string
+  }) {
+    if (args.amountCents <= 0) {
+      throw new Error("creditCreatorCommission amountCents must be > 0")
+    }
+
+    const currency = args.currencyCode || "USD"
+    const vendorAccount = await this.getOrCreateSellerEarnings(args.vendorSellerId, currency)
+    const creatorAccount = await this.getOrCreateCreatorEarnings(args.creatorSellerId, currency)
+
+    return this.createTransfer({
+      debit_account_id: vendorAccount.id,
+      credit_account_id: creatorAccount.id,
+      amount: args.amountCents / 100,
+      entry_type: "CREATOR_COMMISSION",
+      reference_type: "CREATOR_ATTRIBUTION",
+      reference_id: args.attributionId,
+      order_id: args.orderId,
+      idempotency_key: `creator-commission-${args.attributionId}`,
+      description:
+        args.description ||
+        `Creator commission for order ${args.orderId} (attribution ${args.attributionId})`,
+      metadata: {
+        attribution_id: args.attributionId,
+        creator_seller_id: args.creatorSellerId,
+        vendor_seller_id: args.vendorSellerId,
+      },
+    })
+  }
+
+  /**
+   * Get or create a CREATOR_REWARD_POOL account for a program (or
+   * platform-funded global pool when programId is null). Used to escrow
+   * funds for engagement-pool distributions.
+   */
+  async getOrCreateCreatorRewardPool(
+    poolId: string,
+    currencyCode: string = "USD"
+  ) {
+    const existing = await this.listLedgerAccounts({
+      account_type: "CREATOR_REWARD_POOL",
+      owner_type: "SYSTEM",
+      owner_id: poolId,
+    })
+    if (existing.length > 0) return existing[0]
+    return this.createAccount({
+      account_type: "CREATOR_REWARD_POOL",
+      owner_type: "SYSTEM",
+      owner_id: poolId,
+      currency_code: currencyCode,
+    })
+  }
+
+  /**
+   * Fund a creator reward pool from the funder's earnings (vendor) or the
+   * platform reserve (when funderSellerId is null). Used when a vendor
+   * opens a $X engagement pool for a program.
+   */
+  async fundCreatorRewardPool(args: {
+    poolId: string
+    funderSellerId: string | null
+    amountCents: number
+    currencyCode?: string
+    idempotencyKey?: string
+  }) {
+    if (args.amountCents <= 0) {
+      throw new Error("fundCreatorRewardPool amountCents must be > 0")
+    }
+    const currency = args.currencyCode || "USD"
+    const poolAccount = await this.getOrCreateCreatorRewardPool(args.poolId, currency)
+    let sourceAccount
+    if (args.funderSellerId) {
+      sourceAccount = await this.getOrCreateSellerEarnings(args.funderSellerId, currency)
+    } else {
+      sourceAccount = await this.getOrCreateSystemAccount("RESERVE")
+    }
+    return this.createTransfer({
+      debit_account_id: sourceAccount.id,
+      credit_account_id: poolAccount.id,
+      amount: args.amountCents / 100,
+      entry_type: "TRANSFER",
+      reference_type: "CREATOR_REWARD_POOL",
+      reference_id: args.poolId,
+      idempotency_key: args.idempotencyKey || `pool-fund-${args.poolId}`,
+      description: `Fund creator reward pool ${args.poolId}`,
+      metadata: {
+        pool_id: args.poolId,
+        funder_seller_id: args.funderSellerId,
+      },
+    })
+  }
+
+  /**
+   * Credit a creator's earnings from a funded reward pool. Reverses the
+   * usual commission flow direction: pool -> creator earnings.
+   */
+  async creditCreatorReward(args: {
+    poolId: string
+    creatorSellerId: string
+    amountCents: number
+    rewardPayoutId: string
+    currencyCode?: string
+    description?: string
+  }) {
+    if (args.amountCents <= 0) {
+      throw new Error("creditCreatorReward amountCents must be > 0")
+    }
+    const currency = args.currencyCode || "USD"
+    const poolAccount = await this.getOrCreateCreatorRewardPool(args.poolId, currency)
+    const creatorAccount = await this.getOrCreateCreatorEarnings(
+      args.creatorSellerId,
+      currency
+    )
+    return this.createTransfer({
+      debit_account_id: poolAccount.id,
+      credit_account_id: creatorAccount.id,
+      amount: args.amountCents / 100,
+      entry_type: "CREATOR_REWARD",
+      reference_type: "CREATOR_REWARD_POOL",
+      reference_id: args.poolId,
+      idempotency_key: `creator-reward-${args.rewardPayoutId}`,
+      description:
+        args.description ||
+        `Creator reward payout ${args.rewardPayoutId} from pool ${args.poolId}`,
+      metadata: {
+        pool_id: args.poolId,
+        reward_payout_id: args.rewardPayoutId,
+        creator_seller_id: args.creatorSellerId,
+      },
+    })
+  }
+
+  /**
+   * Open escrow for a service subcontract or contract: move funds from
+   * the buyer-vendor's seller-earnings into a per-subcontract ESCROW
+   * account. The funds stay there until release or refund.
+   */
+  async openSubcontractEscrow(args: {
+    subcontractId: string
+    parentSellerId: string
+    amountCents: number
+    currencyCode?: string
+  }) {
+    if (args.amountCents <= 0) {
+      throw new Error("openSubcontractEscrow amountCents must be > 0")
+    }
+    const currency = args.currencyCode || "USD"
+    const parentAccount = await this.getOrCreateSellerEarnings(
+      args.parentSellerId,
+      currency
+    )
+    // Use a dedicated escrow account scoped to the subcontract id.
+    const existing = await this.listLedgerAccounts({
+      account_type: "ESCROW",
+      owner_type: "SYSTEM",
+      owner_id: args.subcontractId,
+    })
+    const escrowAccount =
+      existing[0] ??
+      (await this.createAccount({
+        account_type: "ESCROW",
+        owner_type: "SYSTEM",
+        owner_id: args.subcontractId,
+        currency_code: currency,
+      }))
+    return this.createTransfer({
+      debit_account_id: parentAccount.id,
+      credit_account_id: escrowAccount.id,
+      amount: args.amountCents / 100,
+      entry_type: "TRANSFER",
+      reference_type: "MANUAL",
+      reference_id: args.subcontractId,
+      idempotency_key: `subcontract-escrow-${args.subcontractId}`,
+      description: `Escrow for subcontract ${args.subcontractId}`,
+      metadata: {
+        subcontract_id: args.subcontractId,
+        parent_seller_id: args.parentSellerId,
+      },
+    })
+  }
+
+  /**
+   * Release subcontract escrow to the service vendor's earnings on
+   * verified delivery + acceptance.
+   */
+  async releaseSubcontractEscrow(args: {
+    subcontractId: string
+    serviceSellerId: string
+    amountCents: number
+    currencyCode?: string
+  }) {
+    if (args.amountCents <= 0) {
+      throw new Error("releaseSubcontractEscrow amountCents must be > 0")
+    }
+    const currency = args.currencyCode || "USD"
+    const escrows = await this.listLedgerAccounts({
+      account_type: "ESCROW",
+      owner_type: "SYSTEM",
+      owner_id: args.subcontractId,
+    })
+    if (escrows.length === 0) {
+      throw new Error(`No escrow account for subcontract ${args.subcontractId}`)
+    }
+    const serviceAccount = await this.getOrCreateSellerEarnings(
+      args.serviceSellerId,
+      currency
+    )
+    return this.createTransfer({
+      debit_account_id: escrows[0].id,
+      credit_account_id: serviceAccount.id,
+      amount: args.amountCents / 100,
+      entry_type: "TRANSFER",
+      reference_type: "MANUAL",
+      reference_id: args.subcontractId,
+      idempotency_key: `subcontract-release-${args.subcontractId}`,
+      description: `Release subcontract escrow ${args.subcontractId} to service vendor`,
+      metadata: {
+        subcontract_id: args.subcontractId,
+        service_seller_id: args.serviceSellerId,
+      },
+    })
+  }
+
+  /**
+   * Refund subcontract escrow back to the buyer-vendor on dispute or
+   * cancel.
+   */
+  async refundSubcontractEscrow(args: {
+    subcontractId: string
+    parentSellerId: string
+    amountCents: number
+    reason: string
+    currencyCode?: string
+  }) {
+    if (args.amountCents <= 0) {
+      throw new Error("refundSubcontractEscrow amountCents must be > 0")
+    }
+    const currency = args.currencyCode || "USD"
+    const escrows = await this.listLedgerAccounts({
+      account_type: "ESCROW",
+      owner_type: "SYSTEM",
+      owner_id: args.subcontractId,
+    })
+    if (escrows.length === 0) {
+      throw new Error(`No escrow account for subcontract ${args.subcontractId}`)
+    }
+    const parentAccount = await this.getOrCreateSellerEarnings(
+      args.parentSellerId,
+      currency
+    )
+    return this.createTransfer({
+      debit_account_id: escrows[0].id,
+      credit_account_id: parentAccount.id,
+      amount: args.amountCents / 100,
+      entry_type: "REFUND",
+      reference_type: "MANUAL",
+      reference_id: args.subcontractId,
+      idempotency_key: `subcontract-refund-${args.subcontractId}`,
+      description: `Refund subcontract escrow ${args.subcontractId}: ${args.reason}`,
+      metadata: {
+        subcontract_id: args.subcontractId,
+        reason: args.reason,
+      },
+    })
+  }
+
+  /**
+   * Reverse a previously paid creator commission (e.g. on refund). Creates a
+   * new ledger entry that flows funds creator -> vendor.
+   */
+  async reverseCreatorCommission(args: {
+    vendorSellerId: string
+    creatorSellerId: string
+    amountCents: number
+    orderId: string
+    attributionId: string
+    reason: string
+    currencyCode?: string
+  }) {
+    if (args.amountCents <= 0) {
+      throw new Error("reverseCreatorCommission amountCents must be > 0")
+    }
+
+    const currency = args.currencyCode || "USD"
+    const vendorAccount = await this.getOrCreateSellerEarnings(args.vendorSellerId, currency)
+    const creatorAccount = await this.getOrCreateCreatorEarnings(args.creatorSellerId, currency)
+
+    return this.createTransfer({
+      debit_account_id: creatorAccount.id,
+      credit_account_id: vendorAccount.id,
+      amount: args.amountCents / 100,
+      entry_type: "REFUND",
+      reference_type: "CREATOR_ATTRIBUTION",
+      reference_id: args.attributionId,
+      order_id: args.orderId,
+      idempotency_key: `creator-commission-reversal-${args.attributionId}`,
+      description: `Reversed creator commission for order ${args.orderId}: ${args.reason}`,
+      metadata: {
+        attribution_id: args.attributionId,
+        reversal: true,
+        reason: args.reason,
+      },
     })
   }
 
