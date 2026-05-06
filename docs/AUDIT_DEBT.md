@@ -51,6 +51,25 @@ Effort key: **S** ≤ 1 day · **M** 2–5 days · **L** > 1 week.
 |---|------|--------|-------|:------:|------------------|
 | QA-1 | Add recurring static internal-link route validation in QA/release checks to detect unmatched hrefs before release | `storefront/docs/storefront-pages-audit.md` (open follow-up in `TODO_TRACKER.md`) | storefront QA | S | `v1.0.0` |
 
+## Test infrastructure
+
+| # | Item | Location | Owner | Effort | Target milestone |
+|---|------|----------|-------|:------:|------------------|
+| TI-1 | Reconcile backend module migration order so `pnpm test:integration:http` can run end-to-end. Currently `Migration20251229AddRawColumns` references `hawala_ledger_account` and `Migration20260520AddCreatorCommission` references `order_payout_breakdown` before either table is created. Test runner uses individual `DB_HOST`/`DB_USERNAME`/`DB_PASSWORD`/`DB_PORT` env vars (not `DATABASE_URL`) — already wired in `.github/workflows/ci.yml`. CI step is `continue-on-error: true` until the migration graph is fixed. | `backend/src/modules/**/migrations/*.ts` | backend team | M | `v1.0.0` |
+| TI-2 | Harden the `e2e.yml` Playwright job: cache the docker buildx layers, pre-pull base images, and raise the healthcheck wait window past 5 min so cold builds on shared GitHub runners don't trip the loop. CI step is `continue-on-error: true` and dumps `docker compose logs` on failure for forensic debugging. | `.github/workflows/e2e.yml`, `e2e/**` | platform | M | `v1.1.0` |
+
+## Security dependency bumps (HIGH/CRITICAL — gated, not blocking)
+
+Pinned in `.trivyignore` and the Trivy FS gate is `continue-on-error: true` until the bumps land. Findings still surface in the GitHub Security tab via the SARIF upload.
+
+| # | Package | Range | Fixed | CVEs | Affected lockfile | Owner | Effort | Target |
+|---|---------|-------|-------|------|-------------------|-------|:------:|--------|
+| SD-1 | `@mikro-orm/core` | `<6.6.10` | `6.6.10` (or `7.0.6`) | CVE-2026-34220 (SQL injection), CVE-2026-34221 (prototype pollution) | `backend/pnpm-lock.yaml` | backend team | S | `v1.0.0` |
+| SD-2 | `lodash` | `<4.18.0` | `4.18.0` | CVE-2026-4800 (RCE via template imports) | `backend/`, `storefront/`, `vendor-panel/pnpm-lock.yaml` | platform | S | `v1.0.0` |
+| SD-3 | `picomatch` | `<2.3.2 / <3.0.2 / <4.0.4` | latest within range | CVE-2026-33671 (regex DoS) | `backend/`, `storefront/pnpm-lock.yaml` | platform | S | `v1.0.0` |
+| SD-4 | `axios` | `<1.15.2` | `1.15.2` | CVE-2026-42033 / 42035 / 42043 / 42264 (prototype pollution, header injection, NO_PROXY bypass) | `storefront/`, `vendor-panel/pnpm-lock.yaml` | platform | S | `v1.0.0` |
+| SD-5 | `next` | `<15.5.15` | `15.5.15` (or `16.2.3`) | GHSA-q4gf-8mx6-v5v3 (DoS in Server Components) | `storefront/pnpm-lock.yaml` | storefront team | S | `v1.0.0` |
+
 ## Process
 
 - Re-generate the in-code marker list with `rg -n "TODO|FIXME" admin-panel/src storefront/src vendor-panel/src` quarterly.
