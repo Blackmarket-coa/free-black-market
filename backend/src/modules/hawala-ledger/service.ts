@@ -304,6 +304,140 @@ class HawalaLedgerModuleService extends MedusaService({
   }
 
   /**
+   * Open escrow for a service subcontract or contract: move funds from
+   * the buyer-vendor's seller-earnings into a per-subcontract ESCROW
+   * account. The funds stay there until release or refund.
+   */
+  async openSubcontractEscrow(args: {
+    subcontractId: string
+    parentSellerId: string
+    amountCents: number
+    currencyCode?: string
+  }) {
+    if (args.amountCents <= 0) {
+      throw new Error("openSubcontractEscrow amountCents must be > 0")
+    }
+    const currency = args.currencyCode || "USD"
+    const parentAccount = await this.getOrCreateSellerEarnings(
+      args.parentSellerId,
+      currency
+    )
+    // Use a dedicated escrow account scoped to the subcontract id.
+    const existing = await this.listLedgerAccounts({
+      account_type: "ESCROW",
+      owner_type: "SYSTEM",
+      owner_id: args.subcontractId,
+    })
+    const escrowAccount =
+      existing[0] ??
+      (await this.createAccount({
+        account_type: "ESCROW",
+        owner_type: "SYSTEM",
+        owner_id: args.subcontractId,
+        currency_code: currency,
+      }))
+    return this.createTransfer({
+      debit_account_id: parentAccount.id,
+      credit_account_id: escrowAccount.id,
+      amount: args.amountCents / 100,
+      entry_type: "TRANSFER",
+      reference_type: "MANUAL",
+      reference_id: args.subcontractId,
+      idempotency_key: `subcontract-escrow-${args.subcontractId}`,
+      description: `Escrow for subcontract ${args.subcontractId}`,
+      metadata: {
+        subcontract_id: args.subcontractId,
+        parent_seller_id: args.parentSellerId,
+      },
+    })
+  }
+
+  /**
+   * Release subcontract escrow to the service vendor's earnings on
+   * verified delivery + acceptance.
+   */
+  async releaseSubcontractEscrow(args: {
+    subcontractId: string
+    serviceSellerId: string
+    amountCents: number
+    currencyCode?: string
+  }) {
+    if (args.amountCents <= 0) {
+      throw new Error("releaseSubcontractEscrow amountCents must be > 0")
+    }
+    const currency = args.currencyCode || "USD"
+    const escrows = await this.listLedgerAccounts({
+      account_type: "ESCROW",
+      owner_type: "SYSTEM",
+      owner_id: args.subcontractId,
+    })
+    if (escrows.length === 0) {
+      throw new Error(`No escrow account for subcontract ${args.subcontractId}`)
+    }
+    const serviceAccount = await this.getOrCreateSellerEarnings(
+      args.serviceSellerId,
+      currency
+    )
+    return this.createTransfer({
+      debit_account_id: escrows[0].id,
+      credit_account_id: serviceAccount.id,
+      amount: args.amountCents / 100,
+      entry_type: "TRANSFER",
+      reference_type: "MANUAL",
+      reference_id: args.subcontractId,
+      idempotency_key: `subcontract-release-${args.subcontractId}`,
+      description: `Release subcontract escrow ${args.subcontractId} to service vendor`,
+      metadata: {
+        subcontract_id: args.subcontractId,
+        service_seller_id: args.serviceSellerId,
+      },
+    })
+  }
+
+  /**
+   * Refund subcontract escrow back to the buyer-vendor on dispute or
+   * cancel.
+   */
+  async refundSubcontractEscrow(args: {
+    subcontractId: string
+    parentSellerId: string
+    amountCents: number
+    reason: string
+    currencyCode?: string
+  }) {
+    if (args.amountCents <= 0) {
+      throw new Error("refundSubcontractEscrow amountCents must be > 0")
+    }
+    const currency = args.currencyCode || "USD"
+    const escrows = await this.listLedgerAccounts({
+      account_type: "ESCROW",
+      owner_type: "SYSTEM",
+      owner_id: args.subcontractId,
+    })
+    if (escrows.length === 0) {
+      throw new Error(`No escrow account for subcontract ${args.subcontractId}`)
+    }
+    const parentAccount = await this.getOrCreateSellerEarnings(
+      args.parentSellerId,
+      currency
+    )
+    return this.createTransfer({
+      debit_account_id: escrows[0].id,
+      credit_account_id: parentAccount.id,
+      amount: args.amountCents / 100,
+      entry_type: "REFUND",
+      reference_type: "MANUAL",
+      reference_id: args.subcontractId,
+      idempotency_key: `subcontract-refund-${args.subcontractId}`,
+      description: `Refund subcontract escrow ${args.subcontractId}: ${args.reason}`,
+      metadata: {
+        subcontract_id: args.subcontractId,
+        reason: args.reason,
+      },
+    })
+  }
+
+  /**
    * Reverse a previously paid creator commission (e.g. on refund). Creates a
    * new ledger entry that flows funds creator -> vendor.
    */

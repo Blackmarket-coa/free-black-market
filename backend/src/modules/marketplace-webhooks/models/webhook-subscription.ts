@@ -29,6 +29,22 @@ export const MARKETPLACE_WEBHOOK_EVENTS = [
   "creator.reward.pool_funded",
   "creator.reward.distributed",
   "content_platform.event",
+  "service.program.published",
+  "service.application.submitted",
+  "service.application.approved",
+  "service.application.rejected",
+  "service.contract.opened",
+  "service.contract.delivered",
+  "service.contract.accepted",
+  "service.contract.disputed",
+  "service.proof.submitted",
+  "service.proof.verified",
+  "service.proof.rejected",
+  "subcontract.proposed",
+  "subcontract.accepted",
+  "subcontract.delivered",
+  "subcontract.completed",
+  "subcontract.disputed",
 ] as const
 
 export type MarketplaceWebhookEvent = (typeof MARKETPLACE_WEBHOOK_EVENTS)[number]

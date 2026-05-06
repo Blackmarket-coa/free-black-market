@@ -854,6 +854,14 @@ export function getRouteMap({
               lazy: () => import("../../routes/creator-rewards"),
             },
             {
+              path: "/services",
+              errorElement: <ErrorBoundary />,
+              handle: {
+                breadcrumb: () => "Services",
+              },
+              lazy: () => import("../../routes/services"),
+            },
+            {
               path: "/messages",
               errorElement: <ErrorBoundary />,
               handle: {

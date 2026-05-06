@@ -268,6 +268,11 @@ const useCoreRoutes = (): Omit<INavItem, "pathname">[] => {
       ],
     },
     {
+      icon: <SquaresPlus />,
+      label: "Services",
+      to: "/services",
+    },
+    {
       icon: <ReceiptPercent />,
       label: t("promotions.domain"),
       to: "/promotions",

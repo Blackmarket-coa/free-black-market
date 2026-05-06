@@ -111,6 +111,14 @@ function getVendorNavigationConfig({
       showFor: (_, type) => type !== "creator",
     },
     {
+      icon: <SquaresPlus />,
+      label: "Services",
+      to: "/services",
+      // Visible to all sellers — both buyers (who post bounties / subcontract
+      // order line items) and service providers (who claim bounties and
+      // submit proofs of work) use this surface.
+    },
+    {
       icon: <ShoppingCart />,
       label: t("orders.domain"),
       to: "/orders",
