@@ -86,6 +86,14 @@ export const RouteMap: RouteObject[] = [
             lazy: () => import("../../routes/programs"),
           },
           {
+            path: "referral-links",
+            errorElement: <ErrorBoundary />,
+            handle: {
+              breadcrumb: () => "Referral Links",
+            },
+            lazy: () => import("../../routes/referral-links"),
+          },
+          {
             path: "services",
             errorElement: <ErrorBoundary />,
             handle: {

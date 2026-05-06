@@ -188,6 +188,8 @@ const marketplaceModules = [
   { resolve: './src/modules/marketplace-listing' },
   { resolve: './src/modules/marketplace-signing' },
   { resolve: './src/modules/marketplace-webhooks' },
+  { resolve: './src/modules/entitlement' },
+  { resolve: './src/modules/blackstar-fulfillment' },
   { resolve: './src/modules/creator-attribution' },
   { resolve: './src/modules/creator-program' },
   { resolve: './src/modules/content-platform' },
@@ -268,6 +270,16 @@ const fulfillmentModule = {
               webhook_secret: process.env.PRINTFUL_WEBHOOK_SECRET,
               store_id: process.env.PRINTFUL_STORE_ID,
             },
+          }]
+        : []),
+      // Blackstar fulfillment provider — stub mode when integration flag is on.
+      // Persists fulfillment_node_id / pickup_point_id / vending_machine_id on
+      // BlackstarShipment so Blackstar can update status via webhook later.
+      ...(process.env.FBM_BLACKSTAR_INTEGRATION === '1'
+        ? [{
+            resolve: './src/modules/blackstar-fulfillment-provider',
+            id: 'blackstar',
+            options: {},
           }]
         : []),
     ],

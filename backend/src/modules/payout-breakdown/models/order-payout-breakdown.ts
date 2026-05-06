@@ -54,6 +54,12 @@ const OrderPayoutBreakdown = model.define("order_payout_breakdown", {
   // Total creator commission (affiliate share funded out of seller gross)
   total_creator_commission: model.bigNumber().default(0),
 
+  // Total share to plugin/theme/emoji-pack developers
+  total_to_plugin_developers: model.bigNumber().default(0),
+
+  // Total share to generic referrers (non-affiliate-program referrals)
+  total_to_referrers: model.bigNumber().default(0),
+
   // === Per-Seller Breakdown ===
   // For multi-vendor orders
   seller_breakdown: model.json(), // Array<{ seller_id, amount, fees }>

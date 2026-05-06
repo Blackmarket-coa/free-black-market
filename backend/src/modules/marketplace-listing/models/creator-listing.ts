@@ -50,6 +50,22 @@ const CreatorListing = model
 
     embed_origins: model.json().nullable(),
 
+    // === BMC marketplace categories (plugin / theme / emoji-pack / access-pass) ===
+    plugin_slug: model.text().nullable(),
+    plugin_version: model.text().nullable(),
+    plugin_repo_url: model.text().nullable(),
+    theme_slug: model.text().nullable(),
+    emoji_pack_slug: model.text().nullable(),
+    /**
+     * Compatibility map e.g. { blackout: ">=1.0", fbm: ">=2.12" }.
+     */
+    compatible_with: model.json().nullable(),
+    /**
+     * Distinct from `seller_id` to support white-label distribution where the
+     * listing seller is not the developer earning the plugin-developer split.
+     */
+    developer_seller_id: model.text().nullable(),
+
     metadata: model.json().nullable(),
   })
   .indexes([

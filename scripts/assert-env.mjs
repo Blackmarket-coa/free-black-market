@@ -25,6 +25,26 @@ const BANNED_LITERALS = new Set([
 
 const MIN_SECRET_LENGTH = 32
 
+// Conditional rules — applied only when a gating env var matches a value.
+// Used for opt-in integrations whose secrets only need validation when on.
+const CONDITIONAL_RULES = {
+  backend: [
+    {
+      when: { key: "FBM_BLACKOUT_INTEGRATION", equals: "1" },
+      rules: [
+        { key: "BLACKOUT_CLIENT_ID", required: true },
+        { key: "BLACKOUT_CLIENT_SECRET", required: true, minLength: MIN_SECRET_LENGTH, banPrefixes: ["CHANGE_ME"] },
+      ],
+    },
+    {
+      when: { key: "FBM_BLACKSTAR_INTEGRATION", equals: "1" },
+      rules: [
+        { key: "FBM_BLACKSTAR_API_KEY", required: true, minLength: MIN_SECRET_LENGTH, banPrefixes: ["CHANGE_ME"] },
+      ],
+    },
+  ],
+}
+
 const RULES = {
   backend: [
     { key: "JWT_SECRET", required: true, minLength: MIN_SECRET_LENGTH, banPrefixes: ["CHANGE_ME"] },
@@ -52,10 +72,17 @@ function startsWithBannedPrefix(value, prefixes) {
 export function assertProductionEnv(app, env = process.env) {
   if (env.NODE_ENV !== "production") return { ok: true, errors: [] }
 
-  const rules = RULES[app]
-  if (!rules) {
+  const baseRules = RULES[app]
+  if (!baseRules) {
     throw new Error(`assertProductionEnv: unknown app "${app}"`)
   }
+
+  // Layer in any conditional rules whose gate matches.
+  const conditional = CONDITIONAL_RULES[app] || []
+  const activeConditional = conditional
+    .filter(({ when }) => String(env[when.key] ?? "") === String(when.equals))
+    .flatMap(({ rules }) => rules)
+  const rules = [...baseRules, ...activeConditional]
 
   const errors = []
 

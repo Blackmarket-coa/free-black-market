@@ -37,6 +37,13 @@ export enum ProductArchetypeCode {
   CIRCULAR_ECONOMY = "CIRCULAR_ECONOMY",           // Repaired goods, salvaged materials — condition-graded
   COMMUNITY_SERVICE = "COMMUNITY_SERVICE",         // Shared spaces, skill shares — capacity-based
   EXPERIMENTAL = "EXPERIMENTAL",                   // Prototypes, pilot projects — requires governance approval
+
+  // Marketplace-layer archetypes for the BMC ecosystem
+  SERVICE = "SERVICE",                             // Generic vendor services (consulting, coaching, design)
+  PLUGIN = "PLUGIN",                               // Software plugin distributed via the marketplace
+  THEME = "THEME",                                 // Storefront/UI theme
+  EMOJI_PACK = "EMOJI_PACK",                       // Custom emoji packs (e.g. for Blackout)
+  ACCESS_PASS = "ACCESS_PASS",                     // Time-bound or perpetual feature access (entitlement-driven)
 }
 
 /**
