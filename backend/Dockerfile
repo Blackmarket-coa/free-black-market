@@ -16,7 +16,7 @@ RUN corepack enable
 
 COPY package.json pnpm-lock.yaml ./
 COPY restaurant-marketplace ./restaurant-marketplace
-RUN --mount=type=cache,id=pnpm-store-backend,target=/root/.local/share/pnpm/store \
+RUN --mount=type=cache,id=backend-pnpm-store,target=/root/.local/share/pnpm/store \
     pnpm install --frozen-lockfile --prod=false
 
 # --- build stage -------------------------------------------------------------

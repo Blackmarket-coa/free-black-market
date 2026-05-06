@@ -15,7 +15,7 @@ ENV NODE_ENV=production
 RUN corepack enable
 
 COPY package.json pnpm-lock.yaml ./
-RUN --mount=type=cache,id=pnpm-store-admin,target=/root/.local/share/pnpm/store \
+RUN --mount=type=cache,id=admin-panel-pnpm-store,target=/root/.local/share/pnpm/store \
     pnpm install --frozen-lockfile --prod=false
 
 COPY . .
