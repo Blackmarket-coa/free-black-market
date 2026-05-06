@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: freeblackmarket-production
+  labels:
+    app.kubernetes.io/part-of: freeblackmarket
+    environment: production
