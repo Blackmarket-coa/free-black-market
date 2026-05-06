@@ -33,10 +33,11 @@ Effort key: **S** ≤ 1 day · **M** 2–5 days · **L** > 1 week.
 
 | # | Item | Location | Current | Owner | Effort | Target milestone |
 |---|------|----------|--------:|-------|:------:|------------------|
-| LR-1 | Lower admin-panel ESLint `--max-warnings` from 7000 → 0 in steps (5500 → 4000 → 2000 → 0) | `admin-panel/package.json` `lint` script | 7000 (masks 5,526 errors) | admin-panel team | L | `v1.0.0` → `v1.2.0` |
-| LR-2 | Eliminate vendor-panel typecheck failures (currently `continue-on-error: true` in CI) | `vendor-panel/**` | unknown count | vendor-panel team | M | `v1.0.0` |
-| LR-3 | Eliminate translation-contract drift (`extraInTranslations` in `en.json`, `fields.currentPriceTemplate` extra key) | `admin-panel/src/i18n/translations/en.json`, `vendor-panel/src/i18n/translations/en.json` | 2 failing suites | i18n owners | S | `v1.0.0` |
+| LR-1 | Lower admin-panel ESLint `--max-warnings` from 7000 → 0 in steps (5500 → 4000 → 2000 → 0) | `admin-panel/package.json` `lint` script | 7000 (currently 5,679 warnings) | admin-panel team | L | `v1.0.0` → `v1.2.0` |
+| ~~LR-2~~ | ~~Eliminate vendor-panel typecheck failures~~ — **resolved**: `pnpm typecheck`, `pnpm test`, `pnpm build:preview`, `pnpm lint --max-warnings 0` all pass on `main` as of 2026-05-06; `continue-on-error: true` was correctly removed in PR #658. | `vendor-panel/**` | 0 errors | — | — | done |
+| LR-3 | Eliminate translation-contract drift in admin-panel typecheck (separate from `pnpm test` translation validation, which now passes). Real source of admin-panel `pnpm typecheck` failure is missing modules (`@medusajs/admin-sdk`, `@medusajs/framework/types`, `stripe`) and ~30 type errors across `src/routes/{ticket-products,venues,...}/**`, `src/types/**` — most introduced by the creator-monetization releases. | `admin-panel/src/routes/**`, `admin-panel/src/types/**` | ~30 type errors | admin-panel team | M | `v1.0.0` |
 | LR-4 | Replace backend `lint` (currently aliased to `tsc --noEmit`) with a real ESLint flat config that lints `src/**/*.{ts,tsx}` with `--max-warnings 0` | `backend/package.json`, new `backend/eslint.config.mjs` | aliased to typecheck | backend team | M | `v1.1.0` |
+| LR-5 | Eliminate storefront `pnpm typecheck` failures: missing `sonner` dep import in `src/lib/helpers/toast.ts`, `null` vs `Record<string, string \| undefined>` mismatches in `src/lib/data/{customer,orders,products,wishlist}.ts`. `next.config.ts` sets `typescript.ignoreBuildErrors: true` so the build is unaffected; CI step is `continue-on-error: true` until this lands. | `storefront/src/lib/{data,helpers}/**` | ~12 type errors | storefront team | S | `v1.0.0` |
 
 ## Storefront test coverage
 
