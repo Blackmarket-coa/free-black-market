@@ -14,7 +14,7 @@ WORKDIR /app
 RUN corepack enable
 
 COPY package.json pnpm-lock.yaml ./
-RUN --mount=type=cache,id=storefront-pnpm-store,target=/root/.local/share/pnpm/store \
+RUN --mount=type=cache,target=/root/.local/share/pnpm/store \
     pnpm install --frozen-lockfile --prod=false
 
 # --- build stage -------------------------------------------------------------
