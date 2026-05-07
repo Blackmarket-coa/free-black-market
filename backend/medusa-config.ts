@@ -236,6 +236,50 @@ const optionalModules = [
 // Provider Configurations
 // ============================================================================
 
+// Auth providers
+//
+// Slice C of the Creator Commerce roadmap. We only declare an explicit
+// auth module when at least one social provider is configured via env;
+// otherwise Medusa's framework default (emailpass-only) keeps applying so
+// existing seller logins are unaffected.
+//
+// When env vars are present we declare emailpass alongside the social
+// provider(s) so the seller registration flow keeps working.
+const buildAuthModule = () => {
+  const googleEnabled = !!process.env.GOOGLE_CLIENT_ID && !!process.env.GOOGLE_CLIENT_SECRET
+  // TikTok / Discord are deferred to a follow-up PR — see
+  // docs/CREATOR_COMMERCE_ROADMAP.md Phase 2 for the scope.
+  if (!googleEnabled) return null
+
+  const callbackBase = (process.env.BACKEND_URL || '').replace(/\/$/, '')
+
+  return {
+    resolve: '@medusajs/medusa/auth',
+    options: {
+      providers: [
+        {
+          resolve: '@medusajs/medusa/auth-emailpass',
+          id: 'emailpass',
+        },
+        ...(googleEnabled
+          ? [{
+              resolve: '@medusajs/medusa/auth-google',
+              id: 'google',
+              options: {
+                clientID: process.env.GOOGLE_CLIENT_ID,
+                clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+                callbackURL:
+                  process.env.GOOGLE_CALLBACK_URL ||
+                  (callbackBase ? `${callbackBase}/auth/seller/google/callback` : undefined),
+              },
+            }]
+          : []),
+      ],
+    },
+  }
+}
+const authModule = buildAuthModule()
+
 // Payment providers
 const paymentModule = {
   resolve: '@medusajs/medusa/payment',
@@ -493,6 +537,7 @@ module.exports = defineConfig({
     paymentModule,
     fulfillmentModule,
     fileModule,
+    ...(authModule ? [authModule] : []),
     ...redisModules,
     ...notificationModules,
   ],
