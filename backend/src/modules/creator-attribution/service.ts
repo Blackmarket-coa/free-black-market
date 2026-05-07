@@ -12,6 +12,13 @@ import OrderAttribution, {
   AttributionModel,
   CommissionStatus,
 } from "./models/order-attribution"
+import AnalyticsEvent from "./models/analytics-event"
+import {
+  allocateCommission,
+  capLevels,
+  parseLevelSplitsEnv,
+  walkReferrerChain,
+} from "./utils/referral-chain"
 
 const DEFAULT_COOKIE_WINDOW_DAYS = (() => {
   const v = process.env.CREATOR_ATTRIBUTION_DEFAULT_COOKIE_DAYS
@@ -77,6 +84,7 @@ class CreatorAttributionService extends MedusaService({
   PromoCodeBinding,
   AttributionClickEvent,
   OrderAttribution,
+  AnalyticsEvent,
 }) {
   /**
    * Generate a new affiliate link with a unique short code.
@@ -343,10 +351,43 @@ class CreatorAttributionService extends MedusaService({
     const subtotal = input.subtotalCents
     const commissionAmount = Math.floor((subtotal * commissionPercent) / 100)
 
-    const attribution = await (this as any).createOrderAttributions({
+    // Multi-level referral chain — only walked when the feature flag is on
+    // and a program is associated. Otherwise a single L1 row is written
+    // exactly like before.
+    const multiLevelEnabled = process.env.FBM_MULTILEVEL_REFERRALS === "1"
+    let chain: string[] = [chosen.creatorSellerId]
+    let levelSplits = parseLevelSplitsEnv(
+      process.env.FBM_REFERRAL_DEFAULT_SPLITS
+    )
+    let maxLevels = 1
+    let programReferralModel: any = null
+
+    if (multiLevelEnabled) {
+      programReferralModel = await this.loadProgramReferralConfig(
+        chosen.programId
+      )
+      maxLevels = capLevels(programReferralModel?.max_referral_levels ?? 1)
+      if (programReferralModel?.referral_level_splits) {
+        levelSplits = programReferralModel.referral_level_splits
+      }
+      if (maxLevels > 1) {
+        chain = await walkReferrerChain({
+          primarySellerId: chosen.creatorSellerId,
+          maxLevels,
+          lookupReferrer: (sellerId) => this.lookupReferrer(sellerId),
+        })
+      }
+    }
+
+    const perLevelCents = allocateCommission({
+      totalCents: commissionAmount,
+      levels: chain.length,
+      splits: levelSplits,
+    })
+
+    const baseRow = {
       order_id: input.orderId,
       customer_id: input.customerId ?? null,
-      creator_seller_id: chosen.creatorSellerId,
       affiliate_link_id: chosen.affiliateLinkId,
       promo_code_binding_id: chosen.promoCodeBindingId,
       deal_id: chosen.dealId,
@@ -359,12 +400,34 @@ class CreatorAttributionService extends MedusaService({
       attribution_decided_at: new Date(),
       attributed_subtotal_cents: subtotal,
       commission_basis_cents: subtotal,
-      commission_amount_cents: commissionAmount,
       commission_percent: commissionPercent,
       currency_code: input.currencyCode ?? "usd",
       commission_status: CommissionStatus.PENDING,
       metadata: input.metadata ?? null,
-    })
+    }
+
+    let parentAttributionId: string | null = null
+    let primaryAttribution: any = null
+
+    for (let i = 0; i < chain.length; i++) {
+      const level = i + 1
+      const levelKey = `L${level}`
+      const splitPercent =
+        typeof levelSplits[levelKey] === "number"
+          ? levelSplits[levelKey]
+          : null
+
+      const row = await (this as any).createOrderAttributions({
+        ...baseRow,
+        creator_seller_id: chain[i],
+        commission_amount_cents: perLevelCents[i] ?? 0,
+        level,
+        parent_attribution_id: parentAttributionId,
+        level_split_percent: splitPercent,
+      })
+      if (level === 1) primaryAttribution = row
+      parentAttributionId = row.id
+    }
 
     if (chosen.affiliateLinkId) {
       const links = await this.listAffiliateLinks({ id: chosen.affiliateLinkId })
@@ -377,7 +440,98 @@ class CreatorAttributionService extends MedusaService({
       }
     }
 
-    return attribution
+    return primaryAttribution
+  }
+
+  /**
+   * Resolve the parent creator for a seller via their primary AffiliateLink's
+   * `referrer_creator_seller_id`. Used by the chain walker. Returns null
+   * when no link or no parent is configured.
+   */
+  private async lookupReferrer(sellerId: string): Promise<string | null> {
+    const links = await this.listAffiliateLinks(
+      { creator_seller_id: sellerId },
+      { take: 1 }
+    )
+    const link = links[0]
+    if (!link) return null
+    return (link as any).referrer_creator_seller_id ?? null
+  }
+
+  /**
+   * Load referral-level config from the linked CreatorProgram. The
+   * creator-program module isn't a hard dependency of creator-attribution,
+   * so we use the module's listing API via the @medusajs query when
+   * available, falling back to env-based defaults.
+   */
+  private async loadProgramReferralConfig(
+    programId: string | null
+  ): Promise<{
+    max_referral_levels?: number
+    referral_level_splits?: Record<string, number> | null
+  } | null> {
+    if (!programId) return null
+    const container = (this as any).container_
+    const query = container?.resolve?.("query") as any
+    if (!query) return null
+    try {
+      const { data } = await query.graph({
+        entity: "creator_program",
+        fields: ["id", "max_referral_levels", "referral_level_splits"],
+        filters: { id: programId },
+      })
+      return data?.[0] ?? null
+    } catch {
+      return null
+    }
+  }
+
+  /**
+   * Idempotent ingest of a canonical analytics event from the
+   * `POST /store/analytics/events` API or from a server-side emitter.
+   */
+  async recordAnalyticsEvent(input: {
+    eventName: string
+    visitorToken?: string | null
+    customerId?: string | null
+    creatorSellerId?: string | null
+    affiliateShortCode?: string | null
+    affiliateLinkId?: string | null
+    orderId?: string | null
+    productId?: string | null
+    variantId?: string | null
+    utmSource?: string | null
+    utmMedium?: string | null
+    utmCampaign?: string | null
+    utmContent?: string | null
+    path?: string | null
+    referrer?: string | null
+    deviceType?: string | null
+    country?: string | null
+    payload?: Record<string, unknown> | null
+    occurredAt?: Date
+  }): Promise<any> {
+    return (this as any).createAnalyticsEvents({
+      event_name: input.eventName,
+      visitor_token: input.visitorToken ?? null,
+      customer_id: input.customerId ?? null,
+      creator_seller_id: input.creatorSellerId ?? null,
+      affiliate_short_code: input.affiliateShortCode ?? null,
+      affiliate_link_id: input.affiliateLinkId ?? null,
+      order_id: input.orderId ?? null,
+      product_id: input.productId ?? null,
+      variant_id: input.variantId ?? null,
+      utm_source: input.utmSource ?? null,
+      utm_medium: input.utmMedium ?? null,
+      utm_campaign: input.utmCampaign ?? null,
+      utm_content: input.utmContent ?? null,
+      path: input.path ?? null,
+      referrer: input.referrer ?? null,
+      device_type: input.deviceType ?? null,
+      country: input.country ?? null,
+      payload: input.payload ?? null,
+      occurred_at: input.occurredAt ?? new Date(),
+    })
   }
 
   /**

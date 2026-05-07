@@ -12,6 +12,11 @@ const AffiliateLink = model
 
     short_code: model.text().unique(),
     creator_seller_id: model.text(),
+    /**
+     * Optional parent creator who recruited this link's owner. Drives
+     * recursive referral payouts when FBM_MULTILEVEL_REFERRALS=1.
+     */
+    referrer_creator_seller_id: model.text().nullable(),
     deal_id: model.text().nullable(),
     program_id: model.text().nullable(),
     vendor_id: model.text().nullable(),
@@ -48,6 +53,10 @@ const AffiliateLink = model
     {
       on: ["status"],
       name: "IDX_affiliate_link_status",
+    },
+    {
+      on: ["referrer_creator_seller_id"],
+      name: "IDX_affiliate_link_referrer",
     },
   ])
 
