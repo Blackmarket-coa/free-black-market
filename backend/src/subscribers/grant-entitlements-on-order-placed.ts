@@ -45,12 +45,17 @@ export default async function grantEntitlementsOnOrderPlaced({
       typeof md.fbm_external_customer_id === "string"
         ? (md.fbm_external_customer_id as string)
         : null
+    const sourceSubscriptionId =
+      typeof md.subscription_id === "string"
+        ? (md.subscription_id as string)
+        : null
 
     await entitlementService.grantFromOrder({
       order_id: orderId,
       customer_id: order.customer_id ?? null,
       customer_external_id: externalId,
       items,
+      source_subscription_id: sourceSubscriptionId,
     })
   } catch (err) {
     console.error(`[grant-entitlements-on-order-placed] failed for order ${orderId}:`, err)

@@ -49,6 +49,20 @@ const OnboardingState = model.define("tenancy_onboarding_state", {
    */
   payout_deferred_until_first_sale: model.boolean().default(true),
 
+  /**
+   * True when the seller went through the 60s "quick path" onboarding
+   * variant rather than the 5-step wizard. Drives the redirect logic in
+   * vendor-panel/src/routes/onboarding/onboarding.tsx and lets us measure
+   * funnel uplift.
+   */
+  quick_path_used: model.boolean().default(false),
+  /**
+   * Captured at signup when the seller arrived via an affiliate link. Set
+   * by the seller-created subscriber when `_fbm_aff` cookie is present.
+   * Feeds Slice B's referral chain.
+   */
+  referred_by_seller_id: model.text().nullable(),
+
   metadata: model.json().nullable(),
 })
 

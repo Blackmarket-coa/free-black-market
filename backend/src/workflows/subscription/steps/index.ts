@@ -1,3 +1,5 @@
 export { createSubscriptionStep } from "./create-subscription"
 export { updateSubscriptionStep } from "./update-subscription"
 export { processSubscriptionRenewalStep } from "./process-subscription-renewal"
+export { recordSubscriptionDunningStep } from "./record-subscription-dunning"
+export { grantSubscriptionEntitlementsStep } from "./grant-subscription-entitlements"

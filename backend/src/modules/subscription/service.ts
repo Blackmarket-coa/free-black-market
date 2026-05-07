@@ -184,6 +184,82 @@ class SubscriptionModuleService extends MedusaService({
   }
 
   /**
+   * Record a dunning attempt against a subscription. Returns the updated
+   * subscription with `metadata.dunning_attempts` incremented and
+   * `metadata.dunning_last_error` set. Caller decides whether to schedule
+   * a retry or pause.
+   */
+  async recordDunningAttempt(
+    id: string,
+    error?: string
+  ): Promise<SubscriptionData> {
+    const subscription = await this.retrieveSubscription(id)
+    const prevMetadata = (subscription.metadata as Record<string, unknown>) || {}
+    const prevAttempts = Number(prevMetadata.dunning_attempts ?? 0)
+    const attempts = prevAttempts + 1
+
+    const updated = await this.updateSubscriptions({
+      selector: { id },
+      data: {
+        metadata: {
+          ...prevMetadata,
+          dunning_attempts: attempts,
+          dunning_last_attempt_at: new Date().toISOString(),
+          dunning_last_error: error ?? null,
+        },
+      },
+    })
+    return updated[0]
+  }
+
+  /**
+   * Pause a subscription with a reason recorded on metadata. Used by the
+   * dunning workflow when retries are exhausted.
+   */
+  async pauseSubscriptionWithReason(
+    id: string,
+    reason: string
+  ): Promise<SubscriptionData> {
+    const subscription = await this.retrieveSubscription(id)
+    const prevMetadata = (subscription.metadata as Record<string, unknown>) || {}
+
+    const updated = await this.updateSubscriptions({
+      selector: { id },
+      data: {
+        status: SubscriptionStatus.PAUSED,
+        paused_at: new Date(),
+        metadata: {
+          ...prevMetadata,
+          paused_reason: reason,
+        },
+      },
+    })
+    return updated[0]
+  }
+
+  /**
+   * Reset dunning state, e.g. after a successful renewal payment.
+   */
+  async clearDunningAttempts(id: string): Promise<SubscriptionData> {
+    const subscription = await this.retrieveSubscription(id)
+    const prevMetadata = (subscription.metadata as Record<string, unknown>) || {}
+    if (!prevMetadata.dunning_attempts) {
+      return subscription
+    }
+
+    const cleared = { ...prevMetadata }
+    delete cleared.dunning_attempts
+    delete cleared.dunning_last_attempt_at
+    delete cleared.dunning_last_error
+
+    const updated = await this.updateSubscriptions({
+      selector: { id },
+      data: { metadata: cleared },
+    })
+    return updated[0]
+  }
+
+  /**
    * Calculate the next order date based on interval
    */
   getNextOrderDate({

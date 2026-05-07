@@ -68,6 +68,16 @@ const CreatorProgram = model
     requires_kyc: model.boolean().default(false),
     min_verification_level: model.text().nullable(),
 
+    /**
+     * Multi-level referral configuration. `max_referral_levels` is capped
+     * at 3 in the service. `referral_level_splits` is a JSON object like
+     * `{ "L1": 80, "L2": 15, "L3": 5 }` mapping level names to percentage
+     * shares of the program's commission_percent. Falls back to
+     * FBM_REFERRAL_DEFAULT_SPLITS when null.
+     */
+    max_referral_levels: model.number().default(1),
+    referral_level_splits: model.json().nullable(),
+
     metadata: model.json().nullable(),
   })
   .indexes([

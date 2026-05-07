@@ -26,7 +26,12 @@ const OrderAttribution = model
   .define("order_attribution", {
     id: model.id().primaryKey(),
 
-    order_id: model.text().unique(),
+    /**
+     * Multiple rows can exist for the same order_id when a referral chain
+     * is recorded — one row per referral level. Uniqueness is enforced by
+     * the composite index (order_id, level).
+     */
+    order_id: model.text(),
     customer_id: model.text().nullable(),
     creator_seller_id: model.text(),
     affiliate_link_id: model.text().nullable(),
@@ -58,6 +63,16 @@ const OrderAttribution = model
 
     disqualified_reason: model.text().nullable(),
 
+    /**
+     * Multi-level referral chain. level=1 is the primary attributed
+     * creator; level>=2 are upstream referrers walked via
+     * AffiliateLink.referrer_creator_seller_id. parent_attribution_id
+     * points at the row one level closer to the order.
+     */
+    level: model.number().default(1),
+    parent_attribution_id: model.text().nullable(),
+    level_split_percent: model.number().nullable(),
+
     metadata: model.json().nullable(),
   })
   .indexes([
@@ -76,6 +91,15 @@ const OrderAttribution = model
     {
       on: ["commission_status", "hold_until"],
       name: "IDX_order_attribution_status_hold",
+    },
+    {
+      on: ["order_id", "level"],
+      name: "UQ_order_attribution_order_level",
+      unique: true,
+    },
+    {
+      on: ["parent_attribution_id"],
+      name: "IDX_order_attribution_parent",
     },
   ])
 
