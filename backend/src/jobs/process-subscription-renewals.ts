@@ -2,22 +2,23 @@ import { MedusaContainer } from "@medusajs/framework/types"
 import { SUBSCRIPTION_MODULE } from "../modules/subscription"
 import SubscriptionModuleService from "../modules/subscription/service"
 import { SubscriptionStatus } from "../modules/subscription/types"
+import { renewSubscriptionWorkflow } from "../workflows/subscription/workflows/renew-subscription"
+import { handleSubscriptionFailureWorkflow } from "../workflows/subscription/workflows/handle-subscription-failure"
 
 /**
  * Subscription Renewal Job
- * 
- * This scheduled job runs periodically to:
- * 1. Find subscriptions due for renewal
- * 2. Process renewals (create orders, capture payments)
- * 3. Update subscription dates
- * 4. Expire subscriptions past their end date
- * 
- * Schedule: Run every hour to catch due subscriptions
- * 
- * In production, you would also:
- * - Send renewal reminder emails
- * - Handle payment failures gracefully
- * - Implement retry logic for failed payments
+ *
+ * Runs hourly. For each subscription whose `next_order_date` has elapsed:
+ *   1. Skip if not ACTIVE
+ *   2. Expire if past `expiration_date`
+ *   3. Otherwise invoke `renewSubscriptionWorkflow`
+ *   4. On workflow failure, invoke `handleSubscriptionFailureWorkflow` —
+ *      records a dunning attempt, schedules a retry (1d/3d/7d), and pauses
+ *      after the configured max attempts.
+ *
+ * Gated by `FBM_SUBSCRIPTION_RENEWAL_LIVE`. When unset, falls back to the
+ * legacy date-bump path (recordNewSubscriptionOrder) so the new wiring can
+ * ship dark and be cut over per environment.
  */
 export default async function processSubscriptionRenewals(
   container: MedusaContainer
@@ -26,70 +27,111 @@ export default async function processSubscriptionRenewals(
     SUBSCRIPTION_MODULE
   )
 
-  console.log("[Subscription Job] Starting subscription renewal check...")
+  const liveMode = process.env.FBM_SUBSCRIPTION_RENEWAL_LIVE === "1"
+
+  console.log(
+    `[Subscription Job] Starting subscription renewal check (live_mode=${liveMode})...`
+  )
 
   try {
-    // 1. Get subscriptions due for renewal
     const dueSubscriptions = await subscriptionService.getDueSubscriptions()
-    
-    console.log(`[Subscription Job] Found ${dueSubscriptions.length} subscriptions due for renewal`)
 
-    // 2. Process each due subscription
+    console.log(
+      `[Subscription Job] Found ${dueSubscriptions.length} subscriptions due for renewal`
+    )
+
     for (const subscription of dueSubscriptions) {
       try {
-        // Skip if already processed or not active
         if (subscription.status !== SubscriptionStatus.ACTIVE) {
           continue
         }
 
-        // Check if past expiration
-        if (subscription.expiration_date && new Date() > new Date(subscription.expiration_date)) {
-          console.log(`[Subscription Job] Expiring subscription ${subscription.id}`)
+        if (
+          subscription.expiration_date &&
+          new Date() > new Date(subscription.expiration_date)
+        ) {
+          console.log(
+            `[Subscription Job] Expiring subscription ${subscription.id}`
+          )
           await subscriptionService.expireSubscription(subscription.id)
           continue
         }
 
-        // In production, you would:
-        // 1. Call renewSubscriptionWorkflow
-        // 2. Create order from cart template
-        // 3. Capture payment from saved method
-        // 4. Send confirmation email
+        if (!liveMode) {
+          // Legacy path — preserved for environments that haven't been
+          // cut over to the workflow-driven loop yet.
+          await subscriptionService.recordNewSubscriptionOrder(subscription.id)
+          console.log(
+            `[Subscription Job] (legacy) advanced dates for ${subscription.id}`
+          )
+          continue
+        }
 
-        console.log(`[Subscription Job] Processing renewal for subscription ${subscription.id}`)
-        
-        // For now, just update the subscription dates
-        await subscriptionService.recordNewSubscriptionOrder(subscription.id)
-        
-        console.log(`[Subscription Job] Successfully processed subscription ${subscription.id}`)
-      } catch (error) {
-        console.error(`[Subscription Job] Failed to process subscription ${subscription.id}:`, error)
-        
-        // Mark as failed
-        await subscriptionService.failSubscription(
-          subscription.id,
-          error instanceof Error ? error.message : "Unknown error"
+        await renewSubscriptionWorkflow(container).run({
+          input: { subscription_id: subscription.id },
+        })
+
+        // Successful renewal — clear any prior dunning state.
+        await subscriptionService.clearDunningAttempts(subscription.id)
+
+        console.log(
+          `[Subscription Job] Renewed subscription ${subscription.id}`
         )
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Unknown error"
+        console.error(
+          `[Subscription Job] Renewal failed for ${subscription.id}: ${message}`
+        )
+
+        if (!liveMode) {
+          // Preserve historical behavior — legacy path marks failed
+          // immediately with no dunning loop.
+          await subscriptionService.failSubscription(subscription.id, message)
+          continue
+        }
+
+        try {
+          await handleSubscriptionFailureWorkflow(container).run({
+            input: {
+              subscription_id: subscription.id,
+              error: message,
+            },
+          })
+        } catch (dunningError) {
+          console.error(
+            `[Subscription Job] Dunning workflow failed for ${subscription.id}:`,
+            dunningError
+          )
+        }
       }
     }
 
-    // 3. Expire old subscriptions
+    // Sweep for subscriptions that are still ACTIVE but past expiration.
     const allSubscriptions = await subscriptionService.listSubscriptions({
-      status: SubscriptionStatus.ACTIVE
+      status: SubscriptionStatus.ACTIVE,
     })
 
     const now = new Date()
     const expiredIds = allSubscriptions
-      .filter(s => s.expiration_date && new Date(s.expiration_date) < now)
-      .map(s => s.id)
+      .filter(
+        (s) => s.expiration_date && new Date(s.expiration_date) < now
+      )
+      .map((s) => s.id)
 
     if (expiredIds.length > 0) {
-      console.log(`[Subscription Job] Expiring ${expiredIds.length} past-due subscriptions`)
+      console.log(
+        `[Subscription Job] Expiring ${expiredIds.length} past-due subscriptions`
+      )
       await subscriptionService.expireSubscription(expiredIds)
     }
 
     console.log("[Subscription Job] Completed subscription renewal check")
   } catch (error) {
-    console.error("[Subscription Job] Error in subscription renewal job:", error)
+    console.error(
+      "[Subscription Job] Error in subscription renewal job:",
+      error
+    )
   }
 }
 

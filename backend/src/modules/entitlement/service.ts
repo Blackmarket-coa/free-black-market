@@ -82,8 +82,12 @@ class EntitlementModuleService extends MedusaService({
     customer_id?: string | null
     customer_external_id?: string | null
     items: Array<{ product_id?: string | null; variant_id?: string | null }>
+    source_subscription_id?: string | null
   }): Promise<EntitlementType[]> {
     const granted: EntitlementType[] = []
+    const source = args.source_subscription_id
+      ? EntitlementSource.SUBSCRIPTION
+      : EntitlementSource.ORDER
     for (const item of args.items) {
       const rules = await this.findApplicableRules({
         product_id: item.product_id ?? undefined,
@@ -100,8 +104,9 @@ class EntitlementModuleService extends MedusaService({
           variant_id: item.variant_id ?? null,
           feature_key: rule.feature_key,
           kind: rule.kind as EntitlementKind,
-          source: EntitlementSource.ORDER,
+          source,
           source_order_id: args.order_id,
+          source_subscription_id: args.source_subscription_id ?? null,
           expires_at,
         })
         granted.push(ent)
