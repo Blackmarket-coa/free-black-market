@@ -1,0 +1,25 @@
+[Unit]
+Description=FreeBlackMarket Docker Compose stack
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/opt/fbm
+EnvironmentFile=/opt/fbm/.env.production
+User=fbm
+Group=fbm
+
+# Pull latest images and start the stack.
+ExecStart=/usr/bin/docker compose -f /opt/fbm/docker-compose.yml -f /opt/fbm/docker-compose.prod.yml up -d --remove-orphans
+
+# Stop the stack on shutdown.
+ExecStop=/usr/bin/docker compose -f /opt/fbm/docker-compose.yml -f /opt/fbm/docker-compose.prod.yml stop
+
+TimeoutStartSec=10min
+TimeoutStopSec=2min
+
+[Install]
+WantedBy=multi-user.target

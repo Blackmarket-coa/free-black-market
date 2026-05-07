@@ -1,0 +1,84 @@
+# Production override for the Fedora single-host deployment.
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# Layered on top of docker-compose.yml; this file only overrides what
+# differs in production:
+#   - app services pull pre-built images from GHCR instead of building locally
+#   - every public port is bound to 127.0.0.1 (nginx terminates TLS on the host)
+#   - data services bind 127.0.0.1 only
+#   - secrets come from .env.production (gitignored) instead of dev defaults
+#   - all services use restart: unless-stopped
+#
+# Requires Compose v2.20+ (for !reset / !override list semantics).
+#
+# .env.production must define at minimum:
+#   IMAGE_TAG, GHCR_USERNAME, GHCR_TOKEN, all *_CORS / *_URL hostnames,
+#   POSTGRES_PASSWORD, JWT_SECRET, COOKIE_SECRET, MINIO_ROOT_PASSWORD, etc.
+# See .env.production.example for the full list.
+
+name: free-black-market
+
+services:
+  postgres:
+    restart: unless-stopped
+    ports: !override
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    env_file:
+      - .env.production
+
+  redis:
+    restart: unless-stopped
+    ports: !override
+      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
+    env_file:
+      - .env.production
+
+  minio:
+    restart: unless-stopped
+    ports: !override
+      - "127.0.0.1:${MINIO_PORT:-9100}:9000"
+      - "127.0.0.1:${MINIO_CONSOLE_PORT:-9101}:9001"
+    env_file:
+      - .env.production
+
+  minio-init:
+    env_file:
+      - .env.production
+
+  backend:
+    image: ghcr.io/${GHCR_OWNER:-blackmarket-coa}/free-black-market-backend:${IMAGE_TAG:-latest}
+    build: !reset null
+    restart: unless-stopped
+    ports: !override
+      - "127.0.0.1:${BACKEND_PORT:-9000}:9000"
+    env_file:
+      - .env.production
+
+  storefront:
+    image: ghcr.io/${GHCR_OWNER:-blackmarket-coa}/free-black-market-storefront:${IMAGE_TAG:-latest}
+    build: !reset null
+    restart: unless-stopped
+    ports: !override
+      - "127.0.0.1:${STOREFRONT_PORT:-3000}:3000"
+    env_file:
+      - .env.production
+
+  admin-panel:
+    image: ghcr.io/${GHCR_OWNER:-blackmarket-coa}/free-black-market-admin-panel:${IMAGE_TAG:-latest}
+    build: !reset null
+    restart: unless-stopped
+    ports: !override
+      - "127.0.0.1:${ADMIN_PANEL_PORT:-7000}:80"
+    env_file:
+      - .env.production
+
+  vendor-panel:
+    image: ghcr.io/${GHCR_OWNER:-blackmarket-coa}/free-black-market-vendor-panel:${IMAGE_TAG:-latest}
+    build: !reset null
+    restart: unless-stopped
+    ports: !override
+      - "127.0.0.1:${VENDOR_PANEL_PORT:-7001}:80"
+    env_file:
+      - .env.production
