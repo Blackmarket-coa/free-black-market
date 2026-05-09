@@ -16,6 +16,14 @@ Index of operational primitives added during the production-readiness pass on br
 | Disaster recovery | [`runbooks/DR.md`](./runbooks/DR.md) | live |
 | Release process | [`runbooks/RELEASE.md`](./runbooks/RELEASE.md) | live |
 | Release validation | [`RELEASE_VALIDATION_PLAYBOOK.md`](./RELEASE_VALIDATION_PLAYBOOK.md) | existing |
+| Single points of failure map | [`operations/SPOF_MAP.md`](./operations/SPOF_MAP.md) | foundation-milestone |
+| Co-maintainer onboarding | [`operations/CO_MAINTAINER_ONBOARDING.md`](./operations/CO_MAINTAINER_ONBOARDING.md) | foundation-milestone |
+| Bus-factor drill cadence | [`operations/BUS_FACTOR_DRILL_CADENCE.md`](./operations/BUS_FACTOR_DRILL_CADENCE.md) | foundation-milestone |
+| Upstream advisories feed | [`operations/UPSTREAM_ADVISORIES.md`](./operations/UPSTREAM_ADVISORIES.md) | foundation-milestone |
+| AI-driven security workflow | [`operations/AI_SECURITY_WORKFLOW.md`](./operations/AI_SECURITY_WORKFLOW.md) | foundation-milestone |
+| FBM migration to primary server | [`runbooks/FBM_MIGRATION_TO_PRIMARY_SERVER.md`](./runbooks/FBM_MIGRATION_TO_PRIMARY_SERVER.md) | foundation-milestone |
+| Secrets manager migration | [`runbooks/SECRETS_MANAGER_MIGRATION.md`](./runbooks/SECRETS_MANAGER_MIGRATION.md) | foundation-milestone |
+| Entitlements service contract (OpenAPI) | [`contracts/entitlements.yaml`](./contracts/entitlements.yaml) | foundation-milestone |
 
 ## Quality gates
 
