@@ -28,10 +28,10 @@ info:
     name: BMC Maintainers
     url: https://github.com/Blackmarket-coa/free-black-market
 servers:
-  - url: https://fbm.local/admin
-    description: Admin / in-cluster service-to-service
-  - url: https://fbm.local/store
-    description: Public store API (read-scoped)
+  - url: https://fbm.local/v1/integrations/blackout
+    description: Blackout integration surface (HTTP, OAuth client-credentials)
+  - url: http://localhost:9000/v1/integrations/blackout
+    description: Local dev
 
 security:
   - bearerAuth: []
@@ -47,6 +47,44 @@ tags:
     description: Coalition memberships and coalition-scoped entitlements.
 
 paths:
+  /entitlements:
+    get:
+      tags: [access]
+      operationId: verifyFeatureKey
+      summary: Verify whether an MXID holds an active grant for a feature key.
+      description: |
+        Pre-existing single-feature verify endpoint. Kept for backward
+        compatibility with Blackout-side gating that pre-dates the §2.5
+        contract. New consumers should prefer `/entitlements/access` or
+        `/entitlements/grants`.
+      parameters:
+        - name: customer_external_id
+          in: query
+          schema: { $ref: '#/components/schemas/Mxid' }
+        - name: customer_id
+          in: query
+          schema: { type: string }
+        - name: feature_key
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Verification result.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [entitled, entitlements]
+                properties:
+                  entitled: { type: boolean }
+                  entitlements:
+                    type: array
+                    items: { $ref: '#/components/schemas/Entitlement' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '503': { $ref: '#/components/responses/ServiceDisabled' }
+
   /entitlements/access:
     get:
       tags: [access]
@@ -79,6 +117,7 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '503': { $ref: '#/components/responses/ServiceDisabled' }
 
   /entitlements/economic-standing:
     get:
@@ -101,6 +140,8 @@ paths:
                 $ref: '#/components/schemas/EconomicStanding'
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '501': { $ref: '#/components/responses/NotImplemented' }
+        '503': { $ref: '#/components/responses/ServiceDisabled' }
 
   /entitlements/governance-roles:
     get:
@@ -124,6 +165,8 @@ paths:
                 $ref: '#/components/schemas/GovernanceRoles'
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '501': { $ref: '#/components/responses/NotImplemented' }
+        '503': { $ref: '#/components/responses/ServiceDisabled' }
 
   /entitlements/coalitions:
     get:
@@ -145,6 +188,8 @@ paths:
                 $ref: '#/components/schemas/CoalitionMemberships'
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '501': { $ref: '#/components/responses/NotImplemented' }
+        '503': { $ref: '#/components/responses/ServiceDisabled' }
 
   /entitlements/grants:
     get:
@@ -179,6 +224,7 @@ paths:
                 required: [grants]
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
+        '503': { $ref: '#/components/responses/ServiceDisabled' }
 
 components:
   securitySchemes:
@@ -209,6 +255,23 @@ components:
           schema: { $ref: '#/components/schemas/Error' }
     NotFound:
       description: MXID or resource not found.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    NotImplemented:
+      description: |
+        Endpoint defined in the §2.5 contract but not yet shipped. The
+        response body's `code` is `foundation_milestone` so consumers can
+        detect that the endpoint is contractually present but pending
+        implementation.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    ServiceDisabled:
+      description: |
+        Returned when `FBM_BLACKOUT_INTEGRATION` is not enabled on the
+        backend. The Blackout integration surface is disabled by default
+        in dev/preview and gated behind an env flag in production.
       content:
         application/json:
           schema: { $ref: '#/components/schemas/Error' }
