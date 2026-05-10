@@ -3,14 +3,16 @@ import {
   isBlackoutIntegrationEnabled,
   verifyBlackoutToken,
 } from "../../../../../../lib/blackout-oauth"
+import { ENTITLEMENT_MODULE } from "../../../../../../modules/entitlement"
+import type EntitlementModuleService from "../../../../../../modules/entitlement/service"
 
 /**
  * Governance-roles endpoint per `docs/contracts/entitlements.yaml` §2.5.
  *
- * Foundation milestone: depends on the cooperative + governance modules'
- * Matrix-ACL synchronization and the MXID-keyed vendor-roles revision
- * scoped in AGGRESSIVE_OPERATIONS_GUIDE.md §2.1 and §5.1. Returns 501 with
- * `code: foundation_milestone` until those workstreams ship.
+ * Returns the roles, vote eligibility, Synapse power-level intent, and
+ * derived FBM commerce permissions for an MXID. Coalition-side roles are
+ * read off the entitlement table as `governance.role.<role>.<coalition_id>`
+ * grants; the static role→permission map lives in the entitlement service.
  */
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
   if (!isBlackoutIntegrationEnabled()) {
@@ -27,9 +29,12 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     return res.status(401).json({ code: "unauthorized", message: "Invalid or missing Bearer token" })
   }
 
-  return res.status(501).json({
-    code: "foundation_milestone",
-    message:
-      "Governance roles endpoint is contractually defined but pending the cooperative/governance Matrix-ACL synchronization and vendor-roles MXID revision scoped in AGGRESSIVE_OPERATIONS_GUIDE.md §2.1 and §5.1.",
-  })
+  const mxid = String(req.query.mxid || "").trim()
+  if (!mxid) {
+    return res.status(400).json({ code: "bad_request", message: "mxid is required" })
+  }
+
+  const service = req.scope.resolve<EntitlementModuleService>(ENTITLEMENT_MODULE)
+  const snapshot = await service.getGovernanceRoles(mxid)
+  return res.json(snapshot)
 }

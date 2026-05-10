@@ -147,6 +147,11 @@ const SellerMetadata = model.define("seller_metadata", {
   creator_total_followers: model.number().default(0),
   creator_audience_geo: model.json().nullable(), // CreatorAudienceGeo
 
+  // Matrix MXID — canonical identity per AGGRESSIVE_OPERATIONS_GUIDE.md §2.1.
+  // Nullable while existing vendors are backfilled; uniqueness enforced via
+  // a partial unique index in Migration202607AddMxidToSellerMetadata.
+  mxid: model.text().nullable(),
+
   // Metadata for additional extensions
   metadata: model.json().nullable(),
 })

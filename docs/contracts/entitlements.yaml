@@ -147,13 +147,16 @@ paths:
     get:
       tags: [governance-roles]
       operationId: getGovernanceRoles
-      x-foundation-milestone: true
       summary: Governance roles held by an MXID.
       description: |
         Roles held within each coalition the user belongs to, the petitions
         and proposals they can vote on, the Matrix ACLs that follow from
         those roles, and the FBM commerce permissions that follow from those
-        roles. Backed by `cooperative` and `governance` modules.
+        roles. Read off the entitlement table as
+        `governance.role.<role>.<coalition_id>` grants; FBM permissions
+        derived via the static role→permission map in the entitlement
+        service. Coalition-level membership resolution still depends on the
+        `cooperative` module exposing membership.
       parameters:
         - $ref: '#/components/parameters/MxidQuery'
       responses:
@@ -165,7 +168,6 @@ paths:
                 $ref: '#/components/schemas/GovernanceRoles'
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
-        '501': { $ref: '#/components/responses/NotImplemented' }
         '503': { $ref: '#/components/responses/ServiceDisabled' }
 
   /entitlements/coalitions:
@@ -401,7 +403,6 @@ components:
 
     GovernanceRoles:
       type: object
-      x-foundation-milestone: true
       required: [mxid, roles]
       properties:
         mxid: { $ref: '#/components/schemas/Mxid' }

@@ -239,14 +239,12 @@ describe("EntitlementModuleService", () => {
       expect(decision.reasons.some((r) => r.detail?.includes("listing.write.prod_1"))).toBe(true)
     })
 
-    it("evaluateAccess() returns foundation_milestone_pending for non-listing resource kinds", async () => {
+    it("evaluateAccess() returns foundation_milestone_pending for resource kinds whose substrate is still pending", async () => {
       const svc = makeService()
       for (const kind of [
         "matrix-room",
-        "governance-proposal",
         "fulfillment-node",
         "ledger-tx",
-        "platform-admin",
       ] as const) {
         const decision = await svc.evaluateAccess({
           mxid: MXID,
@@ -259,6 +257,97 @@ describe("EntitlementModuleService", () => {
         expect(skip?.outcome).toBe("skip")
         expect(skip?.detail).toBe("foundation_milestone_pending")
       }
+    })
+
+    it("evaluateAccess() denies governance-proposal.vote without a derived governance permission", async () => {
+      const svc = makeService()
+      const decision = await svc.evaluateAccess({
+        mxid: MXID,
+        resourceKind: "governance-proposal",
+        resourceId: "prop_1",
+        action: "write",
+      })
+      expect(decision.allowed).toBe(false)
+      expect(decision.reasons.some((r) => r.check === "governance-proposal.write")).toBe(true)
+    })
+
+    it("evaluateAccess() permits governance-proposal.vote derived from a member role grant", async () => {
+      const svc = makeService()
+      await svc.grant({
+        customer_external_id: MXID,
+        feature_key: "governance.role.member.coalition_alpha",
+        source_order_id: "ord_role",
+        product_id: "role_member",
+      })
+      const decision = await svc.evaluateAccess({
+        mxid: MXID,
+        resourceKind: "governance-proposal",
+        resourceId: "prop_1",
+        action: "write",
+      })
+      expect(decision.allowed).toBe(true)
+    })
+
+    it("evaluateAccess() permits platform-admin only with a platform.admin grant", async () => {
+      const svc = makeService()
+      const denied = await svc.evaluateAccess({
+        mxid: MXID,
+        resourceKind: "platform-admin",
+        resourceId: "any",
+        action: "admin",
+      })
+      expect(denied.allowed).toBe(false)
+
+      await svc.grant({
+        customer_external_id: MXID,
+        feature_key: "platform.admin",
+        source_order_id: "ord_admin",
+        product_id: "p_admin",
+      })
+      const allowed = await svc.evaluateAccess({
+        mxid: MXID,
+        resourceKind: "platform-admin",
+        resourceId: "any",
+        action: "admin",
+      })
+      expect(allowed.allowed).toBe(true)
+    })
+
+    it("getGovernanceRoles() reads governance.role.<role>.<coalition> grants and derives FBM permissions", async () => {
+      const svc = makeService()
+      await svc.grant({
+        customer_external_id: MXID,
+        feature_key: "governance.role.steward.coalition_alpha",
+        source_order_id: "ord_a",
+        product_id: "p_a",
+      })
+      await svc.grant({
+        customer_external_id: MXID,
+        feature_key: "governance.role.member.coalition_beta",
+        source_order_id: "ord_b",
+        product_id: "p_b",
+      })
+
+      const snapshot = await svc.getGovernanceRoles(MXID)
+      expect(snapshot.mxid).toBe(MXID)
+      expect(snapshot.roles).toHaveLength(2)
+
+      const steward = snapshot.roles.find((r) => r.role === "steward")
+      expect(steward?.coalition_id).toBe("coalition_alpha")
+      expect(steward?.fbm_permissions).toEqual(
+        expect.arrayContaining(["listing.create", "governance.proposal.create"])
+      )
+      expect(steward?.matrix_acls.find((a) => a.room_id === "!coalition_alpha-governance")?.level).toBe(50)
+
+      const member = snapshot.roles.find((r) => r.role === "member")
+      expect(member?.coalition_id).toBe("coalition_beta")
+      expect(member?.fbm_permissions).toEqual(expect.arrayContaining(["governance.proposal.vote"]))
+    })
+
+    it("getGovernanceRoles() returns an empty role list when the MXID holds no role grants", async () => {
+      const svc = makeService()
+      const snapshot = await svc.getGovernanceRoles(MXID)
+      expect(snapshot.roles).toEqual([])
     })
   })
 })
