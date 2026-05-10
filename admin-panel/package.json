@@ -1,6 +1,7 @@
 {
   "name": "@medusajs/dashboard",
   "version": "2.12.5",
+  "packageManager": "pnpm@10.13.1",
   "pnpm": {
     "overrides": {
       "glob": ">=10.5.0",

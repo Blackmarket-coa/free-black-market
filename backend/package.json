@@ -4,6 +4,7 @@
   "description": "A starter for Medusa projects.",
   "author": "Medusa (https://medusajs.com)",
   "license": "MIT",
+  "packageManager": "pnpm@10.13.1",
   "keywords": [
     "sqlite",
     "postgres",
