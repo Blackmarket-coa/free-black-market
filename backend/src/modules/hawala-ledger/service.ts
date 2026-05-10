@@ -2045,6 +2045,130 @@ class HawalaLedgerModuleService extends MedusaService({
 
     return { splits, total_split: grossAmount }
   }
+
+  // ==================== ECONOMIC STANDING (§5.1) ====================
+
+  /**
+   * Aggregate Coalition Credits standing for an MXID per the §2.5
+   * entitlements contract. Sums available + pending balances across the
+   * customer's USER_WALLET, the seller's SELLER_EARNINGS, and (if any)
+   * CREATOR_EARNINGS accounts.
+   *
+   * `seller_id` resolution comes from `seller_metadata.mxid` (added by
+   * Migration202607AddMxidToSellerMetadata). `customer_id` resolution
+   * uses Medusa customer.metadata.mxid as the conventional slot — the
+   * customer-side metadata is a JSONB blob so the lookup is a single
+   * indexed query in production-sized installs.
+   *
+   * Returns null totals (rather than throwing) when the MXID resolves to
+   * no accounts; this is the expected state for new MXIDs that haven't
+   * transacted yet.
+   */
+  async getEconomicStandingByMxid(args: {
+    mxid: string
+    pgConnection?: { raw: (sql: string, bindings?: unknown[]) => Promise<{ rows?: Array<Record<string, unknown>> }> }
+  }): Promise<{
+    mxid: string
+    available: number
+    pending: number
+    currency: string
+    last_settlement_at: string | null
+    sources: Array<{
+      account_id: string
+      account_type: string
+      owner_type: string | null
+      available: number
+      pending: number
+    }>
+  }> {
+    const { mxid } = args
+    const ownerIds: string[] = []
+    let currency = "USD"
+
+    if (args.pgConnection) {
+      try {
+        const sellerLookup = await args.pgConnection.raw(
+          `SELECT seller_id FROM seller_metadata WHERE mxid = ? AND deleted_at IS NULL LIMIT 1`,
+          [mxid]
+        )
+        const sellerId = sellerLookup?.rows?.[0]?.seller_id
+        if (typeof sellerId === "string") ownerIds.push(sellerId)
+      } catch {
+        // schema not yet migrated; treat as no match
+      }
+
+      try {
+        const customerLookup = await args.pgConnection.raw(
+          `SELECT id FROM customer WHERE metadata->>'mxid' = ? AND deleted_at IS NULL LIMIT 1`,
+          [mxid]
+        )
+        const customerId = customerLookup?.rows?.[0]?.id
+        if (typeof customerId === "string") ownerIds.push(customerId)
+      } catch {
+        // customer table not present in this scope; ignore
+      }
+    }
+
+    if (ownerIds.length === 0) {
+      return {
+        mxid,
+        available: 0,
+        pending: 0,
+        currency,
+        last_settlement_at: null,
+        sources: [],
+      }
+    }
+
+    const accounts = await this.listLedgerAccounts({
+      owner_id: ownerIds,
+    })
+
+    let available = 0
+    let pending = 0
+    const sources: Array<{
+      account_id: string
+      account_type: string
+      owner_type: string | null
+      available: number
+      pending: number
+    }> = []
+
+    for (const account of accounts) {
+      const accountAvailable = Number(account.available_balance ?? 0)
+      const accountPending = Number(account.pending_balance ?? 0)
+      available += accountAvailable
+      pending += accountPending
+      currency = account.currency_code || currency
+      sources.push({
+        account_id: account.id,
+        account_type: String(account.account_type),
+        owner_type: account.owner_type ? String(account.owner_type) : null,
+        available: accountAvailable,
+        pending: accountPending,
+      })
+    }
+
+    let last_settlement_at: string | null = null
+    if (accounts.length > 0) {
+      const accountIds = accounts.map((a) => a.id)
+      const recent = await this.listLedgerEntries({
+        credit_account_id: accountIds,
+      })
+      const settlement = recent
+        .filter((e) => String((e as { entry_type?: string }).entry_type ?? "") === "SETTLEMENT")
+        .sort((a, b) => {
+          const at = new Date((a as { created_at?: string }).created_at ?? 0).getTime()
+          const bt = new Date((b as { created_at?: string }).created_at ?? 0).getTime()
+          return bt - at
+        })[0]
+      if (settlement && (settlement as { created_at?: string }).created_at) {
+        last_settlement_at = new Date((settlement as { created_at: string }).created_at).toISOString()
+      }
+    }
+
+    return { mxid, available, pending, currency, last_settlement_at, sources }
+  }
 }
 
 export default HawalaLedgerModuleService
