@@ -204,6 +204,123 @@ class EntitlementModuleService extends MedusaService({
     )
   }
 
+  /**
+   * List grants for a Matrix MXID (stored as `customer_external_id`).
+   * Implements the `/entitlements/grants` operation in
+   * `docs/contracts/entitlements.yaml`.
+   */
+  async listGrantsByMxid(
+    mxid: string,
+    options: { status?: EntitlementStatus; featureKey?: string } = {}
+  ): Promise<EntitlementType[]> {
+    const filters: Record<string, unknown> = { customer_external_id: mxid }
+    if (options.status) filters.status = options.status
+    if (options.featureKey) filters.feature_key = options.featureKey
+    const items = await this.listEntitlements(filters)
+    return items
+  }
+
+  /**
+   * Render an access decision for a (mxid, resource, action) triple per
+   * the §2.5 entitlements service contract. Resource kinds the substrate
+   * has policy for today are evaluated against the entitlement table;
+   * kinds whose policy depends on foundation-milestone modules
+   * (governance, coalitions, ledger) are returned as `allowed=false`
+   * with reason `foundation_milestone_pending` so callers can detect the
+   * pending state without conflating it with a real denial.
+   */
+  async evaluateAccess(input: {
+    mxid: string
+    resourceKind:
+      | "matrix-room"
+      | "fbm-listing"
+      | "governance-proposal"
+      | "fulfillment-node"
+      | "ledger-tx"
+      | "platform-admin"
+    resourceId: string
+    action: "read" | "write" | "admin"
+  }): Promise<{
+    allowed: boolean
+    reasons: Array<{
+      check: string
+      outcome: "pass" | "fail" | "skip"
+      detail?: string
+    }>
+    evaluated_at: string
+  }> {
+    const reasons: Array<{
+      check: string
+      outcome: "pass" | "fail" | "skip"
+      detail?: string
+    }> = []
+    const evaluated_at = new Date().toISOString()
+
+    if (!input.mxid) {
+      return {
+        allowed: false,
+        reasons: [{ check: "mxid", outcome: "fail", detail: "mxid is required" }],
+        evaluated_at,
+      }
+    }
+
+    const grants = await this.listGrantsByMxid(input.mxid, {
+      status: EntitlementStatus.ACTIVE,
+    })
+    const now = Date.now()
+    const live = grants.filter(
+      (e) => !e.expires_at || new Date(e.expires_at).getTime() > now
+    )
+    reasons.push({
+      check: "active_grants",
+      outcome: "pass",
+      detail: `${live.length} active grant(s) for ${input.mxid}`,
+    })
+
+    switch (input.resourceKind) {
+      case "fbm-listing": {
+        if (input.action === "read") {
+          reasons.push({
+            check: "fbm-listing.read",
+            outcome: "pass",
+            detail: "public-by-default",
+          })
+          return { allowed: true, reasons, evaluated_at }
+        }
+        const writeKeys = new Set([
+          `listing.${input.action}`,
+          `listing.${input.action}.${input.resourceId}`,
+        ])
+        const match = live.find((e) => writeKeys.has(e.feature_key))
+        if (match) {
+          reasons.push({
+            check: `fbm-listing.${input.action}`,
+            outcome: "pass",
+            detail: `granted by feature_key=${match.feature_key}`,
+          })
+          return { allowed: true, reasons, evaluated_at }
+        }
+        reasons.push({
+          check: `fbm-listing.${input.action}`,
+          outcome: "fail",
+          detail: `no active grant matched feature_key in {${[...writeKeys].join(", ")}}`,
+        })
+        return { allowed: false, reasons, evaluated_at }
+      }
+      case "matrix-room":
+      case "governance-proposal":
+      case "fulfillment-node":
+      case "ledger-tx":
+      case "platform-admin":
+        reasons.push({
+          check: input.resourceKind,
+          outcome: "skip",
+          detail: "foundation_milestone_pending",
+        })
+        return { allowed: false, reasons, evaluated_at }
+    }
+  }
+
   private async findApplicableRules(args: {
     product_id?: string
     variant_id?: string
