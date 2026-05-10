@@ -35,6 +35,10 @@ const navigationItems = [
     label: "Wishlist",
     href: "/user/wishlist",
   },
+  {
+    label: "Coalition Credits",
+    href: "/user/coalition-credits",
+  },
 ]
 
 export const UserNavigation = () => {

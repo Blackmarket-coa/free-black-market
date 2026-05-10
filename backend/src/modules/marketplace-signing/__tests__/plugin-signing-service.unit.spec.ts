@@ -91,4 +91,42 @@ describe("PluginSigningService.sign", () => {
       if (prev !== undefined) process.env.MARKETPLACE_SIGNING_PRIVATE_KEY_PEM = prev
     }
   })
+
+  it("signVendorEvent produces an envelope that verifies against the configured public key", () => {
+    withSigningKey(() => {
+      const service = new PluginSigningService()
+      const envelope = service.signVendorEvent({
+        kind: "order.fulfilled",
+        subject: "order_abc123",
+        payload: {
+          order_id: "order_abc123",
+          fulfilled_at: "2026-05-10T00:00:00.000Z",
+          fulfillment_node: "node_local_42",
+        },
+        signedAt: new Date("2026-05-10T00:00:01Z"),
+      })
+
+      expect(envelope.alg).toBe("ed25519")
+      expect(envelope.payloadType).toBe("order.fulfilled")
+      expect(envelope.subject).toBe("order_abc123")
+      expect(envelope.keyId).toBe("test-key-1")
+
+      const publicKey = (global as any).__test_public_key
+      const message = [
+        "1",
+        envelope.payloadType,
+        envelope.subject,
+        envelope.payloadHash,
+        envelope.signedAt,
+      ].join("|")
+
+      const ok = cryptoVerify(
+        null,
+        Buffer.from(message, "utf8"),
+        publicKey,
+        Buffer.from(envelope.signature, "base64")
+      )
+      expect(ok).toBe(true)
+    })
+  })
 })

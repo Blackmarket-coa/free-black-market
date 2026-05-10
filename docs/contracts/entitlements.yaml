@@ -123,12 +123,13 @@ paths:
     get:
       tags: [economic-standing]
       operationId: getEconomicStanding
-      x-foundation-milestone: true
       summary: Economic standing for an MXID.
       description: |
-        Coalition Credits balance, pending payout balances, vendor sales
-        volume in the current measurement period, and creator reward
-        eligibility flags. Backed by `hawala-ledger` and `payout-breakdown`.
+        Coalition Credits balance (available + pending across the MXID's
+        wallet and earnings accounts), payout summary, vendor sales volume
+        in the current measurement period, and creator reward eligibility
+        flags. Backed by `hawala-ledger`. Returns zeroed totals (rather
+        than 404) for MXIDs that have not yet transacted.
       parameters:
         - $ref: '#/components/parameters/MxidQuery'
       responses:
@@ -139,21 +140,22 @@ paths:
               schema:
                 $ref: '#/components/schemas/EconomicStanding'
         '401': { $ref: '#/components/responses/Unauthorized' }
-        '404': { $ref: '#/components/responses/NotFound' }
-        '501': { $ref: '#/components/responses/NotImplemented' }
         '503': { $ref: '#/components/responses/ServiceDisabled' }
 
   /entitlements/governance-roles:
     get:
       tags: [governance-roles]
       operationId: getGovernanceRoles
-      x-foundation-milestone: true
       summary: Governance roles held by an MXID.
       description: |
         Roles held within each coalition the user belongs to, the petitions
         and proposals they can vote on, the Matrix ACLs that follow from
         those roles, and the FBM commerce permissions that follow from those
-        roles. Backed by `cooperative` and `governance` modules.
+        roles. Read off the entitlement table as
+        `governance.role.<role>.<coalition_id>` grants; FBM permissions
+        derived via the static role→permission map in the entitlement
+        service. Coalition-level membership resolution still depends on the
+        `cooperative` module exposing membership.
       parameters:
         - $ref: '#/components/parameters/MxidQuery'
       responses:
@@ -165,7 +167,6 @@ paths:
                 $ref: '#/components/schemas/GovernanceRoles'
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
-        '501': { $ref: '#/components/responses/NotImplemented' }
         '503': { $ref: '#/components/responses/ServiceDisabled' }
 
   /entitlements/coalitions:
@@ -324,7 +325,6 @@ components:
 
     EconomicStanding:
       type: object
-      x-foundation-milestone: true
       required: [mxid, coalition_credits, payouts, vendor_sales, creator_rewards]
       properties:
         mxid: { $ref: '#/components/schemas/Mxid' }
@@ -342,7 +342,6 @@ components:
 
     CoalitionCreditsBalance:
       type: object
-      x-foundation-milestone: true
       required: [available, currency]
       properties:
         available:
@@ -362,7 +361,6 @@ components:
 
     PayoutSummary:
       type: object
-      x-foundation-milestone: true
       properties:
         pending_amount:
           type: integer
@@ -375,7 +373,6 @@ components:
 
     VendorSalesSummary:
       type: object
-      x-foundation-milestone: true
       properties:
         period:
           type: string
@@ -391,7 +388,6 @@ components:
 
     CreatorRewardEligibility:
       type: object
-      x-foundation-milestone: true
       properties:
         eligible: { type: boolean }
         program_keys:
@@ -401,7 +397,6 @@ components:
 
     GovernanceRoles:
       type: object
-      x-foundation-milestone: true
       required: [mxid, roles]
       properties:
         mxid: { $ref: '#/components/schemas/Mxid' }

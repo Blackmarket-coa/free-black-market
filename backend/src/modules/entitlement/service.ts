@@ -11,6 +11,78 @@ import {
 export type EntitlementType = InferTypeOf<typeof Entitlement>
 export type EntitlementGrantRuleType = InferTypeOf<typeof EntitlementGrantRule>
 
+/**
+ * Static governance-role → FBM commerce-permission mapping per
+ * AGGRESSIVE_OPERATIONS_GUIDE.md §2.1. Roles are Matrix-side names; the
+ * permission keys here are the FBM-side feature keys the entitlements
+ * service answers `evaluateAccess` against. Keep flat and explicit; if
+ * this grows past one screen, replace with a Casbin policy file.
+ */
+const GOVERNANCE_FBM_PERMISSIONS: Record<string, string[]> = {
+  vendor: ["listing.create", "listing.write", "order.fulfill", "payout.withdraw"],
+  steward: [
+    "listing.create",
+    "listing.write",
+    "order.fulfill",
+    "payout.withdraw",
+    "governance.proposal.create",
+    "coalition.member.invite",
+  ],
+  member: ["listing.read", "governance.proposal.vote"],
+  observer: ["listing.read"],
+}
+
+const GOVERNANCE_VOTE_ELIGIBILITY: Record<string, string[]> = {
+  vendor: ["finance", "operations"],
+  steward: ["finance", "operations", "membership", "constitution"],
+  member: ["finance", "operations", "membership"],
+  observer: [],
+}
+
+/**
+ * Synapse power level a role implies inside the coalition's governance
+ * room. Default is 0 (member). 50 is moderator-equivalent and 100 is
+ * room-admin-equivalent in the standard Matrix power-level model.
+ */
+const GOVERNANCE_POWER_LEVEL: Record<string, number> = {
+  vendor: 25,
+  steward: 50,
+  member: 0,
+  observer: 0,
+}
+
+function matrixAclsForRole(
+  role: string,
+  coalitionId: string
+): Array<{ room_id: string; level: number }> {
+  const level = GOVERNANCE_POWER_LEVEL[role] ?? 0
+  // Convention: every coalition has a `governance` room and a `commerce`
+  // room. The Blackout side owns the actual room IDs; we just expose
+  // intent here as `!<coalition>:<room>` style refs that Blackout can
+  // resolve against its room directory.
+  return [
+    { room_id: `!${coalitionId}-governance`, level },
+    { room_id: `!${coalitionId}-commerce`, level },
+  ]
+}
+
+function derivedPermissionsFromGrants(
+  grants: Array<{ feature_key: string }>
+): Set<string> {
+  const out = new Set<string>()
+  for (const g of grants) {
+    out.add(g.feature_key)
+    const parts = g.feature_key.split(".")
+    if (parts[0] === "governance" && parts[1] === "role" && parts.length >= 4) {
+      const role = parts[2]
+      for (const perm of GOVERNANCE_FBM_PERMISSIONS[role] ?? []) {
+        out.add(perm)
+      }
+    }
+  }
+  return out
+}
+
 export type GrantInput = {
   customer_id?: string | null
   customer_external_id?: string | null
@@ -307,11 +379,44 @@ class EntitlementModuleService extends MedusaService({
         })
         return { allowed: false, reasons, evaluated_at }
       }
+      case "governance-proposal": {
+        const required = `governance.proposal.${input.action === "read" ? "read" : input.action === "write" ? "vote" : "create"}`
+        const derived = derivedPermissionsFromGrants(live)
+        if (derived.has(required) || derived.has("governance.proposal.create")) {
+          reasons.push({
+            check: `governance-proposal.${input.action}`,
+            outcome: "pass",
+            detail: `derived permission ${required}`,
+          })
+          return { allowed: true, reasons, evaluated_at }
+        }
+        reasons.push({
+          check: `governance-proposal.${input.action}`,
+          outcome: "fail",
+          detail: `no governance role grants ${required}`,
+        })
+        return { allowed: false, reasons, evaluated_at }
+      }
+      case "platform-admin": {
+        const adminMatch = live.find((e) => e.feature_key === "platform.admin")
+        if (adminMatch) {
+          reasons.push({
+            check: "platform-admin",
+            outcome: "pass",
+            detail: `granted by feature_key=${adminMatch.feature_key}`,
+          })
+          return { allowed: true, reasons, evaluated_at }
+        }
+        reasons.push({
+          check: "platform-admin",
+          outcome: "fail",
+          detail: "no platform.admin grant",
+        })
+        return { allowed: false, reasons, evaluated_at }
+      }
       case "matrix-room":
-      case "governance-proposal":
       case "fulfillment-node":
       case "ledger-tx":
-      case "platform-admin":
         reasons.push({
           check: input.resourceKind,
           outcome: "skip",
@@ -319,6 +424,70 @@ class EntitlementModuleService extends MedusaService({
         })
         return { allowed: false, reasons, evaluated_at }
     }
+  }
+
+  /**
+   * Render a governance-roles snapshot for an MXID per the §2.5 contract.
+   *
+   * The role→permission mapping is intentionally a static table here.
+   * Casbin or similar is reserved for the moment this outgrows a screen —
+   * see plan workstream 1 OSS leverage notes. Coalition membership
+   * resolution itself remains foundation_milestone_pending until the
+   * `cooperative` module exposes membership; this method returns the
+   * derived FBM permissions and Synapse power-level intent for any roles
+   * the entitlement table already records as feature_keys of the form
+   * `governance.role.<role>.<coalition_id>`.
+   */
+  async getGovernanceRoles(mxid: string): Promise<{
+    mxid: string
+    roles: Array<{
+      coalition_id: string
+      role: string
+      vote_eligibility: string[]
+      matrix_acls: Array<{ room_id: string; level: number }>
+      fbm_permissions: string[]
+    }>
+    evaluated_at: string
+  }> {
+    const evaluated_at = new Date().toISOString()
+    if (!mxid) {
+      return { mxid: "", roles: [], evaluated_at }
+    }
+    const grants = await this.listGrantsByMxid(mxid, {
+      status: EntitlementStatus.ACTIVE,
+    })
+    const now = Date.now()
+    const live = grants.filter(
+      (e) => !e.expires_at || new Date(e.expires_at).getTime() > now
+    )
+
+    const rolesByCoalition = new Map<
+      string,
+      { role: string; coalition_id: string }
+    >()
+    for (const g of live) {
+      const parts = g.feature_key.split(".")
+      if (parts[0] === "governance" && parts[1] === "role" && parts.length >= 4) {
+        const role = parts[2]
+        const coalition_id = parts.slice(3).join(".")
+        const key = `${coalition_id}::${role}`
+        if (!rolesByCoalition.has(key)) {
+          rolesByCoalition.set(key, { role, coalition_id })
+        }
+      }
+    }
+
+    const roles = Array.from(rolesByCoalition.values()).map(
+      ({ role, coalition_id }) => ({
+        coalition_id,
+        role,
+        vote_eligibility: GOVERNANCE_VOTE_ELIGIBILITY[role] ?? [],
+        matrix_acls: matrixAclsForRole(role, coalition_id),
+        fbm_permissions: GOVERNANCE_FBM_PERMISSIONS[role] ?? [],
+      })
+    )
+
+    return { mxid, roles, evaluated_at }
   }
 
   private async findApplicableRules(args: {

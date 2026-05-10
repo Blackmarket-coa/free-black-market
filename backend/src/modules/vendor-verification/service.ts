@@ -1,7 +1,8 @@
 import { MedusaService } from "@medusajs/framework/utils"
-import { 
-  VendorVerification, 
-  VerificationCheck, 
+import { emitMetric } from "../../lib/instrumentation"
+import {
+  VendorVerification,
+  VerificationCheck,
   VendorBadge,
   VerificationLevel,
   VerificationType,
@@ -172,6 +173,11 @@ class VendorVerificationService extends MedusaService({
     
     if (existingChecks.length > 0) {
       const existing = existingChecks[0]
+      emitMetric("vendor.verification.submitted", {
+        seller_id: sellerId,
+        check_type: checkType,
+        update: true,
+      })
       // Update existing check
       return this.updateVerificationChecks({
         id: existing.id,
@@ -181,7 +187,12 @@ class VendorVerificationService extends MedusaService({
         status: CheckStatus.PENDING,
       })
     }
-    
+
+    emitMetric("vendor.verification.submitted", {
+      seller_id: sellerId,
+      check_type: checkType,
+      update: false,
+    })
     // Create new check
     return this.createVerificationChecks({
       vendor_verification_id: verification.id,
@@ -215,14 +226,32 @@ class VendorVerificationService extends MedusaService({
       verified_at: new Date(),
       expires_at: result.expires_at,
       notes: result.notes,
-      score_contribution: result.status === CheckStatus.PASSED 
+      score_contribution: result.status === CheckStatus.PASSED
         ? (result.score_contribution ?? TRUST_SCORE_WEIGHTS[check.check_type as VerificationType] ?? 0)
         : 0,
     })
-    
+
+    emitMetric("vendor.verification.processed", {
+      check_id: checkId,
+      check_type: check.check_type,
+      status: result.status,
+      verified_by: result.verified_by,
+    })
+    if (result.status === CheckStatus.PASSED) {
+      emitMetric("vendor.verification.verified", {
+        check_id: checkId,
+        check_type: check.check_type,
+      })
+    } else if (result.status === CheckStatus.FAILED) {
+      emitMetric("vendor.verification.rejected", {
+        check_id: checkId,
+        check_type: check.check_type,
+      })
+    }
+
     // Recalculate trust score
     await this.recalculateTrustScore(check.vendor_verification_id)
-    
+
     return updated
   }
   
@@ -265,8 +294,66 @@ class VendorVerificationService extends MedusaService({
       level,
       last_verified_at: new Date(),
     })
-    
+
+    emitMetric("vendor.verification.trust_score", {
+      verification_id: verificationId,
+      level,
+      passed_check_count: passedTypes.size,
+    }, totalScore)
+
     return totalScore
+  }
+
+  /**
+   * Build the admin verification funnel summary used by the
+   * Coalition admin dashboard. Shape: total counts grouped by status,
+   * plus median time-to-verify in milliseconds.
+   */
+  async getVerificationFunnel(): Promise<{
+    by_status: Record<string, number>
+    by_level: Record<string, number>
+    median_time_to_verify_ms: number | null
+    total: number
+  }> {
+    const verifications = await this.listVendorVerifications({})
+    const checks = await this.listVerificationChecks({})
+
+    const by_level: Record<string, number> = {}
+    for (const v of verifications) {
+      by_level[v.level] = (by_level[v.level] ?? 0) + 1
+    }
+
+    const by_status: Record<string, number> = {}
+    for (const c of checks) {
+      by_status[c.status] = (by_status[c.status] ?? 0) + 1
+    }
+
+    const verifiedTimes: number[] = []
+    for (const c of checks) {
+      if (c.status === CheckStatus.PASSED && c.verified_at) {
+        const created = new Date(c.created_at as unknown as string).getTime()
+        const verified = new Date(c.verified_at as unknown as string).getTime()
+        if (Number.isFinite(created) && Number.isFinite(verified) && verified >= created) {
+          verifiedTimes.push(verified - created)
+        }
+      }
+    }
+
+    let median: number | null = null
+    if (verifiedTimes.length > 0) {
+      const sorted = [...verifiedTimes].sort((a, b) => a - b)
+      const mid = Math.floor(sorted.length / 2)
+      median = sorted.length % 2 === 0
+        ? Math.round((sorted[mid - 1] + sorted[mid]) / 2)
+        : sorted[mid]
+    }
+
+    return {
+      by_status,
+      by_level,
+      median_time_to_verify_ms: median,
+      total: verifications.length,
+    }
   }
   
   /**

@@ -132,3 +132,34 @@ The storefront uses `DOMPurify` to sanitize seller descriptions and product deta
 ---
 
 *Report generated as part of the storefront audit - February 2026*
+
+---
+
+## Addendum — May 2026 — Unified retail/marketplace presentation (§5.1)
+
+The storefront now ships an explicit retail vs marketplace presentation split per AGGRESSIVE_OPERATIONS_GUIDE.md §1.1. Same listing data, different chrome:
+
+- `src/lib/listing/presentation.ts` — pure `selectPresentation()` selector. Inputs: `routeKind`, storefront context, seller handle, optional coalition-membership flag. Outputs: `"retail"` or `"marketplace"`.
+- `src/components/sections/ProductDetailsPage/ProductDetailsPage.tsx` — accepts a `presentation` prop. Marketplace renders the "More from this seller" section; retail omits it.
+- `src/app/[locale]/(main)/products/[handle]/page.tsx` — `routeKind: "products"`, defaults to marketplace.
+- `src/app/[locale]/(main)/shop/[handle]/page.tsx` — `routeKind: "shop"`, defaults to retail. Coalition-storefront-context cookie still forces marketplace.
+- `src/app/[locale]/(main)/shop/page.tsx` — public retail landing.
+
+Tests: `src/__tests__/presentation.test.ts` covers the seven branches of the selector.
+
+This addendum closes the §5.1 unified-presentation workstream; downstream styling work on the retail browse experience is deferred to differentiation milestone.
+
+---
+
+## Addendum — May 2026 — Capacitor / in-app webview embed (§5.1)
+
+The storefront now accepts embedding from the Blackout Capacitor wrapper per AGGRESSIVE_OPERATIONS_GUIDE.md §2.8. Origin-allowlisted, opt-in only:
+
+- `src/lib/runtime/embed-context.ts` — `detectEmbedContext(headers)` returns `{ isEmbedded, origin, isAllowedOrigin }` based on the `X-FBM-Embed-Origin` header and the `BLACKOUT_EMBED_ALLOWED_ORIGINS` env var.
+- `src/middleware.ts` — `applyEmbedHeaders` swaps `X-Frame-Options: SAMEORIGIN` for `Content-Security-Policy: frame-ancestors <origin>` when (and only when) the request comes from an allowlisted embed origin.
+- `src/app/api/auth/embed-bootstrap/route.ts` — POST endpoint accepting a Blackout-issued JWT, sets `_medusa_jwt` cookie scoped to the webview session. JWS verification deferred until Blackout publishes the signing pubkey to pin.
+- `.env.production.example` — `BLACKOUT_EMBED_ALLOWED_ORIGINS` slot added.
+
+Tests: `src/__tests__/embed-context.test.ts` covers the detector's six branches.
+
+Runbook: `docs/runbooks/STOREFRONT_CAPACITOR_EMBED.md` documents the handshake, allowlist, bootstrap, manual test path, and known limitations.

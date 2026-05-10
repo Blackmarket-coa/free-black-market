@@ -304,7 +304,7 @@ These remain the authoritative operational documentation for the Blackout layer.
 
 ### §7.2 New runbooks required by the consolidation
 
-The consolidation introduces six new runbooks that ship as part of foundation milestone work.
+The consolidation introduces nine new runbooks that ship as part of foundation milestone work. The first six are the original consolidation set; the last three were added with the §5.1 FBM workstreams.
 
 The single-point-of-failure map at `docs/operations/SPOF_MAP.md` inventories the single points of failure across the consolidated stack, including the primary server, Cloudflare Tunnel, Postgres hosting both FBM and Synapse, the secrets manager, and the maintainer. The map is updated whenever a new single point of failure is introduced or an existing one is mitigated.
 
@@ -317,6 +317,12 @@ The secrets manager migration runbook at `docs/runbooks/SECRETS_MANAGER_MIGRATIO
 The compat-layer credential recovery runbook at `docs/runbooks/COMPAT_LAYER_CREDENTIAL_RECOVERY.md` documents recovery procedures for linked-account OAuth tokens, widget secrets, and OBS-WS passwords (which are AES-GCM at rest in the Blackout database) in data-loss scenarios.
 
 The deaddrop-appservice runbook at `docs/runbooks/DEADDROP_APPSERVICE.md` documents the operational procedures for the `apps/deaddrop-appservice/` application that ships in the Blackout repository but currently has no operational runbook.
+
+The MXID vendor backfill runbook at `docs/runbooks/MXID_VENDOR_BACKFILL.md` documents how to backfill `seller_metadata.mxid` for existing vendors via the override-CSV / Synapse user-directory / email-localpart-synthesis resolution chain, including pre-flight checks, dry-run, live run, verification queries, and rollback.
+
+The Stellar/USDC bridge runbook at `docs/runbooks/STELLAR_USDC_BRIDGE.md` documents the mainnet config checklist, key rotation SOP, failed-tx triage, liquidity provisioning, deferred multi-sig governance plan, and the structured-log metric counters emitted by the bridge code paths.
+
+The storefront Capacitor embed runbook at `docs/runbooks/STOREFRONT_CAPACITOR_EMBED.md` documents the X-FBM-Embed-Origin handshake, the BLACKOUT_EMBED_ALLOWED_ORIGINS allowlist, the `/api/auth/embed-bootstrap` POST contract, the manual + automated test path, and the JWS-verification deferral.
 
 ### §7.3 Identity hardening
 
@@ -401,14 +407,14 @@ Foundation milestone unbuilt rows:
 
 |System                                                                        |Progress|Status                                                                   |
 |------------------------------------------------------------------------------|--------|-------------------------------------------------------------------------|
-|Coalition Credits ledger UX (extends `hawala-ledger`)                         |0–100%  |Foundation milestone critical                                            |
-|Stellar/USDC settlement bridge production-ready                               |0–100%  |Foundation milestone critical                                            |
-|Entitlements service contract (HTTP exposure, OpenAPI doc)                    |0–100%  |Foundation milestone critical                                            |
-|Vendor-roles revision (Matrix MXID-keyed)                                     |0–100%  |Foundation milestone critical                                            |
-|Existing-vendor migration to MXID-keyed records                               |0–100%  |Foundation milestone critical                                            |
-|Unified retail/marketplace listing presentation                               |0–100%  |Foundation milestone critical                                            |
-|Order Cycles share-box scheduler (extends `order-cycle` + `food-distribution`)|0–100%  |Foundation milestone critical                                            |
-|Storefront polish + Capacitor render compatibility                            |0–100%  |Foundation milestone; extends `STOREFRONT_AUDIT.md`                      |
+|Coalition Credits ledger UX (extends `hawala-ledger`)                         |75–100% |Backend aggregator + economic-standing endpoint + storefront `/user/coalition-credits` + admin dashboard shipped (`53190aa`); Stripe-ACH leg + transfer-to-member UI deferred|
+|Stellar/USDC settlement bridge production-ready                               |75–100% |Retry/backoff + dual-rail selector + bridge health + runbook + .env template shipped (`ae5c59e`); mainnet cutover and signer key provisioning remain operator work|
+|Entitlements service contract (HTTP exposure, OpenAPI doc)                    |100%    |Shipped: `a1db190` (initial HTTP surface) + `fe4a33f` (governance-roles) + `53190aa` (economic-standing)|
+|Vendor-roles revision (Matrix MXID-keyed)                                     |100%    |Shipped (`fe4a33f`): partial-unique mxid column + getGovernanceRoles + role→permission map|
+|Existing-vendor migration to MXID-keyed records                               |75–100% |Backfill script + `MXID_VENDOR_BACKFILL.md` runbook shipped (`fe4a33f`); production execution remains operator work|
+|Unified retail/marketplace listing presentation                               |75–100% |Selector + retail/marketplace ProductDetailsPage prop + `/shop` retail entry shipped (`ead9e2a`); retail browse styling deferred to differentiation|
+|Order Cycles share-box scheduler (extends `order-cycle` + `food-distribution`)|100%    |Shipped (`b5c158d`)                                                       |
+|Storefront polish + Capacitor render compatibility                            |75–100% |Embed-context detector + middleware CSP swap + `/api/auth/embed-bootstrap` + `STOREFRONT_CAPACITOR_EMBED.md` shipped (`97bc3e2`); JWS verification awaits Blackout pubkey publication|
 |Vendor activation Sprint A (TTFLL ≤ 5 min)                                    |0–100%  |Foundation milestone; partially specced; `FEATURE_BUILD_PLAN.md` Sprint A|
 |Cooperative governance proposal flow with Matrix ACL sync                     |0–100%  |Foundation milestone; extends `cooperative` + `governance`               |
 |Railway → primary-server migration (FBM)                                      |0–100%  |Foundation milestone critical                                            |
