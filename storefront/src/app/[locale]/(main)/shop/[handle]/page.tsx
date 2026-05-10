@@ -6,6 +6,13 @@ import { getStorefrontContext } from "@/lib/data/cookies"
 import type { Metadata } from "next"
 import { notFound } from "next/navigation"
 
+/**
+ * Retail entry for a single product. Same data source as
+ * `/products/[handle]`; presentation defaults to `retail` per the
+ * unified retail/marketplace design in
+ * AGGRESSIVE_OPERATIONS_GUIDE.md §1.1. Switches to `marketplace` when
+ * the buyer is in a coalition's storefront context.
+ */
 export async function generateMetadata({
   params,
 }: {
@@ -22,7 +29,7 @@ export async function generateMetadata({
   return generateProductMetadata(prod)
 }
 
-export default async function ProductPage({
+export default async function ShopProductPage({
   params,
 }: {
   params: Promise<{ handle: string; locale: string }>
@@ -41,9 +48,9 @@ export default async function ProductPage({
 
   const storefrontContext = await getStorefrontContext()
   const presentation = selectPresentation({
-    routeKind: "products",
+    routeKind: "shop",
     storefrontContext,
-    sellerHandle: prod.seller?.handle ?? null,
+    sellerHandle: null,
   })
 
   return (

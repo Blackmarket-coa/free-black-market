@@ -132,3 +132,19 @@ The storefront uses `DOMPurify` to sanitize seller descriptions and product deta
 ---
 
 *Report generated as part of the storefront audit - February 2026*
+
+---
+
+## Addendum — May 2026 — Unified retail/marketplace presentation (§5.1)
+
+The storefront now ships an explicit retail vs marketplace presentation split per AGGRESSIVE_OPERATIONS_GUIDE.md §1.1. Same listing data, different chrome:
+
+- `src/lib/listing/presentation.ts` — pure `selectPresentation()` selector. Inputs: `routeKind`, storefront context, seller handle, optional coalition-membership flag. Outputs: `"retail"` or `"marketplace"`.
+- `src/components/sections/ProductDetailsPage/ProductDetailsPage.tsx` — accepts a `presentation` prop. Marketplace renders the "More from this seller" section; retail omits it.
+- `src/app/[locale]/(main)/products/[handle]/page.tsx` — `routeKind: "products"`, defaults to marketplace.
+- `src/app/[locale]/(main)/shop/[handle]/page.tsx` — `routeKind: "shop"`, defaults to retail. Coalition-storefront-context cookie still forces marketplace.
+- `src/app/[locale]/(main)/shop/page.tsx` — public retail landing.
+
+Tests: `src/__tests__/presentation.test.ts` covers the seven branches of the selector.
+
+This addendum closes the §5.1 unified-presentation workstream; downstream styling work on the retail browse experience is deferred to differentiation milestone.
