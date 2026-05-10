@@ -45,16 +45,23 @@ export type SelectPresentationInput = {
 }
 
 export function selectPresentation(input: SelectPresentationInput): Presentation {
-  if (input.routeKind === "shop") return "retail"
+  // Strong marketplace signals override the route default. A buyer on a
+  // coalition's storefront should see vendor-forward chrome even when
+  // they entered through `/shop/...`; a vendor's own product page is
+  // always marketplace presentation.
   if (input.sellerHandle) return "marketplace"
   if (input.routeKind === "embed") return "marketplace"
-
-  if (input.storefrontContext?.organization_id && input.storefrontContext?.storefront_id) {
+  if (
+    input.storefrontContext?.organization_id &&
+    input.storefrontContext?.storefront_id
+  ) {
     return "marketplace"
   }
-
   if (input.isCoalitionMember) return "marketplace"
 
+  // No marketplace signals: route defaults take over. `/shop` → retail,
+  // `/products` → marketplace, anything else → retail.
+  if (input.routeKind === "shop") return "retail"
   if (input.routeKind === "products") return "marketplace"
 
   return "retail"

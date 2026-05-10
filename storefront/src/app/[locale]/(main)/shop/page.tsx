@@ -1,4 +1,5 @@
 import type { Metadata } from "next"
+import Link from "next/link"
 
 export const metadata: Metadata = {
   title: "Shop",
@@ -28,7 +29,8 @@ export default async function ShopLandingPage() {
         vendor-forward marketplace view automatically.
       </p>
       <p className="text-secondary text-sm">
-        Browse all products at <a className="underline" href="/products">/products</a>.
+        Browse the catalog by <Link className="underline" href="/categories">category</Link>
+        {" "}or by <Link className="underline" href="/vendors">vendor</Link>.
       </p>
     </main>
   )
