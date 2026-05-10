@@ -148,6 +148,12 @@ const coreModules = [
   { resolve: './src/modules/tenancy' },
   { resolve: './src/modules/product-archetype' },
   { resolve: './src/modules/password-history' },
+  // Composition layer (see docs/COMPOSITION_LAYER.md): playbook is the
+  // cooperative-economic shape a vendor picks at setup; listing-type is
+  // the orthogonal shape of each offering. Both are core to commerce
+  // routing and must load before commerce/marketplace modules.
+  { resolve: './src/modules/playbook' },
+  { resolve: './src/modules/listing-type' },
 ]
 
 // Agricultural/barn-to-door modules
