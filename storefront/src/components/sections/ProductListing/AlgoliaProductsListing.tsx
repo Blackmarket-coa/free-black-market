@@ -16,6 +16,10 @@ import { PRODUCT_LIMIT } from "@/const"
 import { ProductListingSkeleton } from "@/components/organisms/ProductListingSkeleton/ProductListingSkeleton"
 import { useEffect, useMemo, useState } from "react"
 import { listProducts } from "@/lib/data/products"
+import {
+  SUSPENDED_SELLER_ALGOLIA_CLAUSE,
+  productMatchesPriceRange,
+} from "@/lib/listing/policy"
 
 export const AlgoliaProductsListing = ({
   category_id,
@@ -40,7 +44,7 @@ export const AlgoliaProductsListing = ({
     seller_handle
       ? `NOT seller:null AND seller.handle:${seller_handle} AND `
       : "NOT seller:null AND "
-  }NOT seller.store_status:SUSPENDED AND supported_countries:${locale}${
+  }${SUSPENDED_SELLER_ALGOLIA_CLAUSE} AND supported_countries:${locale}${
     category_id ? ` AND categories.id:${category_id}` : ""
   }${collection_id ? ` AND collection.id:${collection_id}` : ""}${
     facetFilters ? ` AND ${facetFilters}` : ""
@@ -132,51 +136,25 @@ const ProductsListing = ({
   if (isHydratingProducts && apiProducts === null)
     return <ProductListingSkeleton />
 
+  const minPriceParam = searchParamas.get("min_price")
+  const maxPriceParam = searchParamas.get("max_price")
+  const hasPriceRange = minPriceParam !== null || maxPriceParam !== null
+
   const products = items.filter((pr) =>
     apiProducts.some(
-      (p: any) => p.id === pr.objectID && filterProductsByCurrencyCode(p)
+      (p: any) =>
+        p.id === pr.objectID &&
+        (!hasPriceRange ||
+          productMatchesPriceRange(p, {
+            currencyCode: currency_code,
+            minPrice: minPriceParam !== null ? Number(minPriceParam) : undefined,
+            maxPrice: maxPriceParam !== null ? Number(maxPriceParam) : undefined,
+          }))
     )
   )
 
   const count = products.length
   const pages = results?.nbPages || 1
-
-  function filterProductsByCurrencyCode(product: HttpTypes.StoreProduct) {
-    const minPrice = searchParamas.get("min_price")
-    const maxPrice = searchParamas.get("max_price")
-
-    if ([minPrice, maxPrice].some((price) => typeof price === "string")) {
-      const variantsWithCurrencyCode = product?.variants?.filter(
-        (variant) => variant.calculated_price?.currency_code === currency_code
-      )
-
-      if (!variantsWithCurrencyCode?.length) {
-        return false
-      }
-
-      if (minPrice && maxPrice) {
-        return variantsWithCurrencyCode.some(
-          (variant) =>
-            (variant.calculated_price?.calculated_amount ?? 0) >= +minPrice &&
-            (variant.calculated_price?.calculated_amount ?? 0) <= +maxPrice
-        )
-      }
-      if (minPrice) {
-        return variantsWithCurrencyCode.some(
-          (variant) =>
-            (variant.calculated_price?.calculated_amount ?? 0) >= +minPrice
-        )
-      }
-      if (maxPrice) {
-        return variantsWithCurrencyCode.some(
-          (variant) =>
-            (variant.calculated_price?.calculated_amount ?? 0) <= +maxPrice
-        )
-      }
-    }
-
-    return true
-  }
 
   return (
     <div className="min-h-[70vh]">
