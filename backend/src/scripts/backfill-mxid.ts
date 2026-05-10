@@ -163,8 +163,10 @@ async function resolveMxid(args: {
   //    we lazy-import so the script still runs in environments without it.
   if (process.env.MATRIX_HOMESERVER_URL && process.env.MATRIX_BACKFILL_TOKEN) {
     try {
+      // matrix-js-sdk is an optional peer-dep; fall through to synthesis
+      // when it isn't installed in the operator's environment.
       const sdkModule: { createClient?: (opts: unknown) => unknown } = await import(
-        "matrix-js-sdk"
+        /* @vite-ignore */ "matrix-js-sdk" as unknown as string
       )
       if (typeof sdkModule.createClient === "function") {
         const client = sdkModule.createClient({

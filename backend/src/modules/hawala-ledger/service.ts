@@ -2156,14 +2156,15 @@ class HawalaLedgerModuleService extends MedusaService({
         credit_account_id: accountIds,
       })
       const settlement = recent
-        .filter((e) => String((e as { entry_type?: string }).entry_type ?? "") === "SETTLEMENT")
+        .filter((e) => String((e as unknown as { entry_type?: string }).entry_type ?? "") === "SETTLEMENT")
         .sort((a, b) => {
-          const at = new Date((a as { created_at?: string }).created_at ?? 0).getTime()
-          const bt = new Date((b as { created_at?: string }).created_at ?? 0).getTime()
+          const at = new Date((a as unknown as { created_at?: string }).created_at ?? 0).getTime()
+          const bt = new Date((b as unknown as { created_at?: string }).created_at ?? 0).getTime()
           return bt - at
         })[0]
-      if (settlement && (settlement as { created_at?: string }).created_at) {
-        last_settlement_at = new Date((settlement as { created_at: string }).created_at).toISOString()
+      const settlementCreatedAt = (settlement as unknown as { created_at?: string } | undefined)?.created_at
+      if (settlementCreatedAt) {
+        last_settlement_at = new Date(settlementCreatedAt).toISOString()
       }
     }
 
