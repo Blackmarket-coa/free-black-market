@@ -1,5 +1,6 @@
 import { HttpTypes } from "@medusajs/types"
 import { NextRequest, NextResponse } from "next/server"
+import { detectEmbedContext } from "./lib/runtime/embed-context"
 
 const BACKEND_URL = process.env.MEDUSA_BACKEND_URL || process.env.NEXT_PUBLIC_MEDUSA_BACKEND_URL || ""
 const PUBLISHABLE_API_KEY = process.env.NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY
@@ -130,6 +131,33 @@ function applyAttributionCookies(request: NextRequest, response: NextResponse) {
   }
 }
 
+/**
+ * Capacitor / in-app webview embed support per
+ * AGGRESSIVE_OPERATIONS_GUIDE.md §2.8 and §5.1. When the request
+ * carries `X-FBM-Embed-Origin` and the origin is allowlisted via
+ * `BLACKOUT_EMBED_ALLOWED_ORIGINS`, swap the default
+ * `X-Frame-Options: SAMEORIGIN` for a `frame-ancestors` CSP that names
+ * the embed origin. Origins outside the allowlist do not get the
+ * relaxed headers, so a malicious origin cannot opt itself in.
+ */
+function applyEmbedHeaders(request: NextRequest, response: NextResponse) {
+  const ctx = detectEmbedContext({
+    get: (name) => request.headers.get(name),
+  })
+  if (!ctx.isEmbedded || !ctx.isAllowedOrigin || !ctx.origin) return
+
+  // Override the default X-Frame-Options applied via next.config.ts
+  // headers(); modern browsers honor frame-ancestors over X-Frame-Options
+  // when both are present.
+  response.headers.set(
+    "Content-Security-Policy",
+    `frame-ancestors ${ctx.origin}`
+  )
+  // Echo the resolved origin for debugging the handshake from inside
+  // the webview without exposing it to non-embed callers.
+  response.headers.set("X-FBM-Embed-Origin-Echo", ctx.origin)
+}
+
 export async function middleware(request: NextRequest) {
   // Short-circuit static assets
   if (request.nextUrl.pathname.includes(".")) {
@@ -146,6 +174,7 @@ export async function middleware(request: NextRequest) {
   if (looksLikeLocale && cacheIdCookie) {
     const fastResponse = NextResponse.next()
     applyAttributionCookies(request, fastResponse)
+    applyEmbedHeaders(request, fastResponse)
     return fastResponse
   }
 
@@ -160,6 +189,7 @@ export async function middleware(request: NextRequest) {
   }
 
   applyAttributionCookies(request, response)
+  applyEmbedHeaders(request, response)
 
   const regionMap = await getRegionMap(cacheId)
   if (!regionMap.size) {
