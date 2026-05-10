@@ -14,6 +14,59 @@ export interface StellarConfig {
   horizonUrl: string
   signerSecretKey: string
   usdcIssuer: string
+  /**
+   * Retry configuration for Horizon submissions. Defaults to 3 attempts
+   * with exponential backoff (250ms, 500ms, 1000ms). Inline today;
+   * candidate to swap for `p-retry` (MIT) once a dependency bump lands.
+   */
+  retry?: {
+    maxAttempts?: number
+    baseDelayMs?: number
+  }
+}
+
+/**
+ * Lightweight metric counters with a structured-log fallback. When
+ * `prom-client` (Apache-2.0) lands in deps, swap the implementation for
+ * a `Counter`/`Histogram` registry. Until then, every increment writes a
+ * one-line JSON log on stderr so operators can grep counts.
+ */
+export const stellarMetrics = {
+  inc(name: string, labels: Record<string, string | number> = {}) {
+    const payload = { metric: name, labels, ts: new Date().toISOString() }
+    // eslint-disable-next-line no-console -- structured-metric sink
+    console.warn(JSON.stringify(payload))
+  },
+}
+
+async function withRetry<T>(
+  fn: () => Promise<T>,
+  opts: { maxAttempts: number; baseDelayMs: number; metricLabels: Record<string, string> }
+): Promise<T> {
+  let lastErr: unknown
+  for (let attempt = 1; attempt <= opts.maxAttempts; attempt++) {
+    try {
+      const result = await fn()
+      if (attempt > 1) {
+        stellarMetrics.inc("stellar.submit.retry_recovered", {
+          ...opts.metricLabels,
+          attempt,
+        })
+      }
+      return result
+    } catch (err) {
+      lastErr = err
+      stellarMetrics.inc("stellar.submit.retry", {
+        ...opts.metricLabels,
+        attempt,
+        is_final: attempt === opts.maxAttempts ? "true" : "false",
+      })
+      if (attempt === opts.maxAttempts) break
+      const delay = opts.baseDelayMs * Math.pow(2, attempt - 1)
+      await new Promise((r) => setTimeout(r, delay))
+    }
+  }
+  throw lastErr
 }
 
 export interface SettlementData {
@@ -38,12 +91,17 @@ export class StellarSettlementService {
   private keypair: Keypair
   private networkPassphrase: string
   private usdcAsset: Asset
+  private retryConfig: { maxAttempts: number; baseDelayMs: number }
 
   constructor(config: StellarConfig) {
     this.server = new Horizon.Server(config.horizonUrl)
     this.keypair = Keypair.fromSecret(config.signerSecretKey)
     this.networkPassphrase = config.networkPassphrase
     this.usdcAsset = new Asset("USDC", config.usdcIssuer)
+    this.retryConfig = {
+      maxAttempts: config.retry?.maxAttempts ?? 3,
+      baseDelayMs: config.retry?.baseDelayMs ?? 250,
+    }
   }
 
   /**
@@ -113,12 +171,31 @@ export class StellarSettlementService {
       .setTimeout(30)
       .build()
 
-    // Sign and submit
+    // Sign and submit (with retry/backoff on transient Horizon failures)
     transaction.sign(this.keypair)
-    const result = await this.server.submitTransaction(transaction)
+    let result: { hash: string; ledger: number }
+    try {
+      result = await withRetry(
+        () => this.server.submitTransaction(transaction) as unknown as Promise<{ hash: string; ledger: number }>,
+        {
+          ...this.retryConfig,
+          metricLabels: { op: "submit_settlement_batch", batch_id: data.batchId },
+        }
+      )
+      stellarMetrics.inc("stellar.submit.success", {
+        op: "submit_settlement_batch",
+        batch_id: data.batchId,
+      })
+    } catch (err) {
+      stellarMetrics.inc("stellar.submit.failure", {
+        op: "submit_settlement_batch",
+        batch_id: data.batchId,
+      })
+      throw err
+    }
 
     // Extract fee from result - SDK v13 uses result_xdr for detailed info
-    const feeCharged = (result as any).fee_charged ?? (result as any).feeCharged ?? '0'
+    const feeCharged = (result as { fee_charged?: string; feeCharged?: string }).fee_charged ?? (result as { fee_charged?: string; feeCharged?: string }).feeCharged ?? '0'
 
     return {
       txHash: result.hash,
@@ -157,7 +234,26 @@ export class StellarSettlementService {
     const transaction = transactionBuilder.setTimeout(30).build()
     transaction.sign(this.keypair)
 
-    const result = await this.server.submitTransaction(transaction)
+    let result: { hash: string; ledger: number }
+    try {
+      result = await withRetry(
+        () => this.server.submitTransaction(transaction) as unknown as Promise<{ hash: string; ledger: number }>,
+        {
+          ...this.retryConfig,
+          metricLabels: { op: "process_usdc_payment", destination: data.destinationAddress },
+        }
+      )
+      stellarMetrics.inc("stellar.submit.success", {
+        op: "process_usdc_payment",
+        destination: data.destinationAddress,
+      })
+    } catch (err) {
+      stellarMetrics.inc("stellar.submit.failure", {
+        op: "process_usdc_payment",
+        destination: data.destinationAddress,
+      })
+      throw err
+    }
 
     return {
       txHash: result.hash,
