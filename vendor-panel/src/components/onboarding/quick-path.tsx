@@ -11,6 +11,11 @@ import {
   toast,
 } from "@medusajs/ui"
 import { backendUrl, getAuthToken } from "../../lib/client"
+import { PlaybookPicker } from "../playbook/playbook-picker"
+import {
+  usePlaybookAssignment,
+  useAssignPlaybook,
+} from "../../hooks/api/playbook"
 
 /**
  * Slice C — 60-second creator onboarding quick path.
@@ -58,6 +63,13 @@ export function QuickPath() {
   const [productTitle, setProductTitle] = useState("")
   const [productPrice, setProductPrice] = useState("")
 
+  const {
+    data: assignmentData,
+    isPending: assignmentLoading,
+  } = usePlaybookAssignment()
+  const { mutateAsync: assignPlaybook, isPending: assigning } = useAssignPlaybook()
+  const hasPlaybook = !!assignmentData?.playbook_assignment
+
   const onSubmit = async () => {
     if (!sellingType) {
       toast.error("Pick a selling type")
@@ -102,6 +114,43 @@ export function QuickPath() {
     } finally {
       setSubmitting(false)
     }
+  }
+
+  if (assignmentLoading) {
+    return (
+      <Container className="mx-auto max-w-2xl p-6">
+        <Text>Loading…</Text>
+      </Container>
+    )
+  }
+
+  if (!hasPlaybook) {
+    return (
+      <Container className="mx-auto max-w-2xl p-6">
+        <PlaybookPicker
+          onComplete={async (result) => {
+            try {
+              await assignPlaybook({
+                recipe_id: result.recipe_id,
+                answers: result.answers,
+                recommended_recipe_id: result.recommended_recipe_id,
+                overridden: result.overridden,
+              })
+              toast.success("Playbook saved")
+            } catch (err) {
+              toast.error("Could not save playbook", {
+                description: (err as Error).message,
+              })
+            }
+          }}
+        />
+        {assigning ? (
+          <div className="text-center mt-4">
+            <Text size="small" className="text-ui-fg-subtle">Saving…</Text>
+          </div>
+        ) : null}
+      </Container>
+    )
   }
 
   return (
