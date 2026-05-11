@@ -2,21 +2,20 @@
 
 import { useState, useTransition } from "react"
 import { Button } from "@/components/atoms"
-import { updateCart } from "@/lib/data/cart"
+import { setCartTier } from "@/lib/data/cart"
 
 /**
  * Three-tier sliding-scale buyer picker, surfaced at checkout for any
- * non-Stall vendor product. The tier choice is captured as
- * `cart.metadata.tier` and read by a workflow hook on the backend
- * (`apply-tier-pricing`) which picks the matching Mercur price-list
- * variant.
+ * non-Stall vendor product. Saving the tier POSTs to the backend's
+ * `/store/carts/:id/tier` route, which writes `cart.metadata.tier` AND
+ * overrides each eligible line item's unit_price for the chosen tier.
  *
  * The tier copy is intentionally non-justifying: there's no income
  * verification and no honor-system disclaimer. Sliding-scale economics
  * collapse if the platform polices the choice; trust is the model.
  *
- * See `docs/COMPOSITION_LAYER.md` and `docs/PLAYBOOK_SYSTEM.md`
- * (allow_sliding_scale per playbook).
+ * See `backend/src/lib/sliding-scale.ts`, `docs/COMPOSITION_LAYER.md`
+ * and `docs/PLAYBOOK_SYSTEM.md` (allow_sliding_scale per playbook).
  */
 export type SlidingScaleTier = "supporter" | "standard" | "solidarity"
 
@@ -58,11 +57,17 @@ export default function SlidingScaleTier({ initialTier, vendorBlurb }: Props) {
   const [savedTier, setSavedTier] = useState<SlidingScaleTier | null>(
     initialTier ?? null
   )
+  const [error, setError] = useState<string | null>(null)
 
   const handleSave = () => {
+    setError(null)
     startTransition(async () => {
-      await updateCart({ metadata: { tier } })
-      setSavedTier(tier)
+      try {
+        await setCartTier(tier)
+        setSavedTier(tier)
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Could not save tier")
+      }
     })
   }
 
@@ -110,9 +115,11 @@ export default function SlidingScaleTier({ initialTier, vendorBlurb }: Props) {
 
       <div className="mt-3 flex items-center justify-between">
         <span className="text-xs text-gray-500">
-          {savedTier
-            ? `Saved: ${savedTier.charAt(0).toUpperCase() + savedTier.slice(1)}`
-            : "Tier not yet saved"}
+          {error
+            ? <span className="text-red-600">{error}</span>
+            : savedTier
+              ? `Saved: ${savedTier.charAt(0).toUpperCase() + savedTier.slice(1)}`
+              : "Tier not yet saved"}
         </span>
         <Button size="small" onClick={handleSave} loading={isPending} disabled={!dirty}>
           {dirty ? "Save tier" : "Saved"}

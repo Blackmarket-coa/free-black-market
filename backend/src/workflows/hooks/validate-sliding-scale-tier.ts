@@ -1,23 +1,23 @@
 import { completeCartWorkflow } from "@medusajs/medusa/core-flows"
 import { MedusaError } from "@medusajs/framework/utils"
+import {
+  isSlidingScaleTier,
+  SLIDING_SCALE_TIERS,
+} from "../../lib/sliding-scale"
 
 /**
  * Validate the sliding-scale tier on cart completion.
  *
  * The storefront writes `cart.metadata.tier` ∈ {"supporter", "standard",
- * "solidarity"} when a non-Stall vendor product is present. This hook
- * rejects malformed values and provides a friendly error.
+ * "solidarity"} via `POST /store/carts/:id/tier`, which also re-prices
+ * eligible line items via `lib/sliding-scale.ts`. This hook is the
+ * final guard at order placement: it rejects malformed tier values that
+ * could only get there via a direct cart-metadata write (cart.metadata
+ * is otherwise free-form, so we can't reject earlier).
  *
- * The actual price-list switch per tier is deferred to a follow-up
- * branch that ships three Mercur price-lists per sliding-scale product
- * and selects the matching one in a cart-line pricing hook. v1 stamps
- * the tier on cart metadata so the eventual order carries the buyer's
- * choice for downstream payout accounting.
- *
- * See `docs/COMPOSITION_LAYER.md`, `docs/PLAYBOOK_SYSTEM.md`.
+ * See `lib/sliding-scale.ts`, `docs/COMPOSITION_LAYER.md`,
+ * `docs/PLAYBOOK_SYSTEM.md`.
  */
-const ALLOWED_TIERS = new Set(["supporter", "standard", "solidarity"])
-
 completeCartWorkflow.hooks.validate(
   async ({ input }, { container }) => {
     const query = container.resolve("query") as {
@@ -39,10 +39,10 @@ completeCartWorkflow.hooks.validate(
     const tier = (cart?.metadata as Record<string, unknown> | undefined)?.tier
     if (tier === undefined || tier === null) return
 
-    if (typeof tier !== "string" || !ALLOWED_TIERS.has(tier)) {
+    if (!isSlidingScaleTier(tier)) {
       throw new MedusaError(
         MedusaError.Types.INVALID_DATA,
-        `Invalid sliding-scale tier "${String(tier)}". Allowed: ${Array.from(ALLOWED_TIERS).join(", ")}.`
+        `Invalid sliding-scale tier "${String(tier)}". Allowed: ${SLIDING_SCALE_TIERS.join(", ")}.`
       )
     }
   }
