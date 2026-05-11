@@ -38,6 +38,7 @@ import { DeliveryCheck } from "./DeliveryCheck/DeliveryCheck"
 import { ContactSellerButton } from "./ContactSellerButton/ContactSellerButton"
 import { CheckoutProgress } from "./CheckoutProgress/CheckoutProgress"
 import { MobileStickyAddToCart } from "./MobileStickyAddToCart/MobileStickyAddToCart"
+import { MobileLauncher } from "./MobileLauncher/MobileLauncher"
 
 // FreeBlackMarket.com Conversion Copy
 export * from "./ConversionCopy"
@@ -88,4 +89,5 @@ export {
   ContactSellerButton,
   CheckoutProgress,
   MobileStickyAddToCart,
+  MobileLauncher,
 }
