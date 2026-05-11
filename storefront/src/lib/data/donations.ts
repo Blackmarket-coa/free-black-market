@@ -53,8 +53,21 @@ export async function listDonationBeneficiaries() {
   return res.beneficiaries
 }
 
+export type DonationConfig = {
+  settings: {
+    default_percentage: number
+    round_up_enabled: boolean
+    /** Display name of the 501(c)(3) fiscal sponsor donations route through. */
+    fiscal_sponsor_name: string | null
+    /** Optional link to the sponsor's 501c3 page. */
+    fiscal_sponsor_url: string | null
+  }
+  feature_gates?: { donation_routing: boolean; advanced_automation: boolean }
+  tier?: string
+}
+
 export async function getDonationSettings() {
-  return medusaFetch<{ settings: { default_percentage: number; round_up_enabled: boolean }; feature_gates?: { donation_routing: boolean; advanced_automation: boolean }; tier?: string }>("/store/donations/config", {
+  return medusaFetch<DonationConfig>("/store/donations/config", {
     method: "GET",
     cache: "no-cache",
     headers: await getStorefrontHeaders(),

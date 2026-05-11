@@ -16,5 +16,16 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
   const settings = await donationService.getOrCreateDefaultSettings()
   const gates = tenancyService.featureGatesForTier(context.tier)
 
-  res.status(200).json({ settings, feature_gates: gates, tier: context.tier })
+  // Surface fiscal-sponsor display fields to the storefront so the
+  // checkout widget can show "routed through [501(c)(3) name]".
+  // `fiscal_sponsor_account_id` stays server-side; never expose it to
+  // the storefront. See `docs/POSTURE_A_COMPLIANCE.md`.
+  const safeSettings = {
+    default_percentage: settings.default_percentage,
+    round_up_enabled: settings.round_up_enabled,
+    fiscal_sponsor_name: settings.fiscal_sponsor_name ?? null,
+    fiscal_sponsor_url: settings.fiscal_sponsor_url ?? null,
+  }
+
+  res.status(200).json({ settings: safeSettings, feature_gates: gates, tier: context.tier })
 }

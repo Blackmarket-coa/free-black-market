@@ -1,5 +1,6 @@
 import { MedusaService } from "@medusajs/framework/utils"
 import { auditFinancialTransaction, logAuditEvent } from "./audit-logger"
+import { assertPurchaseContext } from "./posture-a-guard"
 import {
   LedgerAccount,
   LedgerEntry,
@@ -18,6 +19,8 @@ import {
   VendorPayment,
   VendorCreditLine,
   CreditLineTransaction,
+  EscrowAgreement,
+  PatronageAllocation,
 } from "./models"
 
 class HawalaLedgerModuleService extends MedusaService({
@@ -38,6 +41,8 @@ class HawalaLedgerModuleService extends MedusaService({
   VendorPayment,
   VendorCreditLine,
   CreditLineTransaction,
+  EscrowAgreement,
+  PatronageAllocation,
 }) {
   // ==================== ACCOUNT MANAGEMENT ====================
 
@@ -514,6 +519,20 @@ class HawalaLedgerModuleService extends MedusaService({
     if (!debitAccount || !creditAccount) {
       throw new Error("Invalid account ID")
     }
+
+    // POSTURE A — Coalition Credits closed-loop guard.
+    // Throws when a CCR transfer lacks a goods/services purchase context.
+    // See `posture-a-guard.ts` and `docs/POSTURE_A_COMPLIANCE.md`.
+    assertPurchaseContext({
+      currency_code: debitAccount.currency_code,
+      entry_type: data.entry_type,
+      reference_type: data.reference_type ?? null,
+      reference_id: data.reference_id ?? null,
+      order_id: data.order_id ?? null,
+      cart_id: (data.metadata as { cart_id?: string } | undefined)?.cart_id ?? null,
+      debit_account_id: data.debit_account_id,
+      credit_account_id: data.credit_account_id,
+    })
 
     // Check available balance for debit account
     if (Number(debitAccount.available_balance) < data.amount) {

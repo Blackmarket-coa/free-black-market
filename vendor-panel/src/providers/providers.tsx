@@ -9,6 +9,7 @@ import {
 } from "../extensions"
 import { queryClient } from "../lib/query-client"
 import { I18nProvider } from "./i18n-provider"
+import { PlaybookProvider } from "./playbook-provider"
 import { ThemeProvider } from "./theme-provider"
 import { VendorTypeProvider } from "./vendor-type-provider"
 
@@ -26,7 +27,9 @@ export const Providers = ({ api, children }: ProvidersProps) => {
               <I18n />
               <I18nProvider>
                 <VendorTypeProvider>
-                  {children}
+                  <PlaybookProvider>
+                    {children}
+                  </PlaybookProvider>
                 </VendorTypeProvider>
               </I18nProvider>
               <Toaster />

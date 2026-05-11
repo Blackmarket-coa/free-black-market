@@ -17,6 +17,18 @@ This index organizes project docs by purpose.
 - `docs/VENDOR_PORTAL_IMPROVEMENT_PLAN.md`
 - `docs/WEBSITE_POSITIONING_ALIGNMENT_PLAN.md`
 
+## Composition Layer
+
+- `docs/COMPOSITION_LAYER.md` — how playbooks, listing-types, hawala ledger,
+  Refrain, Threshold, and Blackstar share infrastructure and present distinct
+  surfaces
+- `docs/POSTURE_A_COMPLIANCE.md` — FinCEN payment-facilitator frame; the
+  lines that cannot be crossed under v1
+- `docs/PLAYBOOK_SYSTEM.md` — ten playbooks, mapping from legacy
+  vendor-type, 3-question picker decision tree
+- `docs/LISTING_TYPES.md` — v1 listing-type ship list, v2/v3 deferrals,
+  workflow validation
+
 ## Delivery Tracking & QA
 
 - `docs/COMPLETION_TRACKER.md`

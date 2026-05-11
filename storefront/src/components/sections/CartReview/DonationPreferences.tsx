@@ -9,6 +9,9 @@ type Props = {
   beneficiaries: DonationBeneficiary[]
   defaultPercent: number
   roundUpEnabled: boolean
+  /** 501(c)(3) fiscal sponsor name surfaced under Posture A compliance. */
+  fiscalSponsorName?: string | null
+  fiscalSponsorUrl?: string | null
   initialMetadata?: Record<string, any>
 }
 
@@ -17,6 +20,8 @@ export default function DonationPreferences({
   beneficiaries,
   defaultPercent,
   roundUpEnabled,
+  fiscalSponsorName,
+  fiscalSponsorUrl,
   initialMetadata,
 }: Props) {
   const [isPending, startTransition] = useTransition()
@@ -33,7 +38,26 @@ export default function DonationPreferences({
   return (
     <div className="w-full mb-6 border rounded-sm p-4 bg-white">
       <h3 className="font-semibold mb-3">Community Donation</h3>
-      <p className="text-sm text-gray-600 mb-4">Choose donation percentage, optional round-up, and a beneficiary organization.</p>
+      <p className="text-sm text-gray-600 mb-2">Choose donation percentage, optional round-up, and a beneficiary organization.</p>
+      {fiscalSponsorName ? (
+        <p className="text-xs text-gray-500 mb-4">
+          Routed through{" "}
+          {fiscalSponsorUrl ? (
+            <a
+              href={fiscalSponsorUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="underline"
+            >
+              {fiscalSponsorName}
+            </a>
+          ) : (
+            <span className="font-medium">{fiscalSponsorName}</span>
+          )}
+          , our 501(c)(3) fiscal sponsor. They issue donor receipts and handle
+          state charity registrations.
+        </p>
+      ) : null}
 
       <div className="space-y-3">
         <label className="block text-sm">
