@@ -1,5 +1,9 @@
 import { MedusaService } from "@medusajs/framework/utils"
 import { DonationBeneficiary, DonationDisbursement, DonationSettings } from "./models"
+import {
+  deriveDonationSettingsFields,
+  resolveActiveFiscalSponsor,
+} from "./fiscal-sponsors"
 
 type DonationAggregate = {
   beneficiary_id: string
@@ -15,9 +19,32 @@ class DonationModuleService extends MedusaService({
   DonationDisbursement,
 }) {
   async getOrCreateDefaultSettings() {
+    const sponsorFields = deriveDonationSettingsFields(
+      resolveActiveFiscalSponsor()
+    )
+
     const settings = await this.listDonationSettings({ is_default: true })
-    if (settings.length) return settings[0]
-    return this.createDonationSettings({ is_default: true })
+    if (settings.length) {
+      const existing = settings[0]
+      // Reconcile the sponsor fields on every fetch so a deploy that
+      // flips FBM_FISCAL_SPONSOR_LIVE or rotates the provider key
+      // propagates without a manual admin write. The donation widget
+      // and the disbursement job both read these columns.
+      const needsUpdate =
+        existing.fiscal_sponsor_name !== sponsorFields.fiscal_sponsor_name ||
+        existing.fiscal_sponsor_url !== sponsorFields.fiscal_sponsor_url ||
+        existing.fiscal_sponsor_account_id !==
+          sponsorFields.fiscal_sponsor_account_id
+
+      if (needsUpdate) {
+        const [updated] = await this.updateDonationSettings([
+          { id: existing.id, ...sponsorFields },
+        ])
+        return updated
+      }
+      return existing
+    }
+    return this.createDonationSettings({ is_default: true, ...sponsorFields })
   }
 
   async upsertDefaultSettings(data: Record<string, unknown>) {
