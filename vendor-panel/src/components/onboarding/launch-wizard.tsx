@@ -14,6 +14,11 @@ import {
 } from "@medusajs/ui"
 import { ArrowLeft, ArrowRight, CheckCircleSolid } from "@medusajs/icons"
 import { backendUrl, getAuthToken } from "../../lib/client"
+import { PlaybookPicker } from "../playbook/playbook-picker"
+import {
+  usePlaybookAssignment,
+  useAssignPlaybook,
+} from "../../hooks/api/playbook"
 
 /**
  * Sprint A (FEATURE_BUILD_PLAN.md A1-A10) launch-first onboarding wizard.
@@ -105,6 +110,14 @@ export function LaunchWizard() {
   const [loading, setLoading] = useState(true)
   const [advanced, setAdvanced] = useState(false)
   const [submitting, setSubmitting] = useState(false)
+
+  // Playbook gate — picker shows first when seller has no assignment.
+  const {
+    data: assignmentData,
+    isPending: assignmentLoading,
+  } = usePlaybookAssignment()
+  const { mutateAsync: assignPlaybook, isPending: assigning } = useAssignPlaybook()
+  const hasPlaybook = !!assignmentData?.playbook_assignment
 
   // Step 1
   const [sellingType, setSellingType] = useState<SellingType | "">("")
@@ -224,10 +237,41 @@ export function LaunchWizard() {
     </Text>
   )
 
-  if (loading) {
+  if (loading || assignmentLoading) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
         <Text>Loading…</Text>
+      </div>
+    )
+  }
+
+  if (!hasPlaybook && state?.wizard_step !== "published") {
+    return (
+      <div className="min-h-screen bg-ui-bg-base">
+        <Container className="py-8">
+          <PlaybookPicker
+            onComplete={async (result) => {
+              try {
+                await assignPlaybook({
+                  recipe_id: result.recipe_id,
+                  answers: result.answers,
+                  recommended_recipe_id: result.recommended_recipe_id,
+                  overridden: result.overridden,
+                })
+                toast.success("Playbook saved — let's get your listing up")
+              } catch (err) {
+                toast.error("Could not save playbook", {
+                  description: (err as Error).message,
+                })
+              }
+            }}
+          />
+          {assigning ? (
+            <div className="text-center mt-4">
+              <Text size="small" className="text-ui-fg-subtle">Saving…</Text>
+            </div>
+          ) : null}
+        </Container>
       </div>
     )
   }

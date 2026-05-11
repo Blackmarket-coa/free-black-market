@@ -14,6 +14,10 @@ concurrency:
   group: security-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  NODE_VERSION: '20'
+  PNPM_VERSION: '9'
+
 permissions:
   contents: read
   security-events: write
@@ -21,6 +25,41 @@ permissions:
   actions: read
 
 jobs:
+  posture-a-compliance:
+    name: Posture A Compliance (CCR closed-loop invariants)
+    runs-on: ubuntu-latest
+    # This gate enforces the architectural invariants documented in
+    # docs/POSTURE_A_COMPLIANCE.md. A failing test here means Coalition
+    # Credits could move without a goods/services purchase context — which
+    # collapses the payment-facilitator exemption and triggers FinCEN MSB
+    # classification. Do NOT add continue-on-error, do NOT downgrade to a
+    # warning. Loosening these tests requires a written compliance review.
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm via corepack
+        run: |
+          corepack enable
+          corepack prepare pnpm@${{ env.PNPM_VERSION }} --activate
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+          cache-dependency-path: backend/pnpm-lock.yaml
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: pnpm install --frozen-lockfile
+
+      - name: Run Posture A invariants
+        working-directory: backend
+        run: pnpm test:posture-a
+        env:
+          NODE_ENV: test
+
   gitleaks:
     name: Secret Scan (gitleaks)
     runs-on: ubuntu-latest

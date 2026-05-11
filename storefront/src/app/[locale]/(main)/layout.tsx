@@ -1,5 +1,6 @@
 import { Footer, Header } from "@/components/organisms"
 import { BackToTop } from "@/components/atoms"
+import { MobileLauncher } from "@/components/molecules"
 import { retrieveCustomer } from "@/lib/data/customer"
 import { checkRegion } from "@/lib/helpers/check-region"
 import { RocketChatProvider } from "@/providers/RocketChatProvider"
@@ -47,6 +48,7 @@ export default async function RootLayout({
         {children}
         <Footer />
         <BackToTop />
+        <MobileLauncher />
       </>
     )
   }
@@ -60,6 +62,7 @@ export default async function RootLayout({
         {children}
         <Footer />
         <BackToTop />
+        <MobileLauncher />
       </RocketChatProvider>
     </>
   )

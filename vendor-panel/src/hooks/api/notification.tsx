@@ -54,3 +54,44 @@ export const useNotifications = (
 
   return { ...data, ...rest }
 }
+
+export type NotificationBucket = "awaits_me" | "about_me" | "fyi"
+
+export type NotificationBucketsResponse = {
+  counts: Record<NotificationBucket, number>
+  samples: Record<
+    NotificationBucket,
+    Array<{
+      id: string
+      template: string | null
+      data: Record<string, unknown> | null
+      created_at: string
+    }>
+  >
+}
+
+/**
+ * Three-bucket notification counts + per-bucket samples. Backed by
+ * `GET /vendor/notifications/buckets`. Refetches on a 30s interval so
+ * the bell badge stays accurate without forcing the drawer open.
+ */
+export const useNotificationBuckets = (
+  query?: { limit?: number; since?: string },
+  options?: Omit<
+    UseQueryOptions<NotificationBucketsResponse, FetchError, NotificationBucketsResponse, QueryKey>,
+    "queryFn" | "queryKey"
+  >
+) => {
+  const { data, ...rest } = useQuery<NotificationBucketsResponse, FetchError>({
+    queryFn: () =>
+      fetchQuery("/vendor/notifications/buckets", {
+        method: "GET",
+        query: query as Record<string, string | number>,
+      }) as Promise<NotificationBucketsResponse>,
+    queryKey: [...notificationQueryKeys.lists(), "buckets", query] as QueryKey,
+    refetchInterval: 30_000,
+    ...options,
+  })
+
+  return { data, ...rest }
+}

@@ -204,9 +204,14 @@ non-overridable.
 
 ## Open posture questions
 
-- **Fiscal sponsor selection**: deferred to a follow-up branch that ships
-  the donation routing. Candidates: Allied Media Projects, NEO Philanthropy,
-  Tides Foundation, or a local SELC-recommended sponsor.
+- **Fiscal sponsor selection**: ✓ Resolved (working recommendation —
+  Allied Media Projects). See `docs/FISCAL_SPONSOR_DECISION.md` for the
+  evaluation matrix and the open agreement / board-sign-off items that
+  must close before the disbursement job flips to live. Until then the
+  sponsor `live` flag stays false in
+  `backend/src/modules/donation/fiscal-sponsors.ts`, the donation
+  widget surfaces "pending fiscal sponsor" copy, and donations accrue
+  in pending state on FBM's books.
 - **Banking partner for unbanked vendors**: Mercury, Lili, or LES People's
   FCU. Decision affects vendor onboarding copy. Not blocking for this
   branch.
