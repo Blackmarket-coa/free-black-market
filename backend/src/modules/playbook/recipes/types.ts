@@ -32,7 +32,10 @@ export type MemberModel =
  * Subset of `VendorFeatures` (vendor-panel) that recipes default.
  *
  * Keep in sync with vendor-panel/src/providers/vendor-type-provider/
- * vendor-type-context.tsx (now mirrored by playbook-provider).
+ * vendor-type-context.tsx (now mirrored by playbook-provider). The 14
+ * keys below are the canonical extension-key set; a follow-up branch
+ * may add governance-specific keys (hasMembers, hasGovernance,
+ * hasBookings) once the governance module v2 lands.
  */
 export type PlaybookFeatureDefaults = {
   hasProducts?: boolean
@@ -40,15 +43,15 @@ export type PlaybookFeatureDefaults = {
   hasSeasons?: boolean
   hasVolunteers?: boolean
   hasMenu?: boolean
-  hasReservations?: boolean
-  hasMembers?: boolean
-  hasGovernance?: boolean
+  hasDeliveryZones?: boolean
+  hasDonations?: boolean
   hasSubscriptions?: boolean
   hasSupport?: boolean
   hasHarvests?: boolean
-  hasFulfillment?: boolean
-  hasBookings?: boolean
-  hasAggregation?: boolean
+  hasPlots?: boolean
+  hasRequests?: boolean
+  hasFarm?: boolean
+  hasShows?: boolean
 }
 
 export type ListingTypeId =

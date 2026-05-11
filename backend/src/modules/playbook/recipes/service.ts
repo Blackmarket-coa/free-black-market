@@ -9,9 +9,9 @@ export const SERVICE: PlaybookRecipe = {
   allow_credits_payout: "opt_in",
   member_model: "solo",
   default_features: {
-    hasReservations: true,
     hasSubscriptions: true,
-    hasBookings: true,
+    hasSupport: true,
+    hasRequests: true,
   },
   allowed_listing_types: [
     "event",

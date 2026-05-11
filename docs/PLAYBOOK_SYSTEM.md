@@ -149,24 +149,31 @@ copy.
 ## VendorFeatures extension key defaults
 
 The 14 keys defined on `vendor-type-provider/vendor-type-context.tsx` carry
-forward to the new `playbook-provider`. The defaults per playbook:
+forward to the new `playbook-provider`. The defaults per playbook (which
+backend `playbook.recipes/*.ts` and frontend `playbook-provider`
+`getFeaturesByPlaybook` both must match):
 
 | Feature          | Stall | Atelier | Grove | Workshop | Commons | Cycle | Kitchen | Harvest | Hub | Service |
 |------------------|:-----:|:-------:|:-----:|:--------:|:-------:|:-----:|:-------:|:-------:|:---:|:-------:|
 | hasProducts      | ✓     | ✓       | ✓     | ✓        | ✓       | ✓     | ✓       | ✓       | ✓   |         |
-| hasInventory     | ✓     | ✓       | ✓     | ✓        | ✓       | ✓     | ✓       | ✓       | ✓   |         |
+| hasInventory     | ✓     | ✓       | ✓     | ✓        | ✓       | ✓     | ✓       |         | ✓   |         |
 | hasSeasons       |       |         |       |          |         | ✓     |         | ✓       |     |         |
 | hasVolunteers    |       |         | ✓     |          | ✓       |       |         | ✓       |     |         |
 | hasMenu          |       |         |       |          |         |       | ✓       |         |     |         |
-| hasReservations  |       |         |       |          |         |       | ✓       |         |     | ✓       |
-| hasMembers       |       | ✓       | ✓     | ✓        | ✓       |       |         |         | ✓   |         |
-| hasGovernance    |       |         | ✓     | ✓        | ✓       |       |         |         | ✓   |         |
-| hasSubscriptions |       |         |       |          |         | ✓     |         |         |     | ✓       |
-| hasSupport       |       |         | ✓     |          | ✓       |       |         |         |     |         |
-| hasHarvests      |       |         |       |          |         | ✓     |         | ✓       |     |         |
-| hasFulfillment   | ✓     | ✓       | ✓     | ✓        | ✓       | ✓     | ✓       | ✓       | ✓   |         |
-| hasBookings      |       |         |       |          |         |       | ✓       |         |     | ✓       |
-| hasAggregation   |       |         |       |          |         |       |         |         | ✓   |         |
+| hasDeliveryZones |       |         |       |          |         |       | ✓       |         | ✓   |         |
+| hasDonations     |       |         | ✓     |          | ✓       |       |         | ✓       |     |         |
+| hasSubscriptions |       |         |       |          |         | ✓     |         | ✓       |     | ✓       |
+| hasSupport       | ✓     | ✓       | ✓     | ✓        | ✓       | ✓     |         | ✓       | ✓   | ✓       |
+| hasHarvests      |       |         |       |          |         | ✓     |         |         |     |         |
+| hasPlots         |       |         |       |          |         |       |         | ✓       |     |         |
+| hasRequests      |       |         | ✓     | ✓        | ✓       |       | ✓       |         | ✓   | ✓       |
+| hasFarm          |       |         |       |          |         | ✓     |         | ✓       |     |         |
+| hasShows         |       |         |       |          |         |       | ✓       |         |     |         |
+
+The above set are the existing 14 keys on `vendor-type-provider`. Adding
+new governance-specific keys (e.g. `hasMembers`, `hasGovernance`,
+`hasBookings`) is deferred to a follow-up branch that ships the
+governance v2 module.
 
 A vendor can opt into any feature their playbook doesn't enable by default
 via their settings, with the caveat that some combinations make less sense

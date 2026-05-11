@@ -11,7 +11,7 @@ export const STALL: PlaybookRecipe = {
   default_features: {
     hasProducts: true,
     hasInventory: true,
-    hasFulfillment: true,
+    hasSupport: true,
   },
   allowed_listing_types: [
     "physical_product",

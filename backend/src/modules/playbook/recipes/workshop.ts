@@ -11,9 +11,8 @@ export const WORKSHOP: PlaybookRecipe = {
   default_features: {
     hasProducts: true,
     hasInventory: true,
-    hasMembers: true,
-    hasGovernance: true,
-    hasFulfillment: true,
+    hasSupport: true,
+    hasRequests: true,
   },
   allowed_listing_types: [
     "physical_product",

@@ -14,7 +14,8 @@ export const CYCLE: PlaybookRecipe = {
     hasSeasons: true,
     hasSubscriptions: true,
     hasHarvests: true,
-    hasFulfillment: true,
+    hasFarm: true,
+    hasSupport: true,
   },
   allowed_listing_types: [
     "physical_product",

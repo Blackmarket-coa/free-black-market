@@ -12,10 +12,9 @@ export const COMMONS: PlaybookRecipe = {
     hasProducts: true,
     hasInventory: true,
     hasVolunteers: true,
-    hasMembers: true,
-    hasGovernance: true,
+    hasDonations: true,
     hasSupport: true,
-    hasFulfillment: true,
+    hasRequests: true,
   },
   allowed_listing_types: [
     "physical_product",

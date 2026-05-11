@@ -12,9 +12,9 @@ export const KITCHEN: PlaybookRecipe = {
     hasProducts: true,
     hasInventory: true,
     hasMenu: true,
-    hasReservations: true,
-    hasFulfillment: true,
-    hasBookings: true,
+    hasDeliveryZones: true,
+    hasShows: true,
+    hasRequests: true,
   },
   allowed_listing_types: [
     "physical_product",

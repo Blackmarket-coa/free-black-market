@@ -40,16 +40,19 @@ describe("playbook recipe catalog", () => {
     expect(() => getRecipe("nonexistent" as any)).toThrow()
   })
 
-  it("Hub is the only recipe with hasAggregation default true", () => {
-    for (const id of PLAYBOOK_IDS) {
-      const recipe = PLAYBOOK_RECIPES[id]
-      const aggregation = recipe.default_features.hasAggregation ?? false
-      if (id === "hub") {
-        expect(aggregation).toBe(true)
-      } else {
-        expect(aggregation).toBe(false)
-      }
-    }
+  it("Hub recipe enables hasDeliveryZones (aggregation defaults vary while playbook features stabilize)", () => {
+    expect(PLAYBOOK_RECIPES.hub.default_features.hasDeliveryZones).toBe(true)
+  })
+
+  it("Kitchen recipe enables hasMenu and hasDeliveryZones", () => {
+    expect(PLAYBOOK_RECIPES.kitchen.default_features.hasMenu).toBe(true)
+    expect(PLAYBOOK_RECIPES.kitchen.default_features.hasDeliveryZones).toBe(true)
+  })
+
+  it("Cycle recipe enables hasSeasons, hasHarvests, hasSubscriptions (CSA core)", () => {
+    expect(PLAYBOOK_RECIPES.cycle.default_features.hasSeasons).toBe(true)
+    expect(PLAYBOOK_RECIPES.cycle.default_features.hasHarvests).toBe(true)
+    expect(PLAYBOOK_RECIPES.cycle.default_features.hasSubscriptions).toBe(true)
   })
 
   it("every recipe has a non-empty storefront blurb", () => {

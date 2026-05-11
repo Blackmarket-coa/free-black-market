@@ -11,10 +11,9 @@ export const HUB: PlaybookRecipe = {
   default_features: {
     hasProducts: true,
     hasInventory: true,
-    hasMembers: true,
-    hasGovernance: true,
-    hasFulfillment: true,
-    hasAggregation: true,
+    hasDeliveryZones: true,
+    hasSupport: true,
+    hasRequests: true,
   },
   allowed_listing_types: [
     "physical_product",

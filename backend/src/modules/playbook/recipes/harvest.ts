@@ -10,12 +10,14 @@ export const HARVEST: PlaybookRecipe = {
   member_model: "flat",
   default_features: {
     hasProducts: true,
-    hasInventory: true,
     hasSeasons: true,
     hasVolunteers: true,
+    hasDonations: true,
+    hasSubscriptions: true,
     hasHarvests: true,
-    hasFulfillment: true,
-    hasBookings: true,
+    hasPlots: true,
+    hasFarm: true,
+    hasSupport: true,
   },
   allowed_listing_types: [
     "physical_product",
