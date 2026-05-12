@@ -241,6 +241,20 @@ backend/src/modules/asset-graph/
 backend/src/jobs/
   asset-graph-settlement-reconciler.ts  # scheduled job, every 15min
 
+backend/src/api/admin/asset-graph/
+  manifests/route.ts                     # GET   list manifests
+  manifests/[slug]/route.ts              # GET   one manifest
+  manifests/[slug]/match/route.ts        # POST  run matcher (dry-run; persist?)
+  asset-kinds/route.ts                   # GET   list the taxonomy
+  proposals/route.ts                     # GET   list proposals
+  proposals/[id]/accept/route.ts         # POST  accept → ProjectInstance
+  proposals/[id]/decline/route.ts        # POST  decline
+  instances/route.ts                     # GET   list instances
+  instances/[id]/publish/route.ts        # POST  draft → active
+  instances/[id]/pause/route.ts          # POST  active → paused
+  instances/[id]/reactivate/route.ts     # POST  paused → active
+  instances/[id]/archive/route.ts        # POST  * → archived (terminal)
+
 backend/src/scripts/
   seed-asset-graph.ts               # upserts asset_kind + project_manifest
 
@@ -380,6 +394,51 @@ entitlement workstream owns. The reconciler returns a structured
 `failed` result (not a throw) when the matching account doesn't
 exist, so operators get a clear "provision accounts first" signal
 without crashing the batch.
+
+## Admin HTTP API (v0.1)
+
+The substrate is driveable from outside the service layer via the
+admin route surface. Twelve endpoints cover the operator-side
+end-to-end flow:
+
+```
+GET    /admin/asset-graph/manifests              list the 4 reference manifests
+GET    /admin/asset-graph/manifests/:slug         one manifest
+GET    /admin/asset-graph/asset-kinds            list the taxonomy (~43 nodes)
+POST   /admin/asset-graph/manifests/:slug/match   run matcher; body { persist? }
+GET    /admin/asset-graph/proposals              list with manifest/member/state filters
+POST   /admin/asset-graph/proposals/:id/accept   accept (creates ProjectInstance)
+POST   /admin/asset-graph/proposals/:id/decline  decline
+GET    /admin/asset-graph/instances              list with manifest/operator/state filters
+POST   /admin/asset-graph/instances/:id/publish      draft  → active
+POST   /admin/asset-graph/instances/:id/pause        active → paused
+POST   /admin/asset-graph/instances/:id/reactivate   paused → active
+POST   /admin/asset-graph/instances/:id/archive      *      → archived
+```
+
+Error responses:
+
+  - `400` — missing required path param (id/slug)
+  - `404` — unknown manifest slug
+  - `409` — invalid state-machine transition (`InvalidTransitionError`
+            carries `from` and `action` in the response body)
+  - `500` — any other server error (rare in practice; service-layer
+            tests cover the validation paths)
+
+Out of scope for v0.1:
+
+  - **Member-side declaration endpoints** (declare/list-own assets).
+    These need different auth wiring than admin routes and a
+    separate `/store/asset-graph/...` namespace; deferred.
+  - **Settlements emission endpoint.** Settlements are produced by
+    domain workflows (instance executors) rather than admin actions;
+    a manual emit endpoint is operator tooling, not a primary API
+    path.
+  - **Route-level integration tests.** The 207 service-layer tests
+    cover the meaningful behavior; the routes are thin wrappers
+    that resolve the service and translate exceptions to HTTP
+    status codes. Route tests are integration-test territory and
+    follow the codebase convention of no co-located route tests.
 
 The three reference manifests test three distinct match shapes:
 

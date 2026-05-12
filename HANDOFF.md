@@ -1,7 +1,7 @@
 # Handoff — asset-graph v0
 
 Last touched: 2026-05-13. Branch: `claude/asset-graph-commons-dvAeT`.
-Twelve commits beyond `main` after the composition-layer merge:
+Thirteen commits beyond `main` after the composition-layer merge:
 
 - `4875640` feat(asset-graph): v0 schema + nursery + tool-library reference manifests
 - `8bc7694` feat(asset-graph): repair-cafe reference manifest (v0 third vertical)
@@ -14,7 +14,8 @@ Twelve commits beyond `main` after the composition-layer merge:
 - `a25b775` feat(asset-graph): cross-module settlement reconciler (job + module core)
 - `77b928b` feat(asset-graph): childcare-coop reference manifest (cluster-3 lands)
 - `f8f257f` refactor(hawala-ledger): defense-in-depth — createTransfer uses assertRailInvariants
-- (pending) feat(asset-graph): emission idempotency keys on SettlementRecord
+- `c7e2c5a` feat(asset-graph): emission idempotency keys on SettlementRecord
+- (pending) feat(asset-graph): admin HTTP API surface (12 endpoints)
 
 All pushed to `origin/claude/asset-graph-commons-dvAeT`. No PR open.
 
@@ -346,6 +347,43 @@ Ordered by what unblocks the most downstream work.
     the hawala-ledger entry's idempotency_key. But operator-
     triggered emits and future workflow steps SHOULD supply one
     when they have a natural event id.
+
+14. **Admin HTTP API surface** ✓ — landed in the most recent
+    commit. The substrate is now driveable from outside the
+    service layer. 12 endpoints across 11 route files under
+    `backend/src/api/admin/asset-graph/`:
+
+      GET    /manifests                         catalog list
+      GET    /manifests/:slug                   one manifest
+      GET    /asset-kinds                       taxonomy list
+      POST   /manifests/:slug/match             run matcher (persist?)
+      GET    /proposals                         list with filters
+      POST   /proposals/:id/accept              → ProjectInstance
+      POST   /proposals/:id/decline
+      GET    /instances                         list with filters
+      POST   /instances/:id/publish             draft → active
+      POST   /instances/:id/pause               active → paused
+      POST   /instances/:id/reactivate          paused → active
+      POST   /instances/:id/archive             * → archived
+
+    Error mapping is consistent across routes:
+      - 400 missing path param
+      - 404 unknown manifest slug
+      - 409 invalid state-machine transition (with from/action in body)
+      - 500 other server errors
+
+    Routes are thin wrappers around the service surface — no new
+    business logic. Service tests cover the meaningful behavior;
+    route-level integration tests follow this codebase's convention
+    of no co-located route tests.
+
+    Out of scope for v0.1:
+      - Member-side declaration endpoints (different auth wiring;
+        belongs under `/store/asset-graph/...`).
+      - Settlement emission endpoint (driven by workflows/jobs, not
+        admin actions).
+      - Vendor-panel UI for these routes (frontend work; the API
+        unblocks it but the UI is its own commit stream).
 
 ## Decisions worth knowing
 
