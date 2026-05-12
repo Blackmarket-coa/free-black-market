@@ -96,6 +96,21 @@ export const ASSET_KIND_CATALOG: ReadonlyArray<AssetKindDefinition> = [
     default_sensitivity_tier: "member-visible",
     default_lifecycle: "durable-commitment",
   },
+  {
+    slug: "space.event-venue",
+    category: "space",
+    parent_slug: "space",
+    display_name: "Event venue",
+    attribute_schema: z
+      .object({
+        capacity: z.number().int().positive(),
+        accessible: z.boolean().optional(),
+        recurrence: z.string().optional(),
+      })
+      .strict(),
+    default_sensitivity_tier: "public",
+    default_lifecycle: "durable-commitment",
+  },
 
   // ── tools ─────────────────────────────────────────────────────────
   {
@@ -220,6 +235,62 @@ export const ASSET_KIND_CATALOG: ReadonlyArray<AssetKindDefinition> = [
     default_sensitivity_tier: "member-visible",
     default_lifecycle: "durable-commitment",
   },
+  {
+    slug: "skill.repair",
+    category: "skill",
+    parent_slug: "skill",
+    display_name: "Repair",
+    attribute_schema: z
+      .object({
+        years_experience: z.number().nonnegative().optional(),
+        tools_owned: z.array(z.string()).optional(),
+      })
+      .strict(),
+    default_sensitivity_tier: "member-visible",
+    default_lifecycle: "durable-commitment",
+  },
+  {
+    slug: "skill.repair.electronics",
+    category: "skill",
+    parent_slug: "skill.repair",
+    display_name: "Electronics repair",
+    attribute_schema: z
+      .object({
+        soldering: z.boolean().optional(),
+        smd_capable: z.boolean().optional(),
+        device_classes: z.array(z.string()).optional(),
+      })
+      .strict(),
+    default_sensitivity_tier: "member-visible",
+    default_lifecycle: "durable-commitment",
+  },
+  {
+    slug: "skill.repair.textile",
+    category: "skill",
+    parent_slug: "skill.repair",
+    display_name: "Textile repair",
+    attribute_schema: z
+      .object({
+        machine_available: z.boolean().optional(),
+        techniques: z.array(z.string()).optional(),
+      })
+      .strict(),
+    default_sensitivity_tier: "member-visible",
+    default_lifecycle: "durable-commitment",
+  },
+  {
+    slug: "skill.repair.mechanical",
+    category: "skill",
+    parent_slug: "skill.repair",
+    display_name: "Mechanical repair",
+    attribute_schema: z
+      .object({
+        domains: z.array(z.string()).optional(),
+      })
+      .strict(),
+    default_sensitivity_tier: "member-visible",
+    default_lifecycle: "durable-commitment",
+  },
 
   // ── time ──────────────────────────────────────────────────────────
   {
@@ -258,6 +329,20 @@ export const ASSET_KIND_CATALOG: ReadonlyArray<AssetKindDefinition> = [
       .strict(),
     default_sensitivity_tier: "member-visible",
     default_lifecycle: "recurring",
+  },
+  {
+    slug: "time.event-shift",
+    category: "time",
+    parent_slug: "time",
+    display_name: "Event-shift time",
+    attribute_schema: z
+      .object({
+        hours: z.number().positive(),
+        event_date: z.string().optional(),
+      })
+      .strict(),
+    default_sensitivity_tier: "member-visible",
+    default_lifecycle: "perishable",
   },
 
   // ── output capacity ───────────────────────────────────────────────
@@ -323,6 +408,38 @@ export const ASSET_KIND_CATALOG: ReadonlyArray<AssetKindDefinition> = [
       .strict(),
     default_sensitivity_tier: "member-visible",
     default_lifecycle: "recurring",
+  },
+
+  // ── artifacts (consumer-intake) ──────────────────────────────────
+  {
+    slug: "artifact",
+    category: "physical-artifact",
+    parent_slug: null,
+    display_name: "Artifact",
+    attribute_schema: EmptyAttributes,
+    default_sensitivity_tier: "public",
+    default_lifecycle: "one-time",
+  },
+  {
+    slug: "artifact.broken-item",
+    category: "physical-artifact",
+    parent_slug: "artifact",
+    display_name: "Broken item (intake)",
+    attribute_schema: z
+      .object({
+        category: z.enum([
+          "electronics",
+          "textile",
+          "mechanical",
+          "appliance",
+          "other",
+        ]),
+        symptom: z.string().min(1),
+        not_water_damaged: z.boolean().optional(),
+      })
+      .strict(),
+    default_sensitivity_tier: "public",
+    default_lifecycle: "one-time",
   },
 
   // ── credentials ───────────────────────────────────────────────────

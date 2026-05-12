@@ -14,10 +14,10 @@ this surface."
 The asset graph is **additive**. It plugs into existing modules; it
 does not replace them. See the reuse table at the bottom of this doc.
 
-This document specifies v0: the schema and two reference manifests
-(yard-scrap-nursery, tool-library). v0 is schema-and-catalog only.
-Persistence migrations, the matching engine, and the sensitivity-tier
-cryptography are downstream.
+This document specifies v0: the schema and three reference manifests
+(yard-scrap-nursery, tool-library, repair-cafe). v0 is schema-and-
+catalog only. Persistence migrations, the matching engine, and the
+sensitivity-tier cryptography are downstream.
 
 ## The pieces
 
@@ -25,7 +25,8 @@ cryptography are downstream.
                           ┌───────────────────────┐
                           │   ProjectManifest     │     code-of-truth
                           │ (yard-scrap-nursery,  │     in manifests/
-                          │       tool-library)   │
+                          │  tool-library,        │
+                          │  repair-cafe)         │
                           └─────────┬─────────────┘
                                     │ selects + composes
                 ┌───────────────────┼────────────────────┐
@@ -153,6 +154,40 @@ Hand-traced end-to-end. Each step names the schema field that carries it.
    (closed-loop guard satisfied because the payment is in a
    goods/services context: the replacement tool).
 
+## Walk-through: repair café
+
+1. **Fixer declares** `skill.repair.electronics` with
+   `attributes: { soldering: true, smd_capable: false }`,
+   `sensitivity_tier: member-visible`.
+2. **Fixer declares** `time.event-shift` with
+   `attributes: { hours: 3, event_date: '2026-06-13' }`,
+   `lifecycle: perishable` — if they no-show, the slot is gone.
+3. **Coordinator declares** `time.coordinator`
+   (`{ hours_per_week: 2 }`), `lifecycle: recurring`.
+4. **Venue host declares** `space.event-venue` with
+   `attributes: { capacity: 40, accessible: true, recurrence: 'monthly-saturday' }`,
+   `lifecycle: durable-commitment`.
+5. **A customer walks up** and declares `artifact.broken-item` with
+   `attributes: { category: 'electronics', symptom: 'no power',
+   not_water_damaged: true }`, `lifecycle: one-time`,
+   `sensitivity_tier: public`. The `client` role on this declaration
+   tells the schema this is consumer intake, not contributor supply.
+6. **Manifest match.** The matcher (v0.1) routes the broken-item
+   declaration to a fixer whose `skill.repair.*` declaration's leaf
+   slug matches the item's `category`. `skill.repair.electronics`
+   matches `category: 'electronics'`.
+7. **Manifest deploys** as a `ProjectInstance` on the `workshop`
+   playbook, `threshold` surface, `event` + `bookable` listing-types.
+   Customers can either walk in (`event`) or reserve a slot
+   (`bookable`).
+8. **Repair completes.** `SettlementRecord { rail: 'karma' }` accrues
+   karma to the fixer. `SettlementRecord { rail: 'gift' }` marks the
+   labor itself as gifted — no money changed hands.
+9. **Repair fails.** The fixer marks the item beyond economical
+   repair; the customer takes it back. No settlement records are
+   written. The `one-time` lifecycle on `artifact.broken-item` is
+   discharged either way.
+
 ## Reuse posture
 
 | Existing concept | Role in asset graph |
@@ -178,8 +213,9 @@ backend/src/modules/asset-graph/
     types.ts                        # zod schemas + enums (parser of truth)
     yard-scrap-nursery.ts           # reference manifest 1
     tool-library.ts                 # reference manifest 2
+    repair-cafe.ts                  # reference manifest 3
     index.ts                        # catalog
-  seed/asset-kinds.ts               # v0 taxonomy seed (~25 kinds)
+  seed/asset-kinds.ts               # v0 taxonomy seed (~38 kinds)
   __tests__/
     manifest-parse.unit.spec.ts
     orthogonality.unit.spec.ts
@@ -189,6 +225,7 @@ docs/
   manifests/
     yard-scrap-nursery.md
     tool-library.md
+    repair-cafe.md
 ```
 
 ## Out of scope for v0

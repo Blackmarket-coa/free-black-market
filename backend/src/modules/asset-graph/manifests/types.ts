@@ -130,6 +130,8 @@ export const ManifestRole = z.enum([
   "coordinator",
   "member",
   "contributor",
+  "fixer",
+  "client",
 ])
 export type ManifestRoleT = z.infer<typeof ManifestRole>
 

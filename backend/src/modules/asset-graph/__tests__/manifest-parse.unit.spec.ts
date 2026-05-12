@@ -17,9 +17,13 @@ import type { ListingTypeId } from "../../listing-type/catalog"
 describe("project manifest catalog", () => {
   it("registers the v0 manifests", () => {
     expect(MANIFEST_SLUGS).toEqual(
-      expect.arrayContaining(["yard-scrap-nursery", "tool-library"])
+      expect.arrayContaining([
+        "yard-scrap-nursery",
+        "tool-library",
+        "repair-cafe",
+      ])
     )
-    expect(MANIFEST_SLUGS).toHaveLength(2)
+    expect(MANIFEST_SLUGS).toHaveLength(3)
   })
 
   it("every manifest re-parses cleanly through the zod schema (no escape hatches)", () => {
