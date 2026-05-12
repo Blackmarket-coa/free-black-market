@@ -35,6 +35,12 @@ import {
   getValidityWindow,
   VerifiableCredentialError,
 } from "./attestations/vc"
+import {
+  transitionProposalState,
+  transitionInstanceState,
+  computeInstancePayload,
+  type InstanceState,
+} from "./instance-lifecycle"
 
 /**
  * AssetGraphService
@@ -244,6 +250,104 @@ class AssetGraphService extends MedusaService({
     const result = parseVerifiableCredential(vc)
     if (!result.ok) return false
     return isCurrentlyValid(result.vc, now)
+  }
+
+  // ── instance lifecycle ──────────────────────────────────────────────
+
+  /**
+   * Accept a MatchProposal: transition the proposal to `accepted`,
+   * create a `ProjectInstance` from it, and return both rows.
+   *
+   * The instance carries: manifest_slug from the proposal, operator
+   * = proposal.member_id, member_ids = the deduplicated set of
+   * declaration owners across the proposal's declaration_ids.
+   *
+   * `state` defaults to `active`. Pass `'draft'` to stage the
+   * instance without going live (e.g. so the operator can
+   * pre-configure listings before opening to participants).
+   *
+   * Throws `InvalidTransitionError` if the proposal is not in
+   * `pending` state — accepting an already-accepted proposal is a
+   * caller bug, not a no-op.
+   */
+  async acceptProposal(args: {
+    proposal_id: string
+    state?: "draft" | "active"
+  }): Promise<{ proposal: any; instance: any }> {
+    const proposal: any = await this.retrieveMatchProposal(args.proposal_id)
+    const declarations = (await this.listAssetDeclarations(
+      { id: proposal.declaration_ids } as any,
+      { take: null } as any
+    )) as Array<{ id: string; member_id: string }>
+
+    const nextProposalState = transitionProposalState(
+      proposal.state,
+      "accept"
+    )
+    const instancePayload = computeInstancePayload(
+      {
+        manifest_slug: proposal.manifest_slug,
+        member_id: proposal.member_id,
+        declaration_ids: proposal.declaration_ids,
+      },
+      declarations,
+      { state: args.state }
+    )
+
+    const instance = await this.createProjectInstances(instancePayload as any)
+    const updatedProposal = await this.updateMatchProposals({
+      id: proposal.id,
+      state: nextProposalState,
+      resolved_at: new Date(),
+    } as any)
+
+    return { proposal: updatedProposal, instance }
+  }
+
+  /**
+   * Decline a MatchProposal: transition it to `declined` without
+   * creating an instance. Throws when the proposal is not pending.
+   */
+  async declineProposal(args: { proposal_id: string }): Promise<any> {
+    const proposal: any = await this.retrieveMatchProposal(args.proposal_id)
+    const next = transitionProposalState(proposal.state, "decline")
+    return this.updateMatchProposals({
+      id: proposal.id,
+      state: next,
+      resolved_at: new Date(),
+    } as any)
+  }
+
+  /** Move an active instance to `paused`. */
+  async pauseInstance(args: { instance_id: string }): Promise<any> {
+    return this.transitionInstance(args.instance_id, "pause")
+  }
+
+  /** Move a paused instance back to `active`. */
+  async reactivateInstance(args: { instance_id: string }): Promise<any> {
+    return this.transitionInstance(args.instance_id, "reactivate")
+  }
+
+  /** Move an instance to `archived` (terminal). */
+  async archiveInstance(args: { instance_id: string }): Promise<any> {
+    return this.transitionInstance(args.instance_id, "archive")
+  }
+
+  /** Publish a draft instance (→ active). */
+  async publishInstance(args: { instance_id: string }): Promise<any> {
+    return this.transitionInstance(args.instance_id, "publish")
+  }
+
+  private async transitionInstance(
+    instance_id: string,
+    action: "publish" | "pause" | "reactivate" | "archive"
+  ): Promise<any> {
+    const instance: any = await this.retrieveProjectInstance(instance_id)
+    const next: InstanceState = transitionInstanceState(
+      instance.state,
+      action
+    )
+    return this.updateProjectInstances({ id: instance.id, state: next } as any)
   }
 }
 

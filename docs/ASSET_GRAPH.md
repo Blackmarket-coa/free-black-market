@@ -225,8 +225,10 @@ backend/src/modules/asset-graph/
     seed.unit.spec.ts
     matcher.unit.spec.ts
     vc.unit.spec.ts
+    instance-lifecycle.unit.spec.ts
   attestations/
     vc.ts                           # W3C VC body parser + extractors
+  instance-lifecycle.ts             # state machines + acceptProposal payload
 
 backend/src/scripts/
   seed-asset-graph.ts               # upserts asset_kind + project_manifest
@@ -259,6 +261,46 @@ Service surface:
   - `proposeMatches({ manifest_slug, persist? })` — DB-backed match
     against live declarations; `persist` defaults to false so callers
     can preview proposals before committing them to `match_proposal`.
+
+## Instance lifecycle
+
+`instance-lifecycle.ts` owns the state machines that govern what
+happens after the matcher emits a proposal:
+
+```
+  MatchProposal:    pending ──accept──→ accepted
+                            ──decline─→ declined
+                            ──expire──→ expired       (terminal)
+
+  ProjectInstance:  draft   ──publish──→ active
+                    active  ──pause────→ paused
+                    paused  ──reactivate→ active
+                    *       ──archive──→ archived     (terminal)
+```
+
+Pure functions: `transitionProposalState`, `transitionInstanceState`
+(both throw `InvalidTransitionError` on illegal moves), and
+`computeInstancePayload` (turns a proposal + linked declarations into
+the `ProjectInstance` create payload, deduplicating member ids).
+
+Service surface:
+
+  - `acceptProposal({ proposal_id, state? })` — fetches the
+    proposal, fetches its referenced declarations, creates a
+    `ProjectInstance` (defaults to `state: 'active'`; pass
+    `'draft'` to stage), marks the proposal `accepted`, returns
+    both rows.
+  - `declineProposal({ proposal_id })` — marks the proposal
+    `declined` without creating an instance.
+  - `publishInstance / pauseInstance / reactivateInstance /
+    archiveInstance` — single-step state transitions on a live
+    instance.
+
+Idempotency: every transition method throws
+`InvalidTransitionError` when called against a state that doesn't
+permit the action. Accepting an already-accepted proposal is a
+caller bug, not a no-op. Callers who want at-least-once semantics
+should either catch the error or check state first.
 
 The three reference manifests test three distinct match shapes:
 

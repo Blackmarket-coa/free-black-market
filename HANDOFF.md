@@ -1,14 +1,15 @@
 # Handoff — asset-graph v0
 
 Last touched: 2026-05-13. Branch: `claude/asset-graph-commons-dvAeT`.
-Six commits beyond `main` after the composition-layer merge:
+Seven commits beyond `main` after the composition-layer merge:
 
 - `4875640` feat(asset-graph): v0 schema + nursery + tool-library reference manifests
 - `8bc7694` feat(asset-graph): repair-cafe reference manifest (v0 third vertical)
 - `9c32064` feat(asset-graph): persistence migration + catalog seeder
 - `42bef9d` feat(hawala-ledger): rails registry + HRS + KARMA + karma_event model
 - `37de7b9` feat(asset-graph): matching engine — proposal generator
-- (pending) feat(asset-graph): W3C Verifiable Credential payload validation
+- `4cc657a` feat(asset-graph): W3C Verifiable Credential payload validation
+- (pending) feat(asset-graph): ProjectInstance lifecycle (acceptProposal + state machines)
 
 All pushed to `origin/claude/asset-graph-commons-dvAeT`. No PR open.
 
@@ -153,6 +154,29 @@ Ordered by what unblocks the most downstream work.
    serializer (adds a dep) or keep code-as-truth indefinitely (current
    bet — fine until a UI wants to render declaration forms from the
    DB).
+
+9. **ProjectInstance lifecycle** ✓ — landed in the most recent
+   commit. New `instance-lifecycle.ts` defines the
+   MatchProposal and ProjectInstance state machines (pure
+   `transitionProposalState` + `transitionInstanceState`, both
+   throw `InvalidTransitionError` on illegal moves) plus
+   `computeInstancePayload` that turns an accepted proposal into
+   a ProjectInstance create payload. Service gains
+   `acceptProposal`, `declineProposal`, `publishInstance`,
+   `pauseInstance`, `reactivateInstance`, `archiveInstance`.
+
+   Closes the loop the matcher opened: `proposeMatches` →
+   `acceptProposal` → live `ProjectInstance`. The instance carries
+   manifest_slug + operator + the deduplicated set of all
+   participating members.
+
+   Open follow-ups (next session if continued):
+     - Geography assignment on the instance (declaration centroid?)
+     - Re-validation at accept time (declarations may have been
+       revoked between match and accept)
+     - Cross-instance coordination policy (multiple instances of the
+       same manifest by the same operator allowed by schema; policy
+       belongs higher up).
 
 ## Decisions worth knowing
 
