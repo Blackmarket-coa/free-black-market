@@ -371,6 +371,18 @@ describe("composeSettlement — happy paths across all rails", () => {
     expect(payload.ledger_entry_id).toBeNull()
   })
 
+  it("idempotency_key defaults to null when the caller doesn't supply one", () => {
+    const payload = composeSettlement(base())
+    expect(payload.idempotency_key).toBeNull()
+  })
+
+  it("threads a caller-supplied idempotency_key through to the payload", () => {
+    const payload = composeSettlement(
+      base({ idempotency_key: "tool-library-loan_42-return" })
+    )
+    expect(payload.idempotency_key).toBe("tool-library-loan_42-return")
+  })
+
   it("merges caller metadata with rail-specific metadata", () => {
     const payload = composeSettlement(
       base({
@@ -470,6 +482,10 @@ const buildFakeService = () => {
     records.push(row)
     return row
   })
+  inst.listSettlementRecords = jest.fn(async (filter: any) => {
+    if (filter?.idempotency_key === undefined) return records.slice()
+    return records.filter((r) => r.idempotency_key === filter.idempotency_key)
+  })
   return { service: inst as AssetGraphService, records }
 }
 
@@ -521,5 +537,112 @@ describe("emitSettlementRecord (service)", () => {
     )
     expect(payload.manifest_slug).toBe("yard-scrap-nursery")
     expect(records).toHaveLength(0)
+  })
+
+  // ── emission idempotency ────────────────────────────────────────
+
+  it("returns the existing row when an idempotency_key matches", async () => {
+    const { service, records } = buildFakeService()
+    const intent = base({
+      manifest: TOOLS,
+      rail: "hours",
+      asset_code: "HRS",
+      reference_type: "TIMEBANK_LOAN",
+      reference_id: "loan_42",
+      order_id: undefined,
+      idempotency_key: "tool-library-loan_42-return",
+    })
+    const first = await service.emitSettlementRecord(intent)
+    const second = await service.emitSettlementRecord(intent)
+    expect(first.id).toBe(second.id)
+    expect(records).toHaveLength(1)
+  })
+
+  it("does NOT dedup when no idempotency_key is supplied (two writes produce two rows)", async () => {
+    const { service, records } = buildFakeService()
+    const intent = base({
+      manifest: TOOLS,
+      rail: "hours",
+      asset_code: "HRS",
+      reference_type: "TIMEBANK_LOAN",
+      reference_id: "loan_43",
+      order_id: undefined,
+      // idempotency_key intentionally omitted
+    })
+    await service.emitSettlementRecord(intent)
+    await service.emitSettlementRecord(intent)
+    expect(records).toHaveLength(2)
+  })
+
+  it("distinct idempotency_keys both write (the key namespace is the caller's responsibility)", async () => {
+    const { service, records } = buildFakeService()
+    const intentBase = base({
+      manifest: TOOLS,
+      rail: "hours",
+      asset_code: "HRS",
+      reference_type: "TIMEBANK_LOAN",
+      reference_id: "loan_50",
+      order_id: undefined,
+    })
+    await service.emitSettlementRecord({
+      ...intentBase,
+      idempotency_key: "tool-library-loan_50-loan",
+    })
+    await service.emitSettlementRecord({
+      ...intentBase,
+      idempotency_key: "tool-library-loan_50-return",
+    })
+    expect(records).toHaveLength(2)
+    expect(records[0].idempotency_key).toBe("tool-library-loan_50-loan")
+    expect(records[1].idempotency_key).toBe("tool-library-loan_50-return")
+  })
+
+  it("looks up by idempotency_key before writing (the dedup check happens first)", async () => {
+    const { service } = buildFakeService()
+    await service.emitSettlementRecord(
+      base({
+        manifest: TOOLS,
+        rail: "hours",
+        asset_code: "HRS",
+        reference_type: "TIMEBANK_LOAN",
+        reference_id: "loan_51",
+        order_id: undefined,
+        idempotency_key: "tool-library-loan_51-return",
+      })
+    )
+    // The fake's listSettlementRecords mock should have been invoked
+    // with the key during the second call.
+    const listMock = (service as any).listSettlementRecords as jest.Mock
+    await service.emitSettlementRecord(
+      base({
+        manifest: TOOLS,
+        rail: "hours",
+        asset_code: "HRS",
+        reference_type: "TIMEBANK_LOAN",
+        reference_id: "loan_51",
+        order_id: undefined,
+        idempotency_key: "tool-library-loan_51-return",
+      })
+    )
+    expect(listMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        idempotency_key: "tool-library-loan_51-return",
+      })
+    )
+  })
+
+  it("validation runs before the idempotency lookup (bad rail throws even with an idempotency_key)", async () => {
+    const { service } = buildFakeService()
+    await expect(
+      service.emitSettlementRecord(
+        base({
+          manifest: REPAIR,
+          rail: "ccr",
+          asset_code: "CCR",
+          order_id: "order_1",
+          idempotency_key: "irrelevant",
+        })
+      )
+    ).rejects.toBeInstanceOf(SettlementValidationError)
   })
 })

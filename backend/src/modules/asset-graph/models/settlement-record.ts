@@ -45,6 +45,26 @@ const SettlementRecord = model.define("settlement_record", {
 
   occurred_at: model.dateTime(),
 
+  /**
+   * Caller-supplied idempotency key. When set, the service's
+   * emitSettlementRecord path checks for an existing record with the
+   * same key and returns it instead of writing a duplicate. Callers
+   * who can't synthesize a natural key (e.g. ad-hoc operator
+   * actions) leave this null and accept that re-emitting is the
+   * caller's responsibility.
+   *
+   * Convention for systematic emitters: `${manifest_slug}-${source_id}`
+   * where source_id is the project instance event id (e.g. a loan
+   * id, a repair completion id). This makes "two emits for the same
+   * event" return the same SettlementRecord row.
+   *
+   * The DB-level uniqueness is enforced by a partial unique index
+   * (only when the key is not null) created by the migration —
+   * Medusa's model DSL doesn't expose `.unique()` on nullable columns,
+   * so the index is the canonical guard.
+   */
+  idempotency_key: model.text().nullable(),
+
   metadata: model.json().nullable(),
 }).indexes([
   { on: ["manifest_slug"], name: "IDX_settlement_record_manifest_slug" },
@@ -56,6 +76,10 @@ const SettlementRecord = model.define("settlement_record", {
   { on: ["rail"], name: "IDX_settlement_record_rail" },
   { on: ["from_member_id"], name: "IDX_settlement_record_from_member_id" },
   { on: ["to_member_id"], name: "IDX_settlement_record_to_member_id" },
+  {
+    on: ["idempotency_key"],
+    name: "IDX_settlement_record_idempotency_key",
+  },
 ])
 
 export default SettlementRecord

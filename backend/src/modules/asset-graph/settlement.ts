@@ -87,6 +87,15 @@ export type SettlementIntent = {
   /** KARMA only — module + id of the source artifact (e.g. project_instance + id). */
   karma_source?: { module: string; id: string }
 
+  /**
+   * Optional dedup key. When set and the service's
+   * emitSettlementRecord finds an existing record with the same key,
+   * it returns the existing row instead of writing a duplicate.
+   * Convention for systematic emitters:
+   * `${manifest_slug}-${source_event_id}`.
+   */
+  idempotency_key?: string
+
   metadata?: Record<string, unknown>
 }
 
@@ -224,6 +233,7 @@ export type SettlementRecordPayload = {
   amount_minor: number
   asset_code: string
   occurred_at: Date
+  idempotency_key: string | null
   metadata: Record<string, unknown>
 }
 
@@ -271,6 +281,7 @@ export const composeSettlement = (
     amount_minor: intent.amount_minor,
     asset_code: intent.asset_code,
     occurred_at: intent.occurred_at,
+    idempotency_key: intent.idempotency_key ?? null,
     metadata,
   }
 }

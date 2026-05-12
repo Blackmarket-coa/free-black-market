@@ -373,6 +373,19 @@ class AssetGraphService extends MedusaService({
    */
   async emitSettlementRecord(intent: SettlementIntent): Promise<any> {
     const payload = composeSettlement(intent)
+    // Idempotency: when the caller supplied a key, check for an
+    // existing record before writing. This makes "emit the same
+    // intent twice" return the existing row rather than insert a
+    // duplicate. Without a key, the caller is responsible for
+    // dedup — same posture hawala-ledger.createTransfer takes.
+    if (payload.idempotency_key) {
+      const existing = await this.listSettlementRecords({
+        idempotency_key: payload.idempotency_key,
+      } as any)
+      if (Array.isArray(existing) && existing.length > 0) {
+        return existing[0]
+      }
+    }
     return this.createSettlementRecords(payload as any)
   }
 

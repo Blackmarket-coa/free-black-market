@@ -1,7 +1,7 @@
 # Handoff — asset-graph v0
 
 Last touched: 2026-05-13. Branch: `claude/asset-graph-commons-dvAeT`.
-Ten commits beyond `main` after the composition-layer merge:
+Twelve commits beyond `main` after the composition-layer merge:
 
 - `4875640` feat(asset-graph): v0 schema + nursery + tool-library reference manifests
 - `8bc7694` feat(asset-graph): repair-cafe reference manifest (v0 third vertical)
@@ -12,7 +12,9 @@ Ten commits beyond `main` after the composition-layer merge:
 - `420771f` feat(asset-graph): ProjectInstance lifecycle (acceptProposal + state machines)
 - `bebe498` feat(asset-graph): SettlementRecord emission (rail-validating compose + service)
 - `a25b775` feat(asset-graph): cross-module settlement reconciler (job + module core)
-- (pending) feat(asset-graph): childcare-coop reference manifest (cluster-3 lands)
+- `77b928b` feat(asset-graph): childcare-coop reference manifest (cluster-3 lands)
+- `f8f257f` refactor(hawala-ledger): defense-in-depth — createTransfer uses assertRailInvariants
+- (pending) feat(asset-graph): emission idempotency keys on SettlementRecord
 
 All pushed to `origin/claude/asset-graph-commons-dvAeT`. No PR open.
 
@@ -242,13 +244,13 @@ Ordered by what unblocks the most downstream work.
       - Member → ledger-owner mapping. Reconciler hardcodes
         `owner_type: "CUSTOMER"` today; the entitlement workstream
         (item 7) owns the proper mapping.
-      - Migrating hawala-ledger's `createTransfer` from
+      - ~~Migrating hawala-ledger's `createTransfer` from
         `assertPurchaseContext` to `assertRailInvariants` so HRS-
         coded transfers get the time-bank guard at the ledger layer
-        too (defense in depth).
-      - Idempotency keys on settlement-record emission so duplicate
-        intents don't write two rows (the reconciler handles
-        ledger-side idempotency but not emission-side).
+        too~~ ✓ landed in `f8f257f`.
+      - ~~Idempotency keys on settlement-record emission so duplicate
+        intents don't write two rows~~ ✓ landed in the most recent
+        commit (item 13 below).
 
 12. **Childcare co-op (4th reference manifest)** ✓ — landed in the
     most recent commit. The cluster-3 stress test that has been a
@@ -301,6 +303,49 @@ Ordered by what unblocks the most downstream work.
     8 new matcher tests (multi-count, boolean constraint, the
     `match-only` floor, every required slot) + 2 new orthogonality
     blocks. Asset-graph tests: 200 passing (was 192).
+
+13. **Defense-in-depth + emission idempotency** ✓ — the two
+    HANDOFF item-11 follow-ups landed.
+
+    `f8f257f` refactor(hawala-ledger): `createTransfer` now calls
+    `assertRailInvariants` instead of `assertPurchaseContext`. The
+    dispatcher handles CCR identically (delegates back to the
+    purchase-context check); HRS/KARMA paths get their per-rail
+    guards at the ledger layer for the first time; unknown
+    currency codes throw rather than silently writing. No existing
+    caller breaks because no existing caller uses HRS/KARMA via
+    `createTransfer`.
+
+    (most recent commit) feat(asset-graph): `SettlementRecord` gains
+    an `idempotency_key` column with a partial unique index
+    (enforced only when not null + not deleted; Medusa's model DSL
+    doesn't chain `.nullable().unique()` so the DB index is the
+    canonical guard). `SettlementIntent` carries an optional
+    `idempotency_key`; `composeSettlement` threads it through; the
+    service's `emitSettlementRecord` checks for an existing record
+    by key before writing and returns the existing row when one
+    matches. Validation still runs before the lookup so a bad rail
+    throws regardless of the key.
+
+    Convention for systematic emitters: `${manifest_slug}-${source_event_id}`
+    (e.g. `"tool-library-loan_42-return"`). Without a key, the
+    caller is responsible for dedup — same posture
+    hawala-ledger's `createTransfer` takes.
+
+    7 new tests in settlement.unit.spec.ts (compose threads + null
+    default; service returns existing row on key match; no dedup
+    without a key; distinct keys both write; lookup happens before
+    write; validation runs before the lookup).
+
+    Asset-graph tests: 207 passing (was 200).
+
+    Open follow-up: applying idempotency_key everywhere a caller
+    emits. The reconciler currently doesn't supply one because the
+    SettlementRecord IS the source-of-truth for "what should
+    settle"; idempotency is at the consumer (reconciler) side via
+    the hawala-ledger entry's idempotency_key. But operator-
+    triggered emits and future workflow steps SHOULD supply one
+    when they have a natural event id.
 
 ## Decisions worth knowing
 
