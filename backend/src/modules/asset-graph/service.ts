@@ -28,6 +28,13 @@ import {
   type MatcherDeclaration,
   type MatchProposalPayload,
 } from "./matcher"
+import {
+  parseVerifiableCredential,
+  looksLikeVCPayload,
+  isCurrentlyValid,
+  getValidityWindow,
+  VerifiableCredentialError,
+} from "./attestations/vc"
 
 /**
  * AssetGraphService
@@ -137,6 +144,106 @@ class AssetGraphService extends MedusaService({
 
     const persisted = await this.createMatchProposals(proposals as any[])
     return { report, proposals, persisted }
+  }
+
+  // ── attestation w/ VC validation ────────────────────────────────────
+
+  /**
+   * Create an Attestation row, validating `external.vc_payload`
+   * against the W3C Verifiable Credential schema when present.
+   *
+   * Three paths:
+   *   - `external` is null/undefined           → straight create.
+   *   - `external` has no `vc_payload`         → straight create
+   *                                              (legacy / pre-VC
+   *                                              issuers with just
+   *                                              `{ issuer, ... }`).
+   *   - `external.vc_payload` is present       → validate it; refuse
+   *                                              the write on parse
+   *                                              failure; fill
+   *                                              `expires_at` from
+   *                                              the VC's
+   *                                              validUntil/expirationDate
+   *                                              when not already set.
+   *
+   * Cryptographic proof verification (DID resolution, JWT signature
+   * checking, data-integrity-proof verification) is NOT done here —
+   * that requires a verifier library (didkit / veramo / ssi.js) and
+   * is its own workstream. v0.1 catches malformed payloads.
+   */
+  async createAttestationWithVC(payload: {
+    declaration_id: string
+    tier:
+      | "self-declared"
+      | "peer-vouched"
+      | "third-party-attested"
+    attestor_member_id?: string | null
+    external?: {
+      issuer?: string
+      credential_id?: string
+      verification_url?: string
+      vc_payload?: unknown
+    } | null
+    attested_at: Date
+    expires_at?: Date | null
+    metadata?: Record<string, unknown> | null
+  }): Promise<any> {
+    const vcPayload = payload.external?.vc_payload
+    let derivedExpiry: Date | null | undefined = payload.expires_at
+
+    if (vcPayload != null) {
+      if (!looksLikeVCPayload(vcPayload)) {
+        throw new VerifiableCredentialError(
+          "external.vc_payload is set but does not look like a Verifiable Credential " +
+            "(missing @context / type / credentialSubject). Drop the field for legacy issuers.",
+          []
+        )
+      }
+      const result = parseVerifiableCredential(vcPayload)
+      if (!result.ok) {
+        throw new VerifiableCredentialError(
+          "external.vc_payload failed W3C VC schema validation",
+          result.errors
+        )
+      }
+      // Default expires_at from the VC's validity window when the
+      // caller didn't supply one explicitly.
+      if (derivedExpiry === undefined) {
+        const { until } = getValidityWindow(result.vc)
+        derivedExpiry = until
+      }
+    }
+
+    return this.createAttestations({
+      declaration_id: payload.declaration_id,
+      tier: payload.tier,
+      attestor_member_id: payload.attestor_member_id ?? null,
+      external: payload.external ?? null,
+      attested_at: payload.attested_at,
+      expires_at: derivedExpiry ?? null,
+      metadata: payload.metadata ?? null,
+    } as any)
+  }
+
+  /**
+   * Whether an attestation row's stored vc_payload is currently
+   * valid (within its validity window). Returns false for legacy /
+   * non-VC external payloads as well as for expired or
+   * not-yet-valid VCs. Pure read; no DB I/O.
+   */
+  isAttestationVCCurrentlyValid(
+    attestation: { external?: unknown },
+    now: Date = new Date()
+  ): boolean {
+    const ext = attestation.external as
+      | { vc_payload?: unknown }
+      | null
+      | undefined
+    const vc = ext?.vc_payload
+    if (!vc || !looksLikeVCPayload(vc)) return false
+    const result = parseVerifiableCredential(vc)
+    if (!result.ok) return false
+    return isCurrentlyValid(result.vc, now)
   }
 }
 

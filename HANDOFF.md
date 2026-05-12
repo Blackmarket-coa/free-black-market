@@ -1,13 +1,14 @@
 # Handoff — asset-graph v0
 
 Last touched: 2026-05-13. Branch: `claude/asset-graph-commons-dvAeT`.
-Five commits beyond `main` after the composition-layer merge:
+Six commits beyond `main` after the composition-layer merge:
 
 - `4875640` feat(asset-graph): v0 schema + nursery + tool-library reference manifests
 - `8bc7694` feat(asset-graph): repair-cafe reference manifest (v0 third vertical)
 - `9c32064` feat(asset-graph): persistence migration + catalog seeder
 - `42bef9d` feat(hawala-ledger): rails registry + HRS + KARMA + karma_event model
-- (pending) feat(asset-graph): matching engine — proposal generator
+- `37de7b9` feat(asset-graph): matching engine — proposal generator
+- (pending) feat(asset-graph): W3C Verifiable Credential payload validation
 
 All pushed to `origin/claude/asset-graph-commons-dvAeT`. No PR open.
 
@@ -119,10 +120,25 @@ Ordered by what unblocks the most downstream work.
    deferred. `credential.trust-score` is the v0 test case for the
    `match-only` tier.
 
-6. **Attestation V0.1 work**. The cluster-3 childcare appendix in
-   `docs/ASSET_GRAPH.md` flags that `Attestation.external` exists but
-   v0 doesn't validate a W3C Verifiable Credential payload. v0.1
-   should land the `vc_payload` zod schema.
+6. ~~**Attestation V0.1 work**~~ **Landed** in the most recent
+   commit. New `backend/src/modules/asset-graph/attestations/vc.ts`
+   defines a W3C Verifiable Credential zod schema (covers v1
+   `issuanceDate/expirationDate` and v2 `validFrom/validUntil`
+   contexts) plus extractors for issuer id, credential subjects,
+   validity window, and a `looksLikeVCPayload` heuristic that lets
+   legacy non-VC `external` payloads bypass VC validation. Service
+   gains `createAttestationWithVC` (validates `vc_payload` at write
+   time, refuses malformed credentials, defaults `expires_at` from
+   the VC's validity window) and `isAttestationVCCurrentlyValid`.
+
+   **Cryptographic proof verification** (DID resolution, signature
+   checking, data-integrity-proof verification, BitstringStatusList
+   revocation pull) is intentionally not in v0.1 — it requires a
+   verifier library (didkit / veramo / ssi.js) and is its own
+   workstream. v0.1 catches malformed payloads structurally so the
+   cluster-3 childcare manifest's `credential.cpr-certified` and
+   `credential.background-check` declarations can carry real VCs in
+   the meantime.
 
 7. **Entitlement → Commons/FBM boundary**. v0 declares
    `surface: commerce | threshold | refrain | blackstar` on each

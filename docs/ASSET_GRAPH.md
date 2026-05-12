@@ -224,6 +224,9 @@ backend/src/modules/asset-graph/
     orthogonality.unit.spec.ts
     seed.unit.spec.ts
     matcher.unit.spec.ts
+    vc.unit.spec.ts
+  attestations/
+    vc.ts                           # W3C VC body parser + extractors
 
 backend/src/scripts/
   seed-asset-graph.ts               # upserts asset_kind + project_manifest
@@ -315,8 +318,8 @@ What a childcare manifest needs to declare:
 | Required asset kind (illustrative) | What v0 supports | What v0 lacks |
 | --- | --- | --- |
 | `space.home.childproofed` | ✓ space taxonomy node | ✓ attribute schema can carry `childproofed: true` |
-| `credential.cpr-certified` | ✓ credential category | ✗ `Attestation.external` exists but v0 doesn't validate a Verifiable Credential payload — needs `vc_payload` schema in v0.1 |
-| `credential.background-check` | ✓ credential category | ✗ same: v0 doesn't model background-check issuers or revocation pull |
+| `credential.cpr-certified` | ✓ credential category; ✓ `Attestation.external.vc_payload` parsed via the W3C VC schema (`attestations/vc.ts`) | ✗ cryptographic proof verification (DID resolution, signature checking) is its own workstream |
+| `credential.background-check` | ✓ credential category; ✓ same VC schema covers it | ✗ revocation pull (BitstringStatusList) not yet wired |
 | `time.recurring` (with kids' ages) | ✓ time taxonomy + attribute schema | ✗ no minor's-data sensitivity classification — needs `sensitivity_tier: minor-data` (or a dedicated tier) and crypto enforcement, both deferred |
 | `skill.peer-support` | ✓ skill taxonomy | ✗ no "lived experience" attestation primitive (peer-vouched works in shape but pulls in cluster-3 norms about who can vouch) |
 
@@ -330,13 +333,22 @@ roadmap per `docs/COMPOSITION_LAYER.md`).
 
 **Conclusion.** A childcare manifest cannot fully run on v0 because:
 
-1. The W3C Verifiable Credential payload slot needs a validation pass.
+1. ~~The W3C Verifiable Credential payload slot needs a validation pass.~~
+   **Landed in v0.1** (`attestations/vc.ts` parses VC bodies; the service
+   `createAttestationWithVC` validates at write time). Cryptographic
+   proof verification — DID resolution, signature/data-integrity-proof
+   checking — is still its own workstream.
 2. A `minor-data` sensitivity classification (or `match-only` with
    crypto) must be enforced, not just stored.
 3. `consensus` governance needs proposal-round support (Governance v2
    dependency).
+4. Credential revocation pull (BitstringStatusList) for the
+   background-check VC isn't wired — the VC parses but a revoked
+   credential would still be accepted.
 
-It can be *written* on v0 as a draft, but operating it requires v1.
-That's the correct discipline: the schema generalizes structurally;
-operational depth lands one vertical at a time, surfacing exactly the
-v1 work needed before the next vertical can run.
+It can be *written* on v0 as a draft, and the credential plumbing now
+parses payloads structurally; operating it requires v1's crypto +
+revocation + consensus governance. That's the correct discipline: the
+schema generalizes structurally; operational depth lands one vertical
+at a time, surfacing exactly the v1 work needed before the next
+vertical can run.
