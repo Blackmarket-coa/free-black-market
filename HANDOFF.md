@@ -1,7 +1,7 @@
 # Handoff — asset-graph v0
 
 Last touched: 2026-05-13. Branch: `claude/asset-graph-commons-dvAeT`.
-Eight commits beyond `main` after the composition-layer merge:
+Nine commits beyond `main` after the composition-layer merge:
 
 - `4875640` feat(asset-graph): v0 schema + nursery + tool-library reference manifests
 - `8bc7694` feat(asset-graph): repair-cafe reference manifest (v0 third vertical)
@@ -10,7 +10,8 @@ Eight commits beyond `main` after the composition-layer merge:
 - `37de7b9` feat(asset-graph): matching engine — proposal generator
 - `4cc657a` feat(asset-graph): W3C Verifiable Credential payload validation
 - `420771f` feat(asset-graph): ProjectInstance lifecycle (acceptProposal + state machines)
-- (pending) feat(asset-graph): SettlementRecord emission (rail-validating compose + service)
+- `bebe498` feat(asset-graph): SettlementRecord emission (rail-validating compose + service)
+- (pending) feat(asset-graph): cross-module settlement reconciler (job + module core)
 
 All pushed to `origin/claude/asset-graph-commons-dvAeT`. No PR open.
 
@@ -179,9 +180,9 @@ Ordered by what unblocks the most downstream work.
        same manifest by the same operator allowed by schema; policy
        belongs higher up).
 
-10. **SettlementRecord emission** ✓ — landed in the most recent
-    commit. New `settlement.ts` is the asset-graph side of "when a
-    project executes a transaction, record what flowed":
+10. **SettlementRecord emission** ✓ — landed in `bebe498`.
+    New `settlement.ts` is the asset-graph side of "when a project
+    executes a transaction, record what flowed":
     `composeSettlement(intent)` validates the rail against the
     manifest's `settlement_rails`, validates per-rail required fields
     (CCR purchase context, HRS time-bank reference, KARMA reason,
@@ -190,24 +191,46 @@ Ordered by what unblocks the most downstream work.
     method `emitSettlementRecord(intent)` persists the row; throws
     `SettlementValidationError` and skips the write on bad input.
 
-    The `ledger_entry_id: null` is the "unsettled" marker. Cross-
-    module wiring to hawala-ledger (writing the actual ledger entry
-    for HRS/CCR/USDC/USD, the karma_event for KARMA, nothing for
-    GIFT, then stamping ledger_entry_id) belongs in a reconciler
-    workflow — that's the v0.2 cross-module piece, not service-side,
-    matching this codebase's existing pattern (`backend/src/workflows/`
-    is where modules get stitched).
+11. **Cross-module settlement reconciler** ✓ — landed in the most
+    recent commit. The asset-graph → hawala-ledger reconciler closes
+    the loop emission opened. Per-record logic in
+    `backend/src/modules/asset-graph/reconciler.ts` (unit-testable
+    with fake services); scheduled cron job at
+    `backend/src/jobs/asset-graph-settlement-reconciler.ts` (every
+    15 minutes) iterates unsettled records.
+
+    Per-rail dispatch:
+      - CCR / USDC / USD → `createTransfer` between members'
+        `USER_WALLET` accounts (currency = rail unit)
+      - HRS → `createTransfer` between members' `TIME_BANK`-HRS
+        accounts, carrying TIMEBANK_* reference vocabulary
+      - KARMA → `createKarmaEvents` (no counterparty)
+      - GIFT → metadata stamp only (audit-only)
+
+    Idempotency:
+      - `createTransfer` invoked with idempotency_key
+        `settlement-${record.id}` so re-runs return the existing entry.
+      - KARMA paths skip when a karma_event with `source_id:
+        record.id` already exists.
+      - GIFT and post-write records short-circuit on
+        `metadata.reconciled_at`.
+
+    19 reconciler tests cover every rail's write path, idempotency
+    via existing entries, missing-account failures, the batch-loop
+    continue-past-failure semantics, and the `listSettlementRecords({
+    ledger_entry_id: null })` filter.
 
     Open follow-ups:
-      - Reconciler workflow (asset-graph → hawala-ledger). Reads
-        unsettled SettlementRecords, calls `createTransfer` /
-        `createKarmaEvents` per rail, stamps `ledger_entry_id`.
+      - Member → ledger-owner mapping. Reconciler hardcodes
+        `owner_type: "CUSTOMER"` today; the entitlement workstream
+        (item 7) owns the proper mapping.
       - Migrating hawala-ledger's `createTransfer` from
         `assertPurchaseContext` to `assertRailInvariants` so HRS-
         coded transfers get the time-bank guard at the ledger layer
-        too (defense in depth — asset-graph already validates upstream).
-      - Idempotency keys on settlement records (today, two emits with
-        identical intents would write two rows).
+        too (defense in depth).
+      - Idempotency keys on settlement-record emission so duplicate
+        intents don't write two rows (the reconciler handles
+        ledger-side idempotency but not emission-side).
 
 ## Decisions worth knowing
 

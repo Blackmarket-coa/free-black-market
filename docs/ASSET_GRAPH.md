@@ -227,10 +227,15 @@ backend/src/modules/asset-graph/
     vc.unit.spec.ts
     instance-lifecycle.unit.spec.ts
     settlement.unit.spec.ts
+    reconciler.unit.spec.ts
   attestations/
     vc.ts                           # W3C VC body parser + extractors
   instance-lifecycle.ts             # state machines + acceptProposal payload
   settlement.ts                     # per-rail emission compose + validation
+  reconciler.ts                     # cross-module reconciler core (testable)
+
+backend/src/jobs/
+  asset-graph-settlement-reconciler.ts  # scheduled job, every 15min
 
 backend/src/scripts/
   seed-asset-graph.ts               # upserts asset_kind + project_manifest
@@ -331,13 +336,45 @@ Service surface:
   - `composeSettlementPayload(intent)` — pure preview; returns the
     payload without writing.
 
-The unsettled `ledger_entry_id: null` is the v0.1 marker for "intent
-recorded, hawala-ledger entry not yet written." A reconciler workflow
-(v0.2, cross-module) reads unsettled records, mints the matching
-hawala-ledger entry (or `karma_event` row, or nothing for GIFT), then
-stamps `ledger_entry_id` on the SettlementRecord. That cross-module
-stitching belongs in a workflow, not the module — same pattern this
-codebase uses elsewhere.
+The unsettled `ledger_entry_id: null` is the marker for "intent
+recorded, hawala-ledger entry not yet written." The cross-module
+reconciler picks these up (see below) and stamps `ledger_entry_id`
+when the corresponding hawala-ledger entry lands.
+
+## Settlement reconciler
+
+`reconciler.ts` is the cross-module piece that turns unsettled
+`SettlementRecord` rows into real balance movements. Per-record
+logic lives in the module so it's unit-testable with fake services;
+the scheduled job (`backend/src/jobs/asset-graph-settlement-reconciler.ts`,
+every 15 minutes) is the thin wrapper that resolves
+`HAWALA_LEDGER_MODULE` + `ASSET_GRAPH_MODULE` and iterates.
+
+Per-rail dispatch:
+
+| Rail | Terminal write | How the SettlementRecord is updated |
+| --- | --- | --- |
+| `ccr` / `usdc` / `usd` | `hawala-ledger.createTransfer` between the from/to members' `USER_WALLET` accounts (currency = rail unit) | `ledger_entry_id` stamped |
+| `hours` | `createTransfer` between members' `TIME_BANK`-HRS accounts, carrying the `TIMEBANK_*` reference vocabulary from metadata | `ledger_entry_id` stamped |
+| `karma` | `hawala-ledger.createKarmaEvents` (no counterparty; karma is unilateral) | `metadata.karma_event_id` stamped |
+| `gift` | Nothing — audit only | `metadata.reconciled_at` stamped |
+
+Idempotency:
+
+  - `createTransfer` is invoked with `idempotency_key:
+    settlement-${record.id}`. A second reconciliation returns the
+    existing entry instead of double-writing.
+  - KARMA paths list existing events by `source_id: record.id`
+    before creating.
+  - GIFT and post-write records are detected by `metadata.reconciled_at`
+    and short-circuited on re-run.
+
+Member-to-ledger-owner mapping: v0.1 hardcodes `owner_type: "CUSTOMER"`
+when looking up accounts. The proper mapping is a v0.2 question the
+entitlement workstream owns. The reconciler returns a structured
+`failed` result (not a throw) when the matching account doesn't
+exist, so operators get a clear "provision accounts first" signal
+without crashing the batch.
 
 The three reference manifests test three distinct match shapes:
 
