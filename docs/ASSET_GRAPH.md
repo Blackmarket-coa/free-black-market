@@ -15,9 +15,9 @@ The asset graph is **additive**. It plugs into existing modules; it
 does not replace them. See the reuse table at the bottom of this doc.
 
 This document specifies v0: the schema and three reference manifests
-(yard-scrap-nursery, tool-library, repair-cafe). v0 is schema-and-
-catalog only. Persistence migrations, the matching engine, and the
-sensitivity-tier cryptography are downstream.
+(yard-scrap-nursery, tool-library, repair-cafe). The persistence
+migration and catalog seeder shipped alongside v0; the matching
+engine and sensitivity-tier cryptography are downstream.
 
 ## The pieces
 
@@ -208,7 +208,9 @@ Hand-traced end-to-end. Each step names the schema field that carries it.
 backend/src/modules/asset-graph/
   index.ts                          # module export
   service.ts                        # catalog accessors + matcher
-  models/                           # 7 model files (DB schema; v0.1 migrates)
+  models/                           # 7 model files (DB schema)
+  migrations/
+    Migration20260512CreateAssetGraph.ts  # all 7 tables + indexes
   manifests/
     types.ts                        # zod schemas + enums (parser of truth)
     yard-scrap-nursery.ts           # reference manifest 1
@@ -219,6 +221,10 @@ backend/src/modules/asset-graph/
   __tests__/
     manifest-parse.unit.spec.ts
     orthogonality.unit.spec.ts
+    seed.unit.spec.ts
+
+backend/src/scripts/
+  seed-asset-graph.ts               # upserts asset_kind + project_manifest
 
 docs/
   ASSET_GRAPH.md                    # this file
@@ -237,8 +243,11 @@ docs/
   extend `hawala-ledger`; decision deferred to its own plan).
 - FBM/Commons boundary pricing rules.
 - Refactoring existing modules into the new spine.
-- DB migrations (models reviewable; persistence in v0.1).
 - Membership-requirement definition.
+- Zod-schema serialization for `asset_kind.attribute_schema` — the
+  seeder stores a pointer-to-code marker; the DB column is reserved
+  for a future zod→JSON-schema serializer if a UI ever needs to
+  render attribute forms from the DB instead of from code.
 
 ## Open dependencies (verify during v0.1)
 

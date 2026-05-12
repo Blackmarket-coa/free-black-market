@@ -1,12 +1,13 @@
 # Handoff — asset-graph v0
 
 Last touched: 2026-05-12. Branch: `claude/asset-graph-commons-dvAeT`.
-Two commits beyond `main` after the composition-layer merge:
+Three commits beyond `main` after the composition-layer merge:
 
 - `4875640` feat(asset-graph): v0 schema + nursery + tool-library reference manifests
 - `8bc7694` feat(asset-graph): repair-cafe reference manifest (v0 third vertical)
+- (pending) feat(asset-graph): persistence migration + catalog seeder
 
-Both pushed to `origin/claude/asset-graph-commons-dvAeT`. No PR open.
+All pushed to `origin/claude/asset-graph-commons-dvAeT`. No PR open.
 
 ## What v0 is
 
@@ -58,13 +59,15 @@ Read in this order:
 
 Ordered by what unblocks the most downstream work.
 
-1. **DB migrations for the 7 models** under
-   `backend/src/modules/asset-graph/models/`. Models are reviewable
-   today; nothing persists yet. Pattern: copy the
-   `Migration20260510CreatePlaybook.ts` shape from
-   `backend/src/modules/playbook/migrations/`. Seed scripts for
-   `asset_kind` (from `seed/asset-kinds.ts`) and `project_manifest`
-   (from `manifests/`) wire in alongside the playbook seeder.
+1. ~~**DB migrations for the 7 models**~~ **Landed** in commit on this
+   branch: `backend/src/modules/asset-graph/migrations/Migration20260512CreateAssetGraph.ts`
+   creates `asset_kind`, `asset_declaration`, `attestation`,
+   `project_manifest`, `project_instance`, `match_proposal`, and
+   `settlement_record`. Seeder at
+   `backend/src/scripts/seed-asset-graph.ts` upserts both catalog
+   tables from the in-code source of truth (run:
+   `pnpm medusa exec ./src/scripts/seed-asset-graph.ts`).
+   Idempotency proven by `__tests__/seed.unit.spec.ts`.
 
 2. **Hours rail in `hawala-ledger`**. Recommendation in
    `docs/ASSET_GRAPH.md` § Open dependencies: extend the existing
@@ -107,6 +110,14 @@ Ordered by what unblocks the most downstream work.
    manifest. The membership gate that controls which declarations flow
    to which surface is unwired. Pricing rules (member-rate vs. retail)
    live in the FBM/Commons boundary spec — also pending.
+
+8. **Attribute-schema portability**. The seeder stores a pointer-to-
+   code marker in `asset_kind.attribute_schema` rather than serializing
+   the zod schema (zod isn't JSON). Service reads bypass the DB for
+   the canonical schema. Decide whether to ship a zod-to-JSON-schema
+   serializer (adds a dep) or keep code-as-truth indefinitely (current
+   bet — fine until a UI wants to render declaration forms from the
+   DB).
 
 ## Decisions worth knowing
 

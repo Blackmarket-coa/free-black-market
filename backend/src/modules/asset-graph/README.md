@@ -65,10 +65,15 @@ See `docs/ASSET_GRAPH.md` for the full reuse table.
 
 ## Status
 
-v0 ships the schema and three manifests. The matching engine,
-sensitivity-tier cryptography, and persistence migrations land in
-v0.1. The `hours` rail and Karma asset-model placement in
-`hawala-ledger` are flagged as v0.1 dependencies before the tool
-library can run. The repair-café manifest needs the event-scheduling
-match path (fixer availability vs. event date vs. venue series) before
-it can run, also v0.1.
+v0 ships the schema and three manifests. The persistence migration
+(`migrations/Migration20260512CreateAssetGraph.ts`) creates all seven
+tables, and the catalog seeder (`backend/src/scripts/seed-asset-graph.ts`)
+upserts asset kinds and project manifests from the in-code source of
+truth — both run as part of normal Medusa migrate + seed.
+
+The matching engine and sensitivity-tier cryptography land in v0.1.
+The `hours` rail and Karma asset-model placement in `hawala-ledger`
+are flagged as v0.1 dependencies before the tool library can run.
+The repair-café manifest needs the event-scheduling match path (fixer
+availability vs. event date vs. venue series) before it can run, also
+v0.1.
