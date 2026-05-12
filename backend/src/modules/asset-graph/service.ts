@@ -396,6 +396,74 @@ class AssetGraphService extends MedusaService({
   composeSettlementPayload(intent: SettlementIntent) {
     return composeSettlement(intent)
   }
+
+  // ── declarations (member-side) ──────────────────────────────────────
+
+  /**
+   * Create an AssetDeclaration on behalf of a member. The member-id
+   * is the caller's responsibility — routes extract it from
+   * `req.auth_context.actor_id`; admin code paths pass it explicitly.
+   *
+   * The kind_slug must resolve in the catalog. The attributes are
+   * validated against the kind's zod attribute_schema (so attribute
+   * typos surface here rather than in the matcher). Lifecycle and
+   * sensitivity_tier default from the kind when the caller doesn't
+   * override.
+   *
+   * Throws when the kind is unknown or attributes fail validation;
+   * routes translate to 4xx.
+   */
+  async createDeclarationFor(payload: {
+    member_id: string
+    kind_slug: string
+    attributes: Record<string, unknown>
+    lifecycle?: string
+    sensitivity_tier?: string
+    availability?: Record<string, unknown> | null
+    geography?: Record<string, unknown> | null
+    governance_model?: string
+    metadata?: Record<string, unknown> | null
+  }): Promise<any> {
+    const kind = getAssetKind(payload.kind_slug)
+    // Throw on attribute-schema violations — zod's `.parse` does this
+    // for us. Strict mode (declared on each kind's schema) rejects
+    // unknown keys so a typo doesn't silently land in the DB.
+    const validated = kind.attribute_schema.parse(payload.attributes)
+
+    return this.createAssetDeclarations({
+      member_id: payload.member_id,
+      asset_kind_id: kind.slug, // catalog id == slug at v0.1
+      kind_slug: kind.slug,
+      attributes: validated,
+      sensitivity_tier:
+        payload.sensitivity_tier ?? kind.default_sensitivity_tier,
+      lifecycle: payload.lifecycle ?? kind.default_lifecycle,
+      availability: payload.availability ?? null,
+      geography: payload.geography ?? null,
+      governance_model: payload.governance_model ?? "individual",
+      metadata: payload.metadata ?? null,
+    } as any)
+  }
+
+  /**
+   * Revoke a declaration: sets `revoked_at`. Enforces ownership —
+   * the supplied member_id must match the declaration's. Returns
+   * `null` when the declaration doesn't exist or belongs to a
+   * different member (routes translate to 404 for both — don't
+   * leak existence to non-owners).
+   */
+  async revokeDeclaration(args: {
+    declaration_id: string
+    member_id: string
+  }): Promise<any> {
+    const decl: any = await this.retrieveAssetDeclaration(args.declaration_id)
+    if (!decl) return null
+    if (decl.member_id !== args.member_id) return null
+    return this.updateAssetDeclarations({
+      id: decl.id,
+      revoked_at: new Date(),
+    } as any)
+  }
 }
 
 export default AssetGraphService

@@ -235,6 +235,7 @@ backend/src/modules/asset-graph/
     instance-lifecycle.unit.spec.ts
     settlement.unit.spec.ts
     reconciler.unit.spec.ts
+    declarations.unit.spec.ts
   attestations/
     vc.ts                           # W3C VC body parser + extractors
   instance-lifecycle.ts             # state machines + acceptProposal payload
@@ -257,6 +258,15 @@ backend/src/api/admin/asset-graph/
   instances/[id]/pause/route.ts          # POST  active → paused
   instances/[id]/reactivate/route.ts     # POST  paused → active
   instances/[id]/archive/route.ts        # POST  * → archived (terminal)
+
+backend/src/api/store/asset-graph/
+  manifests/route.ts                     # GET   public catalog
+  manifests/[slug]/route.ts              # GET   public one
+  declarations/route.ts                  # GET own list, POST create own
+  declarations/[id]/route.ts             # DELETE revoke own
+  proposals/route.ts                     # GET own list
+  proposals/[id]/accept/route.ts         # POST accept own → instance
+  proposals/[id]/decline/route.ts        # POST decline own
 
 backend/src/scripts/
   seed-asset-graph.ts               # upserts asset_kind + project_manifest
@@ -431,18 +441,60 @@ Error responses:
 
 Out of scope for v0.1:
 
-  - **Member-side declaration endpoints** (declare/list-own assets).
-    These need different auth wiring than admin routes and a
-    separate `/store/asset-graph/...` namespace; deferred.
+  - ~~Member-side declaration endpoints~~ ✓ landed alongside the
+    member HTTP API section below.
   - **Settlements emission endpoint.** Settlements are produced by
     domain workflows (instance executors) rather than admin actions;
     a manual emit endpoint is operator tooling, not a primary API
     path.
-  - **Route-level integration tests.** The 207 service-layer tests
+  - **Route-level integration tests.** The service-layer tests
     cover the meaningful behavior; the routes are thin wrappers
     that resolve the service and translate exceptions to HTTP
     status codes. Route tests are integration-test territory and
     follow the codebase convention of no co-located route tests.
+
+## Member (storefront) HTTP API (v0.1)
+
+Member-side surface under `/store/asset-graph/...`. Authenticated
+endpoints extract the caller's member-id from
+`req.auth_context.actor_id` and use it both as a filter (members
+only see their own data) and as an ownership check (members can
+only mutate their own data).
+
+```
+GET    /store/asset-graph/manifests              public catalog read
+GET    /store/asset-graph/manifests/:slug         public; one manifest
+GET    /store/asset-graph/declarations           list own (filtered by auth)
+POST   /store/asset-graph/declarations           create own; validates
+                                                  attributes against the
+                                                  kind's zod schema
+DELETE /store/asset-graph/declarations/:id       revoke own (sets revoked_at)
+GET    /store/asset-graph/proposals              list own (where member_id == auth)
+POST   /store/asset-graph/proposals/:id/accept   accept own → ProjectInstance
+POST   /store/asset-graph/proposals/:id/decline  decline own
+```
+
+Auth + ownership posture:
+
+  - All authenticated endpoints return 401 when `auth_context.actor_id`
+    is absent.
+  - List endpoints filter by the caller's member-id — other members'
+    rows aren't returned even when their ids are known.
+  - Mutation endpoints (DELETE declaration, accept/decline proposal)
+    return 404 when the row exists but belongs to a different member.
+    The route deliberately doesn't leak existence to non-owners.
+  - Validation failures on `POST declarations` (zod schema mismatch,
+    unknown attribute keys via strict mode, unknown kind_slug) return
+    400 with structured issue details.
+  - InvalidTransitionError on accept/decline (proposal not in
+    `pending` state) returns 409 with `from`/`action` in the body.
+
+The two service methods that back the declaration routes
+(`createDeclarationFor` and `revokeDeclaration`) live on
+`AssetGraphService` and are unit-tested directly (14 tests in
+`declarations.unit.spec.ts`): every default-from-kind path, every
+attribute-schema rejection path, and the ownership-rejection path
+on revoke.
 
 The three reference manifests test three distinct match shapes:
 

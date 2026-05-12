@@ -1,7 +1,7 @@
 # Handoff — asset-graph v0
 
 Last touched: 2026-05-13. Branch: `claude/asset-graph-commons-dvAeT`.
-Fourteen commits beyond `main` after the composition-layer merge:
+Fifteen commits beyond `main` after the composition-layer merge:
 
 - `4875640` feat(asset-graph): v0 schema + nursery + tool-library reference manifests
 - `8bc7694` feat(asset-graph): repair-cafe reference manifest (v0 third vertical)
@@ -16,7 +16,8 @@ Fourteen commits beyond `main` after the composition-layer merge:
 - `f8f257f` refactor(hawala-ledger): defense-in-depth — createTransfer uses assertRailInvariants
 - `c7e2c5a` feat(asset-graph): emission idempotency keys on SettlementRecord
 - `a4142ca` feat(asset-graph): admin HTTP API surface (12 endpoints)
-- (pending) feat(asset-graph): creator-bounty-pool reference manifest (vote-weighted vertical; 5th manifest)
+- `6137a78` feat(asset-graph): creator-bounty-pool reference manifest (vote-weighted vertical; 5th manifest)
+- (pending) feat(asset-graph): storefront HTTP API surface (7 endpoints) + createDeclarationFor + revokeDeclaration
 
 All pushed to `origin/claude/asset-graph-commons-dvAeT`. No PR open.
 
@@ -444,6 +445,54 @@ Ordered by what unblocks the most downstream work.
         carry their pledge id as `source_id` so accruals are
         traceable.
       - Refund logic on undelivered work (workflow concern).
+
+16. **Storefront HTTP API + service surface for member-side
+    declarations** ✓ — landed in the most recent commit. Closes the
+    last admin/store gap the admin API left.
+
+    Service surface:
+      - `createDeclarationFor({ member_id, kind_slug, attributes, ... })`
+        — looks up the kind in the catalog, validates attributes
+        against the kind's zod schema in strict mode (unknown keys
+        rejected, wrong types rejected), defaults lifecycle and
+        sensitivity_tier from the kind when caller doesn't override,
+        defaults governance_model to "individual". Throws on bad
+        slug or attribute validation; routes translate to 400.
+
+      - `revokeDeclaration({ declaration_id, member_id })` — sets
+        `revoked_at` when ownership matches; returns `null` when
+        the declaration doesn't exist OR belongs to a different
+        member. Routes 404 either way — deliberately doesn't leak
+        existence to non-owners.
+
+    7 storefront endpoints under `/store/asset-graph/`:
+      GET    /manifests                       public catalog
+      GET    /manifests/:slug                   public one
+      GET    /declarations                     list own (auth filter)
+      POST   /declarations                     create own; validates
+      DELETE /declarations/:id                 revoke own (404 non-owner)
+      GET    /proposals                        list own
+      POST   /proposals/:id/accept             accept own → instance
+      POST   /proposals/:id/decline            decline own
+
+    Auth + ownership posture:
+      - All authenticated endpoints 401 on missing
+        `auth_context.actor_id`.
+      - List endpoints filter by caller's member_id.
+      - Mutation endpoints 404 on non-owner (don't leak existence).
+      - Validation failures (zod schema, unknown kind) → 400 with
+        structured issue details.
+      - InvalidTransitionError → 409 with from/action in body.
+
+    Tests: 14 new unit tests in `declarations.unit.spec.ts`. The
+    routes themselves are thin wrappers (codebase convention is no
+    co-located route tests — integration-test territory).
+
+    229 asset-graph unit tests passing (was 215). Typecheck clean.
+
+    Open follow-up: route-level integration tests if the codebase
+    standardizes on them. Existing admin routes don't have them
+    either; this commit follows the existing posture.
 
 ## Decisions worth knowing
 
