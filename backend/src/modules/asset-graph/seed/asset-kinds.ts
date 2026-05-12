@@ -188,6 +188,35 @@ export const ASSET_KIND_CATALOG: ReadonlyArray<AssetKindDefinition> = [
     default_lifecycle: "durable-commitment",
   },
   {
+    slug: "tool.vehicle.bicycle",
+    category: "physical-artifact",
+    parent_slug: "tool.vehicle",
+    display_name: "Bicycle",
+    attribute_schema: z
+      .object({
+        ebike: z.boolean().optional(),
+        gear_count: z.number().int().positive().optional(),
+      })
+      .strict(),
+    default_sensitivity_tier: "member-visible",
+    default_lifecycle: "durable-commitment",
+  },
+  {
+    slug: "tool.vehicle.cargo-bike",
+    category: "physical-artifact",
+    parent_slug: "tool.vehicle",
+    display_name: "Cargo bike",
+    attribute_schema: z
+      .object({
+        payload_lbs: z.number().positive().optional(),
+        cargo_volume_l: z.number().positive().optional(),
+        ebike: z.boolean().optional(),
+      })
+      .strict(),
+    default_sensitivity_tier: "member-visible",
+    default_lifecycle: "durable-commitment",
+  },
+  {
     slug: "tool.garden",
     category: "physical-artifact",
     parent_slug: "tool",
@@ -338,6 +367,23 @@ export const ASSET_KIND_CATALOG: ReadonlyArray<AssetKindDefinition> = [
     attribute_schema: z
       .object({
         domains: z.array(z.string()).optional(),
+      })
+      .strict(),
+    default_sensitivity_tier: "member-visible",
+    default_lifecycle: "durable-commitment",
+  },
+  {
+    slug: "skill.driving",
+    category: "skill",
+    parent_slug: "skill",
+    display_name: "Driving / courier",
+    attribute_schema: z
+      .object({
+        years_experience: z.number().nonnegative().optional(),
+        vehicle_classes: z
+          .array(z.enum(["car", "truck", "bicycle", "cargo-bike", "motorcycle"]))
+          .optional(),
+        comfortable_in_traffic: z.boolean().optional(),
       })
       .strict(),
     default_sensitivity_tier: "member-visible",
@@ -685,6 +731,27 @@ export const ASSET_KIND_CATALOG: ReadonlyArray<AssetKindDefinition> = [
       })
       .strict(),
     default_sensitivity_tier: "member-visible",
+    default_lifecycle: "durable-commitment",
+  },
+  {
+    slug: "credential.drivers-license",
+    category: "credential",
+    parent_slug: "credential",
+    display_name: "Driver's license",
+    // Government-issued; classic VC use case. The W3C VC body lives
+    // on the Attestation row; this declaration's attributes carry
+    // the matcher-relevant fields (class, jurisdiction, validity).
+    // sensitivity defaults to match-only — a driver's license is
+    // PII that shouldn't be member-visible.
+    attribute_schema: z
+      .object({
+        class: z.string().min(1),
+        jurisdiction: z.string().min(2),
+        valid_until: z.string().datetime().optional(),
+        endorsements: z.array(z.string()).optional(),
+      })
+      .strict(),
+    default_sensitivity_tier: "match-only",
     default_lifecycle: "durable-commitment",
   },
 ] as const

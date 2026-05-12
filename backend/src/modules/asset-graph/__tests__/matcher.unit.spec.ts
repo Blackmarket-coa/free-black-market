@@ -49,6 +49,7 @@ import { TOOL_LIBRARY_MANIFEST as TOOLS } from "../manifests/tool-library"
 import { REPAIR_CAFE_MANIFEST as REPAIR } from "../manifests/repair-cafe"
 import { CHILDCARE_MANIFEST as CHILDCARE } from "../manifests/childcare"
 import { CREATOR_BOUNTY_MANIFEST as BOUNTY } from "../manifests/creator-bounty"
+import { COURIER_COLLECTIVE_MANIFEST as COURIER } from "../manifests/courier-collective"
 
 const decl = (overrides: Partial<MatcherDeclaration> = {}): MatcherDeclaration => ({
   id: overrides.id ?? "decl_x",
@@ -784,6 +785,139 @@ describe("matchManifest — creator bounty (vote-weighted + capital + one-time c
       (s) => s.slot.kind_slug === "time.coordinator"
     )!
     expect(curatorSlot.satisfied).toBe(false)
+  })
+})
+
+describe("matchManifest — courier collective (depth-2 wildcard + driver's license + multi-count couriers)", () => {
+  const dispatcher = "mem_dispatch"
+  const courierA = "mem_courier_a"
+  const courierB = "mem_courier_b"
+
+  const pool = (): MatcherDeclaration[] => [
+    // Dispatcher
+    decl({
+      id: "d_dispatch",
+      member_id: dispatcher,
+      kind_slug: "time.coordinator",
+      attributes: { hours_per_week: 15 },
+      lifecycle: "recurring",
+    }),
+    // Courier A — bicycle + driving skill + license + shift
+    ...[
+      [courierA, "d_skill_a", "d_lic_a", "d_veh_a", "d_time_a", "tool.vehicle.bicycle"],
+      [courierB, "d_skill_b", "d_lic_b", "d_veh_b", "d_time_b", "tool.vehicle.cargo-bike"],
+    ].flatMap(
+      ([m, dSkill, dLic, dVeh, dTime, vehicleKind]) =>
+        [
+          decl({
+            id: dSkill,
+            member_id: m,
+            kind_slug: "skill.driving",
+            attributes: {
+              years_experience: 3,
+              vehicle_classes: ["bicycle", "cargo-bike"],
+            },
+            lifecycle: "durable-commitment",
+          }),
+          decl({
+            id: dLic,
+            member_id: m,
+            kind_slug: "credential.drivers-license",
+            attributes: {
+              class: "C",
+              jurisdiction: "US-NY",
+              valid_until: "2030-01-01T00:00:00Z",
+            },
+            sensitivity_tier: "match-only",
+            lifecycle: "durable-commitment",
+          }),
+          decl({
+            id: dVeh,
+            member_id: m,
+            kind_slug: vehicleKind,
+            attributes:
+              vehicleKind === "tool.vehicle.cargo-bike"
+                ? { payload_lbs: 200, cargo_volume_l: 100, ebike: true }
+                : { ebike: false, gear_count: 21 },
+            lifecycle: "durable-commitment",
+          }),
+          decl({
+            id: dTime,
+            member_id: m,
+            kind_slug: "time.recurring",
+            attributes: { hours_per_week: 10 },
+            lifecycle: "recurring",
+          }),
+        ] as MatcherDeclaration[]
+    ),
+  ]
+
+  it("satisfies every slot with dispatcher + 2 couriers each carrying skill + license + vehicle + time", () => {
+    const report = matchManifest(COURIER, pool())
+    expect(report.satisfied).toBe(true)
+    for (const sr of report.slot_reports) {
+      expect(sr.satisfied).toBe(true)
+    }
+  })
+
+  it("matches the depth-2 wildcard tool.vehicle.* against bicycle + cargo-bike leaves", () => {
+    const report = matchManifest(COURIER, pool())
+    const vehSlot = report.slot_reports.find(
+      (s) => s.slot.kind_slug === "tool.vehicle.*"
+    )!
+    const matched = vehSlot.candidates.map((c) => c.declaration_id).sort()
+    expect(matched).toEqual(["d_veh_a", "d_veh_b"])
+  })
+
+  it("depth-2 wildcard matches a truck declaration too (parent tool.vehicle and all subkinds)", () => {
+    const p = pool()
+    p.push(
+      decl({
+        id: "d_truck",
+        member_id: courierA,
+        kind_slug: "tool.vehicle.truck",
+        attributes: { bed_length_ft: 6, payload_lbs: 1500 },
+        lifecycle: "durable-commitment",
+      })
+    )
+    const report = matchManifest(COURIER, p)
+    const vehSlot = report.slot_reports.find(
+      (s) => s.slot.kind_slug === "tool.vehicle.*"
+    )!
+    expect(vehSlot.candidates.map((c) => c.declaration_id)).toContain("d_truck")
+  })
+
+  it("becomes unsatisfied with only one courier (min_count: 2)", () => {
+    const p = pool().filter(
+      (d) => !["d_skill_b", "d_lic_b", "d_veh_b", "d_time_b"].includes(d.id)
+    )
+    const report = matchManifest(COURIER, p)
+    expect(report.satisfied).toBe(false)
+  })
+
+  it("dispatcher hours_per_week_min: 10 is enforced", () => {
+    const p = pool()
+    p.find((d) => d.id === "d_dispatch")!.attributes = { hours_per_week: 5 }
+    const report = matchManifest(COURIER, p)
+    const dispatchSlot = report.slot_reports.find(
+      (s) => s.slot.kind_slug === "time.coordinator"
+    )!
+    expect(dispatchSlot.satisfied).toBe(false)
+  })
+
+  it("dispatcher is candidate operator; couriers are participants (operator role is not OPERATOR_LIKE for skill.driving slot)", () => {
+    // Wait — actually `skill.driving` has role `operator` in the
+    // manifest, and `operator` IS in OPERATOR_LIKE_ROLES. So couriers
+    // ARE candidate operators here, along with the dispatcher
+    // (coordinator role).
+    const report = matchManifest(COURIER, pool())
+    const opIds = report.candidate_operators.map((o) => o.member_id).sort()
+    expect(opIds).toContain(dispatcher)
+    // Each courier qualifies as a candidate operator because their
+    // skill.driving + time.recurring declarations satisfy operator-
+    // role slots.
+    expect(opIds).toContain(courierA)
+    expect(opIds).toContain(courierB)
   })
 })
 

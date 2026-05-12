@@ -223,9 +223,12 @@ describe("v0 manifest orthogonality — catalog coverage", () => {
     for (const g of expected) expect(govs.has(g)).toBe(true)
   })
 
-  it("the catalog covers at least three distinct surfaces", () => {
-    const surfaces = new Set(allManifests().map((m) => m.surface))
-    expect(surfaces.size).toBeGreaterThanOrEqual(3)
+  it("the catalog covers every value in the Surface enum", () => {
+    const surfaces = new Set<string>(
+      allManifests().map((m) => m.surface as string)
+    )
+    const expected = ["commerce", "refrain", "threshold", "blackstar"]
+    for (const s of expected) expect(surfaces.has(s)).toBe(true)
   })
 
   it("at least two manifests use the trailing-'.*' wildcard on distinct category roots", () => {
@@ -333,7 +336,7 @@ describe("v0 manifest orthogonality — per-manifest invariants", () => {
     expect(workSlot.lifecycle).toBe("one-time")
   })
 
-  it("the catalog reaches three wildcard roots (tool, skill.repair, skill.creative)", () => {
+  it("the catalog reaches four wildcard roots, including a depth-2 root", () => {
     const roots = new Set<string>()
     for (const m of allManifests()) {
       for (const r of m.required_asset_kinds as Req[]) {
@@ -343,7 +346,34 @@ describe("v0 manifest orthogonality — per-manifest invariants", () => {
       }
     }
     expect(roots).toEqual(
-      new Set(["tool", "skill.repair", "skill.creative"])
+      new Set(["tool", "skill.repair", "skill.creative", "tool.vehicle"])
     )
+    // The depth-2 root (`tool.vehicle.*`) proves the wildcard
+    // matcher works regardless of taxonomy depth. courier-collective
+    // is the manifest that lands it.
+    const depths = [...roots].map((r) => r.split(".").length)
+    expect(Math.max(...depths)).toBe(2)
+  })
+
+  it("courier-collective uses workshop + blackstar + collective + tool.vehicle.* wildcard + driver's-license credential", () => {
+    const courier = PROJECT_MANIFESTS["courier-collective"]
+    expect(courier.playbook_slug).toBe("workshop")
+    expect(courier.surface).toBe("blackstar")
+    expect(courier.governance_model).toBe("collective")
+    const slugs = (courier.required_asset_kinds as Req[]).map((r) => r.kind_slug)
+    expect(slugs).toContain("tool.vehicle.*")
+    expect(slugs).toContain("credential.drivers-license")
+    expect(slugs).toContain("skill.driving")
+  })
+
+  it("workshop playbook now hosts two manifests (repair-cafe + courier-collective)", () => {
+    const onWorkshop = allManifests().filter(
+      (m) => m.playbook_slug === "workshop"
+    )
+    expect(onWorkshop).toHaveLength(2)
+    // They differ on (surface, governance): threshold+consensus vs
+    // blackstar+collective. The orthogonality test allows two manifests
+    // on the same playbook so long as the (playbook, governance, surface)
+    // tuple is unique.
   })
 })

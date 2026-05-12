@@ -1,7 +1,7 @@
 # Handoff — asset-graph v0
 
 Last touched: 2026-05-13. Branch: `claude/asset-graph-commons-dvAeT`.
-Fifteen commits beyond `main` after the composition-layer merge:
+Sixteen commits beyond `main` after the composition-layer merge:
 
 - `4875640` feat(asset-graph): v0 schema + nursery + tool-library reference manifests
 - `8bc7694` feat(asset-graph): repair-cafe reference manifest (v0 third vertical)
@@ -17,7 +17,8 @@ Fifteen commits beyond `main` after the composition-layer merge:
 - `c7e2c5a` feat(asset-graph): emission idempotency keys on SettlementRecord
 - `a4142ca` feat(asset-graph): admin HTTP API surface (12 endpoints)
 - `6137a78` feat(asset-graph): creator-bounty-pool reference manifest (vote-weighted vertical; 5th manifest)
-- (pending) feat(asset-graph): storefront HTTP API surface (7 endpoints) + createDeclarationFor + revokeDeclaration
+- `b5732ab` feat(asset-graph): storefront HTTP API surface (7 endpoints) + createDeclarationFor + revokeDeclaration
+- (pending) feat(asset-graph): courier-collective reference manifest (blackstar; 6th manifest; full enum coverage)
 
 All pushed to `origin/claude/asset-graph-commons-dvAeT`. No PR open.
 
@@ -30,7 +31,7 @@ live: members declare → matcher proposes → operator accepts (live
 ProjectInstance) → instance emits SettlementRecords → cross-module
 reconciler writes to hawala-ledger.
 
-Five reference manifests cover the schema:
+Six reference manifests cover the schema:
 
 | Manifest | Playbook | Surface | Governance | Sens. floor | Rails | Wildcard |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -39,13 +40,19 @@ Five reference manifests cover the schema:
 | `repair-cafe` | workshop | threshold | consensus | public | karma, gift | `skill.repair.*` |
 | `childcare-coop` | commons | threshold | consensus | match-only | hours, karma, gift | — |
 | `creator-bounty-pool` | atelier | refrain | vote-weighted | public | usdc, karma, gift | `skill.creative.*` |
+| `courier-collective` | workshop | blackstar | collective | member-visible | usdc, hours, karma, gift | `tool.vehicle.*` (depth-2) |
 
-Catalog-wide, the five manifests cover **every value** in the
-`Lifecycle`, `SettlementRail`, and `GovernanceModel` enums, three
-of four surfaces (`blackstar` still unused), and four of ten
-playbooks. The substrate fits production verticals (commerce),
-mutual-aid (threshold), and creator-bounty (refrain) without
-warping.
+Catalog-wide, the six manifests cover **every value** in all four
+manifest-schema enums: `Lifecycle` (5/5), `SettlementRail` (6/6),
+`GovernanceModel` (4/4), and `Surface` (4/4). They also cover four
+of ten playbooks (grove, commons, workshop, atelier) and four
+wildcard category roots (`tool.*`, `skill.repair.*`,
+`skill.creative.*`, `tool.vehicle.*` — including a depth-2 case).
+
+The substrate fits production verticals (commerce), mutual-aid
+(threshold), creator-bounty (refrain), and delivery (blackstar)
+without warping — four-axis enum coverage is the strongest
+available structural proof.
 
 ## Tests
 
@@ -493,6 +500,69 @@ Ordered by what unblocks the most downstream work.
     Open follow-up: route-level integration tests if the codebase
     standardizes on them. Existing admin routes don't have them
     either; this commit follows the existing posture.
+
+17. **Courier-collective (6th reference manifest)** ✓ — landed in
+    the most recent commit. The blackstar/delivery vertical that
+    closes Surface enum coverage. With this manifest the substrate
+    has demonstrated structural fit on every value of every enum
+    the schema cares about — Lifecycle, SettlementRail,
+    GovernanceModel, AND Surface. Four-axis full enum coverage.
+
+    Schema additions:
+      - 4 new asset-kind seeds: `skill.driving`,
+        `credential.drivers-license` (VC-typed, match-only),
+        `tool.vehicle.bicycle`, `tool.vehicle.cargo-bike`.
+        Catalog now ~55 nodes.
+
+    Schema axes exercised (no schema changes required):
+      - `blackstar` surface — last unused Surface enum value.
+        Catalog now covers 4/4 surfaces.
+      - `tool.vehicle.*` depth-2 wildcard — fourth wildcard root
+        and the first below the top level. Proves the matcher
+        works regardless of taxonomy depth. Orthogonality test
+        asserts this as a structural fact (and that the max-depth
+        among roots is 2).
+      - Mixed cash + time-bank settlement (`usdc` + `hours`
+        coexisting on one vertical). The first manifest where the
+        cash leg and the time-bank leg run side by side; the five
+        earlier manifests used one or the other but not both.
+      - Second manifest on the `workshop` playbook (repair-cafe is
+        the first). Differs on (surface, governance) — the
+        `(playbook, governance, surface)` uniqueness check still
+        passes.
+      - Second manifest with `match-only`-defaulted credential
+        (after childcare's `credential.cpr-certified` /
+        `credential.background-check`). Driver's license is PII
+        even when government-issued.
+
+    Tests (8 new):
+      - 6 matcher tests: happy-path, depth-2 wildcard expansion
+        across bicycle + cargo-bike + truck (parent), min_count: 2
+        enforcement, dispatcher hours_per_week_min: 10
+        enforcement, candidate-operator semantics (couriers ARE
+        operators here because skill.driving uses role `operator`;
+        the matcher's role gating works as advertised).
+      - 2 orthogonality blocks: per-manifest invariants for
+        courier-collective, and "workshop playbook hosts two
+        manifests" multi-tenancy proof.
+
+    Catalog-coverage assertions strengthened:
+      - "≥3 distinct surfaces" → "covers every Surface enum value"
+        (4/4: commerce, threshold, refrain, blackstar)
+      - Wildcard-roots set equality: now
+        {tool, skill.repair, skill.creative, tool.vehicle}; max
+        depth is 2 (asserted directly).
+
+    237 asset-graph unit tests passing (was 229). Typecheck clean.
+
+    Open follow-ups (all workflow-side):
+      - Per-delivery settlement chain (USDC + HRS + KARMA emission
+        on a single delivery-completion event).
+      - Dispatch routing engine (logistics; outside asset-graph
+        schema).
+      - Commercial-bond / insurance credentials (real couriers
+        carry these; v0.1's `credential.*` category supports
+        adding them when needed).
 
 ## Decisions worth knowing
 

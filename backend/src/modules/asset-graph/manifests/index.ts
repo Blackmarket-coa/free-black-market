@@ -16,6 +16,7 @@ import { TOOL_LIBRARY_MANIFEST } from "./tool-library"
 import { REPAIR_CAFE_MANIFEST } from "./repair-cafe"
 import { CHILDCARE_MANIFEST } from "./childcare"
 import { CREATOR_BOUNTY_MANIFEST } from "./creator-bounty"
+import { COURIER_COLLECTIVE_MANIFEST } from "./courier-collective"
 import type { ProjectManifestRecipe } from "./types"
 
 export type ManifestSlug =
@@ -24,6 +25,7 @@ export type ManifestSlug =
   | "repair-cafe"
   | "childcare-coop"
   | "creator-bounty-pool"
+  | "courier-collective"
 
 export const PROJECT_MANIFESTS: Record<ManifestSlug, ProjectManifestRecipe> = {
   "yard-scrap-nursery": YARD_SCRAP_NURSERY_MANIFEST,
@@ -31,6 +33,7 @@ export const PROJECT_MANIFESTS: Record<ManifestSlug, ProjectManifestRecipe> = {
   "repair-cafe": REPAIR_CAFE_MANIFEST,
   "childcare-coop": CHILDCARE_MANIFEST,
   "creator-bounty-pool": CREATOR_BOUNTY_MANIFEST,
+  "courier-collective": COURIER_COLLECTIVE_MANIFEST,
 }
 
 export const MANIFEST_SLUGS: ManifestSlug[] = Object.keys(
