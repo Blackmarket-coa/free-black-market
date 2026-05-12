@@ -6,9 +6,15 @@
  * no I/O. Callers (jobs, settlement routes) snapshot bridge health
  * separately via `getBridgeHealth()` and feed it in here.
  *
+ * The selector is only valid for **cash-convertible** rails — USD and
+ * USDC. Calling it with a closed-loop rail (CCR, HRS, KARMA, GIFT)
+ * throws: those rails settle through their own paths (Stellar custom
+ * asset, time-bank ledger entries, karma_event log, audit-only) and
+ * silently routing them to Stripe-ACH would be a closed-loop
+ * violation. See `rails.ts` for the rail registry.
+ *
  * Selection rules in order:
- *   1. If the currency is not USD/USDC, force Stripe-ACH (Stellar bridge
- *      only supports USDC today).
+ *   1. Reject non-cash rails outright (throws).
  *   2. If the amount is below `minStellarAmount`, force Stripe-ACH —
  *      Stellar transaction fees are flat in stroops, but for sub-dollar
  *      amounts the Stripe fee is competitive and avoids on-chain noise.
@@ -16,6 +22,20 @@
  *      requested amount, force Stripe-ACH.
  *   4. Otherwise, prefer Stellar-USDC.
  */
+
+import { CASH_RAILS, RAIL_REGISTRY, type RailCode } from "./rails"
+
+export class NonCashRailError extends Error {
+  constructor(public readonly rail: string) {
+    super(
+      `dual-rail-selector called with non-cash rail "${rail}". Use the ` +
+        `rail-specific path (CCR via posture-a-guard; HRS via time-bank; ` +
+        `KARMA via karma_event; GIFT is audit-only). ` +
+        `See backend/src/modules/hawala-ledger/rails.ts.`
+    )
+    this.name = "NonCashRailError"
+  }
+}
 
 export type Rail = "stripe_ach" | "stellar_usdc"
 
@@ -61,6 +81,13 @@ export function selectSettlementRail(input: SelectorInput): SelectorDecision {
 
   const minStellar = input.minStellarAmount ?? 1.0
   const currency = input.currency.toUpperCase()
+
+  // The selector is for cash rails only. Closed-loop rails (CCR, HRS,
+  // KARMA, GIFT) have their own paths and silently routing them to
+  // Stripe-ACH would be a closed-loop violation — fail loud instead.
+  if (RAIL_REGISTRY[currency as RailCode] && !CASH_RAILS.has(currency as RailCode)) {
+    throw new NonCashRailError(currency)
+  }
 
   if (currency !== "USD" && currency !== "USDC") {
     reasons.push({

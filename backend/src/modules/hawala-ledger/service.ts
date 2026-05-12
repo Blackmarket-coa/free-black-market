@@ -1,6 +1,6 @@
 import { MedusaService } from "@medusajs/framework/utils"
 import { auditFinancialTransaction, logAuditEvent } from "./audit-logger"
-import { assertPurchaseContext } from "./posture-a-guard"
+import { assertRailInvariants } from "./posture-a-guard"
 import {
   LedgerAccount,
   LedgerEntry,
@@ -21,6 +21,7 @@ import {
   CreditLineTransaction,
   EscrowAgreement,
   PatronageAllocation,
+  KarmaEvent,
 } from "./models"
 
 class HawalaLedgerModuleService extends MedusaService({
@@ -43,6 +44,7 @@ class HawalaLedgerModuleService extends MedusaService({
   CreditLineTransaction,
   EscrowAgreement,
   PatronageAllocation,
+  KarmaEvent,
 }) {
   // ==================== ACCOUNT MANAGEMENT ====================
 
@@ -520,10 +522,12 @@ class HawalaLedgerModuleService extends MedusaService({
       throw new Error("Invalid account ID")
     }
 
-    // POSTURE A — Coalition Credits closed-loop guard.
-    // Throws when a CCR transfer lacks a goods/services purchase context.
-    // See `posture-a-guard.ts` and `docs/POSTURE_A_COMPLIANCE.md`.
-    assertPurchaseContext({
+    // Per-rail invariant guard. CCR keeps its Posture A purchase-context
+    // check; HRS gets the time-bank reference check; KARMA is rejected
+    // here (use karma_event); USD/USDC/GIFT are passthrough; unknown
+    // currency codes throw rather than silently writing.
+    // See `posture-a-guard.ts`, `rails.ts`, and `docs/POSTURE_A_COMPLIANCE.md`.
+    assertRailInvariants({
       currency_code: debitAccount.currency_code,
       entry_type: data.entry_type,
       reference_type: data.reference_type ?? null,

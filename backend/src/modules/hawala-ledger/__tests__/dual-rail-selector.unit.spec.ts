@@ -1,4 +1,4 @@
-import { selectSettlementRail } from "../dual-rail-selector"
+import { selectSettlementRail, NonCashRailError } from "../dual-rail-selector"
 
 const healthyHealth = {
   horizon_reachable: true,
@@ -76,5 +76,35 @@ describe("selectSettlementRail", () => {
     })
     expect(result.rail).toBe("stellar_usdc")
     expect(result.reasons[0].check).toBe("force_rail")
+  })
+
+  // Closed-loop rails must never silently route to Stripe-ACH — that
+  // would be a Posture A violation. The selector throws so callers
+  // can't accidentally settle CCR / HRS / KARMA / GIFT through cash.
+  it.each(["CCR", "HRS", "KARMA", "GIFT"])(
+    "throws NonCashRailError for the %s rail",
+    (currency) => {
+      expect(() =>
+        selectSettlementRail({
+          amount: 100,
+          currency,
+          health: healthyHealth,
+        })
+      ).toThrow(NonCashRailError)
+    }
+  )
+
+  it("the thrown NonCashRailError carries the offending rail code", () => {
+    try {
+      selectSettlementRail({
+        amount: 100,
+        currency: "hrs",
+        health: healthyHealth,
+      })
+      throw new Error("should have thrown")
+    } catch (err) {
+      expect(err).toBeInstanceOf(NonCashRailError)
+      expect((err as NonCashRailError).rail).toBe("HRS")
+    }
   })
 })

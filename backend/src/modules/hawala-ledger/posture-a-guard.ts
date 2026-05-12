@@ -17,7 +17,16 @@
  * future CCR-touching public methods. It is **not** a workflow hook
  * because workflow hooks can be bypassed; the service layer is the only
  * line that can reliably refuse to write.
+ *
+ * `assertRailInvariants` is the entry point that dispatches per rail:
+ *   - CCR  → purchase-context check (this file, historical)
+ *   - HRS  → time-bank transfer rules
+ *   - KARMA → accrual-only (no user-to-user transfers)
+ *   - USDC / USD / GIFT → passthrough (cash settlement is governed by
+ *                                       dual-rail-selector + Stripe/Stellar)
  */
+
+import { RAIL_REGISTRY, type RailCode } from "./rails"
 
 /**
  * Currency code for Coalition Credits across the ledger.
@@ -153,4 +162,188 @@ export const assertPurchaseContext = (
       "See docs/POSTURE_A_COMPLIANCE.md.",
     details
   )
+}
+
+/**
+ * Valid reference_types for time-bank (HRS) entries. Hours transfers
+ * are bilateral but must always cite the time-bank activity they
+ * settle — a loan, a return, or a redistribution among members.
+ */
+export const TIMEBANK_REFERENCE_TYPES: ReadonlySet<string> = new Set<string>([
+  "TIMEBANK_LOAN",
+  "TIMEBANK_RETURN",
+  "TIMEBANK_REDISTRIBUTION",
+  "TIMEBANK_OPEN_BALANCE",
+])
+
+/**
+ * Issuer entry types for the time-bank rail. Platform-internal
+ * issuance / extinguishment (e.g. seeding a new member's opening
+ * balance, archiving a withdrawn member's outstanding balance) bypass
+ * the reference-type rule the same way CCR's ISSUE/BURN do.
+ */
+export const HOURS_ISSUER_ENTRY_TYPES: ReadonlySet<string> = new Set<string>([
+  "HOURS_OPEN_BALANCE",
+  "HOURS_ARCHIVE_BALANCE",
+])
+
+/**
+ * Assert an HRS (time-bank) transfer is allowed.
+ *
+ *   - debit and credit accounts must differ (no self-transfer; hours
+ *     are a record of work done for someone else).
+ *   - the entry must carry a recognized `reference_type` from
+ *     `TIMEBANK_REFERENCE_TYPES`, unless the `entry_type` is a
+ *     platform-internal issuer operation.
+ *   - the amount sign is the caller's responsibility; the guard only
+ *     checks shape.
+ *
+ * Throws `ClosedLoopViolationError` in strict mode, logs in warn,
+ * passes in off.
+ */
+export const assertHoursTransferAllowed = (
+  input: TransferGuardInput,
+  mode: GuardMode = resolveGuardMode()
+): void => {
+  if (input.currency_code !== "HRS") return
+
+  if (HOURS_ISSUER_ENTRY_TYPES.has(input.entry_type)) {
+    return
+  }
+
+  const details = {
+    currency_code: input.currency_code,
+    entry_type: input.entry_type,
+    reference_type: input.reference_type ?? null,
+    reference_id: input.reference_id ?? null,
+    debit_account_id: input.debit_account_id,
+    credit_account_id: input.credit_account_id,
+  }
+
+  if (input.debit_account_id === input.credit_account_id) {
+    raiseOrWarn(
+      mode,
+      "Time-bank (HRS) transfer rejected: debit and credit accounts " +
+        "are the same. Hours record work done for someone else; a " +
+        "self-transfer has no time-bank meaning. " +
+        "See docs/POSTURE_A_COMPLIANCE.md § hours rail.",
+      details
+    )
+    return
+  }
+
+  const ref = input.reference_type ?? ""
+  if (!TIMEBANK_REFERENCE_TYPES.has(ref) || !(input.reference_id ?? "")) {
+    raiseOrWarn(
+      mode,
+      "Time-bank (HRS) transfer rejected: must carry a recognized " +
+        "reference_type and reference_id (one of " +
+        [...TIMEBANK_REFERENCE_TYPES].join(", ") +
+        "). See docs/POSTURE_A_COMPLIANCE.md § hours rail.",
+      details
+    )
+  }
+}
+
+/**
+ * Assert a KARMA "transfer" is allowed.
+ *
+ * Karma is non-fungible and not user-to-user transferable: it accrues
+ * from system events tied to a single member. The ledger-entry path
+ * is therefore the wrong primitive for karma; use the `karma_event`
+ * model. This guard rejects every attempt to route a KARMA-coded
+ * ledger entry through the standard transfer path.
+ */
+export const assertKarmaTransferAllowed = (
+  input: TransferGuardInput,
+  mode: GuardMode = resolveGuardMode()
+): void => {
+  if (input.currency_code !== "KARMA") return
+
+  const details = {
+    currency_code: input.currency_code,
+    entry_type: input.entry_type,
+    debit_account_id: input.debit_account_id,
+    credit_account_id: input.credit_account_id,
+  }
+
+  raiseOrWarn(
+    mode,
+    "Karma is non-fungible and not user-to-user transferable. " +
+      "Record karma accruals via the `karma_event` model rather than " +
+      "the double-entry ledger transfer path. " +
+      "See docs/POSTURE_A_COMPLIANCE.md § karma rail.",
+    details
+  )
+}
+
+const raiseOrWarn = (
+  mode: GuardMode,
+  message: string,
+  details: Record<string, unknown>
+): void => {
+  if (mode === "off") return
+  if (mode === "warn") {
+    console.warn(`[hawala-ledger] ${message}`, details)
+    return
+  }
+  throw new ClosedLoopViolationError(message, details)
+}
+
+/**
+ * Top-level per-rail dispatcher. Service code calls this once per
+ * transfer; it routes to the correct rail-specific guard.
+ *
+ * The dispatcher is intentionally exhaustive over `RAIL_REGISTRY` —
+ * adding a rail without giving it a clause here is a compile-time
+ * miss (the `unhandled` line throws a runtime error so unknown rails
+ * never silently succeed).
+ */
+export const assertRailInvariants = (
+  input: TransferGuardInput,
+  mode: GuardMode = resolveGuardMode()
+): void => {
+  const code = input.currency_code as RailCode
+  const def = RAIL_REGISTRY[code]
+  if (!def) {
+    // Unknown rail — not in the registry. Refuse rather than passthrough,
+    // so a typo or a forgotten rail addition surfaces loudly.
+    raiseOrWarn(
+      mode,
+      `Settlement rail "${input.currency_code}" is not registered. ` +
+        `Add it to backend/src/modules/hawala-ledger/rails.ts.`,
+      {
+        currency_code: input.currency_code,
+        debit_account_id: input.debit_account_id,
+        credit_account_id: input.credit_account_id,
+      }
+    )
+    return
+  }
+
+  switch (code) {
+    case "CCR":
+      assertPurchaseContext(input, mode)
+      return
+    case "HRS":
+      assertHoursTransferAllowed(input, mode)
+      return
+    case "KARMA":
+      assertKarmaTransferAllowed(input, mode)
+      return
+    case "USD":
+    case "USDC":
+    case "GIFT":
+      // Cash rails (USD/USDC) are governed by the dual-rail selector
+      // and Stripe/Stellar paths; ledger-side they're passthrough.
+      // GIFT is recorded for audit and never balance-changing.
+      return
+    default: {
+      const unhandled: never = code
+      throw new ClosedLoopViolationError(
+        `Unhandled rail "${unhandled}" in assertRailInvariants — rails.ts and posture-a-guard.ts have drifted.`,
+        { currency_code: input.currency_code }
+      )
+    }
+  }
 }
