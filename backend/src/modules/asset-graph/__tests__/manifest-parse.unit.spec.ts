@@ -21,9 +21,10 @@ describe("project manifest catalog", () => {
         "yard-scrap-nursery",
         "tool-library",
         "repair-cafe",
+        "childcare-coop",
       ])
     )
-    expect(MANIFEST_SLUGS).toHaveLength(3)
+    expect(MANIFEST_SLUGS).toHaveLength(4)
   })
 
   it("every manifest re-parses cleanly through the zod schema (no escape hatches)", () => {

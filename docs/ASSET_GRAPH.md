@@ -14,10 +14,12 @@ this surface."
 The asset graph is **additive**. It plugs into existing modules; it
 does not replace them. See the reuse table at the bottom of this doc.
 
-This document specifies v0: the schema and three reference manifests
-(yard-scrap-nursery, tool-library, repair-cafe). The persistence
-migration and catalog seeder shipped alongside v0; the matching
-engine and sensitivity-tier cryptography are downstream.
+This document specifies v0: the schema and four reference manifests
+(yard-scrap-nursery, tool-library, repair-cafe, childcare-coop). The
+persistence migration, catalog seeder, matching engine, instance
+lifecycle, settlement emission, and cross-module reconciler all
+shipped alongside v0/v0.1; the sensitivity-tier cryptography and
+consensus-governance proposal rounds are downstream.
 
 ## The pieces
 
@@ -26,7 +28,8 @@ engine and sensitivity-tier cryptography are downstream.
                           │   ProjectManifest     │     code-of-truth
                           │ (yard-scrap-nursery,  │     in manifests/
                           │  tool-library,        │
-                          │  repair-cafe)         │
+                          │  repair-cafe,         │
+                          │  childcare-coop)      │
                           └─────────┬─────────────┘
                                     │ selects + composes
                 ┌───────────────────┼────────────────────┐
@@ -217,6 +220,7 @@ backend/src/modules/asset-graph/
     yard-scrap-nursery.ts           # reference manifest 1
     tool-library.ts                 # reference manifest 2
     repair-cafe.ts                  # reference manifest 3
+    childcare.ts                    # reference manifest 4 (cluster-3 stress test)
     index.ts                        # catalog
   seed/asset-kinds.ts               # v0 taxonomy seed (~38 kinds)
   __tests__/
@@ -246,6 +250,7 @@ docs/
     yard-scrap-nursery.md
     tool-library.md
     repair-cafe.md
+    childcare.md
 ```
 
 ## Matching engine (v0.1)
@@ -425,46 +430,48 @@ The three reference manifests test three distinct match shapes:
 
 ## Appendix: Childcare sanity check (cluster-3 stress test)
 
-A v0 childcare co-op manifest exposes what v0 **cannot yet do** and
-therefore what v1 must add. This is the discipline that keeps the
-schema from quietly overfitting to the production verticals.
+This appendix started as a thought experiment to prove the schema
+wouldn't quietly overfit to the production verticals. It now points
+to a real manifest:
+`backend/src/modules/asset-graph/manifests/childcare.ts` and
+`docs/manifests/childcare.md`.
 
-What a childcare manifest needs to declare:
+The cluster-3 fit table — what v0 supports vs. what v1 must add:
 
-| Required asset kind (illustrative) | What v0 supports | What v0 lacks |
+| Required asset kind | What v0/v0.1 supports | What v1 lacks |
 | --- | --- | --- |
-| `space.home.childproofed` | ✓ space taxonomy node | ✓ attribute schema can carry `childproofed: true` |
-| `credential.cpr-certified` | ✓ credential category; ✓ `Attestation.external.vc_payload` parsed via the W3C VC schema (`attestations/vc.ts`) | ✗ cryptographic proof verification (DID resolution, signature checking) is its own workstream |
-| `credential.background-check` | ✓ credential category; ✓ same VC schema covers it | ✗ revocation pull (BitstringStatusList) not yet wired |
-| `time.recurring` (with kids' ages) | ✓ time taxonomy + attribute schema | ✗ no minor's-data sensitivity classification — needs `sensitivity_tier: minor-data` (or a dedicated tier) and crypto enforcement, both deferred |
-| `skill.peer-support` | ✓ skill taxonomy | ✗ no "lived experience" attestation primitive (peer-vouched works in shape but pulls in cluster-3 norms about who can vouch) |
+| `space.home` with `childproofed: true` constraint | ✓ space taxonomy + attribute schema + boolean constraint in matcher | — |
+| `credential.cpr-certified` | ✓ credential category; ✓ `Attestation.external.vc_payload` parsed via the W3C VC schema (`attestations/vc.ts`); ✓ validity-window honored | ✗ cryptographic proof verification (DID resolution, signature checking) is its own workstream |
+| `credential.background-check` | ✓ same VC schema; ✓ scope + cleared attributes | ✗ revocation pull (BitstringStatusList) not yet wired |
+| `time.recurring` (caregiver hours) | ✓ time taxonomy + `hours_per_week_min` constraint | ✗ no minor-data sensitivity classification — the manifest sets `sensitivity_floor: match-only` to record intent, but cryptographic enforcement requires Blackout E2EE |
+| `skill.peer-support` | ✓ skill taxonomy; ✓ optional slot | ✗ no "lived experience" attestation primitive (peer-vouched works in shape but pulls in cluster-3 norms about who can vouch) |
 
-Settlement: hours (the time-bank rail) — already needed by tool
-library; v0.1 lands it.
+Settlement: HRS + KARMA + GIFT, all live in v0.1 (rails registry
+landed `42bef9d`; reconciler routes HRS/KARMA writes `a25b775`).
 
-Governance: a childcare co-op needs `consensus` for new-family
-admission. v0 has the enum value but no proposal/consent-round
-workflow — that lives in Governance v2 (already on the post-composition
-roadmap per `docs/COMPOSITION_LAYER.md`).
+Governance: `consensus` for new-family admission. v0.1 has the enum
+value but no proposal/consent-round workflow — that lives in
+Governance v2.
 
-**Conclusion.** A childcare manifest cannot fully run on v0 because:
+**Conclusion.** The childcare manifest landed as a 4th reference
+vertical because the schema accepts it without changes. It cannot
+yet *run* an actual co-op because of three operational deps:
 
-1. ~~The W3C Verifiable Credential payload slot needs a validation pass.~~
-   **Landed in v0.1** (`attestations/vc.ts` parses VC bodies; the service
-   `createAttestationWithVC` validates at write time). Cryptographic
-   proof verification — DID resolution, signature/data-integrity-proof
-   checking — is still its own workstream.
-2. A `minor-data` sensitivity classification (or `match-only` with
-   crypto) must be enforced, not just stored.
-3. `consensus` governance needs proposal-round support (Governance v2
-   dependency).
-4. Credential revocation pull (BitstringStatusList) for the
-   background-check VC isn't wired — the VC parses but a revoked
-   credential would still be accepted.
+1. ~~W3C Verifiable Credential payload validation~~ ✓ — landed in
+   v0.1 (`attestations/vc.ts`).
+2. **Minor-data sensitivity enforcement.** v0.1 stores the
+   `match-only` floor; v1 must enforce it in lists, queries, and
+   cross-member discovery. Blocking dep for going live.
+3. **`consensus` governance proposal rounds.** Schema records
+   intent; workflow is Governance v2.
+4. **Background-check revocation pull (BitstringStatusList).** The
+   VC's validity window is honored but a mid-window revocation
+   isn't caught.
 
-It can be *written* on v0 as a draft, and the credential plumbing now
-parses payloads structurally; operating it requires v1's crypto +
-revocation + consensus governance. That's the correct discipline: the
-schema generalizes structurally; operational depth lands one vertical
-at a time, surfacing exactly the v1 work needed before the next
-vertical can run.
+The lifecycle the cluster-3 doctrine implies — the substrate shape
+is proven correct by the manifest fitting; operational depth lands
+one vertical at a time — is the v0/v0.1 record. With four reference
+manifests covering grove/commons/workshop playbooks, commerce/
+threshold surfaces, individual/collective/consensus governance,
+five distinct lifecycles, and six settlement rails, the schema has
+done what it was designed to do.

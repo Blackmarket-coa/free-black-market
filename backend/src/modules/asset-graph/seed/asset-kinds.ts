@@ -111,6 +111,23 @@ export const ASSET_KIND_CATALOG: ReadonlyArray<AssetKindDefinition> = [
     default_sensitivity_tier: "public",
     default_lifecycle: "durable-commitment",
   },
+  {
+    slug: "space.home",
+    category: "space",
+    parent_slug: "space",
+    display_name: "Home",
+    attribute_schema: z
+      .object({
+        capacity: z.number().int().positive().optional(),
+        accessible: z.boolean().optional(),
+        childproofed: z.boolean().optional(),
+        smoke_free: z.boolean().optional(),
+      })
+      .strict(),
+    // Member-visible: a home address is the owner's, not public.
+    default_sensitivity_tier: "member-visible",
+    default_lifecycle: "durable-commitment",
+  },
 
   // ── tools ─────────────────────────────────────────────────────────
   {
@@ -291,6 +308,41 @@ export const ASSET_KIND_CATALOG: ReadonlyArray<AssetKindDefinition> = [
     default_sensitivity_tier: "member-visible",
     default_lifecycle: "durable-commitment",
   },
+  {
+    slug: "skill.childcare",
+    category: "skill",
+    parent_slug: "skill",
+    display_name: "Childcare",
+    attribute_schema: z
+      .object({
+        years_experience: z.number().nonnegative().optional(),
+        ages_comfortable_with: z
+          .array(
+            z.enum(["infant", "toddler", "preschool", "school-age", "teen"])
+          )
+          .optional(),
+      })
+      .strict(),
+    default_sensitivity_tier: "member-visible",
+    default_lifecycle: "durable-commitment",
+  },
+  {
+    slug: "skill.peer-support",
+    category: "skill",
+    parent_slug: "skill",
+    display_name: "Peer support",
+    // "Lived experience" support (per the cluster-3 sanity check).
+    // The attribute schema is intentionally minimal in v0; the lived-
+    // experience-attestation primitive that would govern who can vouch
+    // for this skill is a post-v0 concern (HANDOFF item: governance v2).
+    attribute_schema: z
+      .object({
+        domains: z.array(z.string()).optional(),
+      })
+      .strict(),
+    default_sensitivity_tier: "member-visible",
+    default_lifecycle: "durable-commitment",
+  },
 
   // ── time ──────────────────────────────────────────────────────────
   {
@@ -461,6 +513,47 @@ export const ASSET_KIND_CATALOG: ReadonlyArray<AssetKindDefinition> = [
       .object({
         score: z.number().min(0).max(100),
         loans_completed: z.number().int().nonnegative().optional(),
+      })
+      .strict(),
+    default_sensitivity_tier: "match-only",
+    default_lifecycle: "durable-commitment",
+  },
+  {
+    slug: "credential.cpr-certified",
+    category: "credential",
+    parent_slug: "credential",
+    display_name: "CPR certification",
+    // The full W3C VC body lives on the linked Attestation row's
+    // `external.vc_payload` (validated by attestations/vc.ts). The
+    // declaration's attribute_schema captures only the extracted
+    // fields used for matching (the credentialSubject claims).
+    attribute_schema: z
+      .object({
+        levels: z
+          .array(z.enum(["adult", "child", "infant"]))
+          .min(1)
+          .optional(),
+        valid_until: z.string().datetime().optional(),
+      })
+      .strict(),
+    default_sensitivity_tier: "match-only",
+    default_lifecycle: "durable-commitment",
+  },
+  {
+    slug: "credential.background-check",
+    category: "credential",
+    parent_slug: "credential",
+    display_name: "Background check",
+    // Subject's clearance status + scope. VC body lives on Attestation.
+    // Revocation pull (BitstringStatusList) is a v1 follow-up; v0 trusts
+    // the attestation's validity window.
+    attribute_schema: z
+      .object({
+        cleared: z.boolean(),
+        scope: z
+          .array(z.string())
+          .optional(),
+        valid_until: z.string().datetime().optional(),
       })
       .strict(),
     default_sensitivity_tier: "match-only",

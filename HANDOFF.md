@@ -1,7 +1,7 @@
 # Handoff — asset-graph v0
 
 Last touched: 2026-05-13. Branch: `claude/asset-graph-commons-dvAeT`.
-Nine commits beyond `main` after the composition-layer merge:
+Ten commits beyond `main` after the composition-layer merge:
 
 - `4875640` feat(asset-graph): v0 schema + nursery + tool-library reference manifests
 - `8bc7694` feat(asset-graph): repair-cafe reference manifest (v0 third vertical)
@@ -11,53 +11,71 @@ Nine commits beyond `main` after the composition-layer merge:
 - `4cc657a` feat(asset-graph): W3C Verifiable Credential payload validation
 - `420771f` feat(asset-graph): ProjectInstance lifecycle (acceptProposal + state machines)
 - `bebe498` feat(asset-graph): SettlementRecord emission (rail-validating compose + service)
-- (pending) feat(asset-graph): cross-module settlement reconciler (job + module core)
+- `a25b775` feat(asset-graph): cross-module settlement reconciler (job + module core)
+- (pending) feat(asset-graph): childcare-coop reference manifest (cluster-3 lands)
 
 All pushed to `origin/claude/asset-graph-commons-dvAeT`. No PR open.
 
-## What v0 is
+## What's on this branch
 
 Intake/declaration layer for FBM. Members declare assets; project
 manifests compose those declarations onto the existing playbook +
-listing-type + hawala-ledger spine.
+listing-type + hawala-ledger spine. The end-to-end narrative is
+live: members declare → matcher proposes → operator accepts (live
+ProjectInstance) → instance emits SettlementRecords → cross-module
+reconciler writes to hawala-ledger.
 
-v0 is **schema-and-catalog only**. No DB migrations. No matching
-engine. No live UI. The three reference manifests prove the schema
-generalizes:
+Four reference manifests cover the schema:
 
-| Manifest | Playbook | Surface | Governance | Rails | Wildcard | Unique lifecycles |
+| Manifest | Playbook | Surface | Governance | Sens. floor | Rails | Wildcard |
 | --- | --- | --- | --- | --- | --- | --- |
-| `yard-scrap-nursery` | grove | commerce | individual | ccr, usdc, usd, gift | — | (durable-commitment, recurring) |
-| `tool-library` | commons | threshold | collective | hours, karma, ccr, gift | `tool.*` | exhaustible-borrow-return |
-| `repair-cafe` | workshop | threshold | consensus | karma, gift | `skill.repair.*` | perishable, one-time |
+| `yard-scrap-nursery` | grove | commerce | individual | member-visible | ccr, usdc, usd, gift | — |
+| `tool-library` | commons | threshold | collective | member-visible | hours, karma, ccr, gift | `tool.*` |
+| `repair-cafe` | workshop | threshold | consensus | public | karma, gift | `skill.repair.*` |
+| `childcare-coop` | commons | threshold | consensus | match-only | hours, karma, gift | — |
 
-Catalog-wide, the three manifests cover **every value** in the
-`Lifecycle` and `SettlementRail` enums — the strongest available
-structural proof at v0.
+Catalog-wide, the four manifests cover **every value** in the
+`Lifecycle` and `SettlementRail` enums, three of four governance
+models, two of four surfaces, and four of ten playbooks. The
+strongest available structural proof that the schema generalizes.
 
 ## Tests
 
 ```
 cd backend
 TEST_TYPE=unit NODE_OPTIONS=--experimental-vm-modules \
-  npx jest --runInBand --forceExit src/modules/asset-graph/__tests__/
+  npx jest --runInBand --forceExit \
+  src/modules/asset-graph/__tests__/ src/modules/hawala-ledger/__tests__/
 ```
 
-30 passing across `manifest-parse.unit.spec.ts` (14) and
-`orthogonality.unit.spec.ts` (16). Typecheck (`pnpm lint`) clean.
+200 asset-graph + 61 hawala-ledger = 261 passing tests on the branch.
+Typecheck (`npx tsc --noEmit`) clean. Spec files:
+
+  - manifest-parse.unit.spec.ts       — catalog + asset-kind sanity
+  - orthogonality.unit.spec.ts        — pairwise + catalog-coverage
+  - seed.unit.spec.ts                 — seeder idempotency
+  - matcher.unit.spec.ts              — slot-level matching (all 4 manifests)
+  - vc.unit.spec.ts                   — W3C VC parser
+  - instance-lifecycle.unit.spec.ts   — state machines + service orchestration
+  - settlement.unit.spec.ts           — emission compose + per-rail validation
+  - reconciler.unit.spec.ts           — cross-module reconciliation
+  - hawala-ledger rails.unit.spec.ts  — rail registry
+  - hawala-ledger rails-guard.unit.spec.ts — HRS / KARMA guards
 
 ## Where to start next session
 
 Read in this order:
 
-1. `docs/ASSET_GRAPH.md` — full v0 spec, walk-throughs (nursery, tools,
-   repair café), cluster-3 childcare sanity-check appendix.
+1. `docs/ASSET_GRAPH.md` — full v0/v0.1 spec; walk-throughs (nursery,
+   tools, repair café); matcher / instance-lifecycle / settlement
+   / reconciler sections; cluster-3 appendix now points to a real
+   manifest.
 2. `backend/src/modules/asset-graph/manifests/types.ts` — the zod
    schema that is the parser of truth.
 3. `backend/src/modules/asset-graph/__tests__/orthogonality.unit.spec.ts`
-   — the test that encodes "the schema generalizes," now with both
-   pairwise and catalog-wide assertions.
-4. `docs/manifests/{yard-scrap-nursery,tool-library,repair-cafe}.md`
+   — the test that encodes "the schema generalizes," pairwise +
+   catalog-coverage.
+4. `docs/manifests/{yard-scrap-nursery,tool-library,repair-cafe,childcare}.md`
    — per-manifest notes (rails, governance, what each manifest
    exercises that the others don't, open dependencies).
 
@@ -231,6 +249,58 @@ Ordered by what unblocks the most downstream work.
       - Idempotency keys on settlement-record emission so duplicate
         intents don't write two rows (the reconciler handles
         ledger-side idempotency but not emission-side).
+
+12. **Childcare co-op (4th reference manifest)** ✓ — landed in the
+    most recent commit. The cluster-3 stress test that has been a
+    thinking aid in the docs since v0 is now a concrete manifest at
+    `backend/src/modules/asset-graph/manifests/childcare.ts`.
+
+    Schema additions:
+      - 5 new asset-kind seeds: `space.home`, `skill.childcare`,
+        `skill.peer-support`, `credential.cpr-certified`,
+        `credential.background-check`. Total catalog now ~43 nodes.
+      - 1 new ManifestRole: `caregiver` (intentionally not in
+        `OPERATOR_LIKE_ROLES` — caregivers are participants, like
+        fixers and clients; coordinator + host are deployment anchors).
+
+    Schema axes exercised (none required new top-level concepts):
+      - Multi-count slots: caregivers ≥3, background checks ≥3.
+        First manifest to stress min_count > 1.
+      - Boolean attribute constraint: `space.home` with
+        `childproofed: true`. First manifest to use the boolean
+        path of the constraint vocabulary.
+      - `match-only` sensitivity floor. Records intent — crypto
+        enforcement is the open dep below.
+      - VC-typed credential declarations (the v0.1 attestation
+        work's actual operational use case).
+      - Second manifest on the `commons` playbook (tool library was
+        first). Pairwise orthogonality preserved because they
+        differ on governance (collective vs. consensus).
+
+    Orthogonality test loosened: the previous pairwise "every pair
+    exercises at least one lifecycle the other does not" invariant
+    was useful at N=2,3 but became too strict at N=4 — nursery
+    and childcare both use `{durable-commitment, recurring}`
+    legitimately. Dropped in favor of the catalog-coverage
+    assertion (every Lifecycle enum value exercised). The
+    `(playbook, governance, surface)` pairwise differential still
+    rules out duplicate-shape manifests.
+
+    Operational status — draft, not yet runnable. Three v1 deps
+    remain (per the cluster-3 doctrine: each new vertical surfaces
+    exactly the v1 work needed before it can run):
+
+      1. ~~W3C Verifiable Credential payload validation~~ ✓ (v0.1)
+      2. ✗ **Minor-data sensitivity crypto enforcement.** Manifest
+         sets `sensitivity_floor: match-only` but Blackout E2EE
+         is the workstream that enforces it.
+      3. ✗ **Consensus governance proposal rounds.** Schema records
+         intent; workflow is Governance v2.
+      4. ✗ **Background-check revocation pull (BitstringStatusList).**
+
+    8 new matcher tests (multi-count, boolean constraint, the
+    `match-only` floor, every required slot) + 2 new orthogonality
+    blocks. Asset-graph tests: 200 passing (was 192).
 
 ## Decisions worth knowing
 

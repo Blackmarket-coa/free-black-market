@@ -1,7 +1,7 @@
 /**
  * Matcher engine tests.
  *
- * Three manifest match-shapes the v0 engine must handle, exercised
+ * Four manifest match-shapes the v0 engine must handle, exercised
  * with fixture declaration pools shaped like real intake:
  *
  *   - Nursery: concrete-leaf slugs + numeric attribute constraints
@@ -24,6 +24,13 @@
  *     turns on only when every required slot has ≥ min_count
  *     candidates.
  *
+ *   - Childcare co-op: multiple-count slots (≥3 caregivers + ≥3
+ *     background checks), boolean attribute constraint
+ *     (`childproofed: true`), and a credential-typed declaration
+ *     that the matcher treats like any other concrete leaf — VC
+ *     payload validation happens at attestation-write time, not
+ *     in the matcher.
+ *
  * Also covers the constraint vocabulary directly
  * (<key>_min / <key>_max / exact) and the proposalsFromReport
  * builder's behavior when there is and isn't a candidate operator.
@@ -40,6 +47,7 @@ import {
 import { YARD_SCRAP_NURSERY_MANIFEST as NURSERY } from "../manifests/yard-scrap-nursery"
 import { TOOL_LIBRARY_MANIFEST as TOOLS } from "../manifests/tool-library"
 import { REPAIR_CAFE_MANIFEST as REPAIR } from "../manifests/repair-cafe"
+import { CHILDCARE_MANIFEST as CHILDCARE } from "../manifests/childcare"
 
 const decl = (overrides: Partial<MatcherDeclaration> = {}): MatcherDeclaration => ({
   id: overrides.id ?? "decl_x",
@@ -517,6 +525,154 @@ describe("matchManifest — repair café (skill wildcard + perishable event-shif
   })
 })
 
+describe("matchManifest — childcare co-op (multi-count slots + boolean constraint + credentials)", () => {
+  const coordinator = "mem_coord"
+  const host = "mem_host"
+  const caregiverA = "mem_care_a"
+  const caregiverB = "mem_care_b"
+  const caregiverC = "mem_care_c"
+
+  const pool = (): MatcherDeclaration[] => [
+    // Coordinator (deploys + schedules)
+    decl({
+      id: "d_coord",
+      member_id: coordinator,
+      kind_slug: "time.coordinator",
+      attributes: { hours_per_week: 5 },
+      lifecycle: "recurring",
+    }),
+    // Host home — childproofed (the manifest's boolean constraint)
+    decl({
+      id: "d_home",
+      member_id: host,
+      kind_slug: "space.home",
+      attributes: { capacity: 4, childproofed: true, accessible: true },
+      lifecycle: "durable-commitment",
+    }),
+    // Three caregivers — each contributes skill + recurring time + background check
+    ...[
+      [caregiverA, "d_skill_a", "d_time_a", "d_bg_a"],
+      [caregiverB, "d_skill_b", "d_time_b", "d_bg_b"],
+      [caregiverC, "d_skill_c", "d_time_c", "d_bg_c"],
+    ].flatMap(([member, dSkill, dTime, dBg]) => [
+      decl({
+        id: dSkill,
+        member_id: member,
+        kind_slug: "skill.childcare",
+        attributes: {
+          years_experience: 4,
+          ages_comfortable_with: ["toddler", "preschool"],
+        },
+        lifecycle: "durable-commitment",
+      }),
+      decl({
+        id: dTime,
+        member_id: member,
+        kind_slug: "time.recurring",
+        attributes: { hours_per_week: 5 },
+        lifecycle: "recurring",
+      }),
+      decl({
+        id: dBg,
+        member_id: member,
+        kind_slug: "credential.background-check",
+        attributes: { cleared: true, scope: ["childcare"] },
+        sensitivity_tier: "match-only",
+        lifecycle: "durable-commitment",
+      }),
+    ]),
+    // One CPR-certified caregiver
+    decl({
+      id: "d_cpr",
+      member_id: caregiverA,
+      kind_slug: "credential.cpr-certified",
+      attributes: { levels: ["child", "infant"] },
+      sensitivity_tier: "match-only",
+      lifecycle: "durable-commitment",
+    }),
+  ]
+
+  it("satisfies every required slot when 3 caregivers + 1 CPR cert + 3 background checks + host + coordinator are present", () => {
+    const report = matchManifest(CHILDCARE, pool())
+    expect(report.satisfied).toBe(true)
+    for (const sr of report.slot_reports) {
+      expect(sr.satisfied).toBe(true)
+    }
+  })
+
+  it("counts multiple declarations against min_count=3 slots", () => {
+    const report = matchManifest(CHILDCARE, pool())
+    const skillSlot = report.slot_reports.find(
+      (s) => s.slot.kind_slug === "skill.childcare"
+    )!
+    expect(skillSlot.candidates.map((c) => c.declaration_id).sort()).toEqual([
+      "d_skill_a",
+      "d_skill_b",
+      "d_skill_c",
+    ])
+    const bgSlot = report.slot_reports.find(
+      (s) => s.slot.kind_slug === "credential.background-check"
+    )!
+    expect(bgSlot.candidates).toHaveLength(3)
+  })
+
+  it("rejects the host's home when childproofed=false (boolean constraint)", () => {
+    const p = pool()
+    p.find((d) => d.id === "d_home")!.attributes = {
+      capacity: 4,
+      childproofed: false,
+      accessible: true,
+    }
+    const report = matchManifest(CHILDCARE, p)
+    const homeSlot = report.slot_reports.find(
+      (s) => s.slot.kind_slug === "space.home"
+    )!
+    expect(homeSlot.satisfied).toBe(false)
+    expect(report.satisfied).toBe(false)
+  })
+
+  it("becomes unsatisfied when fewer than 3 caregivers contribute background checks", () => {
+    const p = pool().filter((d) => d.id !== "d_bg_c")
+    const report = matchManifest(CHILDCARE, p)
+    const bgSlot = report.slot_reports.find(
+      (s) => s.slot.kind_slug === "credential.background-check"
+    )!
+    expect(bgSlot.candidates).toHaveLength(2)
+    expect(bgSlot.satisfied).toBe(false)
+    expect(report.satisfied).toBe(false)
+  })
+
+  it("becomes unsatisfied when no caregiver carries the CPR credential", () => {
+    const p = pool().filter((d) => d.id !== "d_cpr")
+    const report = matchManifest(CHILDCARE, p)
+    const cprSlot = report.slot_reports.find(
+      (s) => s.slot.kind_slug === "credential.cpr-certified"
+    )!
+    expect(cprSlot.satisfied).toBe(false)
+    expect(report.satisfied).toBe(false)
+  })
+
+  it("treats skill.peer-support as optional — manifest stays satisfied when absent", () => {
+    const report = matchManifest(CHILDCARE, pool())
+    const peerSlot = report.slot_reports.find(
+      (s) => s.slot.kind_slug === "skill.peer-support"
+    )!
+    expect(peerSlot.candidates).toEqual([])
+    expect(peerSlot.satisfied).toBe(true)
+    expect(report.satisfied).toBe(true)
+  })
+
+  it("picks coordinator + host as candidate operators; caregivers are participants", () => {
+    const report = matchManifest(CHILDCARE, pool())
+    const opIds = report.candidate_operators.map((o) => o.member_id).sort()
+    expect(opIds).toContain(coordinator)
+    expect(opIds).toContain(host)
+    expect(opIds).not.toContain(caregiverA)
+    expect(opIds).not.toContain(caregiverB)
+    expect(opIds).not.toContain(caregiverC)
+  })
+})
+
 describe("proposalsFromReport", () => {
   it("returns one proposal per candidate operator", () => {
     const report = matchManifest(NURSERY, [
@@ -586,12 +742,15 @@ describe("operator-like role set", () => {
     expect(OPERATOR_LIKE_ROLES.has("operator-or-shared")).toBe(true)
   })
 
-  it("excludes contributor / lender / borrower / client / fixer / member", () => {
+  it("excludes contributor / lender / borrower / client / fixer / member / caregiver", () => {
     expect(OPERATOR_LIKE_ROLES.has("contributor")).toBe(false)
     expect(OPERATOR_LIKE_ROLES.has("lender")).toBe(false)
     expect(OPERATOR_LIKE_ROLES.has("borrower-side")).toBe(false)
     expect(OPERATOR_LIKE_ROLES.has("client")).toBe(false)
     expect(OPERATOR_LIKE_ROLES.has("fixer")).toBe(false)
     expect(OPERATOR_LIKE_ROLES.has("member")).toBe(false)
+    // Caregivers are participants in a childcare co-op, not deployers.
+    // The coordinator + host roles are the deployment anchors.
+    expect(OPERATOR_LIKE_ROLES.has("caregiver")).toBe(false)
   })
 })

@@ -14,14 +14,20 @@
 import { YARD_SCRAP_NURSERY_MANIFEST } from "./yard-scrap-nursery"
 import { TOOL_LIBRARY_MANIFEST } from "./tool-library"
 import { REPAIR_CAFE_MANIFEST } from "./repair-cafe"
+import { CHILDCARE_MANIFEST } from "./childcare"
 import type { ProjectManifestRecipe } from "./types"
 
-export type ManifestSlug = "yard-scrap-nursery" | "tool-library" | "repair-cafe"
+export type ManifestSlug =
+  | "yard-scrap-nursery"
+  | "tool-library"
+  | "repair-cafe"
+  | "childcare-coop"
 
 export const PROJECT_MANIFESTS: Record<ManifestSlug, ProjectManifestRecipe> = {
   "yard-scrap-nursery": YARD_SCRAP_NURSERY_MANIFEST,
   "tool-library": TOOL_LIBRARY_MANIFEST,
   "repair-cafe": REPAIR_CAFE_MANIFEST,
+  "childcare-coop": CHILDCARE_MANIFEST,
 }
 
 export const MANIFEST_SLUGS: ManifestSlug[] = Object.keys(
