@@ -55,6 +55,7 @@ import {
 import { TOOL_LIBRARY_MANIFEST as TOOLS } from "../manifests/tool-library"
 import { REPAIR_CAFE_MANIFEST as REPAIR } from "../manifests/repair-cafe"
 import { CHILDCARE_MANIFEST as CHILDCARE } from "../manifests/childcare"
+import { CREATOR_BOUNTY_MANIFEST as BOUNTY } from "../manifests/creator-bounty"
 import { PROJECT_MANIFESTS, MANIFEST_SLUGS } from "../manifests"
 import type { ProjectManifestRecipe } from "../manifests/types"
 
@@ -209,19 +210,22 @@ describe("v0 manifest orthogonality — catalog coverage", () => {
     for (const r of expected) expect(seen.has(r)).toBe(true)
   })
 
-  it("the catalog covers at least three distinct playbooks", () => {
+  it("the catalog covers at least four distinct playbooks", () => {
     const playbooks = new Set(allManifests().map((m) => m.playbook_slug))
-    expect(playbooks.size).toBeGreaterThanOrEqual(3)
+    expect(playbooks.size).toBeGreaterThanOrEqual(4)
   })
 
-  it("the catalog covers at least three distinct governance models", () => {
-    const govs = new Set(allManifests().map((m) => m.governance_model))
-    expect(govs.size).toBeGreaterThanOrEqual(3)
+  it("the catalog covers every value in the GovernanceModel enum", () => {
+    const govs = new Set<string>(
+      allManifests().map((m) => m.governance_model as string)
+    )
+    const expected = ["individual", "collective", "consensus", "vote-weighted"]
+    for (const g of expected) expect(govs.has(g)).toBe(true)
   })
 
-  it("the catalog covers at least two distinct surfaces", () => {
+  it("the catalog covers at least three distinct surfaces", () => {
     const surfaces = new Set(allManifests().map((m) => m.surface))
-    expect(surfaces.size).toBeGreaterThanOrEqual(2)
+    expect(surfaces.size).toBeGreaterThanOrEqual(3)
   })
 
   it("at least two manifests use the trailing-'.*' wildcard on distinct category roots", () => {
@@ -308,5 +312,38 @@ describe("v0 manifest orthogonality — per-manifest invariants", () => {
     // differ on governance (collective vs. consensus) and on the
     // (playbook, governance, surface) tuple as a whole.
     expect(TOOLS.governance_model).not.toBe(CHILDCARE.governance_model)
+  })
+
+  it("creator-bounty uses atelier + refrain + vote-weighted + skill.creative.* wildcard + capital.* + public floor", () => {
+    expect(BOUNTY.playbook_slug).toBe("atelier")
+    expect(BOUNTY.surface).toBe("refrain")
+    expect(BOUNTY.governance_model).toBe("vote-weighted")
+    expect(BOUNTY.sensitivity_floor).toBe("public")
+
+    const slugs = (BOUNTY.required_asset_kinds as Req[]).map((r) => r.kind_slug)
+    // First manifest to declare a `capital.*` kind — the AssetCategory
+    // enum value existed but no concrete kind seeded until v0.1.
+    expect(slugs).toContain("capital.bounty-contribution")
+    // Third wildcard root (after tool.* and skill.repair.*).
+    expect(slugs).toContain("skill.creative.*")
+    // The creator's commitment is a one-time deliverable.
+    const workSlot = (BOUNTY.required_asset_kinds as Req[]).find(
+      (r) => r.kind_slug === "output-capacity.creative-work"
+    )!
+    expect(workSlot.lifecycle).toBe("one-time")
+  })
+
+  it("the catalog reaches three wildcard roots (tool, skill.repair, skill.creative)", () => {
+    const roots = new Set<string>()
+    for (const m of allManifests()) {
+      for (const r of m.required_asset_kinds as Req[]) {
+        if (r.kind_slug.endsWith(".*")) {
+          roots.add(r.kind_slug.slice(0, -2))
+        }
+      }
+    }
+    expect(roots).toEqual(
+      new Set(["tool", "skill.repair", "skill.creative"])
+    )
   })
 })

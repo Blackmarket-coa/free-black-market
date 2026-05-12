@@ -343,6 +343,62 @@ export const ASSET_KIND_CATALOG: ReadonlyArray<AssetKindDefinition> = [
     default_sensitivity_tier: "member-visible",
     default_lifecycle: "durable-commitment",
   },
+  {
+    slug: "skill.creative",
+    category: "skill",
+    parent_slug: "skill",
+    display_name: "Creative skill",
+    attribute_schema: z
+      .object({
+        years_experience: z.number().nonnegative().optional(),
+        portfolio_url: z.string().url().optional(),
+      })
+      .strict(),
+    default_sensitivity_tier: "public",
+    default_lifecycle: "durable-commitment",
+  },
+  {
+    slug: "skill.creative.visual",
+    category: "skill",
+    parent_slug: "skill.creative",
+    display_name: "Visual art / illustration",
+    attribute_schema: z
+      .object({
+        media: z.array(z.string()).optional(),
+        portfolio_url: z.string().url().optional(),
+      })
+      .strict(),
+    default_sensitivity_tier: "public",
+    default_lifecycle: "durable-commitment",
+  },
+  {
+    slug: "skill.creative.writing",
+    category: "skill",
+    parent_slug: "skill.creative",
+    display_name: "Writing",
+    attribute_schema: z
+      .object({
+        forms: z.array(z.string()).optional(),
+        portfolio_url: z.string().url().optional(),
+      })
+      .strict(),
+    default_sensitivity_tier: "public",
+    default_lifecycle: "durable-commitment",
+  },
+  {
+    slug: "skill.creative.music",
+    category: "skill",
+    parent_slug: "skill.creative",
+    display_name: "Music",
+    attribute_schema: z
+      .object({
+        instruments: z.array(z.string()).optional(),
+        portfolio_url: z.string().url().optional(),
+      })
+      .strict(),
+    default_sensitivity_tier: "public",
+    default_lifecycle: "durable-commitment",
+  },
 
   // ── time ──────────────────────────────────────────────────────────
   {
@@ -461,6 +517,58 @@ export const ASSET_KIND_CATALOG: ReadonlyArray<AssetKindDefinition> = [
     default_sensitivity_tier: "member-visible",
     default_lifecycle: "recurring",
   },
+  {
+    slug: "output-capacity.creative-work",
+    category: "output-capacity",
+    parent_slug: "output-capacity",
+    display_name: "Creative work commitment",
+    // A creator declares one commitment per bounty cycle: "I will
+    // produce this thing by this date." Single-shot, not recurring.
+    attribute_schema: z
+      .object({
+        description: z.string().min(1),
+        delivery_target_date: z.string().datetime().optional(),
+        format: z.string().optional(),
+      })
+      .strict(),
+    default_sensitivity_tier: "public",
+    default_lifecycle: "one-time",
+  },
+
+  // ── capital ───────────────────────────────────────────────────────
+  // The `capital` AssetCategory enum value existed since v0 but had
+  // no concrete kinds until the creator-bounty manifest landed.
+  // Pledged-money declarations are the first capital use case.
+  {
+    slug: "capital",
+    category: "capital",
+    parent_slug: null,
+    display_name: "Capital",
+    attribute_schema: EmptyAttributes,
+    default_sensitivity_tier: "member-visible",
+    default_lifecycle: "one-time",
+  },
+  {
+    slug: "capital.bounty-contribution",
+    category: "capital",
+    parent_slug: "capital",
+    display_name: "Bounty contribution pledge",
+    // A supporter's one-time pledge to a creator-bounty pool. The
+    // amount denominates the supporter's vote weight when the
+    // manifest's `governance_model: vote-weighted` resolves which
+    // work the creator funds next.
+    attribute_schema: z
+      .object({
+        amount_minor: z.number().int().positive(),
+        currency_code: z.enum(["USDC", "USD"]),
+        // Optional: a supporter can earmark their pledge for a
+        // specific work-id when the creator has multiple in flight.
+        earmarked_for: z.string().optional(),
+      })
+      .strict(),
+    default_sensitivity_tier: "member-visible",
+    default_lifecycle: "one-time",
+  },
 
   // ── artifacts (consumer-intake) ──────────────────────────────────
   {
@@ -557,6 +665,26 @@ export const ASSET_KIND_CATALOG: ReadonlyArray<AssetKindDefinition> = [
       })
       .strict(),
     default_sensitivity_tier: "match-only",
+    default_lifecycle: "durable-commitment",
+  },
+  {
+    slug: "credential.creator-verification",
+    category: "credential",
+    parent_slug: "credential",
+    display_name: "Creator identity verification",
+    // Issuer-attested identity for a creator. Optional on the
+    // creator-bounty manifest — supporters may choose to fund only
+    // verified creators, but anonymous bounty pools are also valid.
+    // The full VC body (issuer, valid_until, etc.) lives on the
+    // Attestation row.
+    attribute_schema: z
+      .object({
+        verified: z.boolean(),
+        legal_name_known: z.boolean().optional(),
+        valid_until: z.string().datetime().optional(),
+      })
+      .strict(),
+    default_sensitivity_tier: "member-visible",
     default_lifecycle: "durable-commitment",
   },
 ] as const

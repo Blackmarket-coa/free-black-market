@@ -48,6 +48,7 @@ import { YARD_SCRAP_NURSERY_MANIFEST as NURSERY } from "../manifests/yard-scrap-
 import { TOOL_LIBRARY_MANIFEST as TOOLS } from "../manifests/tool-library"
 import { REPAIR_CAFE_MANIFEST as REPAIR } from "../manifests/repair-cafe"
 import { CHILDCARE_MANIFEST as CHILDCARE } from "../manifests/childcare"
+import { CREATOR_BOUNTY_MANIFEST as BOUNTY } from "../manifests/creator-bounty"
 
 const decl = (overrides: Partial<MatcherDeclaration> = {}): MatcherDeclaration => ({
   id: overrides.id ?? "decl_x",
@@ -670,6 +671,119 @@ describe("matchManifest — childcare co-op (multi-count slots + boolean constra
     expect(opIds).not.toContain(caregiverA)
     expect(opIds).not.toContain(caregiverB)
     expect(opIds).not.toContain(caregiverC)
+  })
+})
+
+describe("matchManifest — creator bounty (vote-weighted + capital + one-time creative work)", () => {
+  const creator = "mem_creator"
+  const curator = "mem_curator"
+  const supporterA = "mem_sup_a"
+  const supporterB = "mem_sup_b"
+  const supporterC = "mem_sup_c"
+
+  const pool = (): MatcherDeclaration[] => [
+    decl({
+      id: "d_skill",
+      member_id: creator,
+      kind_slug: "skill.creative.writing",
+      attributes: { portfolio_url: "https://example.com/portfolio" },
+      lifecycle: "durable-commitment",
+    }),
+    decl({
+      id: "d_work",
+      member_id: creator,
+      kind_slug: "output-capacity.creative-work",
+      attributes: {
+        description: "A six-story chapbook",
+        format: "digital-pdf",
+      },
+      lifecycle: "one-time",
+    }),
+    decl({
+      id: "d_pledge_a",
+      member_id: supporterA,
+      kind_slug: "capital.bounty-contribution",
+      attributes: { amount_minor: 5_000, currency_code: "USDC" },
+      lifecycle: "one-time",
+    }),
+    decl({
+      id: "d_pledge_b",
+      member_id: supporterB,
+      kind_slug: "capital.bounty-contribution",
+      attributes: { amount_minor: 2_500, currency_code: "USDC" },
+      lifecycle: "one-time",
+    }),
+    decl({
+      id: "d_pledge_c",
+      member_id: supporterC,
+      kind_slug: "capital.bounty-contribution",
+      attributes: { amount_minor: 1_000, currency_code: "USDC" },
+      lifecycle: "one-time",
+    }),
+    decl({
+      id: "d_curator",
+      member_id: curator,
+      kind_slug: "time.coordinator",
+      attributes: { hours_per_week: 3 },
+      lifecycle: "recurring",
+    }),
+  ]
+
+  it("satisfies every required slot with creator + 3 pledges + curator + work commitment", () => {
+    const report = matchManifest(BOUNTY, pool())
+    expect(report.satisfied).toBe(true)
+    for (const sr of report.slot_reports) {
+      expect(sr.satisfied).toBe(true)
+    }
+  })
+
+  it("matches the skill.creative.* wildcard against the writing leaf (third distinct wildcard root)", () => {
+    const report = matchManifest(BOUNTY, pool())
+    const skillSlot = report.slot_reports.find(
+      (s) => s.slot.kind_slug === "skill.creative.*"
+    )!
+    expect(skillSlot.candidates.map((c) => c.declaration_id)).toEqual(["d_skill"])
+  })
+
+  it("becomes unsatisfied when fewer than three supporters pledge (min_count: 3)", () => {
+    const p = pool().filter((d) => d.id !== "d_pledge_c")
+    const report = matchManifest(BOUNTY, p)
+    const pledgeSlot = report.slot_reports.find(
+      (s) => s.slot.kind_slug === "capital.bounty-contribution"
+    )!
+    expect(pledgeSlot.candidates).toHaveLength(2)
+    expect(pledgeSlot.satisfied).toBe(false)
+    expect(report.satisfied).toBe(false)
+  })
+
+  it("the creator-verification credential is optional — manifest satisfied without it", () => {
+    const report = matchManifest(BOUNTY, pool())
+    const credSlot = report.slot_reports.find(
+      (s) => s.slot.kind_slug === "credential.creator-verification"
+    )!
+    expect(credSlot.candidates).toEqual([])
+    expect(credSlot.satisfied).toBe(true)
+    expect(report.satisfied).toBe(true)
+  })
+
+  it("picks creator + curator as candidate operators; supporters are participants", () => {
+    const report = matchManifest(BOUNTY, pool())
+    const opIds = report.candidate_operators.map((o) => o.member_id).sort()
+    expect(opIds).toContain(creator) // role: operator
+    expect(opIds).toContain(curator) // role: coordinator
+    expect(opIds).not.toContain(supporterA) // role: contributor
+    expect(opIds).not.toContain(supporterB)
+    expect(opIds).not.toContain(supporterC)
+  })
+
+  it("enforces the recurring-lifecycle filter on time.coordinator", () => {
+    const p = pool()
+    p.find((d) => d.id === "d_curator")!.lifecycle = "one-time" // wrong lifecycle
+    const report = matchManifest(BOUNTY, p)
+    const curatorSlot = report.slot_reports.find(
+      (s) => s.slot.kind_slug === "time.coordinator"
+    )!
+    expect(curatorSlot.satisfied).toBe(false)
   })
 })
 

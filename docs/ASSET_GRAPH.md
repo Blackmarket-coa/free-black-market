@@ -14,12 +14,13 @@ this surface."
 The asset graph is **additive**. It plugs into existing modules; it
 does not replace them. See the reuse table at the bottom of this doc.
 
-This document specifies v0: the schema and four reference manifests
-(yard-scrap-nursery, tool-library, repair-cafe, childcare-coop). The
-persistence migration, catalog seeder, matching engine, instance
-lifecycle, settlement emission, and cross-module reconciler all
-shipped alongside v0/v0.1; the sensitivity-tier cryptography and
-consensus-governance proposal rounds are downstream.
+This document specifies v0: the schema and five reference manifests
+(yard-scrap-nursery, tool-library, repair-cafe, childcare-coop,
+creator-bounty-pool). The persistence migration, catalog seeder,
+matching engine, instance lifecycle, settlement emission, cross-
+module reconciler, and admin HTTP API all shipped alongside v0/v0.1;
+the sensitivity-tier cryptography and consensus-governance proposal
+rounds are downstream.
 
 ## The pieces
 
@@ -29,7 +30,8 @@ consensus-governance proposal rounds are downstream.
                           │ (yard-scrap-nursery,  │     in manifests/
                           │  tool-library,        │
                           │  repair-cafe,         │
-                          │  childcare-coop)      │
+                          │  childcare-coop,      │
+                          │  creator-bounty-pool) │
                           └─────────┬─────────────┘
                                     │ selects + composes
                 ┌───────────────────┼────────────────────┐
@@ -221,6 +223,7 @@ backend/src/modules/asset-graph/
     tool-library.ts                 # reference manifest 2
     repair-cafe.ts                  # reference manifest 3
     childcare.ts                    # reference manifest 4 (cluster-3 stress test)
+    creator-bounty.ts               # reference manifest 5 (vote-weighted vertical)
     index.ts                        # catalog
   seed/asset-kinds.ts               # v0 taxonomy seed (~38 kinds)
   __tests__/
@@ -265,6 +268,7 @@ docs/
     tool-library.md
     repair-cafe.md
     childcare.md
+    creator-bounty.md
 ```
 
 ## Matching engine (v0.1)

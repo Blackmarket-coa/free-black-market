@@ -1,7 +1,7 @@
 # Handoff — asset-graph v0
 
 Last touched: 2026-05-13. Branch: `claude/asset-graph-commons-dvAeT`.
-Thirteen commits beyond `main` after the composition-layer merge:
+Fourteen commits beyond `main` after the composition-layer merge:
 
 - `4875640` feat(asset-graph): v0 schema + nursery + tool-library reference manifests
 - `8bc7694` feat(asset-graph): repair-cafe reference manifest (v0 third vertical)
@@ -15,7 +15,8 @@ Thirteen commits beyond `main` after the composition-layer merge:
 - `77b928b` feat(asset-graph): childcare-coop reference manifest (cluster-3 lands)
 - `f8f257f` refactor(hawala-ledger): defense-in-depth — createTransfer uses assertRailInvariants
 - `c7e2c5a` feat(asset-graph): emission idempotency keys on SettlementRecord
-- (pending) feat(asset-graph): admin HTTP API surface (12 endpoints)
+- `a4142ca` feat(asset-graph): admin HTTP API surface (12 endpoints)
+- (pending) feat(asset-graph): creator-bounty-pool reference manifest (vote-weighted vertical; 5th manifest)
 
 All pushed to `origin/claude/asset-graph-commons-dvAeT`. No PR open.
 
@@ -28,7 +29,7 @@ live: members declare → matcher proposes → operator accepts (live
 ProjectInstance) → instance emits SettlementRecords → cross-module
 reconciler writes to hawala-ledger.
 
-Four reference manifests cover the schema:
+Five reference manifests cover the schema:
 
 | Manifest | Playbook | Surface | Governance | Sens. floor | Rails | Wildcard |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -36,11 +37,14 @@ Four reference manifests cover the schema:
 | `tool-library` | commons | threshold | collective | member-visible | hours, karma, ccr, gift | `tool.*` |
 | `repair-cafe` | workshop | threshold | consensus | public | karma, gift | `skill.repair.*` |
 | `childcare-coop` | commons | threshold | consensus | match-only | hours, karma, gift | — |
+| `creator-bounty-pool` | atelier | refrain | vote-weighted | public | usdc, karma, gift | `skill.creative.*` |
 
-Catalog-wide, the four manifests cover **every value** in the
-`Lifecycle` and `SettlementRail` enums, three of four governance
-models, two of four surfaces, and four of ten playbooks. The
-strongest available structural proof that the schema generalizes.
+Catalog-wide, the five manifests cover **every value** in the
+`Lifecycle`, `SettlementRail`, and `GovernanceModel` enums, three
+of four surfaces (`blackstar` still unused), and four of ten
+playbooks. The substrate fits production verticals (commerce),
+mutual-aid (threshold), and creator-bounty (refrain) without
+warping.
 
 ## Tests
 
@@ -384,6 +388,62 @@ Ordered by what unblocks the most downstream work.
         admin actions).
       - Vendor-panel UI for these routes (frontend work; the API
         unblocks it but the UI is its own commit stream).
+
+15. **Creator-bounty-pool (5th reference manifest)** ✓ — landed in
+    the most recent commit. The vote-weighted vertical that closes
+    out the GovernanceModel enum and exercises the previously-
+    unused `capital` asset category + `refrain` surface +
+    `atelier` playbook.
+
+    Schema additions:
+      - 8 new asset-kind seeds: `skill.creative` root + visual /
+        writing / music leaves; `output-capacity.creative-work`
+        (lifecycle: one-time); `capital` root +
+        `capital.bounty-contribution` (first concrete capital
+        kind); `credential.creator-verification` (VC-typed,
+        optional). Catalog now ~51 nodes.
+
+    Schema axes exercised (no schema changes required):
+      - `vote-weighted` governance — last unused enum value.
+        Supporters' `amount_minor` on their pledge weights their
+        vote on which queued work the creator funds next. Tally
+        workflow lives in Governance v2; v0.1 captures the data
+        shape.
+      - `refrain` surface — third distinct surface in the catalog
+        (commerce, threshold, refrain). `blackstar` remains the
+        only unused surface.
+      - `atelier` playbook — fourth distinct playbook (after grove,
+        commons, workshop).
+      - `capital` asset category — the enum value existed since v0
+        but had no concrete kind seeded; bounty-contribution is the
+        first.
+      - `skill.creative.*` wildcard — third distinct wildcard
+        category root (after tool.* and skill.repair.*). The
+        orthogonality test now asserts three wildcard roots as a
+        structural fact.
+
+    Catalog-wide structural proof, recorded in orthogonality tests:
+      - Every value in Lifecycle enum exercised (was the case at
+        N=4 already)
+      - Every value in SettlementRail enum exercised (was the case
+        at N=4 already)
+      - Every value in GovernanceModel enum exercised (NEW — was
+        3/4 at N=4)
+      - ≥4 distinct playbooks (NEW floor; was ≥3)
+      - ≥3 distinct surfaces (NEW floor; was ≥2)
+      - 3 wildcard roots (asserted as a set equality, not just a
+        floor)
+
+    Tests: 8 new (6 matcher fixture + 2 orthogonality blocks). 215
+    asset-graph unit tests passing (was 207). Typecheck clean.
+
+    Open follow-ups:
+      - Vote-tally workflow (Governance v2 dependency, same as
+        consensus rounds for childcare).
+      - Per-pledge attribution: each supporter's karma_event should
+        carry their pledge id as `source_id` so accruals are
+        traceable.
+      - Refund logic on undelivered work (workflow concern).
 
 ## Decisions worth knowing
 
