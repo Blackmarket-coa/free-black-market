@@ -207,7 +207,8 @@ Hand-traced end-to-end. Each step names the schema field that carries it.
 ```
 backend/src/modules/asset-graph/
   index.ts                          # module export
-  service.ts                        # catalog accessors + matcher
+  service.ts                        # catalog accessors + matcher entry points
+  matcher.ts                        # pure matching engine
   models/                           # 7 model files (DB schema)
   migrations/
     Migration20260512CreateAssetGraph.ts  # all 7 tables + indexes
@@ -222,6 +223,7 @@ backend/src/modules/asset-graph/
     manifest-parse.unit.spec.ts
     orthogonality.unit.spec.ts
     seed.unit.spec.ts
+    matcher.unit.spec.ts
 
 backend/src/scripts/
   seed-asset-graph.ts               # upserts asset_kind + project_manifest
@@ -234,13 +236,47 @@ docs/
     repair-cafe.md
 ```
 
+## Matching engine (v0.1)
+
+`matcher.ts` is a pure-function engine that walks a manifest's required
+asset kinds against a pool of `AssetDeclaration` rows and reports
+which declarations satisfy each slot. The decomposition mirrors the
+schema axes so each is testable in isolation:
+
+| Function | Job |
+| --- | --- |
+| `evaluateConstraints(constraints, attributes)` | `{ acreage_min: 0.25 }` → `attributes.acreage >= 0.25`. Vocabulary: `_min`, `_max`, or exact-match. |
+| `matchSlot(slot, pool)` | One slot's candidate declarations: kind-slug wildcard + lifecycle filter + constraints + revoked check. |
+| `matchManifest(manifest, pool)` | Full report — per-slot reports plus a list of candidate operators (members whose declarations fill an operator-like role). |
+| `proposalsFromReport(report)` | One `MatchProposal` payload per candidate operator. Score is 0 (incomplete) or 1 (complete). |
+
+Service surface:
+
+  - `runMatchManifest(slug, pool)` — in-memory dry-run; no DB I/O.
+  - `proposeMatches({ manifest_slug, persist? })` — DB-backed match
+    against live declarations; `persist` defaults to false so callers
+    can preview proposals before committing them to `match_proposal`.
+
+The three reference manifests test three distinct match shapes:
+
+  - **Nursery**: concrete-leaf slugs + numeric attribute constraints
+    (`acreage_min`, `hours_per_week_min`). Cross-member assembly —
+    operator's land + N household yard-scrap contributors.
+  - **Tool library**: hierarchical wildcard (`tool.*`) + lifecycle
+    filter (`exhaustible-borrow-return`). Librarian as coordinator-
+    role candidate operator.
+  - **Repair café**: skill wildcard on a different category root
+    (`skill.repair.*`) + perishable event-shift lifecycle + the
+    `client` role for consumer intake (excluded from operator
+    candidacy). The event-loop scheduling primitive (fixer
+    availability vs. event date vs. venue recurrence) is not part
+    of the v0.1 engine — slot-level matching works, but proposing
+    the *right* date is deferred.
+
 ## Out of scope for v0
 
-- Matching engine implementation.
 - Sensitivity-tier cryptography (room-scoped + match-only enforcement).
 - Operator panel UI surfaces.
-- Time-banking ledger fork-vs-extend decision (recommendation:
-  extend `hawala-ledger`; decision deferred to its own plan).
 - FBM/Commons boundary pricing rules.
 - Refactoring existing modules into the new spine.
 - Membership-requirement definition.
@@ -248,6 +284,11 @@ docs/
   seeder stores a pointer-to-code marker; the DB column is reserved
   for a future zod→JSON-schema serializer if a UI ever needs to
   render attribute forms from the DB instead of from code.
+- Matching-engine extensions: scoring beyond 0/1 completeness,
+  event-loop scheduling (fixer availability vs. event date vs. venue
+  recurrence — the v0.1 engine matches at the slot level only),
+  sensitivity-tier redaction of `MatchProposal.sensitivity_redacted_view`,
+  and geography filtering of the declaration pool.
 
 ## Open dependencies (verify during v0.1)
 

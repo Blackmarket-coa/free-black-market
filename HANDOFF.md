@@ -1,12 +1,13 @@
 # Handoff — asset-graph v0
 
 Last touched: 2026-05-13. Branch: `claude/asset-graph-commons-dvAeT`.
-Four commits beyond `main` after the composition-layer merge:
+Five commits beyond `main` after the composition-layer merge:
 
 - `4875640` feat(asset-graph): v0 schema + nursery + tool-library reference manifests
 - `8bc7694` feat(asset-graph): repair-cafe reference manifest (v0 third vertical)
 - `9c32064` feat(asset-graph): persistence migration + catalog seeder
-- (pending) feat(hawala-ledger): rails registry + HRS + KARMA + karma_event model
+- `42bef9d` feat(hawala-ledger): rails registry + HRS + KARMA + karma_event model
+- (pending) feat(asset-graph): matching engine — proposal generator
 
 All pushed to `origin/claude/asset-graph-commons-dvAeT`. No PR open.
 
@@ -88,19 +89,29 @@ Ordered by what unblocks the most downstream work.
    `reason`, `source_module`, `source_id`, `occurred_at`) rather
    than a double-entry ledger account.
 
-4. **Matching engine**. v0 has `service.kindSlugMatches` (the
-   wildcard matcher) but no proposal generator. The matcher walks
-   manifest required-kinds against declarations and emits
-   `MatchProposal` rows. The three manifests test three different
-   match shapes:
-     - nursery: concrete-leaf, attribute-constrained (acreage_min,
-       hours_per_week_min)
-     - tool library: hierarchical-wildcard, lifecycle-filtered
-     - repair café: skill-vs-artifact-category routing,
-       perishable-time scheduling against event date + venue series
-   The third shape (event scheduling) is the one the playbook +
-   listing-type spine doesn't fully cover yet — needs an event-loop
-   primitive.
+4. ~~**Matching engine**~~ **Landed** in the most recent commit.
+   New `backend/src/modules/asset-graph/matcher.ts` is a pure-function
+   engine: `evaluateConstraints` (the `<key>_min` / `<key>_max` /
+   exact attribute vocabulary), `matchSlot` (one slot against the
+   declaration pool — kind_slug wildcard + lifecycle + constraints +
+   revoked filter), `matchManifest` (assembles per-slot reports +
+   identifies candidate operators), and `proposalsFromReport` (turns
+   a report into `MatchProposal` payloads — one per candidate
+   operator). Service surface gains `runMatchManifest` (in-memory
+   dry-run) and `proposeMatches({ persist? })` (DB-backed; persist
+   defaults to false so callers can preview before committing).
+   34 new tests cover all three manifest match-shapes (nursery
+   concrete + constraints + cross-member assembly; tool-library
+   wildcard + lifecycle; repair-café skill wildcard + perishable
+   shift + client/customer not-an-operator) plus the constraint
+   vocabulary, revoked-declaration skipping, optional-slot semantics,
+   and proposal scoring (0 for incomplete, 1 for complete; richer
+   scoring is post-v0.1).
+
+   Still out of scope: event-loop scheduling (repair-café's fixer
+   availability vs. event date vs. venue recurrence), sensitivity-
+   tier redaction in `MatchProposal.sensitivity_redacted_view`
+   (deferred to the Blackout E2EE work), and geography filtering.
 
 5. **Sensitivity-tier cryptography**. v0 stores `sensitivity_tier`
    on declarations and `sensitivity_floor` on manifests. Crypto

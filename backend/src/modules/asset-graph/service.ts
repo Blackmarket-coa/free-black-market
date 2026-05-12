@@ -21,19 +21,30 @@ import {
   matchesKindSlug,
   type AssetKindDefinition,
 } from "./seed/asset-kinds"
+import {
+  matchManifest,
+  proposalsFromReport,
+  type ManifestMatchReport,
+  type MatcherDeclaration,
+  type MatchProposalPayload,
+} from "./matcher"
 
 /**
  * AssetGraphService
  *
- * Thin DI surface for v0: catalog readers, taxonomy lookups, and the
- * wildcard slug matcher. Persistence-backed methods (create
- * declarations, propose matches, emit settlement records) land in
- * v0.1 alongside the matching engine.
+ * Catalog readers, taxonomy lookups, the wildcard slug matcher, and
+ * the manifest-matching engine. Persistence-backed methods write
+ * through the auto-generated MedusaService accessors.
  *
  * Catalog reads (`getManifest`, `getAssetKind`) intentionally bypass
  * the DB — same pattern as `playbook.service.getRecipe` — because the
  * code-side catalog is the source of truth and is always available
  * regardless of seed state.
+ *
+ * The matcher entry points (`runMatchManifest`, `proposeMatches`) are
+ * thin wrappers around the pure functions in `./matcher`. They exist
+ * on the service so they can be DI-resolved, but the algorithm itself
+ * has no service dependency and is unit-testable in isolation.
  */
 class AssetGraphService extends MedusaService({
   AssetKind,
@@ -77,6 +88,55 @@ class AssetGraphService extends MedusaService({
    */
   kindSlugMatches(required: string, declared: string): boolean {
     return matchesKindSlug(required, declared)
+  }
+
+  // ── matcher ─────────────────────────────────────────────────────────
+
+  /**
+   * Run the pure matcher against an explicit declaration pool. Useful
+   * for unit tests, dry-runs, and the upcoming UI preview path. Does
+   * not read from or write to the DB.
+   */
+  runMatchManifest(
+    slug: ManifestSlug,
+    pool: ReadonlyArray<MatcherDeclaration>
+  ): ManifestMatchReport {
+    return matchManifest(getManifest(slug), pool)
+  }
+
+  /**
+   * Generate match proposals for a manifest from the live DB pool of
+   * declarations. When `persist` is true, writes the proposals to the
+   * `match_proposal` table and returns the persisted rows; otherwise
+   * returns the in-memory payloads.
+   *
+   * Default behavior is non-persistent so callers can preview the
+   * proposal set before committing — preserves Posture A's discipline
+   * of "no balance-affecting write without explicit opt-in."
+   */
+  async proposeMatches(args: {
+    manifest_slug: ManifestSlug
+    persist?: boolean
+  }): Promise<{
+    report: ManifestMatchReport
+    proposals: MatchProposalPayload[]
+    persisted?: any[]
+  }> {
+    const manifest = getManifest(args.manifest_slug)
+    const declarations = (await this.listAssetDeclarations(
+      { revoked_at: null } as any,
+      { take: null } as any
+    )) as MatcherDeclaration[]
+
+    const report = matchManifest(manifest, declarations)
+    const proposals = proposalsFromReport(report)
+
+    if (!args.persist) {
+      return { report, proposals }
+    }
+
+    const persisted = await this.createMatchProposals(proposals as any[])
+    return { report, proposals, persisted }
   }
 }
 

@@ -10,3 +10,4 @@ export default Module(ASSET_GRAPH_MODULE, {
 export * from "./models"
 export * from "./manifests"
 export * from "./seed/asset-kinds"
+export * from "./matcher"
