@@ -21,6 +21,7 @@ import {
   CreditLineTransaction,
   EscrowAgreement,
   PatronageAllocation,
+  KarmaEvent,
 } from "./models"
 
 class HawalaLedgerModuleService extends MedusaService({
@@ -43,6 +44,7 @@ class HawalaLedgerModuleService extends MedusaService({
   CreditLineTransaction,
   EscrowAgreement,
   PatronageAllocation,
+  KarmaEvent,
 }) {
   // ==================== ACCOUNT MANAGEMENT ====================
 

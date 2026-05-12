@@ -1,11 +1,12 @@
 # Handoff — asset-graph v0
 
-Last touched: 2026-05-12. Branch: `claude/asset-graph-commons-dvAeT`.
-Three commits beyond `main` after the composition-layer merge:
+Last touched: 2026-05-13. Branch: `claude/asset-graph-commons-dvAeT`.
+Four commits beyond `main` after the composition-layer merge:
 
 - `4875640` feat(asset-graph): v0 schema + nursery + tool-library reference manifests
 - `8bc7694` feat(asset-graph): repair-cafe reference manifest (v0 third vertical)
-- (pending) feat(asset-graph): persistence migration + catalog seeder
+- `9c32064` feat(asset-graph): persistence migration + catalog seeder
+- (pending) feat(hawala-ledger): rails registry + HRS + KARMA + karma_event model
 
 All pushed to `origin/claude/asset-graph-commons-dvAeT`. No PR open.
 
@@ -69,16 +70,23 @@ Ordered by what unblocks the most downstream work.
    `pnpm medusa exec ./src/scripts/seed-asset-graph.ts`).
    Idempotency proven by `__tests__/seed.unit.spec.ts`.
 
-2. **Hours rail in `hawala-ledger`**. Recommendation in
-   `docs/ASSET_GRAPH.md` § Open dependencies: extend the existing
-   ledger with an `hours` asset alongside CCR / USDC / Karma — do not
-   fork a separate time-bank module. Tool library cannot run an
-   instance until this lands.
+2. ~~**Hours rail in `hawala-ledger`**~~ **Landed** in the most
+   recent commit. New `backend/src/modules/hawala-ledger/rails.ts`
+   is the single-source-of-truth registry for all six rails
+   (CCR/USDC/USD/KARMA/HRS/GIFT). `posture-a-guard.ts` gains a
+   per-rail dispatcher `assertRailInvariants` plus dedicated
+   functions for HRS (time-bank reference vocabulary) and KARMA
+   (rejects user-to-user transfers — use `karma_event` instead).
+   `dual-rail-selector.ts` now throws `NonCashRailError` on
+   closed-loop rails rather than silently routing them to Stripe.
+   `LedgerAccount.account_type` gains `TIME_BANK` for HRS balances.
 
-3. **Karma asset-model location** in `hawala-ledger/models/`. The
-   composition-layer doc references Karma but the model home isn't
-   finalized. Repair café accrues karma; this needs to be live before
-   the repair-café instance executor lands.
+3. ~~**Karma asset-model location**~~ **Landed** same commit.
+   New `KarmaEvent` model + migration. Karma is non-fungible and
+   non-transferable (per `docs/COMPOSITION_LAYER.md`), so the model
+   is a per-member signed-delta event log (`member_id`, `delta`,
+   `reason`, `source_module`, `source_id`, `occurred_at`) rather
+   than a double-entry ledger account.
 
 4. **Matching engine**. v0 has `service.kindSlugMatches` (the
    wildcard matcher) but no proposal generator. The matcher walks

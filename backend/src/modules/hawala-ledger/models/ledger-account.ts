@@ -27,6 +27,9 @@ export const LedgerAccount = model.define("hawala_ledger_account", {
     "ESCROW",
     "CREATOR_EARNINGS",
     "CREATOR_REWARD_POOL",
+    // Time-bank balances (HRS rail). Hours are closed-loop, member-to-
+    // member; the account holds the member's signed hours balance.
+    "TIME_BANK",
   ]),
   
   // Currency (ISO 4217)
