@@ -226,9 +226,11 @@ backend/src/modules/asset-graph/
     matcher.unit.spec.ts
     vc.unit.spec.ts
     instance-lifecycle.unit.spec.ts
+    settlement.unit.spec.ts
   attestations/
     vc.ts                           # W3C VC body parser + extractors
   instance-lifecycle.ts             # state machines + acceptProposal payload
+  settlement.ts                     # per-rail emission compose + validation
 
 backend/src/scripts/
   seed-asset-graph.ts               # upserts asset_kind + project_manifest
@@ -301,6 +303,41 @@ Idempotency: every transition method throws
 permit the action. Accepting an already-accepted proposal is a
 caller bug, not a no-op. Callers who want at-least-once semantics
 should either catch the error or check state first.
+
+## Settlement emission
+
+`settlement.ts` is the asset-graph side of "when a project executes a
+transaction, record what flowed." It composes a `SettlementRecord`
+payload from a `SettlementIntent`, validates it twice (the rail must
+be in the manifest's `settlement_rails`, and per-rail required fields
+must be present), and the service persists the row with
+`ledger_entry_id: null`.
+
+Per-rail required fields:
+
+| Rail | Required (in addition to common fields) |
+| --- | --- |
+| `ccr`   | `order_id`, `cart_id`, or recognized `reference_type` + `reference_id` (Posture A purchase context) |
+| `hours` | `reference_type` ∈ {TIMEBANK_LOAN, TIMEBANK_RETURN, TIMEBANK_REDISTRIBUTION, TIMEBANK_OPEN_BALANCE} + non-empty `reference_id`; `from ≠ to` |
+| `karma` | `karma_reason` slug; `from_member_id` may be "SYSTEM" or the counterparty that triggered the accrual |
+| `usd`, `usdc` | `amount_minor > 0` |
+| `gift`  | none (audit-only; amount may be 0) |
+
+Service surface:
+
+  - `emitSettlementRecord(intent)` — validate + persist with
+    `ledger_entry_id: null`. Throws `SettlementValidationError` on
+    a bad intent; the row is not written when validation fails.
+  - `composeSettlementPayload(intent)` — pure preview; returns the
+    payload without writing.
+
+The unsettled `ledger_entry_id: null` is the v0.1 marker for "intent
+recorded, hawala-ledger entry not yet written." A reconciler workflow
+(v0.2, cross-module) reads unsettled records, mints the matching
+hawala-ledger entry (or `karma_event` row, or nothing for GIFT), then
+stamps `ledger_entry_id` on the SettlementRecord. That cross-module
+stitching belongs in a workflow, not the module — same pattern this
+codebase uses elsewhere.
 
 The three reference manifests test three distinct match shapes:
 

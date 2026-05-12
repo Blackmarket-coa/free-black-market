@@ -41,6 +41,10 @@ import {
   computeInstancePayload,
   type InstanceState,
 } from "./instance-lifecycle"
+import {
+  composeSettlement,
+  type SettlementIntent,
+} from "./settlement"
 
 /**
  * AssetGraphService
@@ -348,6 +352,36 @@ class AssetGraphService extends MedusaService({
       action
     )
     return this.updateProjectInstances({ id: instance.id, state: next } as any)
+  }
+
+  // ── settlement emission ─────────────────────────────────────────────
+
+  /**
+   * Emit a SettlementRecord for a project-instance transaction. v0.1
+   * scope: validate the rail against the manifest, validate per-rail
+   * required fields, write the SettlementRecord with
+   * `ledger_entry_id: null` — the "unsettled" marker.
+   *
+   * A reconciler workflow (v0.2) reads unsettled records, mints the
+   * matching hawala-ledger entry (or karma_event for KARMA; nothing
+   * for GIFT), then stamps `ledger_entry_id` on the SettlementRecord.
+   * That cross-module orchestration is workflow-side, not service-
+   * side — same pattern as other modules in this codebase.
+   *
+   * Throws `SettlementValidationError` if the rail isn't allowed by
+   * the manifest or per-rail required fields are missing.
+   */
+  async emitSettlementRecord(intent: SettlementIntent): Promise<any> {
+    const payload = composeSettlement(intent)
+    return this.createSettlementRecords(payload as any)
+  }
+
+  /**
+   * Compose a settlement payload without persisting. Useful for
+   * dry-runs and for the upcoming UI preview path.
+   */
+  composeSettlementPayload(intent: SettlementIntent) {
+    return composeSettlement(intent)
   }
 }
 

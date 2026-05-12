@@ -1,7 +1,7 @@
 # Handoff — asset-graph v0
 
 Last touched: 2026-05-13. Branch: `claude/asset-graph-commons-dvAeT`.
-Seven commits beyond `main` after the composition-layer merge:
+Eight commits beyond `main` after the composition-layer merge:
 
 - `4875640` feat(asset-graph): v0 schema + nursery + tool-library reference manifests
 - `8bc7694` feat(asset-graph): repair-cafe reference manifest (v0 third vertical)
@@ -9,7 +9,8 @@ Seven commits beyond `main` after the composition-layer merge:
 - `42bef9d` feat(hawala-ledger): rails registry + HRS + KARMA + karma_event model
 - `37de7b9` feat(asset-graph): matching engine — proposal generator
 - `4cc657a` feat(asset-graph): W3C Verifiable Credential payload validation
-- (pending) feat(asset-graph): ProjectInstance lifecycle (acceptProposal + state machines)
+- `420771f` feat(asset-graph): ProjectInstance lifecycle (acceptProposal + state machines)
+- (pending) feat(asset-graph): SettlementRecord emission (rail-validating compose + service)
 
 All pushed to `origin/claude/asset-graph-commons-dvAeT`. No PR open.
 
@@ -155,8 +156,8 @@ Ordered by what unblocks the most downstream work.
    bet — fine until a UI wants to render declaration forms from the
    DB).
 
-9. **ProjectInstance lifecycle** ✓ — landed in the most recent
-   commit. New `instance-lifecycle.ts` defines the
+9. **ProjectInstance lifecycle** ✓ — landed in `420771f`.
+   New `instance-lifecycle.ts` defines the
    MatchProposal and ProjectInstance state machines (pure
    `transitionProposalState` + `transitionInstanceState`, both
    throw `InvalidTransitionError` on illegal moves) plus
@@ -170,13 +171,43 @@ Ordered by what unblocks the most downstream work.
    manifest_slug + operator + the deduplicated set of all
    participating members.
 
-   Open follow-ups (next session if continued):
+   Open follow-ups:
      - Geography assignment on the instance (declaration centroid?)
      - Re-validation at accept time (declarations may have been
        revoked between match and accept)
      - Cross-instance coordination policy (multiple instances of the
        same manifest by the same operator allowed by schema; policy
        belongs higher up).
+
+10. **SettlementRecord emission** ✓ — landed in the most recent
+    commit. New `settlement.ts` is the asset-graph side of "when a
+    project executes a transaction, record what flowed":
+    `composeSettlement(intent)` validates the rail against the
+    manifest's `settlement_rails`, validates per-rail required fields
+    (CCR purchase context, HRS time-bank reference, KARMA reason,
+    USD/USDC positive amount, GIFT audit-only), and returns the
+    `SettlementRecord` payload with `ledger_entry_id: null`. Service
+    method `emitSettlementRecord(intent)` persists the row; throws
+    `SettlementValidationError` and skips the write on bad input.
+
+    The `ledger_entry_id: null` is the "unsettled" marker. Cross-
+    module wiring to hawala-ledger (writing the actual ledger entry
+    for HRS/CCR/USDC/USD, the karma_event for KARMA, nothing for
+    GIFT, then stamping ledger_entry_id) belongs in a reconciler
+    workflow — that's the v0.2 cross-module piece, not service-side,
+    matching this codebase's existing pattern (`backend/src/workflows/`
+    is where modules get stitched).
+
+    Open follow-ups:
+      - Reconciler workflow (asset-graph → hawala-ledger). Reads
+        unsettled SettlementRecords, calls `createTransfer` /
+        `createKarmaEvents` per rail, stamps `ledger_entry_id`.
+      - Migrating hawala-ledger's `createTransfer` from
+        `assertPurchaseContext` to `assertRailInvariants` so HRS-
+        coded transfers get the time-bank guard at the ledger layer
+        too (defense in depth — asset-graph already validates upstream).
+      - Idempotency keys on settlement records (today, two emits with
+        identical intents would write two rows).
 
 ## Decisions worth knowing
 
