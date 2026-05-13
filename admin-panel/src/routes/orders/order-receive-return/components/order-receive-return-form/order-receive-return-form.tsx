@@ -1,6 +1,23 @@
 import { zodResolver } from "@hookform/resolvers/zod"
 import { ArrowRight } from "@medusajs/icons"
-import type { AdminOrder, AdminReturn } from "@medusajs/types"
+import type {
+  AdminOrder,
+  AdminOrderLineItem,
+  AdminReturn,
+} from "@medusajs/types"
+
+// AdminOrderLineItem in @medusajs/types omits the per-action history
+// that the admin response includes when fetching items with
+// `+actions.action,+actions.details.*`. Capture the structural shape
+// consumed in this file.
+type LineItemAction = {
+  id: string
+  action: string
+  details: { quantity?: number }
+}
+type LineItemWithActions = AdminOrderLineItem & {
+  actions?: LineItemAction[]
+}
 import { Alert, Button, Input, Switch, Text, toast } from "@medusajs/ui"
 import { useEffect, useMemo } from "react"
 import { useForm } from "react-hook-form"
@@ -41,7 +58,7 @@ export function OrderReceiveReturnForm({
    * Items on the preview order that are part of the return we are receiving currently.
    */
   const previewItems = useMemo(() => {
-    const idsMap = {}
+    const idsMap: Record<string, boolean> = {}
 
     orderReturn.items.forEach((i) => (idsMap[i.item_id] = true))
 
@@ -72,7 +89,7 @@ export function OrderReceiveReturnForm({
   )
 
   const { stock_location } = useStockLocation(
-    orderReturn.location_id,
+    orderReturn.location_id ?? "",
     undefined,
     {
       enabled: !!orderReturn.location_id,
@@ -80,10 +97,10 @@ export function OrderReceiveReturnForm({
   )
 
   const itemsMap = useMemo(() => {
-    const ret = {}
+    const ret: Record<string, AdminOrderLineItem> = {}
     order.items.forEach((i) => (ret[i.id] = i))
-    
-return ret
+
+    return ret
   }, [order.items])
 
   const form = useForm<zod.infer<typeof ReceiveReturnSchema>>({
@@ -101,12 +118,15 @@ return ret
   useEffect(() => {
     previewItems
       ?.sort((i1, i2) => i1.id.localeCompare(i2.id))
-      .forEach((item, index) => {
+      .forEach((rawItem, index) => {
+        // AdminOrderLineItem omits per-action history in the SDK type;
+        // the response includes it when fetched with +actions.action.
+        const item = rawItem as LineItemWithActions
         const receivedAction = item.actions?.find(
-          (a) => a.action === "RECEIVE_RETURN_ITEM"
+          (a: LineItemAction) => a.action === "RECEIVE_RETURN_ITEM"
         )
         const dismissedAction = item.actions?.find(
-          (a) => a.action === "RECEIVE_DAMAGED_RETURN_ITEM"
+          (a: LineItemAction) => a.action === "RECEIVE_DAMAGED_RETURN_ITEM"
         )
 
         form.setValue(
@@ -134,12 +154,10 @@ return ret
 
       toast.success(t("general.success"), {
         description: t("orders.returns.receive.toast.success"),
-        dismissLabel: t("actions.close"),
       })
     } catch (e) {
       toast.error(t("general.error"), {
-        description: e.message,
-        dismissLabel: t("actions.close"),
+        description: e instanceof Error ? e.message : String(e),
       })
     }
   })
@@ -149,20 +167,26 @@ return ret
     value: number | null,
     index: number
   ) => {
-    const item = previewItems?.find((i) => i.id === itemId)
+    const item = previewItems?.find((i) => i.id === itemId) as
+      | LineItemWithActions
+      | undefined
     const action = item?.actions?.find(
-      (a) => a.action === "RECEIVE_RETURN_ITEM"
+      (a: LineItemAction) => a.action === "RECEIVE_RETURN_ITEM"
     )
 
     if (typeof value === "number" && value < 0) {
       form.setValue(
         `items.${index}.quantity`,
-        item.detail.return_received_quantity,
+        item?.detail.return_received_quantity,
         { shouldTouch: true, shouldDirty: true }
       )
 
       toast.error(t("orders.returns.receive.toast.errorNegativeValue"))
 
+      return
+    }
+
+    if (!item) {
       return
     }
 
@@ -195,7 +219,7 @@ return ret
         }
       }
     } catch (e) {
-      toast.error(e.message)
+      toast.error(e instanceof Error ? e.message : String(e))
     }
   }
 
@@ -205,7 +229,7 @@ return ret
         await cancelReceiveReturn()
       }
     } catch (e) {
-      toast.error(e.message)
+      toast.error(e instanceof Error ? e.message : String(e))
     }
   }
 
@@ -280,7 +304,7 @@ return ret
                                 min={0}
                                 max={item.quantity}
                                 type="number"
-                                value={value}
+                                value={value ?? ""}
                                 className="bg-ui-bg-field-component text-right [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                                 onChange={(e) => {
                                   const value =
@@ -293,7 +317,7 @@ return ret
                                 {...field}
                                 onBlur={() => {
                                   field.onBlur()
-                                  handleQuantityChange(item.id, value, ind)
+                                  handleQuantityChange(item.id, value ?? null, ind)
                                 }}
                               />
                             </Form.Control>

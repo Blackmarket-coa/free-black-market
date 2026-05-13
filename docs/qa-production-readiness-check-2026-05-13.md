@@ -16,17 +16,16 @@ to fail-fast in this pass.
 What still blocks a clean v1.0.0 cut after this PR:
 
 1. **LR-3 (partial)** — admin-panel `pnpm typecheck` still failing with
-   **472 errors across ~120 files** after this PR (down from 710). Passes
-   1-4 covered the missing devDeps + missing local files +
-   `requests/`/`tax-regions/`/`components/table/`/`hooks/table/`/`locations/`/`regions/`/`reservations/`/`price-lists/`;
-   pass 5 cleared `hooks/api/` (29 → 0; mutation hook response types
-   realigned with SDK return shapes, React-Query v4 → v5 rename, SDK
-   `user.create` removal worked around), `inventory/` (17 → 0;
-   `AdminInventoryItem` / `AdminInventoryLevel` / `AdminStockLocation`
-   alignments + structural casts where the response inlines fields the
-   SDK type doesn't declare), `customers/` (6 → 0), and the phase0
-   `VITE_FF_*` env declarations. The 472 residual errors live inside
-   Medusa-inherited admin routes (orders/ ~308, promotions/ ~53,
+   **399 errors across ~100 files** after this PR (down from 710). Passes
+   1-5 covered the missing devDeps + missing local files + 10 cluster
+   subtrees (`requests/`, `tax-regions/`, `components/table/`,
+   `hooks/table/`, `locations/`, `regions/`, `reservations/`,
+   `price-lists/`, `hooks/api/`, `inventory/`, `customers/`, phase0).
+   Pass 6 started on the biggest residual subtree (`orders/`, 308
+   errors) and cleared `order-timeline.tsx` (38 → 0) and the
+   `order-receive-return-form/` cluster (35 → 0); 399 → 399 internal,
+   `orders/` 308 → 235. The 399 residual errors live inside
+   Medusa-inherited admin routes (orders/ ~235, promotions/ ~53,
    products/ ~40, product-variants/ ~32, plus small clusters) — a
    genuine M-effort cleanup. Gated behind
    `.github/workflows/ci.yml continue-on-error: true`.

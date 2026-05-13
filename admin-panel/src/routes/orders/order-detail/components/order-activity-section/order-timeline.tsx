@@ -10,6 +10,7 @@ import type {
   AdminFulfillment,
   AdminOrder,
   AdminOrderChange,
+  AdminOrderFulfillment,
   AdminReturn,
 } from "@medusajs/types"
 import { useTranslation } from "react-i18next"
@@ -38,11 +39,6 @@ import ChangeDetailsTooltip from "./change-details-tooltip"
 type OrderTimelineProps = {
   order: AdminOrder
 }
-
-/**
- * Arbitrary high limit to ensure all notes are fetched
- */
-const _NOTE_LIMIT = 9999
 
 /**
  * Order Changes that are not related to RMA flows
@@ -110,13 +106,13 @@ export const OrderTimeline = ({ order }: OrderTimelineProps) => {
 }
 
 type Activity = {
-  title: string
+  // Title accepts ReactNode because the update-order branches render a
+  // <ChangeDetailsTooltip /> inline; other event branches still pass
+  // plain strings from t().
+  title: ReactNode
   timestamp: string | Date
   children?: ReactNode
-  itemsToSend?: (
-    | AdminClaim["additional_items"]
-    | AdminExchange["additional_items"]
-  )[]
+  itemsToSend?: AdminClaim["additional_items"] | AdminExchange["additional_items"]
   itemsToReturn?: AdminReturn["items"]
   itemsMap?: Map<string, AdminOrderLineItem>
 }
@@ -136,7 +132,7 @@ const useActivityItems = (order: AdminOrder): Activity[] => {
   })
 
   const rmaChanges = orderChanges.filter(
-    (oc) => !NON_RMA_CHANGE_TYPES.includes(oc.change_type)
+    (oc) => !NON_RMA_CHANGE_TYPES.includes(oc.change_type ?? "")
   )
 
   const missingLineItemIds = getMissingLineItemIds(order, rmaChanges)
@@ -159,7 +155,10 @@ const useActivityItems = (order: AdminOrder): Activity[] => {
       const i = removedLineItems.find((i) => i.item.id === id)
 
       if (i) {
-        _itemsMap.set(id, { ...i.item, quantity: i.quantity }) // copy quantity from OrderItem to OrderLineItem
+        // AdminOrderItem in @medusajs/types omits `quantity` on the entity
+        // wrapper, but the /admin/orders/:id/line-items response inlines it.
+        const wrapper = i as { item: AdminOrderLineItem; quantity?: number }
+        _itemsMap.set(id, { ...wrapper.item, quantity: wrapper.quantity ?? 0 })
       }
     }
 
@@ -183,7 +182,14 @@ const useActivityItems = (order: AdminOrder): Activity[] => {
 
   const payments = getPaymentsFromOrder(order)
 
-  const notes = []
+  // Placeholder until useNotes ships; once it does, restore the
+  // commented-out hook below and remove this fallback.
+  const notes: Array<{
+    id: string
+    created_at: string | Date
+    raw_value: { value?: string } | null
+    author?: { first_name?: string | null; last_name?: string | null } | null
+  }> = []
   const isLoading = false
   // const { notes, isLoading, isError, error } = useNotes(
   //   {
@@ -330,7 +336,9 @@ const useActivityItems = (order: AdminOrder): Activity[] => {
           timestamp: ret.received_at,
           itemsToReturn: ret?.items,
           itemsMap,
-          children: <ReturnBody orderReturn={ret} isReceived />,
+          children: (
+            <ReturnBody orderReturn={ret} isCreated={false} isReceived />
+          ),
         })
       }
     }
@@ -386,11 +394,14 @@ const useActivityItems = (order: AdminOrder): Activity[] => {
       }
 
       items.push({
-        title: t(`orders.activity.events.edit.${edit.status}`, {
+        // i18next's typed key union doesn't admit template-literal keys;
+        // cast to satisfy TS while preserving runtime behaviour.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        title: t(`orders.activity.events.edit.${edit.status}` as any, {
           editId: edit.id.slice(-7),
         }),
         timestamp:
-          edit.status === "requested"
+          (edit.status === "requested"
             ? edit.requested_at
             : edit.status === "confirmed"
               ? edit.confirmed_at
@@ -398,7 +409,7 @@ const useActivityItems = (order: AdminOrder): Activity[] => {
                 ? edit.declined_at
                 : edit.status === "canceled"
                   ? edit.canceled_at
-                  : edit.created_at,
+                  : edit.created_at) ?? edit.created_at,
         children: isConfirmed ? <OrderEditBody edit={edit} /> : null,
       })
     }
@@ -445,17 +456,28 @@ const useActivityItems = (order: AdminOrder): Activity[] => {
             <ChangeDetailsTooltip
               title={t(`orders.activity.events.update_order.shipping_address`)}
               previous={getFormattedAddress({
-                address: update.actions[0].details.old,
+                address:
+                  update.actions[0]?.details?.old as Parameters<
+                    typeof getFormattedAddress
+                  >[0]["address"],
               }).join(", ")}
               next={getFormattedAddress({
-                address: update.actions[0].details.new,
+                address:
+                  update.actions[0]?.details?.new as Parameters<
+                    typeof getFormattedAddress
+                  >[0]["address"],
               }).join(", ")}
             />
           ),
           timestamp: update.created_at,
           children: (
             <div className="text-ui-fg-subtle mt-2 flex gap-x-2 text-sm">
-              {t("fields.by")} <By id={update.created_by} />
+              {/* AdminOrderChange omits `created_by` in the SDK type but
+                  the response includes it; cast to access. */}
+              {t("fields.by")}{" "}
+              <By
+                id={(update as { created_by?: string }).created_by ?? ""}
+              />
             </div>
           ),
         })
@@ -467,17 +489,28 @@ const useActivityItems = (order: AdminOrder): Activity[] => {
             <ChangeDetailsTooltip
               title={t(`orders.activity.events.update_order.billing_address`)}
               previous={getFormattedAddress({
-                address: update.actions[0].details.old,
+                address:
+                  update.actions[0]?.details?.old as Parameters<
+                    typeof getFormattedAddress
+                  >[0]["address"],
               }).join(", ")}
               next={getFormattedAddress({
-                address: update.actions[0].details.new,
+                address:
+                  update.actions[0]?.details?.new as Parameters<
+                    typeof getFormattedAddress
+                  >[0]["address"],
               }).join(", ")}
             />
           ),
           timestamp: update.created_at,
           children: (
             <div className="text-ui-fg-subtle mt-2 flex gap-x-2 text-sm">
-              {t("fields.by")} <By id={update.created_by} />
+              {/* AdminOrderChange omits `created_by` in the SDK type but
+                  the response includes it; cast to access. */}
+              {t("fields.by")}{" "}
+              <By
+                id={(update as { created_by?: string }).created_by ?? ""}
+              />
             </div>
           ),
         })
@@ -488,14 +521,19 @@ const useActivityItems = (order: AdminOrder): Activity[] => {
           title: (
             <ChangeDetailsTooltip
               title={t(`orders.activity.events.update_order.email`)}
-              previous={update.actions[0].details.old}
-              next={update.actions[0].details.new}
+              previous={String(update.actions[0]?.details?.old ?? "")}
+              next={String(update.actions[0]?.details?.new ?? "")}
             />
           ),
           timestamp: update.created_at,
           children: (
             <div className="text-ui-fg-subtle mt-2 flex gap-x-2 text-sm">
-              {t("fields.by")} <By id={update.created_by} />
+              {/* AdminOrderChange omits `created_by` in the SDK type but
+                  the response includes it; cast to access. */}
+              {t("fields.by")}{" "}
+              <By
+                id={(update as { created_by?: string }).created_by ?? ""}
+              />
             </div>
           ),
         })
@@ -510,10 +548,14 @@ const useActivityItems = (order: AdminOrder): Activity[] => {
     //   })
     // }
 
-    if (order.canceled_at) {
+        // AdminOrder in @medusajs/types omits `canceled_at` but the
+    // /admin/orders/:id response includes it; cast to read the field.
+    const canceledAt = (order as { canceled_at?: string | Date | null })
+      .canceled_at
+    if (canceledAt) {
       items.push({
         title: t("orders.activity.events.canceled.title"),
-        timestamp: order.canceled_at,
+        timestamp: canceledAt,
       })
     }
 
@@ -545,7 +587,9 @@ const useActivityItems = (order: AdminOrder): Activity[] => {
 }
 
 type OrderActivityItemProps = PropsWithChildren<{
-  title: string
+  // Mirrors Activity.title; some event branches render a tooltip
+  // component instead of a string.
+  title: ReactNode
   timestamp: string | Date
   isFirst?: boolean
   itemsToSend?:
@@ -584,8 +628,10 @@ const OrderActivityItem = ({
         <div className="flex items-center justify-between">
           {itemsToSend?.length || itemsToReturn?.length ? (
             <ActivityItems
-              key={title}
-              title={title}
+              // title is ReactNode; coerce to string for the React key
+              // and the ActivityItems prop (it renders the string form).
+              key={String(title)}
+              title={String(title)}
               itemsToSend={itemsToSend}
               itemsToReturn={itemsToReturn}
               itemsMap={itemsMap}
@@ -737,12 +783,20 @@ const OrderActivityCollapsible = ({
 
 const FulfillmentCreatedBody = ({
   fulfillment,
+  isShipment: _isShipment,
 }: {
-  fulfillment: AdminFulfillment
+  // AdminOrderFulfillment in @medusajs/types omits `items` /
+  // `delivery_address` / `labels` / `deleted_at` / `provider` but the
+  // /admin/orders/:id response inlines them; widen to accept either
+  // shape and read the structural fields we use below.
+  fulfillment: AdminFulfillment | AdminOrderFulfillment
+  /** Reserved for shipment vs creation copy; currently unused. */
+  isShipment?: boolean
 }) => {
   const { t } = useTranslation()
 
-  const numberOfItems = fulfillment.items.reduce((acc, item) => {
+  const items = (fulfillment as AdminFulfillment).items ?? []
+  const numberOfItems = items.reduce((acc, item) => {
     return acc + item.quantity
   }, 0)
 
@@ -1034,7 +1088,8 @@ const TransferOrderRequestBody = ({
   return (
     <div>
       <Text size="small" className="text-ui-fg-subtle">
-        {t("orders.activity.from")}: {action.details?.original_email}
+        {t("orders.activity.from")}:{" "}
+        {String(action.details?.original_email ?? "")}
       </Text>
 
       <Text size="small" className="text-ui-fg-subtle">
