@@ -14,9 +14,11 @@ import { InformationCircleSolid } from "@medusajs/icons"
 
 type OrderEditItemProps = {
   item: HttpTypes.AdminOrderLineItem
-  currencyCode: string
+  /** Optional: callers that need price formatting pass through the order's currency_code. */
+  currencyCode?: string
   locationId?: string
-  onItemRemove: (itemId: string) => void
+  /** Optional: callers may attach a row-remove handler. */
+  onItemRemove?: (itemId: string) => void
   reservations: HttpTypes.AdminReservation[]
   form: UseFormReturn<zod.infer<typeof CreateFulfillmentSchema>>
   disabled: boolean

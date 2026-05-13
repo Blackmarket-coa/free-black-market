@@ -66,7 +66,13 @@ function ReturnInfoPopover({ orderReturn }: ReturnInfoPopoverProps) {
               {t(`orders.returns.returnRequested`)}
             </span>
             {" · "}
-            {getFullDate({ date: orderReturn.requested_at, includeTime: true })}
+            {getFullDate({
+              // AdminReturn in @medusajs/types omits `requested_at`; the
+              // response includes it. Cast structurally.
+              date:
+                (orderReturn as { requested_at?: string }).requested_at ?? "",
+              includeTime: true,
+            })}
           </Text>
 
           <Text size="xsmall">

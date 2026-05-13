@@ -76,7 +76,10 @@ return acc
         },
         {} as Record<string, number>
       ),
-      send_notification: !order.no_notification,
+      // AdminOrder omits `no_notification` in @medusajs/types but the
+      // response includes it; cast structurally.
+      send_notification: !(order as { no_notification?: boolean })
+        .no_notification,
     },
     resolver: zodResolver(CreateFulfillmentSchema),
   })
@@ -159,7 +162,7 @@ return acc
       toast.success(t("orders.fulfillment.toast.created"))
       handleSuccess(`/orders/${order.id}`)
     } catch (e) {
-      toast.error(e.message)
+      toast.error(e instanceof Error ? e.message : String(e))
     }
   })
 
@@ -365,7 +368,7 @@ return acc
                             disabled={
                               requiresShipping && !isShippingProfileMatching
                             }
-                            reservations={reservations}
+                            reservations={reservations ?? []}
                           />
                         )
                       })}
@@ -376,7 +379,6 @@ return acc
                       variant="error"
                       dismissible={false}
                       className="flex items-center"
-                      classNameInner="flex justify-between flex-1 items-center"
                     >
                       {form.formState.errors.root.message}
                     </Alert>

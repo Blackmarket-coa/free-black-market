@@ -531,9 +531,12 @@ export const ClaimCreateForm = ({
         return ret
       }
 
+      // FieldArrayWithId<inbound_items> in the claim schema doesn't
+      // declare `variant_id`, but the form holds it for downstream
+      // inventory lookup; cast structurally.
       const variantIds = inboundItems
-        .map((item) => item?.variant_id)
-        .filter(Boolean)
+        .map((item) => (item as { variant_id?: string })?.variant_id)
+        .filter((v): v is string => !!v)
 
       const variants = (
         await sdk.admin.productVariant.list({
@@ -543,8 +546,18 @@ export const ClaimCreateForm = ({
       ).variants
 
       variants.forEach((variant) => {
-        ret[variant.id] =
-          variant.inventory?.flatMap((inventory) => inventory.location_levels || []) || []
+        // AdminProductVariant omits the embedded `inventory` join in
+        // the SDK type; the response includes it when fetched with
+        // +inventory.location_levels.
+        const inventoryRows =
+          (
+            variant as {
+              inventory?: Array<{ location_levels?: InventoryLevelDTO[] }>
+            }
+          ).inventory ?? []
+        ret[variant.id] = inventoryRows.flatMap(
+          (inventory) => inventory.location_levels ?? []
+        )
       })
 
       return ret
@@ -833,7 +846,14 @@ export const ClaimCreateForm = ({
                       const action = item.actions?.find(
                         (act) => act.action === "RETURN_ITEM"
                       )
-                      acc = acc + (action?.amount || 0)
+                      // AdminOrderChangeAction omits `amount` on the
+                      // union; the response includes it for monetary
+                      // actions. Cast structurally.
+                      acc =
+                        acc +
+                        Number(
+                          (action as { amount?: number })?.amount ?? 0
+                        )
 
                       return acc
                     }, 0) * -1,
@@ -853,7 +873,14 @@ export const ClaimCreateForm = ({
                       const action = item.actions?.find(
                         (act) => act.action === "ITEM_ADD"
                       )
-                      acc = acc + (action?.amount || 0)
+                      // AdminOrderChangeAction omits `amount` on the
+                      // union; the response includes it for monetary
+                      // actions. Cast structurally.
+                      acc =
+                        acc +
+                        Number(
+                          (action as { amount?: number })?.amount ?? 0
+                        )
 
                       return acc
                     }, 0),
@@ -922,7 +949,7 @@ export const ClaimCreateForm = ({
                           .symbol_native
                       }
                       code={order.currency_code}
-                      onValueChange={(value, _name, values) => {
+                      onValueChange={(_value, _name, values) => {
                         setCustomInboundShippingAmount({
                           value: values?.value ?? "",
                           float: values?.float ?? null,
@@ -995,7 +1022,7 @@ export const ClaimCreateForm = ({
                           .symbol_native
                       }
                       code={order.currency_code}
-                      onValueChange={(value, _name, values) => {
+                      onValueChange={(_value, _name, values) => {
                         setCustomOutboundShippingAmount({
                           value: values?.value ?? "",
                           float: values?.float ?? null,

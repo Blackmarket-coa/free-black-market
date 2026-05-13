@@ -1,11 +1,19 @@
-import React, { useMemo } from "react"
+import { useMemo } from "react"
 import { createDataTableColumnHelper, StatusBadge } from "@medusajs/ui"
 import type { HttpTypes } from "@medusajs/types"
 import { useDate } from "../../../../../../hooks/use-date"
 
 const columnHelper = createDataTableColumnHelper<HttpTypes.AdminOrder>()
 
-export function useOrderDataTableColumns(apiColumns: any[] | undefined) {
+type ApiColumn = {
+  field: string
+  name: string
+  hideable?: boolean
+}
+
+export function useOrderDataTableColumns(
+  apiColumns: ApiColumn[] | undefined
+) {
   const { getFullDate } = useDate()
   
   return useMemo(() => {
@@ -33,8 +41,6 @@ return (
             name: apiColumn.name,
             column: apiColumn,
           },
-          enableHiding: apiColumn.hideable,
-          enableSorting: false,
         })
       }
 
@@ -52,8 +58,6 @@ return getFullDate({ date: value })
             name: apiColumn.name,
             column: apiColumn,
           },
-          enableHiding: apiColumn.hideable,
-          enableSorting: false,
         })
       }
 
@@ -65,15 +69,13 @@ return getFullDate({ date: value })
             const value = getValue()
             
 return value ? (
-              <StatusBadge variant="default">{value}</StatusBadge>
+              <StatusBadge color="grey">{value}</StatusBadge>
             ) : null
           },
           meta: {
             name: apiColumn.name,
             column: apiColumn,
           },
-          enableHiding: apiColumn.hideable,
-          enableSorting: false,
         })
       }
 
@@ -85,15 +87,13 @@ return value ? (
             const value = getValue()
             
 return value ? (
-              <StatusBadge variant="default">{value}</StatusBadge>
+              <StatusBadge color="grey">{value}</StatusBadge>
             ) : null
           },
           meta: {
             name: apiColumn.name,
             column: apiColumn,
           },
-          enableHiding: apiColumn.hideable,
-          enableSorting: false,
         })
       }
 
@@ -110,8 +110,6 @@ return value ? (
             name: apiColumn.name,
             column: apiColumn,
           },
-          enableHiding: apiColumn.hideable,
-          enableSorting: false,
         })
       }
 
@@ -150,8 +148,6 @@ return JSON.stringify(value)
             name: apiColumn.name,
             column: apiColumn,
           },
-          enableHiding: apiColumn.hideable,
-          enableSorting: false,
         }
       )
     })

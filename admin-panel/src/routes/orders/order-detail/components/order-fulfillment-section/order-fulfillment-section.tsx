@@ -1,10 +1,10 @@
 import { Buildings, XCircle } from "@medusajs/icons"
 import type {
+  AdminFulfillment,
   AdminOrder,
   AdminOrderFulfillment,
   AdminOrderLineItem,
   HttpTypes,
-  OrderLineItemDTO,
 } from "@medusajs/types"
 import {
   Button,
@@ -45,7 +45,15 @@ export const OrderFulfillmentSection = ({
     <div className="flex flex-col gap-y-3">
       <UnfulfilledItemBreakdown order={order} />
       {fulfillments.map((f, index) => (
-        <Fulfillment key={f.id} index={index} fulfillment={f} order={order} />
+        <Fulfillment
+          key={f.id}
+          index={index}
+          // The /admin/orders/:id response inlines items/labels/
+          // shipping_option on each fulfillment row even though the
+          // AdminOrderFulfillment SDK type omits them.
+          fulfillment={f as AdminOrderFulfillment & Partial<AdminFulfillment>}
+          order={order}
+        />
       ))}
     </div>
   )
@@ -55,7 +63,10 @@ const UnfulfilledItem = ({
   item,
   currencyCode,
 }: {
-  item: OrderLineItemDTO & { variant: HttpTypes.AdminProductVariant }
+  // The list response returns AdminOrderLineItem (with the same fields
+  // the workflow-level OrderLineItemDTO defines); accept either so the
+  // mapper above can pass admin items directly.
+  item: HttpTypes.AdminOrderLineItem
   currencyCode: string
 }) => {
   return (
@@ -81,7 +92,7 @@ const UnfulfilledItem = ({
             </div>
           )}
           <Text size="small">
-            {item.variant?.options.map((o) => o.value).join(" · ")}
+            {item.variant?.options?.map((o) => o.value).join(" · ")}
           </Text>
         </div>
       </div>
@@ -101,7 +112,7 @@ const UnfulfilledItem = ({
         </div>
         <div className="flex items-center justify-end">
           <Text size="small">
-            {getLocaleAmount(item.subtotal || 0, currencyCode)}
+            {getLocaleAmount(Number(item.subtotal ?? 0), currencyCode)}
           </Text>
         </div>
       </div>
@@ -204,7 +215,11 @@ const Fulfillment = ({
   order,
   index,
 }: {
-  fulfillment: AdminOrderFulfillment
+  // AdminOrderFulfillment in @medusajs/types omits items / labels /
+  // shipping_option (they live on the standalone AdminFulfillment),
+  // but the /admin/orders/:id response inlines them; accept the
+  // intersected shape so the JSX below typechecks.
+  fulfillment: AdminOrderFulfillment & Partial<AdminFulfillment>
   order: AdminOrder
   index: number
 }) => {
@@ -214,8 +229,19 @@ const Fulfillment = ({
 
   const showLocation = !!fulfillment.location_id
 
+  // AdminFulfillment exposes shipping_option_id but not the embedded
+  // shipping_option join; the response includes it when fetched with
+  // +shipping_option.service_zone.fulfillment_set.type. Cast structurally.
   const isPickUpFulfillment =
-    fulfillment.shipping_option?.service_zone.fulfillment_set.type ===
+    (
+      fulfillment as {
+        shipping_option?: {
+          service_zone?: {
+            fulfillment_set?: { type?: string }
+          }
+        }
+      }
+    ).shipping_option?.service_zone?.fulfillment_set?.type ===
     FulfillmentSetType.Pickup
 
   const { stock_location, isError, error } = useStockLocation(
@@ -366,7 +392,7 @@ return
           {t("orders.fulfillment.itemsLabel")}
         </Text>
         <ul>
-          {fulfillment.items.map((f_item) => (
+          {fulfillment.items?.map((f_item) => (
             <li key={f_item.line_item_id}>
               <Text size="small" leading="compact">
                 {f_item.quantity}x {f_item.title}

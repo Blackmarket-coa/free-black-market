@@ -16,18 +16,26 @@ to fail-fast in this pass.
 What still blocks a clean v1.0.0 cut after this PR:
 
 1. **LR-3 (partial)** — admin-panel `pnpm typecheck` still failing with
-   **399 errors across ~100 files** after this PR (down from 710). Passes
-   1-5 covered the missing devDeps + missing local files + 10 cluster
-   subtrees (`requests/`, `tax-regions/`, `components/table/`,
-   `hooks/table/`, `locations/`, `regions/`, `reservations/`,
-   `price-lists/`, `hooks/api/`, `inventory/`, `customers/`, phase0).
-   Pass 6 started on the biggest residual subtree (`orders/`, 308
-   errors) and cleared `order-timeline.tsx` (38 → 0) and the
-   `order-receive-return-form/` cluster (35 → 0); 399 → 399 internal,
-   `orders/` 308 → 235. The 399 residual errors live inside
-   Medusa-inherited admin routes (orders/ ~235, promotions/ ~53,
-   products/ ~40, product-variants/ ~32, plus small clusters) — a
-   genuine M-effort cleanup. Gated behind
+   **342 errors across ~80 files** after this PR (down from 710,
+   51.8% cleared). Passes 1-5 covered the missing devDeps + missing
+   local files + 10 cluster subtrees. Pass 6 cleared the orders/
+   activity timeline + receive-return form pair. Pass 7 cleared
+   order-summary-section + return-info-popover + order-fulfillment-section
+   + use-order-data-table-columns + exchange-create-form + most of
+   claim-create-form + order-create-fulfillment-form. Highlights this
+   pass: cast around SDK omissions for `AdminReturnItem.reason`,
+   `BaseClaimItem.item`, `BaseExchangeItem.item`,
+   `AdminReturn.requested_at`, `AdminProductVariant.inventory`,
+   `AdminOrderChangeAction.amount`, `AdminOrder.no_notification`;
+   widened the Fulfillment prop to
+   `AdminOrderFulfillment & Partial<AdminFulfillment>`; removed
+   unsupported `enableHiding` / `enableSorting` from the v4 DataTable
+   column-defs; replaced `variant="default"` StatusBadge prop with the
+   v4 `color="grey"` API; widened `getFulfillableQuantity()` in
+   `src/lib/order-item.ts` to accept `OrderLineItemDTO | AdminOrderLineItem`.
+   The 342 residual errors live inside Medusa-inherited admin routes
+   (orders/ ~178, promotions/ ~53, products/ ~40, product-variants/
+   ~32, plus small clusters). Gated behind
    `.github/workflows/ci.yml continue-on-error: true`.
 2. **TI-1 (source fix landed; CI validation pending)** — backend
    migration ordering bug fixed in-source: `Migration20251229AddRawColumns`

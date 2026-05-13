@@ -179,13 +179,21 @@ export const ExchangeCreateForm = ({
 
   useEffect(() => {
     if (inboundShipping) {
-      setCustomInboundShippingAmount(inboundShipping.total)
+      // The state shape is { value: string; float: number | null } —
+      // mirror inboundShipping.total into the float slot.
+      setCustomInboundShippingAmount({
+        value: String(inboundShipping.total),
+        float: Number(inboundShipping.total),
+      })
     }
   }, [inboundShipping])
 
   useEffect(() => {
     if (outboundShipping) {
-      setCustomOutboundShippingAmount(outboundShipping.total)
+      setCustomOutboundShippingAmount({
+        value: String(outboundShipping.total),
+        float: Number(outboundShipping.total),
+      })
     }
   }, [outboundShipping])
 
@@ -213,7 +221,7 @@ export const ExchangeCreateForm = ({
       handleSuccess()
     } catch (e) {
       toast.error(t("general.error"), {
-        description: e.message,
+        description: e instanceof Error ? e.message : String(e),
       })
     }
   })
@@ -307,7 +315,14 @@ export const ExchangeCreateForm = ({
                       const action = item.actions?.find(
                         (act) => act.action === "RETURN_ITEM"
                       )
-                      acc = acc + (action?.amount || 0)
+                      // AdminOrderChangeAction in @medusajs/types omits
+                      // `amount` on the union; the response includes it
+                      // for monetary actions. Cast structurally.
+                      acc =
+                        acc +
+                        Number(
+                          (action as { amount?: number })?.amount ?? 0
+                        )
 
                       return acc
                     }, 0) * -1,
@@ -327,7 +342,14 @@ export const ExchangeCreateForm = ({
                       const action = item.actions?.find(
                         (act) => act.action === "ITEM_ADD"
                       )
-                      acc = acc + (action?.amount || 0)
+                      // AdminOrderChangeAction in @medusajs/types omits
+                      // `amount` on the union; the response includes it
+                      // for monetary actions. Cast structurally.
+                      acc =
+                        acc +
+                        Number(
+                          (action as { amount?: number })?.amount ?? 0
+                        )
 
                       return acc
                     }, 0),
@@ -396,7 +418,7 @@ export const ExchangeCreateForm = ({
                           .symbol_native
                       }
                       code={order.currency_code}
-                      onValueChange={(value, name, values) =>
+                      onValueChange={(_value, _name, values) =>
                         setCustomInboundShippingAmount({
                           value: values?.value ?? "",
                           float: values?.float ?? null,
@@ -469,7 +491,7 @@ export const ExchangeCreateForm = ({
                           .symbol_native
                       }
                       code={order.currency_code}
-                      onValueChange={(value, name, values) =>
+                      onValueChange={(_value, _name, values) =>
                         setCustomOutboundShippingAmount({
                           value: values?.value ?? "",
                           float: values?.float ?? null,
