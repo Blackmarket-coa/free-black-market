@@ -2,7 +2,7 @@ import i18n from "i18next"
 import LanguageDetector from "i18next-browser-languagedetector"
 import { initReactI18next } from "react-i18next"
 
-import { defaultI18nOptions } from "../../../i18n/config"
+import { defaultI18nOptions } from "@/i18n/config"
 
 export const I18n = () => {
   if (i18n.isInitialized) {

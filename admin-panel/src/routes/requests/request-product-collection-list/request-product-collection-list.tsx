@@ -77,7 +77,7 @@ export const RequestProductCollectionList = () => {
           </Table.Header>
           <Table.Body>
             {requests?.map((request) => {
-              const requestData = request.payload as ProductCollectionDTO;
+              const requestData = request.data as unknown as ProductCollectionDTO;
 
               return (
                 <Table.Row key={request.id}>

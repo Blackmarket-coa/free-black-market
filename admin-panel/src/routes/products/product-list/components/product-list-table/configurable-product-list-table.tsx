@@ -1,6 +1,7 @@
+import type {
+  DataTableRowSelectionState} from "@medusajs/ui";
 import {
   createDataTableCommandHelper,
-  DataTableRowSelectionState,
   toast,
   usePrompt,
 } from "@medusajs/ui"
@@ -8,9 +9,9 @@ import { useState, useCallback, useMemo } from "react"
 import { useTranslation } from "react-i18next"
 import { Outlet, useLocation } from "react-router-dom"
 
-import { ConfigurableDataTable } from "../../../../../components/table/configurable-data-table"
-import { useDeleteProducts } from "../../../../../hooks/api/products"
-import { useProductTableAdapter } from "./product-table-adapter"
+import { ConfigurableDataTable } from "@components/table/configurable-data-table"
+import { useDeleteProducts } from "@hooks/api/products"
+import { useProductTableAdapter } from "@routes/products/product-list/components/product-list-table/product-table-adapter"
 
 const commandHelper = createDataTableCommandHelper()
 

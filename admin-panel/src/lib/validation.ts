@@ -1,7 +1,7 @@
 import i18next from "i18next"
-import { FieldPath, FieldValues, UseFormReturn } from "react-hook-form"
+import type { FieldPath, FieldValues, UseFormReturn } from "react-hook-form"
 import { z } from "zod"
-import { castNumber } from "./cast-number"
+import { castNumber } from "@lib/cast-number"
 
 /**
  * Validates that an optional value is an integer.
@@ -81,7 +81,8 @@ export function partialFormValidation<TForm extends FieldValues>(
 
   const values = fields.reduce((acc, key) => {
     acc[key] = form.getValues(key as any)
-    return acc
+    
+return acc
   }, {} as Record<string, unknown>)
 
   const validationResult = schema.safeParse(values)

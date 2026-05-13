@@ -1,5 +1,5 @@
 import { PencilSquare, Trash } from "@medusajs/icons"
-import { PromotionDTO } from "@medusajs/types"
+import type { PromotionDTO } from "@medusajs/types"
 import { Button, Container, Heading, usePrompt } from "@medusajs/ui"
 import { createColumnHelper } from "@tanstack/react-table"
 import { useMemo } from "react"
@@ -7,17 +7,17 @@ import { useTranslation } from "react-i18next"
 import { Link, Outlet, useLoaderData, useNavigate } from "react-router-dom"
 
 import { keepPreviousData } from "@tanstack/react-query"
-import { ActionMenu } from "../../../../../components/common/action-menu"
-import { _DataTable } from "../../../../../components/table/data-table"
+import { ActionMenu } from "@components/common/action-menu"
+import { _DataTable } from "@components/table/data-table"
 import {
   useDeletePromotion,
   usePromotions,
-} from "../../../../../hooks/api/promotions"
-import { usePromotionTableColumns } from "../../../../../hooks/table/columns/use-promotion-table-columns"
-import { usePromotionTableFilters } from "../../../../../hooks/table/filters/use-promotion-table-filters"
-import { usePromotionTableQuery } from "../../../../../hooks/table/query/use-promotion-table-query"
-import { useDataTable } from "../../../../../hooks/use-data-table"
-import { promotionsLoader } from "../../loader"
+} from "@hooks/api/promotions"
+import { usePromotionTableColumns } from "@hooks/table/columns/use-promotion-table-columns"
+import { usePromotionTableFilters } from "@hooks/table/filters/use-promotion-table-filters"
+import { usePromotionTableQuery } from "@hooks/table/query/use-promotion-table-query"
+import { useDataTable } from "@hooks/use-data-table"
+import type { promotionsLoader } from "@routes/promotions/promotion-list/loader"
 
 const PAGE_SIZE = 20
 
@@ -40,12 +40,18 @@ export const PromotionListTable = () => {
   const columns = useColumns()
 
   const { table } = useDataTable({
-    data: (promotions ?? []) as PromotionDTO[],
-    columns,
+    // useColumns returns a mix of DisplayColumnDef<AdminPromotion> +
+    // DisplayColumnDef<PromotionDTO>; useDataTable infers AdminPromotion
+    // from the data array, which mismatches the second column shape.
+    // Cast both for the legacy _DataTable plumbing.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    data: (promotions ?? []) as any,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    columns: columns as any,
     count,
     enablePagination: true,
     pageSize: PAGE_SIZE,
-    getRowId: (row) => row.id,
+    getRowId: (row: { id: string }) => row.id,
   })
 
   if (isError) {
@@ -64,7 +70,8 @@ export const PromotionListTable = () => {
 
       <_DataTable
         table={table}
-        columns={columns}
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        columns={columns as any}
         count={count}
         pageSize={PAGE_SIZE}
         filters={filters}
@@ -72,11 +79,15 @@ export const PromotionListTable = () => {
         pagination
         isLoading={isLoading}
         queryObject={raw}
-        navigateTo={(row) => `${row.original.id}`}
+        navigateTo={(row: { original: { id: string } }) =>
+          `${row.original.id}`
+        }
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         orderBy={[
           { key: "created_at", label: t("fields.createdAt") },
           { key: "updated_at", label: t("fields.updatedAt") },
-        ]}
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ] as any}
       />
       <Outlet />
     </Container>

@@ -8,11 +8,11 @@ import { useTranslation } from "react-i18next"
 import { decodeToken } from "react-jwt"
 import { Link, useSearchParams } from "react-router-dom"
 import * as z from "zod"
-import { Form } from "../../components/common/form"
-import AvatarBox from "../../components/common/logo-box/avatar-box"
-import { useSignUpWithEmailPass } from "../../hooks/api/auth"
-import { useAcceptInvite } from "../../hooks/api/invites"
-import { isFetchError } from "../../lib/is-fetch-error"
+import { Form } from "@components/common/form"
+import AvatarBox from "@components/common/logo-box/avatar-box"
+import { useSignUpWithEmailPass } from "@hooks/api/auth"
+import { useAcceptInvite } from "@hooks/api/invites"
+import { isFetchError } from "@lib/is-fetch-error"
 
 const CreateAccountSchema = z
   .object({
@@ -228,7 +228,8 @@ const CreateView = ({
           message: t("invite.invalidInvite"),
         })
         setInvalid(true)
-        return
+        
+return
       }
 
       form.setError("root", {
@@ -351,7 +352,7 @@ const CreateView = ({
             />
             {validationError && (
               <div className="mt-6 text-center">
-                <Hint className="inline-flex" variant={"error"}>
+                <Hint className="inline-flex" variant="error">
                   {validationError}
                 </Hint>
               </div>

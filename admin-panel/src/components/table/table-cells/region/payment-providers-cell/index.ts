@@ -1,1 +1,1 @@
-export * from "./payment-providers-cell"
+export * from "@components/table/table-cells/region/payment-providers-cell/payment-providers-cell"

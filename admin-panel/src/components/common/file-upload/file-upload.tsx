@@ -1,6 +1,7 @@
 import { ArrowDownTray } from "@medusajs/icons"
 import { Text, clx } from "@medusajs/ui"
-import { ChangeEvent, DragEvent, useRef, useState } from "react"
+import type { ChangeEvent, DragEvent} from "react";
+import { useRef, useState } from "react"
 
 export interface FileType {
   id: string
@@ -69,7 +70,8 @@ export const FileUpload = ({
       const id = Math.random().toString(36).substring(7)
 
       const previewUrl = URL.createObjectURL(file)
-      return {
+      
+return {
         id: id,
         url: previewUrl,
         file,

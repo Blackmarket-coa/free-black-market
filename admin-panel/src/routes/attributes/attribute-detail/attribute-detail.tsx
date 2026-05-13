@@ -10,15 +10,15 @@ import {
 } from "@medusajs/ui";
 import { useParams, useNavigate } from "react-router-dom";
 import { EllipsisHorizontal } from "@medusajs/icons";
-import { PossibleValuesTable } from "../attribute-edit-possible-value/components/possible-values-table";
+import { PossibleValuesTable } from "@routes/attributes/attribute-edit-possible-value/components/possible-values-table";
 
-import { SingleColumnLayout } from "../../../components/layout/single-column";
+import { SingleColumnLayout } from "@components/layout/single-column";
 import {
   attributeQueryKeys,
   useAttribute,
-} from "../../../hooks/api/attributes";
-import { sdk } from "../../../lib/client";
-import { SectionRow } from "../../../components/common/section";
+} from "@hooks/api/attributes";
+import { sdk } from "@lib/client";
+import { SectionRow } from "@components/common/section";
 
 export const AttributeDetail = () => {
   const { id } = useParams();

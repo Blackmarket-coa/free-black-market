@@ -2,15 +2,15 @@ import { ShoppingBag, TruckFast } from "@medusajs/icons"
 import { Container, Heading } from "@medusajs/ui"
 import { useTranslation } from "react-i18next"
 
-import { useStockLocations } from "../../../hooks/api/stock-locations"
-import { LOCATION_LIST_FIELDS } from "./constants"
-import { useLocationListTableColumns } from "./use-location-list-table-columns"
-import { useLocationListTableQuery } from "./use-location-list-table-query"
+import { useStockLocations } from "@hooks/api/stock-locations"
+import { LOCATION_LIST_FIELDS } from "@routes/locations/location-list/constants"
+import { useLocationListTableColumns } from "@routes/locations/location-list/use-location-list-table-columns"
+import { useLocationListTableQuery } from "@routes/locations/location-list/use-location-list-table-query"
 
-import { DataTable } from "../../../components/data-table"
-import { SidebarLink } from "../../../components/common/sidebar-link/sidebar-link"
-import { TwoColumnPage } from "../../../components/layout/pages"
-import { useExtension } from "../../../providers/extension-provider"
+import { DataTable } from "@components/data-table"
+import { SidebarLink } from "@components/common/sidebar-link/sidebar-link"
+import { TwoColumnPage } from "@components/layout/pages"
+import { useExtension } from "@providers/extension-provider"
 import { keepPreviousData } from "@tanstack/react-query"
 
 const PAGE_SIZE = 20

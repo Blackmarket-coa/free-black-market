@@ -1,8 +1,8 @@
 import { useSearchParams } from "react-router-dom"
-import { EditProductMediaForm } from "../edit-product-media-form"
-import { ProductMediaGallery } from "../product-media-gallery"
-import { ProductMediaViewContext } from "./product-media-view-context"
-import { HttpTypes } from "@medusajs/types"
+import { EditProductMediaForm } from "@routes/products/product-media/components/edit-product-media-form"
+import { ProductMediaGallery } from "@routes/products/product-media/components/product-media-gallery"
+import { ProductMediaViewContext } from "@routes/products/product-media/components/product-media-view/product-media-view-context"
+import type { HttpTypes } from "@medusajs/types"
 
 type ProductMediaViewProps = {
   product: HttpTypes.AdminProduct

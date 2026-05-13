@@ -1,1 +1,1 @@
-export { SellerDetails as Component } from "./seller-details";
+export { SellerDetails as Component } from "@routes/sellers/seller-details/seller-details";

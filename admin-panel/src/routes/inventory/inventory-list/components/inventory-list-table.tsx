@@ -1,17 +1,17 @@
-import { InventoryTypes } from "@medusajs/types"
+import type { InventoryTypes } from "@medusajs/types"
 import { Button, Container, Heading, Text } from "@medusajs/ui"
 
-import { RowSelectionState } from "@tanstack/react-table"
+import type { RowSelectionState } from "@tanstack/react-table"
 import { useState } from "react"
 import { useTranslation } from "react-i18next"
 import { Link, useNavigate } from "react-router-dom"
-import { _DataTable } from "../../../../components/table/data-table"
-import { useInventoryItems } from "../../../../hooks/api/inventory"
-import { useDataTable } from "../../../../hooks/use-data-table"
-import { INVENTORY_ITEM_IDS_KEY } from "../../common/constants"
-import { useInventoryTableColumns } from "./use-inventory-table-columns"
-import { useInventoryTableFilters } from "./use-inventory-table-filters"
-import { useInventoryTableQuery } from "./use-inventory-table-query"
+import { _DataTable } from "@components/table/data-table"
+import { useInventoryItems } from "@hooks/api/inventory"
+import { useDataTable } from "@hooks/use-data-table"
+import { INVENTORY_ITEM_IDS_KEY } from "@routes/inventory/common/constants"
+import { useInventoryTableColumns } from "@routes/inventory/inventory-list/components/use-inventory-table-columns"
+import { useInventoryTableFilters } from "@routes/inventory/inventory-list/components/use-inventory-table-filters"
+import { useInventoryTableQuery } from "@routes/inventory/inventory-list/components/use-inventory-table-query"
 
 const PAGE_SIZE = 20
 

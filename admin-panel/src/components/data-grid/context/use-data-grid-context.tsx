@@ -1,5 +1,5 @@
 import { useContext } from "react"
-import { DataGridContext } from "./data-grid-context"
+import { DataGridContext } from "@components/data-grid/context/data-grid-context"
 
 export const useDataGridContext = () => {
   const context = useContext(DataGridContext)

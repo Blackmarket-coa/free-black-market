@@ -1,5 +1,5 @@
 import { useContext } from "react"
-import { RouteModalProviderContext } from "./route-modal-context"
+import { RouteModalProviderContext } from "@components/modals/route-modal-provider/route-modal-context"
 
 export const useRouteModal = () => {
   const context = useContext(RouteModalProviderContext)

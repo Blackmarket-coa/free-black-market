@@ -1,16 +1,16 @@
-import { HttpTypes } from "@medusajs/types"
-import { ColumnDef } from "@tanstack/react-table"
+import type { HttpTypes } from "@medusajs/types"
+import type { ColumnDef } from "@tanstack/react-table"
 import { useMemo } from "react"
 import { useTranslation } from "react-i18next"
 
-import { Thumbnail } from "../../../../components/common/thumbnail"
+import { Thumbnail } from "@components/common/thumbnail"
 import {
   createDataGridHelper,
   DataGrid,
-} from "../../../../components/data-grid"
-import { createDataGridPriceColumns } from "../../../../components/data-grid/helpers/create-data-grid-price-columns"
-import { PricingCreateSchemaType } from "../../price-list-create/components/price-list-create-form/schema"
-import { isProductRow } from "../utils"
+} from "@components/data-grid"
+import { createDataGridPriceColumns } from "@components/data-grid/helpers/create-data-grid-price-columns"
+import type { PricingCreateSchemaType } from "@routes/price-lists/price-list-create/components/price-list-create-form/schema"
+import { isProductRow } from "@routes/price-lists/common/utils"
 
 const columnHelper = createDataGridHelper<
   HttpTypes.AdminProduct | HttpTypes.AdminProductVariant,
@@ -67,7 +67,8 @@ export const usePriceListGridColumns = ({
         pricePreferences,
         isReadyOnly: (context) => {
           const entity = context.row.original
-          return isProductRow(entity)
+          
+return isProductRow(entity)
         },
         getFieldName: (context, value) => {
           const entity = context.row.original

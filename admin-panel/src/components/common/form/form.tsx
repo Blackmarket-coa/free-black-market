@@ -6,19 +6,23 @@ import {
   Tooltip,
   clx,
 } from "@medusajs/ui"
-import { Label as RadixLabel, Slot } from "radix-ui"
-import React, {
-  ReactNode,
+import type { Label as RadixLabel} from "radix-ui";
+import { Slot } from "radix-ui"
+import type {
+  ReactNode} from "react";
+import type React from "react";
+import {
   createContext,
   forwardRef,
   useContext,
   useId,
 } from "react"
-import {
-  Controller,
+import type {
   ControllerProps,
   FieldPath,
-  FieldValues,
+  FieldValues} from "react-hook-form";
+import {
+  Controller,
   FormProvider,
   useFormContext,
   useFormState,

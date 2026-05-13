@@ -1,5 +1,5 @@
 import { useContext } from "react"
-import { ProductMediaViewContext } from "./product-media-view-context"
+import { ProductMediaViewContext } from "@routes/products/product-media/components/product-media-view/product-media-view-context"
 
 export const useProductMediaView = () => {
   const context = useContext(ProductMediaViewContext)

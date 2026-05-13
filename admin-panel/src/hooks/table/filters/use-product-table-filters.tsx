@@ -1,8 +1,8 @@
 import { useTranslation } from "react-i18next"
-import { Filter } from "../../../components/table/data-table"
-import { useProductTags } from "../../api"
-import { useProductTypes } from "../../api/product-types"
-import { useSalesChannels } from "../../api/sales-channels"
+import type { Filter } from "@components/table/data-table"
+import { useProductTags } from "@hooks/api"
+import { useProductTypes } from "@hooks/api/product-types"
+import { useSalesChannels } from "@hooks/api/sales-channels"
 
 const excludeableFields = [
   "sales_channel_id",
@@ -53,8 +53,7 @@ export const useProductTableFilters = (
     }
   )
 
-  const isCategoryExcluded = exclude?.includes("categories")
-
+  // const isCategoryExcluded = exclude?.includes("categories")
   // const { product_categories } = useAdminProductCategories({
   //   limit: 1000,
   //   offset: 0,
@@ -64,8 +63,7 @@ export const useProductTableFilters = (
   //  enabled: !isCategoryExcluded,
   // })
 
-  const isCollectionExcluded = exclude?.includes("collections")
-
+  // const isCollectionExcluded = exclude?.includes("collections")
   // const { collections } = useAdminCollections(
   //   {
   //     limit: 1000,

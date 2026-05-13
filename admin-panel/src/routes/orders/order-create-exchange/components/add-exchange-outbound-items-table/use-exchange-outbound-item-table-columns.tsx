@@ -6,7 +6,7 @@ import { useTranslation } from "react-i18next"
 import {
   ProductCell,
   ProductHeader,
-} from "../../../../../components/table/table-cells/product/product-cell"
+} from "@components/table/table-cells/product/product-cell"
 
 const columnHelper = createColumnHelper<any>()
 

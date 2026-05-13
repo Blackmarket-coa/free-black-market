@@ -1,1 +1,1 @@
-export * from "./location-general-section"
+export * from "@routes/locations/location-detail/components/location-general-section/location-general-section"

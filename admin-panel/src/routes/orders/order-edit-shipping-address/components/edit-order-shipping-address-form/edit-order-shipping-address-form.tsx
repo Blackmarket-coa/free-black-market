@@ -1,15 +1,15 @@
 import * as zod from "zod"
 import { zodResolver } from "@hookform/resolvers/zod"
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 import { Button, Input, toast } from "@medusajs/ui"
 import { useForm } from "react-hook-form"
 import { useTranslation } from "react-i18next"
 
-import { Form } from "../../../../../components/common/form"
-import { RouteDrawer, useRouteModal } from "../../../../../components/modals"
-import { KeyboundForm } from "../../../../../components/utilities/keybound-form"
-import { useUpdateOrder } from "../../../../../hooks/api/orders"
-import { CountrySelect } from "../../../../../components/inputs/country-select"
+import { Form } from "@components/common/form"
+import { RouteDrawer, useRouteModal } from "@components/modals"
+import { KeyboundForm } from "@components/utilities/keybound-form"
+import { useUpdateOrder } from "@hooks/api/orders"
+import { CountrySelect } from "@components/inputs/country-select"
 
 type EditOrderShippingAddressFormProps = {
   order: HttpTypes.AdminOrder

@@ -1,10 +1,11 @@
-import {
+import type {
   Active,
-  DndContext,
   DragEndEvent,
-  DragOverlay,
   DragStartEvent,
-  DraggableSyntheticListeners,
+  DraggableSyntheticListeners} from "@dnd-kit/core";
+import {
+  DndContext,
+  DragOverlay,
   KeyboardSensor,
   PointerSensor,
   defaultDropAnimationSideEffects,
@@ -22,11 +23,12 @@ import {
 import { CSS } from "@dnd-kit/utilities"
 import { DotsSix } from "@medusajs/icons"
 import { IconButton, clx } from "@medusajs/ui"
-import {
+import type {
   CSSProperties,
-  Fragment,
   PropsWithChildren,
-  ReactNode,
+  ReactNode} from "react";
+import {
+  Fragment,
   createContext,
   useContext,
   useMemo,

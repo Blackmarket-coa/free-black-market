@@ -3,7 +3,7 @@ import { subDays, subMonths } from "date-fns"
 import { useMemo } from "react"
 import { useTranslation } from "react-i18next"
 
-import { useDate } from "../../../../hooks/use-date"
+import { useDate } from "@hooks/use-date"
 
 const filterHelper = createDataTableFilterHelper<any>()
 
@@ -13,7 +13,8 @@ const useDateFilterOptions = () => {
   const today = useMemo(() => {
     const date = new Date()
     date.setHours(0, 0, 0, 0)
-    return date
+    
+return date
   }, [])
 
   return useMemo(() => {

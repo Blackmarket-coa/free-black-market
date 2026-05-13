@@ -1,5 +1,5 @@
 import { PencilSquare, Trash } from "@medusajs/icons"
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 import { Button, Container, Heading, Text } from "@medusajs/ui"
 import { keepPreviousData } from "@tanstack/react-query"
 import { createColumnHelper } from "@tanstack/react-table"
@@ -7,13 +7,13 @@ import { useMemo } from "react"
 import { useTranslation } from "react-i18next"
 import { Link } from "react-router-dom"
 
-import { ActionMenu } from "../../../../../components/common/action-menu"
-import { _DataTable } from "../../../../../components/table/data-table"
-import { useReturnReasons } from "../../../../../hooks/api/return-reasons"
-import { useReturnReasonTableColumns } from "../../../../../hooks/table/columns"
-import { useReturnReasonTableQuery } from "../../../../../hooks/table/query"
-import { useDataTable } from "../../../../../hooks/use-data-table"
-import { useDeleteReturnReasonAction } from "../../../common/hooks/use-delete-return-reason-action"
+import { ActionMenu } from "@components/common/action-menu"
+import { _DataTable } from "@components/table/data-table"
+import { useReturnReasons } from "@hooks/api/return-reasons"
+import { useReturnReasonTableColumns } from "@hooks/table/columns"
+import { useReturnReasonTableQuery } from "@hooks/table/query"
+import { useDataTable } from "@hooks/use-data-table"
+import { useDeleteReturnReasonAction } from "@routes/return-reasons/common/hooks/use-delete-return-reason-action"
 
 const PAGE_SIZE = 20
 

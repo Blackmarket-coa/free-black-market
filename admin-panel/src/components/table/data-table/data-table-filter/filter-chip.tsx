@@ -1,7 +1,7 @@
 import { XMarkMini } from "@medusajs/icons"
 import { Text, clx } from "@medusajs/ui"
 import { Popover as RadixPopover } from "radix-ui"
-import { MouseEvent } from "react"
+import type { MouseEvent } from "react"
 import { useTranslation } from "react-i18next"
 
 export type FilterChipProps = {

@@ -5,7 +5,9 @@
   "pnpm": {
     "overrides": {
       "glob": ">=10.5.0",
-      "qs": ">=6.14.1"
+      "qs": ">=6.14.1",
+      "lodash": ">=4.18.0",
+      "picomatch": ">=4.0.4"
     }
   },
   "scripts": {
@@ -18,7 +20,7 @@
     "test": "vitest --run",
     "i18n:validate": "node ./scripts/i18n/validate-translation.js",
     "i18n:schema": "node ./scripts/i18n/generate-schema.js",
-    "lint": "eslint . --ext ts,tsx --max-warnings 7000",
+    "lint": "eslint . --ext ts,tsx --max-warnings 1000",
     "format": "prettier --write \"src/**/*.{ts,tsx,js,jsx,json,css,md}\"",
     "format:check": "prettier --check \"src/**/*.{ts,tsx,js,jsx,json,css,md}\"",
     "lint:strict": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
@@ -73,7 +75,7 @@
     "i18next": "23.7.11",
     "i18next-browser-languagedetector": "7.2.0",
     "i18next-http-backend": "2.4.2",
-    "lodash": "^4.17.21",
+    "lodash": "^4.18.0",
     "match-sorter": "^6.3.4",
     "motion": "^11.15.0",
     "qs": "^6.12.0",
@@ -90,11 +92,15 @@
     "zod": "3.25.76"
   },
   "devDependencies": {
+    "@medusajs/admin-sdk": "2.12.5",
     "@medusajs/admin-shared": "2.12.5",
     "@medusajs/admin-vite-plugin": "2.12.5",
+    "@medusajs/framework": "2.12.5",
     "@medusajs/types": "2.12.5",
     "@medusajs/ui-preset": "2.12.5",
+    "@sentry/browser": "^10.53.1",
     "@trivago/prettier-plugin-sort-imports": "^5.2.2",
+    "@types/lodash": "^4.17.24",
     "@types/node": "^20.11.15",
     "@types/react": "^18.2.79",
     "@types/react-dom": "^18.2.25",
@@ -115,6 +121,7 @@
     "prettier": "^3.1.1",
     "prettier-plugin-classnames": "^0.8.4",
     "prettier-plugin-tailwindcss": "^0.7.0",
+    "stripe": "^22.1.1",
     "tailwindcss": "^3.4.1",
     "tsup": "^8.0.2",
     "typescript": "5.2.2",

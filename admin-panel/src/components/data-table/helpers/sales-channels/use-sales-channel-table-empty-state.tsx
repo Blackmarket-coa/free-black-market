@@ -1,4 +1,4 @@
-import { DataTableEmptyStateProps } from "@medusajs/ui"
+import type { DataTableEmptyStateProps } from "@medusajs/ui"
 import { useMemo } from "react"
 import { useTranslation } from "react-i18next"
 

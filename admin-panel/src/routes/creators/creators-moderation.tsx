@@ -58,7 +58,8 @@ async function adminFetch<T>(path: string, init?: RequestInit): Promise<T> {
     const body = await res.text().catch(() => "")
     throw new Error(`${res.status}: ${body || res.statusText}`)
   }
-  return (await res.json()) as T
+  
+return (await res.json()) as T
 }
 
 export const CreatorsModerationPage = () => {
@@ -105,7 +106,8 @@ export const CreatorsModerationPage = () => {
     const reason = (reasonByAttribution[id] || "").trim()
     if (reason.length < 2) {
       toast.error("Please provide a reason before disqualifying")
-      return
+      
+return
     }
     try {
       await adminFetch(`/v1/admin/marketplace/attributions/${id}/disqualify`, {
@@ -116,7 +118,8 @@ export const CreatorsModerationPage = () => {
       setReasonByAttribution((m) => {
         const next = { ...m }
         delete next[id]
-        return next
+        
+return next
       })
       await reload()
     } catch (err) {

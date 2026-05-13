@@ -1,9 +1,11 @@
-import { castNumber } from "../../../../lib/cast-number"
-import { ITEM_TOTAL_ATTRIBUTE } from "../constants"
+import { castNumber } from "@lib/cast-number"
+import { ITEM_TOTAL_ATTRIBUTE } from "@routes/locations/common/constants"
+
+type PriceRuleOperator = "gt" | "lt" | "eq" | "lte" | "gte"
 
 const createPriceRule = (
   attribute: string,
-  operator: string,
+  operator: PriceRuleOperator,
   value: string | number
 ) => {
   const rule = {
@@ -22,7 +24,7 @@ export const buildShippingOptionPriceRules = (rule: {
   lt?: string | number | null
   eq?: string | number | null
 }) => {
-  const conditions = [
+  const conditions: { value: string | number | null | undefined; operator: PriceRuleOperator }[] = [
     { value: rule.gte, operator: "gte" },
     { value: rule.lte, operator: "lte" },
     { value: rule.gt, operator: "gt" },
@@ -32,7 +34,7 @@ export const buildShippingOptionPriceRules = (rule: {
 
   const conditionsWithValues = conditions.filter(({ value }) => value) as {
     value: string | number
-    operator: string
+    operator: PriceRuleOperator
   }[]
 
   return conditionsWithValues.map(({ operator, value }) =>

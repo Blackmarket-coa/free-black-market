@@ -1,4 +1,4 @@
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 import { PencilSquare, Trash } from "@medusajs/icons"
 import {
   createDataTableColumnHelper,
@@ -9,15 +9,15 @@ import {
 import { useTranslation } from "react-i18next"
 import { useMemo } from "react"
 import { useNavigate } from "react-router-dom"
-import { FetchError } from "@medusajs/js-sdk"
+import type { FetchError } from "@medusajs/js-sdk"
 
-import { PlaceholderCell } from "../../../components/table/table-cells/common/placeholder-cell"
-import { getFormattedAddress } from "../../../lib/addresses"
-import { FulfillmentSetType } from "../common/constants"
-import { queryClient } from "../../../lib/query-client"
-import { stockLocationsQueryKeys } from "../../../hooks/api/stock-locations"
-import { ListSummary } from "../../../components/common/list-summary"
-import { sdk } from "../../../lib/client"
+import { PlaceholderCell } from "@components/table/table-cells/common/placeholder-cell"
+import { getFormattedAddress } from "@lib/addresses"
+import { FulfillmentSetType } from "@routes/locations/common/constants"
+import { queryClient } from "@lib/query-client"
+import { stockLocationsQueryKeys } from "@hooks/api/stock-locations"
+import { ListSummary } from "@components/common/list-summary"
+import { sdk } from "@lib/client"
 
 const columnHelper = createDataTableColumnHelper<HttpTypes.AdminStockLocation>()
 
@@ -159,7 +159,8 @@ export const useLocationListTableColumns = () => {
       columnHelper.action({
         actions: (ctx) => {
           const location = ctx.row.original
-          return [
+          
+return [
             [
               {
                 icon: <PencilSquare />,

@@ -1,1 +1,1 @@
-export * from "./customer-cell"
+export * from "@components/table/table-cells/order/customer-cell/customer-cell"

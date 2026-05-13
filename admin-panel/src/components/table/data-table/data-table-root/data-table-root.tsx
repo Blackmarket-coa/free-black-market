@@ -1,21 +1,23 @@
 import { CommandBar, Table, clx } from "@medusajs/ui"
-import {
+import type {
   ColumnDef,
   Table as ReactTable,
-  Row,
+  Row} from "@tanstack/react-table";
+import {
   flexRender,
 } from "@tanstack/react-table"
-import {
+import type {
   ComponentPropsWithoutRef,
+  UIEvent} from "react";
+import {
   Fragment,
-  UIEvent,
   useEffect,
   useRef,
   useState,
 } from "react"
 import { useTranslation } from "react-i18next"
 import { Link } from "react-router-dom"
-import { NoResults } from "../../../common/empty-table-content"
+import { NoResults } from "@components/common/empty-table-content"
 
 type BulkCommand = {
   label: string

@@ -1,13 +1,19 @@
-import { InventoryNext, ProductVariantDTO } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 
-import { InventoryActions } from "./inventory-actions"
-import { PlaceholderCell } from "../../../../../components/table/table-cells/common/placeholder-cell"
+import { InventoryActions } from "@routes/product-variants/product-variant-detail/components/variant-inventory-section/inventory-actions"
+import { PlaceholderCell } from "@components/table/table-cells/common/placeholder-cell"
 import { createColumnHelper } from "@tanstack/react-table"
 import { useMemo } from "react"
 import { useTranslation } from "react-i18next"
 
-interface ExtendedInventoryItem extends InventoryNext.InventoryItemDTO {
-  variants: ProductVariantDTO[]
+// The variant detail page assembles inventory rows by joining each
+// inventory_item with its parent variant + required_quantity, which the
+// SDK type doesn't model. We accept the looser shape locally.
+type ExtendedInventoryItem = HttpTypes.AdminInventoryItem & {
+  title?: string
+  required_quantity?: number
+  variants?: unknown[]
+  location_levels?: Array<{ available_quantity: number }>
 }
 
 const columnHelper = createColumnHelper<ExtendedInventoryItem>()
@@ -17,10 +23,10 @@ export const useInventoryTableColumns = () => {
 
   return useMemo(
     () => [
-      columnHelper.accessor("title", {
+      columnHelper.accessor("title" as any, {
         header: t("fields.title"),
         cell: ({ getValue }) => {
-          const title = getValue()
+          const title = getValue() as string | undefined
 
           if (!title) {
             return <PlaceholderCell />
@@ -33,7 +39,7 @@ export const useInventoryTableColumns = () => {
           )
         },
       }),
-      columnHelper.accessor("sku", {
+      columnHelper.accessor("sku" as any, {
         header: t("fields.sku"),
         cell: ({ getValue }) => {
           const sku = getValue() as string
@@ -49,10 +55,10 @@ export const useInventoryTableColumns = () => {
           )
         },
       }),
-      columnHelper.accessor("required_quantity", {
+      columnHelper.accessor("required_quantity" as any, {
         header: t("fields.requiredQuantity"),
         cell: ({ getValue }) => {
-          const quantity = getValue()
+          const quantity = getValue() as number | undefined
 
           if (Number.isNaN(quantity)) {
             return <PlaceholderCell />
@@ -68,7 +74,7 @@ export const useInventoryTableColumns = () => {
       columnHelper.display({
         id: "inventory_quantity",
         header: t("fields.inventory"),
-        cell: ({ getValue, row: { original: inventory } }) => {
+        cell: ({ row: { original: inventory } }) => {
           if (!inventory.location_levels?.length) {
             return <PlaceholderCell />
           }
@@ -76,7 +82,7 @@ export const useInventoryTableColumns = () => {
           let quantity = 0
           let locations = 0
 
-          inventory.location_levels.forEach((level) => {
+          inventory.location_levels.forEach((level: { available_quantity: number }) => {
             quantity += level.available_quantity
             locations += 1
           })
@@ -96,7 +102,7 @@ export const useInventoryTableColumns = () => {
       }),
       columnHelper.display({
         id: "actions",
-        cell: ({ row }) => <InventoryActions item={row.original} />,
+        cell: ({ row }) => <InventoryActions item={row.original as any} />,
       }),
     ],
     [t]

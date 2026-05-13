@@ -1,1 +1,1 @@
-export * from "./section-row"
+export * from "@components/common/section/section-row"

@@ -1,13 +1,13 @@
-import { UseFormReturn } from "react-hook-form"
+import type { UseFormReturn } from "react-hook-form"
 
-import { StackedFocusModal } from "../../../../../components/modals"
-import { FormExtensionZone } from "../../../../../dashboard-app"
-import { useExtension } from "../../../../../providers/extension-provider"
-import { ProductCreateSchemaType } from "../../types"
-import { ProductCreateOrganizationSection } from "./components/product-create-organize-section"
-import { ProductCreateAttributeSection } from "./components/product-create-organize-attribute-section/product-create-details-attribute-section"
-import { ProductCreateSalesChannelStackedModal } from "./components/product-create-sales-channel-stacked-modal"
-import { SC_STACKED_MODAL_ID } from "./constants"
+import { StackedFocusModal } from "@components/modals"
+import { FormExtensionZone } from "@/dashboard-app"
+import { useExtension } from "@providers/extension-provider"
+import type { ProductCreateSchemaType } from "@routes/products/product-create/types"
+import { ProductCreateOrganizationSection } from "@routes/products/product-create/components/product-create-organize-form/components/product-create-organize-section"
+import { ProductCreateAttributeSection } from "@routes/products/product-create/components/product-create-organize-form/components/product-create-organize-attribute-section/product-create-details-attribute-section"
+import { ProductCreateSalesChannelStackedModal } from "@routes/products/product-create/components/product-create-organize-form/components/product-create-sales-channel-stacked-modal"
+import { SC_STACKED_MODAL_ID } from "@routes/products/product-create/components/product-create-organize-form/constants"
 
 type ProductAttributesProps = {
   form: UseFormReturn<ProductCreateSchemaType>

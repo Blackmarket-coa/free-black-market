@@ -1,8 +1,8 @@
 import { useParams } from "react-router-dom"
 
-import { RouteDrawer } from "../../../components/modals"
-import { MetadataForm } from "../../../components/forms/metadata-form"
-import { useSalesChannel, useUpdateSalesChannel } from "../../../hooks/api"
+import { RouteDrawer } from "@components/modals"
+import { MetadataForm } from "@components/forms/metadata-form"
+import { useSalesChannel, useUpdateSalesChannel } from "@hooks/api"
 
 export const SalesChannelMetadata = () => {
   const { id } = useParams()
@@ -12,8 +12,8 @@ export const SalesChannelMetadata = () => {
     isPending,
     isError,
     error,
-  } = useSalesChannel(id)
-  const { mutateAsync, isPending: isMutating } = useUpdateSalesChannel(id)
+  } = useSalesChannel(id!)
+  const { mutateAsync, isPending: isMutating } = useUpdateSalesChannel(id!)
 
   if (isError) {
     throw error
@@ -24,7 +24,7 @@ export const SalesChannelMetadata = () => {
       <MetadataForm
         isPending={isPending}
         isMutating={isMutating}
-        hook={mutateAsync}
+        hook={mutateAsync as any}
         metadata={salesChannel?.metadata}
       />
     </RouteDrawer>

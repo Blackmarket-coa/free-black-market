@@ -1,5 +1,5 @@
 import { useContext } from "react"
-import { StackedModalContext } from "./stacked-modal-context"
+import { StackedModalContext } from "@components/modals/stacked-modal-provider/stacked-modal-context"
 
 export const useStackedModal = () => {
   const context = useContext(StackedModalContext)

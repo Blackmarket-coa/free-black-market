@@ -1,1 +1,1 @@
-export * from "./create-promotion-form"
+export * from "@routes/promotions/promotion-create/components/create-promotion-form/create-promotion-form"

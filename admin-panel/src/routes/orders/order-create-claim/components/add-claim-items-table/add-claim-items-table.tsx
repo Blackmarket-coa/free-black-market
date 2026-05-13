@@ -1,19 +1,18 @@
-import {
+import type {
   AdminOrderLineItem,
   DateComparisonOperator,
   NumericalComparisonOperator,
 } from "@medusajs/types"
-import { OnChangeFn, RowSelectionState } from "@tanstack/react-table"
+import type { OnChangeFn, RowSelectionState } from "@tanstack/react-table"
 import { useMemo, useState } from "react"
 
 import { useTranslation } from "react-i18next"
-import { _DataTable } from "../../../../../components/table/data-table"
-import { useDataTable } from "../../../../../hooks/use-data-table"
-import { getStylizedAmount } from "../../../../../lib/money-amount-helpers"
-import { getReturnableQuantity } from "../../../../../lib/rma"
-import { useClaimItemTableColumns } from "./use-claim-item-table-columns"
-import { useClaimItemTableFilters } from "./use-claim-item-table-filters"
-import { useClaimItemTableQuery } from "./use-claim-item-table-query"
+import { _DataTable } from "@components/table/data-table"
+import { useDataTable } from "@hooks/use-data-table"
+import { getReturnableQuantity } from "@lib/rma"
+import { useClaimItemTableColumns } from "@routes/orders/order-create-claim/components/add-claim-items-table/use-claim-item-table-columns"
+import { useClaimItemTableFilters } from "@routes/orders/order-create-claim/components/add-claim-items-table/use-claim-item-table-filters"
+import { useClaimItemTableQuery } from "@routes/orders/order-create-claim/components/add-claim-items-table/use-claim-item-table-query"
 
 const PAGE_SIZE = 50
 const PREFIX = "rit"
@@ -36,7 +35,8 @@ export const AddClaimItemsTable = ({
   const [rowSelection, setRowSelection] = useState<RowSelectionState>(
     selectedItems.reduce((acc, id) => {
       acc[id] = true
-      return acc
+      
+return acc
     }, {} as RowSelectionState)
   )
 
@@ -70,8 +70,8 @@ export const AddClaimItemsTable = ({
     if (q) {
       results = results.filter((i) => {
         return (
-          i.product_title.toLowerCase().includes(q.toLowerCase()) ||
-          i.variant_title.toLowerCase().includes(q.toLowerCase()) ||
+          i.product_title?.toLowerCase().includes(q.toLowerCase()) ||
+          i.variant_title?.toLowerCase().includes(q.toLowerCase()) ||
           i.variant_sku?.toLowerCase().includes(q.toLowerCase())
         )
       })
@@ -182,11 +182,22 @@ const sortItems = (
       aValue = a.variant_sku
       bValue = b.variant_sku
     } else if (field === "returnable_quantity") {
-      aValue = a.quantity - (a.returned_quantity || 0)
-      bValue = b.quantity - (b.returned_quantity || 0)
+      // AdminOrderLineItem omits `returned_quantity` / `refundable` in
+      // @medusajs/types; both are computed and included in the admin
+      // response. Cast structurally.
+      aValue =
+        a.quantity -
+        Number(
+          (a as { returned_quantity?: number }).returned_quantity ?? 0
+        )
+      bValue =
+        b.quantity -
+        Number(
+          (b as { returned_quantity?: number }).returned_quantity ?? 0
+        )
     } else if (field === "refundable_amount") {
-      aValue = a.refundable || 0
-      bValue = b.refundable || 0
+      aValue = Number((a as { refundable?: number }).refundable ?? 0)
+      bValue = Number((b as { refundable?: number }).refundable ?? 0)
     }
 
     if (aValue < bValue) {
@@ -195,7 +206,8 @@ const sortItems = (
     if (aValue > bValue) {
       return direction === "asc" ? 1 : -1
     }
-    return 0
+    
+return 0
   })
 }
 
@@ -242,7 +254,9 @@ const filterByNumber = (
   items: AdminOrderLineItem[],
   value: NumericalComparisonOperator | number,
   field: "returnable_quantity" | "refundable_amount",
-  currency_code: string
+  // Kept for call-site parity; the filter now compares numeric values
+  // directly and doesn't need the currency code for stylising.
+  _currency_code: string
 ) => {
   const { eq, gt, lt, gte, lte } =
     typeof value === "object"
@@ -250,9 +264,17 @@ const filterByNumber = (
       : { ...defaultOperators, eq: value }
 
   return items.filter((i) => {
-    const returnableQuantity = i.quantity - (i.returned_quantity || 0)
-    const refundableAmount = getStylizedAmount(i.refundable || 0, currency_code)
-
+    const returnableQuantity =
+      i.quantity -
+      Number(
+        (i as { returned_quantity?: number }).returned_quantity ?? 0
+      )
+    const refundableAmount = Number(
+      (i as { refundable?: number }).refundable ?? 0
+    )
+    // `field === "returnable_quantity"` compares numeric quantities;
+    // the refundable branch uses the raw amount (number) to compare,
+    // not the stylized string. getStylizedAmount is for display only.
     const itemValue =
       field === "returnable_quantity" ? returnableQuantity : refundableAmount
 
@@ -263,19 +285,19 @@ const filterByNumber = (
     let isValid = true
 
     if (gt) {
-      isValid = isValid && itemValue > gt
+      isValid = isValid && itemValue > Number(gt)
     }
 
     if (gte) {
-      isValid = isValid && itemValue >= gte
+      isValid = isValid && itemValue >= Number(gte)
     }
 
     if (lt) {
-      isValid = isValid && itemValue < lt
+      isValid = isValid && itemValue < Number(lt)
     }
 
     if (lte) {
-      isValid = isValid && itemValue <= lte
+      isValid = isValid && itemValue <= Number(lte)
     }
 
     return isValid

@@ -1,10 +1,10 @@
 import { Input, Textarea } from "@medusajs/ui"
-import { UseFormReturn } from "react-hook-form"
+import type { UseFormReturn } from "react-hook-form"
 import { useTranslation } from "react-i18next"
 
-import { Form } from "../../../../../../../components/common/form"
-import { HandleInput } from "../../../../../../../components/inputs/handle-input"
-import { ProductCreateSchemaType } from "../../../../types"
+import { Form } from "@components/common/form"
+import { HandleInput } from "@components/inputs/handle-input"
+import type { ProductCreateSchemaType } from "@routes/products/product-create/types"
 
 type ProductCreateGeneralSectionProps = {
   form: UseFormReturn<ProductCreateSchemaType>

@@ -1,1 +1,1 @@
-export * from "./link-button"
+export * from "@components/common/link-button/link-button"

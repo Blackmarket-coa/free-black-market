@@ -1,13 +1,13 @@
-import { HttpTypes } from "@medusajs/types"
-import { TFunction } from "i18next"
+import type { HttpTypes } from "@medusajs/types"
+import type { TFunction } from "i18next"
 import { json } from "react-router-dom"
-import { castNumber } from "../../../lib/cast-number"
-import { PriceListDateStatus, PriceListStatus } from "./constants"
-import {
+import { castNumber } from "@lib/cast-number"
+import { PriceListDateStatus, PriceListStatus } from "@routes/price-lists/common/constants"
+import type {
   PriceListCreateCurrencyPrice,
   PriceListCreateProductVariantSchema,
   PriceListCreateProductsSchema,
-} from "./schemas"
+} from "@routes/price-lists/common/schemas"
 
 const getValues = (priceList: HttpTypes.AdminPriceList) => {
   const startsAt = priceList.starts_at

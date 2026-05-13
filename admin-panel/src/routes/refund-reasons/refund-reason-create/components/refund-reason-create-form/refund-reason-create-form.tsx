@@ -5,13 +5,13 @@ import { useForm } from "react-hook-form";
 import { useTranslation } from "react-i18next";
 import { z } from "zod";
 
-import { Form } from "../../../../../components/common/form";
+import { Form } from "@components/common/form";
 import {
   RouteFocusModal,
   useRouteModal,
-} from "../../../../../components/modals";
-import { KeyboundForm } from "../../../../../components/utilities/keybound-form";
-import { useCreateRefundReason } from "../../../../../hooks/api";
+} from "@components/modals";
+import { KeyboundForm } from "@components/utilities/keybound-form";
+import { useCreateRefundReason } from "@hooks/api";
 
 const RefundReasonCreateSchema = z.object({
   label: z.string().min(1),
@@ -43,7 +43,7 @@ export const RefundReasonCreateForm = () => {
   const { mutateAsync, isPending } = useCreateRefundReason();
 
   const handleSubmit = form.handleSubmit(async (data) => {
-    await mutateAsync(data, {
+    await mutateAsync(data as any, {
       onSuccess: ({ refund_reason }) => {
         toast.success(
           t("refundReasons.create.successToast", {

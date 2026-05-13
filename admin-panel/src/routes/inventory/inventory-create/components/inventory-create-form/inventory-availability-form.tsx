@@ -1,14 +1,14 @@
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 import { useMemo } from "react"
-import { UseFormReturn } from "react-hook-form"
+import type { UseFormReturn } from "react-hook-form"
 import { useTranslation } from "react-i18next"
 
 import {
   DataGrid,
   createDataGridHelper,
-} from "../../../../../components/data-grid"
-import { useRouteModal } from "../../../../../components/modals"
-import { CreateInventoryItemSchema } from "./schema"
+} from "@components/data-grid"
+import { useRouteModal } from "@components/modals"
+import type { CreateInventoryItemSchema } from "@routes/inventory/inventory-create/components/inventory-create-form/schema"
 
 type InventoryAvailabilityFormProps = {
   form: UseFormReturn<CreateInventoryItemSchema>

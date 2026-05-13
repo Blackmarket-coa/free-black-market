@@ -1,5 +1,6 @@
 import { Input, Text } from "@medusajs/ui"
-import { ComponentProps, ElementRef, forwardRef } from "react"
+import type { ComponentProps, ElementRef} from "react";
+import { forwardRef } from "react"
 
 export const HandleInput = forwardRef<
   ElementRef<typeof Input>,

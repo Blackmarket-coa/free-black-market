@@ -1,11 +1,11 @@
-import {
+import type {
   AdminReturnReasonListParams,
   AdminReturnReasonListResponse,
 } from "@medusajs/types"
 
-import { returnReasonsQueryKeys } from "../../../hooks/api/return-reasons"
-import { sdk } from "../../../lib/client"
-import { queryClient } from "../../../lib/query-client"
+import { returnReasonsQueryKeys } from "@hooks/api/return-reasons"
+import { sdk } from "@lib/client"
+import { queryClient } from "@lib/query-client"
 
 const returnReasonListQuery = (query?: AdminReturnReasonListParams) => ({
   queryKey: returnReasonsQueryKeys.list(query),
@@ -14,7 +14,8 @@ const returnReasonListQuery = (query?: AdminReturnReasonListParams) => ({
 
 export const returnReasonListLoader = async () => {
   const query = returnReasonListQuery()
-  return (
+  
+return (
     queryClient.getQueryData<AdminReturnReasonListResponse>(query.queryKey) ??
     (await queryClient.fetchQuery(query))
   )

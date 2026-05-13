@@ -1,12 +1,13 @@
-import { FetchError } from "@medusajs/js-sdk";
+import type { FetchError } from "@medusajs/js-sdk";
 import type {
   AdminRefundReasonDeleteResponse,
   HttpTypes,
 } from "@medusajs/types";
 
-import {
+import type {
   UseMutationOptions,
-  UseQueryOptions,
+  UseQueryOptions} from "@tanstack/react-query";
+import {
   useMutation,
   useQuery,
 } from "@tanstack/react-query";
@@ -19,9 +20,9 @@ import type {
   AdminUpdateRefundReason,
 } from "@custom-types/refund-reasons";
 
-import { sdk } from "../../lib/client";
-import { queryClient } from "../../lib/query-client";
-import { queryKeysFactory } from "../../lib/query-key-factory";
+import { sdk } from "@lib/client";
+import { queryClient } from "@lib/query-client";
+import { queryKeysFactory } from "@lib/query-key-factory";
 
 const REFUND_REASONS_QUERY_KEY = "refund_reasons" as const;
 export const refundReasonsQueryKeys = queryKeysFactory(

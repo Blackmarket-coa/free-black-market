@@ -2,18 +2,18 @@ import { createColumnHelper } from "@tanstack/react-table"
 import { useMemo } from "react"
 import { useTranslation } from "react-i18next"
 
-import { TaxRateResponse } from "@medusajs/types"
+import type { AdminTaxRate } from "@medusajs/types"
 import {
   TextCell,
   TextHeader,
-} from "../../../components/table/table-cells/common/text-cell"
+} from "@components/table/table-cells/common/text-cell"
 
 import {
   TypeCell,
   TypeHeader,
-} from "../../../components/table/table-cells/taxes/type-cell"
+} from "@components/table/table-cells/taxes/type-cell"
 
-const columnHelper = createColumnHelper<TaxRateResponse>()
+const columnHelper = createColumnHelper<AdminTaxRate>()
 
 export const useTaxRateTableColumns = () => {
   const { t } = useTranslation()
@@ -29,7 +29,7 @@ export const useTaxRateTableColumns = () => {
         id: "province",
         header: () => <TextHeader text={t("fields.province")} />,
         cell: ({ row }) => (
-          <TextCell text={row.original.tax_region.province_code} />
+          <TextCell text={row.original.tax_region.province_code ?? undefined} />
         ),
       }),
       columnHelper.display({

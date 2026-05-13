@@ -1,6 +1,6 @@
-import { SingleColumnPage } from "../../../components/layout/pages"
-import { useExtension } from "../../../providers/extension-provider"
-import { CustomerGroupListTable } from "./components/customer-group-list-table"
+import { SingleColumnPage } from "@components/layout/pages"
+import { useExtension } from "@providers/extension-provider"
+import { CustomerGroupListTable } from "@routes/customer-groups/customer-group-list/components/customer-group-list-table"
 
 export const CustomerGroupsList = () => {
   const { getWidgets } = useExtension()

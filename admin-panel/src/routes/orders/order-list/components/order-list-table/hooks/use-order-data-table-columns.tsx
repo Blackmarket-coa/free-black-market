@@ -1,11 +1,19 @@
-import React, { useMemo } from "react"
+import { useMemo } from "react"
 import { createDataTableColumnHelper, StatusBadge } from "@medusajs/ui"
-import { HttpTypes } from "@medusajs/types"
-import { useDate } from "../../../../../../hooks/use-date"
+import type { HttpTypes } from "@medusajs/types"
+import { useDate } from "@hooks/use-date"
 
 const columnHelper = createDataTableColumnHelper<HttpTypes.AdminOrder>()
 
-export function useOrderDataTableColumns(apiColumns: any[] | undefined) {
+type ApiColumn = {
+  field: string
+  name: string
+  hideable?: boolean
+}
+
+export function useOrderDataTableColumns(
+  apiColumns: ApiColumn[] | undefined
+) {
   const { getFullDate } = useDate()
   
   return useMemo(() => {
@@ -21,7 +29,8 @@ export function useOrderDataTableColumns(apiColumns: any[] | undefined) {
           header: () => apiColumn.name,
           cell: ({ getValue }) => {
             const value = getValue()
-            return (
+            
+return (
               <div className="flex items-center gap-x-2">
                 <span className="text-ui-fg-subtle">#</span>
                 <span>{value}</span>
@@ -32,8 +41,6 @@ export function useOrderDataTableColumns(apiColumns: any[] | undefined) {
             name: apiColumn.name,
             column: apiColumn,
           },
-          enableHiding: apiColumn.hideable,
-          enableSorting: false,
         })
       }
 
@@ -44,14 +51,13 @@ export function useOrderDataTableColumns(apiColumns: any[] | undefined) {
           cell: ({ getValue }) => {
             const value = getValue()
             if (!value) return null
-            return getFullDate({ date: value })
+            
+return getFullDate({ date: value })
           },
           meta: {
             name: apiColumn.name,
             column: apiColumn,
           },
-          enableHiding: apiColumn.hideable,
-          enableSorting: false,
         })
       }
 
@@ -61,16 +67,15 @@ export function useOrderDataTableColumns(apiColumns: any[] | undefined) {
           header: () => apiColumn.name,
           cell: ({ getValue }) => {
             const value = getValue()
-            return value ? (
-              <StatusBadge variant="default">{value}</StatusBadge>
+            
+return value ? (
+              <StatusBadge color="grey">{value}</StatusBadge>
             ) : null
           },
           meta: {
             name: apiColumn.name,
             column: apiColumn,
           },
-          enableHiding: apiColumn.hideable,
-          enableSorting: false,
         })
       }
 
@@ -80,16 +85,15 @@ export function useOrderDataTableColumns(apiColumns: any[] | undefined) {
           header: () => apiColumn.name,
           cell: ({ getValue }) => {
             const value = getValue()
-            return value ? (
-              <StatusBadge variant="default">{value}</StatusBadge>
+            
+return value ? (
+              <StatusBadge color="grey">{value}</StatusBadge>
             ) : null
           },
           meta: {
             name: apiColumn.name,
             column: apiColumn,
           },
-          enableHiding: apiColumn.hideable,
-          enableSorting: false,
         })
       }
 
@@ -106,8 +110,6 @@ export function useOrderDataTableColumns(apiColumns: any[] | undefined) {
             name: apiColumn.name,
             column: apiColumn,
           },
-          enableHiding: apiColumn.hideable,
-          enableSorting: false,
         })
       }
 
@@ -120,7 +122,8 @@ export function useOrderDataTableColumns(apiColumns: any[] | undefined) {
           for (const part of fieldParts) {
             value = value?.[part]
           }
-          return value
+          
+return value
         },
         {
           id: apiColumn.field,
@@ -135,7 +138,8 @@ export function useOrderDataTableColumns(apiColumns: any[] | undefined) {
               if (value.title) return value.title
               if (value.code) return value.code
               if (value.label) return value.label
-              return JSON.stringify(value)
+              
+return JSON.stringify(value)
             }
             
             return String(value)
@@ -144,8 +148,6 @@ export function useOrderDataTableColumns(apiColumns: any[] | undefined) {
             name: apiColumn.name,
             column: apiColumn,
           },
-          enableHiding: apiColumn.hideable,
-          enableSorting: false,
         }
       )
     })

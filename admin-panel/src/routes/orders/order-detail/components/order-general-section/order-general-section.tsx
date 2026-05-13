@@ -1,5 +1,5 @@
 import { XCircle } from "@medusajs/icons"
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 import {
   Container,
   Copy,
@@ -10,14 +10,14 @@ import {
   usePrompt,
 } from "@medusajs/ui"
 import { useTranslation } from "react-i18next"
-import { ActionMenu } from "../../../../../components/common/action-menu"
-import { useCancelOrder } from "../../../../../hooks/api/orders"
-import { useDate } from "../../../../../hooks/use-date"
+import { ActionMenu } from "@components/common/action-menu"
+import { useCancelOrder } from "@hooks/api/orders"
+import { useDate } from "@hooks/use-date"
 import {
   getCanceledOrderStatus,
   getOrderFulfillmentStatus,
   getOrderPaymentStatus,
-} from "../../../../../lib/order-helpers"
+} from "@lib/order-helpers"
 
 type OrderGeneralSectionProps = {
   order: HttpTypes.AdminOrder
@@ -81,7 +81,8 @@ export const OrderGeneralSection = ({ order }: OrderGeneralSectionProps) => {
                 {
                   label: t("actions.cancel"),
                   onClick: handleCancel,
-                  disabled: !!order.canceled_at,
+                  // AdminOrder.canceled_at is response-only; SDK type omits it.
+                  disabled: !!(order as { canceled_at?: string | null }).canceled_at,
                   icon: <XCircle />,
                 },
               ],

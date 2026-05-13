@@ -3,10 +3,10 @@
   "dependencies": {
     "@medusajs/js-sdk": "^2.13.1",
     "@medusajs/types": "^2.13.1",
-    "@mikro-orm/cli": "6.4.16",
-    "@mikro-orm/core": "6.4.16",
-    "@mikro-orm/knex": "6.4.16",
-    "@mikro-orm/migrations": "6.4.16",
+    "@mikro-orm/cli": "6.6.10",
+    "@mikro-orm/core": "6.6.10",
+    "@mikro-orm/knex": "6.6.10",
+    "@mikro-orm/migrations": "6.6.10",
     "@tanstack/react-query": "^5.90.20"
   },
   "devDependencies": {

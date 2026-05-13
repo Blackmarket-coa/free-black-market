@@ -1,13 +1,13 @@
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 import { clx, Container, Heading, toast, usePrompt } from "@medusajs/ui"
 import { useTranslation } from "react-i18next"
 
 import { Trash } from "@medusajs/icons"
 import { Link, useNavigate } from "react-router-dom"
-import { ActionMenu } from "../../../../../components/common/action-menu"
-import { NoRecords } from "../../../../../components/common/empty-table-content"
-import { Listicle } from "../../../../../components/common/listicle"
-import { useDeleteCustomerAddress } from "../../../../../hooks/api/customers"
+import { ActionMenu } from "@components/common/action-menu"
+import { NoRecords } from "@components/common/empty-table-content"
+import { Listicle } from "@components/common/listicle"
+import { useDeleteCustomerAddress } from "@hooks/api/customers"
 
 type CustomerAddressSectionProps = {
   customer: HttpTypes.AdminCustomer
@@ -58,7 +58,7 @@ export const CustomerAddressSection = ({
     <Container className="p-0">
       <div className="flex items-center justify-between px-6 py-4">
         <Heading level="h2">{t("addresses.title")}</Heading>
-        <Link to={`create-address`} className="text-ui-fg-muted text-xs">
+        <Link to="create-address" className="text-ui-fg-muted text-xs">
           Add
         </Link>
       </div>

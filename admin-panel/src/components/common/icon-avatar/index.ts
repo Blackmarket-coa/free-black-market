@@ -1,1 +1,1 @@
-export * from "./icon-avatar"
+export * from "@components/common/icon-avatar/icon-avatar"

@@ -1,1 +1,1 @@
-export * from "./add-campaign-promotions-form"
+export * from "@routes/campaigns/add-campaign-promotions/components/add-campaign-promotions-form"

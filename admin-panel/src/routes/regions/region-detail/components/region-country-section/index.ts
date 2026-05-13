@@ -1,1 +1,1 @@
-export * from "./region-country-section"
+export * from "@routes/regions/region-detail/components/region-country-section/region-country-section"

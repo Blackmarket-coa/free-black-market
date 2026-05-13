@@ -1,6 +1,6 @@
 import { useParams } from "react-router-dom"
-import { MetadataForm } from "../../../components/forms/metadata-form"
-import { useCustomer, useUpdateCustomer } from "../../../hooks/api/customers"
+import { MetadataForm } from "@components/forms/metadata-form"
+import { useCustomer, useUpdateCustomer } from "@hooks/api/customers"
 
 export const CustomerMetadata = () => {
   const { id } = useParams()
@@ -15,7 +15,9 @@ export const CustomerMetadata = () => {
   return (
     <MetadataForm
       metadata={customer?.metadata}
-      hook={mutateAsync}
+      hook={(params, callbacks) =>
+        mutateAsync(params as Parameters<typeof mutateAsync>[0], callbacks)
+      }
       isPending={isPending}
       isMutating={isMutating}
     />

@@ -1,6 +1,6 @@
 import { z } from "zod"
 import * as zod from "zod"
-import { optionalInt } from "../../../../../lib/validation"
+import { optionalInt } from "@lib/validation"
 
 export const CreateProductVariantSchema = z.object({
   title: z.string().min(1),

@@ -1,9 +1,9 @@
 import { Input, clx } from "@medusajs/ui"
-import { Control } from "react-hook-form"
+import type { Control } from "react-hook-form"
 import { useTranslation } from "react-i18next"
-import { z } from "zod"
-import { EmailSchema } from "../../../lib/schemas"
-import { Form } from "../../common/form"
+import type { z } from "zod"
+import type { EmailSchema } from "@lib/schemas"
+import { Form } from "@components/common/form"
 
 type EmailFieldValues = z.infer<typeof EmailSchema>
 

@@ -1,6 +1,6 @@
-import { SingleColumnPage } from "../../../components/layout/pages"
-import { useExtension } from "../../../providers/extension-provider"
-import { InventoryListTable } from "./components/inventory-list-table"
+import { SingleColumnPage } from "@components/layout/pages"
+import { useExtension } from "@providers/extension-provider"
+import { InventoryListTable } from "@routes/inventory/inventory-list/components/inventory-list-table"
 
 export const InventoryItemListTable = () => {
   const { getWidgets } = useExtension()

@@ -1,9 +1,10 @@
 import { zodResolver } from "@hookform/resolvers/zod"
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
+import type {
+  DataTableRowSelectionState} from "@medusajs/ui";
 import {
   Button,
   createDataTableColumnHelper,
-  DataTableRowSelectionState,
   toast,
 } from "@medusajs/ui"
 import { keepPreviousData } from "@tanstack/react-query"
@@ -12,16 +13,16 @@ import { useForm } from "react-hook-form"
 import { useTranslation } from "react-i18next"
 import * as zod from "zod"
 
-import { DataTable } from "../../../../../components/data-table"
-import * as hooks from "../../../../../components/data-table/helpers/sales-channels"
+import { DataTable } from "@components/data-table"
+import * as hooks from "@components/data-table/helpers/sales-channels"
 import {
   RouteFocusModal,
   useRouteModal,
-} from "../../../../../components/modals"
-import { KeyboundForm } from "../../../../../components/utilities/keybound-form"
-import { VisuallyHidden } from "../../../../../components/utilities/visually-hidden"
-import { useSalesChannels } from "../../../../../hooks/api/sales-channels"
-import { useUpdateStockLocationSalesChannels } from "../../../../../hooks/api/stock-locations"
+} from "@components/modals"
+import { KeyboundForm } from "@components/utilities/keybound-form"
+import { VisuallyHidden } from "@components/utilities/visually-hidden"
+import { useSalesChannels } from "@hooks/api/sales-channels"
+import { useUpdateStockLocationSalesChannels } from "@hooks/api/stock-locations"
 
 type EditSalesChannelsFormProps = {
   location: HttpTypes.AdminStockLocation
@@ -171,7 +172,8 @@ function getInitialState(location: HttpTypes.AdminStockLocation) {
   return (
     location.sales_channels?.reduce((acc, curr) => {
       acc[curr.id] = true
-      return acc
+      
+return acc
     }, {} as DataTableRowSelectionState) ?? {}
   )
 }

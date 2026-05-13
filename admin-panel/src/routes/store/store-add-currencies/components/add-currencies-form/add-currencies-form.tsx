@@ -1,30 +1,31 @@
 import { Button, Checkbox, Hint, Switch, toast, Tooltip } from "@medusajs/ui"
-import {
-  createColumnHelper,
+import type {
   OnChangeFn,
-  RowSelectionState,
+  RowSelectionState} from "@tanstack/react-table";
+import {
+  createColumnHelper
 } from "@tanstack/react-table"
 import { useCallback, useMemo, useState } from "react"
 import { useTranslation } from "react-i18next"
 import * as zod from "zod"
 
 import { zodResolver } from "@hookform/resolvers/zod"
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 import { keepPreviousData } from "@tanstack/react-query"
 import { useForm } from "react-hook-form"
 import {
   RouteFocusModal,
   useRouteModal,
-} from "../../../../../components/modals"
-import { _DataTable } from "../../../../../components/table/data-table"
-import { KeyboundForm } from "../../../../../components/utilities/keybound-form"
-import { useCurrencies } from "../../../../../hooks/api/currencies"
-import { pricePreferencesQueryKeys } from "../../../../../hooks/api/price-preferences"
-import { useUpdateStore } from "../../../../../hooks/api/store"
-import { useDataTable } from "../../../../../hooks/use-data-table"
-import { queryClient } from "../../../../../lib/query-client"
-import { useCurrenciesTableColumns } from "../../../common/hooks/use-currencies-table-columns"
-import { useCurrenciesTableQuery } from "../../../common/hooks/use-currencies-table-query"
+} from "@components/modals"
+import { _DataTable } from "@components/table/data-table"
+import { KeyboundForm } from "@components/utilities/keybound-form"
+import { useCurrencies } from "@hooks/api/currencies"
+import { pricePreferencesQueryKeys } from "@hooks/api/price-preferences"
+import { useUpdateStore } from "@hooks/api/store"
+import { useDataTable } from "@hooks/use-data-table"
+import { queryClient } from "@lib/query-client"
+import { useCurrenciesTableColumns } from "@routes/store/common/hooks/use-currencies-table-columns"
+import { useCurrenciesTableQuery } from "@routes/store/common/hooks/use-currencies-table-query"
 
 type AddCurrenciesFormProps = {
   store: HttpTypes.AdminStore
@@ -284,7 +285,8 @@ const useColumns = (
         cell: ({ row }) => {
           const isPreSelected = !row.getCanSelect()
           const isTaxInclusive = pricePreferences[row.original.code]
-          return (
+          
+return (
             <div className="flex items-center justify-end">
               <Switch
                 dir="ltr"

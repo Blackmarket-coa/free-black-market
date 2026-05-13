@@ -1,10 +1,10 @@
 import { PencilSquare, Plus, Trash } from "@medusajs/icons"
 import { Badge, Container, Heading, usePrompt } from "@medusajs/ui"
 import { useTranslation } from "react-i18next"
-import { ActionMenu } from "../../../../../components/common/action-menu"
-import { SectionRow } from "../../../../../components/common/section"
-import { useDeleteProductOption } from "../../../../../hooks/api/products"
-import { HttpTypes } from "@medusajs/types"
+import { ActionMenu } from "@components/common/action-menu"
+import { SectionRow } from "@components/common/section"
+import { useDeleteProductOption } from "@hooks/api/products"
+import type { HttpTypes } from "@medusajs/types"
 
 const OptionActions = ({
   product,

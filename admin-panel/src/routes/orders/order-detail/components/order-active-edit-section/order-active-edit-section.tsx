@@ -2,19 +2,20 @@ import { Button, Container, Copy, Heading, toast } from "@medusajs/ui"
 import { useTranslation } from "react-i18next"
 import { ExclamationCircleSolid } from "@medusajs/icons"
 
-import { useOrderPreview } from "../../../../../hooks/api"
+import { useOrderPreview } from "@hooks/api"
 import {
   useCancelOrderEdit,
   useConfirmOrderEdit,
-} from "../../../../../hooks/api/order-edits"
+} from "@hooks/api/order-edits"
 import { useMemo } from "react"
-import { HttpTypes } from "@medusajs/types"
-import { Thumbnail } from "../../../../../components/common/thumbnail"
+import type { HttpTypes } from "@medusajs/types"
+import { Thumbnail } from "@components/common/thumbnail"
 import { useNavigate } from "react-router-dom"
 
 type OrderActiveEditSectionProps = {
   order: HttpTypes.AdminOrder
-  quantity: number
+  /** Optional; only the EditItem child renders this. */
+  quantity?: number
 }
 
 function EditItem({
@@ -61,11 +62,14 @@ export const OrderActiveEditSection = ({
   const { mutateAsync: cancelOrderEdit } = useCancelOrderEdit(order.id)
   const { mutateAsync: confirmOrderEdit } = useConfirmOrderEdit(order.id)
 
-  const isPending = orderPreview.order_change?.status === "pending"
+  const isPending = orderPreview?.order_change?.status === "pending"
+
+  type PreviewItem = NonNullable<typeof orderPreview>["items"][number]
+  type ItemDiff = { item: PreviewItem; quantity: number }
 
   const [addedItems, removedItems] = useMemo(() => {
-    const added = []
-    const removed = []
+    const added: ItemDiff[] = []
+    const removed: ItemDiff[] = []
 
     const orderLookupMap = new Map(order.items!.map((i) => [i.id, i]))
 
@@ -74,6 +78,7 @@ export const OrderActiveEditSection = ({
 
       if (!originalItem) {
         added.push({ item: currentItem, quantity: currentItem.quantity })
+
         return
       }
 
@@ -97,21 +102,26 @@ export const OrderActiveEditSection = ({
 
   const onConfirmOrderEdit = async () => {
     try {
-      await confirmOrderEdit()
+      // useConfirmOrderEdit's mutateAsync requires the request payload
+      // arg (typed `void` in some versions, `{ id }` in others). Pass
+      // an empty object to satisfy the wider overload.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (confirmOrderEdit as any)({})
 
       toast.success(t("orders.edits.toast.confirmedSuccessfully"))
     } catch (e) {
-      toast.error(e.message)
+      toast.error(e instanceof Error ? e.message : String(e))
     }
   }
 
   const onCancelOrderEdit = async () => {
     try {
-      await cancelOrderEdit()
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (cancelOrderEdit as any)({})
 
       toast.success(t("orders.edits.toast.canceledSuccessfully"))
     } catch (e) {
-      toast.error(e.message)
+      toast.error(e instanceof Error ? e.message : String(e))
     }
   }
 

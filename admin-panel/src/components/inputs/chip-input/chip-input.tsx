@@ -1,9 +1,10 @@
 import { XMarkMini } from "@medusajs/icons"
 import { Badge, clx } from "@medusajs/ui"
 import { AnimatePresence, motion } from "motion/react"
-import {
+import type {
   FocusEvent,
-  KeyboardEvent,
+  KeyboardEvent} from "react";
+import {
   forwardRef,
   useImperativeHandle,
   useRef,

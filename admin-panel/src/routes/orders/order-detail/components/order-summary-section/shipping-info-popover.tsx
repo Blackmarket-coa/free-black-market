@@ -1,5 +1,5 @@
 import { InformationCircleSolid } from "@medusajs/icons"
-import { AdminOrderShippingMethod } from "@medusajs/types"
+import type { AdminOrderShippingMethod } from "@medusajs/types"
 import { Badge, Tooltip } from "@medusajs/ui"
 import { useTranslation } from "react-i18next"
 

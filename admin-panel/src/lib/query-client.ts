@@ -53,7 +53,8 @@ export const queryClient = new QueryClient({
       retry: (failureCount, error: any) => {
         const status = error?.status ?? error?.response?.status
         if (status === 429 || status === 401 || status === 403) return false
-        return failureCount < 1
+        
+return failureCount < 1
       },
       // Retry delay with exponential backoff
       retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000),
@@ -67,7 +68,8 @@ export const queryClient = new QueryClient({
       retry: (failureCount, error: any) => {
         const status = error?.status ?? error?.response?.status
         if (status === 429 || status === 401 || status === 403) return false
-        return failureCount < 1
+        
+return failureCount < 1
       },
       // Network mode for mutations
       networkMode: 'online',

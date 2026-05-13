@@ -1,2 +1,2 @@
-export { promotionsLoader } from "./loader.ts"
-export { PromotionsList as Component } from "./promotions-list.tsx"
+export { promotionsLoader } from "@routes/promotions/promotion-list/loader.ts"
+export { PromotionsList as Component } from "@routes/promotions/promotion-list/promotions-list.tsx"

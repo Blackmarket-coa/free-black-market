@@ -1,8 +1,8 @@
 import { Spinner } from "@medusajs/icons"
 import { Navigate, Outlet, useLocation } from "react-router-dom"
-import { useMe } from "../../../hooks/api/users"
-import { SearchProvider } from "../../../providers/search-provider"
-import { SidebarProvider } from "../../../providers/sidebar-provider"
+import { useMe } from "@hooks/api/users"
+import { SearchProvider } from "@providers/search-provider"
+import { SidebarProvider } from "@providers/sidebar-provider"
 
 export const ProtectedRoute = () => {
   const { user, isLoading } = useMe()

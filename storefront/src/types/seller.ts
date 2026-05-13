@@ -19,6 +19,7 @@ export type SellerProps = SellerAddress & {
   products?: Product[]
   email?: string
   store_status?: "ACTIVE" | "SUSPENDED" | "INACTIVE"
+  verified?: boolean
   metadata?: SellerMetadata
 }
 

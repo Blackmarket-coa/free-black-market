@@ -1,10 +1,10 @@
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 import { Container, Heading } from "@medusajs/ui"
 
 import { PencilSquare } from "@medusajs/icons"
 import { useTranslation } from "react-i18next"
-import { ActionMenu } from "../../../../../components/common/action-menu"
-import { DateRangeDisplay } from "../../../../../components/common/date-range-display"
+import { ActionMenu } from "@components/common/action-menu"
+import { DateRangeDisplay } from "@components/common/date-range-display"
 
 type CampaignConfigurationSectionProps = {
   campaign: HttpTypes.AdminCampaign

@@ -1,2 +1,2 @@
-export * from './common'
-export * from './mutatations'
+export * from '@custom-types/reviews/common'
+export * from '@custom-types/reviews/mutatations'

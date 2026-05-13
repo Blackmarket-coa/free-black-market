@@ -1,9 +1,10 @@
-import {
+import type {
   ColumnDef,
   OnChangeFn,
   PaginationState,
   Row,
-  RowSelectionState,
+  RowSelectionState} from "@tanstack/react-table";
+import {
   getCoreRowModel,
   getExpandedRowModel,
   getPaginationRowModel,
@@ -89,7 +90,8 @@ export const useDataTable = <TData,>({
     setSearchParams((prev) => {
       if (!pageIndex) {
         prev.delete(offsetKey)
-        return prev
+        
+return prev
       }
 
       const newSearch = new URLSearchParams(prev)
@@ -99,7 +101,8 @@ export const useDataTable = <TData,>({
     })
 
     setPagination(state)
-    return state
+    
+return state
   }
 
   const table = useReactTable({

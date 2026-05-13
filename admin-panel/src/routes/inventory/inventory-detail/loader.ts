@@ -1,9 +1,9 @@
-import { LoaderFunctionArgs } from "react-router-dom"
+import type { LoaderFunctionArgs } from "react-router-dom"
 
-import { inventoryItemsQueryKeys } from "../../../hooks/api/inventory"
-import { sdk } from "../../../lib/client"
-import { queryClient } from "../../../lib/query-client"
-import { INVENTORY_DETAIL_FIELDS } from "./constants"
+import { inventoryItemsQueryKeys } from "@hooks/api/inventory"
+import { sdk } from "@lib/client"
+import { queryClient } from "@lib/query-client"
+import { INVENTORY_DETAIL_FIELDS } from "@routes/inventory/inventory-detail/constants"
 
 const inventoryDetailQuery = (id: string) => ({
   queryKey: inventoryItemsQueryKeys.detail(id),

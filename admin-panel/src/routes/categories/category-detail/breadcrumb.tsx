@@ -1,6 +1,6 @@
-import { HttpTypes } from "@medusajs/types"
-import { UIMatch } from "react-router-dom"
-import { useProductCategory } from "../../../hooks/api"
+import type { HttpTypes } from "@medusajs/types"
+import type { UIMatch } from "react-router-dom"
+import { useProductCategory } from "@hooks/api"
 
 type CategoryDetailBreadcrumbProps =
   UIMatch<HttpTypes.AdminProductCategoryResponse>

@@ -1,7 +1,8 @@
-import { HttpTypes } from "@medusajs/types"
-import { defer, LoaderFunctionArgs } from "react-router-dom"
-import { sdk } from "../../../lib/client"
-import { PRODUCT_VARIANT_IDS_KEY } from "../common/constants"
+import type { HttpTypes } from "@medusajs/types"
+import type { LoaderFunctionArgs } from "react-router-dom";
+import { defer } from "react-router-dom"
+import { sdk } from "@lib/client"
+import { PRODUCT_VARIANT_IDS_KEY } from "@routes/products/common/constants"
 
 async function getProductStockData(id: string, productVariantIds?: string[]) {
   const CHUNK_SIZE = 20

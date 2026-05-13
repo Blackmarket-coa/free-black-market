@@ -1,7 +1,7 @@
-import { HttpTypes } from "@medusajs/types"
-import { UIMatch } from "react-router-dom"
-import { useProduct } from "../../../hooks/api"
-import { PRODUCT_DETAIL_FIELDS } from "./constants"
+import type { HttpTypes } from "@medusajs/types"
+import type { UIMatch } from "react-router-dom"
+import { useProduct } from "@hooks/api"
+import { PRODUCT_DETAIL_FIELDS } from "@routes/products/product-detail/constants"
 
 type ProductDetailBreadcrumbProps = UIMatch<HttpTypes.AdminProductResponse>
 

@@ -1,1 +1,1 @@
-export { ProductShippingProfile as Component } from "./product-shipping-profile"
+export { ProductShippingProfile as Component } from "@routes/products/product-shipping-profile/product-shipping-profile"

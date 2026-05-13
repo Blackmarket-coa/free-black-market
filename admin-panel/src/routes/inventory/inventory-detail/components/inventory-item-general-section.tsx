@@ -1,10 +1,10 @@
 import { Container, Heading } from "@medusajs/ui"
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 import { PencilSquare } from "@medusajs/icons"
 import { useTranslation } from "react-i18next"
 
-import { ActionMenu } from "../../../../components/common/action-menu"
-import { SectionRow } from "../../../../components/common/section"
+import { ActionMenu } from "@components/common/action-menu"
+import { SectionRow } from "@components/common/section"
 
 type InventoryItemGeneralSectionProps = {
   inventoryItem: HttpTypes.AdminInventoryItemResponse["inventory_item"]
@@ -24,7 +24,8 @@ export const InventoryItemGeneralSection = ({
 
     return "-"
   }
-  return (
+  
+return (
     <Container className="divide-y p-0">
       <div className="flex items-center justify-between px-6 py-4">
         <Heading>
@@ -45,21 +46,35 @@ export const InventoryItemGeneralSection = ({
         />
       </div>
       <SectionRow title={t("fields.sku")} value={inventoryItem.sku ?? "-"} />
-      <SectionRow
-        title={t("fields.inStock")}
-        value={getQuantityFormat(inventoryItem.stocked_quantity)}
-      />
+      {(() => {
+        // AdminInventoryItem in @medusajs/types omits the rolled-up
+        // stocked / reserved totals (they live on AdminInventoryLevel
+        // per-location); the admin response embeds them on the item
+        // anyway, so read through a structural cast.
+        const totals = inventoryItem as unknown as {
+          stocked_quantity?: number
+          reserved_quantity?: number
+        }
+        const stocked = totals.stocked_quantity ?? 0
+        const reserved = totals.reserved_quantity ?? 0
 
-      <SectionRow
-        title={t("inventory.reserved")}
-        value={getQuantityFormat(inventoryItem.reserved_quantity)}
-      />
-      <SectionRow
-        title={t("inventory.available")}
-        value={getQuantityFormat(
-          inventoryItem.stocked_quantity - inventoryItem.reserved_quantity
-        )}
-      />
+        return (
+          <>
+            <SectionRow
+              title={t("fields.inStock")}
+              value={getQuantityFormat(stocked)}
+            />
+            <SectionRow
+              title={t("inventory.reserved")}
+              value={getQuantityFormat(reserved)}
+            />
+            <SectionRow
+              title={t("inventory.available")}
+              value={getQuantityFormat(stocked - reserved)}
+            />
+          </>
+        )
+      })()}
     </Container>
   )
 }

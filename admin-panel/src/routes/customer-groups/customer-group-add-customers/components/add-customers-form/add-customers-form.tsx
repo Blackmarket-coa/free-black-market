@@ -1,8 +1,9 @@
 import { zodResolver } from "@hookform/resolvers/zod"
 import { Button, Checkbox, Hint, Tooltip, toast } from "@medusajs/ui"
-import {
+import type {
   OnChangeFn,
-  RowSelectionState,
+  RowSelectionState} from "@tanstack/react-table";
+import {
   createColumnHelper,
 } from "@tanstack/react-table"
 import { useEffect, useMemo, useState } from "react"
@@ -10,19 +11,19 @@ import { useForm } from "react-hook-form"
 import { useTranslation } from "react-i18next"
 import * as zod from "zod"
 
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 import {
   RouteFocusModal,
   useRouteModal,
-} from "../../../../../components/modals"
-import { _DataTable } from "../../../../../components/table/data-table"
-import { KeyboundForm } from "../../../../../components/utilities/keybound-form"
-import { useAddCustomersToGroup } from "../../../../../hooks/api/customer-groups"
-import { useCustomers } from "../../../../../hooks/api/customers"
-import { useCustomerTableColumns } from "../../../../../hooks/table/columns/use-customer-table-columns"
-import { useCustomerTableFilters } from "../../../../../hooks/table/filters/use-customer-table-filters"
-import { useCustomerTableQuery } from "../../../../../hooks/table/query/use-customer-table-query"
-import { useDataTable } from "../../../../../hooks/use-data-table"
+} from "@components/modals"
+import { _DataTable } from "@components/table/data-table"
+import { KeyboundForm } from "@components/utilities/keybound-form"
+import { useAddCustomersToGroup } from "@hooks/api/customer-groups"
+import { useCustomers } from "@hooks/api/customers"
+import { useCustomerTableColumns } from "@hooks/table/columns/use-customer-table-columns"
+import { useCustomerTableFilters } from "@hooks/table/filters/use-customer-table-filters"
+import { useCustomerTableQuery } from "@hooks/table/query/use-customer-table-query"
+import { useDataTable } from "@hooks/use-data-table"
 
 type AddCustomersFormProps = {
   customerGroupId: string

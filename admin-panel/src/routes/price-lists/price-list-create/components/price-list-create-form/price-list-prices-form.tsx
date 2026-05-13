@@ -1,13 +1,14 @@
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 import { useEffect } from "react"
-import { UseFormReturn, useWatch } from "react-hook-form"
-import { DataGrid } from "../../../../../components/data-grid"
-import { useRouteModal } from "../../../../../components/modals"
-import { useProducts } from "../../../../../hooks/api/products"
-import { usePriceListGridColumns } from "../../../common/hooks/use-price-list-grid-columns"
-import { PriceListCreateProductVariantsSchema } from "../../../common/schemas"
-import { isProductRow } from "../../../common/utils"
-import { PricingCreateSchemaType } from "./schema"
+import type { UseFormReturn} from "react-hook-form";
+import { useWatch } from "react-hook-form"
+import { DataGrid } from "@components/data-grid"
+import { useRouteModal } from "@components/modals"
+import { useProducts } from "@hooks/api/products"
+import { usePriceListGridColumns } from "@routes/price-lists/common/hooks/use-price-list-grid-columns"
+import type { PriceListCreateProductVariantsSchema } from "@routes/price-lists/common/schemas"
+import { isProductRow } from "@routes/price-lists/common/utils"
+import type { PricingCreateSchemaType } from "@routes/price-lists/price-list-create/components/price-list-create-form/schema"
 
 type PriceListPricesFormProps = {
   form: UseFormReturn<PricingCreateSchemaType>
@@ -58,7 +59,8 @@ export const PriceListPricesForm = ({
               currency_prices: {},
               region_prices: {},
             }
-            return variants
+            
+return variants
           }, {} as PriceListCreateProductVariantsSchema),
         })
       })

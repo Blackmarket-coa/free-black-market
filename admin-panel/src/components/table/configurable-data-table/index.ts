@@ -1,3 +1,3 @@
-export { ConfigurableDataTable } from "./configurable-data-table"
-export type { ConfigurableDataTableProps } from "./configurable-data-table"
-export { SaveViewDropdown } from "./save-view-dropdown"
+export { ConfigurableDataTable } from "@components/table/configurable-data-table/configurable-data-table"
+export type { ConfigurableDataTableProps } from "@components/table/configurable-data-table/configurable-data-table"
+export { SaveViewDropdown } from "@components/table/configurable-data-table/save-view-dropdown"

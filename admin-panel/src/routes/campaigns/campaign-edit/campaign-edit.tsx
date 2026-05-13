@@ -1,10 +1,10 @@
 import { Heading } from "@medusajs/ui"
 import { useTranslation } from "react-i18next"
 import { useParams } from "react-router-dom"
-import { RouteDrawer } from "../../../components/modals"
-import { VisuallyHidden } from "../../../components/utilities/visually-hidden"
-import { useCampaign } from "../../../hooks/api/campaigns"
-import { EditCampaignForm } from "./components/edit-campaign-form"
+import { RouteDrawer } from "@components/modals"
+import { VisuallyHidden } from "@components/utilities/visually-hidden"
+import { useCampaign } from "@hooks/api/campaigns"
+import { EditCampaignForm } from "@routes/campaigns/campaign-edit/components/edit-campaign-form"
 
 export const CampaignEdit = () => {
   const { t } = useTranslation()

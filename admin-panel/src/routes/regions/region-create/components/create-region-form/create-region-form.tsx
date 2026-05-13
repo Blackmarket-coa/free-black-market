@@ -11,35 +11,36 @@ import {
   clx,
   toast,
 } from "@medusajs/ui"
-import { RowSelectionState, createColumnHelper } from "@tanstack/react-table"
+import type { RowSelectionState} from "@tanstack/react-table";
+import { createColumnHelper } from "@tanstack/react-table"
 import { useMemo, useState } from "react"
 import { useForm, useWatch } from "react-hook-form"
 import { useTranslation } from "react-i18next"
 import * as zod from "zod"
 
-import { RegionCountryDTO } from "@medusajs/types"
+import type { StaticCountry } from "@lib/data/countries"
 
-import { Form } from "../../../../../components/common/form"
-import { Combobox } from "../../../../../components/inputs/combobox"
+import { Form } from "@components/common/form"
+import { Combobox } from "@components/inputs/combobox"
 import {
   RouteFocusModal,
   StackedFocusModal,
   useRouteModal,
   useStackedModal,
-} from "../../../../../components/modals"
-import { _DataTable } from "../../../../../components/table/data-table"
-import { KeyboundForm } from "../../../../../components/utilities/keybound-form"
-import { useCreateRegion } from "../../../../../hooks/api/regions"
-import { useDataTable } from "../../../../../hooks/use-data-table"
-import { countries as staticCountries } from "../../../../../lib/data/countries"
-import { CurrencyInfo } from "../../../../../lib/data/currencies"
-import { formatProvider } from "../../../../../lib/format-provider"
-import { useCountries } from "../../../common/hooks/use-countries"
-import { useCountryTableColumns } from "../../../common/hooks/use-country-table-columns"
-import { useCountryTableQuery } from "../../../common/hooks/use-country-table-query"
-import { useDocumentDirection } from "../../../../../hooks/use-document-direction"
-import { useComboboxData } from "../../../../../hooks/use-combobox-data"
-import { sdk } from "../../../../../lib/client"
+} from "@components/modals"
+import { _DataTable } from "@components/table/data-table"
+import { KeyboundForm } from "@components/utilities/keybound-form"
+import { useCreateRegion } from "@hooks/api/regions"
+import { useDataTable } from "@hooks/use-data-table"
+import { countries as staticCountries } from "@lib/data/countries"
+import type { CurrencyInfo } from "@lib/data/currencies"
+import { formatProvider } from "@lib/format-provider"
+import { useCountries } from "@routes/regions/common/hooks/use-countries"
+import { useCountryTableColumns } from "@routes/regions/common/hooks/use-country-table-columns"
+import { useCountryTableQuery } from "@routes/regions/common/hooks/use-country-table-query"
+import { useDocumentDirection } from "@hooks/use-document-direction"
+import { useComboboxData } from "@hooks/use-combobox-data"
+import { sdk } from "@lib/client"
 
 type CreateRegionFormProps = {
   currencies: CurrencyInfo[]
@@ -167,7 +168,8 @@ export const CreateRegionForm = ({ currencies }: CreateRegionFormProps) => {
       .map((c) => c.code)
       .reduce((acc, c) => {
         acc[c] = true
-        return acc
+        
+return acc
       }, {} as RowSelectionState)
 
     form.setValue("countries", update, { shouldDirty: true, shouldTouch: true })
@@ -455,7 +457,7 @@ export const CreateRegionForm = ({ currencies }: CreateRegionFormProps) => {
   )
 }
 
-const columnHelper = createColumnHelper<RegionCountryDTO>()
+const columnHelper = createColumnHelper<StaticCountry>()
 
 const useColumns = () => {
   const base = useCountryTableColumns()

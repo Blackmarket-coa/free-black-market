@@ -1,11 +1,11 @@
 import { PencilSquare } from "@medusajs/icons"
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 import { Badge, Container, Heading, Tooltip } from "@medusajs/ui"
 import { useTranslation } from "react-i18next"
 import { Link } from "react-router-dom"
-import { ActionMenu } from "../../../../../components/common/action-menu"
-import { SectionRow } from "../../../../../components/common/section"
-import { useExtension } from "../../../../../providers/extension-provider"
+import { ActionMenu } from "@components/common/action-menu"
+import { SectionRow } from "@components/common/section"
+import { useExtension } from "@providers/extension-provider"
 
 type ProductOrganizationSectionProps = {
   product: HttpTypes.AdminProduct

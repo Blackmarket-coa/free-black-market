@@ -1,8 +1,8 @@
 import { Badge, Button, Container, Heading, Text } from "@medusajs/ui";
 import { useNavigate, useParams } from "react-router-dom";
-import { useOrderSet } from "../../../../../hooks/api/sellers";
-import { PaymentStatusBadge } from "../../../../../components/common/payments-status-badge";
-import { OrderStatusBadge } from "../../../../../components/common/order-status-badge";
+import { useOrderSet } from "@hooks/api/sellers";
+import { PaymentStatusBadge } from "@components/common/payments-status-badge";
+import { OrderStatusBadge } from "@components/common/order-status-badge";
 
 export const OrderRemainingOrdersGroupSection = () => {
   const { id } = useParams();
@@ -29,7 +29,8 @@ export const OrderRemainingOrdersGroupSection = () => {
             order.items.length > 1
               ? `${order.items[0].subtitle} + ${order.items.length - 1} more`
               : order.items[0].subtitle;
-          return (
+          
+return (
             <Button
               variant="secondary"
               key={order.id}

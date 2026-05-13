@@ -1,6 +1,6 @@
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 import { keepPreviousData } from "@tanstack/react-query"
-import { TFunction } from "i18next"
+import type { TFunction } from "i18next"
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { useTranslation } from "react-i18next"
 import {
@@ -24,11 +24,11 @@ import {
   useTaxRegions,
   useUsers,
   useVariants,
-} from "../../hooks/api"
-import { useReturnReasons } from "../../hooks/api/return-reasons"
-import { Shortcut, ShortcutType } from "../../providers/keybind-provider"
-import { useGlobalShortcuts } from "../../providers/keybind-provider/hooks"
-import { DynamicSearchResult, SearchArea } from "./types"
+} from "@hooks/api"
+import { useReturnReasons } from "@hooks/api/return-reasons"
+import type { Shortcut, ShortcutType } from "@providers/keybind-provider"
+import { useGlobalShortcuts } from "@providers/keybind-provider/hooks"
+import type { DynamicSearchResult, SearchArea } from "@components/search/types"
 
 type UseSearchProps = {
   q?: string
@@ -425,7 +425,8 @@ const useDynamicSearchResults = (
         if (isAreaEnabled(currentArea, area) || currentArea === "all") {
           return transformDynamicSearchResults(area, limit, t, response)
         }
-        return null
+        
+return null
       })
       .filter(Boolean) // Remove null values
 
@@ -487,7 +488,8 @@ function isAreaEnabled(area: SearchArea, currentArea: SearchArea) {
   if (area === currentArea) {
     return true
   }
-  return false
+  
+return false
 }
 
 type TransformMap = {
@@ -560,7 +562,8 @@ const transformMap: TransformMap = {
       const name = [customer.first_name, customer.last_name]
         .filter(Boolean)
         .join(" ")
-      return {
+      
+return {
         id: customer.id,
         title: name || customer.email,
         subtitle: name ? customer.email : undefined,

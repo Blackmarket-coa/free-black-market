@@ -1,26 +1,27 @@
 import { PencilSquare, Trash } from "@medusajs/icons"
 import { Button, Checkbox, Container, Heading, toast, usePrompt } from "@medusajs/ui"
 import { keepPreviousData } from "@tanstack/react-query"
-import { createColumnHelper, RowSelectionState } from "@tanstack/react-table"
+import type { RowSelectionState } from "@tanstack/react-table";
+import { createColumnHelper } from "@tanstack/react-table"
 import { useMemo, useState } from "react"
 import { useTranslation } from "react-i18next"
 import { Link, Outlet, useLoaderData, useLocation } from "react-router-dom"
 
-import { HttpTypes } from "@medusajs/types"
-import { ActionMenu } from "../../../../../components/common/action-menu"
-import { _DataTable } from "../../../../../components/table/data-table"
+import type { HttpTypes } from "@medusajs/types"
+import { ActionMenu } from "@components/common/action-menu"
+import { _DataTable } from "@components/table/data-table"
 import {
   useDeleteProduct,
   useDeleteProducts,
   useProducts,
-} from "../../../../../hooks/api/products"
-import { useProductTableColumns } from "../../../../../hooks/table/columns/use-product-table-columns"
-import { useProductTableFilters } from "../../../../../hooks/table/filters/use-product-table-filters"
-import { useProductTableQuery } from "../../../../../hooks/table/query/use-product-table-query"
-import { useDataTable } from "../../../../../hooks/use-data-table"
-import { productsLoader } from "../../loader"
-import { useFeatureFlag } from "../../../../../providers/feature-flag-provider"
-import { ConfigurableProductListTable } from "./configurable-product-list-table"
+} from "@hooks/api/products"
+import { useProductTableColumns } from "@hooks/table/columns/use-product-table-columns"
+import { useProductTableFilters } from "@hooks/table/filters/use-product-table-filters"
+import { useProductTableQuery } from "@hooks/table/query/use-product-table-query"
+import { useDataTable } from "@hooks/use-data-table"
+import type { productsLoader } from "@routes/products/product-list/loader"
+import { useFeatureFlag } from "@providers/feature-flag-provider"
+import { ConfigurableProductListTable } from "@routes/products/product-list/components/product-list-table/configurable-product-list-table"
 
 const PAGE_SIZE = 20
 

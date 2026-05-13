@@ -1,17 +1,18 @@
-import { FetchError } from "@medusajs/js-sdk"
-import { HttpTypes } from "@medusajs/types"
-import {
+import type { FetchError } from "@medusajs/js-sdk"
+import type { HttpTypes } from "@medusajs/types"
+import type {
   QueryKey,
-  useMutation,
   UseMutationOptions,
-  useQuery,
-  UseQueryOptions,
+  UseQueryOptions} from "@tanstack/react-query";
+import {
+  useMutation,
+  useQuery
 } from "@tanstack/react-query"
-import { sdk } from "../../lib/client"
-import { queryClient } from "../../lib/query-client"
-import { queryKeysFactory } from "../../lib/query-key-factory"
-import { ordersQueryKeys } from "./orders"
-import { returnsQueryKeys } from "./returns"
+import { sdk } from "@lib/client"
+import { queryClient } from "@lib/query-client"
+import { queryKeysFactory } from "@lib/query-key-factory"
+import { ordersQueryKeys } from "@hooks/api/orders"
+import { returnsQueryKeys } from "@hooks/api/returns"
 
 const EXCHANGES_QUERY_KEY = "exchanges" as const
 export const exchangesQueryKeys = queryKeysFactory(EXCHANGES_QUERY_KEY)
@@ -122,7 +123,7 @@ export const useAddExchangeInboundItems = (
   id: string,
   orderId: string,
   options?: UseMutationOptions<
-    HttpTypes.AdminExchangeResponse,
+    HttpTypes.AdminExchangeReturnResponse,
     FetchError,
     HttpTypes.AdminAddExchangeInboundItems
   >
@@ -144,7 +145,7 @@ export const useUpdateExchangeInboundItem = (
   id: string,
   orderId: string,
   options?: UseMutationOptions<
-    HttpTypes.AdminExchangeResponse,
+    HttpTypes.AdminExchangeReturnResponse,
     FetchError,
     HttpTypes.AdminUpdateExchangeInboundItem & { actionId: string }
   >
@@ -170,7 +171,7 @@ export const useRemoveExchangeInboundItem = (
   id: string,
   orderId: string,
   options?: UseMutationOptions<
-    HttpTypes.AdminExchangeResponse,
+    HttpTypes.AdminExchangeReturnResponse,
     FetchError,
     string
   >
@@ -201,7 +202,7 @@ export const useAddExchangeInboundShipping = (
   id: string,
   orderId: string,
   options?: UseMutationOptions<
-    HttpTypes.AdminExchangeResponse,
+    HttpTypes.AdminExchangeReturnResponse,
     FetchError,
     HttpTypes.AdminExchangeAddInboundShipping
   >
@@ -223,7 +224,7 @@ export const useUpdateExchangeInboundShipping = (
   id: string,
   orderId: string,
   options?: UseMutationOptions<
-    HttpTypes.AdminExchangeResponse,
+    HttpTypes.AdminExchangeReturnResponse,
     FetchError,
     HttpTypes.AdminExchangeUpdateInboundShipping
   >
@@ -248,7 +249,7 @@ export const useDeleteExchangeInboundShipping = (
   id: string,
   orderId: string,
   options?: UseMutationOptions<
-    HttpTypes.AdminExchangeResponse,
+    HttpTypes.AdminExchangeReturnResponse,
     FetchError,
     string
   >
@@ -368,7 +369,7 @@ export const useUpdateExchangeOutboundShipping = (
   id: string,
   orderId: string,
   options?: UseMutationOptions<
-    HttpTypes.AdminExchangeResponse,
+    HttpTypes.AdminExchangePreviewResponse,
     FetchError,
     HttpTypes.AdminExchangeUpdateOutboundShipping
   >
@@ -449,7 +450,7 @@ export const useExchangeConfirmRequest = (
 export const useCancelExchangeRequest = (
   id: string,
   orderId: string,
-  options?: UseMutationOptions<HttpTypes.AdminExchangeResponse, FetchError>
+  options?: UseMutationOptions<HttpTypes.AdminExchangeDeleteResponse, FetchError>
 ) => {
   return useMutation({
     mutationFn: () => sdk.admin.exchange.cancelRequest(id),

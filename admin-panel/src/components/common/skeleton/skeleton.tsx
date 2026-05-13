@@ -1,5 +1,6 @@
-import { Container, Heading, Text, clx } from "@medusajs/ui"
-import { CSSProperties, ComponentPropsWithoutRef } from "react"
+import type { Heading, Text} from "@medusajs/ui";
+import { Container, clx } from "@medusajs/ui"
+import type { CSSProperties, ComponentPropsWithoutRef } from "react"
 
 type SkeletonProps = {
   className?: string

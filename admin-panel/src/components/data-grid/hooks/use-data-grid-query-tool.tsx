@@ -1,6 +1,7 @@
-import { RefObject, useEffect, useRef } from "react"
+import type { RefObject} from "react";
+import { useEffect, useRef } from "react"
 
-import { DataGridQueryTool } from "../models"
+import { DataGridQueryTool } from "@components/data-grid/models"
 
 export const useDataGridQueryTool = (containerRef: RefObject<HTMLElement>) => {
   const queryToolRef = useRef<DataGridQueryTool | null>(null)

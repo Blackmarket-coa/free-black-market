@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query"
-import { sdk } from "../../lib/client"
+import { sdk } from "@lib/client"
 
 export type FeatureFlags = {
   view_configurations?: boolean
@@ -17,6 +17,8 @@ export const useFeatureFlags = () => {
       return response.feature_flags
     },
     staleTime: 5 * 60 * 1000, // Cache for 5 minutes
-    cacheTime: 10 * 60 * 1000, // Keep in cache for 10 minutes
+    // `gcTime` was `cacheTime` in React Query v4; the v5 upgrade
+    // renamed it. Keep in cache for 10 minutes.
+    gcTime: 10 * 60 * 1000,
   })
 }

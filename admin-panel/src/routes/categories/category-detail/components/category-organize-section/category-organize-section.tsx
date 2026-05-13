@@ -3,16 +3,16 @@ import {
   PencilSquare,
   TriangleRightMini,
 } from "@medusajs/icons"
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 import { Badge, Container, Heading, Text, Tooltip } from "@medusajs/ui"
 import { useMemo, useState } from "react"
 import { useTranslation } from "react-i18next"
 import { Link } from "react-router-dom"
-import { ActionMenu } from "../../../../../components/common/action-menu"
-import { LinkButton } from "../../../../../components/common/link-button"
-import { Skeleton } from "../../../../../components/common/skeleton"
-import { useProductCategory } from "../../../../../hooks/api/categories"
-import { getCategoryChildren, getCategoryPath } from "../../../common/utils"
+import { ActionMenu } from "@components/common/action-menu"
+import { LinkButton } from "@components/common/link-button"
+import { Skeleton } from "@components/common/skeleton"
+import { useProductCategory } from "@hooks/api/categories"
+import { getCategoryChildren, getCategoryPath } from "@routes/categories/common/utils"
 
 type CategoryOrganizeSectionProps = {
   category: HttpTypes.AdminProductCategory

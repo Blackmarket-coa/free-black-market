@@ -1,8 +1,8 @@
 import { useParams } from "react-router-dom"
 
-import { useOrder } from "../../../hooks/api/orders"
-import { RouteFocusModal } from "../../../components/modals"
-import { OrderAllocateItemsForm } from "./components/order-create-fulfillment-form"
+import { useOrder } from "@hooks/api/orders"
+import { RouteFocusModal } from "@components/modals"
+import { OrderAllocateItemsForm } from "@routes/orders/order-allocate-items/components/order-create-fulfillment-form"
 
 export function OrderAllocateItems() {
   const { id } = useParams()

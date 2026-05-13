@@ -1,4 +1,4 @@
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 import { createColumnHelper } from "@tanstack/react-table"
 import { useMemo } from "react"
 import { useTranslation } from "react-i18next"
@@ -6,12 +6,12 @@ import { useTranslation } from "react-i18next"
 import {
   CodeCell,
   CodeHeader,
-} from "../../../components/table/table-cells/common/code-cell"
+} from "@components/table/table-cells/common/code-cell"
 import {
   TextCell,
   TextHeader,
-} from "../../../components/table/table-cells/common/text-cell"
-import { StatusCell } from "../../../components/table/table-cells/promotion/status-cell"
+} from "@components/table/table-cells/common/text-cell"
+import { StatusCell } from "@components/table/table-cells/promotion/status-cell"
 
 const columnHelper = createColumnHelper<HttpTypes.AdminPromotion>()
 

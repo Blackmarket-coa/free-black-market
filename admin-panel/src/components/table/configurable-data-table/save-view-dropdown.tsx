@@ -1,4 +1,4 @@
-import React from "react"
+import type React from "react"
 import { Button, DropdownMenu, usePrompt } from "@medusajs/ui"
 import { ChevronDownMini } from "@medusajs/icons"
 import { useTranslation } from "react-i18next"
@@ -14,7 +14,7 @@ interface SaveViewDropdownProps {
 
 export const SaveViewDropdown: React.FC<SaveViewDropdownProps> = ({
   isDefaultView,
-  currentViewId,
+  currentViewId: _currentViewId,
   currentViewName,
   onSaveAsDefault,
   onUpdateExisting,

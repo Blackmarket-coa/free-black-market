@@ -1,39 +1,40 @@
-import { HttpTypes } from "@medusajs/types"
-import {
+import type { HttpTypes } from "@medusajs/types"
+import type {
   ColumnDef,
-  ColumnDefBase,
+  ColumnDefBase} from "@tanstack/react-table";
+import {
   createColumnHelper,
 } from "@tanstack/react-table"
 import { useMemo } from "react"
 import {
   DateCell,
   DateHeader,
-} from "../../../components/table/table-cells/common/date-cell"
-import { CountryCell } from "../../../components/table/table-cells/order/country-cell"
+} from "@components/table/table-cells/common/date-cell"
+import { CountryCell } from "@components/table/table-cells/order/country-cell"
 import {
   CustomerCell,
   CustomerHeader,
-} from "../../../components/table/table-cells/order/customer-cell"
+} from "@components/table/table-cells/order/customer-cell"
 import {
   DisplayIdCell,
   DisplayIdHeader,
-} from "../../../components/table/table-cells/order/display-id-cell"
+} from "@components/table/table-cells/order/display-id-cell"
 import {
   FulfillmentStatusCell,
   FulfillmentStatusHeader,
-} from "../../../components/table/table-cells/order/fulfillment-status-cell"
+} from "@components/table/table-cells/order/fulfillment-status-cell"
 import {
   PaymentStatusCell,
   PaymentStatusHeader,
-} from "../../../components/table/table-cells/order/payment-status-cell"
+} from "@components/table/table-cells/order/payment-status-cell"
 import {
   SalesChannelCell,
   SalesChannelHeader,
-} from "../../../components/table/table-cells/order/sales-channel-cell"
+} from "@components/table/table-cells/order/sales-channel-cell"
 import {
   TotalCell,
   TotalHeader,
-} from "../../../components/table/table-cells/order/total-cell"
+} from "@components/table/table-cells/order/total-cell"
 
 // We have to use any here, as the type of Order is so complex that it lags the TS server
 const columnHelper = createColumnHelper<HttpTypes.AdminOrder>()

@@ -12,16 +12,22 @@ import { useEffect } from "react"
 import { useWatch } from "react-hook-form"
 import { useTranslation } from "react-i18next"
 
-import { Form } from "../../../../../components/common/form"
-import { useStore } from "../../../../../hooks/api/store"
-import { useDocumentDirection } from "../../../../../hooks/use-document-direction"
+import { Form } from "@components/common/form"
+import { useStore } from "@hooks/api/store"
+import { useDocumentDirection } from "@hooks/use-document-direction"
 import {
   currencies,
   getCurrencySymbol,
-} from "../../../../../lib/data/currencies"
-import { Combobox } from "../../../../../components/inputs/combobox"
+} from "@lib/data/currencies"
+import { Combobox } from "@components/inputs/combobox"
 
-export const CreateCampaignFormFields = ({ form, fieldScope = "" }) => {
+export const CreateCampaignFormFields = ({
+  form,
+  fieldScope = "",
+}: {
+  form: any
+  fieldScope?: string
+}) => {
   const { t } = useTranslation()
   const { store } = useStore()
   const direction = useDocumentDirection()
@@ -216,14 +222,14 @@ export const CreateCampaignFormFields = ({ form, fieldScope = "" }) => {
                 >
                   <RadioGroup.ChoiceBox
                     className="flex-1"
-                    value={"usage"}
+                    value="usage"
                     label={t("campaigns.budget.type.usage.title")}
                     description={t("campaigns.budget.type.usage.description")}
                   />
 
                   <RadioGroup.ChoiceBox
                     className="flex-1"
-                    value={"spend"}
+                    value="spend"
                     label={t("campaigns.budget.type.spend.title")}
                     description={t("campaigns.budget.type.spend.description")}
                     disabled={fieldScope?.length ? !currency : false}

@@ -1,12 +1,12 @@
-import { HttpTypes } from "@medusajs/types"
-import { getEntityDefaultFields } from "./entity-defaults"
+import type { HttpTypes } from "@medusajs/types"
+import { getEntityDefaultFields } from "@lib/table/entity-defaults"
 
 /**
  * Calculates the required fields based on visible columns and entity defaults
  */
 export function calculateRequiredFields(
   entity: string,
-  apiColumns: HttpTypes.AdminViewColumn[] | undefined,
+  apiColumns: HttpTypes.AdminColumn[] | undefined,
   visibleColumns: Record<string, boolean>
 ): string {
   // Get entity-specific default fields
@@ -23,7 +23,8 @@ export function calculateRequiredFields(
     if (Object.keys(visibleColumns).length > 0) {
       return visibleColumns[column.field] === true
     }
-    return column.default_visible
+    
+return column.default_visible
   })
 
   // Collect all required fields from visible columns
@@ -54,13 +55,15 @@ export function calculateRequiredFields(
     const isAlreadyCovered = defaults.relations.some(rel =>
       rel === `*${relationName}` || rel === relationName
     )
-    return !isAlreadyCovered
+    
+return !isAlreadyCovered
   })
 
   // Check which direct fields need to be added
   const additionalDirectFields = visibleDirectFields.filter(field => {
-    const isAlreadyIncluded = defaults.properties.includes(field)
-    return !isAlreadyIncluded
+    const isAlreadyIncluded = (defaults.properties as readonly string[]).includes(field)
+    
+return !isAlreadyIncluded
   })
 
   // Combine all additional fields

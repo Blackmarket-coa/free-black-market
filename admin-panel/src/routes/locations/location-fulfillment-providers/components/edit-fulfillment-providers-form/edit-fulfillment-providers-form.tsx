@@ -1,9 +1,10 @@
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 import { Button, Checkbox, toast } from "@medusajs/ui"
 import { keepPreviousData } from "@tanstack/react-query"
-import {
+import type {
   RowSelectionState,
-  Updater,
+  Updater} from "@tanstack/react-table";
+import {
   createColumnHelper,
 } from "@tanstack/react-table"
 import { useMemo, useState } from "react"
@@ -15,15 +16,15 @@ import { useForm } from "react-hook-form"
 import {
   RouteFocusModal,
   useRouteModal,
-} from "../../../../../components/modals"
-import { _DataTable } from "../../../../../components/table/data-table"
-import { KeyboundForm } from "../../../../../components/utilities/keybound-form"
-import { useFulfillmentProviders } from "../../../../../hooks/api/fulfillment-providers"
-import { useUpdateStockLocationFulfillmentProviders } from "../../../../../hooks/api/stock-locations"
-import { useFulfillmentProviderTableColumns } from "../../../../../hooks/table/columns/use-fulfillment-provider-table-columns"
-import { useDateTableFilters } from "../../../../../hooks/table/filters"
-import { useFulfillmentProvidersTableQuery } from "../../../../../hooks/table/query/use-fulfillment-providers-table-query"
-import { useDataTable } from "../../../../../hooks/use-data-table"
+} from "@components/modals"
+import { _DataTable } from "@components/table/data-table"
+import { KeyboundForm } from "@components/utilities/keybound-form"
+import { useFulfillmentProviders } from "@hooks/api/fulfillment-providers"
+import { useUpdateStockLocationFulfillmentProviders } from "@hooks/api/stock-locations"
+import { useFulfillmentProviderTableColumns } from "@hooks/table/columns/use-fulfillment-provider-table-columns"
+import { useDateTableFilters } from "@hooks/table/filters"
+import { useFulfillmentProvidersTableQuery } from "@hooks/table/query/use-fulfillment-providers-table-query"
+import { useDataTable } from "@hooks/use-data-table"
 
 type LocationEditFulfillmentProvidersFormProps = {
   location: HttpTypes.AdminStockLocation
@@ -54,7 +55,8 @@ export const LocationEditFulfillmentProvidersForm = ({
   const initialState =
     location.fulfillment_providers?.reduce((acc, curr) => {
       acc[curr.id] = true
-      return acc
+      
+return acc
     }, {} as RowSelectionState) ?? {}
 
   const [rowSelection, setRowSelection] =

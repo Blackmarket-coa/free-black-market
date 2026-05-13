@@ -1,5 +1,5 @@
 import { useContext } from "react"
-import { ShippingOptionPriceContext } from "./shipping-option-price-context"
+import { ShippingOptionPriceContext } from "@routes/locations/common/components/shipping-option-price-provider/shipping-option-price-context"
 
 export const useShippingOptionPrice = () => {
   const context = useContext(ShippingOptionPriceContext)

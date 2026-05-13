@@ -1,8 +1,8 @@
 import { useParams } from "react-router-dom"
 
-import { RouteFocusModal } from "../../../components/modals"
-import { useCollection } from "../../../hooks/api/collections"
-import { AddProductsToCollectionForm } from "./components/add-products-to-collection-form"
+import { RouteFocusModal } from "@components/modals"
+import { useCollection } from "@hooks/api/collections"
+import { AddProductsToCollectionForm } from "@routes/collections/collection-add-products/components/add-products-to-collection-form"
 
 export const CollectionAddProducts = () => {
   const { id } = useParams()

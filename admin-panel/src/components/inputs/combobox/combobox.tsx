@@ -17,12 +17,13 @@ import {
 } from "@medusajs/icons"
 import { clx, Text } from "@medusajs/ui"
 import { matchSorter } from "match-sorter"
-import {
+import type {
   ComponentPropsWithoutRef,
   CSSProperties,
   ForwardedRef,
+  ReactNode} from "react";
+import {
   Fragment,
-  ReactNode,
   useCallback,
   useDeferredValue,
   useImperativeHandle,
@@ -33,7 +34,7 @@ import {
 } from "react"
 import { useTranslation } from "react-i18next"
 
-import { genericForwardRef } from "../../utilities/generic-forward-ref"
+import { genericForwardRef } from "@components/utilities/generic-forward-ref"
 
 type ComboboxOption = {
   value: string
@@ -115,7 +116,8 @@ const ComboboxImpl = <T extends Value = string>(
         if (isArrayValue) {
           return newValues?.includes(o.value)
         }
-        return o.value === newValues
+        
+return o.value === newValues
       })
 
     // If the value does not exist in the options, and the component has a handler

@@ -1,13 +1,14 @@
+import type {
+  DragEndEvent,
+  DragStartEvent,
+  DropAnimation,
+  UniqueIdentifier} from "@dnd-kit/core";
 import {
   defaultDropAnimationSideEffects,
   DndContext,
-  DragEndEvent,
   DragOverlay,
-  DragStartEvent,
-  DropAnimation,
   KeyboardSensor,
   PointerSensor,
-  UniqueIdentifier,
   useSensor,
   useSensors,
 } from "@dnd-kit/core"
@@ -21,27 +22,28 @@ import {
 import { CSS } from "@dnd-kit/utilities"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { ThumbnailBadge } from "@medusajs/icons"
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 import { Button, Checkbox, clx, CommandBar, toast, Tooltip } from "@medusajs/ui"
 import { Fragment, useCallback, useState } from "react"
 import { useFieldArray, useForm } from "react-hook-form"
 import { useTranslation } from "react-i18next"
 import { Link } from "react-router-dom"
-import { z } from "zod"
+import type { z } from "zod"
 
 import {
   RouteFocusModal,
   useRouteModal,
-} from "../../../../../components/modals"
-import { KeyboundForm } from "../../../../../components/utilities/keybound-form"
-import { useUpdateProduct } from "../../../../../hooks/api/products"
-import { sdk } from "../../../../../lib/client"
-import { UploadMediaFormItem } from "../../../common/components/upload-media-form-item"
+} from "@components/modals"
+import { KeyboundForm } from "@components/utilities/keybound-form"
+import { useUpdateProduct } from "@hooks/api/products"
+import { sdk } from "@lib/client"
+import { UploadMediaFormItem } from "@routes/products/common/components/upload-media-form-item"
+import type {
+  MediaSchema} from "@routes/products/product-create/constants";
 import {
-  EditProductMediaSchema,
-  MediaSchema,
-} from "../../../product-create/constants"
-import { EditProductMediaSchemaType } from "../../../product-create/types"
+  EditProductMediaSchema
+} from "@routes/products/product-create/constants"
+import type { EditProductMediaSchemaType } from "@routes/products/product-create/types"
 
 type ProductMediaViewProps = {
   product: HttpTypes.AdminProduct
@@ -116,7 +118,8 @@ export const EditProductMediaForm = ({ product }: ProductMediaViewProps) => {
             type: "invalid_file",
             message: t("products.media.failedToUpload"),
           })
-          return { files: [] }
+          
+return { files: [] }
         })
       uploaded = uploads
     }
@@ -126,7 +129,8 @@ export const EditProductMediaForm = ({ product }: ProductMediaViewProps) => {
       if (toUploadIndex > -1) {
         return { ...entry, url: uploaded[toUploadIndex]?.url }
       }
-      return entry
+      
+return entry
     })
     const thumbnail = withUpdatedUrls.find((m) => m.isThumbnail)?.url
 

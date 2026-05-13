@@ -9,7 +9,8 @@ export const getStoredContext = (): StorefrontContext | null => {
   if (typeof window === "undefined") return null
   try {
     const raw = window.localStorage.getItem(KEY)
-    return raw ? (JSON.parse(raw) as StorefrontContext) : null
+    
+return raw ? (JSON.parse(raw) as StorefrontContext) : null
   } catch {
     return null
   }
@@ -20,7 +21,9 @@ export const setStoredContext = (ctx: StorefrontContext) => {
   window.localStorage.setItem(KEY, JSON.stringify(ctx))
 }
 
-export const withStorefrontHeaders = (ctx: StorefrontContext | null) =>
+export const withStorefrontHeaders = (
+  ctx: StorefrontContext | null
+): Record<string, string> =>
   ctx
     ? {
         "x-organization-id": ctx.organizationId,

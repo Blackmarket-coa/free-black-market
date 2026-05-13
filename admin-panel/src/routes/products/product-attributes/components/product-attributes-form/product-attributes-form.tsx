@@ -1,17 +1,17 @@
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 import { Button, Input } from "@medusajs/ui"
 import { useTranslation } from "react-i18next"
 import * as zod from "zod"
-import { Form } from "../../../../../components/common/form"
-import { CountrySelect } from "../../../../../components/inputs/country-select"
-import { RouteDrawer, useRouteModal } from "../../../../../components/modals"
-import { KeyboundForm } from "../../../../../components/utilities/keybound-form"
+import { Form } from "@components/common/form"
+import { CountrySelect } from "@components/inputs/country-select"
+import { RouteDrawer, useRouteModal } from "@components/modals"
+import { KeyboundForm } from "@components/utilities/keybound-form"
 import {
   FormExtensionZone,
   useExtendableForm,
-} from "../../../../../dashboard-app"
-import { useUpdateProduct } from "../../../../../hooks/api/products"
-import { useExtension } from "../../../../../providers/extension-provider"
+} from "@/dashboard-app"
+import { useUpdateProduct } from "@hooks/api/products"
+import { useExtension } from "@providers/extension-provider"
 
 type ProductAttributesFormProps = {
   product: HttpTypes.AdminProduct
@@ -23,7 +23,8 @@ const dimension = zod
     if (value === "") {
       return null
     }
-    return Number(value)
+    
+return Number(value)
   })
   .optional()
   .nullable()

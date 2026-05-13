@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query"
 import { Button, Checkbox, Container, Heading, Text } from "@medusajs/ui"
 import { sdk } from "@lib/client"
 import { StorefrontSwitcher } from "@components/tenancy/storefront-switcher"
-import { StorefrontContext } from "@lib/tenancy/context"
+import type { StorefrontContext } from "@lib/tenancy/context"
 
 export const OnboardingChecklistPage = () => {
   const [ctx, setCtx] = useState<StorefrontContext | null>(null)

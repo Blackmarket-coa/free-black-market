@@ -1,27 +1,28 @@
-import { HttpTypes } from "@medusajs/types"
-import { Button, ProgressStatus, ProgressTabs, toast } from "@medusajs/ui"
+import type { HttpTypes } from "@medusajs/types"
+import type { ProgressStatus} from "@medusajs/ui";
+import { Button, ProgressTabs, toast } from "@medusajs/ui"
 import { useEffect, useMemo, useState } from "react"
 import { useWatch } from "react-hook-form"
 import { useTranslation } from "react-i18next"
 import {
   RouteFocusModal,
   useRouteModal,
-} from "../../../../../components/modals"
-import { KeyboundForm } from "../../../../../components/utilities/keybound-form"
-import { useExtendableForm } from "../../../../../dashboard-app/forms/hooks"
-import { useCreateProduct } from "../../../../../hooks/api/products"
-import { sdk } from "../../../../../lib/client"
-import { useExtension } from "../../../../../providers/extension-provider"
+} from "@components/modals"
+import { KeyboundForm } from "@components/utilities/keybound-form"
+import { useExtendableForm } from "@/dashboard-app/forms/hooks"
+import { useCreateProduct } from "@hooks/api/products"
+import { sdk } from "@lib/client"
+import { useExtension } from "@providers/extension-provider"
 import {
   PRODUCT_CREATE_FORM_DEFAULTS,
   ProductCreateSchema,
-} from "../../constants"
-import { normalizeProductFormValues } from "../../utils"
-import { ProductCreateDetailsForm } from "../product-create-details-form"
-import { ProductCreateInventoryKitForm } from "../product-create-inventory-kit-form"
-import { ProductCreateOrganizeForm } from "../product-create-organize-form"
-import { ProductCreateVariantsForm } from "../product-create-variants-form"
-import { useDocumentDirection } from "../../../../../hooks/use-document-direction"
+} from "@routes/products/product-create/constants"
+import { normalizeProductFormValues } from "@routes/products/product-create/utils"
+import { ProductCreateDetailsForm } from "@routes/products/product-create/components/product-create-details-form"
+import { ProductCreateInventoryKitForm } from "@routes/products/product-create/components/product-create-inventory-kit-form"
+import { ProductCreateOrganizeForm } from "@routes/products/product-create/components/product-create-organize-form"
+import { ProductCreateVariantsForm } from "@routes/products/product-create/components/product-create-variants-form"
+import { useDocumentDirection } from "@hooks/use-document-direction"
 
 enum Tab {
   DETAILS = "details",
@@ -81,7 +82,8 @@ export const ProductCreateForm = ({
     return regions.reduce(
       (acc, reg) => {
         acc[reg.id] = reg.currency_code
-        return acc
+        
+return acc
       },
       {} as Record<string, string>
     )

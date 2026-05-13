@@ -1,26 +1,26 @@
 import { zodResolver } from "@hookform/resolvers/zod"
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 import { Button, Divider, Input, RadioGroup, toast } from "@medusajs/ui"
 import { useForm } from "react-hook-form"
 import { useTranslation } from "react-i18next"
 import * as zod from "zod"
 
-import { Form } from "../../../../../components/common/form"
-import { SwitchBox } from "../../../../../components/common/switch-box"
-import { Combobox } from "../../../../../components/inputs/combobox"
-import { RouteDrawer, useRouteModal } from "../../../../../components/modals"
-import { KeyboundForm } from "../../../../../components/utilities/keybound-form"
-import { useUpdateShippingOptions } from "../../../../../hooks/api/shipping-options"
-import { useComboboxData } from "../../../../../hooks/use-combobox-data"
-import { sdk } from "../../../../../lib/client"
-import { pick } from "../../../../../lib/common"
-import { isOptionEnabledInStore } from "../../../../../lib/shipping-options"
+import { Form } from "@components/common/form"
+import { SwitchBox } from "@components/common/switch-box"
+import { Combobox } from "@components/inputs/combobox"
+import { RouteDrawer, useRouteModal } from "@components/modals"
+import { KeyboundForm } from "@components/utilities/keybound-form"
+import { useUpdateShippingOptions } from "@hooks/api/shipping-options"
+import { useComboboxData } from "@hooks/use-combobox-data"
+import { sdk } from "@lib/client"
+import { pick } from "@lib/common"
+import { isOptionEnabledInStore } from "@lib/shipping-options"
 import {
   FulfillmentSetType,
   ShippingOptionPriceType,
-} from "../../../common/constants"
-import { formatProvider } from "../../../../../lib/format-provider"
-import { useDocumentDirection } from "../../../../../hooks/use-document-direction"
+} from "@routes/locations/common/constants"
+import { formatProvider } from "@lib/format-provider"
+import { useDocumentDirection } from "@hooks/use-document-direction"
 
 type EditShippingOptionFormProps = {
   locationId: string
@@ -85,9 +85,15 @@ export const EditShippingOptionForm = ({
   )
 
   const handleSubmit = form.handleSubmit(async (values) => {
+    // Each pushed rule may be either an Update (id present) or a Create
+    // (id absent — the "enabled_in_store" insertion path below); widen
+    // the array to the union the backend accepts.
     const rules = shippingOption.rules.map((r) => ({
       ...pick(r, ["id", "attribute", "operator", "value"]),
-    })) as HttpTypes.AdminUpdateShippingOptionRule[]
+    })) as (
+      | HttpTypes.AdminUpdateShippingOptionRule
+      | HttpTypes.AdminCreateShippingOptionRule
+    )[]
 
     const storeRule = rules.find((r) => r.attribute === "enabled_in_store")
 
@@ -255,7 +261,7 @@ export const EditShippingOptionForm = ({
                   control={form.control}
                   name="provider_id"
                   disabled={true}
-                  render={({ field }) => {
+                  render={({ field: _field }) => {
                     return (
                       <Form.Item>
                         <Form.Label>

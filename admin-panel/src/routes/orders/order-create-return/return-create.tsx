@@ -4,12 +4,12 @@ import { useTranslation } from "react-i18next"
 
 import { toast } from "@medusajs/ui"
 
-import { RouteFocusModal } from "../../../components/modals"
-import { ReturnCreateForm } from "./components/return-create-form"
+import { RouteFocusModal } from "@components/modals"
+import { ReturnCreateForm } from "@routes/orders/order-create-return/components/return-create-form"
 
-import { useOrder, useOrderPreview } from "../../../hooks/api/orders"
-import { useInitiateReturn, useReturn } from "../../../hooks/api/returns"
-import { DEFAULT_FIELDS } from "../order-detail/constants"
+import { useOrder, useOrderPreview } from "@hooks/api/orders"
+import { useInitiateReturn, useReturn } from "@hooks/api/returns"
+import { DEFAULT_FIELDS } from "@routes/orders/order-detail/constants"
 
 let IS_REQUEST_RUNNING = false
 
@@ -25,11 +25,13 @@ export const ReturnCreate = () => {
 
   const { order: preview } = useOrderPreview(id!, undefined, {})
 
-  const [activeReturnId, setActiveReturnId] = useState()
+  const [activeReturnId, setActiveReturnId] = useState<string | undefined>(
+    undefined
+  )
 
   const { mutateAsync: initiateReturn } = useInitiateReturn(order.id)
 
-  const { return: activeReturn } = useReturn(activeReturnId, undefined, {
+  const { return: activeReturn } = useReturn(activeReturnId ?? "", undefined, {
     enabled: !!activeReturnId,
   })
 
@@ -53,11 +55,15 @@ export const ReturnCreate = () => {
       IS_REQUEST_RUNNING = true
 
       try {
-        const orderReturn = await initiateReturn({ order_id: order.id })
-        setActiveReturnId(orderReturn.id)
+        // initiateReturn returns AdminReturnResponse (`{ return: AdminReturn }`),
+        // not the raw return entity; reach into the envelope.
+        const res = await initiateReturn({ order_id: order.id })
+        setActiveReturnId(
+          (res as { return?: { id?: string } }).return?.id ?? undefined
+        )
       } catch (e) {
         navigate(`/orders/${order.id}`, { replace: true })
-        toast.error(e.message)
+        toast.error(e instanceof Error ? e.message : String(e))
       } finally {
         IS_REQUEST_RUNNING = false
       }

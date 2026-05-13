@@ -1,6 +1,6 @@
 import { useTranslation } from "react-i18next"
-import { DateCell } from "../../common/date-cell"
-import { PlaceholderCell } from "../../common/placeholder-cell"
+import { DateCell } from "@components/table/table-cells/common/date-cell"
+import { PlaceholderCell } from "@components/table/table-cells/common/placeholder-cell"
 
 type FirstSeenCellProps = {
   createdAt?: Date | string | null

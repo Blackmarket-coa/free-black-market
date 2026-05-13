@@ -1,6 +1,6 @@
-import { SingleColumnPage } from "../../../components/layout/pages"
-import { useExtension } from "../../../providers/extension-provider"
-import { PromotionListTable } from "./components/promotion-list-table"
+import { SingleColumnPage } from "@components/layout/pages"
+import { useExtension } from "@providers/extension-provider"
+import { PromotionListTable } from "@routes/promotions/promotion-list/components/promotion-list-table"
 
 export const PromotionsList = () => {
   const { getWidgets } = useExtension()

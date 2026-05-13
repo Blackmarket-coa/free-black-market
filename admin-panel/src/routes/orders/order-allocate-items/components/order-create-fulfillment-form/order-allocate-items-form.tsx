@@ -1,26 +1,31 @@
 import { zodResolver } from "@hookform/resolvers/zod"
 import { useEffect, useMemo, useState } from "react"
 import { useTranslation } from "react-i18next"
-import * as zod from "zod"
+import type * as zod from "zod"
 
-import { AdminOrder, InventoryItemDTO, OrderLineItemDTO } from "@medusajs/types"
+import type {
+  AdminOrder,
+  HttpTypes,
+  InventoryItemDTO,
+  OrderLineItemDTO,
+} from "@medusajs/types"
 import { Alert, Button, Heading, Input, Select, toast } from "@medusajs/ui"
 import { useForm, useWatch } from "react-hook-form"
 
-import { Form } from "../../../../../components/common/form"
+import { Form } from "@components/common/form"
 import {
   RouteFocusModal,
   useRouteModal,
-} from "../../../../../components/modals"
-import { KeyboundForm } from "../../../../../components/utilities/keybound-form"
-import { ordersQueryKeys } from "../../../../../hooks/api/orders"
-import { useCreateReservationItem } from "../../../../../hooks/api/reservations"
-import { useStockLocations } from "../../../../../hooks/api/stock-locations"
-import { queryClient } from "../../../../../lib/query-client"
-import { AllocateItemsSchema } from "./constants"
-import { OrderAllocateItemsItem } from "./order-allocate-items-item"
-import { checkInventoryKit } from "./utils"
-import { useDocumentDirection } from "../../../../../hooks/use-document-direction"
+} from "@components/modals"
+import { KeyboundForm } from "@components/utilities/keybound-form"
+import { ordersQueryKeys } from "@hooks/api/orders"
+import { useCreateReservationItem } from "@hooks/api/reservations"
+import { useStockLocations } from "@hooks/api/stock-locations"
+import { queryClient } from "@lib/query-client"
+import { AllocateItemsSchema } from "@routes/orders/order-allocate-items/components/order-create-fulfillment-form/constants"
+import { OrderAllocateItemsItem } from "@routes/orders/order-allocate-items/components/order-create-fulfillment-form/order-allocate-items-item"
+import { checkInventoryKit } from "@routes/orders/order-allocate-items/components/order-create-fulfillment-form/utils"
+import { useDocumentDirection } from "@hooks/use-document-direction"
 
 type OrderAllocateItemsFormProps = {
   order: AdminOrder
@@ -41,7 +46,11 @@ export function OrderAllocateItemsForm({ order }: OrderAllocateItemsFormProps) {
       order.items.filter(
         (item) =>
           item.variant?.manage_inventory &&
-          item.variant?.inventory.length &&
+          // AdminProductVariant in @medusajs/types omits the `inventory`
+          // join; the response inlines it when fetched with
+          // `+variant.inventory.location_levels`.
+          ((item.variant as unknown as { inventory?: unknown[] })?.inventory
+            ?.length ?? 0) > 0 &&
           item.quantity - item.detail.fulfilled_quantity > 0
       ),
     [order.items]
@@ -52,8 +61,8 @@ export function OrderAllocateItemsForm({ order }: OrderAllocateItemsFormProps) {
 
     return itemsToAllocate.filter(
       (i) =>
-        i.variant_title.toLowerCase().includes(searchTerm) ||
-        i.product_title.toLowerCase().includes(searchTerm)
+        i.variant_title?.toLowerCase().includes(searchTerm) ||
+        i.product_title?.toLowerCase().includes(searchTerm)
     )
   }, [itemsToAllocate, filterTerm])
 
@@ -62,7 +71,7 @@ export function OrderAllocateItemsForm({ order }: OrderAllocateItemsFormProps) {
   const form = useForm<zod.infer<typeof AllocateItemsSchema>>({
     defaultValues: {
       location_id: "",
-      quantity: defaultAllocations(itemsToAllocate),
+      quantity: defaultAllocations(itemsToAllocate as unknown as ItemWithInventory[]),
     },
     resolver: zodResolver(AllocateItemsSchema),
   })
@@ -117,71 +126,94 @@ export function OrderAllocateItemsForm({ order }: OrderAllocateItemsFormProps) {
           description: t("orders.allocateItems.toast.error", {
             items: failedItems,
           }),
-          dismissLabel: t("actions.close"),
         })
       }
     } catch (e) {
       toast.error(t("general.error"), {
-        description: e.message,
-        dismissLabel: t("actions.close"),
+        description: e instanceof Error ? e.message : String(e),
       })
     }
   })
 
   const onQuantityChange = (
     inventoryItem: InventoryItemDTO,
-    lineItem: OrderLineItemDTO,
+    lineItem: OrderLineItemDTO | HttpTypes.AdminOrderLineItem,
     hasInventoryKit: boolean,
     value: number | null,
     isRoot?: boolean
   ) => {
     let shouldDisableSubmit = false
 
-    const key =
+    // useForm.setValue's name parameter is the typed key union; the
+    // dynamic `quantity.${string}` form is valid at runtime but doesn't
+    // pre-narrow to the union, so cast through `any` at the call site.
+    const key = (
       isRoot && hasInventoryKit
         ? `quantity.${lineItem.id}-`
         : `quantity.${lineItem.id}-${inventoryItem.id}`
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ) as any
 
     form.setValue(key, value)
 
     if (value) {
-      const location = inventoryItem.location_levels.find(
-        (l) => l.location_id === selectedLocationId
-      )
-      if (location) {
-        if (location.available_quantity < value) {
-          shouldDisableSubmit = true
+      // InventoryItemDTO omits the embedded `location_levels` join in
+      // the SDK type; the response includes it when fetched with
+      // `+location_levels.*`. Cast structurally.
+      const location = (
+        inventoryItem as {
+          location_levels?: Array<{
+            location_id: string
+            available_quantity?: number
+          }>
         }
+      ).location_levels?.find((l) => l.location_id === selectedLocationId)
+      if (location && (location.available_quantity ?? 0) < value) {
+        shouldDisableSubmit = true
       }
     }
 
     if (hasInventoryKit && !isRoot) {
       // changed subitem in the kit -> we need to set parent to "-"
-      form.resetField(`quantity.${lineItem.id}-`, { defaultValue: "" })
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      form.resetField(`quantity.${lineItem.id}-` as any, { defaultValue: "" })
     }
 
     if (hasInventoryKit && isRoot) {
       // changed root -> we need to set items to parent quantity x required_quantity
 
-      const item = itemsToAllocate.find((i) => i.id === lineItem.id)
+      const item = itemsToAllocate.find((i) => i.id === lineItem.id) as
+        | (typeof itemsToAllocate[number] & {
+            variant?: {
+              inventory_items?: Array<{ required_quantity?: number }>
+              inventory?: Array<{
+                id: string
+                location_levels?: Array<{
+                  location_id: string
+                  available_quantity?: number
+                }>
+              }>
+            }
+          })
+        | undefined
 
-      item.variant?.inventory_items.forEach((ii, ind) => {
+      item?.variant?.inventory_items?.forEach((ii, ind) => {
         const num = value || 0
-        const inventory = item.variant?.inventory[ind]
+        const inventory = item.variant?.inventory?.[ind]
+        if (!inventory) return
 
         form.setValue(
-          `quantity.${lineItem.id}-${inventory.id}`,
-          num * ii.required_quantity
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          `quantity.${lineItem.id}-${inventory.id}` as any,
+          num * (ii.required_quantity ?? 1)
         )
 
         if (value) {
-          const location = inventory?.location_levels.find(
+          const location = inventory.location_levels?.find(
             (l) => l.location_id === selectedLocationId
           )
-          if (location) {
-            if (location.available_quantity < value) {
-              shouldDisableSubmit = true
-            }
+          if (location && (location.available_quantity ?? 0) < value) {
+            shouldDisableSubmit = true
           }
         }
       })
@@ -198,7 +230,7 @@ export function OrderAllocateItemsForm({ order }: OrderAllocateItemsFormProps) {
 
   useEffect(() => {
     if (selectedLocationId) {
-      form.setValue("quantity", defaultAllocations(itemsToAllocate))
+      form.setValue("quantity", defaultAllocations(itemsToAllocate as unknown as ItemWithInventory[]))
     }
   }, [selectedLocationId])
 
@@ -298,7 +330,16 @@ export function OrderAllocateItemsForm({ order }: OrderAllocateItemsFormProps) {
                           <OrderAllocateItemsItem
                             key={item.id}
                             form={form}
-                            item={item}
+                            // OrderAllocateItemsItem's local
+                            // LineItemWithVariant intersects
+                            // AdminOrderLineItem with the embedded
+                            // variant.inventory join; the response
+                            // shape matches at runtime.
+                            item={
+                              item as unknown as Parameters<
+                                typeof OrderAllocateItemsItem
+                              >[0]["item"]
+                            }
                             locationId={selectedLocationId}
                             onQuantityChange={onQuantityChange}
                           />
@@ -333,20 +374,27 @@ export function OrderAllocateItemsForm({ order }: OrderAllocateItemsFormProps) {
   )
 }
 
-function defaultAllocations(items: OrderLineItemDTO) {
-  const ret = {}
+type InventoryRow = { id: string }
+type ItemWithInventory = (OrderLineItemDTO | HttpTypes.AdminOrderLineItem) & {
+  variant?: { inventory?: InventoryRow[]; [k: string]: unknown }
+}
+
+function defaultAllocations(items: ItemWithInventory[]) {
+  const ret: Record<string, string> = {}
 
   items.forEach((item) => {
-    const hasInventoryKit = checkInventoryKit(item)
+    const hasInventoryKit = checkInventoryKit(
+      item as unknown as Parameters<typeof checkInventoryKit>[0]
+    )
 
     ret[
       hasInventoryKit
         ? `${item.id}-`
-        : `${item.id}-${item.variant?.inventory[0].id}`
+        : `${item.id}-${item.variant?.inventory?.[0]?.id}`
     ] = ""
 
     if (hasInventoryKit) {
-      item.variant?.inventory.forEach((i) => {
+      item.variant?.inventory?.forEach((i) => {
         ret[`${item.id}-${i.id}`] = ""
       })
     }

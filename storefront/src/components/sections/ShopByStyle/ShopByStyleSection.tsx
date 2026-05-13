@@ -2,7 +2,7 @@ import Image from "next/image"
 import LocalizedClientLink from "@/components/molecules/LocalizedLink/LocalizedLink"
 import { ArrowRightIcon } from "@/icons"
 import { listFeaturedCategories } from "@/lib/data/categories"
-import { Style } from "@type/categories"
+import { Style } from "@/types/categories"
 
 export async function ShopByStyleSection() {
   const featuredCategories = await listFeaturedCategories(5)

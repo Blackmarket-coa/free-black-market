@@ -4,34 +4,38 @@ import {
   ExclamationCircle,
 } from "@medusajs/icons"
 import { Button, DropdownMenu, clx } from "@medusajs/ui"
-import {
+import type {
   Cell,
   CellContext,
   Column,
   ColumnDef,
   Row,
-  VisibilityState,
+  VisibilityState} from "@tanstack/react-table";
+import {
   flexRender,
   getCoreRowModel,
   useReactTable,
 } from "@tanstack/react-table"
-import { VirtualItem, useVirtualizer } from "@tanstack/react-virtual"
-import React, {
+import type { VirtualItem} from "@tanstack/react-virtual";
+import { useVirtualizer } from "@tanstack/react-virtual"
+import type {
   CSSProperties,
-  ReactNode,
+  ReactNode} from "react";
+import type React from "react";
+import {
   useCallback,
   useEffect,
   useMemo,
   useRef,
   useState,
 } from "react"
-import { FieldValues, UseFormReturn } from "react-hook-form"
+import type { FieldValues, UseFormReturn } from "react-hook-form"
 import { useTranslation } from "react-i18next"
 
-import { useCommandHistory } from "../../../hooks/use-command-history"
-import { useDocumentDirection } from "../../../hooks/use-document-direction"
-import { ConditionalTooltip } from "../../common/conditional-tooltip"
-import { DataGridContext } from "../context"
+import { useCommandHistory } from "@hooks/use-command-history"
+import { useDocumentDirection } from "@hooks/use-document-direction"
+import { ConditionalTooltip } from "@components/common/conditional-tooltip"
+import { DataGridContext } from "@components/data-grid/context"
 import {
   useDataGridCellHandlers,
   useDataGridCellMetadata,
@@ -44,11 +48,11 @@ import {
   useDataGridMouseUpEvent,
   useDataGridNavigation,
   useDataGridQueryTool,
-} from "../hooks"
-import { DataGridMatrix } from "../models"
-import { DataGridCoordinates, GridColumnOption } from "../types"
-import { isCellMatch, isSpecialFocusKey } from "../utils"
-import { DataGridKeyboardShortcutModal } from "./data-grid-keyboard-shortcut-modal"
+} from "@components/data-grid/hooks"
+import { DataGridMatrix } from "@components/data-grid/models"
+import type { DataGridCoordinates, GridColumnOption } from "@components/data-grid/types"
+import { isCellMatch, isSpecialFocusKey } from "@components/data-grid/utils"
+import { DataGridKeyboardShortcutModal } from "@components/data-grid/components/data-grid-keyboard-shortcut-modal"
 export interface DataGridRootProps<
   TData,
   TFieldValues extends FieldValues = FieldValues,
@@ -444,7 +448,8 @@ export const DataGridRoot = <
     const specialFocusHandler = (e: KeyboardEvent) => {
       if (isSpecialFocusKey(e)) {
         handleSpecialFocusKeys(e)
-        return
+        
+return
       }
     }
 
@@ -715,7 +720,8 @@ const DataGridHeader = ({
     onHeaderInteractionChange(value)
     setColumnsOpen(value)
   }
-  return (
+  
+return (
     <div className="bg-ui-bg-base flex items-center justify-between border-b p-4">
       <div className="flex items-center gap-x-2">
         <DropdownMenu
@@ -861,10 +867,10 @@ const DataGridCell = <TData,>({
 type DataGridRowProps<TData> = {
   row: Row<TData>
   rowIndex: number
-  virtualRow: VirtualItem<Element>
+  virtualRow: VirtualItem
   virtualPaddingLeft?: number
   virtualPaddingRight?: number
-  virtualColumns: VirtualItem<Element>[]
+  virtualColumns: VirtualItem[]
   flatColumns: Column<TData, unknown>[]
   anchor: DataGridCoordinates | null
   onDragToFillStart: (e: React.MouseEvent<HTMLElement>) => void

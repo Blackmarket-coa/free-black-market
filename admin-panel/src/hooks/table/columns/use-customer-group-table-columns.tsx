@@ -5,8 +5,8 @@ import { useTranslation } from "react-i18next"
 import {
   TextCell,
   TextHeader,
-} from "../../../components/table/table-cells/common/text-cell"
-import { HttpTypes } from "@medusajs/types"
+} from "@components/table/table-cells/common/text-cell"
+import type { HttpTypes } from "@medusajs/types"
 
 const columnHelper = createColumnHelper<HttpTypes.AdminCustomerGroup>()
 

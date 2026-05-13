@@ -1,1 +1,1 @@
-export { LocationServiceZoneShippingOptionEdit as Component } from "./location-service-zone-shipping-option-edit"
+export { LocationServiceZoneShippingOptionEdit as Component } from "@routes/locations/location-service-zone-shipping-option-edit/location-service-zone-shipping-option-edit"

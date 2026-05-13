@@ -1,4 +1,4 @@
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 import { Heading, Text, Tooltip, clx } from "@medusajs/ui"
 import ReactCountryFlag from "react-country-flag"
 
@@ -9,20 +9,21 @@ import {
   Trash,
   PencilSquare,
 } from "@medusajs/icons"
-import { ComponentPropsWithoutRef, ReactNode } from "react"
+import type { ComponentPropsWithoutRef, ReactNode } from "react"
 import { useTranslation } from "react-i18next"
 import { Link } from "react-router-dom"
+import type {
+  Action} from "@components/common/action-menu";
 import {
-  Action,
   ActionMenu,
-} from "../../../../../components/common/action-menu"
-import { IconAvatar } from "../../../../../components/common/icon-avatar"
-import { getCountryByIso2 } from "../../../../../lib/data/countries"
+} from "@components/common/action-menu"
+import { IconAvatar } from "@components/common/icon-avatar"
+import { getCountryByIso2 } from "@lib/data/countries"
 import {
   getProvinceByIso2,
   isProvinceInCountry,
-} from "../../../../../lib/data/country-states"
-import { useDeleteTaxRegionAction } from "../../hooks"
+} from "@lib/data/country-states"
+import { useDeleteTaxRegionAction } from "@routes/tax-regions/common/hooks"
 
 interface TaxRegionCardProps extends ComponentPropsWithoutRef<"div"> {
   taxRegion: HttpTypes.AdminTaxRegion

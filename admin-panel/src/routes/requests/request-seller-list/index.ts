@@ -1,1 +1,1 @@
-export { RequestSellerList as Component } from "./request-seller-list";
+export { RequestSellerList as Component } from "@routes/requests/request-seller-list/request-seller-list";

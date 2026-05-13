@@ -15,15 +15,15 @@ import {
 import { useFieldArray, type UseFormReturn } from "react-hook-form"
 import { useTranslation } from "react-i18next"
 
-import { Form } from "../../../../../components/common/form"
-import { StackedFocusModal } from "../../../../../components/modals/stacked-focus-modal"
-import { useStackedModal } from "../../../../../components/modals/stacked-modal-provider"
-import { PriceListCustomerGroupRuleForm } from "../../../common/components/price-list-customer-group-rule-form"
+import { Form } from "@components/common/form"
+import { StackedFocusModal } from "@components/modals/stacked-focus-modal"
+import { useStackedModal } from "@components/modals/stacked-modal-provider"
+import { PriceListCustomerGroupRuleForm } from "@routes/price-lists/common/components/price-list-customer-group-rule-form"
 import type {
   PricingCreateSchemaType,
   PricingCustomerGroupsArrayType,
-} from "./schema"
-import { useDocumentDirection } from "../../../../../hooks/use-document-direction"
+} from "@routes/price-lists/price-list-create/components/price-list-create-form/schema"
+import { useDocumentDirection } from "@hooks/use-document-direction"
 
 type PriceListDetailsFormProps = {
   form: UseFormReturn<PricingCreateSchemaType>
@@ -85,14 +85,14 @@ export const PriceListDetailsForm = ({ form }: PriceListDetailsFormProps) => {
                       className="grid grid-cols-1 gap-4 md:grid-cols-2"
                     >
                       <RadioGroup.ChoiceBox
-                        value={"sale"}
+                        value="sale"
                         label={t("priceLists.fields.type.options.sale.label")}
                         description={t(
                           "priceLists.fields.type.options.sale.description"
                         )}
                       />
                       <RadioGroup.ChoiceBox
-                        value={"override"}
+                        value="override"
                         label={t(
                           "priceLists.fields.type.options.override.label"
                         )}

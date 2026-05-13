@@ -13,9 +13,9 @@ import {
 import { useState } from "react"
 import { useTranslation } from "react-i18next"
 import { Link } from "react-router-dom"
-import { ActionMenu } from "../../../../../components/common/action-menu"
-import { useUpdateProduct } from "../../../../../hooks/api/products"
-import { HttpTypes } from "@medusajs/types"
+import { ActionMenu } from "@components/common/action-menu"
+import { useUpdateProduct } from "@hooks/api/products"
+import type { HttpTypes } from "@medusajs/types"
 
 type ProductMedisaSectionProps = {
   product: HttpTypes.AdminProduct
@@ -32,7 +32,8 @@ export const ProductMediaSection = ({ product }: ProductMedisaSectionProps) => {
     setSelection((prev) => {
       if (prev[id]) {
         const { [id]: _, ...rest } = prev
-        return rest
+        
+return rest
       } else {
         return { ...prev, [id]: true }
       }
@@ -64,9 +65,9 @@ export const ProductMediaSection = ({ product }: ProductMedisaSectionProps) => {
       return
     }
 
-    const mediaToKeep = product.images
+    const mediaToKeep = (product.images ?? [])
       .filter((i) => !ids.includes(i.id))
-      .map((i) => ({ url: i.url}))
+      .map((i) => ({ url: i.url }))
 
     await mutateAsync(
       {
@@ -129,7 +130,7 @@ export const ProductMediaSection = ({ product }: ProductMedisaSectionProps) => {
                     </Tooltip>
                   </div>
                 )}
-                <Link to={`media`} state={{ curr: index }}>
+                <Link to="media" state={{ curr: index }}>
                   <img
                     src={i.url}
                     alt={`${product.title} image`}
@@ -187,10 +188,10 @@ type Media = {
   isThumbnail: boolean
 }
 
-const getMedia = (product: Product) => {
-  const { images = [], thumbnail } = product
+const getMedia = (product: HttpTypes.AdminProduct) => {
+  const { images, thumbnail } = product
 
-  const media: Media[] = images.map((image) => ({
+  const media: Media[] = (images ?? []).map((image) => ({
     id: image.id,
     url: image.url,
     isThumbnail: image.url === thumbnail,

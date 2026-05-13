@@ -1,11 +1,12 @@
+import type {
+  DataTableColumnDef} from "@medusajs/ui";
 import {
   createDataTableColumnHelper,
-  DataTableColumnDef,
   Tooltip,
 } from "@medusajs/ui"
 import { useMemo } from "react"
 import { useTranslation } from "react-i18next"
-import { useDate } from "../../../../hooks/use-date"
+import { useDate } from "@hooks/use-date"
 
 type EntityWithDates = {
   created_at: string

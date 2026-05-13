@@ -1,18 +1,18 @@
 import { Divider, Heading, Input, RadioGroup, Select, Text } from "@medusajs/ui"
-import { UseFormReturn } from "react-hook-form"
+import type { UseFormReturn } from "react-hook-form"
 import { useTranslation } from "react-i18next"
 
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 
-import { Form } from "../../../../../components/common/form"
-import { SwitchBox } from "../../../../../components/common/switch-box"
-import { Combobox } from "../../../../../components/inputs/combobox"
-import { useComboboxData } from "../../../../../hooks/use-combobox-data"
-import { sdk } from "../../../../../lib/client"
-import { formatProvider } from "../../../../../lib/format-provider"
-import { FulfillmentSetType, ShippingOptionPriceType, } from "../../../common/constants"
-import { CreateShippingOptionSchema } from "./schema"
-import { useDocumentDirection } from "../../../../../hooks/use-document-direction"
+import { Form } from "@components/common/form"
+import { SwitchBox } from "@components/common/switch-box"
+import { Combobox } from "@components/inputs/combobox"
+import { useComboboxData } from "@hooks/use-combobox-data"
+import { sdk } from "@lib/client"
+import { formatProvider } from "@lib/format-provider"
+import { FulfillmentSetType, ShippingOptionPriceType, } from "@routes/locations/common/constants"
+import type { CreateShippingOptionSchema } from "@routes/locations/location-service-zone-shipping-option-create/components/create-shipping-options-form/schema"
+import { useDocumentDirection } from "@hooks/use-document-direction"
 
 type CreateShippingOptionDetailsFormProps = {
   form: UseFormReturn<CreateShippingOptionSchema>
@@ -269,7 +269,7 @@ export const CreateShippingOptionDetailsForm = ({
                           ?.filter((fo) => !!fo.is_return === isReturn)
                           .map((option) => (
                             <Select.Item value={option.id} key={option.id}>
-                              {option.name || option.id}
+                              {(option as { name?: string }).name || option.id}
                             </Select.Item>
                           ))}
                       </Select.Content>

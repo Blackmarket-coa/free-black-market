@@ -61,16 +61,9 @@ jobs:
         working-directory: storefront
         run: pnpm qa:internal-links
 
-      # Storefront typecheck currently surfaces real type errors landed via
-      # the creator-monetization releases (missing 'sonner' module, null
-      # vs Record mismatches in src/lib/data/*). Tracked as LR-5 in
-      # docs/AUDIT_DEBT.md. Keep non-blocking until those are resolved;
-      # next.config.ts sets typescript.ignoreBuildErrors: true so the
-      # build itself is unaffected.
-      - name: Storefront typecheck (non-blocking)
+      - name: Storefront typecheck
         working-directory: storefront
         run: pnpm typecheck
-        continue-on-error: true
 
       - name: TypeScript check
         working-directory: backend
@@ -183,12 +176,11 @@ jobs:
         working-directory: admin-panel
         run: pnpm test
 
-      # Typecheck currently surfaces translation-schema drift; tracked in
-      # docs/AUDIT_DEBT.md (LR-3). Keep non-blocking until that lands.
-      - name: Typecheck admin panel (non-blocking)
+      # LR-3 fully resolved 2026-05-13 — admin-panel typecheck now runs
+      # fail-fast. See docs/AUDIT_DEBT.md.
+      - name: Typecheck admin panel
         working-directory: admin-panel
         run: pnpm typecheck
-        continue-on-error: true
 
   storefront-test:
     name: Storefront Tests

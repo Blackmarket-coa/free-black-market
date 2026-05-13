@@ -1,1 +1,1 @@
-export * from "./user-menu"
+export * from "@components/layout/user-menu/user-menu"

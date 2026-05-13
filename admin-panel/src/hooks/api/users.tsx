@@ -1,15 +1,16 @@
-import { FetchError } from "@medusajs/js-sdk"
-import { HttpTypes } from "@medusajs/types"
-import {
+import type { FetchError } from "@medusajs/js-sdk"
+import type { HttpTypes } from "@medusajs/types"
+import type {
   QueryKey,
   UseMutationOptions,
-  UseQueryOptions,
+  UseQueryOptions} from "@tanstack/react-query";
+import {
   useMutation,
   useQuery,
 } from "@tanstack/react-query"
-import { sdk } from "../../lib/client"
-import { queryClient } from "../../lib/query-client"
-import { queryKeysFactory } from "../../lib/query-key-factory"
+import { sdk } from "@lib/client"
+import { queryClient } from "@lib/query-client"
+import { queryKeysFactory } from "@lib/query-key-factory"
 
 const USERS_QUERY_KEY = "users" as const
 const usersQueryKeys = {
@@ -91,7 +92,16 @@ export const useCreateUser = (
   >
 ) => {
   return useMutation({
-    mutationFn: (payload) => sdk.admin.user.create(payload, query),
+    // @medusajs/js-sdk@2.12.5 dropped sdk.admin.user.create; the
+    // /admin/users POST endpoint still exists (users are created either
+    // here or through the invite/accept flow), so fall back to a typed
+    // sdk.client.fetch call.
+    mutationFn: (payload) =>
+      sdk.client.fetch<HttpTypes.AdminUserResponse>(`/admin/users`, {
+        method: "POST",
+        body: payload,
+        query,
+      }),
     onSuccess: (data, variables, context) => {
       queryClient.invalidateQueries({ queryKey: usersQueryKeys.lists() })
 

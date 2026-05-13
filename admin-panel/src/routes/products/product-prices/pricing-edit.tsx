@@ -1,17 +1,17 @@
 import { zodResolver } from "@hookform/resolvers/zod"
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 import { Button } from "@medusajs/ui"
 import { useMemo } from "react"
 import { useForm } from "react-hook-form"
 import { useTranslation } from "react-i18next"
 import * as zod from "zod"
 
-import { RouteFocusModal, useRouteModal } from "../../../components/modals"
-import { KeyboundForm } from "../../../components/utilities/keybound-form"
-import { useUpdateProductVariantsBatch } from "../../../hooks/api/products"
-import { useRegions } from "../../../hooks/api/regions"
-import { castNumber } from "../../../lib/cast-number"
-import { VariantPricingForm } from "../common/variant-pricing-form"
+import { RouteFocusModal, useRouteModal } from "@components/modals"
+import { KeyboundForm } from "@components/utilities/keybound-form"
+import { useUpdateProductVariantsBatch } from "@hooks/api/products"
+import { useRegions } from "@hooks/api/regions"
+import { castNumber } from "@lib/cast-number"
+import { VariantPricingForm } from "@routes/products/common/variant-pricing-form"
 
 export const UpdateVariantPricesSchema = zod.object({
   variants: zod.array(
@@ -44,9 +44,10 @@ export const PricingEdit = ({
       return {}
     }
 
-    return regions.reduce((acc, reg) => {
+    return regions.reduce<Record<string, string>>((acc, reg) => {
       acc[reg.id] = reg.currency_code
-      return acc
+
+return acc
     }, {})
   }, [regions])
 
@@ -64,7 +65,8 @@ export const PricingEdit = ({
           } else {
             acc[price.currency_code] = price.amount
           }
-          return acc
+          
+return acc
         }, {}),
       })) as any,
     },
@@ -74,7 +76,7 @@ export const PricingEdit = ({
 
   const handleSubmit = form.handleSubmit(async (values) => {
     const reqData = values.variants.map((variant, ind) => ({
-      id: variants[ind].id,
+      id: (variants ?? [])[ind].id,
       prices: Object.entries(variant.prices || {})
         .filter(
           ([_, value]) => value !== "" && typeof value !== "undefined" // deleted cells
@@ -91,13 +93,13 @@ export const PricingEdit = ({
 
           if (regionId) {
             existingId = variants?.[ind]?.prices?.find(
-              (p) => p.rules["region_id"] === regionId
+              (p) => (p as { rules?: Record<string, string> }).rules?.["region_id"] === regionId
             )?.id
           } else {
             existingId = variants?.[ind]?.prices?.find(
               (p) =>
                 p.currency_code === currencyCode &&
-                Object.keys(p.rules ?? {}).length === 0
+                Object.keys((p as { rules?: Record<string, string> }).rules ?? {}).length === 0
             )?.id
           }
 

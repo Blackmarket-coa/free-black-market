@@ -1,7 +1,8 @@
-import { Filter } from ".."
-import { DataTableFilter } from "../data-table-filter"
-import { DataTableOrderBy, DataTableOrderByKey } from "../data-table-order-by"
-import { DataTableSearch } from "../data-table-search"
+import type { Filter } from "@components/table/data-table"
+import { DataTableFilter } from "@components/table/data-table/data-table-filter"
+import type { DataTableOrderByKey } from "@components/table/data-table/data-table-order-by";
+import { DataTableOrderBy } from "@components/table/data-table/data-table-order-by"
+import { DataTableSearch } from "@components/table/data-table/data-table-search"
 
 export interface DataTableQueryProps<TData> {
   search?: boolean | "autofocus"

@@ -1,18 +1,18 @@
 import { zodResolver } from "@hookform/resolvers/zod"
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 import { Button, Input, Select, toast } from "@medusajs/ui"
 import { useForm } from "react-hook-form"
 import { useTranslation } from "react-i18next"
 import { z } from "zod"
 
-import { Form } from "../../../../../components/common/form"
-import { Combobox } from "../../../../../components/inputs/combobox"
-import { RouteDrawer, useRouteModal } from "../../../../../components/modals"
-import { KeyboundForm } from "../../../../../components/utilities/keybound-form"
-import { useUpdateStore } from "../../../../../hooks/api/store"
-import { useComboboxData } from "../../../../../hooks/use-combobox-data"
-import { sdk } from "../../../../../lib/client"
-import { useDocumentDirection } from "../../../../../hooks/use-document-direction"
+import { Form } from "@components/common/form"
+import { Combobox } from "@components/inputs/combobox"
+import { RouteDrawer, useRouteModal } from "@components/modals"
+import { KeyboundForm } from "@components/utilities/keybound-form"
+import { useUpdateStore } from "@hooks/api/store"
+import { useComboboxData } from "@hooks/use-combobox-data"
+import { sdk } from "@lib/client"
+import { useDocumentDirection } from "@hooks/use-document-direction"
 
 type EditStoreFormProps = {
   store: HttpTypes.AdminStore

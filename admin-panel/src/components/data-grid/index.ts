@@ -1,2 +1,2 @@
-export * from "./data-grid"
-export * from "./helpers"
+export * from "@components/data-grid/data-grid"
+export * from "@components/data-grid/helpers"

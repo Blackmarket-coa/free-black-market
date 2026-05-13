@@ -1,21 +1,21 @@
 import { zodResolver } from "@hookform/resolvers/zod"
-import { AdminCampaign, AdminPromotion } from "@medusajs/types"
+import type { AdminCampaign, AdminPromotion } from "@medusajs/types"
 import { Button, RadioGroup, toast } from "@medusajs/ui"
 import { useEffect } from "react"
 import { useForm, useWatch } from "react-hook-form"
 import { useTranslation } from "react-i18next"
 import * as zod from "zod"
-import { Form } from "../../../../../components/common/form"
-import { RouteDrawer, useRouteModal } from "../../../../../components/modals"
-import { KeyboundForm } from "../../../../../components/utilities/keybound-form"
-import { useUpdatePromotion } from "../../../../../hooks/api/promotions"
-import { CreateCampaignFormFields } from "../../../../campaigns/common/components/create-campaign-form-fields"
-import { CampaignDetails } from "./campaign-details"
-import { sdk } from "../../../../../lib/client"
-import { useComboboxData } from "../../../../../hooks/use-combobox-data"
-import { Combobox } from "../../../../../components/inputs/combobox"
-import { useCampaign } from "../../../../../hooks/api/campaigns"
-import { useDocumentDirection } from "../../../../../hooks/use-document-direction"
+import { Form } from "@components/common/form"
+import { RouteDrawer, useRouteModal } from "@components/modals"
+import { KeyboundForm } from "@components/utilities/keybound-form"
+import { useUpdatePromotion } from "@hooks/api/promotions"
+import { CreateCampaignFormFields } from "@routes/campaigns/common/components/create-campaign-form-fields"
+import { CampaignDetails } from "@routes/promotions/promotion-add-campaign/components/add-campaign-promotion-form/campaign-details"
+import { sdk } from "@lib/client"
+import { useComboboxData } from "@hooks/use-combobox-data"
+import { Combobox } from "@components/inputs/combobox"
+import { useCampaign } from "@hooks/api/campaigns"
+import { useDocumentDirection } from "@hooks/use-document-direction"
 
 type EditPromotionFormProps = {
   promotion: AdminPromotion
@@ -92,13 +92,13 @@ export const AddCampaignPromotionFields = ({
                   onValueChange={field.onChange}
                 >
                   <RadioGroup.ChoiceBox
-                    value={"none"}
+                    value="none"
                     label={t("promotions.form.campaign.none.title")}
                     description={t("promotions.form.campaign.none.description")}
                   />
 
                   <RadioGroup.ChoiceBox
-                    value={"existing"}
+                    value="existing"
                     label={t("promotions.form.campaign.existing.title")}
                     description={t(
                       "promotions.form.campaign.existing.description"
@@ -107,7 +107,7 @@ export const AddCampaignPromotionFields = ({
 
                   {withNewCampaign && (
                     <RadioGroup.ChoiceBox
-                      value={"new"}
+                      value="new"
                       label={t("promotions.form.campaign.new.title")}
                       description={t(
                         "promotions.form.campaign.new.description"

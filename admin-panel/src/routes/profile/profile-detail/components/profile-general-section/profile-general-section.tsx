@@ -1,9 +1,9 @@
 import { PencilSquare } from "@medusajs/icons"
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 import { Container, Heading, Text } from "@medusajs/ui"
 import { useTranslation } from "react-i18next"
-import { ActionMenu } from "../../../../../components/common/action-menu"
-import { languages } from "../../../../../i18n/languages"
+import { ActionMenu } from "@components/common/action-menu"
+import { languages } from "@/i18n/languages"
 
 type ProfileGeneralSectionProps = {
   user: HttpTypes.AdminUser

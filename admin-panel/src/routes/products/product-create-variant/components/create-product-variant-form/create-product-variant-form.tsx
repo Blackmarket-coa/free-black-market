@@ -1,32 +1,33 @@
 import { zodResolver } from "@hookform/resolvers/zod"
-import { Button, ProgressStatus, ProgressTabs, toast } from "@medusajs/ui"
+import type { ProgressStatus} from "@medusajs/ui";
+import { Button, ProgressTabs, toast } from "@medusajs/ui"
 import { useEffect, useMemo, useState } from "react"
 import { useFieldArray, useForm, useWatch } from "react-hook-form"
 import { useTranslation } from "react-i18next"
-import { z } from "zod"
+import type { z } from "zod"
 
-import { AdminCreateProductVariantPrice, HttpTypes } from "@medusajs/types"
+import type { AdminCreateProductVariantPrice, HttpTypes } from "@medusajs/types"
 import {
   RouteDrawer,
   RouteFocusModal,
   useRouteModal,
-} from "../../../../../components/modals"
-import { KeyboundForm } from "../../../../../components/utilities/keybound-form"
-import { useRegions } from "../../../../../hooks/api"
-import { useCreateProductVariant } from "../../../../../hooks/api/products"
-import { castNumber } from "../../../../../lib/cast-number"
-import { partialFormValidation } from "../../../../../lib/validation"
+} from "@components/modals"
+import { KeyboundForm } from "@components/utilities/keybound-form"
+import { useRegions } from "@hooks/api"
+import { useCreateProductVariant } from "@hooks/api/products"
+import { castNumber } from "@lib/cast-number"
+import { partialFormValidation } from "@lib/validation"
 import {
   CreateProductVariantSchema,
   CreateVariantDetailsFields,
   CreateVariantDetailsSchema,
   CreateVariantPriceFields,
   CreateVariantPriceSchema,
-} from "./constants"
-import DetailsTab from "./details-tab"
-import InventoryKitTab from "./inventory-kit-tab"
-import PricingTab from "./pricing-tab"
-import { useDocumentDirection } from "../../../../../hooks/use-document-direction"
+} from "@routes/products/product-create-variant/components/create-product-variant-form/constants"
+import DetailsTab from "@routes/products/product-create-variant/components/create-product-variant-form/details-tab"
+import InventoryKitTab from "@routes/products/product-create-variant/components/create-product-variant-form/inventory-kit-tab"
+import PricingTab from "@routes/products/product-create-variant/components/create-product-variant-form/pricing-tab"
+import { useDocumentDirection } from "@hooks/use-document-direction"
 
 enum Tab {
   DETAIL = "detail",
@@ -79,7 +80,8 @@ export const CreateProductVariantForm = ({
     return regions.reduce(
       (acc, reg) => {
         acc[reg.id] = reg.currency_code
-        return acc
+        
+return acc
       },
       {} as Record<string, string>
     )
@@ -102,12 +104,15 @@ export const CreateProductVariantForm = ({
 
   const inventoryTabEnabled = isManageInventoryEnabled && isInventoryKitEnabled
 
-  const tabOrder = useMemo(() => {
+  // Narrowing the readonly tuple union narrows the param type of
+  // .indexOf() too, which makes callers passing the wider `Tab` enum
+  // fail. Widen the inferred element type back to `Tab` here.
+  const tabOrder = useMemo((): readonly Tab[] => {
     if (inventoryTabEnabled) {
-      return [Tab.DETAIL, Tab.PRICE, Tab.INVENTORY] as const
+      return [Tab.DETAIL, Tab.PRICE, Tab.INVENTORY]
     }
 
-    return [Tab.DETAIL, Tab.PRICE] as const
+    return [Tab.DETAIL, Tab.PRICE]
   }, [inventoryTabEnabled])
 
   useEffect(() => {
@@ -134,7 +139,8 @@ export const CreateProductVariantForm = ({
       }))
 
       setTab(update)
-      return
+      
+return
     }
 
     // get the tabs from the current tab to the update tab including the current tab
@@ -155,7 +161,8 @@ export const CreateProductVariantForm = ({
             [tab]: "in-progress",
           }))
           setTab(tab)
-          return
+          
+return
         }
 
         setTabState((prev) => ({
@@ -219,7 +226,9 @@ export const CreateProductVariantForm = ({
               return undefined
             }
 
-            const ret: AdminCreateProductVariantPrice = {}
+            // ret is built up over the next few lines (currency_code +
+            // amount are always set before the object is returned).
+            const ret = {} as AdminCreateProductVariantPrice
             const amount = castNumber(value)
 
             if (regionsCurrencyMap[currencyOrRegion]) {

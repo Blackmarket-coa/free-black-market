@@ -1,1 +1,1 @@
-export * from "./promotion-conditions-section"
+export * from "@routes/promotions/promotion-detail/components/promotion-conditions-section/promotion-conditions-section"

@@ -1,13 +1,13 @@
 import { useParams } from "react-router-dom"
 
-import { usePriceList } from "../../../hooks/api/price-lists"
-import { PriceListConfigurationSection } from "./components/price-list-configuration-section"
-import { PriceListGeneralSection } from "./components/price-list-general-section"
-import { PriceListProductSection } from "./components/price-list-product-section"
+import { usePriceList } from "@hooks/api/price-lists"
+import { PriceListConfigurationSection } from "@routes/price-lists/price-list-detail/components/price-list-configuration-section"
+import { PriceListGeneralSection } from "@routes/price-lists/price-list-detail/components/price-list-general-section"
+import { PriceListProductSection } from "@routes/price-lists/price-list-detail/components/price-list-product-section"
 
-import { TwoColumnPageSkeleton } from "../../../components/common/skeleton"
-import { TwoColumnPage } from "../../../components/layout/pages"
-import { useExtension } from "../../../providers/extension-provider"
+import { TwoColumnPageSkeleton } from "@components/common/skeleton"
+import { TwoColumnPage } from "@components/layout/pages"
+import { useExtension } from "@providers/extension-provider"
 
 export const PriceListDetails = () => {
   const { id } = useParams()

@@ -1,18 +1,19 @@
-import { FetchError } from "@medusajs/js-sdk"
-import { HttpTypes } from "@medusajs/types"
-import {
+import type { FetchError } from "@medusajs/js-sdk"
+import type { HttpTypes } from "@medusajs/types"
+import type {
   QueryKey,
-  useMutation,
   UseMutationOptions,
-  useQuery,
-  UseQueryOptions,
+  UseQueryOptions} from "@tanstack/react-query";
+import {
+  useMutation,
+  useQuery
 } from "@tanstack/react-query"
 
-import { sdk } from "../../lib/client"
-import { queryClient } from "../../lib/query-client"
-import { queryKeysFactory } from "../../lib/query-key-factory"
-import { ordersQueryKeys } from "./orders"
-import { returnsQueryKeys } from "./returns"
+import { sdk } from "@lib/client"
+import { queryClient } from "@lib/query-client"
+import { queryKeysFactory } from "@lib/query-key-factory"
+import { ordersQueryKeys } from "@hooks/api/orders"
+import { returnsQueryKeys } from "@hooks/api/returns"
 
 const CLAIMS_QUERY_KEY = "claims" as const
 export const claimsQueryKeys = queryKeysFactory(CLAIMS_QUERY_KEY)
@@ -234,7 +235,7 @@ export const useUpdateClaimInboundItem = (
   id: string,
   orderId: string,
   options?: UseMutationOptions<
-    HttpTypes.AdminClaimResponse,
+    HttpTypes.AdminClaimReturnPreviewResponse,
     FetchError,
     HttpTypes.AdminUpdateClaimInboundItem & { actionId: string }
   >
@@ -264,7 +265,7 @@ export const useUpdateClaimInboundItem = (
 export const useRemoveClaimInboundItem = (
   id: string,
   orderId: string,
-  options?: UseMutationOptions<HttpTypes.AdminClaimResponse, FetchError, string>
+  options?: UseMutationOptions<HttpTypes.AdminClaimReturnPreviewResponse, FetchError, string>
 ) => {
   return useMutation({
     mutationFn: (actionId: string) =>
@@ -292,7 +293,7 @@ export const useAddClaimInboundShipping = (
   id: string,
   orderId: string,
   options?: UseMutationOptions<
-    HttpTypes.AdminClaimResponse,
+    HttpTypes.AdminClaimReturnPreviewResponse,
     FetchError,
     HttpTypes.AdminClaimAddInboundShipping
   >
@@ -319,7 +320,7 @@ export const useUpdateClaimInboundShipping = (
   id: string,
   orderId: string,
   options?: UseMutationOptions<
-    HttpTypes.AdminClaimResponse,
+    HttpTypes.AdminClaimPreviewResponse,
     FetchError,
     HttpTypes.AdminClaimUpdateInboundShipping
   >
@@ -348,7 +349,7 @@ export const useUpdateClaimInboundShipping = (
 export const useDeleteClaimInboundShipping = (
   id: string,
   orderId: string,
-  options?: UseMutationOptions<HttpTypes.AdminClaimResponse, FetchError, string>
+  options?: UseMutationOptions<HttpTypes.AdminClaimReturnPreviewResponse, FetchError, string>
 ) => {
   return useMutation({
     mutationFn: (actionId: string) =>
@@ -480,7 +481,7 @@ export const useUpdateClaimOutboundShipping = (
   id: string,
   orderId: string,
   options?: UseMutationOptions<
-    HttpTypes.AdminClaimResponse,
+    HttpTypes.AdminClaimPreviewResponse,
     FetchError,
     HttpTypes.AdminClaimUpdateOutboundShipping
   >
@@ -567,7 +568,7 @@ export const useClaimConfirmRequest = (
 export const useCancelClaimRequest = (
   id: string,
   orderId: string,
-  options?: UseMutationOptions<HttpTypes.AdminClaimResponse, FetchError>
+  options?: UseMutationOptions<HttpTypes.AdminClaimDeleteResponse, FetchError>
 ) => {
   return useMutation({
     mutationFn: () => sdk.admin.claim.cancelRequest(id),

@@ -1,5 +1,5 @@
-import { TaxRateRuleReferenceType } from "../common/constants"
-import { TaxRateRuleReference } from "../common/schemas"
+import type { TaxRateRuleReferenceType } from "@routes/tax-regions/common/constants"
+import type { TaxRateRuleReference } from "@routes/tax-regions/common/schemas"
 
 export type InitialRuleValues = {
   [TaxRateRuleReferenceType.PRODUCT]: TaxRateRuleReference[]

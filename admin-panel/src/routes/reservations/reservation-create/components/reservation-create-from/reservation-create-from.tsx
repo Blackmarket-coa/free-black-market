@@ -4,19 +4,19 @@ import { Button, Heading, Input, Text, Textarea, toast } from "@medusajs/ui"
 import {
   RouteFocusModal,
   useRouteModal,
-} from "../../../../../components/modals"
+} from "@components/modals"
 
 import { zodResolver } from "@hookform/resolvers/zod"
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 import React from "react"
 import { useForm } from "react-hook-form"
 import { useTranslation } from "react-i18next"
-import { Form } from "../../../../../components/common/form"
-import { Combobox } from "../../../../../components/inputs/combobox"
-import { KeyboundForm } from "../../../../../components/utilities/keybound-form"
-import { useInventoryItems } from "../../../../../hooks/api/inventory"
-import { useCreateReservationItem } from "../../../../../hooks/api/reservations"
-import { useStockLocations } from "../../../../../hooks/api/stock-locations"
+import { Form } from "@components/common/form"
+import { Combobox } from "@components/inputs/combobox"
+import { KeyboundForm } from "@components/utilities/keybound-form"
+import { useInventoryItems } from "@hooks/api/inventory"
+import { useCreateReservationItem } from "@hooks/api/reservations"
+import { useStockLocations } from "@hooks/api/stock-locations"
 
 export const CreateReservationSchema = zod.object({
   inventory_item_id: zod.string().min(1),
@@ -62,7 +62,7 @@ export const ReservationCreateForm = (props: { inventoryItemId?: string }) => {
   })
 
   const { inventory_items } = useInventoryItems({
-    q: inventorySearch,
+    q: inventorySearch ?? undefined,
   })
 
   const inventoryItemId = form.watch("inventory_item_id")
@@ -144,9 +144,9 @@ export const ReservationCreateForm = (props: { inventoryItemId?: string }) => {
             <Heading>{t("inventory.reservation.create")}</Heading>
             <div className="grid grid-cols-2 gap-4">
               <Form.Field
-                key={"inventory_item_id"}
+                key="inventory_item_id"
                 control={form.control}
-                name={"inventory_item_id"}
+                name="inventory_item_id"
                 render={({ field: { value, onChange, ...field } }) => {
                   return (
                     <Form.Item>
@@ -177,9 +177,9 @@ export const ReservationCreateForm = (props: { inventoryItemId?: string }) => {
                 }}
               />
               <Form.Field
-                key={"location_id"}
+                key="location_id"
                 control={form.control}
-                name={"location_id"}
+                name="location_id"
                 render={({ field: { value, onChange, ...field } }) => {
                   return (
                     <Form.Item>

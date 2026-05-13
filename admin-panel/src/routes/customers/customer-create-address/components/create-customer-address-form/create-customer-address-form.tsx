@@ -4,14 +4,14 @@ import { useForm } from "react-hook-form"
 import { useTranslation } from "react-i18next"
 import { useParams } from "react-router-dom"
 import * as zod from "zod"
-import { Form } from "../../../../../components/common/form"
-import { CountrySelect } from "../../../../../components/inputs/country-select"
+import { Form } from "@components/common/form"
+import { CountrySelect } from "@components/inputs/country-select"
 import {
   RouteFocusModal,
   useRouteModal,
-} from "../../../../../components/modals"
-import { KeyboundForm } from "../../../../../components/utilities/keybound-form"
-import { useCreateCustomerAddress } from "../../../../../hooks/api/customers"
+} from "@components/modals"
+import { KeyboundForm } from "@components/utilities/keybound-form"
+import { useCreateCustomerAddress } from "@hooks/api/customers"
 
 const CreateCustomerAddressSchema = zod.object({
   address_name: zod.string().min(1),

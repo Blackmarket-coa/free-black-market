@@ -1,12 +1,12 @@
 import { useState, useMemo, useCallback, useEffect } from "react"
 import { useSearchParams } from "react-router-dom"
-import { HttpTypes } from "@medusajs/types"
-import { useViewConfigurations, useViewConfiguration } from "../use-view-configurations"
-import { useEntityColumns } from "../api/views"
-import { useFeatureFlag } from "../../providers/feature-flag-provider"
-import { useColumnState } from "./columns/use-column-state"
-import { useQueryParams } from "../use-query-params"
-import { calculateRequiredFields } from "../../lib/table/field-utils"
+import type { HttpTypes } from "@medusajs/types"
+import { useViewConfigurations, useViewConfiguration } from "@hooks/use-view-configurations"
+import { useEntityColumns } from "@hooks/api/views"
+import { useFeatureFlag } from "@providers/feature-flag-provider"
+import { useColumnState } from "@hooks/table/columns/use-column-state"
+import { useQueryParams } from "@hooks/use-query-params"
+import { calculateRequiredFields } from "@lib/table/field-utils"
 
 export interface TableConfiguration {
   filters: Record<string, any>

@@ -1,4 +1,4 @@
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 import { Badge } from "@medusajs/ui"
 import { createColumnHelper } from "@tanstack/react-table"
 import { useMemo } from "react"
@@ -14,7 +14,8 @@ export const useReturnReasonTableColumns = () => {
       columnHelper.accessor("label", {
         cell: ({ row }) => {
           const { label, description } = row.original
-          return (
+          
+return (
             <div className=" py-4">
               <div className="flex h-full w-full flex-col justify-center">
                 <span className="truncate font-medium">{label}</span>

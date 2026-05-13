@@ -2,12 +2,12 @@ import { Button, Container, Heading, Text } from "@medusajs/ui"
 import { keepPreviousData } from "@tanstack/react-query"
 import { useTranslation } from "react-i18next"
 import { Link } from "react-router-dom"
-import { _DataTable } from "../../../../../components/table/data-table"
-import { useApiKeys } from "../../../../../hooks/api/api-keys"
-import { useDataTable } from "../../../../../hooks/use-data-table"
-import { useApiKeyManagementTableColumns } from "./use-api-key-management-table-columns"
-import { useApiKeyManagementTableFilters } from "./use-api-key-management-table-filters"
-import { useApiKeyManagementTableQuery } from "./use-api-key-management-table-query"
+import { _DataTable } from "@components/table/data-table"
+import { useApiKeys } from "@hooks/api/api-keys"
+import { useDataTable } from "@hooks/use-data-table"
+import { useApiKeyManagementTableColumns } from "@routes/api-key-management/api-key-management-list/components/api-key-management-list-table/use-api-key-management-table-columns"
+import { useApiKeyManagementTableFilters } from "@routes/api-key-management/api-key-management-list/components/api-key-management-list-table/use-api-key-management-table-filters"
+import { useApiKeyManagementTableQuery } from "@routes/api-key-management/api-key-management-list/components/api-key-management-list-table/use-api-key-management-table-query"
 
 const PAGE_SIZE = 20
 

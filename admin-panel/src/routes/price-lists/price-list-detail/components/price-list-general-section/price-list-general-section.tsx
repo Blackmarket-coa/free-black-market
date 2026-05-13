@@ -1,11 +1,11 @@
 import { PencilSquare, Trash } from "@medusajs/icons"
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 import { Container, Heading, StatusBadge, Text } from "@medusajs/ui"
 import { useTranslation } from "react-i18next"
 
-import { ActionMenu } from "../../../../../components/common/action-menu"
-import { useDeletePriceListAction } from "../../../common/hooks/use-delete-price-list-action"
-import { getPriceListStatus } from "../../../common/utils"
+import { ActionMenu } from "@components/common/action-menu"
+import { useDeletePriceListAction } from "@routes/price-lists/common/hooks/use-delete-price-list-action"
+import { getPriceListStatus } from "@routes/price-lists/common/utils"
 
 type PriceListGeneralSectionProps = {
   priceList: HttpTypes.AdminPriceList

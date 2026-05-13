@@ -1,5 +1,5 @@
 import { zodResolver } from "@hookform/resolvers/zod"
-import { AdminOrder, AdminOrderPreview } from "@medusajs/types"
+import type { AdminOrder, AdminOrderPreview } from "@medusajs/types"
 import { Button, Heading, toast, usePrompt } from "@medusajs/ui"
 import { useForm } from "react-hook-form"
 import { useTranslation } from "react-i18next"
@@ -7,16 +7,17 @@ import { useTranslation } from "react-i18next"
 import {
   RouteFocusModal,
   useRouteModal,
-} from "../../../../../components/modals"
+} from "@components/modals"
 
-import { KeyboundForm } from "../../../../../components/utilities/keybound-form"
+import { KeyboundForm } from "@components/utilities/keybound-form"
 import {
   useCancelOrderEdit,
   useRequestOrderEdit,
-} from "../../../../../hooks/api/order-edits"
-import { getStylizedAmount } from "../../../../../lib/money-amount-helpers"
-import { OrderEditItemsSection } from "./order-edit-items-section"
-import { CreateOrderEditSchemaType, OrderEditCreateSchema } from "./schema"
+} from "@hooks/api/order-edits"
+import { getStylizedAmount } from "@lib/money-amount-helpers"
+import { OrderEditItemsSection } from "@routes/orders/order-create-edit/components/order-edit-create-form/order-edit-items-section"
+import type { CreateOrderEditSchemaType} from "@routes/orders/order-create-edit/components/order-edit-create-form/schema";
+import { OrderEditCreateSchema } from "@routes/orders/order-create-edit/components/order-edit-create-form/schema"
 
 type ReturnCreateFormProps = {
   order: AdminOrder
@@ -71,7 +72,7 @@ export const OrderEditCreateForm = ({
       handleSuccess()
     } catch (e) {
       toast.error(t("general.error"), {
-        description: e.message,
+        description: e instanceof Error ? e.message : String(e),
       })
     }
   })

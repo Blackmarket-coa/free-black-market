@@ -1,6 +1,6 @@
 import { clx } from "@medusajs/ui"
-import { ConditionalTooltip } from "../../../../common/conditional-tooltip"
-import { PlaceholderCell } from "../placeholder-cell"
+import { ConditionalTooltip } from "@components/common/conditional-tooltip"
+import { PlaceholderCell } from "@components/table/table-cells/common/placeholder-cell"
 
 type CellProps = {
   text?: string | number

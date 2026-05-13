@@ -15,28 +15,29 @@ import { useFieldArray, useForm, useWatch } from "react-hook-form"
 import { z } from "zod"
 
 import { MagnifyingGlass } from "@medusajs/icons"
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 import { useTranslation } from "react-i18next"
-import { Form } from "../../../../../components/common/form"
-import { SwitchBox } from "../../../../../components/common/switch-box"
-import { PercentageInput } from "../../../../../components/inputs/percentage-input"
+import { Form } from "@components/common/form"
+import { SwitchBox } from "@components/common/switch-box"
+import { PercentageInput } from "@components/inputs/percentage-input"
 import {
   RouteFocusModal,
   StackedFocusModal,
   useRouteModal,
   useStackedModal,
-} from "../../../../../components/modals"
-import { KeyboundForm } from "../../../../../components/utilities/keybound-form"
-import { useCreateTaxRate } from "../../../../../hooks/api/tax-rates"
-import { TargetForm } from "../../../common/components/target-form/target-form"
-import { TargetItem } from "../../../common/components/target-item/target-item"
-import { TaxRateRuleReferenceType } from "../../../common/constants"
+} from "@components/modals"
+import { KeyboundForm } from "@components/utilities/keybound-form"
+import { useCreateTaxRate } from "@hooks/api/tax-rates"
+import { TargetForm } from "@routes/tax-regions/common/components/target-form/target-form"
+import { TargetItem } from "@routes/tax-regions/common/components/target-item/target-item"
+import { TaxRateRuleReferenceType } from "@routes/tax-regions/common/constants"
+import type {
+  TaxRateRuleReference} from "@routes/tax-regions/common/schemas";
 import {
-  TaxRateRuleReference,
   TaxRateRuleReferenceSchema,
-} from "../../../common/schemas"
-import { createTaxRulePayload } from "../../../common/utils"
-import { useDocumentDirection } from "../../../../../hooks/use-document-direction"
+} from "@routes/tax-regions/common/schemas"
+import { createTaxRulePayload } from "@routes/tax-regions/common/utils"
+import { useDocumentDirection } from "@hooks/use-document-direction"
 
 const TaxRegionCreateTaxOverrideSchema = z.object({
   name: z.string().min(1),
@@ -280,7 +281,8 @@ export const TaxRegionCreateTaxOverrideForm = ({
           shouldDirty: true,
         })
         setIsOpen(modalId, false)
-        return
+        
+return
       }
 
       const newIds = references.map((reference) => reference.value)
@@ -345,7 +347,8 @@ export const TaxRegionCreateTaxOverrideForm = ({
     .filter((option) => watchedEnabledRules[option.value])
     .sort((a, b) => {
       const orderArray = Array.from(displayOrder)
-      return orderArray.indexOf(b.value) - orderArray.indexOf(a.value)
+      
+return orderArray.indexOf(b.value) - orderArray.indexOf(a.value)
     })
 
   const getAvailableRuleTypes = (type: TaxRateRuleReferenceType) => {
@@ -636,6 +639,7 @@ export const TaxRegionCreateTaxOverrideForm = ({
                                               key={field.id}
                                               index={index}
                                               label={field.label}
+                                              value={field.value}
                                               onRemove={remove}
                                             />
                                           )

@@ -1,11 +1,11 @@
 import { PencilSquare, Trash } from "@medusajs/icons"
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 import { Container, Heading, Text, toast, usePrompt } from "@medusajs/ui"
 import { useTranslation } from "react-i18next"
 import { useNavigate } from "react-router-dom"
 
-import { ActionMenu } from "../../../../../components/common/action-menu"
-import { useDeleteCustomerGroup } from "../../../../../hooks/api/customer-groups"
+import { ActionMenu } from "@components/common/action-menu"
+import { useDeleteCustomerGroup } from "@hooks/api/customer-groups"
 
 type CustomerGroupGeneralSectionProps = {
   group: HttpTypes.AdminCustomerGroup

@@ -1,6 +1,6 @@
-import { HttpTypes } from "@medusajs/types"
-import { castNumber } from "../../../lib/cast-number"
-import { ProductCreateSchemaType } from "./types"
+import type { HttpTypes } from "@medusajs/types"
+import { castNumber } from "@lib/cast-number"
+import type { ProductCreateSchemaType } from "@routes/products/product-create/types"
 
 export const normalizeProductFormValues = (
   values: ProductCreateSchemaType & {
@@ -53,6 +53,10 @@ export const normalizeVariants = (
   variants: ProductCreateSchemaType["variants"],
   regionsCurrencyMap: Record<string, string>
 ): HttpTypes.AdminCreateProductVariant[] => {
+  // The form schema's variant payload structurally matches
+  // AdminCreateProductVariant once the optional fields are derived,
+  // but TS can't infer the equivalence (the filter()-out can leave
+  // undefined in the prices union). Cast at return.
   return variants.map((variant) => ({
     title: variant.title || Object.values(variant.options || {}).join(" / "),
     options: variant.options,
@@ -100,8 +104,8 @@ export const normalizeVariants = (
           }
         }
       })
-      .filter((v) => !!v),
-  }))
+      .filter((v): v is NonNullable<typeof v> => !!v),
+  })) as HttpTypes.AdminCreateProductVariant[]
 }
 
 export const decorateVariantsWithDefaultValues = (

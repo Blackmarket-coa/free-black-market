@@ -2,11 +2,12 @@ import { zodResolver } from "@hookform/resolvers/zod"
 import { useForm } from "react-hook-form"
 import { z } from "zod"
 
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 import { Button, Checkbox, Hint, Tooltip, toast } from "@medusajs/ui"
-import {
+import type {
   OnChangeFn,
-  RowSelectionState,
+  RowSelectionState} from "@tanstack/react-table";
+import {
   createColumnHelper,
 } from "@tanstack/react-table"
 import { useMemo, useState } from "react"
@@ -14,15 +15,15 @@ import { useTranslation } from "react-i18next"
 import {
   RouteFocusModal,
   useRouteModal,
-} from "../../../../../components/modals"
-import { _DataTable } from "../../../../../components/table/data-table"
-import { KeyboundForm } from "../../../../../components/utilities/keybound-form"
-import { useUpdateProductCategoryProducts } from "../../../../../hooks/api/categories"
-import { useProducts } from "../../../../../hooks/api/products"
-import { useProductTableColumns } from "../../../../../hooks/table/columns/use-product-table-columns"
-import { useProductTableFilters } from "../../../../../hooks/table/filters/use-product-table-filters"
-import { useProductTableQuery } from "../../../../../hooks/table/query/use-product-table-query"
-import { useDataTable } from "../../../../../hooks/use-data-table"
+} from "@components/modals"
+import { _DataTable } from "@components/table/data-table"
+import { KeyboundForm } from "@components/utilities/keybound-form"
+import { useUpdateProductCategoryProducts } from "@hooks/api/categories"
+import { useProducts } from "@hooks/api/products"
+import { useProductTableColumns } from "@hooks/table/columns/use-product-table-columns"
+import { useProductTableFilters } from "@hooks/table/filters/use-product-table-filters"
+import { useProductTableQuery } from "@hooks/table/query/use-product-table-query"
+import { useDataTable } from "@hooks/use-data-table"
 
 type EditCategoryProductsFormProps = {
   categoryId: string
@@ -46,7 +47,8 @@ export const EditCategoryProductsForm = ({
   const [selection, setSelection] = useState<RowSelectionState>(
     products.reduce((acc, p) => {
       acc[p.id!] = true
-      return acc
+      
+return acc
     }, {} as RowSelectionState)
   )
 

@@ -1,7 +1,7 @@
-import { ShippingOptionPriceContext } from "./shipping-option-price-context"
+import { ShippingOptionPriceContext } from "@routes/locations/common/components/shipping-option-price-provider/shipping-option-price-context"
 
-import { PropsWithChildren } from "react"
-import { ConditionalPriceInfo } from "../../types"
+import type { PropsWithChildren } from "react"
+import type { ConditionalPriceInfo } from "@routes/locations/common/types"
 
 type ShippingOptionPriceProviderProps = PropsWithChildren<{
   onOpenConditionalPricesModal: (info: ConditionalPriceInfo) => void

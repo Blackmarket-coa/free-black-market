@@ -1,1 +1,1 @@
-export * from "./created-at-cell"
+export * from "@components/table/table-cells/common/created-at-cell/created-at-cell"

@@ -1,7 +1,7 @@
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 import { useTranslation } from "react-i18next"
-import { getOrderPaymentStatus } from "../../../../../lib/order-helpers"
-import { StatusCell } from "../../common/status-cell"
+import { getOrderPaymentStatus } from "@lib/order-helpers"
+import { StatusCell } from "@components/table/table-cells/common/status-cell"
 
 type PaymentStatusCellProps = {
   status: HttpTypes.AdminOrder["payment_status"]

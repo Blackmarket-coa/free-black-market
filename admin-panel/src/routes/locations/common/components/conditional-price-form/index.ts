@@ -1,1 +1,1 @@
-export * from "./conditional-price-form"
+export * from "@routes/locations/common/components/conditional-price-form/conditional-price-form"

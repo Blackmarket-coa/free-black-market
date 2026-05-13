@@ -1,1 +1,1 @@
-export * from "./chip-group"
+export * from "@components/common/chip-group/chip-group"

@@ -1,1 +1,1 @@
-export * from "./route-modal-form"
+export * from "@components/modals/route-modal-form/route-modal-form"

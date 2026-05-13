@@ -1,16 +1,17 @@
-import {
+import type {
   Announcements,
-  DndContext,
   DragEndEvent,
   DragMoveEvent,
   DragOverEvent,
-  DragOverlay,
   DragStartEvent,
   DropAnimation,
+  UniqueIdentifier} from "@dnd-kit/core";
+import {
+  DndContext,
+  DragOverlay,
   KeyboardSensor,
   MeasuringStrategy,
   PointerSensor,
-  UniqueIdentifier,
   closestCenter,
   defaultDropAnimation,
   useSensor,
@@ -22,19 +23,20 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable"
 import { CSS } from "@dnd-kit/utilities"
-import { ReactNode, useEffect, useMemo, useRef, useState } from "react"
+import type { ReactNode} from "react";
+import { useEffect, useMemo, useRef, useState } from "react"
 import { createPortal } from "react-dom"
 
-import { sortableTreeKeyboardCoordinates } from "./keyboard-coordinates"
-import { SortableTreeItem } from "./sortable-tree-item"
-import type { FlattenedItem, SensorContext, TreeItem } from "./types"
+import { sortableTreeKeyboardCoordinates } from "@components/common/sortable-tree/keyboard-coordinates"
+import { SortableTreeItem } from "@components/common/sortable-tree/sortable-tree-item"
+import type { FlattenedItem, SensorContext, TreeItem } from "@components/common/sortable-tree/types"
 import {
   buildTree,
   flattenTree,
   getChildCount,
   getProjection,
   removeChildrenOf,
-} from "./utils"
+} from "@components/common/sortable-tree/utils"
 
 const measuring = {
   droppable: {

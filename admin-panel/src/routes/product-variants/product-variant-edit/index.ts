@@ -1,2 +1,2 @@
-export { ProductVariantEdit as Component } from "./product-variant-edit"
-export { editProductVariantLoader as loader } from "./loader"
+export { ProductVariantEdit as Component } from "@routes/product-variants/product-variant-edit/product-variant-edit"
+export { editProductVariantLoader as loader } from "@routes/product-variants/product-variant-edit/loader"

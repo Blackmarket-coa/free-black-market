@@ -1,16 +1,16 @@
 import { zodResolver } from "@hookform/resolvers/zod"
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 import { Button, Input, toast } from "@medusajs/ui"
 import { useForm } from "react-hook-form"
 import { useTranslation } from "react-i18next"
 import { z } from "zod"
 
-import { Form } from "../../../../../components/common/form"
-import { SwitchBox } from "../../../../../components/common/switch-box"
-import { PercentageInput } from "../../../../../components/inputs/percentage-input"
-import { RouteDrawer, useRouteModal } from "../../../../../components/modals"
-import { KeyboundForm } from "../../../../../components/utilities/keybound-form"
-import { useUpdateTaxRate } from "../../../../../hooks/api/tax-rates"
+import { Form } from "@components/common/form"
+import { SwitchBox } from "@components/common/switch-box"
+import { PercentageInput } from "@components/inputs/percentage-input"
+import { RouteDrawer, useRouteModal } from "@components/modals"
+import { KeyboundForm } from "@components/utilities/keybound-form"
+import { useUpdateTaxRate } from "@hooks/api/tax-rates"
 
 type TaxRegionTaxRateEditFormProps = {
   taxRate: HttpTypes.AdminTaxRate
@@ -52,7 +52,7 @@ export const TaxRegionTaxRateEditForm = ({
     await mutateAsync(
       {
         name: values.name,
-        code: values.code,
+        code: values.code ?? "",
         rate: values.rate?.float,
         is_combinable: values.is_combinable,
       },

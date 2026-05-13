@@ -1,20 +1,20 @@
-import {
+import type {
   CreatePromotionRuleDTO,
   PromotionDTO,
   PromotionRuleDTO,
   PromotionRuleOperatorValues,
-  PromotionRuleResponse,
 } from "@medusajs/types"
-import { useRouteModal } from "../../../../../../components/modals"
+import type { RuleResponseExt } from "@routes/promotions/common/edit-rules/components/edit-rules-form/utils"
+import { useRouteModal } from "@components/modals"
 import {
   usePromotionAddRules,
   usePromotionRemoveRules,
   usePromotionUpdateRules,
   useUpdatePromotion,
-} from "../../../../../../hooks/api/promotions"
-import { RuleTypeValues } from "../../edit-rules"
-import { EditRulesForm } from "../edit-rules-form"
-import { getRuleValue } from "./utils"
+} from "@hooks/api/promotions"
+import type { RuleTypeValues } from "@routes/promotions/common/edit-rules/edit-rules"
+import { EditRulesForm } from "@routes/promotions/common/edit-rules/components/edit-rules-form"
+import { getRuleValue } from "@routes/promotions/common/edit-rules/components/edit-rules-wrapper/utils"
 
 type EditPromotionFormProps = {
   promotion: PromotionDTO
@@ -45,7 +45,7 @@ export const EditRulesWrapper = ({
   const handleSubmit = (
     rulesToRemove?: { id: string; disguised: boolean; attribute: string }[]
   ) => {
-    return async function (data: { rules: PromotionRuleResponse[] }) {
+    return async function (data: { rules: RuleResponseExt[] }) {
       const applicationMethodData: Record<any, any> = {}
       const { rules: allRules = [] } = data
       const disguisedRules = allRules.filter((rule) => rule.disguised)
@@ -56,7 +56,9 @@ export const EditRulesWrapper = ({
       // database, they are currently all under application_method. If more of these are coming
       // up, abstract this away.
       for (const rule of disguisedRules) {
-        applicationMethodData[rule.attribute] = getRuleValue(rule)
+        if (rule.attribute) {
+          applicationMethodData[rule.attribute] = getRuleValue(rule)
+        }
       }
 
       for (const rule of disguisedRulesToRemove) {
@@ -66,9 +68,11 @@ export const EditRulesWrapper = ({
       // This variable will contain the rules that are actual rule objects, without the disguised
       // objects
       const rulesData = allRules.filter((rule) => !rule.disguised)
-      const rulesToCreate: CreatePromotionRuleDTO[] = rulesData.filter(
+      const rulesToCreate = rulesData.filter(
         (rule) => !("id" in rule)
-      )
+        // The RuleResponseExt union covers Create + existing rules; the
+        // mutation typing wants the strict CreatePromotionRuleDTO[].
+      ) as unknown as CreatePromotionRuleDTO[]
       const rulesToUpdate = rulesData.filter(
         (rule: { id: string }) => typeof rule.id === "string"
       )
@@ -97,7 +101,7 @@ export const EditRulesWrapper = ({
 
       rulesToUpdate.length &&
         (await updatePromotionRules({
-          rules: rulesToUpdate.map((rule: PromotionRuleResponse) => {
+          rules: rulesToUpdate.map((rule: RuleResponseExt) => {
             return {
               id: rule.id!,
               attribute: rule.attribute,

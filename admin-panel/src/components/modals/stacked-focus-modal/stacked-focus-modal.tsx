@@ -1,11 +1,12 @@
 import { FocusModal, clx } from "@medusajs/ui"
-import {
+import type {
   ComponentPropsWithoutRef,
-  PropsWithChildren,
+  PropsWithChildren} from "react";
+import {
   forwardRef,
   useEffect,
 } from "react"
-import { useStackedModal } from "../stacked-modal-provider"
+import { useStackedModal } from "@components/modals/stacked-modal-provider"
 
 type StackedFocusModalProps = PropsWithChildren<{
   /**

@@ -10,7 +10,7 @@ import {
 } from "@tanstack/react-query";
 
 import type { AdminRequest, AdminReviewRequest } from "@custom-types/requests";
-import { sellerQueryKeys } from "./sellers";
+import { sellerQueryKeys } from "@hooks/api/sellers";
 
 export const requestsQueryKeys = queryKeysFactory("requests");
 
@@ -70,7 +70,10 @@ export const useReviewRequest = (
 ) => {
   return useMutation({
     mutationFn: ({ id, payload }) =>
-      sdk.client.fetch(`/admin/requests/${id}`, {
+      sdk.client.fetch<{
+        request?: { id?: string; status?: string }
+        status?: string
+      }>(`/admin/requests/${id}`, {
         method: "POST",
         body: payload,
       }),

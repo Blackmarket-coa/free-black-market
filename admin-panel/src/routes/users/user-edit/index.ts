@@ -1,1 +1,1 @@
-export { UserEdit as Component } from "./user-edit"
+export { UserEdit as Component } from "@routes/users/user-edit/user-edit"

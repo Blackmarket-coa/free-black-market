@@ -1,10 +1,11 @@
 import { zodResolver } from "@hookform/resolvers/zod"
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 import { Button, Checkbox, Hint, Tooltip, toast } from "@medusajs/ui"
 import { keepPreviousData } from "@tanstack/react-query"
-import {
+import type {
   OnChangeFn,
-  RowSelectionState,
+  RowSelectionState} from "@tanstack/react-table";
+import {
   createColumnHelper,
 } from "@tanstack/react-table"
 import { useEffect, useMemo, useState } from "react"
@@ -14,15 +15,15 @@ import * as zod from "zod"
 import {
   RouteFocusModal,
   useRouteModal,
-} from "../../../../../components/modals/index.ts"
-import { _DataTable } from "../../../../../components/table/data-table/data-table.tsx"
-import { KeyboundForm } from "../../../../../components/utilities/keybound-form/keybound-form.tsx"
-import { useUpdateCollectionProducts } from "../../../../../hooks/api/collections.tsx"
-import { useProducts } from "../../../../../hooks/api/products.tsx"
-import { useProductTableColumns } from "../../../../../hooks/table/columns/use-product-table-columns.tsx"
-import { useProductTableFilters } from "../../../../../hooks/table/filters/use-product-table-filters.tsx"
-import { useProductTableQuery } from "../../../../../hooks/table/query/use-product-table-query.tsx"
-import { useDataTable } from "../../../../../hooks/use-data-table.tsx"
+} from "@components/modals/index.ts"
+import { _DataTable } from "@components/table/data-table/data-table.tsx"
+import { KeyboundForm } from "@components/utilities/keybound-form/keybound-form.tsx"
+import { useUpdateCollectionProducts } from "@hooks/api/collections.tsx"
+import { useProducts } from "@hooks/api/products.tsx"
+import { useProductTableColumns } from "@hooks/table/columns/use-product-table-columns.tsx"
+import { useProductTableFilters } from "@hooks/table/filters/use-product-table-filters.tsx"
+import { useProductTableQuery } from "@hooks/table/query/use-product-table-query.tsx"
+import { useDataTable } from "@hooks/use-data-table.tsx"
 
 type AddProductsToCollectionFormProps = {
   collection: HttpTypes.AdminCollection

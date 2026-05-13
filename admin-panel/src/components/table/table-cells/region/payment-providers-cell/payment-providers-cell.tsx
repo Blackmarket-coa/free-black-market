@@ -1,9 +1,9 @@
 import { useTranslation } from "react-i18next"
-import { PaymentProviderDTO } from "@medusajs/types"
+import type { PaymentProviderDTO } from "@medusajs/types"
 
-import { formatProvider } from "../../../../../lib/format-provider"
-import { PlaceholderCell } from "../../common/placeholder-cell"
-import { ListSummary } from "../../../../common/list-summary"
+import { formatProvider } from "@lib/format-provider"
+import { PlaceholderCell } from "@components/table/table-cells/common/placeholder-cell"
+import { ListSummary } from "@components/common/list-summary"
 
 type PaymentProvidersCellProps = {
   paymentProviders?: PaymentProviderDTO[] | null

@@ -1,1 +1,1 @@
-export { ApiKeyManagementAddSalesChannels as Component } from "./api-key-management-sales-channels"
+export { ApiKeyManagementAddSalesChannels as Component } from "@routes/api-key-management/api-key-management-sales-channels/api-key-management-sales-channels"

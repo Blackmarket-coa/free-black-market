@@ -4,7 +4,7 @@ import { useState } from "react"
 import { useTranslation } from "react-i18next"
 import { useSearchParams } from "react-router-dom"
 
-import { useDocumentDirection } from "../../../hooks/use-document-direction"
+import { useDocumentDirection } from "@hooks/use-document-direction"
 
 type OrderByProps = {
   keys: string[]
@@ -47,7 +47,8 @@ const formatKey = (key: string) => {
       return word
     }
   })
-  return formattedWords.join(" ")
+  
+return formattedWords.join(" ")
 }
 
 export const OrderBy = ({ keys }: OrderByProps) => {
@@ -87,7 +88,8 @@ export const OrderBy = ({ keys }: OrderByProps) => {
     if (!state.key) {
       setSearchParams((prev) => {
         prev.delete("order")
-        return prev
+        
+return prev
       })
 
       return
@@ -97,7 +99,8 @@ export const OrderBy = ({ keys }: OrderByProps) => {
       state.dir === SortDirection.ASC ? state.key : `-${state.key}`
     setSearchParams((prev) => {
       prev.set("order", orderParam)
-      return prev
+      
+return prev
     })
   }
 

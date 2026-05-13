@@ -1,5 +1,5 @@
 import { zodResolver } from "@hookform/resolvers/zod"
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 import { Button, Heading, toast } from "@medusajs/ui"
 import { useForm } from "react-hook-form"
 import { useTranslation } from "react-i18next"
@@ -9,12 +9,12 @@ import {
   RouteFocusModal,
   StackedFocusModal,
   useRouteModal,
-} from "../../../../../components/modals"
-import { KeyboundForm } from "../../../../../components/utilities/keybound-form"
-import { useUpdateFulfillmentSetServiceZone } from "../../../../../hooks/api/fulfillment-sets"
-import { countries } from "../../../../../lib/data/countries"
-import { GeoZoneForm } from "../../../common/components/geo-zone-form"
-import { GEO_ZONE_STACKED_MODAL_ID } from "../../../common/constants"
+} from "@components/modals"
+import { KeyboundForm } from "@components/utilities/keybound-form"
+import { useUpdateFulfillmentSetServiceZone } from "@hooks/api/fulfillment-sets"
+import { countries } from "@lib/data/countries"
+import { GeoZoneForm } from "@routes/locations/common/components/geo-zone-form"
+import { GEO_ZONE_STACKED_MODAL_ID } from "@routes/locations/common/constants"
 
 const EditeServiceZoneSchema = z.object({
   countries: z

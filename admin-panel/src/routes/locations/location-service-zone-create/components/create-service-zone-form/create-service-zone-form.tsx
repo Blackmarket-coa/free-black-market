@@ -1,23 +1,23 @@
 import { zodResolver } from "@hookform/resolvers/zod"
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 import { Button, Heading, InlineTip, Input, toast } from "@medusajs/ui"
 import { useForm } from "react-hook-form"
 import { useTranslation } from "react-i18next"
 import { z } from "zod"
 
-import { Form } from "../../../../../components/common/form"
+import { Form } from "@components/common/form"
 import {
   RouteFocusModal,
   StackedFocusModal,
   useRouteModal,
-} from "../../../../../components/modals"
-import { KeyboundForm } from "../../../../../components/utilities/keybound-form"
-import { useCreateFulfillmentSetServiceZone } from "../../../../../hooks/api/fulfillment-sets"
-import { GeoZoneForm } from "../../../common/components/geo-zone-form"
+} from "@components/modals"
+import { KeyboundForm } from "@components/utilities/keybound-form"
+import { useCreateFulfillmentSetServiceZone } from "@hooks/api/fulfillment-sets"
+import { GeoZoneForm } from "@routes/locations/common/components/geo-zone-form"
 import {
   FulfillmentSetType,
   GEO_ZONE_STACKED_MODAL_ID,
-} from "../../../common/constants"
+} from "@routes/locations/common/constants"
 
 const CreateServiceZoneSchema = z.object({
   name: z.string().min(1),

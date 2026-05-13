@@ -1,12 +1,12 @@
 import { useLoaderData, useParams } from "react-router-dom"
 
-import { SingleColumnPageSkeleton } from "../../../components/common/skeleton"
-import { SingleColumnPage } from "../../../components/layout/pages"
-import { useCollection } from "../../../hooks/api/collections"
-import { useExtension } from "../../../providers/extension-provider"
-import { CollectionGeneralSection } from "./components/collection-general-section"
-import { CollectionProductSection } from "./components/collection-product-section"
-import { collectionLoader } from "./loader"
+import { SingleColumnPageSkeleton } from "@components/common/skeleton"
+import { SingleColumnPage } from "@components/layout/pages"
+import { useCollection } from "@hooks/api/collections"
+import { useExtension } from "@providers/extension-provider"
+import { CollectionGeneralSection } from "@routes/collections/collection-detail/components/collection-general-section"
+import { CollectionProductSection } from "@routes/collections/collection-detail/components/collection-product-section"
+import type { collectionLoader } from "@routes/collections/collection-detail/loader"
 
 export const CollectionDetail = () => {
   const initialData = useLoaderData() as Awaited<

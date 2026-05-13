@@ -1,5 +1,5 @@
 import { clx } from "@medusajs/ui"
-import { ComponentPropsWithoutRef } from "react"
+import type { ComponentPropsWithoutRef } from "react"
 import { Link } from "react-router-dom"
 
 interface LinkButtonProps extends ComponentPropsWithoutRef<typeof Link> {

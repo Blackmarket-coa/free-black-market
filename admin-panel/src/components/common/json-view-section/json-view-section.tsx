@@ -14,7 +14,8 @@ import {
   Kbd,
 } from "@medusajs/ui"
 import Primitive from "@uiw/react-json-view"
-import { CSSProperties, MouseEvent, Suspense, useState } from "react"
+import type { CSSProperties, MouseEvent} from "react";
+import { Suspense, useState } from "react"
 import { Trans, useTranslation } from "react-i18next"
 
 type JsonViewSectionProps = {

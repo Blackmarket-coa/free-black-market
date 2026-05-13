@@ -2,10 +2,10 @@ import { Heading } from "@medusajs/ui"
 import { useTranslation } from "react-i18next"
 import { useParams } from "react-router-dom"
 
-import { RouteDrawer } from "../../../components/modals"
-import { useOrder } from "../../../hooks/api"
-import { DEFAULT_FIELDS } from "../order-detail/constants"
-import { EditOrderBillingAddressForm } from "./components/edit-order-billing-address-form"
+import { RouteDrawer } from "@components/modals"
+import { useOrder } from "@hooks/api"
+import { DEFAULT_FIELDS } from "@routes/orders/order-detail/constants"
+import { EditOrderBillingAddressForm } from "@routes/orders/order-edit-billing-address/components/edit-order-billing-address-form"
 
 export const OrderEditBillingAddress = () => {
   const { t } = useTranslation()

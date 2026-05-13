@@ -1,6 +1,6 @@
-import { OrderCreditLineDTO } from "@medusajs/framework/types"
+import type { OrderCreditLineDTO } from "@medusajs/framework/types"
 import { ArrowDownRightMini, DocumentText, XCircle } from "@medusajs/icons"
-import { AdminOrder, AdminPayment, HttpTypes } from "@medusajs/types"
+import type { AdminOrder, AdminPayment, HttpTypes } from "@medusajs/types"
 import {
   Badge,
   Button,
@@ -14,18 +14,18 @@ import {
 } from "@medusajs/ui"
 import { format } from "date-fns"
 import { Trans, useTranslation } from "react-i18next"
-import { ActionMenu } from "../../../../../components/common/action-menu"
-import DisplayId from "../../../../../components/common/display-id/display-id"
-import { useCapturePayment } from "../../../../../hooks/api"
-import { formatCurrency } from "../../../../../lib/format-currency"
+import { ActionMenu } from "@components/common/action-menu"
+import DisplayId from "@components/common/display-id/display-id"
+import { useCapturePayment } from "@hooks/api"
+import { formatCurrency } from "@lib/format-currency"
 import {
   getLocaleAmount,
   getStylizedAmount,
-} from "../../../../../lib/money-amount-helpers"
-import { getOrderPaymentStatus } from "../../../../../lib/order-helpers"
-import { getPaymentsFromOrder } from "../../../../../lib/orders"
-import { getTotalCaptured, getTotalPending } from "../../../../../lib/payment"
-import { getLoyaltyPlugin } from "../../../../../lib/plugins"
+} from "@lib/money-amount-helpers"
+import { getOrderPaymentStatus } from "@lib/order-helpers"
+import { getPaymentsFromOrder } from "@lib/orders"
+import { getTotalCaptured, getTotalPending } from "@lib/payment"
+import { getLoyaltyPlugin } from "@lib/plugins"
 
 type OrderPaymentSectionProps = {
   order: HttpTypes.AdminOrder
@@ -189,8 +189,8 @@ const Payment = ({
   const showCapture =
     payment.captured_at === null && payment.canceled_at === null
 
-  const totalRefunded = payment.refunds.reduce(
-    (acc, next) => next.amount + acc,
+  const totalRefunded = (payment.refunds ?? []).reduce(
+    (acc, next) => Number(next.amount) + acc,
     0
   )
 
@@ -325,7 +325,7 @@ const CreditLine = ({
           </Text>
           <Text size="small" leading="compact">
             {format(
-              new Date(creditLine.created_at as string),
+              new Date(creditLine.created_at as unknown as string),
               "dd MMM, yyyy, HH:mm:ss"
             )}
           </Text>
@@ -361,7 +361,7 @@ const PaymentBreakdown = ({
   /**
    * Refunds that are not associated with a payment.
    */
-  const orderRefunds = refunds.filter((refund) => refund.payment_id === null)
+  const orderRefunds = refunds.filter((refund) => (refund as { payment_id?: string | null }).payment_id === null)
   const creditLines = order.credit_lines ?? []
   const creditLineRefunds = creditLines.filter(
     (creditLine) => (creditLine.amount as number) < 0
@@ -402,7 +402,7 @@ const PaymentBreakdown = ({
                 order={order}
                 payment={event}
                 refunds={refunds.filter(
-                  (refund) => refund.payment_id === event.id
+                  (refund) => (refund as { payment_id?: string | null }).payment_id === event.id
                 )}
                 currencyCode={currencyCode}
               />

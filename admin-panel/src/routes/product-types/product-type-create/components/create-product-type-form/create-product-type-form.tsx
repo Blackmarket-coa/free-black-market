@@ -3,13 +3,13 @@ import { Button, Heading, Input, Text, toast } from "@medusajs/ui"
 import { useForm } from "react-hook-form"
 import { useTranslation } from "react-i18next"
 import { z } from "zod"
-import { Form } from "../../../../../components/common/form"
+import { Form } from "@components/common/form"
 import {
   RouteFocusModal,
   useRouteModal,
-} from "../../../../../components/modals"
-import { KeyboundForm } from "../../../../../components/utilities/keybound-form"
-import { useCreateProductType } from "../../../../../hooks/api/product-types"
+} from "@components/modals"
+import { KeyboundForm } from "@components/utilities/keybound-form"
+import { useCreateProductType } from "@hooks/api/product-types"
 
 const CreateProductTypeSchema = z.object({
   value: z.string().min(1),

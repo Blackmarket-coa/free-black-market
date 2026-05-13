@@ -18,9 +18,9 @@ export function ProductSummaryDetail({ request, open, close }: Props) {
     return null;
   }
 
-  const product_id = (request.payload as Record<string, unknown>)?.product_id || "";
+  const product_id = (request.data as Record<string, unknown>)?.product_id || "";
   const navigate = useNavigate();
-  const requestData = request.payload as ProductDTO;
+  const requestData = request.data as unknown as ProductDTO;
 
   return (
     <Drawer open={open} onOpenChange={close}>

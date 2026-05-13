@@ -1,16 +1,16 @@
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 import { Button, Input, Select, Text, Textarea, toast } from "@medusajs/ui"
-import * as zod from "zod"
-import { RouteDrawer, useRouteModal } from "../../../../../../components/modals"
+import type * as zod from "zod"
+import { RouteDrawer, useRouteModal } from "@components/modals"
 
 import { zodResolver } from "@hookform/resolvers/zod"
 import { useForm } from "react-hook-form"
 import { useTranslation } from "react-i18next"
 import { z } from "zod"
-import { Form } from "../../../../../../components/common/form"
-import { KeyboundForm } from "../../../../../../components/utilities/keybound-form"
-import { useUpdateReservationItem } from "../../../../../../hooks/api/reservations"
-import { useDocumentDirection } from "../../../../../../hooks/use-document-direction"
+import { Form } from "@components/common/form"
+import { KeyboundForm } from "@components/utilities/keybound-form"
+import { useUpdateReservationItem } from "@hooks/api/reservations"
+import { useDocumentDirection } from "@hooks/use-document-direction"
 
 type EditReservationFormProps = {
   reservation: HttpTypes.AdminReservationResponse["reservation"]

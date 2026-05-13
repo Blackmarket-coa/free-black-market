@@ -1,17 +1,17 @@
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 import { Button } from "@medusajs/ui"
-import { Table } from "@tanstack/react-table"
-import { ReactNode } from "react"
+import type { Table } from "@tanstack/react-table"
+import type { ReactNode } from "react"
 import { Link } from "react-router-dom"
 import {
   NoRecords,
   NoResults,
-} from "../../../../../components/common/empty-table-content"
-import { TableFooterSkeleton } from "../../../../../components/common/skeleton"
-import { LocalizedTablePagination } from "../../../../../components/localization/localized-table-pagination"
-import { DataTableOrderBy } from "../../../../../components/table/data-table/data-table-order-by"
-import { DataTableSearch } from "../../../../../components/table/data-table/data-table-search"
-import { TaxOverrideCard } from "../tax-override-card"
+} from "@components/common/empty-table-content"
+import { TableFooterSkeleton } from "@components/common/skeleton"
+import { LocalizedTablePagination } from "@components/localization/localized-table-pagination"
+import { DataTableOrderBy } from "@components/table/data-table/data-table-order-by"
+import { DataTableSearch } from "@components/table/data-table/data-table-search"
+import { TaxOverrideCard } from "@routes/tax-regions/common/components/tax-override-card"
 
 type TaxOverrideTableProps = {
   isPending: boolean
@@ -66,7 +66,13 @@ export const TaxOverrideTable = ({
                 <DataTableSearch prefix={prefix} />
               </div>
               <DataTableOrderBy
-                keys={["name", "rate", "code", "updated_at", "created_at"]}
+                keys={[
+                  { key: "name", label: "Name" },
+                  { key: "rate", label: "Rate" },
+                  { key: "code", label: "Code" },
+                  { key: "updated_at", label: "Updated at" },
+                  { key: "created_at", label: "Created at" },
+                ]}
                 prefix={prefix}
               />
             </div>

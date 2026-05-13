@@ -1,1 +1,1 @@
-export { CreatorRewardsPage as Component } from "./creator-rewards"
+export { CreatorRewardsPage as Component } from "@routes/creator-rewards/creator-rewards"
