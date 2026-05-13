@@ -53,7 +53,7 @@ export const TaxRegionTaxOverrideEdit = () => {
 
 const useDefaultRulesValues = (
   taxRate?: HttpTypes.AdminTaxRate
-): { initialValues: InitialRuleValues; isPending: boolean } => {
+): { initialValues?: InitialRuleValues; isPending: boolean } => {
   const rules = taxRate?.rules || []
 
   const idsByReferenceType: {
@@ -68,7 +68,13 @@ const useDefaultRulesValues = (
   }
 
   rules
-    .sort((a, b) => a.created_at.localeCompare(b.created_at)) // preffer newer rules for display
+    // AdminTaxRateRule.created_at is not declared in @medusajs/types but the
+    // /admin/tax-rates response includes it; cast to access for sort order.
+    .sort((a, b) =>
+      ((a as unknown as { created_at: string }).created_at || "").localeCompare(
+        (b as unknown as { created_at: string }).created_at || ""
+      )
+    ) // prefer newer rules for display
     .forEach((rule) => {
       const reference = rule.reference as TaxRateRuleReferenceType
       idsByReferenceType[reference]?.push(rule.reference_id)
@@ -185,7 +191,16 @@ const useDefaultRulesValues = (
       let initialValues: TaxRateRuleReference[] = []
 
       if (queryResults[index].enabled) {
-        const fetchedEntityList = getResult(queryResults[index].result)
+        // queryResults[index].result is a react-query UseQueryResult union
+        // (loading / error / success variants); getResult is reduced over
+        // a union of response shapes. After the isPending/isError checks
+        // above, accessing it through getResult is safe at runtime because
+        // the hooks return `{...data, ...rest}` — but TS cannot reconcile
+        // the result and response unions without an explicit any cast.
+        const fetchedEntityList = getResult(
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          queryResults[index].result as any
+        )
 
         const entityIdMap = new Map(
           fetchedEntityList.map((entity) => [entity.value, entity])

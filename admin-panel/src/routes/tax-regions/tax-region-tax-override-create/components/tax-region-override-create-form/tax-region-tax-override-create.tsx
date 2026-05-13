@@ -639,6 +639,7 @@ return orderArray.indexOf(b.value) - orderArray.indexOf(a.value)
                                               key={field.id}
                                               index={index}
                                               label={field.label}
+                                              value={field.value}
                                               onRemove={remove}
                                             />
                                           )

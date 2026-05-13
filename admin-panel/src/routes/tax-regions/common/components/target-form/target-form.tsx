@@ -144,6 +144,7 @@ const PAGE_SIZE = 50
 
 const PREFIX_CUSTOMER_GROUP = "cg"
 
+// @ts-expect-error reserved for re-enabled TaxRateRuleReferenceType.CUSTOMER_GROUP case
 const _CustomerGroupTable = ({
   initialRowState,
   intermediate,
@@ -410,6 +411,7 @@ const useProductColumns = () => {
 
 const PREFIX_PRODUCT_COLLECTION = "pc"
 
+// @ts-expect-error reserved for re-enabled TaxRateRuleReferenceType.PRODUCT_COLLECTION case
 const _ProductCollectionTable = ({
   initialRowState,
   intermediate,
@@ -826,6 +828,7 @@ const useShippingOptionColumns = () => {
 
 const PREFIX_PRODUCT_TAG = "ptag"
 
+// @ts-expect-error reserved for re-enabled TaxRateRuleReferenceType.PRODUCT_TAG case
 const _ProductTagTable = ({
   initialRowState,
   intermediate,

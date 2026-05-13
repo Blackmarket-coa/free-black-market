@@ -26,7 +26,7 @@ export const RequestProductUpdateList = () => {
 
   const handleDetail = (request: AdminRequest) => {
     const product_id =
-      (request.payload as Record<string, unknown>).product_id || "";
+      (request.data as Record<string, unknown>).product_id || "";
     navigate(`/products/${product_id}`);
   };
 
@@ -65,7 +65,7 @@ export const RequestProductUpdateList = () => {
           </Table.Header>
           <Table.Body>
             {requests?.map((request) => {
-              const requestData = request.payload as ProductDTO;
+              const requestData = request.data as unknown as ProductDTO;
 
               return (
                 <Table.Row key={request.id}>

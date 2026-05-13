@@ -162,7 +162,7 @@ export const TaxRegionTaxOverrideEditForm = ({
     await mutateAsync(
       {
         name: values.name,
-        code: values.code || null,
+        code: values.code ?? "",
         rate: values.rate?.float,
         is_combinable: values.is_combinable,
         rules,

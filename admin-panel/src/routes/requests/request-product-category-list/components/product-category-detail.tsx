@@ -20,7 +20,7 @@ export function ProductCategoryRequestDetail({ request, open, close }: Props) {
   if (!request) {
     return null;
   }
-  const requestData = request.payload as ProductCategoryDTO;
+  const requestData = request.data as unknown as ProductCategoryDTO;
 
   const [promptOpen, setPromptOpen] = useState(false);
   const [requestAccept, setRequestAccept] = useState(false);

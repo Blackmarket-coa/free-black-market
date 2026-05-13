@@ -2,7 +2,12 @@ import type { HttpTypes } from "@medusajs/types"
 import { useQueryParams } from "../../use-query-params"
 
 type UseShippingOptionTableQueryProps = {
-  regionId: string
+  /**
+   * Kept for API parity with the upstream Medusa hook; the
+   * `/admin/shipping-options` endpoint does not currently accept a
+   * `region_id` filter so the value is ignored inside the hook.
+   */
+  regionId?: string
   isReturn?: boolean
   pageSize?: number
   prefix?: string
