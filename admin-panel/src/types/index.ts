@@ -16,3 +16,5 @@ export * from "./store";
 export * from "./customer-group";
 export * from "./product";
 export * from "./producer";
+export * from "./venue";
+export * from "./ticket-product";
