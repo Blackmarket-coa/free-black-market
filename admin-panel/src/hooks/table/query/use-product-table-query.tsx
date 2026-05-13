@@ -47,6 +47,11 @@ export const useProductTableQuery = ({
     q,
   } = queryObject
 
+  // Several admin-vendor filter fields (status, tag_id, type_id,
+  // category_id, collection_id) are not declared on
+  // AdminProductListParams in @medusajs/types but the backend accepts
+  // them; cast to satisfy TS without losing the SDK shape for the
+  // other fields.
   const searchParams: HttpTypes.AdminProductListParams = {
     limit: pageSize,
     offset: offset ? Number(offset) : 0,
@@ -62,7 +67,7 @@ export const useProductTableQuery = ({
     status: status?.split(",") as HttpTypes.AdminProductStatus[],
     q,
     fields: DEFAULT_FIELDS,
-  }
+  } as HttpTypes.AdminProductListParams
 
   return {
     searchParams,

@@ -1,6 +1,7 @@
 import { useMemo } from "react"
 import { toast } from "@medusajs/ui"
 import { FetchError } from "@medusajs/js-sdk"
+import type { HttpTypes } from "@medusajs/types"
 import { useFeatureFlag } from "../providers/feature-flag-provider"
 import {
   useViewConfigurations as useViewConfigurationsBase,
@@ -26,6 +27,17 @@ const handleError = (error: Error, message?: string) => {
 
   toast.error(errorMessage)
 }
+
+/**
+ * Single non-null view-configuration row returned by
+ * `/admin/view-configurations`. The SDK envelope types
+ * `view_configuration` as `AdminViewConfiguration | null` (the "no
+ * configuration set" empty-state) — table components want the present
+ * shape, so this alias strips the null.
+ */
+export type ViewConfiguration = NonNullable<
+  HttpTypes.AdminViewConfigurationResponse["view_configuration"]
+>
 
 export const useViewConfigurations = (entity: string) => {
   const isViewConfigEnabled = useFeatureFlag("view_configurations")

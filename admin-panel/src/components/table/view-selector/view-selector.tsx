@@ -45,8 +45,11 @@ export const ViewSelector: React.FC<ViewSelectorProps> = ({
   const [deletingViewId, setDeletingViewId] = useState<string | null>(null)
   const prompt = usePrompt()
 
-  const views = listViews.data?.view_configurations || []
-  const currentActiveView = activeView.data?.view_configuration || null
+  // useViewConfigurations spreads `{...data, ...rest}` from react-query,
+  // so the response fields are flat on the result object — there is no
+  // separate `.data` envelope.
+  const views = listViews.view_configurations || []
+  const currentActiveView = activeView.view_configuration || null
 
   // Get delete mutation for the current deleting view
   const { deleteView } = useViewConfiguration(entity, deletingViewId || '')

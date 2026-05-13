@@ -18,7 +18,7 @@ import { useForm, useWatch } from "react-hook-form"
 import { useTranslation } from "react-i18next"
 import * as zod from "zod"
 
-import type { RegionCountryDTO } from "@medusajs/types"
+import type { StaticCountry } from "../../../../../lib/data/countries"
 
 import { Form } from "../../../../../components/common/form"
 import { Combobox } from "../../../../../components/inputs/combobox"
@@ -457,7 +457,7 @@ return acc
   )
 }
 
-const columnHelper = createColumnHelper<RegionCountryDTO>()
+const columnHelper = createColumnHelper<StaticCountry>()
 
 const useColumns = () => {
   const base = useCountryTableColumns()

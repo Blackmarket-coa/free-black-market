@@ -180,7 +180,12 @@ export function EditShippingOptionsPricingForm({
         }
 
         const existingPrice = shippingOption.prices.find(
-          (p) => p.region_id === region_id && !p.price_rules?.length
+          // AdminShippingOptionPrice doesn't expose `region_id` directly
+          // in the SDK type (only via price_rules) but the response
+          // includes it; cast to read the flat field.
+          (p) =>
+            (p as { region_id?: string }).region_id === region_id &&
+            !p.price_rules?.length
         )
 
         if (existingPrice) {
@@ -367,9 +372,10 @@ return
         (r) => r.attribute === REGION_ID_ATTRIBUTE
       )?.value
 
+      if (!regionId) return
       region_prices[regionId] = price.amount
-      
-return
+
+      return
     }
 
     if (hasAttributes(price, [REGION_ID_ATTRIBUTE, ITEM_TOTAL_ATTRIBUTE])) {
@@ -377,6 +383,7 @@ return
         (r) => r.attribute === REGION_ID_ATTRIBUTE
       )?.value
 
+      if (!regionId) return
       if (!conditional_region_prices[regionId]) {
         conditional_region_prices[regionId] = []
       }

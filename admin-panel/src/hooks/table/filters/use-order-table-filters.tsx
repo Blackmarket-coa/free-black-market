@@ -51,6 +51,8 @@ export const useOrderTableFilters = (): Filter[] => {
     filters = [...filters, salesChannelFilter]
   }
 
+  // @ts-expect-error preserved while vendor-scoped order list does not
+  // accept payment_status filter — restore when the API supports it.
   const _paymentStatusFilter: Filter = {
     key: "payment_status",
     label: t("orders.payment.statusLabel"),
@@ -88,6 +90,8 @@ export const useOrderTableFilters = (): Filter[] => {
     ],
   }
 
+  // @ts-expect-error preserved while vendor-scoped order list does not
+  // accept fulfillment_status filter — restore when the API supports it.
   const _fulfillmentStatusFilter: Filter = {
     key: "fulfillment_status",
     label: t("orders.fulfillment.statusLabel"),

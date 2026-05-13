@@ -22,9 +22,7 @@ export const ReservationEdit = () => {
 
   const { stock_locations } = useStockLocations(
     {
-      id: inventoryItem?.location_levels?.map(
-        (l: InventoryTypes.InventoryLevelDTO) => l.location_id
-      ),
+      id: inventoryItem?.location_levels?.map((l) => l.location_id),
     },
     {
       enabled: !!inventoryItem?.location_levels,

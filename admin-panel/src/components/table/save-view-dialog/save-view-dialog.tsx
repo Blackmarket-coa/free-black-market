@@ -74,7 +74,11 @@ export const SaveViewDialog: React.FC<SaveViewDialogProps> = ({
             search: currentConfiguration?.search || editingView.configuration.search || "",
           },
         })
-        onSaved(result.view_configuration)
+        // The SDK envelope types view_configuration as AdminViewConfiguration |
+        // null (the "no configuration set" empty-state), but a successful
+        // create/update always returns a row, so the non-null assertion is
+        // safe here.
+        onSaved(result.view_configuration!)
       } else {
         // Create new view
         const result = await createView.mutateAsync({
@@ -88,7 +92,11 @@ export const SaveViewDialog: React.FC<SaveViewDialogProps> = ({
             search: currentConfiguration?.search || "",
           },
         })
-        onSaved(result.view_configuration)
+        // The SDK envelope types view_configuration as AdminViewConfiguration |
+        // null (the "no configuration set" empty-state), but a successful
+        // create/update always returns a row, so the non-null assertion is
+        // safe here.
+        onSaved(result.view_configuration!)
       }
     } catch {
       // Error is handled by the hook

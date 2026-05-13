@@ -22,9 +22,9 @@ export const PriceListProductsAdd = () => {
       {ready && (
         <PriceListPricesAddForm
           priceList={price_list}
-          currencies={currencies}
-          regions={regions}
-          pricePreferences={pricePreferences}
+          currencies={currencies ?? []}
+          regions={regions ?? []}
+          pricePreferences={pricePreferences ?? []}
         />
       )}
     </RouteFocusModal>

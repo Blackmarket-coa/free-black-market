@@ -85,9 +85,15 @@ export const EditShippingOptionForm = ({
   )
 
   const handleSubmit = form.handleSubmit(async (values) => {
+    // Each pushed rule may be either an Update (id present) or a Create
+    // (id absent — the "enabled_in_store" insertion path below); widen
+    // the array to the union the backend accepts.
     const rules = shippingOption.rules.map((r) => ({
       ...pick(r, ["id", "attribute", "operator", "value"]),
-    })) as HttpTypes.AdminUpdateShippingOptionRule[]
+    })) as (
+      | HttpTypes.AdminUpdateShippingOptionRule
+      | HttpTypes.AdminCreateShippingOptionRule
+    )[]
 
     const storeRule = rules.find((r) => r.attribute === "enabled_in_store")
 
@@ -255,7 +261,7 @@ export const EditShippingOptionForm = ({
                   control={form.control}
                   name="provider_id"
                   disabled={true}
-                  render={({ field }) => {
+                  render={({ field: _field }) => {
                     return (
                       <Form.Item>
                         <Form.Label>

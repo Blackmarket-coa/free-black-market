@@ -15,6 +15,9 @@ export const useReservationTableQuery = ({
 
   const { location_id, created_at, updated_at, order, offset, ...rest } = raw
 
+  // `quantity` and other free-form query params are passed through via
+  // ...rest; AdminGetReservationsParams in @medusajs/types doesn't
+  // declare those, so cast the assembled record to satisfy TS.
   const searchParams: HttpTypes.AdminGetReservationsParams = {
     limit: pageSize,
     offset: offset ? parseInt(offset) : undefined,
@@ -23,7 +26,7 @@ export const useReservationTableQuery = ({
     updated_at: updated_at ? JSON.parse(updated_at) : undefined,
     order: order ?? "-created_at",
     ...rest,
-  }
+  } as HttpTypes.AdminGetReservationsParams
 
   return {
     searchParams,

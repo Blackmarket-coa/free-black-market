@@ -16,14 +16,14 @@ to fail-fast in this pass.
 What still blocks a clean v1.0.0 cut after this PR:
 
 1. **LR-3 (partial)** — admin-panel `pnpm typecheck` still failing with
-   **604 errors across ~180 files** after this PR (down from 710). Pass 1
-   resolved the 4 missing devDeps + 4 broken local imports; passes 2 and 3
-   fully cleared the `requests/` (18 errors) and `tax-regions/`
-   (24 errors) subtrees and deduplicated a divergent `RequestStatus`
-   declaration. The 604 residual errors are real type drift inside
-   Medusa-inherited admin routes (orders/ ~312, promotions/ ~54,
+   **535 errors across ~150 files** after this PR (down from 710). Pass 1
+   resolved the missing devDeps + broken local imports; passes 2 and 3
+   cleared `requests/` and `tax-regions/`; pass 4 cleared
+   `components/table/`, `hooks/table/`, `locations/`, `regions/`,
+   `reservations/`, and `price-lists/`. The 535 residual errors live
+   inside Medusa-inherited admin routes (orders/ ~312, promotions/ ~54,
    products/ ~40, product-variants/ ~32, hooks/api/ ~29, inventory/ ~17,
-   locations/ ~15) — a genuine M-effort cleanup. Gated behind
+   plus small clusters) — a genuine M-effort cleanup. Gated behind
    `.github/workflows/ci.yml continue-on-error: true`.
 2. **TI-1 (source fix landed; CI validation pending)** — backend
    migration ordering bug fixed in-source: `Migration20251229AddRawColumns`

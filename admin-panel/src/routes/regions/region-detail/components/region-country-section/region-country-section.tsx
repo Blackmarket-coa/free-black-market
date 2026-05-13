@@ -13,6 +13,7 @@ import { ActionMenu } from "../../../../../components/common/action-menu"
 import { _DataTable } from "../../../../../components/table/data-table"
 import { useUpdateRegion } from "../../../../../hooks/api/regions"
 import { useDataTable } from "../../../../../hooks/use-data-table"
+import type { StaticCountry } from "../../../../../lib/data/countries"
 import { useCountries } from "../../../common/hooks/use-countries"
 import { useCountryTableColumns } from "../../../common/hooks/use-country-table-columns"
 import { useCountryTableQuery } from "../../../common/hooks/use-country-table-query"
@@ -35,7 +36,10 @@ export const RegionCountrySection = ({ region }: RegionCountrySectionProps) => {
     prefix: PREFIX,
   })
   const { countries, count } = useCountries({
-    countries: region.countries || [],
+    // AdminRegionCountry and StaticCountry share the same iso_2 /
+    // display_name shape that useCountries reads — the SDK type just
+    // carries a few additional optional fields.
+    countries: (region.countries ?? []) as unknown as StaticCountry[],
     ...searchParams,
   })
 
@@ -145,7 +149,7 @@ const CountryActions = ({
   country,
   region,
 }: {
-  country: HttpTypes.AdminRegionCountry
+  country: StaticCountry
   region: HttpTypes.AdminRegion
 }) => {
   const { t } = useTranslation()
@@ -154,7 +158,7 @@ const CountryActions = ({
 
   const payload = region.countries
     ?.filter((c) => c.iso_2 !== country.iso_2)
-    .map((c) => c.iso_2)
+    .map((c) => c.iso_2!)
 
   const handleRemove = async () => {
     const res = await prompt({
@@ -204,7 +208,7 @@ const CountryActions = ({
   )
 }
 
-const columnHelper = createColumnHelper<HttpTypes.AdminRegionCountry>()
+const columnHelper = createColumnHelper<StaticCountry>()
 
 const useColumns = () => {
   const base = useCountryTableColumns()
@@ -252,5 +256,5 @@ const useColumns = () => {
       }),
     ],
     [base]
-  ) as ColumnDef<HttpTypes.AdminRegionCountry>[]
+  ) as ColumnDef<StaticCountry>[]
 }
