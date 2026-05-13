@@ -2,12 +2,12 @@ import { Heading } from "@medusajs/ui"
 import { useTranslation } from "react-i18next"
 import { useParams } from "react-router-dom"
 
-import { RouteDrawer } from "../../../components/modals"
-import { useRegion } from "../../../hooks/api/regions"
-import { useStore } from "../../../hooks/api/store"
-import { currencies } from "../../../lib/data/currencies"
-import { EditRegionForm } from "./components/edit-region-form"
-import { usePricePreferences } from "../../../hooks/api/price-preferences"
+import { RouteDrawer } from "@components/modals"
+import { useRegion } from "@hooks/api/regions"
+import { useStore } from "@hooks/api/store"
+import { currencies } from "@lib/data/currencies"
+import { EditRegionForm } from "@routes/regions/region-edit/components/edit-region-form"
+import { usePricePreferences } from "@hooks/api/price-preferences"
 
 export const RegionEdit = () => {
   const { t } = useTranslation()

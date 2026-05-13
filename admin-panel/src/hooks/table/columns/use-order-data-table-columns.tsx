@@ -6,33 +6,33 @@ import { useTranslation } from "react-i18next"
 import {
   DateCell,
   DateHeader,
-} from "../../../components/table/table-cells/common/date-cell"
-import { CountryCell } from "../../../components/table/table-cells/order/country-cell"
+} from "@components/table/table-cells/common/date-cell"
+import { CountryCell } from "@components/table/table-cells/order/country-cell"
 import {
   CustomerCell,
   CustomerHeader,
-} from "../../../components/table/table-cells/order/customer-cell"
+} from "@components/table/table-cells/order/customer-cell"
 import {
   DisplayIdCell,
   DisplayIdHeader,
-} from "../../../components/table/table-cells/order/display-id-cell"
+} from "@components/table/table-cells/order/display-id-cell"
 import {
   FulfillmentStatusCell,
   FulfillmentStatusHeader,
-} from "../../../components/table/table-cells/order/fulfillment-status-cell"
+} from "@components/table/table-cells/order/fulfillment-status-cell"
 import {
   PaymentStatusCell,
   PaymentStatusHeader,
-} from "../../../components/table/table-cells/order/payment-status-cell"
+} from "@components/table/table-cells/order/payment-status-cell"
 import {
   SalesChannelCell,
   SalesChannelHeader,
-} from "../../../components/table/table-cells/order/sales-channel-cell"
+} from "@components/table/table-cells/order/sales-channel-cell"
 import {
   TotalCell,
   TotalHeader,
-} from "../../../components/table/table-cells/order/total-cell"
-import { TextCell, TextHeader } from "../../../components/table/table-cells/common/text-cell"
+} from "@components/table/table-cells/order/total-cell"
+import { TextCell, TextHeader } from "@components/table/table-cells/common/text-cell"
 
 const columnHelper = createColumnHelper<HttpTypes.AdminOrder>()
 

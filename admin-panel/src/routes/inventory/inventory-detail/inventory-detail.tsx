@@ -1,17 +1,17 @@
 import { useLoaderData, useParams } from "react-router-dom"
 
-import { TwoColumnPageSkeleton } from "../../../components/common/skeleton"
-import { TwoColumnPage } from "../../../components/layout/pages"
-import { useInventoryItem } from "../../../hooks/api/inventory"
-import { InventoryItemAttributeSection } from "./components/inventory-item-attributes/attributes-section"
-import { InventoryItemGeneralSection } from "./components/inventory-item-general-section"
-import { InventoryItemLocationLevelsSection } from "./components/inventory-item-location-levels"
-import { InventoryItemReservationsSection } from "./components/inventory-item-reservations"
-import { InventoryItemVariantsSection } from "./components/inventory-item-variants/variants-section"
-import type { inventoryItemLoader } from "./loader"
+import { TwoColumnPageSkeleton } from "@components/common/skeleton"
+import { TwoColumnPage } from "@components/layout/pages"
+import { useInventoryItem } from "@hooks/api/inventory"
+import { InventoryItemAttributeSection } from "@routes/inventory/inventory-detail/components/inventory-item-attributes/attributes-section"
+import { InventoryItemGeneralSection } from "@routes/inventory/inventory-detail/components/inventory-item-general-section"
+import { InventoryItemLocationLevelsSection } from "@routes/inventory/inventory-detail/components/inventory-item-location-levels"
+import { InventoryItemReservationsSection } from "@routes/inventory/inventory-detail/components/inventory-item-reservations"
+import { InventoryItemVariantsSection } from "@routes/inventory/inventory-detail/components/inventory-item-variants/variants-section"
+import type { inventoryItemLoader } from "@routes/inventory/inventory-detail/loader"
 
-import { useExtension } from "../../../providers/extension-provider"
-import { INVENTORY_DETAIL_FIELDS } from "./constants"
+import { useExtension } from "@providers/extension-provider"
+import { INVENTORY_DETAIL_FIELDS } from "@routes/inventory/inventory-detail/constants"
 
 export const InventoryDetail = () => {
   const { id } = useParams()

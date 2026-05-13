@@ -25,8 +25,8 @@ import { keepPreviousData } from "@tanstack/react-query"
 import { createColumnHelper } from "@tanstack/react-table"
 import { useNavigate } from "react-router-dom"
 
-import type { Producer , GrowingPractice } from "../../../types/producer"
-import { GrowingPracticeLabels } from "../../../types/producer"
+import type { Producer , GrowingPractice } from "@custom-types/producer"
+import { GrowingPracticeLabels } from "@custom-types/producer"
 
 import { _DataTable } from "@components/table/data-table"
 

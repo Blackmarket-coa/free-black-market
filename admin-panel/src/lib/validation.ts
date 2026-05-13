@@ -1,7 +1,7 @@
 import i18next from "i18next"
 import type { FieldPath, FieldValues, UseFormReturn } from "react-hook-form"
 import { z } from "zod"
-import { castNumber } from "./cast-number"
+import { castNumber } from "@lib/cast-number"
 
 /**
  * Validates that an optional value is an integer.

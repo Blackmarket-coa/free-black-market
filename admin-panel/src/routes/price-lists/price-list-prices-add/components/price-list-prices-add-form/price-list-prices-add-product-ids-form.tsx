@@ -11,14 +11,14 @@ import { useMemo, useState } from "react"
 import type { UseFormReturn} from "react-hook-form";
 import { useWatch } from "react-hook-form"
 import { useTranslation } from "react-i18next"
-import { _DataTable } from "../../../../../components/table/data-table"
-import { useProducts } from "../../../../../hooks/api/products"
-import { useProductTableColumns } from "../../../../../hooks/table/columns/use-product-table-columns"
-import { useProductTableFilters } from "../../../../../hooks/table/filters/use-product-table-filters"
-import { useProductTableQuery } from "../../../../../hooks/table/query/use-product-table-query"
-import { useDataTable } from "../../../../../hooks/use-data-table"
-import type { PriceListCreateProductsSchema } from "../../../common/schemas"
-import type { PriceListPricesAddSchema } from "./schema"
+import { _DataTable } from "@components/table/data-table"
+import { useProducts } from "@hooks/api/products"
+import { useProductTableColumns } from "@hooks/table/columns/use-product-table-columns"
+import { useProductTableFilters } from "@hooks/table/filters/use-product-table-filters"
+import { useProductTableQuery } from "@hooks/table/query/use-product-table-query"
+import { useDataTable } from "@hooks/use-data-table"
+import type { PriceListCreateProductsSchema } from "@routes/price-lists/common/schemas"
+import type { PriceListPricesAddSchema } from "@routes/price-lists/price-list-prices-add/components/price-list-prices-add-form/schema"
 
 type PriceListPricesAddProductIdsFormProps = {
   form: UseFormReturn<PriceListPricesAddSchema>

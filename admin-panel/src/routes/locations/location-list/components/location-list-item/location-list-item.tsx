@@ -3,12 +3,12 @@ import type { HttpTypes } from "@medusajs/types"
 import { Container, StatusBadge, Text, toast, usePrompt } from "@medusajs/ui"
 import { useTranslation } from "react-i18next"
 
-import { ActionMenu } from "../../../../../components/common/action-menu"
-import { BadgeListSummary } from "../../../../../components/common/badge-list-summary"
-import { LinkButton } from "../../../../../components/common/link-button"
-import { useDeleteStockLocation } from "../../../../../hooks/api/stock-locations"
-import { getFormattedAddress } from "../../../../../lib/addresses"
-import { FulfillmentSetType } from "../../../common/constants"
+import { ActionMenu } from "@components/common/action-menu"
+import { BadgeListSummary } from "@components/common/badge-list-summary"
+import { LinkButton } from "@components/common/link-button"
+import { useDeleteStockLocation } from "@hooks/api/stock-locations"
+import { getFormattedAddress } from "@lib/addresses"
+import { FulfillmentSetType } from "@routes/locations/common/constants"
 
 type SalesChannelsProps = {
   salesChannels?: HttpTypes.AdminSalesChannel[] | null

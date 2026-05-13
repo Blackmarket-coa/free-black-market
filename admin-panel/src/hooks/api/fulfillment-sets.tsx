@@ -8,11 +8,11 @@ import {
   useMutation,
   useQuery,
 } from "@tanstack/react-query"
-import { sdk } from "../../lib/client"
-import { queryClient } from "../../lib/query-client"
-import { queryKeysFactory } from "../../lib/query-key-factory"
-import { shippingOptionsQueryKeys } from "./shipping-options"
-import { stockLocationsQueryKeys } from "./stock-locations"
+import { sdk } from "@lib/client"
+import { queryClient } from "@lib/query-client"
+import { queryKeysFactory } from "@lib/query-key-factory"
+import { shippingOptionsQueryKeys } from "@hooks/api/shipping-options"
+import { stockLocationsQueryKeys } from "@hooks/api/stock-locations"
 
 const FULFILLMENT_SETS_QUERY_KEY = "fulfillment_sets" as const
 export const fulfillmentSetsQueryKeys = queryKeysFactory(

@@ -1,7 +1,7 @@
 import type { AdminOrder } from "@medusajs/types"
 import { Container, Heading } from "@medusajs/ui"
 import { useTranslation } from "react-i18next"
-import { OrderTimeline } from "./order-timeline"
+import { OrderTimeline } from "@routes/orders/order-detail/components/order-activity-section/order-timeline"
 
 type OrderActivityProps = {
   order: AdminOrder

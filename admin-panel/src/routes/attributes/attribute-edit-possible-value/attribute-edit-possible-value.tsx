@@ -12,9 +12,9 @@ import { useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { MetadataEditor } from "../../../components/common/metadata-editor";
-import { useAttribute } from "../../../hooks/api/attributes";
-import { useUpdateAttributePossibleValue } from "../../../hooks/api/attributes";
+import { MetadataEditor } from "@components/common/metadata-editor";
+import { useAttribute } from "@hooks/api/attributes";
+import { useUpdateAttributePossibleValue } from "@hooks/api/attributes";
 
 const formSchema = z.object({
   value: z.string().min(1, "Value is required"),

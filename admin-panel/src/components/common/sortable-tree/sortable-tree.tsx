@@ -27,16 +27,16 @@ import type { ReactNode} from "react";
 import { useEffect, useMemo, useRef, useState } from "react"
 import { createPortal } from "react-dom"
 
-import { sortableTreeKeyboardCoordinates } from "./keyboard-coordinates"
-import { SortableTreeItem } from "./sortable-tree-item"
-import type { FlattenedItem, SensorContext, TreeItem } from "./types"
+import { sortableTreeKeyboardCoordinates } from "@components/common/sortable-tree/keyboard-coordinates"
+import { SortableTreeItem } from "@components/common/sortable-tree/sortable-tree-item"
+import type { FlattenedItem, SensorContext, TreeItem } from "@components/common/sortable-tree/types"
 import {
   buildTree,
   flattenTree,
   getChildCount,
   getProjection,
   removeChildrenOf,
-} from "./utils"
+} from "@components/common/sortable-tree/utils"
 
 const measuring = {
   droppable: {

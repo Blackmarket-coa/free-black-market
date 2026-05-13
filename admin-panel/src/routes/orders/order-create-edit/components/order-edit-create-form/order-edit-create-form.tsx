@@ -7,17 +7,17 @@ import { useTranslation } from "react-i18next"
 import {
   RouteFocusModal,
   useRouteModal,
-} from "../../../../../components/modals"
+} from "@components/modals"
 
-import { KeyboundForm } from "../../../../../components/utilities/keybound-form"
+import { KeyboundForm } from "@components/utilities/keybound-form"
 import {
   useCancelOrderEdit,
   useRequestOrderEdit,
-} from "../../../../../hooks/api/order-edits"
-import { getStylizedAmount } from "../../../../../lib/money-amount-helpers"
-import { OrderEditItemsSection } from "./order-edit-items-section"
-import type { CreateOrderEditSchemaType} from "./schema";
-import { OrderEditCreateSchema } from "./schema"
+} from "@hooks/api/order-edits"
+import { getStylizedAmount } from "@lib/money-amount-helpers"
+import { OrderEditItemsSection } from "@routes/orders/order-create-edit/components/order-edit-create-form/order-edit-items-section"
+import type { CreateOrderEditSchemaType} from "@routes/orders/order-create-edit/components/order-edit-create-form/schema";
+import { OrderEditCreateSchema } from "@routes/orders/order-create-edit/components/order-edit-create-form/schema"
 
 type ReturnCreateFormProps = {
   order: AdminOrder

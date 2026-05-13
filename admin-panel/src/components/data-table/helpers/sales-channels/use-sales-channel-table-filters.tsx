@@ -2,7 +2,7 @@ import type { HttpTypes } from "@medusajs/types"
 import { createDataTableFilterHelper } from "@medusajs/ui"
 import { useMemo } from "react"
 import { useTranslation } from "react-i18next"
-import { useDataTableDateFilters } from "../general/use-data-table-date-filters"
+import { useDataTableDateFilters } from "@components/data-table/helpers/general/use-data-table-date-filters"
 
 const filterHelper = createDataTableFilterHelper<HttpTypes.AdminSalesChannel>()
 

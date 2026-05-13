@@ -1,1 +1,1 @@
-export { ProductCreateVariant as Component } from "./product-create-variant"
+export { ProductCreateVariant as Component } from "@routes/products/product-create-variant/product-create-variant"

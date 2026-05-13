@@ -17,28 +17,28 @@ import { useFieldArray, useForm, useWatch } from "react-hook-form"
 import { useTranslation } from "react-i18next"
 import { z } from "zod"
 
-import { Form } from "../../../../../components/common/form"
-import { SwitchBox } from "../../../../../components/common/switch-box"
-import { PercentageInput } from "../../../../../components/inputs/percentage-input"
+import { Form } from "@components/common/form"
+import { SwitchBox } from "@components/common/switch-box"
+import { PercentageInput } from "@components/inputs/percentage-input"
 import {
   RouteDrawer,
   StackedDrawer,
   useRouteModal,
   useStackedModal,
-} from "../../../../../components/modals"
-import { KeyboundForm } from "../../../../../components/utilities/keybound-form"
-import { useUpdateTaxRate } from "../../../../../hooks/api/tax-rates"
-import { TargetForm } from "../../../common/components/target-form/target-form"
-import { TargetItem } from "../../../common/components/target-item/target-item"
-import { TaxRateRuleReferenceType } from "../../../common/constants"
+} from "@components/modals"
+import { KeyboundForm } from "@components/utilities/keybound-form"
+import { useUpdateTaxRate } from "@hooks/api/tax-rates"
+import { TargetForm } from "@routes/tax-regions/common/components/target-form/target-form"
+import { TargetItem } from "@routes/tax-regions/common/components/target-item/target-item"
+import { TaxRateRuleReferenceType } from "@routes/tax-regions/common/constants"
 import type {
-  TaxRateRuleReference} from "../../../common/schemas";
+  TaxRateRuleReference} from "@routes/tax-regions/common/schemas";
 import {
   TaxRateRuleReferenceSchema,
-} from "../../../common/schemas"
-import { createTaxRulePayload } from "../../../common/utils"
-import type { InitialRuleValues } from "../../types"
-import { useDocumentDirection } from "../../../../../hooks/use-document-direction"
+} from "@routes/tax-regions/common/schemas"
+import { createTaxRulePayload } from "@routes/tax-regions/common/utils"
+import type { InitialRuleValues } from "@routes/tax-regions/tax-region-tax-override-edit/types"
+import { useDocumentDirection } from "@hooks/use-document-direction"
 
 export const DISPLAY_OVERRIDE_ITEMS_LIMIT = 10
 

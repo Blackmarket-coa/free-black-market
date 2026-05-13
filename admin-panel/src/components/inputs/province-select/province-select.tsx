@@ -7,7 +7,7 @@ import {
 } from "react"
 import { Select } from "@medusajs/ui"
 import { useTranslation } from "react-i18next"
-import { getCountryProvinceObjectByIso2 } from "../../../lib/data/country-states"
+import { getCountryProvinceObjectByIso2 } from "@lib/data/country-states"
 
 export const ProvinceSelect = forwardRef<
   HTMLButtonElement,

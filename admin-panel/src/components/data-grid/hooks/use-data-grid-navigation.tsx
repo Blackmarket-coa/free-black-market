@@ -3,8 +3,8 @@ import type { ScrollToOptions, Virtualizer } from "@tanstack/react-virtual"
 import type { Dispatch, SetStateAction} from "react";
 import { useCallback } from "react"
 import type { FieldValues } from "react-hook-form"
-import type { DataGridMatrix, DataGridQueryTool } from "../models"
-import type { DataGridCoordinates } from "../types"
+import type { DataGridMatrix, DataGridQueryTool } from "@components/data-grid/models"
+import type { DataGridCoordinates } from "@components/data-grid/types"
 
 type UseDataGridNavigationOptions<TData, TFieldValues extends FieldValues> = {
   matrix: DataGridMatrix<TData, TFieldValues>

@@ -1,1 +1,1 @@
-export * from "./shipping-option-price-cell"
+export * from "@routes/locations/common/components/shipping-option-price-cell/shipping-option-price-cell"

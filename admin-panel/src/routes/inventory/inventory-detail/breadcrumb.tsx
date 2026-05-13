@@ -1,8 +1,8 @@
 import type { HttpTypes } from "@medusajs/types"
 import type { UIMatch } from "react-router-dom"
 
-import { useInventoryItem } from "../../../hooks/api"
-import { INVENTORY_DETAIL_FIELDS } from "./constants"
+import { useInventoryItem } from "@hooks/api"
+import { INVENTORY_DETAIL_FIELDS } from "@routes/inventory/inventory-detail/constants"
 
 type InventoryDetailBreadcrumbProps =
   UIMatch<HttpTypes.AdminInventoryItemResponse>

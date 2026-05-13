@@ -9,14 +9,14 @@ import {
 } from "@tanstack/react-table"
 import { useMemo, useState } from "react"
 import { useTranslation } from "react-i18next"
-import { ActionMenu } from "../../../../../components/common/action-menu"
-import { _DataTable } from "../../../../../components/table/data-table"
-import { useUpdateRegion } from "../../../../../hooks/api/regions"
-import { useDataTable } from "../../../../../hooks/use-data-table"
-import type { StaticCountry } from "../../../../../lib/data/countries"
-import { useCountries } from "../../../common/hooks/use-countries"
-import { useCountryTableColumns } from "../../../common/hooks/use-country-table-columns"
-import { useCountryTableQuery } from "../../../common/hooks/use-country-table-query"
+import { ActionMenu } from "@components/common/action-menu"
+import { _DataTable } from "@components/table/data-table"
+import { useUpdateRegion } from "@hooks/api/regions"
+import { useDataTable } from "@hooks/use-data-table"
+import type { StaticCountry } from "@lib/data/countries"
+import { useCountries } from "@routes/regions/common/hooks/use-countries"
+import { useCountryTableColumns } from "@routes/regions/common/hooks/use-country-table-columns"
+import { useCountryTableQuery } from "@routes/regions/common/hooks/use-country-table-query"
 
 type RegionCountrySectionProps = {
   region: HttpTypes.AdminRegion

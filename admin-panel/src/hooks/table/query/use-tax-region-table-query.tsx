@@ -1,4 +1,4 @@
-import { useQueryParams } from "../../use-query-params"
+import { useQueryParams } from "@hooks/use-query-params"
 
 type UseTaxRegionTableQueryProps = {
   prefix?: string

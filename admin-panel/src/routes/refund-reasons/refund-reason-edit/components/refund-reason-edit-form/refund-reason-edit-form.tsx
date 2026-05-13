@@ -7,10 +7,10 @@ import { z } from "zod";
 
 import type { AdminRefundReason } from "@custom-types/refund-reasons";
 
-import { Form } from "../../../../../components/common/form";
-import { RouteDrawer, useRouteModal } from "../../../../../components/modals";
-import { KeyboundForm } from "../../../../../components/utilities/keybound-form";
-import { useUpdateRefundReason } from "../../../../../hooks/api";
+import { Form } from "@components/common/form";
+import { RouteDrawer, useRouteModal } from "@components/modals";
+import { KeyboundForm } from "@components/utilities/keybound-form";
+import { useUpdateRefundReason } from "@hooks/api";
 
 type RefundReasonEditFormProps = {
   refundReason: AdminRefundReason;

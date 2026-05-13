@@ -6,11 +6,11 @@ import { useTranslation } from "react-i18next"
 import { useNavigate } from "react-router-dom"
 
 import { PencilSquare } from "@medusajs/icons"
-import { DataTable } from "../../../../../components/data-table"
-import { useDataTableDateColumns } from "../../../../../components/data-table/helpers/general/use-data-table-date-columns"
-import { useDataTableDateFilters } from "../../../../../components/data-table/helpers/general/use-data-table-date-filters"
-import { useUsers } from "../../../../../hooks/api/users"
-import { useQueryParams } from "../../../../../hooks/use-query-params"
+import { DataTable } from "@components/data-table"
+import { useDataTableDateColumns } from "@components/data-table/helpers/general/use-data-table-date-columns"
+import { useDataTableDateFilters } from "@components/data-table/helpers/general/use-data-table-date-filters"
+import { useUsers } from "@hooks/api/users"
+import { useQueryParams } from "@hooks/use-query-params"
 
 const PAGE_SIZE = 20
 

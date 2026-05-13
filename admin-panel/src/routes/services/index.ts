@@ -1,1 +1,1 @@
-export { ServicesAdminPage as Component } from "./services"
+export { ServicesAdminPage as Component } from "@routes/services/services"

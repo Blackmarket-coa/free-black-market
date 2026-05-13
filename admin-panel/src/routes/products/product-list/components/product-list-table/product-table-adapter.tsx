@@ -1,10 +1,10 @@
 import { createDataTableColumnHelper } from "@medusajs/ui"
 import type { HttpTypes } from "@medusajs/types"
-import { useProducts } from "../../../../../hooks/api/products"
-import { productColumnAdapter } from "../../../../../lib/table/entity-adapters"
-import type { TableAdapter } from "../../../../../lib/table/table-adapters";
-import { createTableAdapter } from "../../../../../lib/table/table-adapters"
-import { useProductTableFilters } from "./use-product-table-filters"
+import { useProducts } from "@hooks/api/products"
+import { productColumnAdapter } from "@lib/table/entity-adapters"
+import type { TableAdapter } from "@lib/table/table-adapters";
+import { createTableAdapter } from "@lib/table/table-adapters"
+import { useProductTableFilters } from "@routes/products/product-list/components/product-list-table/use-product-table-filters"
 
 export function createProductTableAdapter(): TableAdapter<HttpTypes.AdminProduct> {
   const columnHelper = createDataTableColumnHelper<HttpTypes.AdminProduct>()

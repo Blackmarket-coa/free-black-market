@@ -23,8 +23,8 @@ import {
   Tabs,
 } from "@medusajs/ui"
 
-import type { Certification , GrowingPractice } from "../../../types/producer"
-import { GrowingPracticeLabels } from "../../../types/producer"
+import type { Certification , GrowingPractice } from "@custom-types/producer"
+import { GrowingPracticeLabels } from "@custom-types/producer"
 
 import {
   useProducer,

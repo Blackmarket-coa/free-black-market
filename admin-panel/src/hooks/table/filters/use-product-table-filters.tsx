@@ -1,8 +1,8 @@
 import { useTranslation } from "react-i18next"
-import type { Filter } from "../../../components/table/data-table"
-import { useProductTags } from "../../api"
-import { useProductTypes } from "../../api/product-types"
-import { useSalesChannels } from "../../api/sales-channels"
+import type { Filter } from "@components/table/data-table"
+import { useProductTags } from "@hooks/api"
+import { useProductTypes } from "@hooks/api/product-types"
+import { useSalesChannels } from "@hooks/api/sales-channels"
 
 const excludeableFields = [
   "sales_channel_id",

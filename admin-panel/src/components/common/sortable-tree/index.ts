@@ -1,1 +1,1 @@
-export * from "./sortable-tree"
+export * from "@components/common/sortable-tree/sortable-tree"

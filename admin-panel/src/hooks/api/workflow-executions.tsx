@@ -1,7 +1,7 @@
 import type { QueryKey, UseQueryOptions} from "@tanstack/react-query";
 import { useQuery } from "@tanstack/react-query"
-import { sdk } from "../../lib/client"
-import { queryKeysFactory } from "../../lib/query-key-factory"
+import { sdk } from "@lib/client"
+import { queryKeysFactory } from "@lib/query-key-factory"
 import type { HttpTypes } from "@medusajs/types"
 import type { FetchError } from "@medusajs/js-sdk"
 

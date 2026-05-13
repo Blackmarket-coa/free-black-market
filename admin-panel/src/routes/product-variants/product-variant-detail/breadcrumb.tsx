@@ -1,7 +1,7 @@
 import type { HttpTypes } from "@medusajs/types"
 import type { UIMatch } from "react-router-dom"
-import { useProductVariant } from "../../../hooks/api"
-import { VARIANT_DETAIL_FIELDS } from "./constants"
+import { useProductVariant } from "@hooks/api"
+import { VARIANT_DETAIL_FIELDS } from "@routes/product-variants/product-variant-detail/constants"
 
 type ProductVariantDetailBreadcrumbProps =
   UIMatch<HttpTypes.AdminProductVariantResponse>

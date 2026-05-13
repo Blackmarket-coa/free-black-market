@@ -1,7 +1,7 @@
 import type { UniqueIdentifier } from "@dnd-kit/core"
 import { arrayMove } from "@dnd-kit/sortable"
 
-import type { FlattenedItem, TreeItem } from "./types"
+import type { FlattenedItem, TreeItem } from "@components/common/sortable-tree/types"
 
 export const iOS = /iPad|iPhone|iPod/.test(navigator.platform)
 

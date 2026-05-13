@@ -1,7 +1,7 @@
 import { defineRouteConfig } from "@medusajs/admin-sdk"
 import { ExclamationCircle } from "@medusajs/icons"
-import { BugReportForm } from "../../components/bug-report/bug-report-form"
-import { sdk } from "../../lib/sdk"
+import { BugReportForm } from "@components/bug-report/bug-report-form"
+import { sdk } from "@lib/sdk"
 
 const BugReportPage = () => {
   return (

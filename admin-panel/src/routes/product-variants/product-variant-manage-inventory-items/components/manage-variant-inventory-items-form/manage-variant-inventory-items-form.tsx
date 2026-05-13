@@ -13,17 +13,17 @@ import {
 import { useTranslation } from "react-i18next"
 import * as zod from "zod"
 
-import { Form } from "../../../../../components/common/form"
-import { Combobox } from "../../../../../components/inputs/combobox"
+import { Form } from "@components/common/form"
+import { Combobox } from "@components/inputs/combobox"
 import {
   RouteFocusModal,
   useRouteModal,
-} from "../../../../../components/modals"
-import { KeyboundForm } from "../../../../../components/utilities/keybound-form"
-import { useProductVariantsInventoryItemsBatch } from "../../../../../hooks/api/products"
-import { useComboboxData } from "../../../../../hooks/use-combobox-data"
-import { castNumber } from "../../../../../lib/cast-number"
-import { sdk } from "../../../../../lib/client"
+} from "@components/modals"
+import { KeyboundForm } from "@components/utilities/keybound-form"
+import { useProductVariantsInventoryItemsBatch } from "@hooks/api/products"
+import { useComboboxData } from "@hooks/use-combobox-data"
+import { castNumber } from "@lib/cast-number"
+import { sdk } from "@lib/client"
 
 // The admin response embeds `inventory_items` with a joined `inventory`
 // payload + `required_quantity`. The SDK type collapses to `never` when

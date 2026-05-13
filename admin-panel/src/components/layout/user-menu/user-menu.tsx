@@ -21,15 +21,15 @@ import {
 import { Dialog as RadixDialog } from "radix-ui"
 import { useTranslation } from "react-i18next"
 
-import { Skeleton } from "../../common/skeleton"
+import { Skeleton } from "@components/common/skeleton"
 
 import { useState } from "react"
 import { Link, useLocation, useNavigate } from "react-router-dom"
-import { useLogout, useMe } from "../../../hooks/api"
-import { queryClient } from "../../../lib/query-client"
-import { useGlobalShortcuts } from "../../../providers/keybind-provider/hooks"
-import { useTheme } from "../../../providers/theme-provider"
-import { useDocumentDirection } from "../../../hooks/use-document-direction"
+import { useLogout, useMe } from "@hooks/api"
+import { queryClient } from "@lib/query-client"
+import { useGlobalShortcuts } from "@providers/keybind-provider/hooks"
+import { useTheme } from "@providers/theme-provider"
+import { useDocumentDirection } from "@hooks/use-document-direction"
 
 export const UserMenu = () => {
   const { t } = useTranslation()

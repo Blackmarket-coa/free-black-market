@@ -1,5 +1,5 @@
-import type { DataGridCoordinates } from "../types"
-import { generateCellId } from "../utils"
+import type { DataGridCoordinates } from "@components/data-grid/types"
+import { generateCellId } from "@components/data-grid/utils"
 
 export class DataGridQueryTool {
   private container: HTMLElement | null

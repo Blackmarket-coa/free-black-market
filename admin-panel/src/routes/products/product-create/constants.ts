@@ -1,7 +1,7 @@
 import { z } from "zod"
-import { i18n } from "../../../components/utilities/i18n/i18n"
-import { optionalFloat, optionalInt } from "../../../lib/validation"
-import { decorateVariantsWithDefaultValues } from "./utils"
+import { i18n } from "@components/utilities/i18n/i18n"
+import { optionalFloat, optionalInt } from "@lib/validation"
+import { decorateVariantsWithDefaultValues } from "@routes/products/product-create/utils"
 
 export const MediaSchema = z.object({
   id: z.string().optional(),

@@ -1,2 +1,2 @@
-export * from "./route-provider"
-export * from "./use-route-modal"
+export * from "@components/modals/route-modal-provider/route-provider"
+export * from "@components/modals/route-modal-provider/use-route-modal"

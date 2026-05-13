@@ -2,10 +2,10 @@ import { createColumnHelper } from "@tanstack/react-table";
 import { useMemo } from "react";
 import { Badge } from "@medusajs/ui";
 
-import { formatDate } from "../../../lib/date";
-import type { VendorSeller } from "../../../types";
-import { SellerStatusBadge } from "../../../components/common/seller-status-badge";
-import { VendorTypeLabels } from "../../../types/domain";
+import { formatDate } from "@lib/date";
+import type { VendorSeller } from "@/types";
+import { SellerStatusBadge } from "@components/common/seller-status-badge";
+import { VendorTypeLabels } from "@custom-types/domain";
 
 const columnHelper = createColumnHelper<VendorSeller>();
 

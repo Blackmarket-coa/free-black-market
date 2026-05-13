@@ -11,19 +11,19 @@ import type { z } from "zod"
 import {
   RouteFocusModal,
   useRouteModal,
-} from "../../../../../components/modals"
-import { KeyboundForm } from "../../../../../components/utilities/keybound-form"
-import { useBatchPriceListPrices } from "../../../../../hooks/api/price-lists"
-import { exctractPricesFromProducts } from "../../../common/utils"
-import { PriceListPricesAddPricesForm } from "./price-list-prices-add-prices-form"
-import { PriceListPricesAddProductIdsForm } from "./price-list-prices-add-product-ids-form"
+} from "@components/modals"
+import { KeyboundForm } from "@components/utilities/keybound-form"
+import { useBatchPriceListPrices } from "@hooks/api/price-lists"
+import { exctractPricesFromProducts } from "@routes/price-lists/common/utils"
+import { PriceListPricesAddPricesForm } from "@routes/price-lists/price-list-prices-add/components/price-list-prices-add-form/price-list-prices-add-prices-form"
+import { PriceListPricesAddProductIdsForm } from "@routes/price-lists/price-list-prices-add/components/price-list-prices-add-form/price-list-prices-add-product-ids-form"
 import {
   PriceListPricesAddProductIdsSchema,
   PriceListPricesAddProductsFields,
   PriceListPricesAddProductsIdsFields,
   PriceListPricesAddSchema,
-} from "./schema"
-import { useDocumentDirection } from "../../../../../hooks/use-document-direction"
+} from "@routes/price-lists/price-list-prices-add/components/price-list-prices-add-form/schema"
+import { useDocumentDirection } from "@hooks/use-document-direction"
 
 type PriceListPricesAddFormProps = {
   priceList: HttpTypes.AdminPriceList

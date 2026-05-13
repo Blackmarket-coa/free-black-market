@@ -8,13 +8,13 @@ import {
   Button
 } from "@medusajs/ui"
 import { useTranslation } from "react-i18next"
-import { DataTable } from "../../data-table"
-import { SaveViewDialog } from "../save-view-dialog"
-import { SaveViewDropdown } from "./save-view-dropdown"
-import { useTableConfiguration } from "../../../hooks/table/use-table-configuration"
-import { useConfigurableTableColumns } from "../../../hooks/table/columns/use-configurable-table-columns"
-import { getEntityAdapter } from "../../../lib/table/entity-adapters"
-import type { TableAdapter } from "../../../lib/table/table-adapters"
+import { DataTable } from "@components/data-table"
+import { SaveViewDialog } from "@components/table/save-view-dialog"
+import { SaveViewDropdown } from "@components/table/configurable-data-table/save-view-dropdown"
+import { useTableConfiguration } from "@hooks/table/use-table-configuration"
+import { useConfigurableTableColumns } from "@hooks/table/columns/use-configurable-table-columns"
+import { getEntityAdapter } from "@lib/table/entity-adapters"
+import type { TableAdapter } from "@lib/table/table-adapters"
 
 type DataTableActionProps = {
   label: string

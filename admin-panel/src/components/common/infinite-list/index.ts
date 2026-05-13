@@ -1,1 +1,1 @@
-export * from "./infinite-list"
+export * from "@components/common/infinite-list/infinite-list"

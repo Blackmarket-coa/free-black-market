@@ -3,12 +3,12 @@ import set from "lodash/set"
 import { useCallback } from "react"
 import type { FieldValues, Path, PathValue, UseFormReturn } from "react-hook-form"
 
-import type { DataGridMatrix } from "../models"
+import type { DataGridMatrix } from "@components/data-grid/models"
 import type {
   DataGridColumnType,
   DataGridCoordinates,
   DataGridToggleableNumber,
-} from "../types"
+} from "@components/data-grid/types"
 
 type UseDataGridFormHandlersOptions<TData, TFieldValues extends FieldValues> = {
   matrix: DataGridMatrix<TData, TFieldValues>

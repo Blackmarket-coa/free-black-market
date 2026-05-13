@@ -2,7 +2,7 @@ import { z } from "zod"
 import {
   PriceListCreateProductsSchema,
   PriceListRulesSchema,
-} from "../../../common/schemas"
+} from "@routes/price-lists/common/schemas"
 
 const PricingCustomerGroupsArray = z.array(
   z.object({

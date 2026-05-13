@@ -5,8 +5,8 @@ import { useTranslation } from "react-i18next"
 import {
   TextCell,
   TextHeader,
-} from "../../../components/table/table-cells/common/text-cell"
-import { formatProvider } from "../../../lib/format-provider"
+} from "@components/table/table-cells/common/text-cell"
+import { formatProvider } from "@lib/format-provider"
 
 const columnHelper = createColumnHelper<HttpTypes.AdminFulfillmentProvider>()
 

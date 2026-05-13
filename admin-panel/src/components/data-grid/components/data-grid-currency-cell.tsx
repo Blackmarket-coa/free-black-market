@@ -7,12 +7,12 @@ import type { ControllerRenderProps } from "react-hook-form";
 import { Controller } from "react-hook-form"
 
 import { useCallback, useEffect, useState } from "react"
-import { useCombinedRefs } from "../../../hooks/use-combined-refs"
-import type { CurrencyInfo} from "../../../lib/data/currencies";
-import { currencies } from "../../../lib/data/currencies"
-import { useDataGridCell, useDataGridCellError } from "../hooks"
-import type { DataGridCellProps, InputProps } from "../types"
-import { DataGridCellContainer } from "./data-grid-cell-container"
+import { useCombinedRefs } from "@hooks/use-combined-refs"
+import type { CurrencyInfo} from "@lib/data/currencies";
+import { currencies } from "@lib/data/currencies"
+import { useDataGridCell, useDataGridCellError } from "@components/data-grid/hooks"
+import type { DataGridCellProps, InputProps } from "@components/data-grid/types"
+import { DataGridCellContainer } from "@components/data-grid/components/data-grid-cell-container"
 
 interface DataGridCurrencyCellProps<TData, TValue = any>
   extends DataGridCellProps<TData, TValue> {

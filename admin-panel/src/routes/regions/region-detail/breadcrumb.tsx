@@ -1,7 +1,7 @@
 import type { HttpTypes } from "@medusajs/types"
 import type { UIMatch } from "react-router-dom"
-import { useRegion } from "../../../hooks/api/regions"
-import { REGION_DETAIL_FIELDS } from "./constants"
+import { useRegion } from "@hooks/api/regions"
+import { REGION_DETAIL_FIELDS } from "@routes/regions/region-detail/constants"
 
 type RegionDetailBreadcrumbProps = UIMatch<HttpTypes.AdminRegionResponse>
 

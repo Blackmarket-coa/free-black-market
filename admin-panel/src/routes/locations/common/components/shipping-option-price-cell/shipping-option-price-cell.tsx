@@ -13,20 +13,20 @@ import {
   Controller,
   useWatch,
 } from "react-hook-form"
-import { DataGridCellContainer } from "../../../../../components/data-grid/components/data-grid-cell-container"
+import { DataGridCellContainer } from "@components/data-grid/components/data-grid-cell-container"
 import {
   useDataGridCell,
   useDataGridCellError,
-} from "../../../../../components/data-grid/hooks"
+} from "@components/data-grid/hooks"
 import type {
   DataGridCellProps,
   InputProps,
-} from "../../../../../components/data-grid/types"
-import { useCombinedRefs } from "../../../../../hooks/use-combined-refs"
-import type { CurrencyInfo } from "../../../../../lib/data/currencies";
-import { currencies } from "../../../../../lib/data/currencies"
-import { getCustomShippingOptionPriceFieldName } from "../../utils/get-custom-shipping-option-price-field-info"
-import { useShippingOptionPrice } from "../shipping-option-price-provider"
+} from "@components/data-grid/types"
+import { useCombinedRefs } from "@hooks/use-combined-refs"
+import type { CurrencyInfo } from "@lib/data/currencies";
+import { currencies } from "@lib/data/currencies"
+import { getCustomShippingOptionPriceFieldName } from "@routes/locations/common/utils/get-custom-shipping-option-price-field-info"
+import { useShippingOptionPrice } from "@routes/locations/common/components/shipping-option-price-provider"
 
 interface ShippingOptionPriceCellProps<TData, TValue = any>
   extends DataGridCellProps<TData, TValue> {

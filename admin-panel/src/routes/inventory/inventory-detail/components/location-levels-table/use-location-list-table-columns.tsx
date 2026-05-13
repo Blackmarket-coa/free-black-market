@@ -4,13 +4,13 @@ import { PencilSquare, Trash } from "@medusajs/icons"
 import { useMemo } from "react"
 import { createDataTableColumnHelper, toast, usePrompt } from "@medusajs/ui"
 import { useTranslation } from "react-i18next"
-import { PlaceholderCell } from "../../../../../components/table/table-cells/common/placeholder-cell"
+import { PlaceholderCell } from "@components/table/table-cells/common/placeholder-cell"
 import {
   inventoryItemLevelsQueryKeys,
   inventoryItemsQueryKeys,
-} from "../../../../../hooks/api"
-import { sdk } from "../../../../../lib/client"
-import { queryClient } from "../../../../../lib/query-client"
+} from "@hooks/api"
+import { sdk } from "@lib/client"
+import { queryClient } from "@lib/query-client"
 import { useNavigate } from "react-router-dom"
 
 /**

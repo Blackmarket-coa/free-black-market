@@ -1,8 +1,8 @@
 import type React from "react";
 import { useState } from "react"
 import { Button, FocusModal, Input, Label, Textarea, toast } from "@medusajs/ui"
-import type { CreateVenueRequest} from "../types";
-import { RowType } from "../types"
+import type { CreateVenueRequest} from "@/types";
+import { RowType } from "@/types"
 
 /**
  * Minimal "create venue" modal used by src/routes/venues/page.tsx. This

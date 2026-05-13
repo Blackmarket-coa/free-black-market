@@ -7,8 +7,8 @@ import { z } from "zod"
 
 import type { AdminOrder } from "@medusajs/types"
 import { useTranslation } from "react-i18next"
-import { Form } from "../../../../../components/common/form"
-import { KeyboundForm } from "../../../../../components/utilities/keybound-form"
+import { Form } from "@components/common/form"
+import { KeyboundForm } from "@components/utilities/keybound-form"
 
 type OrderNoteFormProps = {
   order: AdminOrder

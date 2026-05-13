@@ -1,1 +1,1 @@
-export * from "./two-column-page"
+export * from "@components/layout/pages/two-column-page/two-column-page"

@@ -4,9 +4,9 @@ import { Badge, Container, Heading, usePrompt } from "@medusajs/ui"
 import { useTranslation } from "react-i18next"
 import { useNavigate } from "react-router-dom"
 
-import { ActionMenu } from "../../../../../components/common/action-menu"
-import { SectionRow } from "../../../../../components/common/section"
-import { useDeleteVariant } from "../../../../../hooks/api/products"
+import { ActionMenu } from "@components/common/action-menu"
+import { SectionRow } from "@components/common/section"
+import { useDeleteVariant } from "@hooks/api/products"
 
 type VariantGeneralSectionProps = {
   variant: HttpTypes.AdminProductVariant

@@ -1,10 +1,10 @@
-import { DataTable } from "../../../../../components/data-table"
-import { useInventoryItemLevels } from "../../../../../hooks/api/inventory"
+import { DataTable } from "@components/data-table"
+import { useInventoryItemLevels } from "@hooks/api/inventory"
 import {
   useLocationListTableColumns,
   type ExtendedLocationLevel,
-} from "./use-location-list-table-columns"
-import { useLocationLevelTableQuery } from "./use-location-list-table-query"
+} from "@routes/inventory/inventory-detail/components/location-levels-table/use-location-list-table-columns"
+import { useLocationLevelTableQuery } from "@routes/inventory/inventory-detail/components/location-levels-table/use-location-list-table-query"
 
 const PAGE_SIZE = 20
 const PREFIX = "invlvl"

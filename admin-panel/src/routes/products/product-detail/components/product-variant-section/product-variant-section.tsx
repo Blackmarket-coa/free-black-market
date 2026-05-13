@@ -18,15 +18,15 @@ import { useTranslation } from "react-i18next"
 
 import type { CellContext } from "@tanstack/react-table"
 import { useNavigate, useSearchParams } from "react-router-dom"
-import { DataTable } from "../../../../../components/data-table"
-import { useDataTableDateColumns } from "../../../../../components/data-table/helpers/general/use-data-table-date-columns"
-import { useDataTableDateFilters } from "../../../../../components/data-table/helpers/general/use-data-table-date-filters"
+import { DataTable } from "@components/data-table"
+import { useDataTableDateColumns } from "@components/data-table/helpers/general/use-data-table-date-columns"
+import { useDataTableDateFilters } from "@components/data-table/helpers/general/use-data-table-date-filters"
 import {
   useDeleteVariantLazy,
   useProductVariants,
-} from "../../../../../hooks/api/products"
-import { useQueryParams } from "../../../../../hooks/use-query-params"
-import { PRODUCT_VARIANT_IDS_KEY } from "../../../common/constants"
+} from "@hooks/api/products"
+import { useQueryParams } from "@hooks/use-query-params"
+import { PRODUCT_VARIANT_IDS_KEY } from "@routes/products/common/constants"
 
 type ProductVariantSectionProps = {
   product: HttpTypes.AdminProduct

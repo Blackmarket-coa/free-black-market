@@ -3,7 +3,7 @@ import { useMemo } from "react"
 import { createDataTableColumnHelper } from "@medusajs/ui"
 import type { HttpTypes } from "@medusajs/types"
 import { useTranslation } from "react-i18next"
-import { getCellRenderer, getColumnValue } from "../../../lib/table/cell-renderers"
+import { getCellRenderer, getColumnValue } from "@lib/table/cell-renderers"
 
 export interface ColumnAdapter<TData> {
   getColumnAlignment?: (column: HttpTypes.AdminColumn) => "left" | "center" | "right"

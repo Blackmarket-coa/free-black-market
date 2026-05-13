@@ -4,9 +4,9 @@ import { Badge, Container, Heading, Text } from "@medusajs/ui"
 import { useTranslation } from "react-i18next"
 
 import { Link } from "react-router-dom"
-import { ActionMenu } from "../../../../../components/common/action-menu"
-import { useSalesChannel, useStockLocation } from "../../../../../hooks/api"
-import { useRegion } from "../../../../../hooks/api/regions"
+import { ActionMenu } from "@components/common/action-menu"
+import { useSalesChannel, useStockLocation } from "@hooks/api"
+import { useRegion } from "@hooks/api/regions"
 
 type StoreGeneralSectionProps = {
   store: AdminStore

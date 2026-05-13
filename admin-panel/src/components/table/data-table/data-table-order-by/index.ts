@@ -1,1 +1,1 @@
-export * from "./data-table-order-by"
+export * from "@components/table/data-table/data-table-order-by/data-table-order-by"

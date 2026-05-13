@@ -1,11 +1,11 @@
 import { Container, Heading, Text } from "@medusajs/ui"
 import { keepPreviousData } from "@tanstack/react-query"
 import { useTranslation } from "react-i18next"
-import { _DataTable } from "../../../../../components/table/data-table"
-import { useWorkflowExecutions } from "../../../../../hooks/api/workflow-executions"
-import { useDataTable } from "../../../../../hooks/use-data-table"
-import { useWorkflowExecutionTableColumns } from "./use-workflow-execution-table-columns"
-import { useWorkflowExecutionTableQuery } from "./use-workflow-execution-table-query"
+import { _DataTable } from "@components/table/data-table"
+import { useWorkflowExecutions } from "@hooks/api/workflow-executions"
+import { useDataTable } from "@hooks/use-data-table"
+import { useWorkflowExecutionTableColumns } from "@routes/workflow-executions/workflow-execution-list/components/workflow-execution-list-table/use-workflow-execution-table-columns"
+import { useWorkflowExecutionTableQuery } from "@routes/workflow-executions/workflow-execution-list/components/workflow-execution-list-table/use-workflow-execution-table-query"
 
 const PAGE_SIZE = 20
 

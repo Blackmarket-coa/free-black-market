@@ -17,8 +17,8 @@ import {
   STEP_IN_PROGRESS_STATES,
   STEP_OK_STATES,
   STEP_SKIPPED_STATES,
-} from "../../../constants"
-import { useDocumentDirection } from "../../../../../hooks/use-document-direction"
+} from "@routes/workflow-executions/constants"
+import { useDocumentDirection } from "@hooks/use-document-direction"
 
 type WorkflowExecutionTimelineSectionProps = {
   execution: HttpTypes.AdminWorkflowExecutionResponse["workflow_execution"]

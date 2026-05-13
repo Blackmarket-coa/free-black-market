@@ -22,12 +22,12 @@ import {
 } from "react-hook-form"
 import { useTranslation } from "react-i18next"
 
-import { Form } from "../../../../../../../components/common/form"
-import { SortableList } from "../../../../../../../components/common/sortable-list"
-import { SwitchBox } from "../../../../../../../components/common/switch-box"
-import { ChipInput } from "../../../../../../../components/inputs/chip-input"
-import type { ProductCreateSchemaType } from "../../../../types"
-import { decorateVariantsWithDefaultValues } from "../../../../utils"
+import { Form } from "@components/common/form"
+import { SortableList } from "@components/common/sortable-list"
+import { SwitchBox } from "@components/common/switch-box"
+import { ChipInput } from "@components/inputs/chip-input"
+import type { ProductCreateSchemaType } from "@routes/products/product-create/types"
+import { decorateVariantsWithDefaultValues } from "@routes/products/product-create/utils"
 
 type ProductCreateVariantsSectionProps = {
   form: UseFormReturn<ProductCreateSchemaType>

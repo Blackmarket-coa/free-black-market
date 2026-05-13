@@ -7,12 +7,12 @@ import * as zod from "zod"
 import {
   RouteFocusModal,
   useRouteModal,
-} from "../../../../../components/modals"
-import { KeyboundForm } from "../../../../../components/utilities/keybound-form"
-import { VisuallyHidden } from "../../../../../components/utilities/visually-hidden"
-import { useCreateCampaign } from "../../../../../hooks/api/campaigns"
-import { CreateCampaignFormFields } from "../../../common/components/create-campaign-form-fields"
-import { DEFAULT_CAMPAIGN_VALUES } from "../../../common/constants"
+} from "@components/modals"
+import { KeyboundForm } from "@components/utilities/keybound-form"
+import { VisuallyHidden } from "@components/utilities/visually-hidden"
+import { useCreateCampaign } from "@hooks/api/campaigns"
+import { CreateCampaignFormFields } from "@routes/campaigns/common/components/create-campaign-form-fields"
+import { DEFAULT_CAMPAIGN_VALUES } from "@routes/campaigns/common/constants"
 
 export const CreateCampaignSchema = zod.object({
   name: zod.string().min(1),

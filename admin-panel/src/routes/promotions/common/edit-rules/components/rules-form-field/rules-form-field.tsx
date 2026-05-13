@@ -10,16 +10,16 @@ import {
   useWatch,
 } from "react-hook-form"
 import { useTranslation } from "react-i18next"
-import { Form } from "../../../../../../components/common/form"
+import { Form } from "@components/common/form"
 import {
   usePromotionRuleAttributes,
   usePromotionRules,
-} from "../../../../../../hooks/api/promotions"
-import { useDocumentDirection } from "../../../../../../hooks/use-document-direction"
-import type { CreatePromotionSchemaType } from "../../../../promotion-create/components/create-promotion-form/form-schema"
-import { generateRuleAttributes } from "../edit-rules-form/utils"
-import { RuleValueFormField } from "../rule-value-form-field"
-import { requiredProductRule } from "./constants"
+} from "@hooks/api/promotions"
+import { useDocumentDirection } from "@hooks/use-document-direction"
+import type { CreatePromotionSchemaType } from "@routes/promotions/promotion-create/components/create-promotion-form/form-schema"
+import { generateRuleAttributes } from "@routes/promotions/common/edit-rules/components/edit-rules-form/utils"
+import { RuleValueFormField } from "@routes/promotions/common/edit-rules/components/rule-value-form-field"
+import { requiredProductRule } from "@routes/promotions/common/edit-rules/components/rules-form-field/constants"
 
 type RulesFormFieldType = {
   promotion?: PromotionDTO

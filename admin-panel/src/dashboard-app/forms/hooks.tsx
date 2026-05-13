@@ -4,7 +4,7 @@ import { useForm } from "react-hook-form"
 import type { ZodObject } from "zod";
 import { z, ZodEffects } from "zod"
 
-import type { ConfigField } from "../types"
+import type { ConfigField } from "@/dashboard-app/types"
 
 interface UseExtendableFormProps<
   TSchema extends ZodObject<any> | ZodEffects<ZodObject<any>>,

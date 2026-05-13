@@ -3,8 +3,8 @@ import type { HttpTypes } from "@medusajs/types"
 import { PencilSquare } from "@medusajs/icons"
 import { useTranslation } from "react-i18next"
 
-import { ActionMenu } from "../../../../components/common/action-menu"
-import { SectionRow } from "../../../../components/common/section"
+import { ActionMenu } from "@components/common/action-menu"
+import { SectionRow } from "@components/common/section"
 
 type InventoryItemGeneralSectionProps = {
   inventoryItem: HttpTypes.AdminInventoryItemResponse["inventory_item"]

@@ -5,14 +5,14 @@ import { Button, Input, toast } from "@medusajs/ui"
 import { useForm } from "react-hook-form"
 import { useTranslation } from "react-i18next"
 
-import { Form } from "../../../../../components/common/form"
-import { RouteDrawer, useRouteModal } from "../../../../../components/modals"
-import { KeyboundForm } from "../../../../../components/utilities/keybound-form"
-import { useComboboxData } from "../../../../../hooks/use-combobox-data"
-import { Combobox } from "../../../../../components/inputs/combobox"
-import { useRequestTransferOrder } from "../../../../../hooks/api"
-import { sdk } from "../../../../../lib/client"
-import { TransferHeader } from "./transfer-header"
+import { Form } from "@components/common/form"
+import { RouteDrawer, useRouteModal } from "@components/modals"
+import { KeyboundForm } from "@components/utilities/keybound-form"
+import { useComboboxData } from "@hooks/use-combobox-data"
+import { Combobox } from "@components/inputs/combobox"
+import { useRequestTransferOrder } from "@hooks/api"
+import { sdk } from "@lib/client"
+import { TransferHeader } from "@routes/orders/order-request-transfer/components/create-order-transfer-form/transfer-header"
 
 type CreateOrderTransferFormProps = {
   order: HttpTypes.AdminOrder

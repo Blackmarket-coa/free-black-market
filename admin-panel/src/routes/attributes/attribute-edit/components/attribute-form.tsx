@@ -12,12 +12,12 @@ import { useForm, FormProvider } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import type { z } from "zod";
 import { useEffect, useState } from "react";
-import type { AttributeDTO } from "../../../../types";
-import { AdminUpdateAttribute, CreateAttributeFormSchema } from "../schema";
+import type { AttributeDTO } from "@/types";
+import { AdminUpdateAttribute, CreateAttributeFormSchema } from "@routes/attributes/attribute-edit/schema";
 import type { AdminProductCategory } from "@medusajs/types";
-import PossibleValuesList from "../../attribute-create/components/PossibleValuesList";
-import MultiSelectCategory from "../../attribute-create/components/MultiSelectCategory";
-import { findDuplicatePossibleValues } from "../utils";
+import PossibleValuesList from "@routes/attributes/attribute-create/components/PossibleValuesList";
+import MultiSelectCategory from "@routes/attributes/attribute-create/components/MultiSelectCategory";
+import { findDuplicatePossibleValues } from "@routes/attributes/attribute-edit/utils";
 
 enum AttributeUIComponent {
   SELECT = "select",

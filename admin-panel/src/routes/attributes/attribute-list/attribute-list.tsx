@@ -13,11 +13,11 @@ import {
 import { XMark, DescendingSorting } from "@medusajs/icons";
 import { useState, useMemo, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { SingleColumnLayout } from "../../../components/layout/single-column";
-import { useAttributeTableColumns } from "../../../hooks/table/columns/use-attribute-table-columns";
+import { SingleColumnLayout } from "@components/layout/single-column";
+import { useAttributeTableColumns } from "@hooks/table/columns/use-attribute-table-columns";
 
-import { useAttributes } from "../../../hooks/api/attributes";
-import type { AttributeDTO } from "../../../types";
+import { useAttributes } from "@hooks/api/attributes";
+import type { AttributeDTO } from "@/types";
 
 export const AttributeList = () => {
   const navigate = useNavigate();

@@ -1,9 +1,9 @@
-import { useMe } from "../../../hooks/api/users"
-import { ProfileGeneralSection } from "./components/profile-general-section"
+import { useMe } from "@hooks/api/users"
+import { ProfileGeneralSection } from "@routes/profile/profile-detail/components/profile-general-section"
 
-import { SingleColumnPageSkeleton } from "../../../components/common/skeleton"
-import { SingleColumnPage } from "../../../components/layout/pages"
-import { useExtension } from "../../../providers/extension-provider"
+import { SingleColumnPageSkeleton } from "@components/common/skeleton"
+import { SingleColumnPage } from "@components/layout/pages"
+import { useExtension } from "@providers/extension-provider"
 
 export const ProfileDetail = () => {
   const { user, isPending: isLoading, isError, error } = useMe()

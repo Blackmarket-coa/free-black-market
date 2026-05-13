@@ -1,4 +1,4 @@
-import type { AttributeUIComponent } from './common'
+import type { AttributeUIComponent } from '@custom-types/attribute/common'
 
 export interface CreateAttributeValueDTO {
   value: string

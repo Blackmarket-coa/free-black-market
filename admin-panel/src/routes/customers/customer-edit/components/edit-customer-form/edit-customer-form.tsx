@@ -4,14 +4,14 @@ import { Button, Input, toast } from "@medusajs/ui"
 import { useForm } from "react-hook-form"
 import { useTranslation } from "react-i18next"
 import * as zod from "zod"
-import { ConditionalTooltip } from "../../../../../components/common/conditional-tooltip/index.ts"
-import { Form } from "../../../../../components/common/form/index.ts"
+import { ConditionalTooltip } from "@components/common/conditional-tooltip/index.ts"
+import { Form } from "@components/common/form/index.ts"
 import {
   RouteDrawer,
   useRouteModal,
-} from "../../../../../components/modals/index.ts"
-import { KeyboundForm } from "../../../../../components/utilities/keybound-form/keybound-form.tsx"
-import { useUpdateCustomer } from "../../../../../hooks/api/customers.tsx"
+} from "@components/modals/index.ts"
+import { KeyboundForm } from "@components/utilities/keybound-form/keybound-form.tsx"
+import { useUpdateCustomer } from "@hooks/api/customers.tsx"
 
 type EditCustomerFormProps = {
   customer: HttpTypes.AdminCustomer

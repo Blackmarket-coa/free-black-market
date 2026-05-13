@@ -33,11 +33,11 @@ import { useWatch } from "react-hook-form"
 import { Input, Text, clx } from "@medusajs/ui"
 import type * as zod from "zod"
 
-import { Thumbnail } from "../../../../../components/common/thumbnail"
-import { getFulfillableQuantity } from "../../../../../lib/order-item"
-import { Form } from "../../../../../components/common/form"
-import type { AllocateItemsSchema } from "./constants"
-import { checkInventoryKit } from "./utils"
+import { Thumbnail } from "@components/common/thumbnail"
+import { getFulfillableQuantity } from "@lib/order-item"
+import { Form } from "@components/common/form"
+import type { AllocateItemsSchema } from "@routes/orders/order-allocate-items/components/order-create-fulfillment-form/constants"
+import { checkInventoryKit } from "@routes/orders/order-allocate-items/components/order-create-fulfillment-form/utils"
 
 type OrderEditItemProps = {
   item: LineItemWithVariant

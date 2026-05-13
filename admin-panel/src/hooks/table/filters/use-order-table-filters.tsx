@@ -1,8 +1,8 @@
 import { useTranslation } from "react-i18next"
 
-import type { Filter } from "../../../components/table/data-table"
-import { useRegions } from "../../api/regions"
-import { useSalesChannels } from "../../api/sales-channels"
+import type { Filter } from "@components/table/data-table"
+import { useRegions } from "@hooks/api/regions"
+import { useSalesChannels } from "@hooks/api/sales-channels"
 
 export const useOrderTableFilters = (): Filter[] => {
   const { t } = useTranslation()

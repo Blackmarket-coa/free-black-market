@@ -1,11 +1,11 @@
 import { Heading } from "@medusajs/ui"
 import { useTranslation } from "react-i18next"
 import { useParams } from "react-router-dom"
-import { RouteDrawer } from "../../../../../components/modals"
-import { useInventoryItem } from "../../../../../hooks/api/inventory"
-import { useReservationItem } from "../../../../../hooks/api/reservations"
-import { useStockLocations } from "../../../../../hooks/api/stock-locations"
-import { EditReservationForm } from "./components/edit-reservation-form"
+import { RouteDrawer } from "@components/modals"
+import { useInventoryItem } from "@hooks/api/inventory"
+import { useReservationItem } from "@hooks/api/reservations"
+import { useStockLocations } from "@hooks/api/stock-locations"
+import { EditReservationForm } from "@routes/reservations/reservation-detail/components/edit-reservation/components/edit-reservation-form"
 
 export const ReservationEdit = () => {
   const { id } = useParams()

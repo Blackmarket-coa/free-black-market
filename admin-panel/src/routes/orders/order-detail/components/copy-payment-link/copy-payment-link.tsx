@@ -4,8 +4,8 @@ import { Button, Tooltip } from "@medusajs/ui"
 import copy from "copy-to-clipboard"
 import React, { useState } from "react"
 import { useTranslation } from "react-i18next"
-import { getStylizedAmount } from "../../../../../lib/money-amount-helpers"
-import { MEDUSA_STOREFRONT_URL } from "../../../../../lib/storefront"
+import { getStylizedAmount } from "@lib/money-amount-helpers"
+import { MEDUSA_STOREFRONT_URL } from "@lib/storefront"
 
 type CopyPaymentLinkProps = {
   paymentCollection: AdminPaymentCollection

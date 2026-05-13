@@ -4,8 +4,8 @@ import { Tooltip, clx } from "@medusajs/ui"
 import type { PropsWithChildren } from "react"
 import { get } from "react-hook-form"
 
-import type { DataGridCellContainerProps, DataGridErrorRenderProps } from "../types"
-import { DataGridRowErrorIndicator } from "./data-grid-row-error-indicator"
+import type { DataGridCellContainerProps, DataGridErrorRenderProps } from "@components/data-grid/types"
+import { DataGridRowErrorIndicator } from "@components/data-grid/components/data-grid-row-error-indicator"
 
 export const DataGridCellContainer = ({
   isAnchor,

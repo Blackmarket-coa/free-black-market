@@ -1,1 +1,1 @@
-export * from "./single-column-page"
+export * from "@components/layout/pages/single-column-page/single-column-page"

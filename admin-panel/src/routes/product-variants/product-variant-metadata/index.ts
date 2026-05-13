@@ -1,1 +1,1 @@
-export { ProductVariantMetadata as Component } from "./product-variant-metadata"
+export { ProductVariantMetadata as Component } from "@routes/product-variants/product-variant-metadata/product-variant-metadata"

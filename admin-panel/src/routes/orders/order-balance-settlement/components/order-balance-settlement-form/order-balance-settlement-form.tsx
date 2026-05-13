@@ -18,17 +18,17 @@ import { useSearchParams } from "react-router-dom"
 import { useTranslation } from "react-i18next"
 import * as zod from "zod"
 
-import { Form } from "../../../../../components/common/form"
-import { RouteDrawer, useRouteModal } from "../../../../../components/modals"
-import { KeyboundForm } from "../../../../../components/utilities/keybound-form"
+import { Form } from "@components/common/form"
+import { RouteDrawer, useRouteModal } from "@components/modals"
+import { KeyboundForm } from "@components/utilities/keybound-form"
 import {
   useCreateOrderCreditLine,
   useRefundPayment,
-} from "../../../../../hooks/api"
-import { currencies } from "../../../../../lib/data/currencies"
-import { formatCurrency } from "../../../../../lib/format-currency"
-import { getLocaleAmount } from "../../../../../lib/money-amount-helpers"
-import { getPaymentsFromOrder } from "../../../../../lib/orders"
+} from "@hooks/api"
+import { currencies } from "@lib/data/currencies"
+import { formatCurrency } from "@lib/format-currency"
+import { getLocaleAmount } from "@lib/money-amount-helpers"
+import { getPaymentsFromOrder } from "@lib/orders"
 
 const OrderBalanceSettlementSchema = zod.object({
   settlement_type: zod.enum(["credit_line", "refund"]),

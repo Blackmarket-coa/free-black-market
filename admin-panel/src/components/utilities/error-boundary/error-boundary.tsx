@@ -3,7 +3,7 @@ import { Text } from "@medusajs/ui"
 import { useTranslation } from "react-i18next"
 import { Navigate, useLocation, useRouteError } from "react-router-dom"
 
-import { isFetchError } from "../../../lib/is-fetch-error"
+import { isFetchError } from "@lib/is-fetch-error"
 
 export const ErrorBoundary = () => {
   const error = useRouteError()

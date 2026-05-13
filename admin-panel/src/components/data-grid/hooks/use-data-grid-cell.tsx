@@ -2,13 +2,13 @@ import type { CellContext } from "@tanstack/react-table"
 import type React from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 
-import { useDataGridContext } from "../context"
+import { useDataGridContext } from "@components/data-grid/context"
 import type {
   DataGridCellContext,
   DataGridCellRenderProps,
   DataGridCoordinates,
-} from "../types"
-import { isCellMatch, isSpecialFocusKey } from "../utils"
+} from "@components/data-grid/types"
+import { isCellMatch, isSpecialFocusKey } from "@components/data-grid/utils"
 
 type UseDataGridCellOptions<TData, TValue> = {
   context: CellContext<TData, TValue>

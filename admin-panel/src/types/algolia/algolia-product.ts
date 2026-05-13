@@ -1,6 +1,6 @@
 import { z } from "zod";
-import { StoreStatus } from "../seller";
-import { VendorType } from "../domain";
+import { StoreStatus } from "@custom-types/seller";
+import { VendorType } from "@custom-types/domain";
 
 export type AlgoliaProduct = z.infer<typeof AlgoliaProductValidator>;
 export const AlgoliaProductValidator = z.object({

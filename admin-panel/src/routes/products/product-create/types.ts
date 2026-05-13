@@ -1,5 +1,5 @@
 import type { z } from "zod"
-import type { EditProductMediaSchema, ProductCreateSchema } from "./constants"
+import type { EditProductMediaSchema, ProductCreateSchema } from "@routes/products/product-create/constants"
 
 export type ProductCreateSchemaType = z.infer<typeof ProductCreateSchema>
 

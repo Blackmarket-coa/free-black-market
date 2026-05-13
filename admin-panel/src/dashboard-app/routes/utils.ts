@@ -1,7 +1,7 @@
 import type { ComponentType } from "react"
 import type { LoaderFunction, RouteObject } from "react-router-dom"
-import { ErrorBoundary } from "../../components/utilities/error-boundary"
-import type { RouteExtension, RouteModule } from "../types"
+import { ErrorBoundary } from "@components/utilities/error-boundary"
+import type { RouteExtension, RouteModule } from "@/dashboard-app/types"
 
 /**
  * Used to test if a route is a settings route.

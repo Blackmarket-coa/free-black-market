@@ -1,6 +1,6 @@
 import type { RegionCountryDTO } from "@medusajs/types"
 import { json } from "react-router-dom"
-import type { StaticCountry } from "../../../../lib/data/countries"
+import type { StaticCountry } from "@lib/data/countries"
 
 const acceptedOrderKeys = ["name", "code"]
 

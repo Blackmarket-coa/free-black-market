@@ -9,10 +9,10 @@ import {
   useMutation,
   useQuery,
 } from "@tanstack/react-query"
-import { sdk } from "../../lib/client"
-import { queryClient } from "../../lib/query-client"
-import { queryKeysFactory } from "../../lib/query-key-factory"
-import { salesChannelsQueryKeys } from "./sales-channels"
+import { sdk } from "@lib/client"
+import { queryClient } from "@lib/query-client"
+import { queryKeysFactory } from "@lib/query-key-factory"
+import { salesChannelsQueryKeys } from "@hooks/api/sales-channels"
 
 const API_KEYS_QUERY_KEY = "api_keys" as const
 export const apiKeysQueryKeys = queryKeysFactory(API_KEYS_QUERY_KEY)

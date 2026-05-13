@@ -3,13 +3,13 @@ import { useEffect } from "react"
 import type { UseFormReturn} from "react-hook-form";
 import { useWatch } from "react-hook-form"
 
-import { DataGrid } from "../../../../../components/data-grid"
-import { useRouteModal } from "../../../../../components/modals"
-import { useProducts } from "../../../../../hooks/api/products"
-import { usePriceListGridColumns } from "../../../common/hooks/use-price-list-grid-columns"
-import type { PriceListCreateProductVariantsSchema } from "../../../common/schemas"
-import { isProductRow } from "../../../common/utils"
-import type { PriceListPricesAddSchema } from "./schema"
+import { DataGrid } from "@components/data-grid"
+import { useRouteModal } from "@components/modals"
+import { useProducts } from "@hooks/api/products"
+import { usePriceListGridColumns } from "@routes/price-lists/common/hooks/use-price-list-grid-columns"
+import type { PriceListCreateProductVariantsSchema } from "@routes/price-lists/common/schemas"
+import { isProductRow } from "@routes/price-lists/common/utils"
+import type { PriceListPricesAddSchema } from "@routes/price-lists/price-list-prices-add/components/price-list-prices-add-form/schema"
 
 type PriceListPricesAddPricesFormProps = {
   form: UseFormReturn<PriceListPricesAddSchema>

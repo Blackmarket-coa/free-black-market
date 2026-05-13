@@ -7,14 +7,14 @@ import * as zod from "zod"
 import { Eye, EyeSlash } from "@medusajs/icons"
 import type { AdminApiKeyResponse } from "@medusajs/types"
 import { Fragment, useState } from "react"
-import { Form } from "../../../../../components/common/form"
+import { Form } from "@components/common/form"
 import {
   RouteFocusModal,
   useRouteModal,
-} from "../../../../../components/modals"
-import { KeyboundForm } from "../../../../../components/utilities/keybound-form"
-import { useCreateApiKey } from "../../../../../hooks/api/api-keys"
-import { ApiKeyType } from "../../../common/constants"
+} from "@components/modals"
+import { KeyboundForm } from "@components/utilities/keybound-form"
+import { useCreateApiKey } from "@hooks/api/api-keys"
+import { ApiKeyType } from "@routes/api-key-management/common/constants"
 
 const ApiKeyCreateSchema = zod.object({
   title: zod.string().min(1),

@@ -15,14 +15,14 @@ import { Link } from "react-router-dom"
 
 import type { HttpTypes, SalesChannelDTO } from "@medusajs/types"
 import { keepPreviousData } from "@tanstack/react-query"
-import { ActionMenu } from "../../../../../components/common/action-menu"
-import { _DataTable } from "../../../../../components/table/data-table"
-import { useProducts } from "../../../../../hooks/api/products"
-import { useSalesChannelRemoveProducts } from "../../../../../hooks/api/sales-channels"
-import { useProductTableColumns } from "../../../../../hooks/table/columns/use-product-table-columns"
-import { useProductTableFilters } from "../../../../../hooks/table/filters/use-product-table-filters"
-import { useProductTableQuery } from "../../../../../hooks/table/query/use-product-table-query"
-import { useDataTable } from "../../../../../hooks/use-data-table"
+import { ActionMenu } from "@components/common/action-menu"
+import { _DataTable } from "@components/table/data-table"
+import { useProducts } from "@hooks/api/products"
+import { useSalesChannelRemoveProducts } from "@hooks/api/sales-channels"
+import { useProductTableColumns } from "@hooks/table/columns/use-product-table-columns"
+import { useProductTableFilters } from "@hooks/table/filters/use-product-table-filters"
+import { useProductTableQuery } from "@hooks/table/query/use-product-table-query"
+import { useDataTable } from "@hooks/use-data-table"
 
 const PAGE_SIZE = 10
 

@@ -20,17 +20,17 @@ import {
 import { format } from "date-fns"
 import { useTranslation } from "react-i18next"
 import { Link, useNavigate } from "react-router-dom"
-import { ActionMenu } from "../../../../../components/common/action-menu"
-import { Skeleton } from "../../../../../components/common/skeleton"
-import { Thumbnail } from "../../../../../components/common/thumbnail"
+import { ActionMenu } from "@components/common/action-menu"
+import { Skeleton } from "@components/common/skeleton"
+import { Thumbnail } from "@components/common/thumbnail"
 import {
   useCancelOrderFulfillment,
   useMarkOrderFulfillmentAsDelivered,
-} from "../../../../../hooks/api/orders"
-import { useStockLocation } from "../../../../../hooks/api/stock-locations"
-import { formatProvider } from "../../../../../lib/format-provider"
-import { getLocaleAmount } from "../../../../../lib/money-amount-helpers"
-import { FulfillmentSetType } from "../../../../locations/common/constants"
+} from "@hooks/api/orders"
+import { useStockLocation } from "@hooks/api/stock-locations"
+import { formatProvider } from "@lib/format-provider"
+import { getLocaleAmount } from "@lib/money-amount-helpers"
+import { FulfillmentSetType } from "@routes/locations/common/constants"
 
 type OrderFulfillmentSectionProps = {
   order: AdminOrder

@@ -1,9 +1,9 @@
 import { Heading } from "@medusajs/ui"
 import { useTranslation } from "react-i18next"
 import { useParams } from "react-router-dom"
-import { RouteDrawer } from "../../../../../components/modals"
-import { useInventoryItem } from "../../../../../hooks/api/inventory"
-import { EditInventoryItemAttributesForm } from "./components/edit-item-attributes-form"
+import { RouteDrawer } from "@components/modals"
+import { useInventoryItem } from "@hooks/api/inventory"
+import { EditInventoryItemAttributesForm } from "@routes/inventory/inventory-detail/components/edit-inventory-item-attributes/components/edit-item-attributes-form"
 
 export const InventoryItemAttributesEdit = () => {
   const { id } = useParams()

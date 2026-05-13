@@ -3,8 +3,8 @@ import { useMemo } from "react"
 import { useTranslation } from "react-i18next"
 
 import { createDataTableColumnHelper, Tooltip } from "@medusajs/ui"
-import { DataTableStatusCell } from "../../components/data-table-status-cell/data-table-status-cell"
-import { useDataTableDateColumns } from "../general/use-data-table-date-columns"
+import { DataTableStatusCell } from "@components/data-table/components/data-table-status-cell/data-table-status-cell"
+import { useDataTableDateColumns } from "@components/data-table/helpers/general/use-data-table-date-columns"
 
 const columnHelper = createDataTableColumnHelper<HttpTypes.AdminSalesChannel>()
 

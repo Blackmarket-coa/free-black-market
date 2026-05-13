@@ -2,10 +2,10 @@ import type { HttpTypes } from "@medusajs/types"
 import { createColumnHelper } from "@tanstack/react-table"
 import { useMemo } from "react"
 import { useTranslation } from "react-i18next"
-import { CreatedAtCell } from "../../../../../components/table/table-cells/common/created-at-cell"
-import { PlaceholderCell } from "../../../../../components/table/table-cells/common/placeholder-cell"
-import { TextCell, TextHeader } from "../../../../../components/table/table-cells/common/text-cell"
-import { ReservationActions } from "./reservation-actions"
+import { CreatedAtCell } from "@components/table/table-cells/common/created-at-cell"
+import { PlaceholderCell } from "@components/table/table-cells/common/placeholder-cell"
+import { TextCell, TextHeader } from "@components/table/table-cells/common/text-cell"
+import { ReservationActions } from "@routes/inventory/inventory-detail/components/reservations-table/reservation-actions"
 
 /**
  * Adds missing properties to the InventoryItemDTO type.

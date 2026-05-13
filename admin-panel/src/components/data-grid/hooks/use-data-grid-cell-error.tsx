@@ -3,8 +3,8 @@ import { useMemo } from "react"
 import type { FieldError, FieldErrors} from "react-hook-form";
 import { get } from "react-hook-form"
 
-import { useDataGridContext } from "../context"
-import type { DataGridCellContext, DataGridRowError } from "../types"
+import { useDataGridContext } from "@components/data-grid/context"
+import type { DataGridCellContext, DataGridRowError } from "@components/data-grid/types"
 
 type UseDataGridCellErrorOptions<TData, TValue> = {
   context: CellContext<TData, TValue>

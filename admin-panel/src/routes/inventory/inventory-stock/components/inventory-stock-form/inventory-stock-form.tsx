@@ -5,21 +5,21 @@ import { useRef } from "react"
 import type { DefaultValues} from "react-hook-form";
 import { useForm } from "react-hook-form"
 import { useTranslation } from "react-i18next"
-import { DataGrid } from "../../../../../components/data-grid"
+import { DataGrid } from "@components/data-grid"
 import {
   RouteFocusModal,
   useRouteModal,
-} from "../../../../../components/modals"
-import { KeyboundForm } from "../../../../../components/utilities/keybound-form"
-import { useBatchInventoryItemsLocationLevels } from "../../../../../hooks/api"
-import { castNumber } from "../../../../../lib/cast-number"
-import { useInventoryStockColumns } from "../../hooks/use-inventory-stock-columns"
+} from "@components/modals"
+import { KeyboundForm } from "@components/utilities/keybound-form"
+import { useBatchInventoryItemsLocationLevels } from "@hooks/api"
+import { castNumber } from "@lib/cast-number"
+import { useInventoryStockColumns } from "@routes/inventory/inventory-stock/hooks/use-inventory-stock-columns"
 import type {
   InventoryItemSchema,
-  InventoryLocationsSchema} from "../../schema";
+  InventoryLocationsSchema} from "@routes/inventory/inventory-stock/schema";
 import {
   InventoryStockSchema,
-} from "../../schema"
+} from "@routes/inventory/inventory-stock/schema"
 
 type InventoryStockFormProps = {
   items: HttpTypes.AdminInventoryItem[]

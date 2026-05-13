@@ -1,9 +1,9 @@
 import type { LoaderFunctionArgs } from "react-router-dom"
 
-import { productsQueryKeys } from "../../../hooks/api/products"
-import { sdk } from "../../../lib/client"
-import { queryClient } from "../../../lib/query-client"
-import { PRODUCT_DETAIL_FIELDS } from "./constants"
+import { productsQueryKeys } from "@hooks/api/products"
+import { sdk } from "@lib/client"
+import { queryClient } from "@lib/query-client"
+import { PRODUCT_DETAIL_FIELDS } from "@routes/products/product-detail/constants"
 
 const productDetailQuery = (id: string) => ({
   queryKey: productsQueryKeys.detail(id, { fields: PRODUCT_DETAIL_FIELDS }),

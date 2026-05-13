@@ -6,15 +6,15 @@ import { createColumnHelper } from "@tanstack/react-table"
 import { useMemo } from "react"
 import { useTranslation } from "react-i18next"
 import { Link } from "react-router-dom"
-import { ActionMenu } from "../../../../components/common/action-menu"
-import { _DataTable } from "../../../../components/table/data-table"
+import { ActionMenu } from "@components/common/action-menu"
+import { _DataTable } from "@components/table/data-table"
 import {
   useCampaigns,
   useDeleteCampaign,
-} from "../../../../hooks/api/campaigns"
-import { useCampaignTableColumns } from "../../../../hooks/table/columns/use-campaign-table-columns"
-import { useCampaignTableQuery } from "../../../../hooks/table/query/use-campaign-table-query"
-import { useDataTable } from "../../../../hooks/use-data-table"
+} from "@hooks/api/campaigns"
+import { useCampaignTableColumns } from "@hooks/table/columns/use-campaign-table-columns"
+import { useCampaignTableQuery } from "@hooks/table/query/use-campaign-table-query"
+import { useDataTable } from "@hooks/use-data-table"
 
 const PAGE_SIZE = 20
 

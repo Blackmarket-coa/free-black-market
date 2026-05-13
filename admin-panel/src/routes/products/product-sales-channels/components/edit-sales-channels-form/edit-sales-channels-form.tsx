@@ -8,14 +8,14 @@ import { zodResolver } from "@hookform/resolvers/zod"
 import type { HttpTypes } from "@medusajs/types"
 import { keepPreviousData } from "@tanstack/react-query"
 import { useForm } from "react-hook-form"
-import { DataTable } from "../../../../../components/data-table"
-import * as hooks from "../../../../../components/data-table/helpers/sales-channels"
+import { DataTable } from "@components/data-table"
+import * as hooks from "@components/data-table/helpers/sales-channels"
 import {
   RouteFocusModal,
   useRouteModal,
-} from "../../../../../components/modals"
-import { useUpdateProduct } from "../../../../../hooks/api/products"
-import { useSalesChannels } from "../../../../../hooks/api/sales-channels"
+} from "@components/modals"
+import { useUpdateProduct } from "@hooks/api/products"
+import { useSalesChannels } from "@hooks/api/sales-channels"
 
 type EditSalesChannelsFormProps = {
   product: HttpTypes.AdminProduct

@@ -16,10 +16,10 @@ import {
   useProduct,
   useProductAttributes,
   useUpdateProduct,
-} from "../../../../../hooks/api";
-import { ActionMenu } from "../../../../../components/common/action-menu";
-import { RouteDrawer } from "../../../../../components/modals";
-import { FormComponents } from "./components/form-components";
+} from "@hooks/api";
+import { ActionMenu } from "@components/common/action-menu";
+import { RouteDrawer } from "@components/modals";
+import { FormComponents } from "@routes/products/product-detail/components/product-additional-attribute-section/components/form-components";
 import { useParams } from "react-router-dom";
 
 export const ProductAdditionalAttributeSection = () => {

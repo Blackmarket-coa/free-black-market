@@ -4,12 +4,12 @@ import { useTranslation } from "react-i18next"
 
 import type { HttpTypes } from "@medusajs/types"
 import { useNavigate } from "react-router-dom"
-import { ActionMenu } from "../../../../../components/common/action-menu/index.ts"
-import { ListSummary } from "../../../../../components/common/list-summary/index.ts"
-import { useDeleteRegion } from "../../../../../hooks/api/regions.tsx"
-import { currencies } from "../../../../../lib/data/currencies.ts"
-import { formatProvider } from "../../../../../lib/format-provider.ts"
-import { SectionRow } from "../../../../../components/common/section/section-row.tsx"
+import { ActionMenu } from "@components/common/action-menu/index.ts"
+import { ListSummary } from "@components/common/list-summary/index.ts"
+import { useDeleteRegion } from "@hooks/api/regions.tsx"
+import { currencies } from "@lib/data/currencies.ts"
+import { formatProvider } from "@lib/format-provider.ts"
+import { SectionRow } from "@components/common/section/section-row.tsx"
 
 type RegionGeneralSectionProps = {
   region: HttpTypes.AdminRegion

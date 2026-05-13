@@ -1,13 +1,13 @@
 import { Button, Heading, Text, toast } from "@medusajs/ui"
-import { RouteDrawer, useRouteModal } from "../../../components/modals"
+import { RouteDrawer, useRouteModal } from "@components/modals"
 import { useTranslation } from "react-i18next"
 import { useMemo, useState } from "react"
-import { useConfirmImportProducts, useImportProducts } from "../../../hooks/api"
-import { UploadImport } from "./components/upload-import"
-import { ImportSummary } from "./components/import-summary"
+import { useConfirmImportProducts, useImportProducts } from "@hooks/api"
+import { UploadImport } from "@routes/products/product-import/components/upload-import"
+import { ImportSummary } from "@routes/products/product-import/components/import-summary"
 import { Trash } from "@medusajs/icons"
-import { FilePreview } from "../../../components/common/file-preview"
-import { getProductImportCsvTemplate } from "./helpers/import-template"
+import { FilePreview } from "@components/common/file-preview"
+import { getProductImportCsvTemplate } from "@routes/products/product-import/helpers/import-template"
 
 export const ProductImport = () => {
   const { t } = useTranslation()

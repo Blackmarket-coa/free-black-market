@@ -11,23 +11,23 @@ import {
   RouteDrawer,
   RouteFocusModal,
   useRouteModal,
-} from "../../../../../components/modals"
-import { KeyboundForm } from "../../../../../components/utilities/keybound-form"
-import { useRegions } from "../../../../../hooks/api"
-import { useCreateProductVariant } from "../../../../../hooks/api/products"
-import { castNumber } from "../../../../../lib/cast-number"
-import { partialFormValidation } from "../../../../../lib/validation"
+} from "@components/modals"
+import { KeyboundForm } from "@components/utilities/keybound-form"
+import { useRegions } from "@hooks/api"
+import { useCreateProductVariant } from "@hooks/api/products"
+import { castNumber } from "@lib/cast-number"
+import { partialFormValidation } from "@lib/validation"
 import {
   CreateProductVariantSchema,
   CreateVariantDetailsFields,
   CreateVariantDetailsSchema,
   CreateVariantPriceFields,
   CreateVariantPriceSchema,
-} from "./constants"
-import DetailsTab from "./details-tab"
-import InventoryKitTab from "./inventory-kit-tab"
-import PricingTab from "./pricing-tab"
-import { useDocumentDirection } from "../../../../../hooks/use-document-direction"
+} from "@routes/products/product-create-variant/components/create-product-variant-form/constants"
+import DetailsTab from "@routes/products/product-create-variant/components/create-product-variant-form/details-tab"
+import InventoryKitTab from "@routes/products/product-create-variant/components/create-product-variant-form/inventory-kit-tab"
+import PricingTab from "@routes/products/product-create-variant/components/create-product-variant-form/pricing-tab"
+import { useDocumentDirection } from "@hooks/use-document-direction"
 
 enum Tab {
   DETAIL = "detail",

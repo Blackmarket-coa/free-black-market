@@ -1,13 +1,13 @@
 import { useLoaderData, useParams } from "react-router-dom"
-import { useProductCategory } from "../../../hooks/api/categories"
-import { CategoryGeneralSection } from "./components/category-general-section"
-import { CategoryOrganizeSection } from "./components/category-organize-section"
-import { CategoryProductSection } from "./components/category-product-section"
-import type { categoryLoader } from "./loader"
+import { useProductCategory } from "@hooks/api/categories"
+import { CategoryGeneralSection } from "@routes/categories/category-detail/components/category-general-section"
+import { CategoryOrganizeSection } from "@routes/categories/category-detail/components/category-organize-section"
+import { CategoryProductSection } from "@routes/categories/category-detail/components/category-product-section"
+import type { categoryLoader } from "@routes/categories/category-detail/loader"
 
-import { TwoColumnPageSkeleton } from "../../../components/common/skeleton"
-import { TwoColumnPage } from "../../../components/layout/pages"
-import { useExtension } from "../../../providers/extension-provider"
+import { TwoColumnPageSkeleton } from "@components/common/skeleton"
+import { TwoColumnPage } from "@components/layout/pages"
+import { useExtension } from "@providers/extension-provider"
 
 export const CategoryDetail = () => {
   const { id } = useParams()

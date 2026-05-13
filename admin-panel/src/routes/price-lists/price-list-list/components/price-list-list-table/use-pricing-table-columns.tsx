@@ -3,13 +3,13 @@ import { createColumnHelper } from "@tanstack/react-table"
 import { useMemo } from "react"
 import { useTranslation } from "react-i18next"
 
-import { StatusCell } from "../../../../../components/table/table-cells/common/status-cell"
+import { StatusCell } from "@components/table/table-cells/common/status-cell"
 import {
   TextCell,
   TextHeader,
-} from "../../../../../components/table/table-cells/common/text-cell"
-import { getPriceListStatus } from "../../../common/utils"
-import { PriceListListTableActions } from "./price-list-list-table-actions"
+} from "@components/table/table-cells/common/text-cell"
+import { getPriceListStatus } from "@routes/price-lists/common/utils"
+import { PriceListListTableActions } from "@routes/price-lists/price-list-list/components/price-list-list-table/price-list-list-table-actions"
 
 const columnHelper = createColumnHelper<HttpTypes.AdminPriceList>()
 

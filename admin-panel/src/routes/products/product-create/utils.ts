@@ -1,6 +1,6 @@
 import type { HttpTypes } from "@medusajs/types"
-import { castNumber } from "../../../lib/cast-number"
-import type { ProductCreateSchemaType } from "./types"
+import { castNumber } from "@lib/cast-number"
+import type { ProductCreateSchemaType } from "@routes/products/product-create/types"
 
 export const normalizeProductFormValues = (
   values: ProductCreateSchemaType & {

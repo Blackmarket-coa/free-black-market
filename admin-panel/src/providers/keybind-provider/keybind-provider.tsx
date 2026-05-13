@@ -1,15 +1,15 @@
 import type { PropsWithChildren} from "react";
 import { useCallback, useMemo, useState } from "react"
 
-import { useShortcuts } from "./hooks"
-import { KeybindContext } from "./keybind-context"
-import type { KeybindContextState, Shortcut } from "./types"
+import { useShortcuts } from "@providers/keybind-provider/hooks"
+import { KeybindContext } from "@providers/keybind-provider/keybind-context"
+import type { KeybindContextState, Shortcut } from "@providers/keybind-provider/types"
 import {
   findFirstPlatformMatch,
   findShortcutIndex,
   getShortcutKeys,
   getShortcutWithDefaultValues,
-} from "./utils"
+} from "@providers/keybind-provider/utils"
 
 type KeybindProviderProps = PropsWithChildren<{
   shortcuts: Shortcut[]

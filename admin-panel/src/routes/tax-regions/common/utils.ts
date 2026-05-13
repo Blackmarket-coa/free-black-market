@@ -1,6 +1,6 @@
 import type { HttpTypes } from "@medusajs/types"
 
-import type { TaxRateRuleTarget } from "./schemas"
+import type { TaxRateRuleTarget } from "@routes/tax-regions/common/schemas"
 
 export const createTaxRulePayload = (
   target: TaxRateRuleTarget

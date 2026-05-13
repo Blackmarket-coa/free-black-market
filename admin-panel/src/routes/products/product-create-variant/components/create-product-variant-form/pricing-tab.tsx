@@ -5,15 +5,15 @@ import type { HttpTypes } from "@medusajs/types"
 import { useTranslation } from "react-i18next"
 import type { z } from "zod"
 
-import type { CreateProductVariantSchema } from "./constants"
-import { useRegions, useStore } from "../../../../../hooks/api"
-import { usePricePreferences } from "../../../../../hooks/api/price-preferences"
-import { useRouteModal } from "../../../../../components/modals"
+import type { CreateProductVariantSchema } from "@routes/products/product-create-variant/components/create-product-variant-form/constants"
+import { useRegions, useStore } from "@hooks/api"
+import { usePricePreferences } from "@hooks/api/price-preferences"
+import { useRouteModal } from "@components/modals"
 import {
   createDataGridHelper,
   createDataGridPriceColumns,
   DataGrid,
-} from "../../../../../components/data-grid"
+} from "@components/data-grid"
 
 type PricingTabProps = {
   form: UseFormReturn<z.infer<typeof CreateProductVariantSchema>>

@@ -1,6 +1,6 @@
-import { SingleColumnPage } from "../../../components/layout/pages"
-import { useExtension } from "../../../providers/extension-provider"
-import { ReturnReasonListTable } from "./components/return-reason-list-table"
+import { SingleColumnPage } from "@components/layout/pages"
+import { useExtension } from "@providers/extension-provider"
+import { ReturnReasonListTable } from "@routes/return-reasons/return-reason-list/components/return-reason-list-table"
 
 export const ReturnReasonList = () => {
   const { getWidgets } = useExtension()

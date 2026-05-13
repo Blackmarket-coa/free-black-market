@@ -6,12 +6,12 @@ import { Link } from "react-router-dom"
 import {
   NoRecords,
   NoResults,
-} from "../../../../../components/common/empty-table-content"
-import { TableFooterSkeleton } from "../../../../../components/common/skeleton"
-import { LocalizedTablePagination } from "../../../../../components/localization/localized-table-pagination"
-import { DataTableOrderBy } from "../../../../../components/table/data-table/data-table-order-by"
-import { DataTableSearch } from "../../../../../components/table/data-table/data-table-search"
-import { TaxOverrideCard } from "../tax-override-card"
+} from "@components/common/empty-table-content"
+import { TableFooterSkeleton } from "@components/common/skeleton"
+import { LocalizedTablePagination } from "@components/localization/localized-table-pagination"
+import { DataTableOrderBy } from "@components/table/data-table/data-table-order-by"
+import { DataTableSearch } from "@components/table/data-table/data-table-search"
+import { TaxOverrideCard } from "@routes/tax-regions/common/components/tax-override-card"
 
 type TaxOverrideTableProps = {
   isPending: boolean

@@ -4,10 +4,10 @@ import { useTranslation } from "react-i18next"
 
 import { Trash } from "@medusajs/icons"
 import { Link, useNavigate } from "react-router-dom"
-import { ActionMenu } from "../../../../../components/common/action-menu"
-import { NoRecords } from "../../../../../components/common/empty-table-content"
-import { Listicle } from "../../../../../components/common/listicle"
-import { useDeleteCustomerAddress } from "../../../../../hooks/api/customers"
+import { ActionMenu } from "@components/common/action-menu"
+import { NoRecords } from "@components/common/empty-table-content"
+import { Listicle } from "@components/common/listicle"
+import { useDeleteCustomerAddress } from "@hooks/api/customers"
 
 type CustomerAddressSectionProps = {
   customer: HttpTypes.AdminCustomer

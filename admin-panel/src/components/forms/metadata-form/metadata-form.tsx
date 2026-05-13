@@ -21,12 +21,12 @@ import {
 import type { FetchError } from "@medusajs/js-sdk"
 import type { ComponentPropsWithoutRef} from "react";
 import { forwardRef } from "react"
-import { ConditionalTooltip } from "../../common/conditional-tooltip"
-import { Form } from "../../common/form"
-import { Skeleton } from "../../common/skeleton"
-import { RouteDrawer, useRouteModal } from "../../modals"
-import { KeyboundForm } from "../../utilities/keybound-form"
-import { useDocumentDirection } from "../../../hooks/use-document-direction"
+import { ConditionalTooltip } from "@components/common/conditional-tooltip"
+import { Form } from "@components/common/form"
+import { Skeleton } from "@components/common/skeleton"
+import { RouteDrawer, useRouteModal } from "@components/modals"
+import { KeyboundForm } from "@components/utilities/keybound-form"
+import { useDocumentDirection } from "@hooks/use-document-direction"
 
 type MetaDataSubmitHook<TRes> = (
   params: { metadata?: Record<string, any> | null },

@@ -1,1 +1,1 @@
-export { Component } from "./page"
+export { Component } from "@routes/onboarding-checklist/page"

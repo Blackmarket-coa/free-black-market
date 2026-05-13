@@ -4,11 +4,11 @@ import { Input, Text } from "@medusajs/ui"
 import type { UseFormReturn } from "react-hook-form"
 import { useTranslation } from "react-i18next"
 
-import { ActionMenu } from "../../../../../components/common/action-menu"
-import { Form } from "../../../../../components/common/form"
-import { Thumbnail } from "../../../../../components/common/thumbnail"
-import { MoneyAmountCell } from "../../../../../components/table/table-cells/common/money-amount-cell"
-import type { CreateExchangeSchemaType } from "./schema"
+import { ActionMenu } from "@components/common/action-menu"
+import { Form } from "@components/common/form"
+import { Thumbnail } from "@components/common/thumbnail"
+import { MoneyAmountCell } from "@components/table/table-cells/common/money-amount-cell"
+import type { CreateExchangeSchemaType } from "@routes/orders/order-create-exchange/components/exchange-create-form/schema"
 
 type ExchangeOutboundItemProps = {
   previewItem: AdminOrderLineItem

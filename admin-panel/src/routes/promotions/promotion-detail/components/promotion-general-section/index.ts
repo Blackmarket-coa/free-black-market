@@ -1,1 +1,1 @@
-export * from "./promotion-general-section.tsx"
+export * from "@routes/promotions/promotion-detail/components/promotion-general-section/promotion-general-section.tsx"

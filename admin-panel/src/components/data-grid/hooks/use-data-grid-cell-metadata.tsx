@@ -1,8 +1,8 @@
 import { useCallback } from "react"
 import type { FieldValues } from "react-hook-form"
-import type { DataGridMatrix } from "../models"
-import type { CellErrorMetadata, CellMetadata, DataGridCoordinates } from "../types"
-import { generateCellId } from "../utils"
+import type { DataGridMatrix } from "@components/data-grid/models"
+import type { CellErrorMetadata, CellMetadata, DataGridCoordinates } from "@components/data-grid/types"
+import { generateCellId } from "@components/data-grid/utils"
 
 type UseDataGridCellMetadataOptions<TData, TFieldValues extends FieldValues> = {
   matrix: DataGridMatrix<TData, TFieldValues>

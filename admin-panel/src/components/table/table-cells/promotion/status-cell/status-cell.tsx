@@ -1,6 +1,6 @@
 import type { HttpTypes } from "@medusajs/types"
-import { getPromotionStatus } from "../../../../../lib/promotions"
-import { StatusCell as StatusCell_ } from "../../common/status-cell"
+import { getPromotionStatus } from "@lib/promotions"
+import { StatusCell as StatusCell_ } from "@components/table/table-cells/common/status-cell"
 
 type PromotionCellProps = {
   promotion: HttpTypes.AdminPromotion

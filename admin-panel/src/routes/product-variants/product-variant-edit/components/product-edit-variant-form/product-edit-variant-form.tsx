@@ -5,17 +5,17 @@ import { useTranslation } from "react-i18next"
 import { z } from "zod"
 
 import type { HttpTypes } from "@medusajs/types"
-import { Form } from "../../../../../components/common/form"
-import { Combobox } from "../../../../../components/inputs/combobox"
-import { CountrySelect } from "../../../../../components/inputs/country-select"
-import { RouteDrawer, useRouteModal } from "../../../../../components/modals"
-import { KeyboundForm } from "../../../../../components/utilities/keybound-form"
-import { useUpdateProductVariant } from "../../../../../hooks/api/products"
+import { Form } from "@components/common/form"
+import { Combobox } from "@components/inputs/combobox"
+import { CountrySelect } from "@components/inputs/country-select"
+import { RouteDrawer, useRouteModal } from "@components/modals"
+import { KeyboundForm } from "@components/utilities/keybound-form"
+import { useUpdateProductVariant } from "@hooks/api/products"
 import {
   transformNullableFormData,
   transformNullableFormNumber,
-} from "../../../../../lib/form-helpers"
-import { optionalInt } from "../../../../../lib/validation"
+} from "@lib/form-helpers"
+import { optionalInt } from "@lib/validation"
 
 type ProductEditVariantFormProps = {
   product: HttpTypes.AdminProduct

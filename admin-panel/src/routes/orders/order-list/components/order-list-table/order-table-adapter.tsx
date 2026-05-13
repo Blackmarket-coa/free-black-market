@@ -1,9 +1,9 @@
 import type { HttpTypes } from "@medusajs/types"
-import type { TableAdapter } from "../../../../../lib/table/table-adapters";
-import { createTableAdapter } from "../../../../../lib/table/table-adapters"
-import { useOrders } from "../../../../../hooks/api/orders"
-import { useOrderTableFilters } from "./use-order-table-filters"
-import { orderColumnAdapter } from "../../../../../lib/table/entity-adapters"
+import type { TableAdapter } from "@lib/table/table-adapters";
+import { createTableAdapter } from "@lib/table/table-adapters"
+import { useOrders } from "@hooks/api/orders"
+import { useOrderTableFilters } from "@routes/orders/order-list/components/order-list-table/use-order-table-filters"
+import { orderColumnAdapter } from "@lib/table/entity-adapters"
 
 /**
  * Create the order table adapter with all order-specific logic

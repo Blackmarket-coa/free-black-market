@@ -4,7 +4,7 @@ import { useTranslation } from "react-i18next"
 import { Link } from "react-router-dom"
 
 import type { ProductVariantDTO } from "@medusajs/types"
-import { Thumbnail } from "../../../../../components/common/thumbnail"
+import { Thumbnail } from "@components/common/thumbnail"
 
 type InventoryItemVariantsSectionProps = {
   variants: ProductVariantDTO[]

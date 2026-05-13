@@ -9,12 +9,12 @@ import type {
 } from "react-hook-form"
 import type {
   DataGridMatrix,
-  DataGridQueryTool} from "../models";
+  DataGridQueryTool} from "@components/data-grid/models";
 import {
   DataGridBulkUpdateCommand,
   DataGridUpdateCommand,
-} from "../models"
-import type { DataGridCoordinates } from "../types"
+} from "@components/data-grid/models"
+import type { DataGridCoordinates } from "@components/data-grid/types"
 
 type UseDataGridKeydownEventOptions<TData, TFieldValues extends FieldValues> = {
   containerRef: React.RefObject<HTMLDivElement>

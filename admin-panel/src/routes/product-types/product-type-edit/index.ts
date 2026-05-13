@@ -1,1 +1,1 @@
-export { ProductTypeEdit as Component } from "./product-type-edit"
+export { ProductTypeEdit as Component } from "@routes/product-types/product-type-edit/product-type-edit"

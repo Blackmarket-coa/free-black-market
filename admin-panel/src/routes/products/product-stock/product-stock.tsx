@@ -5,12 +5,12 @@ import { useTranslation } from "react-i18next"
 import { Await, useLoaderData } from "react-router-dom"
 
 import type { ColumnDef } from "@tanstack/react-table"
-import { ProgressBar } from "../../../components/common/progress-bar"
-import { Skeleton } from "../../../components/common/skeleton"
-import { DataGridSkeleton } from "../../../components/data-grid/components"
-import { RouteFocusModal } from "../../../components/modals"
-import { ProductStockForm } from "./components/product-stock-form"
-import type { productStockLoader } from "./loader"
+import { ProgressBar } from "@components/common/progress-bar"
+import { Skeleton } from "@components/common/skeleton"
+import { DataGridSkeleton } from "@components/data-grid/components"
+import { RouteFocusModal } from "@components/modals"
+import { ProductStockForm } from "@routes/products/product-stock/components/product-stock-form"
+import type { productStockLoader } from "@routes/products/product-stock/loader"
 
 export const ProductStock = () => {
   const { t } = useTranslation()

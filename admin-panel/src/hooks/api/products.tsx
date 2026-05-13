@@ -8,15 +8,15 @@ import {
   useMutation,
   useQuery
 } from "@tanstack/react-query";
-import { sdk } from "../../lib/client";
-import { queryClient } from "../../lib/query-client";
-import { queryKeysFactory } from "../../lib/query-key-factory";
-import { inventoryItemsQueryKeys } from "./inventory.tsx";
-import type { AttributeDTO } from "../../types/index.ts";
+import { sdk } from "@lib/client";
+import { queryClient } from "@lib/query-client";
+import { queryKeysFactory } from "@lib/query-key-factory";
+import { inventoryItemsQueryKeys } from "@hooks/api/inventory.tsx";
+import type { AttributeDTO } from "@custom-types/index.ts";
 import type {
   AdminProductResponse,
   AdminProductUpdate,
-} from "../../types/product/common.ts";
+} from "@custom-types/product/common.ts";
 
 const PRODUCTS_QUERY_KEY = "products" as const;
 export const productsQueryKeys = queryKeysFactory(PRODUCTS_QUERY_KEY);

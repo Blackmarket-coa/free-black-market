@@ -5,10 +5,10 @@ import { Popover as RadixPopover } from "radix-ui"
 import { useState } from "react"
 import { useTranslation } from "react-i18next"
 
-import { useSelectedParams } from "../hooks"
-import { useDataTableFilterContext } from "./context"
-import FilterChip from "./filter-chip"
-import type { IFilter } from "./types"
+import { useSelectedParams } from "@components/table/data-table/hooks"
+import { useDataTableFilterContext } from "@components/table/data-table/data-table-filter/context"
+import FilterChip from "@components/table/data-table/data-table-filter/filter-chip"
+import type { IFilter } from "@components/table/data-table/data-table-filter/types"
 
 interface SelectFilterProps extends IFilter {
   options: { label: string; value: unknown }[]

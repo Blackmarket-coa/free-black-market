@@ -9,7 +9,7 @@ import {
   DataGridSkeleton,
   DataGridTextCell,
   type DataGridRootProps,
-} from "./components"
+} from "@components/data-grid/components"
 
 interface DataGridProps<TData, TFieldValues extends FieldValues = FieldValues>
   extends DataGridRootProps<TData, TFieldValues> {

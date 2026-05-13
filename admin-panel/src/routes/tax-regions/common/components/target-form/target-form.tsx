@@ -14,8 +14,8 @@ import { useSearchParams } from "react-router-dom"
 import {
   StackedDrawer,
   StackedFocusModal,
-} from "../../../../../components/modals"
-import { _DataTable } from "../../../../../components/table/data-table"
+} from "@components/modals"
+import { _DataTable } from "@components/table/data-table"
 import {
   useCollections,
   useCustomerGroups,
@@ -24,14 +24,14 @@ import {
   useProducts,
   useShippingOptions,
   useStockLocations,
-} from "../../../../../hooks/api"
+} from "@hooks/api"
 import {
   useCollectionTableColumns,
   useCustomerGroupTableColumns,
   useProductTableColumns,
   useProductTagTableColumns,
   useProductTypeTableColumns,
-} from "../../../../../hooks/table/columns"
+} from "@hooks/table/columns"
 import {
   useCollectionTableFilters,
   useCustomerGroupTableFilters,
@@ -39,7 +39,7 @@ import {
   useProductTagTableFilters,
   useProductTypeTableFilters,
   useShippingOptionTableFilters,
-} from "../../../../../hooks/table/filters"
+} from "@hooks/table/filters"
 import {
   useCollectionTableQuery,
   useCustomerGroupTableQuery,
@@ -47,11 +47,11 @@ import {
   useProductTagTableQuery,
   useProductTypeTableQuery,
   useShippingOptionTableQuery,
-} from "../../../../../hooks/table/query"
-import { useDataTable } from "../../../../../hooks/use-data-table"
-import { TaxRateRuleReferenceType } from "../../constants"
-import type { TaxRateRuleReference } from "../../schemas"
-import { useShippingOptionTableColumns } from "../../../../../hooks/table/columns/use-shipping-option-table-columns"
+} from "@hooks/table/query"
+import { useDataTable } from "@hooks/use-data-table"
+import { TaxRateRuleReferenceType } from "@routes/tax-regions/common/constants"
+import type { TaxRateRuleReference } from "@routes/tax-regions/common/schemas"
+import { useShippingOptionTableColumns } from "@hooks/table/columns/use-shipping-option-table-columns"
 
 type TargetFormProps = {
   referenceType: TaxRateRuleReferenceType

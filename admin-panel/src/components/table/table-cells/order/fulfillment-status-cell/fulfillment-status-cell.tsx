@@ -2,8 +2,8 @@ import { useTranslation } from "react-i18next"
 
 import type { FulfillmentStatus } from "@medusajs/types"
 
-import { getOrderFulfillmentStatus } from "../../../../../lib/order-helpers"
-import { StatusCell } from "../../common/status-cell"
+import { getOrderFulfillmentStatus } from "@lib/order-helpers"
+import { StatusCell } from "@components/table/table-cells/common/status-cell"
 
 type FulfillmentStatusCellProps = {
   status: FulfillmentStatus

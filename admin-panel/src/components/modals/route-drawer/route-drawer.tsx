@@ -3,10 +3,10 @@ import type { PropsWithChildren} from "react";
 import { useEffect, useState } from "react"
 import type { Path} from "react-router-dom";
 import { useNavigate } from "react-router-dom"
-import { useStateAwareTo } from "../hooks/use-state-aware-to"
-import { RouteModalForm } from "../route-modal-form"
-import { RouteModalProvider } from "../route-modal-provider/route-provider"
-import { StackedModalProvider } from "../stacked-modal-provider"
+import { useStateAwareTo } from "@components/modals/hooks/use-state-aware-to"
+import { RouteModalForm } from "@components/modals/route-modal-form"
+import { RouteModalProvider } from "@components/modals/route-modal-provider/route-provider"
+import { StackedModalProvider } from "@components/modals/stacked-modal-provider"
 
 type RouteDrawerProps = PropsWithChildren<{
   prev?: string | Partial<Path>

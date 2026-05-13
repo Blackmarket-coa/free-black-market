@@ -6,7 +6,7 @@ import {
   useRef,
 } from "react"
 import { useTranslation } from "react-i18next"
-import { countries } from "../../../lib/data/countries"
+import { countries } from "@lib/data/countries"
 import { Select } from "@medusajs/ui"
 
 export const CountrySelect = forwardRef<

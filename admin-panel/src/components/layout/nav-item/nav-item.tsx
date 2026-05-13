@@ -10,8 +10,8 @@ import {
 } from "react"
 import { useTranslation } from "react-i18next"
 import { NavLink, useLocation } from "react-router-dom"
-import { useGlobalShortcuts } from "../../../providers/keybind-provider/hooks"
-import { ConditionalTooltip } from "../../common/conditional-tooltip"
+import { useGlobalShortcuts } from "@providers/keybind-provider/hooks"
+import { ConditionalTooltip } from "@components/common/conditional-tooltip"
 
 type ItemType = "core" | "extension" | "setting"
 

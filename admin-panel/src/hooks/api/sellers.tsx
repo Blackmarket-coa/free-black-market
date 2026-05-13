@@ -7,11 +7,11 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 
-import { sdk } from "../../lib/client";
-import { queryKeysFactory } from "../../lib/query-key-factory";
-import type { VendorSeller } from "../../types";
+import { sdk } from "@lib/client";
+import { queryKeysFactory } from "@lib/query-key-factory";
+import type { VendorSeller } from "@/types";
 import type { AdminCustomerGroup, AdminOrder, AdminProduct } from "@medusajs/types";
-import type { OrderSet } from "../../types/order/common";
+import type { OrderSet } from "@custom-types/order/common";
 
 export const sellerQueryKeys = queryKeysFactory("seller");
 

@@ -18,29 +18,29 @@ import { useForm, useWatch } from "react-hook-form"
 import { useTranslation } from "react-i18next"
 import * as zod from "zod"
 
-import type { StaticCountry } from "../../../../../lib/data/countries"
+import type { StaticCountry } from "@lib/data/countries"
 
-import { Form } from "../../../../../components/common/form"
-import { Combobox } from "../../../../../components/inputs/combobox"
+import { Form } from "@components/common/form"
+import { Combobox } from "@components/inputs/combobox"
 import {
   RouteFocusModal,
   StackedFocusModal,
   useRouteModal,
   useStackedModal,
-} from "../../../../../components/modals"
-import { _DataTable } from "../../../../../components/table/data-table"
-import { KeyboundForm } from "../../../../../components/utilities/keybound-form"
-import { useCreateRegion } from "../../../../../hooks/api/regions"
-import { useDataTable } from "../../../../../hooks/use-data-table"
-import { countries as staticCountries } from "../../../../../lib/data/countries"
-import type { CurrencyInfo } from "../../../../../lib/data/currencies"
-import { formatProvider } from "../../../../../lib/format-provider"
-import { useCountries } from "../../../common/hooks/use-countries"
-import { useCountryTableColumns } from "../../../common/hooks/use-country-table-columns"
-import { useCountryTableQuery } from "../../../common/hooks/use-country-table-query"
-import { useDocumentDirection } from "../../../../../hooks/use-document-direction"
-import { useComboboxData } from "../../../../../hooks/use-combobox-data"
-import { sdk } from "../../../../../lib/client"
+} from "@components/modals"
+import { _DataTable } from "@components/table/data-table"
+import { KeyboundForm } from "@components/utilities/keybound-form"
+import { useCreateRegion } from "@hooks/api/regions"
+import { useDataTable } from "@hooks/use-data-table"
+import { countries as staticCountries } from "@lib/data/countries"
+import type { CurrencyInfo } from "@lib/data/currencies"
+import { formatProvider } from "@lib/format-provider"
+import { useCountries } from "@routes/regions/common/hooks/use-countries"
+import { useCountryTableColumns } from "@routes/regions/common/hooks/use-country-table-columns"
+import { useCountryTableQuery } from "@routes/regions/common/hooks/use-country-table-query"
+import { useDocumentDirection } from "@hooks/use-document-direction"
+import { useComboboxData } from "@hooks/use-combobox-data"
+import { sdk } from "@lib/client"
 
 type CreateRegionFormProps = {
   currencies: CurrencyInfo[]

@@ -4,8 +4,8 @@ import { Checkbox } from "@medusajs/ui"
 import { createColumnHelper } from "@tanstack/react-table"
 import { useMemo } from "react"
 import { useTranslation } from "react-i18next"
-import { PlaceholderCell } from "../../../../components/table/table-cells/common/placeholder-cell"
-import { InventoryActions } from "./inventory-actions"
+import { PlaceholderCell } from "@components/table/table-cells/common/placeholder-cell"
+import { InventoryActions } from "@routes/inventory/inventory-list/components/inventory-actions"
 
 /**
  * Adds missing properties to the InventoryItemDTO type.

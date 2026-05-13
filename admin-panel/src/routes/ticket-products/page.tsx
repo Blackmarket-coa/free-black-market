@@ -15,9 +15,9 @@ import {
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { Link } from "react-router-dom"
 import React, { useState, useMemo } from "react"
-import { sdk } from "../../lib/sdk"
-import { CreateTicketProductModal } from "../../components/create-ticket-product-modal"
-import type { TicketProduct } from "../../types"
+import { sdk } from "@lib/sdk"
+import { CreateTicketProductModal } from "@components/create-ticket-product-modal"
+import type { TicketProduct } from "@/types"
 
 const columnHelper = createDataTableColumnHelper<TicketProduct>()
 

@@ -11,28 +11,28 @@ import { useFieldArray } from "react-hook-form"
 import { useTranslation } from "react-i18next"
 
 import type { HttpTypes } from "@medusajs/types"
-import { Form } from "../../../../../components/common/form"
-import { Combobox } from "../../../../../components/inputs/combobox"
+import { Form } from "@components/common/form"
+import { Combobox } from "@components/inputs/combobox"
 import {
   RouteFocusModal,
   StackedFocusModal,
   useStackedModal,
-} from "../../../../../components/modals"
+} from "@components/modals"
 import {
   useAddClaimOutboundItems,
   useAddClaimOutboundShipping,
   useDeleteClaimOutboundShipping,
   useRemoveClaimOutboundItem,
   useUpdateClaimOutboundItems,
-} from "../../../../../hooks/api/claims"
-import { sdk } from "../../../../../lib/client"
-import { OutboundShippingPlaceholder } from "../../../common/placeholders"
-import { AddClaimOutboundItemsTable } from "../add-claim-outbound-items-table"
-import { ClaimOutboundItem } from "./claim-outbound-item"
-import { ItemPlaceholder } from "./item-placeholder"
-import type { CreateClaimSchemaType } from "./schema"
-import { useOrderShippingOptions } from "../../../../../hooks/api/orders"
-import { getFormattedShippingOptionLocationName } from "../../../../../lib/shipping-options"
+} from "@hooks/api/claims"
+import { sdk } from "@lib/client"
+import { OutboundShippingPlaceholder } from "@routes/orders/common/placeholders"
+import { AddClaimOutboundItemsTable } from "@routes/orders/order-create-claim/components/add-claim-outbound-items-table"
+import { ClaimOutboundItem } from "@routes/orders/order-create-claim/components/claim-create-form/claim-outbound-item"
+import { ItemPlaceholder } from "@routes/orders/order-create-claim/components/claim-create-form/item-placeholder"
+import type { CreateClaimSchemaType } from "@routes/orders/order-create-claim/components/claim-create-form/schema"
+import { useOrderShippingOptions } from "@hooks/api/orders"
+import { getFormattedShippingOptionLocationName } from "@lib/shipping-options"
 
 type ClaimOutboundSectionProps = {
   order: AdminOrder

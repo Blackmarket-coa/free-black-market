@@ -3,8 +3,8 @@ import { createColumnHelper } from "@tanstack/react-table"
 import { useMemo } from "react"
 import { useTranslation } from "react-i18next"
 
-import { DateCell } from "../../../components/table/table-cells/common/date-cell"
-import { TextCell } from "../../../components/table/table-cells/common/text-cell"
+import { DateCell } from "@components/table/table-cells/common/date-cell"
+import { TextCell } from "@components/table/table-cells/common/text-cell"
 
 const columnHelper = createColumnHelper<HttpTypes.AdminShippingOptionType>()
 

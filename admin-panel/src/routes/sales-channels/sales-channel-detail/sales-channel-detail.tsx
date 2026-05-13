@@ -1,12 +1,12 @@
 import { useLoaderData, useParams } from "react-router-dom"
 
-import { SingleColumnPageSkeleton } from "../../../components/common/skeleton"
-import { SingleColumnPage } from "../../../components/layout/pages"
-import { useSalesChannel } from "../../../hooks/api/sales-channels"
-import { useExtension } from "../../../providers/extension-provider"
-import { SalesChannelGeneralSection } from "./components/sales-channel-general-section"
-import { SalesChannelProductSection } from "./components/sales-channel-product-section"
-import type { salesChannelLoader } from "./loader"
+import { SingleColumnPageSkeleton } from "@components/common/skeleton"
+import { SingleColumnPage } from "@components/layout/pages"
+import { useSalesChannel } from "@hooks/api/sales-channels"
+import { useExtension } from "@providers/extension-provider"
+import { SalesChannelGeneralSection } from "@routes/sales-channels/sales-channel-detail/components/sales-channel-general-section"
+import { SalesChannelProductSection } from "@routes/sales-channels/sales-channel-detail/components/sales-channel-product-section"
+import type { salesChannelLoader } from "@routes/sales-channels/sales-channel-detail/loader"
 
 export const SalesChannelDetail = () => {
   const initialData = useLoaderData() as Awaited<

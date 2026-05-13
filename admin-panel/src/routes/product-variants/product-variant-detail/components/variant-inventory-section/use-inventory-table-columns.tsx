@@ -1,7 +1,7 @@
 import type { HttpTypes } from "@medusajs/types"
 
-import { InventoryActions } from "./inventory-actions"
-import { PlaceholderCell } from "../../../../../components/table/table-cells/common/placeholder-cell"
+import { InventoryActions } from "@routes/product-variants/product-variant-detail/components/variant-inventory-section/inventory-actions"
+import { PlaceholderCell } from "@components/table/table-cells/common/placeholder-cell"
 import { createColumnHelper } from "@tanstack/react-table"
 import { useMemo } from "react"
 import { useTranslation } from "react-i18next"

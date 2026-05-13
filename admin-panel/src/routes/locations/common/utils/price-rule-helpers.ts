@@ -1,5 +1,5 @@
-import { castNumber } from "../../../../lib/cast-number"
-import { ITEM_TOTAL_ATTRIBUTE } from "../constants"
+import { castNumber } from "@lib/cast-number"
+import { ITEM_TOTAL_ATTRIBUTE } from "@routes/locations/common/constants"
 
 type PriceRuleOperator = "gt" | "lt" | "eq" | "lte" | "gte"
 

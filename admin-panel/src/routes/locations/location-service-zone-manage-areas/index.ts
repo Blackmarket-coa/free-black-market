@@ -1,1 +1,1 @@
-export { LocationServiceZoneManageAreas as Component } from "./location-service-zone-manage-areas"
+export { LocationServiceZoneManageAreas as Component } from "@routes/locations/location-service-zone-manage-areas/location-service-zone-manage-areas"

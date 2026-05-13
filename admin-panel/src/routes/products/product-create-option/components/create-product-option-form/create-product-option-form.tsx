@@ -5,11 +5,11 @@ import { useTranslation } from "react-i18next"
 import { z } from "zod"
 
 import type { HttpTypes } from "@medusajs/types"
-import { Form } from "../../../../../components/common/form"
-import { ChipInput } from "../../../../../components/inputs/chip-input"
-import { RouteDrawer, useRouteModal } from "../../../../../components/modals"
-import { KeyboundForm } from "../../../../../components/utilities/keybound-form"
-import { useCreateProductOption } from "../../../../../hooks/api/products"
+import { Form } from "@components/common/form"
+import { ChipInput } from "@components/inputs/chip-input"
+import { RouteDrawer, useRouteModal } from "@components/modals"
+import { KeyboundForm } from "@components/utilities/keybound-form"
+import { useCreateProductOption } from "@hooks/api/products"
 
 type EditProductOptionsFormProps = {
   product: HttpTypes.AdminProduct

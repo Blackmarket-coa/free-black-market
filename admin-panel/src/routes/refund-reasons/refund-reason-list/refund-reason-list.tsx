@@ -1,6 +1,6 @@
-import { SingleColumnPage } from "../../../components/layout/pages"
-import { useExtension } from "../../../providers/extension-provider"
-import { RefundReasonListTable } from "./components/refund-reason-list-table"
+import { SingleColumnPage } from "@components/layout/pages"
+import { useExtension } from "@providers/extension-provider"
+import { RefundReasonListTable } from "@routes/refund-reasons/refund-reason-list/components/refund-reason-list-table"
 
 export const RefundReasonList = () => {
   const { getWidgets } = useExtension()

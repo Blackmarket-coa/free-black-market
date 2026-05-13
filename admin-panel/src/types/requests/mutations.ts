@@ -1,7 +1,7 @@
 // Canonical RequestStatus lives in ./common.ts (must match backend enum).
 // Re-exporting here to keep this module's public surface stable for
 // existing imports.
-import type { RequestStatus } from "./common"
+import type { RequestStatus } from "@custom-types/requests/common"
 export type { RequestStatus }
 
 export type CreateRequestDTO = {

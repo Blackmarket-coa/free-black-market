@@ -1,7 +1,7 @@
 import type { PropsWithChildren} from "react";
 import { useEffect, useState } from "react"
 import { useLocation } from "react-router-dom"
-import { SidebarContext } from "./sidebar-context"
+import { SidebarContext } from "@providers/sidebar-provider/sidebar-context"
 
 export const SidebarProvider = ({ children }: PropsWithChildren) => {
   const [desktop, setDesktop] = useState(true)

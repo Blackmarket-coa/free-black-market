@@ -1,8 +1,8 @@
 import { useParams } from "react-router-dom"
 
-import { useInventoryItem, useUpdateInventoryItem } from "../../../hooks/api"
-import { MetadataForm } from "../../../components/forms/metadata-form"
-import { RouteDrawer } from "../../../components/modals"
+import { useInventoryItem, useUpdateInventoryItem } from "@hooks/api"
+import { MetadataForm } from "@components/forms/metadata-form"
+import { RouteDrawer } from "@components/modals"
 
 export const InventoryItemMetadata = () => {
   const { id } = useParams()

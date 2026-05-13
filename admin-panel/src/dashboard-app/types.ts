@@ -9,7 +9,7 @@ import type {
 import type { ComponentType } from "react"
 import type { LoaderFunction } from "react-router-dom"
 import type { ZodFirstPartySchemaTypes } from "zod"
-import type { INavItem } from "../components/layout/nav-item"
+import type { INavItem } from "@components/layout/nav-item"
 
 export type RouteExtension = {
   Component: ComponentType

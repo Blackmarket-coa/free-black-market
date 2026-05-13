@@ -17,17 +17,17 @@ import { keepPreviousData } from "@tanstack/react-query"
 import { useTranslation } from "react-i18next"
 import { Link } from "react-router-dom"
 
-import { ActionMenu } from "../../../../../components/common/action-menu"
-import { _DataTable } from "../../../../../components/table/data-table"
-import { useBatchCustomerCustomerGroups } from "../../../../../hooks/api"
+import { ActionMenu } from "@components/common/action-menu"
+import { _DataTable } from "@components/table/data-table"
+import { useBatchCustomerCustomerGroups } from "@hooks/api"
 import {
   useCustomerGroups,
   useRemoveCustomersFromGroup,
-} from "../../../../../hooks/api/customer-groups"
-import { useCustomerGroupTableColumns } from "../../../../../hooks/table/columns/use-customer-group-table-columns"
-import { useCustomerGroupTableFilters } from "../../../../../hooks/table/filters/use-customer-group-table-filters"
-import { useCustomerGroupTableQuery } from "../../../../../hooks/table/query/use-customer-group-table-query"
-import { useDataTable } from "../../../../../hooks/use-data-table"
+} from "@hooks/api/customer-groups"
+import { useCustomerGroupTableColumns } from "@hooks/table/columns/use-customer-group-table-columns"
+import { useCustomerGroupTableFilters } from "@hooks/table/filters/use-customer-group-table-filters"
+import { useCustomerGroupTableQuery } from "@hooks/table/query/use-customer-group-table-query"
+import { useDataTable } from "@hooks/use-data-table"
 
 type CustomerGroupSectionProps = {
   customer: HttpTypes.AdminCustomer

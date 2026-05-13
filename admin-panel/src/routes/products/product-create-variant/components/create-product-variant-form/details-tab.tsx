@@ -6,9 +6,9 @@ import type { z } from "zod"
 
 import type { HttpTypes } from "@medusajs/types"
 
-import { Form } from "../../../../../components/common/form"
-import { Combobox } from "../../../../../components/inputs/combobox"
-import type { CreateProductVariantSchema } from "./constants"
+import { Form } from "@components/common/form"
+import { Combobox } from "@components/inputs/combobox"
+import type { CreateProductVariantSchema } from "@routes/products/product-create-variant/components/create-product-variant-form/constants"
 
 type DetailsTabProps = {
   product: HttpTypes.AdminProduct

@@ -28,26 +28,26 @@ import { useEffect, useMemo, useState } from "react"
 import { useForm, useWatch } from "react-hook-form"
 import { Trans, useTranslation } from "react-i18next"
 import type { z } from "zod"
-import { Form } from "../../../../../components/common/form"
-import { DeprecatedPercentageInput } from "../../../../../components/inputs/percentage-input"
+import { Form } from "@components/common/form"
+import { DeprecatedPercentageInput } from "@components/inputs/percentage-input"
 import {
   RouteFocusModal,
   useRouteModal,
-} from "../../../../../components/modals"
-import { KeyboundForm } from "../../../../../components/utilities/keybound-form"
-import { useCampaigns } from "../../../../../hooks/api/campaigns"
-import { useCreatePromotion } from "../../../../../hooks/api/promotions"
+} from "@components/modals"
+import { KeyboundForm } from "@components/utilities/keybound-form"
+import { useCampaigns } from "@hooks/api/campaigns"
+import { useCreatePromotion } from "@hooks/api/promotions"
 import {
   currencies,
   getCurrencySymbol,
-} from "../../../../../lib/data/currencies"
-import { DEFAULT_CAMPAIGN_VALUES } from "../../../../campaigns/common/constants"
-import { RulesFormField } from "../../../common/edit-rules/components/rules-form-field"
-import { AddCampaignPromotionFields } from "../../../promotion-add-campaign/components/add-campaign-promotion-form"
-import { Tab } from "./constants"
-import { CreatePromotionSchema } from "./form-schema"
-import { templates } from "./templates"
-import { useDocumentDirection } from "../../../../../hooks/use-document-direction"
+} from "@lib/data/currencies"
+import { DEFAULT_CAMPAIGN_VALUES } from "@routes/campaigns/common/constants"
+import { RulesFormField } from "@routes/promotions/common/edit-rules/components/rules-form-field"
+import { AddCampaignPromotionFields } from "@routes/promotions/promotion-add-campaign/components/add-campaign-promotion-form"
+import { Tab } from "@routes/promotions/promotion-create/components/create-promotion-form/constants"
+import { CreatePromotionSchema } from "@routes/promotions/promotion-create/components/create-promotion-form/form-schema"
+import { templates } from "@routes/promotions/promotion-create/components/create-promotion-form/templates"
+import { useDocumentDirection } from "@hooks/use-document-direction"
 
 const defaultValues = {
   campaign_id: undefined,

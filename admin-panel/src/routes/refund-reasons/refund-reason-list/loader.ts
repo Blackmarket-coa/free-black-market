@@ -1,6 +1,6 @@
-import { refundReasonsQueryKeys } from "../../../hooks/api"
-import { sdk } from "../../../lib/client"
-import { queryClient } from "../../../lib/query-client"
+import { refundReasonsQueryKeys } from "@hooks/api"
+import { sdk } from "@lib/client"
+import { queryClient } from "@lib/query-client"
 
 const refundReasonListQuery = () => ({
   queryKey: refundReasonsQueryKeys.list(),

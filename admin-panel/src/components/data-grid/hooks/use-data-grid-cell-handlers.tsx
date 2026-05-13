@@ -1,9 +1,9 @@
 import type { FocusEvent, MouseEvent} from "react";
 import { useCallback } from "react"
 import type { FieldValues, UseFormSetValue } from "react-hook-form"
-import type { DataGridMatrix} from "../models";
-import { DataGridUpdateCommand } from "../models"
-import type { DataGridCoordinates } from "../types"
+import type { DataGridMatrix} from "@components/data-grid/models";
+import { DataGridUpdateCommand } from "@components/data-grid/models"
+import type { DataGridCoordinates } from "@components/data-grid/types"
 
 type UseDataGridCellHandlersOptions<TData, TFieldValues extends FieldValues> = {
   matrix: DataGridMatrix<TData, TFieldValues>

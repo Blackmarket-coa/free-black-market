@@ -4,10 +4,10 @@ import type { z } from "zod"
 
 import type { HttpTypes } from "@medusajs/types"
 import type { Control } from "react-hook-form"
-import type { AddressSchema } from "../../../lib/schemas"
-import { Form } from "../../common/form"
-import { CountrySelect } from "../../inputs/country-select"
-import { useDocumentDirection } from "../../../hooks/use-document-direction"
+import type { AddressSchema } from "@lib/schemas"
+import { Form } from "@components/common/form"
+import { CountrySelect } from "@components/inputs/country-select"
+import { useDocumentDirection } from "@hooks/use-document-direction"
 
 type AddressFieldValues = z.infer<typeof AddressSchema>
 

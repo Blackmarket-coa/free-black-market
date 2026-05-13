@@ -3,9 +3,9 @@ import { useParams } from "react-router-dom"
 import {
   useReservationItem,
   useUpdateReservationItem,
-} from "../../../hooks/api"
-import { MetadataForm } from "../../../components/forms/metadata-form"
-import { RouteDrawer } from "../../../components/modals"
+} from "@hooks/api"
+import { MetadataForm } from "@components/forms/metadata-form"
+import { RouteDrawer } from "@components/modals"
 
 export const ReservationMetadata = () => {
   const { id } = useParams()

@@ -14,7 +14,7 @@ import { format } from "date-fns";
 import { EllipsisHorizontal } from "@medusajs/icons";
 import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "@medusajs/ui";
-import type { AttributeDTO } from "../../../../types";
+import type { AttributeDTO } from "@/types";
 
 type PossibleValue = {
   id: string;

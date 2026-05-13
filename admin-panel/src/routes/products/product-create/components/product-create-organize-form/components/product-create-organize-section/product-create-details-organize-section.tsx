@@ -3,15 +3,15 @@ import type { UseFormReturn} from "react-hook-form";
 import { useFieldArray } from "react-hook-form"
 import { Trans, useTranslation } from "react-i18next"
 
-import { ChipGroup } from "../../../../../../../components/common/chip-group"
-import { Form } from "../../../../../../../components/common/form"
-import { SwitchBox } from "../../../../../../../components/common/switch-box"
-import { Combobox } from "../../../../../../../components/inputs/combobox"
-import { StackedFocusModal } from "../../../../../../../components/modals"
-import { useComboboxData } from "../../../../../../../hooks/use-combobox-data"
-import { sdk } from "../../../../../../../lib/client"
-import { CategoryCombobox } from "../../../../../common/components/category-combobox"
-import type { ProductCreateSchemaType } from "../../../../types"
+import { ChipGroup } from "@components/common/chip-group"
+import { Form } from "@components/common/form"
+import { SwitchBox } from "@components/common/switch-box"
+import { Combobox } from "@components/inputs/combobox"
+import { StackedFocusModal } from "@components/modals"
+import { useComboboxData } from "@hooks/use-combobox-data"
+import { sdk } from "@lib/client"
+import { CategoryCombobox } from "@routes/products/common/components/category-combobox"
+import type { ProductCreateSchemaType } from "@routes/products/product-create/types"
 
 type ProductCreateOrganizationSectionProps = {
   form: UseFormReturn<ProductCreateSchemaType>

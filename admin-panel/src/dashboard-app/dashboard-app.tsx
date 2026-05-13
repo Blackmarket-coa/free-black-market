@@ -14,8 +14,8 @@ import {
   createBrowserRouter,
   RouterProvider,
 } from "react-router-dom"
-import type { INavItem } from "../components/layout/nav-item"
-import { Providers } from "../providers"
+import type { INavItem } from "@components/layout/nav-item"
+import { Providers } from "@/providers"
 import { getRouteMap } from "./routes/get-route.map"
 import { createRouteMap, getRouteExtensions } from "./routes/utils"
 import type {

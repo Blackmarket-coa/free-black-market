@@ -2,8 +2,8 @@ import type React from "react";
 import { useState, useEffect } from "react";
 import { Prompt } from "@medusajs/ui";
 import type { AdminProductCategory } from "@medusajs/types";
-import MultiSelectCategory from "../../attribute-create/components/MultiSelectCategory";
-import { sdk } from "../../../../lib/client";
+import MultiSelectCategory from "@routes/attributes/attribute-create/components/MultiSelectCategory";
+import { sdk } from "@lib/client";
 
 interface CategorySelectionModalProps {
   open: boolean;

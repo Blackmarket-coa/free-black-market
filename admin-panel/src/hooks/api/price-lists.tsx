@@ -8,11 +8,11 @@ import {
   useMutation,
   useQuery,
 } from "@tanstack/react-query"
-import { sdk } from "../../lib/client"
-import { queryClient } from "../../lib/query-client"
-import { queryKeysFactory } from "../../lib/query-key-factory"
-import { customerGroupsQueryKeys } from "./customer-groups"
-import { productsQueryKeys } from "./products"
+import { sdk } from "@lib/client"
+import { queryClient } from "@lib/query-client"
+import { queryKeysFactory } from "@lib/query-key-factory"
+import { customerGroupsQueryKeys } from "@hooks/api/customer-groups"
+import { productsQueryKeys } from "@hooks/api/products"
 
 const PRICE_LISTS_QUERY_KEY = "price-lists" as const
 export const priceListsQueryKeys = queryKeysFactory(PRICE_LISTS_QUERY_KEY)

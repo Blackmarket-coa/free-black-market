@@ -1,12 +1,12 @@
 import type { UseMutationOptions } from "@tanstack/react-query";
 import { useMutation } from "@tanstack/react-query"
 
-import { queryKeysFactory } from "../../lib/query-key-factory"
+import { queryKeysFactory } from "@lib/query-key-factory"
 
 import type { HttpTypes } from "@medusajs/types"
-import { sdk } from "../../lib/client"
-import { queryClient } from "../../lib/query-client"
-import { ordersQueryKeys } from "./orders"
+import { sdk } from "@lib/client"
+import { queryClient } from "@lib/query-client"
+import { ordersQueryKeys } from "@hooks/api/orders"
 import type { FetchError } from "@medusajs/js-sdk"
 
 const FULFILLMENTS_QUERY_KEY = "fulfillments" as const

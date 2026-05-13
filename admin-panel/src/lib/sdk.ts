@@ -15,4 +15,4 @@ export const sdk = new Medusa({
 })
 
 
-export { phase1ModuleFlags } from "./phase0-feature-flags"
+export { phase1ModuleFlags } from "@lib/phase0-feature-flags"

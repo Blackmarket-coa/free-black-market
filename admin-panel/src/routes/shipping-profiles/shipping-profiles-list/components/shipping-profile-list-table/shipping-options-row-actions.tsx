@@ -3,8 +3,8 @@ import type { AdminShippingProfileResponse } from "@medusajs/types"
 import { toast, usePrompt } from "@medusajs/ui"
 import { useTranslation } from "react-i18next"
 
-import { ActionMenu } from "../../../../../components/common/action-menu"
-import { useDeleteShippingProfile } from "../../../../../hooks/api/shipping-profiles"
+import { ActionMenu } from "@components/common/action-menu"
+import { useDeleteShippingProfile } from "@hooks/api/shipping-profiles"
 
 export const ShippingOptionsRowActions = ({
   profile,

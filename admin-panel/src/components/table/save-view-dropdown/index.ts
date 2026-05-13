@@ -1,1 +1,1 @@
-export { SaveViewDropdown } from "./save-view-dropdown"
+export { SaveViewDropdown } from "@components/table/save-view-dropdown/save-view-dropdown"

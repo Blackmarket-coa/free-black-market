@@ -1,8 +1,8 @@
 import { useParams } from "react-router-dom"
 
-import { useTaxRegion, useUpdateTaxRegion } from "../../../hooks/api"
-import { MetadataForm } from "../../../components/forms/metadata-form"
-import { RouteDrawer } from "../../../components/modals"
+import { useTaxRegion, useUpdateTaxRegion } from "@hooks/api"
+import { MetadataForm } from "@components/forms/metadata-form"
+import { RouteDrawer } from "@components/modals"
 
 export const TaxRegionMetadata = () => {
   const { id } = useParams()

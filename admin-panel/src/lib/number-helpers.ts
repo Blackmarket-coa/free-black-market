@@ -1,4 +1,4 @@
-import { currencies } from "./data/currencies";
+import { currencies } from "@lib/data/currencies";
 
 /**
  * Gets the number of decimal places in a number

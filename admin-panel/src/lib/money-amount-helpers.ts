@@ -1,4 +1,4 @@
-import { currencies } from "./data/currencies"
+import { currencies } from "@lib/data/currencies"
 
 export const getDecimalDigits = (currency: string) => {
   return currencies[currency.toUpperCase()]?.decimal_digits ?? 0

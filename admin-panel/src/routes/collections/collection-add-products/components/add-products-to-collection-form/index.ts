@@ -1,1 +1,1 @@
-export * from "./add-products-to-collection-form"
+export * from "@routes/collections/collection-add-products/components/add-products-to-collection-form/add-products-to-collection-form"

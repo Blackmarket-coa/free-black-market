@@ -2,7 +2,7 @@ import fs from "fs"
 import path from "path"
 import { describe, expect, test } from "vitest"
 
-import schema from "../$schema.json"
+import schema from "@/i18n/translations/$schema.json"
 
 const translationsDir = path.join(__dirname, "..")
 

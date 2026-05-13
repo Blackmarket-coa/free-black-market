@@ -1,1 +1,1 @@
-export * from "./json-view-section"
+export * from "@components/common/json-view-section/json-view-section"

@@ -1,7 +1,7 @@
 import { Button, DropdownMenu } from "@medusajs/ui"
 import type { ReactNode } from "react"
 import { useSearchParams } from "react-router-dom"
-import { useDocumentDirection } from "../../../hooks/use-document-direction"
+import { useDocumentDirection } from "@hooks/use-document-direction"
 
 type FilterGroupProps = {
   filters: {

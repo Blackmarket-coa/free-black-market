@@ -2,12 +2,12 @@ import type { OnChangeFn, RowSelectionState } from "@tanstack/react-table"
 import { useState } from "react"
 
 import { useTranslation } from "react-i18next"
-import { _DataTable } from "../../../../../components/table/data-table"
-import { useVariants } from "../../../../../hooks/api"
-import { useDataTable } from "../../../../../hooks/use-data-table"
-import { useClaimOutboundItemTableColumns } from "./use-claim-outbound-item-table-columns"
-import { useClaimOutboundItemTableFilters } from "./use-claim-outbound-item-table-filters"
-import { useClaimOutboundItemTableQuery } from "./use-claim-outbound-item-table-query"
+import { _DataTable } from "@components/table/data-table"
+import { useVariants } from "@hooks/api"
+import { useDataTable } from "@hooks/use-data-table"
+import { useClaimOutboundItemTableColumns } from "@routes/orders/order-create-claim/components/add-claim-outbound-items-table/use-claim-outbound-item-table-columns"
+import { useClaimOutboundItemTableFilters } from "@routes/orders/order-create-claim/components/add-claim-outbound-items-table/use-claim-outbound-item-table-filters"
+import { useClaimOutboundItemTableQuery } from "@routes/orders/order-create-claim/components/add-claim-outbound-items-table/use-claim-outbound-item-table-query"
 
 const PAGE_SIZE = 50
 const PREFIX = "rit"

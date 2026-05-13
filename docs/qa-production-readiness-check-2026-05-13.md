@@ -8,10 +8,10 @@ Bar: **v1.0.0 GA** — block on every row tagged `Target = v1.0.0` in
 
 **Verdict: HOLD for v1.0.0 GA.** Materially closer than the prior pass —
 10 of the 11 originally-tagged `v1.0.0` rows are now done (SD-1..SD-5,
-LR-5, QA-1, TD-3, **LR-3 fully cleared**, plus the first two LR-1
-ratchet steps and the TI-1 in-source fix). One `continue-on-error` flag
-remains on (the backend integration-test step). Both typecheck flags
-(storefront *and* admin-panel) now fail-fast.
+LR-5, QA-1, TD-3, **LR-3 fully cleared**, **LR-1 steps 1+2+3 landed**
+(7000 → 1000), plus the TI-1 in-source fix). One `continue-on-error`
+flag remains on (the backend integration-test step). Both typecheck
+flags (storefront *and* admin-panel) now fail-fast.
 
 What still blocks a clean v1.0.0 cut after this PR:
 
@@ -36,10 +36,17 @@ What still blocks a clean v1.0.0 cut after this PR:
    (`.github/workflows/ci.yml:409`) remains `continue-on-error: true`
    until a green CI run against a live Postgres confirms the migration
    graph end-to-end; flip in a follow-up.
-3. **LR-1 steps 3-4** — admin-panel ESLint cap is now 4000 (down from
-   7000; current count 3,985). Steps 3 (2000) and 4 (0) are still open;
-   step 3 is blocked by 3,077 `no-restricted-imports` warnings that need
-   either a mass `../` → `@/` path-alias rewrite or rule relaxation.
+3. **LR-1 step 4** — admin-panel ESLint cap is now **1000** (down from
+   7000; current count **912**). Step 3 landed this pass: a codemod at
+   `admin-panel/scripts/rewrite-imports-to-aliases.mjs` rewrote 4,508
+   relative imports across 980 files to the TS path aliases declared in
+   `tsconfig.json`. Typecheck still 0 errors; `vite build` passes. The
+   residual 912 warnings are dominated by **681
+   `@typescript-eslint/no-explicit-any`** (most are load-bearing casts
+   around Medusa SDK type drift added during LR-3), 82
+   `react-hooks/exhaustive-deps`, 29 non-null-asserted optional chains,
+   and ~120 small clusters. Step 4 (→ 0) needs each `any` cast to be
+   re-typed properly without regressing LR-3.
 
 Until TI-1 CI-side validation lands, the one remaining
 `continue-on-error: true` flag in `.github/workflows/ci.yml` must stay.
@@ -113,7 +120,7 @@ Source: `docs/PRODUCTION_READINESS.md` §"Quality gates" and
 
 | Gate | Workflow | Status | Notes |
 |---|---|---|---|
-| Lint (4 apps + backend) | `ci.yml` | green | admin-panel runs with `--max-warnings 4000` (LR-1 steps 1+2; was 7000 pre-PR; current count 3,985); other apps zero-warning |
+| Lint (4 apps + backend) | `ci.yml` | green | admin-panel runs with `--max-warnings 1000` (LR-1 steps 1+2+3; was 7000 pre-branch; current count 912); other apps zero-warning |
 | Typecheck — admin-panel | `ci.yml` (~`:181`) | **green (fail-fast)** | `continue-on-error: true` removed this pass; `pnpm typecheck` passes after pass 10 cleared the residual 164 errors (LR-3 done) |
 | Typecheck — storefront | `ci.yml:64` | **green (fail-fast)** | `continue-on-error: true` removed in this PR; `pnpm typecheck` passes against `tsc --noEmit` (LR-5 done) |
 | Typecheck — backend | `ci.yml` | green | `tsc --noEmit` passes locally on 2026-05-13 (after TI-1 migration rename + new CREATE migration) |
@@ -166,7 +173,7 @@ remain open after this PR:
 
 | # | Title | Effort | Owner | Why it blocks |
 |---|---|:-:|---|---|
-| LR-1 (steps 1+2 done) | Lower admin-panel ESLint `--max-warnings` ~~5500~~ → ~~4000~~ → 2000 → 0 | L | admin-panel team | Steps 1 & 2 landed in this PR (7000 → 4000, current count 3,985); step 3 (2000) blocked by 3,077 `no-restricted-imports` warnings — needs a path-alias rewrite pass or rule relaxation |
+| LR-1 (steps 1+2+3 done) | Lower admin-panel ESLint `--max-warnings` ~~5500~~ → ~~4000~~ → ~~1000~~ → 0 | M | admin-panel team | Steps 1-3 landed in this branch (7000 → 1000, current count 912); step 4 (→ 0) needs the 681 `@typescript-eslint/no-explicit-any` casts re-typed without regressing LR-3 |
 | ~~LR-3~~ | ~~Eliminate admin-panel typecheck failures~~ | ✅ | admin-panel team | Fully cleared this branch (710 → 0); CI gate flipped to fail-fast |
 | TI-1 (CI validation) | Confirm the new migration graph passes `pnpm test:integration:http` against live Postgres, then flip `ci.yml:409` | S | backend team | Source fix landed in this PR; CI flag stays soft until a green run is observed |
 
@@ -235,7 +242,7 @@ cd backend     && pnpm test:unit                # (see below)
 cd storefront  && pnpm typecheck                # PASS (LR-5 done)
 cd vendor-panel && pnpm typecheck               # PASS (LR-2 already resolved)
 cd admin-panel  && pnpm typecheck               # PASS (LR-3 done in pass 10)
-cd admin-panel  && pnpm lint                    # PASS (3,985 warnings; cap 4000)
+cd admin-panel  && pnpm lint                    # PASS (912 warnings; cap 1000)
 
 # Lockfile sanity — none of these should match after the bump
 rg -n "@mikro-orm/[a-z]+@6\.4\." backend/pnpm-lock.yaml      pnpm-lock.yaml
@@ -265,7 +272,7 @@ The `rg` commands above confirmed only `@types/lodash@4.17.20` remains
 | vendor-panel | `pnpm typecheck` | PASS in pass 1; not re-run in pass 2 (no vendor-panel touches in this pass) |
 | storefront | `pnpm typecheck` | **PASS** (exit 0) — LR-5 resolved |
 | admin-panel | `pnpm typecheck` | **PASS** (exit 0) — LR-3 fully cleared in pass 10 (710 → 0); CI flag flipped to fail-fast |
-| admin-panel | `pnpm lint` | PASS (exit 0; 3,985 warnings, under 4000 cap) |
+| admin-panel | `pnpm lint` | PASS (exit 0; 912 warnings, under 1000 cap) |
 
 LR-3 (admin-panel) and LR-5 (storefront) are now both closed; the CI
 typecheck flags for both apps run fail-fast. Backend changes were

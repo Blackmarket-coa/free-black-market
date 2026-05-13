@@ -6,11 +6,11 @@ import {
   toast,
 } from "@medusajs/ui"
 import { useQuery } from "@tanstack/react-query"
-import { sdk } from "../lib/sdk"
-import type { RowType, Venue } from "../types"
-import { ProductDetailsStep } from "./product-details-step"
-import type { CurrencyRegionCombination} from "./pricing-step";
-import { PricingStep } from "./pricing-step"
+import { sdk } from "@lib/sdk"
+import type { RowType, Venue } from "@/types"
+import { ProductDetailsStep } from "@components/product-details-step"
+import type { CurrencyRegionCombination} from "@components/pricing-step";
+import { PricingStep } from "@components/pricing-step"
 
 interface CreateTicketProductModalProps {
   open: boolean

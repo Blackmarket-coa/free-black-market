@@ -15,9 +15,9 @@ import {
   CheckCircleSolid,
   ArrowUturnLeft,
 } from "@medusajs/icons"
-import { useViewConfigurations, useViewConfiguration } from "../../../hooks/use-view-configurations"
-import type { ViewConfiguration } from "../../../hooks/use-view-configurations"
-import { SaveViewDialog } from "../save-view-dialog"
+import { useViewConfigurations, useViewConfiguration } from "@hooks/use-view-configurations"
+import type { ViewConfiguration } from "@hooks/use-view-configurations"
+import { SaveViewDialog } from "@components/table/save-view-dialog"
 
 interface ViewSelectorProps {
   entity: string

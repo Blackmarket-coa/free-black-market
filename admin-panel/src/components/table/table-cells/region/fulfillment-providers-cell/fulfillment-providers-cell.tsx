@@ -1,6 +1,6 @@
 import { useTranslation } from "react-i18next"
-import { formatProvider } from "../../../../../lib/format-provider"
-import { PlaceholderCell } from "../../common/placeholder-cell"
+import { formatProvider } from "@lib/format-provider"
+import { PlaceholderCell } from "@components/table/table-cells/common/placeholder-cell"
 import type { HttpTypes } from "@medusajs/types"
 
 type FulfillmentProvidersCellProps = {

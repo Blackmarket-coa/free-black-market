@@ -1,6 +1,6 @@
 import { useTranslation } from "react-i18next"
-import { ConfigurableDataTable } from "../../../../../components/table/configurable-data-table"
-import { useOrderTableAdapter } from "./order-table-adapter"
+import { ConfigurableDataTable } from "@components/table/configurable-data-table"
+import { useOrderTableAdapter } from "@routes/orders/order-list/components/order-list-table/order-table-adapter"
 
 export const ConfigurableOrderListTable = () => {
   const { t } = useTranslation()

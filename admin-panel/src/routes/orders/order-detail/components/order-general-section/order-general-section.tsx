@@ -10,14 +10,14 @@ import {
   usePrompt,
 } from "@medusajs/ui"
 import { useTranslation } from "react-i18next"
-import { ActionMenu } from "../../../../../components/common/action-menu"
-import { useCancelOrder } from "../../../../../hooks/api/orders"
-import { useDate } from "../../../../../hooks/use-date"
+import { ActionMenu } from "@components/common/action-menu"
+import { useCancelOrder } from "@hooks/api/orders"
+import { useDate } from "@hooks/use-date"
 import {
   getCanceledOrderStatus,
   getOrderFulfillmentStatus,
   getOrderPaymentStatus,
-} from "../../../../../lib/order-helpers"
+} from "@lib/order-helpers"
 
 type OrderGeneralSectionProps = {
   order: HttpTypes.AdminOrder

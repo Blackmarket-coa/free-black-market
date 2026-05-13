@@ -2,7 +2,7 @@ import type { FetchError } from "@medusajs/js-sdk"
 import type { HttpTypes } from "@medusajs/types"
 import type { UseMutationOptions} from "@tanstack/react-query";
 import { useMutation } from "@tanstack/react-query"
-import { sdk } from "../../lib/client"
+import { sdk } from "@lib/client"
 
 export const useSignInWithEmailPass = (
   options?: UseMutationOptions<

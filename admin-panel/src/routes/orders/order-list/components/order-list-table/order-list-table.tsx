@@ -2,16 +2,16 @@ import { Container, Heading } from "@medusajs/ui"
 import { keepPreviousData } from "@tanstack/react-query"
 import { useTranslation } from "react-i18next"
 
-import { _DataTable } from "../../../../../components/table/data-table/data-table"
-import { useOrders } from "../../../../../hooks/api/orders"
-import { useOrderTableColumns } from "../../../../../hooks/table/columns/use-order-table-columns"
-import { useOrderTableFilters } from "./use-order-table-filters"
-import { useOrderTableQuery } from "../../../../../hooks/table/query/use-order-table-query"
-import { useDataTable } from "../../../../../hooks/use-data-table"
-import { useFeatureFlag } from "../../../../../providers/feature-flag-provider"
-import { ConfigurableOrderListTable } from "./configurable-order-list-table"
+import { _DataTable } from "@components/table/data-table/data-table"
+import { useOrders } from "@hooks/api/orders"
+import { useOrderTableColumns } from "@hooks/table/columns/use-order-table-columns"
+import { useOrderTableFilters } from "@routes/orders/order-list/components/order-list-table/use-order-table-filters"
+import { useOrderTableQuery } from "@hooks/table/query/use-order-table-query"
+import { useDataTable } from "@hooks/use-data-table"
+import { useFeatureFlag } from "@providers/feature-flag-provider"
+import { ConfigurableOrderListTable } from "@routes/orders/order-list/components/order-list-table/configurable-order-list-table"
 
-import { DEFAULT_FIELDS } from "../../const"
+import { DEFAULT_FIELDS } from "@routes/orders/order-list/const"
 
 const PAGE_SIZE = 20
 

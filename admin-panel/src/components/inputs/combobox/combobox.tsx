@@ -34,7 +34,7 @@ import {
 } from "react"
 import { useTranslation } from "react-i18next"
 
-import { genericForwardRef } from "../../utilities/generic-forward-ref"
+import { genericForwardRef } from "@components/utilities/generic-forward-ref"
 
 type ComboboxOption = {
   value: string

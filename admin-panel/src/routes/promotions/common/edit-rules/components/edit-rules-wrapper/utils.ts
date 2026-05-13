@@ -1,4 +1,4 @@
-import type { RuleResponseExt } from "../edit-rules-form/utils"
+import type { RuleResponseExt } from "@routes/promotions/common/edit-rules/components/edit-rules-form/utils"
 
 export const getRuleValue = (rule: RuleResponseExt) => {
   if (rule.field_type === "number") {

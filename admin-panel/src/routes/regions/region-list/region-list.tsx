@@ -1,6 +1,6 @@
-import { SingleColumnPage } from "../../../components/layout/pages"
-import { useExtension } from "../../../providers/extension-provider"
-import { RegionListTable } from "./components/region-list-table"
+import { SingleColumnPage } from "@components/layout/pages"
+import { useExtension } from "@providers/extension-provider"
+import { RegionListTable } from "@routes/regions/region-list/components/region-list-table"
 
 export const RegionList = () => {
   const { getWidgets } = useExtension()

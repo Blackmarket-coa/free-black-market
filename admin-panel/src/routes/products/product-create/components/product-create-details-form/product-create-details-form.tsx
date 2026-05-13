@@ -2,12 +2,12 @@ import { Divider, Heading } from "@medusajs/ui"
 import type { UseFormReturn } from "react-hook-form"
 import { useTranslation } from "react-i18next"
 
-import { FormExtensionZone } from "../../../../../dashboard-app"
-import { useExtension } from "../../../../../providers/extension-provider"
-import type { ProductCreateSchemaType } from "../../types"
-import { ProductCreateGeneralSection } from "./components/product-create-details-general-section"
-import { ProductCreateMediaSection } from "./components/product-create-details-media-section"
-import { ProductCreateVariantsSection } from "./components/product-create-details-variant-section"
+import { FormExtensionZone } from "@/dashboard-app"
+import { useExtension } from "@providers/extension-provider"
+import type { ProductCreateSchemaType } from "@routes/products/product-create/types"
+import { ProductCreateGeneralSection } from "@routes/products/product-create/components/product-create-details-form/components/product-create-details-general-section"
+import { ProductCreateMediaSection } from "@routes/products/product-create/components/product-create-details-form/components/product-create-details-media-section"
+import { ProductCreateVariantsSection } from "@routes/products/product-create/components/product-create-details-form/components/product-create-details-variant-section"
 
 type ProductAttributesProps = {
   form: UseFormReturn<ProductCreateSchemaType>

@@ -6,17 +6,17 @@ import { Trans, useTranslation } from "react-i18next"
 import { useEffect } from "react"
 import * as zod from "zod"
 
-import { Form } from "../../../../../components/common/form"
-import { DeprecatedPercentageInput } from "../../../../../components/inputs/percentage-input"
-import { RouteDrawer, useRouteModal } from "../../../../../components/modals"
-import { KeyboundForm } from "../../../../../components/utilities/keybound-form"
-import { useUpdatePromotion } from "../../../../../hooks/api/promotions"
+import { Form } from "@components/common/form"
+import { DeprecatedPercentageInput } from "@components/inputs/percentage-input"
+import { RouteDrawer, useRouteModal } from "@components/modals"
+import { KeyboundForm } from "@components/utilities/keybound-form"
+import { useUpdatePromotion } from "@hooks/api/promotions"
 import {
   currencies,
   getCurrencySymbol,
-} from "../../../../../lib/data/currencies"
-import { SwitchBox } from "../../../../../components/common/switch-box"
-import { useDocumentDirection } from "../../../../../hooks/use-document-direction"
+} from "@lib/data/currencies"
+import { SwitchBox } from "@components/common/switch-box"
+import { useDocumentDirection } from "@hooks/use-document-direction"
 
 type EditPromotionFormProps = {
   promotion: AdminPromotion

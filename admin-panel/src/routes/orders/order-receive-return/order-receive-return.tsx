@@ -3,14 +3,14 @@ import { useTranslation } from "react-i18next"
 import { Heading, toast } from "@medusajs/ui"
 import { useEffect, useRef } from "react"
 
-import { useOrder, useOrderPreview } from "../../../hooks/api/orders"
-import { RouteDrawer } from "../../../components/modals"
-import { OrderReceiveReturnForm } from "./components/order-receive-return-form"
+import { useOrder, useOrderPreview } from "@hooks/api/orders"
+import { RouteDrawer } from "@components/modals"
+import { OrderReceiveReturnForm } from "@routes/orders/order-receive-return/components/order-receive-return-form"
 import {
   useAddReceiveItems,
   useInitiateReceiveReturn,
   useReturn,
-} from "../../../hooks/api/returns"
+} from "@hooks/api/returns"
 
 let IS_REQUEST_RUNNING = false
 

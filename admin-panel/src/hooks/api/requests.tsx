@@ -10,7 +10,7 @@ import {
 } from "@tanstack/react-query";
 
 import type { AdminRequest, AdminReviewRequest } from "@custom-types/requests";
-import { sellerQueryKeys } from "./sellers";
+import { sellerQueryKeys } from "@hooks/api/sellers";
 
 export const requestsQueryKeys = queryKeysFactory("requests");
 

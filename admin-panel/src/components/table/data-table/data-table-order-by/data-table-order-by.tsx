@@ -4,7 +4,7 @@ import { useState } from "react"
 import { useTranslation } from "react-i18next"
 import { useSearchParams } from "react-router-dom"
 
-import { useDocumentDirection } from "../../../../hooks/use-document-direction"
+import { useDocumentDirection } from "@hooks/use-document-direction"
 
 export type DataTableOrderByKey<TData> = {
   key: keyof TData

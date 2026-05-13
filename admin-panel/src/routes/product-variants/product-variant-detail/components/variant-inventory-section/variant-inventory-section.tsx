@@ -4,12 +4,12 @@ import { Buildings, Component } from "@medusajs/icons"
 import type { HttpTypes } from "@medusajs/types"
 import { Container, Heading } from "@medusajs/ui"
 
-import { ActionMenu } from "../../../../../components/common/action-menu"
-import { _DataTable } from "../../../../../components/table/data-table"
+import { ActionMenu } from "@components/common/action-menu"
+import { _DataTable } from "@components/table/data-table"
 
-import { LinkButton } from "../../../../../components/common/link-button"
-import { useDataTable } from "../../../../../hooks/use-data-table"
-import { useInventoryTableColumns } from "./use-inventory-table-columns"
+import { LinkButton } from "@components/common/link-button"
+import { useDataTable } from "@hooks/use-data-table"
+import { useInventoryTableColumns } from "@routes/product-variants/product-variant-detail/components/variant-inventory-section/use-inventory-table-columns"
 
 const PAGE_SIZE = 20
 

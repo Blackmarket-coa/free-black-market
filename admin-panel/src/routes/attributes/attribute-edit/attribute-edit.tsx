@@ -3,15 +3,15 @@ import { FocusModal, Button, toast, ProgressTabs } from "@medusajs/ui";
 import { useNavigate, useParams } from "react-router-dom";
 import { useEffect, useState } from "react";
 import type { AdminProductCategory } from "@medusajs/types";
-import { AttributeForm } from "./components/attribute-form";
+import { AttributeForm } from "@routes/attributes/attribute-edit/components/attribute-form";
 import type { z } from "zod";
 import {
   useAttribute,
   useUpdateAttribute,
   attributeQueryKeys,
-} from "../../../hooks/api/attributes";
-import { sdk } from "../../../lib/client";
-import type { CreateAttributeFormSchema } from "./schema";
+} from "@hooks/api/attributes";
+import { sdk } from "@lib/client";
+import type { CreateAttributeFormSchema } from "@routes/attributes/attribute-edit/schema";
 
 export const AttributeEdit = () => {
   const navigate = useNavigate();

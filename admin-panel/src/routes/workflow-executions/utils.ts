@@ -6,8 +6,8 @@ import {
   STEP_IN_PROGRESS_STATES,
   TRANSACTION_ERROR_STATES,
   TRANSACTION_IN_PROGRESS_STATES,
-} from "./constants"
-import { TransactionState, TransactionStepState } from "./types"
+} from "@routes/workflow-executions/constants"
+import { TransactionState, TransactionStepState } from "@routes/workflow-executions/types"
 
 export const adminExecutionKey = {
   detail: (id: string) => ["workflow_executions", "detail", id],

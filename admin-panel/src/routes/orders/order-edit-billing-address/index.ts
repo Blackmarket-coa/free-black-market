@@ -1,1 +1,1 @@
-export { OrderEditBillingAddress as Component } from "./order-edit-billing-address"
+export { OrderEditBillingAddress as Component } from "@routes/orders/order-edit-billing-address/order-edit-billing-address"

@@ -3,17 +3,17 @@ import { Heading } from "@medusajs/ui"
 import { useTranslation } from "react-i18next"
 import { useParams } from "react-router-dom"
 
-import { RouteDrawer } from "../../../components/modals"
-import { useProductTypes } from "../../../hooks/api/product-types"
-import { useProducts } from "../../../hooks/api/products"
-import { TaxRateRuleReferenceType } from "../common/constants"
+import { RouteDrawer } from "@components/modals"
+import { useProductTypes } from "@hooks/api/product-types"
+import { useProducts } from "@hooks/api/products"
+import { TaxRateRuleReferenceType } from "@routes/tax-regions/common/constants"
 import {
   DISPLAY_OVERRIDE_ITEMS_LIMIT,
   TaxRegionTaxOverrideEditForm,
-} from "./components/tax-region-tax-override-edit-form"
-import type { InitialRuleValues } from "./types"
-import { useShippingOptions, useTaxRate } from "../../../hooks/api"
-import type { TaxRateRuleReference } from "../common/schemas"
+} from "@routes/tax-regions/tax-region-tax-override-edit/components/tax-region-tax-override-edit-form"
+import type { InitialRuleValues } from "@routes/tax-regions/tax-region-tax-override-edit/types"
+import { useShippingOptions, useTaxRate } from "@hooks/api"
+import type { TaxRateRuleReference } from "@routes/tax-regions/common/schemas"
 
 export const TaxRegionTaxOverrideEdit = () => {
   const { t } = useTranslation()

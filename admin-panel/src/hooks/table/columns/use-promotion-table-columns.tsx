@@ -6,12 +6,12 @@ import { useTranslation } from "react-i18next"
 import {
   CodeCell,
   CodeHeader,
-} from "../../../components/table/table-cells/common/code-cell"
+} from "@components/table/table-cells/common/code-cell"
 import {
   TextCell,
   TextHeader,
-} from "../../../components/table/table-cells/common/text-cell"
-import { StatusCell } from "../../../components/table/table-cells/promotion/status-cell"
+} from "@components/table/table-cells/common/text-cell"
+import { StatusCell } from "@components/table/table-cells/promotion/status-cell"
 
 const columnHelper = createColumnHelper<HttpTypes.AdminPromotion>()
 

@@ -3,9 +3,9 @@ import type { ColumnDef} from "@tanstack/react-table";
 import { createColumnHelper } from "@tanstack/react-table"
 import { useMemo } from "react"
 import { useTranslation } from "react-i18next"
-import { StatusCell } from "../../../../../components/table/table-cells/common/status-cell"
-import { TransactionStepState } from "../../../types"
-import { getTransactionState, getTransactionStateColor } from "../../../utils"
+import { StatusCell } from "@components/table/table-cells/common/status-cell"
+import { TransactionStepState } from "@routes/workflow-executions/types"
+import { getTransactionState, getTransactionStateColor } from "@routes/workflow-executions/utils"
 import type { HttpTypes } from "@medusajs/types"
 
 const columnHelper =

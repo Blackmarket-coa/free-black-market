@@ -10,15 +10,15 @@ import type { UseFormReturn } from "react-hook-form"
 import { useTranslation } from "react-i18next"
 
 import { keepPreviousData } from "@tanstack/react-query"
-import { DataTable } from "../../../../../../../components/data-table"
-import * as hooks from "../../../../../../../components/data-table/helpers/sales-channels"
+import { DataTable } from "@components/data-table"
+import * as hooks from "@components/data-table/helpers/sales-channels"
 import {
   StackedFocusModal,
   useStackedModal,
-} from "../../../../../../../components/modals"
-import { useSalesChannels } from "../../../../../../../hooks/api/sales-channels"
-import type { ProductCreateSchemaType } from "../../../../types"
-import { SC_STACKED_MODAL_ID } from "../../constants"
+} from "@components/modals"
+import { useSalesChannels } from "@hooks/api/sales-channels"
+import type { ProductCreateSchemaType } from "@routes/products/product-create/types"
+import { SC_STACKED_MODAL_ID } from "@routes/products/product-create/components/product-create-organize-form/constants"
 
 type ProductCreateSalesChannelStackedModalProps = {
   form: UseFormReturn<ProductCreateSchemaType>

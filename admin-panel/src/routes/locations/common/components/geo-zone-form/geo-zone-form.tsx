@@ -11,23 +11,23 @@ import { useFieldArray } from "react-hook-form"
 import { useTranslation } from "react-i18next"
 import { z } from "zod"
 
-import { ChipGroup } from "../../../../../components/common/chip-group"
-import { Form } from "../../../../../components/common/form"
+import { ChipGroup } from "@components/common/chip-group"
+import { Form } from "@components/common/form"
 import {
   StackedFocusModal,
   useStackedModal,
-} from "../../../../../components/modals"
-import { _DataTable } from "../../../../../components/table/data-table"
-import { useDataTable } from "../../../../../hooks/use-data-table"
+} from "@components/modals"
+import { _DataTable } from "@components/table/data-table"
+import { useDataTable } from "@hooks/use-data-table"
 import type {
-  StaticCountry} from "../../../../../lib/data/countries";
+  StaticCountry} from "@lib/data/countries";
 import {
   countries as staticCountries,
-} from "../../../../../lib/data/countries"
-import { useCountries } from "../../../../regions/common/hooks/use-countries"
-import { useCountryTableColumns } from "../../../../regions/common/hooks/use-country-table-columns"
-import { useCountryTableQuery } from "../../../../regions/common/hooks/use-country-table-query"
-import { GEO_ZONE_STACKED_MODAL_ID } from "../../constants"
+} from "@lib/data/countries"
+import { useCountries } from "@routes/regions/common/hooks/use-countries"
+import { useCountryTableColumns } from "@routes/regions/common/hooks/use-country-table-columns"
+import { useCountryTableQuery } from "@routes/regions/common/hooks/use-country-table-query"
+import { GEO_ZONE_STACKED_MODAL_ID } from "@routes/locations/common/constants"
 
 const GeoZoneSchema = z.object({
   countries: z.array(

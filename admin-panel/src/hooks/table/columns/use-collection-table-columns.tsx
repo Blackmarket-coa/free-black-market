@@ -2,7 +2,7 @@ import type { HttpTypes } from "@medusajs/types"
 import { createColumnHelper } from "@tanstack/react-table"
 import { useMemo } from "react"
 import { useTranslation } from "react-i18next"
-import { TextCell } from "../../../components/table/table-cells/common/text-cell"
+import { TextCell } from "@components/table/table-cells/common/text-cell"
 
 const columnHelper = createColumnHelper<HttpTypes.AdminCollection>()
 

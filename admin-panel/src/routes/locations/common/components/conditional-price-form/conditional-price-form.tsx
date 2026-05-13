@@ -34,24 +34,24 @@ import {
 import { Trans, useTranslation } from "react-i18next"
 
 import { formatValue } from "react-currency-input-field"
-import { Form } from "../../../../../components/common/form"
-import { StackedFocusModal } from "../../../../../components/modals"
-import { KeyboundForm } from "../../../../../components/utilities/keybound-form"
-import { useCombinedRefs } from "../../../../../hooks/use-combined-refs"
-import { castNumber } from "../../../../../lib/cast-number"
-import type { CurrencyInfo } from "../../../../../lib/data/currencies"
-import { getLocaleAmount } from "../../../../../lib/money-amount-helpers"
-import type { CreateShippingOptionSchemaType } from "../../../location-service-zone-shipping-option-create/components/create-shipping-options-form/schema"
+import { Form } from "@components/common/form"
+import { StackedFocusModal } from "@components/modals"
+import { KeyboundForm } from "@components/utilities/keybound-form"
+import { useCombinedRefs } from "@hooks/use-combined-refs"
+import { castNumber } from "@lib/cast-number"
+import type { CurrencyInfo } from "@lib/data/currencies"
+import { getLocaleAmount } from "@lib/money-amount-helpers"
+import type { CreateShippingOptionSchemaType } from "@routes/locations/location-service-zone-shipping-option-create/components/create-shipping-options-form/schema"
 import type {
   CondtionalPriceRuleSchemaType,
-  UpdateConditionalPriceRuleSchemaType} from "../../schema";
+  UpdateConditionalPriceRuleSchemaType} from "@routes/locations/common/schema";
 import {
   CondtionalPriceRuleSchema,
   UpdateConditionalPriceRuleSchema
-} from "../../schema"
-import type { ConditionalPriceInfo } from "../../types"
-import { getCustomShippingOptionPriceFieldName } from "../../utils/get-custom-shipping-option-price-field-info"
-import { useShippingOptionPrice } from "../shipping-option-price-provider"
+} from "@routes/locations/common/schema"
+import type { ConditionalPriceInfo } from "@routes/locations/common/types"
+import { getCustomShippingOptionPriceFieldName } from "@routes/locations/common/utils/get-custom-shipping-option-price-field-info"
+import { useShippingOptionPrice } from "@routes/locations/common/components/shipping-option-price-provider"
 
 const RULE_ITEM_PREFIX = "rule-item"
 

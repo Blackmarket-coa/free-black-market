@@ -15,14 +15,14 @@ import { useFieldArray, useForm } from "react-hook-form"
 import { useTranslation } from "react-i18next"
 import { z } from "zod"
 
-import { Form } from "../../../../../components/common/form"
-import { RouteDrawer, useRouteModal } from "../../../../../components/modals"
-import { StackedDrawer } from "../../../../../components/modals/stacked-drawer"
-import { useStackedModal } from "../../../../../components/modals/stacked-modal-provider"
-import { KeyboundForm } from "../../../../../components/utilities/keybound-form"
-import { useUpdatePriceList } from "../../../../../hooks/api/price-lists"
-import { PriceListCustomerGroupRuleForm } from "../../../common/components/price-list-customer-group-rule-form"
-import type { PricingCustomerGroupsArrayType } from "../../../price-list-create/components/price-list-create-form/schema"
+import { Form } from "@components/common/form"
+import { RouteDrawer, useRouteModal } from "@components/modals"
+import { StackedDrawer } from "@components/modals/stacked-drawer"
+import { useStackedModal } from "@components/modals/stacked-modal-provider"
+import { KeyboundForm } from "@components/utilities/keybound-form"
+import { useUpdatePriceList } from "@hooks/api/price-lists"
+import { PriceListCustomerGroupRuleForm } from "@routes/price-lists/common/components/price-list-customer-group-rule-form"
+import type { PricingCustomerGroupsArrayType } from "@routes/price-lists/price-list-create/components/price-list-create-form/schema"
 
 type PriceListConfigurationFormProps = {
   priceList: HttpTypes.AdminPriceList

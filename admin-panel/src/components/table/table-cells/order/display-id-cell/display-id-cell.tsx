@@ -1,5 +1,5 @@
 import { useTranslation } from "react-i18next"
-import { PlaceholderCell } from "../../common/placeholder-cell"
+import { PlaceholderCell } from "@components/table/table-cells/common/placeholder-cell"
 
 export const DisplayIdCell = ({ displayId }: { displayId?: number | null }) => {
   if (!displayId) {

@@ -33,17 +33,17 @@ import type { z } from "zod"
 import {
   RouteFocusModal,
   useRouteModal,
-} from "../../../../../components/modals"
-import { KeyboundForm } from "../../../../../components/utilities/keybound-form"
-import { useUpdateProduct } from "../../../../../hooks/api/products"
-import { sdk } from "../../../../../lib/client"
-import { UploadMediaFormItem } from "../../../common/components/upload-media-form-item"
+} from "@components/modals"
+import { KeyboundForm } from "@components/utilities/keybound-form"
+import { useUpdateProduct } from "@hooks/api/products"
+import { sdk } from "@lib/client"
+import { UploadMediaFormItem } from "@routes/products/common/components/upload-media-form-item"
 import type {
-  MediaSchema} from "../../../product-create/constants";
+  MediaSchema} from "@routes/products/product-create/constants";
 import {
   EditProductMediaSchema
-} from "../../../product-create/constants"
-import type { EditProductMediaSchemaType } from "../../../product-create/types"
+} from "@routes/products/product-create/constants"
+import type { EditProductMediaSchemaType } from "@routes/products/product-create/types"
 
 type ProductMediaViewProps = {
   product: HttpTypes.AdminProduct

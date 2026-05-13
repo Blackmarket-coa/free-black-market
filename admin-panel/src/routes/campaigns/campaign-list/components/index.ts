@@ -1,1 +1,1 @@
-export * from "./campaign-list-table"
+export * from "@routes/campaigns/campaign-list/components/campaign-list-table"

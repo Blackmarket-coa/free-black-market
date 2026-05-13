@@ -5,11 +5,11 @@ import { Trans, useTranslation } from "react-i18next"
 import { Link, useLocation, useNavigate } from "react-router-dom"
 import * as z from "zod"
 
-import { Form } from "../../components/common/form"
-import AvatarBox from "../../components/common/logo-box/avatar-box"
-import { useSignInWithEmailPass } from "../../hooks/api"
-import { isFetchError } from "../../lib/is-fetch-error"
-import { useExtension } from "../../providers/extension-provider"
+import { Form } from "@components/common/form"
+import AvatarBox from "@components/common/logo-box/avatar-box"
+import { useSignInWithEmailPass } from "@hooks/api"
+import { isFetchError } from "@lib/is-fetch-error"
+import { useExtension } from "@providers/extension-provider"
 
 const LoginSchema = z.object({
   email: z.string().email(),

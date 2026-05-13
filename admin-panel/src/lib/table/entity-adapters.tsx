@@ -1,5 +1,5 @@
 import type { HttpTypes } from "@medusajs/types"
-import type { ColumnAdapter } from "../../hooks/table/columns/use-configurable-table-columns"
+import type { ColumnAdapter } from "@hooks/table/columns/use-configurable-table-columns"
 
 export const orderColumnAdapter: ColumnAdapter<HttpTypes.AdminOrder> = {
   getColumnAlignment: (column) => {

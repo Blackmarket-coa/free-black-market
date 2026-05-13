@@ -15,15 +15,15 @@ import { useTranslation } from "react-i18next"
 import {
   RouteFocusModal,
   useRouteModal,
-} from "../../../../../components/modals"
-import { _DataTable } from "../../../../../components/table/data-table"
-import { KeyboundForm } from "../../../../../components/utilities/keybound-form"
-import { useUpdateProductCategoryProducts } from "../../../../../hooks/api/categories"
-import { useProducts } from "../../../../../hooks/api/products"
-import { useProductTableColumns } from "../../../../../hooks/table/columns/use-product-table-columns"
-import { useProductTableFilters } from "../../../../../hooks/table/filters/use-product-table-filters"
-import { useProductTableQuery } from "../../../../../hooks/table/query/use-product-table-query"
-import { useDataTable } from "../../../../../hooks/use-data-table"
+} from "@components/modals"
+import { _DataTable } from "@components/table/data-table"
+import { KeyboundForm } from "@components/utilities/keybound-form"
+import { useUpdateProductCategoryProducts } from "@hooks/api/categories"
+import { useProducts } from "@hooks/api/products"
+import { useProductTableColumns } from "@hooks/table/columns/use-product-table-columns"
+import { useProductTableFilters } from "@hooks/table/filters/use-product-table-filters"
+import { useProductTableQuery } from "@hooks/table/query/use-product-table-query"
+import { useDataTable } from "@hooks/use-data-table"
 
 type EditCategoryProductsFormProps = {
   categoryId: string

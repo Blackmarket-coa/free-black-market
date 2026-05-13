@@ -3,9 +3,9 @@ import type { AdminShippingProfileResponse } from "@medusajs/types"
 import { Container, Heading, toast, usePrompt } from "@medusajs/ui"
 import { useTranslation } from "react-i18next"
 import { useNavigate } from "react-router-dom"
-import { ActionMenu } from "../../../../../components/common/action-menu"
-import { SectionRow } from "../../../../../components/common/section"
-import { useDeleteShippingProfile } from "../../../../../hooks/api/shipping-profiles"
+import { ActionMenu } from "@components/common/action-menu"
+import { SectionRow } from "@components/common/section"
+import { useDeleteShippingProfile } from "@hooks/api/shipping-profiles"
 
 type ShippingProfileGeneralSectionProps = {
   profile: AdminShippingProfileResponse["shipping_profile"]

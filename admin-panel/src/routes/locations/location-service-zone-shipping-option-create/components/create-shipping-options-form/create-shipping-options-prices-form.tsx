@@ -2,24 +2,24 @@ import { useEffect, useMemo, useState } from "react"
 import type { UseFormReturn} from "react-hook-form";
 import { useWatch } from "react-hook-form"
 
-import { DataGrid } from "../../../../../components/data-grid"
+import { DataGrid } from "@components/data-grid"
 import {
   StackedFocusModal,
   useRouteModal,
   useStackedModal,
-} from "../../../../../components/modals"
-import { usePricePreferences } from "../../../../../hooks/api/price-preferences"
-import { useRegions } from "../../../../../hooks/api/regions"
-import { useStore } from "../../../../../hooks/api/store"
-import { ConditionalPriceForm } from "../../../common/components/conditional-price-form"
-import { ShippingOptionPriceProvider } from "../../../common/components/shipping-option-price-provider"
+} from "@components/modals"
+import { usePricePreferences } from "@hooks/api/price-preferences"
+import { useRegions } from "@hooks/api/regions"
+import { useStore } from "@hooks/api/store"
+import { ConditionalPriceForm } from "@routes/locations/common/components/conditional-price-form"
+import { ShippingOptionPriceProvider } from "@routes/locations/common/components/shipping-option-price-provider"
 import {
   FulfillmentSetType,
   CONDITIONAL_PRICES_STACKED_MODAL_ID,
-} from "../../../common/constants"
-import { useShippingOptionPriceColumns } from "../../../common/hooks/use-shipping-option-price-columns"
-import type { ConditionalPriceInfo } from "../../../common/types"
-import type { CreateShippingOptionSchema } from "./schema"
+} from "@routes/locations/common/constants"
+import { useShippingOptionPriceColumns } from "@routes/locations/common/hooks/use-shipping-option-price-columns"
+import type { ConditionalPriceInfo } from "@routes/locations/common/types"
+import type { CreateShippingOptionSchema } from "@routes/locations/location-service-zone-shipping-option-create/components/create-shipping-options-form/schema"
 
 type PricingPricesFormProps = {
   form: UseFormReturn<CreateShippingOptionSchema>

@@ -4,9 +4,9 @@ import { useSortable } from "@dnd-kit/sortable"
 import { CSS } from "@dnd-kit/utilities"
 import type { CSSProperties } from "react"
 
-import type { TreeItemProps } from "./tree-item";
-import { TreeItem } from "./tree-item"
-import { iOS } from "./utils"
+import type { TreeItemProps } from "@components/common/sortable-tree/tree-item";
+import { TreeItem } from "@components/common/sortable-tree/tree-item"
+import { iOS } from "@components/common/sortable-tree/utils"
 
 interface SortableTreeItemProps extends TreeItemProps {
   id: UniqueIdentifier

@@ -5,11 +5,11 @@ import type { UseFormReturn} from "react-hook-form";
 import { useWatch } from "react-hook-form"
 
 import { useTranslation } from "react-i18next"
-import { useProductCategories } from "../../../../../hooks/api/categories"
-import { CategoryTree } from "../../../common/components/category-tree"
-import type { CategoryTreeItem } from "../../../common/types"
-import { insertCategoryTreeItem } from "../../../common/utils"
-import type { CreateCategorySchema } from "./schema"
+import { useProductCategories } from "@hooks/api/categories"
+import { CategoryTree } from "@routes/categories/common/components/category-tree"
+import type { CategoryTreeItem } from "@routes/categories/common/types"
+import { insertCategoryTreeItem } from "@routes/categories/common/utils"
+import type { CreateCategorySchema } from "@routes/categories/category-create/components/create-category-form/schema"
 
 type CreateCategoryNestingProps = {
   form: UseFormReturn<CreateCategorySchema>

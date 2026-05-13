@@ -12,11 +12,11 @@ import {
 import { useTranslation } from "react-i18next"
 import { useNavigate } from "react-router-dom"
 
-import { ActionMenu } from "../../../../../components/common/action-menu"
-import { useDeletePromotion } from "../../../../../hooks/api/promotions"
-import { formatCurrency } from "../../../../../lib/format-currency"
-import { formatPercentage } from "../../../../../lib/percentage-helpers"
-import { getPromotionStatus } from "../../../../../lib/promotions"
+import { ActionMenu } from "@components/common/action-menu"
+import { useDeletePromotion } from "@hooks/api/promotions"
+import { formatCurrency } from "@lib/format-currency"
+import { formatPercentage } from "@lib/percentage-helpers"
+import { getPromotionStatus } from "@lib/promotions"
 
 type PromotionGeneralSectionProps = {
   promotion: HttpTypes.AdminPromotion

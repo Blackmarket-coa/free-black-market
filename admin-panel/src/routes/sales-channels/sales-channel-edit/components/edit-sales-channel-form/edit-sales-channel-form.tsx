@@ -5,10 +5,10 @@ import { useTranslation } from "react-i18next"
 import * as zod from "zod"
 
 import type { SalesChannelDTO } from "@medusajs/types"
-import { Form } from "../../../../../components/common/form"
-import { RouteDrawer, useRouteModal } from "../../../../../components/modals"
-import { KeyboundForm } from "../../../../../components/utilities/keybound-form"
-import { useUpdateSalesChannel } from "../../../../../hooks/api/sales-channels"
+import { Form } from "@components/common/form"
+import { RouteDrawer, useRouteModal } from "@components/modals"
+import { KeyboundForm } from "@components/utilities/keybound-form"
+import { useUpdateSalesChannel } from "@hooks/api/sales-channels"
 
 type EditSalesChannelFormProps = {
   salesChannel: SalesChannelDTO

@@ -2,10 +2,10 @@ import { Heading, Input, Select, Text, Textarea } from "@medusajs/ui"
 import type { UseFormReturn } from "react-hook-form"
 import { useTranslation } from "react-i18next"
 
-import { Form } from "../../../../../components/common/form"
-import { HandleInput } from "../../../../../components/inputs/handle-input"
-import { useDocumentDirection } from "../../../../../hooks/use-document-direction"
-import type { CreateCategorySchema } from "./schema"
+import { Form } from "@components/common/form"
+import { HandleInput } from "@components/inputs/handle-input"
+import { useDocumentDirection } from "@hooks/use-document-direction"
+import type { CreateCategorySchema } from "@routes/categories/category-create/components/create-category-form/schema"
 
 type CreateCategoryDetailsProps = {
   form: UseFormReturn<CreateCategorySchema>

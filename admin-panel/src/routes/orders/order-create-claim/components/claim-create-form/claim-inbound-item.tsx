@@ -4,12 +4,12 @@ import { IconButton, Input, Text } from "@medusajs/ui"
 import type { UseFormReturn } from "react-hook-form"
 import { useTranslation } from "react-i18next"
 
-import { ActionMenu } from "../../../../../components/common/action-menu"
-import { Form } from "../../../../../components/common/form"
-import { Thumbnail } from "../../../../../components/common/thumbnail"
-import { Combobox } from "../../../../../components/inputs/combobox"
-import { MoneyAmountCell } from "../../../../../components/table/table-cells/common/money-amount-cell"
-import { useReturnReasons } from "../../../../../hooks/api/return-reasons"
+import { ActionMenu } from "@components/common/action-menu"
+import { Form } from "@components/common/form"
+import { Thumbnail } from "@components/common/thumbnail"
+import { Combobox } from "@components/inputs/combobox"
+import { MoneyAmountCell } from "@components/table/table-cells/common/money-amount-cell"
+import { useReturnReasons } from "@hooks/api/return-reasons"
 
 type OrderEditItemProps = {
   item: AdminOrderLineItem

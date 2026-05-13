@@ -1,1 +1,1 @@
-export * from "./components/order-balance-settlement-form"
+export * from "@routes/orders/order-balance-settlement/components/order-balance-settlement-form"

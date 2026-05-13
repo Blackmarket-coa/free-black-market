@@ -1,5 +1,5 @@
 import { useContext } from "react"
-import { ExtensionContext } from "./extension-context"
+import { ExtensionContext } from "@providers/extension-provider/extension-context"
 
 export const useExtension = () => {
   const context = useContext(ExtensionContext)

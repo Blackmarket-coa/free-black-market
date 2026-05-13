@@ -8,12 +8,12 @@ import type {
 } from "@medusajs/types"
 
 import { useTranslation } from "react-i18next"
-import { _DataTable } from "../../../../../components/table/data-table"
-import { useDataTable } from "../../../../../hooks/use-data-table"
-import { getReturnableQuantity } from "../../../../../lib/rma"
-import { useReturnItemTableColumns } from "./use-return-item-table-columns"
-import { useReturnItemTableFilters } from "./use-return-item-table-filters"
-import { useReturnItemTableQuery } from "./use-return-item-table-query"
+import { _DataTable } from "@components/table/data-table"
+import { useDataTable } from "@hooks/use-data-table"
+import { getReturnableQuantity } from "@lib/rma"
+import { useReturnItemTableColumns } from "@routes/orders/order-create-return/components/add-return-items-table/use-return-item-table-columns"
+import { useReturnItemTableFilters } from "@routes/orders/order-create-return/components/add-return-items-table/use-return-item-table-filters"
+import { useReturnItemTableQuery } from "@routes/orders/order-create-return/components/add-return-items-table/use-return-item-table-query"
 
 const PAGE_SIZE = 50
 const PREFIX = "rit"

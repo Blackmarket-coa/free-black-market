@@ -1,6 +1,6 @@
 import type { HttpTypes } from "@medusajs/types"
 
-import { countries, getCountryByIso2 } from "./data/countries"
+import { countries, getCountryByIso2 } from "@lib/data/countries"
 
 /**
  * Common shape shared by every "address" entity in the Medusa SDK

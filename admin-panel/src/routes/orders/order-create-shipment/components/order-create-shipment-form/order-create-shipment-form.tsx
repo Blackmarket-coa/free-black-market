@@ -6,14 +6,14 @@ import { useFieldArray, useForm } from "react-hook-form";
 import { useTranslation } from "react-i18next";
 import type * as zod from "zod";
 
-import { Form } from "../../../../../components/common/form";
+import { Form } from "@components/common/form";
 import {
   RouteFocusModal,
   useRouteModal,
-} from "../../../../../components/modals";
-import { KeyboundForm } from "../../../../../components/utilities/keybound-form";
-import { useCreateOrderShipment } from "../../../../../hooks/api";
-import { CreateShipmentSchema } from "./constants";
+} from "@components/modals";
+import { KeyboundForm } from "@components/utilities/keybound-form";
+import { useCreateOrderShipment } from "@hooks/api";
+import { CreateShipmentSchema } from "@routes/orders/order-create-shipment/components/order-create-shipment-form/constants";
 
 type OrderCreateFulfillmentFormProps = {
   order: AdminOrder;

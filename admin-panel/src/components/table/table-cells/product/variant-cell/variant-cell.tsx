@@ -1,6 +1,6 @@
 import { useTranslation } from "react-i18next"
 
-import { PlaceholderCell } from "../../common/placeholder-cell"
+import { PlaceholderCell } from "@components/table/table-cells/common/placeholder-cell"
 import type { HttpTypes } from "@medusajs/types"
 
 type VariantCellProps = {

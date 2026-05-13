@@ -1,1 +1,1 @@
-export { CustomerCreateAddress as Component } from "./customer-create-address"
+export { CustomerCreateAddress as Component } from "@routes/customers/customer-create-address/customer-create-address"

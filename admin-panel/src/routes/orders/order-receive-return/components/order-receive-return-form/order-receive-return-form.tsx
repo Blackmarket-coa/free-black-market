@@ -24,21 +24,21 @@ import { useForm } from "react-hook-form"
 import { useTranslation } from "react-i18next"
 import type * as zod from "zod"
 
-import { Form } from "../../../../../components/common/form"
-import { Thumbnail } from "../../../../../components/common/thumbnail"
-import { RouteDrawer, useRouteModal } from "../../../../../components/modals"
-import { KeyboundForm } from "../../../../../components/utilities/keybound-form"
-import { useStockLocation } from "../../../../../hooks/api"
+import { Form } from "@components/common/form"
+import { Thumbnail } from "@components/common/thumbnail"
+import { RouteDrawer, useRouteModal } from "@components/modals"
+import { KeyboundForm } from "@components/utilities/keybound-form"
+import { useStockLocation } from "@hooks/api"
 import {
   useAddReceiveItems,
   useCancelReceiveReturn,
   useConfirmReturnReceive,
   useRemoveReceiveItems,
   useUpdateReceiveItem,
-} from "../../../../../hooks/api/returns"
-import { getStylizedAmount } from "../../../../../lib/money-amount-helpers"
-import { ReceiveReturnSchema } from "./constants"
-import DismissedQuantity from "./dismissed-quantity"
+} from "@hooks/api/returns"
+import { getStylizedAmount } from "@lib/money-amount-helpers"
+import { ReceiveReturnSchema } from "@routes/orders/order-receive-return/components/order-receive-return-form/constants"
+import DismissedQuantity from "@routes/orders/order-receive-return/components/order-receive-return-form/dismissed-quantity"
 
 type OrderAllocateItemsFormProps = {
   order: AdminOrder

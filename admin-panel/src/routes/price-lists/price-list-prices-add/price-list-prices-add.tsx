@@ -1,8 +1,8 @@
 import { useParams } from "react-router-dom"
-import { RouteFocusModal } from "../../../components/modals"
-import { usePriceList } from "../../../hooks/api/price-lists"
-import { usePriceListCurrencyData } from "../common/hooks/use-price-list-currency-data"
-import { PriceListPricesAddForm } from "./components/price-list-prices-add-form"
+import { RouteFocusModal } from "@components/modals"
+import { usePriceList } from "@hooks/api/price-lists"
+import { usePriceListCurrencyData } from "@routes/price-lists/common/hooks/use-price-list-currency-data"
+import { PriceListPricesAddForm } from "@routes/price-lists/price-list-prices-add/components/price-list-prices-add-form"
 
 export const PriceListProductsAdd = () => {
   const { id } = useParams<{ id: string }>()

@@ -1,1 +1,1 @@
-export * from "./collection-list-table"
+export * from "@routes/collections/collection-list/components/collection-list-table/collection-list-table"

@@ -2,7 +2,7 @@ import { Switch } from "@medusajs/ui"
 import type { ReactNode } from "react"
 import type { ControllerProps, FieldPath, FieldValues } from "react-hook-form"
 
-import { Form } from "../../common/form"
+import { Form } from "@components/common/form"
 
 interface HeadlessControllerProps<
   TFieldValues extends FieldValues = FieldValues,

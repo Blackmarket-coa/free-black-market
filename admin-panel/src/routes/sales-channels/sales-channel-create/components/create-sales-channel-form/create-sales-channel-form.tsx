@@ -12,13 +12,13 @@ import { useForm } from "react-hook-form"
 import { useTranslation } from "react-i18next"
 import * as zod from "zod"
 
-import { Form } from "../../../../../components/common/form"
+import { Form } from "@components/common/form"
 import {
   RouteFocusModal,
   useRouteModal,
-} from "../../../../../components/modals"
-import { KeyboundForm } from "../../../../../components/utilities/keybound-form"
-import { useCreateSalesChannel } from "../../../../../hooks/api/sales-channels"
+} from "@components/modals"
+import { KeyboundForm } from "@components/utilities/keybound-form"
+import { useCreateSalesChannel } from "@hooks/api/sales-channels"
 
 const CreateSalesChannelSchema = zod.object({
   name: zod.string().min(1),

@@ -3,9 +3,9 @@ import { useParams } from "react-router-dom"
 import {
   useProductCategory,
   useUpdateProductCategory,
-} from "../../../hooks/api"
-import { MetadataForm } from "../../../components/forms/metadata-form"
-import { RouteDrawer } from "../../../components/modals"
+} from "@hooks/api"
+import { MetadataForm } from "@components/forms/metadata-form"
+import { RouteDrawer } from "@components/modals"
 
 export const CategoriesMetadata = () => {
   const { id } = useParams()

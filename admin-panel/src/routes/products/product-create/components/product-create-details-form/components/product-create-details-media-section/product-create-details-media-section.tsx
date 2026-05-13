@@ -31,9 +31,9 @@ import { useState } from "react"
 import type { UseFormReturn } from "react-hook-form";
 import { useFieldArray } from "react-hook-form"
 import { useTranslation } from "react-i18next"
-import { ActionMenu } from "../../../../../../../components/common/action-menu"
-import { UploadMediaFormItem } from "../../../../../common/components/upload-media-form-item"
-import type { ProductCreateSchemaType } from "../../../../types"
+import { ActionMenu } from "@components/common/action-menu"
+import { UploadMediaFormItem } from "@routes/products/common/components/upload-media-form-item"
+import type { ProductCreateSchemaType } from "@routes/products/product-create/types"
 
 type ProductCreateMediaSectionProps = {
   form: UseFormReturn<ProductCreateSchemaType>

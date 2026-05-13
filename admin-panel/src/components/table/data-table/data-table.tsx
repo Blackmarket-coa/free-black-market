@@ -1,12 +1,12 @@
 import { clx } from "@medusajs/ui"
 import { memo } from "react"
-import type { NoResultsProps } from "../../common/empty-table-content";
-import { NoRecords } from "../../common/empty-table-content"
-import { TableSkeleton } from "../../common/skeleton"
-import type { DataTableQueryProps } from "./data-table-query";
-import { DataTableQuery } from "./data-table-query"
-import type { DataTableRootProps } from "./data-table-root";
-import { DataTableRoot } from "./data-table-root"
+import type { NoResultsProps } from "@components/common/empty-table-content";
+import { NoRecords } from "@components/common/empty-table-content"
+import { TableSkeleton } from "@components/common/skeleton"
+import type { DataTableQueryProps } from "@components/table/data-table/data-table-query";
+import { DataTableQuery } from "@components/table/data-table/data-table-query"
+import type { DataTableRootProps } from "@components/table/data-table/data-table-root";
+import { DataTableRoot } from "@components/table/data-table/data-table-root"
 
 interface DataTableProps<TData>
   extends Omit<DataTableRootProps<TData>, "noResults">,

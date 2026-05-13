@@ -1,5 +1,5 @@
 import type { HttpTypes } from "@medusajs/types"
-import { i18n } from "../components/utilities/i18n"
+import { i18n } from "@components/utilities/i18n"
 
 export enum PromotionStatus {
   SCHEDULED = "SCHEDULED",

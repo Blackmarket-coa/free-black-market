@@ -1,5 +1,5 @@
 import { useTranslation } from "react-i18next"
-import { PlaceholderCell } from "../placeholder-cell"
+import { PlaceholderCell } from "@components/table/table-cells/common/placeholder-cell"
 
 type NameCellProps = {
   firstName?: string | null

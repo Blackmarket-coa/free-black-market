@@ -10,10 +10,10 @@ import {
   useQuery
 } from "@tanstack/react-query"
 
-import { sdk } from "../../lib/client"
-import { queryClient } from "../../lib/query-client"
-import type { TQueryKey } from "../../lib/query-key-factory";
-import { queryKeysFactory } from "../../lib/query-key-factory"
+import { sdk } from "@lib/client"
+import { queryClient } from "@lib/query-client"
+import type { TQueryKey } from "@lib/query-key-factory";
+import { queryKeysFactory } from "@lib/query-key-factory"
 
 const VIEWS_QUERY_KEY = "views" as const
 const _viewsKeys = queryKeysFactory(VIEWS_QUERY_KEY) as TQueryKey<"views"> & {

@@ -1,10 +1,10 @@
 import { createColumnHelper } from "@tanstack/react-table"
 import { useMemo } from "react"
 import { useTranslation } from "react-i18next"
-import { DateCell } from "../../../../../components/table/table-cells/common/date-cell"
-import { PlaceholderCell } from "../../../../../components/table/table-cells/common/placeholder-cell"
-import { ReservationActions } from "./reservation-actions"
-import type { ExtendedReservationItem } from "../../../../inventory/inventory-detail/components/reservations-table/use-reservation-list-table-columns"
+import { DateCell } from "@components/table/table-cells/common/date-cell"
+import { PlaceholderCell } from "@components/table/table-cells/common/placeholder-cell"
+import { ReservationActions } from "@routes/reservations/reservation-list/components/reservation-list-table/reservation-actions"
+import type { ExtendedReservationItem } from "@routes/inventory/inventory-detail/components/reservations-table/use-reservation-list-table-columns"
 
 const columnHelper = createColumnHelper<ExtendedReservationItem>()
 

@@ -6,10 +6,10 @@ import {
   RouteFocusModal,
   StackedFocusModal,
   useStackedModal,
-} from "../../../../../components/modals"
-import { useAddOrderEditItems } from "../../../../../hooks/api/order-edits"
-import { AddOrderEditItemsTable } from "../add-order-edit-items-table"
-import { OrderEditItem } from "./order-edit-item"
+} from "@components/modals"
+import { useAddOrderEditItems } from "@hooks/api/order-edits"
+import { AddOrderEditItemsTable } from "@routes/orders/order-create-edit/components/add-order-edit-items-table"
+import { OrderEditItem } from "@routes/orders/order-create-edit/components/order-edit-create-form/order-edit-item"
 
 type ExchangeInboundSectionProps = {
   order: AdminOrder

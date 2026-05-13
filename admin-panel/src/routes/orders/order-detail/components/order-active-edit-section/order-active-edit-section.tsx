@@ -2,14 +2,14 @@ import { Button, Container, Copy, Heading, toast } from "@medusajs/ui"
 import { useTranslation } from "react-i18next"
 import { ExclamationCircleSolid } from "@medusajs/icons"
 
-import { useOrderPreview } from "../../../../../hooks/api"
+import { useOrderPreview } from "@hooks/api"
 import {
   useCancelOrderEdit,
   useConfirmOrderEdit,
-} from "../../../../../hooks/api/order-edits"
+} from "@hooks/api/order-edits"
 import { useMemo } from "react"
 import type { HttpTypes } from "@medusajs/types"
-import { Thumbnail } from "../../../../../components/common/thumbnail"
+import { Thumbnail } from "@components/common/thumbnail"
 import { useNavigate } from "react-router-dom"
 
 type OrderActiveEditSectionProps = {

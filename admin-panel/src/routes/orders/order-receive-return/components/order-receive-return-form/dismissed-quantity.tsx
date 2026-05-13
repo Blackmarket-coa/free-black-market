@@ -8,13 +8,13 @@ import type { UseFormReturn } from "react-hook-form";
 import { useTranslation } from "react-i18next";
 import type { z } from "zod";
 
-import { Form } from "../../../../../components/common/form";
+import { Form } from "@components/common/form";
 import {
   useAddDismissItems,
   useRemoveDismissItem,
   useUpdateDismissItem,
-} from "../../../../../hooks/api/returns";
-import type { ReceiveReturnSchema } from "./constants";
+} from "@hooks/api/returns";
+import type { ReceiveReturnSchema } from "@routes/orders/order-receive-return/components/order-receive-return-form/constants";
 
 /**
  * AdminOrderLineItem in @medusajs/types omits the per-action history

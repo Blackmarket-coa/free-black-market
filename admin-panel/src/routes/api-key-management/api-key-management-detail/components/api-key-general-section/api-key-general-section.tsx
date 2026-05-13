@@ -13,23 +13,23 @@ import {
 import { useTranslation } from "react-i18next"
 import { useNavigate } from "react-router-dom"
 import type {
-  Action} from "../../../../../components/common/action-menu";
+  Action} from "@components/common/action-menu";
 import {
   ActionMenu,
-} from "../../../../../components/common/action-menu"
-import { Skeleton } from "../../../../../components/common/skeleton"
-import { UserLink } from "../../../../../components/common/user-link"
+} from "@components/common/action-menu"
+import { Skeleton } from "@components/common/skeleton"
+import { UserLink } from "@components/common/user-link"
 import {
   useDeleteApiKey,
   useRevokeApiKey,
-} from "../../../../../hooks/api/api-keys"
-import { useUser } from "../../../../../hooks/api/users"
-import { useDate } from "../../../../../hooks/use-date"
+} from "@hooks/api/api-keys"
+import { useUser } from "@hooks/api/users"
+import { useDate } from "@hooks/use-date"
 import {
   getApiKeyStatusProps,
   getApiKeyTypeProps,
   prettifyRedactedToken,
-} from "../../../common/utils"
+} from "@routes/api-key-management/common/utils"
 
 type ApiKeyGeneralSectionProps = {
   apiKey: ApiKeyDTO

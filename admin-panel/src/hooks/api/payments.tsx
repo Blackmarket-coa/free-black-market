@@ -7,10 +7,10 @@ import {
   useMutation,
   useQuery
 } from "@tanstack/react-query"
-import { sdk } from "../../lib/client"
-import { queryClient } from "../../lib/query-client"
-import { queryKeysFactory } from "../../lib/query-key-factory"
-import { ordersQueryKeys } from "./orders"
+import { sdk } from "@lib/client"
+import { queryClient } from "@lib/query-client"
+import { queryKeysFactory } from "@lib/query-key-factory"
+import { ordersQueryKeys } from "@hooks/api/orders"
 import type { FetchError } from "@medusajs/js-sdk"
 
 const PAYMENT_QUERY_KEY = "payment" as const

@@ -2,11 +2,11 @@ import { PencilSquare } from "@medusajs/icons"
 import type { HttpTypes } from "@medusajs/types"
 import { Container, Heading } from "@medusajs/ui"
 import { useTranslation } from "react-i18next"
-import { ActionMenu } from "../../../../../components/common/action-menu"
-import { DateRangeDisplay } from "../../../../../components/common/date-range-display"
-import { ListSummary } from "../../../../../components/common/list-summary"
-import { Skeleton } from "../../../../../components/common/skeleton"
-import { useCustomerGroups } from "../../../../../hooks/api/customer-groups"
+import { ActionMenu } from "@components/common/action-menu"
+import { DateRangeDisplay } from "@components/common/date-range-display"
+import { ListSummary } from "@components/common/list-summary"
+import { Skeleton } from "@components/common/skeleton"
+import { useCustomerGroups } from "@hooks/api/customer-groups"
 
 type PriceListConfigurationSectionProps = {
   priceList: HttpTypes.AdminPriceList

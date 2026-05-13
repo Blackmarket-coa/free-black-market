@@ -1,1 +1,1 @@
-export * from "./product-create-organize-form"
+export * from "@routes/products/product-create/components/product-create-organize-form/product-create-organize-form"

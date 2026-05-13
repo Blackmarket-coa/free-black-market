@@ -2,8 +2,8 @@ import { PencilSquare, Trash } from "@medusajs/icons"
 import type { HttpTypes } from "@medusajs/types"
 import { Container, Heading } from "@medusajs/ui"
 import { useTranslation } from "react-i18next"
-import { ActionMenu } from "../../../../../components/common/action-menu"
-import { useDeleteProductTagAction } from "../../../common/hooks/use-delete-product-tag-action"
+import { ActionMenu } from "@components/common/action-menu"
+import { useDeleteProductTagAction } from "@routes/product-tags/common/hooks/use-delete-product-tag-action"
 
 type ProductTagGeneralSectionProps = {
   productTag: HttpTypes.AdminProductTag

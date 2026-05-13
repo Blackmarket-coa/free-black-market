@@ -2,9 +2,9 @@
 
 // import { Select, clx } from "@medusajs/ui"
 // import { Controller } from "react-hook-form"
-// import { useDataGridCell } from "../hooks"
-// import { DataGridCellProps } from "../types"
-// import { DataGridCellContainer } from "./data-grid-cell-container"
+// import { useDataGridCell } from "@components/data-grid/hooks"
+// import { DataGridCellProps } from "@components/data-grid/types"
+// import { DataGridCellContainer } from "@components/data-grid/components/data-grid-cell-container"
 
 // interface DataGridSelectCellProps<TData, TValue = any>
 //   extends DataGridCellProps<TData, TValue> {

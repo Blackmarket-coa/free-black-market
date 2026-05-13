@@ -1,2 +1,2 @@
-export * from "./view-selector"
-export * from "./view-pills"
+export * from "@components/table/view-selector/view-selector"
+export * from "@components/table/view-selector/view-pills"

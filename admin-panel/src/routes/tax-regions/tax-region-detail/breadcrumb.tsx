@@ -1,8 +1,8 @@
 import type { HttpTypes } from "@medusajs/types"
 import type { UIMatch } from "react-router-dom"
 
-import { useTaxRegion } from "../../../hooks/api"
-import { getCountryByIso2 } from "../../../lib/data/countries"
+import { useTaxRegion } from "@hooks/api"
+import { getCountryByIso2 } from "@lib/data/countries"
 
 type TaxRegionDetailBreadcrumbProps = UIMatch<HttpTypes.AdminTaxRegionResponse>
 

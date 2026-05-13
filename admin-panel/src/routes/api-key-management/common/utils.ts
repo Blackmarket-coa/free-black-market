@@ -1,6 +1,6 @@
 import type { AdminApiKeyResponse } from "@medusajs/types"
 import type { TFunction } from "i18next"
-import { ApiKeyType } from "./constants"
+import { ApiKeyType } from "@routes/api-key-management/common/constants"
 
 export function getApiKeyTypeFromPathname(pathname: string) {
   const isSecretKey = pathname.startsWith("/settings/secret-api-keys")

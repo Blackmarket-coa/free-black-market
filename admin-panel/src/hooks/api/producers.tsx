@@ -7,15 +7,15 @@ import {
   useQueryClient,
 } from "@tanstack/react-query"
 
-import { sdk } from "../../lib/client"
-import { queryKeysFactory } from "../../lib/query-key-factory"
+import { sdk } from "@lib/client"
+import { queryKeysFactory } from "@lib/query-key-factory"
 import type {
   AdminProducerListResponse,
   AdminProducerResponse,
   AdminProducerStatsResponse,
   ProducerListParams,
   UpdateProducerInput,
-} from "../../types/producer"
+} from "@custom-types/producer"
 
 export const producerQueryKeys = queryKeysFactory("producer")
 

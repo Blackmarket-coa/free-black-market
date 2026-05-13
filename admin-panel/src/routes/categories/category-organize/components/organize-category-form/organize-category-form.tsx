@@ -6,15 +6,15 @@ import type { FetchError } from "@medusajs/js-sdk"
 import type { HttpTypes } from "@medusajs/types"
 import { toast } from "@medusajs/ui"
 import { useState } from "react"
-import { RouteFocusModal } from "../../../../../components/modals"
+import { RouteFocusModal } from "@components/modals"
 import {
   categoriesQueryKeys,
   useProductCategories,
-} from "../../../../../hooks/api/categories"
-import { sdk } from "../../../../../lib/client"
-import { queryClient } from "../../../../../lib/query-client"
-import { CategoryTree } from "../../../common/components/category-tree"
-import type { CategoryTreeItem } from "../../../common/types"
+} from "@hooks/api/categories"
+import { sdk } from "@lib/client"
+import { queryClient } from "@lib/query-client"
+import { CategoryTree } from "@routes/categories/common/components/category-tree"
+import type { CategoryTreeItem } from "@routes/categories/common/types"
 
 const QUERY = {
   fields: "id,name,parent_category_id,rank,*category_children",

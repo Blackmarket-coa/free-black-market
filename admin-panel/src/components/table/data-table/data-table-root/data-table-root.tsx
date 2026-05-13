@@ -17,7 +17,7 @@ import {
 } from "react"
 import { useTranslation } from "react-i18next"
 import { Link } from "react-router-dom"
-import { NoResults } from "../../../common/empty-table-content"
+import { NoResults } from "@components/common/empty-table-content"
 
 type BulkCommand = {
   label: string

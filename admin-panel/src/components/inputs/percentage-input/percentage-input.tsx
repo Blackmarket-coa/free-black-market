@@ -1,5 +1,5 @@
 import { clx, Input, Text } from "@medusajs/ui";
-import { getNumberOfDecimalPlaces } from "../../../lib/number-helpers";
+import { getNumberOfDecimalPlaces } from "@lib/number-helpers";
 import type { ComponentProps, ElementRef} from "react";
 import { forwardRef } from "react";
 import Primitive from "react-currency-input-field";

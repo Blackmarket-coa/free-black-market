@@ -7,34 +7,34 @@ import type { HttpTypes } from "@medusajs/types"
 import { Button, toast } from "@medusajs/ui"
 import { useTranslation } from "react-i18next"
 
-import { DataGrid } from "../../../../../components/data-grid"
+import { DataGrid } from "@components/data-grid"
 import {
   RouteFocusModal,
   StackedFocusModal,
   useRouteModal,
   useStackedModal,
-} from "../../../../../components/modals/index"
-import { KeyboundForm } from "../../../../../components/utilities/keybound-form"
-import { usePricePreferences } from "../../../../../hooks/api/price-preferences"
-import { useRegions } from "../../../../../hooks/api/regions"
-import { useUpdateShippingOptions } from "../../../../../hooks/api/shipping-options"
-import { useStore } from "../../../../../hooks/api/store"
-import { castNumber } from "../../../../../lib/cast-number"
-import { ConditionalPriceForm } from "../../../common/components/conditional-price-form"
-import { ShippingOptionPriceProvider } from "../../../common/components/shipping-option-price-provider"
+} from "@components/modals/index"
+import { KeyboundForm } from "@components/utilities/keybound-form"
+import { usePricePreferences } from "@hooks/api/price-preferences"
+import { useRegions } from "@hooks/api/regions"
+import { useUpdateShippingOptions } from "@hooks/api/shipping-options"
+import { useStore } from "@hooks/api/store"
+import { castNumber } from "@lib/cast-number"
+import { ConditionalPriceForm } from "@routes/locations/common/components/conditional-price-form"
+import { ShippingOptionPriceProvider } from "@routes/locations/common/components/shipping-option-price-provider"
 import {
   CONDITIONAL_PRICES_STACKED_MODAL_ID,
   ITEM_TOTAL_ATTRIBUTE,
   REGION_ID_ATTRIBUTE,
-} from "../../../common/constants"
-import { useShippingOptionPriceColumns } from "../../../common/hooks/use-shipping-option-price-columns"
+} from "@routes/locations/common/constants"
+import { useShippingOptionPriceColumns } from "@routes/locations/common/hooks/use-shipping-option-price-columns"
 import type {
-  UpdateConditionalPrice} from "../../../common/schema";
+  UpdateConditionalPrice} from "@routes/locations/common/schema";
 import {
   UpdateConditionalPriceSchema,
-} from "../../../common/schema"
-import type { ConditionalPriceInfo } from "../../../common/types"
-import { buildShippingOptionPriceRules } from "../../../common/utils/price-rule-helpers"
+} from "@routes/locations/common/schema"
+import type { ConditionalPriceInfo } from "@routes/locations/common/types"
+import { buildShippingOptionPriceRules } from "@routes/locations/common/utils/price-rule-helpers"
 
 type PriceRecord = {
   id?: string

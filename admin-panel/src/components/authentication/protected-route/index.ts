@@ -1,1 +1,1 @@
-export * from "./protected-route"
+export * from "@components/authentication/protected-route/protected-route"

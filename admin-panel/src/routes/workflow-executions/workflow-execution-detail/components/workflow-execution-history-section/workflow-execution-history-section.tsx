@@ -19,8 +19,8 @@ import {
   STEP_INACTIVE_STATES,
   STEP_OK_STATES,
   STEP_SKIPPED_STATES,
-} from "../../../constants"
-import { TransactionStepState, TransactionStepStatus } from "../../../types"
+} from "@routes/workflow-executions/constants"
+import { TransactionStepState, TransactionStepStatus } from "@routes/workflow-executions/types"
 
 type WorkflowExecutionHistorySectionProps = {
   execution: HttpTypes.AdminWorkflowExecution

@@ -20,9 +20,9 @@ import type {
   AdminUpdateRefundReason,
 } from "@custom-types/refund-reasons";
 
-import { sdk } from "../../lib/client";
-import { queryClient } from "../../lib/query-client";
-import { queryKeysFactory } from "../../lib/query-key-factory";
+import { sdk } from "@lib/client";
+import { queryClient } from "@lib/query-client";
+import { queryKeysFactory } from "@lib/query-key-factory";
 
 const REFUND_REASONS_QUERY_KEY = "refund_reasons" as const;
 export const refundReasonsQueryKeys = queryKeysFactory(

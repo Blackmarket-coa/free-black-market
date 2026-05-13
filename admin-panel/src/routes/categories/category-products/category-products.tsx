@@ -1,7 +1,7 @@
 import { useParams } from "react-router-dom"
-import { RouteFocusModal } from "../../../components/modals"
-import { useProductCategory } from "../../../hooks/api/categories"
-import { EditCategoryProductsForm } from "./components/edit-category-products-form"
+import { RouteFocusModal } from "@components/modals"
+import { useProductCategory } from "@hooks/api/categories"
+import { EditCategoryProductsForm } from "@routes/categories/category-products/components/edit-category-products-form"
 
 export const CategoryProducts = () => {
   const { id } = useParams()

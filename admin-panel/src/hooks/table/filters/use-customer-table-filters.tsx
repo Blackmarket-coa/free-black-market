@@ -1,6 +1,6 @@
 import { useTranslation } from "react-i18next"
-import type { Filter } from "../../../components/table/data-table"
-import { useCustomerGroups } from "../../api/customer-groups"
+import type { Filter } from "@components/table/data-table"
+import { useCustomerGroups } from "@hooks/api/customer-groups"
 
 const excludeableFields = ["groups"] as const
 
