@@ -29,7 +29,13 @@ export const OrderNoteForm = ({ order }: OrderNoteFormProps) => {
     resolver: zodResolver(OrderNoteSchema),
   })
 
-  const { mutateAsync, isLoading } = {}
+  // Placeholder until useNotes ships; once it does, replace with the
+  // real mutation.
+  const mutateAsync: (
+    payload: { resource_id: string; resource_type: string; value: string },
+    options?: { onSuccess?: () => void; onError?: (error: Error) => void }
+  ) => Promise<void> = async (_payload, _options) => {}
+  const isLoading = false
 
   const handleSubmit = form.handleSubmit(async (values) => {
     mutateAsync(

@@ -32,7 +32,10 @@ export function OrderCreateShipmentForm({
 
   const form = useForm<zod.infer<typeof CreateShipmentSchema>>({
     defaultValues: {
-      send_notification: !order.no_notification,
+      // AdminOrder.no_notification is not in the SDK type but the
+      // response includes it; cast to read the field.
+      send_notification: !(order as { no_notification?: boolean })
+        .no_notification,
     },
     resolver: zodResolver(CreateShipmentSchema),
   });
@@ -53,10 +56,16 @@ export function OrderCreateShipmentForm({
 
     await createShipment(
       {
-        items: fulfillment?.items?.map((i) => ({
-          id: i.line_item_id,
-          quantity: i.quantity,
-        })),
+        // AdminFulfillmentItem.line_item_id is `string | null`; the
+        // mutation requires `string`. Filter the null rows out.
+        items: fulfillment?.items
+          ?.filter((i): i is typeof i & { line_item_id: string } =>
+            typeof i.line_item_id === "string"
+          )
+          .map((i) => ({
+            id: i.line_item_id,
+            quantity: i.quantity,
+          })),
         labels: [...addedLabels, ...(fulfillment?.labels || [])],
         no_notification: !data.send_notification,
       },

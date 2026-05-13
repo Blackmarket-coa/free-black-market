@@ -16,31 +16,27 @@ to fail-fast in this pass.
 What still blocks a clean v1.0.0 cut after this PR:
 
 1. **LR-3 (partial)** — admin-panel `pnpm typecheck` still failing with
-   **263 errors across ~65 files** after this PR (down from 710,
-   63.0% cleared). Passes 1-5 covered the missing devDeps + missing
-   local files + 10 cluster subtrees. Passes 6 + 7 covered the
-   biggest order-detail / order-create files (timeline, summary,
-   fulfillment, receive-return, exchange-create, claim-create,
-   order-create-fulfillment-form, plus the data-table-columns helper).
-   Pass 8 cleared order-edit-item + order-edit-items-section, the
-   add-claim-items-table + add-return-items-table pair, and the
-   allocate-items pair. Highlights this pass: replicated the
-   `LineItemWithActions` local alias from receive-return into
-   order-edit-item; cast around SDK omissions for
-   `AdminOrderLineItem.returned_quantity` / `refundable` in the
-   add-*-items-table files (dropped the now-unused
-   `getStylizedAmount` import and the `currency_code` parameter);
-   coerced `Number()` on numeric operator comparisons; null-coerced
-   `i.product_title?.toLowerCase()` chains; extended the
-   `checkInventoryKit` helper in `utils.ts` to accept either
-   `OrderLineItemDTO` or `AdminOrderLineItem`; captured
-   `LineItemWithVariant` / `ItemWithInventory` aliases in the
-   allocate-items pair for the response-only
-   `variant.inventory[].location_levels` join; bypassed the
-   `useForm.setValue` typed name union with localized `as any` for
-   dynamic `quantity.${string}-${string}` keys. The 263 residual
-   errors live inside Medusa-inherited admin routes (orders/ ~99,
-   promotions/ ~53, products/ ~40, product-variants/ ~32, plus small
+   **164 errors across ~40 files** after this PR (down from 710,
+   **76.9% cleared**). Passes 1-5 covered the missing devDeps +
+   missing local files + 10 cluster subtrees. Passes 6-8 cleared most
+   of the orders/ subtree. **Pass 9 fully cleared the orders/ subtree
+   (99 → 0)**, taking out return-create-form, claim/exchange
+   outbound-section pairs, order-create-fulfillment-item,
+   order-active-edit-section, the three inbound-item siblings, and
+   the long tail of catch-error narrowings + small-cast files.
+   Highlights of this pass: cast around SDK omissions for
+   `AdminOrderLineItem.return_requested_total`,
+   `AdminOrderChangeAction.amount`, `AdminFulfillmentItem.line_item_id`
+   (`string | null`), `AdminInventoryItem.variant_id`/`product_id`,
+   `AdminOrder.no_notification`/`canceled_at`,
+   `AdminRefund.payment_id`, the `return_receive` AdminOrderChangeType
+   variant; widened `outbound_items` FieldArray rows to carry
+   `variant_id` via structural cast; cast `AdminReturnResponse`
+   envelope in `initiateReturn` callers; switched the React-Query v5
+   `placeholderData` callback to read `previousQuery.queryKey[…]`;
+   widened `OrderActiveEditSection.quantity` to optional. The 164
+   residual errors live inside Medusa-inherited admin routes
+   (promotions/ ~53, products/ ~40, product-variants/ ~32, plus small
    clusters). Gated behind
    `.github/workflows/ci.yml continue-on-error: true`.
 2. **TI-1 (source fix landed; CI validation pending)** — backend

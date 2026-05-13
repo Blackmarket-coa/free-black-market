@@ -321,8 +321,8 @@ export const ExchangeInboundSection = ({
       }
 
       const variantIds = inboundItems
-        .map((item) => item?.variant_id)
-        .filter(Boolean)
+        .map((item) => (item as { variant_id?: string })?.variant_id)
+        .filter((v): v is string => !!v)
 
       const variants = (
         await sdk.admin.productVariant.list({
@@ -332,8 +332,16 @@ export const ExchangeInboundSection = ({
       ).variants
 
       variants.forEach((variant) => {
-        ret[variant.id] =
-          variant.inventory?.flatMap((inventory) => inventory.location_levels || []) || []
+        // AdminProductVariant omits the embedded `inventory` join.
+        const inventoryRows =
+          (
+            variant as {
+              inventory?: Array<{ location_levels?: InventoryLevelDTO[] }>
+            }
+          ).inventory ?? []
+        ret[variant.id] = inventoryRows.flatMap(
+          (inventory) => inventory.location_levels ?? []
+        )
       })
 
       return ret

@@ -34,28 +34,47 @@ export function OrderCreateFulfillmentItem({
   const { t } = useTranslation()
 
   const { variant } = useProductVariant(
-    item.product_id,
-    item.variant_id,
+    // AdminOrderLineItem.product_id and .variant_id are `string | null`;
+    // the hook accepts string only. Guard with the `enabled` flag below.
+    item.product_id ?? "",
+    item.variant_id ?? "",
     {
       fields: "*inventory,*inventory.location_levels,*inventory_items",
     },
     {
-      enabled: !!item.variant,
+      enabled: !!item.variant && !!item.variant_id,
     }
   )
 
   const { availableQuantity, inStockQuantity } = useMemo(() => {
+    // AdminProductVariant in @medusajs/types omits the embedded
+    // `inventory` join; the response inlines it when fetched with
+    // `+inventory,+inventory.location_levels`. Cast structurally.
+    type InventoryLevelRow = {
+      id?: string
+      location_id?: string
+      available_quantity: number
+      stocked_quantity: number
+    }
+    type InventoryRow = {
+      id: string
+      location_levels?: InventoryLevelRow[]
+    }
+    const variantWithInventory = variant as
+      | (typeof variant & { inventory?: InventoryRow[] })
+      | undefined
+
     if (
-      !variant?.inventory_items?.length ||
-      !variant?.inventory?.length ||
+      !variantWithInventory?.inventory_items?.length ||
+      !variantWithInventory?.inventory?.length ||
       !locationId
     ) {
       return {}
     }
 
-    const { inventory, inventory_items } = variant
+    const { inventory, inventory_items } = variantWithInventory
 
-    const locationHasEveryInventoryItem = inventory.every((i) =>
+    const locationHasEveryInventoryItem = inventory.every((i: InventoryRow) =>
       i.location_levels?.find((inv) => inv.location_id === locationId)
     )
 
@@ -215,7 +234,7 @@ export function OrderCreateFulfillmentItem({
 
                             field.onChange(val)
 
-                            if (!isNaN(val)) {
+                            if (val !== null && !isNaN(val)) {
                               if (val < minValue || val > maxValue) {
                                 form.setError(`quantity.${item.id}`, {
                                   type: "manual",

@@ -40,17 +40,22 @@ export const OrderDetail = () => {
 
   // TODO: Retrieve endpoints don't have an order ability, so a JS sort until this is available
   if (order) {
-    order.items = order.items.sort((itemA, itemB) => {
-      if (itemA.created_at > itemB.created_at) {
-        return 1;
-      }
+    order.items = order.items.sort(
+      (
+        itemA: { created_at: string | Date },
+        itemB: { created_at: string | Date }
+      ) => {
+        if (itemA.created_at > itemB.created_at) {
+          return 1;
+        }
 
-      if (itemA.created_at < itemB.created_at) {
-        return -1;
-      }
+        if (itemA.created_at < itemB.created_at) {
+          return -1;
+        }
 
-      return 0;
-    });
+        return 0;
+      }
+    );
   }
 
   const { order: orderPreview, isLoading: isPreviewLoading } = useOrderPreview(

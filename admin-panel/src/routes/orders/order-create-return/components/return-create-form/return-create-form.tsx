@@ -2,6 +2,7 @@ import { zodResolver } from "@hookform/resolvers/zod"
 import { PencilSquare } from "@medusajs/icons"
 import type {
   AdminOrder,
+  AdminOrderLineItem,
   AdminOrderPreview,
   AdminReturn,
   InventoryLevelDTO,
@@ -181,11 +182,13 @@ export const ReturnCreateForm = ({
           quantity: i.detail.return_requested_quantity,
           note: i.actions?.find((a) => a.action === "RETURN_ITEM")
             ?.internal_note,
-          reason_id: i.actions?.find((a) => a.action === "RETURN_ITEM")?.details
-            ?.reason_id,
+          // action details is typed `unknown`; cast the embedded
+          // reason_id to satisfy the form schema.
+          reason_id: i.actions?.find((a) => a.action === "RETURN_ITEM")
+            ?.details?.reason_id as string | null | undefined,
         })),
-        option_id: method ? method.shipping_option_id : "",
-        location_id: activeReturn?.location_id,
+        option_id: method ? method.shipping_option_id ?? "" : "",
+        location_id: activeReturn?.location_id ?? undefined,
         send_notification: false,
       })
     },
@@ -227,7 +230,10 @@ export const ReturnCreateForm = ({
             ...items[ind],
             quantity: i.detail.return_requested_quantity,
             note: returnItemAction?.internal_note,
-            reason_id: returnItemAction?.details?.reason_id,
+            reason_id: returnItemAction?.details?.reason_id as
+              | string
+              | null
+              | undefined,
           })
         }
       } else {
@@ -278,8 +284,7 @@ export const ReturnCreateForm = ({
       handleSuccess()
     } catch (e) {
       toast.error(t("general.error"), {
-        description: e.message,
-        dismissLabel: t("actions.close"),
+        description: e instanceof Error ? e.message : String(e),
       })
     }
   })
@@ -304,8 +309,8 @@ export const ReturnCreateForm = ({
   ) => {
     const promises = preview.shipping_methods
       .map((s) => s.actions?.find((a) => a.action === "SHIPPING_ADD")?.id)
-      .filter(Boolean)
-      .map(deleteReturnShipping)
+      .filter((id): id is string => !!id)
+      .map((id) => deleteReturnShipping(id))
 
     await Promise.all(promises)
 
@@ -316,7 +321,7 @@ export const ReturnCreateForm = ({
 
   useEffect(() => {
     if (isShippingPriceEdit) {
-      document.getElementById("js-shipping-input").focus()
+      document.getElementById("js-shipping-input")?.focus()
     }
   }, [isShippingPriceEdit])
 
@@ -357,16 +362,16 @@ export const ReturnCreateForm = ({
         return ret
       }
 
-      (
+      ;(
         await Promise.all(
           items.map(async (_i) => {
             const item = itemsMap.get(_i.item_id)
 
-            if (!item.variant_id) {
+            if (!item?.variant_id || !item.product_id) {
               return undefined
             }
-            
-return await sdk.admin.product.retrieveVariant(
+
+            return await sdk.admin.product.retrieveVariant(
               item.product_id,
               item.variant_id,
               { fields: "*inventory,*inventory.location_levels" }
@@ -374,10 +379,17 @@ return await sdk.admin.product.retrieveVariant(
           })
         )
       )
-        .filter((it) => it?.variant)
+        .filter((it): it is NonNullable<typeof it> => !!it?.variant)
         .forEach((item) => {
-          const { variant } = item
-          const levels = variant.inventory[0]?.location_levels
+          // AdminProductVariant doesn't declare the embedded
+          // `inventory` join; fetched via +inventory,+inventory.
+          // location_levels. Cast structurally.
+          const variant = item.variant as typeof item.variant & {
+            inventory?: Array<{
+              location_levels?: InventoryLevelDTO[]
+            }>
+          }
+          const levels = variant.inventory?.[0]?.location_levels
 
           if (!levels) {
             return
@@ -477,8 +489,13 @@ return await sdk.admin.product.retrieveVariant(
               .map((item, index) => (
                 <ReturnItem
                   key={item.id}
-                  item={itemsMap.get(item.item_id)!}
-                  previewItem={previewItemsMap.get(item.item_id)}
+                  // itemsMap holds the wider AdminOrderLineItem &
+                  // { actions? } shape; the prop accepts the narrower
+                  // AdminOrderLineItem so a cast is safe here.
+                  item={itemsMap.get(item.item_id) as AdminOrderLineItem}
+                  previewItem={
+                    previewItemsMap.get(item.item_id) as AdminOrderLineItem
+                  }
                   currencyCode={order.currency_code}
                   form={form}
                   onRemove={() => {
@@ -538,7 +555,7 @@ return await sdk.admin.product.retrieveVariant(
                               value={value}
                               onChange={(v) => {
                                 onChange(v)
-                                onLocationChange(v)
+                                onLocationChange(v ?? "")
                               }}
                               {...field}
                               options={(stock_locations ?? []).map(
@@ -664,7 +681,7 @@ return await sdk.admin.product.retrieveVariant(
                     <CurrencyInput
                       id="js-shipping-input"
                       onBlur={() => {
-                        let actionId
+                        let actionId: string | undefined
 
                         preview.shipping_methods.forEach((s) => {
                           if (s.actions) {
@@ -677,10 +694,14 @@ return await sdk.admin.product.retrieveVariant(
                         })
 
                         if (actionId) {
+                          // updateReturnShipping accepts the broader
+                          // AdminAddReturnShipping payload + actionId;
+                          // the form only updates the amount.
                           updateReturnShipping({
                             actionId,
-                            custom_amount: customShippingAmount.float,
-                          })
+                            custom_amount:
+                              customShippingAmount.float ?? undefined,
+                          } as Parameters<typeof updateReturnShipping>[0])
                         }
                         setIsShippingPriceEdit(false)
                       }}
@@ -689,7 +710,7 @@ return await sdk.admin.product.retrieveVariant(
                           .symbol_native
                       }
                       code={order.currency_code}
-                      onValueChange={(value, name, values) =>
+                      onValueChange={(_value, _name, values) =>
                         setCustomShippingAmount({
                           value: values?.value ?? "",
                           float: values?.float ?? null,

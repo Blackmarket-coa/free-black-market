@@ -15,7 +15,10 @@ import {
 let IS_REQUEST_RUNNING = false
 
 export function OrderReceiveReturn() {
-  const { id, return_id } = useParams()
+  const { id, return_id } = useParams() as {
+    id: string
+    return_id: string
+  }
   const { t } = useTranslation()
   const navigate = useNavigate()
 
@@ -61,12 +64,16 @@ export function OrderReceiveReturn() {
       }
 
       if (preview.order_change) {
-        if (preview.order_change.change_type !== "return_receive") {
+        // `return_receive` is not in the AdminOrderChangeType union
+        // declared in @medusajs/types; cast through string to compare.
+        if (
+          (preview.order_change.change_type as string) !== "return_receive"
+        ) {
           navigate(`/orders/${id}`, { replace: true })
           toast.error(t("orders.returns.activeChangeError"))
         }
-        
-return
+
+        return
       }
 
       IS_REQUEST_RUNNING = true
@@ -81,7 +88,7 @@ return
           })),
         })
       } catch (e) {
-        toast.error(e.message)
+        toast.error(e instanceof Error ? e.message : String(e))
       } finally {
         IS_REQUEST_RUNNING = false
       }

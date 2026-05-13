@@ -101,7 +101,10 @@ function ReturnItem({
           <div className="text-ui-fg-subtle txt-small mr-2 flex flex-shrink-0">
             <MoneyAmountCell
               currencyCode={currencyCode}
-              amount={previewItem.return_requested_total}
+              amount={
+                (previewItem as { return_requested_total?: number })
+                  .return_requested_total ?? 0
+              }
             />
           </div>
 
@@ -125,7 +128,8 @@ function ReturnItem({
                     onClick: onRemove,
                     icon: <XCircle />,
                   },
-                ].filter(Boolean),
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                ].filter(Boolean) as any[],
               },
             ]}
           />

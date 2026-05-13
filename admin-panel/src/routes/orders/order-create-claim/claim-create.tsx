@@ -59,7 +59,7 @@ export const ClaimCreate = () => {
 
         setActiveClaimId(createdClaim.id)
       } catch (e) {
-        toast.error(e.message)
+        toast.error(e instanceof Error ? e.message : String(e))
         navigate(`/orders/${preview.id}`, { replace: true })
       } finally {
         IS_REQUEST_RUNNING = false

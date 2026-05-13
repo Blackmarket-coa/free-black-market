@@ -57,8 +57,8 @@ return acc
     if (q) {
       results = results.filter((i) => {
         return (
-          i.product_title.toLowerCase().includes(q.toLowerCase()) ||
-          i.variant_title.toLowerCase().includes(q.toLowerCase()) ||
+          i.product_title?.toLowerCase().includes(q.toLowerCase()) ||
+          i.variant_title?.toLowerCase().includes(q.toLowerCase()) ||
           i.variant_sku?.toLowerCase().includes(q.toLowerCase())
         )
       })
@@ -186,10 +186,6 @@ const filterByDate = (
   })
 }
 
-const _defaultOperators = {
-  eq: undefined,
-  gt: undefined,
-  gte: undefined,
-  lt: undefined,
-  lte: undefined,
-}
+// _defaultOperators removed — it was reserved for a conditional
+// operator filter that this table doesn't ship. Restore from git when
+// re-adding the filter.

@@ -140,12 +140,15 @@ export const ExchangeOutboundSection = ({
           })
         }
       } else {
+        // outbound_items in ExchangeCreateSchema is `{quantity, item_id}`
+        // only, but we attach variant_id for inventory lookup below.
         append(
           {
             item_id: i.id,
             quantity: i.detail.quantity,
-            variant_id: i.variant_id,
-          },
+            variant_id: i.variant_id ?? "",
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          } as any,
           { shouldFocus: false }
         )
       }
@@ -248,7 +251,9 @@ export const ExchangeOutboundSection = ({
 
     const allItemsHaveLocation = outboundItems
       .map((i) => {
-        const item = variantItemMap.get(i.variant_id)
+        const item = variantItemMap.get(
+          (i as { variant_id?: string | null }).variant_id ?? null
+        )
         if (!item?.variant_id || !item?.variant) {
           return true
         }
@@ -282,8 +287,8 @@ export const ExchangeOutboundSection = ({
       }
 
       const variantIds = outboundItems
-        .map((item) => item?.variant_id)
-        .filter(Boolean)
+        .map((item) => (item as { variant_id?: string })?.variant_id)
+        .filter((v): v is string => !!v)
 
       const variants = (
         await sdk.admin.productVariant.list({
@@ -293,8 +298,15 @@ export const ExchangeOutboundSection = ({
       ).variants
 
       variants.forEach((variant) => {
-        ret[variant.id] =
-          variant.inventory?.flatMap((inventory) => inventory.location_levels || []) || []
+        const inventoryRows =
+          (
+            variant as {
+              inventory?: Array<{ location_levels?: InventoryLevelDTO[] }>
+            }
+          ).inventory ?? []
+        ret[variant.id] = inventoryRows.flatMap(
+          (inventory) => inventory.location_levels ?? []
+        )
       })
 
       return ret
@@ -320,10 +332,14 @@ export const ExchangeOutboundSection = ({
             <StackedFocusModal.Header />
 
             <AddExchangeOutboundItemsTable
-              selectedItems={outboundItems.map((i) => i.variant_id)}
+              selectedItems={outboundItems.map(
+                (i) => (i as { variant_id?: string }).variant_id ?? ""
+              )}
               currencyCode={order.currency_code}
               onSelectionChange={(finalSelection) => {
-                const alreadySelected = outboundItems.map((i) => i.variant_id)
+                const alreadySelected = outboundItems.map(
+                  (i) => (i as { variant_id?: string }).variant_id ?? ""
+                )
 
                 itemsToAdd = finalSelection.filter(
                   (selection) => !alreadySelected.includes(selection)
@@ -363,10 +379,16 @@ export const ExchangeOutboundSection = ({
 
       {outboundItems.map(
         (item, index) =>
-          variantOutboundMap.get(item.variant_id) && (
+          variantOutboundMap.get(
+            (item as { variant_id?: string }).variant_id ?? null
+          ) && (
             <ExchangeOutboundItem
               key={item.id}
-              previewItem={variantOutboundMap.get(item.variant_id)!}
+              previewItem={
+                variantOutboundMap.get(
+                  (item as { variant_id?: string }).variant_id ?? null
+                )!
+              }
               currencyCode={order.currency_code}
               form={form}
               onRemove={() => {

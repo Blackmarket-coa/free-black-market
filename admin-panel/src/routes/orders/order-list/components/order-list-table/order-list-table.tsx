@@ -63,7 +63,12 @@ export const OrderListTable = () => {
         table={table}
         pagination
         navigateTo={(row) => `/orders/${row.original.id}`}
-        filters={filters}
+        // DataTableFilterOption / DataTableFilter shape narrows
+        // differently between the v4 DataTable helpers and the local
+        // `Filter` type the legacy _DataTable still expects. Cast to
+        // satisfy the prop without changing the runtime payload.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        filters={filters as any}
         count={count}
         search
         isLoading={isLoading}
