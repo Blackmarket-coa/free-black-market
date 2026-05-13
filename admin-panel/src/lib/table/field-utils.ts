@@ -6,7 +6,7 @@ import { getEntityDefaultFields } from "./entity-defaults"
  */
 export function calculateRequiredFields(
   entity: string,
-  apiColumns: HttpTypes.AdminViewColumn[] | undefined,
+  apiColumns: HttpTypes.AdminColumn[] | undefined,
   visibleColumns: Record<string, boolean>
 ): string {
   // Get entity-specific default fields
@@ -61,7 +61,7 @@ return !isAlreadyCovered
 
   // Check which direct fields need to be added
   const additionalDirectFields = visibleDirectFields.filter(field => {
-    const isAlreadyIncluded = defaults.properties.includes(field)
+    const isAlreadyIncluded = (defaults.properties as readonly string[]).includes(field)
     
 return !isAlreadyIncluded
   })

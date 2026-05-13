@@ -18,3 +18,19 @@ export * from "./product";
 export * from "./producer";
 export * from "./venue";
 export * from "./ticket-product";
+
+// Digital product types are surfaced by the legacy media-management
+// route; the API contract isn't fully spec'd yet, so model the minimum
+// shape callers compile against.
+export enum MediaType {
+  PREVIEW = "preview",
+  MAIN = "main",
+}
+
+export type DigitalProduct = {
+  id: string
+  name: string
+  product_title?: string
+  medias?: Array<{ id: string; type: MediaType; url: string }>
+  product_variant?: { product_id?: string } | null
+}

@@ -21,7 +21,9 @@ export const setStoredContext = (ctx: StorefrontContext) => {
   window.localStorage.setItem(KEY, JSON.stringify(ctx))
 }
 
-export const withStorefrontHeaders = (ctx: StorefrontContext | null) =>
+export const withStorefrontHeaders = (
+  ctx: StorefrontContext | null
+): Record<string, string> =>
   ctx
     ? {
         "x-organization-id": ctx.organizationId,

@@ -176,12 +176,11 @@ jobs:
         working-directory: admin-panel
         run: pnpm test
 
-      # Typecheck currently surfaces translation-schema drift; tracked in
-      # docs/AUDIT_DEBT.md (LR-3). Keep non-blocking until that lands.
-      - name: Typecheck admin panel (non-blocking)
+      # LR-3 fully resolved 2026-05-13 — admin-panel typecheck now runs
+      # fail-fast. See docs/AUDIT_DEBT.md.
+      - name: Typecheck admin panel
         working-directory: admin-panel
         run: pnpm typecheck
-        continue-on-error: true
 
   storefront-test:
     name: Storefront Tests

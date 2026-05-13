@@ -1,2 +1,2 @@
-export type { DashboardPlugin } from "./dashboard-app/dashboard-app"
+export type { DashboardPlugin } from "./dashboard-app/types"
 export * from "./dashboard-app"

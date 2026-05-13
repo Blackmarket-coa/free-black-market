@@ -104,12 +104,15 @@ return acc
 
   const inventoryTabEnabled = isManageInventoryEnabled && isInventoryKitEnabled
 
-  const tabOrder = useMemo(() => {
+  // Narrowing the readonly tuple union narrows the param type of
+  // .indexOf() too, which makes callers passing the wider `Tab` enum
+  // fail. Widen the inferred element type back to `Tab` here.
+  const tabOrder = useMemo((): readonly Tab[] => {
     if (inventoryTabEnabled) {
-      return [Tab.DETAIL, Tab.PRICE, Tab.INVENTORY] as const
+      return [Tab.DETAIL, Tab.PRICE, Tab.INVENTORY]
     }
 
-    return [Tab.DETAIL, Tab.PRICE] as const
+    return [Tab.DETAIL, Tab.PRICE]
   }, [inventoryTabEnabled])
 
   useEffect(() => {
@@ -223,7 +226,9 @@ return
               return undefined
             }
 
-            const ret: AdminCreateProductVariantPrice = {}
+            // ret is built up over the next few lines (currency_code +
+            // amount are always set before the object is returned).
+            const ret = {} as AdminCreateProductVariantPrice
             const amount = castNumber(value)
 
             if (regionsCurrencyMap[currencyOrRegion]) {

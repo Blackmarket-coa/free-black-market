@@ -34,7 +34,7 @@ export const CreateCampaignForm = () => {
   const { mutateAsync, isPending } = useCreateCampaign()
 
   const form = useForm<zod.infer<typeof CreateCampaignSchema>>({
-    defaultValues: DEFAULT_CAMPAIGN_VALUES,
+    defaultValues: DEFAULT_CAMPAIGN_VALUES as any,
     resolver: zodResolver(CreateCampaignSchema),
   })
 

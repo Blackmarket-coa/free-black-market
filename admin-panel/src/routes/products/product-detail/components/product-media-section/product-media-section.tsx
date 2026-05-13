@@ -65,9 +65,9 @@ return rest
       return
     }
 
-    const mediaToKeep = product.images
+    const mediaToKeep = (product.images ?? [])
       .filter((i) => !ids.includes(i.id))
-      .map((i) => ({ url: i.url}))
+      .map((i) => ({ url: i.url }))
 
     await mutateAsync(
       {
@@ -188,10 +188,10 @@ type Media = {
   isThumbnail: boolean
 }
 
-const getMedia = (product: Product) => {
-  const { images = [], thumbnail } = product
+const getMedia = (product: HttpTypes.AdminProduct) => {
+  const { images, thumbnail } = product
 
-  const media: Media[] = images.map((image) => ({
+  const media: Media[] = (images ?? []).map((image) => ({
     id: image.id,
     url: image.url,
     isThumbnail: image.url === thumbnail,

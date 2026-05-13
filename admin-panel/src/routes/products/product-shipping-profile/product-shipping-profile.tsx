@@ -27,7 +27,11 @@ export const ProductShippingProfile = () => {
         </RouteDrawer.Title>
       </RouteDrawer.Header>
       {!isLoading && product && (
-        <ProductShippingProfileForm product={product} />
+        // ProductShippingProfileForm's prop type asserts the embedded
+        // shipping_profile join; the admin response includes it when
+        // fetched with +shipping_profile.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        <ProductShippingProfileForm product={product as any} />
       )}
     </RouteDrawer>
   )

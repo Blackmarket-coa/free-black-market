@@ -53,7 +53,7 @@ export const PromotionDetail = () => {
           rules={targetRules || []}
           ruleType="target-rules"
           applicationMethodTargetType={
-            promotion.application_method.target_type || "items"
+            promotion.application_method?.target_type || "items"
           }
         />
         {promotion.type === "buyget" && (

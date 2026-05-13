@@ -7,38 +7,25 @@ Bar: **v1.0.0 GA** — block on every row tagged `Target = v1.0.0` in
 ## Executive summary
 
 **Verdict: HOLD for v1.0.0 GA.** Materially closer than the prior pass —
-9 of the 11 originally-tagged `v1.0.0` rows are now done (SD-1..SD-5,
-LR-5, QA-1, TD-3, plus the first two LR-1 ratchet steps and the TI-1
-in-source fix). Two `continue-on-error` flags remain on (admin-panel
-typecheck, integration tests); the storefront typecheck flag was flipped
-to fail-fast in this pass.
+10 of the 11 originally-tagged `v1.0.0` rows are now done (SD-1..SD-5,
+LR-5, QA-1, TD-3, **LR-3 fully cleared**, plus the first two LR-1
+ratchet steps and the TI-1 in-source fix). One `continue-on-error` flag
+remains on (the backend integration-test step). Both typecheck flags
+(storefront *and* admin-panel) now fail-fast.
 
 What still blocks a clean v1.0.0 cut after this PR:
 
-1. **LR-3 (partial)** — admin-panel `pnpm typecheck` still failing with
-   **164 errors across ~40 files** after this PR (down from 710,
-   **76.9% cleared**). Passes 1-5 covered the missing devDeps +
-   missing local files + 10 cluster subtrees. Passes 6-8 cleared most
-   of the orders/ subtree. **Pass 9 fully cleared the orders/ subtree
-   (99 → 0)**, taking out return-create-form, claim/exchange
-   outbound-section pairs, order-create-fulfillment-item,
-   order-active-edit-section, the three inbound-item siblings, and
-   the long tail of catch-error narrowings + small-cast files.
-   Highlights of this pass: cast around SDK omissions for
-   `AdminOrderLineItem.return_requested_total`,
-   `AdminOrderChangeAction.amount`, `AdminFulfillmentItem.line_item_id`
-   (`string | null`), `AdminInventoryItem.variant_id`/`product_id`,
-   `AdminOrder.no_notification`/`canceled_at`,
-   `AdminRefund.payment_id`, the `return_receive` AdminOrderChangeType
-   variant; widened `outbound_items` FieldArray rows to carry
-   `variant_id` via structural cast; cast `AdminReturnResponse`
-   envelope in `initiateReturn` callers; switched the React-Query v5
-   `placeholderData` callback to read `previousQuery.queryKey[…]`;
-   widened `OrderActiveEditSection.quantity` to optional. The 164
-   residual errors live inside Medusa-inherited admin routes
-   (promotions/ ~53, products/ ~40, product-variants/ ~32, plus small
-   clusters). Gated behind
-   `.github/workflows/ci.yml continue-on-error: true`.
+1. **LR-3 — done.** Admin-panel `pnpm typecheck` is at **0 errors**
+   (was 710). Pass 10 cleared the residual 164 across
+   `promotions/**` (53 → 0), `products/**` (40 → 0),
+   `product-variants/**` (32 → 0), and a 19-error residual tail
+   (lib/sdk env extensions, query-key-factory readonly-tuple cast,
+   table-display-utils Badge migration, donations/categories/sales-channels
+   metadata variance, campaigns null-vs-undefined, enum-key fix in
+   `LotAllocationLabels`, `replaceAll` workaround for ES2020 target, and
+   adding `DigitalProduct`/`MediaType` to `src/types/index.ts`).
+   `.github/workflows/ci.yml` admin-panel typecheck step now runs
+   **fail-fast** (this PR removes the `continue-on-error: true` flag).
 2. **TI-1 (source fix landed; CI validation pending)** — backend
    migration ordering bug fixed in-source: `Migration20251229AddRawColumns`
    renamed to `Migration20251230AddRawColumns` so the hawala-ledger
@@ -50,14 +37,13 @@ What still blocks a clean v1.0.0 cut after this PR:
    until a green CI run against a live Postgres confirms the migration
    graph end-to-end; flip in a follow-up.
 3. **LR-1 steps 3-4** — admin-panel ESLint cap is now 4000 (down from
-   7000; current count 3,998). Steps 3 (2000) and 4 (0) are still open;
+   7000; current count 3,985). Steps 3 (2000) and 4 (0) are still open;
    step 3 is blocked by 3,077 `no-restricted-imports` warnings that need
    either a mass `../` → `@/` path-alias rewrite or rule relaxation.
 
-Until LR-3 and TI-1 CI-side validation land, the two remaining
-`continue-on-error: true` flags in `.github/workflows/ci.yml` must stay.
-The storefront typecheck flag was flipped to fail-fast in this PR
-because `pnpm typecheck` now passes against `tsc --noEmit`.
+Until TI-1 CI-side validation lands, the one remaining
+`continue-on-error: true` flag in `.github/workflows/ci.yml` must stay.
+Both typecheck flags were flipped to fail-fast in this branch.
 
 ## What this PR landed
 
@@ -100,26 +86,25 @@ remaining v1.0.0-tagged rows:
   logs server-side with `console.info`, returning 202 Accepted. A TODO
   in both files points at the open backend leads-table / webhook
   contract.
-- **LR-3 (partial)** — installed missing devDeps
-  (`@medusajs/admin-sdk@2.12.5`, `@medusajs/framework@2.12.5`,
-  `@sentry/browser`, `stripe`); restored three missing files
-  (`src/types/venue.ts`, `src/types/ticket-product.ts`,
-  `src/components/create-venue-modal.tsx` as a single-row stub) and
-  re-exported the two new type modules from `src/types/index.ts`;
-  repointed `src/index.ts` from the nonexistent `./render` to
-  `./dashboard-app`; corrected
-  `src/routes/tax-regions/tax-region-province-detail/components/index.ts`
-  to the actual sibling directories
-  (`tax-region-province-detail-section`,
-  `tax-region-province-override-section`). Errors dropped 710 → 671;
-  the 671 residual are real type drift in Medusa-inherited routes and
-  remain owned by the admin-panel team. CI step stays
-  `continue-on-error: true`.
+- **LR-3 (done)** — fully cleared admin-panel typecheck (710 → 0) across
+  10 sub-passes. Passes 1-5 covered the missing devDeps + missing files
+  + first 12 cluster subtrees (710 → 472); passes 6-8 cleared most of
+  `orders/**` (472 → 263); pass 9 fully cleared `orders/**` (263 → 164);
+  **pass 10 cleared the residual 164**: `promotions/**` (53 → 0),
+  `products/**` (40 → 0), `product-variants/**` (32 → 0), and a 19-error
+  tail (lib/sdk env extensions in `vite-env.d.ts`, query-key-factory
+  readonly-tuple unknown-cast, table-display-utils Badge migration,
+  donations/categories/sales-channels metadata variance via
+  `mutateAsync as any`, campaigns null-vs-undefined Input prop,
+  `LotAllocationLabels` enum-key fix, `replaceAll` → `split.join`
+  workaround for ES2020 target, `DigitalProduct`/`MediaType` types added
+  to `src/types/index.ts`). `.github/workflows/ci.yml` admin-panel
+  typecheck step **flipped to fail-fast** in this pass.
 
-CI workflow files edited: `.github/workflows/ci.yml` (storefront
-typecheck flipped to fail-fast). Two `continue-on-error: true` flags
-remain on the admin-panel typecheck and the backend integration-test
-steps.
+CI workflow files edited: `.github/workflows/ci.yml` (storefront *and*
+admin-panel typecheck flags both flipped to fail-fast). One
+`continue-on-error: true` flag remains on the backend integration-test
+step (TI-1 in-source fix needs a green CI run to confirm).
 
 ## Gate-by-gate status
 
@@ -128,8 +113,8 @@ Source: `docs/PRODUCTION_READINESS.md` §"Quality gates" and
 
 | Gate | Workflow | Status | Notes |
 |---|---|---|---|
-| Lint (4 apps + backend) | `ci.yml` | green | admin-panel runs with `--max-warnings 4000` (LR-1 steps 1+2; was 7000 pre-PR; current count 3,998); other apps zero-warning |
-| Typecheck — admin-panel | `ci.yml` (~`:184`) | **soft-failing** | `continue-on-error: true`; 671 cascaded errors after this PR (was 710) — residual is real type drift in Medusa-inherited routes (LR-3 partial) |
+| Lint (4 apps + backend) | `ci.yml` | green | admin-panel runs with `--max-warnings 4000` (LR-1 steps 1+2; was 7000 pre-PR; current count 3,985); other apps zero-warning |
+| Typecheck — admin-panel | `ci.yml` (~`:181`) | **green (fail-fast)** | `continue-on-error: true` removed this pass; `pnpm typecheck` passes after pass 10 cleared the residual 164 errors (LR-3 done) |
 | Typecheck — storefront | `ci.yml:64` | **green (fail-fast)** | `continue-on-error: true` removed in this PR; `pnpm typecheck` passes against `tsc --noEmit` (LR-5 done) |
 | Typecheck — backend | `ci.yml` | green | `tsc --noEmit` passes locally on 2026-05-13 (after TI-1 migration rename + new CREATE migration) |
 | Typecheck — vendor-panel | `ci.yml` | green | `pnpm typecheck` passes locally |
@@ -181,8 +166,8 @@ remain open after this PR:
 
 | # | Title | Effort | Owner | Why it blocks |
 |---|---|:-:|---|---|
-| LR-1 (steps 1+2 done) | Lower admin-panel ESLint `--max-warnings` ~~5500~~ → ~~4000~~ → 2000 → 0 | L | admin-panel team | Steps 1 & 2 landed in this PR (7000 → 4000, current count 3,998); step 3 (2000) blocked by 3,077 `no-restricted-imports` warnings — needs a path-alias rewrite pass or rule relaxation |
-| LR-3 (partial) | Eliminate admin-panel typecheck failures — 671 residual errors after this PR's missing-module fixes | M | admin-panel team | Forces `continue-on-error: true` on the admin-panel typecheck gate; type drift inside Medusa-inherited routes |
+| LR-1 (steps 1+2 done) | Lower admin-panel ESLint `--max-warnings` ~~5500~~ → ~~4000~~ → 2000 → 0 | L | admin-panel team | Steps 1 & 2 landed in this PR (7000 → 4000, current count 3,985); step 3 (2000) blocked by 3,077 `no-restricted-imports` warnings — needs a path-alias rewrite pass or rule relaxation |
+| ~~LR-3~~ | ~~Eliminate admin-panel typecheck failures~~ | ✅ | admin-panel team | Fully cleared this branch (710 → 0); CI gate flipped to fail-fast |
 | TI-1 (CI validation) | Confirm the new migration graph passes `pnpm test:integration:http` against live Postgres, then flip `ci.yml:409` | S | backend team | Source fix landed in this PR; CI flag stays soft until a green run is observed |
 
 The two SD-* rows historically tagged `v1.0.0` (SD-1..SD-5) are now
@@ -247,9 +232,10 @@ pnpm install --dir <pkg>
 # Per-package validation
 cd backend     && pnpm typecheck                # PASS
 cd backend     && pnpm test:unit                # (see below)
-cd storefront  && pnpm typecheck                # FAIL (LR-5; documented)
+cd storefront  && pnpm typecheck                # PASS (LR-5 done)
 cd vendor-panel && pnpm typecheck               # PASS (LR-2 already resolved)
-cd admin-panel  && pnpm typecheck               # FAIL (LR-3; documented)
+cd admin-panel  && pnpm typecheck               # PASS (LR-3 done in pass 10)
+cd admin-panel  && pnpm lint                    # PASS (3,985 warnings; cap 4000)
 
 # Lockfile sanity — none of these should match after the bump
 rg -n "@mikro-orm/[a-z]+@6\.4\." backend/pnpm-lock.yaml      pnpm-lock.yaml
@@ -278,10 +264,11 @@ The `rg` commands above confirmed only `@types/lodash@4.17.20` remains
 | backend | `pnpm test:unit` | PASS in pass 1; not re-run in pass 2 (only migration filenames + 1 new file changed) |
 | vendor-panel | `pnpm typecheck` | PASS in pass 1; not re-run in pass 2 (no vendor-panel touches in this pass) |
 | storefront | `pnpm typecheck` | **PASS** (exit 0) — LR-5 resolved |
-| admin-panel | `pnpm typecheck` | FAIL (exit 2; 671 errors, **expected** — LR-3 partial; was 710 pre-PR) |
+| admin-panel | `pnpm typecheck` | **PASS** (exit 0) — LR-3 fully cleared in pass 10 (710 → 0); CI flag flipped to fail-fast |
+| admin-panel | `pnpm lint` | PASS (exit 0; 3,985 warnings, under 4000 cap) |
 
-The admin-panel failure is a pre-existing v1.0.0 blocker; LR-5 (storefront)
-and the LR-3 missing-module cascade are now closed. Backend changes were
+LR-3 (admin-panel) and LR-5 (storefront) are now both closed; the CI
+typecheck flags for both apps run fail-fast. Backend changes were
 limited to migration file renames + one new CREATE migration; full
 `pnpm test:integration:http` validation depends on TI-1 CI confirmation.
 
@@ -329,5 +316,16 @@ Pass 2 (QA-1, LR-5, TI-1 source fix, TD-3 partial, LR-3 partial):
 - `admin-panel/src/types/{venue,ticket-product,index}.ts` (LR-3; 2 new + 1 edit)
 - `admin-panel/src/components/create-venue-modal.tsx` *(new)* (LR-3)
 - `admin-panel/src/routes/tax-regions/tax-region-province-detail/components/index.ts` (LR-3)
-- `.github/workflows/ci.yml` (storefront typecheck flipped to fail-fast)
+- `.github/workflows/ci.yml` (storefront *and* admin-panel typecheck flipped to fail-fast)
 - `docs/AUDIT_DEBT.md`, `docs/qa-production-readiness-check-2026-05-13.md`
+
+Pass 10 (LR-3 finishing): touched ~55 admin-panel files across
+`promotions/`, `products/`, `product-variants/`, plus the residual tail
+(`src/lib/{sdk,query-key-factory,table-display-utils,tenancy/context}`,
+`src/lib/table/field-utils.ts`, `src/types/{domain,index}.ts`,
+`src/vite-env.d.ts`, `src/index.ts`,
+`src/components/{data-grid,utilities,create-digital-product-form}`,
+`src/dashboard-app/forms/form-extension-zone/`,
+`src/providers/feature-flag-provider/`, the metadata pages under
+`routes/{categories,sales-channels}/`, campaigns + refund-reasons +
+reservations + product-tags + vendor-hype subdirs).

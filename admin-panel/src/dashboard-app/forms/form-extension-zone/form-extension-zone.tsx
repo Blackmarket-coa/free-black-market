@@ -59,7 +59,7 @@ const FormExtensionField = ({ field, form }: FormExtensionFieldProps) => {
             {description && <Form.Hint>{description}</Form.Hint>}
             <Form.Control>
               <FormExtensionFieldComponent
-                field={field}
+                field={field as any}
                 type={type}
                 component={Component}
                 placeholder={placeholder}

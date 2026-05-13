@@ -24,7 +24,11 @@ export function ProductVariantManageInventoryItems() {
   return (
     <RouteFocusModal>
       {!isLoading && variant && (
-        <ManageVariantInventoryItemsForm variant={variant} />
+        // The admin response embeds the variant's inventory_items join
+        // when fetched with VARIANT_DETAIL_FIELDS, which the SDK type
+        // doesn't model. Cast through any to relax the join shape.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        <ManageVariantInventoryItemsForm variant={variant as any} />
       )}
     </RouteFocusModal>
   )

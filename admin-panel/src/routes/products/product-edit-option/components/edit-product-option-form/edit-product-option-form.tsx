@@ -29,13 +29,13 @@ export const CreateProductOptionForm = ({
   const form = useForm<z.infer<typeof CreateProductOptionSchema>>({
     defaultValues: {
       title: option.title,
-      values: option.values.map((v: any) => v.value),
+      values: (option.values ?? []).map((v: any) => v.value),
     },
     resolver: zodResolver(CreateProductOptionSchema),
   })
 
   const { mutateAsync, isPending } = useUpdateProductOption(
-    option.product_id,
+    option.product_id ?? "",
     option.id
   )
 

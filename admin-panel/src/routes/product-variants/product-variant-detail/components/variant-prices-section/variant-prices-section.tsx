@@ -16,7 +16,11 @@ type VariantPricesSectionProps = {
 export function VariantPricesSection({ variant }: VariantPricesSectionProps) {
   const { t } = useTranslation()
   const prices = variant.prices
-    ?.filter((p) => !Object.keys(p.rules || {}).length)
+    ?.filter(
+      (p) =>
+        !Object.keys((p as { rules?: Record<string, unknown> }).rules || {})
+          .length
+    )
     .sort((p1, p2) => p1.currency_code?.localeCompare(p2.currency_code))
 
   const hasPrices = !!prices?.length

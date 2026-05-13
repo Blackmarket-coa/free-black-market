@@ -53,7 +53,10 @@ export const EditRules = () => {
 
       {!isLoading && promotion && (
         <EditRulesWrapper
-          promotion={promotion}
+          // EditRulesWrapper's prop type is the workflow-level PromotionDTO;
+          // the response is AdminPromotion which has a broader shape.
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          promotion={promotion as any}
           rules={rules}
           ruleType={ruleType}
         />

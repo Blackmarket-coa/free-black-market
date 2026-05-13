@@ -1,4 +1,4 @@
-import React, { useMemo } from "react"
+import { useMemo } from "react"
 import type { UseFormReturn} from "react-hook-form";
 import { useWatch } from "react-hook-form"
 import type { HttpTypes } from "@medusajs/types"

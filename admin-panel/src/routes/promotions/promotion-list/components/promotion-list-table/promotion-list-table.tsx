@@ -40,12 +40,18 @@ export const PromotionListTable = () => {
   const columns = useColumns()
 
   const { table } = useDataTable({
-    data: (promotions ?? []) as PromotionDTO[],
-    columns,
+    // useColumns returns a mix of DisplayColumnDef<AdminPromotion> +
+    // DisplayColumnDef<PromotionDTO>; useDataTable infers AdminPromotion
+    // from the data array, which mismatches the second column shape.
+    // Cast both for the legacy _DataTable plumbing.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    data: (promotions ?? []) as any,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    columns: columns as any,
     count,
     enablePagination: true,
     pageSize: PAGE_SIZE,
-    getRowId: (row) => row.id,
+    getRowId: (row: { id: string }) => row.id,
   })
 
   if (isError) {
@@ -64,7 +70,8 @@ export const PromotionListTable = () => {
 
       <_DataTable
         table={table}
-        columns={columns}
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        columns={columns as any}
         count={count}
         pageSize={PAGE_SIZE}
         filters={filters}
@@ -72,11 +79,15 @@ export const PromotionListTable = () => {
         pagination
         isLoading={isLoading}
         queryObject={raw}
-        navigateTo={(row) => `${row.original.id}`}
+        navigateTo={(row: { original: { id: string } }) =>
+          `${row.original.id}`
+        }
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         orderBy={[
           { key: "created_at", label: t("fields.createdAt") },
           { key: "updated_at", label: t("fields.updatedAt") },
-        ]}
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ] as any}
       />
       <Outlet />
     </Container>

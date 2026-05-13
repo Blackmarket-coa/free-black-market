@@ -24,7 +24,8 @@ export function createProductTableAdapter(): TableAdapter<HttpTypes.AdminProduct
         {
           placeholderData: (previousData, previousQuery) => {
             // Only keep placeholder data if the fields haven't changed
-            const prevFields = previousQuery?.[previousQuery.length - 1]?.query?.fields
+            const prevKey = (previousQuery?.queryKey ?? []) as unknown[]
+            const prevFields = (prevKey[prevKey.length - 1] as { query?: { fields?: string } } | undefined)?.query?.fields
             if (prevFields && prevFields !== fields) {
               // Fields changed, don't use placeholder data
               return undefined

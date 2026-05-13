@@ -59,7 +59,11 @@ export const ProductCreateVariantsForm = ({
   })
 
   const variantData = useMemo(() => {
-    const ret = []
+    // Variants in the form schema don't carry `originalIndex`; we
+    // attach it here so the column rendering below can drive
+    // `variants.${originalIndex}.…` form paths back to the source
+    // entry.
+    const ret: Array<typeof variants[number] & { originalIndex: number }> = []
 
     variants.forEach((v, i) => {
       if (v.should_create) {
@@ -127,7 +131,7 @@ const useColumns = ({
         name: t("fields.title"),
         header: t("fields.title"),
         field: (context) =>
-          `variants.${context.row.original.originalIndex}.title`,
+          `variants.${(context.row.original as ProductCreateVariantSchema & { originalIndex: number }).originalIndex}.title`,
         type: "text",
         cell: (context) => {
           return <DataGrid.TextCell context={context} />
@@ -138,7 +142,7 @@ const useColumns = ({
         name: t("fields.sku"),
         header: t("fields.sku"),
         field: (context) =>
-          `variants.${context.row.original.originalIndex}.sku`,
+          `variants.${(context.row.original as ProductCreateVariantSchema & { originalIndex: number }).originalIndex}.sku`,
         type: "text",
         cell: (context) => {
           return <DataGrid.TextCell context={context} />
@@ -149,7 +153,7 @@ const useColumns = ({
         name: t("fields.managedInventory"),
         header: t("fields.managedInventory"),
         field: (context) =>
-          `variants.${context.row.original.originalIndex}.manage_inventory`,
+          `variants.${(context.row.original as ProductCreateVariantSchema & { originalIndex: number }).originalIndex}.manage_inventory`,
         type: "boolean",
         cell: (context) => {
           return <DataGrid.BooleanCell context={context} />
@@ -160,7 +164,7 @@ const useColumns = ({
         name: t("fields.allowBackorder"),
         header: t("fields.allowBackorder"),
         field: (context) =>
-          `variants.${context.row.original.originalIndex}.allow_backorder`,
+          `variants.${(context.row.original as ProductCreateVariantSchema & { originalIndex: number }).originalIndex}.allow_backorder`,
         type: "boolean",
         cell: (context) => {
           return <DataGrid.BooleanCell context={context} />
@@ -172,7 +176,7 @@ const useColumns = ({
         name: t("fields.inventoryKit"),
         header: t("fields.inventoryKit"),
         field: (context) =>
-          `variants.${context.row.original.originalIndex}.inventory_kit`,
+          `variants.${(context.row.original as ProductCreateVariantSchema & { originalIndex: number }).originalIndex}.inventory_kit`,
         type: "boolean",
         cell: (context) => {
           return (
@@ -193,10 +197,10 @@ const useColumns = ({
         pricePreferences,
         getFieldName: (context, value) => {
           if (context.column.id?.startsWith("currency_prices")) {
-            return `variants.${context.row.original.originalIndex}.prices.${value}`
+            return `variants.${(context.row.original as ProductCreateVariantSchema & { originalIndex: number }).originalIndex}.prices.${value}`
           }
           
-return `variants.${context.row.original.originalIndex}.prices.${value}`
+return `variants.${(context.row.original as ProductCreateVariantSchema & { originalIndex: number }).originalIndex}.prices.${value}`
         },
         t,
       }),

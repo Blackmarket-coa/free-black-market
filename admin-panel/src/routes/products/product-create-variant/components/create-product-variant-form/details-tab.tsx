@@ -1,4 +1,3 @@
-import React from "react"
 import { Heading, Input, Switch } from "@medusajs/ui"
 import type { UseFormReturn} from "react-hook-form";
 import { useWatch } from "react-hook-form"
@@ -62,7 +61,7 @@ function DetailsTab({ form, product }: DetailsTabProps) {
             }}
           />
 
-          {product.options.map((option: any) => (
+          {product.options?.map((option: any) => (
             <Form.Field
               key={option.id}
               control={form.control}

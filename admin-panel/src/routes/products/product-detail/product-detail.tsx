@@ -72,7 +72,13 @@ export const ProductDetail = () => {
       </TwoColumnPage.Main>
       <TwoColumnPage.Sidebar>
         <ProductSalesChannelSection product={product} />
-        <ProductShippingProfileSection product={product} />
+        <ProductShippingProfileSection
+          // ProductShippingProfileSection's prop type asserts the
+          // embedded shipping_profile join is present; the admin
+          // response includes it when fetched with +shipping_profile.
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          product={product as any}
+        />
         <ProductOrganizationSection product={product} />
         <ProductAttributeSection product={product} />
         <ProductAdditionalAttributeSection />

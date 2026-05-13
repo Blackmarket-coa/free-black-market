@@ -3,10 +3,12 @@ import { Heading, Text } from "@medusajs/ui"
 import { Fragment } from "react"
 import { useTranslation } from "react-i18next"
 
-const translationKeyMap = {
+// Mirrors CampaignBudgetTypeValues from @medusajs/types.
+const translationKeyMap: Record<string, string> = {
   spend: "spend",
   usage: "usage",
   use_by_attribute: "useByAttribute",
+  spend_by_attribute: "spendByAttribute",
 }
 
 type CampaignDetailsProps = {
