@@ -1,11 +1,11 @@
 import { Heading, Input, Select, Text, Textarea } from "@medusajs/ui"
-import { UseFormReturn } from "react-hook-form"
+import type { UseFormReturn } from "react-hook-form"
 import { useTranslation } from "react-i18next"
 
 import { Form } from "../../../../../components/common/form"
 import { HandleInput } from "../../../../../components/inputs/handle-input"
 import { useDocumentDirection } from "../../../../../hooks/use-document-direction"
-import { CreateCategorySchema } from "./schema"
+import type { CreateCategorySchema } from "./schema"
 
 type CreateCategoryDetailsProps = {
   form: UseFormReturn<CreateCategorySchema>
@@ -14,7 +14,8 @@ type CreateCategoryDetailsProps = {
 export const CreateCategoryDetails = ({ form }: CreateCategoryDetailsProps) => {
   const { t } = useTranslation()
   const direction = useDocumentDirection()
-  return (
+  
+return (
     <div className="flex flex-col items-center p-16">
       <div className="flex w-full max-w-[720px] flex-col gap-y-8">
         <div>

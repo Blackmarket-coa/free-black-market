@@ -1,4 +1,5 @@
-import { HttpTypes, PaymentProviderDTO } from "@medusajs/types"
+import type { HttpTypes} from "@medusajs/types";
+import { PaymentProviderDTO } from "@medusajs/types"
 import { Button, Input, Select, Switch, Text, toast } from "@medusajs/ui"
 import { useForm } from "react-hook-form"
 import { useTranslation } from "react-i18next"
@@ -12,7 +13,7 @@ import {
 } from "../../../../../components/modals/index.ts"
 import { KeyboundForm } from "../../../../../components/utilities/keybound-form/keybound-form.tsx"
 import { useUpdateRegion } from "../../../../../hooks/api/regions.tsx"
-import { CurrencyInfo } from "../../../../../lib/data/currencies.ts"
+import type { CurrencyInfo } from "../../../../../lib/data/currencies.ts"
 import { formatProvider } from "../../../../../lib/format-provider.ts"
 import { useDocumentDirection } from "../../../../../hooks/use-document-direction"
 import { useComboboxData } from "../../../../../hooks/use-combobox-data.tsx"

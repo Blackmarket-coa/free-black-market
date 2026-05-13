@@ -1,8 +1,8 @@
 import { Divider, Heading, Input, RadioGroup, Select, Text } from "@medusajs/ui"
-import { UseFormReturn } from "react-hook-form"
+import type { UseFormReturn } from "react-hook-form"
 import { useTranslation } from "react-i18next"
 
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 
 import { Form } from "../../../../../components/common/form"
 import { SwitchBox } from "../../../../../components/common/switch-box"
@@ -11,7 +11,7 @@ import { useComboboxData } from "../../../../../hooks/use-combobox-data"
 import { sdk } from "../../../../../lib/client"
 import { formatProvider } from "../../../../../lib/format-provider"
 import { FulfillmentSetType, ShippingOptionPriceType, } from "../../../common/constants"
-import { CreateShippingOptionSchema } from "./schema"
+import type { CreateShippingOptionSchema } from "./schema"
 import { useDocumentDirection } from "../../../../../hooks/use-document-direction"
 
 type CreateShippingOptionDetailsFormProps = {

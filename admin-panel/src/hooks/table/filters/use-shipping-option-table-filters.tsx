@@ -1,7 +1,7 @@
 import { useTranslation } from "react-i18next"
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 
-import { Filter } from "../../../components/table/data-table"
+import type { Filter } from "../../../components/table/data-table"
 
 export const useShippingOptionTableFilters = (
   locations: HttpTypes.AdminStockLocation[]

@@ -1,4 +1,4 @@
-import { AdminOrder } from "@medusajs/types"
+import type { AdminOrder } from "@medusajs/types"
 import { Container, Heading } from "@medusajs/ui"
 import { useTranslation } from "react-i18next"
 import { OrderTimeline } from "./order-timeline"

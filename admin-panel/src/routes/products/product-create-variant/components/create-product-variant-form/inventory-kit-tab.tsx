@@ -1,9 +1,10 @@
 import React from "react"
-import { z } from "zod"
-import { useFieldArray, UseFormReturn } from "react-hook-form"
+import type { z } from "zod"
+import type { UseFormReturn } from "react-hook-form";
+import { useFieldArray } from "react-hook-form"
 import { Button, Heading, IconButton, Input, Label } from "@medusajs/ui"
 
-import { CreateProductVariantSchema } from "./constants"
+import type { CreateProductVariantSchema } from "./constants"
 import { XMarkMini } from "@medusajs/icons"
 import { useTranslation } from "react-i18next"
 

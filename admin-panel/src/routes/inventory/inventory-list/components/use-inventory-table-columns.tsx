@@ -1,4 +1,4 @@
-import { InventoryTypes, ProductVariantDTO } from "@medusajs/types"
+import type { InventoryTypes, ProductVariantDTO } from "@medusajs/types"
 
 import { Checkbox } from "@medusajs/ui"
 import { createColumnHelper } from "@tanstack/react-table"

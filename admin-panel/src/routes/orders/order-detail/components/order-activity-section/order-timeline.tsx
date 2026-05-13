@@ -1,9 +1,10 @@
 import { Button, Text, Tooltip, clx, toast, usePrompt } from "@medusajs/ui"
 import { Collapsible as RadixCollapsible } from "radix-ui"
 
-import { PropsWithChildren, ReactNode, useMemo, useState } from "react"
+import type { PropsWithChildren, ReactNode} from "react";
+import { useMemo, useState } from "react"
 
-import {
+import type {
   AdminClaim,
   AdminExchange,
   AdminFulfillment,
@@ -13,7 +14,7 @@ import {
 } from "@medusajs/types"
 import { useTranslation } from "react-i18next"
 
-import { AdminOrderLineItem } from "@medusajs/types"
+import type { AdminOrderLineItem } from "@medusajs/types"
 import { By } from "../../../../../components/common/user-link"
 import {
   useCancelOrderTransfer,

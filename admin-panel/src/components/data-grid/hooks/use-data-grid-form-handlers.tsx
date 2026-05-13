@@ -1,10 +1,10 @@
 import get from "lodash/get"
 import set from "lodash/set"
 import { useCallback } from "react"
-import { FieldValues, Path, PathValue, UseFormReturn } from "react-hook-form"
+import type { FieldValues, Path, PathValue, UseFormReturn } from "react-hook-form"
 
-import { DataGridMatrix } from "../models"
-import {
+import type { DataGridMatrix } from "../models"
+import type {
   DataGridColumnType,
   DataGridCoordinates,
   DataGridToggleableNumber,
@@ -150,7 +150,8 @@ function setValue<
 ) {
   if (type !== "togglable-number") {
     set(currentValues, field, newValue)
-    return
+    
+return
   }
 
   setValueToggleableNumber(currentValues, field, newValue, isHistory)
@@ -169,14 +170,16 @@ function setValueToggleableNumber(
     if (disabledToggle && value === "") {
       return 0
     }
-    return value
+    
+return value
   }
 
   const determineChecked = (quantity: number | string | null | undefined) => {
     if (disabledToggle) {
       return true
     }
-    return quantity !== "" && quantity != null
+    
+return quantity !== "" && quantity != null
   }
 
   const quantity = normalizeQuantity(newValue.quantity)

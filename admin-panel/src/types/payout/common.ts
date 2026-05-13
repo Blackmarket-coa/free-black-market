@@ -1,5 +1,5 @@
 /* Payment Account */
-import { BigNumberInput } from '@medusajs/framework/types'
+import type { BigNumberInput } from '@medusajs/framework/types'
 
 export enum PayoutAccountStatus {
   PENDING = 'pending',

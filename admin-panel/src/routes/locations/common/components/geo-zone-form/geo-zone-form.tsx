@@ -1,11 +1,13 @@
 import { Button, Checkbox } from "@medusajs/ui"
-import {
+import type {
   OnChangeFn,
-  RowSelectionState,
+  RowSelectionState} from "@tanstack/react-table";
+import {
   createColumnHelper,
 } from "@tanstack/react-table"
 import { useEffect, useMemo, useState } from "react"
-import { UseFormReturn, useFieldArray } from "react-hook-form"
+import type { UseFormReturn} from "react-hook-form";
+import { useFieldArray } from "react-hook-form"
 import { useTranslation } from "react-i18next"
 import { z } from "zod"
 
@@ -17,8 +19,9 @@ import {
 } from "../../../../../components/modals"
 import { _DataTable } from "../../../../../components/table/data-table"
 import { useDataTable } from "../../../../../hooks/use-data-table"
+import type {
+  StaticCountry} from "../../../../../lib/data/countries";
 import {
-  StaticCountry,
   countries as staticCountries,
 } from "../../../../../lib/data/countries"
 import { useCountries } from "../../../../regions/common/hooks/use-countries"
@@ -191,7 +194,8 @@ const AreaStackedModal = <TForm extends UseFormReturn<any>>({
 
     setState((prev) => {
       const filteredPrev = prev.filter((country) => value[country.iso_2])
-      return Array.from(new Set([...filteredPrev, ...addedCountries]))
+      
+return Array.from(new Set([...filteredPrev, ...addedCountries]))
     })
     setSelection(value)
   }

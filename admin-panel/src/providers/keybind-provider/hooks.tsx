@@ -6,7 +6,7 @@ import { useNavigate } from "react-router-dom"
 import { useLogout } from "../../hooks/api/auth"
 import { queryClient } from "../../lib/query-client"
 import { KeybindContext } from "./keybind-context"
-import { Shortcut } from "./types"
+import type { Shortcut } from "./types"
 import { findShortcut } from "./utils"
 
 export const useKeybind = () => {
@@ -79,7 +79,8 @@ export const useShortcuts = ({
         target.contentEditable === "true"
       ) {
         removeKeys()
-        return
+        
+return
       }
 
       setKeys((oldKeys) => [...oldKeys, event.key])

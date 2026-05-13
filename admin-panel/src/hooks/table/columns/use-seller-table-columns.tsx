@@ -3,7 +3,7 @@ import { useMemo } from "react";
 import { Badge } from "@medusajs/ui";
 
 import { formatDate } from "../../../lib/date";
-import { VendorSeller } from "../../../types";
+import type { VendorSeller } from "../../../types";
 import { SellerStatusBadge } from "../../../components/common/seller-status-badge";
 import { VendorTypeLabels } from "../../../types/domain";
 
@@ -29,7 +29,8 @@ export const useSellersTableColumns = () => {
           const vendorType = row.original.seller_metadata?.vendor_type;
           if (!vendorType) return "-";
           const label = VendorTypeLabels[vendorType as keyof typeof VendorTypeLabels] || vendorType;
-          return <Badge color="blue">{label}</Badge>;
+          
+return <Badge color="blue">{label}</Badge>;
         },
       }),
       columnHelper.display({
@@ -44,7 +45,8 @@ export const useSellersTableColumns = () => {
         header: "Verified",
         cell: ({ row }) => {
           const verified = row.original.seller_metadata?.verified;
-          return verified ? (
+          
+return verified ? (
             <Badge color="green">Yes</Badge>
           ) : (
             <Badge color="orange">No</Badge>

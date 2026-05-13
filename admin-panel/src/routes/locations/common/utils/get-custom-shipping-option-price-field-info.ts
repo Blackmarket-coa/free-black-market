@@ -1,4 +1,4 @@
-import { ConditionalShippingOptionPriceAccessor } from "../types"
+import type { ConditionalShippingOptionPriceAccessor } from "../types"
 
 export const getCustomShippingOptionPriceFieldName = (
   field: string,

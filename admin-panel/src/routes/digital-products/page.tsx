@@ -3,7 +3,7 @@ import { PhotoSolid } from "@medusajs/icons"
 import { Container, Heading, Table, Button, Drawer } from "@medusajs/ui"
 import { useEffect, useMemo, useState } from "react"
 import { Link } from "react-router-dom"
-import { DigitalProduct } from "../../types"
+import type { DigitalProduct } from "../../types"
 import CreateDigitalProductForm from "../../components/create-digital-product-form"
 
 const DigitalProductsPage = () => {

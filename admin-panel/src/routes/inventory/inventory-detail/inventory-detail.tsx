@@ -8,7 +8,7 @@ import { InventoryItemGeneralSection } from "./components/inventory-item-general
 import { InventoryItemLocationLevelsSection } from "./components/inventory-item-location-levels"
 import { InventoryItemReservationsSection } from "./components/inventory-item-reservations"
 import { InventoryItemVariantsSection } from "./components/inventory-item-variants/variants-section"
-import { inventoryItemLoader } from "./loader"
+import type { inventoryItemLoader } from "./loader"
 
 import { useExtension } from "../../../providers/extension-provider"
 import { INVENTORY_DETAIL_FIELDS } from "./constants"

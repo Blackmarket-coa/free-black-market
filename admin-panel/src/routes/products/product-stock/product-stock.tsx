@@ -1,16 +1,16 @@
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 import { AnimatePresence } from "motion/react"
 import { Suspense, useEffect, useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
 import { Await, useLoaderData } from "react-router-dom"
 
-import { ColumnDef } from "@tanstack/react-table"
+import type { ColumnDef } from "@tanstack/react-table"
 import { ProgressBar } from "../../../components/common/progress-bar"
 import { Skeleton } from "../../../components/common/skeleton"
 import { DataGridSkeleton } from "../../../components/data-grid/components"
 import { RouteFocusModal } from "../../../components/modals"
 import { ProductStockForm } from "./components/product-stock-form"
-import { productStockLoader } from "./loader"
+import type { productStockLoader } from "./loader"
 
 export const ProductStock = () => {
   const { t } = useTranslation()

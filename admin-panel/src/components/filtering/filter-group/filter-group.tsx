@@ -1,5 +1,5 @@
 import { Button, DropdownMenu } from "@medusajs/ui"
-import { ReactNode } from "react"
+import type { ReactNode } from "react"
 import { useSearchParams } from "react-router-dom"
 import { useDocumentDirection } from "../../../hooks/use-document-direction"
 
@@ -39,7 +39,8 @@ type AddFilterMenuProps = {
 
 const AddFilterMenu = ({ availableKeys }: AddFilterMenuProps) => {
   const direction = useDocumentDirection()
-  return (
+  
+return (
     <DropdownMenu
       dir={direction}
     >

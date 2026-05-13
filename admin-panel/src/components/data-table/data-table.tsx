@@ -1,20 +1,22 @@
-import {
-  DataTable as UiDataTable,
-  useDataTable,
+import type {
   DataTableColumnDef,
   DataTableCommand,
   DataTableEmptyStateProps,
   DataTableFilter,
   DataTableRow,
   DataTableRowSelectionState,
-  Heading,
-  Text,
-  Button,
   DataTableFilteringState,
   DataTablePaginationState,
-  DataTableSortingState,
+  DataTableSortingState} from "@medusajs/ui";
+import {
+  DataTable as UiDataTable,
+  useDataTable,
+  Heading,
+  Text,
+  Button
 } from "@medusajs/ui"
-import React, { ReactNode, useCallback, useMemo } from "react"
+import type { ReactNode} from "react";
+import React, { useCallback, useMemo } from "react"
 import { useTranslation } from "react-i18next"
 import { Link, useNavigate, useSearchParams } from "react-router-dom"
 
@@ -225,7 +227,8 @@ export const DataTable = <TData,>({
           transformPaginationState(value).toString()
         )
       }
-      return prev
+      
+return prev
     })
   }
 
@@ -304,12 +307,14 @@ export const DataTable = <TData,>({
 
       if (event.metaKey || event.ctrlKey || event.button === 1) {
         window.open(href, "_blank", "noreferrer")
-        return
+        
+return
       }
 
       if (event.shiftKey) {
         window.open(href, undefined, "noreferrer")
-        return
+        
+return
       }
 
       navigate(href)

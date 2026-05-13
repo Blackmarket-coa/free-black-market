@@ -39,7 +39,8 @@ async function readFileAsBase64(file: File): Promise<string> {
       const result = reader.result
       if (typeof result !== "string") {
         reject(new Error("Unexpected reader output"))
-        return
+        
+return
       }
       resolve(result.replace(/^data:[^;]+;base64,/, ""))
     }
@@ -97,11 +98,13 @@ export const BugReportForm = ({
     setScreenshotError(null)
     if (!file) {
       setScreenshot(null)
-      return
+      
+return
     }
     if (file.size > MAX_SCREENSHOT_BYTES) {
       setScreenshotError("Screenshot must be 2 MB or smaller")
-      return
+      
+return
     }
     try {
       const contentBase64 = await readFileAsBase64(file)

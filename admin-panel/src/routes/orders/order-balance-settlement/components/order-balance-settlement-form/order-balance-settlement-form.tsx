@@ -1,5 +1,5 @@
 import { zodResolver } from "@hookform/resolvers/zod"
-import { AdminOrder, AdminPayment } from "@medusajs/types"
+import type { AdminOrder, AdminPayment } from "@medusajs/types"
 import {
   Button,
   clx,
@@ -196,7 +196,7 @@ export const OrderBalanceSettlementForm = ({
                 }
               >
                 <RadioGroup.ChoiceBox
-                  value={"refund"}
+                  value="refund"
                   description={t(
                     "orders.balanceSettlement.settlementTypes.paymentMethodDescription"
                   )}
@@ -207,7 +207,7 @@ export const OrderBalanceSettlementForm = ({
                 />
 
                 <RadioGroup.ChoiceBox
-                  value={"credit_line"}
+                  value="credit_line"
                   description={t(
                     "orders.balanceSettlement.settlementTypes.creditLineDescription"
                   )}
@@ -311,7 +311,7 @@ export const OrderBalanceSettlementForm = ({
 
                 <Form.Field
                   control={form.control}
-                  name={`refund.note`}
+                  name="refund.note"
                   render={({ field }) => {
                     return (
                       <Form.Item>

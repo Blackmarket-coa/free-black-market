@@ -5,7 +5,7 @@ import { SingleColumnPage } from "../../../components/layout/pages"
 import { useShippingOptionType } from "../../../hooks/api"
 import { useExtension } from "../../../providers/extension-provider"
 import { ShippingOptionTypeGeneralSection } from "./components/shipping-option-type-general-section"
-import { shippingOptionTypeLoader } from "./loader"
+import type { shippingOptionTypeLoader } from "./loader"
 
 export const ShippingOptionTypeDetail = () => {
   const { id } = useParams()

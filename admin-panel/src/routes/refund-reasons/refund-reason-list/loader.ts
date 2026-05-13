@@ -9,7 +9,8 @@ const refundReasonListQuery = () => ({
 
 export const refundReasonListLoader = async () => {
   const query = refundReasonListQuery()
-  return (
+  
+return (
     queryClient.getQueryData(query.queryKey) ??
     (await queryClient.fetchQuery(query))
   )

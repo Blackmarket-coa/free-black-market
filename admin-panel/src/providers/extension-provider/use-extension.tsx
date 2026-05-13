@@ -6,5 +6,6 @@ export const useExtension = () => {
   if (!context) {
     throw new Error("useExtension must be used within a ExtensionProvider")
   }
-  return context
+  
+return context
 }

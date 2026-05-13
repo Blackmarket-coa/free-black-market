@@ -1,5 +1,6 @@
 import { Input } from "@medusajs/ui"
-import { ChangeEvent, useCallback, useEffect } from "react"
+import type { ChangeEvent} from "react";
+import { useCallback, useEffect } from "react"
 import { useTranslation } from "react-i18next"
 
 import { debounce } from "lodash"

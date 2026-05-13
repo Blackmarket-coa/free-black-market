@@ -1,4 +1,4 @@
-import { DataGridCoordinates } from "../types"
+import type { DataGridCoordinates } from "../types"
 import { generateCellId } from "../utils"
 
 export class DataGridQueryTool {

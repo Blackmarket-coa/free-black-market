@@ -1,9 +1,10 @@
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 import { Button, Checkbox } from "@medusajs/ui"
 import { keepPreviousData } from "@tanstack/react-query"
-import {
+import type {
   OnChangeFn,
-  RowSelectionState,
+  RowSelectionState} from "@tanstack/react-table";
+import {
   createColumnHelper,
 } from "@tanstack/react-table"
 import { useEffect, useMemo, useState } from "react"
@@ -49,7 +50,7 @@ import {
 } from "../../../../../hooks/table/query"
 import { useDataTable } from "../../../../../hooks/use-data-table"
 import { TaxRateRuleReferenceType } from "../../constants"
-import { TaxRateRuleReference } from "../../schemas"
+import type { TaxRateRuleReference } from "../../schemas"
 import { useShippingOptionTableColumns } from "../../../../../hooks/table/columns/use-shipping-option-table-columns"
 
 type TargetFormProps = {
@@ -62,7 +63,8 @@ type TargetFormProps = {
 function initRowSelection(state: TaxRateRuleReference[]) {
   return state.reduce((acc, reference) => {
     acc[reference.value] = true
-    return acc
+    
+return acc
   }, {} as RowSelectionState)
 }
 

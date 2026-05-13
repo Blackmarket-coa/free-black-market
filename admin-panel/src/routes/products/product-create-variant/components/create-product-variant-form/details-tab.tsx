@@ -1,14 +1,15 @@
 import React from "react"
 import { Heading, Input, Switch } from "@medusajs/ui"
-import { UseFormReturn, useWatch } from "react-hook-form"
+import type { UseFormReturn} from "react-hook-form";
+import { useWatch } from "react-hook-form"
 import { useTranslation } from "react-i18next"
-import { z } from "zod"
+import type { z } from "zod"
 
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 
 import { Form } from "../../../../../components/common/form"
 import { Combobox } from "../../../../../components/inputs/combobox"
-import { CreateProductVariantSchema } from "./constants"
+import type { CreateProductVariantSchema } from "./constants"
 
 type DetailsTabProps = {
   product: HttpTypes.AdminProduct

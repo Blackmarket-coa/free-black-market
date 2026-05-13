@@ -1,5 +1,6 @@
 import { Button, Input, Text, Heading, DropdownMenu } from "@medusajs/ui"
-import { useFieldArray, UseFormReturn, FieldValues, Path, FieldError, FieldErrors, ArrayPath, FieldArray } from "react-hook-form"
+import type { UseFormReturn, FieldValues, Path, FieldError, FieldErrors, ArrayPath, FieldArray } from "react-hook-form";
+import { useFieldArray } from "react-hook-form"
 import { EllipsisHorizontal, Trash } from "@medusajs/icons"
 
 interface MetadataField {
@@ -29,7 +30,8 @@ export const MetadataEditor = <T extends FieldValues & { metadata: MetadataField
 
   const getFieldErrors = (index: number) => {
     const errors = form.formState.errors[name] as FieldErrors<MetadataField[]> | undefined
-    return {
+    
+return {
       key: errors?.[index]?.key,
       value: errors?.[index]?.value
     }
@@ -46,7 +48,8 @@ export const MetadataEditor = <T extends FieldValues & { metadata: MetadataField
         </div>
         {fields.map((field, index) => {
           const fieldErrors = getFieldErrors(index)
-          return (
+          
+return (
             <div key={field.id} className="grid grid-cols-[1fr_1fr_40px] items-center border-b last:border-b-0">
               <div className="py-2 pl-3 pr-2 border-r">
                 <Input

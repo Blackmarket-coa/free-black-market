@@ -49,9 +49,11 @@ export const ConditionalPriceSchema = z
       ) {
         const gte = castNumber(data.gte)
         const lte = castNumber(data.lte)
-        return gte <= lte
+        
+return gte <= lte
       }
-      return true
+      
+return true
     },
     {
       message: t(

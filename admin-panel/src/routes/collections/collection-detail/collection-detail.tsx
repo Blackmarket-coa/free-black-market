@@ -6,7 +6,7 @@ import { useCollection } from "../../../hooks/api/collections"
 import { useExtension } from "../../../providers/extension-provider"
 import { CollectionGeneralSection } from "./components/collection-general-section"
 import { CollectionProductSection } from "./components/collection-product-section"
-import { collectionLoader } from "./loader"
+import type { collectionLoader } from "./loader"
 
 export const CollectionDetail = () => {
   const initialData = useLoaderData() as Awaited<

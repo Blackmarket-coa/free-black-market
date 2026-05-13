@@ -1,12 +1,13 @@
-import { FetchError } from "@medusajs/js-sdk";
+import type { FetchError } from "@medusajs/js-sdk";
 import type {
   AdminRefundReasonDeleteResponse,
   HttpTypes,
 } from "@medusajs/types";
 
-import {
+import type {
   UseMutationOptions,
-  UseQueryOptions,
+  UseQueryOptions} from "@tanstack/react-query";
+import {
   useMutation,
   useQuery,
 } from "@tanstack/react-query";

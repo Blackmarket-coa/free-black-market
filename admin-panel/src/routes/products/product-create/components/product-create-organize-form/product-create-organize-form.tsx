@@ -1,9 +1,9 @@
-import { UseFormReturn } from "react-hook-form"
+import type { UseFormReturn } from "react-hook-form"
 
 import { StackedFocusModal } from "../../../../../components/modals"
 import { FormExtensionZone } from "../../../../../dashboard-app"
 import { useExtension } from "../../../../../providers/extension-provider"
-import { ProductCreateSchemaType } from "../../types"
+import type { ProductCreateSchemaType } from "../../types"
 import { ProductCreateOrganizationSection } from "./components/product-create-organize-section"
 import { ProductCreateAttributeSection } from "./components/product-create-organize-attribute-section/product-create-details-attribute-section"
 import { ProductCreateSalesChannelStackedModal } from "./components/product-create-sales-channel-stacked-modal"

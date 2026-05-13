@@ -1,5 +1,6 @@
+import type {
+  QueryKey} from "@tanstack/react-query";
 import {
-  QueryKey,
   keepPreviousData,
   useInfiniteQuery,
   useQuery,
@@ -80,7 +81,8 @@ export const useComboboxData = <
     initialPageParam: 0,
     getNextPageParam: (lastPage) => {
       const moreItemsExist = lastPage.count > lastPage.offset + lastPage.limit
-      return moreItemsExist ? lastPage.offset + lastPage.limit : undefined
+      
+return moreItemsExist ? lastPage.offset + lastPage.limit : undefined
     },
     placeholderData: keepPreviousData,
     enabled: enabled,

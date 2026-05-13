@@ -58,7 +58,8 @@ async function adminFetch<T>(path: string, init?: RequestInit): Promise<T> {
     const body = await res.text().catch(() => "")
     throw new Error(`${res.status}: ${body || res.statusText}`)
   }
-  return (await res.json()) as T
+  
+return (await res.json()) as T
 }
 
 export const ServicesAdminPage = () => {
@@ -113,7 +114,7 @@ export const ServicesAdminPage = () => {
   ) => {
     const reason = window.prompt(`Reason for ${decision}:`)
     if (!reason || reason.trim().length < 2) return
-    let body: Record<string, unknown> = { decision, reason }
+    const body: Record<string, unknown> = { decision, reason }
     if (decision === "split") {
       const amt = parseInt(resolveAmountById[id] || "0", 10)
       body.release_amount_cents = Number.isFinite(amt) ? amt : 0
@@ -146,7 +147,8 @@ export const ServicesAdminPage = () => {
     const reason = (rejectReasonById[id] || "").trim()
     if (reason.length < 2) {
       toast.error("Please provide a reason")
-      return
+      
+return
     }
     try {
       await adminFetch(`/v1/admin/marketplace/proofs/${id}/reject`, {
@@ -157,7 +159,8 @@ export const ServicesAdminPage = () => {
       setRejectReasonById((m) => {
         const next = { ...m }
         delete next[id]
-        return next
+        
+return next
       })
       await reload()
     } catch (err) {

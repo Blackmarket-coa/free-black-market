@@ -1,6 +1,6 @@
 import { Prompt } from "@medusajs/ui"
-import { PropsWithChildren } from "react"
-import { FieldValues, UseFormReturn } from "react-hook-form"
+import type { PropsWithChildren } from "react"
+import type { FieldValues, UseFormReturn } from "react-hook-form"
 import { useTranslation } from "react-i18next"
 import { useBlocker } from "react-router-dom"
 import { Form } from "../../common/form"
@@ -28,7 +28,8 @@ export const RouteModalForm = <TFieldValues extends FieldValues = any>({
 
     if (isSubmitSuccessful) {
       onClose?.(true)
-      return false
+      
+return false
     }
 
     const isPathChanged = currentLocation.pathname !== nextLocation.pathname

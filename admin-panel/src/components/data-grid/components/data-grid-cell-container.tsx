@@ -1,10 +1,10 @@
 import { ErrorMessage } from "@hookform/error-message"
 import { ExclamationCircle } from "@medusajs/icons"
 import { Tooltip, clx } from "@medusajs/ui"
-import { PropsWithChildren } from "react"
+import type { PropsWithChildren } from "react"
 import { get } from "react-hook-form"
 
-import { DataGridCellContainerProps, DataGridErrorRenderProps } from "../types"
+import type { DataGridCellContainerProps, DataGridErrorRenderProps } from "../types"
 import { DataGridRowErrorIndicator } from "./data-grid-row-error-indicator"
 
 export const DataGridCellContainer = ({

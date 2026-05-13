@@ -3,7 +3,7 @@ import { useLoaderData, useParams } from "react-router-dom"
 import { useStockLocation } from "../../../hooks/api/stock-locations"
 import { LocationGeneralSection } from "./components/location-general-section"
 import LocationsSalesChannelsSection from "./components/location-sales-channels-section/locations-sales-channels-section"
-import { locationLoader } from "./loader"
+import type { locationLoader } from "./loader"
 
 import { TwoColumnPageSkeleton } from "../../../components/common/skeleton"
 import { TwoColumnPage } from "../../../components/layout/pages"

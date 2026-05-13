@@ -1,15 +1,16 @@
 import { Button, Checkbox, Hint, Switch, toast, Tooltip } from "@medusajs/ui"
-import {
-  createColumnHelper,
+import type {
   OnChangeFn,
-  RowSelectionState,
+  RowSelectionState} from "@tanstack/react-table";
+import {
+  createColumnHelper
 } from "@tanstack/react-table"
 import { useCallback, useMemo, useState } from "react"
 import { useTranslation } from "react-i18next"
 import * as zod from "zod"
 
 import { zodResolver } from "@hookform/resolvers/zod"
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 import { keepPreviousData } from "@tanstack/react-query"
 import { useForm } from "react-hook-form"
 import {
@@ -284,7 +285,8 @@ const useColumns = (
         cell: ({ row }) => {
           const isPreSelected = !row.getCanSelect()
           const isTaxInclusive = pricePreferences[row.original.code]
-          return (
+          
+return (
             <div className="flex items-center justify-end">
               <Switch
                 dir="ltr"

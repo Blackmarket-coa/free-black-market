@@ -1,10 +1,10 @@
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 import { useMemo } from "react"
 import { useTranslation } from "react-i18next"
 import { createDataGridHelper } from "../../../../components/data-grid"
 import { DataGridReadOnlyCell } from "../../../../components/data-grid/components"
 import { DataGridTogglableNumberCell } from "../../../../components/data-grid/components/data-grid-toggleable-number-cell"
-import { InventoryStockSchema } from "../schema"
+import type { InventoryStockSchema } from "../schema"
 
 const helper = createDataGridHelper<
   HttpTypes.AdminInventoryItem,
@@ -24,7 +24,8 @@ export const useInventoryStockColumns = (
         header: "Title",
         cell: (context) => {
           const item = context.row.original
-          return (
+          
+return (
             <DataGridReadOnlyCell context={context} color="normal">
               <span title={item.title || undefined}>{item.title || "-"}</span>
             </DataGridReadOnlyCell>

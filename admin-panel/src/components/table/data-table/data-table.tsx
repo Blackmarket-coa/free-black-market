@@ -1,9 +1,12 @@
 import { clx } from "@medusajs/ui"
 import { memo } from "react"
-import { NoRecords, NoResultsProps } from "../../common/empty-table-content"
+import type { NoResultsProps } from "../../common/empty-table-content";
+import { NoRecords } from "../../common/empty-table-content"
 import { TableSkeleton } from "../../common/skeleton"
-import { DataTableQuery, DataTableQueryProps } from "./data-table-query"
-import { DataTableRoot, DataTableRootProps } from "./data-table-root"
+import type { DataTableQueryProps } from "./data-table-query";
+import { DataTableQuery } from "./data-table-query"
+import type { DataTableRootProps } from "./data-table-root";
+import { DataTableRoot } from "./data-table-root"
 
 interface DataTableProps<TData>
   extends Omit<DataTableRootProps<TData>, "noResults">,

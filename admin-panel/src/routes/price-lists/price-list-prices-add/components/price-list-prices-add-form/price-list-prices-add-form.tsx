@@ -1,10 +1,12 @@
 import { zodResolver } from "@hookform/resolvers/zod"
-import { HttpTypes } from "@medusajs/types"
-import { Button, ProgressStatus, ProgressTabs, toast } from "@medusajs/ui"
+import type { HttpTypes } from "@medusajs/types"
+import type { ProgressStatus} from "@medusajs/ui";
+import { Button, ProgressTabs, toast } from "@medusajs/ui"
 import { useState } from "react"
-import { FieldPath, useForm } from "react-hook-form"
+import type { FieldPath} from "react-hook-form";
+import { useForm } from "react-hook-form"
 import { useTranslation } from "react-i18next"
-import { z } from "zod"
+import type { z } from "zod"
 
 import {
   RouteFocusModal,
@@ -94,7 +96,8 @@ export const PriceListPricesAddForm = ({
     const values = fields.reduce(
       (acc, key) => {
         acc[key] = form.getValues(key)
-        return acc
+        
+return acc
       },
       {} as Record<string, unknown>
     )
@@ -149,7 +152,8 @@ export const PriceListPricesAddForm = ({
       }))
 
       setTab(update)
-      return
+      
+return
     }
 
     // get the tabs from the current tab to the update tab including the current tab

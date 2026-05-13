@@ -1,5 +1,5 @@
-import { AdminApiKeyResponse } from "@medusajs/types"
-import { TFunction } from "i18next"
+import type { AdminApiKeyResponse } from "@medusajs/types"
+import type { TFunction } from "i18next"
 import { ApiKeyType } from "./constants"
 
 export function getApiKeyTypeFromPathname(pathname: string) {

@@ -1,12 +1,13 @@
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 import { useMemo } from "react"
 
 import { _DataTable } from "../../../../../components/table/data-table"
 import { useStockLocations } from "../../../../../hooks/api"
 import { useReservationItems } from "../../../../../hooks/api/reservations"
 import { useDataTable } from "../../../../../hooks/use-data-table"
+import type {
+  ExtendedReservationItem} from "./use-reservation-list-table-columns";
 import {
-  ExtendedReservationItem,
   useReservationTableColumn,
 } from "./use-reservation-list-table-columns"
 import { useReservationsTableQuery } from "./use-reservation-list-table-query"

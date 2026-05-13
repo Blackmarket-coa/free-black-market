@@ -1,5 +1,5 @@
 import { zodResolver } from "@hookform/resolvers/zod"
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 import {
   Button,
   CurrencyInput,
@@ -263,7 +263,7 @@ export const CreateRefundForm = ({ order }: CreateRefundFormProps) => {
 
             <Form.Field
               control={form.control}
-              name={`note`}
+              name="note"
               render={({ field }) => {
                 return (
                   <Form.Item>

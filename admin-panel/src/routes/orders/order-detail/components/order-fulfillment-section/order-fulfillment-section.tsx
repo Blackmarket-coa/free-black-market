@@ -1,5 +1,5 @@
 import { Buildings, XCircle } from "@medusajs/icons"
-import {
+import type {
   AdminOrder,
   AdminOrderFulfillment,
   AdminOrderLineItem,
@@ -294,7 +294,8 @@ const Fulfillment = ({
   const handleCancel = async () => {
     if (fulfillment.shipped_at) {
       toast.warning(t("orders.fulfillment.toast.fulfillmentShipped"))
-      return
+      
+return
     }
 
     const res = await prompt({

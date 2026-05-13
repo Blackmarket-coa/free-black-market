@@ -19,10 +19,13 @@ import {
   Tooltip,
 } from "@medusajs/ui"
 import { Accordion as RadixAccordion } from "radix-ui"
-import React, { Fragment, ReactNode, useRef, useState } from "react"
-import {
+import type { ReactNode} from "react";
+import type React from "react";
+import { Fragment, useRef, useState } from "react"
+import type {
   Control,
-  ControllerRenderProps,
+  ControllerRenderProps} from "react-hook-form";
+import {
   useFieldArray,
   useForm,
   useFormContext,
@@ -36,16 +39,17 @@ import { StackedFocusModal } from "../../../../../components/modals"
 import { KeyboundForm } from "../../../../../components/utilities/keybound-form"
 import { useCombinedRefs } from "../../../../../hooks/use-combined-refs"
 import { castNumber } from "../../../../../lib/cast-number"
-import { CurrencyInfo } from "../../../../../lib/data/currencies"
+import type { CurrencyInfo } from "../../../../../lib/data/currencies"
 import { getLocaleAmount } from "../../../../../lib/money-amount-helpers"
-import { CreateShippingOptionSchemaType } from "../../../location-service-zone-shipping-option-create/components/create-shipping-options-form/schema"
+import type { CreateShippingOptionSchemaType } from "../../../location-service-zone-shipping-option-create/components/create-shipping-options-form/schema"
+import type {
+  CondtionalPriceRuleSchemaType,
+  UpdateConditionalPriceRuleSchemaType} from "../../schema";
 import {
   CondtionalPriceRuleSchema,
-  CondtionalPriceRuleSchemaType,
-  UpdateConditionalPriceRuleSchema,
-  UpdateConditionalPriceRuleSchemaType,
+  UpdateConditionalPriceRuleSchema
 } from "../../schema"
-import { ConditionalPriceInfo } from "../../types"
+import type { ConditionalPriceInfo } from "../../types"
 import { getCustomShippingOptionPriceFieldName } from "../../utils/get-custom-shipping-option-price-field-info"
 import { useShippingOptionPrice } from "../shipping-option-price-provider"
 

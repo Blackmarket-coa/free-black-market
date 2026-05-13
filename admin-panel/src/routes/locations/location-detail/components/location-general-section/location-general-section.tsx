@@ -7,7 +7,7 @@ import {
   Trash,
   TriangleDownMini,
 } from "@medusajs/icons"
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 import {
   Badge,
   Container,
@@ -38,8 +38,9 @@ import {
   useDeleteStockLocation,
 } from "../../../../../hooks/api/stock-locations"
 import { getFormattedAddress } from "../../../../../lib/addresses"
+import type {
+  StaticCountry} from "../../../../../lib/data/countries";
 import {
-  StaticCountry,
   countries as staticCountries,
 } from "../../../../../lib/data/countries"
 import { formatProvider } from "../../../../../lib/format-provider"

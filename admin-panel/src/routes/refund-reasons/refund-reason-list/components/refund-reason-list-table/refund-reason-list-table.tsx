@@ -1,7 +1,7 @@
 import { useCallback, useMemo } from "react";
 
 import { PencilSquare, Trash } from "@medusajs/icons";
-import { HttpTypes } from "@medusajs/types";
+import type { HttpTypes } from "@medusajs/types";
 import {
   Container,
   createDataTableColumnHelper,

@@ -1,8 +1,9 @@
-import { QueryKey, UseQueryOptions, useQuery } from "@tanstack/react-query"
+import type { QueryKey, UseQueryOptions} from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query"
 import { sdk } from "../../lib/client"
 import { queryKeysFactory } from "../../lib/query-key-factory"
-import { HttpTypes } from "@medusajs/types"
-import { FetchError } from "@medusajs/js-sdk"
+import type { HttpTypes } from "@medusajs/types"
+import type { FetchError } from "@medusajs/js-sdk"
 
 const WORKFLOW_EXECUTIONS_QUERY_KEY = "workflow_executions" as const
 export const workflowExecutionsQueryKeys = queryKeysFactory(

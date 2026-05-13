@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next"
 import { ArrowPath, CurrencyDollar, Envelope, FlyingBox } from "@medusajs/icons"
 import { ActionMenu } from "../../../../../components/common/action-menu"
 import { CustomerInfo } from "../../../../../components/common/customer-info"
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 
 type OrderCustomerSectionProps = {
   order: HttpTypes.AdminOrder

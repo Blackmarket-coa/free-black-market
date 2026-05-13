@@ -1,7 +1,7 @@
 import { useTranslation } from "react-i18next"
 
 import { StatusCell } from "../../common/status-cell"
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 
 type ProductStatusCellProps = {
   status: HttpTypes.AdminProductStatus

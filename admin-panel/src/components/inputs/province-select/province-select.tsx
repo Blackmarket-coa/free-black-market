@@ -1,5 +1,6 @@
+import type {
+  ComponentPropsWithoutRef} from "react";
 import {
-  ComponentPropsWithoutRef,
   forwardRef,
   useImperativeHandle,
   useRef,

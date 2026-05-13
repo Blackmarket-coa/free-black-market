@@ -15,5 +15,6 @@ export const useDataTableFilterContext = () => {
       "useDataTableFacetedFilterContext must be used within a DataTableFacetedFilter"
     )
   }
-  return ctx
+  
+return ctx
 }

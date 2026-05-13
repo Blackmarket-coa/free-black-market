@@ -1,4 +1,4 @@
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 import { Button, Input } from "@medusajs/ui"
 import { useTranslation } from "react-i18next"
 import * as zod from "zod"
@@ -23,7 +23,8 @@ const dimension = zod
     if (value === "") {
       return null
     }
-    return Number(value)
+    
+return Number(value)
   })
   .optional()
   .nullable()

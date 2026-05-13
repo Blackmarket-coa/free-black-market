@@ -1,10 +1,10 @@
 import { InlineTip, Input, Switch } from "@medusajs/ui"
-import { ComponentType } from "react"
-import { ControllerRenderProps, UseFormReturn } from "react-hook-form"
+import type { ComponentType } from "react"
+import type { ControllerRenderProps, UseFormReturn } from "react-hook-form"
 import { useTranslation } from "react-i18next"
 import { Form } from "../../../components/common/form"
-import { FormField } from "../../types"
-import { FormFieldType } from "./types"
+import type { FormField } from "../../types"
+import type { FormFieldType } from "./types"
 import { getFieldType } from "./utils"
 
 type FormExtensionZoneProps = {

@@ -1,8 +1,9 @@
-import { CellContext } from "@tanstack/react-table"
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import type { CellContext } from "@tanstack/react-table"
+import type React from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 
 import { useDataGridContext } from "../context"
-import {
+import type {
   DataGridCellContext,
   DataGridCellRenderProps,
   DataGridCoordinates,
@@ -74,7 +75,8 @@ export const useDataGridCell = <TData, TValue>({
         // If not we let the function continue and treat the click as if the shift key was not pressed.
         if (coords.col === anchor?.col) {
           setRangeEnd(coords)
-          return
+          
+return
         }
       }
 
@@ -94,12 +96,14 @@ export const useDataGridCell = <TData, TValue>({
 
       if (e.detail === 2) {
         inputRef.current?.focus()
-        return
+        
+return
       }
 
       if (e.shiftKey) {
         setRangeEnd(coords)
-        return
+        
+return
       }
 
       if (containerRef.current) {

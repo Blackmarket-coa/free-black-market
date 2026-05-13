@@ -1,8 +1,9 @@
 import { zodResolver } from "@hookform/resolvers/zod"
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 import { Button, toast, usePrompt } from "@medusajs/ui"
 import { useEffect, useMemo, useRef, useState } from "react"
-import { DefaultValues, useForm } from "react-hook-form"
+import type { DefaultValues} from "react-hook-form";
+import { useForm } from "react-hook-form"
 import { useTranslation } from "react-i18next"
 
 import { DataGrid } from "../../../../../components/data-grid"
@@ -14,11 +15,12 @@ import { KeyboundForm } from "../../../../../components/utilities/keybound-form"
 import { useBatchInventoryItemsLocationLevels } from "../../../../../hooks/api"
 import { castNumber } from "../../../../../lib/cast-number"
 import { useProductStockColumns } from "../../hooks/use-product-stock-columns"
-import {
+import type {
   ProductStockInventoryItemSchema,
   ProductStockLocationSchema,
-  ProductStockSchema,
-  ProductStockVariantSchema,
+  ProductStockVariantSchema} from "../../schema";
+import {
+  ProductStockSchema
 } from "../../schema"
 import {
   getDisabledInventoryRows,
@@ -204,17 +206,20 @@ function getDefaultValue(
                 (level?.incoming_quantity || 0) > 0 ||
                 (level?.reserved_quantity || 0) > 0,
             }
-            return locationAcc
+            
+return locationAcc
           }, {} as ProductStockLocationSchema)
 
           itemAcc[item.inventory_item_id] = { locations: locationsMap }
-          return itemAcc
+          
+return itemAcc
         },
         {} as Record<string, ProductStockInventoryItemSchema>
       )
 
       variantAcc[variant.id] = { inventory_items: inventoryItems || {} }
-      return variantAcc
+      
+return variantAcc
     }, {} as Record<string, ProductStockVariantSchema>),
   }
 }

@@ -7,7 +7,7 @@ import { TaxRegionProvinceDetailSection } from "./components/tax-region-province
 import { SingleColumnPageSkeleton } from "../../../components/common/skeleton"
 import { useExtension } from "../../../providers/extension-provider"
 import { TaxRegionProvinceOverrideSection } from "./components/tax-region-province-override-section"
-import { taxRegionLoader } from "./loader"
+import type { taxRegionLoader } from "./loader"
 
 export const TaxRegionDetail = () => {
   const { province_id } = useParams()

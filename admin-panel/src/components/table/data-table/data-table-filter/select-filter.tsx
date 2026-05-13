@@ -8,7 +8,7 @@ import { useTranslation } from "react-i18next"
 import { useSelectedParams } from "../hooks"
 import { useDataTableFilterContext } from "./context"
 import FilterChip from "./filter-chip"
-import { IFilter } from "./types"
+import type { IFilter } from "./types"
 
 interface SelectFilterProps extends IFilter {
   options: { label: string; value: unknown }[]

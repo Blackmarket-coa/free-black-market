@@ -1,9 +1,10 @@
-import { Column, Row, VisibilityState } from "@tanstack/react-table"
-import { ScrollToOptions, Virtualizer } from "@tanstack/react-virtual"
-import { Dispatch, SetStateAction, useCallback } from "react"
-import { FieldValues } from "react-hook-form"
-import { DataGridMatrix, DataGridQueryTool } from "../models"
-import { DataGridCoordinates } from "../types"
+import type { Column, Row, VisibilityState } from "@tanstack/react-table"
+import type { ScrollToOptions, Virtualizer } from "@tanstack/react-virtual"
+import type { Dispatch, SetStateAction} from "react";
+import { useCallback } from "react"
+import type { FieldValues } from "react-hook-form"
+import type { DataGridMatrix, DataGridQueryTool } from "../models"
+import type { DataGridCoordinates } from "../types"
 
 type UseDataGridNavigationOptions<TData, TFieldValues extends FieldValues> = {
   matrix: DataGridMatrix<TData, TFieldValues>

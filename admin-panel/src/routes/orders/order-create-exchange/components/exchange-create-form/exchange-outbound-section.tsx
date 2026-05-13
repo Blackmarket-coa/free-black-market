@@ -1,4 +1,4 @@
-import {
+import type {
   AdminExchange,
   AdminOrder,
   AdminOrderPreview,
@@ -6,7 +6,8 @@ import {
 } from "@medusajs/types"
 import { Alert, Button, Heading, Text, toast } from "@medusajs/ui"
 import { useEffect, useMemo, useState } from "react"
-import { useFieldArray, UseFormReturn } from "react-hook-form"
+import type { UseFormReturn } from "react-hook-form";
+import { useFieldArray } from "react-hook-form"
 import { useTranslation } from "react-i18next"
 
 import { Form } from "../../../../../components/common/form"
@@ -29,7 +30,7 @@ import { ItemPlaceholder } from "../../../order-create-claim/components/claim-cr
 import { AddExchangeOutboundItemsTable } from "../add-exchange-outbound-items-table"
 import { ExchangeOutboundItem } from "./exchange-outbound-item"
 import { useOrderShippingOptions } from "../../../../../hooks/api/orders"
-import { CreateExchangeSchemaType } from "./schema"
+import type { CreateExchangeSchemaType } from "./schema"
 import { getFormattedShippingOptionLocationName } from "../../../../../lib/shipping-options"
 
 type ExchangeOutboundSectionProps = {

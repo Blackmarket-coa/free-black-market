@@ -1,4 +1,4 @@
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 import { Badge, Container, Tooltip } from "@medusajs/ui"
 import { useTranslation } from "react-i18next"
 

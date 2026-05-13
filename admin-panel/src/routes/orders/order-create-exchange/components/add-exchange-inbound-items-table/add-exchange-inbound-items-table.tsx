@@ -1,5 +1,5 @@
-import { AdminOrderLineItem, DateComparisonOperator } from "@medusajs/types"
-import { OnChangeFn, RowSelectionState } from "@tanstack/react-table"
+import type { AdminOrderLineItem, DateComparisonOperator } from "@medusajs/types"
+import type { OnChangeFn, RowSelectionState } from "@tanstack/react-table"
 import { useMemo, useState } from "react"
 
 import { useTranslation } from "react-i18next"
@@ -31,7 +31,8 @@ export const AddExchangeInboundItemsTable = ({
   const [rowSelection, setRowSelection] = useState<RowSelectionState>(
     selectedItems.reduce((acc, id) => {
       acc[id] = true
-      return acc
+      
+return acc
     }, {} as RowSelectionState)
   )
 
@@ -149,7 +150,8 @@ const sortItems = (
     if (aValue > bValue) {
       return direction === "asc" ? 1 : -1
     }
-    return 0
+    
+return 0
   })
 }
 

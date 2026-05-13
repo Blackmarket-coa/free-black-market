@@ -1,5 +1,5 @@
-import { HttpTypes } from "@medusajs/types"
-import { UIMatch } from "react-router-dom"
+import type { HttpTypes } from "@medusajs/types"
+import type { UIMatch } from "react-router-dom"
 import { useShippingProfile } from "../../../hooks/api/shipping-profiles"
 
 type ShippingProfileDetailBreadcrumbProps =

@@ -1,5 +1,5 @@
 import { InformationCircleSolid } from "@medusajs/icons"
-import { AdminReturn } from "@medusajs/types"
+import type { AdminReturn } from "@medusajs/types"
 import { Badge, Popover, Text } from "@medusajs/ui"
 import { useState } from "react"
 import { useTranslation } from "react-i18next"

@@ -1,4 +1,4 @@
-import {
+import type {
   DateComparisonOperator,
   NumericalComparisonOperator,
 } from "@medusajs/types"

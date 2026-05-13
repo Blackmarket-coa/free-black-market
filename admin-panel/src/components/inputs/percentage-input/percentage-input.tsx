@@ -1,6 +1,7 @@
 import { clx, Input, Text } from "@medusajs/ui";
 import { getNumberOfDecimalPlaces } from "../../../lib/number-helpers";
-import { ComponentProps, ElementRef, forwardRef } from "react";
+import type { ComponentProps, ElementRef} from "react";
+import { forwardRef } from "react";
 import Primitive from "react-currency-input-field";
 
 const MIN_DECIMAL_SCALE = 2;
@@ -11,7 +12,8 @@ function resolveDecimalScale(
   if (value == null || Array.isArray(value)) {
     return MIN_DECIMAL_SCALE;
   }
-  return Math.max(
+  
+return Math.max(
     getNumberOfDecimalPlaces(parseFloat(value.toString())),
     MIN_DECIMAL_SCALE
   );

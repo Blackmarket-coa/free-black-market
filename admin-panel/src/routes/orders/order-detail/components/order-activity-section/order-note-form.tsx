@@ -5,7 +5,7 @@ import { useRef } from "react"
 import { useForm } from "react-hook-form"
 import { z } from "zod"
 
-import { AdminOrder } from "@medusajs/types"
+import type { AdminOrder } from "@medusajs/types"
 import { useTranslation } from "react-i18next"
 import { Form } from "../../../../../components/common/form"
 import { KeyboundForm } from "../../../../../components/utilities/keybound-form"

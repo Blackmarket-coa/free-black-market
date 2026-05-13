@@ -367,7 +367,8 @@ export const ENTITY_COLUMN_OVERRIDES = {
         if (formattedCustomer) {
           return formattedCustomer
         }
-        return customer?.email || 'Guest'
+        
+return customer?.email || 'Guest'
       }
     }
   }

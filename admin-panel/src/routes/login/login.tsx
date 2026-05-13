@@ -131,7 +131,7 @@ export const Login = () => {
               </div>
               {validationError && (
                 <div className="text-center">
-                  <Hint className="inline-flex" variant={"error"}>
+                  <Hint className="inline-flex" variant="error">
                     {validationError}
                   </Hint>
                 </div>

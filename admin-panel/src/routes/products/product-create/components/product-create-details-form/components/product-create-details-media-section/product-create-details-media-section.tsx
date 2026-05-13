@@ -1,13 +1,14 @@
+import type {
+  DragEndEvent,
+  DragStartEvent,
+  DropAnimation,
+  UniqueIdentifier} from "@dnd-kit/core";
 import {
   defaultDropAnimationSideEffects,
   DndContext,
-  DragEndEvent,
   DragOverlay,
-  DragStartEvent,
-  DropAnimation,
   KeyboardSensor,
   PointerSensor,
-  UniqueIdentifier,
   useSensor,
   useSensors,
 } from "@dnd-kit/core"
@@ -27,11 +28,12 @@ import {
 } from "@medusajs/icons"
 import { IconButton, Text } from "@medusajs/ui"
 import { useState } from "react"
-import { useFieldArray, UseFormReturn } from "react-hook-form"
+import type { UseFormReturn } from "react-hook-form";
+import { useFieldArray } from "react-hook-form"
 import { useTranslation } from "react-i18next"
 import { ActionMenu } from "../../../../../../../components/common/action-menu"
 import { UploadMediaFormItem } from "../../../../../common/components/upload-media-form-item"
-import { ProductCreateSchemaType } from "../../../../types"
+import type { ProductCreateSchemaType } from "../../../../types"
 
 type ProductCreateMediaSectionProps = {
   form: UseFormReturn<ProductCreateSchemaType>

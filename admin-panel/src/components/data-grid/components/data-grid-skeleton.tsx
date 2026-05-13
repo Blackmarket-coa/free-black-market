@@ -1,4 +1,4 @@
-import { ColumnDef } from "@tanstack/react-table"
+import type { ColumnDef } from "@tanstack/react-table"
 import { Skeleton } from "../../common/skeleton"
 
 type DataGridSkeletonProps<TData> = {

@@ -8,7 +8,7 @@ import {
   useConfirmOrderEdit,
 } from "../../../../../hooks/api/order-edits"
 import { useMemo } from "react"
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 import { Thumbnail } from "../../../../../components/common/thumbnail"
 import { useNavigate } from "react-router-dom"
 
@@ -74,7 +74,8 @@ export const OrderActiveEditSection = ({
 
       if (!originalItem) {
         added.push({ item: currentItem, quantity: currentItem.quantity })
-        return
+        
+return
       }
 
       if (originalItem.quantity > currentItem.quantity) {

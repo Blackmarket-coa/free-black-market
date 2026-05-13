@@ -3,7 +3,8 @@ import { useQuery } from "@tanstack/react-query"
 import { Container, Heading, Text } from "@medusajs/ui"
 import { sdk } from "@lib/client"
 import { StorefrontSwitcher } from "@components/tenancy/storefront-switcher"
-import { StorefrontContext, withStorefrontHeaders } from "@lib/tenancy/context"
+import type { StorefrontContext} from "@lib/tenancy/context";
+import { withStorefrontHeaders } from "@lib/tenancy/context"
 
 export const DonationReportPage = () => {
   const [ctx, setCtx] = useState<StorefrontContext | null>(null)

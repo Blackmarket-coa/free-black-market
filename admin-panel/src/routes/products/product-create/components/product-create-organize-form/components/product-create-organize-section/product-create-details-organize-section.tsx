@@ -1,5 +1,6 @@
 import { Button, Heading } from "@medusajs/ui"
-import { UseFormReturn, useFieldArray } from "react-hook-form"
+import type { UseFormReturn} from "react-hook-form";
+import { useFieldArray } from "react-hook-form"
 import { Trans, useTranslation } from "react-i18next"
 
 import { ChipGroup } from "../../../../../../../components/common/chip-group"
@@ -10,7 +11,7 @@ import { StackedFocusModal } from "../../../../../../../components/modals"
 import { useComboboxData } from "../../../../../../../hooks/use-combobox-data"
 import { sdk } from "../../../../../../../lib/client"
 import { CategoryCombobox } from "../../../../../common/components/category-combobox"
-import { ProductCreateSchemaType } from "../../../../types"
+import type { ProductCreateSchemaType } from "../../../../types"
 
 type ProductCreateOrganizationSectionProps = {
   form: UseFormReturn<ProductCreateSchemaType>
@@ -177,7 +178,7 @@ export const ProductCreateOrganizationSection = ({
             {t("products.fields.shipping_profile.label")}
           </Form.Label>
           <Form.Hint>
-            <Trans i18nKey={"products.fields.shipping_profile.hint"} />
+            <Trans i18nKey="products.fields.shipping_profile.hint" />
           </Form.Hint>
         </div>
         <Form.Field
@@ -214,7 +215,7 @@ export const ProductCreateOrganizationSection = ({
                       {t("products.fields.sales_channels.label")}
                     </Form.Label>
                     <Form.Hint>
-                      <Trans i18nKey={"products.fields.sales_channels.hint"} />
+                      <Trans i18nKey="products.fields.sales_channels.hint" />
                     </Form.Hint>
                   </div>
                   <StackedFocusModal.Trigger asChild>

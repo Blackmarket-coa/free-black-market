@@ -1,8 +1,10 @@
 import { zodResolver } from "@hookform/resolvers/zod"
-import { FieldValues, useForm, UseFormProps } from "react-hook-form"
-import { z, ZodEffects, ZodObject } from "zod"
+import type { FieldValues, UseFormProps } from "react-hook-form";
+import { useForm } from "react-hook-form"
+import type { ZodObject } from "zod";
+import { z, ZodEffects } from "zod"
 
-import { ConfigField } from "../types"
+import type { ConfigField } from "../types"
 
 interface UseExtendableFormProps<
   TSchema extends ZodObject<any> | ZodEffects<ZodObject<any>>,
@@ -17,7 +19,8 @@ interface UseExtendableFormProps<
 function createAdditionalDataSchema(configs: ConfigField[]) {
   return configs.reduce((acc, config) => {
     acc[config.name] = config.validation
-    return acc
+    
+return acc
   }, {} as Record<string, z.ZodTypeAny>)
 }
 
@@ -53,7 +56,8 @@ function createExtendedDefaultValues<TData>(
 
     acc[name] =
       typeof defaultValue === "function" ? defaultValue(data) : defaultValue
-    return acc
+    
+return acc
   }, {} as Record<string, any>)
 
   return Object.assign(baseDefaultValues, { additional_data })

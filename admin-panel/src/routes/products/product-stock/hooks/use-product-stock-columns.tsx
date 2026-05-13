@@ -1,5 +1,5 @@
 import { InformationCircle } from "@medusajs/icons"
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 import { Switch, Tooltip } from "@medusajs/ui"
 import { useCallback, useMemo } from "react"
 
@@ -9,7 +9,7 @@ import { createDataGridHelper } from "../../../../components/data-grid"
 import { DataGridReadOnlyCell } from "../../../../components/data-grid/components"
 import { DataGridDuplicateCell } from "../../../../components/data-grid/components/data-grid-duplicate-cell"
 import { DataGridTogglableNumberCell } from "../../../../components/data-grid/components/data-grid-toggleable-number-cell"
-import { ProductStockSchema } from "../schema"
+import type { ProductStockSchema } from "../schema"
 import { isProductVariant } from "../utils"
 
 const helper = createDataGridHelper<

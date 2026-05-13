@@ -1,9 +1,9 @@
-import {
+import type {
   DataTableColumnDef,
   DataTableEmptyStateProps,
   DataTableFilter,
 } from "@medusajs/ui"
-import { ColumnAdapter } from "../../hooks/table/columns/use-configurable-table-columns"
+import type { ColumnAdapter } from "../../hooks/table/columns/use-configurable-table-columns"
 
 /**
  * Adapter interface for configurable tables.

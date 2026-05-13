@@ -14,7 +14,7 @@ import { ProductSalesChannelSection } from "./components/product-sales-channel-s
 import { ProductShippingProfileSection } from "./components/product-shipping-profile-section";
 import { ProductVariantSection } from "./components/product-variant-section";
 import { PRODUCT_DETAIL_FIELDS } from "./constants";
-import { productLoader } from "./loader";
+import type { productLoader } from "./loader";
 
 export const ProductDetail = () => {
   const initialData = useLoaderData() as Awaited<

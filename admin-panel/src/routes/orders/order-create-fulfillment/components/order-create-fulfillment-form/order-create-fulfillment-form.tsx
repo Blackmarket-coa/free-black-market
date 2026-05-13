@@ -1,13 +1,13 @@
 import { zodResolver } from "@hookform/resolvers/zod"
 import { useEffect, useMemo, useState } from "react"
 import { useTranslation } from "react-i18next"
-import * as zod from "zod"
+import type * as zod from "zod"
 
-import { AdminOrder, HttpTypes } from "@medusajs/types"
+import type { AdminOrder, HttpTypes } from "@medusajs/types"
 import { Alert, Button, Select, Switch, toast } from "@medusajs/ui"
 import { useForm, useWatch } from "react-hook-form"
 
-import { OrderLineItemDTO } from "@medusajs/types"
+import type { OrderLineItemDTO } from "@medusajs/types"
 import { Form } from "../../../../../components/common/form"
 import {
   RouteFocusModal,
@@ -71,7 +71,8 @@ export function OrderCreateFulfillmentForm({
       quantity: fulfillableItems.reduce(
         (acc, item) => {
           acc[item.id] = getFulfillableQuantity(item)
-          return acc
+          
+return acc
         },
         {} as Record<string, number>
       ),
@@ -107,7 +108,8 @@ export function OrderCreateFulfillmentForm({
         type: "manual",
         message: t("orders.fulfillment.error.noShippingOption"),
       })
-      return
+      
+return
     }
 
     if (!selectedLocationId) {
@@ -115,7 +117,8 @@ export function OrderCreateFulfillmentForm({
         type: "manual",
         message: t("orders.fulfillment.error.noLocation"),
       })
-      return
+      
+return
     }
 
     let items = Object.entries(data.quantity)
@@ -134,7 +137,8 @@ export function OrderCreateFulfillmentForm({
 
       const itemShippingProfileMap = order.items.reduce((acc, item) => {
         acc[item.id] = item.variant?.product?.shipping_profile?.id
-        return acc
+        
+return acc
       }, {} as any)
 
       items = items.filter(
@@ -211,7 +215,8 @@ export function OrderCreateFulfillmentForm({
     const quantityMap = itemsToFulfill.reduce(
       (acc, item) => {
         acc[item.id] = getFulfillableQuantity(item as OrderLineItemDTO)
-        return acc
+        
+return acc
       },
       {} as Record<string, number>
     )

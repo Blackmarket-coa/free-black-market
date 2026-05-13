@@ -1,5 +1,5 @@
-import { HttpTypes } from "@medusajs/types"
-import { LoaderFunctionArgs } from "react-router-dom"
+import type { HttpTypes } from "@medusajs/types"
+import type { LoaderFunctionArgs } from "react-router-dom"
 import { regionsQueryKeys } from "../../../hooks/api/regions"
 import { sdk } from "../../../lib/client"
 import { queryClient } from "../../../lib/query-client"

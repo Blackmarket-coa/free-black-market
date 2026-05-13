@@ -1,6 +1,6 @@
 import { Badge, Tooltip } from "@medusajs/ui"
 import { useTranslation } from "react-i18next"
-import { DataGridRowError } from "../types"
+import type { DataGridRowError } from "../types"
 
 type DataGridRowErrorIndicatorProps = {
   rowErrors: DataGridRowError[]

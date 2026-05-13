@@ -1,4 +1,4 @@
-import { AdminOrderLineItem } from "@medusajs/types"
+import type { AdminOrderLineItem } from "@medusajs/types"
 
 export function getReturnableQuantity(item: AdminOrderLineItem): number {
   const {

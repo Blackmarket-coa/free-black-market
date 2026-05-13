@@ -14,7 +14,8 @@ export const Messages = () => {
     if (loginToken) {
       const url = new URL(iframeUrl)
       url.searchParams.set('resumeToken', loginToken)
-      return url.toString()
+      
+return url.toString()
     }
 
     return iframeUrl

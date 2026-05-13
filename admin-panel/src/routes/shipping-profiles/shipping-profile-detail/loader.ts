@@ -1,4 +1,4 @@
-import { LoaderFunctionArgs } from "react-router-dom"
+import type { LoaderFunctionArgs } from "react-router-dom"
 
 import { shippingProfileQueryKeys } from "../../../hooks/api/shipping-profiles"
 import { sdk } from "../../../lib/client"

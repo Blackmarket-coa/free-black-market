@@ -1,7 +1,7 @@
-import { AdminProductCategoryResponse } from "@medusajs/types"
-import { TFunction } from "i18next"
+import type { AdminProductCategoryResponse } from "@medusajs/types"
+import type { TFunction } from "i18next"
 
-import { CategoryTreeItem } from "./types"
+import type { CategoryTreeItem } from "./types"
 
 export function getIsActiveProps(
   isActive: boolean,
@@ -124,13 +124,15 @@ export const insertCategoryTreeItem = (
         })
 
         item.category_children.sort((a, b) => (a.rank ?? 0) - (b.rank ?? 0))
-        return categories
+        
+return categories
       }
       if (item.category_children) {
         stack.push(...item.category_children)
       }
     }
-    return items
+    
+return items
   }
 
   categories = remove(categories, newItem.id)

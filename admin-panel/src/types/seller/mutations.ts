@@ -1,4 +1,4 @@
-import { MemberInviteDTO, MemberRole, SellerDTO, StoreStatus } from './common'
+import type { MemberInviteDTO, MemberRole, SellerDTO, StoreStatus } from './common'
 
 export interface CreateSellerDTO
   extends Omit<

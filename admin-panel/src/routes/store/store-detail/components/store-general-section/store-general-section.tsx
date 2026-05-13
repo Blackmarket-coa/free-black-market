@@ -1,5 +1,5 @@
 import { PencilSquare } from "@medusajs/icons"
-import { AdminStore } from "@medusajs/types"
+import type { AdminStore } from "@medusajs/types"
 import { Badge, Container, Heading, Text } from "@medusajs/ui"
 import { useTranslation } from "react-i18next"
 

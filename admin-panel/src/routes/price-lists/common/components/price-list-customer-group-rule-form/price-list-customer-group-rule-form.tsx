@@ -1,9 +1,10 @@
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 import { Button, Checkbox } from "@medusajs/ui"
 import { keepPreviousData } from "@tanstack/react-query"
-import {
+import type {
   OnChangeFn,
-  RowSelectionState,
+  RowSelectionState} from "@tanstack/react-table";
+import {
   createColumnHelper,
 } from "@tanstack/react-table"
 import { useEffect, useMemo, useState } from "react"
@@ -16,7 +17,7 @@ import { useCustomerGroupTableColumns } from "../../../../../hooks/table/columns
 import { useCustomerGroupTableFilters } from "../../../../../hooks/table/filters/use-customer-group-table-filters"
 import { useCustomerGroupTableQuery } from "../../../../../hooks/table/query/use-customer-group-table-query"
 import { useDataTable } from "../../../../../hooks/use-data-table"
-import { PriceListCustomerGroup } from "../../schemas"
+import type { PriceListCustomerGroup } from "../../schemas"
 
 const PAGE_SIZE = 50
 const PREFIX = "cg"
@@ -30,7 +31,8 @@ type PriceListCustomerGroupRuleFormProps = {
 const initRowSelection = (state: PriceListCustomerGroup[]) => {
   return state.reduce((acc, group) => {
     acc[group.id] = true
-    return acc
+    
+return acc
   }, {} as RowSelectionState)
 }
 

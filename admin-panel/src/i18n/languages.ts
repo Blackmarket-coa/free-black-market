@@ -29,7 +29,7 @@ import {
   bs,
   id,
 } from "date-fns/locale"
-import { Language } from "./types"
+import type { Language } from "./types"
 
 export const languages: Language[] = [
   {

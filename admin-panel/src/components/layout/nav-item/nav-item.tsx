@@ -1,8 +1,9 @@
 import { Kbd, Text, clx } from "@medusajs/ui"
 import { Collapsible as RadixCollapsible } from "radix-ui"
-import {
+import type {
   PropsWithChildren,
-  ReactNode,
+  ReactNode} from "react";
+import {
   useCallback,
   useEffect,
   useState,

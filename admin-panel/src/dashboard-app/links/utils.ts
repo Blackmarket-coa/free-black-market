@@ -1,4 +1,4 @@
-import { CustomFieldModel } from "@medusajs/admin-shared"
+import type { CustomFieldModel } from "@medusajs/admin-shared"
 import linkModule from "virtual:medusa/links"
 
 function appendLinkableFields(
@@ -16,5 +16,6 @@ function appendLinkableFields(
 
 export function getLinkedFields(model: CustomFieldModel, fields: string = "") {
   const links = linkModule.links[model]
-  return appendLinkableFields(fields, links)
+  
+return appendLinkableFields(fields, links)
 }

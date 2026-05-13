@@ -1,11 +1,12 @@
 import { zodResolver } from "@hookform/resolvers/zod"
-import { Button, ProgressStatus, ProgressTabs, toast } from "@medusajs/ui"
+import type { ProgressStatus} from "@medusajs/ui";
+import { Button, ProgressTabs, toast } from "@medusajs/ui"
 import { useEffect, useMemo, useState } from "react"
 import { useFieldArray, useForm, useWatch } from "react-hook-form"
 import { useTranslation } from "react-i18next"
-import { z } from "zod"
+import type { z } from "zod"
 
-import { AdminCreateProductVariantPrice, HttpTypes } from "@medusajs/types"
+import type { AdminCreateProductVariantPrice, HttpTypes } from "@medusajs/types"
 import {
   RouteDrawer,
   RouteFocusModal,
@@ -79,7 +80,8 @@ export const CreateProductVariantForm = ({
     return regions.reduce(
       (acc, reg) => {
         acc[reg.id] = reg.currency_code
-        return acc
+        
+return acc
       },
       {} as Record<string, string>
     )
@@ -134,7 +136,8 @@ export const CreateProductVariantForm = ({
       }))
 
       setTab(update)
-      return
+      
+return
     }
 
     // get the tabs from the current tab to the update tab including the current tab
@@ -155,7 +158,8 @@ export const CreateProductVariantForm = ({
             [tab]: "in-progress",
           }))
           setTab(tab)
-          return
+          
+return
         }
 
         setTabState((prev) => ({

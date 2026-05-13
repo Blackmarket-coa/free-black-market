@@ -6,7 +6,7 @@ import { useSalesChannel } from "../../../hooks/api/sales-channels"
 import { useExtension } from "../../../providers/extension-provider"
 import { SalesChannelGeneralSection } from "./components/sales-channel-general-section"
 import { SalesChannelProductSection } from "./components/sales-channel-product-section"
-import { salesChannelLoader } from "./loader"
+import type { salesChannelLoader } from "./loader"
 
 export const SalesChannelDetail = () => {
   const initialData = useLoaderData() as Awaited<

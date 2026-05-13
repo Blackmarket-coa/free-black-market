@@ -82,10 +82,12 @@ function formatDuration(ms: number | null): string {
   const minutes = Math.floor((ms % (60 * 60 * 1000)) / (60 * 1000))
   if (hours > 24) {
     const days = Math.floor(hours / 24)
-    return `${days}d ${hours % 24}h`
+    
+return `${days}d ${hours % 24}h`
   }
   if (hours > 0) return `${hours}h ${minutes}m`
-  return `${minutes}m`
+  
+return `${minutes}m`
 }
 
 export const Component = VendorVerificationPage

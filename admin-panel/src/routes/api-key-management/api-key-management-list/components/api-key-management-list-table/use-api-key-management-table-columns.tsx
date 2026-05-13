@@ -1,4 +1,4 @@
-import { AdminApiKeyResponse } from "@medusajs/types"
+import type { AdminApiKeyResponse } from "@medusajs/types"
 import { Badge } from "@medusajs/ui"
 import { createColumnHelper } from "@tanstack/react-table"
 import { useMemo } from "react"
@@ -33,7 +33,8 @@ export const useApiKeyManagementTableColumns = () => {
         header: "Token",
         cell: ({ getValue }) => {
           const token = getValue()
-          return <Badge size="2xsmall">{prettifyRedactedToken(token)}</Badge>
+          
+return <Badge size="2xsmall">{prettifyRedactedToken(token)}</Badge>
         },
       }),
       columnHelper.accessor("type", {

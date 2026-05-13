@@ -1,7 +1,7 @@
 import { useTranslation } from "react-i18next"
 
 import { PlaceholderCell } from "../../common/placeholder-cell"
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 
 type VariantCellProps = {
   variants?: HttpTypes.AdminProductVariant[] | null

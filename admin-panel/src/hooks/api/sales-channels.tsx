@@ -1,13 +1,14 @@
-import { FetchError } from "@medusajs/js-sdk"
-import {
+import type { FetchError } from "@medusajs/js-sdk"
+import type {
   AdminSalesChannelListResponse,
   AdminSalesChannelResponse,
   HttpTypes,
 } from "@medusajs/types"
-import {
+import type {
   QueryKey,
   UseMutationOptions,
-  UseQueryOptions,
+  UseQueryOptions} from "@tanstack/react-query";
+import {
   useMutation,
   useQuery,
 } from "@tanstack/react-query"

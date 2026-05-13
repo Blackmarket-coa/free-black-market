@@ -1,6 +1,6 @@
 import { zodResolver } from "@hookform/resolvers/zod"
 import { PencilSquare } from "@medusajs/icons"
-import {
+import type {
   AdminClaim,
   AdminOrder,
   AdminOrderPreview,
@@ -35,9 +35,10 @@ import { useStockLocations } from "../../../../../hooks/api/stock-locations"
 import { getStylizedAmount } from "../../../../../lib/money-amount-helpers"
 import { AddClaimItemsTable } from "../add-claim-items-table"
 import { ClaimInboundItem } from "./claim-inbound-item.tsx"
-import { ClaimCreateSchema, CreateClaimSchemaType } from "./schema"
+import type { CreateClaimSchemaType } from "./schema";
+import { ClaimCreateSchema } from "./schema"
 
-import { AdminReturn, HttpTypes } from "@medusajs/types"
+import type { AdminReturn, HttpTypes } from "@medusajs/types"
 import { KeyboundForm } from "../../../../../components/utilities/keybound-form/keybound-form.tsx"
 import {
   useAddClaimInboundItems,

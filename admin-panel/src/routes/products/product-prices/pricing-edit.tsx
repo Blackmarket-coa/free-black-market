@@ -1,5 +1,5 @@
 import { zodResolver } from "@hookform/resolvers/zod"
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 import { Button } from "@medusajs/ui"
 import { useMemo } from "react"
 import { useForm } from "react-hook-form"
@@ -46,7 +46,8 @@ export const PricingEdit = ({
 
     return regions.reduce((acc, reg) => {
       acc[reg.id] = reg.currency_code
-      return acc
+      
+return acc
     }, {})
   }, [regions])
 
@@ -64,7 +65,8 @@ export const PricingEdit = ({
           } else {
             acc[price.currency_code] = price.amount
           }
-          return acc
+          
+return acc
         }, {}),
       })) as any,
     },

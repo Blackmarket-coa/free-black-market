@@ -1,4 +1,4 @@
-import { AttributeUIComponent } from './common'
+import type { AttributeUIComponent } from './common'
 
 export interface CreateAttributeValueDTO {
   value: string

@@ -1,16 +1,19 @@
-import { FetchError } from "@medusajs/js-sdk"
-import { HttpTypes } from "@medusajs/types"
-import {
+import type { FetchError } from "@medusajs/js-sdk"
+import type { HttpTypes } from "@medusajs/types"
+import type {
   QueryKey,
-  useMutation,
   UseMutationOptions,
-  useQuery,
   UseQueryOptions
+} from "@tanstack/react-query";
+import {
+  useMutation,
+  useQuery
 } from "@tanstack/react-query"
 
 import { sdk } from "../../lib/client"
 import { queryClient } from "../../lib/query-client"
-import { queryKeysFactory, TQueryKey } from "../../lib/query-key-factory"
+import type { TQueryKey } from "../../lib/query-key-factory";
+import { queryKeysFactory } from "../../lib/query-key-factory"
 
 const VIEWS_QUERY_KEY = "views" as const
 const _viewsKeys = queryKeysFactory(VIEWS_QUERY_KEY) as TQueryKey<"views"> & {
@@ -32,7 +35,8 @@ _viewsKeys.configurations = function(entity: string, query?: any) {
   if (query !== undefined) {
     key.push(query)
   }
-  return key
+  
+return key
 }
 
 export const viewsQueryKeys = _viewsKeys

@@ -1,5 +1,5 @@
-import { PropsWithChildren } from "react"
-import { DashboardApp } from "../../dashboard-app/dashboard-app"
+import type { PropsWithChildren } from "react"
+import type { DashboardApp } from "../../dashboard-app/dashboard-app"
 import { ExtensionContext } from "./extension-context"
 
 type ExtensionProviderProps = PropsWithChildren<{

@@ -1,12 +1,13 @@
-import {
+import type {
   CellContext,
   ColumnDefTemplate,
-  createColumnHelper,
-  HeaderContext,
+  HeaderContext} from "@tanstack/react-table";
+import {
+  createColumnHelper
 } from "@tanstack/react-table"
-import { FieldValues } from "react-hook-form"
+import type { FieldValues } from "react-hook-form"
 
-import { DataGridColumnType, FieldFunction } from "../types"
+import type { DataGridColumnType, FieldFunction } from "../types"
 
 type DataGridHelperColumnsProps<TData, TFieldValues extends FieldValues> = {
   /**

@@ -65,7 +65,8 @@ export function OrderReceiveReturn() {
           navigate(`/orders/${id}`, { replace: true })
           toast.error(t("orders.returns.activeChangeError"))
         }
-        return
+        
+return
       }
 
       IS_REQUEST_RUNNING = true

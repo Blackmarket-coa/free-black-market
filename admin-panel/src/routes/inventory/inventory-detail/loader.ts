@@ -1,4 +1,4 @@
-import { LoaderFunctionArgs } from "react-router-dom"
+import type { LoaderFunctionArgs } from "react-router-dom"
 
 import { inventoryItemsQueryKeys } from "../../../hooks/api/inventory"
 import { sdk } from "../../../lib/client"

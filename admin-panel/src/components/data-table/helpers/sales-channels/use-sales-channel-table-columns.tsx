@@ -1,4 +1,4 @@
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 import { useMemo } from "react"
 import { useTranslation } from "react-i18next"
 
@@ -47,7 +47,8 @@ export const useSalesChannelTableColumns = () => {
         sortDescLabel: t("filters.sorting.alphabeticallyDesc"),
         cell: ({ getValue }) => {
           const value = getValue()
-          return (
+          
+return (
             <DataTableStatusCell color={value ? "grey" : "green"}>
               {value ? t("general.disabled") : t("general.enabled")}
             </DataTableStatusCell>

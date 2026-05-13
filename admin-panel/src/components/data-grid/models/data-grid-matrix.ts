@@ -1,6 +1,6 @@
-import { ColumnDef, Row } from "@tanstack/react-table"
-import { FieldValues } from "react-hook-form"
-import {
+import type { ColumnDef, Row } from "@tanstack/react-table"
+import type { FieldValues } from "react-hook-form"
+import type {
   DataGridColumnType,
   DataGridCoordinates,
   Grid,

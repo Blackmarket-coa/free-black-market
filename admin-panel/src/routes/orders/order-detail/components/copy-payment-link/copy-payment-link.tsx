@@ -1,5 +1,5 @@
 import { CheckCircleSolid, SquareTwoStack } from "@medusajs/icons"
-import { AdminOrder, AdminPaymentCollection } from "@medusajs/types"
+import type { AdminOrder, AdminPaymentCollection } from "@medusajs/types"
 import { Button, Tooltip } from "@medusajs/ui"
 import copy from "copy-to-clipboard"
 import React, { useState } from "react"
@@ -42,7 +42,8 @@ const CopyPaymentLink = React.forwardRef<any, CopyPaymentLinkProps>(
     React.useEffect(() => {
       if (done) {
         setText(t("actions.copied"))
-        return
+        
+return
       }
 
       setTimeout(() => {

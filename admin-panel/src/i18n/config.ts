@@ -1,4 +1,4 @@
-import { InitOptions } from "i18next"
+import type { InitOptions } from "i18next"
 
 import translations from "./translations"
 

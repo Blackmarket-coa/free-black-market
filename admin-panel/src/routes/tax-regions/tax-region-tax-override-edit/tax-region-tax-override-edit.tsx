@@ -1,4 +1,4 @@
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 import { Heading } from "@medusajs/ui"
 import { useTranslation } from "react-i18next"
 import { useParams } from "react-router-dom"
@@ -11,9 +11,9 @@ import {
   DISPLAY_OVERRIDE_ITEMS_LIMIT,
   TaxRegionTaxOverrideEditForm,
 } from "./components/tax-region-tax-override-edit-form"
-import { InitialRuleValues } from "./types"
+import type { InitialRuleValues } from "./types"
 import { useShippingOptions, useTaxRate } from "../../../hooks/api"
-import { TaxRateRuleReference } from "../common/schemas"
+import type { TaxRateRuleReference } from "../common/schemas"
 
 export const TaxRegionTaxOverrideEdit = () => {
   const { t } = useTranslation()

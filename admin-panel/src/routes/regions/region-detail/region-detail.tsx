@@ -3,7 +3,7 @@ import { useLoaderData, useParams } from "react-router-dom"
 import { useRegion } from "../../../hooks/api/regions"
 import { RegionCountrySection } from "./components/region-country-section"
 import { RegionGeneralSection } from "./components/region-general-section"
-import { regionLoader } from "./loader"
+import type { regionLoader } from "./loader"
 
 import { SingleColumnPageSkeleton } from "../../../components/common/skeleton"
 import { SingleColumnPage } from "../../../components/layout/pages"

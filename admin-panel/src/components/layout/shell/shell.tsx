@@ -2,12 +2,14 @@ import { SidebarLeft, TriangleRightMini, XMark } from "@medusajs/icons"
 import { IconButton, clx } from "@medusajs/ui"
 import { AnimatePresence } from "motion/react"
 import { Dialog as RadixDialog } from "radix-ui"
-import { PropsWithChildren, ReactNode, useEffect, useState } from "react"
+import type { PropsWithChildren, ReactNode} from "react";
+import { useEffect, useState } from "react"
 import { useTranslation } from "react-i18next"
+import type {
+  UIMatch} from "react-router-dom";
 import {
   Link,
   Outlet,
-  UIMatch,
   useMatches,
   useNavigation,
 } from "react-router-dom"

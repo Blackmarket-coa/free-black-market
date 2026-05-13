@@ -1,6 +1,6 @@
 import { zodResolver } from "@hookform/resolvers/zod"
 import { PencilSquare } from "@medusajs/icons"
-import {
+import type {
   AdminOrder,
   AdminOrderPreview,
   AdminReturn,
@@ -50,7 +50,8 @@ import { getStylizedAmount } from "../../../../../lib/money-amount-helpers"
 import { ReturnShippingPlaceholder } from "../../../common/placeholders"
 import { AddReturnItemsTable } from "../add-return-items-table"
 import { ReturnItem } from "./return-item"
-import { ReturnCreateSchema, ReturnCreateSchemaType } from "./schema"
+import type { ReturnCreateSchemaType } from "./schema";
+import { ReturnCreateSchema } from "./schema"
 
 type ReturnCreateFormProps = {
   order: AdminOrder
@@ -356,7 +357,7 @@ export const ReturnCreateForm = ({
         return ret
       }
 
-      ;(
+      (
         await Promise.all(
           items.map(async (_i) => {
             const item = itemsMap.get(_i.item_id)
@@ -364,7 +365,8 @@ export const ReturnCreateForm = ({
             if (!item.variant_id) {
               return undefined
             }
-            return await sdk.admin.product.retrieveVariant(
+            
+return await sdk.admin.product.retrieveVariant(
               item.product_id,
               item.variant_id,
               { fields: "*inventory,*inventory.location_levels" }

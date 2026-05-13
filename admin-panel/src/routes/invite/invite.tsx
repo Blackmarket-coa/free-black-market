@@ -228,7 +228,8 @@ const CreateView = ({
           message: t("invite.invalidInvite"),
         })
         setInvalid(true)
-        return
+        
+return
       }
 
       form.setError("root", {
@@ -351,7 +352,7 @@ const CreateView = ({
             />
             {validationError && (
               <div className="mt-6 text-center">
-                <Hint className="inline-flex" variant={"error"}>
+                <Hint className="inline-flex" variant="error">
                   {validationError}
                 </Hint>
               </div>

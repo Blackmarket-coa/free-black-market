@@ -3,10 +3,10 @@ import {
   BellAlertDone,
   InformationCircleSolid,
 } from "@medusajs/icons"
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 import { clx, Drawer, Heading, IconButton, Text } from "@medusajs/ui"
 import { formatDistance } from "date-fns"
-import { TFunction } from "i18next"
+import type { TFunction } from "i18next"
 import { useEffect, useState } from "react"
 import { useTranslation } from "react-i18next"
 import { notificationQueryKeys, useNotifications } from "../../../hooks/api"
@@ -139,7 +139,7 @@ const Notification = ({
               </Text>
               <div className="align-center flex items-center justify-center gap-2">
                 <Text
-                  as={"span"}
+                  as="span"
                   className={clx("text-ui-fg-subtle", {
                     "text-ui-fg-base": unread,
                   })}

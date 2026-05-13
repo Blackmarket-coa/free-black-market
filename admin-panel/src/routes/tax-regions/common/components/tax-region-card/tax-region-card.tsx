@@ -1,4 +1,4 @@
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 import { Heading, Text, Tooltip, clx } from "@medusajs/ui"
 import ReactCountryFlag from "react-country-flag"
 
@@ -9,11 +9,12 @@ import {
   Trash,
   PencilSquare,
 } from "@medusajs/icons"
-import { ComponentPropsWithoutRef, ReactNode } from "react"
+import type { ComponentPropsWithoutRef, ReactNode } from "react"
 import { useTranslation } from "react-i18next"
 import { Link } from "react-router-dom"
+import type {
+  Action} from "../../../../../components/common/action-menu";
 import {
-  Action,
   ActionMenu,
 } from "../../../../../components/common/action-menu"
 import { IconAvatar } from "../../../../../components/common/icon-avatar"

@@ -1,5 +1,5 @@
 import { Spinner, TriangleDownMini } from "@medusajs/icons"
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 import {
   clx,
   CodeBlock,

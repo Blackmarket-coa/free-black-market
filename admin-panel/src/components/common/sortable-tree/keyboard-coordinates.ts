@@ -1,7 +1,8 @@
-import {
+import type {
   DroppableContainer,
+  KeyboardCoordinateGetter} from "@dnd-kit/core";
+import {
   KeyboardCode,
-  KeyboardCoordinateGetter,
   closestCorners,
   getFirstCollision,
 } from "@dnd-kit/core"

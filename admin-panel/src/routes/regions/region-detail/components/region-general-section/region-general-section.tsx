@@ -2,7 +2,7 @@ import { PencilSquare, Trash } from "@medusajs/icons"
 import { Badge, Container, Heading, Text, toast, usePrompt } from "@medusajs/ui"
 import { useTranslation } from "react-i18next"
 
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 import { useNavigate } from "react-router-dom"
 import { ActionMenu } from "../../../../../components/common/action-menu/index.ts"
 import { ListSummary } from "../../../../../components/common/list-summary/index.ts"

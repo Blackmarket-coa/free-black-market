@@ -1,4 +1,6 @@
-import React, { forwardRef, HTMLAttributes, ReactNode } from "react"
+import type { HTMLAttributes, ReactNode } from "react";
+import type React from "react";
+import { forwardRef } from "react"
 
 import {
   DotsSix,
@@ -8,7 +10,7 @@ import {
   TriangleRightMini,
 } from "@medusajs/icons"
 import { Badge, clx, IconButton } from "@medusajs/ui"
-import { HandleProps } from "./types"
+import type { HandleProps } from "./types"
 
 export interface TreeItemProps
   extends Omit<HTMLAttributes<HTMLLIElement>, "id"> {

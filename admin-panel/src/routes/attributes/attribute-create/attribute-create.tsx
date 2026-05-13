@@ -2,12 +2,12 @@ import { useQueryClient } from "@tanstack/react-query";
 import { FocusModal, Button, toast, ProgressTabs } from "@medusajs/ui";
 import { useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
-import { AdminProductCategory } from "@medusajs/types";
+import type { AdminProductCategory } from "@medusajs/types";
 import { AttributeForm } from "../attribute-edit/components/attribute-form";
-import { z } from "zod";
+import type { z } from "zod";
 import { sdk } from "../../../lib/client";
 import { attributeQueryKeys } from "../../../hooks/api/attributes";
-import { CreateAttributeFormSchema } from "../attribute-edit/schema";
+import type { CreateAttributeFormSchema } from "../attribute-edit/schema";
 
 export const AttributeCreate = () => {
   const navigate = useNavigate();

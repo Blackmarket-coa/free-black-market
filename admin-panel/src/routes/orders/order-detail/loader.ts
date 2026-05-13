@@ -1,4 +1,4 @@
-import { LoaderFunctionArgs } from "react-router-dom"
+import type { LoaderFunctionArgs } from "react-router-dom"
 
 import { ordersQueryKeys } from "../../../hooks/api/orders"
 import { sdk } from "../../../lib/client"

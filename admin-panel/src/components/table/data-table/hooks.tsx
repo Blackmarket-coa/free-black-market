@@ -61,7 +61,8 @@ export const useSelectedParams = ({
         prev.delete(identifier)
       }
       prev.delete(offsetKey)
-      return prev
+      
+return prev
     })
   }
 

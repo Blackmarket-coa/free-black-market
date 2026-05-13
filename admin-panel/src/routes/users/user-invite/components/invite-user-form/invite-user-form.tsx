@@ -1,6 +1,6 @@
 import { zodResolver } from "@hookform/resolvers/zod"
 import { ArrowPath, Link, Trash } from "@medusajs/icons"
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 import {
   Alert,
   Button,
@@ -91,7 +91,8 @@ export const InviteUserForm = () => {
           type: "manual",
           message: error.message,
         })
-        return
+        
+return
       }
     }
   })
@@ -310,7 +311,7 @@ const useColumns = () => {
             <Tooltip
               content={
                 <Trans
-                  i18nKey={"users.validFromUntil"}
+                  i18nKey="users.validFromUntil"
                   components={[
                     <span key="from" className="font-medium" />,
                     <span key="untill" className="font-medium" />,

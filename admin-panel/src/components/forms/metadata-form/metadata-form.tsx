@@ -18,8 +18,9 @@ import {
   EllipsisVertical,
   Trash,
 } from "@medusajs/icons"
-import { FetchError } from "@medusajs/js-sdk"
-import { ComponentPropsWithoutRef, forwardRef } from "react"
+import type { FetchError } from "@medusajs/js-sdk"
+import type { ComponentPropsWithoutRef} from "react";
+import { forwardRef } from "react"
 import { ConditionalTooltip } from "../../common/conditional-tooltip"
 import { Form } from "../../common/form"
 import { Skeleton } from "../../common/skeleton"
@@ -403,7 +404,8 @@ function parseValues(
 
     if (disabled) {
       update[key] = value
-      return
+      
+return
     }
 
     key = key.trim()

@@ -1,5 +1,5 @@
 import { ArrowUturnLeft, DocumentSeries, XCircle } from "@medusajs/icons"
-import { AdminOrderLineItem } from "@medusajs/types"
+import type { AdminOrderLineItem } from "@medusajs/types"
 import { Badge, Input, Text, toast } from "@medusajs/ui"
 import { useTranslation } from "react-i18next"
 
@@ -42,7 +42,8 @@ function OrderEditItem({ item, currencyCode, orderId }: OrderEditItemProps) {
   const isItemRemoved = useMemo(() => {
     // To be removed item needs to have updated quantity
     const updateAction = item.actions?.find((a) => a.action === "ITEM_UPDATE")
-    return !!updateAction && item.quantity === item.detail.fulfilled_quantity
+    
+return !!updateAction && item.quantity === item.detail.fulfilled_quantity
   }, [item])
 
   /**
@@ -52,7 +53,8 @@ function OrderEditItem({ item, currencyCode, orderId }: OrderEditItemProps) {
   const onUpdate = async (quantity: number) => {
     if (quantity <= item.detail.fulfilled_quantity) {
       toast.error(t("orders.edits.validation.quantityLowerThanFulfillment"))
-      return
+      
+return
     }
 
     if (quantity === item.quantity) {

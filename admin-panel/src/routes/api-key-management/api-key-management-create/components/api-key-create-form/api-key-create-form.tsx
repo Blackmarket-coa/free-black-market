@@ -5,7 +5,7 @@ import { useTranslation } from "react-i18next"
 import * as zod from "zod"
 
 import { Eye, EyeSlash } from "@medusajs/icons"
-import { AdminApiKeyResponse } from "@medusajs/types"
+import type { AdminApiKeyResponse } from "@medusajs/types"
 import { Fragment, useState } from "react"
 import { Form } from "../../../../../components/common/form"
 import {

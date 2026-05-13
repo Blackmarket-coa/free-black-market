@@ -1,7 +1,7 @@
-import { InventoryTypes } from "@medusajs/types"
+import type { InventoryTypes } from "@medusajs/types"
 import { Button, Container, Heading, Text } from "@medusajs/ui"
 
-import { RowSelectionState } from "@tanstack/react-table"
+import type { RowSelectionState } from "@tanstack/react-table"
 import { useState } from "react"
 import { useTranslation } from "react-i18next"
 import { Link, useNavigate } from "react-router-dom"

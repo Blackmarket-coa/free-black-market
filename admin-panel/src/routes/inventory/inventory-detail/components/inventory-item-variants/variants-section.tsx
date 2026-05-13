@@ -3,7 +3,7 @@ import { Container, Heading } from "@medusajs/ui"
 import { useTranslation } from "react-i18next"
 import { Link } from "react-router-dom"
 
-import { ProductVariantDTO } from "@medusajs/types"
+import type { ProductVariantDTO } from "@medusajs/types"
 import { Thumbnail } from "../../../../../components/common/thumbnail"
 
 type InventoryItemVariantsSectionProps = {

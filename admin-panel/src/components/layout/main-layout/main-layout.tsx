@@ -26,7 +26,8 @@ import { useTranslation } from "react-i18next";
 import { useStore } from "../../../hooks/api/store"
 import { useMe } from "../../../hooks/api/users";
 import { Skeleton } from "../../common/skeleton";
-import { INavItem, NavItem } from "../../layout/nav-item";
+import type { INavItem} from "../../layout/nav-item";
+import { NavItem } from "../../layout/nav-item";
 import { Shell } from "../../layout/shell";
 
 import { Link, useLocation, useNavigate } from "react-router-dom";

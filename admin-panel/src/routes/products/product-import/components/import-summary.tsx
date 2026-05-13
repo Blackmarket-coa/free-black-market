@@ -1,4 +1,4 @@
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 import { Divider, Text } from "@medusajs/ui"
 import { useTranslation } from "react-i18next"
 

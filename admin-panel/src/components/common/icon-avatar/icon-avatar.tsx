@@ -1,5 +1,5 @@
 import { clx } from "@medusajs/ui"
-import { PropsWithChildren } from "react"
+import type { PropsWithChildren } from "react"
 
 type IconAvatarProps = PropsWithChildren<{
   className?: string

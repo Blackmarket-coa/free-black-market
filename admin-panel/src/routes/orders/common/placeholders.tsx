@@ -15,7 +15,7 @@ export const ReturnShippingPlaceholder = () => {
           i18nKey="orders.returns.placeholders.noReturnShippingOptions.hint"
           components={{
             LinkComponent: (
-              <Link to={`/settings/locations`} className="text-blue-500" />
+              <Link to="/settings/locations" className="text-blue-500" />
             ),
           }}
         />
@@ -38,7 +38,7 @@ export const OutboundShippingPlaceholder = () => {
           i18nKey="orders.returns.placeholders.outboundShippingOptions.hint"
           components={{
             LinkComponent: (
-              <Link to={`/settings/locations`} className="text-blue-500" />
+              <Link to="/settings/locations" className="text-blue-500" />
             ),
           }}
         />

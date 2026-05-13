@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react"
 import { Select, Text } from "@medusajs/ui"
-import { getStoredContext, setStoredContext, StorefrontContext } from "@lib/tenancy/context"
+import type { StorefrontContext } from "@lib/tenancy/context";
+import { getStoredContext, setStoredContext } from "@lib/tenancy/context"
 
 export const StorefrontSwitcher = ({
   organizations,
@@ -20,7 +21,8 @@ export const StorefrontSwitcher = ({
       setOrganizationId(cached.organizationId)
       setStorefrontId(cached.storefrontId)
       onContextChange(cached)
-      return
+      
+return
     }
 
     if (organizations[0]) {

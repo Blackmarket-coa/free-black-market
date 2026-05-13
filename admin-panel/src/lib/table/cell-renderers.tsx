@@ -1,6 +1,6 @@
-import React from "react"
+import type React from "react"
 import { Badge, StatusBadge, Tooltip } from "@medusajs/ui"
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 import ReactCountryFlag from "react-country-flag"
 import { getCountryByIso2 } from "../data/countries"
 import { ProductCell } from "../../components/table/table-cells/product/product-cell"
@@ -12,7 +12,7 @@ import { DateCell } from "../../components/table/table-cells/common/date-cell"
 import { DisplayIdCell } from "../../components/table/table-cells/order/display-id-cell"
 import { TotalCell } from "../../components/table/table-cells/order/total-cell"
 import { MoneyAmountCell } from "../../components/table/table-cells/common/money-amount-cell"
-import { TFunction } from "i18next"
+import type { TFunction } from "i18next"
 
 export type CellRenderer<TData = any> = (
   value: any,
@@ -31,13 +31,15 @@ const getNestedValue = (obj: any, path: string) => {
 
 const TextRenderer: CellRenderer = (value, _row, _column, _t) => {
   if (value === null || value === undefined) return '-'
-  return String(value)
+  
+return String(value)
 }
 
 const CountRenderer: CellRenderer = (value, _row, _column, t) => {
   const items = value || []
   const count = Array.isArray(items) ? items.length : 0
-  return t('general.items', { count })
+  
+return t('general.items', { count })
 }
 
 const StatusRenderer: CellRenderer = (value, row, column, t) => {
@@ -232,12 +234,14 @@ const DisplayIdRenderer: CellRenderer = (value, _row, _column, _t) => {
 
 const CurrencyRenderer: CellRenderer = (value, row, _column, _t) => {
   const currencyCode = row.currency_code || 'USD'
-  return <MoneyAmountCell currencyCode={currencyCode} amount={value} align="right" />
+  
+return <MoneyAmountCell currencyCode={currencyCode} amount={value} align="right" />
 }
 
 const TotalRenderer: CellRenderer = (value, row, _column, _t) => {
   const currencyCode = row.currency_code || 'USD'
-  return <TotalCell currencyCode={currencyCode} total={value} />
+  
+return <TotalCell currencyCode={currencyCode} total={value} />
 }
 
 // Register built-in renderers
@@ -281,7 +285,8 @@ export function getCellRenderer(
         if (t) {
           return value ? t('fields.yes', 'Yes') : t('fields.no', 'No')
         }
-        return value ? 'Yes' : 'No'
+        
+return value ? 'Yes' : 'No'
       }
     case 'enum':
       return StatusRenderer

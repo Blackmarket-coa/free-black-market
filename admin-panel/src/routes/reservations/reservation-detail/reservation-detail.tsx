@@ -7,7 +7,7 @@ import { useReservationItem } from "../../../hooks/api/reservations"
 import { useExtension } from "../../../providers/extension-provider"
 import { InventoryItemGeneralSection } from "../../inventory/inventory-detail/components/inventory-item-general-section"
 import { ReservationGeneralSection } from "./components/reservation-general-section"
-import { reservationItemLoader } from "./loader"
+import type { reservationItemLoader } from "./loader"
 
 export const ReservationDetail = () => {
   const { id } = useParams()

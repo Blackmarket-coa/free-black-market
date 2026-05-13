@@ -1,6 +1,6 @@
 import { useState, useMemo, useCallback, useEffect } from "react"
 import { useSearchParams } from "react-router-dom"
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 import { useViewConfigurations, useViewConfiguration } from "../use-view-configurations"
 import { useEntityColumns } from "../api/views"
 import { useFeatureFlag } from "../../providers/feature-flag-provider"

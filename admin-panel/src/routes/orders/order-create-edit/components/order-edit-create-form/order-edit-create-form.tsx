@@ -1,5 +1,5 @@
 import { zodResolver } from "@hookform/resolvers/zod"
-import { AdminOrder, AdminOrderPreview } from "@medusajs/types"
+import type { AdminOrder, AdminOrderPreview } from "@medusajs/types"
 import { Button, Heading, toast, usePrompt } from "@medusajs/ui"
 import { useForm } from "react-hook-form"
 import { useTranslation } from "react-i18next"
@@ -16,7 +16,8 @@ import {
 } from "../../../../../hooks/api/order-edits"
 import { getStylizedAmount } from "../../../../../lib/money-amount-helpers"
 import { OrderEditItemsSection } from "./order-edit-items-section"
-import { CreateOrderEditSchemaType, OrderEditCreateSchema } from "./schema"
+import type { CreateOrderEditSchemaType} from "./schema";
+import { OrderEditCreateSchema } from "./schema"
 
 type ReturnCreateFormProps = {
   order: AdminOrder

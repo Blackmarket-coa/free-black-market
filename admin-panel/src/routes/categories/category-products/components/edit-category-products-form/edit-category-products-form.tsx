@@ -2,11 +2,12 @@ import { zodResolver } from "@hookform/resolvers/zod"
 import { useForm } from "react-hook-form"
 import { z } from "zod"
 
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 import { Button, Checkbox, Hint, Tooltip, toast } from "@medusajs/ui"
-import {
+import type {
   OnChangeFn,
-  RowSelectionState,
+  RowSelectionState} from "@tanstack/react-table";
+import {
   createColumnHelper,
 } from "@tanstack/react-table"
 import { useMemo, useState } from "react"
@@ -46,7 +47,8 @@ export const EditCategoryProductsForm = ({
   const [selection, setSelection] = useState<RowSelectionState>(
     products.reduce((acc, p) => {
       acc[p.id!] = true
-      return acc
+      
+return acc
     }, {} as RowSelectionState)
   )
 

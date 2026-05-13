@@ -1,8 +1,9 @@
-import { HttpTypes, PaginatedResponse } from "@medusajs/types"
-import {
+import type { HttpTypes, PaginatedResponse } from "@medusajs/types"
+import type {
   QueryKey,
   UseMutationOptions,
-  UseQueryOptions,
+  UseQueryOptions} from "@tanstack/react-query";
+import {
   useMutation,
   useQuery,
 } from "@tanstack/react-query"
@@ -10,7 +11,7 @@ import { sdk } from "../../lib/client"
 import { queryClient } from "../../lib/query-client"
 import { queryKeysFactory } from "../../lib/query-key-factory"
 import { pricePreferencesQueryKeys } from "./price-preferences"
-import { FetchError } from "@medusajs/js-sdk"
+import type { FetchError } from "@medusajs/js-sdk"
 
 const REGIONS_QUERY_KEY = "regions" as const
 export const regionsQueryKeys = queryKeysFactory(REGIONS_QUERY_KEY)

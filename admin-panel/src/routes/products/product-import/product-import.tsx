@@ -117,7 +117,7 @@ const ProductImportContent = () => {
         </Text>
         <div className="mt-4">
           <FilePreview
-            filename={"product-import-template.csv"}
+            filename="product-import-template.csv"
             url={productImportTemplateContent}
           />
         </div>

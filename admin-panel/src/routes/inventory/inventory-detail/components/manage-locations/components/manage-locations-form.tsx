@@ -1,4 +1,4 @@
-import {
+import type {
   AdminInventoryItem,
   AdminStockLocation,
   HttpTypes,
@@ -45,7 +45,8 @@ export const ManageLocationsForm = ({
       } else {
         newSet.delete(locationId)
       }
-      return newSet
+      
+return newSet
     })
   }
 
@@ -113,12 +114,12 @@ export const ManageLocationsForm = ({
               {t("locations.selectLocations")}
             </Text>
             <Text size="small" leading="compact">
-              {"("}
+              (
               {t("general.countOfTotalSelected", {
                 count: selectedLocationIds.size,
                 total: count,
               })}
-              {")"}
+              )
             </Text>
           </div>
         </div>
@@ -141,7 +142,8 @@ export const ManageLocationsForm = ({
                 offset: params.offset,
                 ...(searchQuery && { q: searchQuery }),
               })
-              return response
+              
+return response
             }}
             responseKey="stock_locations"
             renderItem={(location) => (

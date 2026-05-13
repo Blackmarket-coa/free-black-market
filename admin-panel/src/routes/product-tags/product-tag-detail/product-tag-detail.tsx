@@ -6,7 +6,7 @@ import { useProductTag } from "../../../hooks/api"
 import { useExtension } from "../../../providers/extension-provider"
 import { ProductTagGeneralSection } from "./components/product-tag-general-section"
 import { ProductTagProductSection } from "./components/product-tag-product-section"
-import { productTagLoader } from "./loader"
+import type { productTagLoader } from "./loader"
 
 export const ProductTagDetail = () => {
   const { id } = useParams()

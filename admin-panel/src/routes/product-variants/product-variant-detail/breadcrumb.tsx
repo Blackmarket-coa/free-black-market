@@ -1,5 +1,5 @@
-import { HttpTypes } from "@medusajs/types"
-import { UIMatch } from "react-router-dom"
+import type { HttpTypes } from "@medusajs/types"
+import type { UIMatch } from "react-router-dom"
 import { useProductVariant } from "../../../hooks/api"
 import { VARIANT_DETAIL_FIELDS } from "./constants"
 

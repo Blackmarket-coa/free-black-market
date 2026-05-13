@@ -1,7 +1,8 @@
-import { HttpTypes } from "@medusajs/types"
-import {
+import type { HttpTypes } from "@medusajs/types"
+import type {
   ColumnDef,
-  ColumnDefBase,
+  ColumnDefBase} from "@tanstack/react-table";
+import {
   createColumnHelper,
 } from "@tanstack/react-table"
 import { useMemo } from "react"

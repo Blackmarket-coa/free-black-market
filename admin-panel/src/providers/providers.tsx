@@ -3,7 +3,7 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import type { PropsWithChildren } from "react";
 import { HelmetProvider } from "react-helmet-async";
 import { I18n } from "../components/utilities/i18n";
-import { DashboardApp } from "../dashboard-app";
+import type { DashboardApp } from "../dashboard-app";
 import { queryClient } from "../lib/query-client";
 import { ExtensionProvider } from "./extension-provider";
 import { I18nProvider } from "./i18n-provider";

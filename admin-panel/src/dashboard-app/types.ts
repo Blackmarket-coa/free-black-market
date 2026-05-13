@@ -1,4 +1,4 @@
-import {
+import type {
   CustomFieldContainerZone,
   CustomFieldFormTab,
   CustomFieldFormZone,
@@ -6,10 +6,10 @@ import {
   InjectionZone,
   NestedRoutePosition,
 } from "@medusajs/admin-shared"
-import { ComponentType } from "react"
-import { LoaderFunction } from "react-router-dom"
-import { ZodFirstPartySchemaTypes } from "zod"
-import { INavItem } from "../components/layout/nav-item"
+import type { ComponentType } from "react"
+import type { LoaderFunction } from "react-router-dom"
+import type { ZodFirstPartySchemaTypes } from "zod"
+import type { INavItem } from "../components/layout/nav-item"
 
 export type RouteExtension = {
   Component: ComponentType

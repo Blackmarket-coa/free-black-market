@@ -1,4 +1,4 @@
-import React from "react"
+import type React from "react"
 import { Button, DropdownMenu, usePrompt } from "@medusajs/ui"
 import { ChevronDownMini } from "@medusajs/icons"
 

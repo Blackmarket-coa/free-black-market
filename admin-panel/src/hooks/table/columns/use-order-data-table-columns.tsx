@@ -1,4 +1,4 @@
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 import { createColumnHelper } from "@tanstack/react-table"
 import { useMemo } from "react"
 import { useTranslation } from "react-i18next"
@@ -53,42 +53,48 @@ export const useOrderDataTableColumns = (
           header: () => <DisplayIdHeader />,
           cell: ({ getValue }) => {
             const id = getValue()
-            return <DisplayIdCell displayId={id!} />
+            
+return <DisplayIdCell displayId={id!} />
           },
         }),
         columnHelper.accessor("created_at", {
           header: () => <DateHeader />,
           cell: ({ getValue }) => {
             const date = new Date(getValue())
-            return <DateCell date={date} />
+            
+return <DateCell date={date} />
           },
         }),
         columnHelper.accessor("customer", {
           header: () => <CustomerHeader />,
           cell: ({ getValue }) => {
             const customer = getValue()
-            return <CustomerCell customer={customer} />
+            
+return <CustomerCell customer={customer} />
           },
         }),
         columnHelper.accessor("sales_channel", {
           header: () => <SalesChannelHeader />,
           cell: ({ getValue }) => {
             const channel = getValue()
-            return <SalesChannelCell channel={channel} />
+            
+return <SalesChannelCell channel={channel} />
           },
         }),
         columnHelper.accessor("payment_status", {
           header: () => <PaymentStatusHeader />,
           cell: ({ getValue }) => {
             const status = getValue()
-            return <PaymentStatusCell status={status} />
+            
+return <PaymentStatusCell status={status} />
           },
         }),
         columnHelper.accessor("fulfillment_status", {
           header: () => <FulfillmentStatusHeader />,
           cell: ({ getValue }) => {
             const status = getValue()
-            return <FulfillmentStatusCell status={status} />
+            
+return <FulfillmentStatusCell status={status} />
           },
         }),
         columnHelper.accessor("total", {
@@ -96,14 +102,16 @@ export const useOrderDataTableColumns = (
           cell: ({ getValue, row }) => {
             const total = getValue()
             const currencyCode = row.original.currency_code
-            return <TotalCell currencyCode={currencyCode} total={total} />
+            
+return <TotalCell currencyCode={currencyCode} total={total} />
           },
         }),
         columnHelper.display({
           id: "country",
           cell: ({ row }) => {
             const country = row.original.shipping_address?.country
-            return <CountryCell country={country} />
+            
+return <CountryCell country={country} />
           },
         }),
       ]
@@ -115,7 +123,8 @@ export const useOrderDataTableColumns = (
       .sort((a, b) => {
         const aIndex = visibleColumns.indexOf(a.id)
         const bIndex = visibleColumns.indexOf(b.id)
-        return aIndex - bIndex
+        
+return aIndex - bIndex
       })
       .map((col) => {
         // Handle special columns with custom cells
@@ -125,7 +134,8 @@ export const useOrderDataTableColumns = (
               header: () => <DisplayIdHeader />,
               cell: ({ getValue }) => {
                 const id = getValue()
-                return <DisplayIdCell displayId={id!} />
+                
+return <DisplayIdCell displayId={id!} />
               },
             })
           
@@ -135,7 +145,8 @@ export const useOrderDataTableColumns = (
               header: () => <DateHeader />,
               cell: ({ getValue }) => {
                 const date = getValue() ? new Date(getValue() as string) : null
-                return date ? <DateCell date={date} /> : null
+                
+return date ? <DateCell date={date} /> : null
               },
             })
           
@@ -144,7 +155,8 @@ export const useOrderDataTableColumns = (
               header: () => <TextHeader text={col.name} />,
               cell: ({ getValue }) => {
                 const email = getValue()
-                return <TextCell text={email || ""} />
+                
+return <TextCell text={email || ""} />
               },
             })
           
@@ -153,7 +165,8 @@ export const useOrderDataTableColumns = (
               header: () => <CustomerHeader />,
               cell: ({ getValue }) => {
                 const customer = getValue()
-                return <CustomerCell customer={customer} />
+                
+return <CustomerCell customer={customer} />
               },
             })
           
@@ -162,7 +175,8 @@ export const useOrderDataTableColumns = (
               header: () => <SalesChannelHeader />,
               cell: ({ getValue }) => {
                 const channel = getValue()
-                return <SalesChannelCell channel={channel} />
+                
+return <SalesChannelCell channel={channel} />
               },
             })
           
@@ -171,7 +185,8 @@ export const useOrderDataTableColumns = (
               header: () => <PaymentStatusHeader />,
               cell: ({ getValue }) => {
                 const status = getValue()
-                return <PaymentStatusCell status={status} />
+                
+return <PaymentStatusCell status={status} />
               },
             })
           
@@ -180,7 +195,8 @@ export const useOrderDataTableColumns = (
               header: () => <FulfillmentStatusHeader />,
               cell: ({ getValue }) => {
                 const status = getValue()
-                return <FulfillmentStatusCell status={status} />
+                
+return <FulfillmentStatusCell status={status} />
               },
             })
           
@@ -190,7 +206,8 @@ export const useOrderDataTableColumns = (
               cell: ({ getValue, row }) => {
                 const total = getValue()
                 const currencyCode = row.original.currency_code
-                return <TotalCell currencyCode={currencyCode} total={total} />
+                
+return <TotalCell currencyCode={currencyCode} total={total} />
               },
             })
           
@@ -199,7 +216,8 @@ export const useOrderDataTableColumns = (
               id: "country",
               cell: ({ row }) => {
                 const country = row.original.shipping_address?.country
-                return <CountryCell country={country} />
+                
+return <CountryCell country={country} />
               },
             })
           
@@ -207,15 +225,18 @@ export const useOrderDataTableColumns = (
             // Handle relationship fields (e.g., customer.email)
             if (col.field.includes(".")) {
               const [relation, field] = col.field.split(".")
-              return columnHelper.accessor((row: any) => {
+              
+return columnHelper.accessor((row: any) => {
                 const relationData = row[relation]
-                return relationData?.[field] || ""
+                
+return relationData?.[field] || ""
               }, {
                 id: col.id,
                 header: () => <TextHeader text={col.name} />,
                 cell: ({ getValue }) => {
                   const value = getValue()
-                  return <TextCell text={value || ""} />
+                  
+return <TextCell text={value || ""} />
                 },
               })
             }
@@ -225,7 +246,8 @@ export const useOrderDataTableColumns = (
               header: () => <TextHeader text={col.name} />,
               cell: ({ getValue }) => {
                 const value = getValue()
-                return <TextCell text={value || ""} />
+                
+return <TextCell text={value || ""} />
               },
             })
         }

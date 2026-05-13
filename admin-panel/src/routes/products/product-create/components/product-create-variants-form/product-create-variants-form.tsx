@@ -1,6 +1,7 @@
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 import { useMemo } from "react"
-import { UseFormReturn, useWatch } from "react-hook-form"
+import type { UseFormReturn} from "react-hook-form";
+import { useWatch } from "react-hook-form"
 import { useTranslation } from "react-i18next"
 
 import {
@@ -9,11 +10,11 @@ import {
   DataGrid,
 } from "../../../../../components/data-grid"
 import { useRouteModal } from "../../../../../components/modals"
-import {
+import type {
   ProductCreateOptionSchema,
   ProductCreateVariantSchema,
 } from "../../constants"
-import { ProductCreateSchemaType } from "../../types"
+import type { ProductCreateSchemaType } from "../../types"
 
 type ProductCreateVariantsFormProps = {
   form: UseFormReturn<ProductCreateSchemaType>
@@ -194,7 +195,8 @@ const useColumns = ({
           if (context.column.id?.startsWith("currency_prices")) {
             return `variants.${context.row.original.originalIndex}.prices.${value}`
           }
-          return `variants.${context.row.original.originalIndex}.prices.${value}`
+          
+return `variants.${context.row.original.originalIndex}.prices.${value}`
         },
         t,
       }),

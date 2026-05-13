@@ -1,11 +1,12 @@
 import { zodResolver } from "@hookform/resolvers/zod"
+import type {
+  ProgressStatus} from "@medusajs/ui";
 import {
   Button,
   clx,
   Divider,
   Heading,
   Input,
-  ProgressStatus,
   ProgressTabs,
   Textarea,
   toast,
@@ -14,7 +15,7 @@ import { useCallback, useEffect, useState } from "react"
 import { useForm } from "react-hook-form"
 import { useTranslation } from "react-i18next"
 
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 import { Form } from "../../../../../components/common/form"
 import { SwitchBox } from "../../../../../components/common/switch-box"
 import { CountrySelect } from "../../../../../components/inputs/country-select"
@@ -108,7 +109,8 @@ export function InventoryCreateForm({ locations }: InventoryCreateFormProps) {
       {
         onError: (e) => {
           toast.error(e.message)
-          return
+          
+return
         },
       }
     )

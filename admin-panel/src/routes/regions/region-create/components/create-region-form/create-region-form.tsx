@@ -11,13 +11,14 @@ import {
   clx,
   toast,
 } from "@medusajs/ui"
-import { RowSelectionState, createColumnHelper } from "@tanstack/react-table"
+import type { RowSelectionState} from "@tanstack/react-table";
+import { createColumnHelper } from "@tanstack/react-table"
 import { useMemo, useState } from "react"
 import { useForm, useWatch } from "react-hook-form"
 import { useTranslation } from "react-i18next"
 import * as zod from "zod"
 
-import { RegionCountryDTO } from "@medusajs/types"
+import type { RegionCountryDTO } from "@medusajs/types"
 
 import { Form } from "../../../../../components/common/form"
 import { Combobox } from "../../../../../components/inputs/combobox"
@@ -32,7 +33,7 @@ import { KeyboundForm } from "../../../../../components/utilities/keybound-form"
 import { useCreateRegion } from "../../../../../hooks/api/regions"
 import { useDataTable } from "../../../../../hooks/use-data-table"
 import { countries as staticCountries } from "../../../../../lib/data/countries"
-import { CurrencyInfo } from "../../../../../lib/data/currencies"
+import type { CurrencyInfo } from "../../../../../lib/data/currencies"
 import { formatProvider } from "../../../../../lib/format-provider"
 import { useCountries } from "../../../common/hooks/use-countries"
 import { useCountryTableColumns } from "../../../common/hooks/use-country-table-columns"
@@ -167,7 +168,8 @@ export const CreateRegionForm = ({ currencies }: CreateRegionFormProps) => {
       .map((c) => c.code)
       .reduce((acc, c) => {
         acc[c] = true
-        return acc
+        
+return acc
       }, {} as RowSelectionState)
 
     form.setValue("countries", update, { shouldDirty: true, shouldTouch: true })

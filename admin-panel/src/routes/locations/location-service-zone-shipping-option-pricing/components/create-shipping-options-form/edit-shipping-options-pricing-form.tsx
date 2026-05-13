@@ -3,7 +3,7 @@ import { useMemo, useState } from "react"
 import { useForm } from "react-hook-form"
 import * as zod from "zod"
 
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 import { Button, toast } from "@medusajs/ui"
 import { useTranslation } from "react-i18next"
 
@@ -28,11 +28,12 @@ import {
   REGION_ID_ATTRIBUTE,
 } from "../../../common/constants"
 import { useShippingOptionPriceColumns } from "../../../common/hooks/use-shipping-option-price-columns"
+import type {
+  UpdateConditionalPrice} from "../../../common/schema";
 import {
-  UpdateConditionalPrice,
   UpdateConditionalPriceSchema,
 } from "../../../common/schema"
-import { ConditionalPriceInfo } from "../../../common/types"
+import type { ConditionalPriceInfo } from "../../../common/types"
 import { buildShippingOptionPriceRules } from "../../../common/utils/price-rule-helpers"
 
 type PriceRecord = {
@@ -331,7 +332,8 @@ const getDefaultValues = (prices: HttpTypes.AdminShippingOptionPrice[]) => {
     forbidden: string[] = []
   ) => {
     const attributes = price.price_rules?.map((r) => r.attribute) || []
-    return (
+    
+return (
       required.every((attr) => attributes.includes(attr)) &&
       !forbidden.some((attr) => attributes.includes(attr))
     )
@@ -346,7 +348,8 @@ const getDefaultValues = (prices: HttpTypes.AdminShippingOptionPrice[]) => {
   prices.forEach((price) => {
     if (!price.price_rules?.length) {
       currency_prices[price.currency_code!] = price.amount
-      return
+      
+return
     }
 
     if (hasAttributes(price, [ITEM_TOTAL_ATTRIBUTE], [REGION_ID_ATTRIBUTE])) {
@@ -355,7 +358,8 @@ const getDefaultValues = (prices: HttpTypes.AdminShippingOptionPrice[]) => {
         conditional_currency_prices[code] = []
       }
       conditional_currency_prices[code].push(mapToConditionalPrice(price))
-      return
+      
+return
     }
 
     if (hasAttributes(price, [REGION_ID_ATTRIBUTE], [ITEM_TOTAL_ATTRIBUTE])) {
@@ -364,7 +368,8 @@ const getDefaultValues = (prices: HttpTypes.AdminShippingOptionPrice[]) => {
       )?.value
 
       region_prices[regionId] = price.amount
-      return
+      
+return
     }
 
     if (hasAttributes(price, [REGION_ID_ATTRIBUTE, ITEM_TOTAL_ATTRIBUTE])) {

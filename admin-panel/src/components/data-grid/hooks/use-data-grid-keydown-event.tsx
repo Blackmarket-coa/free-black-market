@@ -1,4 +1,5 @@
-import React, { useCallback } from "react"
+import type React from "react";
+import { useCallback } from "react"
 import type {
   FieldValues,
   Path,
@@ -6,13 +7,14 @@ import type {
   UseFormGetValues,
   UseFormSetValue,
 } from "react-hook-form"
+import type {
+  DataGridMatrix,
+  DataGridQueryTool} from "../models";
 import {
   DataGridBulkUpdateCommand,
-  DataGridMatrix,
-  DataGridQueryTool,
   DataGridUpdateCommand,
 } from "../models"
-import { DataGridCoordinates } from "../types"
+import type { DataGridCoordinates } from "../types"
 
 type UseDataGridKeydownEventOptions<TData, TFieldValues extends FieldValues> = {
   containerRef: React.RefObject<HTMLDivElement>
@@ -180,7 +182,8 @@ export const useDataGridKeydownEvent = <
 
       if (e.shiftKey) {
         redo()
-        return
+        
+return
       }
 
       undo()
@@ -376,7 +379,8 @@ export const useDataGridKeydownEvent = <
     (e: KeyboardEvent, anchor: DataGridCoordinates) => {
       if (isEditing) {
         handleMoveOnEnter(e, anchor)
-        return
+        
+return
       }
 
       handleEditOnEnter(anchor)
@@ -600,37 +604,44 @@ export const useDataGridKeydownEvent = <
     (e: KeyboardEvent) => {
       if (ARROW_KEYS.includes(e.key)) {
         handleKeyboardNavigation(e)
-        return
+        
+return
       }
 
       if (e.key === "z" && (e.metaKey || e.ctrlKey)) {
         handleUndo(e)
-        return
+        
+return
       }
 
       if (e.key === " ") {
         handleSpaceKey(e)
-        return
+        
+return
       }
 
       if (e.key === "Delete" || e.key === "Backspace") {
         handleDeleteKey(e)
-        return
+        
+return
       }
 
       if (e.key === "Enter") {
         handleEnterKey(e)
-        return
+        
+return
       }
 
       if (e.key === "Escape") {
         handleEscapeKey(e)
-        return
+        
+return
       }
 
       if (e.key === "Tab") {
         handleTabKey(e)
-        return
+        
+return
       }
     },
     [

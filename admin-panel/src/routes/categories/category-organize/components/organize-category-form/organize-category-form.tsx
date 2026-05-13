@@ -1,9 +1,9 @@
 import { useMutation } from "@tanstack/react-query"
 
-import { UniqueIdentifier } from "@dnd-kit/core"
+import type { UniqueIdentifier } from "@dnd-kit/core"
 import { Spinner } from "@medusajs/icons"
-import { FetchError } from "@medusajs/js-sdk"
-import { HttpTypes } from "@medusajs/types"
+import type { FetchError } from "@medusajs/js-sdk"
+import type { HttpTypes } from "@medusajs/types"
 import { toast } from "@medusajs/ui"
 import { useState } from "react"
 import { RouteFocusModal } from "../../../../../components/modals"
@@ -14,7 +14,7 @@ import {
 import { sdk } from "../../../../../lib/client"
 import { queryClient } from "../../../../../lib/query-client"
 import { CategoryTree } from "../../../common/components/category-tree"
-import { CategoryTreeItem } from "../../../common/types"
+import type { CategoryTreeItem } from "../../../common/types"
 
 const QUERY = {
   fields: "id,name,parent_category_id,rank,*category_children",

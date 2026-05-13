@@ -1,14 +1,15 @@
 import { zodResolver } from "@hookform/resolvers/zod"
-import { PromotionDTO, PromotionRuleDTO } from "@medusajs/types"
+import type { PromotionDTO, PromotionRuleDTO } from "@medusajs/types"
 import { Button } from "@medusajs/ui"
 import { useState } from "react"
 import { useForm } from "react-hook-form"
 import { useTranslation } from "react-i18next"
 import { RouteDrawer } from "../../../../../../components/modals"
 import { KeyboundForm } from "../../../../../../components/utilities/keybound-form"
-import { RuleTypeValues } from "../../edit-rules"
+import type { RuleTypeValues } from "../../edit-rules"
 import { RulesFormField } from "../rules-form-field"
-import { EditRules, EditRulesType } from "./form-schema"
+import type { EditRulesType } from "./form-schema";
+import { EditRules } from "./form-schema"
 
 type EditPromotionFormProps = {
   promotion: PromotionDTO

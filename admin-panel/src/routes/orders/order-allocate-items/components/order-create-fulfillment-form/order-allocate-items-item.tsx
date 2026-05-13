@@ -1,19 +1,20 @@
 import { useMemo, useState } from "react"
 import { useTranslation } from "react-i18next"
-import { InventoryItemDTO, OrderLineItemDTO } from "@medusajs/types"
+import type { InventoryItemDTO, OrderLineItemDTO } from "@medusajs/types"
 import {
   Component,
   ExclamationCircleSolid,
   TriangleDownMini,
 } from "@medusajs/icons"
-import { UseFormReturn, useWatch } from "react-hook-form"
+import type { UseFormReturn} from "react-hook-form";
+import { useWatch } from "react-hook-form"
 import { Input, Text, clx } from "@medusajs/ui"
-import * as zod from "zod"
+import type * as zod from "zod"
 
 import { Thumbnail } from "../../../../../components/common/thumbnail"
 import { getFulfillableQuantity } from "../../../../../lib/order-item"
 import { Form } from "../../../../../components/common/form"
-import { AllocateItemsSchema } from "./constants"
+import type { AllocateItemsSchema } from "./constants"
 import { checkInventoryKit } from "./utils"
 
 type OrderEditItemProps = {

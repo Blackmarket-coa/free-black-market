@@ -1,4 +1,4 @@
-import {
+import type {
   AdminClaim,
   AdminOrder,
   AdminOrderPreview,
@@ -6,10 +6,11 @@ import {
 } from "@medusajs/types"
 import { Alert, Button, Heading, Text, toast } from "@medusajs/ui"
 import { useEffect, useMemo, useState } from "react"
-import { useFieldArray, UseFormReturn } from "react-hook-form"
+import type { UseFormReturn } from "react-hook-form";
+import { useFieldArray } from "react-hook-form"
 import { useTranslation } from "react-i18next"
 
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 import { Form } from "../../../../../components/common/form"
 import { Combobox } from "../../../../../components/inputs/combobox"
 import {
@@ -29,7 +30,7 @@ import { OutboundShippingPlaceholder } from "../../../common/placeholders"
 import { AddClaimOutboundItemsTable } from "../add-claim-outbound-items-table"
 import { ClaimOutboundItem } from "./claim-outbound-item"
 import { ItemPlaceholder } from "./item-placeholder"
-import { CreateClaimSchemaType } from "./schema"
+import type { CreateClaimSchemaType } from "./schema"
 import { useOrderShippingOptions } from "../../../../../hooks/api/orders"
 import { getFormattedShippingOptionLocationName } from "../../../../../lib/shipping-options"
 
@@ -202,7 +203,7 @@ export const ClaimOutboundSection = ({
         (a) => a.action === "SHIPPING_ADD" && !a.return_id
       )
 
-      return action && !!!action?.return_id
+      return action && !action?.return_id
     })
 
     const promises = outboundShippingMethods

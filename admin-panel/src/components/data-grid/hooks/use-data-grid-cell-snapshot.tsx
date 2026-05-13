@@ -1,7 +1,7 @@
 import { useCallback, useState } from "react"
-import { FieldValues, Path, UseFormReturn } from "react-hook-form"
-import { DataGridMatrix } from "../models"
-import { DataGridCellSnapshot, DataGridCoordinates } from "../types"
+import type { FieldValues, Path, UseFormReturn } from "react-hook-form"
+import type { DataGridMatrix } from "../models"
+import type { DataGridCellSnapshot, DataGridCoordinates } from "../types"
 
 type UseDataGridCellSnapshotOptions<TData, TFieldValues extends FieldValues> = {
   matrix: DataGridMatrix<TData, TFieldValues>

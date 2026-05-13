@@ -1,7 +1,8 @@
 import { Drawer, clx } from "@medusajs/ui"
-import {
+import type {
   ComponentPropsWithoutRef,
-  PropsWithChildren,
+  PropsWithChildren} from "react";
+import {
   forwardRef,
   useEffect,
 } from "react"

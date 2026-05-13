@@ -1,5 +1,5 @@
 import { CheckCircle, Plus, Trash, XCircle } from "@medusajs/icons"
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 import {
   Checkbox,
   CommandBar,
@@ -9,7 +9,8 @@ import {
   usePrompt,
 } from "@medusajs/ui"
 import { keepPreviousData } from "@tanstack/react-query"
-import { RowSelectionState, createColumnHelper } from "@tanstack/react-table"
+import type { RowSelectionState} from "@tanstack/react-table";
+import { createColumnHelper } from "@tanstack/react-table"
 import { useMemo, useState } from "react"
 import { useTranslation } from "react-i18next"
 
@@ -252,7 +253,8 @@ const CurrencyActions = ({
       {
         supported_currencies: supportedCurrencies.map((c) => {
           const pref = preferencesMap.get(c.currency_code)
-          return {
+          
+return {
             ...c,
             is_tax_inclusive:
               c.currency_code === currency.code
@@ -348,7 +350,8 @@ const useColumns = () => {
         header: t("fields.taxInclusivePricing"),
         cell: ({ getValue }) => {
           const isTaxInclusive = getValue()
-          return (
+          
+return (
             <StatusCell color={isTaxInclusive ? "green" : "grey"}>
               {isTaxInclusive ? t("fields.true") : t("fields.false")}
             </StatusCell>

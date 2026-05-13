@@ -1,5 +1,5 @@
 import { PencilSquare, Trash } from "@medusajs/icons"
-import { AdminCampaignResponse } from "@medusajs/types"
+import type { AdminCampaignResponse } from "@medusajs/types"
 import {
   Badge,
   Container,

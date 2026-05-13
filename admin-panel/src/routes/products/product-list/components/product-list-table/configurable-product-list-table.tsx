@@ -1,6 +1,7 @@
+import type {
+  DataTableRowSelectionState} from "@medusajs/ui";
 import {
   createDataTableCommandHelper,
-  DataTableRowSelectionState,
   toast,
   usePrompt,
 } from "@medusajs/ui"

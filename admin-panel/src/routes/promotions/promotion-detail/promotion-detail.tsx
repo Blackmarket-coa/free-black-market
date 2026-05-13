@@ -7,7 +7,7 @@ import { useExtension } from "../../../providers/extension-provider"
 import { CampaignSection } from "./components/campaign-section"
 import { PromotionConditionsSection } from "./components/promotion-conditions-section"
 import { PromotionGeneralSection } from "./components/promotion-general-section"
-import { promotionLoader } from "./loader"
+import type { promotionLoader } from "./loader"
 
 export const PromotionDetail = () => {
   const initialData = useLoaderData() as Awaited<
@@ -48,10 +48,10 @@ export const PromotionDetail = () => {
     >
       <TwoColumnPage.Main>
         <PromotionGeneralSection promotion={promotion} />
-        <PromotionConditionsSection rules={rules || []} ruleType={"rules"} />
+        <PromotionConditionsSection rules={rules || []} ruleType="rules" />
         <PromotionConditionsSection
           rules={targetRules || []}
-          ruleType={"target-rules"}
+          ruleType="target-rules"
           applicationMethodTargetType={
             promotion.application_method.target_type || "items"
           }
@@ -59,8 +59,8 @@ export const PromotionDetail = () => {
         {promotion.type === "buyget" && (
           <PromotionConditionsSection
             rules={buyRules || []}
-            ruleType={"buy-rules"}
-            applicationMethodTargetType={"items"}
+            ruleType="buy-rules"
+            applicationMethodTargetType="items"
           />
         )}
       </TwoColumnPage.Main>

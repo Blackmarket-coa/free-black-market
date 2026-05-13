@@ -1,4 +1,4 @@
-import { HttpTypes } from "@medusajs/types";
+import type { HttpTypes } from "@medusajs/types";
 import { Button, Input, toast } from "@medusajs/ui";
 
 import { zodResolver } from "@hookform/resolvers/zod";

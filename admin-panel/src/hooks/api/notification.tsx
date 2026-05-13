@@ -1,9 +1,10 @@
-import { QueryKey, UseQueryOptions, useQuery } from "@tanstack/react-query"
+import type { QueryKey, UseQueryOptions} from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query"
 
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 import { sdk } from "../../lib/client"
 import { queryKeysFactory } from "../../lib/query-key-factory"
-import { FetchError } from "@medusajs/js-sdk"
+import type { FetchError } from "@medusajs/js-sdk"
 
 const NOTIFICATION_QUERY_KEY = "notification" as const
 export const notificationQueryKeys = queryKeysFactory(NOTIFICATION_QUERY_KEY)

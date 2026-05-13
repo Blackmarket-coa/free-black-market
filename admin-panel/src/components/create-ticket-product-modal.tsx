@@ -7,9 +7,10 @@ import {
 } from "@medusajs/ui"
 import { useQuery } from "@tanstack/react-query"
 import { sdk } from "../lib/sdk"
-import { RowType, Venue } from "../types"
+import type { RowType, Venue } from "../types"
 import { ProductDetailsStep } from "./product-details-step"
-import { CurrencyRegionCombination, PricingStep } from "./pricing-step"
+import type { CurrencyRegionCombination} from "./pricing-step";
+import { PricingStep } from "./pricing-step"
 
 interface CreateTicketProductModalProps {
   open: boolean
@@ -87,15 +88,18 @@ export const CreateTicketProductModal = ({
   const handleStep1Next = () => {
     if (!name.trim()) {
       toast.error("Name is required")
-      return
+      
+return
     }
     if (!selectedVenueId) {
       toast.error("Please select a venue")
-      return
+      
+return
     }
     if (selectedDates.length === 0) {
       toast.error("Please select at least one date")
-      return
+      
+return
     }
     setCurrentStep("1")
   }
@@ -103,7 +107,8 @@ export const CreateTicketProductModal = ({
   const handleStep2Submit = async () => {
     if (!selectedVenue) {
       toast.error("Venue not found")
-      return
+      
+return
     }
 
     // Prepare variants data

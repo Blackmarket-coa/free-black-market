@@ -1,14 +1,15 @@
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 import { useEffect } from "react"
-import { UseFormReturn, useWatch } from "react-hook-form"
+import type { UseFormReturn} from "react-hook-form";
+import { useWatch } from "react-hook-form"
 
 import { DataGrid } from "../../../../../components/data-grid"
 import { useRouteModal } from "../../../../../components/modals"
 import { useProducts } from "../../../../../hooks/api/products"
 import { usePriceListGridColumns } from "../../../common/hooks/use-price-list-grid-columns"
-import { PriceListCreateProductVariantsSchema } from "../../../common/schemas"
+import type { PriceListCreateProductVariantsSchema } from "../../../common/schemas"
 import { isProductRow } from "../../../common/utils"
-import { PriceListPricesAddSchema } from "./schema"
+import type { PriceListPricesAddSchema } from "./schema"
 
 type PriceListPricesAddPricesFormProps = {
   form: UseFormReturn<PriceListPricesAddSchema>
@@ -59,7 +60,8 @@ export const PriceListPricesAddPricesForm = ({
               currency_prices: {},
               region_prices: {},
             }
-            return variants
+            
+return variants
           }, {} as PriceListCreateProductVariantsSchema),
         })
       })

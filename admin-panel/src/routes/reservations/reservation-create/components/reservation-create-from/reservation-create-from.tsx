@@ -7,7 +7,7 @@ import {
 } from "../../../../../components/modals"
 
 import { zodResolver } from "@hookform/resolvers/zod"
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 import React from "react"
 import { useForm } from "react-hook-form"
 import { useTranslation } from "react-i18next"
@@ -144,9 +144,9 @@ export const ReservationCreateForm = (props: { inventoryItemId?: string }) => {
             <Heading>{t("inventory.reservation.create")}</Heading>
             <div className="grid grid-cols-2 gap-4">
               <Form.Field
-                key={"inventory_item_id"}
+                key="inventory_item_id"
                 control={form.control}
-                name={"inventory_item_id"}
+                name="inventory_item_id"
                 render={({ field: { value, onChange, ...field } }) => {
                   return (
                     <Form.Item>
@@ -177,9 +177,9 @@ export const ReservationCreateForm = (props: { inventoryItemId?: string }) => {
                 }}
               />
               <Form.Field
-                key={"location_id"}
+                key="location_id"
                 control={form.control}
-                name={"location_id"}
+                name="location_id"
                 render={({ field: { value, onChange, ...field } }) => {
                   return (
                     <Form.Item>

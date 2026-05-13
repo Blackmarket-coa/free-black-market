@@ -15,7 +15,7 @@ import { useTranslation } from "react-i18next"
 import { Link } from "react-router-dom"
 import { ActionMenu } from "../../../../../components/common/action-menu"
 import { useUpdateProduct } from "../../../../../hooks/api/products"
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 
 type ProductMedisaSectionProps = {
   product: HttpTypes.AdminProduct
@@ -32,7 +32,8 @@ export const ProductMediaSection = ({ product }: ProductMedisaSectionProps) => {
     setSelection((prev) => {
       if (prev[id]) {
         const { [id]: _, ...rest } = prev
-        return rest
+        
+return rest
       } else {
         return { ...prev, [id]: true }
       }
@@ -129,7 +130,7 @@ export const ProductMediaSection = ({ product }: ProductMedisaSectionProps) => {
                     </Tooltip>
                   </div>
                 )}
-                <Link to={`media`} state={{ curr: index }}>
+                <Link to="media" state={{ curr: index }}>
                   <img
                     src={i.url}
                     alt={`${product.title} image`}

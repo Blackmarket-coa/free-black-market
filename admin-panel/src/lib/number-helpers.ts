@@ -29,5 +29,6 @@ export const isAmountLessThenRoundingError = (
   currencyCode: string
 ) => {
   const decimalDigits = getDecimalDigits(currencyCode);
-  return Math.abs(amount) < 1 / 10 ** decimalDigits / 2;
+  
+return Math.abs(amount) < 1 / 10 ** decimalDigits / 2;
 };

@@ -1,6 +1,8 @@
-import React, { useState } from "react"
+import type React from "react";
+import { useState } from "react"
 import { Button, FocusModal, Input, Label, Textarea, toast } from "@medusajs/ui"
-import { CreateVenueRequest, RowType } from "../types"
+import type { CreateVenueRequest} from "../types";
+import { RowType } from "../types"
 
 /**
  * Minimal "create venue" modal used by src/routes/venues/page.tsx. This
@@ -35,12 +37,14 @@ export const CreateVenueModal: React.FC<CreateVenueModalProps> = ({
   const handleSubmit = async () => {
     if (!name.trim()) {
       toast.error("Venue name is required")
-      return
+      
+return
     }
     const parsedSeats = Number.parseInt(seatCount, 10)
     if (!Number.isFinite(parsedSeats) || parsedSeats < 0) {
       toast.error("Seat count must be a non-negative integer")
-      return
+      
+return
     }
     setIsSubmitting(true)
     try {

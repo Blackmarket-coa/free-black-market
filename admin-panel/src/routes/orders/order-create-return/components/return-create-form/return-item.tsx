@@ -2,8 +2,8 @@ import { useTranslation } from "react-i18next"
 
 import React from "react"
 import { IconButton, Input, Text } from "@medusajs/ui"
-import { UseFormReturn } from "react-hook-form"
-import { HttpTypes, AdminOrderLineItem } from "@medusajs/types"
+import type { UseFormReturn } from "react-hook-form"
+import type { HttpTypes, AdminOrderLineItem } from "@medusajs/types"
 import { ChatBubble, DocumentText, XCircle, XMark } from "@medusajs/icons"
 
 import { Thumbnail } from "../../../../../components/common/thumbnail"

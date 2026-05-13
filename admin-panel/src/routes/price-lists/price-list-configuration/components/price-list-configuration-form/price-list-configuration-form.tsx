@@ -1,6 +1,6 @@
 import { zodResolver } from "@hookform/resolvers/zod"
 import { MagnifyingGlass, XMark } from "@medusajs/icons"
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 import {
   Button,
   DatePicker,
@@ -22,7 +22,7 @@ import { useStackedModal } from "../../../../../components/modals/stacked-modal-
 import { KeyboundForm } from "../../../../../components/utilities/keybound-form"
 import { useUpdatePriceList } from "../../../../../hooks/api/price-lists"
 import { PriceListCustomerGroupRuleForm } from "../../../common/components/price-list-customer-group-rule-form"
-import { PricingCustomerGroupsArrayType } from "../../../price-list-create/components/price-list-create-form/schema"
+import type { PricingCustomerGroupsArrayType } from "../../../price-list-create/components/price-list-create-form/schema"
 
 type PriceListConfigurationFormProps = {
   priceList: HttpTypes.AdminPriceList
@@ -69,7 +69,8 @@ export const PriceListConfigurationForm = ({
     if (!groups.length) {
       form.setValue("customer_group_id", [])
       setIsOpen(STACKED_MODAL_ID, false)
-      return
+      
+return
     }
 
     const newIds = groups.map((group) => group.id)

@@ -1,5 +1,5 @@
 import { TriangleRightMini } from "@medusajs/icons"
-import { AdminProductCategoryResponse } from "@medusajs/types"
+import type { AdminProductCategoryResponse } from "@medusajs/types"
 import { IconButton, Text, clx } from "@medusajs/ui"
 import { createColumnHelper } from "@tanstack/react-table"
 import { useMemo } from "react"

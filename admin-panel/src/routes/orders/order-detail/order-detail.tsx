@@ -16,7 +16,7 @@ import { OrderGeneralSection } from "./components/order-general-section";
 import { OrderPaymentSection } from "./components/order-payment-section";
 import { OrderSummarySection } from "./components/order-summary-section";
 import { DEFAULT_FIELDS } from "./constants";
-import { orderLoader } from "./loader";
+import type { orderLoader } from "./loader";
 import { OrderRemainingOrdersGroupSection } from "./components/order-remaining-orders-group-section";
 
 export const OrderDetail = () => {

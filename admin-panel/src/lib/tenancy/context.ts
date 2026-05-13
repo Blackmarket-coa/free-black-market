@@ -9,7 +9,8 @@ export const getStoredContext = (): StorefrontContext | null => {
   if (typeof window === "undefined") return null
   try {
     const raw = window.localStorage.getItem(KEY)
-    return raw ? (JSON.parse(raw) as StorefrontContext) : null
+    
+return raw ? (JSON.parse(raw) as StorefrontContext) : null
   } catch {
     return null
   }

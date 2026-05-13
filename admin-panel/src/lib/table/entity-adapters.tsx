@@ -1,5 +1,5 @@
-import { HttpTypes } from "@medusajs/types"
-import { ColumnAdapter } from "../../hooks/table/columns/use-configurable-table-columns"
+import type { HttpTypes } from "@medusajs/types"
+import type { ColumnAdapter } from "../../hooks/table/columns/use-configurable-table-columns"
 
 export const orderColumnAdapter: ColumnAdapter<HttpTypes.AdminOrder> = {
   getColumnAlignment: (column) => {
@@ -12,7 +12,8 @@ export const orderColumnAdapter: ColumnAdapter<HttpTypes.AdminOrder> = {
     if (column.computed?.type === "country_code") {
       return "center"
     }
-    return "left"
+    
+return "left"
   }
 }
 
@@ -58,7 +59,8 @@ export const productColumnAdapter: ColumnAdapter<HttpTypes.AdminProduct> = {
   transformCellValue: (_value, row, column) => {
     if (column.field === "variants_count" || column.computed?.type === "count") {
       const count = Array.isArray(row.variants) ? row.variants.length : 0
-      return `${count} ${count === 1 ? 'variant' : 'variants'}`
+      
+return `${count} ${count === 1 ? 'variant' : 'variants'}`
     }
 
     if (column.field === "product_display" || column.computed?.type === "product_info") {
@@ -98,7 +100,8 @@ export const customerColumnAdapter: ColumnAdapter<HttpTypes.AdminCustomer> = {
       if (first_name || last_name) {
         return `${first_name || ""} ${last_name || ""}`.trim()
       }
-      return "-"
+      
+return "-"
     }
 
     return null

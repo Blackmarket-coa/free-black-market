@@ -1,6 +1,7 @@
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 import { useMemo } from "react"
-import { UseFormReturn, useWatch } from "react-hook-form"
+import type { UseFormReturn} from "react-hook-form";
+import { useWatch } from "react-hook-form"
 import { useTranslation } from "react-i18next"
 
 import {
@@ -12,7 +13,7 @@ import { useRouteModal } from "../../../components/modals/index"
 import { usePricePreferences } from "../../../hooks/api/price-preferences"
 import { useRegions } from "../../../hooks/api/regions.tsx"
 import { useStore } from "../../../hooks/api/store"
-import { ProductCreateSchemaType } from "../product-create/types"
+import type { ProductCreateSchemaType } from "../product-create/types"
 
 type VariantPricingFormProps = {
   form: UseFormReturn<ProductCreateSchemaType>
@@ -69,7 +70,8 @@ const useVariantPriceGridColumns = ({
         header: t("fields.title"),
         cell: (context) => {
           const entity = context.row.original
-          return (
+          
+return (
             <DataGrid.ReadonlyCell context={context}>
               <div className="flex h-full w-full items-center gap-x-2 overflow-hidden">
                 <span className="truncate">{entity.title}</span>
@@ -90,7 +92,8 @@ const useVariantPriceGridColumns = ({
           if (context.column.id?.startsWith("currency_prices")) {
             return `variants.${context.row.index}.prices.${value}`
           }
-          return `variants.${context.row.index}.prices.${value}`
+          
+return `variants.${context.row.index}.prices.${value}`
         },
         t,
       }),

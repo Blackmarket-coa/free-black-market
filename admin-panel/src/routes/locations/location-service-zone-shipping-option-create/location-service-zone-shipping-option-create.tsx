@@ -4,7 +4,7 @@ import { RouteFocusModal } from "../../../components/modals"
 import { useStockLocation } from "../../../hooks/api/stock-locations"
 import { CreateShippingOptionsForm } from "./components/create-shipping-options-form"
 import { LOC_CREATE_SHIPPING_OPTION_FIELDS } from "./constants"
-import { FulfillmentSetType } from "../common/constants"
+import type { FulfillmentSetType } from "../common/constants"
 
 export function LocationServiceZoneShippingOptionCreate() {
   const { location_id, fset_id, zone_id } = useParams()

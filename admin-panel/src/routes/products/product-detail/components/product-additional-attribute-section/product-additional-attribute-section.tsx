@@ -71,7 +71,8 @@ export const ProductAdditionalAttributeSection = () => {
     const values = Object.keys(payload).reduce(
       (acc: Array<Record<string, string>>, key) => {
         acc.push({ attribute_id: key, value: payload[key] });
-        return acc;
+        
+return acc;
       },
       []
     );

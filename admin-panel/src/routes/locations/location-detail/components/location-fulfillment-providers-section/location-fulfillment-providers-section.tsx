@@ -1,5 +1,5 @@
 import { HandTruck, PencilSquare } from "@medusajs/icons"
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 import { Container, Heading } from "@medusajs/ui"
 import { Fragment } from "react"
 import { useTranslation } from "react-i18next"

@@ -1,5 +1,5 @@
-import { HttpTypes } from "@medusajs/types"
-import { TFunction } from "i18next"
+import type { HttpTypes } from "@medusajs/types"
+import type { TFunction } from "i18next"
 import {
   STEP_ERROR_STATES,
   STEP_INACTIVE_STATES,

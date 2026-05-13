@@ -1,7 +1,9 @@
-import { FocusEvent, MouseEvent, useCallback } from "react"
-import { FieldValues, UseFormSetValue } from "react-hook-form"
-import { DataGridMatrix, DataGridUpdateCommand } from "../models"
-import { DataGridCoordinates } from "../types"
+import type { FocusEvent, MouseEvent} from "react";
+import { useCallback } from "react"
+import type { FieldValues, UseFormSetValue } from "react-hook-form"
+import type { DataGridMatrix} from "../models";
+import { DataGridUpdateCommand } from "../models"
+import type { DataGridCoordinates } from "../types"
 
 type UseDataGridCellHandlersOptions<TData, TFieldValues extends FieldValues> = {
   matrix: DataGridMatrix<TData, TFieldValues>
@@ -56,7 +58,8 @@ export const useDataGridCellHandlers = <
 
         if (e.shiftKey) {
           setRangeEnd(coords)
-          return
+          
+return
         }
 
         setIsSelecting(true)

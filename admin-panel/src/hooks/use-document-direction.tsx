@@ -13,7 +13,8 @@ export const useDocumentDirection = (): "ltr" | "rtl" | undefined => {
         undefined
       )
     }
-    return undefined
+    
+return undefined
   })
 
   useEffect(() => {

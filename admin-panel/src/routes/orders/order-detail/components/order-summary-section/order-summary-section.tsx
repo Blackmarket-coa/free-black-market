@@ -1,4 +1,5 @@
-import { ReactNode, useMemo, useState } from "react"
+import type { ReactNode} from "react";
+import { useMemo, useState } from "react"
 import { useTranslation } from "react-i18next"
 import { Link } from "react-router-dom"
 
@@ -12,7 +13,7 @@ import {
   PencilSquare,
   TriangleDownMini,
 } from "@medusajs/icons"
-import {
+import type {
   AdminClaim,
   AdminExchange,
   AdminOrder,
@@ -37,7 +38,7 @@ import {
   usePrompt,
 } from "@medusajs/ui"
 
-import { AdminReservation } from "@medusajs/types/src/http"
+import type { AdminReservation } from "@medusajs/types/src/http"
 import { format } from "date-fns"
 import { ActionMenu } from "../../../../../components/common/action-menu"
 import DisplayId from "../../../../../components/common/display-id/display-id"
@@ -769,7 +770,8 @@ const DiscountAndTotalBreakdown = ({
         ).sort(),
       })
     }
-    return discounts
+    
+return discounts
   }, [order])
 
   const hasDiscount = discounts.length > 0

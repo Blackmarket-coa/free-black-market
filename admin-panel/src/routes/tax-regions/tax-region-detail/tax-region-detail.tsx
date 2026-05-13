@@ -11,7 +11,7 @@ import { useExtension } from "../../../providers/extension-provider"
 import { TaxRegionOverrideSection } from "./components/tax-region-override-section"
 import { TaxRegionSublevelAlert } from "./components/tax-region-sublevel-alert"
 import { TaxRegionProviderSection } from "./tax-region-provider-section"
-import { taxRegionLoader } from "./loader"
+import type { taxRegionLoader } from "./loader"
 
 export const TaxRegionDetail = () => {
   const { id } = useParams()

@@ -1,5 +1,7 @@
-import React, { createContext, useContext } from "react"
-import { useFeatureFlags, FeatureFlags } from "../../hooks/api/feature-flags"
+import type React from "react";
+import { createContext, useContext } from "react"
+import type { FeatureFlags } from "../../hooks/api/feature-flags";
+import { useFeatureFlags } from "../../hooks/api/feature-flags"
 
 interface FeatureFlagContextValue {
   flags: FeatureFlags
@@ -15,7 +17,8 @@ export const useFeatureFlag = (flag: keyof FeatureFlags): boolean => {
     // If no context, assume feature is disabled
     return false
   }
-  return context.isFeatureEnabled(flag)
+  
+return context.isFeatureEnabled(flag)
 }
 
 export const useFeatureFlagContext = () => {
@@ -23,7 +26,8 @@ export const useFeatureFlagContext = () => {
   if (!context) {
     throw new Error("useFeatureFlagContext must be used within FeatureFlagProvider")
   }
-  return context
+  
+return context
 }
 
 interface FeatureFlagProviderProps {
@@ -35,7 +39,8 @@ export const FeatureFlagProvider: React.FC<FeatureFlagProviderProps> = ({ childr
 
   const isFeatureEnabled = (flag: keyof FeatureFlags): boolean => {
     const enabled = flags[flag] === true
-    return enabled
+    
+return enabled
   }
 
   return (

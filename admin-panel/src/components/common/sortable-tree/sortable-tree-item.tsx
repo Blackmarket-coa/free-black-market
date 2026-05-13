@@ -1,9 +1,11 @@
 import type { UniqueIdentifier } from "@dnd-kit/core"
-import { AnimateLayoutChanges, useSortable } from "@dnd-kit/sortable"
+import type { AnimateLayoutChanges} from "@dnd-kit/sortable";
+import { useSortable } from "@dnd-kit/sortable"
 import { CSS } from "@dnd-kit/utilities"
-import { CSSProperties } from "react"
+import type { CSSProperties } from "react"
 
-import { TreeItem, TreeItemProps } from "./tree-item"
+import type { TreeItemProps } from "./tree-item";
+import { TreeItem } from "./tree-item"
 import { iOS } from "./utils"
 
 interface SortableTreeItemProps extends TreeItemProps {

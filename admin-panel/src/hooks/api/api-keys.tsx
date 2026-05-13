@@ -1,10 +1,11 @@
-import { HttpTypes } from "@medusajs/types"
-import { FetchError } from "@medusajs/js-sdk"
-import {
+import type { HttpTypes } from "@medusajs/types"
+import type { FetchError } from "@medusajs/js-sdk"
+import type {
   MutationOptions,
   QueryKey,
   UseMutationOptions,
-  UseQueryOptions,
+  UseQueryOptions} from "@tanstack/react-query";
+import {
   useMutation,
   useQuery,
 } from "@tanstack/react-query"

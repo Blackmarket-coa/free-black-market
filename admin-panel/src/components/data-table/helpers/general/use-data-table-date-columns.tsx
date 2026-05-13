@@ -1,6 +1,7 @@
+import type {
+  DataTableColumnDef} from "@medusajs/ui";
 import {
   createDataTableColumnHelper,
-  DataTableColumnDef,
   Tooltip,
 } from "@medusajs/ui"
 import { useMemo } from "react"

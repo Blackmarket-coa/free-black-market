@@ -7,7 +7,7 @@ import { useExtension } from "../../../providers/extension-provider"
 import { ApiKeyType } from "../common/constants"
 import { ApiKeyGeneralSection } from "./components/api-key-general-section"
 import { ApiKeySalesChannelSection } from "./components/api-key-sales-channel-section"
-import { apiKeyLoader } from "./loader"
+import type { apiKeyLoader } from "./loader"
 
 export const ApiKeyManagementDetail = () => {
   const initialData = useLoaderData() as Awaited<

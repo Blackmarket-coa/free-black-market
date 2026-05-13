@@ -1,5 +1,5 @@
-import { HttpTypes } from "@medusajs/types"
-import { UIMatch } from "react-router-dom"
+import type { HttpTypes } from "@medusajs/types"
+import type { UIMatch } from "react-router-dom"
 
 import { useInventoryItem } from "../../../hooks/api"
 import { INVENTORY_DETAIL_FIELDS } from "./constants"

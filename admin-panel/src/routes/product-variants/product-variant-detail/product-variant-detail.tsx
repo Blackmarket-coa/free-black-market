@@ -12,7 +12,7 @@ import {
 } from "./components/variant-inventory-section"
 import { VariantPricesSection } from "./components/variant-prices-section"
 import { VARIANT_DETAIL_FIELDS } from "./constants"
-import { variantLoader } from "./loader"
+import type { variantLoader } from "./loader"
 
 export const ProductVariantDetail = () => {
   const initialData = useLoaderData() as Awaited<

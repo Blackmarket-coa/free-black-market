@@ -1,8 +1,8 @@
-import Stripe from 'stripe'
+import type Stripe from 'stripe'
 
-import { BigNumberInput } from '@medusajs/framework/types'
+import type { BigNumberInput } from '@medusajs/framework/types'
 
-import { PayoutWebhookAction } from './events'
+import type { PayoutWebhookAction } from './events'
 
 export type ProcessPayoutInput = {
   amount: BigNumberInput

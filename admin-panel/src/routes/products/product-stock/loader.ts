@@ -1,5 +1,6 @@
-import { HttpTypes } from "@medusajs/types"
-import { defer, LoaderFunctionArgs } from "react-router-dom"
+import type { HttpTypes } from "@medusajs/types"
+import type { LoaderFunctionArgs } from "react-router-dom";
+import { defer } from "react-router-dom"
 import { sdk } from "../../../lib/client"
 import { PRODUCT_VARIANT_IDS_KEY } from "../common/constants"
 

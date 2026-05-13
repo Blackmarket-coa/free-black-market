@@ -1,10 +1,11 @@
+import type {
+  DataTablePaginationState} from "@medusajs/ui";
 import {
   Container,
   Heading,
   Button,
   DataTable,
   useDataTable,
-  DataTablePaginationState,
   Badge,
   DropdownMenu,
   IconButton,
@@ -16,7 +17,7 @@ import { SingleColumnLayout } from "../../../components/layout/single-column";
 import { useAttributeTableColumns } from "../../../hooks/table/columns/use-attribute-table-columns";
 
 import { useAttributes } from "../../../hooks/api/attributes";
-import { AttributeDTO } from "../../../types";
+import type { AttributeDTO } from "../../../types";
 
 export const AttributeList = () => {
   const navigate = useNavigate();
@@ -68,7 +69,8 @@ export const AttributeList = () => {
     setFilters((prev) => {
       const newFilters = { ...prev };
       delete newFilters[key];
-      return newFilters;
+      
+return newFilters;
     });
     setPagination((prev) => ({ ...prev, pageIndex: 0 }));
   };
@@ -106,7 +108,8 @@ export const AttributeList = () => {
     if (filters.global !== undefined) {
       filtered = filtered.filter((attr) => {
         const isGlobal = !attr.product_categories?.length;
-        return isGlobal === filters.global;
+        
+return isGlobal === filters.global;
       });
     }
 
@@ -143,7 +146,8 @@ export const AttributeList = () => {
 
         if (aValue < bValue) return sorting.order === "asc" ? -1 : 1;
         if (aValue > bValue) return sorting.order === "asc" ? 1 : -1;
-        return 0;
+        
+return 0;
       });
     }
 
@@ -154,7 +158,8 @@ export const AttributeList = () => {
   const paginatedAttributes = useMemo(() => {
     const startIndex = pagination.pageIndex * pagination.pageSize;
     const endIndex = startIndex + pagination.pageSize;
-    return processedAttributes.slice(startIndex, endIndex);
+    
+return processedAttributes.slice(startIndex, endIndex);
   }, [processedAttributes, pagination]);
 
   const table = useDataTable({

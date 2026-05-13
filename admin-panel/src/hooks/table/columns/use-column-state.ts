@@ -1,5 +1,5 @@
 import { useState, useCallback, useMemo, useEffect, useRef } from "react"
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 
 type ViewConfiguration =
   HttpTypes.AdminViewConfigurationResponse["view_configuration"]
@@ -42,11 +42,13 @@ export function useColumnState(
             activeView.configuration.visible_columns?.includes(column.field) ||
             false
         })
-        return visibility
+        
+return visibility
       } else if (apiColumns?.length) {
         return getInitialColumnVisibility(apiColumns)
       }
-      return {}
+      
+return {}
     }
   )
 
@@ -57,7 +59,8 @@ export function useColumnState(
     } else if (apiColumns?.length) {
       return getInitialColumnOrder(apiColumns)
     }
-    return []
+    
+return []
   })
 
   const columnState = useMemo<ColumnState>(
@@ -202,7 +205,8 @@ function getInitialColumnOrder(apiColumns: HttpTypes.AdminColumn[]): string[] {
   const sortedColumns = [...apiColumns].sort((a, b) => {
     const orderA = a.default_order ?? DEFAULT_COLUMN_ORDER
     const orderB = b.default_order ?? DEFAULT_COLUMN_ORDER
-    return orderA - orderB
+    
+return orderA - orderB
   })
 
   return sortedColumns.map((col) => col.field)

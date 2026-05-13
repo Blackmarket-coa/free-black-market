@@ -1,4 +1,4 @@
-import { OnChangeFn, RowSelectionState } from "@tanstack/react-table"
+import type { OnChangeFn, RowSelectionState } from "@tanstack/react-table"
 import { useState } from "react"
 
 import { useTranslation } from "react-i18next"

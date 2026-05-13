@@ -35,7 +35,8 @@ const toCsv = (rows: AuditResponse["payouts"]) => {
       .map((value) => `"${String(value).replaceAll('"', '""')}"`)
       .join(",")
   )
-  return [header.join(","), ...lines].join("\n")
+  
+return [header.join(","), ...lines].join("\n")
 }
 
 export const VendorHypePayoutAuditPage = () => {

@@ -10,11 +10,11 @@ import {
 } from "@medusajs/ui";
 import { useForm, FormProvider } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { z } from "zod";
+import type { z } from "zod";
 import { useEffect, useState } from "react";
-import { AttributeDTO } from "../../../../types";
+import type { AttributeDTO } from "../../../../types";
 import { AdminUpdateAttribute, CreateAttributeFormSchema } from "../schema";
-import { AdminProductCategory } from "@medusajs/types";
+import type { AdminProductCategory } from "@medusajs/types";
 import PossibleValuesList from "../../attribute-create/components/PossibleValuesList";
 import MultiSelectCategory from "../../attribute-create/components/MultiSelectCategory";
 import { findDuplicatePossibleValues } from "../utils";

@@ -1,6 +1,7 @@
-import { Filter } from ".."
+import type { Filter } from ".."
 import { DataTableFilter } from "../data-table-filter"
-import { DataTableOrderBy, DataTableOrderByKey } from "../data-table-order-by"
+import type { DataTableOrderByKey } from "../data-table-order-by";
+import { DataTableOrderBy } from "../data-table-order-by"
 import { DataTableSearch } from "../data-table-search"
 
 export interface DataTableQueryProps<TData> {

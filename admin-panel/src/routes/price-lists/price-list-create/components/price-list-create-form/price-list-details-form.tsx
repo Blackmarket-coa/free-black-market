@@ -85,14 +85,14 @@ export const PriceListDetailsForm = ({ form }: PriceListDetailsFormProps) => {
                       className="grid grid-cols-1 gap-4 md:grid-cols-2"
                     >
                       <RadioGroup.ChoiceBox
-                        value={"sale"}
+                        value="sale"
                         label={t("priceLists.fields.type.options.sale.label")}
                         description={t(
                           "priceLists.fields.type.options.sale.description"
                         )}
                       />
                       <RadioGroup.ChoiceBox
-                        value={"override"}
+                        value="override"
                         label={t(
                           "priceLists.fields.type.options.override.label"
                         )}

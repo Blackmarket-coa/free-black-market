@@ -6,7 +6,7 @@ import { useProductType } from "../../../hooks/api/product-types"
 import { useExtension } from "../../../providers/extension-provider"
 import { ProductTypeGeneralSection } from "./components/product-type-general-section"
 import { ProductTypeProductSection } from "./components/product-type-product-section"
-import { productTypeLoader } from "./loader"
+import type { productTypeLoader } from "./loader"
 
 export const ProductTypeDetail = () => {
   const { id } = useParams()

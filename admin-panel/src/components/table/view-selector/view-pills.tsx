@@ -1,4 +1,5 @@
-import React, { useEffect, useState, useRef } from "react"
+import type React from "react";
+import { useEffect, useState, useRef } from "react"
 import {
   Badge,
   usePrompt,
@@ -58,7 +59,8 @@ export const ViewPills: React.FC<ViewPillsProps> = ({
       if (viewId === null) {
         // Select default view - clear the active view
         await setActiveView.mutateAsync(null)
-        return
+        
+return
       }
 
       const view = views.find(v => v.id === viewId)

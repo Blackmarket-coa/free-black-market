@@ -1,6 +1,6 @@
 import { createColumnHelper } from "@tanstack/react-table"
 
-import { AdminCampaign } from "@medusajs/types"
+import type { AdminCampaign } from "@medusajs/types"
 import { useMemo } from "react"
 import { useTranslation } from "react-i18next"
 import { DateCell } from "../../../components/table/table-cells/common/date-cell"
@@ -36,7 +36,8 @@ export const useCampaignTableColumns = () => {
         header: () => <TextHeader text={t("campaigns.fields.identifier")} />,
         cell: ({ getValue }) => {
           const value = getValue()
-          return <TextCell text={value} />
+          
+return <TextCell text={value} />
         },
       }),
       columnHelper.accessor("starts_at", {

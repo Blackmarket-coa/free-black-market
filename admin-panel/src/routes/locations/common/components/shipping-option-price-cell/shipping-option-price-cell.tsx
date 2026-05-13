@@ -1,14 +1,16 @@
 import { ArrowsPointingOut, CircleSliders } from "@medusajs/icons"
 import { clx } from "@medusajs/ui"
 import { useCallback, useEffect, useRef, useState } from "react"
+import type {
+  CurrencyInputProps} from "react-currency-input-field";
 import CurrencyInput, {
-  CurrencyInputProps,
   formatValue,
 } from "react-currency-input-field"
-import {
+import type {
   Control,
+  ControllerRenderProps} from "react-hook-form";
+import {
   Controller,
-  ControllerRenderProps,
   useWatch,
 } from "react-hook-form"
 import { DataGridCellContainer } from "../../../../../components/data-grid/components/data-grid-cell-container"
@@ -16,12 +18,13 @@ import {
   useDataGridCell,
   useDataGridCellError,
 } from "../../../../../components/data-grid/hooks"
-import {
+import type {
   DataGridCellProps,
   InputProps,
 } from "../../../../../components/data-grid/types"
 import { useCombinedRefs } from "../../../../../hooks/use-combined-refs"
-import { currencies, CurrencyInfo } from "../../../../../lib/data/currencies"
+import type { CurrencyInfo } from "../../../../../lib/data/currencies";
+import { currencies } from "../../../../../lib/data/currencies"
 import { getCustomShippingOptionPriceFieldName } from "../../utils/get-custom-shipping-option-price-field-info"
 import { useShippingOptionPrice } from "../shipping-option-price-provider"
 
@@ -125,7 +128,8 @@ const OuterComponent = ({
     }
 
     document.addEventListener("keydown", handleKeyDown)
-    return () => document.removeEventListener("keydown", handleKeyDown)
+    
+return () => document.removeEventListener("keydown", handleKeyDown)
   }, [isAnchor])
 
   return (
@@ -206,7 +210,8 @@ const Inner = ({
   ) => {
     if (!value) {
       setLocalValue("")
-      return
+      
+return
     }
 
     setLocalValue(value)

@@ -1,15 +1,15 @@
-import { HttpTypes } from "@medusajs/types"
-import { ColumnDef } from "@tanstack/react-table"
-import { TFunction } from "i18next"
+import type { HttpTypes } from "@medusajs/types"
+import type { ColumnDef } from "@tanstack/react-table"
+import type { TFunction } from "i18next"
 import { useMemo } from "react"
-import { FieldPath, FieldValues } from "react-hook-form"
+import type { FieldPath, FieldValues } from "react-hook-form"
 import { useTranslation } from "react-i18next"
 import { IncludesTaxTooltip } from "../../../../components/common/tax-badge/tax-badge"
 import {
   createDataGridHelper,
   DataGrid,
 } from "../../../../components/data-grid"
-import { FieldContext } from "../../../../components/data-grid/types"
+import type { FieldContext } from "../../../../components/data-grid/types"
 import { ShippingOptionPriceCell } from "../components/shipping-option-price-cell"
 
 const columnHelper = createDataGridHelper()

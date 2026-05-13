@@ -1,10 +1,11 @@
 import React, { useMemo } from "react"
-import { UseFormReturn, useWatch } from "react-hook-form"
-import { HttpTypes } from "@medusajs/types"
+import type { UseFormReturn} from "react-hook-form";
+import { useWatch } from "react-hook-form"
+import type { HttpTypes } from "@medusajs/types"
 import { useTranslation } from "react-i18next"
-import { z } from "zod"
+import type { z } from "zod"
 
-import { CreateProductVariantSchema } from "./constants"
+import type { CreateProductVariantSchema } from "./constants"
 import { useRegions, useStore } from "../../../../../hooks/api"
 import { usePricePreferences } from "../../../../../hooks/api/price-preferences"
 import { useRouteModal } from "../../../../../components/modals"
@@ -68,7 +69,8 @@ const useVariantPriceGridColumns = ({
         header: t("fields.title"),
         cell: (context) => {
           const entity = context.row.original
-          return (
+          
+return (
             <DataGrid.ReadonlyCell context={context}>
               <div className="flex h-full w-full items-center gap-x-2 overflow-hidden">
                 <span className="truncate">{entity.title}</span>
@@ -89,7 +91,8 @@ const useVariantPriceGridColumns = ({
           if (context.column.id?.startsWith("currency_prices")) {
             return `prices.${value}`
           }
-          return `prices.${value}`
+          
+return `prices.${value}`
         },
         t,
       }),

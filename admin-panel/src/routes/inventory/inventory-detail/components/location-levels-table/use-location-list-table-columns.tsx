@@ -1,4 +1,4 @@
-import { InventoryTypes, StockLocationDTO } from "@medusajs/types"
+import type { InventoryTypes, StockLocationDTO } from "@medusajs/types"
 import { PencilSquare, Trash } from "@medusajs/icons"
 
 import { useMemo } from "react"
@@ -141,7 +141,8 @@ export const useLocationListTableColumns = () => {
       columnHelper.action({
         actions: (ctx) => {
           const level = ctx.row.original
-          return [
+          
+return [
             [
               {
                 icon: <PencilSquare />,

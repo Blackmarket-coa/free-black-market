@@ -1,9 +1,10 @@
+import type {
+  DataTablePaginationState} from "@medusajs/ui";
 import {
   Container,
   Heading,
   DataTable,
   createDataTableColumnHelper,
-  DataTablePaginationState,
   DropdownMenu,
   Button,
 } from "@medusajs/ui";
@@ -13,7 +14,7 @@ import { format } from "date-fns";
 import { EllipsisHorizontal } from "@medusajs/icons";
 import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "@medusajs/ui";
-import { AttributeDTO } from "../../../../types";
+import type { AttributeDTO } from "../../../../types";
 
 type PossibleValue = {
   id: string;
@@ -62,7 +63,8 @@ export const PossibleValuesTable = ({
       id: "actions",
       cell: (info) => {
         const possibleValue = info.row.original;
-        return (
+        
+return (
           <div className="flex items-center justify-end">
             <DropdownMenu>
               <DropdownMenu.Trigger asChild>

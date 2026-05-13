@@ -5,14 +5,15 @@ import {
   Popover as RadixPopover,
   RadioGroup as RadixRadioGroup,
 } from "radix-ui"
-import { ChangeEvent, useCallback, useEffect, useState } from "react"
+import type { ChangeEvent} from "react";
+import { useCallback, useEffect, useState } from "react"
 import { useTranslation } from "react-i18next"
 
-import { TFunction } from "i18next"
+import type { TFunction } from "i18next"
 import { useSelectedParams } from "../hooks"
 import { useDataTableFilterContext } from "./context"
 import FilterChip from "./filter-chip"
-import { IFilter } from "./types"
+import type { IFilter } from "./types"
 
 type NumberFilterProps = IFilter
 
@@ -56,18 +57,21 @@ export const NumberFilter = ({
       const handleValue = (operator: Operator) => {
         if (!value && isCurrentNumber) {
           selectedParams.delete()
-          return
+          
+return
         }
 
         if (curr && !value) {
           delete curr[operator]
           selectedParams.add(JSON.stringify(curr))
-          return
+          
+return
         }
 
         if (!curr) {
           selectedParams.add(JSON.stringify({ [operator]: value }))
-          return
+          
+return
         }
 
         selectedParams.add(JSON.stringify({ ...curr, [operator]: value }))

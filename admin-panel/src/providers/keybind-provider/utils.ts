@@ -1,4 +1,4 @@
-import { Keys, Platform, Shortcut } from "./types"
+import type { Keys, Platform, Shortcut } from "./types"
 
 export const findFirstPlatformMatch = (keys: Keys) => {
   const match =
@@ -66,7 +66,8 @@ export const findShortcutIndex = (shortcuts: Shortcut[], keys: string[]) => {
 
 export const findShortcut = (shortcuts: Shortcut[], keys: string[]) => {
   const shortcutIndex = findShortcutIndex(shortcuts, keys)
-  return shortcutIndex > -1 ? shortcuts[shortcutIndex] : null
+  
+return shortcutIndex > -1 ? shortcuts[shortcutIndex] : null
 }
 
 export const getShortcutWithDefaultValues = (

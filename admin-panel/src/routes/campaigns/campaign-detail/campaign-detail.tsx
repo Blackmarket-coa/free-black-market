@@ -5,7 +5,7 @@ import { CampaignBudget } from "./components/campaign-budget"
 import { CampaignGeneralSection } from "./components/campaign-general-section"
 import { CampaignPromotionSection } from "./components/campaign-promotion-section"
 import { CampaignSpend } from "./components/campaign-spend"
-import { campaignLoader } from "./loader"
+import type { campaignLoader } from "./loader"
 
 import { TwoColumnPageSkeleton } from "../../../components/common/skeleton"
 import { TwoColumnPage } from "../../../components/layout/pages"

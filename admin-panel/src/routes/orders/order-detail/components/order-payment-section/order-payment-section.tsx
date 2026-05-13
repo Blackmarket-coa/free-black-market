@@ -1,6 +1,6 @@
-import { OrderCreditLineDTO } from "@medusajs/framework/types"
+import type { OrderCreditLineDTO } from "@medusajs/framework/types"
 import { ArrowDownRightMini, DocumentText, XCircle } from "@medusajs/icons"
-import { AdminOrder, AdminPayment, HttpTypes } from "@medusajs/types"
+import type { AdminOrder, AdminPayment, HttpTypes } from "@medusajs/types"
 import {
   Badge,
   Button,

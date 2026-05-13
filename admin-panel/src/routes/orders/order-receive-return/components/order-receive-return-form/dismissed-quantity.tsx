@@ -1,10 +1,10 @@
 import { useMemo, useState } from "react";
 
 import { HeartBroken } from "@medusajs/icons";
-import { AdminOrderLineItem } from "@medusajs/types";
+import type { AdminOrderLineItem } from "@medusajs/types";
 import { Button, Input, Popover, toast } from "@medusajs/ui";
 
-import { UseFormReturn } from "react-hook-form";
+import type { UseFormReturn } from "react-hook-form";
 import { useTranslation } from "react-i18next";
 
 import { Form } from "../../../../../components/common/form";
@@ -13,7 +13,7 @@ import {
   useRemoveDismissItem,
   useUpdateDismissItem,
 } from "../../../../../hooks/api/returns";
-import { ReceiveReturnSchema } from "./constants";
+import type { ReceiveReturnSchema } from "./constants";
 
 type DismissedQuantityProps = {
   returnId: string;

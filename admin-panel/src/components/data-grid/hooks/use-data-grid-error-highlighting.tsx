@@ -1,9 +1,9 @@
-import { Table, VisibilityState } from "@tanstack/react-table"
+import type { Table, VisibilityState } from "@tanstack/react-table"
 import { useCallback, useMemo, useState } from "react"
-import { FieldError, FieldErrors, FieldValues } from "react-hook-form"
+import type { FieldError, FieldErrors, FieldValues } from "react-hook-form"
 
-import { DataGridMatrix } from "../models"
-import { VisibilitySnapshot } from "../types"
+import type { DataGridMatrix } from "../models"
+import type { VisibilitySnapshot } from "../types"
 
 export const useDataGridErrorHighlighting = <
   TData,

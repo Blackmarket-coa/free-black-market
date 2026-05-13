@@ -1,4 +1,4 @@
-import { Filter } from "../../../../../components/table/data-table"
+import type { Filter } from "../../../../../components/table/data-table"
 import { useStockLocations } from "../../../../../hooks/api/stock-locations"
 import { useTranslation } from "react-i18next"
 

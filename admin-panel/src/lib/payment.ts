@@ -1,4 +1,4 @@
-import { AdminPaymentCollection } from "@medusajs/types"
+import type { AdminPaymentCollection } from "@medusajs/types"
 
 export const getTotalCaptured = (
   paymentCollections: AdminPaymentCollection[]
@@ -8,7 +8,8 @@ export const getTotalCaptured = (
       acc +
       ((paymentCollection.captured_amount as number) -
         (paymentCollection.refunded_amount as number))
-    return acc
+    
+return acc
   }, 0)
 
 export const getTotalPending = (paymentCollections: AdminPaymentCollection[]) =>

@@ -4,28 +4,32 @@ import {
   ExclamationCircle,
 } from "@medusajs/icons"
 import { Button, DropdownMenu, clx } from "@medusajs/ui"
-import {
+import type {
   Cell,
   CellContext,
   Column,
   ColumnDef,
   Row,
-  VisibilityState,
+  VisibilityState} from "@tanstack/react-table";
+import {
   flexRender,
   getCoreRowModel,
   useReactTable,
 } from "@tanstack/react-table"
-import { VirtualItem, useVirtualizer } from "@tanstack/react-virtual"
-import React, {
+import type { VirtualItem} from "@tanstack/react-virtual";
+import { useVirtualizer } from "@tanstack/react-virtual"
+import type {
   CSSProperties,
-  ReactNode,
+  ReactNode} from "react";
+import type React from "react";
+import {
   useCallback,
   useEffect,
   useMemo,
   useRef,
   useState,
 } from "react"
-import { FieldValues, UseFormReturn } from "react-hook-form"
+import type { FieldValues, UseFormReturn } from "react-hook-form"
 import { useTranslation } from "react-i18next"
 
 import { useCommandHistory } from "../../../hooks/use-command-history"
@@ -46,7 +50,7 @@ import {
   useDataGridQueryTool,
 } from "../hooks"
 import { DataGridMatrix } from "../models"
-import { DataGridCoordinates, GridColumnOption } from "../types"
+import type { DataGridCoordinates, GridColumnOption } from "../types"
 import { isCellMatch, isSpecialFocusKey } from "../utils"
 import { DataGridKeyboardShortcutModal } from "./data-grid-keyboard-shortcut-modal"
 export interface DataGridRootProps<
@@ -444,7 +448,8 @@ export const DataGridRoot = <
     const specialFocusHandler = (e: KeyboardEvent) => {
       if (isSpecialFocusKey(e)) {
         handleSpecialFocusKeys(e)
-        return
+        
+return
       }
     }
 
@@ -715,7 +720,8 @@ const DataGridHeader = ({
     onHeaderInteractionChange(value)
     setColumnsOpen(value)
   }
-  return (
+  
+return (
     <div className="bg-ui-bg-base flex items-center justify-between border-b p-4">
       <div className="flex items-center gap-x-2">
         <DropdownMenu

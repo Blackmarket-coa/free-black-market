@@ -1,4 +1,4 @@
-import { CommissionLineDTO } from './common'
+import type { CommissionLineDTO } from './common'
 
 export type Price = {
   amount: number

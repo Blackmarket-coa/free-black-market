@@ -1,5 +1,6 @@
 import { Table } from "@medusajs/ui"
-import { ComponentPropsWithoutRef, ElementRef, forwardRef } from "react"
+import type { ComponentPropsWithoutRef, ElementRef} from "react";
+import { forwardRef } from "react"
 import { useTranslation } from "react-i18next"
 
 type LocalizedTablePaginationProps = Omit<

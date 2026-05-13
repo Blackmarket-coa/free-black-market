@@ -1,10 +1,10 @@
 import { Heading, Input } from "@medusajs/ui"
-import { UseFormReturn } from "react-hook-form"
+import type { UseFormReturn } from "react-hook-form"
 import { useTranslation } from "react-i18next"
 
 import { Form } from "../../../../../../../components/common/form"
 import { CountrySelect } from "../../../../../../../components/inputs/country-select"
-import { ProductCreateSchemaType } from "../../../../types"
+import type { ProductCreateSchemaType } from "../../../../types"
 
 type ProductCreateAttributeSectionProps = {
   form: UseFormReturn<ProductCreateSchemaType>

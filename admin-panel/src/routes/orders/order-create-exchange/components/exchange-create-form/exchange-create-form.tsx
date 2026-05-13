@@ -1,6 +1,6 @@
 import { zodResolver } from "@hookform/resolvers/zod"
 import { PencilSquare } from "@medusajs/icons"
-import { AdminExchange, AdminOrder, AdminOrderPreview } from "@medusajs/types"
+import type { AdminExchange, AdminOrder, AdminOrderPreview } from "@medusajs/types"
 import {
   Button,
   CurrencyInput,
@@ -21,9 +21,10 @@ import {
 
 import { Form } from "../../../../../components/common/form"
 import { getStylizedAmount } from "../../../../../lib/money-amount-helpers"
-import { CreateExchangeSchemaType, ExchangeCreateSchema } from "./schema"
+import type { CreateExchangeSchemaType} from "./schema";
+import { ExchangeCreateSchema } from "./schema"
 
-import { AdminReturn } from "@medusajs/types"
+import type { AdminReturn } from "@medusajs/types"
 import { KeyboundForm } from "../../../../../components/utilities/keybound-form/keybound-form.tsx"
 import {
   useCancelExchangeRequest,

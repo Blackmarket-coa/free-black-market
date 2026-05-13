@@ -1,4 +1,4 @@
-import { AdminOrder, AdminOrderLineItem, HttpTypes } from "@medusajs/types"
+import type { AdminOrder, AdminOrderLineItem, HttpTypes } from "@medusajs/types"
 
 export const getPaymentsFromOrder = (order: HttpTypes.AdminOrder) => {
   return order.payment_collections

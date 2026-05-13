@@ -1,5 +1,5 @@
-import { HttpTypes } from "@medusajs/types"
-import { QueryClient } from "@tanstack/react-query"
+import type { HttpTypes } from "@medusajs/types"
+import type { QueryClient } from "@tanstack/react-query"
 import { promotionsQueryKeys } from "../../../hooks/api/promotions"
 import { sdk } from "../../../lib/client"
 import { queryClient } from "../../../lib/query-client"

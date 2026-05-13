@@ -1,4 +1,4 @@
-import { LoaderFunctionArgs } from "react-router-dom"
+import type { LoaderFunctionArgs } from "react-router-dom"
 
 import { workflowExecutionsQueryKeys } from "../../../hooks/api/workflow-executions"
 import { sdk } from "../../../lib/client"

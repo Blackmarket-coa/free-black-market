@@ -6,7 +6,7 @@ import { ShippingProfileGeneralSection } from "./components/shipping-profile-gen
 
 import { SingleColumnPage } from "../../../components/layout/pages"
 import { useExtension } from "../../../providers/extension-provider"
-import { shippingProfileLoader } from "./loader"
+import type { shippingProfileLoader } from "./loader"
 
 export const ShippingProfileDetail = () => {
   const { shipping_profile_id } = useParams()

@@ -2,7 +2,7 @@ import { useLoaderData } from "react-router-dom"
 
 import { useStore } from "../../../hooks/api/store"
 import { StoreGeneralSection } from "./components/store-general-section"
-import { storeLoader } from "./loader"
+import type { storeLoader } from "./loader"
 
 import { SingleColumnPageSkeleton } from "../../../components/common/skeleton"
 import { SingleColumnPage } from "../../../components/layout/pages"

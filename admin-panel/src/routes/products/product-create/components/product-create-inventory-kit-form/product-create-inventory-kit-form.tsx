@@ -1,6 +1,6 @@
-import { UseFormReturn } from "react-hook-form"
+import type { UseFormReturn } from "react-hook-form"
 
-import { ProductCreateSchemaType } from "../../types"
+import type { ProductCreateSchemaType } from "../../types"
 import { ProductCreateInventoryKitSection } from "./components/product-create-inventory-kit-section/product-create-inventory-kit-section"
 
 type ProductAttributesProps = {

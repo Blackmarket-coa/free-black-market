@@ -1,7 +1,7 @@
-import { OnChangeFn, RowSelectionState } from "@tanstack/react-table"
+import type { OnChangeFn, RowSelectionState } from "@tanstack/react-table"
 import { useMemo, useState } from "react"
 
-import {
+import type {
   AdminOrderLineItem,
   DateComparisonOperator,
   NumericalComparisonOperator,
@@ -37,7 +37,8 @@ export const AddReturnItemsTable = ({
   const [rowSelection, setRowSelection] = useState<RowSelectionState>(
     selectedItems.reduce((acc, id) => {
       acc[id] = true
-      return acc
+      
+return acc
     }, {} as RowSelectionState)
   )
 
@@ -196,7 +197,8 @@ const sortItems = (
     if (aValue > bValue) {
       return direction === "asc" ? 1 : -1
     }
-    return 0
+    
+return 0
   })
 }
 

@@ -1,11 +1,11 @@
 import { zodResolver } from "@hookform/resolvers/zod"
 import { ArrowRight } from "@medusajs/icons"
-import { AdminOrder, AdminReturn } from "@medusajs/types"
+import type { AdminOrder, AdminReturn } from "@medusajs/types"
 import { Alert, Button, Input, Switch, Text, toast } from "@medusajs/ui"
 import { useEffect, useMemo } from "react"
 import { useForm } from "react-hook-form"
 import { useTranslation } from "react-i18next"
-import * as zod from "zod"
+import type * as zod from "zod"
 
 import { Form } from "../../../../../components/common/form"
 import { Thumbnail } from "../../../../../components/common/thumbnail"
@@ -82,7 +82,8 @@ export function OrderReceiveReturnForm({
   const itemsMap = useMemo(() => {
     const ret = {}
     order.items.forEach((i) => (ret[i.id] = i))
-    return ret
+    
+return ret
   }, [order.items])
 
   const form = useForm<zod.infer<typeof ReceiveReturnSchema>>({

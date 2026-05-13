@@ -216,14 +216,14 @@ export const CreateCampaignFormFields = ({ form, fieldScope = "" }) => {
                 >
                   <RadioGroup.ChoiceBox
                     className="flex-1"
-                    value={"usage"}
+                    value="usage"
                     label={t("campaigns.budget.type.usage.title")}
                     description={t("campaigns.budget.type.usage.description")}
                   />
 
                   <RadioGroup.ChoiceBox
                     className="flex-1"
-                    value={"spend"}
+                    value="spend"
                     label={t("campaigns.budget.type.spend.title")}
                     description={t("campaigns.budget.type.spend.description")}
                     disabled={fieldScope?.length ? !currency : false}

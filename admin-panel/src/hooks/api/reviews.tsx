@@ -1,4 +1,5 @@
-import { QueryKey, UseQueryOptions, useQuery } from "@tanstack/react-query";
+import type { QueryKey, UseQueryOptions} from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 
 import { sdk } from "../../lib/client";
 import { queryKeysFactory } from "../../lib/query-key-factory";

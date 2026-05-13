@@ -4,7 +4,7 @@ import { useForm } from "react-hook-form"
 import { useTranslation } from "react-i18next"
 import { z } from "zod"
 
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 import { Form } from "../../../../../components/common/form"
 import { Combobox } from "../../../../../components/inputs/combobox"
 import { CountrySelect } from "../../../../../components/inputs/country-select"
@@ -51,7 +51,8 @@ export const ProductEditVariantForm = ({
   const defaultOptions = product.options?.reduce((acc: any, option: any) => {
     const varOpt = variant.options?.find((o: any) => o.option_id === option.id)
     acc[option.title] = varOpt?.value
-    return acc
+    
+return acc
   }, {})
 
   const form = useForm<z.infer<typeof ProductEditVariantSchema>>({

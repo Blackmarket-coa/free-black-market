@@ -1,8 +1,9 @@
-import { PropsWithChildren, useCallback, useMemo, useState } from "react"
+import type { PropsWithChildren} from "react";
+import { useCallback, useMemo, useState } from "react"
 
 import { useShortcuts } from "./hooks"
 import { KeybindContext } from "./keybind-context"
-import { KeybindContextState, Shortcut } from "./types"
+import type { KeybindContextState, Shortcut } from "./types"
 import {
   findFirstPlatformMatch,
   findShortcutIndex,
@@ -32,7 +33,8 @@ export const KeybindProvider = ({
 
         if (idx > -1) {
           newShortcuts[idx] = getShortcutWithDefaultValues(shortcut)
-          return prevShortcuts
+          
+return prevShortcuts
         }
 
         return [...prevShortcuts, getShortcutWithDefaultValues(shortcut)]

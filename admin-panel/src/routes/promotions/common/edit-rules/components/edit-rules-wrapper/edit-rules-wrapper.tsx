@@ -1,4 +1,4 @@
-import {
+import type {
   CreatePromotionRuleDTO,
   PromotionDTO,
   PromotionRuleDTO,
@@ -12,7 +12,7 @@ import {
   usePromotionUpdateRules,
   useUpdatePromotion,
 } from "../../../../../../hooks/api/promotions"
-import { RuleTypeValues } from "../../edit-rules"
+import type { RuleTypeValues } from "../../edit-rules"
 import { EditRulesForm } from "../edit-rules-form"
 import { getRuleValue } from "./utils"
 

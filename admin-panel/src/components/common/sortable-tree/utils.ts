@@ -277,7 +277,8 @@ export function removeChildrenOf(
       if (children.length) {
         excludeParentIds.push(item.id)
       }
-      return false
+      
+return false
     }
 
     return true

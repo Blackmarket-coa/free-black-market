@@ -4,7 +4,7 @@ import { ActionMenu } from "../../../../../components/common/action-menu"
 import { useDeleteReservationItem } from "../../../../../hooks/api/reservations"
 import { usePrompt } from "@medusajs/ui"
 import { useTranslation } from "react-i18next"
-import { ExtendedReservationItem } from "../../../../inventory/inventory-detail/components/reservations-table/use-reservation-list-table-columns"
+import type { ExtendedReservationItem } from "../../../../inventory/inventory-detail/components/reservations-table/use-reservation-list-table-columns"
 
 export const ReservationActions = ({
   reservation,

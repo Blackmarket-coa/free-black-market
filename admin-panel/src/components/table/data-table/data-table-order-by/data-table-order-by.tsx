@@ -85,7 +85,8 @@ export const DataTableOrderBy = <TData,>({
     if (!state.key) {
       setSearchParams((prev) => {
         prev.delete(param)
-        return prev
+        
+return prev
       })
 
       return
@@ -95,7 +96,8 @@ export const DataTableOrderBy = <TData,>({
       state.dir === SortDirection.ASC ? state.key : `-${state.key}`
     setSearchParams((prev) => {
       prev.set(param, orderParam)
-      return prev
+      
+return prev
     })
   }
 

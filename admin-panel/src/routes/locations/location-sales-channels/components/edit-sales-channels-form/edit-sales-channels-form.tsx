@@ -1,9 +1,10 @@
 import { zodResolver } from "@hookform/resolvers/zod"
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
+import type {
+  DataTableRowSelectionState} from "@medusajs/ui";
 import {
   Button,
   createDataTableColumnHelper,
-  DataTableRowSelectionState,
   toast,
 } from "@medusajs/ui"
 import { keepPreviousData } from "@tanstack/react-query"
@@ -171,7 +172,8 @@ function getInitialState(location: HttpTypes.AdminStockLocation) {
   return (
     location.sales_channels?.reduce((acc, curr) => {
       acc[curr.id] = true
-      return acc
+      
+return acc
     }, {} as DataTableRowSelectionState) ?? {}
   )
 }

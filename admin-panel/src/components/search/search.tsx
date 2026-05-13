@@ -9,10 +9,11 @@ import {
 } from "@medusajs/ui"
 import { Command } from "cmdk"
 import { Dialog as RadixDialog } from "radix-ui"
+import type {
+  ComponentPropsWithoutRef,
+  ElementRef} from "react";
 import {
   Children,
-  ComponentPropsWithoutRef,
-  ElementRef,
   forwardRef,
   Fragment,
   useCallback,
@@ -42,7 +43,7 @@ import {
   SEARCH_AREAS,
   SEARCH_LIMIT_INCREMENT,
 } from "./constants"
-import { SearchArea } from "./types"
+import type { SearchArea } from "./types"
 import { useSearchResults } from "./use-search-results"
 import { useDocumentDirection } from "../../hooks/use-document-direction"
 
@@ -96,12 +97,14 @@ export const Search = () => {
 
     if (item.to) {
       navigate(item.to)
-      return
+      
+return
     }
 
     if (item.callback) {
       item.callback()
-      return
+      
+return
     }
   }
 

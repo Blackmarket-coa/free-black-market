@@ -43,7 +43,8 @@ async function adminFetch<T>(path: string, init?: RequestInit): Promise<T> {
     const body = await res.text().catch(() => "")
     throw new Error(`${res.status}: ${body || res.statusText}`)
   }
-  return (await res.json()) as T
+  
+return (await res.json()) as T
 }
 
 export const CreatorProgramsAdminPage = () => {

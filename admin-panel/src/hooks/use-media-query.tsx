@@ -7,7 +7,8 @@ export const useMediaQuery = (query: string) => {
   useEffect(() => {
     const handler = (e: MediaQueryListEvent) => setMatches(e.matches)
     mediaQuery.addEventListener("change", handler)
-    return () => mediaQuery.removeEventListener("change", handler)
+    
+return () => mediaQuery.removeEventListener("change", handler)
   }, [mediaQuery])
 
   return matches

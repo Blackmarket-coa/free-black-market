@@ -3,7 +3,7 @@ import { useProductCategory } from "../../../hooks/api/categories"
 import { CategoryGeneralSection } from "./components/category-general-section"
 import { CategoryOrganizeSection } from "./components/category-organize-section"
 import { CategoryProductSection } from "./components/category-product-section"
-import { categoryLoader } from "./loader"
+import type { categoryLoader } from "./loader"
 
 import { TwoColumnPageSkeleton } from "../../../components/common/skeleton"
 import { TwoColumnPage } from "../../../components/layout/pages"

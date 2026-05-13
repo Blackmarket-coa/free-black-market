@@ -1,4 +1,4 @@
-import { Command } from "../../../hooks/use-command-history"
+import type { Command } from "../../../hooks/use-command-history"
 
 export type DataGridBulkUpdateCommandArgs = {
   fields: string[]

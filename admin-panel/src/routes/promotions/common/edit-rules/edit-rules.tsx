@@ -1,4 +1,4 @@
-import { PromotionRuleDTO } from "@medusajs/types"
+import type { PromotionRuleDTO } from "@medusajs/types"
 import { Heading } from "@medusajs/ui"
 import { useTranslation } from "react-i18next"
 import { useParams } from "react-router-dom"

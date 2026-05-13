@@ -1,14 +1,16 @@
 import { CommandBar, Table, clx } from "@medusajs/ui"
-import {
+import type {
   ColumnDef,
   Table as ReactTable,
-  Row,
+  Row} from "@tanstack/react-table";
+import {
   flexRender,
 } from "@tanstack/react-table"
-import {
+import type {
   ComponentPropsWithoutRef,
+  UIEvent} from "react";
+import {
   Fragment,
-  UIEvent,
   useEffect,
   useRef,
   useState,

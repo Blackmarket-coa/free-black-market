@@ -65,7 +65,8 @@ export type EntityType = keyof typeof ENTITY_DEFAULT_FIELDS
 export function getEntityDefaultFields(entity: string) {
   const config =
     ENTITY_DEFAULT_FIELDS[entity as EntityType] || ENTITY_DEFAULT_FIELDS.default
-  return {
+  
+return {
     properties: config.properties,
     relations: config.relations,
     formatted: [...config.properties, ...config.relations].join(","),

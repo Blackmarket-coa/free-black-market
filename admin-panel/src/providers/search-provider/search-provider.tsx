@@ -1,4 +1,5 @@
-import { PropsWithChildren, useEffect, useState } from "react"
+import type { PropsWithChildren} from "react";
+import { useEffect, useState } from "react"
 import { Search } from "../../components/search"
 import { useSidebar } from "../sidebar-provider"
 import { SearchContext } from "./search-context"

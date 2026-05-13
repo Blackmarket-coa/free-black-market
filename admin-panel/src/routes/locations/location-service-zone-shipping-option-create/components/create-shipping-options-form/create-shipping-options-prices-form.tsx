@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react"
-import { UseFormReturn, useWatch } from "react-hook-form"
+import type { UseFormReturn} from "react-hook-form";
+import { useWatch } from "react-hook-form"
 
 import { DataGrid } from "../../../../../components/data-grid"
 import {
@@ -17,8 +18,8 @@ import {
   CONDITIONAL_PRICES_STACKED_MODAL_ID,
 } from "../../../common/constants"
 import { useShippingOptionPriceColumns } from "../../../common/hooks/use-shipping-option-price-columns"
-import { ConditionalPriceInfo } from "../../../common/types"
-import { CreateShippingOptionSchema } from "./schema"
+import type { ConditionalPriceInfo } from "../../../common/types"
+import type { CreateShippingOptionSchema } from "./schema"
 
 type PricingPricesFormProps = {
   form: UseFormReturn<CreateShippingOptionSchema>

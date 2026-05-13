@@ -1,4 +1,4 @@
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 import { useQueryParams } from "../../../hooks/use-query-params"
 
 export const useLocationListTableQuery = ({

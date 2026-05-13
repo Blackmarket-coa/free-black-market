@@ -1,5 +1,5 @@
 import { zodResolver } from "@hookform/resolvers/zod"
-import { AdminCampaign, AdminPromotion } from "@medusajs/types"
+import type { AdminCampaign, AdminPromotion } from "@medusajs/types"
 import { Button, RadioGroup, toast } from "@medusajs/ui"
 import { useEffect } from "react"
 import { useForm, useWatch } from "react-hook-form"
@@ -92,13 +92,13 @@ export const AddCampaignPromotionFields = ({
                   onValueChange={field.onChange}
                 >
                   <RadioGroup.ChoiceBox
-                    value={"none"}
+                    value="none"
                     label={t("promotions.form.campaign.none.title")}
                     description={t("promotions.form.campaign.none.description")}
                   />
 
                   <RadioGroup.ChoiceBox
-                    value={"existing"}
+                    value="existing"
                     label={t("promotions.form.campaign.existing.title")}
                     description={t(
                       "promotions.form.campaign.existing.description"
@@ -107,7 +107,7 @@ export const AddCampaignPromotionFields = ({
 
                   {withNewCampaign && (
                     <RadioGroup.ChoiceBox
-                      value={"new"}
+                      value="new"
                       label={t("promotions.form.campaign.new.title")}
                       description={t(
                         "promotions.form.campaign.new.description"

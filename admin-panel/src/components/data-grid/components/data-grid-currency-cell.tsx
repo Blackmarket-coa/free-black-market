@@ -1,14 +1,17 @@
+import type {
+  CurrencyInputProps} from "react-currency-input-field";
 import CurrencyInput, {
-  CurrencyInputProps,
   formatValue,
 } from "react-currency-input-field"
-import { Controller, ControllerRenderProps } from "react-hook-form"
+import type { ControllerRenderProps } from "react-hook-form";
+import { Controller } from "react-hook-form"
 
 import { useCallback, useEffect, useState } from "react"
 import { useCombinedRefs } from "../../../hooks/use-combined-refs"
-import { CurrencyInfo, currencies } from "../../../lib/data/currencies"
+import type { CurrencyInfo} from "../../../lib/data/currencies";
+import { currencies } from "../../../lib/data/currencies"
 import { useDataGridCell, useDataGridCellError } from "../hooks"
-import { DataGridCellProps, InputProps } from "../types"
+import type { DataGridCellProps, InputProps } from "../types"
 import { DataGridCellContainer } from "./data-grid-cell-container"
 
 interface DataGridCurrencyCellProps<TData, TValue = any>
@@ -86,7 +89,8 @@ const Inner = ({
   ) => {
     if (!value) {
       setLocalValue("")
-      return
+      
+return
     }
 
     setLocalValue(value)

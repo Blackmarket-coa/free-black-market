@@ -1,7 +1,8 @@
-import { HttpTypes } from "@medusajs/types"
-import {
+import type { HttpTypes } from "@medusajs/types"
+import type {
   OnChangeFn,
-  PaginationState,
+  PaginationState} from "@tanstack/react-table";
+import {
   getCoreRowModel,
   getPaginationRowModel,
   useReactTable,
@@ -60,7 +61,8 @@ export const useTaxRegionTable = ({
     setSearchParams((prev) => {
       if (!pageIndex) {
         prev.delete(offsetKey)
-        return prev
+        
+return prev
       }
 
       const newSearch = new URLSearchParams(prev)
@@ -70,7 +72,8 @@ export const useTaxRegionTable = ({
     })
 
     setPagination(state)
-    return state
+    
+return state
   }
 
   const table = useReactTable({

@@ -1,5 +1,5 @@
 import { XCircle } from "@medusajs/icons"
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 import {
   Container,
   Copy,

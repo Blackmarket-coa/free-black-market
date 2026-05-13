@@ -1,5 +1,5 @@
 import { zodResolver } from "@hookform/resolvers/zod"
-import {
+import type {
   ApplicationMethodAllocationValues,
   ApplicationMethodTargetTypeValues,
   ApplicationMethodTypeValues,
@@ -7,6 +7,8 @@ import {
   PromotionStatusValues,
   PromotionTypeValues,
 } from "@medusajs/types"
+import type {
+  ProgressStatus} from "@medusajs/ui";
 import {
   Alert,
   Badge,
@@ -16,7 +18,6 @@ import {
   Divider,
   Heading,
   Input,
-  ProgressStatus,
   ProgressTabs,
   RadioGroup,
   Switch,
@@ -26,7 +27,7 @@ import {
 import { useEffect, useMemo, useState } from "react"
 import { useForm, useWatch } from "react-hook-form"
 import { Trans, useTranslation } from "react-i18next"
-import { z } from "zod"
+import type { z } from "zod"
 import { Form } from "../../../../../components/common/form"
 import { DeprecatedPercentageInput } from "../../../../../components/inputs/percentage-input"
 import {
@@ -51,7 +52,7 @@ import { useDocumentDirection } from "../../../../../hooks/use-document-directio
 const defaultValues = {
   campaign_id: undefined,
   template_id: templates[0].id!,
-  campaign_choice: "none" as "none",
+  campaign_choice: "none" as const,
   is_automatic: "false",
   code: "",
   type: "standard" as PromotionTypeValues,
@@ -427,7 +428,7 @@ export const CreatePromotionForm = () => {
                           <Form.Control>
                             <RadioGroup
                               dir={direction}
-                              key={"template_id"}
+                              key="template_id"
                               className="flex-col gap-y-3"
                               {...field}
                               onValueChange={field.onChange}
@@ -503,7 +504,7 @@ export const CreatePromotionForm = () => {
                               onValueChange={field.onChange}
                             >
                               <RadioGroup.ChoiceBox
-                                value={"false"}
+                                value="false"
                                 label={t("promotions.form.method.code.title")}
                                 description={t(
                                   "promotions.form.method.code.description"
@@ -512,7 +513,7 @@ export const CreatePromotionForm = () => {
                               />
 
                               <RadioGroup.ChoiceBox
-                                value={"true"}
+                                value="true"
                                 label={t(
                                   "promotions.form.method.automatic.title"
                                 )}
@@ -548,7 +549,7 @@ export const CreatePromotionForm = () => {
                               onValueChange={field.onChange}
                             >
                               <RadioGroup.ChoiceBox
-                                value={"draft"}
+                                value="draft"
                                 label={t("promotions.form.status.draft.title")}
                                 description={t(
                                   "promotions.form.status.draft.description"
@@ -557,7 +558,7 @@ export const CreatePromotionForm = () => {
                               />
 
                               <RadioGroup.ChoiceBox
-                                value={"active"}
+                                value="active"
                                 label={t("promotions.form.status.active.title")}
                                 description={t(
                                   "promotions.form.status.active.description"
@@ -666,7 +667,7 @@ export const CreatePromotionForm = () => {
                                 onValueChange={field.onChange}
                               >
                                 <RadioGroup.ChoiceBox
-                                  value={"standard"}
+                                  value="standard"
                                   label={t(
                                     "promotions.form.type.standard.title"
                                   )}
@@ -677,7 +678,7 @@ export const CreatePromotionForm = () => {
                                 />
 
                                 <RadioGroup.ChoiceBox
-                                  value={"buyget"}
+                                  value="buyget"
                                   label={t("promotions.form.type.buyget.title")}
                                   description={t(
                                     "promotions.form.type.buyget.description"
@@ -695,7 +696,7 @@ export const CreatePromotionForm = () => {
 
                   <Divider />
 
-                  <RulesFormField form={form} ruleType={"rules"} />
+                  <RulesFormField form={form} ruleType="rules" />
 
                   {!currentTemplate?.hiddenFields?.includes(
                     "application_method.type"
@@ -719,7 +720,7 @@ export const CreatePromotionForm = () => {
                                   onValueChange={field.onChange}
                                 >
                                   <RadioGroup.ChoiceBox
-                                    value={"fixed"}
+                                    value="fixed"
                                     label={t(
                                       "promotions.form.value_type.fixed.title"
                                     )}
@@ -730,7 +731,7 @@ export const CreatePromotionForm = () => {
                                   />
 
                                   <RadioGroup.ChoiceBox
-                                    value={"percentage"}
+                                    value="percentage"
                                     label={t(
                                       "promotions.form.value_type.percentage.title"
                                     )}
@@ -910,7 +911,7 @@ export const CreatePromotionForm = () => {
                                   onValueChange={field.onChange}
                                 >
                                   <RadioGroup.ChoiceBox
-                                    value={"each"}
+                                    value="each"
                                     label={t(
                                       "promotions.form.allocation.each.title"
                                     )}
@@ -921,7 +922,7 @@ export const CreatePromotionForm = () => {
                                   />
 
                                   <RadioGroup.ChoiceBox
-                                    value={"across"}
+                                    value="across"
                                     label={t(
                                       "promotions.form.allocation.across.title"
                                     )}
@@ -944,7 +945,7 @@ export const CreatePromotionForm = () => {
                       <Divider />
                       <RulesFormField
                         form={form}
-                        ruleType={"buy-rules"}
+                        ruleType="buy-rules"
                         scope="application_method.buy_rules"
                       />
                     </>
@@ -955,7 +956,7 @@ export const CreatePromotionForm = () => {
                       <Divider />
                       <RulesFormField
                         form={form}
-                        ruleType={"target-rules"}
+                        ruleType="target-rules"
                         scope="application_method.target_rules"
                       />
                     </>

@@ -1,13 +1,15 @@
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 import { Checkbox } from "@medusajs/ui"
 import { keepPreviousData } from "@tanstack/react-query"
-import {
+import type {
   OnChangeFn,
-  RowSelectionState,
+  RowSelectionState} from "@tanstack/react-table";
+import {
   createColumnHelper,
 } from "@tanstack/react-table"
 import { useMemo, useState } from "react"
-import { UseFormReturn, useWatch } from "react-hook-form"
+import type { UseFormReturn} from "react-hook-form";
+import { useWatch } from "react-hook-form"
 
 import { useTranslation } from "react-i18next"
 import { _DataTable } from "../../../../../components/table/data-table"
@@ -16,8 +18,8 @@ import { useProductTableColumns } from "../../../../../hooks/table/columns/use-p
 import { useProductTableFilters } from "../../../../../hooks/table/filters/use-product-table-filters"
 import { useProductTableQuery } from "../../../../../hooks/table/query/use-product-table-query"
 import { useDataTable } from "../../../../../hooks/use-data-table"
-import { PriceListCreateProductsSchema } from "../../../common/schemas"
-import { PricingCreateSchemaType } from "./schema"
+import type { PriceListCreateProductsSchema } from "../../../common/schemas"
+import type { PricingCreateSchemaType } from "./schema"
 
 type PriceListProductsFormProps = {
   form: UseFormReturn<PricingCreateSchemaType>
@@ -29,7 +31,8 @@ const PREFIX = "p"
 function getInitialSelection(products: { id: string }[]) {
   return products.reduce((acc, curr) => {
     acc[curr.id] = true
-    return acc
+    
+return acc
   }, {} as RowSelectionState)
 }
 

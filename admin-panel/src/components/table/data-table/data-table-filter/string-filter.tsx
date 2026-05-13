@@ -1,11 +1,12 @@
 import { Input, Label, clx } from "@medusajs/ui"
 import { debounce } from "lodash"
 import { Popover as RadixPopover } from "radix-ui"
-import { ChangeEvent, useCallback, useEffect, useState } from "react"
+import type { ChangeEvent} from "react";
+import { useCallback, useEffect, useState } from "react"
 import { useSelectedParams } from "../hooks"
 import { useDataTableFilterContext } from "./context"
 import FilterChip from "./filter-chip"
-import { IFilter } from "./types"
+import type { IFilter } from "./types"
 
 type StringFilterProps = IFilter
 

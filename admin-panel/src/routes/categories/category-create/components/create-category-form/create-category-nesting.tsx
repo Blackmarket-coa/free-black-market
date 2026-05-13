@@ -1,14 +1,15 @@
-import { UniqueIdentifier } from "@dnd-kit/core"
+import type { UniqueIdentifier } from "@dnd-kit/core"
 import { Badge } from "@medusajs/ui"
 import { useMemo, useState } from "react"
-import { UseFormReturn, useWatch } from "react-hook-form"
+import type { UseFormReturn} from "react-hook-form";
+import { useWatch } from "react-hook-form"
 
 import { useTranslation } from "react-i18next"
 import { useProductCategories } from "../../../../../hooks/api/categories"
 import { CategoryTree } from "../../../common/components/category-tree"
-import { CategoryTreeItem } from "../../../common/types"
+import type { CategoryTreeItem } from "../../../common/types"
 import { insertCategoryTreeItem } from "../../../common/utils"
-import { CreateCategorySchema } from "./schema"
+import type { CreateCategorySchema } from "./schema"
 
 type CreateCategoryNestingProps = {
   form: UseFormReturn<CreateCategorySchema>

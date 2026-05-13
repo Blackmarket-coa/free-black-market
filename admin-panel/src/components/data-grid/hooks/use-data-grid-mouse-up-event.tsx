@@ -1,7 +1,8 @@
 import { useCallback } from "react"
-import { FieldValues, Path, PathValue } from "react-hook-form"
-import { DataGridBulkUpdateCommand, DataGridMatrix } from "../models"
-import { DataGridCoordinates } from "../types"
+import type { FieldValues, Path, PathValue } from "react-hook-form"
+import type { DataGridMatrix } from "../models";
+import { DataGridBulkUpdateCommand } from "../models"
+import type { DataGridCoordinates } from "../types"
 
 type UseDataGridMouseUpEventOptions<TData, TFieldValues extends FieldValues> = {
   matrix: DataGridMatrix<TData, TFieldValues>

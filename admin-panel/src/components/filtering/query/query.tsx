@@ -1,6 +1,7 @@
 import { Input } from "@medusajs/ui"
 import { debounce } from "lodash"
-import { ChangeEvent, useCallback, useEffect, useState } from "react"
+import type { ChangeEvent} from "react";
+import { useCallback, useEffect, useState } from "react"
 import { useTranslation } from "react-i18next"
 import { useSearchParams } from "react-router-dom"
 
@@ -19,7 +20,8 @@ export const Query = ({ placeholder }: QueryProps) => {
     if (!newValue) {
       setSearchParams((prev) => {
         prev.delete("q")
-        return prev
+        
+return prev
       })
 
       return
