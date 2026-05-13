@@ -182,6 +182,16 @@ const financialModules = [
   { resolve: './src/modules/donation' },
 ]
 
+// Composition-layer surfaces (see docs/COMPOSITION_LAYER.md):
+// Refrain is the creator-bounty surface; Threshold is the mutual-aid
+// surface. Both are scaffolds in v1 — models + invariants + service
+// state-machines only. Workflow hooks and HTTP routes come in
+// follow-up branches.
+const surfaceModules = [
+  { resolve: './src/modules/refrain' },
+  { resolve: './src/modules/threshold' },
+]
+
 // FreeBlackMarket.com feature modules
 const marketplaceModules = [
   { resolve: './src/modules/vendor-verification' },
@@ -533,6 +543,7 @@ module.exports = defineConfig({
     ...agricultureModules,
     ...commerceModules,
     ...financialModules,
+    ...surfaceModules,
     ...marketplaceModules,
     ...communityModules,
     ...collectiveModules,
