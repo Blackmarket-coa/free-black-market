@@ -16,7 +16,7 @@ import { useNavigate } from "react-router-dom"
 /**
  * Adds missing properties to the InventoryLevelDTO type.
  */
-interface ExtendedLocationLevel extends InventoryTypes.InventoryLevelDTO {
+export interface ExtendedLocationLevel extends InventoryTypes.InventoryLevelDTO {
   stock_locations: StockLocationDTO[]
   reserved_quantity: number
   stocked_quantity: number
@@ -66,13 +66,19 @@ export const useLocationListTableColumns = () => {
         queryKey: inventoryItemLevelsQueryKeys.detail(level.inventory_item_id),
       })
     } catch (e) {
-      toast.error(e.message)
+      toast.error(e instanceof Error ? e.message : String(e))
     }
   }
 
   return useMemo(
     () => [
-      columnHelper.accessor("stock_locations.0.name", {
+      // Function-form accessor: path-string `stock_locations.0.name`
+      // exceeds the TanStack-Table accessorKey union (typed off
+      // ExtendedLocationLevel keys), so derive the value inline.
+      columnHelper.accessor(
+        (row) => row.stock_locations?.[0]?.name ?? "",
+        {
+          id: "location_name",
         header: t("fields.location"),
         cell: ({ getValue }) => {
           const locationName = getValue()
@@ -87,7 +93,8 @@ export const useLocationListTableColumns = () => {
             </div>
           )
         },
-      }),
+        }
+      ),
       columnHelper.accessor("reserved_quantity", {
         header: t("inventory.reserved"),
         cell: ({ getValue }) => {
@@ -148,7 +155,7 @@ return [
                 icon: <PencilSquare />,
                 label: t("actions.edit"),
 
-                onClick: (row) => {
+                onClick: () => {
                   navigate(`locations/${level.location_id}`)
                 },
               },

@@ -13,7 +13,7 @@ import { inventoryItemsQueryKeys } from "./inventory.tsx"
 export const useCreateOrderEdit = (
   orderId: string,
   options?: UseMutationOptions<
-    HttpTypes.AdminOrderEditPreviewResponse,
+    HttpTypes.AdminOrderEditResponse,
     FetchError,
     HttpTypes.AdminInitiateOrderEditRequest
   >

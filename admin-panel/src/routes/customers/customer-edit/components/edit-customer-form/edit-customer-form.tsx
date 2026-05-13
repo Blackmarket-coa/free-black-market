@@ -44,12 +44,14 @@ export const EditCustomerForm = ({ customer }: EditCustomerFormProps) => {
 
   const handleSubmit = form.handleSubmit(async (data) => {
     await mutateAsync(
+      // AdminUpdateCustomer does not accept `email` (use the
+      // identity / invite flow to change account email). Pass the
+      // remaining mutable fields only.
       {
-        email: customer.has_account ? undefined : data.email,
-        first_name: data.first_name || null,
-        last_name: data.last_name || null,
-        phone: data.phone || null,
-        company_name: data.company_name || null,
+        first_name: data.first_name || undefined,
+        last_name: data.last_name || undefined,
+        phone: data.phone || undefined,
+        company_name: data.company_name || undefined,
       },
       {
         onSuccess: ({ customer }) => {

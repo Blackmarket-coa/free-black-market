@@ -17,7 +17,7 @@ export const fulfillmentProviderOptionsQueryKeys = queryKeysFactory(
 )
 
 export const useFulfillmentProviders = (
-  query?: HttpTypes.AdminFulfillmentProviderListParams,
+  query?: HttpTypes.AdminGetFulfillmentProvidersParams,
   options?: Omit<
     UseQueryOptions<
       HttpTypes.AdminFulfillmentProviderListResponse,

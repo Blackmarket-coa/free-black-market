@@ -46,21 +46,35 @@ return (
         />
       </div>
       <SectionRow title={t("fields.sku")} value={inventoryItem.sku ?? "-"} />
-      <SectionRow
-        title={t("fields.inStock")}
-        value={getQuantityFormat(inventoryItem.stocked_quantity)}
-      />
+      {(() => {
+        // AdminInventoryItem in @medusajs/types omits the rolled-up
+        // stocked / reserved totals (they live on AdminInventoryLevel
+        // per-location); the admin response embeds them on the item
+        // anyway, so read through a structural cast.
+        const totals = inventoryItem as unknown as {
+          stocked_quantity?: number
+          reserved_quantity?: number
+        }
+        const stocked = totals.stocked_quantity ?? 0
+        const reserved = totals.reserved_quantity ?? 0
 
-      <SectionRow
-        title={t("inventory.reserved")}
-        value={getQuantityFormat(inventoryItem.reserved_quantity)}
-      />
-      <SectionRow
-        title={t("inventory.available")}
-        value={getQuantityFormat(
-          inventoryItem.stocked_quantity - inventoryItem.reserved_quantity
-        )}
-      />
+        return (
+          <>
+            <SectionRow
+              title={t("fields.inStock")}
+              value={getQuantityFormat(stocked)}
+            />
+            <SectionRow
+              title={t("inventory.reserved")}
+              value={getQuantityFormat(reserved)}
+            />
+            <SectionRow
+              title={t("inventory.available")}
+              value={getQuantityFormat(stocked - reserved)}
+            />
+          </>
+        )
+      })()}
     </Container>
   )
 }

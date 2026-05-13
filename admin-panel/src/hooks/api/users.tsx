@@ -92,7 +92,16 @@ export const useCreateUser = (
   >
 ) => {
   return useMutation({
-    mutationFn: (payload) => sdk.admin.user.create(payload, query),
+    // @medusajs/js-sdk@2.12.5 dropped sdk.admin.user.create; the
+    // /admin/users POST endpoint still exists (users are created either
+    // here or through the invite/accept flow), so fall back to a typed
+    // sdk.client.fetch call.
+    mutationFn: (payload) =>
+      sdk.client.fetch<HttpTypes.AdminUserResponse>(`/admin/users`, {
+        method: "POST",
+        body: payload,
+        query,
+      }),
     onSuccess: (data, variables, context) => {
       queryClient.invalidateQueries({ queryKey: usersQueryKeys.lists() })
 

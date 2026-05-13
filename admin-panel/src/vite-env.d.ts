@@ -4,6 +4,14 @@ interface ImportMetaEnv {
   readonly VITE_MEDUSA_ADMIN_BACKEND_URL: string
   readonly VITE_MEDUSA_STOREFRONT_URL: string
   readonly VITE_MEDUSA_V2: "true" | "false"
+
+  // Phase-1 module feature flags — see lib/phase0-feature-flags.ts.
+  // All optional; absence is treated as off.
+  readonly VITE_FF_POS_V1?: string
+  readonly VITE_FF_WEIGHT_PRICING_V1?: string
+  readonly VITE_FF_PICK_PACK_V1?: string
+  readonly VITE_FF_INVOICING_V1?: string
+  readonly VITE_FF_CHANNEL_SYNC_V1?: string
 }
 
 interface ImportMeta {
