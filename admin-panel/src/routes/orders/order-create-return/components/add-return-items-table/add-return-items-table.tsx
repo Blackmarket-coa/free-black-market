@@ -10,7 +10,6 @@ import type {
 import { useTranslation } from "react-i18next"
 import { _DataTable } from "../../../../../components/table/data-table"
 import { useDataTable } from "../../../../../hooks/use-data-table"
-import { getStylizedAmount } from "../../../../../lib/money-amount-helpers"
 import { getReturnableQuantity } from "../../../../../lib/rma"
 import { useReturnItemTableColumns } from "./use-return-item-table-columns"
 import { useReturnItemTableFilters } from "./use-return-item-table-filters"
@@ -72,8 +71,8 @@ return acc
     if (q) {
       results = results.filter((i) => {
         return (
-          i.product_title.toLowerCase().includes(q.toLowerCase()) ||
-          i.variant_title.toLowerCase().includes(q.toLowerCase()) ||
+          i.product_title?.toLowerCase().includes(q.toLowerCase()) ||
+          i.variant_title?.toLowerCase().includes(q.toLowerCase()) ||
           i.variant_sku?.toLowerCase().includes(q.toLowerCase())
         )
       })
@@ -184,11 +183,22 @@ const sortItems = (
       aValue = a.variant_sku
       bValue = b.variant_sku
     } else if (field === "returnable_quantity") {
-      aValue = a.quantity - (a.returned_quantity || 0)
-      bValue = b.quantity - (b.returned_quantity || 0)
+      // AdminOrderLineItem omits `returned_quantity` / `refundable` in
+      // @medusajs/types; both are computed and included in the admin
+      // response. Cast structurally.
+      aValue =
+        a.quantity -
+        Number(
+          (a as { returned_quantity?: number }).returned_quantity ?? 0
+        )
+      bValue =
+        b.quantity -
+        Number(
+          (b as { returned_quantity?: number }).returned_quantity ?? 0
+        )
     } else if (field === "refundable_amount") {
-      aValue = a.refundable || 0
-      bValue = b.refundable || 0
+      aValue = Number((a as { refundable?: number }).refundable ?? 0)
+      bValue = Number((b as { refundable?: number }).refundable ?? 0)
     }
 
     if (aValue < bValue) {
@@ -245,7 +255,9 @@ const filterByNumber = (
   items: AdminOrderLineItem[],
   value: NumericalComparisonOperator | number,
   field: "returnable_quantity" | "refundable_amount",
-  currency_code: string
+  // Kept for call-site parity; the filter now compares numeric values
+  // directly and doesn't need the currency code for stylising.
+  _currency_code: string
 ) => {
   const { eq, gt, lt, gte, lte } =
     typeof value === "object"
@@ -253,9 +265,14 @@ const filterByNumber = (
       : { ...defaultOperators, eq: value }
 
   return items.filter((i) => {
-    const returnableQuantity = i.quantity - (i.returned_quantity || 0)
-    const refundableAmount = getStylizedAmount(i.refundable || 0, currency_code)
-
+    const returnableQuantity =
+      i.quantity -
+      Number(
+        (i as { returned_quantity?: number }).returned_quantity ?? 0
+      )
+    const refundableAmount = Number(
+      (i as { refundable?: number }).refundable ?? 0
+    )
     const itemValue =
       field === "returnable_quantity" ? returnableQuantity : refundableAmount
 
@@ -266,19 +283,19 @@ const filterByNumber = (
     let isValid = true
 
     if (gt) {
-      isValid = isValid && itemValue > gt
+      isValid = isValid && itemValue > Number(gt)
     }
 
     if (gte) {
-      isValid = isValid && itemValue >= gte
+      isValid = isValid && itemValue >= Number(gte)
     }
 
     if (lt) {
-      isValid = isValid && itemValue < lt
+      isValid = isValid && itemValue < Number(lt)
     }
 
     if (lte) {
-      isValid = isValid && itemValue <= lte
+      isValid = isValid && itemValue <= Number(lte)
     }
 
     return isValid

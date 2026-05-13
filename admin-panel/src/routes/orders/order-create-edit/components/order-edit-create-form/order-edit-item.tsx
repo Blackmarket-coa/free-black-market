@@ -14,8 +14,15 @@ import {
   useUpdateOrderEditOriginalItem,
 } from "../../../../../hooks/api/order-edits"
 
+// AdminOrderLineItem in @medusajs/types omits the per-action history
+// that the admin response includes when fetched with
+// `+actions.action,+actions.details.*`. Capture the structural shape
+// consumed in this file.
+type LineItemAction = { id: string; action: string }
+type LineItemWithActions = AdminOrderLineItem & { actions?: LineItemAction[] }
+
 type OrderEditItemProps = {
-  item: AdminOrderLineItem
+  item: LineItemWithActions
   currencyCode: string
   orderId: string
 }
@@ -30,20 +37,24 @@ function OrderEditItem({ item, currencyCode, orderId }: OrderEditItemProps) {
   const { mutateAsync: undoAction } = useRemoveOrderEditItem(orderId)
 
   const isAddedItem = useMemo(
-    () => !!item.actions?.find((a) => a.action === "ITEM_ADD"),
+    () =>
+      !!item.actions?.find((a: LineItemAction) => a.action === "ITEM_ADD"),
     [item]
   )
 
   const isItemUpdated = useMemo(
-    () => !!item.actions?.find((a) => a.action === "ITEM_UPDATE"),
+    () =>
+      !!item.actions?.find((a: LineItemAction) => a.action === "ITEM_UPDATE"),
     [item]
   )
 
   const isItemRemoved = useMemo(() => {
     // To be removed item needs to have updated quantity
-    const updateAction = item.actions?.find((a) => a.action === "ITEM_UPDATE")
-    
-return !!updateAction && item.quantity === item.detail.fulfilled_quantity
+    const updateAction = item.actions?.find(
+      (a: LineItemAction) => a.action === "ITEM_UPDATE"
+    )
+
+    return !!updateAction && item.quantity === item.detail.fulfilled_quantity
   }, [item])
 
   /**
@@ -53,15 +64,17 @@ return !!updateAction && item.quantity === item.detail.fulfilled_quantity
   const onUpdate = async (quantity: number) => {
     if (quantity <= item.detail.fulfilled_quantity) {
       toast.error(t("orders.edits.validation.quantityLowerThanFulfillment"))
-      
-return
+
+      return
     }
 
     if (quantity === item.quantity) {
       return
     }
 
-    const addItemAction = item.actions?.find((a) => a.action === "ITEM_ADD")
+    const addItemAction = item.actions?.find(
+      (a: LineItemAction) => a.action === "ITEM_ADD"
+    )
 
     try {
       if (addItemAction) {
@@ -70,12 +83,14 @@ return
         await updateOriginalItem({ quantity, itemId: item.id })
       }
     } catch (e) {
-      toast.error(e.message)
+      toast.error(e instanceof Error ? e.message : String(e))
     }
   }
 
   const onRemove = async () => {
-    const addItemAction = item.actions?.find((a) => a.action === "ITEM_ADD")
+    const addItemAction = item.actions?.find(
+      (a: LineItemAction) => a.action === "ITEM_ADD"
+    )
 
     try {
       if (addItemAction) {
@@ -87,13 +102,13 @@ return
         })
       }
     } catch (e) {
-      toast.error(e.message)
+      toast.error(e instanceof Error ? e.message : String(e))
     }
   }
 
   const onRemoveUndo = async () => {
     const updateItemAction = item.actions?.find(
-      (a) => a.action === "ITEM_UPDATE"
+      (a: LineItemAction) => a.action === "ITEM_UPDATE"
     )
 
     try {
@@ -101,7 +116,7 @@ return
         await undoAction(updateItemAction.id) // Remove action that updated items quantity to fulfilled quantity which makes it "removed"
       }
     } catch (e) {
-      toast.error(e.message)
+      toast.error(e instanceof Error ? e.message : String(e))
     }
   }
 
@@ -110,13 +125,17 @@ return
       await addItems({
         items: [
           {
-            variant_id: item.variant_id,
+            // AdminOrderLineItem.variant_id is `string | null` but the
+            // mutation expects `string`; coerce to empty string (the
+            // backend rejects empty), surfacing the validation error
+            // rather than passing null.
+            variant_id: item.variant_id ?? "",
             quantity: item.quantity,
           },
         ],
       })
     } catch (e) {
-      toast.error(e.message)
+      toast.error(e instanceof Error ? e.message : String(e))
     }
   }
 
