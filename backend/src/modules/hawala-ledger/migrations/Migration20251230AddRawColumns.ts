@@ -1,6 +1,6 @@
 import { Migration } from "@medusajs/framework/mikro-orm/migrations"
 
-export class Migration20251229AddRawColumns extends Migration {
+export class Migration20251230AddRawColumns extends Migration {
   override async up(): Promise<void> {
     // Add raw columns for BigNumber support in ledger_account
     this.addSql(`ALTER TABLE "hawala_ledger_account" ADD COLUMN IF NOT EXISTS "raw_balance" JSONB;`)
