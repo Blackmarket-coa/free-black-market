@@ -67,6 +67,8 @@
     "@mikro-orm/knex": "6.4.16",
     "@mikro-orm/migrations": "6.4.16",
     "@mikro-orm/postgresql": "6.4.16",
+    "@octokit/auth-app": "6.1.4",
+    "@octokit/rest": "19.0.13",
     "@react-email/components": "^1.0.3",
     "@stellar/stellar-sdk": "^13.1.0",
     "@tanstack/react-query": "5.64.2",

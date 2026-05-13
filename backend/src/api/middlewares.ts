@@ -15,6 +15,8 @@ import { z } from "zod";
 import {
   authRateLimiter,
   authSessionRateLimiter,
+  bugReportAnonymousRateLimiter,
+  bugReportAuthRateLimiter,
   strictAuthRateLimiter,
   vendorRegistrationRateLimiter,
 } from "../shared/rate-limiter";
@@ -898,6 +900,23 @@ export default defineMiddlewares({
       matcher: "/store/ticket-products/:id/seats",
       method: "GET",
       middlewares: [validateAndTransformQuery(GetTicketProductSeatsSchema, {})],
+    },
+    // Bug report routes - rate limited; storefront is anonymous-friendly,
+    // vendor/admin are keyed by actor.
+    {
+      matcher: "/store/bug-report",
+      method: "POST",
+      middlewares: [bugReportAnonymousRateLimiter],
+    },
+    {
+      matcher: "/vendor/bug-report",
+      method: "POST",
+      middlewares: [bugReportAuthRateLimiter],
+    },
+    {
+      matcher: "/admin/bug-report",
+      method: "POST",
+      middlewares: [bugReportAuthRateLimiter],
     },
   ],
 });

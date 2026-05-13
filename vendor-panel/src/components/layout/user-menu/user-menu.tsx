@@ -1,6 +1,7 @@
 import {
   CircleHalfSolid,
   EllipsisHorizontal,
+  ExclamationCircle,
   Keyboard,
   OpenRectArrowOut,
   User as UserIcon,
@@ -58,6 +59,12 @@ export const UserMenu = () => {
           <DropdownMenu.Item onClick={toggleModal}>
             <Keyboard className="text-ui-fg-subtle mr-2" />
             {t("app.menus.user.shortcuts")}
+          </DropdownMenu.Item>
+          <DropdownMenu.Item asChild>
+            <Link to="/bug-report" state={{ from: location.pathname }}>
+              <ExclamationCircle className="text-ui-fg-subtle mr-2" />
+              Report a bug
+            </Link>
           </DropdownMenu.Item>
           <ThemeToggle />
           <DropdownMenu.Separator />
