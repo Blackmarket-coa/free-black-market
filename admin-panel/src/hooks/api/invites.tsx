@@ -36,7 +36,7 @@ export const useInvite = (
 }
 
 export const useInvites = (
-  query?: Record<string, any>,
+  query?: HttpTypes.AdminGetInvitesParams,
   options?: Omit<
     UseQueryOptions<
       HttpTypes.AdminInviteListResponse,

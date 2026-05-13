@@ -10,7 +10,7 @@ export const notificationQueryKeys = queryKeysFactory(NOTIFICATION_QUERY_KEY)
 
 export const useNotification = (
   id: string,
-  query?: Record<string, any>,
+  query?: HttpTypes.AdminNotificationListParams,
   options?: Omit<
     UseQueryOptions<
       HttpTypes.AdminNotificationResponse,

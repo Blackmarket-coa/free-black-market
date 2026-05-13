@@ -17,7 +17,7 @@ export const regionsQueryKeys = queryKeysFactory(REGIONS_QUERY_KEY)
 
 export const useRegion = (
   id: string,
-  query?: Record<string, any>,
+  query?: HttpTypes.AdminRegionFilters,
   options?: Omit<
     UseQueryOptions<
       { region: HttpTypes.AdminRegion },
@@ -38,7 +38,7 @@ export const useRegion = (
 }
 
 export const useRegions = (
-  query?: Record<string, any>,
+  query?: HttpTypes.AdminRegionFilters,
   options?: Omit<
     UseQueryOptions<
       PaginatedResponse<{ regions: HttpTypes.AdminRegion[] }>,

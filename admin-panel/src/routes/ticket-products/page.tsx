@@ -14,9 +14,10 @@ import {
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { Link } from "react-router-dom"
 import React, { useState, useMemo } from "react"
+import { FetchError } from "@medusajs/js-sdk"
 import { sdk } from "../../lib/sdk"
 import { CreateTicketProductModal } from "../../components/create-ticket-product-modal"
-import { TicketProduct } from "../../types"
+import { CreateTicketProductRequest, TicketProduct } from "../../types"
 
 const columnHelper = createDataTableColumnHelper<TicketProduct>()
 
@@ -109,7 +110,7 @@ const TicketProductsPage = () => {
     setIsModalOpen(false)
   }
 
-  const handleCreateTicketProduct = async (data: any) => {
+  const handleCreateTicketProduct = async (data: CreateTicketProductRequest) => {
     try {
       await sdk.client.fetch("/admin/ticket-products", {
         method: "POST",
@@ -117,8 +118,12 @@ const TicketProductsPage = () => {
       })
       queryClient.invalidateQueries({ queryKey: ["ticket-products"] })
       handleCloseModal()
-    } catch (error: any) {
-      toast.error(`Failed to create show: ${error.message}`)
+    } catch (error) {
+      const message =
+        error instanceof FetchError || error instanceof Error
+          ? error.message
+          : "Unknown error"
+      toast.error(`Failed to create show: ${message}`)
     }
   }
 

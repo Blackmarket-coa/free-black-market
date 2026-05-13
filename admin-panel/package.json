@@ -18,7 +18,7 @@
     "test": "vitest --run",
     "i18n:validate": "node ./scripts/i18n/validate-translation.js",
     "i18n:schema": "node ./scripts/i18n/generate-schema.js",
-    "lint": "eslint . --ext ts,tsx --max-warnings 7000",
+    "lint": "eslint . --ext ts,tsx --max-warnings 5400",
     "format": "prettier --write \"src/**/*.{ts,tsx,js,jsx,json,css,md}\"",
     "format:check": "prettier --check \"src/**/*.{ts,tsx,js,jsx,json,css,md}\"",
     "lint:strict": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
@@ -57,7 +57,9 @@
     "@dnd-kit/utilities": "^3.2.2",
     "@hookform/error-message": "^2.0.1",
     "@hookform/resolvers": "3.4.2",
+    "@medusajs/admin-sdk": "2.12.5",
     "@medusajs/admin-shared": "2.12.5",
+    "@medusajs/framework": "2.12.5",
     "@medusajs/icons": "2.12.5",
     "@medusajs/js-sdk": "2.12.5",
     "@medusajs/ui": "4.0.28",
@@ -87,6 +89,7 @@
     "react-i18next": "13.5.0",
     "react-jwt": "^1.2.0",
     "react-router-dom": "6.20.1",
+    "stripe": "^17.7.0",
     "zod": "3.25.76"
   },
   "devDependencies": {

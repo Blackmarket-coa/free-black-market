@@ -14,9 +14,9 @@ import { queryKeysFactory, TQueryKey } from "../../lib/query-key-factory"
 
 const VIEWS_QUERY_KEY = "views" as const
 const _viewsKeys = queryKeysFactory(VIEWS_QUERY_KEY) as TQueryKey<"views"> & {
-  columns: (entity: string) => any
-  active: (entity: string) => any
-  configurations: (entity: string, query?: any) => any
+  columns: (entity: string) => QueryKey
+  active: (entity: string) => QueryKey
+  configurations: (entity: string, query?: unknown) => QueryKey
 }
 
 _viewsKeys.columns = function(entity: string) {
@@ -27,10 +27,10 @@ _viewsKeys.active = function(entity: string) {
   return [this.detail(entity), "active"]
 }
 
-_viewsKeys.configurations = function(entity: string, query?: any) {
-  const key = [this.all, "configurations", entity]
+_viewsKeys.configurations = function(entity: string, query?: unknown) {
+  const key: QueryKey = [this.all, "configurations", entity]
   if (query !== undefined) {
-    key.push(query)
+    return [...key, query]
   }
   return key
 }
@@ -117,7 +117,7 @@ export const useActiveViewConfiguration = (
 export const useViewConfiguration = (
   entity: string,
   id: string,
-  query?: Record<string, any>,
+  query?: HttpTypes.AdminGetViewConfigurationsParams,
   options?: Omit<
     UseQueryOptions<
       HttpTypes.AdminViewConfigurationResponse,
@@ -152,8 +152,7 @@ export const useCreateViewConfiguration = (
     ...options,
     onSuccess: (data, variables, context) => {
       queryClient.invalidateQueries({ queryKey: viewsQueryKeys.configurations(entity) })
-      // If set_active was true, also invalidate the active configuration
-      if ((variables as any).set_active) {
+      if ((variables as HttpTypes.AdminCreateViewConfiguration & { set_active?: boolean }).set_active) {
         queryClient.invalidateQueries({
           queryKey: viewsQueryKeys.active(entity)
         })

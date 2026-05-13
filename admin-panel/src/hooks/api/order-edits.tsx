@@ -20,7 +20,7 @@ export const useCreateOrderEdit = (
   return useMutation({
     mutationFn: (payload: HttpTypes.AdminInitiateOrderEditRequest) =>
       sdk.admin.orderEdit.initiateRequest(payload),
-    onSuccess: (data: any, variables: any, context: any) => {
+    onSuccess: (data, variables, context) => {
       queryClient.invalidateQueries({
         queryKey: ordersQueryKeys.details(),
       })
@@ -44,7 +44,7 @@ export const useRequestOrderEdit = (
 ) => {
   return useMutation({
     mutationFn: () => sdk.admin.orderEdit.request(id),
-    onSuccess: (data: any, variables: any, context: any) => {
+    onSuccess: (data, variables, context) => {
       queryClient.invalidateQueries({
         queryKey: ordersQueryKeys.details(),
       })
@@ -76,7 +76,7 @@ export const useConfirmOrderEdit = (
 ) => {
   return useMutation({
     mutationFn: () => sdk.admin.orderEdit.confirm(id),
-    onSuccess: (data: any, variables: any, context: any) => {
+    onSuccess: (data, variables, context) => {
       queryClient.invalidateQueries({
         queryKey: ordersQueryKeys.details(),
       })
@@ -113,11 +113,15 @@ export const useConfirmOrderEdit = (
 
 export const useCancelOrderEdit = (
   orderId: string,
-  options?: UseMutationOptions<any, FetchError, any>
+  options?: UseMutationOptions<
+    HttpTypes.AdminOrderEditDeleteResponse,
+    FetchError,
+    void
+  >
 ) => {
   return useMutation({
     mutationFn: () => sdk.admin.orderEdit.cancelRequest(orderId),
-    onSuccess: (data: any, variables: any, context: any) => {
+    onSuccess: (data, variables, context) => {
       queryClient.invalidateQueries({
         queryKey: ordersQueryKeys.details(),
       })
@@ -150,7 +154,7 @@ export const useAddOrderEditItems = (
   return useMutation({
     mutationFn: (payload: HttpTypes.AdminAddOrderEditItems) =>
       sdk.admin.orderEdit.addItems(id, payload),
-    onSuccess: (data: any, variables: any, context: any) => {
+    onSuccess: (data, variables, context) => {
       queryClient.invalidateQueries({
         queryKey: ordersQueryKeys.preview(id),
       })
@@ -178,7 +182,7 @@ export const useUpdateOrderEditOriginalItem = (
     }: HttpTypes.AdminUpdateOrderEditItem & { itemId: string }) => {
       return sdk.admin.orderEdit.updateOriginalItem(id, itemId, payload)
     },
-    onSuccess: (data: any, variables: any, context: any) => {
+    onSuccess: (data, variables, context) => {
       queryClient.invalidateQueries({
         queryKey: ordersQueryKeys.preview(id),
       })
@@ -206,7 +210,7 @@ export const useUpdateOrderEditAddedItem = (
     }: HttpTypes.AdminUpdateOrderEditItem & { actionId: string }) => {
       return sdk.admin.orderEdit.updateAddedItem(id, actionId, payload)
     },
-    onSuccess: (data: any, variables: any, context: any) => {
+    onSuccess: (data, variables, context) => {
       queryClient.invalidateQueries({
         queryKey: ordersQueryKeys.preview(id),
       })
@@ -231,7 +235,7 @@ export const useRemoveOrderEditItem = (
   return useMutation({
     mutationFn: (actionId: string) =>
       sdk.admin.orderEdit.removeAddedItem(id, actionId),
-    onSuccess: (data: any, variables: any, context: any) => {
+    onSuccess: (data, variables, context) => {
       queryClient.invalidateQueries({
         queryKey: ordersQueryKeys.preview(id),
       })

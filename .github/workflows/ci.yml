@@ -183,8 +183,12 @@ jobs:
         working-directory: admin-panel
         run: pnpm test
 
-      # Typecheck currently surfaces translation-schema drift; tracked in
-      # docs/AUDIT_DEBT.md (LR-3). Keep non-blocking until that lands.
+      # LR-3's module-resolution cascade is closed (missing
+      # @medusajs/admin-sdk, @medusajs/framework, stripe installed; local
+      # types added for ticket-product, venue, donation). Downstream type
+      # mismatches in routes/orders/**, routes/tax-regions/**, etc. remain;
+      # tracked under TS-1 in docs/AUDIT_DEBT.md. Keep non-blocking until
+      # those land.
       - name: Typecheck admin panel (non-blocking)
         working-directory: admin-panel
         run: pnpm typecheck

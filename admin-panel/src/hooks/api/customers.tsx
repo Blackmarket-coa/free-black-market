@@ -1,4 +1,4 @@
-import { FetchError } from "@medusajs/js-sdk"
+import { ClientHeaders, FetchError } from "@medusajs/js-sdk"
 import { HttpTypes, PaginatedResponse } from "@medusajs/types"
 import {
   QueryKey,
@@ -20,7 +20,7 @@ export const customerAddressesQueryKeys = queryKeysFactory(
 
 export const useCustomer = (
   id: string,
-  query?: Record<string, any>,
+  query?: HttpTypes.AdminCustomerFilters,
   options?: Omit<
     UseQueryOptions<
       { customer: HttpTypes.AdminCustomer },
@@ -41,7 +41,7 @@ export const useCustomer = (
 }
 
 export const useCustomers = (
-  query?: Record<string, any>,
+  query?: HttpTypes.AdminCustomerFilters,
   options?: Omit<
     UseQueryOptions<
       PaginatedResponse<{ customers: HttpTypes.AdminCustomer[] }>,
@@ -226,7 +226,7 @@ export const useDeleteCustomerAddress = (
 
 export const useListCustomerAddresses = (
   id: string,
-  query?: Record<string, any>,
+  headers?: ClientHeaders,
   options?: UseQueryOptions<
     HttpTypes.AdminCustomerResponse,
     FetchError,
@@ -235,7 +235,7 @@ export const useListCustomerAddresses = (
   >
 ) => {
   const { data, ...rest } = useQuery({
-    queryFn: () => sdk.admin.customer.listAddresses(id, query),
+    queryFn: () => sdk.admin.customer.listAddresses(id, headers),
     queryKey: customerAddressesQueryKeys.list(id),
     ...options,
   })

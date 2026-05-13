@@ -17,7 +17,7 @@ export const taxRatesQueryKeys = queryKeysFactory(TAX_RATES_QUERY_KEY)
 
 export const useTaxRate = (
   id: string,
-  query?: Record<string, any>,
+  query?: HttpTypes.AdminTaxRateListParams,
   options?: Omit<
     UseQueryOptions<
       HttpTypes.AdminTaxRateResponse,
@@ -38,7 +38,7 @@ export const useTaxRate = (
 }
 
 export const useTaxRates = (
-  query?: Record<string, any>,
+  query?: HttpTypes.AdminTaxRateListParams,
   options?: Omit<
     UseQueryOptions<
       HttpTypes.AdminTaxRateListResponse,

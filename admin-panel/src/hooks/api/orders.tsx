@@ -15,10 +15,10 @@ import { reservationItemsQueryKeys } from "./reservations"
 
 const ORDERS_QUERY_KEY = "orders" as const
 const _orderKeys = queryKeysFactory(ORDERS_QUERY_KEY) as TQueryKey<"orders"> & {
-  preview: (orderId: string) => any
-  changes: (orderId: string) => any
-  lineItems: (orderId: string) => any
-  shippingOptions: (orderId: string) => any
+  preview: (orderId: string) => QueryKey
+  changes: (orderId: string) => QueryKey
+  lineItems: (orderId: string) => QueryKey
+  shippingOptions: (orderId: string) => QueryKey
 }
 
 _orderKeys.preview = function (id: string) {
@@ -41,9 +41,14 @@ export const ordersQueryKeys = _orderKeys
 
 export const useOrder = (
   id: string,
-  query?: Record<string, any>,
+  query?: HttpTypes.AdminOrderFilters,
   options?: Omit<
-    UseQueryOptions<any, FetchError, any, QueryKey>,
+    UseQueryOptions<
+      HttpTypes.AdminOrderResponse,
+      FetchError,
+      HttpTypes.AdminOrderResponse,
+      QueryKey
+    >,
     "queryFn" | "queryKey"
   >
 ) => {
@@ -67,7 +72,7 @@ export const useUpdateOrder = (
   return useMutation({
     mutationFn: (payload: HttpTypes.AdminUpdateOrder) =>
       sdk.admin.order.update(id, payload),
-    onSuccess: (data: any, variables: any, context: any) => {
+    onSuccess: (data, variables, context) => {
       queryClient.invalidateQueries({
         queryKey: ordersQueryKeys.detail(id),
       })
@@ -207,7 +212,7 @@ export const useCreateOrderFulfillment = (
   return useMutation({
     mutationFn: (payload: HttpTypes.AdminCreateOrderFulfillment) =>
       sdk.admin.order.createFulfillment(orderId, payload),
-    onSuccess: (data: any, variables: any, context: any) => {
+    onSuccess: (data, variables, context) => {
       queryClient.invalidateQueries({
         queryKey: ordersQueryKeys.all,
       })
@@ -233,12 +238,16 @@ export const useCreateOrderFulfillment = (
 export const useCancelOrderFulfillment = (
   orderId: string,
   fulfillmentId: string,
-  options?: UseMutationOptions<any, FetchError, any>
+  options?: UseMutationOptions<
+    HttpTypes.AdminOrderResponse,
+    FetchError,
+    { no_notification?: boolean }
+  >
 ) => {
   return useMutation({
     mutationFn: (payload: { no_notification?: boolean }) =>
       sdk.admin.order.cancelFulfillment(orderId, fulfillmentId, payload),
-    onSuccess: (data: any, variables: any, context: any) => {
+    onSuccess: (data, variables, context) => {
       queryClient.invalidateQueries({
         queryKey: ordersQueryKeys.all,
       })
@@ -273,7 +282,7 @@ export const useCreateOrderShipment = (
   return useMutation({
     mutationFn: (payload: HttpTypes.AdminCreateOrderShipment) =>
       sdk.admin.order.createShipment(orderId, fulfillmentId, payload),
-    onSuccess: (data: any, variables: any, context: any) => {
+    onSuccess: (data, variables, context) => {
       queryClient.invalidateQueries({
         queryKey: ordersQueryKeys.all,
       })
@@ -299,7 +308,7 @@ export const useMarkOrderFulfillmentAsDelivered = (
 ) => {
   return useMutation({
     mutationFn: () => sdk.admin.order.markAsDelivered(orderId, fulfillmentId),
-    onSuccess: (data: any, variables: any, context: any) => {
+    onSuccess: (data, variables, context) => {
       queryClient.invalidateQueries({
         queryKey: ordersQueryKeys.all,
       })
@@ -320,7 +329,7 @@ export const useCancelOrder = (
 ) => {
   return useMutation({
     mutationFn: () => sdk.admin.order.cancel(orderId),
-    onSuccess: (data: any, variables: any, context: any) => {
+    onSuccess: (data, variables, context) => {
       queryClient.invalidateQueries({
         queryKey: ordersQueryKeys.detail(orderId),
       })
@@ -346,7 +355,7 @@ export const useRequestTransferOrder = (
   return useMutation({
     mutationFn: (payload: HttpTypes.AdminRequestOrderTransfer) =>
       sdk.admin.order.requestTransfer(orderId, payload),
-    onSuccess: (data: any, variables: any, context: any) => {
+    onSuccess: (data, variables, context) => {
       queryClient.invalidateQueries({
         queryKey: ordersQueryKeys.preview(orderId),
       })
@@ -363,11 +372,11 @@ export const useRequestTransferOrder = (
 
 export const useCancelOrderTransfer = (
   orderId: string,
-  options?: UseMutationOptions<any, FetchError, void>
+  options?: UseMutationOptions<HttpTypes.AdminOrderResponse, FetchError, void>
 ) => {
   return useMutation({
     mutationFn: () => sdk.admin.order.cancelTransfer(orderId),
-    onSuccess: (data: any, variables: any, context: any) => {
+    onSuccess: (data, variables, context) => {
       queryClient.invalidateQueries({
         queryKey: ordersQueryKeys.preview(orderId),
       })

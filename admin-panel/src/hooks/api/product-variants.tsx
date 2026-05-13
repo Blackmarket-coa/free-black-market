@@ -1,4 +1,5 @@
 import { QueryKey, useQuery, UseQueryOptions } from "@tanstack/react-query"
+import { HttpTypes } from "@medusajs/types"
 import { sdk } from "../../lib/client"
 import { queryKeysFactory } from "../../lib/query-key-factory"
 import { FetchError } from "@medusajs/js-sdk"
@@ -9,9 +10,14 @@ export const productVariantQueryKeys = queryKeysFactory(
 )
 
 export const useVariants = (
-  query?: Record<string, any>,
+  query?: HttpTypes.AdminProductVariantParams,
   options?: Omit<
-    UseQueryOptions<any, FetchError, any, QueryKey>,
+    UseQueryOptions<
+      HttpTypes.AdminProductVariantListResponse,
+      FetchError,
+      HttpTypes.AdminProductVariantListResponse,
+      QueryKey
+    >,
     "queryFn" | "queryKey"
   >
 ) => {

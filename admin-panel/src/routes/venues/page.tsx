@@ -11,6 +11,7 @@ import {
 } from "@medusajs/ui"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { useState, useMemo } from "react"
+import { FetchError } from "@medusajs/js-sdk"
 import { sdk } from "../../lib/sdk"
 import { Venue, CreateVenueRequest } from "../../types"
 import { CreateVenueModal } from "../../components/create-venue-modal"
@@ -102,8 +103,12 @@ const VenuesPage = () => {
       })
       queryClient.invalidateQueries({ queryKey: ["venues"] })
       handleCloseModal()
-    } catch (error: any) {
-      throw new Error(`Failed to create venue: ${error.message}`)
+    } catch (error) {
+      const message =
+        error instanceof FetchError || error instanceof Error
+          ? error.message
+          : "Unknown error"
+      throw new Error(`Failed to create venue: ${message}`)
     }
   }
 

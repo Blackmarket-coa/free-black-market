@@ -24,7 +24,7 @@ export const inventoryItemLevelsQueryKeys = queryKeysFactory(
 )
 
 export const useInventoryItems = (
-  query?: HttpTypes.AdminInventoryItemParams,
+  query?: HttpTypes.AdminInventoryItemsParams,
   options?: Omit<
     UseQueryOptions<
       HttpTypes.AdminInventoryItemListResponse,
@@ -46,7 +46,7 @@ export const useInventoryItems = (
 
 export const useInventoryItem = (
   id: string,
-  query?: Record<string, any>,
+  query?: HttpTypes.AdminInventoryItemsParams,
   options?: Omit<
     UseQueryOptions<
       HttpTypes.AdminInventoryItemResponse,
@@ -163,7 +163,7 @@ export const useDeleteInventoryItemLevel = (
 
 export const useInventoryItemLevels = (
   inventoryItemId: string,
-  query?: Record<string, any>,
+  query?: HttpTypes.AdminInventoryItemsParams,
   options?: Omit<
     UseQueryOptions<
       HttpTypes.AdminInventoryLevelListResponse,

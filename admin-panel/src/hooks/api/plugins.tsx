@@ -10,7 +10,7 @@ export const pluginsQueryKeys = queryKeysFactory(PLUGINS_QUERY_KEY)
 export const usePlugins = (
   options?: Omit<
     UseQueryOptions<
-      any,
+      HttpTypes.AdminPluginsListResponse,
       FetchError,
       HttpTypes.AdminPluginsListResponse,
       QueryKey

@@ -39,7 +39,7 @@ export const useCreateShippingProfile = (
 
 export const useShippingProfile = (
   id: string,
-  query?: Record<string, any>,
+  query?: HttpTypes.AdminShippingProfileListParams,
   options?: Omit<
     UseQueryOptions<
       HttpTypes.AdminShippingProfileResponse,

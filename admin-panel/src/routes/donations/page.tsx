@@ -4,6 +4,14 @@ import { Button, Container, Heading, Input, Label, Select, Text, Textarea } from
 import { sdk } from "@lib/client"
 import { StorefrontSwitcher } from "@components/tenancy/storefront-switcher"
 import { StorefrontContext, withStorefrontHeaders } from "@lib/tenancy/context"
+import type {
+  DonationBeneficiary,
+  DonationImportResult,
+  DonationSettings,
+  TenancyOrganization,
+  TenancyStorefront,
+  TenancyStorefrontTemplate,
+} from "../../types"
 
 const SHOPIFY_EXAMPLE = `Handle,Title,Body (HTML),Variant SKU,Variant Price\norganic-kale,Organic Kale,<p>Fresh kale</p>,KALE-001,3.99`
 
@@ -11,7 +19,7 @@ export const DonationsPage = () => {
   const [ctx, setCtx] = useState<StorefrontContext | null>(null)
   const [csv, setCsv] = useState(SHOPIFY_EXAMPLE)
   const [preset, setPreset] = useState<"shopify" | "custom">("shopify")
-  const [importResult, setImportResult] = useState<any>(null)
+  const [importResult, setImportResult] = useState<DonationImportResult | null>(null)
   const [templateKey, setTemplateKey] = useState("food_coop")
   const [newStorefrontName, setNewStorefrontName] = useState("")
   const [newStorefrontSlug, setNewStorefrontSlug] = useState("")
@@ -20,12 +28,12 @@ export const DonationsPage = () => {
 
   const { data: orgs } = useQuery({
     queryKey: ["tenancy-organizations"],
-    queryFn: () => sdk.client.fetch<{ organizations: any[] }>("/admin/tenancy/organizations"),
+    queryFn: () => sdk.client.fetch<{ organizations: TenancyOrganization[] }>("/admin/tenancy/organizations"),
   })
 
   const { data: storefronts, refetch: refetchStorefronts } = useQuery({
     queryKey: ["tenancy-storefronts"],
-    queryFn: () => sdk.client.fetch<{ storefronts: any[] }>("/admin/tenancy/storefronts"),
+    queryFn: () => sdk.client.fetch<{ storefronts: TenancyStorefront[] }>("/admin/tenancy/storefronts"),
   })
 
   const currentStorefront = useMemo(
@@ -35,19 +43,19 @@ export const DonationsPage = () => {
 
   const { data, refetch } = useQuery({
     queryKey: ["donations-beneficiaries", ctx?.organizationId, ctx?.storefrontId],
-    queryFn: () => sdk.client.fetch<{ beneficiaries: any[] }>("/admin/donations/beneficiaries", { headers }),
+    queryFn: () => sdk.client.fetch<{ beneficiaries: DonationBeneficiary[] }>("/admin/donations/beneficiaries", { headers }),
     enabled: Boolean(ctx),
   })
 
   const { data: settings, refetch: refetchSettings } = useQuery({
     queryKey: ["donations-settings", ctx?.organizationId, ctx?.storefrontId],
-    queryFn: () => sdk.client.fetch<{ settings: any }>("/admin/donations/settings", { headers }),
+    queryFn: () => sdk.client.fetch<{ settings: DonationSettings }>("/admin/donations/settings", { headers }),
     enabled: Boolean(ctx),
   })
 
   const { data: templates } = useQuery({
     queryKey: ["tenancy-storefront-templates"],
-    queryFn: () => sdk.client.fetch<{ templates: any[] }>("/admin/tenancy/storefronts/templates"),
+    queryFn: () => sdk.client.fetch<{ templates: TenancyStorefrontTemplate[] }>("/admin/tenancy/storefronts/templates"),
   })
 
   const updateStatus = async (id: string, verification_status: string) => {
@@ -146,7 +154,7 @@ export const DonationsPage = () => {
         <Text size="small" className="text-ui-fg-subtle">Field mapping + validation errors with Shopify CSV-compatible preset.</Text>
         <div className="mt-3">
           <Label>Preset</Label>
-          <Select value={preset} onValueChange={(v: any) => setPreset(v)}>
+          <Select value={preset} onValueChange={(v) => setPreset(v as "shopify" | "custom")}>
             <Select.Trigger><Select.Value /></Select.Trigger>
             <Select.Content>
               <Select.Item value="shopify">Shopify CSV preset</Select.Item>
@@ -161,7 +169,7 @@ export const DonationsPage = () => {
           <div className="mt-3 text-sm">
             <div>Total rows: {importResult.total_rows} / Valid rows: {importResult.valid_rows}</div>
             <div className="mt-2">Errors:</div>
-            <ul className="list-disc pl-6">{(importResult.errors || []).slice(0, 10).map((e: any, i: number) => <li key={i}>Row {e.row} [{e.field}] {e.message}</li>)}</ul>
+            <ul className="list-disc pl-6">{(importResult.errors || []).slice(0, 10).map((e, i) => <li key={i}>Row {e.row} [{e.field}] {e.message}</li>)}</ul>
           </div>
         )}
       </Container>
@@ -170,8 +178,8 @@ export const DonationsPage = () => {
         <Heading>Sandbox mode</Heading>
         <Text size="small" className="text-ui-fg-subtle">Enable test payments and order simulation for this storefront.</Text>
         <div className="mt-3 flex gap-2">
-          <Button variant={(currentStorefront?.metadata as any)?.sandbox_mode ? "primary" : "secondary"} onClick={() => setSandboxMode(true)}>Enable sandbox</Button>
-          <Button variant={!(currentStorefront?.metadata as any)?.sandbox_mode ? "primary" : "secondary"} onClick={() => setSandboxMode(false)}>Disable sandbox</Button>
+          <Button variant={currentStorefront?.metadata?.sandbox_mode ? "primary" : "secondary"} onClick={() => setSandboxMode(true)}>Enable sandbox</Button>
+          <Button variant={!currentStorefront?.metadata?.sandbox_mode ? "primary" : "secondary"} onClick={() => setSandboxMode(false)}>Disable sandbox</Button>
         </div>
       </Container>
 
