@@ -184,6 +184,7 @@ const financialModules = [
 
 // FreeBlackMarket.com feature modules
 const marketplaceModules = [
+  { resolve: './src/modules/sell-signup' },
   { resolve: './src/modules/vendor-verification' },
   { resolve: './src/modules/impact-metrics' },
   { resolve: './src/modules/payout-breakdown' },

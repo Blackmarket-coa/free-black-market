@@ -130,13 +130,10 @@ export default function SellPage() {
       selling: selectedCategories.join(","),
     })
 
-    // TD-3: Best-effort first-party capture of the signup intent before
-    // we hand the user off to the vendor-panel registration page. The
-    // route at /api/sell-signup is a stub that the backend team will
-    // wire up to persist {email, store_name, selling[], submitted_at}
-    // into a leads table and emit a webhook. See
-    // docs/AUDIT_DEBT.md row TD-3 for the open contract decision; until
-    // it lands the route returns 202 Accepted and only logs server-side.
+    // Best-effort first-party capture of the signup intent before
+    // handing the user off to the vendor-panel registration page.
+    // /api/sell-signup forwards to the backend `sell_signup` module;
+    // failures are swallowed so the redirect is never blocked.
     try {
       await fetch("/api/sell-signup", {
         method: "POST",
