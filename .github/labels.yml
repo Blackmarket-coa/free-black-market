@@ -40,3 +40,6 @@
 - name: docs
   color: 0052cc
   description: Documentation-only changes
+- name: user-report
+  color: ffbf00
+  description: Submitted via the in-app bug reporter

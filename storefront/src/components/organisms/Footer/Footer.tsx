@@ -1,4 +1,5 @@
 import LocalizedClientLink from "@/components/molecules/LocalizedLink/LocalizedLink"
+import { BugReportButton } from "@/components/molecules/BugReportButton/BugReportButton"
 import footerLinks from "@/data/footerLinks"
 
 // Client component for copyright year to prevent hydration mismatch
@@ -27,6 +28,7 @@ export function Footer() {
                 {label}
               </LocalizedClientLink>
             ))}
+            <BugReportButton />
           </nav>
         </div>
 

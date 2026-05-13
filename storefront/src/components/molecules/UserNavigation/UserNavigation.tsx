@@ -6,6 +6,7 @@ import {
   LogoutButton,
   NavigationItem,
 } from "@/components/atoms"
+import { BugReportButton } from "@/components/molecules/BugReportButton/BugReportButton"
 import { useRocketChat } from "@/providers/RocketChatProvider"
 import { usePathname } from "next/navigation"
 
@@ -69,6 +70,7 @@ export const UserNavigation = () => {
       >
         Settings
       </NavigationItem>
+      <BugReportButton variant="menu-item" className="px-4" />
       <LogoutButton className="w-full text-left" />
     </Card>
   )

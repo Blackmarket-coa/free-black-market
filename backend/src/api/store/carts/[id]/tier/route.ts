@@ -89,22 +89,25 @@ export async function POST(req: MedusaRequest<Body>, res: MedusaResponse) {
   >()
 
   if (productIds.length > 0) {
-    const { data: sellers } = await query.graph({
-      entity: "seller",
-      fields: ["id", "products.id", "products.metadata"],
-      filters: { "products.id": productIds },
+    // Query products by id and follow the seller link inward.
+    // (The inverse — `entity: "seller", filters: { "products.id": ... }` —
+    // works at runtime but isn't accepted by the RemoteQueryFilters<"seller">
+    // type, which only allows direct seller fields as filter keys.)
+    const { data: products } = await query.graph({
+      entity: "product",
+      fields: ["id", "metadata", "seller.id"],
+      filters: { id: productIds },
     })
-    for (const seller of (sellers ?? []) as Array<{
+    for (const product of (products ?? []) as Array<{
       id: string
-      products?: Array<{ id: string; metadata?: Record<string, unknown> | null }>
+      metadata?: Record<string, unknown> | null
+      seller?: { id: string } | null
     }>) {
-      for (const product of seller.products ?? []) {
-        if (!product?.id) continue
-        productInfo.set(product.id, {
-          sellerId: seller.id,
-          metadata: (product.metadata ?? {}) as Record<string, unknown>,
-        })
-      }
+      if (!product?.id) continue
+      productInfo.set(product.id, {
+        sellerId: product.seller?.id ?? null,
+        metadata: (product.metadata ?? {}) as Record<string, unknown>,
+      })
     }
   }
 

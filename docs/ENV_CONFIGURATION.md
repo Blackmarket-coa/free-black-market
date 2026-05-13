@@ -33,6 +33,24 @@ integration hooks.
 | `FBM_ONBOARDING_FOLLOWUP_DELAY_MS` | `172800000` (48h) | optional | Delay used by the Sprint A → C 48h follow-up subscriber. |
 | `PUBLIC_STOREFRONT_URL` | — | optional | Used by the launch wizard's share screen for storefront URL building. Never hardcoded in code. |
 
+## In-app bug reporter
+
+Added with the in-app "Report a bug" entry points in storefront, vendor
+panel, and admin panel. The backend opens an issue on the configured
+GitHub repository for each submission.
+
+| Variable | Default | Required when | Description |
+| --- | --- | --- | --- |
+| `GITHUB_ISSUE_REPO` | — | reporter enabled | `owner/repo` slug the backend posts issues to (e.g. `blackmarket-coa/free-black-market`). |
+| `GITHUB_APP_ID` | — | preferred | GitHub App ID. Used with `GITHUB_APP_INSTALLATION_ID` and `GITHUB_APP_PRIVATE_KEY` to mint installation tokens. |
+| `GITHUB_APP_INSTALLATION_ID` | — | preferred | Installation ID for the App on the target org. |
+| `GITHUB_APP_PRIVATE_KEY` | — | preferred | PEM private key (literal or base64-encoded) for the App. |
+| `GITHUB_PAT` | — | fallback | Personal access token. Used only when App credentials are absent. |
+| `BUG_REPORT_ENABLED` | `true` | optional | Set to `false` to hide UI entry points and make routes return 404. |
+
+When neither App credentials nor a PAT are set, the routes return 503
+and the UI hides itself via `GET /store/bug-report/config`.
+
 ## Existing variables (reference)
 
 The above is layered on top of the existing template:
