@@ -66,7 +66,7 @@ const StripePaymentButton = ({
   const onPaymentCompleted = async () => {
     try {
       const res = await placeOrder()
-      if (!res.ok) {
+      if (!res.ok && res.error) {
         setErrorMessage(orderErrorFormatter(res.error))
       }
     } catch (error: any) {
@@ -177,7 +177,7 @@ const ManualTestPaymentButton = ({ notReady }: { notReady: boolean }) => {
   const onPaymentCompleted = async () => {
     try {
       const res = await placeOrder()
-      if (!res.ok) {
+      if (!res.ok && res.error) {
         setErrorMessage(orderErrorFormatter(res.error))
       }
     } catch (error: any) {

@@ -62,7 +62,7 @@ export const createReturnRequest = async (data: any) => {
 }
 
 export const getReturns = async () => {
-  const headers = await getAuthHeaders()
+  const headers = (await getAuthHeaders()) ?? undefined
 
   return medusaFetch<{
     order_return_requests: Array<any>
@@ -80,7 +80,7 @@ export const getReturns = async () => {
 }
 
 export const retriveReturnMethods = async (order_id: string) => {
-  const headers = await getAuthHeaders()
+  const headers = (await getAuthHeaders()) ?? undefined
 
   return medusaFetch<{
     shipping_options: Array<any>
@@ -149,7 +149,7 @@ export const createTransferRequest = async (
     return { success: false, error: "Order ID is required", order: null }
   }
 
-  const headers = await getAuthHeaders()
+  const headers = (await getAuthHeaders()) ?? undefined
 
   return await sdk.store.order
     .requestTransfer(
@@ -165,7 +165,7 @@ export const createTransferRequest = async (
 }
 
 export const acceptTransferRequest = async (id: string, token: string) => {
-  const headers = await getAuthHeaders()
+  const headers = (await getAuthHeaders()) ?? undefined
 
   return await sdk.store.order
     .acceptTransfer(id, { token }, {}, headers)
@@ -174,7 +174,7 @@ export const acceptTransferRequest = async (id: string, token: string) => {
 }
 
 export const declineTransferRequest = async (id: string, token: string) => {
-  const headers = await getAuthHeaders()
+  const headers = (await getAuthHeaders()) ?? undefined
 
   return await sdk.store.order
     .declineTransfer(id, { token }, {}, headers)
@@ -183,7 +183,7 @@ export const declineTransferRequest = async (id: string, token: string) => {
 }
 
 export const retrieveReturnReasons = async () => {
-  const headers = await getAuthHeaders()
+  const headers = (await getAuthHeaders()) ?? undefined
 
   return medusaFetch<{
     return_reasons: Array<HttpTypes.StoreReturnReason>

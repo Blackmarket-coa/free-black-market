@@ -1,6 +1,14 @@
 import Medusa from "@medusajs/js-sdk"
-import type { NextFetchRequestConfig } from "next/dist/server/config-shared"
 import { logger } from "./logger"
+
+// Shape of the `next` option Next.js attaches to fetch RequestInit for
+// route caching/tagging. Inlined here because Next 15.5.15 removed the
+// previously-public `NextFetchRequestConfig` export from
+// next/dist/server/config-shared.
+type NextFetchRequestConfig = {
+  revalidate?: number | false
+  tags?: string[]
+}
 
 // Defaults to standard port for Medusa server
 const MEDUSA_BACKEND_URL =
@@ -31,9 +39,12 @@ type FetchQueryOptions = Omit<RequestInit, "headers" | "body"> & {
   body?: Record<string, any>
 }
 
-type MedusaFetchOptions = Omit<RequestInit, "headers"> & {
+type MedusaFetchOptions = Omit<RequestInit, "headers" | "body"> & {
   headers?: Record<string, string | undefined>
-  query?: Record<string, string | number | string[] | undefined>
+  query?: Record<string, string | number | boolean | string[] | undefined>
+  // medusa-js-sdk's client.fetch accepts a plain object body and handles
+  // JSON serialization internally, so callers don't need to wrap it.
+  body?: Record<string, unknown>
   next?: NextFetchRequestConfig
 }
 

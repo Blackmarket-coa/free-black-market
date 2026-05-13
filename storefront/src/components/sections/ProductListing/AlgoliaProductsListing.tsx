@@ -141,7 +141,7 @@ const ProductsListing = ({
   const hasPriceRange = minPriceParam !== null || maxPriceParam !== null
 
   const products = items.filter((pr) =>
-    apiProducts.some(
+    (apiProducts ?? []).some(
       (p: any) =>
         p.id === pr.objectID &&
         (!hasPriceRange ||
@@ -181,7 +181,7 @@ const ProductsListing = ({
               <ul className="flex flex-wrap gap-4">
                 {products.map((hit) => (
                   <ProductCard
-                    api_product={apiProducts.find(
+                    api_product={apiProducts?.find(
                       (p: any) => p.id === hit.objectID
                     )}
                     key={hit.objectID}
