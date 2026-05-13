@@ -6,70 +6,109 @@ Bar: **v1.0.0 GA** — block on every row tagged `Target = v1.0.0` in
 
 ## Executive summary
 
-**Verdict: HOLD for v1.0.0 GA.**
+**Verdict: HOLD for v1.0.0 GA.** Materially closer than the prior pass —
+6 of the 11 originally-tagged `v1.0.0` rows are now done (SD-1..SD-5,
+LR-5, QA-1, TI-1 source fix, TD-3 first-party capture). Two `continue-on-error`
+flags remain on (admin-panel typecheck, integration tests); the storefront
+typecheck flag was flipped to fail-fast in this pass.
 
-The five security CVEs (SD-1..SD-5) were resolved in this pass; the audit-debt
-tracker has been refreshed to reflect actual state (two stale rows struck,
-LR-5 scope corrected). After this PR lands, the following items still block
-a clean v1.0.0 cut:
+What still blocks a clean v1.0.0 cut after this PR:
 
-1. **LR-3** — admin-panel `pnpm typecheck` failing with **710 total
-   `error TS` lines** (re-measured 2026-05-13) cascading from **19
-   distinct `Cannot find module` errors**: `@medusajs/admin-sdk`,
-   `@medusajs/framework/types`, `@medusajs/types/src/http`,
-   `@sentry/browser`, `stripe`, and 4 local creator-monetization paths.
-   Gated behind `.github/workflows/ci.yml:191 continue-on-error: true`.
-   `AUDIT_DEBT.md` updated to reflect the cascade count.
-2. **LR-5** — storefront `pnpm typecheck` failing with **29 `error TS`
-   lines** on 2026-05-13 (doc previously claimed ~12). Errors include
-   the original `sonner`/`null`-vs-`Record` data-layer mismatches plus
-   `SellerProps.verified` missing, `SellerScheduling` merged-declaration
-   /`isolatedModules` conflicts, missing `@type/categories` module, and
-   `NextFetchRequestConfig` no longer exported from `next`. Gated behind
-   `.github/workflows/ci.yml:73 continue-on-error: true`. Effort revised
-   S → M in `AUDIT_DEBT.md`.
-3. **TI-1** — backend `pnpm test:integration:http` cannot run end-to-end:
-   `Migration20251229AddRawColumns` references `hawala_ledger_account` and
-   `Migration20260520AddCreatorCommission` references
-   `order_payout_breakdown` before either table is created. Gated behind
-   `.github/workflows/ci.yml:409 continue-on-error: true`.
-4. **LR-1 step 1** — admin-panel ESLint `--max-warnings` is held at 7000
+1. **LR-3 (partial)** — admin-panel `pnpm typecheck` still failing with
+   **671 errors across 199 files** after this PR (down from 710). The
+   4 missing devDeps (`@medusajs/admin-sdk`, `@medusajs/framework`,
+   `@sentry/browser`, `stripe`) and 4 broken local imports
+   (`./render`, `./tax-region-general-detail`, `./tax-region-province-section`,
+   `../../components/create-venue-modal` + the two missing type modules
+   `src/types/{venue,ticket-product}.ts`) have been resolved. The 671
+   residual errors are real type drift inside Medusa-inherited admin
+   routes (orders/, product-variants/, promotions/, tax-regions/) — a
+   genuine M-effort cleanup, not a missing-import cascade. Gated behind
+   `.github/workflows/ci.yml continue-on-error: true` (was `:191`,
+   line shifts to ~`:184` after the storefront block was de-commented).
+2. **TI-1 (source fix landed; CI validation pending)** — backend
+   migration ordering bug fixed in-source: `Migration20251229AddRawColumns`
+   renamed to `Migration20251230AddRawColumns` so the hawala-ledger
+   ALTERs run *after* the CREATE; new
+   `Migration20260101000000CreateOrderPayoutBreakdown` lands the base
+   `order_payout_breakdown` table so the three subsequent ALTERs
+   harmlessly no-op against it. The CI integration-test step
+   (`.github/workflows/ci.yml:409`) remains `continue-on-error: true`
+   until a green CI run against a live Postgres confirms the migration
+   graph end-to-end; flip in a follow-up.
+3. **LR-1 step 1** — admin-panel ESLint `--max-warnings` is held at 7000
    (with ~5,679 active warnings); first ratchet to 5500 not yet done.
-5. **TD-3** — `storefront/src/app/[locale]/(main)/sell/page.tsx` is still a
-   stub that redirects to vendor-panel; no API integration yet. Needs a
-   product/API contract decision before code lands.
-6. **QA-1** — no recurring static internal-link route validation in
-   QA/release checks. Two prior storefront-pages-audit follow-ups were
-   completed (metadata + `notFound()`); this last one remains.
+4. **TD-3 (partial)** — client signup now best-effort POSTs to
+   `/api/sell-signup` before redirecting to the vendor panel, and the
+   Next.js route stub validates + logs the payload server-side. Backend
+   leads-table / webhook contract is still TBD; capture is log-only.
 
-Until items 1-3 are fixed, the three `continue-on-error: true` flags in
-`.github/workflows/ci.yml` must stay; flipping them off would just turn
-those gates red. Item 5 (TD-3) blocks the seller onboarding path entirely.
+Until LR-3 and TI-1 CI-side validation land, the two remaining
+`continue-on-error: true` flags in `.github/workflows/ci.yml` must stay.
+The storefront typecheck flag was flipped to fail-fast in this PR
+because `pnpm typecheck` now passes against `tsc --noEmit`.
 
 ## What this PR landed
 
-- Bumped `@mikro-orm/{core,cli,knex,migrations,postgresql}` `6.4.16` →
-  `6.6.10` in `backend/package.json` and root `package.json`, with
-  `pnpm.overrides` in `backend/package.json` to lift the transitive copy
-  inside `@medusajs/deps`. **(SD-1)**
-- Bumped `lodash` to `^4.18.0` (resolves to `4.18.1`) in `backend/`,
-  `storefront/`, `vendor-panel/`, `admin-panel/` package.json + overrides.
-  **(SD-2)**
-- Pinned `picomatch` to `>=4.0.4` (resolves to `4.0.4`) via `pnpm.overrides`
-  in all four package roots. **(SD-3)**
-- Bumped `axios` to `^1.15.2` (resolves to `1.16.0`) in `backend/` direct
-  dep + `pnpm.overrides` in `backend/`, `storefront/`, `vendor-panel/`.
-  **(SD-4)**
-- Bumped `next` `15.5.10` → `15.5.15` in `storefront/package.json` (dep +
-  `resolutions` + `pnpm.overrides`). **(SD-5)**
-- Emptied `.trivyignore` so the Trivy FS gate now catches any regression
-  of the five CVEs above.
-- Struck TD-2 and TD-4 in `docs/AUDIT_DEBT.md` (verified resolved on disk;
-  see Spot risks below). Updated LR-5 to reflect the actual 80+-error
-  scope.
+This PR is the second pass on the 2026-05-13 branch. Pass 1 closed
+SD-1..SD-5 (security CVEs). This pass closes/partially-closes the
+remaining v1.0.0-tagged rows:
 
-No CI workflow files were edited. No `continue-on-error: true` flag was
-flipped — each of the three flags maps to a still-deferred item.
+- **QA-1 (done)** — `scripts/release_validation.sh` now invokes
+  `pnpm qa:internal-links` in the storefront block so release validation
+  flags dead internal hrefs (the CI workflow already had it as a hard
+  gate; this brings the local script to parity).
+- **LR-5 (done)** — storefront `pnpm typecheck` now passes against
+  `tsc --noEmit`. Installed `sonner@^2.0.7`; inlined the
+  `NextFetchRequestConfig` shape (Next 15.5.15 removed the public
+  export); widened `MedusaFetchOptions.body` to
+  `Record<string, unknown>` and `query` value type to include `boolean`;
+  coerced `null` → `undefined` for `getAuthHeaders()` consumers in
+  `orders.ts`; added `verified?: boolean` to `SellerProps`; added
+  missing `Style` export to `src/types/categories.ts`; switched
+  `SellerScheduling.tsx` to `import type` to satisfy `isolatedModules`;
+  narrowed `err: unknown` in `customer.ts`; null-coalesced `res.error`
+  in `PaymentButton.tsx` and `AddressForm.tsx`; fixed `deleteLineItem`
+  call-site signature (SDK now takes `SelectParams` as 3rd arg);
+  corrected `@type/categories` → `@/types/categories` path. Flipped
+  the storefront typecheck CI step to fail-fast (removed
+  `continue-on-error: true`).
+- **TI-1 source fix (done; CI validation pending)** — renamed
+  `Migration20251229AddRawColumns.ts` → `Migration20251230AddRawColumns.ts`
+  so the hawala-ledger ALTER batch runs *after* the CREATE; added
+  `backend/src/modules/payout-breakdown/migrations/Migration20260101000000CreateOrderPayoutBreakdown.ts`
+  to land the base `order_payout_breakdown` table before the three
+  subsequent ALTER migrations (which use `ADD COLUMN IF NOT EXISTS`
+  and harmlessly no-op against the baseline). Backend `pnpm typecheck`
+  still passes.
+- **TD-3 (partial)** — `sell/SellPageClient.tsx` now best-effort POSTs
+  `{email, store_name, selling[]}` to `/api/sell-signup` via
+  `fetch({..., keepalive: true})` before redirecting to the vendor
+  panel; failure does not block the redirect. New Next.js route stub at
+  `storefront/src/app/api/sell-signup/route.ts` validates the body and
+  logs server-side with `console.info`, returning 202 Accepted. A TODO
+  in both files points at the open backend leads-table / webhook
+  contract.
+- **LR-3 (partial)** — installed missing devDeps
+  (`@medusajs/admin-sdk@2.12.5`, `@medusajs/framework@2.12.5`,
+  `@sentry/browser`, `stripe`); restored three missing files
+  (`src/types/venue.ts`, `src/types/ticket-product.ts`,
+  `src/components/create-venue-modal.tsx` as a single-row stub) and
+  re-exported the two new type modules from `src/types/index.ts`;
+  repointed `src/index.ts` from the nonexistent `./render` to
+  `./dashboard-app`; corrected
+  `src/routes/tax-regions/tax-region-province-detail/components/index.ts`
+  to the actual sibling directories
+  (`tax-region-province-detail-section`,
+  `tax-region-province-override-section`). Errors dropped 710 → 671;
+  the 671 residual are real type drift in Medusa-inherited routes and
+  remain owned by the admin-panel team. CI step stays
+  `continue-on-error: true`.
+
+CI workflow files edited: `.github/workflows/ci.yml` (storefront
+typecheck flipped to fail-fast). Two `continue-on-error: true` flags
+remain on the admin-panel typecheck and the backend integration-test
+steps.
 
 ## Gate-by-gate status
 
@@ -79,11 +118,11 @@ Source: `docs/PRODUCTION_READINESS.md` §"Quality gates" and
 | Gate | Workflow | Status | Notes |
 |---|---|---|---|
 | Lint (4 apps + backend) | `ci.yml` | green | admin-panel runs with `--max-warnings 7000` (LR-1); other apps zero-warning |
-| Typecheck — admin-panel | `ci.yml:191` | **soft-failing** | `continue-on-error: true`; 710 cascaded errors from 19 missing modules (LR-3; was documented as ~30) |
-| Typecheck — storefront | `ci.yml:73` | **soft-failing** | `continue-on-error: true`; 29 errors (LR-5; was documented as ~12) |
-| Typecheck — backend | `ci.yml` | green | `tsc --noEmit` passes locally on 2026-05-13 |
+| Typecheck — admin-panel | `ci.yml` (~`:184`) | **soft-failing** | `continue-on-error: true`; 671 cascaded errors after this PR (was 710) — residual is real type drift in Medusa-inherited routes (LR-3 partial) |
+| Typecheck — storefront | `ci.yml:64` | **green (fail-fast)** | `continue-on-error: true` removed in this PR; `pnpm typecheck` passes against `tsc --noEmit` (LR-5 done) |
+| Typecheck — backend | `ci.yml` | green | `tsc --noEmit` passes locally on 2026-05-13 (after TI-1 migration rename + new CREATE migration) |
 | Typecheck — vendor-panel | `ci.yml` | green | `pnpm typecheck` passes locally |
-| Unit + integration tests | `ci.yml:409` | **soft-failing** | `pnpm test:integration:http` `continue-on-error: true` until TI-1 lands |
+| Unit + integration tests | `ci.yml:409` | **soft-failing** | `pnpm test:integration:http` `continue-on-error: true`; TI-1 in-source fix landed in this PR but flag stays until a green CI run validates the migration graph against a live Postgres |
 | Translation contract validation | `ci.yml` | green | |
 | Vendor/module completeness | `ci.yml` | green | |
 | Secret scanning (gitleaks) | `security.yml` | green | Hard-fail, configured at `:35` |
@@ -132,11 +171,9 @@ remain open after this PR:
 | # | Title | Effort | Owner | Why it blocks |
 |---|---|:-:|---|---|
 | LR-1 | Lower admin-panel ESLint `--max-warnings` 7000 → 5500 → 4000 → 2000 → 0 | L | admin-panel team | Documented v1.0.0 → v1.2.0 step ladder; first ratchet hasn't landed |
-| LR-3 | Eliminate admin-panel typecheck failures (~30 errors) | M | admin-panel team | Forces `continue-on-error: true` on the admin-panel typecheck gate |
-| LR-5 | Eliminate storefront typecheck failures (80+ errors, revised) | M | storefront team | Forces `continue-on-error: true` on the storefront typecheck gate |
-| TD-3 | Sell signup → API integration | S→M | storefront team | `sell/page.tsx` is a stub redirect; seller onboarding has no first-party persistence |
-| TI-1 | Reconcile backend module migration order | M | backend team | Forces `continue-on-error: true` on integration tests |
-| QA-1 | Recurring static internal-link route validation in QA/release checks | S | storefront QA | Last open item from the storefront-pages-audit |
+| LR-3 (partial) | Eliminate admin-panel typecheck failures — 671 residual errors after this PR's missing-module fixes | M | admin-panel team | Forces `continue-on-error: true` on the admin-panel typecheck gate; type drift inside Medusa-inherited routes |
+| TD-3 (partial) | Replace `/api/sell-signup` log-only stub with a backend leads endpoint / webhook | S | storefront + backend | First-party capture exists but persistence is log-only |
+| TI-1 (CI validation) | Confirm the new migration graph passes `pnpm test:integration:http` against live Postgres, then flip `ci.yml:409` | S | backend team | Source fix landed in this PR; CI flag stays soft until a green run is observed |
 
 The two SD-* rows historically tagged `v1.0.0` (SD-1..SD-5) are now
 struck through; CVEs no longer block the cut.
@@ -227,14 +264,16 @@ The `rg` commands above confirmed only `@types/lodash@4.17.20` remains
 
 | Package | Command | Result |
 |---|---|---|
-| backend | `pnpm typecheck` | **PASS** (exit 0) — confirms `@mikro-orm/* 6.6.10` + `axios 1.16.0` bumps did not break backend types |
-| backend | `pnpm test:unit` | **PASS** (exit 0) — Jest unit suite green post-bump |
-| vendor-panel | `pnpm typecheck` | **PASS** (exit 0) — confirms LR-2 stays resolved with the new lodash/axios/picomatch overrides |
-| storefront | `pnpm typecheck` | FAIL (exit 2; 29 errors, **expected** — gates on LR-5) |
-| admin-panel | `pnpm typecheck` | FAIL (exit 2; 710 errors, **expected** — gates on LR-3) |
+| backend | `pnpm typecheck` | **PASS** (exit 0) — confirms the renamed hawala migration + new payout-breakdown CREATE migration compile cleanly |
+| backend | `pnpm test:unit` | PASS in pass 1; not re-run in pass 2 (only migration filenames + 1 new file changed) |
+| vendor-panel | `pnpm typecheck` | PASS in pass 1; not re-run in pass 2 (no vendor-panel touches in this pass) |
+| storefront | `pnpm typecheck` | **PASS** (exit 0) — LR-5 resolved |
+| admin-panel | `pnpm typecheck` | FAIL (exit 2; 671 errors, **expected** — LR-3 partial; was 710 pre-PR) |
 
-The two failures are pre-existing v1.0.0 blockers; the bumps in this PR
-neither introduced nor masked any new failure mode.
+The admin-panel failure is a pre-existing v1.0.0 blocker; LR-5 (storefront)
+and the LR-3 missing-module cascade are now closed. Backend changes were
+limited to migration file renames + one new CREATE migration; full
+`pnpm test:integration:http` validation depends on TI-1 CI confirmation.
 
 ### What was *not* verified end-to-end
 
@@ -250,7 +289,7 @@ section.
 
 ## Files touched
 
-Written / edited by this PR:
+Pass 1 (security CVEs SD-1..SD-5):
 
 - `package.json` (root)
 - `backend/package.json`, `backend/pnpm-lock.yaml`
@@ -260,4 +299,25 @@ Written / edited by this PR:
 - `pnpm-lock.yaml` (root)
 - `.trivyignore`
 - `docs/AUDIT_DEBT.md`
-- `docs/qa-production-readiness-check-2026-05-13.md` (this file)
+- `docs/qa-production-readiness-check-2026-05-13.md`
+
+Pass 2 (QA-1, LR-5, TI-1 source fix, TD-3 partial, LR-3 partial):
+
+- `scripts/release_validation.sh` (QA-1)
+- `storefront/src/app/[locale]/(main)/sell/SellPageClient.tsx` (TD-3)
+- `storefront/src/app/api/sell-signup/route.ts` *(new)* (TD-3)
+- `backend/src/modules/hawala-ledger/migrations/Migration20251229AddRawColumns.ts` → `Migration20251230AddRawColumns.ts` *(renamed)* (TI-1)
+- `backend/src/modules/payout-breakdown/migrations/Migration20260101000000CreateOrderPayoutBreakdown.ts` *(new)* (TI-1)
+- `storefront/package.json`, `storefront/pnpm-lock.yaml` (sonner add; LR-5)
+- `storefront/src/lib/config.ts` (LR-5)
+- `storefront/src/lib/data/{orders,cart,customer}.ts` (LR-5)
+- `storefront/src/types/{seller,categories}.ts` (LR-5)
+- `storefront/src/components/sections/{CartReview/PaymentButton,SellerScheduling/SellerScheduling,ProductListing/AlgoliaProductsListing,ShopByStyle/ShopByStyleSection}.tsx` (LR-5)
+- `storefront/src/components/molecules/AddressForm/AddressForm.tsx` (LR-5)
+- `admin-panel/package.json`, `admin-panel/pnpm-lock.yaml` (4 devDeps; LR-3)
+- `admin-panel/src/index.ts` (LR-3)
+- `admin-panel/src/types/{venue,ticket-product,index}.ts` (LR-3; 2 new + 1 edit)
+- `admin-panel/src/components/create-venue-modal.tsx` *(new)* (LR-3)
+- `admin-panel/src/routes/tax-regions/tax-region-province-detail/components/index.ts` (LR-3)
+- `.github/workflows/ci.yml` (storefront typecheck flipped to fail-fast)
+- `docs/AUDIT_DEBT.md`, `docs/qa-production-readiness-check-2026-05-13.md`
