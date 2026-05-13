@@ -131,7 +131,7 @@ function convertToggleableNumber(value: any): {
   if (typeof obj === "string") {
     try {
       obj = JSON.parse(obj)
-    } catch (error) {
+    } catch {
       throw new Error(`String "${value}" cannot be converted to object.`)
     }
   }

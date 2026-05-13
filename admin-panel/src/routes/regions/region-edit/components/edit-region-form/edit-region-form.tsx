@@ -1,5 +1,4 @@
 import type { HttpTypes} from "@medusajs/types";
-import { PaymentProviderDTO } from "@medusajs/types"
 import { Button, Input, Select, Switch, Text, toast } from "@medusajs/ui"
 import { useForm } from "react-hook-form"
 import { useTranslation } from "react-i18next"

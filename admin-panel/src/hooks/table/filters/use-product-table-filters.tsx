@@ -4,7 +4,7 @@ import { useProductTags } from "../../api"
 import { useProductTypes } from "../../api/product-types"
 import { useSalesChannels } from "../../api/sales-channels"
 
-const excludeableFields = [
+const _excludeableFields = [
   "sales_channel_id",
   "collections",
   "categories",
@@ -53,7 +53,7 @@ export const useProductTableFilters = (
     }
   )
 
-  const isCategoryExcluded = exclude?.includes("categories")
+  const _isCategoryExcluded = exclude?.includes("categories")
 
   // const { product_categories } = useAdminProductCategories({
   //   limit: 1000,
@@ -64,7 +64,7 @@ export const useProductTableFilters = (
   //  enabled: !isCategoryExcluded,
   // })
 
-  const isCollectionExcluded = exclude?.includes("collections")
+  const _isCollectionExcluded = exclude?.includes("collections")
 
   // const { collections } = useAdminCollections(
   //   {

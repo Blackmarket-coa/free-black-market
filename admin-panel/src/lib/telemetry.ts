@@ -18,7 +18,7 @@ export async function initTelemetry(): Promise<void> {
           ?.VITE_SENTRY_SAMPLE_RATE || "0.1"
       ),
     })
-  } catch (err) {
+  } catch {
     // eslint-disable-next-line no-console
     console.warn("[telemetry] @sentry/browser is not installed; skipping init.")
   }

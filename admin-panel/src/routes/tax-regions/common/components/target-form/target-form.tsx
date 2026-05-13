@@ -144,7 +144,7 @@ const PAGE_SIZE = 50
 
 const PREFIX_CUSTOMER_GROUP = "cg"
 
-const CustomerGroupTable = ({
+const _CustomerGroupTable = ({
   initialRowState,
   intermediate,
   setIntermediate,
@@ -410,7 +410,7 @@ const useProductColumns = () => {
 
 const PREFIX_PRODUCT_COLLECTION = "pc"
 
-const ProductCollectionTable = ({
+const _ProductCollectionTable = ({
   initialRowState,
   intermediate,
   setIntermediate,
@@ -826,7 +826,7 @@ const useShippingOptionColumns = () => {
 
 const PREFIX_PRODUCT_TAG = "ptag"
 
-const ProductTagTable = ({
+const _ProductTagTable = ({
   initialRowState,
   intermediate,
   setIntermediate,

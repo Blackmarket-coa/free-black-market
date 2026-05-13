@@ -109,7 +109,7 @@ const Breadcrumbs = () => {
 
       try {
         label = handle.breadcrumb?.(match)
-      } catch (error) {
+      } catch {
         // noop
       }
 

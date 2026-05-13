@@ -36,7 +36,7 @@ export const useSignUpWithEmailPass = (
   return useMutation({
     mutationFn: (payload) => {
       // Strip unsupported fields before calling auth.register
-      const { vendor_type, confirmPassword, ...authPayload } = payload as any
+      const { vendor_type: _vendor_type, confirmPassword: _confirmPassword, ...authPayload } = payload as any
       
 return sdk.auth.register("user", "emailpass", {
         ...authPayload,

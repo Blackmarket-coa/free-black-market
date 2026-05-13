@@ -117,7 +117,7 @@ Source: `docs/PRODUCTION_READINESS.md` §"Quality gates" and
 
 | Gate | Workflow | Status | Notes |
 |---|---|---|---|
-| Lint (4 apps + backend) | `ci.yml` | green | admin-panel runs with `--max-warnings 5500` (LR-1 step 1; was 7000 pre-PR); other apps zero-warning |
+| Lint (4 apps + backend) | `ci.yml` | green | admin-panel runs with `--max-warnings 4000` (LR-1 steps 1+2; was 7000 pre-PR; current count 3,998); other apps zero-warning |
 | Typecheck — admin-panel | `ci.yml` (~`:184`) | **soft-failing** | `continue-on-error: true`; 671 cascaded errors after this PR (was 710) — residual is real type drift in Medusa-inherited routes (LR-3 partial) |
 | Typecheck — storefront | `ci.yml:64` | **green (fail-fast)** | `continue-on-error: true` removed in this PR; `pnpm typecheck` passes against `tsc --noEmit` (LR-5 done) |
 | Typecheck — backend | `ci.yml` | green | `tsc --noEmit` passes locally on 2026-05-13 (after TI-1 migration rename + new CREATE migration) |
@@ -170,7 +170,7 @@ remain open after this PR:
 
 | # | Title | Effort | Owner | Why it blocks |
 |---|---|:-:|---|---|
-| LR-1 (step 1 done) | Lower admin-panel ESLint `--max-warnings` ~~5500~~ → 4000 → 2000 → 0 | L | admin-panel team | Step 1 landed in this PR (7000 → 5500, current count 4,106); step 2 (4000) needs ~107 more warnings cleared |
+| LR-1 (steps 1+2 done) | Lower admin-panel ESLint `--max-warnings` ~~5500~~ → ~~4000~~ → 2000 → 0 | L | admin-panel team | Steps 1 & 2 landed in this PR (7000 → 4000, current count 3,998); step 3 (2000) blocked by 3,077 `no-restricted-imports` warnings — needs a path-alias rewrite pass or rule relaxation |
 | LR-3 (partial) | Eliminate admin-panel typecheck failures — 671 residual errors after this PR's missing-module fixes | M | admin-panel team | Forces `continue-on-error: true` on the admin-panel typecheck gate; type drift inside Medusa-inherited routes |
 | TD-3 (partial) | Replace `/api/sell-signup` log-only stub with a backend leads endpoint / webhook | S | storefront + backend | First-party capture exists but persistence is log-only |
 | TI-1 (CI validation) | Confirm the new migration graph passes `pnpm test:integration:http` against live Postgres, then flip `ci.yml:409` | S | backend team | Source fix landed in this PR; CI flag stays soft until a green run is observed |

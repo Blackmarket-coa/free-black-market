@@ -1,6 +1,5 @@
 import { useTranslation } from "react-i18next"
 
-import React from "react"
 import { IconButton, Input, Text } from "@medusajs/ui"
 import type { UseFormReturn } from "react-hook-form"
 import type { HttpTypes, AdminOrderLineItem } from "@medusajs/types"
@@ -148,7 +147,7 @@ function ReturnItem({
                 <Form.Field
                   control={form.control}
                   name={`items.${index}.reason_id`}
-                  render={({ field: { ref, value, onChange, ...field } }) => {
+                  render={({ field: { ref: _ref, value, onChange, ...field } }) => {
                     return (
                       <Form.Item>
                         <Form.Control>
@@ -202,7 +201,7 @@ function ReturnItem({
                 <Form.Field
                   control={form.control}
                   name={`items.${index}.note`}
-                  render={({ field: { ref, onChange, ...field } }) => {
+                  render={({ field: { ref: _ref, onChange, ...field } }) => {
                     return (
                       <Form.Item>
                         <Form.Control>

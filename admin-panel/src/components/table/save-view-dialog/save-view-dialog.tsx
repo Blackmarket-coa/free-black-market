@@ -90,7 +90,7 @@ export const SaveViewDialog: React.FC<SaveViewDialogProps> = ({
         })
         onSaved(result.view_configuration)
       }
-    } catch (error) {
+    } catch {
       // Error is handled by the hook
     } finally {
       setIsLoading(false)
