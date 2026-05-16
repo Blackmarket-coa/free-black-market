@@ -3,7 +3,31 @@ import { useEffect, useMemo, useState } from "react"
 import { useTranslation } from "react-i18next"
 import * as zod from "zod"
 
-import { AdminOrder, InventoryItemDTO, OrderLineItemDTO } from "@medusajs/types"
+import {
+  AdminOrder,
+  AdminOrderLineItem,
+  AdminProductVariant,
+  InventoryItemDTO,
+  OrderLineItemDTO,
+} from "@medusajs/types"
+
+// The variant returned by the order-items list still carries the legacy
+// `inventory` array (with location_levels per inventory item); the public
+// AdminProductVariant type only exposes `inventory_items` today.
+type LegacyInventoryEntry = {
+  id: string
+  location_levels?: Array<{
+    location_id: string
+    available_quantity?: number
+  }>
+}
+type VariantWithInventory = AdminProductVariant & {
+  inventory?: LegacyInventoryEntry[]
+}
+type AllocateLineItem = AdminOrderLineItem & {
+  variant?: VariantWithInventory | null
+  detail?: { fulfilled_quantity: number }
+}
 import { Alert, Button, Heading, Input, Select, toast } from "@medusajs/ui"
 import { useForm, useWatch } from "react-hook-form"
 
@@ -38,11 +62,11 @@ export function OrderAllocateItemsForm({ order }: OrderAllocateItemsFormProps) {
 
   const itemsToAllocate = useMemo(
     () =>
-      order.items.filter(
+      (order.items as AllocateLineItem[]).filter(
         (item) =>
           item.variant?.manage_inventory &&
-          item.variant?.inventory.length &&
-          item.quantity - item.detail.fulfilled_quantity > 0
+          !!item.variant?.inventory?.length &&
+          item.quantity - (item.detail?.fulfilled_quantity ?? 0) > 0
       ),
     [order.items]
   )
@@ -52,8 +76,8 @@ export function OrderAllocateItemsForm({ order }: OrderAllocateItemsFormProps) {
 
     return itemsToAllocate.filter(
       (i) =>
-        i.variant_title.toLowerCase().includes(searchTerm) ||
-        i.product_title.toLowerCase().includes(searchTerm)
+        i.variant_title?.toLowerCase().includes(searchTerm) ||
+        i.product_title?.toLowerCase().includes(searchTerm)
     )
   }, [itemsToAllocate, filterTerm])
 
@@ -140,16 +164,24 @@ export function OrderAllocateItemsForm({ order }: OrderAllocateItemsFormProps) {
         ? `quantity.${lineItem.id}-`
         : `quantity.${lineItem.id}-${inventoryItem.id}`
 
-    form.setValue(key, value)
+    form.setValue(
+      key as `quantity.${string}`,
+      value as never
+    )
 
     if (value) {
-      const location = inventoryItem.location_levels.find(
+      const locationLevels =
+        (inventoryItem as InventoryItemDTO & {
+          location_levels?: Array<{
+            location_id: string
+            available_quantity?: number
+          }>
+        }).location_levels ?? []
+      const location = locationLevels.find(
         (l) => l.location_id === selectedLocationId
       )
-      if (location) {
-        if (location.available_quantity < value) {
-          shouldDisableSubmit = true
-        }
+      if (location && (location.available_quantity ?? 0) < value) {
+        shouldDisableSubmit = true
       }
     }
 
@@ -162,24 +194,27 @@ export function OrderAllocateItemsForm({ order }: OrderAllocateItemsFormProps) {
       // changed root -> we need to set items to parent quantity x required_quantity
 
       const item = itemsToAllocate.find((i) => i.id === lineItem.id)
+      const inventoryItems = item?.variant?.inventory_items ?? []
+      const inventory = item?.variant?.inventory ?? []
 
-      item.variant?.inventory_items.forEach((ii, ind) => {
+      inventoryItems.forEach((ii, ind) => {
         const num = value || 0
-        const inventory = item.variant?.inventory[ind]
+        const entry = inventory[ind]
+        if (!entry) {
+          return
+        }
 
         form.setValue(
-          `quantity.${lineItem.id}-${inventory.id}`,
-          num * ii.required_quantity
+          `quantity.${lineItem.id}-${entry.id}` as `quantity.${string}`,
+          (num * (ii.required_quantity ?? 0)) as never
         )
 
         if (value) {
-          const location = inventory?.location_levels.find(
+          const location = entry.location_levels?.find(
             (l) => l.location_id === selectedLocationId
           )
-          if (location) {
-            if (location.available_quantity < value) {
-              shouldDisableSubmit = true
-            }
+          if (location && (location.available_quantity ?? 0) < value) {
+            shouldDisableSubmit = true
           }
         }
       })
@@ -296,7 +331,7 @@ export function OrderAllocateItemsForm({ order }: OrderAllocateItemsFormProps) {
                           <OrderAllocateItemsItem
                             key={item.id}
                             form={form}
-                            item={item}
+                            item={item as unknown as OrderLineItemDTO}
                             locationId={selectedLocationId}
                             onQuantityChange={onQuantityChange}
                           />
@@ -331,20 +366,21 @@ export function OrderAllocateItemsForm({ order }: OrderAllocateItemsFormProps) {
   )
 }
 
-function defaultAllocations(items: OrderLineItemDTO) {
-  const ret = {}
+function defaultAllocations(items: AllocateLineItem[]) {
+  const ret: Record<string, string> = {}
 
   items.forEach((item) => {
-    const hasInventoryKit = checkInventoryKit(item)
+    const hasInventoryKit = checkInventoryKit(
+      item as unknown as OrderLineItemDTO
+    )
+    const inventory = item.variant?.inventory ?? []
 
     ret[
-      hasInventoryKit
-        ? `${item.id}-`
-        : `${item.id}-${item.variant?.inventory[0].id}`
+      hasInventoryKit ? `${item.id}-` : `${item.id}-${inventory[0]?.id ?? ""}`
     ] = ""
 
     if (hasInventoryKit) {
-      item.variant?.inventory.forEach((i) => {
+      inventory.forEach((i) => {
         ret[`${item.id}-${i.id}`] = ""
       })
     }

@@ -31,9 +31,9 @@ export function OrderCreateFulfillmentItem({
 }: OrderEditItemProps) {
   const { t } = useTranslation()
 
-  const { variant } = useProductVariant(
-    item.product_id,
-    item.variant_id,
+  const { variant: rawVariant } = useProductVariant(
+    item.product_id!,
+    item.variant_id!,
     {
       fields: "*inventory,*inventory.location_levels,*inventory_items",
     },
@@ -41,6 +41,19 @@ export function OrderCreateFulfillmentItem({
       enabled: !!item.variant,
     }
   )
+
+  // The order-items list returns the variant with the legacy
+  // `inventory` array (location levels per inventory item) that the
+  // public AdminProductVariant type doesn't expose.
+  type InventoryLevel = {
+    location_id: string
+    available_quantity: number
+    stocked_quantity: number
+  }
+  type InventoryEntry = { id: string; location_levels?: InventoryLevel[] }
+  const variant = rawVariant as
+    | (typeof rawVariant & { inventory?: InventoryEntry[] })
+    | undefined
 
   const { availableQuantity, inStockQuantity } = useMemo(() => {
     if (
@@ -123,7 +136,7 @@ export function OrderCreateFulfillmentItem({
 
   const minValue = 0
   const maxValue = Math.min(
-    getFulfillableQuantity(item),
+    getFulfillableQuantity(item as unknown as Parameters<typeof getFulfillableQuantity>[0]),
     availableQuantity || Number.MAX_SAFE_INTEGER
   )
 
@@ -213,7 +226,7 @@ export function OrderCreateFulfillmentItem({
 
                             field.onChange(val)
 
-                            if (!isNaN(val)) {
+                            if (val !== null && !isNaN(val)) {
                               if (val < minValue || val > maxValue) {
                                 form.setError(`quantity.${item.id}`, {
                                   type: "manual",

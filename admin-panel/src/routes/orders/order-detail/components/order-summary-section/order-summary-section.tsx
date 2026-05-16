@@ -37,7 +37,7 @@ import {
   usePrompt,
 } from "@medusajs/ui"
 
-import { AdminReservation } from "@medusajs/types/src/http"
+import { AdminReservation } from "@medusajs/types"
 import { format } from "date-fns"
 import { ActionMenu } from "../../../../../components/common/action-menu"
 import DisplayId from "../../../../../components/common/display-id/display-id"
@@ -400,7 +400,7 @@ const Item = ({
   const hasInventoryKit =
     isInventoryManaged &&
     ((item.variant?.inventory_items?.length || 0) > 1 ||
-      item.variant?.inventory_items?.some((i) => i.required_quantity > 1))
+      item.variant?.inventory_items?.some((i) => (i.required_quantity ?? 0) > 1))
   const hasUnfulfilledItems = item.quantity - item.detail.fulfilled_quantity > 0
 
   return (
@@ -638,7 +638,7 @@ const CostBreakdown = ({
                   <div>
                     <span className="txt-small">
                       {sm.name}
-                      {sm.detail.return_id &&
+                      {sm.detail?.return_id &&
                         ` (${t("fields.returnShipping")})`}{" "}
                       <ShippingInfoPopover key={i} shippingMethod={sm} />
                     </span>
@@ -960,14 +960,14 @@ const InventoryKitBreakdown = ({ item }: { item: AdminOrderLineItem }) => {
           {inventory.map((i) => {
             return (
               <div
-                key={i.inventory.id}
+                key={i.inventory?.id}
                 className="flex items-center justify-between gap-x-2"
               >
                 <div>
                   <span className="txt-small text-ui-fg-subtle font-medium">
-                    {i.inventory.title}
+                    {i.inventory?.title}
 
-                    {i.inventory.sku && (
+                    {i.inventory?.sku && (
                       <span className="text-ui-fg-subtle font-normal">
                         {" "}
                         ⋅ {i.inventory.sku}
@@ -999,7 +999,13 @@ const ReturnBreakdownWithDamages = ({
 }) => {
   const { t } = useTranslation()
 
-  const item = orderReturn?.items?.find((ri) => ri.item_id === itemId)
+  // Return items include the populated `reason` object when fields query
+  // includes it; the public type only exposes reason_id.
+  const item = orderReturn?.items?.find((ri) => ri.item_id === itemId) as
+    | (NonNullable<AdminReturn["items"]>[number] & {
+        reason?: { label?: string }
+      })
+    | undefined
   const damagedQuantity = item?.damaged_quantity || 0
 
   return (
@@ -1064,7 +1070,11 @@ const ReturnBreakdown = ({
   }
 
   const isRequested = orderReturn.status === "requested"
-  const item = orderReturn?.items?.find((ri) => ri.item_id === itemId)
+  const item = orderReturn?.items?.find((ri) => ri.item_id === itemId) as
+    | (NonNullable<AdminReturn["items"]>[number] & {
+        reason?: { label?: string }
+      })
+    | undefined
   const damagedQuantity = item?.damaged_quantity || 0
 
   return (
@@ -1144,9 +1154,15 @@ const ClaimBreakdown = ({
 }) => {
   const { t } = useTranslation()
   const { getRelativeDate } = useDate()
-  const items = claim.additional_items.filter(
-    (item) => item.item?.id === itemId
-  )
+  // Claim items include the populated `item` reference when the order is
+  // hydrated; the public BaseClaimItem only exposes the id.
+  const items = (
+    claim.additional_items as Array<
+      AdminClaim["additional_items"][number] & {
+        item?: { id?: string }
+      }
+    >
+  ).filter((item) => item.item?.id === itemId)
 
   return (
     !!items.length && (
@@ -1184,9 +1200,13 @@ const ExchangeBreakdown = ({
 }) => {
   const { t } = useTranslation()
   const { getRelativeDate } = useDate()
-  const items = exchange.additional_items.filter(
-    (item) => item?.item?.id === itemId
-  )
+  const items = (
+    exchange.additional_items as Array<
+      AdminExchange["additional_items"][number] & {
+        item?: { id?: string }
+      }
+    >
+  ).filter((item) => item?.item?.id === itemId)
 
   return (
     !!items.length && (

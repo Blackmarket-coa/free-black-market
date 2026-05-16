@@ -9,9 +9,13 @@ import {
  */
 export function checkInventoryKit(
   item: OrderLineItemDTO & {
-    variant?: AdminProductVariant & {
-      inventory_items: AdminProductVariantInventoryItemLink[]
-    }
+    variant?:
+      | (AdminProductVariant & {
+          inventory_items?:
+            | AdminProductVariantInventoryItemLink[]
+            | null
+        })
+      | null
   }
 ) {
   const variant = item.variant
@@ -20,9 +24,10 @@ export function checkInventoryKit(
     return false
   }
 
+  const items = variant.inventory_items ?? []
+
   return (
-    (!!variant.inventory_items.length && variant.inventory_items.length > 1) ||
-    (variant.inventory_items.length === 1 &&
-      variant.inventory_items[0].required_quantity! > 1)
+    (items.length > 0 && items.length > 1) ||
+    (items.length === 1 && (items[0].required_quantity ?? 0) > 1)
   )
 }

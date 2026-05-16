@@ -1,6 +1,14 @@
-import { PromotionRuleResponse } from "@medusajs/types"
+import { AdminPromotionRule } from "@medusajs/types"
 
-export const generateRuleAttributes = (rules?: PromotionRuleResponse[]) =>
+// Backend enriches promotion rules with extra UI metadata that the public
+// AdminPromotionRule type doesn't expose.
+export type ExtendedPromotionRule = AdminPromotionRule & {
+  required?: boolean
+  field_type?: string
+  disguised?: boolean
+}
+
+export const generateRuleAttributes = (rules?: ExtendedPromotionRule[]) =>
   (rules || []).map((rule) => ({
     id: rule.id,
     required: rule.required,
@@ -11,7 +19,9 @@ export const generateRuleAttributes = (rules?: PromotionRuleResponse[]) =>
     values:
       rule.field_type === "number" || rule.operator === "eq"
         ? typeof rule.values === "object"
-          ? rule.values[0]?.value
+          ? (rule.values as Array<{ value: string }> | undefined)?.[0]?.value
           : rule.values
-        : rule?.values?.map((v: { value: string }) => v.value!),
+        : (rule.values as Array<{ value: string }> | undefined)?.map(
+            (v) => v.value
+          ),
   }))

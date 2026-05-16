@@ -3,7 +3,6 @@ import {
   PromotionDTO,
   PromotionRuleDTO,
   PromotionRuleOperatorValues,
-  PromotionRuleResponse,
 } from "@medusajs/types"
 import { useRouteModal } from "../../../../../../components/modals"
 import {
@@ -14,6 +13,7 @@ import {
 } from "../../../../../../hooks/api/promotions"
 import { RuleTypeValues } from "../../edit-rules"
 import { EditRulesForm } from "../edit-rules-form"
+import { ExtendedPromotionRule } from "../edit-rules-form/utils"
 import { getRuleValue } from "./utils"
 
 type EditPromotionFormProps = {
@@ -45,7 +45,7 @@ export const EditRulesWrapper = ({
   const handleSubmit = (
     rulesToRemove?: { id: string; disguised: boolean; attribute: string }[]
   ) => {
-    return async function (data: { rules: PromotionRuleResponse[] }) {
+    return async function (data: { rules: ExtendedPromotionRule[] }) {
       const applicationMethodData: Record<any, any> = {}
       const { rules: allRules = [] } = data
       const disguisedRules = allRules.filter((rule) => rule.disguised)
@@ -68,9 +68,9 @@ export const EditRulesWrapper = ({
       const rulesData = allRules.filter((rule) => !rule.disguised)
       const rulesToCreate: CreatePromotionRuleDTO[] = rulesData.filter(
         (rule) => !("id" in rule)
-      )
+      ) as unknown as CreatePromotionRuleDTO[]
       const rulesToUpdate = rulesData.filter(
-        (rule: { id: string }) => typeof rule.id === "string"
+        (rule) => typeof rule.id === "string"
       )
 
       if (Object.keys(applicationMethodData).length) {
@@ -97,7 +97,7 @@ export const EditRulesWrapper = ({
 
       rulesToUpdate.length &&
         (await updatePromotionRules({
-          rules: rulesToUpdate.map((rule: PromotionRuleResponse) => {
+          rules: rulesToUpdate.map((rule) => {
             return {
               id: rule.id!,
               attribute: rule.attribute,
