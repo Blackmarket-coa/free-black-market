@@ -53,7 +53,10 @@ export const TaxRegionTaxOverrideEdit = () => {
 
 const useDefaultRulesValues = (
   taxRate?: HttpTypes.AdminTaxRate
-): { initialValues: InitialRuleValues; isPending: boolean } => {
+): {
+  initialValues?: InitialRuleValues
+  isPending: boolean
+} => {
   const rules = taxRate?.rules || []
 
   const idsByReferenceType: {
@@ -67,8 +70,13 @@ const useDefaultRulesValues = (
     // [TaxRateRuleReferenceType.CUSTOMER_GROUP]: [],
   }
 
-  rules
-    .sort((a, b) => a.created_at.localeCompare(b.created_at)) // preffer newer rules for display
+  ;[...rules]
+    .sort((a, b) => {
+      // Backend stamps created_at on the rule, public type doesn't.
+      const aAt = (a as { created_at?: string }).created_at ?? ""
+      const bAt = (b as { created_at?: string }).created_at ?? ""
+      return aAt.localeCompare(bAt)
+    })
     .forEach((rule) => {
       const reference = rule.reference as TaxRateRuleReferenceType
       idsByReferenceType[reference]?.push(rule.reference_id)
@@ -185,7 +193,9 @@ const useDefaultRulesValues = (
       let initialValues: TaxRateRuleReference[] = []
 
       if (queryResults[index].enabled) {
-        const fetchedEntityList = getResult(queryResults[index].result)
+        const fetchedEntityList = getResult(
+          queryResults[index].result as HttpTypes.AdminProductListResponse
+        )
 
         const entityIdMap = new Map(
           fetchedEntityList.map((entity) => [entity.value, entity])

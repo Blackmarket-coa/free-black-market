@@ -2,6 +2,7 @@ import { HttpTypes } from "@medusajs/types"
 import { Button } from "@medusajs/ui"
 import { Table } from "@tanstack/react-table"
 import { ReactNode } from "react"
+import { useTranslation } from "react-i18next"
 import { Link } from "react-router-dom"
 import {
   NoRecords,
@@ -32,6 +33,7 @@ export const TaxOverrideTable = ({
   prefix,
   children,
 }: TaxOverrideTableProps) => {
+  const { t } = useTranslation()
   if (isPending) {
     return (
       <div className="flex flex-col divide-y">
@@ -66,7 +68,13 @@ export const TaxOverrideTable = ({
                 <DataTableSearch prefix={prefix} />
               </div>
               <DataTableOrderBy
-                keys={["name", "rate", "code", "updated_at", "created_at"]}
+                keys={[
+                  { key: "name", label: t("fields.name") },
+                  { key: "rate", label: t("fields.rate") },
+                  { key: "code", label: t("fields.code") },
+                  { key: "updated_at", label: t("fields.updatedAt") },
+                  { key: "created_at", label: t("fields.createdAt") },
+                ]}
                 prefix={prefix}
               />
             </div>
