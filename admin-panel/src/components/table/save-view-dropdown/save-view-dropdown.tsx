@@ -1,14 +1,12 @@
-import React, { useState, useEffect } from "react"
+import React from "react"
 import {
   DropdownMenu,
   Button,
-  toast,
   usePrompt,
 } from "@medusajs/ui"
 import {
-  Plus,
   CloudArrowUp,
-  SquarePlusMicro,
+  SquaresPlus,
 } from "@medusajs/icons"
 
 interface SaveViewDropdownProps {
@@ -78,7 +76,7 @@ export const SaveViewDropdown: React.FC<SaveViewDropdownProps> = ({
         )}
         {onSaveAsNew && (
           <DropdownMenu.Item onClick={onSaveAsNew}>
-            <SquarePlusMicro className="h-4 w-4" />
+            <SquaresPlus className="h-4 w-4" />
             Save as new view
           </DropdownMenu.Item>
         )}

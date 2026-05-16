@@ -51,7 +51,7 @@ export const useOrderTableFilters = (): Filter[] => {
     filters = [...filters, salesChannelFilter]
   }
 
-  const paymentStatusFilter: Filter = {
+  const _paymentStatusFilter: Filter = {
     key: "payment_status",
     label: t("orders.payment.statusLabel"),
     type: "select",
@@ -88,7 +88,7 @@ export const useOrderTableFilters = (): Filter[] => {
     ],
   }
 
-  const fulfillmentStatusFilter: Filter = {
+  const _fulfillmentStatusFilter: Filter = {
     key: "fulfillment_status",
     label: t("orders.fulfillment.statusLabel"),
     type: "select",
@@ -132,6 +132,10 @@ export const useOrderTableFilters = (): Filter[] => {
       },
     ],
   }
+
+  // Kept for re-enabling; commented out at the spread below.
+  void _paymentStatusFilter
+  void _fulfillmentStatusFilter
 
   const dateFilters: Filter[] = [
     { label: "Created At", key: "created_at" },

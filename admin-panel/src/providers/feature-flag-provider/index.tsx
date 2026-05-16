@@ -31,7 +31,7 @@ interface FeatureFlagProviderProps {
 }
 
 export const FeatureFlagProvider: React.FC<FeatureFlagProviderProps> = ({ children }) => {
-  const { data: flags = {}, isLoading, error } = useFeatureFlags()
+ const { data: flags = {}, isLoading } = useFeatureFlags()
 
   const isFeatureEnabled = (flag: keyof FeatureFlags): boolean => {
     const enabled = flags[flag] === true

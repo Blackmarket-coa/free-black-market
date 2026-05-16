@@ -71,7 +71,7 @@ export const OrderEditCreateForm = ({
       handleSuccess()
     } catch (e) {
       toast.error(t("general.error"), {
-        description: e.message,
+        description: (e instanceof Error ? e.message : String(e)),
       })
     }
   })

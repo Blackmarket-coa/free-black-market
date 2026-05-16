@@ -1,4 +1,4 @@
-import React, { useMemo } from "react"
+import { useMemo } from "react"
 import { createDataTableColumnHelper, StatusBadge } from "@medusajs/ui"
 import { HttpTypes } from "@medusajs/types"
 import { useDate } from "../../../../../../hooks/use-date"

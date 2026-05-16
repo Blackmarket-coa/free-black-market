@@ -101,7 +101,7 @@ export const OrderActiveEditSection = ({
 
       toast.success(t("orders.edits.toast.confirmedSuccessfully"))
     } catch (e) {
-      toast.error(e.message)
+      toast.error((e instanceof Error ? e.message : String(e)))
     }
   }
 
@@ -111,7 +111,7 @@ export const OrderActiveEditSection = ({
 
       toast.success(t("orders.edits.toast.canceledSuccessfully"))
     } catch (e) {
-      toast.error(e.message)
+      toast.error((e instanceof Error ? e.message : String(e)))
     }
   }
 

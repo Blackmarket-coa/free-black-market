@@ -2,7 +2,7 @@ import { createColumnHelper } from "@tanstack/react-table"
 import { useMemo } from "react"
 import { useTranslation } from "react-i18next"
 
-import { TaxRateResponse } from "@medusajs/types"
+import { AdminTaxRateResponse } from "@medusajs/types"
 import {
   TextCell,
   TextHeader,
@@ -13,7 +13,7 @@ import {
   TypeHeader,
 } from "../../../components/table/table-cells/taxes/type-cell"
 
-const columnHelper = createColumnHelper<TaxRateResponse>()
+const columnHelper = createColumnHelper<AdminTaxRateResponse>()
 
 export const useTaxRateTableColumns = () => {
   const { t } = useTranslation()

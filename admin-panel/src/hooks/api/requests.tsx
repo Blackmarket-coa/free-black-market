@@ -70,10 +70,13 @@ export const useReviewRequest = (
 ) => {
   return useMutation({
     mutationFn: ({ id, payload }) =>
-      sdk.client.fetch(`/admin/requests/${id}`, {
-        method: "POST",
-        body: payload,
-      }),
+      sdk.client.fetch<{ request?: { id?: string; status?: string }; status?: string }>(
+        `/admin/requests/${id}`,
+        {
+          method: "POST",
+          body: payload,
+        }
+      ),
     onSuccess: (data, variables) => {
       const nextStatus =
         data?.request?.status || data?.status || variables.payload.status;

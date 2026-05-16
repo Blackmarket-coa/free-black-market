@@ -142,7 +142,7 @@ const PAGE_SIZE = 50
 
 const PREFIX_CUSTOMER_GROUP = "cg"
 
-const CustomerGroupTable = ({
+const _CustomerGroupTable = ({
   initialRowState,
   intermediate,
   setIntermediate,
@@ -269,6 +269,7 @@ const useGroupColumns = () => {
     [base]
   )
 }
+void _CustomerGroupTable
 
 const PREFIX_PRODUCT = "p"
 
@@ -408,7 +409,7 @@ const useProductColumns = () => {
 
 const PREFIX_PRODUCT_COLLECTION = "pc"
 
-const ProductCollectionTable = ({
+const _ProductCollectionTable = ({
   initialRowState,
   intermediate,
   setIntermediate,
@@ -500,6 +501,7 @@ const ProductCollectionTable = ({
     />
   )
 }
+void _ProductCollectionTable
 
 const pcColumnHelper = createColumnHelper<HttpTypes.AdminCollection>()
 
@@ -824,7 +826,7 @@ const useShippingOptionColumns = () => {
 
 const PREFIX_PRODUCT_TAG = "ptag"
 
-const ProductTagTable = ({
+const _ProductTagTable = ({
   initialRowState,
   intermediate,
   setIntermediate,
@@ -916,6 +918,7 @@ const ProductTagTable = ({
     />
   )
 }
+void _ProductTagTable
 
 const ptagColumnHelper = createColumnHelper<HttpTypes.AdminProductTag>()
 

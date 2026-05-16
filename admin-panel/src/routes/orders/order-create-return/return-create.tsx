@@ -57,7 +57,7 @@ export const ReturnCreate = () => {
         setActiveReturnId(orderReturn.id)
       } catch (e) {
         navigate(`/orders/${order.id}`, { replace: true })
-        toast.error(e.message)
+        toast.error((e instanceof Error ? e.message : String(e)))
       } finally {
         IS_REQUEST_RUNNING = false
       }

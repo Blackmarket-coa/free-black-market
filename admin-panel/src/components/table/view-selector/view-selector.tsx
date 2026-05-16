@@ -1,16 +1,16 @@
 import React, { useEffect, useState } from "react"
 import { 
-  Select,
+
   Button,
   Tooltip,
   DropdownMenu,
-  Badge,
+
   usePrompt,
-  toast,
+
 } from "@medusajs/ui"
 import { 
   Eye,
-  EyeSlash,
+
   Plus,
   Trash,
   PencilSquare,
@@ -40,7 +40,7 @@ export const ViewSelector: React.FC<ViewSelectorProps> = ({
     listViews,
     activeView,
     setActiveView,
-    isDefaultViewActive,
+
   } = useViewConfigurations(entity)
 
   const [saveDialogOpen, setSaveDialogOpen] = useState(false)

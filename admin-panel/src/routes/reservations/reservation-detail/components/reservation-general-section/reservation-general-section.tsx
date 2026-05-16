@@ -8,7 +8,6 @@ import { SectionRow } from "../../../../../components/common/section"
 import { useInventoryItem } from "../../../../../hooks/api/inventory"
 import { useStockLocation } from "../../../../../hooks/api/stock-locations"
 import { useTranslation } from "react-i18next"
-import { useOrder } from "../../../../../hooks/api"
 
 type ReservationGeneralSectionProps = {
   reservation: AdminReservationResponse["reservation"]

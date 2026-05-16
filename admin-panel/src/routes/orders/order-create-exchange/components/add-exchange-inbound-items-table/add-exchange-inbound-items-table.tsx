@@ -184,10 +184,11 @@ const filterByDate = (
   })
 }
 
-const defaultOperators = {
+const _defaultOperators = {
   eq: undefined,
   gt: undefined,
   gte: undefined,
   lt: undefined,
   lte: undefined,
 }
+void _defaultOperators

@@ -40,7 +40,7 @@ const columnHelper = createColumnHelper<HttpTypes.AdminOrder>()
  * Hook to build columns dynamically based on API columns response
  */
 export const useOrderDataTableColumns = (
-  apiColumns: HttpTypes.AdminOrderColumn[] | undefined,
+  apiColumns: HttpTypes.AdminColumn[] | undefined,
   visibleColumns: string[]
 ) => {
   const { t } = useTranslation()

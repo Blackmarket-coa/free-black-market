@@ -53,7 +53,7 @@ export const useProductTableFilters = (
     }
   )
 
-  const isCategoryExcluded = exclude?.includes("categories")
+  const _isCategoryExcluded = exclude?.includes("categories")
 
   // const { product_categories } = useAdminProductCategories({
   //   limit: 1000,
@@ -64,7 +64,7 @@ export const useProductTableFilters = (
   //  enabled: !isCategoryExcluded,
   // })
 
-  const isCollectionExcluded = exclude?.includes("collections")
+  const _isCollectionExcluded = exclude?.includes("collections")
 
   // const { collections } = useAdminCollections(
   //   {
@@ -75,6 +75,10 @@ export const useProductTableFilters = (
   //     enabled: !isCollectionExcluded,
   //   }
   // )
+
+  // Kept for re-enabling alongside the commented-out queries above.
+  void _isCategoryExcluded
+  void _isCollectionExcluded
 
   let filters: Filter[] = []
 

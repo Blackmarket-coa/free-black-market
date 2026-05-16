@@ -1,6 +1,7 @@
 import { useMemo } from "react"
 import { toast } from "@medusajs/ui"
 import { FetchError } from "@medusajs/js-sdk"
+import type { HttpTypes } from "@medusajs/types"
 import { useFeatureFlag } from "../providers/feature-flag-provider"
 import {
   useViewConfigurations as useViewConfigurationsBase,
@@ -10,6 +11,10 @@ import {
   useDeleteViewConfiguration as useDeleteViewConfigurationBase,
   useSetActiveViewConfiguration as useSetActiveViewConfigurationBase,
 } from "./api/views"
+
+export type ViewConfiguration = NonNullable<
+  HttpTypes.AdminViewConfigurationResponse["view_configuration"]
+>
 
 // Common error handler
 const handleError = (error: Error, message?: string) => {

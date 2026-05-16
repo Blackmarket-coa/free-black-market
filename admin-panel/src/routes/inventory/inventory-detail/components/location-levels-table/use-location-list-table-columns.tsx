@@ -66,7 +66,7 @@ export const useLocationListTableColumns = () => {
         queryKey: inventoryItemLevelsQueryKeys.detail(level.inventory_item_id),
       })
     } catch (e) {
-      toast.error(e.message)
+      toast.error((e instanceof Error ? e.message : String(e)))
     }
   }
 
@@ -147,7 +147,7 @@ export const useLocationListTableColumns = () => {
                 icon: <PencilSquare />,
                 label: t("actions.edit"),
 
-                onClick: (row) => {
+ onClick: () => {
                   navigate(`locations/${level.location_id}`)
                 },
               },

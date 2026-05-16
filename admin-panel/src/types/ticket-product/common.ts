@@ -1,6 +1,13 @@
 import type { HttpTypes } from "@medusajs/types";
 
-export type RowType = "premium" | "balcony" | "standard" | "vip";
+export const RowType = {
+  PREMIUM: "premium",
+  BALCONY: "balcony",
+  STANDARD: "standard",
+  VIP: "vip",
+} as const;
+
+export type RowType = (typeof RowType)[keyof typeof RowType];
 
 export type VenueSummary = {
   id: string;

@@ -1,4 +1,3 @@
-import React from "react"
 import { Heading, Input, Switch } from "@medusajs/ui"
 import { UseFormReturn, useWatch } from "react-hook-form"
 import { useTranslation } from "react-i18next"

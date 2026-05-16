@@ -14,8 +14,20 @@ import {
   useUpdateOrderEditOriginalItem,
 } from "../../../../../hooks/api/order-edits"
 
+// Preview orders include pending ITEM_* actions and a `detail` summary on
+// each line item; the public AdminOrderLineItem type doesn't expose them.
+type PreviewLineItem = AdminOrderLineItem & {
+  actions?: Array<{
+    id: string
+    action: string
+  }>
+  detail?: {
+    fulfilled_quantity: number
+  }
+}
+
 type OrderEditItemProps = {
-  item: AdminOrderLineItem
+  item: PreviewLineItem
   currencyCode: string
   orderId: string
 }
@@ -42,7 +54,7 @@ function OrderEditItem({ item, currencyCode, orderId }: OrderEditItemProps) {
   const isItemRemoved = useMemo(() => {
     // To be removed item needs to have updated quantity
     const updateAction = item.actions?.find((a) => a.action === "ITEM_UPDATE")
-    return !!updateAction && item.quantity === item.detail.fulfilled_quantity
+    return !!updateAction && item.quantity === (item.detail?.fulfilled_quantity ?? 0)
   }, [item])
 
   /**
@@ -50,7 +62,7 @@ function OrderEditItem({ item, currencyCode, orderId }: OrderEditItemProps) {
    */
 
   const onUpdate = async (quantity: number) => {
-    if (quantity <= item.detail.fulfilled_quantity) {
+    if (quantity <= (item.detail?.fulfilled_quantity ?? 0)) {
       toast.error(t("orders.edits.validation.quantityLowerThanFulfillment"))
       return
     }
@@ -68,7 +80,7 @@ function OrderEditItem({ item, currencyCode, orderId }: OrderEditItemProps) {
         await updateOriginalItem({ quantity, itemId: item.id })
       }
     } catch (e) {
-      toast.error(e.message)
+      toast.error((e instanceof Error ? e.message : String(e)))
     }
   }
 
@@ -80,12 +92,12 @@ function OrderEditItem({ item, currencyCode, orderId }: OrderEditItemProps) {
         await undoAction(addItemAction.id)
       } else {
         await updateOriginalItem({
-          quantity: item.detail.fulfilled_quantity, //
+          quantity: (item.detail?.fulfilled_quantity ?? 0), //
           itemId: item.id,
         })
       }
     } catch (e) {
-      toast.error(e.message)
+      toast.error((e instanceof Error ? e.message : String(e)))
     }
   }
 
@@ -99,11 +111,14 @@ function OrderEditItem({ item, currencyCode, orderId }: OrderEditItemProps) {
         await undoAction(updateItemAction.id) // Remove action that updated items quantity to fulfilled quantity which makes it "removed"
       }
     } catch (e) {
-      toast.error(e.message)
+      toast.error((e instanceof Error ? e.message : String(e)))
     }
   }
 
   const onDuplicate = async () => {
+    if (!item.variant_id) {
+      return
+    }
     try {
       await addItems({
         items: [
@@ -114,7 +129,7 @@ function OrderEditItem({ item, currencyCode, orderId }: OrderEditItemProps) {
         ],
       })
     } catch (e) {
-      toast.error(e.message)
+      toast.error((e instanceof Error ? e.message : String(e)))
     }
   }
 
@@ -171,8 +186,8 @@ function OrderEditItem({ item, currencyCode, orderId }: OrderEditItemProps) {
             <Input
               className="bg-ui-bg-base txt-small w-[67px] rounded-lg [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
               type="number"
-              disabled={item.detail.fulfilled_quantity === item.quantity}
-              min={item.detail.fulfilled_quantity}
+              disabled={(item.detail?.fulfilled_quantity ?? 0) === item.quantity}
+              min={(item.detail?.fulfilled_quantity ?? 0)}
               defaultValue={item.quantity}
               onBlur={(e) => {
                 const val = e.target.value
@@ -211,7 +226,7 @@ function OrderEditItem({ item, currencyCode, orderId }: OrderEditItemProps) {
                         onClick: onRemove,
                         icon: <XCircle />,
                         disabled:
-                          item.detail.fulfilled_quantity === item.quantity,
+                          (item.detail?.fulfilled_quantity ?? 0) === item.quantity,
                       }
                     : {
                         label: t("actions.undo"),

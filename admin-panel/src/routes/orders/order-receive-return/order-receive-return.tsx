@@ -25,7 +25,7 @@ export function OrderReceiveReturn() {
 
   const { order } = useOrder(id!, { fields: "+currency_code,*items" })
   const { order: preview } = useOrderPreview(id!)
-  const { return: orderReturn } = useReturn(return_id, {
+  const { return: orderReturn } = useReturn(return_id!, {
     fields: "*items.item,*items.item.variant,*items.item.variant.product",
   })
 
@@ -36,11 +36,11 @@ export function OrderReceiveReturn() {
    */
 
   const { mutateAsync: initiateReceiveReturn } = useInitiateReceiveReturn(
-    return_id,
-    id
+    return_id!,
+    id!
   )
 
-  const { mutateAsync: addReceiveItems } = useAddReceiveItems(return_id, id)
+  const { mutateAsync: addReceiveItems } = useAddReceiveItems(return_id!, id!)
 
 
   useEffect(() => {
@@ -61,7 +61,10 @@ export function OrderReceiveReturn() {
       }
 
       if (preview.order_change) {
-        if (preview.order_change.change_type !== "return_receive") {
+        if (
+          (preview.order_change.change_type as string | undefined) !==
+          "return_receive"
+        ) {
           navigate(`/orders/${id}`, { replace: true })
           toast.error(t("orders.returns.activeChangeError"))
         }
@@ -80,7 +83,7 @@ export function OrderReceiveReturn() {
           })),
         })
       } catch (e) {
-        toast.error(e.message)
+        toast.error(e instanceof Error ? e.message : String(e))
       } finally {
         IS_REQUEST_RUNNING = false
       }

@@ -117,13 +117,11 @@ export function OrderAllocateItemsForm({ order }: OrderAllocateItemsFormProps) {
           description: t("orders.allocateItems.toast.error", {
             items: failedItems,
           }),
-          dismissLabel: t("actions.close"),
         })
       }
     } catch (e) {
       toast.error(t("general.error"), {
-        description: e.message,
-        dismissLabel: t("actions.close"),
+        description: (e instanceof Error ? e.message : String(e)),
       })
     }
   })

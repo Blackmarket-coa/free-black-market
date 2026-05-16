@@ -6,6 +6,7 @@ import { Button, Input, Popover, toast } from "@medusajs/ui";
 
 import { UseFormReturn } from "react-hook-form";
 import { useTranslation } from "react-i18next";
+import * as zod from "zod";
 
 import { Form } from "../../../../../components/common/form";
 import {
@@ -15,12 +16,25 @@ import {
 } from "../../../../../hooks/api/returns";
 import { ReceiveReturnSchema } from "./constants";
 
+// Preview orders include pending RECEIVE_*_ITEM actions on each line item;
+// the public AdminOrderLineItem type doesn't expose this surface.
+type PreviewLineItem = AdminOrderLineItem & {
+  actions?: Array<{
+    id: string;
+    action: string;
+    details: { quantity?: number | null };
+  }>;
+  detail?: {
+    return_received_quantity?: number | null;
+  };
+};
+
 type DismissedQuantityProps = {
   returnId: string;
   orderId: string;
   index: number;
-  item: AdminOrderLineItem;
-  form: UseFormReturn<typeof ReceiveReturnSchema>;
+  item: PreviewLineItem;
+  form: UseFormReturn<zod.infer<typeof ReceiveReturnSchema>>;
 };
 
 function DismissedQuantity({
@@ -92,7 +106,8 @@ function DismissedQuantity({
 
     if (
       typeof value === "number" &&
-      value > item.quantity - item.detail.return_received_quantity // total received quantity across multiple returns
+      value >
+        item.quantity - (item.detail?.return_received_quantity ?? 0) // total received quantity across multiple returns
     ) {
       form.setValue(`items.${index}.dismissed_quantity`, dismissedQuantity, {
         shouldTouch: true,
@@ -120,7 +135,7 @@ function DismissedQuantity({
         }
       }
     } catch (e) {
-      toast.error(e.message);
+      toast.error(e instanceof Error ? e.message : String(e));
     }
   };
 
@@ -148,9 +163,12 @@ function DismissedQuantity({
                   <Form.Control>
                     <Input
                       min={0}
-                      max={item.quantity - item.detail.return_received_quantity}
+                      max={
+                        item.quantity -
+                        (item.detail?.return_received_quantity ?? 0)
+                      }
                       type="number"
-                      value={value}
+                      value={value ?? ""}
                       className="bg-ui-bg-field-component text-right [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                       onChange={(e) => {
                         const value =
@@ -163,7 +181,7 @@ function DismissedQuantity({
                       {...field}
                       onBlur={() => {
                         field.onBlur();
-                        onDismissedQuantityChanged(value);
+                        onDismissedQuantityChanged(value ?? null);
                       }}
                     />
                   </Form.Control>

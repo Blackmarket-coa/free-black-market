@@ -6,7 +6,7 @@ import { getEntityDefaultFields } from "./entity-defaults"
  */
 export function calculateRequiredFields(
   entity: string,
-  apiColumns: HttpTypes.AdminViewColumn[] | undefined,
+  apiColumns: HttpTypes.AdminColumn[] | undefined,
   visibleColumns: Record<string, boolean>
 ): string {
   // Get entity-specific default fields

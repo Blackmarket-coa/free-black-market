@@ -68,7 +68,7 @@ export const useInventoryTableColumns = () => {
       columnHelper.display({
         id: "inventory_quantity",
         header: t("fields.inventory"),
-        cell: ({ getValue, row: { original: inventory } }) => {
+ cell: ({ row: { original: inventory } }) => {
           if (!inventory.location_levels?.length) {
             return <PlaceholderCell />
           }
