@@ -1,3 +1,4 @@
+import type { ReactNode } from "react"
 import { ChatBubble, DocumentText, XCircle, XMark } from "@medusajs/icons"
 import { AdminOrderLineItem, HttpTypes } from "@medusajs/types"
 import { IconButton, Input, Text } from "@medusajs/ui"
@@ -99,7 +100,10 @@ function ClaimInboundItem({
           <div className="text-ui-fg-subtle txt-small mr-2 flex flex-shrink-0">
             <MoneyAmountCell
               currencyCode={currencyCode}
-              amount={previewItem.return_requested_total}
+              amount={
+                (previewItem as { return_requested_total?: number })
+                  .return_requested_total ?? 0
+              }
             />
           </div>
 
@@ -124,7 +128,11 @@ function ClaimInboundItem({
                     onClick: onRemove,
                     icon: <XCircle />,
                   },
-                ].filter(Boolean),
+                ].filter(Boolean) as Array<{
+                  label: string
+                  onClick: () => void
+                  icon: ReactNode
+                }>,
               },
             ]}
           />

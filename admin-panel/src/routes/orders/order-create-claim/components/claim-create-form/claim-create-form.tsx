@@ -209,23 +209,21 @@ export const ClaimCreateForm = ({
 
           return {
             item_id: i.id,
-            variant_id: i.variant_id,
             quantity: i.detail.return_requested_quantity,
-            note: inboundAction?.internal_note,
-            reason_id: inboundAction?.details?.reason_id as string | undefined,
+            note: inboundAction?.internal_note ?? null,
+            reason_id:
+              ((inboundAction?.details as
+                | { reason_id?: string | null }
+                | undefined)?.reason_id) ?? null,
           }
         }),
         outbound_items: outboundPreviewItems.map((i) => ({
           item_id: i.id,
-          variant_id: i.variant_id,
+          variant_id: i.variant_id ?? "",
           quantity: i.detail.quantity,
         })),
-        inbound_option_id: inboundShippingMethod
-          ? inboundShippingMethod.shipping_option_id
-          : "",
-        outbound_option_id: outboundShippingMethod
-          ? outboundShippingMethod.shipping_option_id
-          : "",
+        inbound_option_id: inboundShippingMethod?.shipping_option_id ?? "",
+        outbound_option_id: outboundShippingMethod?.shipping_option_id ?? "",
         location_id: orderReturn?.location_id,
         send_notification: false,
       })
@@ -530,9 +528,14 @@ export const ClaimCreateForm = ({
         return ret
       }
 
+      // The inbound items schema doesn't carry variant_id; look it up
+      // via the corresponding preview item.
       const variantIds = inboundItems
-        .map((item) => item?.variant_id)
-        .filter(Boolean)
+        .map(
+          (item) =>
+            previewItems.find((p) => p.id === item.item_id)?.variant_id
+        )
+        .filter((id): id is string => Boolean(id))
 
       const variants = (
         await sdk.admin.productVariant.list({
@@ -541,9 +544,21 @@ export const ClaimCreateForm = ({
         })
       ).variants
 
+      type LegacyInventory = {
+        id: string
+        location_levels?: Array<{
+          location_id: string
+          available_quantity?: number
+          stocked_quantity?: number
+        }>
+      }
       variants.forEach((variant) => {
-        ret[variant.id] =
-          variant.inventory?.flatMap((inventory) => inventory.location_levels || []) || []
+        const inventory = (variant as HttpTypes.AdminProductVariant & {
+          inventory?: LegacyInventory[]
+        }).inventory
+        ret[variant.id] = (inventory?.flatMap(
+          (entry) => entry.location_levels ?? []
+        ) ?? []) as unknown as InventoryLevelDTO[]
       })
 
       return ret
@@ -832,7 +847,12 @@ export const ClaimCreateForm = ({
                       const action = item.actions?.find(
                         (act) => act.action === "RETURN_ITEM"
                       )
-                      acc = acc + (action?.amount || 0)
+                      acc =
+                        acc +
+                        Number(
+                          (action as { amount?: number } | undefined)
+                            ?.amount ?? 0
+                        )
 
                       return acc
                     }, 0) * -1,
@@ -852,7 +872,12 @@ export const ClaimCreateForm = ({
                       const action = item.actions?.find(
                         (act) => act.action === "ITEM_ADD"
                       )
-                      acc = acc + (action?.amount || 0)
+                      acc =
+                        acc +
+                        Number(
+                          (action as { amount?: number } | undefined)
+                            ?.amount ?? 0
+                        )
 
                       return acc
                     }, 0),

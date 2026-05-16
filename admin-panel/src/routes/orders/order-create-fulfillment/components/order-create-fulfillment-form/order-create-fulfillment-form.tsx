@@ -62,7 +62,9 @@ export function OrderCreateFulfillmentForm({
     (order.items || []).filter(
       (item) =>
         item.requires_shipping === requiresShipping &&
-        getFulfillableQuantity(item) > 0
+        getFulfillableQuantity(
+          item as unknown as Parameters<typeof getFulfillableQuantity>[0]
+        ) > 0
     )
   )
 
@@ -70,12 +72,15 @@ export function OrderCreateFulfillmentForm({
     defaultValues: {
       quantity: fulfillableItems.reduce(
         (acc, item) => {
-          acc[item.id] = getFulfillableQuantity(item)
+          acc[item.id] = getFulfillableQuantity(
+          item as unknown as Parameters<typeof getFulfillableQuantity>[0]
+        )
           return acc
         },
         {} as Record<string, number>
       ),
-      send_notification: !order.no_notification,
+      send_notification: !(order as { no_notification?: boolean })
+        .no_notification,
     },
     resolver: zodResolver(CreateFulfillmentSchema),
   })
@@ -194,7 +199,9 @@ export function OrderCreateFulfillmentForm({
       order?.items?.filter(
         (item) =>
           item.requires_shipping === requiresShipping &&
-          getFulfillableQuantity(item) > 0
+          getFulfillableQuantity(
+          item as unknown as Parameters<typeof getFulfillableQuantity>[0]
+        ) > 0
       ) || []
 
     setFulfillableItems(itemsToFulfill)
@@ -360,7 +367,7 @@ export function OrderCreateFulfillmentForm({
                             disabled={
                               requiresShipping && !isShippingProfileMatching
                             }
-                            reservations={reservations}
+                            reservations={reservations ?? []}
                           />
                         )
                       })}
@@ -371,9 +378,8 @@ export function OrderCreateFulfillmentForm({
                       variant="error"
                       dismissible={false}
                       className="flex items-center"
-                      classNameInner="flex justify-between flex-1 items-center"
                     >
-                      {form.formState.errors.root.message}
+                      {form.formState.errors.root.message ?? ""}
                     </Alert>
                   )}
                 </div>

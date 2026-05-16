@@ -179,7 +179,9 @@ export function EditShippingOptionsPricingForm({
         }
 
         const existingPrice = shippingOption.prices.find(
-          (p) => p.region_id === region_id && !p.price_rules?.length
+          (p) =>
+            (p as { region_id?: string }).region_id === region_id &&
+            !p.price_rules?.length
         )
 
         if (existingPrice) {
@@ -209,7 +211,7 @@ export function EditShippingOptionsPricingForm({
     ]
 
     await mutateAsync(
-      { prices: allPrices },
+      { prices: allPrices as HttpTypes.AdminUpdateShippingOption["prices"] },
       {
         onSuccess: () => {
           toast.success(t("general.success"))
@@ -362,6 +364,9 @@ const getDefaultValues = (prices: HttpTypes.AdminShippingOptionPrice[]) => {
       const regionId = price.price_rules.find(
         (r) => r.attribute === REGION_ID_ATTRIBUTE
       )?.value
+      if (!regionId) {
+        return
+      }
 
       region_prices[regionId] = price.amount
       return
@@ -371,6 +376,9 @@ const getDefaultValues = (prices: HttpTypes.AdminShippingOptionPrice[]) => {
       const regionId = price.price_rules.find(
         (r) => r.attribute === REGION_ID_ATTRIBUTE
       )?.value
+      if (!regionId) {
+        return
+      }
 
       if (!conditional_region_prices[regionId]) {
         conditional_region_prices[regionId] = []
