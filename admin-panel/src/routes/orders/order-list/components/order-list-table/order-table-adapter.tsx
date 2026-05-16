@@ -22,13 +22,16 @@ export function createOrderTableAdapter(): TableAdapter<HttpTypes.AdminOrder> {
         },
         {
           placeholderData: (previousData, previousQuery) => {
-            // Only keep placeholder data if the fields haven't changed
-            const prevFields = previousQuery?.[previousQuery.length - 1]?.query?.fields
+            // Only keep placeholder data if the fields haven't changed.
+            // queryKey ends with { query: {...} }; fish `fields` out.
+            const queryKey = previousQuery?.queryKey as readonly unknown[] | undefined
+            const last = queryKey?.[queryKey.length - 1]
+            const prevFields =
+              (last as { query?: { fields?: string } } | undefined)?.query
+                ?.fields
             if (prevFields && prevFields !== fields) {
-              // Fields changed, don't use placeholder data
               return undefined
             }
-            // Fields are the same, keep previous data for smooth transitions
             return previousData
           },
         }

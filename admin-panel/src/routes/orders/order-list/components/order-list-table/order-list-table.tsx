@@ -2,7 +2,10 @@ import { Container, Heading } from "@medusajs/ui"
 import { keepPreviousData } from "@tanstack/react-query"
 import { useTranslation } from "react-i18next"
 
-import { _DataTable } from "../../../../../components/table/data-table/data-table"
+import {
+  _DataTable,
+  type Filter,
+} from "../../../../../components/table/data-table"
 import { useOrders } from "../../../../../hooks/api/orders"
 import { useOrderTableColumns } from "../../../../../hooks/table/columns/use-order-table-columns"
 import { useOrderTableFilters } from "./use-order-table-filters"
@@ -63,7 +66,7 @@ export const OrderListTable = () => {
         table={table}
         pagination
         navigateTo={(row) => `/orders/${row.original.id}`}
-        filters={filters}
+        filters={filters as unknown as Filter[]}
         count={count}
         search
         isLoading={isLoading}

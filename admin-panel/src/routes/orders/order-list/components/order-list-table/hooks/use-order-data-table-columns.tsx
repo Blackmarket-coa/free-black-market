@@ -5,7 +5,9 @@ import { useDate } from "../../../../../../hooks/use-date"
 
 const columnHelper = createDataTableColumnHelper<HttpTypes.AdminOrder>()
 
-export function useOrderDataTableColumns(apiColumns: any[] | undefined) {
+export function useOrderDataTableColumns(
+  apiColumns: HttpTypes.AdminColumn[] | undefined
+) {
   const { getFullDate } = useDate()
   
   return useMemo(() => {
@@ -32,7 +34,6 @@ export function useOrderDataTableColumns(apiColumns: any[] | undefined) {
             name: apiColumn.name,
             column: apiColumn,
           },
-          enableHiding: apiColumn.hideable,
           enableSorting: false,
         })
       }
@@ -50,7 +51,6 @@ export function useOrderDataTableColumns(apiColumns: any[] | undefined) {
             name: apiColumn.name,
             column: apiColumn,
           },
-          enableHiding: apiColumn.hideable,
           enableSorting: false,
         })
       }
@@ -62,14 +62,13 @@ export function useOrderDataTableColumns(apiColumns: any[] | undefined) {
           cell: ({ getValue }) => {
             const value = getValue()
             return value ? (
-              <StatusBadge variant="default">{value}</StatusBadge>
+              <StatusBadge color="grey">{value}</StatusBadge>
             ) : null
           },
           meta: {
             name: apiColumn.name,
             column: apiColumn,
           },
-          enableHiding: apiColumn.hideable,
           enableSorting: false,
         })
       }
@@ -81,14 +80,13 @@ export function useOrderDataTableColumns(apiColumns: any[] | undefined) {
           cell: ({ getValue }) => {
             const value = getValue()
             return value ? (
-              <StatusBadge variant="default">{value}</StatusBadge>
+              <StatusBadge color="grey">{value}</StatusBadge>
             ) : null
           },
           meta: {
             name: apiColumn.name,
             column: apiColumn,
           },
-          enableHiding: apiColumn.hideable,
           enableSorting: false,
         })
       }
@@ -106,7 +104,6 @@ export function useOrderDataTableColumns(apiColumns: any[] | undefined) {
             name: apiColumn.name,
             column: apiColumn,
           },
-          enableHiding: apiColumn.hideable,
           enableSorting: false,
         })
       }
@@ -144,7 +141,6 @@ export function useOrderDataTableColumns(apiColumns: any[] | undefined) {
             name: apiColumn.name,
             column: apiColumn,
           },
-          enableHiding: apiColumn.hideable,
           enableSorting: false,
         }
       )

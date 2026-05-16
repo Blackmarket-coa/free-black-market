@@ -7,11 +7,21 @@ import { ActionMenu } from "../../../../../components/common/action-menu"
 import { BadgeListSummary } from "../../../../../components/common/badge-list-summary"
 import { NoRecords } from "../../../../../components/common/empty-table-content"
 
+// Backend enriches promotion rules with display metadata
+// (attribute_label, operator_label, field_type) and labels on the values
+// that the public AdminPromotionRule type doesn't expose.
+type DisplayablePromotionRule = HttpTypes.AdminPromotionRule & {
+  attribute_label?: string
+  operator_label?: string
+  field_type?: string
+}
+
 type RuleProps = {
-  rule: HttpTypes.AdminPromotionRule
+  rule: DisplayablePromotionRule
 }
 
 function RuleBlock({ rule }: RuleProps) {
+  type DisplayableValue = { value?: string; label?: string }
   return (
     <div className="bg-ui-bg-subtle shadow-borders-base align-center flex justify-around rounded-md p-2">
       <div className="text-ui-fg-subtle txt-compact-xsmall flex items-center whitespace-nowrap">
@@ -31,9 +41,11 @@ function RuleBlock({ rule }: RuleProps) {
           inline
           className="!txt-compact-small-plus"
           list={
-            rule.field_type === "number"
-              ? [rule.values]
-              : rule.values?.map((v) => v.label)
+            (rule.field_type === "number"
+              ? [String(rule.values ?? "")]
+              : (rule.values as DisplayableValue[] | undefined)?.map(
+                  (v) => v.label ?? ""
+                )) ?? []
           }
         />
       </div>
@@ -59,8 +71,8 @@ export const PromotionConditionsSection = ({
       <div className="flex items-center justify-between px-6 py-4">
         <div className="flex flex-col">
           <Heading>
-            {t(
-              ruleType === "target-rules"
+            {(t as (k: string) => string)(
+              (ruleType as string) === "target-rules"
                 ? `promotions.fields.conditions.${ruleType}.${applicationMethodTargetType}.title`
                 : `promotions.fields.conditions.${ruleType}.title`
             )}
