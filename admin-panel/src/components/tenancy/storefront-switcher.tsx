@@ -7,8 +7,13 @@ export const StorefrontSwitcher = ({
   storefronts,
   onContextChange,
 }: {
-  organizations: Array<{ id: string; name: string }>
-  storefronts: Array<{ id: string; name: string; organization_id: string; tier: string }>
+  organizations: Array<{ id: string; name?: string }>
+  storefronts: Array<{
+    id: string
+    name?: string
+    organization_id?: string
+    tier?: string
+  }>
   onContextChange: (ctx: StorefrontContext) => void
 }) => {
   const [organizationId, setOrganizationId] = useState("")

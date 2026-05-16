@@ -88,10 +88,13 @@ export const DonationsPage = () => {
   }
 
   const runImporter = async () => {
-    const result = await sdk.client.fetch("/admin/tenancy/storefronts/import", {
-      method: "POST",
-      body: { csv, preset },
-    })
+    const result = await sdk.client.fetch<DonationImportResult>(
+      "/admin/tenancy/storefronts/import",
+      {
+        method: "POST",
+        body: { csv, preset },
+      }
+    )
     setImportResult(result)
   }
 

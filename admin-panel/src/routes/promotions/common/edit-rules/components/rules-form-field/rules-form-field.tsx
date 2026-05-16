@@ -4,6 +4,7 @@ import { Badge, Button, Heading, IconButton, Select, Text } from "@medusajs/ui"
 import { forwardRef, Fragment, useEffect, useRef } from "react"
 import {
   ControllerRenderProps,
+  FieldValues,
   useFieldArray,
   UseFormReturn,
   useWatch,
@@ -16,7 +17,10 @@ import {
 } from "../../../../../../hooks/api/promotions"
 import { useDocumentDirection } from "../../../../../../hooks/use-document-direction"
 import { CreatePromotionSchemaType } from "../../../../promotion-create/components/create-promotion-form/form-schema"
-import { generateRuleAttributes } from "../edit-rules-form/utils"
+import {
+  ExtendedPromotionRule,
+  generateRuleAttributes,
+} from "../edit-rules-form/utils"
 import { RuleValueFormField } from "../rule-value-form-field"
 import { requiredProductRule } from "./constants"
 
@@ -117,20 +121,24 @@ export const RulesFormField = ({
       form.resetField("application_method.buy_rules")
       const rulesToAppend =
         promotion?.id || promotionType === "standard"
-          ? rules
-          : [...rules, requiredProductRule]
+          ? rules ?? []
+          : [...(rules ?? []), requiredProductRule]
 
-      replace(generateRuleAttributes(rulesToAppend) as any)
+      replace(
+        generateRuleAttributes(rulesToAppend as ExtendedPromotionRule[]) as any
+      )
     }
 
     if (ruleType === "target-rules" && !fields.length) {
       form.resetField("application_method.target_rules")
       const rulesToAppend =
         promotion?.id || promotionType === "standard"
-          ? rules
-          : [...rules, requiredProductRule]
+          ? rules ?? []
+          : [...(rules ?? []), requiredProductRule]
 
-      replace(generateRuleAttributes(rulesToAppend) as any)
+      replace(
+        generateRuleAttributes(rulesToAppend as ExtendedPromotionRule[]) as any
+      )
     }
 
     initialRulesSet.current = true
@@ -165,7 +173,7 @@ export const RulesFormField = ({
       </Text>
 
       {fields.map((fieldRule, index) => {
-        const identifier = fieldRule.id
+        const identifier = fieldRule.id ?? ""
 
         return (
           <Fragment key={`${fieldRule.id}.${index}.${fieldRule.attribute}`}>
@@ -262,7 +270,12 @@ export const RulesFormField = ({
                                   (ao) => ao.value === fieldRule.attribute
                                 )?.label || ""
                               }
-                              field={field}
+                              field={
+                                field as unknown as ControllerRenderProps<
+                                  FieldValues,
+                                  string
+                                >
+                              }
                             />
                           )}
                         </Form.Control>
@@ -326,7 +339,12 @@ export const RulesFormField = ({
                                     (o) => o.value === fieldProps.value
                                   )?.label || ""
                                 }
-                                field={field}
+                                field={
+                                  field as unknown as ControllerRenderProps<
+                                    FieldValues,
+                                    string
+                                  >
+                                }
                               />
                             )}
                           </Form.Control>
@@ -343,7 +361,7 @@ export const RulesFormField = ({
                     name={`${scope}.${index}.values`}
                     operator={`${scope}.${index}.operator`}
                     fieldRule={fieldRule}
-                    attributes={attributes}
+                    attributes={attributes ?? []}
                     ruleType={ruleType}
                     applicationMethodTargetType={applicationMethodTargetType}
                   />
@@ -410,7 +428,7 @@ export const RulesFormField = ({
             onClick={() => {
               const indicesToRemove = fields
                 .map((field: any, index) => (field.required ? null : index))
-                .filter((f) => f !== null)
+                .filter((f): f is number => f !== null)
 
               setRulesToRemove &&
                 setRulesToRemove(fields.filter((field: any) => !field.required))
@@ -427,7 +445,7 @@ export const RulesFormField = ({
 
 type DisabledAttributeProps = {
   label: string
-  field: ControllerRenderProps
+  field: ControllerRenderProps<FieldValues, string>
 }
 
 /**

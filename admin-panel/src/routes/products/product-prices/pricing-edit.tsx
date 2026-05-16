@@ -39,12 +39,12 @@ export const PricingEdit = ({
   const { mutateAsync, isPending } = useUpdateProductVariantsBatch(product.id)
 
   const { regions } = useRegions({ limit: 9999 })
-  const regionsCurrencyMap = useMemo(() => {
+  const regionsCurrencyMap = useMemo<Record<string, string>>(() => {
     if (!regions?.length) {
       return {}
     }
 
-    return regions.reduce((acc, reg) => {
+    return regions.reduce<Record<string, string>>((acc, reg) => {
       acc[reg.id] = reg.currency_code
       return acc
     }, {})
@@ -73,13 +73,19 @@ export const PricingEdit = ({
   })
 
   const handleSubmit = form.handleSubmit(async (values) => {
+    if (!variants?.length) {
+      return
+    }
+    type PriceWithRules = HttpTypes.AdminPrice & {
+      rules?: Record<string, string>
+    }
     const reqData = values.variants.map((variant, ind) => ({
-      id: variants[ind].id,
+      id: variants![ind].id,
       prices: Object.entries(variant.prices || {})
         .filter(
           ([_, value]) => value !== "" && typeof value !== "undefined" // deleted cells
         )
-        .map(([currencyCodeOrRegionId, value]: any) => {
+        .map(([currencyCodeOrRegionId, value]: [string, unknown]) => {
           const regionId = regionsCurrencyMap[currencyCodeOrRegionId]
             ? currencyCodeOrRegionId
             : undefined
@@ -87,21 +93,25 @@ export const PricingEdit = ({
             ? regionsCurrencyMap[regionId]
             : currencyCodeOrRegionId
 
-          let existingId = undefined
+          let existingId: string | undefined = undefined
 
           if (regionId) {
-            existingId = variants?.[ind]?.prices?.find(
-              (p) => p.rules["region_id"] === regionId
+            existingId = (variants?.[ind]?.prices as
+              | PriceWithRules[]
+              | undefined)?.find(
+              (p) => p.rules?.["region_id"] === regionId
             )?.id
           } else {
-            existingId = variants?.[ind]?.prices?.find(
+            existingId = (variants?.[ind]?.prices as
+              | PriceWithRules[]
+              | undefined)?.find(
               (p) =>
                 p.currency_code === currencyCode &&
                 Object.keys(p.rules ?? {}).length === 0
             )?.id
           }
 
-          const amount = castNumber(value)
+          const amount = castNumber(value as string | number)
 
           return {
             id: existingId,
