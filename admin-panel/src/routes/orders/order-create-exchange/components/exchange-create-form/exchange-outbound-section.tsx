@@ -2,6 +2,7 @@ import {
   AdminExchange,
   AdminOrder,
   AdminOrderPreview,
+  HttpTypes,
   InventoryLevelDTO,
 } from "@medusajs/types"
 import { Alert, Button, Heading, Text, toast } from "@medusajs/ui"
@@ -143,7 +144,7 @@ export const ExchangeOutboundSection = ({
           {
             item_id: i.id,
             quantity: i.detail.quantity,
-            variant_id: i.variant_id,
+            variant_id: i.variant_id ?? "",
           },
           { shouldFocus: false }
         )
@@ -164,10 +165,12 @@ export const ExchangeOutboundSection = ({
     itemsToAdd.length &&
       (await addOutboundItem(
         {
+          // Backend accepts { variant_id } for adding new outbound
+          // items; the public type only declares { id, quantity }.
           items: itemsToAdd.map((variantId) => ({
             variant_id: variantId,
             quantity: 1,
-          })),
+          })) as unknown as HttpTypes.AdminAddExchangeOutboundItems["items"],
         },
         {
           onError: (error) => {
@@ -292,8 +295,20 @@ export const ExchangeOutboundSection = ({
       ).variants
 
       variants.forEach((variant) => {
-        ret[variant.id] =
-          variant.inventory?.flatMap((inventory) => inventory.location_levels || []) || []
+        type LegacyInventory = {
+          id: string
+          location_levels?: Array<{
+            location_id: string
+            available_quantity?: number
+            stocked_quantity?: number
+          }>
+        }
+        const inventory = (variant as HttpTypes.AdminProductVariant & {
+          inventory?: LegacyInventory[]
+        }).inventory
+        ret[variant.id] = (inventory?.flatMap(
+          (entry) => entry.location_levels ?? []
+        ) ?? []) as unknown as InventoryLevelDTO[]
       })
 
       return ret

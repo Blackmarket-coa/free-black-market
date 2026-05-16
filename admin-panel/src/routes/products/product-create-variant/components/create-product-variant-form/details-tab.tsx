@@ -60,7 +60,7 @@ function DetailsTab({ form, product }: DetailsTabProps) {
             }}
           />
 
-          {product.options.map((option: any) => (
+          {(product.options ?? []).map((option) => (
             <Form.Field
               key={option.id}
               control={form.control}

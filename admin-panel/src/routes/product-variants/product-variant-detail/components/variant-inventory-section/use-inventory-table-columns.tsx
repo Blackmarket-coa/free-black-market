@@ -1,4 +1,4 @@
-import { InventoryNext, ProductVariantDTO } from "@medusajs/types"
+import { InventoryItemDTO, ProductVariantDTO } from "@medusajs/types"
 
 import { InventoryActions } from "./inventory-actions"
 import { PlaceholderCell } from "../../../../../components/table/table-cells/common/placeholder-cell"
@@ -6,8 +6,20 @@ import { createColumnHelper } from "@tanstack/react-table"
 import { useMemo } from "react"
 import { useTranslation } from "react-i18next"
 
-interface ExtendedInventoryItem extends InventoryNext.InventoryItemDTO {
+// The product-variant detail query returns inventory items with the
+// variant-link's `required_quantity`, the populated `variants` list, and
+// hydrated `location_levels`; none of those are on the public
+// InventoryItemDTO type.
+type LocationLevel = {
+  id: string
+  location_id: string
+  available_quantity: number
+  stocked_quantity?: number
+}
+interface ExtendedInventoryItem extends InventoryItemDTO {
   variants: ProductVariantDTO[]
+  required_quantity?: number
+  location_levels?: LocationLevel[]
 }
 
 const columnHelper = createColumnHelper<ExtendedInventoryItem>()

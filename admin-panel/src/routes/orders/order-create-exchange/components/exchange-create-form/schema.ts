@@ -12,6 +12,7 @@ export const ExchangeCreateSchema = z.object({
   outbound_items: z.array(
     z.object({
       item_id: z.string(),
+      variant_id: z.string(),
       quantity: z.number(),
     })
   ),

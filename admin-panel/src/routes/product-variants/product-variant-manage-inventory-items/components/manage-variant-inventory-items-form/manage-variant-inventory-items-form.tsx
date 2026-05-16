@@ -24,13 +24,15 @@ import { useComboboxData } from "../../../../../hooks/use-combobox-data"
 import { castNumber } from "../../../../../lib/cast-number"
 import { sdk } from "../../../../../lib/client"
 
+type ManageVariantInventoryItemRow = {
+  inventory: HttpTypes.AdminInventoryItem
+  inventory_item_id: string
+  required_quantity: number
+}
+
 type ManageVariantInventoryItemsFormProps = {
-  variant: AdminProductVariant & {
-    inventory_items: {
-      inventory: HttpTypes.AdminInventoryItem
-      inventory_item_id: string
-      required_quantity: number
-    }[]
+  variant: Omit<AdminProductVariant, "inventory_items"> & {
+    inventory_items: ManageVariantInventoryItemRow[]
   }
 }
 
@@ -61,12 +63,12 @@ const ManageVariantInventoryItemsSchema = zod.object({
   ),
 })
 
-type InventoryItemFormData = zod.infer<
+type ManageVariantInventoryItemsFormData = zod.infer<
   typeof ManageVariantInventoryItemsSchema
->["inventory"]
+>
 
 type VariantInventoryItemRowProps = {
-  form: UseFormReturn<InventoryItemFormData>
+  form: UseFormReturn<ManageVariantInventoryItemsFormData>
   inventoryIndex: number
   inventoryItem: {
     id: string
@@ -352,7 +354,13 @@ export function ManageVariantInventoryItemsForm({
                   key={inventoryItem.id}
                   form={form}
                   inventoryIndex={inventoryIndex}
-                  inventoryItem={inventoryItem}
+                  inventoryItem={{
+                    id: inventoryItem.id,
+                    inventory_item_id: inventoryItem.inventory_item_id,
+                    required_quantity: Number(
+                      inventoryItem.required_quantity
+                    ) || 0,
+                  }}
                   isItemOptionDisabled={isItemOptionDisabled}
                   onRemove={() => inventory.remove(inventoryIndex)}
                 />

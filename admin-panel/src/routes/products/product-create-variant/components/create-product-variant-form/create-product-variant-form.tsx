@@ -102,12 +102,12 @@ export const CreateProductVariantForm = ({
 
   const inventoryTabEnabled = isManageInventoryEnabled && isInventoryKitEnabled
 
-  const tabOrder = useMemo(() => {
+  const tabOrder = useMemo<Tab[]>(() => {
     if (inventoryTabEnabled) {
-      return [Tab.DETAIL, Tab.PRICE, Tab.INVENTORY] as const
+      return [Tab.DETAIL, Tab.PRICE, Tab.INVENTORY]
     }
 
-    return [Tab.DETAIL, Tab.PRICE] as const
+    return [Tab.DETAIL, Tab.PRICE]
   }, [inventoryTabEnabled])
 
   useEffect(() => {
@@ -214,28 +214,33 @@ export const CreateProductVariantForm = ({
         manage_inventory,
         options: data.options,
         prices: Object.entries(data.prices ?? {})
-          .map(([currencyOrRegion, value]) => {
+          .map(([currencyOrRegion, value]):
+            | AdminCreateProductVariantPrice
+            | undefined => {
             if (value === "" || value === undefined) {
               return undefined
             }
 
-            const ret: AdminCreateProductVariantPrice = {}
             const amount = castNumber(value)
+            const ret: AdminCreateProductVariantPrice = {
+              currency_code:
+                regionsCurrencyMap[currencyOrRegion] ?? currencyOrRegion,
+              amount,
+            }
 
             if (regionsCurrencyMap[currencyOrRegion]) {
               ret.rules = { region_id: currencyOrRegion }
-              ret.currency_code = regionsCurrencyMap[currencyOrRegion]
-            } else {
-              ret.currency_code = currencyOrRegion
             }
-
-            ret.amount = amount
 
             return ret
           })
-          .filter(Boolean),
+          .filter(
+            (p): p is AdminCreateProductVariantPrice => Boolean(p)
+          ),
         inventory_items: (data.inventory || [])
-          .map((i) => {
+          .map((i):
+            | { required_quantity: number; inventory_item_id: string }
+            | false => {
             if (!i.required_quantity || !i.inventory_item_id) {
               return false
             }
@@ -245,7 +250,14 @@ export const CreateProductVariantForm = ({
               required_quantity: castNumber(i.required_quantity),
             }
           })
-          .filter(Boolean),
+          .filter(
+            (
+              entry
+            ): entry is {
+              required_quantity: number
+              inventory_item_id: string
+            } => Boolean(entry)
+          ),
       },
       {
         onSuccess: () => {

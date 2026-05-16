@@ -57,8 +57,8 @@ export const ProductCreateVariantsForm = ({
     pricePreferences,
   })
 
-  const variantData = useMemo(() => {
-    const ret = []
+  const variantData = useMemo<ProductCreateVariantWithIndex[]>(() => {
+    const ret: ProductCreateVariantWithIndex[] = []
 
     variants.forEach((v, i) => {
       if (v.should_create) {
@@ -81,8 +81,15 @@ export const ProductCreateVariantsForm = ({
   )
 }
 
+// The variants displayed in the data grid are decorated with their
+// `originalIndex` in the form's `variants` field array so that the field
+// accessors can target the right path.
+type ProductCreateVariantWithIndex = ProductCreateVariantSchema & {
+  originalIndex: number
+}
+
 const columnHelper = createDataGridHelper<
-  ProductCreateVariantSchema,
+  ProductCreateVariantWithIndex,
   ProductCreateSchemaType
 >()
 
@@ -184,7 +191,7 @@ const useColumns = ({
       }),
 
       ...createDataGridPriceColumns<
-        ProductCreateVariantSchema,
+        ProductCreateVariantWithIndex,
         ProductCreateSchemaType
       >({
         currencies,

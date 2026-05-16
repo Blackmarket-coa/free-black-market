@@ -144,7 +144,7 @@ export const ClaimOutboundSection = ({
           {
             item_id: i.id,
             quantity: i.detail.quantity,
-            variant_id: i.variant_id,
+            variant_id: i.variant_id ?? "",
           },
           { shouldFocus: false }
         )
@@ -165,10 +165,12 @@ export const ClaimOutboundSection = ({
     itemsToAdd.length &&
       (await addOutboundItem(
         {
+          // Backend accepts { variant_id } for adding new outbound items;
+          // the public type only declares { id, quantity }.
           items: itemsToAdd.map((variantId) => ({
             variant_id: variantId,
             quantity: 1,
-          })),
+          })) as unknown as HttpTypes.AdminAddClaimOutboundItems["items"],
         },
         {
           onError: (error) => {
@@ -283,8 +285,19 @@ export const ClaimOutboundSection = ({
       ).variants
 
       variants.forEach((variant) => {
-        ret[variant.id] =
-          variant.inventory?.flatMap((inventory) => inventory.location_levels || []) || []
+        // Variants returned with *inventory.location_levels include a
+        // legacy `inventory` array of inventory items, each with
+        // `location_levels`; not in the public AdminProductVariant.
+        type LegacyInventory = {
+          id: string
+          location_levels?: Array<{ location_id: string; available_quantity?: number; stocked_quantity?: number }>
+        }
+        const inventory = (variant as HttpTypes.AdminProductVariant & {
+          inventory?: LegacyInventory[]
+        }).inventory
+        ret[variant.id] = (inventory?.flatMap(
+          (entry) => entry.location_levels ?? []
+        ) ?? []) as unknown as InventoryLevelDTO[]
       })
 
       return ret
