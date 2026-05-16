@@ -81,7 +81,7 @@ const UnfulfilledItem = ({
             </div>
           )}
           <Text size="small">
-            {item.variant?.options.map((o) => o.value).join(" · ")}
+            {item.variant?.options?.map((o) => o.value).join(" · ")}
           </Text>
         </div>
       </div>
@@ -101,7 +101,7 @@ const UnfulfilledItem = ({
         </div>
         <div className="flex items-center justify-end">
           <Text size="small">
-            {getLocaleAmount(item.subtotal || 0, currencyCode)}
+            {getLocaleAmount(Number(item.subtotal) || 0, currencyCode)}
           </Text>
         </div>
       </div>
@@ -190,7 +190,7 @@ const UnfulfilledItemDisplay = ({
         {unfulfilledItems.map((item: AdminOrderLineItem) => (
           <UnfulfilledItem
             key={item.id}
-            item={item}
+            item={item as unknown as OrderLineItemDTO & { variant: HttpTypes.AdminProductVariant }}
             currencyCode={order.currency_code}
           />
         ))}
@@ -199,8 +199,33 @@ const UnfulfilledItemDisplay = ({
   )
 }
 
+// AdminOrderFulfillment is the slim type Medusa returns inside orders.
+// At runtime it carries shipping_option, items, and labels populated; the
+// public type doesn't expose them.
+type FulfillmentItem = {
+  id: string
+  quantity: number
+  title?: string | null
+  line_item_id?: string | null
+  raw_quantity?: { value: string }
+}
+type FulfillmentLabel = {
+  id: string
+  url?: string | null
+  label_url?: string | null
+  tracking_url?: string | null
+  tracking_number?: string | null
+}
+type EnrichedFulfillment = AdminOrderFulfillment & {
+  shipping_option?: {
+    service_zone?: { fulfillment_set?: { type?: string } }
+  } | null
+  items?: FulfillmentItem[]
+  labels?: FulfillmentLabel[]
+}
+
 const Fulfillment = ({
-  fulfillment,
+  fulfillment: rawFulfillment,
   order,
   index,
 }: {
@@ -208,6 +233,7 @@ const Fulfillment = ({
   order: AdminOrder
   index: number
 }) => {
+  const fulfillment = rawFulfillment as EnrichedFulfillment
   const { t } = useTranslation()
   const prompt = usePrompt()
   const navigate = useNavigate()
@@ -215,7 +241,7 @@ const Fulfillment = ({
   const showLocation = !!fulfillment.location_id
 
   const isPickUpFulfillment =
-    fulfillment.shipping_option?.service_zone.fulfillment_set.type ===
+    fulfillment.shipping_option?.service_zone?.fulfillment_set?.type ===
     FulfillmentSetType.Pickup
 
   const { stock_location, isError, error } = useStockLocation(
@@ -305,7 +331,7 @@ const Fulfillment = ({
     })
 
     if (res) {
-      await mutateAsync(undefined, {
+      await mutateAsync({}, {
         onSuccess: () => {
           toast.success(t("orders.fulfillment.toast.canceled"))
         },
@@ -365,7 +391,7 @@ const Fulfillment = ({
           {t("orders.fulfillment.itemsLabel")}
         </Text>
         <ul>
-          {fulfillment.items.map((f_item) => (
+          {fulfillment.items?.map((f_item) => (
             <li key={f_item.line_item_id}>
               <Text size="small" leading="compact">
                 {f_item.quantity}x {f_item.title}
@@ -410,15 +436,15 @@ const Fulfillment = ({
           {fulfillment.labels && fulfillment.labels.length > 0 ? (
             <ul>
               {fulfillment.labels.map((tlink) => {
-                const hasTrackingUrl = isValidUrl(tlink.tracking_url)
-                const hasLabelUrl = isValidUrl(tlink.label_url)
+                const hasTrackingUrl = isValidUrl(tlink.tracking_url ?? undefined)
+                const hasLabelUrl = isValidUrl(tlink.label_url ?? undefined)
 
                 if (hasTrackingUrl || hasLabelUrl) {
                   return (
                     <li key={tlink.tracking_number}>
                       {hasTrackingUrl && (
                         <a
-                          href={tlink.tracking_url}
+                          href={tlink.tracking_url ?? undefined}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="text-ui-fg-interactive hover:text-ui-fg-interactive-hover transition-fg"
@@ -431,7 +457,7 @@ const Fulfillment = ({
                       {hasTrackingUrl && hasLabelUrl && " - "}
                       {hasLabelUrl && (
                         <a
-                          href={tlink.label_url}
+                          href={tlink.label_url ?? undefined}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="text-ui-fg-interactive hover:text-ui-fg-interactive-hover transition-fg"

@@ -71,8 +71,8 @@ export const AddReturnItemsTable = ({
     if (q) {
       results = results.filter((i) => {
         return (
-          i.product_title.toLowerCase().includes(q.toLowerCase()) ||
-          i.variant_title.toLowerCase().includes(q.toLowerCase()) ||
+          i.product_title?.toLowerCase().includes(q.toLowerCase()) ||
+          i.variant_title?.toLowerCase().includes(q.toLowerCase()) ||
           i.variant_sku?.toLowerCase().includes(q.toLowerCase())
         )
       })
@@ -183,11 +183,19 @@ const sortItems = (
       aValue = a.variant_sku
       bValue = b.variant_sku
     } else if (field === "returnable_quantity") {
-      aValue = a.quantity - (a.returned_quantity || 0)
-      bValue = b.quantity - (b.returned_quantity || 0)
+      aValue =
+        a.quantity -
+        ((a as AdminOrderLineItem & { returned_quantity?: number })
+          .returned_quantity || 0)
+      bValue =
+        b.quantity -
+        ((b as AdminOrderLineItem & { returned_quantity?: number })
+          .returned_quantity || 0)
     } else if (field === "refundable_amount") {
-      aValue = a.refundable || 0
-      bValue = b.refundable || 0
+      aValue =
+        (a as AdminOrderLineItem & { refundable?: number }).refundable || 0
+      bValue =
+        (b as AdminOrderLineItem & { refundable?: number }).refundable || 0
     }
 
     if (aValue < bValue) {
@@ -251,8 +259,15 @@ const filterByNumber = (
       : { ...defaultOperators, eq: value }
 
   return items.filter((i) => {
-    const returnableQuantity = i.quantity - (i.returned_quantity || 0)
-    const refundableAmount = getStylizedAmount(i.refundable || 0, currency_code)
+    const enriched = i as AdminOrderLineItem & {
+      returned_quantity?: number
+      refundable?: number
+    }
+    const returnableQuantity = i.quantity - (enriched.returned_quantity || 0)
+    const refundableAmount = getStylizedAmount(
+      enriched.refundable || 0,
+      currency_code
+    )
 
     const itemValue =
       field === "returnable_quantity" ? returnableQuantity : refundableAmount
@@ -262,21 +277,23 @@ const filterByNumber = (
     }
 
     let isValid = true
+    const numericValue =
+      typeof itemValue === "number" ? itemValue : Number(itemValue) || 0
 
     if (gt) {
-      isValid = isValid && itemValue > gt
+      isValid = isValid && numericValue > gt
     }
 
     if (gte) {
-      isValid = isValid && itemValue >= gte
+      isValid = isValid && numericValue >= gte
     }
 
     if (lt) {
-      isValid = isValid && itemValue < lt
+      isValid = isValid && numericValue < lt
     }
 
     if (lte) {
-      isValid = isValid && itemValue <= lte
+      isValid = isValid && numericValue <= lte
     }
 
     return isValid

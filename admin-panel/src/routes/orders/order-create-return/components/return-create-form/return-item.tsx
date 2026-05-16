@@ -1,3 +1,4 @@
+import type { ReactNode } from "react"
 import { useTranslation } from "react-i18next"
 
 import { IconButton, Input, Text } from "@medusajs/ui"
@@ -12,9 +13,25 @@ import { ActionMenu } from "../../../../../components/common/action-menu"
 import { Combobox } from "../../../../../components/inputs/combobox"
 import { useReturnReasons } from "../../../../../hooks/api/return-reasons"
 
+// Preview order line items carry pending RETURN_ITEM actions and a
+// `detail` summary that the public type doesn't expose.
+export type PreviewReturnLineItem = AdminOrderLineItem & {
+  actions?: Array<{
+    id: string
+    action: string
+    return_id?: string | null
+    details?: { quantity?: number; reason_id?: string | null }
+    internal_note?: string | null
+  }>
+  detail?: {
+    return_requested_quantity?: number | null
+  }
+  return_requested_total?: number
+}
+
 type OrderEditItemProps = {
   item: AdminOrderLineItem
-  previewItem: AdminOrderLineItem
+  previewItem?: PreviewReturnLineItem
   currencyCode: string
   index: number
 
@@ -101,7 +118,7 @@ function ReturnItem({
           <div className="text-ui-fg-subtle txt-small mr-2 flex flex-shrink-0">
             <MoneyAmountCell
               currencyCode={currencyCode}
-              amount={previewItem.return_requested_total}
+              amount={previewItem?.return_requested_total ?? 0}
             />
           </div>
 
@@ -125,7 +142,11 @@ function ReturnItem({
                     onClick: onRemove,
                     icon: <XCircle />,
                   },
-                ].filter(Boolean),
+                ].filter(Boolean) as Array<{
+                  label: string
+                  onClick: () => void
+                  icon: ReactNode
+                }>,
               },
             ]}
           />

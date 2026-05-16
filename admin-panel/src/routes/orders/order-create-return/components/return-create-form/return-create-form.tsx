@@ -49,7 +49,7 @@ import { currencies } from "../../../../../lib/data/currencies"
 import { getStylizedAmount } from "../../../../../lib/money-amount-helpers"
 import { ReturnShippingPlaceholder } from "../../../common/placeholders"
 import { AddReturnItemsTable } from "../add-return-items-table"
-import { ReturnItem } from "./return-item"
+import { ReturnItem, type PreviewReturnLineItem } from "./return-item"
 import { ReturnCreateSchema, ReturnCreateSchemaType } from "./schema"
 
 type ReturnCreateFormProps = {
@@ -178,12 +178,15 @@ export const ReturnCreateForm = ({
         items: previewItems.map((i) => ({
           item_id: i.id,
           quantity: i.detail.return_requested_quantity,
-          note: i.actions?.find((a) => a.action === "RETURN_ITEM")
-            ?.internal_note,
-          reason_id: i.actions?.find((a) => a.action === "RETURN_ITEM")?.details
-            ?.reason_id,
+          note:
+            i.actions?.find((a) => a.action === "RETURN_ITEM")
+              ?.internal_note ?? null,
+          reason_id:
+            ((i.actions?.find((a) => a.action === "RETURN_ITEM")
+              ?.details as { reason_id?: string | null } | undefined)
+              ?.reason_id) ?? null,
         })),
-        option_id: method ? method.shipping_option_id : "",
+        option_id: method?.shipping_option_id ?? "",
         location_id: activeReturn?.location_id,
         send_notification: false,
       })
@@ -225,8 +228,11 @@ export const ReturnCreateForm = ({
           update(ind, {
             ...items[ind],
             quantity: i.detail.return_requested_quantity,
-            note: returnItemAction?.internal_note,
-            reason_id: returnItemAction?.details?.reason_id,
+            note: returnItemAction?.internal_note ?? null,
+            reason_id:
+              ((returnItemAction?.details as
+                | { reason_id?: string | null }
+                | undefined)?.reason_id) ?? null,
           })
         }
       } else {
@@ -302,8 +308,8 @@ export const ReturnCreateForm = ({
   ) => {
     const promises = preview.shipping_methods
       .map((s) => s.actions?.find((a) => a.action === "SHIPPING_ADD")?.id)
-      .filter(Boolean)
-      .map(deleteReturnShipping)
+      .filter((id): id is string => Boolean(id))
+      .map((id) => deleteReturnShipping(id))
 
     await Promise.all(promises)
 
@@ -314,7 +320,7 @@ export const ReturnCreateForm = ({
 
   useEffect(() => {
     if (isShippingPriceEdit) {
-      document.getElementById("js-shipping-input").focus()
+      document.getElementById("js-shipping-input")?.focus()
     }
   }, [isShippingPriceEdit])
 
@@ -360,7 +366,7 @@ export const ReturnCreateForm = ({
           items.map(async (_i) => {
             const item = itemsMap.get(_i.item_id)
 
-            if (!item.variant_id) {
+            if (!item?.variant_id || !item.product_id) {
               return undefined
             }
             return await sdk.admin.product.retrieveVariant(
@@ -371,10 +377,19 @@ export const ReturnCreateForm = ({
           })
         )
       )
-        .filter((it) => it?.variant)
+        .filter((it): it is NonNullable<typeof it> => !!it?.variant)
         .forEach((item) => {
-          const { variant } = item
-          const levels = variant.inventory[0]?.location_levels
+          const variant = item.variant as
+            | (NonNullable<typeof item.variant> & {
+                inventory?: Array<{
+                  location_levels?: InventoryLevelDTO[]
+                }>
+              })
+            | undefined
+          if (!variant) {
+            return
+          }
+          const levels = variant.inventory?.[0]?.location_levels
 
           if (!levels) {
             return
@@ -475,7 +490,11 @@ export const ReturnCreateForm = ({
                 <ReturnItem
                   key={item.id}
                   item={itemsMap.get(item.item_id)!}
-                  previewItem={previewItemsMap.get(item.item_id)}
+                  previewItem={
+                    previewItemsMap.get(item.item_id) as
+                      | PreviewReturnLineItem
+                      | undefined
+                  }
                   currencyCode={order.currency_code}
                   form={form}
                   onRemove={() => {
@@ -535,7 +554,9 @@ export const ReturnCreateForm = ({
                               value={value}
                               onChange={(v) => {
                                 onChange(v)
-                                onLocationChange(v)
+                                if (v) {
+                                  onLocationChange(v)
+                                }
                               }}
                               {...field}
                               options={(stock_locations ?? []).map(
@@ -676,7 +697,8 @@ export const ReturnCreateForm = ({
                         if (actionId) {
                           updateReturnShipping({
                             actionId,
-                            custom_amount: customShippingAmount.float,
+                            custom_amount:
+                              customShippingAmount.float ?? undefined,
                           })
                         }
                         setIsShippingPriceEdit(false)
