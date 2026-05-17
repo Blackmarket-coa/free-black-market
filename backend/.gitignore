@@ -24,3 +24,9 @@ build
 !.yarn/versions
 
 .medusa
+
+# mikro-orm writes per-test-run schema snapshots into each module's
+# migrations/ directory when `pnpm test:integration:http` runs against
+# an ephemeral DB. They're per-run artifacts (filename contains the
+# transient DB id), not part of the migration graph.
+src/modules/*/migrations/.snapshot-medusa-*.json
