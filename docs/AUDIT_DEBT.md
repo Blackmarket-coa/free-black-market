@@ -55,14 +55,12 @@ Effort key: **S** ≤ 1 day · **M** 2–5 days · **L** > 1 week.
 
 | # | Item | Location | Owner | Effort | Target milestone |
 |---|------|----------|-------|:------:|------------------|
-| ~~TI-1~~ | ~~Reconcile backend module migration order so `pnpm test:integration:http` can run end-to-end.~~ — **resolved 2026-05-13**: renamed `Migration20251229AddRawColumns.ts` → `Migration20251230AddRawColumns.ts` (and the class) so `hawala-ledger`'s ALTERs run *after* `Migration20251229CreateHawalaLedger`; added `Migration20260101000000CreateOrderPayoutBreakdown.ts` to the `payout-breakdown` module so the table exists before the three subsequent ALTERs (which already use `ADD COLUMN IF NOT EXISTS` and harmlessly no-op against the baseline). Backend `pnpm typecheck` still passes. CI integration-test step (`ci.yml:409`) remains `continue-on-error: true` until the CI run validates the end-to-end migration graph against a live Postgres; flip to fail-fast in a follow-up once the green run is observed. | `backend/src/modules/{hawala-ledger,payout-breakdown}/migrations/*.ts` | backend team | M | `v1.0.0` |
+| ~~TI-1~~ | ~~Reconcile backend module migration order so `pnpm test:integration:http` can run end-to-end.~~ — **resolved 2026-05-13**: renamed `Migration20251229AddRawColumns.ts` → `Migration20251230AddRawColumns.ts` (and the class) so `hawala-ledger`'s ALTERs run *after* `Migration20251229CreateHawalaLedger`; added `Migration20260101000000CreateOrderPayoutBreakdown.ts` to the `payout-breakdown` module so the table exists before the three subsequent ALTERs (which already use `ADD COLUMN IF NOT EXISTS` and harmlessly no-op against the baseline). Backend `pnpm typecheck` still passes. **Gate flipped to fail-fast 2026-05-17** on branch `claude/prepare-live-deployment-I1EJ1` (`.github/workflows/ci.yml` integration-test step). | `backend/src/modules/{hawala-ledger,payout-breakdown}/migrations/*.ts` | backend team | M | `v1.0.0` |
 | TI-2 | Harden the `e2e.yml` Playwright job: cache the docker buildx layers, pre-pull base images, and raise the healthcheck wait window past 5 min so cold builds on shared GitHub runners don't trip the loop. CI step is `continue-on-error: true` and dumps `docker compose logs` on failure for forensic debugging. | `.github/workflows/e2e.yml`, `e2e/**` | platform | M | `v1.1.0` |
 
-## Security dependency bumps (HIGH/CRITICAL — gated, not blocking)
+## Security dependency bumps (HIGH/CRITICAL — gated, blocking)
 
-Pinned in `.trivyignore` and the Trivy FS gate is `continue-on-error: true` until the bumps land. Findings still surface in the GitHub Security tab via the SARIF upload.
-
-All five rows below were resolved together on 2026-05-13 via the production-readiness pass on branch `claude/check-production-readiness-WGO1m`. `.trivyignore` was emptied at the same time so the Trivy gate now catches regressions.
+All five rows below were resolved together on 2026-05-13 via the production-readiness pass on branch `claude/check-production-readiness-WGO1m`. `.trivyignore` was emptied at the same time and **the Trivy FS gate was flipped to fail-fast on 2026-05-17** (branch `claude/prepare-live-deployment-I1EJ1`, `.github/workflows/security.yml`). New HIGH/CRITICAL findings now block CI and must be triaged into `.trivyignore` with a fresh `SD-*` row here before the gate can be made green again.
 
 | # | Package | Range | Fixed | CVEs | Affected lockfile | Owner | Effort | Target |
 |---|---------|-------|-------|------|-------------------|-------|:------:|--------|

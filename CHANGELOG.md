@@ -4,6 +4,15 @@ All notable changes to this project are documented here. The format is based on 
 
 ## [Unreleased]
 
+### Changed
+- **Production-readiness pass (2026-05-17, branch `claude/prepare-live-deployment-I1EJ1`)**:
+  - `.github/workflows/security.yml` Trivy FS gate flipped to fail-fast. `.trivyignore` was already empty after SD-1..SD-5 landed; new HIGH/CRITICAL findings now block CI.
+  - `.github/workflows/ci.yml` integration-test step flipped to fail-fast. TI-1 (migration order) is closed; the gate now catches regressions in the backend migration graph or HTTP surface.
+  - `.github/workflows/e2e.yml` comment clarified — gate is **advisory** while TI-2 (docker buildx caching) is open; reviewers must inspect the uploaded Playwright report before merging `release/*`.
+  - `QA_AUDIT_REPORT.md` refreshed: 2026-02-13 "NOT RELEASE-READY" verdict superseded with a current CI gate posture table; original audit preserved verbatim in Appendix A.
+  - `docs/runbooks/DEPLOYMENT.md` § "Cluster-external setup" tightened into a **Release Go/No-Go Gate** with explicit **BLOCKER / REQUIRED / RECOMMENDED** severities, two new rows for first green staging + prod deploy runs, and a quick `kubectl`/`dig` verification snippet.
+  - `docs/AUDIT_DEBT.md` updated: TI-1 marked as gate-flipped; SD section header updated to reflect blocking Trivy gate.
+
 ### Added
 - **Asset-graph module (v0/v0.1)** — declarative intake layer that turns "writing a new vertical" into "writing a manifest." Six reference manifests cover every value in all four manifest-schema enums (`Lifecycle`, `SettlementRail`, `GovernanceModel`, `Surface`): yard-scrap-nursery (commerce/grove/individual), tool-library (threshold/commons/collective), repair-cafe (threshold/workshop/consensus), childcare-coop (threshold/commons/consensus, match-only sensitivity), creator-bounty-pool (refrain/atelier/vote-weighted, exercises the `capital` asset category), and courier-collective (blackstar/workshop/collective, depth-2 wildcard via `tool.vehicle.*`). End-to-end flow: member declares assets → matcher proposes manifests → operator accepts → ProjectInstance emits SettlementRecords → cross-module reconciler writes hawala-ledger entries (CCR/USDC/USD/HRS), karma_event rows (KARMA), or audit-only marks (GIFT). See `docs/ASSET_GRAPH.md` and `docs/manifests/`.
 - 7 DB tables: `asset_kind`, `asset_declaration`, `attestation`, `project_manifest`, `project_instance`, `match_proposal`, `settlement_record` (the last with a partial-unique `idempotency_key` for systematic emitters). Catalog seeder at `backend/src/scripts/seed-asset-graph.ts` upserts both `asset_kind` and `project_manifest` from the in-code source of truth.

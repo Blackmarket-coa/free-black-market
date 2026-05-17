@@ -429,18 +429,13 @@ jobs:
         working-directory: backend
         run: pnpm install --frozen-lockfile
 
-      # Tracked as TI-1 in docs/AUDIT_DEBT.md: backend module migrations are
-      # ordered such that running them all in sequence into a clean DB fails
-      # (`Migration20251229AddRawColumns` references `hawala_ledger_account`
-      # before it's created; `Migration20260520AddCreatorCommission`
-      # references `order_payout_breakdown` likewise). Until the migration
-      # graph is reconciled this gate is non-blocking; the env contract
-      # below is correct so once the migrations are fixed the gate goes
-      # green automatically.
-      - name: Run integration tests (non-blocking until TI-1 lands)
+      # TI-1 closed 2026-05-13 (migration order reconciled; see
+      # docs/AUDIT_DEBT.md). Integration tests are a hard gate from this
+      # point forward — regressions in the migration graph or HTTP
+      # surface must be fixed, not masked.
+      - name: Run integration tests
         working-directory: backend
         run: pnpm test:integration:http
-        continue-on-error: true
         env:
           NODE_ENV: test
           # `@medusajs/test-utils` reads DB_HOST/DB_USERNAME/DB_PASSWORD/DB_PORT

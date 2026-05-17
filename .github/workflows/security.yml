@@ -107,15 +107,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # The current set of HIGH/CRITICAL findings is tracked in `.trivyignore`
-      # and as SD-1..SD-5 in docs/AUDIT_DEBT.md. They require a minor/major
-      # bump of @mikro-orm/core, lodash, picomatch, axios, and next.js — i.e.
-      # a lockfile regeneration which is out of scope for the current PR.
-      # Keep this step non-blocking until those land; SARIF upload below
-      # still surfaces findings under the Security tab regardless.
+      # SD-1..SD-5 (mikro-orm/lodash/picomatch/axios/next) landed 2026-05-13
+      # and `.trivyignore` is now empty (header only). Trivy is a hard gate;
+      # any new HIGH/CRITICAL finding fails CI and must be triaged into
+      # `.trivyignore` with an accompanying `SD-*` row in docs/AUDIT_DEBT.md
+      # before the gate can be made green again.
       - name: Trivy fs (HIGH/CRITICAL)
         uses: aquasecurity/trivy-action@master
-        continue-on-error: true
         with:
           scan-type: fs
           scan-ref: '.'
