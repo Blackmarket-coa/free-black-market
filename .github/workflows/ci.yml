@@ -429,15 +429,29 @@ jobs:
         working-directory: backend
         run: pnpm install --frozen-lockfile
 
-      # Tracked as TI-1 in docs/AUDIT_DEBT.md: backend module migrations are
-      # ordered such that running them all in sequence into a clean DB fails
-      # (`Migration20251229AddRawColumns` references `hawala_ledger_account`
-      # before it's created; `Migration20260520AddCreatorCommission`
-      # references `order_payout_breakdown` likewise). Until the migration
-      # graph is reconciled this gate is non-blocking; the env contract
-      # below is correct so once the migrations are fixed the gate goes
-      # green automatically.
-      - name: Run integration tests (non-blocking until TI-1 lands)
+      # TI-1 closed 2026-05-13 (hawala-ledger + payout-breakdown migration
+      # order). Briefly flipped to fail-fast on 2026-05-17 (PR #677) — the
+      # first live-Postgres run surfaced a deeper chain of issues that the
+      # `continue-on-error: true` mask had hidden:
+      #   - cross-module ALTER on a non-existent table name (payout_config
+      #     vs hawala_payout_config) — fixed in PR #677
+      #   - product-archetype migrations with isTransactional=false running
+      #     on a side connection that can't see the master tx — fixed in
+      #     PR #677 by pre-declaring all enum values in the CREATE migration
+      #     and making the ADD VALUE migrations transactional no-ops
+      #   - creator-attribution / creator-program Add-before-Create
+      #     filename sort order — fixed in PR #677 by renaming
+      #   - missing STRIPE_SECRET_API_KEY / STRIPE_API_KEY in CI env (the
+      #     @mercurjs/b2c-core PayoutProvider instantiates Stripe at module
+      #     bootstrap and rejects undefined apiKey) — see TI-3 below
+      #   - hook conflict: src/workflows/hooks/validate-listing-type-allowed.ts
+      #     and @mercurjs/b2c-core/.../hooks/product-created.ts both register
+      #     `createProductsWorkflow.hooks.productsCreated`, and Medusa v2
+      #     allows only one handler per hook — see TI-3
+      # TI-3 in docs/AUDIT_DEBT.md tracks the remaining work. Step kept
+      # non-blocking until that follow-up lands; flip to fail-fast once
+      # `pnpm test:integration:http` is green against a live Postgres.
+      - name: Run integration tests (non-blocking until TI-3 lands)
         working-directory: backend
         run: pnpm test:integration:http
         continue-on-error: true

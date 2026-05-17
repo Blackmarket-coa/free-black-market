@@ -10,7 +10,7 @@ import { Migration } from "@mikro-orm/migrations"
  * CreatorAttributionService.attributeOrder to allocate per-level
  * commission_amount_cents.
  */
-export class Migration20260520203AddReferralLevels extends Migration {
+export class Migration20260616AddReferralLevels extends Migration {
   async up(): Promise<void> {
     this.addSql(
       'ALTER TABLE "creator_program" ADD COLUMN IF NOT EXISTS "max_referral_levels" INTEGER NOT NULL DEFAULT 1;'

@@ -141,19 +141,32 @@ cert-manager + the `letsencrypt-prod` `ClusterIssuer` annotated in the Ingress o
 
 ## Cluster-external setup
 
-These items are configured outside the cluster (or outside the repo) and the deploy workflows / runbooks reference them. Each row tracks whether the user has confirmed it exists.
+These items are configured outside the cluster (or outside the repo) and the deploy workflows / runbooks reference them. The **Severity** column controls release behaviour — **BLOCKER** rows must read `confirmed YYYY-MM-DD — <operator>` before production cutover; **REQUIRED** rows must be confirmed before staging cutover; **RECOMMENDED** rows can be deferred to a tracked follow-up but should be confirmed within 30 days of production cutover.
 
-| Item | Referenced by | Confirmed |
-|------|---------------|-----------|
-| PagerDuty rotation "Free Black Market" | `runbooks/ON_CALL.md` | _pending — confirm with user_ |
-| Slack `#freeblackmarket-alerts` | `runbooks/INCIDENT_RESPONSE.md`, `OBSERVABILITY.md` | _pending_ |
-| Slack `#freeblackmarket-oncall` | `runbooks/ON_CALL.md` | _pending_ |
-| Slack `#freeblackmarket-engineering` | `runbooks/RELEASE.md` | _pending_ |
-| Status page at `status.freeblackmarket.com` | `runbooks/INCIDENT_RESPONSE.md` | _pending_ |
-| Sentry projects per app + DSN distribution | `OBSERVABILITY.md` | _pending_ |
-| Grafana org folder `freeblackmarket` + 5 dashboards | `OBSERVABILITY.md`, `infrastructure/observability/grafana/README.md` | _pending_ |
-| DB managed-snapshot policy (daily, 30 d retention) | `runbooks/BACKUP_RESTORE.md` | _pending_ |
-| Cross-region MinIO/S3 replication on the media bucket | `runbooks/DR.md` | _pending_ |
-| Route 53 / Cloudflare failover record sets | `runbooks/DR.md` | _pending_ |
+| # | Item | Referenced by | Severity | Confirmed |
+|---|------|---------------|:---:|-----------|
+| 1 | PagerDuty rotation "Free Black Market" wired to the production alert sink | `runbooks/ON_CALL.md` | **BLOCKER** | _pending — confirm with user_ |
+| 2 | Status page at `status.freeblackmarket.com` reachable; incident webhook documented | `runbooks/INCIDENT_RESPONSE.md` | **BLOCKER** | _pending_ |
+| 3 | Sentry projects per app (backend / storefront / admin-panel / vendor-panel); DSNs distributed to the four `*-env` secrets | `OBSERVABILITY.md` | **BLOCKER** | _pending_ |
+| 4 | DB managed-snapshot policy (daily, 30 d retention, off-cluster) | `runbooks/BACKUP_RESTORE.md` | **BLOCKER** | _pending_ |
+| 5 | DNS records for the 4 production hostnames resolve to the prod LB | `runbooks/DEPLOYMENT.md` § "DNS prerequisites" | **BLOCKER** | _pending_ |
+| 6 | cert-manager + `letsencrypt-prod` `ClusterIssuer` reachable from production cluster | `runbooks/DEPLOYMENT.md` § "DNS prerequisites" | **BLOCKER** | _pending_ |
+| 7 | GHCR image repos visible (Internal); production cluster can pull without per-pod auth (or `imagePullSecret` referenced in Deployments) | `runbooks/DEPLOYMENT.md` § "GHCR" | **BLOCKER** | _pending_ |
+| 8 | External Secrets Operator installed in prod cluster; `cluster-secret-store` `ClusterSecretStore` resolves; all four `*-env` Secrets sync green | `runbooks/DEPLOYMENT.md` § "External Secrets Operator" | **BLOCKER** | _pending_ |
+| 9 | Slack `#freeblackmarket-alerts` exists; PagerDuty + Sentry post into it | `runbooks/INCIDENT_RESPONSE.md`, `OBSERVABILITY.md` | REQUIRED | _pending_ |
+| 10 | Slack `#freeblackmarket-oncall` exists; on-call rotation @mentions resolve | `runbooks/ON_CALL.md` | REQUIRED | _pending_ |
+| 11 | Slack `#freeblackmarket-engineering` exists; release notes auto-post | `runbooks/RELEASE.md` | REQUIRED | _pending_ |
+| 12 | DNS records for the 4 staging hostnames resolve to the staging LB | `runbooks/DEPLOYMENT.md` § "DNS prerequisites" | REQUIRED | _pending_ |
+| 13 | cert-manager + `letsencrypt-prod` `ClusterIssuer` reachable from staging cluster | `runbooks/DEPLOYMENT.md` § "DNS prerequisites" | REQUIRED | _pending_ |
+| 14 | ESO + `cluster-secret-store` installed in staging cluster; all four `*-env` Secrets sync green | `runbooks/DEPLOYMENT.md` § "External Secrets Operator" | REQUIRED | _pending_ |
+| 15 | Grafana org folder `freeblackmarket` + 5 canonical dashboards imported | `OBSERVABILITY.md`, `infrastructure/observability/grafana/README.md` | RECOMMENDED | _pending_ |
+| 16 | Cross-region MinIO/S3 replication on the media bucket | `runbooks/DR.md` | RECOMMENDED | _pending_ |
+| 17 | Route 53 / Cloudflare failover record sets | `runbooks/DR.md` | RECOMMENDED | _pending_ |
+| 18 | First green run of `staging-deploy.yml` against a real cluster (validates K8s API versions, ESO bind, GHCR pull) | `.github/workflows/staging-deploy.yml` | **BLOCKER** | _pending_ |
+| 19 | First green run of `prod-deploy.yml` rollout + healthcheck round trip on a no-op release tag | `.github/workflows/prod-deploy.yml` | **BLOCKER** | _pending_ |
 
-When an item is confirmed, replace `_pending_` with the date and the operator who verified it (e.g. `2026-05-08 — alice`).
+When an item is confirmed, replace `_pending_` with `confirmed YYYY-MM-DD — <operator>` (e.g. `confirmed 2026-05-08 — alice`). When all **BLOCKER** rows are green, the operator commander records the go/no-go decision in `runbooks/RELEASE.md` and proceeds with the **Production** deploy workflow.
+
+### Quick verification script
+
+For rows 7, 8, 14: run `kubectl --context=<prod|staging> -n freeblackmarket-<env> get externalsecrets` and confirm every row reads `STATUS=SecretSynced READY=True`. For row 6/13: `kubectl --context=<env> get clusterissuer letsencrypt-prod -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}'` should return `True`. For row 5/12: `dig +short <hostname>` should return the LB IP.

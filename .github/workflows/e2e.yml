@@ -16,9 +16,12 @@ jobs:
     name: Playwright (compose stack)
     runs-on: ubuntu-latest
     timeout-minutes: 35
-    # Step-level continue-on-error on "Bring up the stack" + "Run
-    # Playwright tests" keeps the job conclusion green while
-    # docker-buildx caching / pre-pull lands. Tracked as TI-2.
+    # ADVISORY GATE (not blocking). Step-level continue-on-error on
+    # "Bring up the stack" + "Run Playwright tests" keeps the job
+    # conclusion green while docker-buildx caching / pre-pull lands
+    # (TI-2 in docs/AUDIT_DEBT.md). The Playwright report is uploaded
+    # as an artifact; reviewers must inspect it before merging
+    # release/* branches. Flip to fail-fast once TI-2 closes.
     steps:
       - name: Checkout
         uses: actions/checkout@v4

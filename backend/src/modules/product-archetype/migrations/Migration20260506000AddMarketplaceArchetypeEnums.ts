@@ -7,9 +7,10 @@ import { Migration } from "@mikro-orm/migrations"
  * Seeding is done in Migration20260506001SeedMarketplaceArchetypes.
  */
 export class Migration20260506000AddMarketplaceArchetypeEnums extends Migration {
-  isTransactional(): boolean {
-    return false
-  }
+  // Kept transactional — see Migration20260202000AddCommunityArchetypeEnums
+  // for the rationale. Values are pre-declared in
+  // Migration20251228CreateProductArchetype so these ADD VALUE IF NOT EXISTS
+  // calls are no-ops on a fresh DB.
 
   async up(): Promise<void> {
     this.addSql(`

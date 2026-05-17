@@ -9,9 +9,13 @@ import { Migration } from "@mikro-orm/migrations"
  * No drop-shipping: all fulfillment is community-internal.
  */
 export class Migration20260202000AddCommunityArchetypeEnums extends Migration {
-  isTransactional(): boolean {
-    return false
-  }
+  // Kept transactional so it can see CREATE TYPE from
+  // Migration20251228CreateProductArchetype within the master transaction
+  // that the mikro-orm migrator opens for the module batch. The values are
+  // now also pre-declared in Migration20251228, so the ADD VALUE IF NOT
+  // EXISTS calls below are idempotent no-ops on a fresh DB. On existing
+  // prod DBs that already ran this migration non-transactionally, the
+  // migration is recorded and won't replay.
 
   async up(): Promise<void> {
     // Add new enum values to product_archetype_code_enum
