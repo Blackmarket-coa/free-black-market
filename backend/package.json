@@ -27,7 +27,6 @@
       "@medusajs/workflows-sdk": "2.12.5",
       "lodash": ">=4.18.0",
       "picomatch": ">=4.0.4",
-      "ajv": ">=8.18.0",
       "postcss": ">=8.5.10",
       "esbuild": ">=0.25.0",
       "@mikro-orm/core": "6.6.14",
