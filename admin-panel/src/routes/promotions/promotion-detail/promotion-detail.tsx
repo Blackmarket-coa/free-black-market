@@ -1,3 +1,7 @@
+import type {
+  ApplicationMethodTargetTypeValues,
+  PromotionRuleTypes,
+} from "@medusajs/types"
 import { useLoaderData, useParams } from "react-router-dom"
 
 import { TwoColumnPageSkeleton } from "../../../components/common/skeleton"
@@ -48,19 +52,26 @@ export const PromotionDetail = () => {
     >
       <TwoColumnPage.Main>
         <PromotionGeneralSection promotion={promotion} />
-        <PromotionConditionsSection rules={rules || []} ruleType={"rules"} />
+        <PromotionConditionsSection
+          rules={rules || []}
+          ruleType={"rules" as PromotionRuleTypes}
+          applicationMethodTargetType={"items" as ApplicationMethodTargetTypeValues}
+        />
         <PromotionConditionsSection
           rules={targetRules || []}
-          ruleType={"target-rules"}
+          ruleType={"target-rules" as unknown as PromotionRuleTypes}
           applicationMethodTargetType={
-            promotion.application_method.target_type || "items"
+            ((promotion.application_method?.target_type ||
+              "items") as ApplicationMethodTargetTypeValues)
           }
         />
         {promotion.type === "buyget" && (
           <PromotionConditionsSection
             rules={buyRules || []}
-            ruleType={"buy-rules"}
-            applicationMethodTargetType={"items"}
+            ruleType={"buy-rules" as unknown as PromotionRuleTypes}
+            applicationMethodTargetType={
+              "items" as ApplicationMethodTargetTypeValues
+            }
           />
         )}
       </TwoColumnPage.Main>

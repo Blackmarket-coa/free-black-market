@@ -61,11 +61,12 @@ export const OrderActiveEditSection = ({
   const { mutateAsync: cancelOrderEdit } = useCancelOrderEdit(order.id)
   const { mutateAsync: confirmOrderEdit } = useConfirmOrderEdit(order.id)
 
-  const isPending = orderPreview.order_change?.status === "pending"
+  const isPending = orderPreview?.order_change?.status === "pending"
 
   const [addedItems, removedItems] = useMemo(() => {
-    const added = []
-    const removed = []
+    type ItemDiff = { item: HttpTypes.AdminOrderLineItem; quantity: number }
+    const added: ItemDiff[] = []
+    const removed: ItemDiff[] = []
 
     const orderLookupMap = new Map(order.items!.map((i) => [i.id, i]))
 

@@ -266,11 +266,16 @@ export const CreatePromotionForm = () => {
 
     for (const [key, value] of Object.entries(currentTemplate.defaults)) {
       if (typeof value === "object") {
-        for (const [subKey, subValue] of Object.entries(value)) {
-          setValue(`application_method.${subKey}`, subValue)
+        for (const [subKey, subValue] of Object.entries(value as object)) {
+          // Dynamic template-driven setValue; the static FieldPath
+          // union doesn't cover arbitrary application_method.* paths.
+          setValue(
+            `application_method.${subKey}` as never,
+            subValue as never
+          )
         }
       } else {
-        setValue(key, value)
+        setValue(key as never, value as never)
       }
     }
 
@@ -344,7 +349,7 @@ export const CreatePromotionForm = () => {
             ...DEFAULT_CAMPAIGN_VALUES.budget,
             currency_code: formData.application_method.currency_code,
           },
-        })
+        } as never)
       }
     }
   }, [watchCampaignChoice, getValues, setValue])
@@ -971,7 +976,7 @@ export const CreatePromotionForm = () => {
               <div className="flex flex-col items-center">
                 <div className="flex w-full max-w-[720px] flex-col gap-y-8 py-16">
                   <AddCampaignPromotionFields
-                    form={form}
+                    form={form as never}
                     campaigns={campaigns || []}
                   />
                 </div>

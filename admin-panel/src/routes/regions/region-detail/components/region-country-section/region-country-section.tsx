@@ -12,6 +12,7 @@ import { ActionMenu } from "../../../../../components/common/action-menu"
 import { _DataTable } from "../../../../../components/table/data-table"
 import { useUpdateRegion } from "../../../../../hooks/api/regions"
 import { useDataTable } from "../../../../../hooks/use-data-table"
+import { StaticCountry } from "../../../../../lib/data/countries"
 import { useCountries } from "../../../common/hooks/use-countries"
 import { useCountryTableColumns } from "../../../common/hooks/use-country-table-columns"
 import { useCountryTableQuery } from "../../../common/hooks/use-country-table-query"
@@ -34,15 +35,16 @@ export const RegionCountrySection = ({ region }: RegionCountrySectionProps) => {
     prefix: PREFIX,
   })
   const { countries, count } = useCountries({
-    countries: region.countries || [],
+    countries:
+      (region.countries as unknown as StaticCountry[] | undefined) ?? [],
     ...searchParams,
   })
 
   const columns = useColumns()
 
   const { table } = useDataTable({
-    data: countries || [],
-    columns,
+    data: (countries || []) as unknown as StaticCountry[],
+    columns: columns as unknown as ColumnDef<StaticCountry, unknown>[],
     count,
     enablePagination: true,
     enableRowSelection: true,
@@ -84,7 +86,7 @@ export const RegionCountrySection = ({ region }: RegionCountrySectionProps) => {
 
     await mutateAsync(
       {
-        countries: payload,
+        countries: (payload?.filter((c): c is string => !!c)) ?? [],
       },
       {
         onSuccess: () => {
@@ -116,14 +118,16 @@ export const RegionCountrySection = ({ region }: RegionCountrySectionProps) => {
         />
       </div>
       <_DataTable
-        table={table}
-        columns={columns}
+        table={table as unknown as Parameters<typeof _DataTable>[0]["table"]}
+        columns={columns as unknown as ColumnDef<unknown, unknown>[]}
         pageSize={PAGE_SIZE}
         count={count}
-        orderBy={[
-          { key: "display_name", label: t("fields.name") },
-          { key: "iso_2", label: t("fields.code") },
-        ]}
+        orderBy={
+          [
+            { key: "display_name", label: t("fields.name") },
+            { key: "iso_2", label: t("fields.code") },
+          ] as Parameters<typeof _DataTable>[0]["orderBy"]
+        }
         search
         pagination
         queryObject={raw}
@@ -173,7 +177,7 @@ const CountryActions = ({
 
     await mutateAsync(
       {
-        countries: payload,
+        countries: (payload?.filter((c): c is string => !!c)) ?? [],
       },
       {
         onSuccess: () => {

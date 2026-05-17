@@ -29,7 +29,15 @@ export const OrderNoteForm = ({ order }: OrderNoteFormProps) => {
     resolver: zodResolver(OrderNoteSchema),
   })
 
-  const { mutateAsync, isLoading } = {}
+  // Notes mutation isn't wired up yet. Stub for now.
+  const mutateAsync = async (
+    _payload: { resource_id: string; resource_type: string; value: string },
+    _opts?: { onSuccess?: () => void; onError?: (err: unknown) => void }
+  ) => {
+    void _payload
+    void _opts
+  }
+  const isLoading = false
 
   const handleSubmit = form.handleSubmit(async (values) => {
     mutateAsync(

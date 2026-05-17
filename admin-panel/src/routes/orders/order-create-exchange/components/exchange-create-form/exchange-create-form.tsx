@@ -142,23 +142,21 @@ export const ExchangeCreateForm = ({
 
           return {
             item_id: i.id,
-            variant_id: i.variant_id,
             quantity: i.detail.return_requested_quantity,
-            note: inboundAction?.internal_note,
-            reason_id: inboundAction?.details?.reason_id as string | undefined,
+            note: inboundAction?.internal_note ?? null,
+            reason_id:
+              ((inboundAction?.details as
+                | { reason_id?: string | null }
+                | undefined)?.reason_id) ?? null,
           }
         }),
         outbound_items: outboundPreviewItems.map((i) => ({
           item_id: i.id,
-          variant_id: i.variant_id,
+          variant_id: i.variant_id ?? "",
           quantity: i.detail.quantity,
         })),
-        inbound_option_id: inboundShippingMethod
-          ? inboundShippingMethod.shipping_option_id
-          : "",
-        outbound_option_id: outboundShippingMethod
-          ? outboundShippingMethod.shipping_option_id
-          : "",
+        inbound_option_id: inboundShippingMethod?.shipping_option_id ?? "",
+        outbound_option_id: outboundShippingMethod?.shipping_option_id ?? "",
         location_id: orderReturn?.location_id,
         send_notification: false,
       })
@@ -178,13 +176,15 @@ export const ExchangeCreateForm = ({
 
   useEffect(() => {
     if (inboundShipping) {
-      setCustomInboundShippingAmount(inboundShipping.total)
+      const float = Number(inboundShipping.total) || 0
+      setCustomInboundShippingAmount({ value: String(float), float })
     }
   }, [inboundShipping])
 
   useEffect(() => {
     if (outboundShipping) {
-      setCustomOutboundShippingAmount(outboundShipping.total)
+      const float = Number(outboundShipping.total) || 0
+      setCustomOutboundShippingAmount({ value: String(float), float })
     }
   }, [outboundShipping])
 
@@ -306,7 +306,12 @@ export const ExchangeCreateForm = ({
                       const action = item.actions?.find(
                         (act) => act.action === "RETURN_ITEM"
                       )
-                      acc = acc + (action?.amount || 0)
+                      acc =
+                        acc +
+                        Number(
+                          (action as { amount?: number } | undefined)
+                            ?.amount ?? 0
+                        )
 
                       return acc
                     }, 0) * -1,
@@ -326,7 +331,12 @@ export const ExchangeCreateForm = ({
                       const action = item.actions?.find(
                         (act) => act.action === "ITEM_ADD"
                       )
-                      acc = acc + (action?.amount || 0)
+                      acc =
+                        acc +
+                        Number(
+                          (action as { amount?: number } | undefined)
+                            ?.amount ?? 0
+                        )
 
                       return acc
                     }, 0),

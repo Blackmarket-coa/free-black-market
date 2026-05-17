@@ -47,17 +47,26 @@ export const InventoryItemGeneralSection = ({
       <SectionRow title={t("fields.sku")} value={inventoryItem.sku ?? "-"} />
       <SectionRow
         title={t("fields.inStock")}
-        value={getQuantityFormat(inventoryItem.stocked_quantity)}
+        value={getQuantityFormat(
+          (inventoryItem as { stocked_quantity?: number }).stocked_quantity ??
+            0
+        )}
       />
 
       <SectionRow
         title={t("inventory.reserved")}
-        value={getQuantityFormat(inventoryItem.reserved_quantity)}
+        value={getQuantityFormat(
+          (inventoryItem as { reserved_quantity?: number })
+            .reserved_quantity ?? 0
+        )}
       />
       <SectionRow
         title={t("inventory.available")}
         value={getQuantityFormat(
-          inventoryItem.stocked_quantity - inventoryItem.reserved_quantity
+          ((inventoryItem as { stocked_quantity?: number })
+            .stocked_quantity ?? 0) -
+            ((inventoryItem as { reserved_quantity?: number })
+              .reserved_quantity ?? 0)
         )}
       />
     </Container>
