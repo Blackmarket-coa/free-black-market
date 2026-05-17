@@ -32,7 +32,8 @@ export function OrderCreateShipmentForm({
 
   const form = useForm<zod.infer<typeof CreateShipmentSchema>>({
     defaultValues: {
-      send_notification: !order.no_notification,
+      send_notification: !(order as { no_notification?: boolean })
+        .no_notification,
     },
     resolver: zodResolver(CreateShipmentSchema),
   });
@@ -53,10 +54,14 @@ export function OrderCreateShipmentForm({
 
     await createShipment(
       {
-        items: fulfillment?.items?.map((i) => ({
-          id: i.line_item_id,
-          quantity: i.quantity,
-        })),
+        items: fulfillment?.items
+          ?.filter((i): i is typeof i & { line_item_id: string } =>
+            !!i.line_item_id
+          )
+          .map((i) => ({
+            id: i.line_item_id,
+            quantity: i.quantity,
+          })),
         labels: [...addedLabels, ...(fulfillment?.labels || [])],
         no_notification: !data.send_notification,
       },

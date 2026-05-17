@@ -695,6 +695,7 @@ const ShippingOptionTable = ({
   useCleanupSearchParams()
 
   const { searchParams, raw } = useShippingOptionTableQuery({
+    regionId: "",
     pageSize: PAGE_SIZE,
     prefix: PREFIX_SHIPPING_OPTION,
   })

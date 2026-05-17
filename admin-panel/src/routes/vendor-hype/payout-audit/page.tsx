@@ -32,7 +32,7 @@ const toCsv = (rows: AuditResponse["payouts"]) => {
       row.market_id ?? "",
       row.settlement_id ?? "",
     ]
-      .map((value) => `"${String(value).replaceAll('"', '""')}"`)
+      .map((value) => `"${String(value).split('"').join('""')}"`)
       .join(",")
   )
   return [header.join(","), ...lines].join("\n")

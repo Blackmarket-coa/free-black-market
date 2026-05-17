@@ -358,7 +358,7 @@ const ConditionalPriceItem = ({
           render={({ field }) => {
             return (
               <OperatorInput
-                field={field}
+                field={field as OperatorInputProps["field"]}
                 label={t(
                   "stockLocations.shippingOptions.conditionalPrices.rules.gte"
                 )}
@@ -375,7 +375,7 @@ const ConditionalPriceItem = ({
           render={({ field }) => {
             return (
               <OperatorInput
-                field={field}
+                field={field as OperatorInputProps["field"]}
                 label={t(
                   "stockLocations.shippingOptions.conditionalPrices.rules.lte"
                 )}
@@ -401,7 +401,11 @@ interface OperatorInputProps {
   label: string
   field: ControllerRenderProps<
     CondtionalPriceRuleSchemaType,
-    `prices.${number}.lte` | `prices.${number}.gte`
+    | `prices.${number}.lte`
+    | `prices.${number}.gte`
+    | `prices.${number}.eq`
+    | `prices.${number}.gt`
+    | `prices.${number}.lt`
   >
 }
 

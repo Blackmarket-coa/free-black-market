@@ -111,12 +111,11 @@ export function CreateShippingOptionsForm({
     const conditionalRegionPrices = Object.entries(
       data.conditional_region_prices
     ).flatMap(([region_id, value]) => {
-      const prices: HttpTypes.AdminCreateShippingOptionPriceWithRegion[] =
-        value?.map((rule) => ({
-          region_id: region_id,
-          amount: castNumber(rule.amount),
-          rules: buildShippingOptionPriceRules(rule),
-        })) || []
+      const prices = (value?.map((rule) => ({
+        region_id: region_id,
+        amount: castNumber(rule.amount),
+        rules: buildShippingOptionPriceRules(rule),
+      })) || []) as HttpTypes.AdminCreateShippingOptionPriceWithRegion[]
 
       return prices?.filter(Boolean)
     })
@@ -124,12 +123,11 @@ export function CreateShippingOptionsForm({
     const conditionalCurrencyPrices = Object.entries(
       data.conditional_currency_prices
     ).flatMap(([currency_code, value]) => {
-      const prices: HttpTypes.AdminCreateShippingOptionPriceWithCurrency[] =
-        value?.map((rule) => ({
-          currency_code,
-          amount: castNumber(rule.amount),
-          rules: buildShippingOptionPriceRules(rule),
-        })) || []
+      const prices = (value?.map((rule) => ({
+        currency_code,
+        amount: castNumber(rule.amount),
+        rules: buildShippingOptionPriceRules(rule),
+      })) || []) as HttpTypes.AdminCreateShippingOptionPriceWithCurrency[]
 
       return prices?.filter(Boolean)
     })

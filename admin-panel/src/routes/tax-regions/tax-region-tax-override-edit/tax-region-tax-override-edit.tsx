@@ -194,7 +194,7 @@ const useDefaultRulesValues = (
 
       if (queryResults[index].enabled) {
         const fetchedEntityList = getResult(
-          queryResults[index].result as HttpTypes.AdminProductListResponse
+          queryResults[index].result as never
         )
 
         const entityIdMap = new Map(

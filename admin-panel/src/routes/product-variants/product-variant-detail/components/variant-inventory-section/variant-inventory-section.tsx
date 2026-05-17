@@ -25,7 +25,7 @@ export function VariantInventorySection({
   const columns = useInventoryTableColumns()
 
   const { table } = useDataTable({
-    data: (inventoryItems ?? []) as never,
+    data: (inventoryItems ?? []) as HttpTypes.AdminInventoryItem[],
     columns: columns as never,
     count: inventoryItems.length,
     enablePagination: true,
@@ -63,8 +63,10 @@ export function VariantInventorySection({
       </div>
 
       <_DataTable
-        table={table}
-        columns={columns}
+        table={
+          table as unknown as Parameters<typeof _DataTable>[0]["table"]
+        }
+        columns={columns as never}
         pageSize={PAGE_SIZE}
         count={inventoryItems.length}
         navigateTo={(row) => `/inventory/${row.id}`}

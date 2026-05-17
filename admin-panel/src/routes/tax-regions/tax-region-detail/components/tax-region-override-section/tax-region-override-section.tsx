@@ -28,7 +28,7 @@ export const TaxRegionOverrideSection = ({
     {
       ...searchParams,
       tax_region_id: taxRegion.id,
-      is_default: false,
+      is_default: "false",
     },
     {
       placeholderData: keepPreviousData,
