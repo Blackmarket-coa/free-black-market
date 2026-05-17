@@ -89,6 +89,7 @@ if [[ -d "$ROOT_DIR/storefront" ]]; then
     warn "storefront has no test script; running lint as minimum validation"
     run_cmd "storefront lint" bash -lc "cd '$ROOT_DIR/storefront' && pnpm run lint"
   fi
+  run_cmd "storefront internal-link route validation" bash -lc "cd '$ROOT_DIR/storefront' && pnpm qa:internal-links"
 else
   warn "storefront directory not found"
   FAILURES=$((FAILURES + 1))

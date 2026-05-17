@@ -1,26 +1,41 @@
 import { useMemo, useState } from "react";
 
 import { HeartBroken } from "@medusajs/icons";
-import { AdminOrderLineItem } from "@medusajs/types";
+import type { AdminOrderLineItem } from "@medusajs/types";
 import { Button, Input, Popover, toast } from "@medusajs/ui";
 
-import { UseFormReturn } from "react-hook-form";
+import type { UseFormReturn } from "react-hook-form";
 import { useTranslation } from "react-i18next";
+import type { z } from "zod";
 
-import { Form } from "../../../../../components/common/form";
+import { Form } from "@components/common/form";
 import {
   useAddDismissItems,
   useRemoveDismissItem,
   useUpdateDismissItem,
-} from "../../../../../hooks/api/returns";
-import { ReceiveReturnSchema } from "./constants";
+} from "@hooks/api/returns";
+import type { ReceiveReturnSchema } from "@routes/orders/order-receive-return/components/order-receive-return-form/constants";
+
+/**
+ * AdminOrderLineItem in @medusajs/types omits the per-action history
+ * (`actions`) that the admin response includes when fetching items
+ * with `+actions.action,+actions.details.*`. Capture the structural
+ * shape consumed below.
+ */
+type LineItemWithActions = AdminOrderLineItem & {
+  actions?: Array<{
+    id: string;
+    action: string;
+    details: { quantity?: number };
+  }>;
+};
 
 type DismissedQuantityProps = {
   returnId: string;
   orderId: string;
   index: number;
-  item: AdminOrderLineItem;
-  form: UseFormReturn<typeof ReceiveReturnSchema>;
+  item: LineItemWithActions;
+  form: UseFormReturn<z.infer<typeof ReceiveReturnSchema>>;
 };
 
 function DismissedQuantity({
@@ -120,7 +135,7 @@ function DismissedQuantity({
         }
       }
     } catch (e) {
-      toast.error(e.message);
+      toast.error(e instanceof Error ? e.message : String(e));
     }
   };
 
@@ -150,7 +165,7 @@ function DismissedQuantity({
                       min={0}
                       max={item.quantity - item.detail.return_received_quantity}
                       type="number"
-                      value={value}
+                      value={value ?? ""}
                       className="bg-ui-bg-field-component text-right [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                       onChange={(e) => {
                         const value =
@@ -163,7 +178,7 @@ function DismissedQuantity({
                       {...field}
                       onBlur={() => {
                         field.onBlur();
-                        onDismissedQuantityChanged(value);
+                        onDismissedQuantityChanged(value ?? null);
                       }}
                     />
                   </Form.Control>

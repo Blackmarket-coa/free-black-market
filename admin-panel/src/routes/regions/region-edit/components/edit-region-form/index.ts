@@ -1,1 +1,1 @@
-export * from "./edit-region-form"
+export * from "@routes/regions/region-edit/components/edit-region-form/edit-region-form"

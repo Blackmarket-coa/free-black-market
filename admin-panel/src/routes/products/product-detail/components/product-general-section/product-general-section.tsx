@@ -1,13 +1,13 @@
 import { PencilSquare, Trash } from "@medusajs/icons"
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 import { Container, Heading, StatusBadge, usePrompt } from "@medusajs/ui"
 import { useTranslation } from "react-i18next"
 import { useNavigate } from "react-router-dom"
 
-import { ActionMenu } from "../../../../../components/common/action-menu"
-import { SectionRow } from "../../../../../components/common/section"
-import { useDeleteProduct } from "../../../../../hooks/api/products"
-import { useExtension } from "../../../../../providers/extension-provider"
+import { ActionMenu } from "@components/common/action-menu"
+import { SectionRow } from "@components/common/section"
+import { useDeleteProduct } from "@hooks/api/products"
+import { useExtension } from "@providers/extension-provider"
 
 const productStatusColor = (status: string) => {
   switch (status) {

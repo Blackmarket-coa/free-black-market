@@ -3,12 +3,12 @@ import { useEffect, useState } from "react"
 import { useTranslation } from "react-i18next"
 import { useNavigate, useParams } from "react-router-dom"
 
-import { RouteFocusModal } from "../../../components/modals"
-import { useCreateExchange, useExchange } from "../../../hooks/api/exchanges"
-import { useOrder, useOrderPreview } from "../../../hooks/api/orders"
-import { useReturn } from "../../../hooks/api/returns"
-import { DEFAULT_FIELDS } from "../order-detail/constants"
-import { ExchangeCreateForm } from "./components/exchange-create-form"
+import { RouteFocusModal } from "@components/modals"
+import { useCreateExchange, useExchange } from "@hooks/api/exchanges"
+import { useOrder, useOrderPreview } from "@hooks/api/orders"
+import { useReturn } from "@hooks/api/returns"
+import { DEFAULT_FIELDS } from "@routes/orders/order-detail/constants"
+import { ExchangeCreateForm } from "@routes/orders/order-create-exchange/components/exchange-create-form"
 
 let IS_REQUEST_RUNNING = false
 
@@ -59,7 +59,7 @@ export const ExchangeCreate = () => {
 
         setActiveExchangeId(createdExchange.id)
       } catch (e) {
-        toast.error(e.message)
+        toast.error(e instanceof Error ? e.message : String(e))
         navigate(`/orders/${preview.id}`, { replace: true })
       } finally {
         IS_REQUEST_RUNNING = false

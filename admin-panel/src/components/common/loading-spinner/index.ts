@@ -1,1 +1,1 @@
-export { LoadingSpinner } from "./loading-spinner";
+export { LoadingSpinner } from "@components/common/loading-spinner/loading-spinner";

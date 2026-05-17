@@ -1,12 +1,14 @@
 import { Switch } from "@medusajs/ui"
 import { useEffect, useRef, useState } from "react"
-import CurrencyInput, { CurrencyInputProps } from "react-currency-input-field"
-import { Controller, ControllerRenderProps } from "react-hook-form"
-import { useCombinedRefs } from "../../../hooks/use-combined-refs"
-import { ConditionalTooltip } from "../../common/conditional-tooltip"
-import { useDataGridCell, useDataGridCellError } from "../hooks"
-import { DataGridCellProps, InputProps } from "../types"
-import { DataGridCellContainer } from "./data-grid-cell-container"
+import type { CurrencyInputProps } from "react-currency-input-field";
+import CurrencyInput from "react-currency-input-field"
+import type { ControllerRenderProps } from "react-hook-form";
+import { Controller } from "react-hook-form"
+import { useCombinedRefs } from "@hooks/use-combined-refs"
+import { ConditionalTooltip } from "@components/common/conditional-tooltip"
+import { useDataGridCell, useDataGridCellError } from "@components/data-grid/hooks"
+import type { DataGridCellProps, InputProps } from "@components/data-grid/types"
+import { DataGridCellContainer } from "@components/data-grid/components/data-grid-cell-container"
 
 export const DataGridTogglableNumberCell = <TData, TValue = any>({
   context,
@@ -96,7 +98,8 @@ const OuterComponent = ({
     }
 
     document.addEventListener("keydown", handleKeyDown)
-    return () => document.removeEventListener("keydown", handleKeyDown)
+    
+return () => document.removeEventListener("keydown", handleKeyDown)
   }, [isAnchor])
 
   return (

@@ -2,7 +2,7 @@ import { useNavigate } from "react-router-dom"
 import { toast, usePrompt } from "@medusajs/ui"
 import { useTranslation } from "react-i18next"
 
-import { useDeleteShippingOptionType } from "../../../../hooks/api/shipping-option-types"
+import { useDeleteShippingOptionType } from "@hooks/api/shipping-option-types"
 
 export const useDeleteShippingOptionTypeAction = (
   id: string,

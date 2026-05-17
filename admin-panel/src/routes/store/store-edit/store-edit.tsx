@@ -1,8 +1,8 @@
 import { Heading } from "@medusajs/ui"
 import { useTranslation } from "react-i18next"
-import { RouteDrawer } from "../../../components/modals"
-import { useStore } from "../../../hooks/api/store"
-import { EditStoreForm } from "./components/edit-store-form/edit-store-form"
+import { RouteDrawer } from "@components/modals"
+import { useStore } from "@hooks/api/store"
+import { EditStoreForm } from "@routes/store/store-edit/components/edit-store-form/edit-store-form"
 
 export const StoreEdit = () => {
   const { t } = useTranslation()

@@ -1,1 +1,1 @@
-export * from "./metadata-section"
+export * from "@components/common/metadata-section/metadata-section"

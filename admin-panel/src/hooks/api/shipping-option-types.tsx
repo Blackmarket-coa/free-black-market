@@ -1,15 +1,16 @@
-import { FetchError } from "@medusajs/js-sdk"
-import { HttpTypes } from "@medusajs/types"
-import {
+import type { FetchError } from "@medusajs/js-sdk"
+import type { HttpTypes } from "@medusajs/types"
+import type {
   QueryKey,
-  useMutation,
   UseMutationOptions,
-  useQuery,
-  UseQueryOptions,
+  UseQueryOptions} from "@tanstack/react-query";
+import {
+  useMutation,
+  useQuery
 } from "@tanstack/react-query"
-import { sdk } from "../../lib/client"
-import { queryClient } from "../../lib/query-client"
-import { queryKeysFactory } from "../../lib/query-key-factory"
+import { sdk } from "@lib/client"
+import { queryClient } from "@lib/query-client"
+import { queryKeysFactory } from "@lib/query-key-factory"
 
 const SHIPPING_OPTION_TYPES_QUERY_KEY = "shipping_option_types" as const
 export const shippingOptionTypesQueryKeys = queryKeysFactory(

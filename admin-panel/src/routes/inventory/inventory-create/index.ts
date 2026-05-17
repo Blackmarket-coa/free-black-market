@@ -1,1 +1,1 @@
-export { InventoryCreate as Component } from "./inventory-create"
+export { InventoryCreate as Component } from "@routes/inventory/inventory-create/inventory-create"

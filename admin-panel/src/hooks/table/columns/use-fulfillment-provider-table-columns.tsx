@@ -1,12 +1,12 @@
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 import { createColumnHelper } from "@tanstack/react-table"
 import { useMemo } from "react"
 import { useTranslation } from "react-i18next"
 import {
   TextCell,
   TextHeader,
-} from "../../../components/table/table-cells/common/text-cell"
-import { formatProvider } from "../../../lib/format-provider"
+} from "@components/table/table-cells/common/text-cell"
+import { formatProvider } from "@lib/format-provider"
 
 const columnHelper = createColumnHelper<HttpTypes.AdminFulfillmentProvider>()
 
@@ -16,7 +16,7 @@ export const useFulfillmentProviderTableColumns = () => {
   return useMemo(
     () => [
       columnHelper.accessor("id", {
-        header: () => <TextHeader text={"Provider"} />,
+        header: () => <TextHeader text="Provider" />,
         cell: ({ getValue }) => <TextCell text={formatProvider(getValue())} />,
       }),
     ],

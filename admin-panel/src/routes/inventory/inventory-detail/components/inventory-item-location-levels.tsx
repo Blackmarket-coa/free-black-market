@@ -1,8 +1,8 @@
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 import { Button, Container, Heading } from "@medusajs/ui"
 import { useTranslation } from "react-i18next"
 import { Link } from "react-router-dom"
-import { ItemLocationListTable } from "./location-levels-table/location-list-table"
+import { ItemLocationListTable } from "@routes/inventory/inventory-detail/components/location-levels-table/location-list-table"
 
 type InventoryItemLocationLevelsSectionProps = {
   inventoryItem: HttpTypes.AdminInventoryItemResponse["inventory_item"]

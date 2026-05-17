@@ -1,15 +1,15 @@
 import { useLoaderData, useParams } from "react-router-dom"
 
-import { useStockLocation } from "../../../hooks/api/stock-locations"
-import { LocationGeneralSection } from "./components/location-general-section"
-import LocationsSalesChannelsSection from "./components/location-sales-channels-section/locations-sales-channels-section"
-import { locationLoader } from "./loader"
+import { useStockLocation } from "@hooks/api/stock-locations"
+import { LocationGeneralSection } from "@routes/locations/location-detail/components/location-general-section"
+import LocationsSalesChannelsSection from "@routes/locations/location-detail/components/location-sales-channels-section/locations-sales-channels-section"
+import type { locationLoader } from "@routes/locations/location-detail/loader"
 
-import { TwoColumnPageSkeleton } from "../../../components/common/skeleton"
-import { TwoColumnPage } from "../../../components/layout/pages"
-import { useExtension } from "../../../providers/extension-provider"
-import LocationsFulfillmentProvidersSection from "./components/location-fulfillment-providers-section/location-fulfillment-providers-section"
-import { LOCATION_DETAILS_FIELD } from "./constants"
+import { TwoColumnPageSkeleton } from "@components/common/skeleton"
+import { TwoColumnPage } from "@components/layout/pages"
+import { useExtension } from "@providers/extension-provider"
+import LocationsFulfillmentProvidersSection from "@routes/locations/location-detail/components/location-fulfillment-providers-section/location-fulfillment-providers-section"
+import { LOCATION_DETAILS_FIELD } from "@routes/locations/location-detail/constants"
 
 export const LocationDetail = () => {
   const initialData = useLoaderData() as Awaited<

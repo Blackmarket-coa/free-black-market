@@ -1,5 +1,5 @@
-import { HttpTypes } from "@medusajs/types"
-import { useQueryParams } from "../../use-query-params"
+import type { HttpTypes } from "@medusajs/types"
+import { useQueryParams } from "@hooks/use-query-params"
 
 type UseOrderTableQueryProps = {
   prefix?: string
@@ -37,6 +37,9 @@ export const useOrderTableQuery = ({
     order,
   } = queryObject
 
+  // AdminOrderFilters in @medusajs/types omits fulfillment_status /
+  // payment_status declarations but the backend accepts them; cast to
+  // satisfy TS without losing the SDK shape for the other fields.
   const searchParams: HttpTypes.AdminOrderFilters = {
     limit: pageSize,
     offset: offset ? Number(offset) : 0,
@@ -48,7 +51,7 @@ export const useOrderTableQuery = ({
     region_id: region_id?.split(","),
     order: order ? order : "-display_id",
     q,
-  }
+  } as HttpTypes.AdminOrderFilters
 
   return {
     searchParams,

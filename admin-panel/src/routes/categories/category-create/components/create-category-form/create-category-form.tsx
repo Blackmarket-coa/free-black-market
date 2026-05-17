@@ -1,5 +1,6 @@
 import { zodResolver } from "@hookform/resolvers/zod"
-import { Button, ProgressStatus, ProgressTabs, toast } from "@medusajs/ui"
+import type { ProgressStatus} from "@medusajs/ui";
+import { Button, ProgressTabs, toast } from "@medusajs/ui"
 import { useForm } from "react-hook-form"
 import { useTranslation } from "react-i18next"
 
@@ -7,14 +8,14 @@ import { useState } from "react"
 import {
   RouteFocusModal,
   useRouteModal,
-} from "../../../../../components/modals"
-import { KeyboundForm } from "../../../../../components/utilities/keybound-form"
-import { useCreateProductCategory } from "../../../../../hooks/api/categories"
-import { transformNullableFormData } from "../../../../../lib/form-helpers"
-import { CreateCategoryDetails } from "./create-category-details"
-import { CreateCategoryNesting } from "./create-category-nesting"
-import { CreateCategoryDetailsSchema, CreateCategorySchema } from "./schema"
-import { useDocumentDirection } from "../../../../../hooks/use-document-direction"
+} from "@components/modals"
+import { KeyboundForm } from "@components/utilities/keybound-form"
+import { useCreateProductCategory } from "@hooks/api/categories"
+import { transformNullableFormData } from "@lib/form-helpers"
+import { CreateCategoryDetails } from "@routes/categories/category-create/components/create-category-form/create-category-details"
+import { CreateCategoryNesting } from "@routes/categories/category-create/components/create-category-form/create-category-nesting"
+import { CreateCategoryDetailsSchema, CreateCategorySchema } from "@routes/categories/category-create/components/create-category-form/schema"
+import { useDocumentDirection } from "@hooks/use-document-direction"
 
 type CreateCategoryFormProps = {
   parentCategoryId: string | null

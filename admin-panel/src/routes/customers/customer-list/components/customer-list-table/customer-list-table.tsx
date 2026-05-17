@@ -6,14 +6,14 @@ import { useMemo } from "react"
 import { useTranslation } from "react-i18next"
 import { Link } from "react-router-dom"
 
-import { HttpTypes } from "@medusajs/types"
-import { ActionMenu } from "../../../../../components/common/action-menu"
-import { _DataTable } from "../../../../../components/table/data-table"
-import { useCustomers } from "../../../../../hooks/api/customers"
-import { useCustomerTableColumns } from "../../../../../hooks/table/columns/use-customer-table-columns"
-import { useCustomerTableFilters } from "../../../../../hooks/table/filters/use-customer-table-filters"
-import { useCustomerTableQuery } from "../../../../../hooks/table/query/use-customer-table-query"
-import { useDataTable } from "../../../../../hooks/use-data-table"
+import type { HttpTypes } from "@medusajs/types"
+import { ActionMenu } from "@components/common/action-menu"
+import { _DataTable } from "@components/table/data-table"
+import { useCustomers } from "@hooks/api/customers"
+import { useCustomerTableColumns } from "@hooks/table/columns/use-customer-table-columns"
+import { useCustomerTableFilters } from "@hooks/table/filters/use-customer-table-filters"
+import { useCustomerTableQuery } from "@hooks/table/query/use-customer-table-query"
+import { useDataTable } from "@hooks/use-data-table"
 
 const PAGE_SIZE = 20
 

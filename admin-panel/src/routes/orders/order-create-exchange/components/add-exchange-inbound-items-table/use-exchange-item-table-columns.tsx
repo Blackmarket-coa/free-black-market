@@ -6,9 +6,9 @@ import { useTranslation } from "react-i18next"
 import {
   ProductCell,
   ProductHeader,
-} from "../../../../../components/table/table-cells/product/product-cell"
-import { getStylizedAmount } from "../../../../../lib/money-amount-helpers"
-import { getReturnableQuantity } from "../../../../../lib/rma"
+} from "@components/table/table-cells/product/product-cell"
+import { getStylizedAmount } from "@lib/money-amount-helpers"
+import { getReturnableQuantity } from "@lib/rma"
 
 const columnHelper = createColumnHelper<any>()
 
@@ -75,7 +75,7 @@ export const useExchangeItemTableColumns = (currencyCode: string) => {
             <span className="truncate">{t("fields.quantity")}</span>
           </div>
         ),
-        cell: ({ getValue, row }) => {
+        cell: ({ row }) => {
           return getReturnableQuantity(row.original)
         },
       }),

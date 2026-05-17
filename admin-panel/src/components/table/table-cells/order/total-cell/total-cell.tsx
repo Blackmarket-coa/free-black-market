@@ -1,6 +1,6 @@
 import { useTranslation } from "react-i18next"
-import { MoneyAmountCell } from "../../common/money-amount-cell"
-import { PlaceholderCell } from "../../common/placeholder-cell"
+import { MoneyAmountCell } from "@components/table/table-cells/common/money-amount-cell"
+import { PlaceholderCell } from "@components/table/table-cells/common/placeholder-cell"
 
 type TotalCellProps = {
   currencyCode: string

@@ -1,6 +1,6 @@
 import { useParams } from "react-router-dom"
-import { MetadataForm } from "../../../components/forms/metadata-form/metadata-form"
-import { useCollection, useUpdateCollection } from "../../../hooks/api"
+import { MetadataForm } from "@components/forms/metadata-form/metadata-form"
+import { useCollection, useUpdateCollection } from "@hooks/api"
 
 export const CollectionMetadata = () => {
   const { id } = useParams()

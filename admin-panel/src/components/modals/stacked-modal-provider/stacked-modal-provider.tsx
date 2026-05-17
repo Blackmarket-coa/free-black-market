@@ -1,5 +1,6 @@
-import { PropsWithChildren, useState } from "react"
-import { StackedModalContext } from "./stacked-modal-context"
+import type { PropsWithChildren} from "react";
+import { useState } from "react"
+import { StackedModalContext } from "@components/modals/stacked-modal-provider/stacked-modal-context"
 
 type StackedModalProviderProps = PropsWithChildren<{
   onOpenChange: (open: boolean) => void
@@ -35,7 +36,8 @@ export const StackedModalProvider = ({
     setState((prevState) => {
       const newState = { ...prevState }
       delete newState[id]
-      return newState
+      
+return newState
     })
   }
 

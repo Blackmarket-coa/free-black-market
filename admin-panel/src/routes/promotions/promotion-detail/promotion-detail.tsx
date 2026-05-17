@@ -1,13 +1,13 @@
 import { useLoaderData, useParams } from "react-router-dom"
 
-import { TwoColumnPageSkeleton } from "../../../components/common/skeleton"
-import { TwoColumnPage } from "../../../components/layout/pages"
-import { usePromotion, usePromotionRules } from "../../../hooks/api/promotions"
-import { useExtension } from "../../../providers/extension-provider"
-import { CampaignSection } from "./components/campaign-section"
-import { PromotionConditionsSection } from "./components/promotion-conditions-section"
-import { PromotionGeneralSection } from "./components/promotion-general-section"
-import { promotionLoader } from "./loader"
+import { TwoColumnPageSkeleton } from "@components/common/skeleton"
+import { TwoColumnPage } from "@components/layout/pages"
+import { usePromotion, usePromotionRules } from "@hooks/api/promotions"
+import { useExtension } from "@providers/extension-provider"
+import { CampaignSection } from "@routes/promotions/promotion-detail/components/campaign-section"
+import { PromotionConditionsSection } from "@routes/promotions/promotion-detail/components/promotion-conditions-section"
+import { PromotionGeneralSection } from "@routes/promotions/promotion-detail/components/promotion-general-section"
+import type { promotionLoader } from "@routes/promotions/promotion-detail/loader"
 
 export const PromotionDetail = () => {
   const initialData = useLoaderData() as Awaited<
@@ -48,19 +48,19 @@ export const PromotionDetail = () => {
     >
       <TwoColumnPage.Main>
         <PromotionGeneralSection promotion={promotion} />
-        <PromotionConditionsSection rules={rules || []} ruleType={"rules"} />
+        <PromotionConditionsSection rules={rules || []} ruleType="rules" />
         <PromotionConditionsSection
           rules={targetRules || []}
-          ruleType={"target-rules"}
+          ruleType="target-rules"
           applicationMethodTargetType={
-            promotion.application_method.target_type || "items"
+            promotion.application_method?.target_type || "items"
           }
         />
         {promotion.type === "buyget" && (
           <PromotionConditionsSection
             rules={buyRules || []}
-            ruleType={"buy-rules"}
-            applicationMethodTargetType={"items"}
+            ruleType="buy-rules"
+            applicationMethodTargetType="items"
           />
         )}
       </TwoColumnPage.Main>

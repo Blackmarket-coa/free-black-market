@@ -1,10 +1,10 @@
 import { PencilSquare, Trash } from "@medusajs/icons"
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 import { Container, Heading, StatusBadge, Text } from "@medusajs/ui"
 import { useTranslation } from "react-i18next"
-import { ActionMenu } from "../../../../../components/common/action-menu"
-import { useDeleteProductCategoryAction } from "../../../common/hooks/use-delete-product-category-action"
-import { getIsActiveProps, getIsInternalProps } from "../../../common/utils"
+import { ActionMenu } from "@components/common/action-menu"
+import { useDeleteProductCategoryAction } from "@routes/categories/common/hooks/use-delete-product-category-action"
+import { getIsActiveProps, getIsInternalProps } from "@routes/categories/common/utils"
 
 type CategoryGeneralSectionProps = {
   category: HttpTypes.AdminProductCategory

@@ -1,7 +1,7 @@
 import { useParams } from "react-router-dom"
-import { RouteFocusModal } from "../../../components/modals"
-import { useSalesChannel } from "../../../hooks/api/sales-channels"
-import { AddProductsToSalesChannelForm } from "./components"
+import { RouteFocusModal } from "@components/modals"
+import { useSalesChannel } from "@hooks/api/sales-channels"
+import { AddProductsToSalesChannelForm } from "@routes/sales-channels/sales-channel-add-products/components"
 
 export const SalesChannelAddProducts = () => {
   const { id } = useParams()

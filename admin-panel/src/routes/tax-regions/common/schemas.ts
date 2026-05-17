@@ -1,5 +1,5 @@
 import { z } from "zod"
-import { TaxRateRuleReferenceType } from "./constants"
+import { TaxRateRuleReferenceType } from "@routes/tax-regions/common/constants"
 
 export const TaxRateRuleReferenceSchema = z.object({
   value: z.string(),

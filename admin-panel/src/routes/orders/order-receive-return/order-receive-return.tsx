@@ -3,19 +3,22 @@ import { useTranslation } from "react-i18next"
 import { Heading, toast } from "@medusajs/ui"
 import { useEffect, useRef } from "react"
 
-import { useOrder, useOrderPreview } from "../../../hooks/api/orders"
-import { RouteDrawer } from "../../../components/modals"
-import { OrderReceiveReturnForm } from "./components/order-receive-return-form"
+import { useOrder, useOrderPreview } from "@hooks/api/orders"
+import { RouteDrawer } from "@components/modals"
+import { OrderReceiveReturnForm } from "@routes/orders/order-receive-return/components/order-receive-return-form"
 import {
   useAddReceiveItems,
   useInitiateReceiveReturn,
   useReturn,
-} from "../../../hooks/api/returns"
+} from "@hooks/api/returns"
 
 let IS_REQUEST_RUNNING = false
 
 export function OrderReceiveReturn() {
-  const { id, return_id } = useParams()
+  const { id, return_id } = useParams() as {
+    id: string
+    return_id: string
+  }
   const { t } = useTranslation()
   const navigate = useNavigate()
 
@@ -61,10 +64,15 @@ export function OrderReceiveReturn() {
       }
 
       if (preview.order_change) {
-        if (preview.order_change.change_type !== "return_receive") {
+        // `return_receive` is not in the AdminOrderChangeType union
+        // declared in @medusajs/types; cast through string to compare.
+        if (
+          (preview.order_change.change_type as string) !== "return_receive"
+        ) {
           navigate(`/orders/${id}`, { replace: true })
           toast.error(t("orders.returns.activeChangeError"))
         }
+
         return
       }
 
@@ -80,7 +88,7 @@ export function OrderReceiveReturn() {
           })),
         })
       } catch (e) {
-        toast.error(e.message)
+        toast.error(e instanceof Error ? e.message : String(e))
       } finally {
         IS_REQUEST_RUNNING = false
       }

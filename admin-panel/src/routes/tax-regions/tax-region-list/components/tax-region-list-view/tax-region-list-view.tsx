@@ -2,10 +2,10 @@ import { Container, Heading, Text } from "@medusajs/ui"
 import { keepPreviousData } from "@tanstack/react-query"
 import { useTranslation } from "react-i18next"
 
-import { useTaxRegions } from "../../../../../hooks/api/tax-regions"
-import { useTaxRegionTableQuery } from "../../../../../hooks/table/query/use-tax-region-table-query"
-import { TaxRegionTable } from "../../../common/components/tax-region-table"
-import { useTaxRegionTable } from "../../../common/hooks/use-tax-region-table"
+import { useTaxRegions } from "@hooks/api/tax-regions"
+import { useTaxRegionTableQuery } from "@hooks/table/query/use-tax-region-table-query"
+import { TaxRegionTable } from "@routes/tax-regions/common/components/tax-region-table"
+import { useTaxRegionTable } from "@routes/tax-regions/common/hooks/use-tax-region-table"
 
 const PAGE_SIZE = 20
 

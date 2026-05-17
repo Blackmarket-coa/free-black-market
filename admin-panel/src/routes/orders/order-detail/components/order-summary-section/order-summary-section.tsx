@@ -1,4 +1,5 @@
-import { ReactNode, useMemo, useState } from "react"
+import type { ReactNode} from "react";
+import { useMemo, useState } from "react"
 import { useTranslation } from "react-i18next"
 import { Link } from "react-router-dom"
 
@@ -12,7 +13,7 @@ import {
   PencilSquare,
   TriangleDownMini,
 } from "@medusajs/icons"
-import {
+import type {
   AdminClaim,
   AdminExchange,
   AdminOrder,
@@ -37,33 +38,33 @@ import {
   usePrompt,
 } from "@medusajs/ui"
 
-import { AdminReservation } from "@medusajs/types/src/http"
+import type { AdminReservation } from "@medusajs/types"
 import { format } from "date-fns"
-import { ActionMenu } from "../../../../../components/common/action-menu"
-import DisplayId from "../../../../../components/common/display-id/display-id"
-import { Thumbnail } from "../../../../../components/common/thumbnail"
-import { useClaims } from "../../../../../hooks/api/claims"
-import { useExchanges } from "../../../../../hooks/api/exchanges"
-import { useOrderPreview } from "../../../../../hooks/api/orders"
-import { useMarkPaymentCollectionAsPaid } from "../../../../../hooks/api/payment-collections"
-import { useReservationItems } from "../../../../../hooks/api/reservations"
-import { useReturns } from "../../../../../hooks/api/returns"
-import { useDate } from "../../../../../hooks/use-date"
-import { getTotalCreditLines } from "../../../../../lib/credit-line"
-import { formatCurrency } from "../../../../../lib/format-currency"
-import { getReservationsLimitCount } from "../../../../../lib/orders"
+import { ActionMenu } from "@components/common/action-menu"
+import DisplayId from "@components/common/display-id/display-id"
+import { Thumbnail } from "@components/common/thumbnail"
+import { useClaims } from "@hooks/api/claims"
+import { useExchanges } from "@hooks/api/exchanges"
+import { useOrderPreview } from "@hooks/api/orders"
+import { useMarkPaymentCollectionAsPaid } from "@hooks/api/payment-collections"
+import { useReservationItems } from "@hooks/api/reservations"
+import { useReturns } from "@hooks/api/returns"
+import { useDate } from "@hooks/use-date"
+import { getTotalCreditLines } from "@lib/credit-line"
+import { formatCurrency } from "@lib/format-currency"
+import { getReservationsLimitCount } from "@lib/orders"
 import {
   getLocaleAmount,
   getStylizedAmount,
   isAmountLessThenRoundingError,
-} from "../../../../../lib/money-amount-helpers"
-import { getTotalCaptured } from "../../../../../lib/payment"
-import { getLoyaltyPlugin } from "../../../../../lib/plugins"
-import { getReturnableQuantity } from "../../../../../lib/rma"
-import { CopyPaymentLink } from "../copy-payment-link/copy-payment-link"
-import ReturnInfoPopover from "./return-info-popover"
-import ShippingInfoPopover from "./shipping-info-popover"
-import { formatPercentage } from "../../../../../lib/percentage-helpers.ts"
+} from "@lib/money-amount-helpers"
+import { getTotalCaptured } from "@lib/payment"
+import { getLoyaltyPlugin } from "@lib/plugins"
+import { getReturnableQuantity } from "@lib/rma"
+import { CopyPaymentLink } from "@routes/orders/order-detail/components/copy-payment-link/copy-payment-link"
+import ReturnInfoPopover from "@routes/orders/order-detail/components/order-summary-section/return-info-popover"
+import ShippingInfoPopover from "@routes/orders/order-detail/components/order-summary-section/shipping-info-popover"
+import { formatPercentage } from "@lib/percentage-helpers.ts"
 
 type OrderSummarySectionProps = {
   order: AdminOrder
@@ -400,7 +401,7 @@ const Item = ({
   const hasInventoryKit =
     isInventoryManaged &&
     ((item.variant?.inventory_items?.length || 0) > 1 ||
-      item.variant?.inventory_items?.some((i) => i.required_quantity > 1))
+      item.variant?.inventory_items?.some((i) => (i.required_quantity ?? 0) > 1))
   const hasUnfulfilledItems = item.quantity - item.detail.fulfilled_quantity > 0
 
   return (
@@ -638,7 +639,7 @@ const CostBreakdown = ({
                   <div>
                     <span className="txt-small">
                       {sm.name}
-                      {sm.detail.return_id &&
+                      {sm.detail?.return_id &&
                         ` (${t("fields.returnShipping")})`}{" "}
                       <ShippingInfoPopover key={i} shippingMethod={sm} />
                     </span>
@@ -769,7 +770,8 @@ const DiscountAndTotalBreakdown = ({
         ).sort(),
       })
     }
-    return discounts
+    
+return discounts
   }, [order])
 
   const hasDiscount = discounts.length > 0
@@ -960,14 +962,14 @@ const InventoryKitBreakdown = ({ item }: { item: AdminOrderLineItem }) => {
           {inventory.map((i) => {
             return (
               <div
-                key={i.inventory.id}
+                key={i.inventory?.id}
                 className="flex items-center justify-between gap-x-2"
               >
                 <div>
                   <span className="txt-small text-ui-fg-subtle font-medium">
-                    {i.inventory.title}
+                    {i.inventory?.title}
 
-                    {i.inventory.sku && (
+                    {i.inventory?.sku && (
                       <span className="text-ui-fg-subtle font-normal">
                         {" "}
                         ⋅ {i.inventory.sku}
@@ -1022,13 +1024,16 @@ const ReturnBreakdownWithDamages = ({
             </Tooltip>
           )}
 
-          {item?.reason && (
+          {/* AdminReturnItem in @medusajs/types omits the embedded
+              `reason` join (label/code); the response includes it
+              when fetched with +items.reason.*. Cast structurally. */}
+          {(item as { reason?: { label?: string } })?.reason && (
             <Badge
               size="2xsmall"
               className="cursor-default select-none capitalize"
               rounded="full"
             >
-              {item?.reason?.label}
+              {(item as { reason?: { label?: string } })?.reason?.label}
             </Badge>
           )}
         </div>
@@ -1100,13 +1105,13 @@ const ReturnBreakdown = ({
               </Tooltip>
             )}
 
-            {item?.reason && (
+            {(item as { reason?: { label?: string } })?.reason && (
               <Badge
                 size="2xsmall"
                 className="cursor-default select-none capitalize"
                 rounded="full"
               >
-                {item?.reason?.label}
+                {(item as { reason?: { label?: string } })?.reason?.label}
               </Badge>
             )}
           </div>
@@ -1144,8 +1149,11 @@ const ClaimBreakdown = ({
 }) => {
   const { t } = useTranslation()
   const { getRelativeDate } = useDate()
+  // BaseClaimItem in @medusajs/types omits the embedded `item` join
+  // (the line-item the claim row references); the response includes
+  // it when fetched with +additional_items.item.id. Cast structurally.
   const items = claim.additional_items.filter(
-    (item) => item.item?.id === itemId
+    (item) => (item as { item?: { id?: string } }).item?.id === itemId
   )
 
   return (
@@ -1184,8 +1192,11 @@ const ExchangeBreakdown = ({
 }) => {
   const { t } = useTranslation()
   const { getRelativeDate } = useDate()
+  // BaseExchangeItem in @medusajs/types omits the embedded `item`
+  // join; the response includes it when fetched with
+  // +additional_items.item.id. Cast structurally.
   const items = exchange.additional_items.filter(
-    (item) => item?.item?.id === itemId
+    (item) => (item as { item?: { id?: string } })?.item?.id === itemId
   )
 
   return (

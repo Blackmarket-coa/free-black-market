@@ -1,10 +1,10 @@
 import { Heading } from "@medusajs/ui"
 import { useTranslation } from "react-i18next"
 import { useParams } from "react-router-dom"
-import { RouteDrawer } from "../../../components/modals"
-import { VisuallyHidden } from "../../../components/utilities/visually-hidden"
-import { useApiKey } from "../../../hooks/api/api-keys"
-import { EditApiKeyForm } from "./components/edit-api-key-form"
+import { RouteDrawer } from "@components/modals"
+import { VisuallyHidden } from "@components/utilities/visually-hidden"
+import { useApiKey } from "@hooks/api/api-keys"
+import { EditApiKeyForm } from "@routes/api-key-management/api-key-management-edit/components/edit-api-key-form"
 
 export const ApiKeyManagementEdit = () => {
   const { id } = useParams()

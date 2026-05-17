@@ -1,8 +1,8 @@
-import { HttpTypes } from "@medusajs/types"
-import { UIMatch } from "react-router-dom"
+import type { HttpTypes } from "@medusajs/types"
+import type { UIMatch } from "react-router-dom"
 
-import { useStockLocation } from "../../../hooks/api/stock-locations"
-import { LOCATION_DETAILS_FIELD } from "./constants"
+import { useStockLocation } from "@hooks/api/stock-locations"
+import { LOCATION_DETAILS_FIELD } from "@routes/locations/location-detail/constants"
 
 type LocationDetailBreadcrumbProps =
   UIMatch<HttpTypes.AdminStockLocationResponse>

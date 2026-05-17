@@ -1,12 +1,12 @@
 import { ArrowUpRightOnBox, PencilSquare } from "@medusajs/icons"
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 import { Container, Heading, Text } from "@medusajs/ui"
 import { useTranslation } from "react-i18next"
 import { useParams } from "react-router-dom"
 
-import { ActionMenu } from "../../../../../components/common/action-menu"
-import { DateRangeDisplay } from "../../../../../components/common/date-range-display"
-import { NoRecords } from "../../../../../components/common/empty-table-content"
+import { ActionMenu } from "@components/common/action-menu"
+import { DateRangeDisplay } from "@components/common/date-range-display"
+import { NoRecords } from "@components/common/empty-table-content"
 
 const CampaignDetailSection = ({
   campaign,

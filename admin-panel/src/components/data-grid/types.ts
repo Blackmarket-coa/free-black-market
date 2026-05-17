@@ -1,12 +1,13 @@
-import {
+import type {
   CellContext,
   ColumnDef,
   ColumnMeta,
   Row,
   VisibilityState,
 } from "@tanstack/react-table"
-import React, { PropsWithChildren, ReactNode, RefObject } from "react"
-import {
+import type { PropsWithChildren, ReactNode, RefObject } from "react";
+import type React from "react"
+import type {
   FieldErrors,
   FieldPath,
   FieldValues,

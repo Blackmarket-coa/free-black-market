@@ -1,1 +1,1 @@
-export * from "./combobox"
+export * from "@components/inputs/combobox/combobox"

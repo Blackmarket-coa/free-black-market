@@ -1,5 +1,5 @@
-import { ColumnDef } from "@tanstack/react-table"
-import { Skeleton } from "../../common/skeleton"
+import type { ColumnDef } from "@tanstack/react-table"
+import { Skeleton } from "@components/common/skeleton"
 
 type DataGridSkeletonProps<TData> = {
   columns: ColumnDef<TData>[]

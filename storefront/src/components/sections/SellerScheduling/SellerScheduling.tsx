@@ -3,7 +3,7 @@
 import { useMemo } from "react"
 import { Button } from "@/components/atoms"
 import { useRocketChat } from "@/providers/RocketChatProvider"
-import { SellerProps, SellerScheduling } from "@/types/seller"
+import type { SellerProps, SellerScheduling as SellerSchedulingMeta } from "@/types/seller"
 
 const PLATFORM_LABELS: Record<string, string> = {
   rocketchat: "Rocket.Chat",
@@ -12,7 +12,7 @@ const PLATFORM_LABELS: Record<string, string> = {
   custom: "video call",
 }
 
-const hasSchedulingDetails = (scheduling?: SellerScheduling) => {
+const hasSchedulingDetails = (scheduling?: SellerSchedulingMeta) => {
   if (!scheduling) return false
   return Boolean(
     scheduling.booking_url ||

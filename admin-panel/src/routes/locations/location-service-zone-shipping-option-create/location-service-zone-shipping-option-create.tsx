@@ -1,10 +1,10 @@
 import { json, useParams, useSearchParams } from "react-router-dom"
 
-import { RouteFocusModal } from "../../../components/modals"
-import { useStockLocation } from "../../../hooks/api/stock-locations"
-import { CreateShippingOptionsForm } from "./components/create-shipping-options-form"
-import { LOC_CREATE_SHIPPING_OPTION_FIELDS } from "./constants"
-import { FulfillmentSetType } from "../common/constants"
+import { RouteFocusModal } from "@components/modals"
+import { useStockLocation } from "@hooks/api/stock-locations"
+import { CreateShippingOptionsForm } from "@routes/locations/location-service-zone-shipping-option-create/components/create-shipping-options-form"
+import { LOC_CREATE_SHIPPING_OPTION_FIELDS } from "@routes/locations/location-service-zone-shipping-option-create/constants"
+import type { FulfillmentSetType } from "@routes/locations/common/constants"
 
 export function LocationServiceZoneShippingOptionCreate() {
   const { location_id, fset_id, zone_id } = useParams()

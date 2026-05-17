@@ -1,10 +1,10 @@
 import { useMemo } from "react"
 import { useTranslation } from "react-i18next"
 import { createDataTableFilterHelper } from "@medusajs/ui"
-import { HttpTypes } from "@medusajs/types"
-import { useDataTableDateFilters } from "../../../../../components/data-table/helpers/general/use-data-table-date-filters"
-import { useRegions } from "../../../../../hooks/api/regions"
-import { useSalesChannels } from "../../../../../hooks/api/sales-channels"
+import type { HttpTypes } from "@medusajs/types"
+import { useDataTableDateFilters } from "@components/data-table/helpers/general/use-data-table-date-filters"
+import { useRegions } from "@hooks/api/regions"
+import { useSalesChannels } from "@hooks/api/sales-channels"
 
 const filterHelper = createDataTableFilterHelper<HttpTypes.AdminOrder>()
 

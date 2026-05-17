@@ -1,1 +1,1 @@
-export * from "./seller-status-badge";
+export * from "@components/common/seller-status-badge/seller-status-badge";

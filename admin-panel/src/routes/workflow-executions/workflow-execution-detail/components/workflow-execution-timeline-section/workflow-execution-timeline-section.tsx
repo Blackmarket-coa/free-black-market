@@ -10,15 +10,15 @@ import { useEffect, useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
 import { Link } from "react-router-dom"
 
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 import {
   STEP_ERROR_STATES,
   STEP_INACTIVE_STATES,
   STEP_IN_PROGRESS_STATES,
   STEP_OK_STATES,
   STEP_SKIPPED_STATES,
-} from "../../../constants"
-import { useDocumentDirection } from "../../../../../hooks/use-document-direction"
+} from "@routes/workflow-executions/constants"
+import { useDocumentDirection } from "@hooks/use-document-direction"
 
 type WorkflowExecutionTimelineSectionProps = {
   execution: HttpTypes.AdminWorkflowExecutionResponse["workflow_execution"]
@@ -66,7 +66,8 @@ const getNextCluster = (
   depth: number
 ) => {
   const nextDepth = depth + 1
-  return clusters[nextDepth]
+  
+return clusters[nextDepth]
 }
 
 type ZoomScale = 0.5 | 0.75 | 1
@@ -120,7 +121,8 @@ const Canvas = ({
     y: number
   ) {
     const scaleRatio = newScale / prevScale
-    return {
+    
+return {
       x: x * scaleRatio,
       y: y * scaleRatio,
     }

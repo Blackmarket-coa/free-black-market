@@ -1,0 +1,89 @@
+name: Deploy → Production
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: 'Image tag to deploy (e.g. v1.2.3 or sha-abcd123). Required.'
+        required: true
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: read
+  id-token: write
+
+jobs:
+  deploy:
+    name: Apply Kubernetes manifests (production)
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://freeblackmarket.com
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure kubeconfig
+        env:
+          KUBE_CONFIG_DATA: ${{ secrets.PRODUCTION_KUBE_CONFIG_DATA }}
+        run: |
+          if [ -z "$KUBE_CONFIG_DATA" ]; then
+            echo "::error::PRODUCTION_KUBE_CONFIG_DATA secret is not configured."
+            exit 1
+          fi
+          mkdir -p "$HOME/.kube"
+          echo "$KUBE_CONFIG_DATA" | base64 -d > "$HOME/.kube/config"
+          chmod 600 "$HOME/.kube/config"
+
+      - name: Verify image is signed and present
+        env:
+          IMAGE_TAG: ${{ inputs.image_tag }}
+        run: |
+          for image in free-black-market-backend free-black-market-storefront free-black-market-admin-panel free-black-market-vendor-panel; do
+            ref="ghcr.io/${{ github.repository_owner }}/$image:$IMAGE_TAG"
+            echo "Verifying $ref"
+            docker buildx imagetools inspect "$ref" >/dev/null
+          done
+
+      - name: Render manifests
+        env:
+          IMAGE_TAG: ${{ inputs.image_tag }}
+          IMAGE_REGISTRY: ghcr.io/${{ github.repository_owner }}
+        run: |
+          if [ ! -d infrastructure/k8s/production ]; then
+            echo "::warning::infrastructure/k8s/production is empty; skipping kubectl apply."
+            exit 0
+          fi
+          find infrastructure/k8s/production -type f -name '*.yaml' -print0 \
+            | xargs -0 sed -i "s|__IMAGE_REGISTRY__|$IMAGE_REGISTRY|g; s|__IMAGE_TAG__|$IMAGE_TAG|g"
+
+      - name: Apply manifests
+        if: hashFiles('infrastructure/k8s/production/*.yaml') != ''
+        run: kubectl apply -f infrastructure/k8s/production/
+
+      - name: Wait for rollouts
+        if: hashFiles('infrastructure/k8s/production/*.yaml') != ''
+        run: |
+          for d in backend storefront admin-panel vendor-panel; do
+            kubectl -n freeblackmarket-production rollout status deployment/$d --timeout=15m || exit 1
+          done
+
+      - name: Smoke test
+        run: |
+          for url in \
+            "https://freeblackmarket.com/api/health" \
+            "https://admin.freeblackmarket.com/healthz" \
+            "https://vendor.freeblackmarket.com/healthz"; do
+            echo "Checking $url"
+            curl -fsS --max-time 10 "$url" >/dev/null
+          done
+
+      - name: Annotate deployment
+        run: |
+          echo "## Production deploy" >> "$GITHUB_STEP_SUMMARY"
+          echo "Image tag: \`${{ inputs.image_tag }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "Triggered by: @${{ github.actor }}" >> "$GITHUB_STEP_SUMMARY"

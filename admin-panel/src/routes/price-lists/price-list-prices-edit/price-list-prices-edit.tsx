@@ -1,9 +1,9 @@
 import { useParams, useSearchParams } from "react-router-dom"
-import { RouteFocusModal } from "../../../components/modals"
-import { usePriceList } from "../../../hooks/api/price-lists"
-import { useProducts } from "../../../hooks/api/products"
-import { usePriceListCurrencyData } from "../common/hooks/use-price-list-currency-data"
-import { PriceListPricesEditForm } from "./components/price-list-prices-edit-form"
+import { RouteFocusModal } from "@components/modals"
+import { usePriceList } from "@hooks/api/price-lists"
+import { useProducts } from "@hooks/api/products"
+import { usePriceListCurrencyData } from "@routes/price-lists/common/hooks/use-price-list-currency-data"
+import { PriceListPricesEditForm } from "@routes/price-lists/price-list-prices-edit/components/price-list-prices-edit-form"
 
 export const PriceListPricesEdit = () => {
   const { id } = useParams()
@@ -51,9 +51,9 @@ export const PriceListPricesEdit = () => {
         <PriceListPricesEditForm
           priceList={price_list}
           products={products}
-          regions={regions}
-          currencies={currencies}
-          pricePreferences={pricePreferences}
+          regions={regions ?? []}
+          currencies={currencies ?? []}
+          pricePreferences={pricePreferences ?? []}
         />
       )}
     </RouteFocusModal>

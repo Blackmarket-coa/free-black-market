@@ -1,1 +1,1 @@
-export * from "./edit-rules-form"
+export * from "@routes/promotions/common/edit-rules/components/edit-rules-form/edit-rules-form"

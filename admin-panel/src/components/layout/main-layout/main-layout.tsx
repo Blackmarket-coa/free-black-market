@@ -14,6 +14,7 @@ import {
   Shopping,
   ShoppingCart,
   SquaresPlus,
+  Star,
   Sun,
   Tag,
   Users,
@@ -22,19 +23,20 @@ import { Avatar, Divider, DropdownMenu, Text, clx } from "@medusajs/ui";
 import { Collapsible as RadixCollapsible } from "radix-ui";
 import { useTranslation } from "react-i18next";
 
-import { useStore } from "../../../hooks/api/store"
-import { useMe } from "../../../hooks/api/users";
-import { Skeleton } from "../../common/skeleton";
-import { INavItem, NavItem } from "../../layout/nav-item";
-import { Shell } from "../../layout/shell";
+import { useStore } from "@hooks/api/store"
+import { useMe } from "@hooks/api/users";
+import { Skeleton } from "@components/common/skeleton";
+import type { INavItem} from "@components/layout/nav-item";
+import { NavItem } from "@components/layout/nav-item";
+import { Shell } from "@components/layout/shell";
 
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { useLogout } from "../../../hooks/api";
-import { queryClient } from "../../../lib/query-client";
-import { useExtension } from "../../../providers/extension-provider";
-import { useSearch } from "../../../providers/search-provider";
-import { UserMenu } from "../user-menu";
-import { useDocumentDirection } from "../../../hooks/use-document-direction";
+import { useLogout } from "@hooks/api";
+import { queryClient } from "@lib/query-client";
+import { useExtension } from "@providers/extension-provider";
+import { useSearch } from "@providers/search-provider";
+import { UserMenu } from "@components/layout/user-menu";
+import { useDocumentDirection } from "@hooks/use-document-direction";
 
 export const MainLayout = () => {
   return (
@@ -250,6 +252,26 @@ const useCoreRoutes = (): Omit<INavItem, "pathname">[] => {
       icon: <Sun />,
       label: "Producers",
       to: "/producers",
+    },
+    {
+      icon: <Star />,
+      label: "Creators",
+      to: "/creators",
+      items: [
+        {
+          label: "Programs",
+          to: "/creator-programs",
+        },
+        {
+          label: "Reward Pools",
+          to: "/creator-rewards",
+        },
+      ],
+    },
+    {
+      icon: <SquaresPlus />,
+      label: "Services",
+      to: "/services",
     },
     {
       icon: <ReceiptPercent />,

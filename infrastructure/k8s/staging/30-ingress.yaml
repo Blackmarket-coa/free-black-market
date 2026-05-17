@@ -1,0 +1,64 @@
+# Single Ingress object routing all four staging hostnames. The hostnames
+# match the smoke-test URLs in .github/workflows/staging-deploy.yml. TLS is
+# expected to be issued by cert-manager via the cluster's Let's Encrypt
+# ClusterIssuer.
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: freeblackmarket
+  namespace: freeblackmarket-staging
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/proxy-body-size: "32m"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - staging.freeblackmarket.com
+        - staging-admin.freeblackmarket.com
+        - staging-vendor.freeblackmarket.com
+        - staging-api.freeblackmarket.com
+      secretName: freeblackmarket-staging-tls
+  rules:
+    - host: staging.freeblackmarket.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: storefront
+                port:
+                  number: 3000
+    - host: staging-api.freeblackmarket.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: backend
+                port:
+                  number: 9000
+    - host: staging-admin.freeblackmarket.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: admin-panel
+                port:
+                  number: 80
+    - host: staging-vendor.freeblackmarket.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: vendor-panel
+                port:
+                  number: 80

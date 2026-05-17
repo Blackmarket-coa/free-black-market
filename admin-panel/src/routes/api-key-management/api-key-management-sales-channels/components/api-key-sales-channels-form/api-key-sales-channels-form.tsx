@@ -1,31 +1,32 @@
 import { zodResolver } from "@hookform/resolvers/zod"
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
+import type {
+  DataTableRowSelectionState} from "@medusajs/ui";
 import {
   Button,
   Checkbox,
-  DataTableRowSelectionState,
   Hint,
   createDataTableColumnHelper,
   toast,
 } from "@medusajs/ui"
 import { keepPreviousData } from "@tanstack/react-query"
-import { RowSelectionState } from "@tanstack/react-table"
+import type { RowSelectionState } from "@tanstack/react-table"
 import { useMemo, useState } from "react"
 import { useForm } from "react-hook-form"
 import { useTranslation } from "react-i18next"
 import * as zod from "zod"
 
-import { ConditionalTooltip } from "../../../../../components/common/conditional-tooltip"
-import { DataTable } from "../../../../../components/data-table"
-import * as hooks from "../../../../../components/data-table/helpers/sales-channels"
+import { ConditionalTooltip } from "@components/common/conditional-tooltip"
+import { DataTable } from "@components/data-table"
+import * as hooks from "@components/data-table/helpers/sales-channels"
 import {
   RouteFocusModal,
   useRouteModal,
-} from "../../../../../components/modals"
-import { KeyboundForm } from "../../../../../components/utilities/keybound-form"
-import { VisuallyHidden } from "../../../../../components/utilities/visually-hidden"
-import { useBatchAddSalesChannelsToApiKey } from "../../../../../hooks/api/api-keys"
-import { useSalesChannels } from "../../../../../hooks/api/sales-channels"
+} from "@components/modals"
+import { KeyboundForm } from "@components/utilities/keybound-form"
+import { VisuallyHidden } from "@components/utilities/visually-hidden"
+import { useBatchAddSalesChannelsToApiKey } from "@hooks/api/api-keys"
+import { useSalesChannels } from "@hooks/api/sales-channels"
 
 type ApiKeySalesChannelFormProps = {
   apiKey: string

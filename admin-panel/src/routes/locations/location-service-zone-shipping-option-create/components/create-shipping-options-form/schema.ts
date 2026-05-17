@@ -1,6 +1,6 @@
 import { z } from "zod"
-import { ShippingOptionPriceType } from "../../../common/constants"
-import { ConditionalPriceSchema } from "../../../common/schema"
+import { ShippingOptionPriceType } from "@routes/locations/common/constants"
+import { ConditionalPriceSchema } from "@routes/locations/common/schema"
 
 export type CreateShippingOptionSchema = z.infer<
   typeof CreateShippingOptionSchema

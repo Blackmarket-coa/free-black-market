@@ -3,12 +3,12 @@ import { Link } from "react-router-dom"
 
 import { keepPreviousData } from "@tanstack/react-query"
 import { useTranslation } from "react-i18next"
-import { _DataTable } from "../../../../../components/table/data-table"
-import { useShippingProfiles } from "../../../../../hooks/api/shipping-profiles"
-import { useDataTable } from "../../../../../hooks/use-data-table"
-import { useShippingProfileTableColumns } from "./use-shipping-profile-table-columns"
-import { useShippingProfileTableFilters } from "./use-shipping-profile-table-filters"
-import { useShippingProfileTableQuery } from "./use-shipping-profile-table-query"
+import { _DataTable } from "@components/table/data-table"
+import { useShippingProfiles } from "@hooks/api/shipping-profiles"
+import { useDataTable } from "@hooks/use-data-table"
+import { useShippingProfileTableColumns } from "@routes/shipping-profiles/shipping-profiles-list/components/shipping-profile-list-table/use-shipping-profile-table-columns"
+import { useShippingProfileTableFilters } from "@routes/shipping-profiles/shipping-profiles-list/components/shipping-profile-list-table/use-shipping-profile-table-filters"
+import { useShippingProfileTableQuery } from "@routes/shipping-profiles/shipping-profiles-list/components/shipping-profile-list-table/use-shipping-profile-table-query"
 
 const PAGE_SIZE = 20
 

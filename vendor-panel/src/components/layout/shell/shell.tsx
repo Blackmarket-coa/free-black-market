@@ -19,6 +19,7 @@ import { ProgressBar } from "../../common/progress-bar"
 import { Notifications } from "../notifications"
 import { AdminChat } from "../admin-chat"
 import { VendorHermesChat } from "../vendor-hermes-chat"
+import { PlaybookSetupBanner } from "../../playbook/playbook-setup-banner"
 import { useMe } from "../../../hooks/api"
 
 export const Shell = ({ children }: PropsWithChildren) => {
@@ -55,6 +56,7 @@ export const Shell = ({ children }: PropsWithChildren) => {
               )}
             >
               <Gutter>
+                <PlaybookSetupBanner />
                 <Outlet />
               </Gutter>
             </main>

@@ -1,17 +1,18 @@
-import { HttpTypes } from "@medusajs/types"
-import {
+import type { HttpTypes } from "@medusajs/types"
+import type {
   QueryKey,
-  useMutation,
   UseMutationOptions,
-  useQuery,
-  UseQueryOptions,
+  UseQueryOptions} from "@tanstack/react-query";
+import {
+  useMutation,
+  useQuery
 } from "@tanstack/react-query"
 
-import { FetchError } from "@medusajs/js-sdk"
-import { sdk } from "../../lib/client"
-import { queryClient } from "../../lib/query-client"
-import { queryKeysFactory } from "../../lib/query-key-factory"
-import { ordersQueryKeys } from "./orders"
+import type { FetchError } from "@medusajs/js-sdk"
+import { sdk } from "@lib/client"
+import { queryClient } from "@lib/query-client"
+import { queryKeysFactory } from "@lib/query-key-factory"
+import { ordersQueryKeys } from "@hooks/api/orders"
 
 const RETURNS_QUERY_KEY = "returns" as const
 export const returnsQueryKeys = queryKeysFactory(RETURNS_QUERY_KEY)

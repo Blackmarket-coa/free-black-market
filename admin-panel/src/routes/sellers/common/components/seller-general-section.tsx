@@ -1,5 +1,20 @@
 import { PencilSquare, User } from "@medusajs/icons";
-import { Badge, Container, Divider, Heading, Text, usePrompt } from "@medusajs/ui";
+import {
+  Badge,
+  Button,
+  Container,
+  Divider,
+  Heading,
+  Input,
+  Label,
+  Text,
+  Textarea,
+  toast,
+  usePrompt,
+} from "@medusajs/ui";
+
+import { useState } from "react";
+import type { FormEvent } from "react";
 
 import { useNavigate } from "react-router-dom";
 
@@ -9,12 +24,18 @@ import { VendorTypeLabels } from "@custom-types/domain";
 import { ActionsButton } from "@components/common/actions-button";
 import { SellerStatusBadge } from "@components/common/seller-status-badge";
 
-import { useUpdateSeller } from "@hooks/api/sellers";
+import { useEmailSeller, useUpdateSeller } from "@hooks/api/sellers";
 
 export const SellerGeneralSection = ({ seller }: { seller: VendorSeller }) => {
   const navigate = useNavigate();
+  const [showEmailForm, setShowEmailForm] = useState(false);
+  const [subject, setSubject] = useState("");
+  const [message, setMessage] = useState("");
 
   const { mutateAsync: suspendSeller } = useUpdateSeller();
+  const { mutateAsync: emailSeller, isPending: isEmailingSeller } = useEmailSeller(
+    seller.id,
+  );
 
   const dialog = usePrompt();
 
@@ -49,6 +70,32 @@ export const SellerGeneralSection = ({ seller }: { seller: VendorSeller }) => {
     ? VendorTypeLabels[seller.seller_metadata.vendor_type as keyof typeof VendorTypeLabels] || seller.seller_metadata.vendor_type
     : "Not set";
 
+  const handleSendEmail = async (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+
+    if (!seller.email) {
+      toast.error("Vendor does not have an email address configured");
+
+      return;
+    }
+
+    if (!subject.trim() || !message.trim()) {
+      toast.error("Please add both a subject and message");
+
+      return;
+    }
+
+    try {
+      await emailSeller({ subject: subject.trim(), message: message.trim() });
+      toast.success(`Email sent to ${seller.email}`);
+      setSubject("");
+      setMessage("");
+      setShowEmailForm(false);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to send email");
+    }
+  };
+
   return (
     <>
       <div>
@@ -78,12 +125,47 @@ export const SellerGeneralSection = ({ seller }: { seller: VendorSeller }) => {
                     onClick: () => handleSuspend(),
                     icon: <User />,
                   },
+                  {
+                    label: showEmailForm ? "Hide email form" : "Email vendor",
+                    onClick: () => setShowEmailForm((prev) => !prev),
+                    icon: <User />,
+                  },
                 ]}
               />
             </div>
           </div>
         </Container>
       </div>
+      {showEmailForm && (
+        <Container className="mb-4">
+          <form className="flex flex-col gap-4" onSubmit={handleSendEmail}>
+            <div>
+              <Label htmlFor="vendor-email-subject">Subject</Label>
+              <Input
+                id="vendor-email-subject"
+                value={subject}
+                onChange={(e) => setSubject(e.target.value)}
+                placeholder="Enter email subject"
+              />
+            </div>
+            <div>
+              <Label htmlFor="vendor-email-message">Message</Label>
+              <Textarea
+                id="vendor-email-message"
+                value={message}
+                onChange={(e) => setMessage(e.target.value)}
+                placeholder="Write your message to the vendor"
+                rows={6}
+              />
+            </div>
+            <div className="flex justify-end">
+              <Button type="submit" isLoading={isEmailingSeller}>
+                Send email
+              </Button>
+            </div>
+          </form>
+        </Container>
+      )}
       <div className="flex gap-4">
         <Container className="px-0">
           <div className="flex items-center justify-between px-8 py-4">

@@ -1,7 +1,8 @@
 import { zodResolver } from "@hookform/resolvers/zod"
-import {
+import type {
   ColumnDef,
-  RowSelectionState,
+  RowSelectionState} from "@tanstack/react-table";
+import {
   createColumnHelper,
 } from "@tanstack/react-table"
 import { useEffect, useMemo, useState } from "react"
@@ -9,20 +10,23 @@ import { useForm } from "react-hook-form"
 import { useTranslation } from "react-i18next"
 import * as zod from "zod"
 
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 import { Button, Checkbox, toast } from "@medusajs/ui"
 import {
   RouteFocusModal,
   useRouteModal,
-} from "../../../../../components/modals"
-import { _DataTable } from "../../../../../components/table/data-table"
-import { KeyboundForm } from "../../../../../components/utilities/keybound-form"
-import { useUpdateRegion } from "../../../../../hooks/api/regions"
-import { useDataTable } from "../../../../../hooks/use-data-table"
-import { countries as staticCountries } from "../../../../../lib/data/countries"
-import { useCountries } from "../../../common/hooks/use-countries"
-import { useCountryTableColumns } from "../../../common/hooks/use-country-table-columns"
-import { useCountryTableQuery } from "../../../common/hooks/use-country-table-query"
+} from "@components/modals"
+import { _DataTable } from "@components/table/data-table"
+import { KeyboundForm } from "@components/utilities/keybound-form"
+import { useUpdateRegion } from "@hooks/api/regions"
+import { useDataTable } from "@hooks/use-data-table"
+import {
+  countries as staticCountries,
+  type StaticCountry,
+} from "@lib/data/countries"
+import { useCountries } from "@routes/regions/common/hooks/use-countries"
+import { useCountryTableColumns } from "@routes/regions/common/hooks/use-country-table-columns"
+import { useCountryTableQuery } from "@routes/regions/common/hooks/use-country-table-query"
 
 type AddCountriesFormProps = {
   region: HttpTypes.AdminRegion
@@ -163,7 +167,7 @@ export const AddCountriesForm = ({ region }: AddCountriesFormProps) => {
   )
 }
 
-const columnHelper = createColumnHelper<HttpTypes.AdminRegionCountry>()
+const columnHelper = createColumnHelper<StaticCountry>()
 
 const useColumns = () => {
   const base = useCountryTableColumns()
@@ -204,5 +208,5 @@ const useColumns = () => {
       ...base,
     ],
     [base]
-  ) as ColumnDef<HttpTypes.AdminRegionCountry>[]
+  ) as ColumnDef<StaticCountry>[]
 }

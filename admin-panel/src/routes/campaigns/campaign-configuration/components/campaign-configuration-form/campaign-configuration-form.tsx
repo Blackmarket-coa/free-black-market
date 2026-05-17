@@ -1,14 +1,14 @@
 import { zodResolver } from "@hookform/resolvers/zod"
-import { AdminCampaign } from "@medusajs/types"
+import type { AdminCampaign } from "@medusajs/types"
 import { Button, DatePicker, toast } from "@medusajs/ui"
 import { useForm } from "react-hook-form"
 import { useTranslation } from "react-i18next"
 import { z } from "zod"
 
-import { Form } from "../../../../../components/common/form"
-import { RouteDrawer, useRouteModal } from "../../../../../components/modals"
-import { KeyboundForm } from "../../../../../components/utilities/keybound-form"
-import { useUpdateCampaign } from "../../../../../hooks/api/campaigns"
+import { Form } from "@components/common/form"
+import { RouteDrawer, useRouteModal } from "@components/modals"
+import { KeyboundForm } from "@components/utilities/keybound-form"
+import { useUpdateCampaign } from "@hooks/api/campaigns"
 
 type CampaignConfigurationFormProps = {
   campaign: AdminCampaign

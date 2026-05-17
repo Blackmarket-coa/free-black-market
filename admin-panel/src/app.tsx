@@ -1,5 +1,5 @@
 import { DashboardApp } from "./dashboard-app"
-import { DashboardPlugin } from "./dashboard-app/types"
+import type { DashboardPlugin } from "./dashboard-app/types"
 
 import displayModule from "virtual:medusa/displays"
 import formModule from "virtual:medusa/forms"

@@ -19,12 +19,17 @@ export const LedgerAccount = model.define("hawala_ledger_account", {
   account_number: model.text().unique(), // Unique account identifier
   account_type: model.enum([
     "USER_WALLET",
-    "PRODUCER_POOL", 
+    "PRODUCER_POOL",
     "SELLER_EARNINGS",
     "PLATFORM_FEE",
     "SETTLEMENT",
     "RESERVE",
     "ESCROW",
+    "CREATOR_EARNINGS",
+    "CREATOR_REWARD_POOL",
+    // Time-bank balances (HRS rail). Hours are closed-loop, member-to-
+    // member; the account holds the member's signed hours balance.
+    "TIME_BANK",
   ]),
   
   // Currency (ISO 4217)
@@ -42,6 +47,7 @@ export const LedgerAccount = model.define("hawala_ledger_account", {
     "PRODUCER",
     "PLATFORM",
     "SYSTEM",
+    "CREATOR",
   ]).nullable(),
   owner_id: model.text().nullable(), // customer_id, seller_id, producer_id, etc.
   

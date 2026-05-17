@@ -6,7 +6,8 @@ import {
   Container,
   Badge,
 } from "@medusajs/ui"
-import { RowType, Venue } from "../types"
+import type { Venue } from "@/types";
+import { RowType } from "@/types"
 
 export interface CurrencyRegionCombination {
   currency: string
@@ -101,7 +102,8 @@ export const PricingStep = ({
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {currencyRegionCombinations.map((combo) => {
                   const key = combo.region_id ? `${combo.currency}_${combo.region_id}` : `${combo.currency}_store`
-                  return (
+                  
+return (
                     <div key={key}>
                       <Label htmlFor={`${rowType}-${key}`}>
                         {combo.currency.toUpperCase()} - {combo.region_name || "Store"}

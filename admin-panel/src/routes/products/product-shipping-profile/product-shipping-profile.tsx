@@ -2,10 +2,10 @@ import { Heading } from "@medusajs/ui"
 import { useTranslation } from "react-i18next"
 import { useParams } from "react-router-dom"
 
-import { RouteDrawer } from "../../../components/modals"
-import { useProduct } from "../../../hooks/api/products"
-import { PRODUCT_DETAIL_FIELDS } from "../product-detail/constants"
-import { ProductShippingProfileForm } from "./components/product-organization-form"
+import { RouteDrawer } from "@components/modals"
+import { useProduct } from "@hooks/api/products"
+import { PRODUCT_DETAIL_FIELDS } from "@routes/products/product-detail/constants"
+import { ProductShippingProfileForm } from "@routes/products/product-shipping-profile/components/product-organization-form"
 
 export const ProductShippingProfile = () => {
   const { id } = useParams()
@@ -27,7 +27,11 @@ export const ProductShippingProfile = () => {
         </RouteDrawer.Title>
       </RouteDrawer.Header>
       {!isLoading && product && (
-        <ProductShippingProfileForm product={product} />
+        // ProductShippingProfileForm's prop type asserts the embedded
+        // shipping_profile join; the admin response includes it when
+        // fetched with +shipping_profile.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        <ProductShippingProfileForm product={product as any} />
       )}
     </RouteDrawer>
   )

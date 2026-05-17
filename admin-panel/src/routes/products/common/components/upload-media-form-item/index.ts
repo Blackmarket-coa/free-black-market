@@ -1,1 +1,1 @@
-export * from "./upload-media-form-item"
+export * from "@routes/products/common/components/upload-media-form-item/upload-media-form-item"

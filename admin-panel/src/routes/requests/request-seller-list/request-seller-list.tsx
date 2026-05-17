@@ -5,7 +5,7 @@ import { Container, Heading, Table, Text } from "@medusajs/ui";
 
 import { formatDate } from "@lib/date";
 
-import type { AdminRequest } from "@custom-types/requests";
+import type { AdminSellerRequest } from "@custom-types/requests";
 
 import { useVendorRequests } from "@hooks/api/requests";
 
@@ -22,11 +22,11 @@ const PAGE_SIZE = 20;
 export const RequestSellerList = () => {
   const [currentPage, setCurrentPage] = useState<number>(0);
   const [detailOpen, setDetailOpen] = useState(false);
-  const [detailRequest, setDetailRequest] = useState<AdminRequest | undefined>(
+  const [detailRequest, setDetailRequest] = useState<AdminSellerRequest | undefined>(
     undefined,
   );
 
-  const handleDetail = (request: AdminRequest) => {
+  const handleDetail = (request: AdminSellerRequest) => {
     setDetailRequest(request);
     setDetailOpen(true);
   };
@@ -101,7 +101,9 @@ export const RequestSellerList = () => {
                     </Table.Cell>
                     <Table.Cell>
                       <RequestMenu
-                        handleDetail={handleDetail}
+                        handleDetail={(req) =>
+                          handleDetail(req as unknown as AdminSellerRequest)
+                        }
                         request={request}
                       />
                     </Table.Cell>
@@ -135,7 +137,9 @@ export const RequestSellerList = () => {
                   </Table.Cell>
                   <Table.Cell>
                     <RequestMenu
-                      handleDetail={handleDetail}
+                      handleDetail={(req) =>
+                        handleDetail(req as unknown as AdminSellerRequest)
+                      }
                       request={request}
                     />
                   </Table.Cell>

@@ -1,1 +1,1 @@
-export { OrderCreateShipment as Component } from "./order-create-shipment"
+export { OrderCreateShipment as Component } from "@routes/orders/order-create-shipment/order-create-shipment"

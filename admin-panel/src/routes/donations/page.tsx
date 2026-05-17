@@ -3,7 +3,8 @@ import { useQuery } from "@tanstack/react-query"
 import { Button, Container, Heading, Input, Label, Select, Text, Textarea } from "@medusajs/ui"
 import { sdk } from "@lib/client"
 import { StorefrontSwitcher } from "@components/tenancy/storefront-switcher"
-import { StorefrontContext, withStorefrontHeaders } from "@lib/tenancy/context"
+import type { StorefrontContext} from "@lib/tenancy/context";
+import { withStorefrontHeaders } from "@lib/tenancy/context"
 
 const SHOPIFY_EXAMPLE = `Handle,Title,Body (HTML),Variant SKU,Variant Price\norganic-kale,Organic Kale,<p>Fresh kale</p>,KALE-001,3.99`
 

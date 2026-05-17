@@ -1,12 +1,11 @@
-import { InventoryTypes } from "@medusajs/types"
 import { Heading } from "@medusajs/ui"
 import { useTranslation } from "react-i18next"
 import { useParams } from "react-router-dom"
-import { RouteDrawer } from "../../../../../components/modals"
-import { useInventoryItem } from "../../../../../hooks/api/inventory"
-import { useReservationItem } from "../../../../../hooks/api/reservations"
-import { useStockLocations } from "../../../../../hooks/api/stock-locations"
-import { EditReservationForm } from "./components/edit-reservation-form"
+import { RouteDrawer } from "@components/modals"
+import { useInventoryItem } from "@hooks/api/inventory"
+import { useReservationItem } from "@hooks/api/reservations"
+import { useStockLocations } from "@hooks/api/stock-locations"
+import { EditReservationForm } from "@routes/reservations/reservation-detail/components/edit-reservation/components/edit-reservation-form"
 
 export const ReservationEdit = () => {
   const { id } = useParams()
@@ -22,9 +21,7 @@ export const ReservationEdit = () => {
 
   const { stock_locations } = useStockLocations(
     {
-      id: inventoryItem?.location_levels?.map(
-        (l: InventoryTypes.InventoryLevelDTO) => l.location_id
-      ),
+      id: inventoryItem?.location_levels?.map((l) => l.location_id),
     },
     {
       enabled: !!inventoryItem?.location_levels,

@@ -1,6 +1,6 @@
 import { zodResolver } from "@hookform/resolvers/zod"
 import { PencilSquare } from "@medusajs/icons"
-import {
+import type {
   AdminClaim,
   AdminOrder,
   AdminOrderPreview,
@@ -26,19 +26,20 @@ import {
   StackedFocusModal,
   useRouteModal,
   useStackedModal,
-} from "../../../../../components/modals"
+} from "@components/modals"
 
-import { Form } from "../../../../../components/common/form"
-import { Combobox } from "../../../../../components/inputs/combobox"
-import { useShippingOptions } from "../../../../../hooks/api/shipping-options"
-import { useStockLocations } from "../../../../../hooks/api/stock-locations"
-import { getStylizedAmount } from "../../../../../lib/money-amount-helpers"
-import { AddClaimItemsTable } from "../add-claim-items-table"
-import { ClaimInboundItem } from "./claim-inbound-item.tsx"
-import { ClaimCreateSchema, CreateClaimSchemaType } from "./schema"
+import { Form } from "@components/common/form"
+import { Combobox } from "@components/inputs/combobox"
+import { useShippingOptions } from "@hooks/api/shipping-options"
+import { useStockLocations } from "@hooks/api/stock-locations"
+import { getStylizedAmount } from "@lib/money-amount-helpers"
+import { AddClaimItemsTable } from "@routes/orders/order-create-claim/components/add-claim-items-table"
+import { ClaimInboundItem } from "@routes/orders/order-create-claim/components/claim-create-form/claim-inbound-item.tsx"
+import type { CreateClaimSchemaType } from "@routes/orders/order-create-claim/components/claim-create-form/schema";
+import { ClaimCreateSchema } from "@routes/orders/order-create-claim/components/claim-create-form/schema"
 
-import { AdminReturn, HttpTypes } from "@medusajs/types"
-import { KeyboundForm } from "../../../../../components/utilities/keybound-form/keybound-form.tsx"
+import type { AdminReturn, HttpTypes } from "@medusajs/types"
+import { KeyboundForm } from "@components/utilities/keybound-form/keybound-form.tsx"
 import {
   useAddClaimInboundItems,
   useAddClaimInboundShipping,
@@ -49,13 +50,13 @@ import {
   useUpdateClaimInboundItem,
   useUpdateClaimInboundShipping,
   useUpdateClaimOutboundShipping,
-} from "../../../../../hooks/api/claims"
-import { useUpdateReturn } from "../../../../../hooks/api/returns"
-import { sdk } from "../../../../../lib/client"
-import { currencies } from "../../../../../lib/data/currencies"
-import { ReturnShippingPlaceholder } from "../../../common/placeholders"
-import { ClaimOutboundSection } from "./claim-outbound-section"
-import { ItemPlaceholder } from "./item-placeholder"
+} from "@hooks/api/claims"
+import { useUpdateReturn } from "@hooks/api/returns"
+import { sdk } from "@lib/client"
+import { currencies } from "@lib/data/currencies"
+import { ReturnShippingPlaceholder } from "@routes/orders/common/placeholders"
+import { ClaimOutboundSection } from "@routes/orders/order-create-claim/components/claim-create-form/claim-outbound-section"
+import { ItemPlaceholder } from "@routes/orders/order-create-claim/components/claim-create-form/item-placeholder"
 
 type ReturnCreateFormProps = {
   order: AdminOrder
@@ -530,9 +531,12 @@ export const ClaimCreateForm = ({
         return ret
       }
 
+      // FieldArrayWithId<inbound_items> in the claim schema doesn't
+      // declare `variant_id`, but the form holds it for downstream
+      // inventory lookup; cast structurally.
       const variantIds = inboundItems
-        .map((item) => item?.variant_id)
-        .filter(Boolean)
+        .map((item) => (item as { variant_id?: string })?.variant_id)
+        .filter((v): v is string => !!v)
 
       const variants = (
         await sdk.admin.productVariant.list({
@@ -542,8 +546,18 @@ export const ClaimCreateForm = ({
       ).variants
 
       variants.forEach((variant) => {
-        ret[variant.id] =
-          variant.inventory?.flatMap((inventory) => inventory.location_levels || []) || []
+        // AdminProductVariant omits the embedded `inventory` join in
+        // the SDK type; the response includes it when fetched with
+        // +inventory.location_levels.
+        const inventoryRows =
+          (
+            variant as {
+              inventory?: Array<{ location_levels?: InventoryLevelDTO[] }>
+            }
+          ).inventory ?? []
+        ret[variant.id] = inventoryRows.flatMap(
+          (inventory) => inventory.location_levels ?? []
+        )
       })
 
       return ret
@@ -832,7 +846,14 @@ export const ClaimCreateForm = ({
                       const action = item.actions?.find(
                         (act) => act.action === "RETURN_ITEM"
                       )
-                      acc = acc + (action?.amount || 0)
+                      // AdminOrderChangeAction omits `amount` on the
+                      // union; the response includes it for monetary
+                      // actions. Cast structurally.
+                      acc =
+                        acc +
+                        Number(
+                          (action as { amount?: number })?.amount ?? 0
+                        )
 
                       return acc
                     }, 0) * -1,
@@ -852,7 +873,14 @@ export const ClaimCreateForm = ({
                       const action = item.actions?.find(
                         (act) => act.action === "ITEM_ADD"
                       )
-                      acc = acc + (action?.amount || 0)
+                      // AdminOrderChangeAction omits `amount` on the
+                      // union; the response includes it for monetary
+                      // actions. Cast structurally.
+                      acc =
+                        acc +
+                        Number(
+                          (action as { amount?: number })?.amount ?? 0
+                        )
 
                       return acc
                     }, 0),
@@ -921,7 +949,7 @@ export const ClaimCreateForm = ({
                           .symbol_native
                       }
                       code={order.currency_code}
-                      onValueChange={(value, _name, values) => {
+                      onValueChange={(_value, _name, values) => {
                         setCustomInboundShippingAmount({
                           value: values?.value ?? "",
                           float: values?.float ?? null,
@@ -994,7 +1022,7 @@ export const ClaimCreateForm = ({
                           .symbol_native
                       }
                       code={order.currency_code}
-                      onValueChange={(value, _name, values) => {
+                      onValueChange={(_value, _name, values) => {
                         setCustomOutboundShippingAmount({
                           value: values?.value ?? "",
                           float: values?.float ?? null,

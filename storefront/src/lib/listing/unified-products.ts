@@ -4,6 +4,11 @@ import { HttpTypes } from "@medusajs/types"
 import { PRODUCT_LIMIT } from "@/const"
 import { listProducts } from "@/lib/data/products"
 import { sortProducts } from "@/lib/helpers/sort-products"
+import {
+  getProductSellerIdentifiers,
+  isSuspended,
+  productMatchesPriceRange,
+} from "@/lib/listing/policy"
 
 type SortBy = "created_at" | "price_asc" | "price_desc"
 
@@ -48,26 +53,6 @@ const DEFAULT_DIAGNOSTICS = {
   droppedByHydration: 0,
   droppedByCurrencyFilter: 0,
   droppedByPolicy: 0,
-}
-
-const isSuspended = (product: HttpTypes.StoreProduct) =>
-  ((product as any)?.seller?.store_status as string | undefined) === "SUSPENDED"
-
-const getProductSellerIdentifiers = (product: HttpTypes.StoreProduct) => {
-  const productAny = product as any
-
-  return {
-    id:
-      (productAny?.seller?.id as string | undefined) ??
-      (productAny?.seller?.seller_id as string | undefined) ??
-      (productAny?.seller_id as string | undefined) ??
-      (productAny?.metadata?.seller_id as string | undefined) ??
-      "",
-    handle:
-      (productAny?.seller?.handle as string | undefined) ??
-      (productAny?.metadata?.seller_handle as string | undefined) ??
-      "",
-  }
 }
 
 const applyPolicyFilters = (
@@ -196,30 +181,12 @@ const applyFacetFilters = (
       return false
     }
 
-    const hasPriceMatch = variants.some((variant: any) => {
-      const rawAmount =
-        variant?.calculated_price?.calculated_amount ??
-        variant?.calculated_price?.original_amount ??
-        variant?.prices?.[0]?.amount
-
-      if (typeof rawAmount !== "number") {
-        return false
-      }
-
-      if (typeof input.minPrice === "number" && rawAmount < input.minPrice) {
-        return false
-      }
-
-      if (typeof input.maxPrice === "number" && rawAmount > input.maxPrice) {
-        return false
-      }
-
-      return true
-    })
-
     if (
       (typeof input.minPrice === "number" || typeof input.maxPrice === "number") &&
-      !hasPriceMatch
+      !productMatchesPriceRange(product, {
+        minPrice: input.minPrice,
+        maxPrice: input.maxPrice,
+      })
     ) {
       return false
     }

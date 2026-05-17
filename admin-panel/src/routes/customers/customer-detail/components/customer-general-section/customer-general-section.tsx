@@ -1,5 +1,5 @@
 import { PencilSquare, Trash } from "@medusajs/icons"
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 import {
   Container,
   Heading,
@@ -11,8 +11,8 @@ import {
 import { useTranslation } from "react-i18next"
 import { useNavigate } from "react-router-dom"
 
-import { ActionMenu } from "../../../../../components/common/action-menu"
-import { useDeleteCustomer } from "../../../../../hooks/api/customers"
+import { ActionMenu } from "@components/common/action-menu"
+import { useDeleteCustomer } from "@hooks/api/customers"
 
 type CustomerGeneralSectionProps = {
   customer: HttpTypes.AdminCustomer

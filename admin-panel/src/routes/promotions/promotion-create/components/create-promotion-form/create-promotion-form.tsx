@@ -1,5 +1,5 @@
 import { zodResolver } from "@hookform/resolvers/zod"
-import {
+import type {
   ApplicationMethodAllocationValues,
   ApplicationMethodTargetTypeValues,
   ApplicationMethodTypeValues,
@@ -7,6 +7,8 @@ import {
   PromotionStatusValues,
   PromotionTypeValues,
 } from "@medusajs/types"
+import type {
+  ProgressStatus} from "@medusajs/ui";
 import {
   Alert,
   Badge,
@@ -16,7 +18,6 @@ import {
   Divider,
   Heading,
   Input,
-  ProgressStatus,
   ProgressTabs,
   RadioGroup,
   Switch,
@@ -26,32 +27,32 @@ import {
 import { useEffect, useMemo, useState } from "react"
 import { useForm, useWatch } from "react-hook-form"
 import { Trans, useTranslation } from "react-i18next"
-import { z } from "zod"
-import { Form } from "../../../../../components/common/form"
-import { DeprecatedPercentageInput } from "../../../../../components/inputs/percentage-input"
+import type { z } from "zod"
+import { Form } from "@components/common/form"
+import { DeprecatedPercentageInput } from "@components/inputs/percentage-input"
 import {
   RouteFocusModal,
   useRouteModal,
-} from "../../../../../components/modals"
-import { KeyboundForm } from "../../../../../components/utilities/keybound-form"
-import { useCampaigns } from "../../../../../hooks/api/campaigns"
-import { useCreatePromotion } from "../../../../../hooks/api/promotions"
+} from "@components/modals"
+import { KeyboundForm } from "@components/utilities/keybound-form"
+import { useCampaigns } from "@hooks/api/campaigns"
+import { useCreatePromotion } from "@hooks/api/promotions"
 import {
   currencies,
   getCurrencySymbol,
-} from "../../../../../lib/data/currencies"
-import { DEFAULT_CAMPAIGN_VALUES } from "../../../../campaigns/common/constants"
-import { RulesFormField } from "../../../common/edit-rules/components/rules-form-field"
-import { AddCampaignPromotionFields } from "../../../promotion-add-campaign/components/add-campaign-promotion-form"
-import { Tab } from "./constants"
-import { CreatePromotionSchema } from "./form-schema"
-import { templates } from "./templates"
-import { useDocumentDirection } from "../../../../../hooks/use-document-direction"
+} from "@lib/data/currencies"
+import { DEFAULT_CAMPAIGN_VALUES } from "@routes/campaigns/common/constants"
+import { RulesFormField } from "@routes/promotions/common/edit-rules/components/rules-form-field"
+import { AddCampaignPromotionFields } from "@routes/promotions/promotion-add-campaign/components/add-campaign-promotion-form"
+import { Tab } from "@routes/promotions/promotion-create/components/create-promotion-form/constants"
+import { CreatePromotionSchema } from "@routes/promotions/promotion-create/components/create-promotion-form/form-schema"
+import { templates } from "@routes/promotions/promotion-create/components/create-promotion-form/templates"
+import { useDocumentDirection } from "@hooks/use-document-direction"
 
 const defaultValues = {
   campaign_id: undefined,
   template_id: templates[0].id!,
-  campaign_choice: "none" as "none",
+  campaign_choice: "none" as const,
   is_automatic: "false",
   code: "",
   type: "standard" as PromotionTypeValues,
@@ -267,10 +268,15 @@ export const CreatePromotionForm = () => {
     for (const [key, value] of Object.entries(currentTemplate.defaults)) {
       if (typeof value === "object") {
         for (const [subKey, subValue] of Object.entries(value)) {
-          setValue(`application_method.${subKey}`, subValue)
+          // useForm.setValue's name parameter is the typed key union;
+          // the dynamic `application_method.${subKey}` form is valid
+          // at runtime but can't pre-narrow.
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          setValue(`application_method.${subKey}` as any, subValue)
         }
       } else {
-        setValue(key, value)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        setValue(key as any, value)
       }
     }
 
@@ -342,9 +348,14 @@ export const CreatePromotionForm = () => {
           ...DEFAULT_CAMPAIGN_VALUES,
           budget: {
             ...DEFAULT_CAMPAIGN_VALUES.budget,
+            // The form schema narrows budget.type to spend|usage|
+            // use_by_attribute, but DEFAULT_CAMPAIGN_VALUES uses the
+            // SDK union which also includes spend_by_attribute. The
+            // default value ("usage") is in both — cast safely.
             currency_code: formData.application_method.currency_code,
           },
-        })
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        } as any)
       }
     }
   }, [watchCampaignChoice, getValues, setValue])
@@ -427,7 +438,7 @@ export const CreatePromotionForm = () => {
                           <Form.Control>
                             <RadioGroup
                               dir={direction}
-                              key={"template_id"}
+                              key="template_id"
                               className="flex-col gap-y-3"
                               {...field}
                               onValueChange={field.onChange}
@@ -503,7 +514,7 @@ export const CreatePromotionForm = () => {
                               onValueChange={field.onChange}
                             >
                               <RadioGroup.ChoiceBox
-                                value={"false"}
+                                value="false"
                                 label={t("promotions.form.method.code.title")}
                                 description={t(
                                   "promotions.form.method.code.description"
@@ -512,7 +523,7 @@ export const CreatePromotionForm = () => {
                               />
 
                               <RadioGroup.ChoiceBox
-                                value={"true"}
+                                value="true"
                                 label={t(
                                   "promotions.form.method.automatic.title"
                                 )}
@@ -548,7 +559,7 @@ export const CreatePromotionForm = () => {
                               onValueChange={field.onChange}
                             >
                               <RadioGroup.ChoiceBox
-                                value={"draft"}
+                                value="draft"
                                 label={t("promotions.form.status.draft.title")}
                                 description={t(
                                   "promotions.form.status.draft.description"
@@ -557,7 +568,7 @@ export const CreatePromotionForm = () => {
                               />
 
                               <RadioGroup.ChoiceBox
-                                value={"active"}
+                                value="active"
                                 label={t("promotions.form.status.active.title")}
                                 description={t(
                                   "promotions.form.status.active.description"
@@ -666,7 +677,7 @@ export const CreatePromotionForm = () => {
                                 onValueChange={field.onChange}
                               >
                                 <RadioGroup.ChoiceBox
-                                  value={"standard"}
+                                  value="standard"
                                   label={t(
                                     "promotions.form.type.standard.title"
                                   )}
@@ -677,7 +688,7 @@ export const CreatePromotionForm = () => {
                                 />
 
                                 <RadioGroup.ChoiceBox
-                                  value={"buyget"}
+                                  value="buyget"
                                   label={t("promotions.form.type.buyget.title")}
                                   description={t(
                                     "promotions.form.type.buyget.description"
@@ -695,7 +706,7 @@ export const CreatePromotionForm = () => {
 
                   <Divider />
 
-                  <RulesFormField form={form} ruleType={"rules"} />
+                  <RulesFormField form={form} ruleType="rules" />
 
                   {!currentTemplate?.hiddenFields?.includes(
                     "application_method.type"
@@ -719,7 +730,7 @@ export const CreatePromotionForm = () => {
                                   onValueChange={field.onChange}
                                 >
                                   <RadioGroup.ChoiceBox
-                                    value={"fixed"}
+                                    value="fixed"
                                     label={t(
                                       "promotions.form.value_type.fixed.title"
                                     )}
@@ -730,7 +741,7 @@ export const CreatePromotionForm = () => {
                                   />
 
                                   <RadioGroup.ChoiceBox
-                                    value={"percentage"}
+                                    value="percentage"
                                     label={t(
                                       "promotions.form.value_type.percentage.title"
                                     )}
@@ -851,7 +862,7 @@ export const CreatePromotionForm = () => {
                       <Form.Field
                         control={form.control}
                         name="application_method.max_quantity"
-                        render={({ field }) => {
+                        render={({ field: _field }) => {
                           return (
                             <Form.Item className="basis-1/2">
                               <Form.Label>
@@ -910,7 +921,7 @@ export const CreatePromotionForm = () => {
                                   onValueChange={field.onChange}
                                 >
                                   <RadioGroup.ChoiceBox
-                                    value={"each"}
+                                    value="each"
                                     label={t(
                                       "promotions.form.allocation.each.title"
                                     )}
@@ -921,7 +932,7 @@ export const CreatePromotionForm = () => {
                                   />
 
                                   <RadioGroup.ChoiceBox
-                                    value={"across"}
+                                    value="across"
                                     label={t(
                                       "promotions.form.allocation.across.title"
                                     )}
@@ -944,7 +955,7 @@ export const CreatePromotionForm = () => {
                       <Divider />
                       <RulesFormField
                         form={form}
-                        ruleType={"buy-rules"}
+                        ruleType="buy-rules"
                         scope="application_method.buy_rules"
                       />
                     </>
@@ -955,7 +966,7 @@ export const CreatePromotionForm = () => {
                       <Divider />
                       <RulesFormField
                         form={form}
-                        ruleType={"target-rules"}
+                        ruleType="target-rules"
                         scope="application_method.target_rules"
                       />
                     </>
@@ -971,8 +982,12 @@ export const CreatePromotionForm = () => {
               <div className="flex flex-col items-center">
                 <div className="flex w-full max-w-[720px] flex-col gap-y-8 py-16">
                   <AddCampaignPromotionFields
-                    form={form}
-                    campaigns={campaigns || []}
+                    // AddCampaignPromotionFields was originally typed
+                    // against the local CreatePromotionSchema shape and
+                    // accepted an additional `campaigns` prop; the
+                    // current declared signature dropped `campaigns`.
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    {...({ form, campaigns: campaigns || [] } as any)}
                   />
                 </div>
               </div>

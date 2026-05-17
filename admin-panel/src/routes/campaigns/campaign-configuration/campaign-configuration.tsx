@@ -1,9 +1,9 @@
 import { Heading } from "@medusajs/ui"
 import { useTranslation } from "react-i18next"
 import { useParams } from "react-router-dom"
-import { RouteDrawer } from "../../../components/modals"
-import { useCampaign } from "../../../hooks/api/campaigns"
-import { CampaignConfigurationForm } from "./components/campaign-configuration-form"
+import { RouteDrawer } from "@components/modals"
+import { useCampaign } from "@hooks/api/campaigns"
+import { CampaignConfigurationForm } from "@routes/campaigns/campaign-configuration/components/campaign-configuration-form"
 
 export const CampaignConfiguration = () => {
   const { t } = useTranslation()

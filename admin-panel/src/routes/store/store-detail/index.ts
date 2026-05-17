@@ -1,2 +1,2 @@
-export { storeLoader as loader } from "./loader"
-export { StoreDetail as Component } from "./store-detail"
+export { storeLoader as loader } from "@routes/store/store-detail/loader"
+export { StoreDetail as Component } from "@routes/store/store-detail/store-detail"

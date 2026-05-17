@@ -15,11 +15,14 @@ import { z } from "zod";
 import {
   authRateLimiter,
   authSessionRateLimiter,
+  bugReportAnonymousRateLimiter,
+  bugReportAuthRateLimiter,
   strictAuthRateLimiter,
   vendorRegistrationRateLimiter,
 } from "../shared/rate-limiter";
 import { preventPasswordReuseMiddleware } from "./middlewares/password-history";
 import { ensureSellerContext } from "./vendor/_middlewares";
+import { requireSellerContextV1 } from "./middlewares/seller-context-v1";
 import { CreateVenueSchema } from "./admin/venues/route";
 import { CreateTicketProductSchema } from "./admin/ticket-products/route";
 import { GetTicketProductSeatsSchema } from "./store/ticket-products/[id]/seats/route";
@@ -600,6 +603,27 @@ export default defineMiddlewares({
         authenticate("user", ["bearer", "session"]),
       ],
     },
+    // ============================================================
+    // /v1/** — Marketplace plugins / Creator Studio API
+    // ============================================================
+    // CORS for all /v1 routes (covers seller, public marketplace, checkout, admin)
+    {
+      matcher: "/v1/**",
+      middlewares: [vendorCorsMiddleware],
+    },
+    // Seller routes — require seller bearer auth and resolved seller context
+    {
+      matcher: "/v1/seller/**",
+      middlewares: [authenticate("seller", "bearer"), requireSellerContextV1],
+    },
+    // Admin marketplace routes — require platform admin auth
+    {
+      matcher: "/v1/admin/**",
+      middlewares: [authenticate("user", ["bearer", "session"])],
+    },
+    // /v1/marketplace/** and /v1/checkout/** are intentionally unauthenticated
+    // (public listings + cart-token-based checkout). CORS above is sufficient.
+
     // Apply security headers to all routes
     {
       matcher: "/*",
@@ -876,6 +900,23 @@ export default defineMiddlewares({
       matcher: "/store/ticket-products/:id/seats",
       method: "GET",
       middlewares: [validateAndTransformQuery(GetTicketProductSeatsSchema, {})],
+    },
+    // Bug report routes - rate limited; storefront is anonymous-friendly,
+    // vendor/admin are keyed by actor.
+    {
+      matcher: "/store/bug-report",
+      method: "POST",
+      middlewares: [bugReportAnonymousRateLimiter],
+    },
+    {
+      matcher: "/vendor/bug-report",
+      method: "POST",
+      middlewares: [bugReportAuthRateLimiter],
+    },
+    {
+      matcher: "/admin/bug-report",
+      method: "POST",
+      middlewares: [bugReportAuthRateLimiter],
     },
   ],
 });

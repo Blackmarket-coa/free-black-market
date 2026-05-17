@@ -1,0 +1,94 @@
+name: Docker Build & Publish
+
+on:
+  push:
+    branches: [main, develop, 'release/**']
+    tags: ['v*']
+  pull_request:
+    branches: [main, develop, 'release/**']
+  workflow_dispatch:
+
+concurrency:
+  group: docker-build-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.app }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - app: backend
+            context: backend
+            image: free-black-market-backend
+          - app: storefront
+            context: storefront
+            image: free-black-market-storefront
+          - app: admin-panel
+            context: admin-panel
+            image: free-black-market-admin-panel
+          - app: vendor-panel
+            context: vendor-panel
+            image: free-black-market-vendor-panel
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compute image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}
+          tags: |
+            type=sha,prefix=sha-,format=short
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      # docker/build-push-action with `provenance: true` produces a manifest
+      # list that the local docker daemon's image store cannot import via
+      # `load`. On PRs we don't push to the registry — we only verify the
+      # Dockerfile builds — so we skip both `load` and the manifest-list
+      # outputs. On push to main / tags / release branches we still publish
+      # with full provenance + SBOM attestations.
+      - name: Build${{ github.event_name != 'pull_request' && ' & push' || '' }} image
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.context }}/Dockerfile
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=${{ matrix.app }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.app }}
+          provenance: ${{ github.event_name != 'pull_request' }}
+          sbom: ${{ github.event_name != 'pull_request' }}
+
+      - name: Image build summary
+        run: |
+          echo "Built ${{ matrix.app }} image with tags:" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo "${{ steps.meta.outputs.tags }}" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"

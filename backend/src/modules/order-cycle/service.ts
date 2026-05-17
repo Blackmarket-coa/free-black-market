@@ -1,11 +1,14 @@
 import { MedusaService } from "@medusajs/framework/utils"
-import { 
-  OrderCycle, 
-  OrderCycleProduct, 
+import {
+  OrderCycle,
+  OrderCycleProduct,
   OrderCycleSeller,
   OrderCycleExchange,
   OrderCycleFee,
   EnterpriseFee,
+  ShareBoxTemplate,
+  ShareBoxSubscription,
+  ShareBox,
 } from "./models"
 
 type OrderCycleStatus = "draft" | "upcoming" | "open" | "closed" | "dispatched" | "cancelled"
@@ -14,6 +17,27 @@ type CalculatorType = "flat_rate" | "flat_per_item" | "percentage" | "weight"
 type ExchangeType = "incoming" | "outgoing"
 type ApplicationType = "coordinator" | "incoming" | "outgoing"
 
+export type ShareBoxSlot = {
+  key: string
+  label?: string
+  quantity: number
+  candidate_variant_ids?: string[]
+  tag?: string | null
+}
+
+export type ShareBoxSlotOverride = {
+  candidate_variant_ids?: string[]
+  skip?: boolean
+}
+
+export type ShareBoxItem = {
+  slot_key: string
+  variant_id: string
+  quantity: number
+  unit_price: number
+  currency_code: string
+}
+
 class OrderCycleModuleService extends MedusaService({
   OrderCycle,
   OrderCycleProduct,
@@ -21,6 +45,9 @@ class OrderCycleModuleService extends MedusaService({
   OrderCycleExchange,
   OrderCycleFee,
   EnterpriseFee,
+  ShareBoxTemplate,
+  ShareBoxSubscription,
+  ShareBox,
 }) {
   // ==================== ORDER CYCLE METHODS ====================
 
@@ -647,6 +674,424 @@ class OrderCycleModuleService extends MedusaService({
     }
 
     return newCycle
+  }
+
+  // ==================== SHARE BOX SCHEDULER ====================
+  //
+  // Implements the share-box primitive named in
+  // AGGRESSIVE_OPERATIONS_GUIDE.md §5.1 ("Order Cycles share-box scheduler
+  // on top of the existing `order-cycle` and `food-distribution` modules").
+
+  private validateSlots(slots: unknown): ShareBoxSlot[] {
+    if (!Array.isArray(slots) || slots.length === 0) {
+      throw new Error("share-box template must declare at least one slot")
+    }
+    const seen = new Set<string>()
+    const validated: ShareBoxSlot[] = []
+    for (const raw of slots as Array<Record<string, unknown>>) {
+      if (!raw || typeof raw.key !== "string" || !raw.key) {
+        throw new Error("share-box slot is missing a string `key`")
+      }
+      if (seen.has(raw.key)) {
+        throw new Error(`share-box slot key "${raw.key}" is duplicated`)
+      }
+      seen.add(raw.key)
+      const quantity = Number(raw.quantity)
+      if (!Number.isFinite(quantity) || quantity < 1 || !Number.isInteger(quantity)) {
+        throw new Error(
+          `share-box slot "${raw.key}" must have an integer quantity >= 1`
+        )
+      }
+      const candidates = raw.candidate_variant_ids
+      if (
+        candidates !== undefined &&
+        candidates !== null &&
+        !(
+          Array.isArray(candidates) &&
+          candidates.every((v) => typeof v === "string")
+        )
+      ) {
+        throw new Error(
+          `share-box slot "${raw.key}" candidate_variant_ids must be a string array`
+        )
+      }
+      validated.push({
+        key: raw.key,
+        label: typeof raw.label === "string" ? raw.label : undefined,
+        quantity,
+        candidate_variant_ids: Array.isArray(candidates)
+          ? (candidates as string[])
+          : undefined,
+        tag: typeof raw.tag === "string" ? raw.tag : null,
+      })
+    }
+    return validated
+  }
+
+  async createShareBoxTemplate(args: {
+    coordinator_seller_id: string
+    name: string
+    description?: string
+    base_price?: number | null
+    currency_code?: string
+    slots: ShareBoxSlot[] | unknown
+    metadata?: Record<string, unknown> | null
+  }) {
+    if (!args.coordinator_seller_id) {
+      throw new Error("coordinator_seller_id is required")
+    }
+    if (!args.name) {
+      throw new Error("name is required")
+    }
+    const slots = this.validateSlots(args.slots)
+    const [created] = await this.createShareBoxTemplates([
+      {
+        coordinator_seller_id: args.coordinator_seller_id,
+        name: args.name,
+        description: args.description ?? null,
+        base_price: args.base_price ?? null,
+        currency_code: args.currency_code ?? "usd",
+        slots: slots as any,
+        is_active: true,
+        metadata: args.metadata ?? null,
+      } as any,
+    ])
+    return created
+  }
+
+  async createShareBoxSubscriptionRecord(args: {
+    share_box_template_id: string
+    customer_id?: string | null
+    customer_external_id?: string | null
+    slot_overrides?: Record<string, ShareBoxSlotOverride> | null
+    starts_at?: Date | null
+    ends_at?: Date | null
+    metadata?: Record<string, unknown> | null
+  }) {
+    if (!args.share_box_template_id) {
+      throw new Error("share_box_template_id is required")
+    }
+    if (!args.customer_id && !args.customer_external_id) {
+      throw new Error("customer_id or customer_external_id is required")
+    }
+    const [created] = await this.createShareBoxSubscriptions([
+      {
+        share_box_template_id: args.share_box_template_id,
+        customer_id: args.customer_id ?? null,
+        customer_external_id: args.customer_external_id ?? null,
+        status: "active" as const,
+        slot_overrides: args.slot_overrides ?? null,
+        starts_at: args.starts_at ?? null,
+        ends_at: args.ends_at ?? null,
+        metadata: args.metadata ?? null,
+      },
+    ])
+    return created
+  }
+
+  async pauseShareBoxSubscription(id: string, until?: Date | null) {
+    const [updated] = await this.updateShareBoxSubscriptions([
+      {
+        id,
+        status: "paused" as const,
+        pause_until: until ?? null,
+      },
+    ])
+    return updated
+  }
+
+  async resumeShareBoxSubscription(id: string) {
+    const [updated] = await this.updateShareBoxSubscriptions([
+      {
+        id,
+        status: "active" as const,
+        pause_until: null,
+      },
+    ])
+    return updated
+  }
+
+  async cancelShareBoxSubscription(id: string, reason?: string) {
+    const [updated] = await this.updateShareBoxSubscriptions([
+      {
+        id,
+        status: "cancelled" as const,
+        cancelled_at: new Date(),
+        cancelled_reason: reason ?? null,
+      },
+    ])
+    return updated
+  }
+
+  /**
+   * Determine whether a subscription is eligible for a given cycle.
+   * Eligibility requires status=active and the cycle's dispatch date
+   * to fall within any [starts_at, ends_at] / pause_until window.
+   */
+  private isSubscriptionEligible(
+    subscription: any,
+    dispatchAt: Date
+  ): boolean {
+    if (subscription.status !== "active") return false
+    if (subscription.starts_at && new Date(subscription.starts_at) > dispatchAt) {
+      return false
+    }
+    if (subscription.ends_at && new Date(subscription.ends_at) < dispatchAt) {
+      return false
+    }
+    if (
+      subscription.pause_until &&
+      new Date(subscription.pause_until) > dispatchAt
+    ) {
+      return false
+    }
+    return true
+  }
+
+  /**
+   * Resolve the variants for a single share-box slot against the order
+   * cycle's available products. Returns picked items and any leftover
+   * candidate variants that were skipped because they were already
+   * exhausted or not present.
+   */
+  private resolveSlot(args: {
+    slot: ShareBoxSlot
+    override?: ShareBoxSlotOverride
+    products: Array<{
+      variant_id: string
+      override_price: number | string | null
+      sold_quantity: number
+      available_quantity: number | null
+      currency_code: string | null
+    }>
+    reservations: Map<string, number>
+  }): { items: ShareBoxItem[]; filled: boolean } {
+    if (args.override?.skip) {
+      return { items: [], filled: true }
+    }
+    const candidates =
+      args.override?.candidate_variant_ids ??
+      args.slot.candidate_variant_ids ??
+      []
+
+    const eligible = args.products.filter((p) => {
+      if (candidates.length > 0 && !candidates.includes(p.variant_id)) {
+        return false
+      }
+      const reserved = args.reservations.get(p.variant_id) ?? 0
+      const taken = p.sold_quantity + reserved
+      if (p.available_quantity == null) return true
+      return taken < p.available_quantity
+    })
+
+    const items: ShareBoxItem[] = []
+    let need = args.slot.quantity
+    for (const product of eligible) {
+      if (need <= 0) break
+      const reserved = args.reservations.get(product.variant_id) ?? 0
+      const headroom =
+        product.available_quantity == null
+          ? need
+          : Math.max(
+              0,
+              product.available_quantity - product.sold_quantity - reserved
+            )
+      const take = Math.min(need, headroom)
+      if (take <= 0) continue
+      items.push({
+        slot_key: args.slot.key,
+        variant_id: product.variant_id,
+        quantity: take,
+        unit_price:
+          product.override_price == null ? 0 : Number(product.override_price),
+        currency_code: product.currency_code ?? "usd",
+      })
+      args.reservations.set(product.variant_id, reserved + take)
+      need -= take
+    }
+    return { items, filled: need === 0 }
+  }
+
+  /**
+   * Generate share boxes for every active subscription whose template's
+   * coordinator matches the order cycle's coordinator.
+   *
+   * Idempotent on (subscription_id, order_cycle_id): re-running for the
+   * same cycle returns the existing rows rather than creating duplicates.
+   *
+   * The scheduler does not transition the order cycle status; it works
+   * for cycles in any non-cancelled status so coordinators can preview
+   * generation while the cycle is still in `draft` or `upcoming`.
+   */
+  async generateBoxesForCycle(orderCycleId: string): Promise<{
+    cycle_id: string
+    generated: number
+    reused: number
+    skipped: number
+    boxes: any[]
+  }> {
+    const cycle = await this.retrieveOrderCycle(orderCycleId)
+    if (cycle.status === "cancelled") {
+      throw new Error("cannot generate boxes for a cancelled cycle")
+    }
+    const dispatchAt = new Date(cycle.dispatch_at)
+
+    const templates = await this.listShareBoxTemplates({
+      coordinator_seller_id: cycle.coordinator_seller_id,
+      is_active: true,
+    })
+    if (templates.length === 0) {
+      return {
+        cycle_id: orderCycleId,
+        generated: 0,
+        reused: 0,
+        skipped: 0,
+        boxes: [],
+      }
+    }
+
+    const products = (
+      await this.listOrderCycleProducts({ order_cycle_id: orderCycleId })
+    )
+      .filter((p: any) => p.is_visible !== false)
+      .map((p: any) => ({
+        variant_id: p.variant_id,
+        override_price: p.override_price,
+        sold_quantity: Number(p.sold_quantity ?? 0),
+        available_quantity:
+          p.available_quantity == null ? null : Number(p.available_quantity),
+        currency_code: p.currency_code ?? null,
+      }))
+
+    let generated = 0
+    let reused = 0
+    let skipped = 0
+    const boxes: any[] = []
+    const reservations = new Map<string, number>()
+
+    for (const template of templates) {
+      const subscriptions = await this.listShareBoxSubscriptions({
+        share_box_template_id: template.id,
+      })
+      const slots = this.validateSlots(template.slots)
+
+      for (const subscription of subscriptions) {
+        if (!this.isSubscriptionEligible(subscription, dispatchAt)) {
+          continue
+        }
+
+        const existing = await this.listShareBoxes({
+          share_box_subscription_id: subscription.id,
+          order_cycle_id: orderCycleId,
+        })
+        if (existing.length > 0) {
+          boxes.push(existing[0])
+          reused++
+          continue
+        }
+
+        const overrides =
+          (subscription.slot_overrides as
+            | Record<string, ShareBoxSlotOverride>
+            | null
+            | undefined) ?? null
+
+        const items: ShareBoxItem[] = []
+        const unfilled: string[] = []
+        for (const slot of slots) {
+          const resolved = this.resolveSlot({
+            slot,
+            override: overrides ? overrides[slot.key] : undefined,
+            products,
+            reservations,
+          })
+          items.push(...resolved.items)
+          if (!resolved.filled) unfilled.push(slot.key)
+        }
+
+        const total = items.reduce(
+          (sum, item) => sum + item.unit_price * item.quantity,
+          0
+        )
+        const status = unfilled.length > 0 ? "skipped" : "allocated"
+        const currencyCode =
+          items[0]?.currency_code ?? template.currency_code ?? "usd"
+
+        const [box] = await this.createShareBoxes([
+          {
+            share_box_subscription_id: subscription.id,
+            share_box_template_id: template.id,
+            order_cycle_id: orderCycleId,
+            customer_id: subscription.customer_id ?? null,
+            customer_external_id: subscription.customer_external_id ?? null,
+            status: status as any,
+            items: items as any,
+            total_price: items.length > 0 ? total : null,
+            currency_code: currencyCode,
+            unfilled_slot_keys: unfilled.length > 0 ? (unfilled as any) : null,
+            generated_at: new Date(),
+            allocated_at: status === "allocated" ? new Date() : null,
+          } as any,
+        ])
+        boxes.push(box)
+        if (status === "allocated") generated++
+        else skipped++
+      }
+    }
+
+    // Reflect the reservations into the cycle's product sold_quantity so
+    // downstream availability checks treat allocated boxes the same as
+    // direct sales. We update only products that received allocations.
+    for (const [variantId, reservedQty] of reservations) {
+      if (reservedQty <= 0) continue
+      const matches = await this.listOrderCycleProducts({
+        order_cycle_id: orderCycleId,
+        variant_id: variantId,
+      })
+      if (matches.length === 0) continue
+      const product = matches[0]
+      await this.updateOrderCycleProducts({
+        id: product.id,
+        sold_quantity: Number(product.sold_quantity ?? 0) + reservedQty,
+      })
+    }
+
+    return {
+      cycle_id: orderCycleId,
+      generated,
+      reused,
+      skipped,
+      boxes,
+    }
+  }
+
+  async markShareBoxPacked(id: string) {
+    const [updated] = await this.updateShareBoxes([
+      { id, status: "packed" as const },
+    ])
+    return updated
+  }
+
+  async markShareBoxDispatched(id: string) {
+    const [updated] = await this.updateShareBoxes([
+      {
+        id,
+        status: "dispatched" as const,
+        dispatched_at: new Date(),
+      },
+    ])
+    return updated
+  }
+
+  async cancelShareBox(id: string) {
+    const [updated] = await this.updateShareBoxes([
+      { id, status: "cancelled" as const },
+    ])
+    return updated
+  }
+
+  async getShareBoxesForCycle(orderCycleId: string) {
+    return this.listShareBoxes({ order_cycle_id: orderCycleId })
   }
 }
 

@@ -1,6 +1,6 @@
-import { MetadataForm } from "../../../components/forms/metadata-form"
-import { RouteDrawer } from "../../../components/modals"
-import { useStore, useUpdateStore } from "../../../hooks/api"
+import { MetadataForm } from "@components/forms/metadata-form"
+import { RouteDrawer } from "@components/modals"
+import { useStore, useUpdateStore } from "@hooks/api"
 
 export const StoreMetadata = () => {
   const { store, isPending, isError, error } = useStore()

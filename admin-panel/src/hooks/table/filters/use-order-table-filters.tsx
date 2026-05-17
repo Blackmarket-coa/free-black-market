@@ -1,8 +1,8 @@
 import { useTranslation } from "react-i18next"
 
-import type { Filter } from "../../../components/table/data-table"
-import { useRegions } from "../../api/regions"
-import { useSalesChannels } from "../../api/sales-channels"
+import type { Filter } from "@components/table/data-table"
+import { useRegions } from "@hooks/api/regions"
+import { useSalesChannels } from "@hooks/api/sales-channels"
 
 export const useOrderTableFilters = (): Filter[] => {
   const { t } = useTranslation()
@@ -51,7 +51,9 @@ export const useOrderTableFilters = (): Filter[] => {
     filters = [...filters, salesChannelFilter]
   }
 
-  const paymentStatusFilter: Filter = {
+  // @ts-expect-error preserved while vendor-scoped order list does not
+  // accept payment_status filter — restore when the API supports it.
+  const _paymentStatusFilter: Filter = {
     key: "payment_status",
     label: t("orders.payment.statusLabel"),
     type: "select",
@@ -88,7 +90,9 @@ export const useOrderTableFilters = (): Filter[] => {
     ],
   }
 
-  const fulfillmentStatusFilter: Filter = {
+  // @ts-expect-error preserved while vendor-scoped order list does not
+  // accept fulfillment_status filter — restore when the API supports it.
+  const _fulfillmentStatusFilter: Filter = {
     key: "fulfillment_status",
     label: t("orders.fulfillment.statusLabel"),
     type: "select",

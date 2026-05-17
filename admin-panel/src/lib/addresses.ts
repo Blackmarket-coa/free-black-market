@@ -1,6 +1,25 @@
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 
-import { countries, getCountryByIso2 } from "./data/countries"
+import { countries, getCountryByIso2 } from "@lib/data/countries"
+
+/**
+ * Common shape shared by every "address" entity in the Medusa SDK
+ * (AdminOrderAddress, AdminStockLocationAddress, AdminCustomerAddress …).
+ * Helpers here only touch these fields, so accepting the structural
+ * shape avoids per-callsite type juggling between siblings.
+ */
+type FormattableAddress = {
+  first_name?: string | null
+  last_name?: string | null
+  company?: string | null
+  address_1?: string | null
+  address_2?: string | null
+  city?: string | null
+  postal_code?: string | null
+  province?: string | null
+  country?: { display_name?: string | null } | null
+  country_code?: string | null
+}
 
 export const isSameAddress = (
   a?: HttpTypes.AdminOrderAddress | null,
@@ -25,7 +44,7 @@ export const isSameAddress = (
 export const getFormattedAddress = ({
   address,
 }: {
-  address?: HttpTypes.AdminOrderAddress | null
+  address?: FormattableAddress | null
 }) => {
   if (!address) {
     return []
@@ -93,5 +112,6 @@ export const getFormattedCountry = (countryCode: string | null | undefined) => {
   }
 
   const country = countries.find((c) => c.iso_2 === countryCode)
-  return country ? country.display_name : countryCode
+  
+return country ? country.display_name : countryCode
 }

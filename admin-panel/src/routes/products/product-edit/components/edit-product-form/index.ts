@@ -1,1 +1,1 @@
-export * from "./edit-product-form"
+export * from "@routes/products/product-edit/components/edit-product-form/edit-product-form"

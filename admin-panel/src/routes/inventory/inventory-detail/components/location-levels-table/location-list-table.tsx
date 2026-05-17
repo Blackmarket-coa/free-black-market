@@ -1,7 +1,10 @@
-import { DataTable } from "../../../../../components/data-table"
-import { useInventoryItemLevels } from "../../../../../hooks/api/inventory"
-import { useLocationListTableColumns } from "./use-location-list-table-columns"
-import { useLocationLevelTableQuery } from "./use-location-list-table-query"
+import { DataTable } from "@components/data-table"
+import { useInventoryItemLevels } from "@hooks/api/inventory"
+import {
+  useLocationListTableColumns,
+  type ExtendedLocationLevel,
+} from "@routes/inventory/inventory-detail/components/location-levels-table/use-location-list-table-columns"
+import { useLocationLevelTableQuery } from "@routes/inventory/inventory-detail/components/location-levels-table/use-location-list-table-query"
 
 const PAGE_SIZE = 20
 const PREFIX = "invlvl"
@@ -35,7 +38,11 @@ export const ItemLocationListTable = ({
 
   return (
     <DataTable
-      data={inventory_levels ?? []}
+      // The /admin/inventory-items/{id}/location-levels response inflates
+      // each row with stock_locations + level totals; the SDK type only
+      // sees the base InventoryLevel shape. ExtendedLocationLevel
+      // captures the actual response shape consumed by the columns.
+      data={(inventory_levels ?? []) as unknown as ExtendedLocationLevel[]}
       columns={columns}
       rowCount={count}
       pageSize={PAGE_SIZE}

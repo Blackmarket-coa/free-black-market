@@ -1,1 +1,1 @@
-export * from "./product-option-section";
+export * from "@routes/products/product-detail/components/product-option-section/product-option-section";

@@ -9,10 +9,10 @@ import {
 } from "@medusajs/ui"
 import { useTranslation } from "react-i18next"
 
-import { SalesChannelDTO } from "@medusajs/types"
+import type { SalesChannelDTO } from "@medusajs/types"
 import { useNavigate } from "react-router-dom"
-import { ActionMenu } from "../../../../../components/common/action-menu"
-import { useDeleteSalesChannel } from "../../../../../hooks/api/sales-channels"
+import { ActionMenu } from "@components/common/action-menu"
+import { useDeleteSalesChannel } from "@hooks/api/sales-channels"
 
 type SalesChannelGeneralSectionProps = {
   salesChannel: SalesChannelDTO

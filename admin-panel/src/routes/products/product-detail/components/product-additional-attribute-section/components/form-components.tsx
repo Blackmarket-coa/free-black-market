@@ -1,5 +1,5 @@
 import { Input, Switch, Textarea } from "@medusajs/ui";
-import { AttributeSelect } from "./attribute-select";
+import { AttributeSelect } from "@routes/products/product-detail/components/product-additional-attribute-section/components/attribute-select";
 
 export const FormComponents = ({
   attribute,

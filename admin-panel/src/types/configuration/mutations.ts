@@ -1,4 +1,4 @@
-import { ConfigurationRuleType } from './common'
+import type { ConfigurationRuleType } from '@custom-types/configuration/common'
 
 export interface CreateConfigurationRuleDTO {
   rule_type: ConfigurationRuleType

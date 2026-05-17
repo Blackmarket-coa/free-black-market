@@ -15,6 +15,7 @@ import {
 } from "./cookies"
 import { getRegion } from "./regions"
 import { parseVariantIdsFromError } from "@/lib/helpers/parse-variant-error"
+import { applyAttributionToCart } from "./attribution"
 
 /**
  * Retrieves a cart by its ID. If no ID is provided, it will use the cart ID from the cookies.
@@ -80,6 +81,16 @@ export async function getOrSetCart(countryCode: string) {
     revalidateTag(cartCacheTag)
   }
 
+  if (cart?.id) {
+    // Best-effort: stamp affiliate attribution onto the cart from the
+    // visitor's `_fbm_aff` cookie. Idempotent.
+    try {
+      await applyAttributionToCart(cart.id)
+    } catch {
+      // never block cart load on attribution failures
+    }
+  }
+
   return cart
 }
 
@@ -102,6 +113,51 @@ export async function updateCart(data: HttpTypes.StoreUpdateCart) {
       return cart
     })
     .catch(medusaError)
+}
+
+const ALLOWED_SLIDING_SCALE_TIERS = ["supporter", "standard", "solidarity"] as const
+export type SlidingScaleTier = (typeof ALLOWED_SLIDING_SCALE_TIERS)[number]
+
+/**
+ * Set the buyer's sliding-scale tier on the current cart.
+ *
+ * POSTs to the backend's `/store/carts/:id/tier` route, which writes
+ * `cart.metadata.tier` AND overrides each eligible line item's unit_price
+ * for the chosen tier. Eligibility is determined per seller's playbook
+ * (every playbook except Stall opts in).
+ *
+ * Returns `{ tier, line_items_repriced }` so callers can confirm how many
+ * items were affected. Throws on validation / network errors.
+ */
+export async function setCartTier(
+  tier: SlidingScaleTier
+): Promise<{ tier: SlidingScaleTier; line_items_repriced: number }> {
+  if (!ALLOWED_SLIDING_SCALE_TIERS.includes(tier)) {
+    throw new Error(`Invalid sliding-scale tier: ${tier}`)
+  }
+  const cartId = await getCartId()
+  if (!cartId) {
+    throw new Error("No existing cart found, please create one before setting tier")
+  }
+
+  const headers = {
+    ...((await getAuthHeaders()) ?? {}),
+  }
+
+  const result = (await medusaFetch(`/store/carts/${cartId}/tier`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ tier }),
+  } as any)) as {
+    cart_id: string
+    tier: SlidingScaleTier
+    line_items_repriced: number
+  }
+
+  const cartCacheTag = await getCacheTag("carts")
+  await revalidateTag(cartCacheTag)
+
+  return { tier: result.tier, line_items_repriced: result.line_items_repriced }
 }
 
 export async function addToCart({
@@ -215,7 +271,7 @@ export async function deleteLineItem(lineId: string) {
   }
 
   await sdk.store.cart
-    .deleteLineItem(cartId, lineId, headers)
+    .deleteLineItem(cartId, lineId, {}, headers)
     .then(async () => {
       const cartCacheTag = await getCacheTag("carts")
       await revalidateTag(cartCacheTag)
@@ -550,7 +606,7 @@ export async function updateRegionWithValidation(
           )
           if (item) {
             try {
-              await sdk.store.cart.deleteLineItem(cart.id, item.id, headers)
+              await sdk.store.cart.deleteLineItem(cart.id, item.id, {}, headers)
               removedItems.push(item.product_title || "Unknown product")
             } catch (deleteError) {
               // Silent failure - item removal failed but continue

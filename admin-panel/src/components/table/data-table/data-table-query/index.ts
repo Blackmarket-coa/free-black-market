@@ -1,1 +1,1 @@
-export * from "./data-table-query"
+export * from "@components/table/data-table/data-table-query/data-table-query"

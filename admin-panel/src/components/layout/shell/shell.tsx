@@ -2,21 +2,23 @@ import { SidebarLeft, TriangleRightMini, XMark } from "@medusajs/icons"
 import { IconButton, clx } from "@medusajs/ui"
 import { AnimatePresence } from "motion/react"
 import { Dialog as RadixDialog } from "radix-ui"
-import { PropsWithChildren, ReactNode, useEffect, useState } from "react"
+import type { PropsWithChildren, ReactNode} from "react";
+import { useEffect, useState } from "react"
 import { useTranslation } from "react-i18next"
+import type {
+  UIMatch} from "react-router-dom";
 import {
   Link,
   Outlet,
-  UIMatch,
   useMatches,
   useNavigation,
 } from "react-router-dom"
 
-import { KeybindProvider } from "../../../providers/keybind-provider"
-import { useGlobalShortcuts } from "../../../providers/keybind-provider/hooks"
-import { useSidebar } from "../../../providers/sidebar-provider"
-import { ProgressBar } from "../../common/progress-bar"
-import { Notifications } from "../notifications"
+import { KeybindProvider } from "@providers/keybind-provider"
+import { useGlobalShortcuts } from "@providers/keybind-provider/hooks"
+import { useSidebar } from "@providers/sidebar-provider"
+import { ProgressBar } from "@components/common/progress-bar"
+import { Notifications } from "@components/layout/notifications"
 
 export const Shell = ({ children }: PropsWithChildren) => {
   const globalShortcuts = useGlobalShortcuts()
@@ -107,7 +109,7 @@ const Breadcrumbs = () => {
 
       try {
         label = handle.breadcrumb?.(match)
-      } catch (error) {
+      } catch {
         // noop
       }
 

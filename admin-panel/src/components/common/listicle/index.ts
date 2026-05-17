@@ -1,1 +1,1 @@
-export * from "./listicle"
+export * from "@components/common/listicle/listicle"

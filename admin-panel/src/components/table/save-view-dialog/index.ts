@@ -1,1 +1,1 @@
-export * from "./save-view-dialog"
+export * from "@components/table/save-view-dialog/save-view-dialog"

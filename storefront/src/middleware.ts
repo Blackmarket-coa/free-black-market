@@ -1,5 +1,6 @@
 import { HttpTypes } from "@medusajs/types"
 import { NextRequest, NextResponse } from "next/server"
+import { detectEmbedContext } from "./lib/runtime/embed-context"
 
 const BACKEND_URL = process.env.MEDUSA_BACKEND_URL || process.env.NEXT_PUBLIC_MEDUSA_BACKEND_URL || ""
 const PUBLISHABLE_API_KEY = process.env.NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY
@@ -98,6 +99,65 @@ async function getCountryCode(
   }
 }
 
+/**
+ * Apply creator-attribution cookies (visitor token + affiliate code) to the
+ * given response. Idempotent: existing visitor cookies are reused; the
+ * affiliate cookie is only refreshed when `?fbm_ref=<code>` is present.
+ */
+function applyAttributionCookies(request: NextRequest, response: NextResponse) {
+  const VISITOR_COOKIE = "_fbm_visitor"
+  const AFF_COOKIE = "_fbm_aff"
+  const COOKIE_MAX_AGE_DAYS = 90
+  const AFF_MAX_AGE_DAYS =
+    parseInt(process.env.NEXT_PUBLIC_CREATOR_ATTRIBUTION_DEFAULT_COOKIE_DAYS || "7", 10) || 7
+
+  // Visitor cookie: ensure one exists and is 90 days fresh.
+  if (!request.cookies.get(VISITOR_COOKIE)) {
+    response.cookies.set(VISITOR_COOKIE, crypto.randomUUID(), {
+      maxAge: COOKIE_MAX_AGE_DAYS * 24 * 60 * 60,
+      sameSite: "lax",
+      path: "/",
+    })
+  }
+
+  // Affiliate cookie: pin if `?fbm_ref=<short_code>` present in the URL.
+  const fbmRef = request.nextUrl.searchParams.get("fbm_ref")
+  if (fbmRef) {
+    response.cookies.set(AFF_COOKIE, `${fbmRef}.${Date.now()}`, {
+      maxAge: AFF_MAX_AGE_DAYS * 24 * 60 * 60,
+      sameSite: "lax",
+      path: "/",
+    })
+  }
+}
+
+/**
+ * Capacitor / in-app webview embed support per
+ * AGGRESSIVE_OPERATIONS_GUIDE.md §2.8 and §5.1. When the request
+ * carries `X-FBM-Embed-Origin` and the origin is allowlisted via
+ * `BLACKOUT_EMBED_ALLOWED_ORIGINS`, swap the default
+ * `X-Frame-Options: SAMEORIGIN` for a `frame-ancestors` CSP that names
+ * the embed origin. Origins outside the allowlist do not get the
+ * relaxed headers, so a malicious origin cannot opt itself in.
+ */
+function applyEmbedHeaders(request: NextRequest, response: NextResponse) {
+  const ctx = detectEmbedContext({
+    get: (name) => request.headers.get(name),
+  })
+  if (!ctx.isEmbedded || !ctx.isAllowedOrigin || !ctx.origin) return
+
+  // Override the default X-Frame-Options applied via next.config.ts
+  // headers(); modern browsers honor frame-ancestors over X-Frame-Options
+  // when both are present.
+  response.headers.set(
+    "Content-Security-Policy",
+    `frame-ancestors ${ctx.origin}`
+  )
+  // Echo the resolved origin for debugging the handshake from inside
+  // the webview without exposing it to non-embed callers.
+  response.headers.set("X-FBM-Embed-Origin-Echo", ctx.origin)
+}
+
 export async function middleware(request: NextRequest) {
   // Short-circuit static assets
   if (request.nextUrl.pathname.includes(".")) {
@@ -108,9 +168,14 @@ export async function middleware(request: NextRequest) {
   const urlSegment = request.nextUrl.pathname.split("/")[1]
   const looksLikeLocale = /^[a-z]{2}$/i.test(urlSegment || "")
 
-  // Fast path: URL already has a locale segment and cache cookie exists
+  // Fast path: URL already has a locale segment and cache cookie exists.
+  // Still apply creator attribution cookies so /r/* redirects through the
+  // backend redirector or any direct ?fbm_ref= param keeps attributing.
   if (looksLikeLocale && cacheIdCookie) {
-    return NextResponse.next()
+    const fastResponse = NextResponse.next()
+    applyAttributionCookies(request, fastResponse)
+    applyEmbedHeaders(request, fastResponse)
+    return fastResponse
   }
 
   let response = NextResponse.next()
@@ -122,6 +187,9 @@ export async function middleware(request: NextRequest) {
       maxAge: 60 * 60 * 24,
     })
   }
+
+  applyAttributionCookies(request, response)
+  applyEmbedHeaders(request, response)
 
   const regionMap = await getRegionMap(cacheId)
   if (!regionMap.size) {

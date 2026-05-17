@@ -1,18 +1,19 @@
-import {
+import type {
   QueryKey,
   UseMutationOptions,
-  UseQueryOptions,
+  UseQueryOptions} from "@tanstack/react-query";
+import {
   useMutation,
   useQuery,
 } from "@tanstack/react-query";
 
-import { sdk } from "../../lib/client";
+import { sdk } from "@lib/client";
 
-import {
+import type {
   AdminOrderReturnRequest,
   AdminUpdateOrderReturnRequest,
-} from "../../types";
-import { queryKeysFactory } from "../../lib/query-key-factory";
+} from "@/types";
+import { queryKeysFactory } from "@lib/query-key-factory";
 
 export const returnRequestsQueryKeys = queryKeysFactory("return-request");
 

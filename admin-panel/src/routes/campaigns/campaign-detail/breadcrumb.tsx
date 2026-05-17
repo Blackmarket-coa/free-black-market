@@ -1,7 +1,7 @@
-import { HttpTypes } from "@medusajs/types"
-import { UIMatch } from "react-router-dom"
-import { useCampaign } from "../../../hooks/api"
-import { CAMPAIGN_DETAIL_FIELDS } from "./constants"
+import type { HttpTypes } from "@medusajs/types"
+import type { UIMatch } from "react-router-dom"
+import { useCampaign } from "@hooks/api"
+import { CAMPAIGN_DETAIL_FIELDS } from "@routes/campaigns/campaign-detail/constants"
 
 type CampaignDetailBreadcrumbProps = UIMatch<HttpTypes.AdminCampaignResponse>
 

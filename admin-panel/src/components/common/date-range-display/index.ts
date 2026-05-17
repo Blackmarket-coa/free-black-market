@@ -1,1 +1,1 @@
-export * from "./date-range-display"
+export * from "@components/common/date-range-display/date-range-display"

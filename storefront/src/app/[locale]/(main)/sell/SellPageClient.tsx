@@ -3,6 +3,7 @@
 import { useState } from "react"
 import Image from "next/image"
 import Link from "next/link"
+import FeeBreakdown from "@/components/sections/FeeBreakdown"
 
 // Inline SVG icons
 const CheckCircleIcon = ({ className = "" }: { className?: string }) => (
@@ -128,6 +129,25 @@ export default function SellPage() {
       store_name: storeName,
       selling: selectedCategories.join(","),
     })
+
+    // Best-effort first-party capture of the signup intent before
+    // handing the user off to the vendor-panel registration page.
+    // /api/sell-signup forwards to the backend `sell_signup` module;
+    // failures are swallowed so the redirect is never blocked.
+    try {
+      await fetch("/api/sell-signup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email,
+          store_name: storeName,
+          selling: selectedCategories,
+        }),
+        keepalive: true,
+      })
+    } catch {
+      // never block the redirect on capture failure
+    }
 
     window.open(
       `${VENDOR_PANEL_URL}/register?${registrationParams.toString()}`,
@@ -463,6 +483,9 @@ export default function SellPage() {
           </div>
         </div>
       </section>
+
+      {/* Trust & Transparency Section */}
+      <FeeBreakdown />
 
       {/* Trust & Transparency Section */}
       <section className="py-20 bg-gray-900 text-white">

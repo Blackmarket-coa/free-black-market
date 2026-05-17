@@ -9,5 +9,6 @@ export function formatDate(
   }
   const value = new Date(date);
   value.setMinutes(value.getMinutes() - value.getTimezoneOffset());
-  return format(value, date_format);
+  
+return format(value, date_format);
 }

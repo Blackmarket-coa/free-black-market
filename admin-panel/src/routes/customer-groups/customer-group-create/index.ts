@@ -1,1 +1,1 @@
-export { CustomerGroupCreate as Component } from "./customer-group-create"
+export { CustomerGroupCreate as Component } from "@routes/customer-groups/customer-group-create/customer-group-create"

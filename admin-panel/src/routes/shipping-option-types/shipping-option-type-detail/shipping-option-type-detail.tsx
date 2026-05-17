@@ -1,11 +1,11 @@
 import { useLoaderData, useParams } from "react-router-dom"
 
-import { SingleColumnPageSkeleton } from "../../../components/common/skeleton"
-import { SingleColumnPage } from "../../../components/layout/pages"
-import { useShippingOptionType } from "../../../hooks/api"
-import { useExtension } from "../../../providers/extension-provider"
-import { ShippingOptionTypeGeneralSection } from "./components/shipping-option-type-general-section"
-import { shippingOptionTypeLoader } from "./loader"
+import { SingleColumnPageSkeleton } from "@components/common/skeleton"
+import { SingleColumnPage } from "@components/layout/pages"
+import { useShippingOptionType } from "@hooks/api"
+import { useExtension } from "@providers/extension-provider"
+import { ShippingOptionTypeGeneralSection } from "@routes/shipping-option-types/shipping-option-type-detail/components/shipping-option-type-general-section"
+import type { shippingOptionTypeLoader } from "@routes/shipping-option-types/shipping-option-type-detail/loader"
 
 export const ShippingOptionTypeDetail = () => {
   const { id } = useParams()

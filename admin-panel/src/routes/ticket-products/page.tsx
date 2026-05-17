@@ -1,12 +1,13 @@
 import { defineRouteConfig } from "@medusajs/admin-sdk"
 import { ReceiptPercent } from "@medusajs/icons"
+import type {
+  DataTablePaginationState} from "@medusajs/ui";
 import {
   createDataTableColumnHelper,
   Container,
   DataTable,
   useDataTable,
   Heading,
-  DataTablePaginationState,
   Button,
   Badge,
   toast,
@@ -14,9 +15,9 @@ import {
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { Link } from "react-router-dom"
 import React, { useState, useMemo } from "react"
-import { sdk } from "../../lib/sdk"
-import { CreateTicketProductModal } from "../../components/create-ticket-product-modal"
-import { TicketProduct } from "../../types"
+import { sdk } from "@lib/sdk"
+import { CreateTicketProductModal } from "@components/create-ticket-product-modal"
+import type { TicketProduct } from "@/types"
 
 const columnHelper = createDataTableColumnHelper<TicketProduct>()
 
@@ -33,7 +34,8 @@ const columns = [
       const dates = row.original.dates || []
       // Show first and last dates
       const displayDates = [dates[0], dates[dates.length - 1]]
-      return (
+      
+return (
         <div className="flex flex-wrap gap-1 items-center">
           {displayDates.map((date, index) => (
             <React.Fragment key={date}>

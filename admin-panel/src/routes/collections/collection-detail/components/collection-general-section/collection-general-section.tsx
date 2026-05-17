@@ -1,9 +1,9 @@
 import { PencilSquare, Trash } from "@medusajs/icons"
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 import { Container, Heading, Text, usePrompt } from "@medusajs/ui"
 import { useTranslation } from "react-i18next"
-import { ActionMenu } from "../../../../../components/common/action-menu"
-import { useDeleteCollection } from "../../../../../hooks/api/collections"
+import { ActionMenu } from "@components/common/action-menu"
+import { useDeleteCollection } from "@hooks/api/collections"
 import { useNavigate } from "react-router-dom"
 
 type CollectionGeneralSectionProps = {

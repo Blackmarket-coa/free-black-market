@@ -2,7 +2,7 @@ import { z } from "zod"
 import {
   PriceListCreateProductsSchema,
   PriceListRulesSchema,
-} from "../../../common/schemas"
+} from "@routes/price-lists/common/schemas"
 
 const PricingCustomerGroupsArray = z.array(
   z.object({
@@ -35,7 +35,6 @@ export const PricingDetailsSchema = PricingCreateSchema.pick({
   description: true,
   starts_at: true,
   ends_at: true,
-  customer_group_ids: true,
 })
 
 export const PricingDetailsFields = Object.keys(

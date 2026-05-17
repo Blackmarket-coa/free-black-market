@@ -4,15 +4,17 @@ import {
   InformationCircleSolid,
 } from "@medusajs/icons"
 import { HttpTypes } from "@medusajs/types"
-import { clx, Drawer, Heading, IconButton, Text } from "@medusajs/ui"
+import { clx, Drawer, Heading, IconButton, Tabs, Text } from "@medusajs/ui"
 import { formatDistance } from "date-fns"
 import { TFunction } from "i18next"
 import { useEffect, useState } from "react"
 import { useTranslation } from "react-i18next"
-import { notificationQueryKeys, useNotifications } from "../../../hooks/api"
-import { fetchQuery } from "../../../lib/client"
+import {
+  useNotificationBuckets,
+  useNotifications,
+  type NotificationBucket,
+} from "../../../hooks/api"
 import { FilePreview } from "../../common/file-preview"
-import { InfiniteList } from "../../common/infinite-list"
 
 interface NotificationData {
   title: string
@@ -26,15 +28,30 @@ interface NotificationData {
 
 const LAST_READ_NOTIFICATION_KEY = "notificationsLastReadAt"
 
+const BUCKET_TAB_LABELS: Record<NotificationBucket, string> = {
+  awaits_me: "Awaits me",
+  about_me: "About me",
+  fyi: "FYI",
+}
+
+const BUCKET_TAB_ORDER: NotificationBucket[] = ["awaits_me", "about_me", "fyi"]
+
 export const Notifications = () => {
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   const [hasUnread, setHasUnread] = useUnreadNotifications()
+  const [activeTab, setActiveTab] = useState<NotificationBucket>("awaits_me")
   // This is used to show the unread icon on the notification when the drawer is open,
   // so it should lag behind the local storage data and should only be reset on close
   const [lastReadAt, setLastReadAt] = useState(
     localStorage.getItem(LAST_READ_NOTIFICATION_KEY)
   )
+
+  // Buckets feed: counts + samples. Powers both the bell badge and the
+  // tab strip. Refetches on a 30s interval.
+  const { data: buckets } = useNotificationBuckets({ limit: 20 })
+
+  const awaitsMeCount = buckets?.counts.awaits_me ?? 0
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -61,14 +78,26 @@ export const Notifications = () => {
     }
   }
 
+  const activeSamples = buckets?.samples[activeTab] ?? []
+  const activeCount = buckets?.counts[activeTab] ?? 0
+
   return (
     <Drawer open={open} onOpenChange={handleOnOpen}>
       <Drawer.Trigger asChild>
         <IconButton
           variant="transparent"
-          className="text-ui-fg-muted hover:text-ui-fg-subtle"
+          className="text-ui-fg-muted hover:text-ui-fg-subtle relative"
         >
-          {hasUnread ? <BellAlertDone /> : <BellAlert />}
+          {hasUnread || awaitsMeCount > 0 ? <BellAlertDone /> : <BellAlert />}
+          {awaitsMeCount > 0 && (
+            <span
+              className="absolute -right-1 -top-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-ui-tag-red-bg px-1 text-[10px] font-semibold text-ui-tag-red-text"
+              role="status"
+              aria-label={`${awaitsMeCount} awaiting action`}
+            >
+              {awaitsMeCount > 99 ? "99+" : awaitsMeCount}
+            </span>
+          )}
         </IconButton>
       </Drawer.Trigger>
       <Drawer.Content>
@@ -80,36 +109,47 @@ export const Notifications = () => {
             {t("notifications.accessibility.description")}
           </Drawer.Description>
         </Drawer.Header>
-        <Drawer.Body className="overflow-y-auto px-0">
-          <InfiniteList<
-            HttpTypes.AdminNotificationListResponse,
-            HttpTypes.AdminNotification,
-            HttpTypes.AdminNotificationListParams
-          >
-            responseKey="notifications"
-            queryKey={notificationQueryKeys.all}
-            queryFn={(params) =>
-              fetchQuery("/vendor/notifications", {
-                method: "GET",
-                query: params as Record<string, string | number>,
-              })
-            }
-            queryOptions={{ enabled: open }}
-            renderEmpty={() => <NotificationsEmptyState t={t} />}
-            renderItem={(notification) => {
+        <Tabs
+          value={activeTab}
+          onValueChange={(v) => setActiveTab(v as NotificationBucket)}
+        >
+          <Tabs.List className="border-b px-4">
+            {BUCKET_TAB_ORDER.map((bucket) => {
+              const count = buckets?.counts[bucket] ?? 0
               return (
+                <Tabs.Trigger key={bucket} value={bucket}>
+                  {BUCKET_TAB_LABELS[bucket]}
+                  {count > 0 && (
+                    <span className="ml-1.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-ui-tag-neutral-bg px-1 text-[10px] font-semibold text-ui-tag-neutral-text">
+                      {count > 99 ? "99+" : count}
+                    </span>
+                  )}
+                </Tabs.Trigger>
+              )
+            })}
+          </Tabs.List>
+          <Drawer.Body className="overflow-y-auto px-0">
+            {activeSamples.length === 0 ? (
+              <NotificationsEmptyState t={t} />
+            ) : (
+              activeSamples.map((notification) => (
                 <Notification
                   key={notification.id}
-                  notification={notification}
+                  notification={notification as unknown as HttpTypes.AdminNotification}
                   unread={
                     Date.parse(notification.created_at) >
                     (lastReadAt ? Date.parse(lastReadAt) : 0)
                   }
                 />
-              )
-            }}
-          />
-        </Drawer.Body>
+              ))
+            )}
+            {activeCount > activeSamples.length && (
+              <p className="text-ui-fg-muted px-6 py-3 text-xs">
+                Showing the {activeSamples.length} most recent of {activeCount}.
+              </p>
+            )}
+          </Drawer.Body>
+        </Tabs>
       </Drawer.Content>
     </Drawer>
   )

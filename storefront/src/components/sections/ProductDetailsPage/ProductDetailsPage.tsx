@@ -2,13 +2,16 @@ import { ProductDetails, ProductGallery } from "@/components/organisms"
 import { listProducts } from "@/lib/data/products"
 import { HomeProductSection } from "../HomeProductSection/HomeProductSection"
 import NotFound from "@/app/not-found"
+import type { Presentation } from "@/lib/listing/presentation"
 
 export const ProductDetailsPage = async ({
   handle,
   locale,
+  presentation = "marketplace",
 }: {
   handle: string
   locale: string
+  presentation?: Presentation
 }) => {
   const prod = await listProducts({
     countryCode: locale,
@@ -24,7 +27,7 @@ export const ProductDetailsPage = async ({
 
   return (
     <>
-      <div className="flex flex-col md:flex-row lg:gap-12">
+      <div className="flex flex-col md:flex-row lg:gap-12" data-presentation={presentation}>
         <div className="md:w-1/2 md:px-2">
           <ProductGallery images={prod?.images || []} />
         </div>
@@ -32,14 +35,16 @@ export const ProductDetailsPage = async ({
           <ProductDetails product={prod} locale={locale} />
         </div>
       </div>
-      <div className="my-8">
-        <HomeProductSection
-          heading="More from this seller"
-          products={prod.seller?.products}
-          // seller_handle={prod.seller?.handle}
-          locale={locale}
-        />
-      </div>
+      {presentation === "marketplace" && (
+        <div className="my-8">
+          <HomeProductSection
+            heading="More from this seller"
+            products={prod.seller?.products}
+            // seller_handle={prod.seller?.handle}
+            locale={locale}
+          />
+        </div>
+      )}
     </>
   )
 }

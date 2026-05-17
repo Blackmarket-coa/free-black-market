@@ -129,6 +129,8 @@ Include exact commands and outcomes in your PR description.
 ## Where to Look Next
 
 - Platform docs: `docs/README.md`
+- Production readiness index: `docs/PRODUCTION_READINESS.md`
+- Deferred audit backlog: `docs/AUDIT_DEBT.md`
 - Release checks: `docs/RELEASE_VALIDATION_PLAYBOOK.md`
 - Contributor process: `CONTRIBUTING.md`
 - Root scripts: `scripts/README.md`

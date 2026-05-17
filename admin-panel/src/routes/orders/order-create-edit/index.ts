@@ -1,1 +1,1 @@
-export { OrderEditCreate as Component } from "./order-edit-create.tsx"
+export { OrderEditCreate as Component } from "@routes/orders/order-create-edit/order-edit-create.tsx"

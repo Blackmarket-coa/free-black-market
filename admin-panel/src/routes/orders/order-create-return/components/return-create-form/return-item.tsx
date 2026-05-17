@@ -1,17 +1,16 @@
 import { useTranslation } from "react-i18next"
 
-import React from "react"
 import { IconButton, Input, Text } from "@medusajs/ui"
-import { UseFormReturn } from "react-hook-form"
-import { HttpTypes, AdminOrderLineItem } from "@medusajs/types"
+import type { UseFormReturn } from "react-hook-form"
+import type { HttpTypes, AdminOrderLineItem } from "@medusajs/types"
 import { ChatBubble, DocumentText, XCircle, XMark } from "@medusajs/icons"
 
-import { Thumbnail } from "../../../../../components/common/thumbnail"
-import { MoneyAmountCell } from "../../../../../components/table/table-cells/common/money-amount-cell"
-import { Form } from "../../../../../components/common/form"
-import { ActionMenu } from "../../../../../components/common/action-menu"
-import { Combobox } from "../../../../../components/inputs/combobox"
-import { useReturnReasons } from "../../../../../hooks/api/return-reasons"
+import { Thumbnail } from "@components/common/thumbnail"
+import { MoneyAmountCell } from "@components/table/table-cells/common/money-amount-cell"
+import { Form } from "@components/common/form"
+import { ActionMenu } from "@components/common/action-menu"
+import { Combobox } from "@components/inputs/combobox"
+import { useReturnReasons } from "@hooks/api/return-reasons"
 
 type OrderEditItemProps = {
   item: AdminOrderLineItem
@@ -102,7 +101,10 @@ function ReturnItem({
           <div className="text-ui-fg-subtle txt-small mr-2 flex flex-shrink-0">
             <MoneyAmountCell
               currencyCode={currencyCode}
-              amount={previewItem.return_requested_total}
+              amount={
+                (previewItem as { return_requested_total?: number })
+                  .return_requested_total ?? 0
+              }
             />
           </div>
 
@@ -126,7 +128,8 @@ function ReturnItem({
                     onClick: onRemove,
                     icon: <XCircle />,
                   },
-                ].filter(Boolean),
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                ].filter(Boolean) as any[],
               },
             ]}
           />
@@ -148,7 +151,7 @@ function ReturnItem({
                 <Form.Field
                   control={form.control}
                   name={`items.${index}.reason_id`}
-                  render={({ field: { ref, value, onChange, ...field } }) => {
+                  render={({ field: { ref: _ref, value, onChange, ...field } }) => {
                     return (
                       <Form.Item>
                         <Form.Control>
@@ -202,7 +205,7 @@ function ReturnItem({
                 <Form.Field
                   control={form.control}
                   name={`items.${index}.note`}
-                  render={({ field: { ref, onChange, ...field } }) => {
+                  render={({ field: { ref: _ref, onChange, ...field } }) => {
                     return (
                       <Form.Item>
                         <Form.Control>

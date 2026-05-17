@@ -1,5 +1,7 @@
-import { QueryKey, useInfiniteQuery } from "@tanstack/react-query"
-import { ReactNode, useEffect, useMemo, useRef } from "react"
+import type { QueryKey} from "@tanstack/react-query";
+import { useInfiniteQuery } from "@tanstack/react-query"
+import type { ReactNode} from "react";
+import { useEffect, useMemo, useRef } from "react"
 import { toast } from "@medusajs/ui"
 import { Spinner } from "@medusajs/icons"
 
@@ -47,11 +49,13 @@ export const InfiniteList = <
     maxPages: 5,
     getNextPageParam: (lastPage) => {
       const moreItemsExist = lastPage.count > lastPage.offset + lastPage.limit
-      return moreItemsExist ? lastPage.offset + lastPage.limit : undefined
+      
+return moreItemsExist ? lastPage.offset + lastPage.limit : undefined
     },
     getPreviousPageParam: (firstPage) => {
       const moreItemsExist = firstPage.offset !== 0
-      return moreItemsExist
+      
+return moreItemsExist
         ? Math.max(firstPage.offset - firstPage.limit, 0)
         : undefined
     },

@@ -1,1 +1,1 @@
-export * from "./file-upload"
+export * from "@components/common/file-upload/file-upload"

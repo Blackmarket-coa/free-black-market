@@ -1,7 +1,8 @@
-import { FetchError } from "@medusajs/js-sdk"
-import { HttpTypes } from "@medusajs/types"
-import { UseMutationOptions, useMutation } from "@tanstack/react-query"
-import { sdk } from "../../lib/client"
+import type { FetchError } from "@medusajs/js-sdk"
+import type { HttpTypes } from "@medusajs/types"
+import type { UseMutationOptions} from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query"
+import { sdk } from "@lib/client"
 
 export const useSignInWithEmailPass = (
   options?: UseMutationOptions<
@@ -35,8 +36,9 @@ export const useSignUpWithEmailPass = (
   return useMutation({
     mutationFn: (payload) => {
       // Strip unsupported fields before calling auth.register
-      const { vendor_type, confirmPassword, ...authPayload } = payload as any
-      return sdk.auth.register("user", "emailpass", {
+      const { vendor_type: _vendor_type, confirmPassword: _confirmPassword, ...authPayload } = payload as any
+      
+return sdk.auth.register("user", "emailpass", {
         ...authPayload,
         email: payload.email.toLowerCase().trim(),
       })

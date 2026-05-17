@@ -106,12 +106,21 @@ export interface AdminUpdateOrderReturnRequest {
 
 /**
  * Seller request data structure
+ *
+ * `name` and `email` are legacy top-level fields kept optional so the
+ * request-seller-detail screen can render rows submitted before the
+ * payload was normalised into {member, seller}. They should never be
+ * populated for new seller submissions.
  */
 export interface SellerRequestData {
   auth_identity_id: string;
   member: MemberDTO;
   seller: SellerDTO;
   vendor_type?: VendorType;
+  /** Legacy top-level name; superseded by `seller.name` / `member.name`. */
+  name?: string;
+  /** Legacy top-level email; superseded by `member.email`. */
+  email?: string;
 }
 
 export interface AdminSellerRequest extends Omit<RequestDTO, 'data' | 'reviewer_id' | 'reviewer_note'> {

@@ -1,8 +1,8 @@
-import { HttpTypes } from "@medusajs/types"
-import { UIMatch } from "react-router-dom"
+import type { HttpTypes } from "@medusajs/types"
+import type { UIMatch } from "react-router-dom"
 
-import { useCustomerGroup } from "../../../hooks/api"
-import { CUSTOMER_GROUP_DETAIL_FIELDS } from "./constants"
+import { useCustomerGroup } from "@hooks/api"
+import { CUSTOMER_GROUP_DETAIL_FIELDS } from "@routes/customer-groups/customer-group-detail/constants"
 
 type CustomerGroupDetailBreadcrumbProps =
   UIMatch<HttpTypes.AdminCustomerGroupResponse>

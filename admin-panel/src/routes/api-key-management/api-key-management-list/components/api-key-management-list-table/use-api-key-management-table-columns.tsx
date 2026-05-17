@@ -1,18 +1,18 @@
-import { AdminApiKeyResponse } from "@medusajs/types"
+import type { AdminApiKeyResponse } from "@medusajs/types"
 import { Badge } from "@medusajs/ui"
 import { createColumnHelper } from "@tanstack/react-table"
 import { useMemo } from "react"
 import { useTranslation } from "react-i18next"
 
-import { DateCell } from "../../../../../components/table/table-cells/common/date-cell"
-import { StatusCell } from "../../../../../components/table/table-cells/common/status-cell"
-import { TextCell } from "../../../../../components/table/table-cells/common/text-cell"
+import { DateCell } from "@components/table/table-cells/common/date-cell"
+import { StatusCell } from "@components/table/table-cells/common/status-cell"
+import { TextCell } from "@components/table/table-cells/common/text-cell"
 import {
   getApiKeyStatusProps,
   getApiKeyTypeProps,
   prettifyRedactedToken,
-} from "../../../common/utils"
-import { ApiKeyRowActions } from "./api-key-row-actions"
+} from "@routes/api-key-management/common/utils"
+import { ApiKeyRowActions } from "@routes/api-key-management/api-key-management-list/components/api-key-management-list-table/api-key-row-actions"
 
 const columnHelper = createColumnHelper<AdminApiKeyResponse["api_key"]>()
 
@@ -33,7 +33,8 @@ export const useApiKeyManagementTableColumns = () => {
         header: "Token",
         cell: ({ getValue }) => {
           const token = getValue()
-          return <Badge size="2xsmall">{prettifyRedactedToken(token)}</Badge>
+          
+return <Badge size="2xsmall">{prettifyRedactedToken(token)}</Badge>
         },
       }),
       columnHelper.accessor("type", {

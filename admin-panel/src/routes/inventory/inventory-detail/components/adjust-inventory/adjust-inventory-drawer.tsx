@@ -1,11 +1,10 @@
-import { InventoryTypes } from "@medusajs/types"
 import { Heading } from "@medusajs/ui"
 import { useTranslation } from "react-i18next"
 import { useParams } from "react-router-dom"
-import { RouteDrawer } from "../../../../../components/modals"
-import { useInventoryItem } from "../../../../../hooks/api/inventory"
-import { useStockLocation } from "../../../../../hooks/api/stock-locations"
-import { AdjustInventoryForm } from "./components/adjust-inventory-form"
+import { RouteDrawer } from "@components/modals"
+import { useInventoryItem } from "@hooks/api/inventory"
+import { useStockLocation } from "@hooks/api/stock-locations"
+import { AdjustInventoryForm } from "@routes/inventory/inventory-detail/components/adjust-inventory/components/adjust-inventory-form"
 
 export const AdjustInventoryDrawer = () => {
   const { id, location_id } = useParams()
@@ -19,8 +18,7 @@ export const AdjustInventoryDrawer = () => {
   } = useInventoryItem(id!)
 
   const inventoryLevel = inventoryItem?.location_levels!.find(
-    (level: InventoryTypes.InventoryLevelDTO) =>
-      level.location_id === location_id
+    (level) => level.location_id === location_id
   )
 
   const { stock_location, isLoading: isLoadingLocation } = useStockLocation(

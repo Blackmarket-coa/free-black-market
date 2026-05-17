@@ -1,36 +1,43 @@
 import { zodResolver } from "@hookform/resolvers/zod"
 import { XMarkMini } from "@medusajs/icons"
-import { AdminProductVariant, HttpTypes } from "@medusajs/types"
+import type { AdminProductVariant, HttpTypes } from "@medusajs/types"
 import { Button, Heading, IconButton, Input, Label, toast } from "@medusajs/ui"
 import i18next from "i18next"
+import type {
+  UseFormReturn} from "react-hook-form";
 import {
   useFieldArray,
   useForm,
-  UseFormReturn,
   useWatch,
 } from "react-hook-form"
 import { useTranslation } from "react-i18next"
 import * as zod from "zod"
 
-import { Form } from "../../../../../components/common/form"
-import { Combobox } from "../../../../../components/inputs/combobox"
+import { Form } from "@components/common/form"
+import { Combobox } from "@components/inputs/combobox"
 import {
   RouteFocusModal,
   useRouteModal,
-} from "../../../../../components/modals"
-import { KeyboundForm } from "../../../../../components/utilities/keybound-form"
-import { useProductVariantsInventoryItemsBatch } from "../../../../../hooks/api/products"
-import { useComboboxData } from "../../../../../hooks/use-combobox-data"
-import { castNumber } from "../../../../../lib/cast-number"
-import { sdk } from "../../../../../lib/client"
+} from "@components/modals"
+import { KeyboundForm } from "@components/utilities/keybound-form"
+import { useProductVariantsInventoryItemsBatch } from "@hooks/api/products"
+import { useComboboxData } from "@hooks/use-combobox-data"
+import { castNumber } from "@lib/cast-number"
+import { sdk } from "@lib/client"
+
+// The admin response embeds `inventory_items` with a joined `inventory`
+// payload + `required_quantity`. The SDK type collapses to `never` when
+// intersected with the joined shape, so we accept a relaxed shape and
+// rely on runtime guarantees.
+type VariantInventoryRow = {
+  inventory: HttpTypes.AdminInventoryItem
+  inventory_item_id: string
+  required_quantity: number
+}
 
 type ManageVariantInventoryItemsFormProps = {
   variant: AdminProductVariant & {
-    inventory_items: {
-      inventory: HttpTypes.AdminInventoryItem
-      inventory_item_id: string
-      required_quantity: number
-    }[]
+    inventory_items?: VariantInventoryRow[] | null
   }
 }
 
@@ -63,7 +70,7 @@ const ManageVariantInventoryItemsSchema = zod.object({
 
 type InventoryItemFormData = zod.infer<
   typeof ManageVariantInventoryItemsSchema
->["inventory"]
+>
 
 type VariantInventoryItemRowProps = {
   form: UseFormReturn<InventoryItemFormData>
@@ -91,8 +98,8 @@ function VariantInventoryItemRow({
 
   const selectedInventoryItemId = useWatch({
     control: form.control,
-    name: `inventory.${inventoryIndex}.inventory_item_id`,
-  })
+    name: `inventory.${inventoryIndex}.inventory_item_id` as const,
+  }) as string
 
   const items = useComboboxData({
     queryKey: ["inventory_items"],
@@ -100,8 +107,8 @@ function VariantInventoryItemRow({
     defaultValue: inventoryItem.inventory_item_id,
     selectedValue: selectedInventoryItemId,
     queryFn: (params) => sdk.admin.inventoryItem.list(params),
-    getOptions: (data) =>
-      data.inventory_items.map((item) => ({
+    getOptions: (data: any) =>
+      data.inventory_items.map((item: HttpTypes.AdminInventoryItem) => ({
         label: `${item.title} ${item.sku ? `(${item.sku})` : ""}`,
         value: item.id!,
       })),
@@ -205,12 +212,14 @@ export function ManageVariantInventoryItemsForm({
   const { t } = useTranslation()
   const { handleSuccess } = useRouteModal()
 
+  const inventoryItems: VariantInventoryRow[] = variant.inventory_items ?? []
+
   const form = useForm<zod.infer<typeof ManageVariantInventoryItemsSchema>>({
     defaultValues: {
-      inventory: variant.inventory_items.length
-        ? variant.inventory_items!.map((i) => ({
+      inventory: inventoryItems.length
+        ? inventoryItems.map((i) => ({
             required_quantity: i.required_quantity,
-            inventory_item_id: i.inventory.id,
+            inventory_item_id: i.inventory.id!,
           }))
         : [
             {
@@ -255,8 +264,8 @@ export function ManageVariantInventoryItemsForm({
     const existingItems: Record<string, number> = {}
     const selectedItems: Record<string, boolean> = {}
 
-    variant.inventory_items.forEach(
-      (i) => (existingItems[i.inventory.id] = i.required_quantity)
+    inventoryItems.forEach(
+      (i) => (existingItems[i.inventory.id!] = i.required_quantity)
     )
 
     values.inventory.forEach((i) => (selectedItems[i.inventory_item_id] = true))
@@ -285,12 +294,12 @@ export function ManageVariantInventoryItemsForm({
       }
     })
 
-    variant.inventory_items.forEach((i) => {
-      if (!(i.inventory.id in selectedItems)) {
+    inventoryItems.forEach((i) => {
+      if (!(i.inventory.id! in selectedItems)) {
         payload.delete = payload.delete || []
 
         payload.delete.push({
-          inventory_item_id: i.inventory.id,
+          inventory_item_id: i.inventory.id!,
           variant_id: variant.id,
         })
       }
@@ -352,7 +361,7 @@ export function ManageVariantInventoryItemsForm({
                   key={inventoryItem.id}
                   form={form}
                   inventoryIndex={inventoryIndex}
-                  inventoryItem={inventoryItem}
+                  inventoryItem={inventoryItem as unknown as VariantInventoryRow & { id: string }}
                   isItemOptionDisabled={isItemOptionDisabled}
                   onRemove={() => inventory.remove(inventoryIndex)}
                 />

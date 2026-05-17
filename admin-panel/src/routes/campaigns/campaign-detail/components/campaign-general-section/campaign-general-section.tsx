@@ -1,5 +1,5 @@
 import { PencilSquare, Trash } from "@medusajs/icons"
-import { AdminCampaignResponse } from "@medusajs/types"
+import type { AdminCampaignResponse } from "@medusajs/types"
 import {
   Badge,
   Container,
@@ -11,13 +11,13 @@ import {
 } from "@medusajs/ui"
 import { useTranslation } from "react-i18next"
 import { useNavigate } from "react-router-dom"
-import { ActionMenu } from "../../../../../components/common/action-menu"
-import { useDeleteCampaign } from "../../../../../hooks/api/campaigns"
-import { currencies } from "../../../../../lib/data/currencies"
+import { ActionMenu } from "@components/common/action-menu"
+import { useDeleteCampaign } from "@hooks/api/campaigns"
+import { currencies } from "@lib/data/currencies"
 import {
   campaignStatus,
   statusColor,
-} from "../../../common/utils/campaign-status"
+} from "@routes/campaigns/common/utils/campaign-status"
 
 type CampaignGeneralSectionProps = {
   campaign: AdminCampaignResponse["campaign"]

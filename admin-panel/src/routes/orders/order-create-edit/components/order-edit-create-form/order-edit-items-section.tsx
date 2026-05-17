@@ -1,4 +1,4 @@
-import { AdminOrder, AdminOrderPreview } from "@medusajs/types"
+import type { AdminOrder, AdminOrderPreview } from "@medusajs/types"
 import { Button, Heading, Input, toast } from "@medusajs/ui"
 import { useMemo, useState } from "react"
 import { useTranslation } from "react-i18next"
@@ -6,10 +6,10 @@ import {
   RouteFocusModal,
   StackedFocusModal,
   useStackedModal,
-} from "../../../../../components/modals"
-import { useAddOrderEditItems } from "../../../../../hooks/api/order-edits"
-import { AddOrderEditItemsTable } from "../add-order-edit-items-table"
-import { OrderEditItem } from "./order-edit-item"
+} from "@components/modals"
+import { useAddOrderEditItems } from "@hooks/api/order-edits"
+import { AddOrderEditItemsTable } from "@routes/orders/order-create-edit/components/add-order-edit-items-table"
+import { OrderEditItem } from "@routes/orders/order-create-edit/components/order-edit-create-form/order-edit-item"
 
 type ExchangeInboundSectionProps = {
   order: AdminOrder
@@ -59,8 +59,8 @@ export const OrderEditItemsSection = ({
   const filteredItems = useMemo(() => {
     return preview.items.filter(
       (i) =>
-        i.title.toLowerCase().includes(filterTerm) ||
-        i.product_title.toLowerCase().includes(filterTerm)
+        i.title?.toLowerCase().includes(filterTerm) ||
+        i.product_title?.toLowerCase().includes(filterTerm)
     )
   }, [preview, filterTerm])
 

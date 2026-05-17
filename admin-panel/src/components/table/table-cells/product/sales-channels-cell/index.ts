@@ -1,1 +1,1 @@
-export * from "./sales-channels-cell"
+export * from "@components/table/table-cells/product/sales-channels-cell/sales-channels-cell"

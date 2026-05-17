@@ -9,10 +9,11 @@ import {
 } from "@medusajs/ui"
 import { Command } from "cmdk"
 import { Dialog as RadixDialog } from "radix-ui"
+import type {
+  ComponentPropsWithoutRef,
+  ElementRef} from "react";
 import {
   Children,
-  ComponentPropsWithoutRef,
-  ElementRef,
   forwardRef,
   Fragment,
   useCallback,
@@ -34,17 +35,17 @@ import {
 } from "@medusajs/icons"
 import { matchSorter } from "match-sorter"
 
-import { useSearch } from "../../providers/search-provider"
-import { Skeleton } from "../common/skeleton"
-import { Thumbnail } from "../common/thumbnail"
+import { useSearch } from "@providers/search-provider"
+import { Skeleton } from "@components/common/skeleton"
+import { Thumbnail } from "@components/common/thumbnail"
 import {
   DEFAULT_SEARCH_LIMIT,
   SEARCH_AREAS,
   SEARCH_LIMIT_INCREMENT,
-} from "./constants"
-import { SearchArea } from "./types"
-import { useSearchResults } from "./use-search-results"
-import { useDocumentDirection } from "../../hooks/use-document-direction"
+} from "@components/search/constants"
+import type { SearchArea } from "@components/search/types"
+import { useSearchResults } from "@components/search/use-search-results"
+import { useDocumentDirection } from "@hooks/use-document-direction"
 
 export const Search = () => {
   const [area, setArea] = useState<SearchArea>("all")
@@ -96,12 +97,14 @@ export const Search = () => {
 
     if (item.to) {
       navigate(item.to)
-      return
+      
+return
     }
 
     if (item.callback) {
       item.callback()
-      return
+      
+return
     }
   }
 

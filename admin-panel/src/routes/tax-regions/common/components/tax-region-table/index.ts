@@ -1,1 +1,1 @@
-export * from "./tax-region-table"
+export * from "@routes/tax-regions/common/components/tax-region-table/tax-region-table"

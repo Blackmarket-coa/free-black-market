@@ -1,1 +1,1 @@
-export * from "./province-select"
+export * from "@components/inputs/province-select/province-select"

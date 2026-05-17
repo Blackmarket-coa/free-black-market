@@ -1,10 +1,10 @@
 import { InlineTip, Input, Switch } from "@medusajs/ui"
-import { ComponentType } from "react"
-import { ControllerRenderProps, UseFormReturn } from "react-hook-form"
+import type { ComponentType } from "react"
+import type { ControllerRenderProps, UseFormReturn } from "react-hook-form"
 import { useTranslation } from "react-i18next"
-import { Form } from "../../../components/common/form"
-import { FormField } from "../../types"
-import { FormFieldType } from "./types"
+import { Form } from "@components/common/form"
+import type { FormField } from "@/dashboard-app/types"
+import type { FormFieldType } from "./types"
 import { getFieldType } from "./utils"
 
 type FormExtensionZoneProps = {
@@ -59,7 +59,7 @@ const FormExtensionField = ({ field, form }: FormExtensionFieldProps) => {
             {description && <Form.Hint>{description}</Form.Hint>}
             <Form.Control>
               <FormExtensionFieldComponent
-                field={field}
+                field={field as any}
                 type={type}
                 component={Component}
                 placeholder={placeholder}

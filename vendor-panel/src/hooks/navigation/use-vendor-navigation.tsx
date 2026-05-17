@@ -97,6 +97,28 @@ function getVendorNavigationConfig({
       // Always visible
     },
     {
+      icon: <Star />,
+      label: "Creator Studio",
+      to: "/creator-studio",
+      // Visible to all sellers; the page itself surfaces only the creator's
+      // own attributions and links so non-creator vendors will see empty
+      // panels until they opt in by setting vendor_type=creator.
+    },
+    {
+      icon: <Star />,
+      label: "Creator Programs",
+      to: "/programs",
+      showFor: (_, type) => type !== "creator",
+    },
+    {
+      icon: <SquaresPlus />,
+      label: "Services",
+      to: "/services",
+      // Visible to all sellers — both buyers (who post bounties / subcontract
+      // order line items) and service providers (who claim bounties and
+      // submit proofs of work) use this surface.
+    },
+    {
       icon: <ShoppingCart />,
       label: t("orders.domain"),
       to: "/orders",

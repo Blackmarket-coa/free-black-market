@@ -1,7 +1,7 @@
 import { Tooltip } from "@medusajs/ui"
 import { useTranslation } from "react-i18next"
-import { useDate } from "../../../../../hooks/use-date"
-import { PlaceholderCell } from "../placeholder-cell"
+import { useDate } from "@hooks/use-date"
+import { PlaceholderCell } from "@components/table/table-cells/common/placeholder-cell"
 
 type DateCellProps = {
   date: Date | string | undefined

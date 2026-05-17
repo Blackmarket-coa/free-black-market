@@ -1,5 +1,5 @@
 import { Text } from "@medusajs/ui"
-import { ReactNode } from "react"
+import type { ReactNode } from "react"
 
 export interface ListicleProps {
   labelKey: string

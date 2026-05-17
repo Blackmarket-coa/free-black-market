@@ -1,1 +1,1 @@
-export * from "./sales-channel-list-table"
+export * from "@routes/sales-channels/sales-channel-list/components/sales-channel-list-table"

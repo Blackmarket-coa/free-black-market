@@ -1,22 +1,24 @@
 import { useMemo } from "react"
 import { useTranslation } from "react-i18next"
-import * as zod from "zod"
+import type * as zod from "zod"
 import { clx, Input, Text, Tooltip } from "@medusajs/ui"
-import { UseFormReturn } from "react-hook-form"
-import { HttpTypes } from "@medusajs/types"
+import type { UseFormReturn } from "react-hook-form"
+import type { HttpTypes } from "@medusajs/types"
 
-import { Form } from "../../../../../components/common/form/index"
-import { Thumbnail } from "../../../../../components/common/thumbnail/index"
-import { useProductVariant } from "../../../../../hooks/api/products"
-import { getFulfillableQuantity } from "../../../../../lib/order-item"
-import { CreateFulfillmentSchema } from "./constants"
+import { Form } from "@components/common/form/index"
+import { Thumbnail } from "@components/common/thumbnail/index"
+import { useProductVariant } from "@hooks/api/products"
+import { getFulfillableQuantity } from "@lib/order-item"
+import type { CreateFulfillmentSchema } from "@routes/orders/order-create-fulfillment/components/order-create-fulfillment-form/constants"
 import { InformationCircleSolid } from "@medusajs/icons"
 
 type OrderEditItemProps = {
   item: HttpTypes.AdminOrderLineItem
-  currencyCode: string
+  /** Optional: callers that need price formatting pass through the order's currency_code. */
+  currencyCode?: string
   locationId?: string
-  onItemRemove: (itemId: string) => void
+  /** Optional: callers may attach a row-remove handler. */
+  onItemRemove?: (itemId: string) => void
   reservations: HttpTypes.AdminReservation[]
   form: UseFormReturn<zod.infer<typeof CreateFulfillmentSchema>>
   disabled: boolean
@@ -32,28 +34,47 @@ export function OrderCreateFulfillmentItem({
   const { t } = useTranslation()
 
   const { variant } = useProductVariant(
-    item.product_id,
-    item.variant_id,
+    // AdminOrderLineItem.product_id and .variant_id are `string | null`;
+    // the hook accepts string only. Guard with the `enabled` flag below.
+    item.product_id ?? "",
+    item.variant_id ?? "",
     {
       fields: "*inventory,*inventory.location_levels,*inventory_items",
     },
     {
-      enabled: !!item.variant,
+      enabled: !!item.variant && !!item.variant_id,
     }
   )
 
   const { availableQuantity, inStockQuantity } = useMemo(() => {
+    // AdminProductVariant in @medusajs/types omits the embedded
+    // `inventory` join; the response inlines it when fetched with
+    // `+inventory,+inventory.location_levels`. Cast structurally.
+    type InventoryLevelRow = {
+      id?: string
+      location_id?: string
+      available_quantity: number
+      stocked_quantity: number
+    }
+    type InventoryRow = {
+      id: string
+      location_levels?: InventoryLevelRow[]
+    }
+    const variantWithInventory = variant as
+      | (typeof variant & { inventory?: InventoryRow[] })
+      | undefined
+
     if (
-      !variant?.inventory_items?.length ||
-      !variant?.inventory?.length ||
+      !variantWithInventory?.inventory_items?.length ||
+      !variantWithInventory?.inventory?.length ||
       !locationId
     ) {
       return {}
     }
 
-    const { inventory, inventory_items } = variant
+    const { inventory, inventory_items } = variantWithInventory
 
-    const locationHasEveryInventoryItem = inventory.every((i) =>
+    const locationHasEveryInventoryItem = inventory.every((i: InventoryRow) =>
       i.location_levels?.find((inv) => inv.location_id === locationId)
     )
 
@@ -213,7 +234,7 @@ export function OrderCreateFulfillmentItem({
 
                             field.onChange(val)
 
-                            if (!isNaN(val)) {
+                            if (val !== null && !isNaN(val)) {
                               if (val < minValue || val > maxValue) {
                                 form.setError(`quantity.${item.id}`, {
                                   type: "manual",

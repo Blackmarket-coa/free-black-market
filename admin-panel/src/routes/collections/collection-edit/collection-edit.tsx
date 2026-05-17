@@ -1,9 +1,9 @@
 import { Heading } from "@medusajs/ui"
 import { useTranslation } from "react-i18next"
 import { useParams } from "react-router-dom"
-import { RouteDrawer } from "../../../components/modals"
-import { useCollection } from "../../../hooks/api/collections"
-import { EditCollectionForm } from "./components/edit-collection-form"
+import { RouteDrawer } from "@components/modals"
+import { useCollection } from "@hooks/api/collections"
+import { EditCollectionForm } from "@routes/collections/collection-edit/components/edit-collection-form"
 
 export const CollectionEdit = () => {
   const { id } = useParams()

@@ -1,17 +1,19 @@
-import { FetchError } from "@medusajs/js-sdk"
-import { CreateOrderCreditLineDTO, HttpTypes } from "@medusajs/types"
-import {
+import type { FetchError } from "@medusajs/js-sdk"
+import type { CreateOrderCreditLineDTO, HttpTypes } from "@medusajs/types"
+import type {
   QueryKey,
-  useMutation,
   UseMutationOptions,
-  useQuery,
-  UseQueryOptions,
+  UseQueryOptions} from "@tanstack/react-query";
+import {
+  useMutation,
+  useQuery
 } from "@tanstack/react-query"
-import { sdk } from "../../lib/client"
-import { queryClient } from "../../lib/query-client"
-import { queryKeysFactory, TQueryKey } from "../../lib/query-key-factory"
-import { inventoryItemsQueryKeys } from "./inventory"
-import { reservationItemsQueryKeys } from "./reservations"
+import { sdk } from "@lib/client"
+import { queryClient } from "@lib/query-client"
+import type { TQueryKey } from "@lib/query-key-factory";
+import { queryKeysFactory } from "@lib/query-key-factory"
+import { inventoryItemsQueryKeys } from "@hooks/api/inventory"
+import { reservationItemsQueryKeys } from "@hooks/api/reservations"
 
 const ORDERS_QUERY_KEY = "orders" as const
 const _orderKeys = queryKeysFactory(ORDERS_QUERY_KEY) as TQueryKey<"orders"> & {

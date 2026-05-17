@@ -1,12 +1,12 @@
 import { useLoaderData, useParams } from "react-router-dom"
 
-import { SingleColumnPageSkeleton } from "../../../components/common/skeleton"
-import { SingleColumnPage } from "../../../components/layout/pages"
-import { useProductType } from "../../../hooks/api/product-types"
-import { useExtension } from "../../../providers/extension-provider"
-import { ProductTypeGeneralSection } from "./components/product-type-general-section"
-import { ProductTypeProductSection } from "./components/product-type-product-section"
-import { productTypeLoader } from "./loader"
+import { SingleColumnPageSkeleton } from "@components/common/skeleton"
+import { SingleColumnPage } from "@components/layout/pages"
+import { useProductType } from "@hooks/api/product-types"
+import { useExtension } from "@providers/extension-provider"
+import { ProductTypeGeneralSection } from "@routes/product-types/product-type-detail/components/product-type-general-section"
+import { ProductTypeProductSection } from "@routes/product-types/product-type-detail/components/product-type-product-section"
+import type { productTypeLoader } from "@routes/product-types/product-type-detail/loader"
 
 export const ProductTypeDetail = () => {
   const { id } = useParams()

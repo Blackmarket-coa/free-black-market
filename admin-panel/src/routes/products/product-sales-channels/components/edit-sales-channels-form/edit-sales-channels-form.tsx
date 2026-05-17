@@ -1,21 +1,21 @@
 import { Button, createDataTableColumnHelper } from "@medusajs/ui"
-import { RowSelectionState } from "@tanstack/react-table"
+import type { RowSelectionState } from "@tanstack/react-table"
 import { useEffect, useMemo, useState } from "react"
 import { useTranslation } from "react-i18next"
 import * as zod from "zod"
 
 import { zodResolver } from "@hookform/resolvers/zod"
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 import { keepPreviousData } from "@tanstack/react-query"
 import { useForm } from "react-hook-form"
-import { DataTable } from "../../../../../components/data-table"
-import * as hooks from "../../../../../components/data-table/helpers/sales-channels"
+import { DataTable } from "@components/data-table"
+import * as hooks from "@components/data-table/helpers/sales-channels"
 import {
   RouteFocusModal,
   useRouteModal,
-} from "../../../../../components/modals"
-import { useUpdateProduct } from "../../../../../hooks/api/products"
-import { useSalesChannels } from "../../../../../hooks/api/sales-channels"
+} from "@components/modals"
+import { useUpdateProduct } from "@hooks/api/products"
+import { useSalesChannels } from "@hooks/api/sales-channels"
 
 type EditSalesChannelsFormProps = {
   product: HttpTypes.AdminProduct
@@ -46,7 +46,8 @@ export const EditSalesChannelsForm = ({
   const initialState =
     product.sales_channels?.reduce((acc, curr) => {
       acc[curr.id] = true
-      return acc
+      
+return acc
     }, {} as RowSelectionState) ?? {}
 
   const [rowSelection, setRowSelection] =

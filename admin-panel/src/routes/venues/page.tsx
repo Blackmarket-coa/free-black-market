@@ -1,19 +1,20 @@
 import { defineRouteConfig } from "@medusajs/admin-sdk"
 import { Buildings } from "@medusajs/icons"
+import type { 
+  DataTablePaginationState} from "@medusajs/ui";
 import { 
   createDataTableColumnHelper, 
   Container, 
   DataTable, 
   useDataTable, 
-  Heading, 
-  DataTablePaginationState,
+  Heading,
   Button,
 } from "@medusajs/ui"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { useState, useMemo } from "react"
-import { sdk } from "../../lib/sdk"
-import { Venue, CreateVenueRequest } from "../../types"
-import { CreateVenueModal } from "../../components/create-venue-modal"
+import { sdk } from "@lib/sdk"
+import type { Venue, CreateVenueRequest } from "@/types"
+import { CreateVenueModal } from "@components/create-venue-modal"
 
 const columnHelper = createDataTableColumnHelper<Venue>()
 
@@ -36,7 +37,8 @@ const columns = [
         (sum, rowItem) => sum + rowItem.seat_count,
         0
       )
-      return <span className="txt-small-plus">{totalCapacity} seats</span>
+      
+return <span className="txt-small-plus">{totalCapacity} seats</span>
     },
   }),
   columnHelper.accessor("address", {

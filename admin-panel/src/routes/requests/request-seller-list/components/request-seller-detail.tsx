@@ -123,23 +123,25 @@ export function RequestSellerDetail({ request, open, close }: Props) {
           </Container>
         </Drawer.Body>
         <Drawer.Footer>
-          {request.status === "pending" && (
+          {(request.status === "pending" || request.status === "rejected") && (
             <>
               <Button
                 onClick={() => {
                   handlePrompt(request.id!, true);
                 }}
               >
-                Accept
+                {request.status === "rejected" ? "Reverse rejection" : "Accept"}
               </Button>
-              <Button
-                onClick={() => {
-                  handlePrompt(request.id!, false);
-                }}
-                variant="danger"
-              >
-                Reject
-              </Button>
+              {request.status === "pending" && (
+                <Button
+                  onClick={() => {
+                    handlePrompt(request.id!, false);
+                  }}
+                  variant="danger"
+                >
+                  Reject
+                </Button>
+              )}
               <Button variant="secondary" onClick={close}>
                 Cancel
               </Button>

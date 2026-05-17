@@ -1,1 +1,1 @@
-export { RequestProductCollectionList as Component } from "./request-product-collection-list";
+export { RequestProductCollectionList as Component } from "@routes/requests/request-product-collection-list/request-product-collection-list";

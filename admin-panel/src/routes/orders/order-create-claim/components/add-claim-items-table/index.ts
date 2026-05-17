@@ -1,1 +1,1 @@
-export * from "./add-claim-items-table"
+export * from "@routes/orders/order-create-claim/components/add-claim-items-table/add-claim-items-table"

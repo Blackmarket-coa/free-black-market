@@ -2,10 +2,10 @@ import { Heading } from "@medusajs/ui"
 import { useTranslation } from "react-i18next"
 import { useParams } from "react-router-dom"
 
-import { RouteDrawer } from "../../../components/modals"
-import { useProduct } from "../../../hooks/api/products"
-import { PRODUCT_DETAIL_FIELDS } from "../product-detail/constants"
-import { EditProductForm } from "./components/edit-product-form"
+import { RouteDrawer } from "@components/modals"
+import { useProduct } from "@hooks/api/products"
+import { PRODUCT_DETAIL_FIELDS } from "@routes/products/product-detail/constants"
+import { EditProductForm } from "@routes/products/product-edit/components/edit-product-form"
 
 export const ProductEdit = () => {
   const { id } = useParams()

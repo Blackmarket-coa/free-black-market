@@ -25,8 +25,8 @@ import { keepPreviousData } from "@tanstack/react-query"
 import { createColumnHelper } from "@tanstack/react-table"
 import { useNavigate } from "react-router-dom"
 
-import type { Producer } from "../../../types/producer"
-import { GrowingPracticeLabels, GrowingPractice } from "../../../types/producer"
+import type { Producer , GrowingPractice } from "@custom-types/producer"
+import { GrowingPracticeLabels } from "@custom-types/producer"
 
 import { _DataTable } from "@components/table/data-table"
 
@@ -144,7 +144,8 @@ export const ProducersList = () => {
         cell: ({ row }) => {
           const practices = row.original.practices || []
           if (practices.length === 0) return <Text className="text-ui-fg-muted">—</Text>
-          return (
+          
+return (
             <div className="flex flex-wrap gap-1">
               {practices.slice(0, 2).map((practice) => (
                 <Badge key={practice} color="grey" size="xsmall">

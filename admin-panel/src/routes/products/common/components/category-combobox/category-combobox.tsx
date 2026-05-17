@@ -5,14 +5,15 @@ import {
   TrianglesMini,
   XMarkMini,
 } from "@medusajs/icons"
-import { AdminProductCategoryResponse } from "@medusajs/types"
+import type { AdminProductCategoryResponse } from "@medusajs/types"
 import { Divider, Text, clx } from "@medusajs/ui"
 import { Popover as RadixPopover } from "radix-ui"
-import {
+import type {
   CSSProperties,
   ComponentPropsWithoutRef,
+  MouseEvent} from "react";
+import {
   Fragment,
-  MouseEvent,
   forwardRef,
   useCallback,
   useEffect,
@@ -22,9 +23,9 @@ import {
   useState,
 } from "react"
 import { Trans, useTranslation } from "react-i18next"
-import { TextSkeleton } from "../../../../../components/common/skeleton"
-import { useProductCategories } from "../../../../../hooks/api/categories"
-import { useDebouncedSearch } from "../../../../../hooks/use-debounced-search"
+import { TextSkeleton } from "@components/common/skeleton"
+import { useProductCategories } from "@hooks/api/categories"
+import { useDebouncedSearch } from "@hooks/use-debounced-search"
 
 interface CategoryComboboxProps
   extends Omit<
@@ -184,7 +185,8 @@ export const CategoryCombobox = forwardRef<
         e.preventDefault()
         setFocusedIndex((prev) => {
           const nextIndex = prev < optionsLength - 1 ? prev + 1 : prev
-          return nextIndex
+          
+return nextIndex
         })
       } else if (e.key === "ArrowUp") {
         e.preventDefault()
@@ -214,7 +216,8 @@ export const CategoryCombobox = forwardRef<
         if (showLevelUp && focusedIndex === 0) {
           setLevel(level.slice(0, level.length - 1))
           setFocusedIndex(0)
-          return
+          
+return
         }
 
         const index = showLevelUp ? focusedIndex - 1 : focusedIndex
@@ -440,7 +443,7 @@ export const CategoryCombobox = forwardRef<
                 {query ? (
                   <Trans
                     i18n={i18n}
-                    i18nKey={"general.noResultsTitle"}
+                    i18nKey="general.noResultsTitle"
                     tOptions={{
                       query: query,
                     }}

@@ -1,1 +1,1 @@
-export * from "./date-cell"
+export * from "@components/table/table-cells/common/date-cell/date-cell"

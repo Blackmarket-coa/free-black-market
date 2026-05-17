@@ -1,1 +1,1 @@
-export { ProductImport as Component } from "./product-import"
+export { ProductImport as Component } from "@routes/products/product-import/product-import"

@@ -1,9 +1,9 @@
 import { Heading } from "@medusajs/ui"
 import { useTranslation } from "react-i18next"
 import { useParams } from "react-router-dom"
-import { RouteDrawer } from "../../../components/modals"
-import { useCustomerGroup } from "../../../hooks/api/customer-groups"
-import { EditCustomerGroupForm } from "./components/edit-customer-group-form"
+import { RouteDrawer } from "@components/modals"
+import { useCustomerGroup } from "@hooks/api/customer-groups"
+import { EditCustomerGroupForm } from "@routes/customer-groups/customer-group-edit/components/edit-customer-group-form"
 
 export const CustomerGroupEdit = () => {
   const { id } = useParams()

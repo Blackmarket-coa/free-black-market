@@ -40,6 +40,8 @@ export const LedgerEntry = model.define("hawala_ledger_entry", {
     "REFUND",
     "ADJUSTMENT",
     "FEE",
+    "CREATOR_COMMISSION",
+    "CREATOR_REWARD",
   ]),
   
   // Status
@@ -60,6 +62,8 @@ export const LedgerEntry = model.define("hawala_ledger_entry", {
     "STRIPE_PAYMENT",
     "STELLAR_TX",
     "MANUAL",
+    "CREATOR_ATTRIBUTION",
+    "CREATOR_REWARD_POOL",
   ]).nullable(),
   reference_id: model.text().nullable(),
   

@@ -1,4 +1,4 @@
-import {
+import type {
   AdminExchange,
   AdminOrder,
   AdminOrderPreview,
@@ -7,32 +7,33 @@ import {
 } from "@medusajs/types"
 import { Alert, Button, Heading, Text, toast } from "@medusajs/ui"
 import { useEffect, useMemo, useState } from "react"
-import { useFieldArray, UseFormReturn } from "react-hook-form"
+import type { UseFormReturn } from "react-hook-form";
+import { useFieldArray } from "react-hook-form"
 import { useTranslation } from "react-i18next"
 
-import { HttpTypes } from "@medusajs/types"
-import { Form } from "../../../../../components/common/form"
-import { Combobox } from "../../../../../components/inputs/combobox"
+import type { HttpTypes } from "@medusajs/types"
+import { Form } from "@components/common/form"
+import { Combobox } from "@components/inputs/combobox"
 import {
   RouteFocusModal,
   StackedFocusModal,
   useStackedModal,
-} from "../../../../../components/modals"
-import { useShippingOptions, useStockLocations } from "../../../../../hooks/api"
+} from "@components/modals"
+import { useShippingOptions, useStockLocations } from "@hooks/api"
 import {
   useAddExchangeInboundItems,
   useAddExchangeInboundShipping,
   useDeleteExchangeInboundShipping,
   useRemoveExchangeInboundItem,
   useUpdateExchangeInboundItem,
-} from "../../../../../hooks/api/exchanges"
-import { useUpdateReturn } from "../../../../../hooks/api/returns"
-import { sdk } from "../../../../../lib/client"
-import { ReturnShippingPlaceholder } from "../../../common/placeholders"
-import { ItemPlaceholder } from "../../../order-create-claim/components/claim-create-form/item-placeholder"
-import { AddExchangeInboundItemsTable } from "../add-exchange-inbound-items-table"
-import { ExchangeInboundItem } from "./exchange-inbound-item"
-import { CreateExchangeSchemaType } from "./schema"
+} from "@hooks/api/exchanges"
+import { useUpdateReturn } from "@hooks/api/returns"
+import { sdk } from "@lib/client"
+import { ReturnShippingPlaceholder } from "@routes/orders/common/placeholders"
+import { ItemPlaceholder } from "@routes/orders/order-create-claim/components/claim-create-form/item-placeholder"
+import { AddExchangeInboundItemsTable } from "@routes/orders/order-create-exchange/components/add-exchange-inbound-items-table"
+import { ExchangeInboundItem } from "@routes/orders/order-create-exchange/components/exchange-create-form/exchange-inbound-item"
+import type { CreateExchangeSchemaType } from "@routes/orders/order-create-exchange/components/exchange-create-form/schema"
 
 type ExchangeInboundSectionProps = {
   order: AdminOrder
@@ -320,8 +321,8 @@ export const ExchangeInboundSection = ({
       }
 
       const variantIds = inboundItems
-        .map((item) => item?.variant_id)
-        .filter(Boolean)
+        .map((item) => (item as { variant_id?: string })?.variant_id)
+        .filter((v): v is string => !!v)
 
       const variants = (
         await sdk.admin.productVariant.list({
@@ -331,8 +332,16 @@ export const ExchangeInboundSection = ({
       ).variants
 
       variants.forEach((variant) => {
-        ret[variant.id] =
-          variant.inventory?.flatMap((inventory) => inventory.location_levels || []) || []
+        // AdminProductVariant omits the embedded `inventory` join.
+        const inventoryRows =
+          (
+            variant as {
+              inventory?: Array<{ location_levels?: InventoryLevelDTO[] }>
+            }
+          ).inventory ?? []
+        ret[variant.id] = inventoryRows.flatMap(
+          (inventory) => inventory.location_levels ?? []
+        )
       })
 
       return ret

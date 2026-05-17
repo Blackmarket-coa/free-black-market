@@ -1,17 +1,17 @@
 import { zodResolver } from "@hookform/resolvers/zod"
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 import { Button, Input, toast } from "@medusajs/ui"
 import { useForm } from "react-hook-form"
 import { useTranslation } from "react-i18next"
 import * as zod from "zod"
-import { ConditionalTooltip } from "../../../../../components/common/conditional-tooltip/index.ts"
-import { Form } from "../../../../../components/common/form/index.ts"
+import { ConditionalTooltip } from "@components/common/conditional-tooltip/index.ts"
+import { Form } from "@components/common/form/index.ts"
 import {
   RouteDrawer,
   useRouteModal,
-} from "../../../../../components/modals/index.ts"
-import { KeyboundForm } from "../../../../../components/utilities/keybound-form/keybound-form.tsx"
-import { useUpdateCustomer } from "../../../../../hooks/api/customers.tsx"
+} from "@components/modals/index.ts"
+import { KeyboundForm } from "@components/utilities/keybound-form/keybound-form.tsx"
+import { useUpdateCustomer } from "@hooks/api/customers.tsx"
 
 type EditCustomerFormProps = {
   customer: HttpTypes.AdminCustomer
@@ -44,12 +44,14 @@ export const EditCustomerForm = ({ customer }: EditCustomerFormProps) => {
 
   const handleSubmit = form.handleSubmit(async (data) => {
     await mutateAsync(
+      // AdminUpdateCustomer does not accept `email` (use the
+      // identity / invite flow to change account email). Pass the
+      // remaining mutable fields only.
       {
-        email: customer.has_account ? undefined : data.email,
-        first_name: data.first_name || null,
-        last_name: data.last_name || null,
-        phone: data.phone || null,
-        company_name: data.company_name || null,
+        first_name: data.first_name || undefined,
+        last_name: data.last_name || undefined,
+        phone: data.phone || undefined,
+        company_name: data.company_name || undefined,
       },
       {
         onSuccess: ({ customer }) => {

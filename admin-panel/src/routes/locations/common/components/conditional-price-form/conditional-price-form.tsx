@@ -19,10 +19,13 @@ import {
   Tooltip,
 } from "@medusajs/ui"
 import { Accordion as RadixAccordion } from "radix-ui"
-import React, { Fragment, ReactNode, useRef, useState } from "react"
-import {
+import type { ReactNode} from "react";
+import type React from "react";
+import { Fragment, useRef, useState } from "react"
+import type {
   Control,
-  ControllerRenderProps,
+  ControllerRenderProps} from "react-hook-form";
+import {
   useFieldArray,
   useForm,
   useFormContext,
@@ -31,23 +34,24 @@ import {
 import { Trans, useTranslation } from "react-i18next"
 
 import { formatValue } from "react-currency-input-field"
-import { Form } from "../../../../../components/common/form"
-import { StackedFocusModal } from "../../../../../components/modals"
-import { KeyboundForm } from "../../../../../components/utilities/keybound-form"
-import { useCombinedRefs } from "../../../../../hooks/use-combined-refs"
-import { castNumber } from "../../../../../lib/cast-number"
-import { CurrencyInfo } from "../../../../../lib/data/currencies"
-import { getLocaleAmount } from "../../../../../lib/money-amount-helpers"
-import { CreateShippingOptionSchemaType } from "../../../location-service-zone-shipping-option-create/components/create-shipping-options-form/schema"
+import { Form } from "@components/common/form"
+import { StackedFocusModal } from "@components/modals"
+import { KeyboundForm } from "@components/utilities/keybound-form"
+import { useCombinedRefs } from "@hooks/use-combined-refs"
+import { castNumber } from "@lib/cast-number"
+import type { CurrencyInfo } from "@lib/data/currencies"
+import { getLocaleAmount } from "@lib/money-amount-helpers"
+import type { CreateShippingOptionSchemaType } from "@routes/locations/location-service-zone-shipping-option-create/components/create-shipping-options-form/schema"
+import type {
+  CondtionalPriceRuleSchemaType,
+  UpdateConditionalPriceRuleSchemaType} from "@routes/locations/common/schema";
 import {
   CondtionalPriceRuleSchema,
-  CondtionalPriceRuleSchemaType,
-  UpdateConditionalPriceRuleSchema,
-  UpdateConditionalPriceRuleSchemaType,
-} from "../../schema"
-import { ConditionalPriceInfo } from "../../types"
-import { getCustomShippingOptionPriceFieldName } from "../../utils/get-custom-shipping-option-price-field-info"
-import { useShippingOptionPrice } from "../shipping-option-price-provider"
+  UpdateConditionalPriceRuleSchema
+} from "@routes/locations/common/schema"
+import type { ConditionalPriceInfo } from "@routes/locations/common/types"
+import { getCustomShippingOptionPriceFieldName } from "@routes/locations/common/utils/get-custom-shipping-option-price-field-info"
+import { useShippingOptionPrice } from "@routes/locations/common/components/shipping-option-price-provider"
 
 const RULE_ITEM_PREFIX = "rule-item"
 
@@ -358,7 +362,7 @@ const ConditionalPriceItem = ({
           render={({ field }) => {
             return (
               <OperatorInput
-                field={field}
+                field={field as OperatorInputProps["field"]}
                 label={t(
                   "stockLocations.shippingOptions.conditionalPrices.rules.gte"
                 )}
@@ -375,7 +379,7 @@ const ConditionalPriceItem = ({
           render={({ field }) => {
             return (
               <OperatorInput
-                field={field}
+                field={field as OperatorInputProps["field"]}
                 label={t(
                   "stockLocations.shippingOptions.conditionalPrices.rules.lte"
                 )}

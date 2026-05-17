@@ -1,6 +1,6 @@
 import { zodResolver } from "@hookform/resolvers/zod"
 import { PencilSquare } from "@medusajs/icons"
-import { AdminExchange, AdminOrder, AdminOrderPreview } from "@medusajs/types"
+import type { AdminExchange, AdminOrder, AdminOrderPreview } from "@medusajs/types"
 import {
   Button,
   CurrencyInput,
@@ -17,23 +17,24 @@ import { useTranslation } from "react-i18next"
 import {
   RouteFocusModal,
   useRouteModal,
-} from "../../../../../components/modals"
+} from "@components/modals"
 
-import { Form } from "../../../../../components/common/form"
-import { getStylizedAmount } from "../../../../../lib/money-amount-helpers"
-import { CreateExchangeSchemaType, ExchangeCreateSchema } from "./schema"
+import { Form } from "@components/common/form"
+import { getStylizedAmount } from "@lib/money-amount-helpers"
+import type { CreateExchangeSchemaType} from "@routes/orders/order-create-exchange/components/exchange-create-form/schema";
+import { ExchangeCreateSchema } from "@routes/orders/order-create-exchange/components/exchange-create-form/schema"
 
-import { AdminReturn } from "@medusajs/types"
-import { KeyboundForm } from "../../../../../components/utilities/keybound-form/keybound-form.tsx"
+import type { AdminReturn } from "@medusajs/types"
+import { KeyboundForm } from "@components/utilities/keybound-form/keybound-form.tsx"
 import {
   useCancelExchangeRequest,
   useExchangeConfirmRequest,
   useUpdateExchangeInboundShipping,
   useUpdateExchangeOutboundShipping,
-} from "../../../../../hooks/api/exchanges"
-import { currencies } from "../../../../../lib/data/currencies"
-import { ExchangeInboundSection } from "./exchange-inbound-section.tsx"
-import { ExchangeOutboundSection } from "./exchange-outbound-section"
+} from "@hooks/api/exchanges"
+import { currencies } from "@lib/data/currencies"
+import { ExchangeInboundSection } from "@routes/orders/order-create-exchange/components/exchange-create-form/exchange-inbound-section.tsx"
+import { ExchangeOutboundSection } from "@routes/orders/order-create-exchange/components/exchange-create-form/exchange-outbound-section"
 
 type ReturnCreateFormProps = {
   order: AdminOrder
@@ -178,13 +179,21 @@ export const ExchangeCreateForm = ({
 
   useEffect(() => {
     if (inboundShipping) {
-      setCustomInboundShippingAmount(inboundShipping.total)
+      // The state shape is { value: string; float: number | null } —
+      // mirror inboundShipping.total into the float slot.
+      setCustomInboundShippingAmount({
+        value: String(inboundShipping.total),
+        float: Number(inboundShipping.total),
+      })
     }
   }, [inboundShipping])
 
   useEffect(() => {
     if (outboundShipping) {
-      setCustomOutboundShippingAmount(outboundShipping.total)
+      setCustomOutboundShippingAmount({
+        value: String(outboundShipping.total),
+        float: Number(outboundShipping.total),
+      })
     }
   }, [outboundShipping])
 
@@ -212,7 +221,7 @@ export const ExchangeCreateForm = ({
       handleSuccess()
     } catch (e) {
       toast.error(t("general.error"), {
-        description: e.message,
+        description: e instanceof Error ? e.message : String(e),
       })
     }
   })
@@ -306,7 +315,14 @@ export const ExchangeCreateForm = ({
                       const action = item.actions?.find(
                         (act) => act.action === "RETURN_ITEM"
                       )
-                      acc = acc + (action?.amount || 0)
+                      // AdminOrderChangeAction in @medusajs/types omits
+                      // `amount` on the union; the response includes it
+                      // for monetary actions. Cast structurally.
+                      acc =
+                        acc +
+                        Number(
+                          (action as { amount?: number })?.amount ?? 0
+                        )
 
                       return acc
                     }, 0) * -1,
@@ -326,7 +342,14 @@ export const ExchangeCreateForm = ({
                       const action = item.actions?.find(
                         (act) => act.action === "ITEM_ADD"
                       )
-                      acc = acc + (action?.amount || 0)
+                      // AdminOrderChangeAction in @medusajs/types omits
+                      // `amount` on the union; the response includes it
+                      // for monetary actions. Cast structurally.
+                      acc =
+                        acc +
+                        Number(
+                          (action as { amount?: number })?.amount ?? 0
+                        )
 
                       return acc
                     }, 0),
@@ -395,7 +418,7 @@ export const ExchangeCreateForm = ({
                           .symbol_native
                       }
                       code={order.currency_code}
-                      onValueChange={(value, name, values) =>
+                      onValueChange={(_value, _name, values) =>
                         setCustomInboundShippingAmount({
                           value: values?.value ?? "",
                           float: values?.float ?? null,
@@ -468,7 +491,7 @@ export const ExchangeCreateForm = ({
                           .symbol_native
                       }
                       code={order.currency_code}
-                      onValueChange={(value, name, values) =>
+                      onValueChange={(_value, _name, values) =>
                         setCustomOutboundShippingAmount({
                           value: values?.value ?? "",
                           float: values?.float ?? null,

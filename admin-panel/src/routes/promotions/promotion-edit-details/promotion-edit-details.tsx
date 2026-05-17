@@ -2,9 +2,9 @@ import { Heading } from "@medusajs/ui"
 import { useTranslation } from "react-i18next"
 import { useParams } from "react-router-dom"
 
-import { RouteDrawer } from "../../../components/modals"
-import { usePromotion } from "../../../hooks/api/promotions"
-import { EditPromotionDetailsForm } from "./components/edit-promotion-form"
+import { RouteDrawer } from "@components/modals"
+import { usePromotion } from "@hooks/api/promotions"
+import { EditPromotionDetailsForm } from "@routes/promotions/promotion-edit-details/components/edit-promotion-form"
 
 export const PromotionEditDetails = () => {
   const { id } = useParams()

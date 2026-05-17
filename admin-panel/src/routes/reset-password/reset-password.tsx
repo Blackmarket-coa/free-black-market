@@ -7,13 +7,13 @@ import * as z from "zod"
 
 import { useState } from "react"
 import { decodeToken } from "react-jwt"
-import { Form } from "../../components/common/form"
-import { LogoBox } from "../../components/common/logo-box"
-import { i18n } from "../../components/utilities/i18n"
+import { Form } from "@components/common/form"
+import { LogoBox } from "@components/common/logo-box"
+import { i18n } from "@components/utilities/i18n"
 import {
   useResetPasswordForEmailPass,
   useUpdateProviderForEmailPass,
-} from "../../hooks/api/auth"
+} from "@hooks/api/auth"
 
 const ResetPasswordInstructionsSchema = z.object({
   email: z.string().email(),

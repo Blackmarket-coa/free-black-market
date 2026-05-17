@@ -1,1 +1,1 @@
-export { CollectionList as Component } from "./collection-list"
+export { CollectionList as Component } from "@routes/collections/collection-list/collection-list"

@@ -1,1 +1,1 @@
-export * from "./sortable-list"
+export * from "@components/common/sortable-list/sortable-list"

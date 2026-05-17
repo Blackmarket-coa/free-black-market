@@ -1,5 +1,5 @@
 import { Text, clx } from "@medusajs/ui"
-import { ReactNode } from "react"
+import type { ReactNode } from "react"
 
 export type SectionRowProps = {
   title: string

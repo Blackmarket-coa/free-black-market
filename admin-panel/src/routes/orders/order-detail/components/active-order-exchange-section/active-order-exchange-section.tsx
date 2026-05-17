@@ -2,9 +2,9 @@ import { ArrowPath } from "@medusajs/icons"
 import { Button, Container, Heading, Text, toast } from "@medusajs/ui"
 import { useTranslation } from "react-i18next"
 
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 import { useNavigate } from "react-router-dom"
-import { useCancelExchangeRequest } from "../../../../../hooks/api/exchanges"
+import { useCancelExchangeRequest } from "@hooks/api/exchanges"
 
 type ActiveOrderExchangeSectionProps = {
   orderPreview: HttpTypes.AdminOrderPreview

@@ -1,5 +1,5 @@
 import { useWatch } from "react-hook-form"
-import { useDataGridContext } from "../context"
+import { useDataGridContext } from "@components/data-grid/context"
 
 interface UseDataGridDuplicateCellOptions {
   duplicateOf: string

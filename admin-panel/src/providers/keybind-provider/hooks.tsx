@@ -3,11 +3,11 @@ import { useCallback, useContext, useEffect, useState } from "react"
 import { useTranslation } from "react-i18next"
 import { useNavigate } from "react-router-dom"
 
-import { useLogout } from "../../hooks/api/auth"
-import { queryClient } from "../../lib/query-client"
-import { KeybindContext } from "./keybind-context"
-import { Shortcut } from "./types"
-import { findShortcut } from "./utils"
+import { useLogout } from "@hooks/api/auth"
+import { queryClient } from "@lib/query-client"
+import { KeybindContext } from "@providers/keybind-provider/keybind-context"
+import type { Shortcut } from "@providers/keybind-provider/types"
+import { findShortcut } from "@providers/keybind-provider/utils"
 
 export const useKeybind = () => {
   const context = useContext(KeybindContext)
@@ -79,7 +79,8 @@ export const useShortcuts = ({
         target.contentEditable === "true"
       ) {
         removeKeys()
-        return
+        
+return
       }
 
       setKeys((oldKeys) => [...oldKeys, event.key])

@@ -1,19 +1,20 @@
 import { PencilSquare, Trash } from "@medusajs/icons"
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 import { Button, Checkbox, Container, Heading, usePrompt } from "@medusajs/ui"
-import { RowSelectionState, createColumnHelper } from "@tanstack/react-table"
+import type { RowSelectionState} from "@tanstack/react-table";
+import { createColumnHelper } from "@tanstack/react-table"
 import { useMemo, useState } from "react"
 import { useTranslation } from "react-i18next"
 import { Link } from "react-router-dom"
 
-import { ActionMenu } from "../../../../../components/common/action-menu"
-import { _DataTable } from "../../../../../components/table/data-table"
-import { useRemoveCustomersFromGroup } from "../../../../../hooks/api/customer-groups"
-import { useCustomers } from "../../../../../hooks/api/customers"
-import { useCustomerTableColumns } from "../../../../../hooks/table/columns/use-customer-table-columns"
-import { useCustomerTableFilters } from "../../../../../hooks/table/filters/use-customer-table-filters"
-import { useCustomerTableQuery } from "../../../../../hooks/table/query/use-customer-table-query"
-import { useDataTable } from "../../../../../hooks/use-data-table"
+import { ActionMenu } from "@components/common/action-menu"
+import { _DataTable } from "@components/table/data-table"
+import { useRemoveCustomersFromGroup } from "@hooks/api/customer-groups"
+import { useCustomers } from "@hooks/api/customers"
+import { useCustomerTableColumns } from "@hooks/table/columns/use-customer-table-columns"
+import { useCustomerTableFilters } from "@hooks/table/filters/use-customer-table-filters"
+import { useCustomerTableQuery } from "@hooks/table/query/use-customer-table-query"
+import { useDataTable } from "@hooks/use-data-table"
 
 type CustomerGroupCustomerSectionProps = {
   group: HttpTypes.AdminCustomerGroup

@@ -1,1 +1,1 @@
-export { InventoryStock as Component } from "./inventory-stock"
+export { InventoryStock as Component } from "@routes/inventory/inventory-stock/inventory-stock"

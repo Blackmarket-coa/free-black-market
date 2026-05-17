@@ -1,4 +1,4 @@
-import {
+import type {
   AdminClaim,
   AdminExchange,
   AdminOrderLineItem,
@@ -7,7 +7,7 @@ import {
 import { Popover, Text } from "@medusajs/ui"
 import { useState } from "react"
 import { useTranslation } from "react-i18next"
-import { Thumbnail } from "../../../../../components/common/thumbnail"
+import { Thumbnail } from "@components/common/thumbnail"
 
 type ActivityItemsProps = {
   itemsToSend?:

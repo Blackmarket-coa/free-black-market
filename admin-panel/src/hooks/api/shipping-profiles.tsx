@@ -1,16 +1,17 @@
-import {
+import type {
   QueryKey,
-  useMutation,
   UseMutationOptions,
-  useQuery,
-  UseQueryOptions,
+  UseQueryOptions} from "@tanstack/react-query";
+import {
+  useMutation,
+  useQuery
 } from "@tanstack/react-query"
 
-import { FetchError } from "@medusajs/js-sdk"
-import { HttpTypes } from "@medusajs/types"
-import { sdk } from "../../lib/client"
-import { queryClient } from "../../lib/query-client"
-import { queryKeysFactory } from "../../lib/query-key-factory"
+import type { FetchError } from "@medusajs/js-sdk"
+import type { HttpTypes } from "@medusajs/types"
+import { sdk } from "@lib/client"
+import { queryClient } from "@lib/query-client"
+import { queryKeysFactory } from "@lib/query-key-factory"
 
 const SHIPPING_PROFILE_QUERY_KEY = "shipping_profile" as const
 export const shippingProfileQueryKeys = queryKeysFactory(

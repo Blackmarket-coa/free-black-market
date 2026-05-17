@@ -1,10 +1,10 @@
 import { Heading } from "@medusajs/ui"
 import { useTranslation } from "react-i18next"
 import { useLoaderData, useParams, useSearchParams } from "react-router-dom"
-import { RouteDrawer } from "../../../components/modals"
-import { useProduct, useProductVariant } from "../../../hooks/api/products"
-import { ProductEditVariantForm } from "./components/product-edit-variant-form"
-import { editProductVariantLoader } from "./loader"
+import { RouteDrawer } from "@components/modals"
+import { useProduct, useProductVariant } from "@hooks/api/products"
+import { ProductEditVariantForm } from "@routes/product-variants/product-variant-edit/components/product-edit-variant-form"
+import type { editProductVariantLoader } from "@routes/product-variants/product-variant-edit/loader"
 
 export const ProductVariantEdit = () => {
   const initialData = useLoaderData() as Awaited<

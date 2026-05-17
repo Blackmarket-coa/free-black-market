@@ -5,8 +5,37 @@ import { CartItems } from "./CartItems"
 import { CartSummary } from "@/components/organisms"
 import { TrustWidget } from "@/components/sections/TrustWidget"
 import DonationPreferences from "./DonationPreferences"
+import SlidingScaleTier, { type SlidingScaleTier as TierValue } from "./SlidingScaleTier"
 import StorefrontSwitcher from "./StorefrontSwitcher"
 import { DonationBeneficiary, PublicStorefront } from "@/lib/data/donations"
+
+/**
+ * Playbooks that allow sliding-scale pricing. Mirrors the backend
+ * `playbook.allow_sliding_scale` recipe field. Stall is intentionally
+ * excluded to preserve the zero-overhead solo-seller invariant.
+ */
+const SLIDING_SCALE_PLAYBOOKS = new Set<string>([
+  "atelier",
+  "grove",
+  "workshop",
+  "commons",
+  "cycle",
+  "kitchen",
+  "harvest",
+  "hub",
+  "service",
+])
+
+const cartHasSlidingScaleItem = (cart: any): boolean => {
+  const items: Array<any> = cart?.items ?? []
+  return items.some((item) => {
+    const playbook =
+      item?.product?.seller?.playbook ||
+      item?.product?.seller?.metadata?.playbook ||
+      null
+    return typeof playbook === "string" && SLIDING_SCALE_PLAYBOOKS.has(playbook)
+  })
+}
 
 const Review = ({
   cart,
@@ -17,7 +46,12 @@ const Review = ({
 }: {
   cart: any
   beneficiaries: DonationBeneficiary[]
-  donationSettings: { default_percentage: number; round_up_enabled: boolean }
+  donationSettings: {
+    default_percentage: number
+    round_up_enabled: boolean
+    fiscal_sponsor_name?: string | null
+    fiscal_sponsor_url?: string | null
+  }
   storefronts: PublicStorefront[]
   donationFeatureGates?: { donation_routing: boolean; advanced_automation: boolean }
 }) => {
@@ -49,12 +83,22 @@ const Review = ({
 
       <StorefrontSwitcher storefronts={storefronts} />
 
+      {cartHasSlidingScaleItem(cart) ? (
+        <SlidingScaleTier
+          initialTier={
+            ((cart?.metadata as Record<string, any>)?.tier as TierValue) ?? undefined
+          }
+        />
+      ) : null}
+
       {donationFeatureGates?.donation_routing ? (
         <DonationPreferences
           cartTotal={cart?.total || 0}
           beneficiaries={beneficiaries}
           defaultPercent={donationSettings?.default_percentage || 0}
           roundUpEnabled={Boolean(donationSettings?.round_up_enabled)}
+          fiscalSponsorName={donationSettings?.fiscal_sponsor_name ?? null}
+          fiscalSponsorUrl={donationSettings?.fiscal_sponsor_url ?? null}
           initialMetadata={(cart?.metadata as Record<string, any>) || {}}
         />
       ) : (

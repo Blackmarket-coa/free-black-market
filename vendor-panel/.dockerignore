@@ -1,0 +1,12 @@
+node_modules
+dist
+.git
+.gitignore
+.env
+.env.*
+!.env.template
+*.log
+coverage
+storybook-static
+README.md
+docs

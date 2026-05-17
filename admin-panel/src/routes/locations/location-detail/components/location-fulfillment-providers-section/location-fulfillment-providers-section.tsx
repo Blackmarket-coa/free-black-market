@@ -1,14 +1,14 @@
 import { HandTruck, PencilSquare } from "@medusajs/icons"
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 import { Container, Heading } from "@medusajs/ui"
 import { Fragment } from "react"
 import { useTranslation } from "react-i18next"
 
-import { ActionMenu } from "../../../../../components/common/action-menu"
-import { NoRecords } from "../../../../../components/common/empty-table-content"
-import { IconAvatar } from "../../../../../components/common/icon-avatar"
-import { useFulfillmentProviders } from "../../../../../hooks/api"
-import { formatProvider } from "../../../../../lib/format-provider"
+import { ActionMenu } from "@components/common/action-menu"
+import { NoRecords } from "@components/common/empty-table-content"
+import { IconAvatar } from "@components/common/icon-avatar"
+import { useFulfillmentProviders } from "@hooks/api"
+import { formatProvider } from "@lib/format-provider"
 
 type LocationsFulfillmentProvidersSectionProps = {
   location: HttpTypes.AdminStockLocation

@@ -1,1 +1,1 @@
-export { CustomerEdit as Component } from "./customer-edit"
+export { CustomerEdit as Component } from "@routes/customers/customer-edit/customer-edit"

@@ -4,3 +4,9 @@ export interface Category {
   image: string;
   href: string;
 }
+
+export interface Style {
+  id: number;
+  name: string;
+  href: string;
+}

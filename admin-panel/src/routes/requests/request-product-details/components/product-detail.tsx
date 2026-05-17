@@ -22,7 +22,7 @@ import { SectionRow } from "@routes/requests/common/components/section-row";
 export const ProductRequestDetail = ({ id }: { id: string }) => {
   const navigate = useNavigate();
   const { request, isError, isLoading } = useVendorRequest(id!);
-  const requestData = request?.data as ProductDTO;
+  const requestData = request?.data as unknown as ProductDTO;
 
   const [promptOpen, setPromptOpen] = useState(false);
   const [requestAccept, setRequestAccept] = useState(false);

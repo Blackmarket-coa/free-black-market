@@ -1,4 +1,5 @@
-import React, { useEffect, useState, useRef } from "react"
+import type React from "react";
+import { useEffect, useState } from "react"
 import {
   Badge,
   usePrompt,
@@ -10,9 +11,9 @@ import {
   PencilSquare,
   ArrowUturnLeft,
 } from "@medusajs/icons"
-import { useViewConfigurations, useViewConfiguration } from "../../../hooks/use-view-configurations"
-import type { ViewConfiguration } from "../../../hooks/use-view-configurations"
-import { SaveViewDialog } from "../save-view-dialog"
+import { useViewConfigurations, useViewConfiguration } from "@hooks/use-view-configurations"
+import type { ViewConfiguration } from "@hooks/use-view-configurations"
+import { SaveViewDialog } from "@components/table/save-view-dialog"
 
 interface ViewPillsProps {
   entity: string
@@ -58,7 +59,8 @@ export const ViewPills: React.FC<ViewPillsProps> = ({
       if (viewId === null) {
         // Select default view - clear the active view
         await setActiveView.mutateAsync(null)
-        return
+        
+return
       }
 
       const view = views.find(v => v.id === viewId)

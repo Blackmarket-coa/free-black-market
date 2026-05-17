@@ -1,17 +1,18 @@
-import { FetchError } from "@medusajs/js-sdk"
-import { HttpTypes } from "@medusajs/types"
-import {
+import type { FetchError } from "@medusajs/js-sdk"
+import type { HttpTypes } from "@medusajs/types"
+import type {
   QueryKey,
   UseMutationOptions,
-  UseQueryOptions,
+  UseQueryOptions} from "@tanstack/react-query";
+import {
   useMutation,
   useQuery,
 } from "@tanstack/react-query"
-import { sdk } from "../../lib/client"
-import { queryClient } from "../../lib/query-client"
-import { queryKeysFactory } from "../../lib/query-key-factory"
-import { shippingOptionsQueryKeys } from "./shipping-options"
-import { stockLocationsQueryKeys } from "./stock-locations"
+import { sdk } from "@lib/client"
+import { queryClient } from "@lib/query-client"
+import { queryKeysFactory } from "@lib/query-key-factory"
+import { shippingOptionsQueryKeys } from "@hooks/api/shipping-options"
+import { stockLocationsQueryKeys } from "@hooks/api/stock-locations"
 
 const FULFILLMENT_SETS_QUERY_KEY = "fulfillment_sets" as const
 export const fulfillmentSetsQueryKeys = queryKeysFactory(

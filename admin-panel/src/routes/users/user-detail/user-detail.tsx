@@ -1,12 +1,12 @@
 import { useLoaderData, useParams } from "react-router-dom"
 
-import { useUser } from "../../../hooks/api/users"
-import { UserGeneralSection } from "./components/user-general-section"
-import { userLoader } from "./loader"
+import { useUser } from "@hooks/api/users"
+import { UserGeneralSection } from "@routes/users/user-detail/components/user-general-section"
+import type { userLoader } from "@routes/users/user-detail/loader"
 
-import { SingleColumnPageSkeleton } from "../../../components/common/skeleton"
-import { SingleColumnPage } from "../../../components/layout/pages"
-import { useExtension } from "../../../providers/extension-provider"
+import { SingleColumnPageSkeleton } from "@components/common/skeleton"
+import { SingleColumnPage } from "@components/layout/pages"
+import { useExtension } from "@providers/extension-provider"
 
 export const UserDetail = () => {
   const initialData = useLoaderData() as Awaited<ReturnType<typeof userLoader>>

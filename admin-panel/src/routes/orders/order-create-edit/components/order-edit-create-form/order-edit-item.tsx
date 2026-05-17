@@ -1,21 +1,28 @@
 import { ArrowUturnLeft, DocumentSeries, XCircle } from "@medusajs/icons"
-import { AdminOrderLineItem } from "@medusajs/types"
+import type { AdminOrderLineItem } from "@medusajs/types"
 import { Badge, Input, Text, toast } from "@medusajs/ui"
 import { useTranslation } from "react-i18next"
 
-import { ActionMenu } from "../../../../../components/common/action-menu"
-import { Thumbnail } from "../../../../../components/common/thumbnail"
-import { MoneyAmountCell } from "../../../../../components/table/table-cells/common/money-amount-cell"
+import { ActionMenu } from "@components/common/action-menu"
+import { Thumbnail } from "@components/common/thumbnail"
+import { MoneyAmountCell } from "@components/table/table-cells/common/money-amount-cell"
 import { useMemo } from "react"
 import {
   useAddOrderEditItems,
   useRemoveOrderEditItem,
   useUpdateOrderEditAddedItem,
   useUpdateOrderEditOriginalItem,
-} from "../../../../../hooks/api/order-edits"
+} from "@hooks/api/order-edits"
+
+// AdminOrderLineItem in @medusajs/types omits the per-action history
+// that the admin response includes when fetched with
+// `+actions.action,+actions.details.*`. Capture the structural shape
+// consumed in this file.
+type LineItemAction = { id: string; action: string }
+type LineItemWithActions = AdminOrderLineItem & { actions?: LineItemAction[] }
 
 type OrderEditItemProps = {
-  item: AdminOrderLineItem
+  item: LineItemWithActions
   currencyCode: string
   orderId: string
 }
@@ -30,18 +37,23 @@ function OrderEditItem({ item, currencyCode, orderId }: OrderEditItemProps) {
   const { mutateAsync: undoAction } = useRemoveOrderEditItem(orderId)
 
   const isAddedItem = useMemo(
-    () => !!item.actions?.find((a) => a.action === "ITEM_ADD"),
+    () =>
+      !!item.actions?.find((a: LineItemAction) => a.action === "ITEM_ADD"),
     [item]
   )
 
   const isItemUpdated = useMemo(
-    () => !!item.actions?.find((a) => a.action === "ITEM_UPDATE"),
+    () =>
+      !!item.actions?.find((a: LineItemAction) => a.action === "ITEM_UPDATE"),
     [item]
   )
 
   const isItemRemoved = useMemo(() => {
     // To be removed item needs to have updated quantity
-    const updateAction = item.actions?.find((a) => a.action === "ITEM_UPDATE")
+    const updateAction = item.actions?.find(
+      (a: LineItemAction) => a.action === "ITEM_UPDATE"
+    )
+
     return !!updateAction && item.quantity === item.detail.fulfilled_quantity
   }, [item])
 
@@ -52,6 +64,7 @@ function OrderEditItem({ item, currencyCode, orderId }: OrderEditItemProps) {
   const onUpdate = async (quantity: number) => {
     if (quantity <= item.detail.fulfilled_quantity) {
       toast.error(t("orders.edits.validation.quantityLowerThanFulfillment"))
+
       return
     }
 
@@ -59,7 +72,9 @@ function OrderEditItem({ item, currencyCode, orderId }: OrderEditItemProps) {
       return
     }
 
-    const addItemAction = item.actions?.find((a) => a.action === "ITEM_ADD")
+    const addItemAction = item.actions?.find(
+      (a: LineItemAction) => a.action === "ITEM_ADD"
+    )
 
     try {
       if (addItemAction) {
@@ -68,12 +83,14 @@ function OrderEditItem({ item, currencyCode, orderId }: OrderEditItemProps) {
         await updateOriginalItem({ quantity, itemId: item.id })
       }
     } catch (e) {
-      toast.error(e.message)
+      toast.error(e instanceof Error ? e.message : String(e))
     }
   }
 
   const onRemove = async () => {
-    const addItemAction = item.actions?.find((a) => a.action === "ITEM_ADD")
+    const addItemAction = item.actions?.find(
+      (a: LineItemAction) => a.action === "ITEM_ADD"
+    )
 
     try {
       if (addItemAction) {
@@ -85,13 +102,13 @@ function OrderEditItem({ item, currencyCode, orderId }: OrderEditItemProps) {
         })
       }
     } catch (e) {
-      toast.error(e.message)
+      toast.error(e instanceof Error ? e.message : String(e))
     }
   }
 
   const onRemoveUndo = async () => {
     const updateItemAction = item.actions?.find(
-      (a) => a.action === "ITEM_UPDATE"
+      (a: LineItemAction) => a.action === "ITEM_UPDATE"
     )
 
     try {
@@ -99,7 +116,7 @@ function OrderEditItem({ item, currencyCode, orderId }: OrderEditItemProps) {
         await undoAction(updateItemAction.id) // Remove action that updated items quantity to fulfilled quantity which makes it "removed"
       }
     } catch (e) {
-      toast.error(e.message)
+      toast.error(e instanceof Error ? e.message : String(e))
     }
   }
 
@@ -108,13 +125,17 @@ function OrderEditItem({ item, currencyCode, orderId }: OrderEditItemProps) {
       await addItems({
         items: [
           {
-            variant_id: item.variant_id,
+            // AdminOrderLineItem.variant_id is `string | null` but the
+            // mutation expects `string`; coerce to empty string (the
+            // backend rejects empty), surfacing the validation error
+            // rather than passing null.
+            variant_id: item.variant_id ?? "",
             quantity: item.quantity,
           },
         ],
       })
     } catch (e) {
-      toast.error(e.message)
+      toast.error(e instanceof Error ? e.message : String(e))
     }
   }
 

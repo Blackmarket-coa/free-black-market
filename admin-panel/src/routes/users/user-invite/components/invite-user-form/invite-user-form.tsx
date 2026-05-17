@@ -1,6 +1,6 @@
 import { zodResolver } from "@hookform/resolvers/zod"
 import { ArrowPath, Link, Trash } from "@medusajs/icons"
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 import {
   Alert,
   Button,
@@ -19,20 +19,20 @@ import { useMemo } from "react"
 import { useForm } from "react-hook-form"
 import { Trans, useTranslation } from "react-i18next"
 import * as zod from "zod"
-import { ActionMenu } from "../../../../../components/common/action-menu"
-import { Form } from "../../../../../components/common/form"
-import { RouteFocusModal } from "../../../../../components/modals/index.ts"
-import { _DataTable } from "../../../../../components/table/data-table"
-import { KeyboundForm } from "../../../../../components/utilities/keybound-form/keybound-form.tsx"
+import { ActionMenu } from "@components/common/action-menu"
+import { Form } from "@components/common/form"
+import { RouteFocusModal } from "@components/modals/index.ts"
+import { _DataTable } from "@components/table/data-table"
+import { KeyboundForm } from "@components/utilities/keybound-form/keybound-form.tsx"
 import {
   useCreateInvite,
   useDeleteInvite,
   useInvites,
   useResendInvite,
-} from "../../../../../hooks/api/invites"
-import { useUserInviteTableQuery } from "../../../../../hooks/table/query/use-user-invite-table-query"
-import { useDataTable } from "../../../../../hooks/use-data-table"
-import { isFetchError } from "../../../../../lib/is-fetch-error"
+} from "@hooks/api/invites"
+import { useUserInviteTableQuery } from "@hooks/table/query/use-user-invite-table-query"
+import { useDataTable } from "@hooks/use-data-table"
+import { isFetchError } from "@lib/is-fetch-error"
 
 const InviteUserSchema = zod.object({
   email: zod.string().email(),
@@ -91,7 +91,8 @@ export const InviteUserForm = () => {
           type: "manual",
           message: error.message,
         })
-        return
+        
+return
       }
     }
   })
@@ -310,7 +311,7 @@ const useColumns = () => {
             <Tooltip
               content={
                 <Trans
-                  i18nKey={"users.validFromUntil"}
+                  i18nKey="users.validFromUntil"
                   components={[
                     <span key="from" className="font-medium" />,
                     <span key="untill" className="font-medium" />,

@@ -1,18 +1,18 @@
 import { useLoaderData, useParams } from "react-router-dom"
 
-import { useProductVariant } from "../../../hooks/api/products"
+import { useProductVariant } from "@hooks/api/products"
 
-import { TwoColumnPageSkeleton } from "../../../components/common/skeleton"
-import { TwoColumnPage } from "../../../components/layout/pages"
-import { useExtension } from "../../../providers/extension-provider"
-import { VariantGeneralSection } from "./components/variant-general-section"
+import { TwoColumnPageSkeleton } from "@components/common/skeleton"
+import { TwoColumnPage } from "@components/layout/pages"
+import { useExtension } from "@providers/extension-provider"
+import { VariantGeneralSection } from "@routes/product-variants/product-variant-detail/components/variant-general-section"
 import {
   InventorySectionPlaceholder,
   VariantInventorySection,
-} from "./components/variant-inventory-section"
-import { VariantPricesSection } from "./components/variant-prices-section"
-import { VARIANT_DETAIL_FIELDS } from "./constants"
-import { variantLoader } from "./loader"
+} from "@routes/product-variants/product-variant-detail/components/variant-inventory-section"
+import { VariantPricesSection } from "@routes/product-variants/product-variant-detail/components/variant-prices-section"
+import { VARIANT_DETAIL_FIELDS } from "@routes/product-variants/product-variant-detail/constants"
+import type { variantLoader } from "@routes/product-variants/product-variant-detail/loader"
 
 export const ProductVariantDetail = () => {
   const initialData = useLoaderData() as Awaited<
@@ -65,13 +65,13 @@ export const ProductVariantDetail = () => {
           <InventorySectionPlaceholder />
         ) : (
           <VariantInventorySection
-            inventoryItems={variant.inventory_items.map((i) => {
+            inventoryItems={(variant.inventory_items ?? []).map((i) => {
               return {
                 ...i.inventory,
                 required_quantity: i.required_quantity,
                 variant,
               }
-            })}
+            }) as any}
           />
         )}
       </TwoColumnPage.Main>

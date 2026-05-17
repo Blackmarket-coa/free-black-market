@@ -1,1 +1,1 @@
-export * from "./target-item"
+export * from "@routes/tax-regions/common/components/target-item/target-item"

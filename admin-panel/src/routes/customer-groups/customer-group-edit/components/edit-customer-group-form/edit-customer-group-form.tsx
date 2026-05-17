@@ -1,13 +1,13 @@
 import { zodResolver } from "@hookform/resolvers/zod"
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 import { Button, Input, toast } from "@medusajs/ui"
 import { useForm } from "react-hook-form"
 import { useTranslation } from "react-i18next"
 import * as z from "zod"
-import { Form } from "../../../../../components/common/form"
-import { RouteDrawer, useRouteModal } from "../../../../../components/modals"
-import { KeyboundForm } from "../../../../../components/utilities/keybound-form"
-import { useUpdateCustomerGroup } from "../../../../../hooks/api/customer-groups"
+import { Form } from "@components/common/form"
+import { RouteDrawer, useRouteModal } from "@components/modals"
+import { KeyboundForm } from "@components/utilities/keybound-form"
+import { useUpdateCustomerGroup } from "@hooks/api/customer-groups"
 
 type EditCustomerGroupFormProps = {
   group: HttpTypes.AdminCustomerGroup

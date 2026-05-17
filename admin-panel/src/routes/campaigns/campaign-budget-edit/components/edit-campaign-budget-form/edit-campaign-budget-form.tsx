@@ -1,14 +1,14 @@
 import { zodResolver } from "@hookform/resolvers/zod"
-import { AdminCampaign } from "@medusajs/types"
+import type { AdminCampaign } from "@medusajs/types"
 import { Button, CurrencyInput, Input, toast } from "@medusajs/ui"
 import { useForm } from "react-hook-form"
 import { useTranslation } from "react-i18next"
 import * as zod from "zod"
-import { Form } from "../../../../../components/common/form"
-import { RouteDrawer, useRouteModal } from "../../../../../components/modals"
-import { KeyboundForm } from "../../../../../components/utilities/keybound-form"
-import { useUpdateCampaign } from "../../../../../hooks/api/campaigns"
-import { getCurrencySymbol } from "../../../../../lib/data/currencies"
+import { Form } from "@components/common/form"
+import { RouteDrawer, useRouteModal } from "@components/modals"
+import { KeyboundForm } from "@components/utilities/keybound-form"
+import { useUpdateCampaign } from "@hooks/api/campaigns"
+import { getCurrencySymbol } from "@lib/data/currencies"
 
 type EditCampaignBudgetFormProps = {
   campaign: AdminCampaign
@@ -95,7 +95,7 @@ export const EditCampaignBudgetForm = ({
                           key="usage"
                           min={0}
                           {...field}
-                          value={value}
+                          value={value ?? undefined}
                           onChange={(e) => {
                             onChange(
                               e.target.value === ""

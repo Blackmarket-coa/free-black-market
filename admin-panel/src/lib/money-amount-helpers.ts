@@ -1,4 +1,4 @@
-import { currencies } from "./data/currencies"
+import { currencies } from "@lib/data/currencies"
 
 export const getDecimalDigits = (currency: string) => {
   return currencies[currency.toUpperCase()]?.decimal_digits ?? 0
@@ -71,5 +71,6 @@ export const isAmountLessThenRoundingError = (
   currencyCode: string
 ) => {
   const decimalDigits = getDecimalDigits(currencyCode)
-  return Math.abs(amount) < 1 / 10 ** decimalDigits / 2
+  
+return Math.abs(amount) < 1 / 10 ** decimalDigits / 2
 }

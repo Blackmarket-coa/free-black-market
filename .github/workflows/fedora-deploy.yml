@@ -1,0 +1,110 @@
+name: Deploy to Fedora
+
+# Manual deploy workflow for the Fedora single-host environment.
+# Pulls a pre-built image tag from GHCR and rolls the stack via SSH.
+#
+# Required repository secrets:
+#   FEDORA_HOST            - hostname or IP of the Fedora server
+#   FEDORA_USER            - deploy user (typically 'fbm')
+#   FEDORA_SSH_KEY         - private SSH key authorized for FEDORA_USER
+#   FEDORA_SSH_PORT        - (optional) SSH port; defaults to 22
+#
+# Optional per-environment secrets / vars used for post-deploy smoke tests:
+#   FBM_PROD_API_HOST          (default: api.freeblackmarket.com)
+#   FBM_PROD_STOREFRONT_HOST   (default: freeblackmarket.com)
+#   FBM_STAGING_API_HOST       (default: staging-api.freeblackmarket.com)
+#   FBM_STAGING_STOREFRONT_HOST (default: staging.freeblackmarket.com)
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: 'Image tag to deploy (e.g. latest, sha-abc1234, v1.2.3)'
+        required: true
+        default: 'latest'
+        type: string
+      environment:
+        description: 'Target environment'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - production
+      git_ref:
+        description: 'Git ref to checkout on the server (for compose/scripts)'
+        required: true
+        default: 'main'
+        type: string
+
+concurrency:
+  group: fedora-deploy-${{ github.event.inputs.environment }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy ${{ inputs.image_tag }} to ${{ inputs.environment }}
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    timeout-minutes: 20
+
+    steps:
+      - name: Echo deploy parameters
+        run: |
+          echo "Image tag : ${{ inputs.image_tag }}"
+          echo "Env       : ${{ inputs.environment }}"
+          echo "Git ref   : ${{ inputs.git_ref }}"
+          echo "Host      : ${{ secrets.FEDORA_HOST }}"
+
+      - name: Run deploy on Fedora host
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.FEDORA_HOST }}
+          username: ${{ secrets.FEDORA_USER }}
+          key: ${{ secrets.FEDORA_SSH_KEY }}
+          port: ${{ secrets.FEDORA_SSH_PORT || 22 }}
+          command_timeout: 15m
+          script: |
+            set -euo pipefail
+            cd /opt/fbm
+            git fetch --all --tags --prune
+            git checkout "${{ inputs.git_ref }}"
+            git pull --ff-only origin "${{ inputs.git_ref }}" || true
+            bash scripts/deploy-fedora.sh "${{ inputs.image_tag }}"
+
+      - name: Resolve smoke-test hostnames
+        id: hosts
+        run: |
+          if [[ "${{ inputs.environment }}" == "production" ]]; then
+            api_host="${{ secrets.FBM_PROD_API_HOST }}"
+            store_host="${{ secrets.FBM_PROD_STOREFRONT_HOST }}"
+            : "${api_host:=api.freeblackmarket.com}"
+            : "${store_host:=freeblackmarket.com}"
+          else
+            api_host="${{ secrets.FBM_STAGING_API_HOST }}"
+            store_host="${{ secrets.FBM_STAGING_STOREFRONT_HOST }}"
+            : "${api_host:=staging-api.freeblackmarket.com}"
+            : "${store_host:=staging.freeblackmarket.com}"
+          fi
+          echo "api_host=${api_host}"      >> "$GITHUB_OUTPUT"
+          echo "store_host=${store_host}" >> "$GITHUB_OUTPUT"
+
+      - name: Public smoke test
+        run: |
+          set -e
+          for url in \
+            "https://${{ steps.hosts.outputs.api_host }}/health" \
+            "https://${{ steps.hosts.outputs.store_host }}/api/health"
+          do
+            echo "Probing ${url}"
+            for attempt in 1 2 3 4 5; do
+              if curl -fsSI --max-time 10 "$url" >/dev/null; then
+                echo "  ✓ ${url}"
+                continue 2
+              fi
+              echo "  attempt ${attempt} failed; retrying in 5s"
+              sleep 5
+            done
+            echo "FAIL: ${url} did not respond healthily after 5 attempts"
+            exit 1
+          done

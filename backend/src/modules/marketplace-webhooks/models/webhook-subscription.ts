@@ -1,0 +1,79 @@
+import { model } from "@medusajs/framework/utils"
+
+export enum WebhookSubscriptionStatus {
+  ACTIVE = "active",
+  DISABLED = "disabled",
+}
+
+export const MARKETPLACE_WEBHOOK_EVENTS = [
+  "creator.payout.completed",
+  "listing.signed_bundle.published",
+  "creator.account.suspended",
+  "creator.commission.earned",
+  "creator.commission.held",
+  "creator.commission.approved",
+  "creator.commission.reversed",
+  "creator.commission.disqualified",
+  "creator.attribution.fraud_flagged",
+  "creator.program.published",
+  "creator.application.submitted",
+  "creator.application.approved",
+  "creator.application.rejected",
+  "creator.deal.opened",
+  "creator.deal.violated",
+  "creator.deal.canceled",
+  "creator.post.registered",
+  "creator.post.verified",
+  "creator.post.rejected",
+  "creator.reward.pool_opened",
+  "creator.reward.pool_funded",
+  "creator.reward.distributed",
+  "content_platform.event",
+  "service.program.published",
+  "service.application.submitted",
+  "service.application.approved",
+  "service.application.rejected",
+  "service.contract.opened",
+  "service.contract.delivered",
+  "service.contract.accepted",
+  "service.contract.disputed",
+  "service.proof.submitted",
+  "service.proof.verified",
+  "service.proof.rejected",
+  "subcontract.proposed",
+  "subcontract.accepted",
+  "subcontract.delivered",
+  "subcontract.completed",
+  "subcontract.disputed",
+] as const
+
+export type MarketplaceWebhookEvent = (typeof MARKETPLACE_WEBHOOK_EVENTS)[number]
+
+const WebhookSubscription = model
+  .define("marketplace_webhook_subscription", {
+    id: model.id().primaryKey(),
+
+    seller_id: model.text(),
+    url: model.text(),
+    secret: model.text(),
+    events: model.json(),
+
+    status: model
+      .enum(Object.values(WebhookSubscriptionStatus))
+      .default(WebhookSubscriptionStatus.ACTIVE),
+
+    failure_count: model.number().default(0),
+    last_attempt_at: model.dateTime().nullable(),
+  })
+  .indexes([
+    {
+      on: ["seller_id"],
+      name: "IDX_marketplace_webhook_subscription_seller_id",
+    },
+    {
+      on: ["status"],
+      name: "IDX_marketplace_webhook_subscription_status",
+    },
+  ])
+
+export default WebhookSubscription

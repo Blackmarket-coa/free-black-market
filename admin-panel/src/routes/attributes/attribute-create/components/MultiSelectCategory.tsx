@@ -1,4 +1,5 @@
-import React, { useEffect, useRef, useState } from "react";
+import type React from "react";
+import { useEffect, useRef, useState } from "react";
 
 import {
   ArrowUturnLeft,
@@ -6,7 +7,7 @@ import {
   TrianglesMini,
   XMarkMini,
 } from "@medusajs/icons";
-import { AdminProductCategory } from "@medusajs/types";
+import type { AdminProductCategory } from "@medusajs/types";
 import { Badge, Text } from "@medusajs/ui";
 
 type MultiSelectCategoryProps = {
@@ -38,7 +39,8 @@ const MultiSelectCategory: React.FC<MultiSelectCategoryProps> = ({
       }
     };
     document.addEventListener("mousedown", handleClickOutside);
-    return () => {
+    
+return () => {
       document.removeEventListener("mousedown", handleClickOutside);
     };
   }, []);
@@ -82,7 +84,8 @@ const MultiSelectCategory: React.FC<MultiSelectCategoryProps> = ({
 
   const getBackButtonText = (): string => {
     const parentCategory = categories.find((cat) => cat.id === currentParentId);
-    return parentCategory?.name || "";
+    
+return parentCategory?.name || "";
   };
 
   return (
@@ -137,10 +140,11 @@ const MultiSelectCategory: React.FC<MultiSelectCategoryProps> = ({
             currentCategories.map((category) => {
               const isSelected = value.includes(category.id);
               const hasChildrenNode = hasChildren(category.id);
-              return (
+              
+return (
                 <div
                   key={category.id}
-                  className={`flex cursor-pointer items-center justify-between px-1 py-1`}
+                  className="flex cursor-pointer items-center justify-between px-1 py-1"
                   onClick={() => handleItemClick(category.id)}
                 >
                   <div className="relative mr-2 flex flex-1 items-center rounded-md px-2 py-1.5 hover:bg-ui-bg-base-hover">

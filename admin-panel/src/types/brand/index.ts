@@ -1,1 +1,1 @@
-export * from "./mutations";
+export * from "@custom-types/brand/mutations";

@@ -1,0 +1,53 @@
+# GitGuardian Internal Monitoring config.
+# https://docs.gitguardian.com/internal-repositories-monitoring/integrations/version_control_systems/github_pull_request_check_run
+#
+# The App reads this file from the default branch (main). Until this PR
+# merges, the App still flags placeholders. Mirrors `.gitleaks.toml`'s
+# allowlist set so both gates agree.
+
+version: 2
+
+secret:
+  ignored_paths:
+    # Build artefacts (gitignored, but the App still scans them when a
+    # contributor attaches them to a PR by mistake).
+    - "**/.next/**"
+    - "**/.medusa/**"
+    - "**/dist/**"
+    - "**/storybook-static/**"
+    - "**/coverage/**"
+
+    # Test fixtures with deterministic HMAC keys.
+    - "**/__tests__/**"
+    - "**/test/**"
+    - "**/*.spec.ts"
+    - "**/*.spec.tsx"
+    - "**/*.spec.js"
+    - "**/*.test.ts"
+    - "**/*.test.tsx"
+    - "**/*.test.js"
+
+    # CI workflows reference deterministic placeholder publishable keys.
+    - ".github/workflows/**"
+
+    # Documented placeholders.
+    - "**/*.env.template"
+    - "**/*.env.staging.template"
+    - "**/*.env.railway.template"
+    - "docs/**/*.md"
+    - "**/README.md"
+    - "**/CHANGELOG.md"
+
+  ignored_matches:
+    - name: "CHANGE_ME_* placeholders enforced by scripts/assert-env.mjs"
+      match: "CHANGE_ME_[A-Za-z0-9_]+"
+    - name: "CI / e2e / perf-job placeholder publishable keys"
+      match: "pk_(e2e|perf|local|test)_[a-z0-9_]+"
+    - name: "Marketplace webhook test fixture HMAC keys"
+      match: "fbm_whsec_[a-f0-9]+"
+    - name: "Documented Stripe test placeholders"
+      match: "(sk|pk)_test_your[_a-z0-9]+"
+    - name: "Resend documented placeholders"
+      match: "re_[a-z]+_your[_a-z0-9]+"
+    - name: "Stellar key documentation example"
+      match: "Syour56characterstellarsecretkey"

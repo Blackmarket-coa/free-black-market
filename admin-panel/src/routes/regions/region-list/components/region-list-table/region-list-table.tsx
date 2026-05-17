@@ -14,13 +14,13 @@ import { useMemo } from "react"
 import { useTranslation } from "react-i18next"
 import { Link } from "react-router-dom"
 
-import { ActionMenu } from "../../../../../components/common/action-menu"
-import { _DataTable } from "../../../../../components/table/data-table"
-import { useDeleteRegion, useRegions } from "../../../../../hooks/api/regions"
-import { useRegionTableColumns } from "../../../../../hooks/table/columns/use-region-table-columns"
-import { useRegionTableFilters } from "../../../../../hooks/table/filters/use-region-table-filters"
-import { useRegionTableQuery } from "../../../../../hooks/table/query/use-region-table-query"
-import { useDataTable } from "../../../../../hooks/use-data-table"
+import { ActionMenu } from "@components/common/action-menu"
+import { _DataTable } from "@components/table/data-table"
+import { useDeleteRegion, useRegions } from "@hooks/api/regions"
+import { useRegionTableColumns } from "@hooks/table/columns/use-region-table-columns"
+import { useRegionTableFilters } from "@hooks/table/filters/use-region-table-filters"
+import { useRegionTableQuery } from "@hooks/table/query/use-region-table-query"
+import { useDataTable } from "@hooks/use-data-table"
 
 const PAGE_SIZE = 20
 

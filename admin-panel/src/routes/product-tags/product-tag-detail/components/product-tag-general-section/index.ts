@@ -1,1 +1,1 @@
-export * from "./product-tag-general-section"
+export * from "@routes/product-tags/product-tag-detail/components/product-tag-general-section/product-tag-general-section"

@@ -1,9 +1,9 @@
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 import { Badge, Container, Tooltip } from "@medusajs/ui"
 import { useTranslation } from "react-i18next"
 
-import { TaxRateLine } from "../../../common/components/tax-rate-line"
-import { TaxRegionCard } from "../../../common/components/tax-region-card"
+import { TaxRateLine } from "@routes/tax-regions/common/components/tax-rate-line"
+import { TaxRegionCard } from "@routes/tax-regions/common/components/tax-region-card"
 
 type TaxRegionProvinceDetailSectionProps = {
   taxRegion: HttpTypes.AdminTaxRegion

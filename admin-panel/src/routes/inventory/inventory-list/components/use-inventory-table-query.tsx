@@ -1,6 +1,6 @@
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 
-import { useQueryParams } from "../../../../hooks/use-query-params"
+import { useQueryParams } from "@hooks/use-query-params"
 
 export const useInventoryTableQuery = ({
   pageSize = 20,
@@ -41,7 +41,7 @@ export const useInventoryTableQuery = ({
     ...params
   } = raw
 
-  const searchParams: HttpTypes.AdminInventoryItemParams = {
+  const searchParams: HttpTypes.AdminInventoryItemsParams = {
     limit: pageSize,
     offset: offset ? parseInt(offset) : undefined,
     weight: weight ? JSON.parse(weight) : undefined,

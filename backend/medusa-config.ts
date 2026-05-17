@@ -148,6 +148,12 @@ const coreModules = [
   { resolve: './src/modules/tenancy' },
   { resolve: './src/modules/product-archetype' },
   { resolve: './src/modules/password-history' },
+  // Composition layer (see docs/COMPOSITION_LAYER.md): playbook is the
+  // cooperative-economic shape a vendor picks at setup; listing-type is
+  // the orthogonal shape of each offering. Both are core to commerce
+  // routing and must load before commerce/marketplace modules.
+  { resolve: './src/modules/playbook' },
+  { resolve: './src/modules/listing-type' },
 ]
 
 // Agricultural/barn-to-door modules
@@ -178,6 +184,7 @@ const financialModules = [
 
 // FreeBlackMarket.com feature modules
 const marketplaceModules = [
+  { resolve: './src/modules/sell-signup' },
   { resolve: './src/modules/vendor-verification' },
   { resolve: './src/modules/impact-metrics' },
   { resolve: './src/modules/payout-breakdown' },
@@ -185,6 +192,18 @@ const marketplaceModules = [
   { resolve: './src/modules/vendor-rules' },
   { resolve: './src/modules/supplier-forwarding' },
   { resolve: './src/modules/vendor-hype-operations-prediction' },
+  { resolve: './src/modules/marketplace-listing' },
+  { resolve: './src/modules/marketplace-signing' },
+  { resolve: './src/modules/marketplace-webhooks' },
+  { resolve: './src/modules/entitlement' },
+  { resolve: './src/modules/blackstar-fulfillment' },
+  { resolve: './src/modules/creator-attribution' },
+  { resolve: './src/modules/creator-program' },
+  { resolve: './src/modules/content-platform' },
+  { resolve: './src/modules/creator-rewards' },
+  { resolve: './src/modules/service-program' },
+  { resolve: './src/modules/work-verification' },
+  { resolve: './src/modules/order-subcontract' },
 ]
 
 // Community infrastructure modules
@@ -224,6 +243,50 @@ const optionalModules = [
 // Provider Configurations
 // ============================================================================
 
+// Auth providers
+//
+// Slice C of the Creator Commerce roadmap. We only declare an explicit
+// auth module when at least one social provider is configured via env;
+// otherwise Medusa's framework default (emailpass-only) keeps applying so
+// existing seller logins are unaffected.
+//
+// When env vars are present we declare emailpass alongside the social
+// provider(s) so the seller registration flow keeps working.
+const buildAuthModule = () => {
+  const googleEnabled = !!process.env.GOOGLE_CLIENT_ID && !!process.env.GOOGLE_CLIENT_SECRET
+  // TikTok / Discord are deferred to a follow-up PR — see
+  // docs/CREATOR_COMMERCE_ROADMAP.md Phase 2 for the scope.
+  if (!googleEnabled) return null
+
+  const callbackBase = (process.env.BACKEND_URL || '').replace(/\/$/, '')
+
+  return {
+    resolve: '@medusajs/medusa/auth',
+    options: {
+      providers: [
+        {
+          resolve: '@medusajs/medusa/auth-emailpass',
+          id: 'emailpass',
+        },
+        ...(googleEnabled
+          ? [{
+              resolve: '@medusajs/medusa/auth-google',
+              id: 'google',
+              options: {
+                clientID: process.env.GOOGLE_CLIENT_ID,
+                clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+                callbackURL:
+                  process.env.GOOGLE_CALLBACK_URL ||
+                  (callbackBase ? `${callbackBase}/auth/seller/google/callback` : undefined),
+              },
+            }]
+          : []),
+      ],
+    },
+  }
+}
+const authModule = buildAuthModule()
+
 // Payment providers
 const paymentModule = {
   resolve: '@medusajs/medusa/payment',
@@ -258,6 +321,16 @@ const fulfillmentModule = {
               webhook_secret: process.env.PRINTFUL_WEBHOOK_SECRET,
               store_id: process.env.PRINTFUL_STORE_ID,
             },
+          }]
+        : []),
+      // Blackstar fulfillment provider — stub mode when integration flag is on.
+      // Persists fulfillment_node_id / pickup_point_id / vending_machine_id on
+      // BlackstarShipment so Blackstar can update status via webhook later.
+      ...(process.env.FBM_BLACKSTAR_INTEGRATION === '1'
+        ? [{
+            resolve: './src/modules/blackstar-fulfillment-provider',
+            id: 'blackstar',
+            options: {},
           }]
         : []),
     ],
@@ -361,12 +434,50 @@ const notificationModules = (() => {
 
 const isMedusaBuildCommand = process.argv.some(arg => arg === 'build')
 
+// Banned placeholder literals — rejected at boot in production.
+// Keep in sync with scripts/assert-env.mjs.
+const BANNED_SECRET_LITERALS = new Set<string>([
+  'supersecret',
+  'changeme',
+  'change-me',
+  'change_me',
+  'dev-only-secret-change-in-production-32chars',
+  'test',
+  'secret',
+  'password',
+])
+const BANNED_SECRET_PREFIXES = ['CHANGE_ME']
+const MIN_SECRET_LENGTH = 32
+
+const isBannedSecret = (value: string): boolean => {
+  const lower = value.trim().toLowerCase()
+  if (BANNED_SECRET_LITERALS.has(lower)) return true
+  return BANNED_SECRET_PREFIXES.some((p) => value.startsWith(p))
+}
+
 const getRequiredSecret = (envName: 'JWT_SECRET' | 'COOKIE_SECRET'): string => {
   const configured = process.env[envName]
-  if (configured) return configured
+  const isProduction = process.env.NODE_ENV === 'production'
 
-  if (process.env.NODE_ENV !== 'production' || isMedusaBuildCommand) {
-    if (process.env.NODE_ENV === 'production' && isMedusaBuildCommand) {
+  if (configured) {
+    if (isProduction && !isMedusaBuildCommand) {
+      if (isBannedSecret(configured)) {
+        throw new Error(
+          `${envName} is set to a banned placeholder value. Generate one with: ` +
+          `node -e "console.log(require('crypto').randomBytes(64).toString('hex'))"`
+        )
+      }
+      if (configured.length < MIN_SECRET_LENGTH) {
+        throw new Error(
+          `${envName} must be at least ${MIN_SECRET_LENGTH} characters in production (got ${configured.length}).`
+        )
+      }
+    }
+    return configured
+  }
+
+  if (!isProduction || isMedusaBuildCommand) {
+    if (isProduction && isMedusaBuildCommand) {
       console.warn(`[medusa-config] ${envName} is not set during build; using a temporary fallback secret for build-time config loading.`)
     }
     return 'dev-only-secret-change-in-production-32chars'
@@ -374,6 +485,23 @@ const getRequiredSecret = (envName: 'JWT_SECRET' | 'COOKIE_SECRET'): string => {
 
   throw new Error(`${envName} is required in production`)
 }
+
+// Production-only fail-closed check for the seeded admin password.
+// Skipped during the medusa build step (where envs are not yet provisioned).
+const assertAdminPassword = () => {
+  if (process.env.NODE_ENV !== 'production' || isMedusaBuildCommand) return
+  const value = process.env.MEDUSA_ADMIN_PASSWORD || ''
+  if (!value) {
+    throw new Error('MEDUSA_ADMIN_PASSWORD is required in production. Refusing to start with an empty admin password.')
+  }
+  if (isBannedSecret(value)) {
+    throw new Error('MEDUSA_ADMIN_PASSWORD matches a banned placeholder literal. Refusing to start.')
+  }
+  if (value.length < 12) {
+    throw new Error(`MEDUSA_ADMIN_PASSWORD must be at least 12 characters in production (got ${value.length}).`)
+  }
+}
+assertAdminPassword()
 
 module.exports = defineConfig({
   projectConfig: {
@@ -416,6 +544,7 @@ module.exports = defineConfig({
     paymentModule,
     fulfillmentModule,
     fileModule,
+    ...(authModule ? [authModule] : []),
     ...redisModules,
     ...notificationModules,
   ],

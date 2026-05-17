@@ -1,5 +1,5 @@
 import { PencilSquare, Trash } from "@medusajs/icons"
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 import {
   Container,
   createDataTableColumnHelper,
@@ -10,13 +10,13 @@ import { keepPreviousData } from "@tanstack/react-query"
 import { useCallback, useMemo } from "react"
 import { useTranslation } from "react-i18next"
 import { useNavigate } from "react-router-dom"
-import { DataTable } from "../../../../components/data-table"
-import * as hooks from "../../../../components/data-table/helpers/sales-channels"
-import { useStore } from "../../../../hooks/api"
+import { DataTable } from "@components/data-table"
+import * as hooks from "@components/data-table/helpers/sales-channels"
+import { useStore } from "@hooks/api"
 import {
   useDeleteSalesChannelLazy,
   useSalesChannels,
-} from "../../../../hooks/api/sales-channels"
+} from "@hooks/api/sales-channels"
 
 type SalesChannelWithIsDefault = HttpTypes.AdminSalesChannel & {
   is_default?: boolean

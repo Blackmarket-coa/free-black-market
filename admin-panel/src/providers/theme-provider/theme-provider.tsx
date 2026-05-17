@@ -1,5 +1,7 @@
-import { PropsWithChildren, useEffect, useState } from "react"
-import { ThemeContext, ThemeOption, ThemeValue } from "./theme-context"
+import type { PropsWithChildren} from "react";
+import { useEffect, useState } from "react"
+import type { ThemeOption, ThemeValue } from "@providers/theme-provider/theme-context";
+import { ThemeContext } from "@providers/theme-provider/theme-context"
 
 const THEME_KEY = "medusa_admin_theme"
 

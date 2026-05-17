@@ -1,6 +1,7 @@
 import { zodResolver } from "@hookform/resolvers/zod"
-import { HttpTypes } from "@medusajs/types"
-import { Button, ProgressStatus, ProgressTabs, toast } from "@medusajs/ui"
+import type { HttpTypes } from "@medusajs/types"
+import type { ProgressStatus} from "@medusajs/ui";
+import { Button, ProgressTabs, toast } from "@medusajs/ui"
 import { useForm, useWatch } from "react-hook-form"
 import { useTranslation } from "react-i18next"
 
@@ -8,23 +9,24 @@ import { useState } from "react"
 import {
   RouteFocusModal,
   useRouteModal,
-} from "../../../../../components/modals"
-import { KeyboundForm } from "../../../../../components/utilities/keybound-form"
-import { useCreateShippingOptions } from "../../../../../hooks/api/shipping-options"
-import { castNumber } from "../../../../../lib/cast-number"
+} from "@components/modals"
+import { KeyboundForm } from "@components/utilities/keybound-form"
+import { useCreateShippingOptions } from "@hooks/api/shipping-options"
+import { castNumber } from "@lib/cast-number"
+import type {
+  FulfillmentSetType} from "@routes/locations/common/constants";
 import {
-  FulfillmentSetType,
   ShippingOptionPriceType,
-} from "../../../common/constants"
-import { buildShippingOptionPriceRules } from "../../../common/utils/price-rule-helpers"
-import { CreateShippingOptionDetailsForm } from "./create-shipping-option-details-form"
-import { CreateShippingOptionsPricesForm } from "./create-shipping-options-prices-form"
+} from "@routes/locations/common/constants"
+import { buildShippingOptionPriceRules } from "@routes/locations/common/utils/price-rule-helpers"
+import { CreateShippingOptionDetailsForm } from "@routes/locations/location-service-zone-shipping-option-create/components/create-shipping-options-form/create-shipping-option-details-form"
+import { CreateShippingOptionsPricesForm } from "@routes/locations/location-service-zone-shipping-option-create/components/create-shipping-options-form/create-shipping-options-prices-form"
 import {
   CreateShippingOptionDetailsSchema,
   CreateShippingOptionSchema,
-} from "./schema"
-import { useFulfillmentProviderOptions } from "../../../../../hooks/api"
-import { useDocumentDirection } from "../../../../../hooks/use-document-direction"
+} from "@routes/locations/location-service-zone-shipping-option-create/components/create-shipping-options-form/schema"
+import { useFulfillmentProviderOptions } from "@hooks/api"
+import { useDocumentDirection } from "@hooks/use-document-direction"
 
 enum Tab {
   DETAILS = "details",
@@ -222,7 +224,8 @@ export function CreateShippingOptionsForm({
         )
 
         setValidDetails(false)
-        return
+        
+return
       }
 
       setValidDetails(true)
@@ -265,7 +268,8 @@ export function CreateShippingOptionsForm({
           if (shouldContinueToPricing) {
             e.stopPropagation()
             onTabChange(Tab.PRICING)
-            return
+            
+return
           }
 
           handleSubmit()

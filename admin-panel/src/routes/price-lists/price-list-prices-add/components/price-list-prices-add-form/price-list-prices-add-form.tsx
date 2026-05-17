@@ -1,27 +1,29 @@
 import { zodResolver } from "@hookform/resolvers/zod"
-import { HttpTypes } from "@medusajs/types"
-import { Button, ProgressStatus, ProgressTabs, toast } from "@medusajs/ui"
+import type { HttpTypes } from "@medusajs/types"
+import type { ProgressStatus} from "@medusajs/ui";
+import { Button, ProgressTabs, toast } from "@medusajs/ui"
 import { useState } from "react"
-import { FieldPath, useForm } from "react-hook-form"
+import type { FieldPath} from "react-hook-form";
+import { useForm } from "react-hook-form"
 import { useTranslation } from "react-i18next"
-import { z } from "zod"
+import type { z } from "zod"
 
 import {
   RouteFocusModal,
   useRouteModal,
-} from "../../../../../components/modals"
-import { KeyboundForm } from "../../../../../components/utilities/keybound-form"
-import { useBatchPriceListPrices } from "../../../../../hooks/api/price-lists"
-import { exctractPricesFromProducts } from "../../../common/utils"
-import { PriceListPricesAddPricesForm } from "./price-list-prices-add-prices-form"
-import { PriceListPricesAddProductIdsForm } from "./price-list-prices-add-product-ids-form"
+} from "@components/modals"
+import { KeyboundForm } from "@components/utilities/keybound-form"
+import { useBatchPriceListPrices } from "@hooks/api/price-lists"
+import { exctractPricesFromProducts } from "@routes/price-lists/common/utils"
+import { PriceListPricesAddPricesForm } from "@routes/price-lists/price-list-prices-add/components/price-list-prices-add-form/price-list-prices-add-prices-form"
+import { PriceListPricesAddProductIdsForm } from "@routes/price-lists/price-list-prices-add/components/price-list-prices-add-form/price-list-prices-add-product-ids-form"
 import {
   PriceListPricesAddProductIdsSchema,
   PriceListPricesAddProductsFields,
   PriceListPricesAddProductsIdsFields,
   PriceListPricesAddSchema,
-} from "./schema"
-import { useDocumentDirection } from "../../../../../hooks/use-document-direction"
+} from "@routes/price-lists/price-list-prices-add/components/price-list-prices-add-form/schema"
+import { useDocumentDirection } from "@hooks/use-document-direction"
 
 type PriceListPricesAddFormProps = {
   priceList: HttpTypes.AdminPriceList
@@ -94,7 +96,8 @@ export const PriceListPricesAddForm = ({
     const values = fields.reduce(
       (acc, key) => {
         acc[key] = form.getValues(key)
-        return acc
+        
+return acc
       },
       {} as Record<string, unknown>
     )
@@ -149,7 +152,8 @@ export const PriceListPricesAddForm = ({
       }))
 
       setTab(update)
-      return
+      
+return
     }
 
     // get the tabs from the current tab to the update tab including the current tab

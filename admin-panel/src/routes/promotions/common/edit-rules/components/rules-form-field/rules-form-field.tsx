@@ -1,24 +1,25 @@
 import { XMarkMini } from "@medusajs/icons"
-import { PromotionDTO } from "@medusajs/types"
+import type { PromotionDTO } from "@medusajs/types"
 import { Badge, Button, Heading, IconButton, Select, Text } from "@medusajs/ui"
 import { forwardRef, Fragment, useEffect, useRef } from "react"
-import {
+import type {
   ControllerRenderProps,
+  UseFormReturn} from "react-hook-form";
+import {
   useFieldArray,
-  UseFormReturn,
   useWatch,
 } from "react-hook-form"
 import { useTranslation } from "react-i18next"
-import { Form } from "../../../../../../components/common/form"
+import { Form } from "@components/common/form"
 import {
   usePromotionRuleAttributes,
   usePromotionRules,
-} from "../../../../../../hooks/api/promotions"
-import { useDocumentDirection } from "../../../../../../hooks/use-document-direction"
-import { CreatePromotionSchemaType } from "../../../../promotion-create/components/create-promotion-form/form-schema"
-import { generateRuleAttributes } from "../edit-rules-form/utils"
-import { RuleValueFormField } from "../rule-value-form-field"
-import { requiredProductRule } from "./constants"
+} from "@hooks/api/promotions"
+import { useDocumentDirection } from "@hooks/use-document-direction"
+import type { CreatePromotionSchemaType } from "@routes/promotions/promotion-create/components/create-promotion-form/form-schema"
+import { generateRuleAttributes } from "@routes/promotions/common/edit-rules/components/edit-rules-form/utils"
+import { RuleValueFormField } from "@routes/promotions/common/edit-rules/components/rule-value-form-field"
+import { requiredProductRule } from "@routes/promotions/common/edit-rules/components/rules-form-field/constants"
 
 type RulesFormFieldType = {
   promotion?: PromotionDTO
@@ -118,9 +119,15 @@ export const RulesFormField = ({
       const rulesToAppend =
         promotion?.id || promotionType === "standard"
           ? rules
-          : [...rules, requiredProductRule]
+          : [...(rules ?? []), requiredProductRule]
 
-      replace(generateRuleAttributes(rulesToAppend) as any)
+      replace(
+        generateRuleAttributes(
+          rulesToAppend as unknown as Parameters<
+            typeof generateRuleAttributes
+          >[0]
+        ) as any
+      )
     }
 
     if (ruleType === "target-rules" && !fields.length) {
@@ -128,9 +135,15 @@ export const RulesFormField = ({
       const rulesToAppend =
         promotion?.id || promotionType === "standard"
           ? rules
-          : [...rules, requiredProductRule]
+          : [...(rules ?? []), requiredProductRule]
 
-      replace(generateRuleAttributes(rulesToAppend) as any)
+      replace(
+        generateRuleAttributes(
+          rulesToAppend as unknown as Parameters<
+            typeof generateRuleAttributes
+          >[0]
+        ) as any
+      )
     }
 
     initialRulesSet.current = true
@@ -338,12 +351,12 @@ export const RulesFormField = ({
 
                   <RuleValueFormField
                     form={form}
-                    identifier={identifier}
+                    identifier={identifier ?? ""}
                     scope={scope}
                     name={`${scope}.${index}.values`}
                     operator={`${scope}.${index}.operator`}
                     fieldRule={fieldRule}
-                    attributes={attributes}
+                    attributes={attributes ?? []}
                     ruleType={ruleType}
                     applicationMethodTargetType={applicationMethodTargetType}
                   />
@@ -410,7 +423,7 @@ export const RulesFormField = ({
             onClick={() => {
               const indicesToRemove = fields
                 .map((field: any, index) => (field.required ? null : index))
-                .filter((f) => f !== null)
+                .filter((f): f is number => f !== null)
 
               setRulesToRemove &&
                 setRulesToRemove(fields.filter((field: any) => !field.required))
@@ -427,7 +440,10 @@ export const RulesFormField = ({
 
 type DisabledAttributeProps = {
   label: string
-  field: ControllerRenderProps
+  // Accept any ControllerRenderProps shape; this component renders a
+  // hidden input with the typed field bound, so any name path works.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  field: ControllerRenderProps<any, any>
 }
 
 /**

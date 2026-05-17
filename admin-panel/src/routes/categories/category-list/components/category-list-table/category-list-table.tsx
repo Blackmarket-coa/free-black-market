@@ -1,5 +1,5 @@
 import { PencilSquare, Trash } from "@medusajs/icons"
-import { AdminProductCategoryResponse } from "@medusajs/types"
+import type { AdminProductCategoryResponse } from "@medusajs/types"
 import { Button, Container, Heading, Text } from "@medusajs/ui"
 import { keepPreviousData } from "@tanstack/react-query"
 import { createColumnHelper } from "@tanstack/react-table"
@@ -7,13 +7,13 @@ import { useMemo } from "react"
 import { useTranslation } from "react-i18next"
 
 import { Link } from "react-router-dom"
-import { ActionMenu } from "../../../../../components/common/action-menu"
-import { _DataTable } from "../../../../../components/table/data-table"
-import { useProductCategories } from "../../../../../hooks/api/categories"
-import { useDataTable } from "../../../../../hooks/use-data-table"
-import { useDeleteProductCategoryAction } from "../../../common/hooks/use-delete-product-category-action"
-import { useCategoryTableColumns } from "./use-category-table-columns"
-import { useCategoryTableQuery } from "./use-category-table-query"
+import { ActionMenu } from "@components/common/action-menu"
+import { _DataTable } from "@components/table/data-table"
+import { useProductCategories } from "@hooks/api/categories"
+import { useDataTable } from "@hooks/use-data-table"
+import { useDeleteProductCategoryAction } from "@routes/categories/common/hooks/use-delete-product-category-action"
+import { useCategoryTableColumns } from "@routes/categories/category-list/components/category-list-table/use-category-table-columns"
+import { useCategoryTableQuery } from "@routes/categories/category-list/components/category-list-table/use-category-table-query"
 
 const PAGE_SIZE = 20
 

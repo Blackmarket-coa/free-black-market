@@ -1,13 +1,13 @@
 import { useLoaderData, useParams } from "react-router-dom"
 
-import { TwoColumnPageSkeleton } from "../../../components/common/skeleton"
-import { TwoColumnPage } from "../../../components/layout/pages"
-import { useInventoryItem } from "../../../hooks/api"
-import { useReservationItem } from "../../../hooks/api/reservations"
-import { useExtension } from "../../../providers/extension-provider"
-import { InventoryItemGeneralSection } from "../../inventory/inventory-detail/components/inventory-item-general-section"
-import { ReservationGeneralSection } from "./components/reservation-general-section"
-import { reservationItemLoader } from "./loader"
+import { TwoColumnPageSkeleton } from "@components/common/skeleton"
+import { TwoColumnPage } from "@components/layout/pages"
+import { useInventoryItem } from "@hooks/api"
+import { useReservationItem } from "@hooks/api/reservations"
+import { useExtension } from "@providers/extension-provider"
+import { InventoryItemGeneralSection } from "@routes/inventory/inventory-detail/components/inventory-item-general-section"
+import { ReservationGeneralSection } from "@routes/reservations/reservation-detail/components/reservation-general-section"
+import type { reservationItemLoader } from "@routes/reservations/reservation-detail/loader"
 
 export const ReservationDetail = () => {
   const { id } = useParams()

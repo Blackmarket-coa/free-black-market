@@ -4,12 +4,12 @@ import { useForm } from "react-hook-form"
 import { useTranslation } from "react-i18next"
 import { z } from "zod"
 
-import { HttpTypes } from "@medusajs/types"
-import { Form } from "../../../../../components/common/form"
-import { ChipInput } from "../../../../../components/inputs/chip-input"
-import { RouteDrawer, useRouteModal } from "../../../../../components/modals"
-import { KeyboundForm } from "../../../../../components/utilities/keybound-form"
-import { useUpdateProductOption } from "../../../../../hooks/api/products"
+import type { HttpTypes } from "@medusajs/types"
+import { Form } from "@components/common/form"
+import { ChipInput } from "@components/inputs/chip-input"
+import { RouteDrawer, useRouteModal } from "@components/modals"
+import { KeyboundForm } from "@components/utilities/keybound-form"
+import { useUpdateProductOption } from "@hooks/api/products"
 
 type EditProductOptionFormProps = {
   option: HttpTypes.AdminProductOption
@@ -29,13 +29,13 @@ export const CreateProductOptionForm = ({
   const form = useForm<z.infer<typeof CreateProductOptionSchema>>({
     defaultValues: {
       title: option.title,
-      values: option.values.map((v: any) => v.value),
+      values: (option.values ?? []).map((v: any) => v.value),
     },
     resolver: zodResolver(CreateProductOptionSchema),
   })
 
   const { mutateAsync, isPending } = useUpdateProductOption(
-    option.product_id,
+    option.product_id ?? "",
     option.id
   )
 

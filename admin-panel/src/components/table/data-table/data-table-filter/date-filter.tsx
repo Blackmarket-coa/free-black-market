@@ -6,11 +6,11 @@ import { useMemo, useState } from "react"
 
 import { t } from "i18next"
 import { useTranslation } from "react-i18next"
-import { useDate } from "../../../../hooks/use-date"
-import { useSelectedParams } from "../hooks"
-import { useDataTableFilterContext } from "./context"
-import FilterChip from "./filter-chip"
-import { IFilter } from "./types"
+import { useDate } from "@hooks/use-date"
+import { useSelectedParams } from "@components/table/data-table/hooks"
+import { useDataTableFilterContext } from "@components/table/data-table/data-table-filter/context"
+import FilterChip from "@components/table/data-table/data-table-filter/filter-chip"
+import type { IFilter } from "@components/table/data-table/data-table-filter/types"
 
 type DateFilterProps = IFilter
 
@@ -88,7 +88,8 @@ export const DateFilter = ({
 
   const getDisplayValueFromPresets = () => {
     const preset = presets.find((p) => isEqual(p.value, currentDateComparison))
-    return preset?.label
+    
+return preset?.label
   }
 
   const formatCustomDate = (date: Date | undefined) => {
@@ -99,7 +100,8 @@ export const DateFilter = ({
     const formattedDates = [customStartValue, customEndValue].map(
       formatCustomDate
     )
-    return formattedDates.filter(Boolean).join(" - ")
+    
+return formattedDates.filter(Boolean).join(" - ")
   }
 
   const displayValue = getDisplayValueFromPresets() || getCustomDisplayValue()
@@ -165,7 +167,8 @@ export const DateFilter = ({
                 const isSelected = selectedParams
                   .get()
                   .includes(JSON.stringify(preset.value))
-                return (
+                
+return (
                   <li key={preset.label}>
                     <button
                       className="bg-ui-bg-base hover:bg-ui-bg-base-hover focus-visible:bg-ui-bg-base-pressed text-ui-fg-base data-[disabled]:text-ui-fg-disabled txt-compact-small relative flex w-full cursor-pointer select-none items-center rounded-md px-2 py-1.5 outline-none transition-colors data-[disabled]:pointer-events-none"

@@ -1,0 +1,5 @@
+# Trivy ignore list — HIGH/CRITICAL findings that have been triaged.
+#
+# Every CVE here must reference an open `SD-*` row in docs/AUDIT_DEBT.md or
+# a documented runtime decision. When a CVE is fixed in the lockfile, drop
+# its row from this file so the Trivy gate can detect regressions.

@@ -1,4 +1,4 @@
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 
 export enum ColumnAlignment {
   LEFT = "left",
@@ -64,7 +64,8 @@ export function getInitialColumnOrder(
   const sortedColumns = [...apiColumns].sort((a, b) => {
     const orderA = a.default_order ?? DEFAULT_COLUMN_ORDER
     const orderB = b.default_order ?? DEFAULT_COLUMN_ORDER
-    return orderA - orderB
+    
+return orderA - orderB
   })
   
   return sortedColumns.map(col => col.field)

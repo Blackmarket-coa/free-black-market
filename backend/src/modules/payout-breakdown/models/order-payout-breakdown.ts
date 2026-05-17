@@ -50,7 +50,25 @@ const OrderPayoutBreakdown = model.define("order_payout_breakdown", {
   
   // Total tip
   total_tip: model.bigNumber().default(0),
-  
+
+  // Total creator commission (affiliate share funded out of seller gross)
+  total_creator_commission: model.bigNumber().default(0),
+
+  // Total share to plugin/theme/emoji-pack developers
+  total_to_plugin_developers: model.bigNumber().default(0),
+
+  // Total share to generic referrers (non-affiliate-program referrals)
+  total_to_referrers: model.bigNumber().default(0),
+
+  /**
+   * Per-level referrer split for multi-level referral chains. When
+   * FBM_MULTILEVEL_REFERRALS=1 and an order has L2/L3 referrers, this
+   * captures the per-seller per-level cents amounts that summed give
+   * total_to_referrers. Shape:
+   *   [{ level: 2, seller_id: "sel_...", amount_cents: 1500 }, ...]
+   */
+  referrer_levels: model.json().nullable(),
+
   // === Per-Seller Breakdown ===
   // For multi-vendor orders
   seller_breakdown: model.json(), // Array<{ seller_id, amount, fees }>

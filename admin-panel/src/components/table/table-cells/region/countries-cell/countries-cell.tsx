@@ -1,9 +1,9 @@
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 import { useTranslation } from "react-i18next"
 
-import { countries as COUNTRIES } from "../../../../../lib/data/countries"
-import { ListSummary } from "../../../../common/list-summary"
-import { PlaceholderCell } from "../../common/placeholder-cell"
+import { countries as COUNTRIES } from "@lib/data/countries"
+import { ListSummary } from "@components/common/list-summary"
+import { PlaceholderCell } from "@components/table/table-cells/common/placeholder-cell"
 
 type CountriesCellProps = {
   countries?: HttpTypes.AdminRegionCountry[] | null

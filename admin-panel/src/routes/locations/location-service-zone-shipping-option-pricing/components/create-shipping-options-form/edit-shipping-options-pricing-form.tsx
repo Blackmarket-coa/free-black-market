@@ -3,37 +3,38 @@ import { useMemo, useState } from "react"
 import { useForm } from "react-hook-form"
 import * as zod from "zod"
 
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 import { Button, toast } from "@medusajs/ui"
 import { useTranslation } from "react-i18next"
 
-import { DataGrid } from "../../../../../components/data-grid"
+import { DataGrid } from "@components/data-grid"
 import {
   RouteFocusModal,
   StackedFocusModal,
   useRouteModal,
   useStackedModal,
-} from "../../../../../components/modals/index"
-import { KeyboundForm } from "../../../../../components/utilities/keybound-form"
-import { usePricePreferences } from "../../../../../hooks/api/price-preferences"
-import { useRegions } from "../../../../../hooks/api/regions"
-import { useUpdateShippingOptions } from "../../../../../hooks/api/shipping-options"
-import { useStore } from "../../../../../hooks/api/store"
-import { castNumber } from "../../../../../lib/cast-number"
-import { ConditionalPriceForm } from "../../../common/components/conditional-price-form"
-import { ShippingOptionPriceProvider } from "../../../common/components/shipping-option-price-provider"
+} from "@components/modals/index"
+import { KeyboundForm } from "@components/utilities/keybound-form"
+import { usePricePreferences } from "@hooks/api/price-preferences"
+import { useRegions } from "@hooks/api/regions"
+import { useUpdateShippingOptions } from "@hooks/api/shipping-options"
+import { useStore } from "@hooks/api/store"
+import { castNumber } from "@lib/cast-number"
+import { ConditionalPriceForm } from "@routes/locations/common/components/conditional-price-form"
+import { ShippingOptionPriceProvider } from "@routes/locations/common/components/shipping-option-price-provider"
 import {
   CONDITIONAL_PRICES_STACKED_MODAL_ID,
   ITEM_TOTAL_ATTRIBUTE,
   REGION_ID_ATTRIBUTE,
-} from "../../../common/constants"
-import { useShippingOptionPriceColumns } from "../../../common/hooks/use-shipping-option-price-columns"
+} from "@routes/locations/common/constants"
+import { useShippingOptionPriceColumns } from "@routes/locations/common/hooks/use-shipping-option-price-columns"
+import type {
+  UpdateConditionalPrice} from "@routes/locations/common/schema";
 import {
-  UpdateConditionalPrice,
   UpdateConditionalPriceSchema,
-} from "../../../common/schema"
-import { ConditionalPriceInfo } from "../../../common/types"
-import { buildShippingOptionPriceRules } from "../../../common/utils/price-rule-helpers"
+} from "@routes/locations/common/schema"
+import type { ConditionalPriceInfo } from "@routes/locations/common/types"
+import { buildShippingOptionPriceRules } from "@routes/locations/common/utils/price-rule-helpers"
 
 type PriceRecord = {
   id?: string
@@ -179,7 +180,12 @@ export function EditShippingOptionsPricingForm({
         }
 
         const existingPrice = shippingOption.prices.find(
-          (p) => p.region_id === region_id && !p.price_rules?.length
+          // AdminShippingOptionPrice doesn't expose `region_id` directly
+          // in the SDK type (only via price_rules) but the response
+          // includes it; cast to read the flat field.
+          (p) =>
+            (p as { region_id?: string }).region_id === region_id &&
+            !p.price_rules?.length
         )
 
         if (existingPrice) {
@@ -331,7 +337,8 @@ const getDefaultValues = (prices: HttpTypes.AdminShippingOptionPrice[]) => {
     forbidden: string[] = []
   ) => {
     const attributes = price.price_rules?.map((r) => r.attribute) || []
-    return (
+    
+return (
       required.every((attr) => attributes.includes(attr)) &&
       !forbidden.some((attr) => attributes.includes(attr))
     )
@@ -346,7 +353,8 @@ const getDefaultValues = (prices: HttpTypes.AdminShippingOptionPrice[]) => {
   prices.forEach((price) => {
     if (!price.price_rules?.length) {
       currency_prices[price.currency_code!] = price.amount
-      return
+      
+return
     }
 
     if (hasAttributes(price, [ITEM_TOTAL_ATTRIBUTE], [REGION_ID_ATTRIBUTE])) {
@@ -355,7 +363,8 @@ const getDefaultValues = (prices: HttpTypes.AdminShippingOptionPrice[]) => {
         conditional_currency_prices[code] = []
       }
       conditional_currency_prices[code].push(mapToConditionalPrice(price))
-      return
+      
+return
     }
 
     if (hasAttributes(price, [REGION_ID_ATTRIBUTE], [ITEM_TOTAL_ATTRIBUTE])) {
@@ -363,7 +372,9 @@ const getDefaultValues = (prices: HttpTypes.AdminShippingOptionPrice[]) => {
         (r) => r.attribute === REGION_ID_ATTRIBUTE
       )?.value
 
+      if (!regionId) return
       region_prices[regionId] = price.amount
+
       return
     }
 
@@ -372,6 +383,7 @@ const getDefaultValues = (prices: HttpTypes.AdminShippingOptionPrice[]) => {
         (r) => r.attribute === REGION_ID_ATTRIBUTE
       )?.value
 
+      if (!regionId) return
       if (!conditional_region_prices[regionId]) {
         conditional_region_prices[regionId] = []
       }

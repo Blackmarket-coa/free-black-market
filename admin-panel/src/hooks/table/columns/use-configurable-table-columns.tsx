@@ -1,8 +1,9 @@
-import React, { useMemo } from "react"
+import type React from "react";
+import { useMemo } from "react"
 import { createDataTableColumnHelper } from "@medusajs/ui"
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 import { useTranslation } from "react-i18next"
-import { getCellRenderer, getColumnValue } from "../../../lib/table/cell-renderers"
+import { getCellRenderer, getColumnValue } from "@lib/table/cell-renderers"
 
 export interface ColumnAdapter<TData> {
   getColumnAlignment?: (column: HttpTypes.AdminColumn) => "left" | "center" | "right"

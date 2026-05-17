@@ -1,21 +1,21 @@
-import * as zod from "zod"
+import type * as zod from "zod"
 
 import { Button, Input, toast } from "@medusajs/ui"
-import { RouteDrawer, useRouteModal } from "../../../../../../components/modals"
+import { RouteDrawer, useRouteModal } from "@components/modals"
 
 import { zodResolver } from "@hookform/resolvers/zod"
-import { InventoryTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 import { useForm } from "react-hook-form"
 import { useTranslation } from "react-i18next"
 import { z } from "zod"
 
-import { Form } from "../../../../../../components/common/form"
-import { CountrySelect } from "../../../../../../components/inputs/country-select"
-import { KeyboundForm } from "../../../../../../components/utilities/keybound-form"
-import { useUpdateInventoryItem } from "../../../../../../hooks/api/inventory"
+import { Form } from "@components/common/form"
+import { CountrySelect } from "@components/inputs/country-select"
+import { KeyboundForm } from "@components/utilities/keybound-form"
+import { useUpdateInventoryItem } from "@hooks/api/inventory"
 
 type EditInventoryItemAttributeFormProps = {
-  item: InventoryTypes.InventoryItemDTO
+  item: HttpTypes.AdminInventoryItem
 }
 
 const EditInventoryItemAttributesSchema = z.object({
@@ -29,7 +29,7 @@ const EditInventoryItemAttributesSchema = z.object({
   origin_country: z.string().optional(),
 })
 
-const getDefaultValues = (item: InventoryTypes.InventoryItemDTO) => {
+const getDefaultValues = (item: HttpTypes.AdminInventoryItem) => {
   return {
     height: item.height ?? undefined,
     width: item.width ?? undefined,

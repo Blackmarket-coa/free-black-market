@@ -1,8 +1,8 @@
 import { useParams } from "react-router-dom"
 
-import { RouteFocusModal } from "../../../components/modals"
-import { useOrder } from "../../../hooks/api/orders"
-import { OrderCreateShipmentForm } from "./components/order-create-shipment-form"
+import { RouteFocusModal } from "@components/modals"
+import { useOrder } from "@hooks/api/orders"
+import { OrderCreateShipmentForm } from "@routes/orders/order-create-shipment/components/order-create-shipment-form"
 
 export function OrderCreateShipment() {
   const { id, f_id } = useParams()
@@ -22,7 +22,9 @@ export function OrderCreateShipment() {
       {ready && (
         <OrderCreateShipmentForm
           order={order}
-          fulfillment={order.fulfillments?.find((f) => f.id === f_id)}
+          fulfillment={order.fulfillments?.find(
+            (f: { id: string }) => f.id === f_id
+          )}
         />
       )}
     </RouteFocusModal>

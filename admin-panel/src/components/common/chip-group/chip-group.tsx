@@ -1,6 +1,7 @@
 import { XMarkMini } from "@medusajs/icons"
 import { Button, clx } from "@medusajs/ui"
-import { Children, PropsWithChildren, createContext, useContext } from "react"
+import type { PropsWithChildren} from "react";
+import { Children, createContext, useContext } from "react"
 import { useTranslation } from "react-i18next"
 
 type ChipGroupVariant = "base" | "component"

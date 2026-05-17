@@ -1,1 +1,1 @@
-export * from "./i18n"
+export * from "@components/utilities/i18n/i18n"

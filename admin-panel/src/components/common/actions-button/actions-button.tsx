@@ -4,7 +4,8 @@ import { useState } from "react";
 
 export const ActionsButton = ({actions}: {actions: {label: string, onClick: () => void, icon?: JSX.Element}[]}) => {
   const [open, setOpen] = useState(false);
-  return (
+  
+return (
     <DropdownMenu open={open} onOpenChange={setOpen}>
       <DropdownMenu.Trigger asChild><Button variant="transparent" className="h-8 w-12 p-0" onClick={() => setOpen(true)}><EllipsisHorizontal /></Button></DropdownMenu.Trigger>
       <DropdownMenu.Content>

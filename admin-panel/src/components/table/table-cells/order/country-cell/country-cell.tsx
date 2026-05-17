@@ -1,7 +1,7 @@
 import { Tooltip } from "@medusajs/ui"
 import ReactCountryFlag from "react-country-flag"
-import { PlaceholderCell } from "../../common/placeholder-cell"
-import { HttpTypes } from "@medusajs/types"
+import { PlaceholderCell } from "@components/table/table-cells/common/placeholder-cell"
+import type { HttpTypes } from "@medusajs/types"
 
 export const CountryCell = ({
   country,

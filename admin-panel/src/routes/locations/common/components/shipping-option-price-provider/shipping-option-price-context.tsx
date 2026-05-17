@@ -1,5 +1,5 @@
 import { createContext } from "react"
-import { ConditionalPriceInfo } from "../../types"
+import type { ConditionalPriceInfo } from "@routes/locations/common/types"
 
 type ShippingOptionPriceContextType = {
   onOpenConditionalPricesModal: (info: ConditionalPriceInfo) => void

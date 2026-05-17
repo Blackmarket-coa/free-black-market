@@ -2,12 +2,12 @@ import { Button, Container, Heading, Text } from "@medusajs/ui"
 
 import { useTranslation } from "react-i18next"
 import { Link } from "react-router-dom"
-import { _DataTable } from "../../../../../components/table/data-table"
-import { useReservationItems } from "../../../../../hooks/api/reservations"
-import { useDataTable } from "../../../../../hooks/use-data-table"
-import { useReservationTableColumns } from "./use-reservation-table-columns"
-import { useReservationTableFilters } from "./use-reservation-table-filters"
-import { useReservationTableQuery } from "./use-reservation-table-query"
+import { _DataTable } from "@components/table/data-table"
+import { useReservationItems } from "@hooks/api/reservations"
+import { useDataTable } from "@hooks/use-data-table"
+import { useReservationTableColumns } from "@routes/reservations/reservation-list/components/reservation-list-table/use-reservation-table-columns"
+import { useReservationTableFilters } from "@routes/reservations/reservation-list/components/reservation-list-table/use-reservation-table-filters"
+import { useReservationTableQuery } from "@routes/reservations/reservation-list/components/reservation-list-table/use-reservation-table-query"
 
 const PAGE_SIZE = 20
 

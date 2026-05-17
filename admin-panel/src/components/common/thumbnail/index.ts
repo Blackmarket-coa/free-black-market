@@ -1,1 +1,1 @@
-export * from "./thumbnail";
+export * from "@components/common/thumbnail/thumbnail";

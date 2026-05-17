@@ -1,9 +1,9 @@
-import { ReactNode } from "react"
+import type { ReactNode } from "react"
 import { Link } from "react-router-dom"
 
 import { TriangleRightMini } from "@medusajs/icons"
 import { Text } from "@medusajs/ui"
-import { IconAvatar } from "../icon-avatar"
+import { IconAvatar } from "@components/common/icon-avatar"
 
 export interface SidebarLinkProps {
   to: string

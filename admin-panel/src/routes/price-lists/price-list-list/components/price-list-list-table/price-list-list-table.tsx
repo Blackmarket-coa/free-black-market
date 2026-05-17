@@ -2,12 +2,12 @@ import { Button, Container, Heading, Text } from "@medusajs/ui"
 import { keepPreviousData } from "@tanstack/react-query"
 import { useTranslation } from "react-i18next"
 import { Link } from "react-router-dom"
-import { _DataTable } from "../../../../../components/table/data-table"
-import { usePriceLists } from "../../../../../hooks/api/price-lists"
-import { useDataTable } from "../../../../../hooks/use-data-table"
-import { usePricingTableColumns } from "./use-pricing-table-columns"
-import { usePricingTableFilters } from "./use-pricing-table-filters"
-import { usePricingTableQuery } from "./use-pricing-table-query"
+import { _DataTable } from "@components/table/data-table"
+import { usePriceLists } from "@hooks/api/price-lists"
+import { useDataTable } from "@hooks/use-data-table"
+import { usePricingTableColumns } from "@routes/price-lists/price-list-list/components/price-list-list-table/use-pricing-table-columns"
+import { usePricingTableFilters } from "@routes/price-lists/price-list-list/components/price-list-list-table/use-pricing-table-filters"
+import { usePricingTableQuery } from "@routes/price-lists/price-list-list/components/price-list-list-table/use-pricing-table-query"
 
 const PAGE_SIZE = 20
 

@@ -1,25 +1,26 @@
 import { zodResolver } from "@hookform/resolvers/zod"
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 import { Button, toast } from "@medusajs/ui"
 import { useRef } from "react"
 import { useForm } from "react-hook-form"
 import { useTranslation } from "react-i18next"
 import { z } from "zod"
 
-import { DataGrid } from "../../../../../components/data-grid"
+import { DataGrid } from "@components/data-grid"
 import {
   RouteFocusModal,
   useRouteModal,
-} from "../../../../../components/modals"
-import { KeyboundForm } from "../../../../../components/utilities/keybound-form"
-import { useBatchPriceListPrices } from "../../../../../hooks/api/price-lists"
-import { castNumber } from "../../../../../lib/cast-number"
-import { usePriceListGridColumns } from "../../../common/hooks/use-price-list-grid-columns"
+} from "@components/modals"
+import { KeyboundForm } from "@components/utilities/keybound-form"
+import { useBatchPriceListPrices } from "@hooks/api/price-lists"
+import { castNumber } from "@lib/cast-number"
+import { usePriceListGridColumns } from "@routes/price-lists/common/hooks/use-price-list-grid-columns"
+import type {
+  PriceListUpdateProductVariantsSchema} from "@routes/price-lists/common/schemas";
 import {
-  PriceListUpdateProductVariantsSchema,
   PriceListUpdateProductsSchema,
-} from "../../../common/schemas"
-import { isProductRow } from "../../../common/utils"
+} from "@routes/price-lists/common/schemas"
+import { isProductRow } from "@routes/price-lists/common/utils"
 
 type PriceListPricesEditFormProps = {
   priceList: HttpTypes.AdminPriceList
@@ -154,7 +155,8 @@ function initRecord(
     }
 
     variants[price.variant_id] = variantObject
-    return variants
+    
+return variants
   }, {} as PriceListUpdateProductVariantsSchema)
 
   for (const product of products) {
@@ -188,7 +190,8 @@ function convertToPriceArray(
 
   const regionCurrencyMap = regions.reduce((map, region) => {
     map[region.id] = region.currency_code
-    return map
+    
+return map
   }, {} as Record<string, string>)
 
   for (const [_productId, product] of Object.entries(data || {})) {
@@ -249,12 +252,14 @@ function comparePrices(initialPrices: PriceObject[], newPrices: PriceObject[]) {
 
   const initialPriceMap = initialPrices.reduce((map, price) => {
     map[createMapKey(price)] = price
-    return map
+    
+return map
   }, {} as Record<string, (typeof initialPrices)[0]>)
 
   const newPriceMap = newPrices.reduce((map, price) => {
     map[createMapKey(price)] = price
-    return map
+    
+return map
   }, {} as Record<string, (typeof newPrices)[0]>)
 
   const keys = new Set([

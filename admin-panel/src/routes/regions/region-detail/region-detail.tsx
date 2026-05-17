@@ -1,15 +1,15 @@
 import { useLoaderData, useParams } from "react-router-dom"
 
-import { useRegion } from "../../../hooks/api/regions"
-import { RegionCountrySection } from "./components/region-country-section"
-import { RegionGeneralSection } from "./components/region-general-section"
-import { regionLoader } from "./loader"
+import { useRegion } from "@hooks/api/regions"
+import { RegionCountrySection } from "@routes/regions/region-detail/components/region-country-section"
+import { RegionGeneralSection } from "@routes/regions/region-detail/components/region-general-section"
+import type { regionLoader } from "@routes/regions/region-detail/loader"
 
-import { SingleColumnPageSkeleton } from "../../../components/common/skeleton"
-import { SingleColumnPage } from "../../../components/layout/pages"
-import { usePricePreferences } from "../../../hooks/api/price-preferences"
-import { useExtension } from "../../../providers/extension-provider"
-import { REGION_DETAIL_FIELDS } from "./constants"
+import { SingleColumnPageSkeleton } from "@components/common/skeleton"
+import { SingleColumnPage } from "@components/layout/pages"
+import { usePricePreferences } from "@hooks/api/price-preferences"
+import { useExtension } from "@providers/extension-provider"
+import { REGION_DETAIL_FIELDS } from "@routes/regions/region-detail/constants"
 
 export const RegionDetail = () => {
   const initialData = useLoaderData() as Awaited<

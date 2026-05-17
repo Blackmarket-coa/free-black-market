@@ -1,22 +1,22 @@
 import { zodResolver } from "@hookform/resolvers/zod"
-import { AdminPromotion } from "@medusajs/types"
+import type { AdminPromotion } from "@medusajs/types"
 import { Button, CurrencyInput, Input, RadioGroup, Text } from "@medusajs/ui"
 import { useForm, useWatch } from "react-hook-form"
 import { Trans, useTranslation } from "react-i18next"
 import { useEffect } from "react"
 import * as zod from "zod"
 
-import { Form } from "../../../../../components/common/form"
-import { DeprecatedPercentageInput } from "../../../../../components/inputs/percentage-input"
-import { RouteDrawer, useRouteModal } from "../../../../../components/modals"
-import { KeyboundForm } from "../../../../../components/utilities/keybound-form"
-import { useUpdatePromotion } from "../../../../../hooks/api/promotions"
+import { Form } from "@components/common/form"
+import { DeprecatedPercentageInput } from "@components/inputs/percentage-input"
+import { RouteDrawer, useRouteModal } from "@components/modals"
+import { KeyboundForm } from "@components/utilities/keybound-form"
+import { useUpdatePromotion } from "@hooks/api/promotions"
 import {
   currencies,
   getCurrencySymbol,
-} from "../../../../../lib/data/currencies"
-import { SwitchBox } from "../../../../../components/common/switch-box"
-import { useDocumentDirection } from "../../../../../hooks/use-document-direction"
+} from "@lib/data/currencies"
+import { SwitchBox } from "@components/common/switch-box"
+import { useDocumentDirection } from "@hooks/use-document-direction"
 
 type EditPromotionFormProps = {
   promotion: AdminPromotion
@@ -63,11 +63,12 @@ export const EditPromotionDetailsForm = ({
   const { mutateAsync, isPending } = useUpdatePromotion(promotion.id)
 
   const handleSubmit = form.handleSubmit(async (data) => {
-    const value = parseFloat(data.value)
+    const value = parseFloat(String(data.value))
 
     if (isNaN(value) || value < 0) {
       form.setError("value", { message: t("promotions.form.value.invalid") })
-      return
+      
+return
     }
 
     await mutateAsync(
@@ -77,7 +78,7 @@ export const EditPromotionDetailsForm = ({
         status: data.status,
         is_tax_inclusive: data.is_tax_inclusive,
         application_method: {
-          value: parseFloat(data.value),
+          value: parseFloat(String(data.value)),
           type: data.value_type as any,
           allocation: data.allocation as any,
         },
@@ -101,7 +102,8 @@ export const EditPromotionDetailsForm = ({
     }
   }, [allocationWatchValue, form, promotion])
   const direction = useDocumentDirection()
-  return (
+  
+return (
     <RouteDrawer.Form form={form}>
       <KeyboundForm
         onSubmit={handleSubmit}
@@ -125,7 +127,7 @@ export const EditPromotionDetailsForm = ({
                         onValueChange={field.onChange}
                       >
                         <RadioGroup.ChoiceBox
-                          value={"draft"}
+                          value="draft"
                           label={t("promotions.form.status.draft.title")}
                           description={t(
                             "promotions.form.status.draft.description"
@@ -133,7 +135,7 @@ export const EditPromotionDetailsForm = ({
                         />
 
                         <RadioGroup.ChoiceBox
-                          value={"active"}
+                          value="active"
                           label={t("promotions.form.status.active.title")}
                           description={t(
                             "promotions.form.status.active.description"
@@ -141,7 +143,7 @@ export const EditPromotionDetailsForm = ({
                         />
 
                         <RadioGroup.ChoiceBox
-                          value={"inactive"}
+                          value="inactive"
                           label={t("promotions.form.status.inactive.title")}
                           description={t(
                             "promotions.form.status.inactive.description"
@@ -171,14 +173,14 @@ export const EditPromotionDetailsForm = ({
                         onValueChange={field.onChange}
                       >
                         <RadioGroup.ChoiceBox
-                          value={"false"}
+                          value="false"
                           label={t("promotions.form.method.code.title")}
                           description={t(
                             "promotions.form.method.code.description"
                           )}
                         />
                         <RadioGroup.ChoiceBox
-                          value={"true"}
+                          value="true"
                           label={t("promotions.form.method.automatic.title")}
                           description={t(
                             "promotions.form.method.automatic.description"
@@ -251,7 +253,7 @@ export const EditPromotionDetailsForm = ({
                             onValueChange={field.onChange}
                           >
                             <RadioGroup.ChoiceBox
-                              value={"fixed"}
+                              value="fixed"
                               label={t(
                                 "promotions.form.value_type.fixed.title"
                               )}
@@ -261,7 +263,7 @@ export const EditPromotionDetailsForm = ({
                             />
 
                             <RadioGroup.ChoiceBox
-                              value={"percentage"}
+                              value="percentage"
                               label={t(
                                 "promotions.form.value_type.percentage.title"
                               )}
@@ -346,7 +348,7 @@ export const EditPromotionDetailsForm = ({
                             onValueChange={field.onChange}
                           >
                             <RadioGroup.ChoiceBox
-                              value={"each"}
+                              value="each"
                               label={t("promotions.form.allocation.each.title")}
                               description={t(
                                 "promotions.form.allocation.each.description"
@@ -354,7 +356,7 @@ export const EditPromotionDetailsForm = ({
                             />
 
                             <RadioGroup.ChoiceBox
-                              value={"across"}
+                              value="across"
                               label={t(
                                 "promotions.form.allocation.across.title"
                               )}

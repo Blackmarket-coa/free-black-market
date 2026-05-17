@@ -1,9 +1,7 @@
-import React from "react"
 import { Badge, StatusBadge, Tooltip } from "@medusajs/ui"
-import { HttpTypes } from "@medusajs/types"
 import ReactCountryFlag from "react-country-flag"
-import { getCountryByIso2 } from "./data/countries"
-import { getStylizedAmount } from "./money-amount-helpers"
+import { getCountryByIso2 } from "@lib/data/countries"
+import { getStylizedAmount } from "@lib/money-amount-helpers"
 
 // Helper function to get nested value from object using dot notation
 const getNestedValue = (obj: any, path: string) => {
@@ -133,7 +131,7 @@ const FulfillmentStatusBadge = ({ status }: { status: string }) => {
 // Generic status badge
 const GenericStatusBadge = ({ status }: { status: string }) => {
   return (
-    <Badge variant="outline" className="capitalize">
+    <Badge className="capitalize">
       {status}
     </Badge>
   )
@@ -193,7 +191,7 @@ export const DISPLAY_STRATEGIES = {
   
   boolean: {
     default: (value: any) => (
-      <Badge variant={value ? 'solid' : 'outline'}>
+      <Badge color={value ? "green" : "grey"}>
         {value ? 'Yes' : 'No'}
       </Badge>
     )
@@ -367,7 +365,8 @@ export const ENTITY_COLUMN_OVERRIDES = {
         if (formattedCustomer) {
           return formattedCustomer
         }
-        return customer?.email || 'Guest'
+        
+return customer?.email || 'Guest'
       }
     }
   }

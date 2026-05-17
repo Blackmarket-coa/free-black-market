@@ -283,7 +283,7 @@ export const addCustomerAddress = async (formData: FormData) => {
     revalidateTag(await getCacheTag("customers"))
     return { success: true, error: null }
   } catch (err) {
-    return { success: false, error: err.toString() }
+    return { success: false, error: err instanceof Error ? err.message : String(err) }
   }
 }
 
@@ -325,7 +325,7 @@ export const updateCustomerAddress = async (formData: FormData) => {
     revalidateTag(await getCacheTag("customers"))
     return { success: true, error: null }
   } catch (err) {
-    return { success: false, error: err.toString() }
+    return { success: false, error: err instanceof Error ? err.message : String(err) }
   }
 }
 

@@ -1,9 +1,9 @@
 import { Heading } from "@medusajs/ui"
 import { useTranslation } from "react-i18next"
 import { useParams } from "react-router-dom"
-import { RouteDrawer } from "../../../components/modals"
-import { useShippingOptionType } from "../../../hooks/api"
-import { EditShippingOptionTypeForm } from "./components/edit-shipping-option-type-form"
+import { RouteDrawer } from "@components/modals"
+import { useShippingOptionType } from "@hooks/api"
+import { EditShippingOptionTypeForm } from "@routes/shipping-option-types/shipping-option-type-edit/components/edit-shipping-option-type-form"
 
 export const ShippingOptionTypeEdit = () => {
   const { id } = useParams()

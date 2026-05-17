@@ -1,5 +1,6 @@
 import { useMemo } from "react"
-import { Path, useLocation } from "react-router-dom"
+import type { Path} from "react-router-dom";
+import { useLocation } from "react-router-dom"
 
 /**
  * Checks if the current location has a restore_params property.

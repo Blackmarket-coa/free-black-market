@@ -1,14 +1,14 @@
-import { AdminOrderLineItem, DateComparisonOperator } from "@medusajs/types"
-import { OnChangeFn, RowSelectionState } from "@tanstack/react-table"
+import type { AdminOrderLineItem, DateComparisonOperator } from "@medusajs/types"
+import type { OnChangeFn, RowSelectionState } from "@tanstack/react-table"
 import { useMemo, useState } from "react"
 
 import { useTranslation } from "react-i18next"
-import { _DataTable } from "../../../../../components/table/data-table"
-import { useDataTable } from "../../../../../hooks/use-data-table"
-import { getReturnableQuantity } from "../../../../../lib/rma"
-import { useExchangeItemTableColumns } from "./use-exchange-item-table-columns"
-import { useExchangeItemTableFilters } from "./use-exchange-item-table-filters"
-import { useExchangeItemTableQuery } from "./use-exchange-item-table-query"
+import { _DataTable } from "@components/table/data-table"
+import { useDataTable } from "@hooks/use-data-table"
+import { getReturnableQuantity } from "@lib/rma"
+import { useExchangeItemTableColumns } from "@routes/orders/order-create-exchange/components/add-exchange-inbound-items-table/use-exchange-item-table-columns"
+import { useExchangeItemTableFilters } from "@routes/orders/order-create-exchange/components/add-exchange-inbound-items-table/use-exchange-item-table-filters"
+import { useExchangeItemTableQuery } from "@routes/orders/order-create-exchange/components/add-exchange-inbound-items-table/use-exchange-item-table-query"
 
 const PAGE_SIZE = 50
 const PREFIX = "rit"
@@ -31,7 +31,8 @@ export const AddExchangeInboundItemsTable = ({
   const [rowSelection, setRowSelection] = useState<RowSelectionState>(
     selectedItems.reduce((acc, id) => {
       acc[id] = true
-      return acc
+      
+return acc
     }, {} as RowSelectionState)
   )
 
@@ -56,8 +57,8 @@ export const AddExchangeInboundItemsTable = ({
     if (q) {
       results = results.filter((i) => {
         return (
-          i.product_title.toLowerCase().includes(q.toLowerCase()) ||
-          i.variant_title.toLowerCase().includes(q.toLowerCase()) ||
+          i.product_title?.toLowerCase().includes(q.toLowerCase()) ||
+          i.variant_title?.toLowerCase().includes(q.toLowerCase()) ||
           i.variant_sku?.toLowerCase().includes(q.toLowerCase())
         )
       })
@@ -149,7 +150,8 @@ const sortItems = (
     if (aValue > bValue) {
       return direction === "asc" ? 1 : -1
     }
-    return 0
+    
+return 0
   })
 }
 
@@ -184,10 +186,6 @@ const filterByDate = (
   })
 }
 
-const defaultOperators = {
-  eq: undefined,
-  gt: undefined,
-  gte: undefined,
-  lt: undefined,
-  lte: undefined,
-}
+// _defaultOperators removed — it was reserved for a conditional
+// operator filter that this table doesn't ship. Restore from git when
+// re-adding the filter.

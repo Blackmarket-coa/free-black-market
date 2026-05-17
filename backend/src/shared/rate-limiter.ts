@@ -288,3 +288,25 @@ export const vendorRegistrationRateLimiter = createRateLimiter({
   max: 5,
   keyPrefix: "vendor-reg",
 })
+
+/** Bug report (anonymous): 5 submissions per hour per IP */
+export const bugReportAnonymousRateLimiter = createRateLimiter({
+  windowMs: 3600_000,
+  max: 5,
+  keyPrefix: "bug-report-anon",
+})
+
+/**
+ * Bug report (authenticated): 20 submissions per hour per actor.
+ * Falls back to IP if actor_id is missing.
+ */
+export const bugReportAuthRateLimiter = createRateLimiter({
+  windowMs: 3600_000,
+  max: 20,
+  keyPrefix: "bug-report-auth",
+  keyGenerator: (req) => {
+    const actorId = (req as any).auth_context?.actor_id
+    if (actorId) return `actor:${actorId}`
+    return req.ip || (req.headers["x-forwarded-for"] as string) || "unknown"
+  },
+})

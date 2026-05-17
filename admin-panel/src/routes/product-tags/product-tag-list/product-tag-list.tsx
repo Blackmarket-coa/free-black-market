@@ -1,6 +1,6 @@
-import { SingleColumnPage } from "../../../components/layout/pages"
-import { useExtension } from "../../../providers/extension-provider"
-import { ProductTagListTable } from "./components/product-tag-list-table"
+import { SingleColumnPage } from "@components/layout/pages"
+import { useExtension } from "@providers/extension-provider"
+import { ProductTagListTable } from "@routes/product-tags/product-tag-list/components/product-tag-list-table"
 
 export const ProductTagList = () => {
   const { getWidgets } = useExtension()

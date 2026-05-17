@@ -1,1 +1,1 @@
-export * from "./customer-address-section"
+export * from "@routes/customers/customer-detail/components/customer-address-section/customer-address-section"

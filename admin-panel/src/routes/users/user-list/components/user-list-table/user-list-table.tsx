@@ -1,4 +1,4 @@
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 import { Container, createDataTableColumnHelper } from "@medusajs/ui"
 import { keepPreviousData } from "@tanstack/react-query"
 import { useMemo } from "react"
@@ -6,11 +6,11 @@ import { useTranslation } from "react-i18next"
 import { useNavigate } from "react-router-dom"
 
 import { PencilSquare } from "@medusajs/icons"
-import { DataTable } from "../../../../../components/data-table"
-import { useDataTableDateColumns } from "../../../../../components/data-table/helpers/general/use-data-table-date-columns"
-import { useDataTableDateFilters } from "../../../../../components/data-table/helpers/general/use-data-table-date-filters"
-import { useUsers } from "../../../../../hooks/api/users"
-import { useQueryParams } from "../../../../../hooks/use-query-params"
+import { DataTable } from "@components/data-table"
+import { useDataTableDateColumns } from "@components/data-table/helpers/general/use-data-table-date-columns"
+import { useDataTableDateFilters } from "@components/data-table/helpers/general/use-data-table-date-filters"
+import { useUsers } from "@hooks/api/users"
+import { useQueryParams } from "@hooks/use-query-params"
 
 const PAGE_SIZE = 20
 

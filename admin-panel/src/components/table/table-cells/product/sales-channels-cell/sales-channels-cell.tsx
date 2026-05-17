@@ -1,8 +1,8 @@
 import { Tooltip } from "@medusajs/ui"
 import { useTranslation } from "react-i18next"
 
-import { SalesChannelDTO } from "@medusajs/types"
-import { PlaceholderCell } from "../../common/placeholder-cell"
+import type { SalesChannelDTO } from "@medusajs/types"
+import { PlaceholderCell } from "@components/table/table-cells/common/placeholder-cell"
 
 type SalesChannelsCellProps = {
   salesChannels?: SalesChannelDTO[] | null

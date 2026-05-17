@@ -1,4 +1,4 @@
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 
 export const LOYALTY_PLUGIN_NAME = "@medusajs/loyalty-plugin"
 

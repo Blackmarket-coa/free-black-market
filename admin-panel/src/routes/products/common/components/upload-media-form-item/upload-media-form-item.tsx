@@ -1,17 +1,18 @@
 import { useCallback } from "react"
-import { UseFormReturn } from "react-hook-form"
+import type { UseFormReturn } from "react-hook-form"
 import { useTranslation } from "react-i18next"
-import { z } from "zod"
+import type { z } from "zod"
+import type {
+  FileType} from "@components/common/file-upload";
 import {
-  FileType,
   FileUpload,
-} from "../../../../../components/common/file-upload"
-import { Form } from "../../../../../components/common/form"
-import { MediaSchema } from "../../../product-create/constants"
-import {
+} from "@components/common/file-upload"
+import { Form } from "@components/common/form"
+import type { MediaSchema } from "@routes/products/product-create/constants"
+import type {
   EditProductMediaSchemaType,
   ProductCreateSchemaType,
-} from "../../../product-create/types"
+} from "@routes/products/product-create/types"
 
 type Media = z.infer<typeof MediaSchema>
 

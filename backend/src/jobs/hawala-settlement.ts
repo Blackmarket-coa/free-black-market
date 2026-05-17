@@ -1,7 +1,12 @@
 import { MedusaContainer } from "@medusajs/framework/types"
 import { HAWALA_LEDGER_MODULE } from "../modules/hawala-ledger"
 import HawalaLedgerModuleService from "../modules/hawala-ledger/service"
-import { createStellarSettlementService } from "../modules/hawala-ledger/stellar-settlement"
+import {
+  createStellarSettlementService,
+  stellarMetrics,
+} from "../modules/hawala-ledger/stellar-settlement"
+import { selectSettlementRail } from "../modules/hawala-ledger/dual-rail-selector"
+import { getBridgeHealth } from "../modules/hawala-ledger/health"
 import { runQueueConsumer } from "../shared/queue-runtime"
 import { requeueWithBackoff } from "../shared/queue-requeue-adapter"
 
@@ -74,8 +79,50 @@ export default async function hawalaSettlementJob(container: MedusaContainer) {
       payload: invoiceEvent,
       idempotencyKey: invoiceEvent.invoice_id,
       handler: async () => {
-        // Submit to Stellar
+        // Dual-rail selection: pick Stripe-ACH vs Stellar-USDC based on
+        // bridge health and amount. Stripe-ACH leg is intentionally
+        // out of scope here; the selector logs the decision so ops can
+        // see why Stellar was (or was not) chosen.
         const stellarService = createStellarSettlementService()
+        const lastBatch = existingBatches[existingBatches.length - 1]
+        const lastBatchStatus = lastBatch
+          ? lastBatch.status === "FAILED"
+            ? "failed" as const
+            : lastBatch.status === "PENDING"
+              ? "pending" as const
+              : "succeeded" as const
+          : "unknown" as const
+        const health = await getBridgeHealth({
+          service: stellarService,
+          lastBatchStatus,
+        })
+        const decision = selectSettlementRail({
+          amount: totalVolume,
+          currency: "USDC",
+          health,
+        })
+        stellarMetrics.inc("stellar.dual_rail_decision", {
+          rail: decision.rail,
+          batch_id: batch.id,
+        })
+        console.log(
+          `[Hawala Settlement] Dual-rail decision: ${decision.rail} (` +
+            decision.reasons.map((r) => `${r.check}=${r.outcome}`).join(", ") +
+            `)`
+        )
+
+        if (decision.rail === "stripe_ach") {
+          await hawalaService.updateSettlementBatches({
+            id: batch.id,
+            status: "PENDING",
+            metadata: {
+              dual_rail_decision: "stripe_ach",
+              dual_rail_reasons: decision.reasons,
+              note: "Stripe-ACH leg pending operator action; Stellar bridge skipped",
+            },
+          })
+          return
+        }
 
         const stellarResult = await stellarService.submitSettlementBatch({
           batchId: batch.id,

@@ -1,3 +1,5 @@
+import type {
+  ZodType} from "zod";
 import {
   ZodBoolean,
   ZodEffects,
@@ -6,10 +8,9 @@ import {
   ZodNumber,
   ZodOptional,
   ZodString,
-  ZodType,
   ZodUndefined,
 } from "zod"
-import { FormFieldType } from "./types"
+import type { FormFieldType } from "./types"
 
 export function getFieldLabel(name: string, label?: string) {
   if (label) {

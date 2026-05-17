@@ -1,13 +1,13 @@
 import { useParams } from "react-router-dom"
 
-import { SingleColumnPageSkeleton } from "../../../components/common/skeleton"
-import { SingleColumnPage } from "../../../components/layout/pages"
-import { useWorkflowExecution } from "../../../hooks/api/workflow-executions"
-import { useExtension } from "../../../providers/extension-provider"
-import { WorkflowExecutionGeneralSection } from "./components/workflow-execution-general-section"
-import { WorkflowExecutionHistorySection } from "./components/workflow-execution-history-section"
-import { WorkflowExecutionPayloadSection } from "./components/workflow-execution-payload-section"
-import { WorkflowExecutionTimelineSection } from "./components/workflow-execution-timeline-section"
+import { SingleColumnPageSkeleton } from "@components/common/skeleton"
+import { SingleColumnPage } from "@components/layout/pages"
+import { useWorkflowExecution } from "@hooks/api/workflow-executions"
+import { useExtension } from "@providers/extension-provider"
+import { WorkflowExecutionGeneralSection } from "@routes/workflow-executions/workflow-execution-detail/components/workflow-execution-general-section"
+import { WorkflowExecutionHistorySection } from "@routes/workflow-executions/workflow-execution-detail/components/workflow-execution-history-section"
+import { WorkflowExecutionPayloadSection } from "@routes/workflow-executions/workflow-execution-detail/components/workflow-execution-payload-section"
+import { WorkflowExecutionTimelineSection } from "@routes/workflow-executions/workflow-execution-detail/components/workflow-execution-timeline-section"
 
 export const ExecutionDetail = () => {
   const { id } = useParams()

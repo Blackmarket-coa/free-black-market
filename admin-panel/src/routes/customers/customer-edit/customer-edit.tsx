@@ -1,9 +1,9 @@
 import { Heading } from "@medusajs/ui"
 import { useTranslation } from "react-i18next"
 import { useParams } from "react-router-dom"
-import { RouteDrawer } from "../../../components/modals"
-import { useCustomer } from "../../../hooks/api/customers"
-import { EditCustomerForm } from "./components/edit-customer-form"
+import { RouteDrawer } from "@components/modals"
+import { useCustomer } from "@hooks/api/customers"
+import { EditCustomerForm } from "@routes/customers/customer-edit/components/edit-customer-form"
 
 export const CustomerEdit = () => {
   const { t } = useTranslation()

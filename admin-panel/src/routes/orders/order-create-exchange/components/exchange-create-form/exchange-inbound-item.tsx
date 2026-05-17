@@ -1,15 +1,15 @@
 import { ChatBubble, DocumentText, XCircle, XMark } from "@medusajs/icons"
-import { AdminOrderLineItem, HttpTypes } from "@medusajs/types"
+import type { AdminOrderLineItem, HttpTypes } from "@medusajs/types"
 import { IconButton, Input, Text } from "@medusajs/ui"
-import { UseFormReturn } from "react-hook-form"
+import type { UseFormReturn } from "react-hook-form"
 import { useTranslation } from "react-i18next"
 
-import { ActionMenu } from "../../../../../components/common/action-menu"
-import { Form } from "../../../../../components/common/form"
-import { Thumbnail } from "../../../../../components/common/thumbnail"
-import { Combobox } from "../../../../../components/inputs/combobox"
-import { MoneyAmountCell } from "../../../../../components/table/table-cells/common/money-amount-cell"
-import { useReturnReasons } from "../../../../../hooks/api/return-reasons"
+import { ActionMenu } from "@components/common/action-menu"
+import { Form } from "@components/common/form"
+import { Thumbnail } from "@components/common/thumbnail"
+import { Combobox } from "@components/inputs/combobox"
+import { MoneyAmountCell } from "@components/table/table-cells/common/money-amount-cell"
+import { useReturnReasons } from "@hooks/api/return-reasons"
 
 type ExchangeInboundItemProps = {
   item: AdminOrderLineItem
@@ -99,7 +99,10 @@ function ExchangeInboundItem({
           <div className="text-ui-fg-subtle txt-small mr-2 flex flex-shrink-0">
             <MoneyAmountCell
               currencyCode={currencyCode}
-              amount={previewItem.return_requested_total}
+              amount={
+                (previewItem as { return_requested_total?: number })
+                  .return_requested_total ?? 0
+              }
             />
           </div>
 
@@ -124,7 +127,8 @@ function ExchangeInboundItem({
                     onClick: onRemove,
                     icon: <XCircle />,
                   },
-                ].filter(Boolean),
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                ].filter(Boolean) as any[],
               },
             ]}
           />
@@ -146,7 +150,7 @@ function ExchangeInboundItem({
                 <Form.Field
                   control={form.control}
                   name={`inbound_items.${index}.reason_id`}
-                  render={({ field: { ref, value, onChange, ...field } }) => {
+                  render={({ field: { ref: _ref, value, onChange, ...field } }) => {
                     return (
                       <Form.Item>
                         <Form.Control>
@@ -201,7 +205,7 @@ function ExchangeInboundItem({
                 <Form.Field
                   control={form.control}
                   name={`inbound_items.${index}.note`}
-                  render={({ field: { ref, ...field } }) => {
+                  render={({ field: { ref: _ref, ...field } }) => {
                     return (
                       <Form.Item>
                         <Form.Control>

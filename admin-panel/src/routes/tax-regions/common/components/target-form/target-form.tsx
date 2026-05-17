@@ -1,9 +1,10 @@
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 import { Button, Checkbox } from "@medusajs/ui"
 import { keepPreviousData } from "@tanstack/react-query"
-import {
+import type {
   OnChangeFn,
-  RowSelectionState,
+  RowSelectionState} from "@tanstack/react-table";
+import {
   createColumnHelper,
 } from "@tanstack/react-table"
 import { useEffect, useMemo, useState } from "react"
@@ -13,8 +14,8 @@ import { useSearchParams } from "react-router-dom"
 import {
   StackedDrawer,
   StackedFocusModal,
-} from "../../../../../components/modals"
-import { _DataTable } from "../../../../../components/table/data-table"
+} from "@components/modals"
+import { _DataTable } from "@components/table/data-table"
 import {
   useCollections,
   useCustomerGroups,
@@ -23,14 +24,14 @@ import {
   useProducts,
   useShippingOptions,
   useStockLocations,
-} from "../../../../../hooks/api"
+} from "@hooks/api"
 import {
   useCollectionTableColumns,
   useCustomerGroupTableColumns,
   useProductTableColumns,
   useProductTagTableColumns,
   useProductTypeTableColumns,
-} from "../../../../../hooks/table/columns"
+} from "@hooks/table/columns"
 import {
   useCollectionTableFilters,
   useCustomerGroupTableFilters,
@@ -38,7 +39,7 @@ import {
   useProductTagTableFilters,
   useProductTypeTableFilters,
   useShippingOptionTableFilters,
-} from "../../../../../hooks/table/filters"
+} from "@hooks/table/filters"
 import {
   useCollectionTableQuery,
   useCustomerGroupTableQuery,
@@ -46,11 +47,11 @@ import {
   useProductTagTableQuery,
   useProductTypeTableQuery,
   useShippingOptionTableQuery,
-} from "../../../../../hooks/table/query"
-import { useDataTable } from "../../../../../hooks/use-data-table"
-import { TaxRateRuleReferenceType } from "../../constants"
-import { TaxRateRuleReference } from "../../schemas"
-import { useShippingOptionTableColumns } from "../../../../../hooks/table/columns/use-shipping-option-table-columns"
+} from "@hooks/table/query"
+import { useDataTable } from "@hooks/use-data-table"
+import { TaxRateRuleReferenceType } from "@routes/tax-regions/common/constants"
+import type { TaxRateRuleReference } from "@routes/tax-regions/common/schemas"
+import { useShippingOptionTableColumns } from "@hooks/table/columns/use-shipping-option-table-columns"
 
 type TargetFormProps = {
   referenceType: TaxRateRuleReferenceType
@@ -62,7 +63,8 @@ type TargetFormProps = {
 function initRowSelection(state: TaxRateRuleReference[]) {
   return state.reduce((acc, reference) => {
     acc[reference.value] = true
-    return acc
+    
+return acc
   }, {} as RowSelectionState)
 }
 
@@ -142,7 +144,8 @@ const PAGE_SIZE = 50
 
 const PREFIX_CUSTOMER_GROUP = "cg"
 
-const CustomerGroupTable = ({
+// @ts-expect-error reserved for re-enabled TaxRateRuleReferenceType.CUSTOMER_GROUP case
+const _CustomerGroupTable = ({
   initialRowState,
   intermediate,
   setIntermediate,
@@ -408,7 +411,8 @@ const useProductColumns = () => {
 
 const PREFIX_PRODUCT_COLLECTION = "pc"
 
-const ProductCollectionTable = ({
+// @ts-expect-error reserved for re-enabled TaxRateRuleReferenceType.PRODUCT_COLLECTION case
+const _ProductCollectionTable = ({
   initialRowState,
   intermediate,
   setIntermediate,
@@ -824,7 +828,8 @@ const useShippingOptionColumns = () => {
 
 const PREFIX_PRODUCT_TAG = "ptag"
 
-const ProductTagTable = ({
+// @ts-expect-error reserved for re-enabled TaxRateRuleReferenceType.PRODUCT_TAG case
+const _ProductTagTable = ({
   initialRowState,
   intermediate,
   setIntermediate,

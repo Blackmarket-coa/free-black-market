@@ -1,9 +1,9 @@
-import { AdminShippingProfileResponse } from "@medusajs/types"
+import type { AdminShippingProfileResponse } from "@medusajs/types"
 import { createColumnHelper } from "@tanstack/react-table"
 import { useMemo } from "react"
 import { useTranslation } from "react-i18next"
 
-import { ShippingOptionsRowActions } from "./shipping-options-row-actions"
+import { ShippingOptionsRowActions } from "@routes/shipping-profiles/shipping-profiles-list/components/shipping-profile-list-table/shipping-options-row-actions"
 
 const columnHelper =
   createColumnHelper<AdminShippingProfileResponse["shipping_profile"]>()

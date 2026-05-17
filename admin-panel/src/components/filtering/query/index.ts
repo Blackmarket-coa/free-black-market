@@ -1,1 +1,1 @@
-export * from "./query"
+export * from "@components/filtering/query/query"

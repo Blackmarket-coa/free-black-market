@@ -14,7 +14,7 @@ import { sdk } from "@/lib/client";
 import { queryClient } from "@/lib/query-client";
 import { queryKeysFactory } from "@/lib/query-key-factory";
 
-import { pricePreferencesQueryKeys } from "./price-preferences";
+import { pricePreferencesQueryKeys } from "@hooks/api/price-preferences";
 
 const STORE_QUERY_KEY = "store" as const;
 export const storeQueryKeys = queryKeysFactory(STORE_QUERY_KEY);

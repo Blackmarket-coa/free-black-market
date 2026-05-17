@@ -1,1 +1,1 @@
-export { ReservationMetadata as Component } from "./reservation-metadata"
+export { ReservationMetadata as Component } from "@routes/reservations/reservation-metadata/reservation-metadata"

@@ -1,20 +1,21 @@
-import {
+import type {
   QueryKey,
-  UseQueryOptions,
+  UseQueryOptions} from "@tanstack/react-query";
+import {
   useMutation,
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query"
 
-import { sdk } from "../../lib/client"
-import { queryKeysFactory } from "../../lib/query-key-factory"
+import { sdk } from "@lib/client"
+import { queryKeysFactory } from "@lib/query-key-factory"
 import type {
   AdminProducerListResponse,
   AdminProducerResponse,
   AdminProducerStatsResponse,
   ProducerListParams,
   UpdateProducerInput,
-} from "../../types/producer"
+} from "@custom-types/producer"
 
 export const producerQueryKeys = queryKeysFactory("producer")
 
@@ -42,7 +43,8 @@ export const useProducers = (
           query: query as Record<string, unknown>,
         }
       )
-      return response
+      
+return response
     },
     ...options,
   })
@@ -70,7 +72,8 @@ export const useProducer = (
       const response = await sdk.client.fetch<AdminProducerResponse>(
         `/admin/producers/${id}`
       )
-      return response
+      
+return response
     },
     enabled: !!id,
     ...options,
@@ -98,7 +101,8 @@ export const useProducerStats = (
       const response = await sdk.client.fetch<AdminProducerStatsResponse>(
         "/admin/producers/stats"
       )
-      return response
+      
+return response
     },
     ...options,
   })
@@ -124,7 +128,8 @@ export const useUpdateProducer = () => {
           body: data,
         }
       )
-      return response.producer
+      
+return response.producer
     },
     onSuccess: (_, { id }) => {
       queryClient.invalidateQueries({ queryKey: producerQueryKeys.detail(id) })
@@ -148,7 +153,8 @@ export const useVerifyProducer = () => {
           body: { verified },
         }
       )
-      return response.producer
+      
+return response.producer
     },
     onSuccess: (_, { id }) => {
       queryClient.invalidateQueries({ queryKey: producerQueryKeys.detail(id) })
@@ -173,7 +179,8 @@ export const useFeatureProducer = () => {
           body: { featured },
         }
       )
-      return response.producer
+      
+return response.producer
     },
     onSuccess: (_, { id }) => {
       queryClient.invalidateQueries({ queryKey: producerQueryKeys.detail(id) })
@@ -206,7 +213,8 @@ export const useVerifyCertification = () => {
           body: { verified },
         }
       )
-      return response.producer
+      
+return response.producer
     },
     onSuccess: (_, { producerId }) => {
       queryClient.invalidateQueries({ queryKey: producerQueryKeys.detail(producerId) })

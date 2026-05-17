@@ -1,1 +1,1 @@
-export * from "./text-cell"
+export * from "@components/table/table-cells/common/text-cell/text-cell"

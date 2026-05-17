@@ -1,12 +1,12 @@
-import { HttpTypes } from "@medusajs/types"
+import type { HttpTypes } from "@medusajs/types"
 import { Container, Heading } from "@medusajs/ui"
 import { useTranslation } from "react-i18next"
-import { _DataTable } from "../../../../../components/table/data-table"
-import { useProducts } from "../../../../../hooks/api"
-import { useProductTableColumns } from "../../../../../hooks/table/columns"
-import { useProductTableFilters } from "../../../../../hooks/table/filters"
-import { useProductTableQuery } from "../../../../../hooks/table/query"
-import { useDataTable } from "../../../../../hooks/use-data-table"
+import { _DataTable } from "@components/table/data-table"
+import { useProducts } from "@hooks/api"
+import { useProductTableColumns } from "@hooks/table/columns"
+import { useProductTableFilters } from "@hooks/table/filters"
+import { useProductTableQuery } from "@hooks/table/query"
+import { useDataTable } from "@hooks/use-data-table"
 
 type ProductTagProductSectionProps = {
   productTag: HttpTypes.AdminProductTag
@@ -28,7 +28,7 @@ export const ProductTagProductSection = ({
   const { products, count, isPending, isError, error } = useProducts({
     ...searchParams,
     tag_id: productTag.id,
-  })
+  } as any)
 
   const filters = useProductTableFilters(["product_tags"])
   const columns = useProductTableColumns()

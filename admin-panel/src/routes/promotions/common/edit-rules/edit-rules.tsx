@@ -1,10 +1,10 @@
-import { PromotionRuleDTO } from "@medusajs/types"
+import type { PromotionRuleDTO } from "@medusajs/types"
 import { Heading } from "@medusajs/ui"
 import { useTranslation } from "react-i18next"
 import { useParams } from "react-router-dom"
-import { RouteDrawer } from "../../../../components/modals"
-import { usePromotion } from "../../../../hooks/api/promotions"
-import { EditRulesWrapper } from "./components/edit-rules-wrapper"
+import { RouteDrawer } from "@components/modals"
+import { usePromotion } from "@hooks/api/promotions"
+import { EditRulesWrapper } from "@routes/promotions/common/edit-rules/components/edit-rules-wrapper"
 
 export enum RuleType {
   RULES = "rules",
@@ -53,7 +53,10 @@ export const EditRules = () => {
 
       {!isLoading && promotion && (
         <EditRulesWrapper
-          promotion={promotion}
+          // EditRulesWrapper's prop type is the workflow-level PromotionDTO;
+          // the response is AdminPromotion which has a broader shape.
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          promotion={promotion as any}
           rules={rules}
           ruleType={ruleType}
         />

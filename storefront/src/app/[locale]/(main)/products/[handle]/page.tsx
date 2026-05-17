@@ -1,6 +1,8 @@
 import { ProductDetailsPage } from "@/components/sections"
 import { listProducts } from "@/lib/data/products"
 import { generateProductMetadata } from "@/lib/helpers/seo"
+import { selectPresentation } from "@/lib/listing/presentation"
+import { getStorefrontContext } from "@/lib/data/cookies"
 import type { Metadata } from "next"
 import { notFound } from "next/navigation"
 
@@ -37,9 +39,16 @@ export default async function ProductPage({
     return notFound()
   }
 
+  const storefrontContext = await getStorefrontContext()
+  const presentation = selectPresentation({
+    routeKind: "products",
+    storefrontContext,
+    sellerHandle: prod.seller?.handle ?? null,
+  })
+
   return (
     <main className="container">
-      <ProductDetailsPage handle={handle} locale={locale} />
+      <ProductDetailsPage handle={handle} locale={locale} presentation={presentation} />
     </main>
   )
 }

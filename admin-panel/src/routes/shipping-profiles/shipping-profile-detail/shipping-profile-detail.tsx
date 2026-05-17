@@ -1,12 +1,12 @@
 import { useLoaderData, useParams } from "react-router-dom"
 
-import { SingleColumnPageSkeleton } from "../../../components/common/skeleton"
-import { useShippingProfile } from "../../../hooks/api/shipping-profiles"
-import { ShippingProfileGeneralSection } from "./components/shipping-profile-general-section"
+import { SingleColumnPageSkeleton } from "@components/common/skeleton"
+import { useShippingProfile } from "@hooks/api/shipping-profiles"
+import { ShippingProfileGeneralSection } from "@routes/shipping-profiles/shipping-profile-detail/components/shipping-profile-general-section"
 
-import { SingleColumnPage } from "../../../components/layout/pages"
-import { useExtension } from "../../../providers/extension-provider"
-import { shippingProfileLoader } from "./loader"
+import { SingleColumnPage } from "@components/layout/pages"
+import { useExtension } from "@providers/extension-provider"
+import type { shippingProfileLoader } from "@routes/shipping-profiles/shipping-profile-detail/loader"
 
 export const ShippingProfileDetail = () => {
   const { shipping_profile_id } = useParams()

@@ -1,15 +1,20 @@
-import { HttpTypes } from "@medusajs/types"
-import { useQueryParams } from "../../use-query-params"
+import type { HttpTypes } from "@medusajs/types"
+import { useQueryParams } from "@hooks/use-query-params"
 
 type UseShippingOptionTableQueryProps = {
-  regionId: string
+  /**
+   * Kept for API parity with the upstream Medusa hook; the
+   * `/admin/shipping-options` endpoint does not currently accept a
+   * `region_id` filter so the value is ignored inside the hook.
+   */
+  regionId?: string
   isReturn?: boolean
   pageSize?: number
   prefix?: string
 }
 
 export const useShippingOptionTableQuery = ({
-  regionId,
+  regionId: _regionId,
   pageSize = 10,
   prefix,
 }: UseShippingOptionTableQueryProps) => {
@@ -31,8 +36,8 @@ export const useShippingOptionTableQuery = ({
     offset,
     order,
     q,
-    admin_only,
-    is_return,
+    admin_only: _admin_only,
+    is_return: _is_return,
     created_at,
     updated_at,
     stock_location_id,

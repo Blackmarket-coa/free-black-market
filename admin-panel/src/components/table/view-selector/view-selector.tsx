@@ -1,16 +1,13 @@
-import React, { useEffect, useState } from "react"
-import { 
-  Select,
+import type React from "react";
+import { useEffect, useState } from "react"
+import {
   Button,
   Tooltip,
   DropdownMenu,
-  Badge,
   usePrompt,
-  toast,
 } from "@medusajs/ui"
-import { 
+import {
   Eye,
-  EyeSlash,
   Plus,
   Trash,
   PencilSquare,
@@ -18,9 +15,9 @@ import {
   CheckCircleSolid,
   ArrowUturnLeft,
 } from "@medusajs/icons"
-import { useViewConfigurations, useViewConfiguration } from "../../../hooks/use-view-configurations"
-import type { ViewConfiguration } from "../../../hooks/use-view-configurations"
-import { SaveViewDialog } from "../save-view-dialog"
+import { useViewConfigurations, useViewConfiguration } from "@hooks/use-view-configurations"
+import type { ViewConfiguration } from "@hooks/use-view-configurations"
+import { SaveViewDialog } from "@components/table/save-view-dialog"
 
 interface ViewSelectorProps {
   entity: string
@@ -40,7 +37,7 @@ export const ViewSelector: React.FC<ViewSelectorProps> = ({
     listViews,
     activeView,
     setActiveView,
-    isDefaultViewActive,
+    isDefaultViewActive: _isDefaultViewActive,
   } = useViewConfigurations(entity)
 
   const [saveDialogOpen, setSaveDialogOpen] = useState(false)
@@ -48,8 +45,11 @@ export const ViewSelector: React.FC<ViewSelectorProps> = ({
   const [deletingViewId, setDeletingViewId] = useState<string | null>(null)
   const prompt = usePrompt()
 
-  const views = listViews.data?.view_configurations || []
-  const currentActiveView = activeView.data?.view_configuration || null
+  // useViewConfigurations spreads `{...data, ...rest}` from react-query,
+  // so the response fields are flat on the result object — there is no
+  // separate `.data` envelope.
+  const views = listViews.view_configurations || []
+  const currentActiveView = activeView.view_configuration || null
 
   // Get delete mutation for the current deleting view
   const { deleteView } = useViewConfiguration(entity, deletingViewId || '')

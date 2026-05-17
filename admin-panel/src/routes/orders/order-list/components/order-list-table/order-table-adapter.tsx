@@ -1,8 +1,9 @@
-import { HttpTypes } from "@medusajs/types"
-import { createTableAdapter, TableAdapter } from "../../../../../lib/table/table-adapters"
-import { useOrders } from "../../../../../hooks/api/orders"
-import { useOrderTableFilters } from "./use-order-table-filters"
-import { orderColumnAdapter } from "../../../../../lib/table/entity-adapters"
+import type { HttpTypes } from "@medusajs/types"
+import type { TableAdapter } from "@lib/table/table-adapters";
+import { createTableAdapter } from "@lib/table/table-adapters"
+import { useOrders } from "@hooks/api/orders"
+import { useOrderTableFilters } from "@routes/orders/order-list/components/order-list-table/use-order-table-filters"
+import { orderColumnAdapter } from "@lib/table/entity-adapters"
 
 /**
  * Create the order table adapter with all order-specific logic
@@ -22,8 +23,15 @@ export function createOrderTableAdapter(): TableAdapter<HttpTypes.AdminOrder> {
         },
         {
           placeholderData: (previousData, previousQuery) => {
-            // Only keep placeholder data if the fields haven't changed
-            const prevFields = previousQuery?.[previousQuery.length - 1]?.query?.fields
+            // React Query v5 passes the previous Query object (not an
+            // array). The queryKey holds the params used; pull `fields`
+            // off its last segment for the comparison.
+            const previousKey = previousQuery?.queryKey
+            const previousParams =
+              (previousKey?.[previousKey.length - 1] as
+                | { query?: { fields?: string } }
+                | undefined) ?? undefined
+            const prevFields = previousParams?.query?.fields
             if (prevFields && prevFields !== fields) {
               // Fields changed, don't use placeholder data
               return undefined

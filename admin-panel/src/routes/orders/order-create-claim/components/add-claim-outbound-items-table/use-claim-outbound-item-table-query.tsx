@@ -1,8 +1,8 @@
-import {
+import type {
   DateComparisonOperator,
   NumericalComparisonOperator,
 } from "@medusajs/types"
-import { useQueryParams } from "../../../../../hooks/use-query-params"
+import { useQueryParams } from "@hooks/use-query-params"
 
 export type ReturnItemTableQuery = {
   q?: string

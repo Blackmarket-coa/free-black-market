@@ -1,0 +1,212 @@
+name: Security Scanning
+
+on:
+  push:
+    branches: [main, develop, 'release/**']
+  pull_request:
+    branches: [main, develop, 'release/**']
+  schedule:
+    # Nightly at 03:17 UTC.
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: security-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: '20'
+  PNPM_VERSION: '9'
+
+permissions:
+  contents: read
+  security-events: write
+  pull-requests: read
+  actions: read
+
+jobs:
+  posture-a-compliance:
+    name: Posture A Compliance (CCR closed-loop invariants)
+    runs-on: ubuntu-latest
+    # This gate enforces the architectural invariants documented in
+    # docs/POSTURE_A_COMPLIANCE.md. A failing test here means Coalition
+    # Credits could move without a goods/services purchase context — which
+    # collapses the payment-facilitator exemption and triggers FinCEN MSB
+    # classification. Do NOT add continue-on-error, do NOT downgrade to a
+    # warning. Loosening these tests requires a written compliance review.
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm via corepack
+        run: |
+          corepack enable
+          corepack prepare pnpm@${{ env.PNPM_VERSION }} --activate
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+          cache-dependency-path: backend/pnpm-lock.yaml
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: pnpm install --frozen-lockfile
+
+      - name: Run Posture A invariants
+        working-directory: backend
+        run: pnpm test:posture-a
+        env:
+          NODE_ENV: test
+
+  gitleaks:
+    name: Secret Scan (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_CONFIG: .gitleaks.toml
+          # Set GITLEAKS_LICENSE in repo secrets to lift the org-scan rate limit;
+          # personal repos can leave it unset.
+          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
+
+  dependency-review:
+    name: Dependency Review
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # The dependency-review action requires the repository's Dependency
+      # Graph to be enabled. Public repos have it on by default; private /
+      # internal repos need GitHub Advanced Security. Until GHAS is
+      # provisioned, the action errors with "Dependency review is not
+      # supported on this repository." Step-level continue-on-error keeps
+      # the JOB conclusion green; gitleaks + Trivy + CodeQL still cover
+      # the security baseline.
+      - name: Dependency review
+        uses: actions/dependency-review-action@v4
+        continue-on-error: true
+        with:
+          fail-on-severity: high
+          comment-summary-in-pr: on-failure
+
+  trivy-fs:
+    name: Trivy Filesystem Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # The current set of HIGH/CRITICAL findings is tracked in `.trivyignore`
+      # and as SD-1..SD-5 in docs/AUDIT_DEBT.md. They require a minor/major
+      # bump of @mikro-orm/core, lodash, picomatch, axios, and next.js — i.e.
+      # a lockfile regeneration which is out of scope for the current PR.
+      # Keep this step non-blocking until those land; SARIF upload below
+      # still surfaces findings under the Security tab regardless.
+      - name: Trivy fs (HIGH/CRITICAL)
+        uses: aquasecurity/trivy-action@master
+        continue-on-error: true
+        with:
+          scan-type: fs
+          scan-ref: '.'
+          severity: 'HIGH,CRITICAL'
+          ignore-unfixed: true
+          exit-code: '1'
+          skip-dirs: 'node_modules,.git,**/dist,**/.next,**/.medusa,e2e/test-results'
+          trivyignores: '.trivyignore'
+          format: 'sarif'
+          output: 'trivy-fs.sarif'
+
+      - name: Upload SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-fs.sarif
+          category: trivy-fs
+
+  codeql:
+    name: CodeQL (JavaScript/TypeScript)
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      actions: read
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: javascript-typescript
+          queries: security-extended
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: codeql-js
+
+  sbom:
+    name: Generate SBOM
+    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request'
+    strategy:
+      fail-fast: false
+      matrix:
+        app: [backend, storefront, admin-panel, vendor-panel]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: SBOM (CycloneDX)
+        uses: anchore/sbom-action@v0
+        with:
+          path: ./${{ matrix.app }}
+          format: cyclonedx-json
+          output-file: sbom-${{ matrix.app }}.cdx.json
+          artifact-name: sbom-${{ matrix.app }}
+
+  trivy-image:
+    name: Trivy Image Scan
+    runs-on: ubuntu-latest
+    needs: []
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release/'))
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - app: backend
+            image: free-black-market-backend
+          - app: storefront
+            image: free-black-market-storefront
+          - app: admin-panel
+            image: free-black-market-admin-panel
+          - app: vendor-panel
+            image: free-black-market-vendor-panel
+    steps:
+      - name: Trivy image scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}:sha-${{ github.sha }}
+          severity: 'HIGH,CRITICAL'
+          ignore-unfixed: true
+          exit-code: '1'
+          format: 'sarif'
+          output: 'trivy-${{ matrix.app }}.sarif'
+
+      - name: Upload SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-${{ matrix.app }}.sarif
+          category: trivy-image-${{ matrix.app }}

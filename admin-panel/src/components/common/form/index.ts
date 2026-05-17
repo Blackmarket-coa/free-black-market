@@ -1,1 +1,1 @@
-export * from "./form";
+export * from "@components/common/form/form";
