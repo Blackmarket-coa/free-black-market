@@ -29,22 +29,19 @@ export const CreateProductOptionForm = ({
   const form = useForm<z.infer<typeof CreateProductOptionSchema>>({
     defaultValues: {
       title: option.title,
-      values: option.values.map((v: any) => v.value),
+      values: (option.values ?? []).map((v) => v.value),
     },
     resolver: zodResolver(CreateProductOptionSchema),
   })
 
   const { mutateAsync, isPending } = useUpdateProductOption(
-    option.product_id,
+    option.product_id ?? "",
     option.id
   )
 
   const handleSubmit = form.handleSubmit(async (values) => {
     mutateAsync(
-      {
-        id: option.id,
-        ...values,
-      },
+      values as HttpTypes.AdminUpdateProductOption,
       {
         onSuccess: () => {
           handleSuccess()

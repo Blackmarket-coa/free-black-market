@@ -1,7 +1,7 @@
 import { PencilSquare, Trash } from "@medusajs/icons"
-import { PromotionDTO } from "@medusajs/types"
+import { HttpTypes, PromotionDTO } from "@medusajs/types"
 import { Button, Container, Heading, usePrompt } from "@medusajs/ui"
-import { createColumnHelper } from "@tanstack/react-table"
+import { ColumnDef, createColumnHelper } from "@tanstack/react-table"
 import { useMemo } from "react"
 import { useTranslation } from "react-i18next"
 import { Link, Outlet, useLoaderData, useNavigate } from "react-router-dom"
@@ -40,8 +40,8 @@ export const PromotionListTable = () => {
   const columns = useColumns()
 
   const { table } = useDataTable({
-    data: (promotions ?? []) as PromotionDTO[],
-    columns,
+    data: (promotions ?? []) as unknown as HttpTypes.AdminPromotion[],
+    columns: columns as ColumnDef<HttpTypes.AdminPromotion, unknown>[],
     count,
     enablePagination: true,
     pageSize: PAGE_SIZE,
@@ -64,7 +64,7 @@ export const PromotionListTable = () => {
 
       <_DataTable
         table={table}
-        columns={columns}
+        columns={columns as ColumnDef<HttpTypes.AdminPromotion, unknown>[]}
         count={count}
         pageSize={PAGE_SIZE}
         filters={filters}

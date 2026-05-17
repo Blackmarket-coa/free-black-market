@@ -12,8 +12,8 @@ export const SalesChannelMetadata = () => {
     isPending,
     isError,
     error,
-  } = useSalesChannel(id)
-  const { mutateAsync, isPending: isMutating } = useUpdateSalesChannel(id)
+  } = useSalesChannel(id!)
+  const { mutateAsync, isPending: isMutating } = useUpdateSalesChannel(id!)
 
   if (isError) {
     throw error
@@ -24,7 +24,7 @@ export const SalesChannelMetadata = () => {
       <MetadataForm
         isPending={isPending}
         isMutating={isMutating}
-        hook={mutateAsync}
+        hook={mutateAsync as never}
         metadata={salesChannel?.metadata}
       />
     </RouteDrawer>

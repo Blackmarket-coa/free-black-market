@@ -24,24 +24,25 @@ export function RequestSellerDetail({ request, open, close }: Props) {
   // Check if this is a legacy request with no data
   const isLegacyRequest = !requestData || Object.keys(requestData).length === 0;
 
-  // Handle both old and new data formats
+  // Handle both old and new data formats. Legacy requests carry a
+  // flatter shape with `name` / `email` at the root that isn't in the
+  // current SellerRequestData type.
+  type LegacyRequestData = {
+    name?: string
+    email?: string
+  }
+  const legacyData = requestData as unknown as LegacyRequestData | undefined
   const sellerName = isLegacyRequest
     ? "Legacy request - no data available"
-    : (requestData?.seller?.name ||
-       requestData?.name ||
-       "-");
+    : (requestData?.seller?.name || legacyData?.name || "-");
 
   const memberName = isLegacyRequest
     ? "Legacy request - no data available"
-    : (requestData?.member?.name ||
-       requestData?.name ||
-       "-");
+    : (requestData?.member?.name || legacyData?.name || "-");
 
   const memberEmail = isLegacyRequest
     ? "Legacy request - no data available"
-    : (requestData?.member?.email ||
-       requestData?.email ||
-       "N/A");
+    : (requestData?.member?.email || legacyData?.email || "N/A");
 
   const vendorType = isLegacyRequest
     ? "unknown"

@@ -7,8 +7,8 @@ import { RouteDrawer } from "../../../components/modals"
 export const InventoryItemMetadata = () => {
   const { id } = useParams()
 
-  const { inventory_item, isPending, isError, error } = useInventoryItem(id)
-  const { mutateAsync, isPending: isMutating } = useUpdateInventoryItem(id)
+  const { inventory_item, isPending, isError, error } = useInventoryItem(id!)
+  const { mutateAsync, isPending: isMutating } = useUpdateInventoryItem(id!)
 
   if (isError) {
     throw error
@@ -19,7 +19,7 @@ export const InventoryItemMetadata = () => {
       <MetadataForm
         isPending={isPending}
         isMutating={isMutating}
-        hook={mutateAsync}
+        hook={mutateAsync as never}
         metadata={inventory_item?.metadata}
       />
     </RouteDrawer>

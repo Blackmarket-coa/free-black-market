@@ -319,9 +319,14 @@ export const ExchangeInboundSection = ({
         return ret
       }
 
+      // The inbound items schema doesn't carry variant_id; look it up
+      // via the corresponding preview item.
       const variantIds = inboundItems
-        .map((item) => item?.variant_id)
-        .filter(Boolean)
+        .map(
+          (item) =>
+            previewInboundItems?.find((p) => p.id === item.item_id)?.variant_id
+        )
+        .filter((id): id is string => Boolean(id))
 
       const variants = (
         await sdk.admin.productVariant.list({
@@ -330,9 +335,21 @@ export const ExchangeInboundSection = ({
         })
       ).variants
 
+      type LegacyInventory = {
+        id: string
+        location_levels?: Array<{
+          location_id: string
+          available_quantity?: number
+          stocked_quantity?: number
+        }>
+      }
       variants.forEach((variant) => {
-        ret[variant.id] =
-          variant.inventory?.flatMap((inventory) => inventory.location_levels || []) || []
+        const inventory = (variant as HttpTypes.AdminProductVariant & {
+          inventory?: LegacyInventory[]
+        }).inventory
+        ret[variant.id] = (inventory?.flatMap(
+          (entry) => entry.location_levels ?? []
+        ) ?? []) as unknown as InventoryLevelDTO[]
       })
 
       return ret
