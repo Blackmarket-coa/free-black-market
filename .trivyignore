@@ -26,3 +26,14 @@ CVE-2025-25290
 # Rolldown migration is tackled as a separate workstream.
 CVE-2026-39365
 GHSA-67mh-4wv8-2f99
+
+# SD-15: ajv >=8.18.0 introduces an internal `addSchema` validation
+# stricter than `@eslint/eslintrc` (v2.1.4 / v3.3.3) supports — both
+# admin-panel (ESLint 8.57.1) and vendor-panel (ESLint 9.39.2) crash
+# with "NOT SUPPORTED: option missingRefs. Pass empty schema with $id
+# that should be ignored to ajv.addSchema." on `pnpm lint`. The bump
+# (8.17.1 → 8.20.0 via direct devDep + override) breaks CI even though
+# the runtime surface is fine. Reverted; suppressing the MEDIUM CVE
+# until @eslint/eslintrc is patched upstream or both panels migrate
+# to ESLint flat config (which doesn't use the legacy schema path).
+CVE-2025-69873
