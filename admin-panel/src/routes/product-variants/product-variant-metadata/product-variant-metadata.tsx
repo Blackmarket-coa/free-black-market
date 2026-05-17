@@ -22,7 +22,7 @@ export const ProductVariantMetadata = () => {
   return (
     <MetadataForm
       metadata={variant?.metadata}
-      hook={mutateAsync}
+      hook={mutateAsync as never}
       isPending={isPending}
       isMutating={isMutating}
     />

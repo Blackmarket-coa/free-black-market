@@ -19,7 +19,7 @@ export const RegionMetadata = () => {
       <MetadataForm
         isPending={isPending}
         isMutating={isMutating}
-        hook={mutateAsync}
+        hook={mutateAsync as never}
         metadata={region?.metadata}
       />
     </RouteDrawer>

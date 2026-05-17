@@ -23,7 +23,7 @@ export const ShippingProfileMetadata = () => {
   return (
     <MetadataForm
       metadata={shipping_profile?.metadata}
-      hook={mutateAsync}
+      hook={mutateAsync as never}
       isPending={isPending}
       isMutating={isMutating}
     />

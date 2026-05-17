@@ -7,7 +7,7 @@ import { RouteDrawer } from "../../../components/modals"
 export const TaxRegionMetadata = () => {
   const { id } = useParams()
 
-  const { tax_region, isPending, isError, error } = useTaxRegion(id)
+  const { tax_region, isPending, isError, error } = useTaxRegion(id!)
   const { mutateAsync, isPending: isMutating } = useUpdateTaxRegion(id!)
 
   if (isError) {
@@ -19,7 +19,7 @@ export const TaxRegionMetadata = () => {
       <MetadataForm
         isPending={isPending}
         isMutating={isMutating}
-        hook={mutateAsync}
+        hook={mutateAsync as never}
         metadata={tax_region?.metadata}
       />
     </RouteDrawer>

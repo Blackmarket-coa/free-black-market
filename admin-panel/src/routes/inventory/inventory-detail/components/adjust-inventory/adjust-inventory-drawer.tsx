@@ -18,9 +18,8 @@ export const AdjustInventoryDrawer = () => {
     error,
   } = useInventoryItem(id!)
 
-  const inventoryLevel = inventoryItem?.location_levels!.find(
-    (level: InventoryTypes.InventoryLevelDTO) =>
-      level.location_id === location_id
+  const inventoryLevel = inventoryItem?.location_levels?.find(
+    (level) => level.location_id === location_id
   )
 
   const { stock_location, isLoading: isLoadingLocation } = useStockLocation(
@@ -46,8 +45,8 @@ export const AdjustInventoryDrawer = () => {
       {ready && (
         <AdjustInventoryForm
           item={inventoryItem}
-          level={inventoryLevel}
-          location={stock_location}
+          level={inventoryLevel as unknown as InventoryTypes.InventoryLevelDTO}
+          location={stock_location as never}
         />
       )}
     </RouteDrawer>

@@ -331,7 +331,7 @@ export enum LotAllocation {
 }
 
 export const LotAllocationLabels: Record<LotAllocation, string> = {
-  [LotAllocation.RETAIL]: "Retail (DTC)",
+  [LotAllocation.KITCHEN]: "Kitchen",
   [LotAllocation.RESTAURANT]: "Restaurant (B2B)",
   [LotAllocation.WHOLESALE]: "Wholesale",
   [LotAllocation.CSA]: "CSA Share",

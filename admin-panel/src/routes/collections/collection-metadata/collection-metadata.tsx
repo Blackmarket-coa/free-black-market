@@ -18,7 +18,7 @@ export const CollectionMetadata = () => {
   return (
     <MetadataForm
       metadata={collection?.metadata}
-      hook={mutateAsync}
+      hook={mutateAsync as never}
       isPending={isPending}
       isMutating={isMutating}
     />

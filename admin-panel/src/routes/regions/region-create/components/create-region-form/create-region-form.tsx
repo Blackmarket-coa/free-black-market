@@ -11,7 +11,12 @@ import {
   clx,
   toast,
 } from "@medusajs/ui"
-import { RowSelectionState, createColumnHelper } from "@tanstack/react-table"
+import {
+  ColumnDef,
+  RowSelectionState,
+  createColumnHelper,
+} from "@tanstack/react-table"
+import { StaticCountry } from "../../../../../lib/data/countries"
 import { useMemo, useState } from "react"
 import { useForm, useWatch } from "react-hook-form"
 import { useTranslation } from "react-i18next"
@@ -131,7 +136,7 @@ export const CreateRegionForm = ({ currencies }: CreateRegionFormProps) => {
 
   const { table } = useDataTable({
     data: countries || [],
-    columns,
+    columns: columns as ColumnDef<StaticCountry, unknown>[],
     count,
     enablePagination: true,
     enableRowSelection: true,

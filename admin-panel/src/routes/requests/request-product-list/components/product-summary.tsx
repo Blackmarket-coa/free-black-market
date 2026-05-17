@@ -18,9 +18,12 @@ export function ProductSummaryDetail({ request, open, close }: Props) {
     return null;
   }
 
-  const product_id = (request.payload as Record<string, unknown>)?.product_id || "";
+  // Backend persists request body as `payload`; AdminRequest interface
+  // names it `data`. They're the same field.
+  const payload = (request as { payload?: Record<string, unknown> }).payload
+  const product_id = (payload?.product_id as string | undefined) || "";
   const navigate = useNavigate();
-  const requestData = request.payload as ProductDTO;
+  const requestData = payload as unknown as ProductDTO;
 
   return (
     <Drawer open={open} onOpenChange={close}>

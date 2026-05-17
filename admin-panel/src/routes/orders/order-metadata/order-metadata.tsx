@@ -18,7 +18,7 @@ export const OrderMetadata = () => {
   return (
     <MetadataForm
       metadata={order?.metadata}
-      hook={mutateAsync}
+      hook={mutateAsync as never}
       isPending={isPending}
       isMutating={isMutating}
     />

@@ -15,7 +15,7 @@ export const CustomerMetadata = () => {
   return (
     <MetadataForm
       metadata={customer?.metadata}
-      hook={mutateAsync}
+      hook={mutateAsync as never}
       isPending={isPending}
       isMutating={isMutating}
     />

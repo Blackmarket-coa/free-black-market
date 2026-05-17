@@ -11,6 +11,7 @@ import * as zod from "zod"
 
 import { HttpTypes } from "@medusajs/types"
 import { Button, Checkbox, toast } from "@medusajs/ui"
+import { StaticCountry } from "../../../../../lib/data/countries"
 import {
   RouteFocusModal,
   useRouteModal,
@@ -80,8 +81,8 @@ export const AddCountriesForm = ({ region }: AddCountriesFormProps) => {
   const columns = useColumns()
 
   const { table } = useDataTable({
-    data: countries || [],
-    columns,
+    data: (countries || []) as unknown as StaticCountry[],
+    columns: columns as unknown as ColumnDef<StaticCountry, unknown>[],
     count,
     enablePagination: true,
     enableRowSelection: (row) => {
@@ -133,17 +134,19 @@ export const AddCountriesForm = ({ region }: AddCountriesFormProps) => {
 
         <RouteFocusModal.Body className="overflow-hidden">
           <_DataTable
-            table={table}
-            columns={columns}
+            table={table as unknown as Parameters<typeof _DataTable>[0]["table"]}
+            columns={columns as unknown as ColumnDef<unknown, unknown>[]}
             pageSize={PAGE_SIZE}
             count={count}
             search="autofocus"
             pagination
             layout="fill"
-            orderBy={[
-              { key: "display_name", label: t("fields.name") },
-              { key: "iso_2", label: t("fields.code") },
-            ]}
+            orderBy={
+              [
+                { key: "display_name", label: t("fields.name") },
+                { key: "iso_2", label: t("fields.code") },
+              ] as Parameters<typeof _DataTable>[0]["orderBy"]
+            }
             queryObject={raw}
             prefix={PREFIX}
           />

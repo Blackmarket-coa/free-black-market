@@ -19,7 +19,7 @@ export const UserMetadata = () => {
       <MetadataForm
         isPending={isPending}
         isMutating={isMutating}
-        hook={mutateAsync}
+        hook={mutateAsync as never}
         metadata={user?.metadata}
       />
     </RouteDrawer>

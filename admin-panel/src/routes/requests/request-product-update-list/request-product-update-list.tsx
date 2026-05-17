@@ -25,8 +25,8 @@ export const RequestProductUpdateList = () => {
   const [currentPage, setCurrentPage] = useState<number>(0);
 
   const handleDetail = (request: AdminRequest) => {
-    const product_id =
-      (request.payload as Record<string, unknown>).product_id || "";
+    const payload = (request as { payload?: Record<string, unknown> }).payload
+    const product_id = (payload?.product_id as string | undefined) || "";
     navigate(`/products/${product_id}`);
   };
 
@@ -65,7 +65,9 @@ export const RequestProductUpdateList = () => {
           </Table.Header>
           <Table.Body>
             {requests?.map((request) => {
-              const requestData = request.payload as ProductDTO;
+              const requestData = (
+                request as { payload?: ProductDTO }
+              ).payload as ProductDTO;
 
               return (
                 <Table.Row key={request.id}>
