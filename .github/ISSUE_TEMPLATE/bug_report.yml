@@ -8,11 +8,43 @@ body:
       value: |
         Thanks for filing a bug report. Please include enough detail for maintainers to reproduce.
 
+        For **security vulnerabilities**, do not file here — use a private
+        [GitHub Security Advisory](https://github.com/Blackmarket-coa/free-black-market/security/advisories/new)
+        instead. See `SECURITY.md`.
+
   - type: input
     id: summary
     attributes:
       label: Summary
       placeholder: Short description of the bug
+    validations:
+      required: true
+
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Surface
+      description: Which part of the platform is affected?
+      options:
+        - Storefront
+        - Vendor Panel
+        - Admin Panel
+        - Backend API
+        - Docs
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity (your assessment)
+      description: Triage may re-rate. See the severity guidance in `docs/testing/`.
+      options:
+        - Critical — data loss, payment broken, security, full outage
+        - High — major feature unusable
+        - Medium — workaround exists, significant friction
+        - Low — copy, polish, minor visual
     validations:
       required: true
 
@@ -47,6 +79,26 @@ body:
     attributes:
       label: Environment
       placeholder: OS, Node version, pnpm version, browser (if UI)
+
+  - type: input
+    id: browser_device
+    attributes:
+      label: Browser / device (if UI)
+      description: Browser + version, device, viewport size. Skip for backend-only bugs.
+      placeholder: e.g. Safari 17.4 on iPhone 15, 390x844
+
+  - type: input
+    id: blackout_handle
+    attributes:
+      label: Blackout Community handle
+      description: Optional — provide your handle on the Blackout Community platform for crowdsourced-testing payout attribution.
+      placeholder: e.g. @yourhandle
+
+  - type: input
+    id: test_plan_ref
+    attributes:
+      label: Test plan reference
+      description: Optional — if this finding came from a checklist item, cite it (e.g. `S5.3`, `V4.2`, or `RELEASE_VALIDATION_PLAYBOOK section X`).
 
   - type: textarea
     id: logs

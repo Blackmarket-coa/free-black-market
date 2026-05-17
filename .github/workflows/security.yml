@@ -120,6 +120,12 @@ jobs:
           severity: 'HIGH,CRITICAL'
           ignore-unfixed: true
           exit-code: '1'
+          # Without this, trivy-action overrides `severity` to include all
+          # severities when `format: sarif`, so the `exit-code: 1` gate
+          # trips on LOW/MEDIUM findings too — defeating the stated
+          # "HIGH/CRITICAL only" gate above. `true` keeps both the SARIF
+          # and the exit-code filter consistent with the documented intent.
+          limit-severities-for-sarif: true
           # `node_modules` alone matches only top-level on Trivy 0.70+;
           # `**/node_modules` skips nested package vendoring too (notably
           # `@stellar/js-xdr`'s vendored Ruby Gemfile.lock which is not

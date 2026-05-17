@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/Blackmarket-coa/free-black-market/security/advisories/new
+    about: Report a vulnerability privately. Do NOT open a public issue — see SECURITY.md.
+  - name: Tester chat & payout coordination (Blackout Community)
+    url: https://example.com/BLACKOUT_INVITE_URL
+    about: Join Blackout Community for crowdsourced testing chat, recruitment, and payouts.
+  - name: Crowdsourced testing program overview
+    url: https://github.com/Blackmarket-coa/free-black-market/blob/main/TESTING.md
+    about: Read TESTING.md before filing your first finding.

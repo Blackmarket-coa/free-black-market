@@ -59,6 +59,18 @@ A good PR includes:
 
 Use `.github/PULL_REQUEST_TEMPLATE.md` when opening your PR.
 
+If you are a crowdsourced contributor recruited via the Blackout Community platform, include your Blackout Community handle in the PR body so the payout system can attribute the fix to you. Link the issue your PR closes with `Closes #N`.
+
+## Crowdsourced Testing & Bounties
+
+We run an external crowdsourced testing program for manual exploratory testing, production-readiness validation, and a security bounty. Engineers can also pick up triaged bugs for bounty fixes.
+
+- Program overview and tester onboarding: `TESTING.md`
+- Security disclosure and bounty scope: `SECURITY.md` and `docs/testing/security-bounty-scope.md`
+- Manual test plans: `docs/testing/`
+
+Recruitment, chat, and payouts are coordinated on the Blackout Community platform (external — distinct from the *release blackout windows* concept in `docs/blackout_centralized_build_work_order.md`).
+
 ## Reporting Bugs and Requesting Features
 
 Please use:
@@ -70,9 +82,9 @@ Include reproduction details, expected behavior, and environment info.
 
 ## Security Reporting
 
-Do **not** open public issues for sensitive vulnerabilities.
+Do **not** open public issues for sensitive vulnerabilities. See `SECURITY.md` for the full disclosure policy and `docs/testing/security-bounty-scope.md` for the bounty program scope.
 
-Please report security concerns privately to the maintainers via your repository security contact channel.
+Report privately via a [GitHub Security Advisory](https://docs.github.com/en/code-security/security-advisories/guidance-on-reporting-and-writing-information-about-vulnerabilities/privately-reporting-a-security-vulnerability) on this repository.
 
 ## Code of Conduct
 
