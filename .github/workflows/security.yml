@@ -202,10 +202,20 @@ jobs:
           - app: vendor-panel
             image: free-black-market-vendor-panel
     steps:
+      # docker-build.yml publishes images with `sha-<7-char>` tags (via
+      # docker/metadata-action `type=sha,prefix=sha-,format=short`).
+      # `${{ github.sha }}` is the full 40-char SHA — using it raw makes
+      # trivy-action look up a tag that was never published and fail with
+      # image-not-found on every push to main. Compute the short SHA here
+      # so the image-ref matches what docker-build actually pushed.
+      - name: Compute short SHA
+        id: short_sha
+        run: echo "value=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
       - name: Trivy image scan
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}:sha-${{ github.sha }}
+          image-ref: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}:sha-${{ steps.short_sha.outputs.value }}
           severity: 'HIGH,CRITICAL'
           ignore-unfixed: true
           exit-code: '1'
