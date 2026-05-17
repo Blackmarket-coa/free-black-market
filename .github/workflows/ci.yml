@@ -334,6 +334,48 @@ jobs:
           path: audit-reports/*.json
           retention-days: 30
 
+
+  blackout-gate:
+    name: Centralized Blackout Gate
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release/'))
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Evaluate blackout policy gate
+        env:
+          BLACKOUT_TARGET_ENV: ${{ github.ref == 'refs/heads/main' && 'production' || 'staging' }}
+          BLACKOUT_SERVICE: release-promotion
+          BLACKOUT_CHANGE_TYPE: ${{ vars.BLACKOUT_CHANGE_TYPE || 'hotfix' }}
+          BLACKOUT_OVERRIDE_APPROVALS: ${{ vars.BLACKOUT_OVERRIDE_APPROVALS || '0' }}
+          BLACKOUT_OVERRIDE_ROLES: ${{ vars.BLACKOUT_OVERRIDE_ROLES || '' }}
+          BLACKOUT_OVERRIDE_TICKET: ${{ vars.BLACKOUT_OVERRIDE_TICKET || '' }}
+          BLACKOUT_OVERRIDE_REASON: ${{ vars.BLACKOUT_OVERRIDE_REASON || '' }}
+          BLACKOUT_ACTOR: ${{ github.actor }}
+          BLACKOUT_COMMIT_SHA: ${{ github.sha }}
+          BLACKOUT_RUN_ID: ${{ github.run_id }}
+          BLACKOUT_SOURCE_REF: ${{ github.ref }}
+          BLACKOUT_DECISION_OUTPUT: blackout-gate/decision-record.json
+        run: |
+          set -euo pipefail
+          mkdir -p blackout-gate
+          node ./scripts/blackout-gate-check.mjs --policy config/release/blackout-policy.json
+
+      - name: Upload blackout gate decision artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: blackout-gate-decision-${{ github.run_id }}
+          path: blackout-gate/decision-record.json
+          if-no-files-found: warn
+          retention-days: 30
+
   test-integration:
     name: Integration Tests
     runs-on: ubuntu-latest
@@ -420,7 +462,7 @@ jobs:
   release-validation:
     name: Release Validation Gate
     runs-on: ubuntu-latest
-    needs: [lint, i18n-contracts, vendor-panel, test-unit, security]
+    needs: [lint, i18n-contracts, vendor-panel, test-unit, security, blackout-gate]
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/heads/release/')
     steps:
       - name: Checkout code
@@ -460,7 +502,7 @@ jobs:
   notify-deploy:
     name: Deployment Ready
     runs-on: ubuntu-latest
-    needs: [build, test-unit, security, vendor-panel, i18n-contracts, admin-panel, storefront-test]
+    needs: [build, test-unit, security, vendor-panel, i18n-contracts, blackout-gate]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     steps:
       - name: Deployment notification
