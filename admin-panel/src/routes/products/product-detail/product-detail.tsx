@@ -72,7 +72,7 @@ export const ProductDetail = () => {
       </TwoColumnPage.Main>
       <TwoColumnPage.Sidebar>
         <ProductSalesChannelSection product={product} />
-        <ProductShippingProfileSection product={product} />
+        <ProductShippingProfileSection product={product as never} />
         <ProductOrganizationSection product={product} />
         <ProductAttributeSection product={product} />
         <ProductAdditionalAttributeSection />

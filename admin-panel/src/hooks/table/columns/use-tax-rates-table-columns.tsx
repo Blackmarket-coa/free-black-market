@@ -29,7 +29,7 @@ export const useTaxRateTableColumns = () => {
         id: "province",
         header: () => <TextHeader text={t("fields.province")} />,
         cell: ({ row }) => (
-          <TextCell text={row.original.tax_region.province_code} />
+          <TextCell text={row.original.tax_region.province_code ?? ""} />
         ),
       }),
       columnHelper.display({

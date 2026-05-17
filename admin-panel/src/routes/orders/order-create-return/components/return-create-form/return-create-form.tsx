@@ -696,10 +696,10 @@ export const ReturnCreateForm = ({
 
                         if (actionId) {
                           updateReturnShipping({
-                            actionId,
+                            actionId: actionId as string,
                             custom_amount:
                               customShippingAmount.float ?? undefined,
-                          })
+                          } as never)
                         }
                         setIsShippingPriceEdit(false)
                       }}

@@ -72,9 +72,14 @@ export const useLocationListTableColumns = () => {
 
   return useMemo(
     () => [
-      columnHelper.accessor("stock_locations.0.name", {
+      (
+        columnHelper.accessor as unknown as (
+          accessor: string,
+          config: unknown
+        ) => unknown
+      )("stock_locations.0.name", {
         header: t("fields.location"),
-        cell: ({ getValue }) => {
+        cell: ({ getValue }: { getValue: () => string | undefined }) => {
           const locationName = getValue()
 
           if (!locationName) {

@@ -130,7 +130,9 @@ function LocationListItem(props: LocationProps) {
           <div className="grow-1 flex flex-1 flex-col">
             <Text weight="plus">{location.name}</Text>
             <Text className="text-ui-fg-subtle txt-small">
-              {getFormattedAddress({ address: location.address }).join(", ")}
+              {getFormattedAddress({
+                address: location.address as never,
+              }).join(", ")}
             </Text>
           </div>
 

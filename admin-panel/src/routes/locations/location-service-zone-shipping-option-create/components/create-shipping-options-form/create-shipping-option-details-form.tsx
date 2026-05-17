@@ -269,7 +269,7 @@ export const CreateShippingOptionDetailsForm = ({
                           ?.filter((fo) => !!fo.is_return === isReturn)
                           .map((option) => (
                             <Select.Item value={option.id} key={option.id}>
-                              {option.name || option.id}
+                              {(option as { name?: string }).name || option.id}
                             </Select.Item>
                           ))}
                       </Select.Content>

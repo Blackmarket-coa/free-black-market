@@ -24,7 +24,7 @@ export function ProductCollectionRequestDetail({
   if (!request) {
     return null;
   }
-  const requestData = request.payload as ProductCollectionDTO;
+  const requestData = (request as { payload?: Record<string, unknown> }).payload as unknown as ProductCollectionDTO;
 
   const [promptOpen, setPromptOpen] = useState(false);
   const [requestAccept, setRequestAccept] = useState(false);

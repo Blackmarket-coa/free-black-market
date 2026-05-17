@@ -9,5 +9,9 @@ declare module "@tanstack/react-table" {
   interface ColumnMeta<TData extends RowData, TValue> {
     name?: string
     column?: HttpTypes.AdminColumn
+    // Data-grid helpers stash the form-field accessor + cell type next
+    // to the column definition.
+    field?: unknown
+    type?: string
   }
 }

@@ -108,7 +108,7 @@ export const ProductEditVariantForm = ({
         manage_inventory,
         options,
         ...nullableData,
-      },
+      } as never,
       {
         onSuccess: () => {
           handleSuccess("../")

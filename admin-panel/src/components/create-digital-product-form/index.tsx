@@ -1,6 +1,18 @@
 import { useState } from "react"
 import { Input, Button, Select, toast } from "@medusajs/ui"
-import { MediaType } from "../../types"
+
+// MediaType was previously imported from "../../types"; the type was
+// removed in the asset-graph refactor. Inline the enum locally until
+// the digital-products flow is rebuilt.
+const MediaType = {
+  IMAGE: "image",
+  VIDEO: "video",
+  AUDIO: "audio",
+  DOCUMENT: "document",
+  PREVIEW: "preview",
+  MAIN: "main",
+} as const
+type MediaType = (typeof MediaType)[keyof typeof MediaType]
 
 type CreateMedia = {
   type: MediaType

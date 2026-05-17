@@ -372,14 +372,14 @@ export const CreateRegionForm = ({ currencies }: CreateRegionFormProps) => {
                       </StackedFocusModal.Header>
                       <StackedFocusModal.Body className="overflow-hidden">
                         <_DataTable
-                          table={table}
-                          columns={columns}
+                          table={table as never}
+                          columns={columns as unknown as ColumnDef<unknown, unknown>[]}
                           count={count}
                           pageSize={PAGE_SIZE}
                           orderBy={[
                             { key: "display_name", label: t("fields.name") },
                             { key: "iso_2", label: t("fields.code") },
-                          ]}
+                          ] as never}
                           pagination
                           search="autofocus"
                           layout="fill"

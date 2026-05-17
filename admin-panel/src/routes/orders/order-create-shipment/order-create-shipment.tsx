@@ -22,7 +22,9 @@ export function OrderCreateShipment() {
       {ready && (
         <OrderCreateShipmentForm
           order={order}
-          fulfillment={order.fulfillments?.find((f) => f.id === f_id)}
+          fulfillment={
+            order.fulfillments?.find((f) => f.id === f_id) as never
+          }
         />
       )}
     </RouteFocusModal>

@@ -34,7 +34,6 @@ import {
   useRouteModal,
 } from "../../../../../components/modals"
 import { KeyboundForm } from "../../../../../components/utilities/keybound-form"
-import { useCampaigns } from "../../../../../hooks/api/campaigns"
 import { useCreatePromotion } from "../../../../../hooks/api/promotions"
 import {
   currencies,
@@ -313,17 +312,6 @@ export const CreatePromotionForm = () => {
   })
 
   const isTargetTypeOrder = targetType === "order"
-
-  const formData = form.getValues()
-  let campaignQuery: object = {}
-
-  if (formData.application_method.currency_code) {
-    campaignQuery = {
-      budget: { currency_code: formData.application_method.currency_code },
-    }
-  }
-
-  const { campaigns } = useCampaigns(campaignQuery)
 
   const watchCampaignChoice = useWatch({
     control: form.control,
@@ -975,10 +963,7 @@ export const CreatePromotionForm = () => {
             >
               <div className="flex flex-col items-center">
                 <div className="flex w-full max-w-[720px] flex-col gap-y-8 py-16">
-                  <AddCampaignPromotionFields
-                    form={form as never}
-                    campaigns={campaigns || []}
-                  />
+                  <AddCampaignPromotionFields form={form} />
                 </div>
               </div>
             </ProgressTabs.Content>

@@ -51,7 +51,7 @@ export const RequestSellerList = () => {
           <Heading>Seller creation requests</Heading>
 
           <RequestSellerDetail
-            request={detailRequest}
+            request={detailRequest as never}
             open={detailOpen}
             close={() => {
               setDetailOpen(false);

@@ -37,7 +37,7 @@ export const useOrderTableQuery = ({
     order,
   } = queryObject
 
-  const searchParams: HttpTypes.AdminOrderFilters = {
+  const searchParams = {
     limit: pageSize,
     offset: offset ? Number(offset) : 0,
     sales_channel_id: sales_channel_id?.split(","),
@@ -48,7 +48,7 @@ export const useOrderTableQuery = ({
     region_id: region_id?.split(","),
     order: order ? order : "-display_id",
     q,
-  }
+  } as HttpTypes.AdminOrderFilters
 
   return {
     searchParams,

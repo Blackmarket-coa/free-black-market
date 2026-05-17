@@ -81,7 +81,8 @@ export const OrderGeneralSection = ({ order }: OrderGeneralSectionProps) => {
                 {
                   label: t("actions.cancel"),
                   onClick: handleCancel,
-                  disabled: !!order.canceled_at,
+                  disabled: !!(order as { canceled_at?: string | null })
+                    .canceled_at,
                   icon: <XCircle />,
                 },
               ],

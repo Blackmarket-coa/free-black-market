@@ -50,7 +50,7 @@ export const EditCustomerForm = ({ customer }: EditCustomerFormProps) => {
         last_name: data.last_name || undefined,
         phone: data.phone || undefined,
         company_name: data.company_name || undefined,
-      },
+      } as never,
       {
         onSuccess: ({ customer }) => {
           toast.success(

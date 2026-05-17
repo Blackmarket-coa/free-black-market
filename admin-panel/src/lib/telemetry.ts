@@ -8,7 +8,11 @@ const DSN = (import.meta as ImportMeta & { env: Record<string, string | undefine
 export async function initTelemetry(): Promise<void> {
   if (!DSN) return
   try {
-    const Sentry = await import("@sentry/browser")
+    // @sentry/browser is an optional peer dep; declared as a dynamic
+    // import so missing-dep installs don't fail typecheck.
+    const Sentry = (await import(
+      /* @vite-ignore */ "@sentry/browser" as never
+    )) as { init: (options: Record<string, unknown>) => void }
     Sentry.init({
       dsn: DSN,
       environment: (import.meta as ImportMeta & { env: Record<string, string | undefined> }).env

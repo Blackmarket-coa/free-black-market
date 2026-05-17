@@ -24,7 +24,7 @@ export function ProductVariantManageInventoryItems() {
   return (
     <RouteFocusModal>
       {!isLoading && variant && (
-        <ManageVariantInventoryItemsForm variant={variant} />
+        <ManageVariantInventoryItemsForm variant={variant as never} />
       )}
     </RouteFocusModal>
   )

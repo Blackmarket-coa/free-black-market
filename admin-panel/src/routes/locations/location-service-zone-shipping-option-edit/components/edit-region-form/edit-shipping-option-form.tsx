@@ -97,7 +97,7 @@ export const EditShippingOptionForm = ({
         value: values.enabled_in_store ? "true" : "false",
         attribute: "enabled_in_store",
         operator: "eq",
-      })
+      } as never as HttpTypes.AdminUpdateShippingOptionRule)
     } else {
       storeRule.value = values.enabled_in_store ? "true" : "false"
     }

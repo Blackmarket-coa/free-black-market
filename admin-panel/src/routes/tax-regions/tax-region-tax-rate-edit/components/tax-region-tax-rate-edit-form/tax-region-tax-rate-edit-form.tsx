@@ -36,7 +36,7 @@ export const TaxRegionTaxRateEditForm = ({
 
   const form = useForm<z.infer<typeof TaxRegionTaxRateEditSchema>>({
     defaultValues: {
-      name: taxRate.name,
+      name: taxRate.name ?? "",
       code: taxRate.code,
       rate: {
         value: taxRate.rate?.toString() || "",
@@ -51,8 +51,8 @@ export const TaxRegionTaxRateEditForm = ({
   const handleSubmit = form.handleSubmit(async (values) => {
     await mutateAsync(
       {
-        name: values.name,
-        code: values.code || undefined,
+        name: values.name ?? "",
+        code: values.code ?? "",
         rate: values.rate?.float,
         is_combinable: values.is_combinable,
       },

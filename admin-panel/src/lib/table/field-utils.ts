@@ -59,7 +59,9 @@ export function calculateRequiredFields(
 
   // Check which direct fields need to be added
   const additionalDirectFields = visibleDirectFields.filter(field => {
-    const isAlreadyIncluded = defaults.properties.includes(field)
+    const isAlreadyIncluded = (defaults.properties as readonly string[]).includes(
+      field
+    )
     return !isAlreadyIncluded
   })
 

@@ -87,7 +87,7 @@ export function ReturnRequestDetail({ request, open, close }: Props) {
               {request.line_items?.map((item) => {
                 return (
                   <ItemRow
-                    order={order!}
+                    order={order as never}
                     line_item_id={item.line_item_id!}
                     quantity={item.quantity!}
                     key={item.id}

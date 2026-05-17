@@ -53,8 +53,8 @@ export const EditRules = () => {
 
       {!isLoading && promotion && (
         <EditRulesWrapper
-          promotion={promotion}
-          rules={rules}
+          promotion={promotion as never}
+          rules={rules ?? []}
           ruleType={ruleType}
         />
       )}

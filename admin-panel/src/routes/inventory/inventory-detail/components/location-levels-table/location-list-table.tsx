@@ -35,11 +35,11 @@ export const ItemLocationListTable = ({
 
   return (
     <DataTable
-      data={inventory_levels ?? []}
-      columns={columns}
+      data={(inventory_levels ?? []) as never}
+      columns={columns as never}
       rowCount={count}
       pageSize={PAGE_SIZE}
-      getRowId={(row) => row.id}
+      getRowId={(row) => (row as { id: string }).id}
       isLoading={isLoading}
       prefix={PREFIX}
       layout="fill"

@@ -183,16 +183,9 @@ jobs:
         working-directory: admin-panel
         run: pnpm test
 
-      # LR-3's module-resolution cascade is closed (missing
-      # @medusajs/admin-sdk, @medusajs/framework, stripe installed; local
-      # types added for ticket-product, venue, donation). Downstream type
-      # mismatches in routes/orders/**, routes/tax-regions/**, etc. remain;
-      # tracked under TS-1 in docs/AUDIT_DEBT.md. Keep non-blocking until
-      # those land.
-      - name: Typecheck admin panel (non-blocking)
+      - name: Typecheck admin panel
         working-directory: admin-panel
         run: pnpm typecheck
-        continue-on-error: true
 
   storefront-test:
     name: Storefront Tests

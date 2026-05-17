@@ -423,7 +423,7 @@ const useDynamicSearchResults = (
       .map(([key, response]) => {
         const area = key as SearchArea
         if (isAreaEnabled(currentArea, area) || currentArea === "all") {
-          return transformDynamicSearchResults(area, limit, t, response)
+          return transformDynamicSearchResults(area, limit, t, response as never)
         }
         return null
       })

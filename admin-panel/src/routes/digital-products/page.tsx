@@ -3,8 +3,18 @@ import { PhotoSolid } from "@medusajs/icons"
 import { Container, Heading, Table, Button, Drawer } from "@medusajs/ui"
 import { useEffect, useMemo, useState } from "react"
 import { Link } from "react-router-dom"
-import { DigitalProduct } from "../../types"
 import CreateDigitalProductForm from "../../components/create-digital-product-form"
+
+// DigitalProduct type was removed in the asset-graph refactor; inline
+// a minimal shape until the digital-products flow is rebuilt.
+type DigitalProduct = {
+  id: string
+  title?: string
+  name?: string
+  product_id?: string
+  product_variant?: { product_id?: string }
+  preview_url?: string
+}
 
 const DigitalProductsPage = () => {
   const [digitalProducts, setDigitalProducts] = useState<

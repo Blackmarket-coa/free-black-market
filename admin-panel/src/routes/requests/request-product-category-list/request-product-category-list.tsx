@@ -76,7 +76,7 @@ export const RequestProductCategoryList = () => {
           </Table.Header>
           <Table.Body>
             {requests?.map((request) => {
-              const requestData = request.payload as ProductCategoryDTO;
+              const requestData = (request as { payload?: Record<string, unknown> }).payload as unknown as ProductCategoryDTO;
 
               return (
                 <Table.Row key={request.id}>

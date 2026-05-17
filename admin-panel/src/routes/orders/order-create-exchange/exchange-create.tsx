@@ -23,7 +23,7 @@ export const ExchangeCreate = () => {
 
   const { order: preview } = useOrderPreview(id!)
   const [activeExchangeId, setActiveExchangeId] = useState<string>()
-  const { mutateAsync: createExchange } = useCreateExchange(order.id)
+  const { mutateAsync: createExchange } = useCreateExchange(order?.id ?? "")
 
   const { exchange } = useExchange(activeExchangeId!, undefined, {
     enabled: !!activeExchangeId,

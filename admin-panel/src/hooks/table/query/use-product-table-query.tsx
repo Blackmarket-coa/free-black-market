@@ -47,7 +47,7 @@ export const useProductTableQuery = ({
     q,
   } = queryObject
 
-  const searchParams: HttpTypes.AdminProductListParams = {
+  const searchParams = {
     limit: pageSize,
     offset: offset ? Number(offset) : 0,
     sales_channel_id: sales_channel_id?.split(","),
@@ -62,7 +62,7 @@ export const useProductTableQuery = ({
     status: status?.split(",") as HttpTypes.AdminProductStatus[],
     q,
     fields: DEFAULT_FIELDS,
-  }
+  } as HttpTypes.AdminProductListParams
 
   return {
     searchParams,

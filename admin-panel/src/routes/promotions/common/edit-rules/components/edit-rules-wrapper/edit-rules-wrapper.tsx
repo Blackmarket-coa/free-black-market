@@ -56,6 +56,7 @@ export const EditRulesWrapper = ({
       // database, they are currently all under application_method. If more of these are coming
       // up, abstract this away.
       for (const rule of disguisedRules) {
+        if (!rule.attribute) continue
         applicationMethodData[rule.attribute] = getRuleValue(rule)
       }
 

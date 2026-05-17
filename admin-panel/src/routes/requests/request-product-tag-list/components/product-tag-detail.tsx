@@ -20,7 +20,7 @@ export function ProductTagRequestDetail({ request, open, close }: Props) {
   if (!request) {
     return null;
   }
-  const requestData = request.payload as ProductTagDTO;
+  const requestData = (request as { payload?: Record<string, unknown> }).payload as unknown as ProductTagDTO;
 
   const [promptOpen, setPromptOpen] = useState(false);
   const [requestAccept, setRequestAccept] = useState(false);

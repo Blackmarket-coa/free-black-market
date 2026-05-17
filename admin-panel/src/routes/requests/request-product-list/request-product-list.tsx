@@ -113,7 +113,7 @@ const ProductRequestsRow = ({
   handleDetail: (request: AdminRequest) => void;
 }) => {
   const navigate = useNavigate();
-  const requestData = request.payload as ProductDTO | undefined;
+  const requestData = (request as { payload?: Record<string, unknown> }).payload as unknown as ProductDTO | undefined;
 
   return (
     <Table.Row key={request.id}>

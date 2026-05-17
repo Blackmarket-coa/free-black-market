@@ -43,7 +43,7 @@ export const RefundReasonCreateForm = () => {
   const { mutateAsync, isPending } = useCreateRefundReason();
 
   const handleSubmit = form.handleSubmit(async (data) => {
-    await mutateAsync(data, {
+    await mutateAsync(data as never, {
       onSuccess: ({ refund_reason }) => {
         toast.success(
           t("refundReasons.create.successToast", {

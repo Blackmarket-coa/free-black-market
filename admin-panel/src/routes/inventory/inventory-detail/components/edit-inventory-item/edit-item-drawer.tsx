@@ -27,7 +27,7 @@ export const InventoryItemEdit = () => {
       <RouteDrawer.Header>
         <Heading>{t("inventory.editItemDetails")}</Heading>
       </RouteDrawer.Header>
-      {ready && <EditInventoryItemForm item={inventoryItem} />}
+      {ready && <EditInventoryItemForm item={inventoryItem as never} />}
     </RouteDrawer>
   )
 }

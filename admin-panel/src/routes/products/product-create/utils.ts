@@ -100,8 +100,8 @@ export const normalizeVariants = (
           }
         }
       })
-      .filter((v) => !!v),
-  }))
+      .filter((v): v is NonNullable<typeof v> => !!v),
+  })) as HttpTypes.AdminCreateProductVariant[]
 }
 
 export const decorateVariantsWithDefaultValues = (
