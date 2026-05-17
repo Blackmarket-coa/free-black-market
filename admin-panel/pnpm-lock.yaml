@@ -9,6 +9,7 @@ overrides:
   qs: '>=6.14.1'
   lodash: '>=4.18.0'
   picomatch: '>=4.0.4'
+  '@remix-run/router': '>=1.23.2'
 
 importers:
 
@@ -2630,8 +2631,8 @@ packages:
     peerDependencies:
       react: ^16.8.0 || ^17.0.0-rc.1 || ^18.0.0 || ^19.0.0-rc.1
 
-  '@remix-run/router@1.13.1':
-    resolution: {integrity: sha512-so+DHzZKsoOcoXrILB4rqDkMDy7NLMErRdOxvzvOKb507YINKUP4Di+shbTZDhSE/pBZ+vr7XGIpcOO0VLSA+Q==}
+  '@remix-run/router@1.23.2':
+    resolution: {integrity: sha512-Ic6m2U/rMjTkhERIa/0ZtXJP17QUi2CbWE7cqx4J58M8aA3QTfW+2UlQ4psvTX9IO1RfNVhK3pcpdjej7L+t2w==}
     engines: {node: '>=14.0.0'}
 
   '@rollup/pluginutils@5.3.0':
@@ -9561,7 +9562,7 @@ snapshots:
       '@react-types/shared': 3.32.1(react@18.3.1)
       react: 18.3.1
 
-  '@remix-run/router@1.13.1': {}
+  '@remix-run/router@1.23.2': {}
 
   '@rollup/pluginutils@5.3.0(rollup@4.53.2)':
     dependencies:
@@ -12675,14 +12676,14 @@ snapshots:
 
   react-router-dom@6.20.1(react-dom@18.3.1(react@18.3.1))(react@18.3.1):
     dependencies:
-      '@remix-run/router': 1.13.1
+      '@remix-run/router': 1.23.2
       react: 18.3.1
       react-dom: 18.3.1(react@18.3.1)
       react-router: 6.20.1(react@18.3.1)
 
   react-router@6.20.1(react@18.3.1):
     dependencies:
-      '@remix-run/router': 1.13.1
+      '@remix-run/router': 1.23.2
       react: 18.3.1
 
   react-stately@3.42.0(react@18.3.1):

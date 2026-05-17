@@ -2,17 +2,34 @@ import { Migration } from "@mikro-orm/migrations"
 
 export class Migration20251228CreateProductArchetype extends Migration {
   async up(): Promise<void> {
-    // Create product_archetype_code enum
+    // Create product_archetype_code enum with the full set of values across
+    // all subsequent module passes (community + marketplace). Subsequent
+    // ALTER TYPE ADD VALUE migrations (Migration20260202000AddCommunity*,
+    // Migration20260506000AddMarketplace*) are kept for prod-DB history but
+    // are no-ops on a fresh DB via `ADD VALUE IF NOT EXISTS`. The reason
+    // values are created up-front: when the migrator wraps everything in
+    // one master transaction (mikro-orm `allOrNothing`), a non-transactional
+    // ALTER on a side connection cannot see the uncommitted CREATE TYPE.
     this.addSql(`
       DO $$ BEGIN
         CREATE TYPE "product_archetype_code_enum" AS ENUM (
           'AGRICULTURAL_RAW',
-          'AGRICULTURAL_PROCESSED', 
+          'AGRICULTURAL_PROCESSED',
           'RESTAURANT_PREPARED',
           'NON_PERISHABLE',
           'DIGITAL',
           'TICKET',
-          'SUBSCRIPTION'
+          'SUBSCRIPTION',
+          'LAND_ACCESS',
+          'MUTUAL_AID',
+          'CIRCULAR_ECONOMY',
+          'COMMUNITY_SERVICE',
+          'EXPERIMENTAL',
+          'SERVICE',
+          'PLUGIN',
+          'THEME',
+          'EMOJI_PACK',
+          'ACCESS_PASS'
         );
       EXCEPTION
         WHEN duplicate_object THEN null;

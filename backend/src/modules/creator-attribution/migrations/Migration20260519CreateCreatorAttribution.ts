@@ -1,6 +1,6 @@
 import { Migration } from "@mikro-orm/migrations"
 
-export class Migration20260520CreateCreatorAttribution extends Migration {
+export class Migration20260519CreateCreatorAttribution extends Migration {
   async up(): Promise<void> {
     this.addSql(`
       DO $$ BEGIN

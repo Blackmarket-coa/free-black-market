@@ -120,7 +120,11 @@ jobs:
           severity: 'HIGH,CRITICAL'
           ignore-unfixed: true
           exit-code: '1'
-          skip-dirs: 'node_modules,.git,**/dist,**/.next,**/.medusa,e2e/test-results'
+          # `node_modules` alone matches only top-level on Trivy 0.70+;
+          # `**/node_modules` skips nested package vendoring too (notably
+          # `@stellar/js-xdr`'s vendored Ruby Gemfile.lock which is not
+          # used at runtime in our Node app).
+          skip-dirs: 'node_modules,**/node_modules,.git,**/dist,**/.next,**/.medusa,e2e/test-results'
           trivyignores: '.trivyignore'
           format: 'sarif'
           output: 'trivy-fs.sarif'
