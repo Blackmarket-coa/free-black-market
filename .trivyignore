@@ -1,5 +1,28 @@
-# Trivy ignore list — HIGH/CRITICAL findings that have been triaged.
+# Trivy ignore list — findings that have been triaged.
 #
 # Every CVE here must reference an open `SD-*` row in docs/AUDIT_DEBT.md or
 # a documented runtime decision. When a CVE is fixed in the lockfile, drop
 # its row from this file so the Trivy gate can detect regressions.
+
+# SD-15: @octokit/{plugin-paginate-rest,request,request-error} bumped via
+# pnpm.overrides created a transitive break — newer plugin/request versions
+# require @octokit/core >=5, but `@octokit/rest@19.0.13` (used by
+# `backend/src/shared/github-service.ts` for bug-report integration) ships
+# @octokit/core@4.2.4. Bumping `@octokit/rest` to v22 also requires bumping
+# `@octokit/auth-app` 6→8 (a runtime auth flow change) — out of scope for
+# this PR. Suppressing the three MEDIUM CVEs in Code Scanning until the
+# @octokit lineage is migrated as a separate workstream.
+CVE-2025-25288
+CVE-2025-25289
+CVE-2025-25290
+
+# SD-15: vite 5→8 + esbuild bumps blocked by vite 8's switch to Rolldown,
+# which deprecates the `manualChunks: object` rollup API used in
+# `admin-panel/vite.config.ts` and `vendor-panel/vite.config.ts`, plus
+# `@vitejs/plugin-react@4.x` does not officially support vite 8 (peer dep
+# capped at vite 6). Fixing requires rewriting both vite configs to use
+# `manualChunks` as a function and bumping the React plugin — beyond the
+# scope of this dep-cleanup PR. Suppressing the two MEDIUM CVEs until the
+# Rolldown migration is tackled as a separate workstream.
+CVE-2026-39365
+GHSA-67mh-4wv8-2f99

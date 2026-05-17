@@ -4,6 +4,9 @@
     "overrides": {
       "lodash": ">=4.18.0",
       "picomatch": ">=4.0.4",
+      "qs": ">=6.14.2",
+      "ajv": ">=8.18.0",
+      "postcss": ">=8.5.10",
       "@mikro-orm/core": "6.6.14",
       "@mikro-orm/cli": "6.6.14",
       "@mikro-orm/knex": "6.6.14",

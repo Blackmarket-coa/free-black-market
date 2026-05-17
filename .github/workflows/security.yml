@@ -209,6 +209,12 @@ jobs:
           severity: 'HIGH,CRITICAL'
           ignore-unfixed: true
           exit-code: '1'
+          # Without this, trivy-action overrides `severity` to include all
+          # severities when `format: sarif`, so the `exit-code: 1` gate
+          # trips on LOW/MEDIUM findings too — defeating the stated
+          # "HIGH/CRITICAL only" gate above. Mirrors the trivy-fs fix
+          # landed in commit 42de0b6 (SD-15 audit closed the same gap here).
+          limit-severities-for-sarif: true
           format: 'sarif'
           output: 'trivy-${{ matrix.app }}.sarif'
 

@@ -16,7 +16,7 @@
   "pnpm": {
     "overrides": {
       "glob": ">=10.5.0",
-      "qs": ">=6.14.1",
+      "qs": ">=6.14.2",
       "jws": ">=3.2.3",
       "axios": ">=1.15.2",
       "@isaacs/brace-expansion": ">=5.0.1",
@@ -27,6 +27,9 @@
       "@medusajs/workflows-sdk": "2.12.5",
       "lodash": ">=4.18.0",
       "picomatch": ">=4.0.4",
+      "ajv": ">=8.18.0",
+      "postcss": ">=8.5.10",
+      "esbuild": ">=0.25.0",
       "@mikro-orm/core": "6.6.14",
       "@mikro-orm/cli": "6.6.14",
       "@mikro-orm/knex": "6.6.14",
@@ -102,7 +105,7 @@
     "medusajs-launch-utils": "^0.0.18",
     "minio": "^8.0.3",
     "multer": "^2.0.2",
-    "nodemailer": "^7.0.11",
+    "nodemailer": "^8.0.5",
     "pg": "^8.13.0",
     "qrcode": "^1.5.4",
     "redis": "^5.10.0",
@@ -133,10 +136,9 @@
     "prop-types": "^15.8.1",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
-    "react-router-dom": "6.20.1",
+    "react-router-dom": "6.30.2",
     "ts-node": "^10.9.2",
     "typescript": "^5.6.2",
-    "vite": "^5.2.11",
     "yalc": "^1.0.0-pre.53"
   },
   "engines": {
