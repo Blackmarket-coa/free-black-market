@@ -1,0 +1,87 @@
+name: Test session report
+description: Summary of a crowdsourced testing session covering multiple findings
+labels:
+  - crowdsourced-test
+  - triage
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this template to summarize a testing session. File each individual bug as its own
+        Bug report and link them from the "Findings" section below.
+
+        Read `TESTING.md` and the relevant plan under `docs/testing/` before filing.
+
+  - type: input
+    id: blackout_handle
+    attributes:
+      label: Blackout Community handle
+      description: Your handle on the Blackout Community platform — required for payout attribution.
+      placeholder: e.g. @yourhandle
+    validations:
+      required: true
+
+  - type: dropdown
+    id: track
+    attributes:
+      label: Track
+      options:
+        - Exploratory / UX
+        - Production readiness
+        - Manual test plan — storefront
+        - Manual test plan — vendor panel
+        - Manual test plan — admin panel
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: session_length
+    attributes:
+      label: Session length
+      placeholder: e.g. 90 minutes
+    validations:
+      required: true
+
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      placeholder: Browser + version, OS, device, staging URL
+    validations:
+      required: true
+
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope covered
+      description: Which areas, flows, or checklist items did you exercise?
+      placeholder: |
+        - Storefront test plan sections S1, S2, S5
+        - Spot-checked S6 on mobile Safari
+    validations:
+      required: true
+
+  - type: textarea
+    id: findings
+    attributes:
+      label: Findings (linked bug reports)
+      description: List each filed bug by issue number with a one-line description and severity.
+      placeholder: |
+        - #123 [High] Checkout fails on Safari iOS when applying promo code
+        - #124 [Medium] Search filter "vendor" doesn't clear with "Clear all"
+        - #125 [Low] PDP image gallery arrows missing focus state
+    validations:
+      required: true
+
+  - type: textarea
+    id: impressions
+    attributes:
+      label: Overall impressions
+      description: Anything not worth filing as a bug but worth noting — friction, confusing copy, performance feel, accessibility gaps.
+
+  - type: textarea
+    id: blocked
+    attributes:
+      label: Blocked / could not test
+      description: Anything in the planned scope you couldn't get to, and why.

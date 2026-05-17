@@ -13,6 +13,11 @@ Closes #
 - [ ] Local checks executed
 - [ ] Migration or rollout steps documented (if applicable)
 - [ ] For new vendor extension keys: completed `docs/VENDOR_EXTENSION_DEFINITION_OF_DONE.md` checklist
+- [ ] If this PR addresses a manual test-plan item, the relevant `docs/testing/*.md` checklist item is referenced
+
+## Crowdsourced contributor attribution
+
+Blackout Community handle (if applicable): <!-- @yourhandle, for payout attribution. Leave blank if N/A. -->
 
 Commands run:
 

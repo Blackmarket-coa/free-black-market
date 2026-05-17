@@ -9,6 +9,8 @@ A monorepo for a Medusa-based multi-vendor marketplace platform with four main a
 
 This repository also includes operational docs, QA playbooks, and scripts for release validation.
 
+> **Testing & security.** We run an external crowdsourced testing program with a security bounty. See [`TESTING.md`](TESTING.md) to join as a tester or contribute fixes, and [`SECURITY.md`](SECURITY.md) for the responsible-disclosure policy. **Do not file public issues for security vulnerabilities.**
+
 ## Repository Layout
 
 ```text
