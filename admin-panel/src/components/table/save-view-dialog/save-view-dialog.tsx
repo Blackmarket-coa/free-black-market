@@ -73,7 +73,9 @@ export const SaveViewDialog: React.FC<SaveViewDialogProps> = ({
             search: currentConfiguration?.search || editingView.configuration.search || "",
           },
         })
-        onSaved(result.view_configuration)
+        if (result.view_configuration) {
+          onSaved(result.view_configuration)
+        }
       } else {
         // Create new view
         const result = await createView.mutateAsync({
@@ -87,7 +89,9 @@ export const SaveViewDialog: React.FC<SaveViewDialogProps> = ({
             search: currentConfiguration?.search || "",
           },
         })
-        onSaved(result.view_configuration)
+        if (result.view_configuration) {
+          onSaved(result.view_configuration)
+        }
       }
     } catch (error) {
       // Error is handled by the hook

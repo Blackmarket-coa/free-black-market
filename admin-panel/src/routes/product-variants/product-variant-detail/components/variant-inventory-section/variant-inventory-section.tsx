@@ -25,8 +25,8 @@ export function VariantInventorySection({
   const columns = useInventoryTableColumns()
 
   const { table } = useDataTable({
-    data: inventoryItems ?? [],
-    columns,
+    data: (inventoryItems ?? []) as never,
+    columns: columns as never,
     count: inventoryItems.length,
     enablePagination: true,
     getRowId: (row) => row.id,

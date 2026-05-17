@@ -131,7 +131,7 @@ const FulfillmentStatusBadge = ({ status }: { status: string }) => {
 // Generic status badge
 const GenericStatusBadge = ({ status }: { status: string }) => {
   return (
-    <Badge variant="outline" className="capitalize">
+    <Badge color="grey" className="capitalize">
       {status}
     </Badge>
   )
@@ -191,8 +191,8 @@ export const DISPLAY_STRATEGIES = {
   
   boolean: {
     default: (value: any) => (
-      <Badge variant={value ? 'solid' : 'outline'}>
-        {value ? 'Yes' : 'No'}
+      <Badge color={value ? "green" : "grey"}>
+        {value ? "Yes" : "No"}
       </Badge>
     )
   },
