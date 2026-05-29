@@ -42,6 +42,15 @@ const CONDITIONAL_RULES = {
         { key: "FBM_BLACKSTAR_API_KEY", required: true, minLength: MIN_SECRET_LENGTH, banPrefixes: ["CHANGE_ME"] },
       ],
     },
+    {
+      // Matrix/Synapse (Blackout) chat — only validated when enabled by
+      // setting MATRIX_HOMESERVER_URL.
+      when: { key: "MATRIX_HOMESERVER_URL", present: true },
+      rules: [
+        { key: "MATRIX_SERVER_NAME", required: true, banPrefixes: ["CHANGE_ME"] },
+        { key: "MATRIX_ADMIN_TOKEN", required: true, banPrefixes: ["CHANGE_ME"] },
+      ],
+    },
   ],
 }
 
@@ -80,7 +89,11 @@ export function assertProductionEnv(app, env = process.env) {
   // Layer in any conditional rules whose gate matches.
   const conditional = CONDITIONAL_RULES[app] || []
   const activeConditional = conditional
-    .filter(({ when }) => String(env[when.key] ?? "") === String(when.equals))
+    .filter(({ when }) =>
+      when.present
+        ? String(env[when.key] ?? "") !== ""
+        : String(env[when.key] ?? "") === String(when.equals)
+    )
     .flatMap(({ rules }) => rules)
   const rules = [...baseRules, ...activeConditional]
 

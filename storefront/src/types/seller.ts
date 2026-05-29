@@ -25,7 +25,7 @@ export type SellerProps = SellerAddress & {
 
 export type SellerScheduling = {
   booking_url?: string
-  meeting_platform?: "rocketchat" | "zoom" | "signal" | "custom" | string
+  meeting_platform?: "matrix" | "zoom" | "signal" | "custom" | string
   meeting_url?: string
   meeting_instructions?: string
   ticket_product_handle?: string

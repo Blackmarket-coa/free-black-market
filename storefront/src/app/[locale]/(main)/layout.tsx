@@ -3,7 +3,7 @@ import { BackToTop } from "@/components/atoms"
 import { MobileLauncher } from "@/components/molecules"
 import { retrieveCustomer } from "@/lib/data/customer"
 import { checkRegion } from "@/lib/helpers/check-region"
-import { RocketChatProvider } from "@/providers/RocketChatProvider"
+import { MatrixChatProvider } from "@/providers/MatrixChatProvider"
 import { AnalyticsEventBinder } from "@/components/providers/AnalyticsEventBinder"
 import { redirect } from "next/navigation"
 
@@ -14,7 +14,7 @@ export default async function RootLayout({
   children: React.ReactNode
   params: Promise<{ locale: string }>
 }) {
-  const ROCKETCHAT_URL = process.env.NEXT_PUBLIC_ROCKETCHAT_URL
+  const MATRIX_ELEMENT_URL = process.env.NEXT_PUBLIC_MATRIX_ELEMENT_URL
   const { locale } = await params
 
   let user = null
@@ -39,8 +39,8 @@ export default async function RootLayout({
     user = null
   }
 
-  // --- Default layout (no RocketChat) ---
-  if (!ROCKETCHAT_URL || !user) {
+  // --- Default layout (no Matrix chat) ---
+  if (!MATRIX_ELEMENT_URL || !user) {
     return (
       <>
         <Header />
@@ -53,17 +53,17 @@ export default async function RootLayout({
     )
   }
 
-  // --- Authenticated layout with RocketChat ---
+  // --- Authenticated layout with Matrix chat ---
   return (
     <>
-      <RocketChatProvider>
+      <MatrixChatProvider>
         <Header />
         <AnalyticsEventBinder />
         {children}
         <Footer />
         <BackToTop />
         <MobileLauncher />
-      </RocketChatProvider>
+      </MatrixChatProvider>
     </>
   )
 }

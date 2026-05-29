@@ -1,5 +1,7 @@
 "use client"
 
+import { elementRoomUrl } from "@/lib/util/element-url"
+
 type ChatProps = {
   order_id?: string
   product_id?: string
@@ -20,8 +22,6 @@ type ChatProps = {
   }
 }
 
-const ROCKETCHAT_URL = process.env.NEXT_PUBLIC_ROCKETCHAT_URL || ""
-
 export function ChatBox({
   currentUser,
   supportUser,
@@ -29,17 +29,17 @@ export function ChatBox({
   order_id,
   product_id,
 }: ChatProps) {
-  if (!ROCKETCHAT_URL) {
+  // Build a room alias for the conversation
+  const roomAlias = `product-${product_id || order_id}-${currentUser.id}-${supportUser.id}`
+  const iframeUrl = elementRoomUrl({ alias: roomAlias })
+
+  if (!iframeUrl) {
     return (
       <div className="w-full h-[500px] flex items-center justify-center text-gray-500">
-        Chat is not configured. Please set NEXT_PUBLIC_ROCKETCHAT_URL.
+        Chat is not configured. Please set NEXT_PUBLIC_MATRIX_ELEMENT_URL.
       </div>
     )
   }
-
-  // Build a channel name for the conversation
-  const channelName = `product-${product_id || order_id}-${currentUser.id}-${supportUser.id}`
-  const iframeUrl = `${ROCKETCHAT_URL}/channel/${channelName}`
 
   return (
     <div className="w-full h-[500px]">

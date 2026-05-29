@@ -1,25 +1,27 @@
 import { Container, Heading, Text } from "@medusajs/ui";
 import { ChatBubbleLeftRight } from "@medusajs/icons";
 
-import { useRocketChat } from "@hooks/api/messages";
+import { useMatrixChat } from "@hooks/api/messages";
 
 export const Messages = () => {
-  const { isConfigured, rocketChatUrl, iframeUrl, loginToken, isLoading } = useRocketChat();
+  const { isConfigured, elementUrl, defaultRoomAlias, loginToken, isLoading } =
+    useMatrixChat();
 
-  // Build iframe URL with auto-login token
+  // Build the Element URL: auto-login via the single-use loginToken query param,
+  // and deep-link to the default room via the hash route when available.
   const getIframeUrl = () => {
-    if (!iframeUrl) return ""
+    if (!elementUrl) return "";
 
-    // If we have a login token, add it to the URL for auto-login
-    if (loginToken) {
-      const url = new URL(iframeUrl)
-      url.searchParams.set('resumeToken', loginToken)
-      
-return url.toString()
-    }
+    const base = elementUrl.replace(/\/$/, "");
+    const query = loginToken
+      ? `?loginToken=${encodeURIComponent(loginToken)}`
+      : "";
+    const hash = defaultRoomAlias
+      ? `#/room/${encodeURIComponent(defaultRoomAlias)}`
+      : "";
 
-    return iframeUrl
-  }
+    return `${base}/${query}${hash}`;
+  };
 
   const finalIframeUrl = getIframeUrl();
 
@@ -27,9 +29,9 @@ return url.toString()
     <Container>
       <div className="flex items-center justify-between mb-4">
         <Heading>Messages</Heading>
-        {isConfigured && rocketChatUrl && (
+        {isConfigured && elementUrl && (
           <a
-            href={rocketChatUrl}
+            href={elementUrl}
             target="_blank"
             rel="noopener noreferrer"
             className="text-ui-fg-interactive hover:underline text-sm"
@@ -46,7 +48,7 @@ return url.toString()
         ) : isConfigured && finalIframeUrl ? (
           <iframe
             src={finalIframeUrl}
-            title="Rocket.Chat Messages"
+            title="Matrix Messages"
             className="w-full h-full border-0 rounded-lg"
             allow="camera; microphone; fullscreen; display-capture"
           />
@@ -55,8 +57,8 @@ return url.toString()
             <ChatBubbleLeftRight className="w-12 h-12 text-ui-fg-muted mb-4" />
             <Heading>Chat Not Configured</Heading>
             <Text className="mt-4 text-ui-fg-muted text-center max-w-md">
-              Please set the ROCKETCHAT_URL environment variable in your backend
-              to enable chat functionality.
+              Please set the MATRIX_HOMESERVER_URL and MATRIX_ELEMENT_URL
+              environment variables in your backend to enable chat functionality.
             </Text>
           </div>
         )}

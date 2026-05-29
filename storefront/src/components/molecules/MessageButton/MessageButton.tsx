@@ -3,10 +3,10 @@
 import { Badge } from "@/components/atoms"
 import { MessageIcon } from "@/icons"
 import LocalizedClientLink from "../LocalizedLink/LocalizedLink"
-import { useRocketChat } from "@/providers/RocketChatProvider"
+import { useMatrixChat } from "@/providers/MatrixChatProvider"
 
 export const MessageButton = () => {
-  const { unreadCount } = useRocketChat()
+  const { unreadCount } = useMatrixChat()
 
   return (
     <LocalizedClientLink href="/user/messages" className="relative">

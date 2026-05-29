@@ -1,8 +1,11 @@
 "use client"
 
 import { MessageCircle } from "lucide-react"
-
-const ROCKETCHAT_URL = process.env.NEXT_PUBLIC_ROCKETCHAT_URL || ""
+import {
+  elementRoomUrl,
+  vendorRoomAlias,
+  orderRoomAlias,
+} from "@/lib/util/element-url"
 
 interface OrderChatButtonProps {
   orderId: string
@@ -15,17 +18,16 @@ export const OrderChatButton = ({
   sellerHandle,
   className = "",
 }: OrderChatButtonProps) => {
-  if (!ROCKETCHAT_URL) {
+  // Order chat goes to the vendor room when known, else an order-specific room.
+  const channelUrl = elementRoomUrl({
+    alias: sellerHandle
+      ? vendorRoomAlias(sellerHandle)
+      : orderRoomAlias(orderId),
+  })
+
+  if (!channelUrl) {
     return null
   }
-
-  // Clean order ID for channel name
-  const cleanOrderId = orderId.replace('order_', '')
-  
-  // Order channels could be either order-specific or go to vendor channel
-  const channelUrl = sellerHandle
-    ? `${ROCKETCHAT_URL}/channel/vendor-${sellerHandle}`
-    : `${ROCKETCHAT_URL}/channel/order-${cleanOrderId}`
 
   const handleClick = () => {
     window.open(channelUrl, "_blank", "noopener,noreferrer")

@@ -482,7 +482,7 @@ export const EditLinksForm = ({ seller }: { seller: StoreVendor }) => {
                       <Form.Control>
                         <Input
                           {...field}
-                          placeholder="Rocket.Chat, Zoom, Signal, etc."
+                          placeholder="Blackout Chat, Zoom, Signal, etc."
                         />
                       </Form.Control>
                       <Form.ErrorMessage />

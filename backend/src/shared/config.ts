@@ -61,8 +61,14 @@ const envSchema = z.object({
   STRIPE_API_KEY: z.string().startsWith("sk_", "STRIPE_API_KEY must start with 'sk_'").optional(),
   STRIPE_WEBHOOK_SECRET: z.string().startsWith("whsec_").optional(),
   
+  // Matrix / Synapse (Blackout) - internal messaging (optional)
+  MATRIX_HOMESERVER_URL: optionalString,
+  MATRIX_PUBLIC_BASE_URL: optionalString,
+  MATRIX_SERVER_NAME: optionalString,
+  MATRIX_ADMIN_TOKEN: optionalString,
+  MATRIX_ELEMENT_URL: optionalString,
+
   // External services (optional - just strings, no URL validation)
-  ROCKETCHAT_URL: optionalString,
   APPRISE_API_URL: optionalString,
   RESEND_API_KEY: optionalString,
   RESEND_FROM_EMAIL: optionalString,
@@ -171,6 +177,10 @@ export const features = {
   redis: () => !!config.REDIS_URL,
   openTelemetry: () => config.OTEL_ENABLED,
   sentry: () => !!config.SENTRY_DSN,
+  matrixChat: () =>
+    !!config.MATRIX_HOMESERVER_URL &&
+    !!config.MATRIX_SERVER_NAME &&
+    !!config.MATRIX_ADMIN_TOKEN,
 }
 
 // Export schema for testing

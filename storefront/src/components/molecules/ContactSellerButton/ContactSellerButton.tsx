@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useCallback } from "react"
+import { elementRoomUrl, vendorRoomAlias } from "@/lib/util/element-url"
 
 // Filled chat icon for better visibility
 const ChatBubbleFilledIcon = ({ className = "" }: { className?: string }) => (
@@ -53,8 +54,6 @@ const CloseIcon = ({ className = "" }: { className?: string }) => (
   </svg>
 )
 
-const ROCKETCHAT_URL = process.env.NEXT_PUBLIC_ROCKETCHAT_URL || ""
-
 interface ContactSellerButtonProps {
   sellerHandle: string
   sellerName?: string
@@ -74,12 +73,12 @@ export const ContactSellerButton = ({
   const [showChat, setShowChat] = useState(false)
 
   const displayName = sellerName || "Provider"
-  const channelUrl = `${ROCKETCHAT_URL}/channel/vendor-${sellerHandle}`
+  const channelUrl = elementRoomUrl({ alias: vendorRoomAlias(sellerHandle) })
 
   const handleClick = useCallback(() => {
     if (embedded) {
       setShowChat(true)
-    } else {
+    } else if (channelUrl) {
       window.open(channelUrl, "_blank", "noopener,noreferrer")
     }
   }, [embedded, channelUrl])
@@ -88,7 +87,7 @@ export const ContactSellerButton = ({
     setShowChat(false)
   }, [])
 
-  if (!ROCKETCHAT_URL) {
+  if (!channelUrl) {
     return null
   }
 

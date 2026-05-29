@@ -10,7 +10,7 @@ import { Dropdown } from "@/components/molecules"
 import LocalizedClientLink from "@/components/molecules/LocalizedLink/LocalizedLink"
 import { ProfileIcon } from "@/icons"
 import { HttpTypes } from "@medusajs/types"
-import { useRocketChat } from "@/providers/RocketChatProvider"
+import { useMatrixChat } from "@/providers/MatrixChatProvider"
 import { useState } from "react"
 
 // User Avatar with initials
@@ -31,7 +31,7 @@ export const UserDropdown = ({
 }) => {
   const [open, setOpen] = useState(false)
 
-  const { unreadCount } = useRocketChat()
+  const { unreadCount } = useMatrixChat()
 
   return (
     <div
