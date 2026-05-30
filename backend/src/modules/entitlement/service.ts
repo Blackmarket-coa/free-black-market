@@ -54,16 +54,41 @@ const GOVERNANCE_POWER_LEVEL: Record<string, number> = {
 function matrixAclsForRole(
   role: string,
   coalitionId: string
-): Array<{ room_id: string; level: number }> {
-  const level = GOVERNANCE_POWER_LEVEL[role] ?? 0
+): Array<{ roomId: string; powerLevel: number }> {
+  // Synapse power levels are 0-100; clamp defensively.
+  const powerLevel = Math.max(0, Math.min(100, GOVERNANCE_POWER_LEVEL[role] ?? 0))
   // Convention: every coalition has a `governance` room and a `commerce`
   // room. The Blackout side owns the actual room IDs; we just expose
   // intent here as `!<coalition>:<room>` style refs that Blackout can
-  // resolve against its room directory.
+  // resolve against its room directory. Blackout applies these verbatim.
   return [
-    { room_id: `!${coalitionId}-governance`, level },
-    { room_id: `!${coalitionId}-commerce`, level },
+    { roomId: `!${coalitionId}-governance`, powerLevel },
+    { roomId: `!${coalitionId}-commerce`, powerLevel },
   ]
+}
+
+/**
+ * Map an access decision onto a §4 `source` token. Prefers the most specific
+ * passing check; falls back to pending/none for denials.
+ */
+function deriveAccessSource(decision: {
+  allowed: boolean
+  reasons: Array<{ check: string; outcome: "pass" | "fail" | "skip"; detail?: string }>
+}): string {
+  if (decision.allowed) {
+    // The first pass that isn't the generic active-grants tally is the decider.
+    const decider = decision.reasons.find(
+      (r) => r.outcome === "pass" && r.check !== "active_grants"
+    )
+    if (!decider) return "grant"
+    if (decider.detail?.includes("public")) return "public"
+    if (decider.check.startsWith("governance")) return "governance-role"
+    return "grant"
+  }
+  if (decision.reasons.some((r) => r.detail === "foundation_milestone_pending")) {
+    return "pending"
+  }
+  return "none"
 }
 
 function derivedPermissionsFromGrants(
@@ -81,6 +106,56 @@ function derivedPermissionsFromGrants(
     }
   }
   return out
+}
+
+/**
+ * Internal resource kinds the access engine evaluates. The public contract
+ * (§4) speaks `urn:fbm:*` URNs; `parseResourceUrn` maps them onto these.
+ */
+export type ResourceKind =
+  | "matrix-room"
+  | "fbm-listing"
+  | "governance-proposal"
+  | "fulfillment-node"
+  | "ledger-tx"
+  | "platform-admin"
+
+/** §4 access action vocabulary. `administer` maps onto the internal `admin`. */
+export type AccessAction = "read" | "write" | "administer"
+
+/**
+ * Parse a §4 `ResourceUrn` into an internal `(kind, id)`. Returns null for
+ * malformed or unknown URNs. Recognised forms:
+ *   urn:fbm:room:<id>            -> matrix-room
+ *   urn:fbm:listing:<id>         -> fbm-listing
+ *   urn:fbm:proposal:<id>        -> governance-proposal
+ *   urn:fbm:fulfillment-node:<id>-> fulfillment-node
+ *   urn:fbm:ledger-tx:<id>       -> ledger-tx
+ *   urn:fbm:platform:admin       -> platform-admin (no id)
+ */
+export function parseResourceUrn(
+  urn: string
+): { kind: ResourceKind; id: string } | null {
+  if (typeof urn !== "string" || !urn.startsWith("urn:fbm:")) return null
+  const rest = urn.slice("urn:fbm:".length)
+  if (rest === "platform:admin") return { kind: "platform-admin", id: "admin" }
+
+  const sep = rest.indexOf(":")
+  if (sep <= 0) return null
+  const segment = rest.slice(0, sep)
+  const id = rest.slice(sep + 1)
+  if (!id) return null
+
+  const map: Record<string, ResourceKind> = {
+    room: "matrix-room",
+    listing: "fbm-listing",
+    proposal: "governance-proposal",
+    "fulfillment-node": "fulfillment-node",
+    "ledger-tx": "ledger-tx",
+  }
+  const kind = map[segment]
+  if (!kind) return null
+  return { kind, id }
 }
 
 export type GrantInput = {
@@ -303,15 +378,9 @@ class EntitlementModuleService extends MedusaService({
    */
   async evaluateAccess(input: {
     mxid: string
-    resourceKind:
-      | "matrix-room"
-      | "fbm-listing"
-      | "governance-proposal"
-      | "fulfillment-node"
-      | "ledger-tx"
-      | "platform-admin"
+    resourceKind: ResourceKind
     resourceId: string
-    action: "read" | "write" | "admin"
+    action: "read" | "write" | "admin" | "administer"
   }): Promise<{
     allowed: boolean
     reasons: Array<{
@@ -321,6 +390,10 @@ class EntitlementModuleService extends MedusaService({
     }>
     evaluated_at: string
   }> {
+    // §4 speaks `administer`; the internal engine uses `admin`.
+    const action: "read" | "write" | "admin" =
+      input.action === "administer" ? "admin" : input.action
+    input = { ...input, action }
     const reasons: Array<{
       check: string
       outcome: "pass" | "fail" | "skip"
@@ -427,6 +500,42 @@ class EntitlementModuleService extends MedusaService({
   }
 
   /**
+   * §4 `checkAccess`: project an access decision for a (mxid, urn, action)
+   * triple down to the `{ allowed, source }` shape the Blackout consumer reads.
+   * `source` is a short machine token describing what decided it.
+   */
+  async checkAccess(input: {
+    mxid: string
+    urn: string
+    action: AccessAction
+  }): Promise<{ allowed: boolean; source: string }> {
+    const parsed = parseResourceUrn(input.urn)
+    if (!parsed) {
+      return { allowed: false, source: "invalid_urn" }
+    }
+    const decision = await this.evaluateAccess({
+      mxid: input.mxid,
+      resourceKind: parsed.kind,
+      resourceId: parsed.id,
+      action: input.action,
+    })
+    return { allowed: decision.allowed, source: deriveAccessSource(decision) }
+  }
+
+  /**
+   * §4 `checkAccessBatch`: evaluate many checks for one MXID, returning results
+   * in the SAME ORDER as the input `checks`.
+   */
+  async checkAccessBatch(
+    mxid: string,
+    checks: Array<{ urn: string; action: AccessAction }>
+  ): Promise<Array<{ allowed: boolean; source: string }>> {
+    return Promise.all(
+      checks.map((c) => this.checkAccess({ mxid, urn: c.urn, action: c.action }))
+    )
+  }
+
+  /**
    * Render a governance-roles snapshot for an MXID per the §2.5 contract.
    *
    * The role→permission mapping is intentionally a static table here.
@@ -439,19 +548,16 @@ class EntitlementModuleService extends MedusaService({
    * `governance.role.<role>.<coalition_id>`.
    */
   async getGovernanceRoles(mxid: string): Promise<{
-    mxid: string
     roles: Array<{
-      coalition_id: string
+      coalitionId: string
       role: string
-      vote_eligibility: string[]
-      matrix_acls: Array<{ room_id: string; level: number }>
-      fbm_permissions: string[]
+      matrixAcls: Array<{ roomId: string; powerLevel: number }>
+      commercePermissions: string[]
+      voteEligibility: string[]
     }>
-    evaluated_at: string
   }> {
-    const evaluated_at = new Date().toISOString()
     if (!mxid) {
-      return { mxid: "", roles: [], evaluated_at }
+      return { roles: [] }
     }
     const grants = await this.listGrantsByMxid(mxid, {
       status: EntitlementStatus.ACTIVE,
@@ -479,15 +585,86 @@ class EntitlementModuleService extends MedusaService({
 
     const roles = Array.from(rolesByCoalition.values()).map(
       ({ role, coalition_id }) => ({
-        coalition_id,
+        coalitionId: coalition_id,
         role,
-        vote_eligibility: GOVERNANCE_VOTE_ELIGIBILITY[role] ?? [],
-        matrix_acls: matrixAclsForRole(role, coalition_id),
-        fbm_permissions: GOVERNANCE_FBM_PERMISSIONS[role] ?? [],
+        // matrixAcls are applied verbatim by Blackout's ACL sync worker.
+        matrixAcls: matrixAclsForRole(role, coalition_id),
+        commercePermissions: GOVERNANCE_FBM_PERMISSIONS[role] ?? [],
+        voteEligibility: GOVERNANCE_VOTE_ELIGIBILITY[role] ?? [],
       })
     )
 
-    return { mxid, roles, evaluated_at }
+    return { roles }
+  }
+
+  /**
+   * §4 `getEconomicStanding`: reshape the Hawala ledger standing into the
+   * minor-units contract Blackout reads. Ledger balances are stored as
+   * NUMERIC(20,4) major units (dollars), so amounts are converted to integer
+   * minor units. Empty totals are a valid response, not a 404.
+   */
+  async getEconomicStanding(standing: {
+    available: number
+    pending: number
+    currency: string
+    last_settlement_at: string | null
+    sources: Array<{ account_type: string; available: number; pending: number }>
+  }): Promise<{
+    coalitionCreditsBalanceMinorUnits: number
+    currency: string
+    pendingPayouts: Array<{ amountMinorUnits: number; currency: string }>
+    vendorSalesVolumeMinorUnits30d: number | null
+    creatorRewardEligibility: Array<{ programKey: string; eligible: boolean }>
+    lastSettlementAt: string | null
+  }> {
+    const toMinor = (major: number) => Math.round(major * 100)
+
+    const sellerSources = standing.sources.filter(
+      (s) => s.account_type === "SELLER_EARNINGS"
+    )
+    const creatorSources = standing.sources.filter(
+      (s) => s.account_type === "CREATOR_EARNINGS"
+    )
+
+    const pendingPayoutMajor = sellerSources.reduce((sum, s) => sum + s.pending, 0)
+    const vendorGrossMajor = sellerSources.reduce(
+      (sum, s) => sum + s.available + s.pending,
+      0
+    )
+
+    return {
+      coalitionCreditsBalanceMinorUnits: toMinor(standing.available + standing.pending),
+      currency: standing.currency,
+      pendingPayouts:
+        pendingPayoutMajor > 0
+          ? [{ amountMinorUnits: toMinor(pendingPayoutMajor), currency: standing.currency }]
+          : [],
+      // Null when there is no vendor activity to report a 30d volume for.
+      vendorSalesVolumeMinorUnits30d:
+        sellerSources.length > 0 ? toMinor(vendorGrossMajor) : null,
+      creatorRewardEligibility:
+        creatorSources.length > 0
+          ? [{ programKey: "creator-rewards", eligible: true }]
+          : [],
+      lastSettlementAt: standing.last_settlement_at,
+    }
+  }
+
+  /**
+   * §4 `getCoalitionMemberships`: coalition membership resolution depends on the
+   * `cooperative` module surfaces (foundation milestone). Until those ship we
+   * return a stable empty list (200) rather than 501, so Blackout consumes one
+   * shape across the cutover.
+   */
+  async getCoalitionMemberships(_mxid: string): Promise<{
+    memberships: Array<{
+      coalitionId: string
+      status: "active" | "pending" | "suspended" | "departed"
+      joinedAt?: string
+      entitlements: string[]
+    }>
+  }> {
+    return { memberships: [] }
   }
 
   private async findApplicableRules(args: {

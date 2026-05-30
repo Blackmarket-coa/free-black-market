@@ -329,19 +329,18 @@ describe("EntitlementModuleService", () => {
       })
 
       const snapshot = await svc.getGovernanceRoles(MXID)
-      expect(snapshot.mxid).toBe(MXID)
       expect(snapshot.roles).toHaveLength(2)
 
       const steward = snapshot.roles.find((r) => r.role === "steward")
-      expect(steward?.coalition_id).toBe("coalition_alpha")
-      expect(steward?.fbm_permissions).toEqual(
+      expect(steward?.coalitionId).toBe("coalition_alpha")
+      expect(steward?.commercePermissions).toEqual(
         expect.arrayContaining(["listing.create", "governance.proposal.create"])
       )
-      expect(steward?.matrix_acls.find((a) => a.room_id === "!coalition_alpha-governance")?.level).toBe(50)
+      expect(steward?.matrixAcls.find((a) => a.roomId === "!coalition_alpha-governance")?.powerLevel).toBe(50)
 
       const member = snapshot.roles.find((r) => r.role === "member")
-      expect(member?.coalition_id).toBe("coalition_beta")
-      expect(member?.fbm_permissions).toEqual(expect.arrayContaining(["governance.proposal.vote"]))
+      expect(member?.coalitionId).toBe("coalition_beta")
+      expect(member?.commercePermissions).toEqual(expect.arrayContaining(["governance.proposal.vote"]))
     })
 
     it("getGovernanceRoles() returns an empty role list when the MXID holds no role grants", async () => {
