@@ -1,4 +1,4 @@
-import EntitlementModuleService from "../service"
+import EntitlementModuleService, { parseResourceUrn } from "../service"
 import {
   EntitlementKind,
   EntitlementSource,
@@ -347,6 +347,87 @@ describe("EntitlementModuleService", () => {
       const svc = makeService()
       const snapshot = await svc.getGovernanceRoles(MXID)
       expect(snapshot.roles).toEqual([])
+    })
+  })
+
+  describe("§4 normative contract", () => {
+    const MXID = "@alice:theblackout.app"
+
+    it("parseResourceUrn maps urn:fbm:* onto internal kinds", () => {
+      expect(parseResourceUrn("urn:fbm:room:!abc")).toEqual({ kind: "matrix-room", id: "!abc" })
+      expect(parseResourceUrn("urn:fbm:listing:lst_1")).toEqual({ kind: "fbm-listing", id: "lst_1" })
+      expect(parseResourceUrn("urn:fbm:proposal:p1")).toEqual({ kind: "governance-proposal", id: "p1" })
+      expect(parseResourceUrn("urn:fbm:fulfillment-node:n1")).toEqual({ kind: "fulfillment-node", id: "n1" })
+      expect(parseResourceUrn("urn:fbm:ledger-tx:tx1")).toEqual({ kind: "ledger-tx", id: "tx1" })
+      expect(parseResourceUrn("urn:fbm:platform:admin")).toEqual({ kind: "platform-admin", id: "admin" })
+      expect(parseResourceUrn("not-a-urn")).toBeNull()
+      expect(parseResourceUrn("urn:fbm:room:")).toBeNull()
+    })
+
+    it("checkAccess returns { allowed, source } and treats administer as admin", async () => {
+      const svc = makeService()
+      // public read on a listing
+      const pub = await svc.checkAccess({ mxid: MXID, urn: "urn:fbm:listing:lst_1", action: "read" })
+      expect(pub).toEqual({ allowed: true, source: "public" })
+
+      // platform admin granted -> administer allowed via grant
+      await svc.grant({
+        customer_external_id: MXID,
+        feature_key: "platform.admin",
+        source_order_id: "o1",
+        product_id: "p1",
+      })
+      const admin = await svc.checkAccess({ mxid: MXID, urn: "urn:fbm:platform:admin", action: "administer" })
+      expect(admin.allowed).toBe(true)
+      expect(admin.source).toBe("grant")
+
+      // invalid urn
+      const bad = await svc.checkAccess({ mxid: MXID, urn: "nope", action: "read" })
+      expect(bad).toEqual({ allowed: false, source: "invalid_urn" })
+    })
+
+    it("checkAccessBatch preserves input order", async () => {
+      const svc = makeService()
+      const results = await svc.checkAccessBatch(MXID, [
+        { urn: "urn:fbm:listing:a", action: "read" }, // public -> allowed
+        { urn: "urn:fbm:platform:admin", action: "administer" }, // denied (no grant)
+      ])
+      expect(results).toHaveLength(2)
+      expect(results[0].allowed).toBe(true)
+      expect(results[1].allowed).toBe(false)
+    })
+
+    it("getEconomicStanding converts ledger dollars to minor units", async () => {
+      const svc = makeService()
+      const standing = await svc.getEconomicStanding({
+        available: 12.34,
+        pending: 1.0,
+        currency: "USD",
+        last_settlement_at: null,
+        sources: [{ account_type: "SELLER_EARNINGS", available: 10, pending: 2 }],
+      })
+      expect(standing.coalitionCreditsBalanceMinorUnits).toBe(1334) // (12.34 + 1.00) * 100
+      expect(standing.currency).toBe("USD")
+      expect(standing.pendingPayouts).toEqual([{ amountMinorUnits: 200, currency: "USD" }])
+      expect(standing.vendorSalesVolumeMinorUnits30d).toBe(1200) // (10 + 2) * 100
+    })
+
+    it("getEconomicStanding reports null vendor volume when not a vendor", async () => {
+      const svc = makeService()
+      const standing = await svc.getEconomicStanding({
+        available: 0,
+        pending: 0,
+        currency: "USD",
+        last_settlement_at: null,
+        sources: [],
+      })
+      expect(standing.vendorSalesVolumeMinorUnits30d).toBeNull()
+      expect(standing.pendingPayouts).toEqual([])
+    })
+
+    it("getCoalitionMemberships returns a stable empty list", async () => {
+      const svc = makeService()
+      expect(await svc.getCoalitionMemberships(MXID)).toEqual({ memberships: [] })
     })
   })
 })
