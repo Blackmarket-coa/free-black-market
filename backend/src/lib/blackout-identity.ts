@@ -102,6 +102,25 @@ export async function resolveSellerBlackoutUserId(
   }
 }
 
+/** Forward lookup: Blackout user id -> FBM seller_id (for §5 seller calls). */
+export async function resolveSellerIdByBlackoutUserId(
+  container: MedusaContainer,
+  blackoutUserId: string
+): Promise<string | null> {
+  const conn = pg(container)
+  if (!conn) return null
+  try {
+    const res = await conn.raw(
+      `SELECT seller_id FROM seller_metadata
+         WHERE blackout_user_id = ? AND deleted_at IS NULL LIMIT 1`,
+      [blackoutUserId]
+    )
+    return firstString(res?.rows, "seller_id")
+  } catch {
+    return null
+  }
+}
+
 /** Resolve a vendor's Matrix MXID (for §3 `vendorMxid`) from `seller_metadata`. */
 export async function resolveSellerMxid(
   container: MedusaContainer,
