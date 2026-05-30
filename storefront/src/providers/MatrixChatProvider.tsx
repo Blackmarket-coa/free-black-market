@@ -8,7 +8,7 @@ import {
   ReactNode,
   useCallback,
 } from "react"
-import { getMatrixChatConfig, MatrixChatConfig } from "@/lib/data/matrix"
+import { getMatrixChatConfig, getMatrixUnread, MatrixChatConfig } from "@/lib/data/matrix"
 import {
   elementBaseUrl,
   elementRoomUrl,
@@ -96,7 +96,7 @@ export const MatrixChatProvider = ({
   const [defaultRoomAlias, setDefaultRoomAlias] = useState<string | null>(
     initialConfig?.default_room_alias ?? null
   )
-  const [unreadCount] = useState(0)
+  const [unreadCount, setUnreadCount] = useState(0)
   const [connectionState, setConnectionState] = useState<
     "idle" | "connecting" | "connected" | "error"
   >(initialConfig ? "connecting" : "idle")
@@ -138,6 +138,24 @@ export const MatrixChatProvider = ({
       fetchConfig()
     }
   }, [initialConfig, fetchConfig])
+
+  // Poll the unread badge count every 30s while chat is configured.
+  useEffect(() => {
+    if (!isConfigured) return
+
+    let cancelled = false
+    const refresh = async () => {
+      const count = await getMatrixUnread()
+      if (!cancelled) setUnreadCount(count)
+    }
+
+    refresh()
+    const interval = setInterval(refresh, 30_000)
+    return () => {
+      cancelled = true
+      clearInterval(interval)
+    }
+  }, [isConfigured])
 
   const getRoomUrl = useCallback(
     (localAlias: string) =>

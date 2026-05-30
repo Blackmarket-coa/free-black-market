@@ -169,18 +169,23 @@ export class MatrixService {
    *
    * Requires Synapse `login_via_existing_session.enabled: true`.
    */
-  async mintLoginToken(mxid: string): Promise<LoginTokenResult> {
-    // Step 1: admin-impersonation login → user access token.
-    let userAccessToken: string
+  /**
+   * Admin-impersonation login: exchange the server-admin token for a real user
+   * access token via `POST /_synapse/admin/v1/users/{mxid}/login`. The returned
+   * token never leaves the backend; it is used to act as the user against the
+   * Client-Server API (login-token minting, sync, etc.).
+   */
+  private async getUserAccessToken(mxid: string): Promise<string> {
     try {
       const loginRes = await this.client.post(
         `/_synapse/admin/v1/users/${encodeURIComponent(mxid)}/login`,
         {}
       )
-      userAccessToken = loginRes.data.access_token
+      const userAccessToken = loginRes.data.access_token
       if (!userAccessToken) {
         throw new Error("admin login returned no access_token")
       }
+      return userAccessToken
     } catch (error: any) {
       console.error(
         "[Matrix] admin user login failed:",
@@ -188,6 +193,11 @@ export class MatrixService {
       )
       throw new Error("Failed to obtain Matrix user access token")
     }
+  }
+
+  async mintLoginToken(mxid: string): Promise<LoginTokenResult> {
+    // Step 1: admin-impersonation login → user access token.
+    const userAccessToken = await this.getUserAccessToken(mxid)
 
     // Step 2: exchange the user access token for a single-use login token.
     try {
@@ -221,6 +231,50 @@ export class MatrixService {
         error.response?.data || error.message
       )
       throw new Error("Failed to mint Matrix login token")
+    }
+  }
+
+  /**
+   * Sum the unread notification count across all of a user's joined rooms via
+   * `GET /_matrix/client/v3/sync` (acting as the user). Best-effort: returns 0
+   * on any failure or missing data so the badge degrades silently.
+   */
+  async getUnreadCount(mxid: string): Promise<number> {
+    try {
+      const userAccessToken = await this.getUserAccessToken(mxid)
+
+      // Minimal sync: no timeline events, no full state — we only need the
+      // per-room `unread_notifications` summary.
+      const filter = JSON.stringify({ room: { timeline: { limit: 0 } } })
+      const syncRes = await axios.get(
+        `${this.homeserverUrl}/_matrix/client/v3/sync`,
+        {
+          params: { filter, full_state: false, timeout: 0 },
+          headers: { Authorization: `Bearer ${userAccessToken}` },
+        }
+      )
+
+      const joinedRooms = syncRes.data?.rooms?.join
+      if (!joinedRooms || typeof joinedRooms !== "object") {
+        return 0
+      }
+
+      let total = 0
+      for (const room of Object.values(joinedRooms) as Array<{
+        unread_notifications?: { notification_count?: number }
+      }>) {
+        const count = room?.unread_notifications?.notification_count
+        if (typeof count === "number" && count > 0) {
+          total += count
+        }
+      }
+      return total
+    } catch (error: any) {
+      console.error(
+        "[Matrix] getUnreadCount failed:",
+        error.response?.data || error.message
+      )
+      return 0
     }
   }
 

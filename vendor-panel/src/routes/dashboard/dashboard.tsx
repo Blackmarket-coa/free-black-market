@@ -3,6 +3,7 @@ import { Alert, Button, Container, Heading, Text } from "@medusajs/ui"
 import { useOnboarding, useOrders } from "../../hooks/api"
 import { DashboardCharts } from "./components/dashboard-charts"
 import { DashboardOnboarding } from "./components/dashboard-onboarding"
+import { EconomicStandingCard } from "./components/economic-standing-card"
 import { ChartSkeleton } from "./components/chart-skeleton"
 import { useReviews } from "../../hooks/api/review"
 import { isFetchError } from "../../lib/is-fetch-error"
@@ -115,10 +116,13 @@ export const Dashboard = () => {
     )
 
   return (
-    <DashboardCharts
-      notFulfilledOrders={notFulfilledOrders}
-      fulfilledOrders={fulfilledOrders}
-      reviewsToReply={reviewsToReply}
-    />
+    <div className="flex flex-col gap-4">
+      <DashboardCharts
+        notFulfilledOrders={notFulfilledOrders}
+        fulfilledOrders={fulfilledOrders}
+        reviewsToReply={reviewsToReply}
+      />
+      <EconomicStandingCard />
+    </div>
   )
 }

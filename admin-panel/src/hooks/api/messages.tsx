@@ -38,3 +38,22 @@ export const useMatrixChat = () => {
     isLoading,
   };
 };
+
+/**
+ * Poll the authenticated admin's unread Matrix notification count.
+ * Best-effort: resolves to 0 on any error. Refetches every 30s.
+ */
+export const useMatrixUnread = () => {
+  const { data } = useQuery({
+    queryKey: ["matrix-unread"],
+    queryFn: () =>
+      fetch("/admin/chat/unread", {
+        credentials: "include",
+      })
+        .then((res) => res.json())
+        .catch(() => ({ unread_count: 0 })),
+    refetchInterval: 30_000,
+  });
+
+  return { unreadCount: data?.unread_count ?? 0 };
+};
