@@ -6,6 +6,11 @@ import type OrderSubcontractService from "../../../../../../../modules/order-sub
 import { OrderSubcontractStatus } from "../../../../../../../modules/order-subcontract/models"
 import { MARKETPLACE_WEBHOOKS_MODULE } from "../../../../../../../modules/marketplace-webhooks"
 import type MarketplaceWebhooksService from "../../../../../../../modules/marketplace-webhooks/service"
+import { emitBlackoutEvent } from "../../../../../../../lib/blackout-emit"
+import {
+  resolveSellerBlackoutUserId,
+  resolveSellerMxid,
+} from "../../../../../../../lib/blackout-identity"
 
 const Schema = z.object({
   reason: z.string().min(2).max(2000),
@@ -75,5 +80,28 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
   } catch (err) {
     console.error("[subcontract/dispute] webhook dispatch failed", err)
   }
+
+  // §3 bridge: open the three-party dispute room. vendorId is the counterparty
+  // seller; userId is the disputing party's Blackout id when linked.
+  const vendorSellerId =
+    sub.parent_seller_id === sellerId ? sub.subcontract_seller_id : sub.parent_seller_id
+  const [raiserBlackoutId, vendorMxid] = await Promise.all([
+    resolveSellerBlackoutUserId(req.scope, sellerId),
+    resolveSellerMxid(req.scope, vendorSellerId),
+  ])
+  await emitBlackoutEvent(
+    req.scope,
+    "dispute.opened",
+    {
+      disputeId: id,
+      vendorId: vendorSellerId,
+      ...(raiserBlackoutId ? { userId: raiserBlackoutId } : {}),
+      orderId: id,
+      reason: parsed.data.reason,
+      ...(vendorMxid ? { vendorMxid } : {}),
+    },
+    { eventId: `dispute.opened:${id}` }
+  )
+
   return res.status(200).json({ subcontract: updated })
 }
