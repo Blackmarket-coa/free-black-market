@@ -5,6 +5,7 @@ import { PAYOUT_BREAKDOWN_MODULE } from "../modules/payout-breakdown"
 import PayoutBreakdownService from "../modules/payout-breakdown/service"
 import { CREATOR_ATTRIBUTION_MODULE } from "../modules/creator-attribution"
 import type CreatorAttributionService from "../modules/creator-attribution/service"
+import { emitBlackoutEvent } from "../lib/blackout-emit"
 
 /**
  * Convert cents (integer) to dollars (decimal)
@@ -168,6 +169,23 @@ export default async function hawalaOrderPaymentSubscriber({
     })
 
     console.log(`[Hawala] Order ${orderId} processed: ${entries.length} ledger entries created`)
+
+    // §3 bridge: post to the vendor's private ledger room. order.total is in
+    // CENTS already, which is exactly the minor-units the contract wants.
+    const ledgerTxId =
+      (entries[0] as unknown as { id?: string } | undefined)?.id ?? `order-payment-${orderId}`
+    await emitBlackoutEvent(
+      container,
+      "ledger.payment_received",
+      {
+        vendorId: sellerId,
+        orderId,
+        amountMinorUnits: Math.round(Number(order.total)),
+        currency: String(order.currency_code || "USD").toUpperCase(),
+        ledgerTxId,
+      },
+      { eventId: `ledger.payment_received:${orderId}` }
+    )
   } catch (error) {
     console.error(`[Hawala] Error processing order ${orderId}:`, error)
     // Don't throw - order completion should not fail due to ledger issues

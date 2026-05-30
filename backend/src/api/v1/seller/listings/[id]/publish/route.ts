@@ -7,6 +7,8 @@ import { MARKETPLACE_SIGNING_MODULE } from "../../../../../../modules/marketplac
 import type PluginSigningService from "../../../../../../modules/marketplace-signing/service"
 import { MARKETPLACE_WEBHOOKS_MODULE } from "../../../../../../modules/marketplace-webhooks"
 import type MarketplaceWebhooksService from "../../../../../../modules/marketplace-webhooks/service"
+import { emitBlackoutEvent } from "../../../../../../lib/blackout-emit"
+import { resolveSellerBlackoutUserId } from "../../../../../../lib/blackout-identity"
 
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
   const sellerId = (req as SellerAuthRequest).seller_id
@@ -90,6 +92,21 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     signed_bundle_url: signedBundleUrl,
     signature_envelope: envelope,
   })
+
+  // §2 lifecycle: mirror onto the global Blackout channel. userId is the
+  // vendor's Blackout id; skip if the vendor hasn't linked their account.
+  const blackoutUserId = await resolveSellerBlackoutUserId(req.scope, sellerId)
+  if (blackoutUserId) {
+    await emitBlackoutEvent(
+      req.scope,
+      "listing.signed_bundle.published",
+      { userId: blackoutUserId, providerListingId: listing.id },
+      {
+        eventId: `listing.signed_bundle.published:${listing.id}:${listing.version}`,
+        metadata: { slug: listing.slug, version: listing.version },
+      }
+    )
+  }
 
   return res.json({ listing: updated, envelope })
 }

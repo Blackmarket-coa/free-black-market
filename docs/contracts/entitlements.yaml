@@ -1,24 +1,21 @@
 openapi: 3.1.0
 info:
   title: BMC Entitlements Service
-  version: 0.1.0
+  version: 1.0.0
   summary: |
     Stable boundary between the FBM substrate layer and the Blackout interface
     layer. Answers four questions for any (Matrix MXID, resource) pair: access,
     economic standing, governance roles, and coalition membership.
   description: |
-    This is the canonical contract for the entitlements service described in
-    `docs/AGGRESSIVE_OPERATIONS_GUIDE.md` §2.5. It is consumed by Blackout
-    (over HTTP) and by FBM modules (in-process). Changes to this contract
-    require revising the operations guide.
+    Canonical, authoritative contract for the FBM-hosted entitlements service
+    consumed by Blackout to gate Matrix room access, sync power levels, and
+    render Coalition Credits. This revision matches the normative
+    FreeBlackMarket -> Blackout work order (§4): path-param `{mxid}` routes, the
+    `read|write|administer` action vocabulary, `urn:fbm:*` resource URNs, and the
+    minor-units economic-standing shape.
 
-    Fields and operations not yet implemented in
-    `backend/src/modules/entitlement` are tagged `x-foundation-milestone: true`
-    so the contract documents the §2.5 target end state without misrepresenting
-    what ships today. The `/entitlements/access` shape that maps onto the
-    existing `verify` and `listForCustomer` service methods is implemented;
-    the economic-standing, governance-roles, and coalitions endpoints are the
-    foundation-milestone extension surface.
+    Implemented under
+    `backend/src/api/v1/integrations/blackout/entitlements/**`.
 
     Sibling contract: `docs/contracts/marketplace-layer.md`.
   license:
@@ -29,7 +26,7 @@ info:
     url: https://github.com/Blackmarket-coa/free-black-market
 servers:
   - url: https://fbm.local/v1/integrations/blackout
-    description: Blackout integration surface (HTTP, OAuth client-credentials)
+    description: Blackout integration surface (HTTP, service-token bearer)
   - url: http://localhost:9000/v1/integrations/blackout
     description: Local dev
 
@@ -38,192 +35,163 @@ security:
 
 tags:
   - name: access
-    description: Resource access decisions for a given MXID and resource.
+    description: Resource access decisions for a given MXID and resource URN.
   - name: economic-standing
     description: Coalition Credits balance, payouts, sales volume, reward eligibility.
   - name: governance-roles
-    description: Coalition roles, vote eligibility, derived Matrix ACLs and FBM permissions.
+    description: Coalition roles, derived Matrix ACLs and FBM commerce permissions.
   - name: coalitions
     description: Coalition memberships and coalition-scoped entitlements.
+  - name: summary
+    description: Combined economic standing + governance roles + coalition memberships.
 
 paths:
-  /entitlements:
+  /entitlements/access/{mxid}:
     get:
       tags: [access]
-      operationId: verifyFeatureKey
-      summary: Verify whether an MXID holds an active grant for a feature key.
-      description: |
-        Pre-existing single-feature verify endpoint. Kept for backward
-        compatibility with Blackout-side gating that pre-dates the §2.5
-        contract. New consumers should prefer `/entitlements/access` or
-        `/entitlements/grants`.
+      operationId: checkAccess
+      summary: Access decision for a (mxid, urn, action) triple.
       parameters:
-        - name: customer_external_id
-          in: query
-          schema: { $ref: '#/components/schemas/Mxid' }
-        - name: customer_id
-          in: query
-          schema: { type: string }
-        - name: feature_key
+        - $ref: '#/components/parameters/MxidPath'
+        - name: urn
           in: query
           required: true
-          schema: { type: string }
-      responses:
-        '200':
-          description: Verification result.
-          content:
-            application/json:
-              schema:
-                type: object
-                required: [entitled, entitlements]
-                properties:
-                  entitled: { type: boolean }
-                  entitlements:
-                    type: array
-                    items: { $ref: '#/components/schemas/Entitlement' }
-        '400': { $ref: '#/components/responses/BadRequest' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '503': { $ref: '#/components/responses/ServiceDisabled' }
-
-  /entitlements/access:
-    get:
-      tags: [access]
-      operationId: getAccessDecision
-      summary: Access decision for a (mxid, resource, action) triple.
-      description: |
-        Returns whether the actor identified by `mxid` may perform `action`
-        on `resource`. The resource taxonomy is closed and matches §2.5 of
-        the operations guide.
-      parameters:
-        - $ref: '#/components/parameters/MxidQuery'
-        - name: resource
-          in: query
-          required: true
-          schema:
-            $ref: '#/components/schemas/ResourceRef'
+          schema: { $ref: '#/components/schemas/ResourceUrn' }
         - name: action
           in: query
           required: true
-          schema:
-            type: string
-            enum: [read, write, admin]
+          schema: { $ref: '#/components/schemas/AccessAction' }
       responses:
         '200':
           description: Decision rendered.
           content:
             application/json:
-              schema:
-                $ref: '#/components/schemas/AccessDecision'
+              schema: { $ref: '#/components/schemas/AccessResult' }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
-        '404': { $ref: '#/components/responses/NotFound' }
         '503': { $ref: '#/components/responses/ServiceDisabled' }
 
-  /entitlements/economic-standing:
+  /entitlements/access-batch/{mxid}:
+    post:
+      tags: [access]
+      operationId: checkAccessBatch
+      summary: Batch access decisions for one MXID.
+      description: Returns one result per check, in the SAME ORDER as the input.
+      parameters:
+        - $ref: '#/components/parameters/MxidPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [checks]
+              properties:
+                checks:
+                  type: array
+                  minItems: 1
+                  items:
+                    type: object
+                    required: [urn, action]
+                    properties:
+                      urn: { $ref: '#/components/schemas/ResourceUrn' }
+                      action: { $ref: '#/components/schemas/AccessAction' }
+      responses:
+        '200':
+          description: Decisions in input order.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/AccessResult' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '503': { $ref: '#/components/responses/ServiceDisabled' }
+
+  /entitlements/economic-standing/{mxid}:
     get:
       tags: [economic-standing]
       operationId: getEconomicStanding
       summary: Economic standing for an MXID.
       description: |
-        Coalition Credits balance (available + pending across the MXID's
-        wallet and earnings accounts), payout summary, vendor sales volume
-        in the current measurement period, and creator reward eligibility
-        flags. Backed by `hawala-ledger`. Returns zeroed totals (rather
-        than 404) for MXIDs that have not yet transacted.
+        Coalition Credits balance, pending payouts, 30-day vendor sales volume,
+        and creator reward eligibility. Backed by `hawala-ledger`. Returns zeroed
+        totals (not 404) for MXIDs that have not yet transacted.
       parameters:
-        - $ref: '#/components/parameters/MxidQuery'
+        - $ref: '#/components/parameters/MxidPath'
       responses:
         '200':
           description: Standing snapshot.
           content:
             application/json:
-              schema:
-                $ref: '#/components/schemas/EconomicStanding'
+              schema: { $ref: '#/components/schemas/EconomicStanding' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '503': { $ref: '#/components/responses/ServiceDisabled' }
 
-  /entitlements/governance-roles:
+  /entitlements/governance-roles/{mxid}:
     get:
       tags: [governance-roles]
       operationId: getGovernanceRoles
       summary: Governance roles held by an MXID.
       description: |
-        Roles held within each coalition the user belongs to, the petitions
-        and proposals they can vote on, the Matrix ACLs that follow from
-        those roles, and the FBM commerce permissions that follow from those
-        roles. Read off the entitlement table as
-        `governance.role.<role>.<coalition_id>` grants; FBM permissions
-        derived via the static role→permission map in the entitlement
-        service. Coalition-level membership resolution still depends on the
-        `cooperative` module exposing membership.
+        Roles held within each coalition, the Matrix ACLs that follow from those
+        roles (applied verbatim by Blackout's ACL sync worker), and the FBM
+        commerce permissions they confer.
       parameters:
-        - $ref: '#/components/parameters/MxidQuery'
+        - $ref: '#/components/parameters/MxidPath'
       responses:
         '200':
           description: Role snapshot.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/GovernanceRoles'
+                type: object
+                required: [roles]
+                properties:
+                  roles:
+                    type: array
+                    items: { $ref: '#/components/schemas/GovernanceRole' }
         '401': { $ref: '#/components/responses/Unauthorized' }
-        '404': { $ref: '#/components/responses/NotFound' }
         '503': { $ref: '#/components/responses/ServiceDisabled' }
 
-  /entitlements/coalitions:
+  /entitlements/coalitions/{mxid}:
     get:
       tags: [coalitions]
       operationId: getCoalitionMemberships
-      x-foundation-milestone: true
       summary: Coalition memberships for an MXID.
-      description: |
-        Coalitions the user belongs to, membership status per coalition,
-        and coalition-scoped entitlements that follow from membership.
       parameters:
-        - $ref: '#/components/parameters/MxidQuery'
+        - $ref: '#/components/parameters/MxidPath'
       responses:
         '200':
           description: Membership snapshot.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/CoalitionMemberships'
+                type: object
+                required: [memberships]
+                properties:
+                  memberships:
+                    type: array
+                    items: { $ref: '#/components/schemas/CoalitionMembership' }
         '401': { $ref: '#/components/responses/Unauthorized' }
-        '404': { $ref: '#/components/responses/NotFound' }
-        '501': { $ref: '#/components/responses/NotImplemented' }
         '503': { $ref: '#/components/responses/ServiceDisabled' }
 
-  /entitlements/grants:
+  /entitlements/summary/{mxid}:
     get:
-      tags: [access]
-      operationId: listEntitlementGrants
-      summary: List entitlement grants for an MXID.
+      tags: [summary]
+      operationId: getSummary
+      summary: Combined entitlements summary (Q2 + Q3 + Q4).
       description: |
-        Lower-level view onto the `entitlement` table. Each row is a
-        feature-key grant with status, source, and expiry. Mirrors the
-        existing `listEntitlements` service method.
+        Economic standing, governance roles, and coalition memberships in one
+        response plus `cacheTtlSeconds`. Blackout caps the summary cache at 30s.
       parameters:
-        - $ref: '#/components/parameters/MxidQuery'
-        - name: status
-          in: query
-          schema:
-            $ref: '#/components/schemas/EntitlementStatus'
-        - name: feature_key
-          in: query
-          schema:
-            type: string
+        - $ref: '#/components/parameters/MxidPath'
       responses:
         '200':
-          description: Grants matching the filter.
+          description: Summary snapshot.
           content:
             application/json:
-              schema:
-                type: object
-                properties:
-                  grants:
-                    type: array
-                    items: { $ref: '#/components/schemas/Entitlement' }
-                required: [grants]
-        '400': { $ref: '#/components/responses/BadRequest' }
+              schema: { $ref: '#/components/schemas/EntitlementsSummary' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '503': { $ref: '#/components/responses/ServiceDisabled' }
 
@@ -232,16 +200,17 @@ components:
     bearerAuth:
       type: http
       scheme: bearer
-      bearerFormat: JWT
+      description: |
+        The Blackout deployment service token (`ENTITLEMENTS_SERVICE_TOKEN`).
+        A valid Blackout OAuth JWT is also accepted for back-compat.
 
   parameters:
-    MxidQuery:
+    MxidPath:
       name: mxid
-      in: query
+      in: path
       required: true
-      description: Matrix MXID, e.g. `@alice:bmc.example`.
-      schema:
-        $ref: '#/components/schemas/Mxid'
+      description: URL-encoded Matrix MXID, e.g. `%40alice%3Atheblackout.app`.
+      schema: { $ref: '#/components/schemas/Mxid' }
 
   responses:
     BadRequest:
@@ -250,29 +219,14 @@ components:
         application/json:
           schema: { $ref: '#/components/schemas/Error' }
     Unauthorized:
-      description: Missing or invalid bearer token.
-      content:
-        application/json:
-          schema: { $ref: '#/components/schemas/Error' }
-    NotFound:
-      description: MXID or resource not found.
-      content:
-        application/json:
-          schema: { $ref: '#/components/schemas/Error' }
-    NotImplemented:
-      description: |
-        Endpoint defined in the §2.5 contract but not yet shipped. The
-        response body's `code` is `foundation_milestone` so consumers can
-        detect that the endpoint is contractually present but pending
-        implementation.
+      description: Missing or invalid service token.
       content:
         application/json:
           schema: { $ref: '#/components/schemas/Error' }
     ServiceDisabled:
       description: |
-        Returned when `FBM_BLACKOUT_INTEGRATION` is not enabled on the
-        backend. The Blackout integration surface is disabled by default
-        in dev/preview and gated behind an env flag in production.
+        Blackout integration is not enabled on the backend
+        (`FBM_BLACKOUT_INTEGRATION != 1`).
       content:
         application/json:
           schema: { $ref: '#/components/schemas/Error' }
@@ -281,231 +235,135 @@ components:
     Mxid:
       type: string
       pattern: '^@[A-Za-z0-9._=/-]+:[A-Za-z0-9.-]+$'
-      example: '@alice:bmc.example'
+      example: '@alice:theblackout.app'
 
-    ResourceRef:
+    AccessAction:
+      type: string
+      enum: [read, write, administer]
+
+    ResourceUrn:
+      type: string
       description: |
-        Compact reference to a resource the entitlements service knows about.
-        The `kind` taxonomy is closed; each kind has its own `id` shape.
-      type: object
-      required: [kind, id]
-      properties:
-        kind:
-          type: string
-          enum:
-            - matrix-room
-            - fbm-listing
-            - governance-proposal
-            - fulfillment-node
-            - ledger-tx
-            - platform-admin
-        id:
-          type: string
+        Closed resource taxonomy. One of:
+        `urn:fbm:room:<id>`, `urn:fbm:listing:<id>`, `urn:fbm:proposal:<id>`,
+        `urn:fbm:fulfillment-node:<id>`, `urn:fbm:ledger-tx:<id>`,
+        `urn:fbm:platform:admin`.
+      examples:
+        - 'urn:fbm:room:!abc123'
+        - 'urn:fbm:platform:admin'
 
-    AccessDecision:
+    AccessResult:
       type: object
-      required: [allowed, reasons]
+      required: [allowed, source]
       properties:
         allowed: { type: boolean }
-        reasons:
-          description: Ordered list of policy checks that contributed to the decision.
-          type: array
-          items:
-            type: object
-            required: [check, outcome]
-            properties:
-              check: { type: string }
-              outcome:
-                type: string
-                enum: [pass, fail, skip]
-              detail: { type: string }
-        evaluated_at:
+        source:
           type: string
-          format: date-time
+          description: |
+            What decided the result, e.g. `grant`, `public`, `governance-role`,
+            `none`, `pending`, `invalid_urn`.
 
     EconomicStanding:
       type: object
-      required: [mxid, coalition_credits, payouts, vendor_sales, creator_rewards]
+      required:
+        - coalitionCreditsBalanceMinorUnits
+        - currency
+        - pendingPayouts
+        - vendorSalesVolumeMinorUnits30d
+        - creatorRewardEligibility
       properties:
-        mxid: { $ref: '#/components/schemas/Mxid' }
-        coalition_credits:
-          $ref: '#/components/schemas/CoalitionCreditsBalance'
-        payouts:
-          $ref: '#/components/schemas/PayoutSummary'
-        vendor_sales:
-          $ref: '#/components/schemas/VendorSalesSummary'
-        creator_rewards:
-          $ref: '#/components/schemas/CreatorRewardEligibility'
-        evaluated_at:
-          type: string
-          format: date-time
-
-    CoalitionCreditsBalance:
-      type: object
-      required: [available, currency]
-      properties:
-        available:
-          description: Available balance in `currency`'s minor unit (e.g. cents).
+        coalitionCreditsBalanceMinorUnits:
           type: integer
-          minimum: 0
-        pending:
-          type: integer
-          minimum: 0
-          default: 0
+          description: Available + pending Coalition Credits in the currency's minor unit.
         currency:
           type: string
-          example: USDC
-        last_settlement_at:
-          type: string
-          format: date-time
-
-    PayoutSummary:
-      type: object
-      properties:
-        pending_amount:
-          type: integer
-          minimum: 0
-        currency:
-          type: string
-        next_payout_at:
+          example: USD
+        pendingPayouts:
+          type: array
+          items:
+            type: object
+            required: [amountMinorUnits, currency]
+            properties:
+              amountMinorUnits: { type: integer }
+              currency: { type: string }
+        vendorSalesVolumeMinorUnits30d:
+          type: [integer, "null"]
+          description: 30-day gross vendor volume in minor units, or null when not a vendor.
+        creatorRewardEligibility:
+          type: array
+          items:
+            type: object
+            required: [programKey, eligible]
+            properties:
+              programKey: { type: string }
+              eligible: { type: boolean }
+        lastSettlementAt:
           type: [string, "null"]
           format: date-time
 
-    VendorSalesSummary:
+    GovernanceRole:
       type: object
+      required: [coalitionId, role, matrixAcls, commercePermissions]
       properties:
-        period:
+        coalitionId: { type: string }
+        role:
           type: string
-          description: Measurement period label, e.g. `2026-Q2`.
-        gross_volume:
-          type: integer
-          minimum: 0
-        net_volume:
-          type: integer
-          minimum: 0
-        currency:
-          type: string
-
-    CreatorRewardEligibility:
-      type: object
-      properties:
-        eligible: { type: boolean }
-        program_keys:
+          description: Role within the coalition (e.g. `vendor`, `steward`, `member`).
+        matrixAcls:
+          type: array
+          description: Applied verbatim by Blackout's ACL sync worker. FBM owns the mapping.
+          items:
+            type: object
+            required: [roomId, powerLevel]
+            properties:
+              roomId: { type: string }
+              powerLevel:
+                type: integer
+                minimum: 0
+                maximum: 100
+        commercePermissions:
           type: array
           items: { type: string }
-          description: Creator program keys the user qualifies under.
+          description: FBM commerce permission keys conferred by the role.
+        voteEligibility:
+          type: array
+          items: { type: string }
 
-    GovernanceRoles:
+    CoalitionMembership:
       type: object
-      required: [mxid, roles]
+      required: [coalitionId, status, entitlements]
+      properties:
+        coalitionId: { type: string }
+        status:
+          type: string
+          enum: [active, pending, suspended, departed]
+        joinedAt:
+          type: string
+          format: date-time
+        entitlements:
+          type: array
+          items: { type: string }
+
+    EntitlementsSummary:
+      type: object
+      required:
+        - mxid
+        - economicStanding
+        - governanceRoles
+        - coalitionMemberships
+        - cacheTtlSeconds
       properties:
         mxid: { $ref: '#/components/schemas/Mxid' }
-        roles:
+        economicStanding: { $ref: '#/components/schemas/EconomicStanding' }
+        governanceRoles:
           type: array
-          items:
-            type: object
-            required: [coalition_id, role]
-            properties:
-              coalition_id: { type: string }
-              role:
-                type: string
-                description: Role name within the coalition (e.g. `vendor`, `steward`, `member`).
-              vote_eligibility:
-                type: array
-                items:
-                  type: string
-                  description: Petition or proposal IDs the user can vote on.
-              matrix_acls:
-                type: array
-                items:
-                  type: object
-                  required: [room_id, level]
-                  properties:
-                    room_id: { type: string }
-                    level:
-                      type: integer
-                      description: Synapse power level derived from the role.
-              fbm_permissions:
-                type: array
-                items:
-                  type: string
-                  description: |
-                    FBM commerce permission keys derived from the role
-                    (e.g. `listing.create`, `order.fulfill`, `payout.withdraw`).
-
-    CoalitionMemberships:
-      type: object
-      x-foundation-milestone: true
-      required: [mxid, memberships]
-      properties:
-        mxid: { $ref: '#/components/schemas/Mxid' }
-        memberships:
+          items: { $ref: '#/components/schemas/GovernanceRole' }
+        coalitionMemberships:
           type: array
-          items:
-            type: object
-            required: [coalition_id, status]
-            properties:
-              coalition_id: { type: string }
-              status:
-                type: string
-                enum: [active, pending, suspended, departed]
-              joined_at:
-                type: string
-                format: date-time
-              entitlements:
-                type: array
-                items: { type: string }
-                description: Coalition-scoped feature keys the membership grants.
-
-    Entitlement:
-      type: object
-      description: Mirror of the `entitlement` table row shape.
-      required: [id, feature_key, kind, status, source, granted_at]
-      properties:
-        id: { type: string }
-        customer_id:
-          type: [string, "null"]
-        customer_external_id:
-          type: [string, "null"]
-          description: |
-            For MXID-keyed records, this holds the MXID. The vendor-roles
-            revision (foundation milestone) makes this the canonical key.
-        product_id:
-          type: [string, "null"]
-        variant_id:
-          type: [string, "null"]
-        feature_key: { type: string }
-        kind: { $ref: '#/components/schemas/EntitlementKind' }
-        status: { $ref: '#/components/schemas/EntitlementStatus' }
-        source: { $ref: '#/components/schemas/EntitlementSource' }
-        source_order_id:
-          type: [string, "null"]
-        source_subscription_id:
-          type: [string, "null"]
-        granted_at: { type: string, format: date-time }
-        expires_at:
-          type: [string, "null"]
-          format: date-time
-        revoked_at:
-          type: [string, "null"]
-          format: date-time
-        revoked_reason:
-          type: [string, "null"]
-        metadata:
-          type: [object, "null"]
-          additionalProperties: true
-
-    EntitlementStatus:
-      type: string
-      enum: [active, pending, expired, revoked]
-
-    EntitlementSource:
-      type: string
-      enum: [order, subscription, manual, external]
-
-    EntitlementKind:
-      type: string
-      enum: [digital, access_pass, plugin, theme, emoji_pack, service, other]
+          items: { $ref: '#/components/schemas/CoalitionMembership' }
+        cacheTtlSeconds:
+          type: integer
+          maximum: 30
 
     Error:
       type: object

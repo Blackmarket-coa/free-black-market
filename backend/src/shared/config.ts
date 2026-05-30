@@ -68,6 +68,17 @@ const envSchema = z.object({
   MATRIX_ADMIN_TOKEN: optionalString,
   MATRIX_ELEMENT_URL: optionalString,
 
+  // Blackout integration (FreeBlackMarket <-> Blackout)
+  // Outbound webhook emitter (§1-§3) + commerce API (§5) + entitlements service (§4).
+  // FREEBLACKMARKET_WEBHOOK_SECRET / FREEBLACKMARKET_API_KEY are required in production
+  // (enforced below in loadConfig); optional in dev/test so local boots succeed.
+  FREEBLACKMARKET_WEBHOOK_SECRET: optionalString,
+  FREEBLACKMARKET_API_KEY: optionalString,
+  FREEBLACKMARKET_BASE_URL: optionalString,
+  BLACKOUT_API_BASE: optionalString,
+  ENTITLEMENTS_SERVICE_TOKEN: optionalString,
+  ENTITLEMENTS_BASE_URL: optionalString,
+
   // External services (optional - just strings, no URL validation)
   APPRISE_API_URL: optionalString,
   RESEND_API_KEY: optionalString,
@@ -136,6 +147,18 @@ function loadConfig(): Config {
       throw new Error("JWT_SECRET is required in production.")
     }
 
+    // Blackout integration secrets are mandatory in production: the webhook
+    // emitter cannot sign deliveries and the commerce API cannot authenticate
+    // Blackout without them. Fail fast rather than booting a half-wired bridge.
+    if (!result.data.FREEBLACKMARKET_WEBHOOK_SECRET) {
+      logger.error("FREEBLACKMARKET_WEBHOOK_SECRET is required in production.")
+      throw new Error("FREEBLACKMARKET_WEBHOOK_SECRET is required in production.")
+    }
+    if (!result.data.FREEBLACKMARKET_API_KEY) {
+      logger.error("FREEBLACKMARKET_API_KEY is required in production.")
+      throw new Error("FREEBLACKMARKET_API_KEY is required in production.")
+    }
+
     const warnings: string[] = []
     
     if (!result.data.REDIS_URL) {
@@ -181,6 +204,10 @@ export const features = {
     !!config.MATRIX_HOMESERVER_URL &&
     !!config.MATRIX_SERVER_NAME &&
     !!config.MATRIX_ADMIN_TOKEN,
+  // Outbound Blackout webhook emitter is live only when we have both a signing
+  // secret and a destination. Used by emitBlackout() to no-op cleanly in dev.
+  freeblackmarketEmit: () =>
+    !!config.FREEBLACKMARKET_WEBHOOK_SECRET && !!config.BLACKOUT_API_BASE,
 }
 
 // Export schema for testing

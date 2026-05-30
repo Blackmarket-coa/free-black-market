@@ -8,6 +8,8 @@ import {
 } from "../../../../../modules/marketplace-listing/models/creator-payout-account"
 import { MARKETPLACE_WEBHOOKS_MODULE } from "../../../../../modules/marketplace-webhooks"
 import type MarketplaceWebhooksService from "../../../../../modules/marketplace-webhooks/service"
+import { emitBlackoutEvent } from "../../../../../lib/blackout-emit"
+import { resolveSellerBlackoutUserId } from "../../../../../lib/blackout-identity"
 
 const BodySchema = z
   .object({
@@ -78,6 +80,24 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       paid_at: now.toISOString(),
     }
   )
+
+  // §2 lifecycle: mirror onto the global Blackout channel (amount in minor units).
+  const blackoutUserId = await resolveSellerBlackoutUserId(req.scope, parsed.data.seller_id)
+  if (blackoutUserId) {
+    await emitBlackoutEvent(
+      req.scope,
+      "creator.payout.completed",
+      { userId: blackoutUserId },
+      {
+        eventId: `creator.payout.completed:${parsed.data.external_payout_id ?? `${parsed.data.seller_id}:${now.getTime()}`}`,
+        metadata: {
+          grossCents: Math.round(parsed.data.amount * 100),
+          currency: parsed.data.currency.toUpperCase(),
+          periodId: parsed.data.period_id ?? null,
+        },
+      }
+    )
+  }
 
   return res.json({
     seller_id: parsed.data.seller_id,

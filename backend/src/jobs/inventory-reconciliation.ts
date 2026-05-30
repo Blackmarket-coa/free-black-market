@@ -7,6 +7,7 @@ import {
   getLotAnomalies,
   getStaleWooConnections,
 } from "../utils/inventory-reconciliation-utils";
+import { emitBlackoutEvent } from "../lib/blackout-emit";
 
 /**
  * Scheduled job: inventory data quality reconciliation.
@@ -93,6 +94,37 @@ export default async function inventoryReconciliationJob(
           .map((connection: any) => connection.id)
           .join(",")}`,
       );
+    }
+
+    // §3 inventory.low — emit when stocked falls at/below the threshold. The
+    // vendor for a SKU is resolved from item metadata when present; items
+    // without a resolvable seller are skipped (the seller-link join is the
+    // remaining one-line wire-up — see work order §3 notes).
+    const threshold = Number(process.env.FBM_INVENTORY_LOW_THRESHOLD ?? 5);
+    let lowEmitted = 0;
+    for (const item of (inventoryItems || []) as any[]) {
+      const remaining = Number(item.stocked_quantity ?? 0) - Number(item.reserved_quantity ?? 0);
+      if (!(remaining >= 0 && remaining <= threshold)) continue;
+      const vendorId =
+        (item.metadata?.seller_id as string | undefined) ??
+        (item.metadata?.vendor_id as string | undefined);
+      if (!vendorId || !item.sku) continue;
+      await emitBlackoutEvent(
+        container,
+        "inventory.low",
+        {
+          vendorId,
+          sku: item.sku,
+          title: (item.title as string) ?? item.sku,
+          remaining,
+          threshold,
+        },
+        { eventId: `inventory.low:${item.id}:${remaining}` },
+      );
+      lowEmitted++;
+    }
+    if (lowEmitted > 0) {
+      logger.info(`[Inventory Reconciliation] Emitted ${lowEmitted} inventory.low event(s)`);
     }
   } catch (error: any) {
     logger.error(

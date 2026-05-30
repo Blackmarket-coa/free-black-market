@@ -14,6 +14,26 @@ export interface CreatorListingAsset {
   sha256: string
 }
 
+/**
+ * Blackout marketplace categories (§5). A listing's `category` must be one of
+ * these for the commerce catalog API to surface it to Blackout.
+ */
+export const BLACKOUT_LISTING_CATEGORIES = [
+  "emoji-sticker",
+  "meme-asset",
+  "stego-software",
+  "plugin-curated",
+  "subscription",
+  "profile-cosmetic",
+  "audio-pack",
+  "community-template",
+  "creator-asset",
+  "security-tool",
+  "ai-automation",
+] as const
+
+export type BlackoutListingCategory = (typeof BLACKOUT_LISTING_CATEGORIES)[number]
+
 export interface CreatorListingSignatureEnvelope {
   keyId: string
   alg: "ed25519"
@@ -65,6 +85,18 @@ const CreatorListing = model
      * listing seller is not the developer earning the plugin-developer split.
      */
     developer_seller_id: model.text().nullable(),
+
+    // === Blackout commerce catalog fields (§5) ===
+    // CreatorListing is signed-bundle shaped; these add the priced-catalog
+    // surface Blackout reads (priceCents/category/availableSkus/...). Nullable
+    // so existing signed-bundle listings are unaffected.
+    category: model.text().nullable(), // one of BLACKOUT_LISTING_CATEGORIES
+    price_cents: model.number().nullable(),
+    currency: model.text().nullable(),
+    entitlement_kind: model.text().nullable(),
+    available_skus: model.json().nullable(), // string[]
+    media_urls: model.json().nullable(), // string[]
+    tags: model.json().nullable(), // string[]
 
     metadata: model.json().nullable(),
   })

@@ -7,6 +7,7 @@ import { HAWALA_LEDGER_MODULE } from "../../../../../../../modules/hawala-ledger
 import type HawalaLedgerModuleService from "../../../../../../../modules/hawala-ledger/service"
 import { MARKETPLACE_WEBHOOKS_MODULE } from "../../../../../../../modules/marketplace-webhooks"
 import type MarketplaceWebhooksService from "../../../../../../../modules/marketplace-webhooks/service"
+import { emitBlackoutEvent } from "../../../../../../../lib/blackout-emit"
 
 const Schema = z.object({
   decision: z.enum(["release", "refund", "split"]),
@@ -121,6 +122,50 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     await webhooks.dispatch("subcontract.completed", sub.subcontract_seller_id, payload)
   } catch (err) {
     console.error("[admin/resolve] webhook dispatch failed", err)
+  }
+
+  // §3 bridge: dispute resolution + ledger escrow disposition.
+  const outcome =
+    parsed.data.decision === "refund"
+      ? "refunded"
+      : parsed.data.decision === "release"
+      ? "released"
+      : "split"
+  await emitBlackoutEvent(
+    req.scope,
+    "dispute.resolved",
+    { disputeId: id, outcome },
+    { eventId: `dispute.resolved:${id}` }
+  )
+  const releaseEntry = ops.find((o) => o.kind === "release")
+  if (releaseEntry) {
+    await emitBlackoutEvent(
+      req.scope,
+      "ledger.escrow_released",
+      {
+        vendorId: sub.subcontract_seller_id,
+        orderId: id,
+        amountMinorUnits: releaseAmount,
+        currency,
+        ledgerTxId: releaseEntry.entry_id,
+      },
+      { eventId: `ledger.escrow_released:${id}` }
+    )
+  }
+  const refundEntry = ops.find((o) => o.kind === "refund")
+  if (refundEntry) {
+    await emitBlackoutEvent(
+      req.scope,
+      "ledger.refund",
+      {
+        vendorId: sub.parent_seller_id,
+        orderId: id,
+        amountMinorUnits: refundAmount,
+        currency,
+        ledgerTxId: refundEntry.entry_id,
+      },
+      { eventId: `ledger.refund:${id}` }
+    )
   }
 
   return res.status(200).json({

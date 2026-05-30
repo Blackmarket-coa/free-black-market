@@ -1,4 +1,5 @@
 import jwt from "jsonwebtoken"
+import { timingSafeEqual } from "crypto"
 import type { MedusaRequest, MedusaResponse, MedusaNextFunction } from "@medusajs/framework/http"
 
 /**
@@ -68,6 +69,49 @@ export function verifyBlackoutToken(token: string): BlackoutTokenClaims | null {
   } catch {
     return null
   }
+}
+
+/** Constant-time string compare that tolerates length differences. */
+function safeEqual(a: string, b: string): boolean {
+  const ab = Buffer.from(a)
+  const bb = Buffer.from(b)
+  if (ab.length !== bb.length) return false
+  return timingSafeEqual(ab, bb)
+}
+
+/**
+ * Verify the bearer used by Blackout to call the entitlements service (§4).
+ * Accepts EITHER the static `ENTITLEMENTS_SERVICE_TOKEN` (the deployment token
+ * FBM issues to a Blackout deployment) OR a valid Blackout OAuth JWT, so the
+ * service keeps working for existing JWT-based callers during the cutover.
+ */
+export function verifyEntitlementsServiceToken(token: string): boolean {
+  if (!token) return false
+  const serviceToken = process.env.ENTITLEMENTS_SERVICE_TOKEN
+  if (serviceToken && safeEqual(token, serviceToken)) return true
+  return verifyBlackoutToken(token) !== null
+}
+
+/**
+ * Extract a `Bearer <token>` value from a request, or null. Handles the header
+ * arriving as a string or string[] (per Node's header typing).
+ */
+export function bearerToken(req: { headers: Record<string, unknown> }): string | null {
+  const raw = req.headers["authorization"] ?? req.headers["Authorization"]
+  const header = Array.isArray(raw) ? raw[0] : raw
+  if (typeof header !== "string" || !header.startsWith("Bearer ")) return null
+  const token = header.slice("Bearer ".length).trim()
+  return token.length > 0 ? token : null
+}
+
+/**
+ * Verify the bearer Blackout uses to call FBM's commerce API (§5): the static
+ * `FREEBLACKMARKET_API_KEY`. Constant-time compare.
+ */
+export function verifyCommerceApiKey(token: string): boolean {
+  const apiKey = process.env.FREEBLACKMARKET_API_KEY
+  if (!apiKey) return false
+  return safeEqual(token, apiKey)
 }
 
 export function blackoutAuthMiddleware(

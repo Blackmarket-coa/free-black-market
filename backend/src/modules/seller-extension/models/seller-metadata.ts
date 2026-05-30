@@ -152,6 +152,11 @@ const SellerMetadata = model.define("seller_metadata", {
   // a partial unique index in Migration202607AddMxidToSellerMetadata.
   mxid: model.text().nullable(),
 
+  // Blackout user id (the OAuth `sub`) captured when the vendor links their
+  // Blackout account. Distinct from `mxid`: this is the value Blackout keys
+  // entitlement grants and webhook `userId` on. Nullable until linked.
+  blackout_user_id: model.text().nullable(),
+
   // Metadata for additional extensions
   metadata: model.json().nullable(),
 })

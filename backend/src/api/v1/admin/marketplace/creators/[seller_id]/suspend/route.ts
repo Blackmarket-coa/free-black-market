@@ -11,6 +11,8 @@ import {
 } from "../../../../../../../modules/marketplace-listing/models/creator-payout-account"
 import { MARKETPLACE_WEBHOOKS_MODULE } from "../../../../../../../modules/marketplace-webhooks"
 import type MarketplaceWebhooksService from "../../../../../../../modules/marketplace-webhooks/service"
+import { emitBlackoutEvent } from "../../../../../../../lib/blackout-emit"
+import { resolveSellerBlackoutUserId } from "../../../../../../../lib/blackout-identity"
 
 const BodySchema = z
   .object({
@@ -74,6 +76,20 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       suspended_at: new Date().toISOString(),
     }
   )
+
+  // §2 lifecycle: mirror onto the global Blackout channel.
+  const blackoutUserId = await resolveSellerBlackoutUserId(req.scope, sellerId)
+  if (blackoutUserId) {
+    await emitBlackoutEvent(
+      req.scope,
+      "creator.account.suspended",
+      { userId: blackoutUserId },
+      {
+        eventId: `creator.account.suspended:${sellerId}:${Date.now()}`,
+        metadata: { reason: parsed.data.reason ?? null, suspendedListingCount: suspendedCount },
+      }
+    )
+  }
 
   return res.json({
     seller_id: sellerId,
