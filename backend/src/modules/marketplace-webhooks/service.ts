@@ -1,5 +1,5 @@
 import { MedusaService } from "@medusajs/framework/utils"
-import { createHmac, randomBytes } from "crypto"
+import { createHmac, randomBytes, randomUUID } from "crypto"
 import WebhookSubscription, {
   MARKETPLACE_WEBHOOK_EVENTS,
   MarketplaceWebhookEvent,
@@ -8,9 +8,18 @@ import WebhookSubscription, {
 import WebhookDelivery, {
   WebhookDeliveryStatus,
 } from "./models/webhook-delivery"
+import { isBlackoutEventType } from "./models/blackout-events"
 
 const RETRY_BACKOFF_MINUTES = [1, 5, 30] as const
 const MAX_ATTEMPTS = RETRY_BACKOFF_MINUTES.length + 1
+
+/**
+ * Sentinel subscription id for the global Blackout outbound channel (§1).
+ * Never a real DB row: it tells `attemptDelivery` to take the Blackout branch
+ * (top-level envelope, raw-byte hex signing, x-fbm-* headers, single
+ * config-driven destination) instead of the per-seller branch.
+ */
+export const BLACKOUT_SUBSCRIPTION_ID = "blackout-global"
 
 export interface DispatchedDelivery {
   id: string
@@ -87,6 +96,60 @@ class MarketplaceWebhooksService extends MedusaService({
   }
 
   /**
+   * Enqueue one event for the global Blackout outbound channel (§1-§3).
+   *
+   * Builds the top-level envelope `{ eventId, type, occurredAt, [metadata],
+   * ...fields }` exactly as the Blackout consumer expects (NOT the per-seller
+   * `{id,event,seller_id,payload}` wrapper) and stores it as the delivery
+   * payload. The dispatcher signs and ships it from `attemptDelivery`.
+   *
+   * Idempotency: `eventId` must be stable per logical event (e.g.
+   * `purchase.succeeded:${orderId}`); a re-emit with the same id is a no-op.
+   * No-ops entirely when the emitter is not configured (dev/preview without a
+   * signing secret + destination), returning `null`.
+   */
+  async emitBlackout(
+    type: string,
+    fields: Record<string, unknown>,
+    opts: { eventId?: string; metadata?: Record<string, unknown> } = {}
+  ): Promise<DispatchedDelivery | null> {
+    if (!isBlackoutEventType(type)) {
+      throw new Error(`Unknown Blackout event type: ${type}`)
+    }
+    if (!isBlackoutEmitConfigured()) {
+      return null
+    }
+
+    const eventId = opts.eventId ?? randomUUID()
+
+    // Stable-eventId dedupe: never enqueue the same logical event twice.
+    const existing = await this.listWebhookDeliveries({ event_id: eventId })
+    if (existing.length > 0) {
+      return { id: existing[0].id, subscription_id: BLACKOUT_SUBSCRIPTION_ID }
+    }
+
+    const envelope: Record<string, unknown> = {
+      eventId,
+      type,
+      occurredAt: new Date().toISOString(),
+      ...(opts.metadata ? { metadata: opts.metadata } : {}),
+      ...fields,
+    }
+
+    const delivery = await (this as any).createWebhookDeliveries({
+      subscription_id: BLACKOUT_SUBSCRIPTION_ID,
+      event: type,
+      event_id: eventId,
+      payload: envelope,
+      attempt: 0,
+      status: WebhookDeliveryStatus.PENDING,
+      next_attempt_at: new Date(),
+    })
+    const single = Array.isArray(delivery) ? delivery[0] : delivery
+    return { id: single.id, subscription_id: BLACKOUT_SUBSCRIPTION_ID }
+  }
+
+  /**
    * Attempt one delivery. Returns true on 2xx, false otherwise (and schedules
    * retry or marks dead).
    */
@@ -94,6 +157,73 @@ class MarketplaceWebhooksService extends MedusaService({
     const [delivery] = await this.listWebhookDeliveries({ id: deliveryId })
     if (!delivery) return false
 
+    if (delivery.subscription_id === BLACKOUT_SUBSCRIPTION_ID) {
+      return this.attemptBlackoutDelivery(delivery)
+    }
+
+    return this.attemptSellerDelivery(delivery)
+  }
+
+  /**
+   * Deliver a Blackout-channel event (§1): top-level envelope as the raw body,
+   * lowercase-hex HMAC-SHA256 over the exact bytes transmitted, x-fbm-event-id
+   * / x-fbm-signature headers, single config-driven destination. Reuses the
+   * shared retry/backoff state machine.
+   */
+  private async attemptBlackoutDelivery(delivery: any): Promise<boolean> {
+    const cfg = blackoutEmitConfig()
+    if (!cfg) {
+      // Secret/destination went away after enqueue — leave pending for a later
+      // drain rather than burning a retry attempt.
+      return false
+    }
+
+    // Sign the EXACT bytes we transmit: same string to update() and fetch body.
+    const rawBody = JSON.stringify(delivery.payload)
+    const signature = createHmac("sha256", cfg.secret).update(rawBody).digest("hex")
+    const url = `${cfg.apiBase.replace(/\/$/, "")}/v1/marketplace/webhooks/freeblackmarket`
+    const attempt = (delivery.attempt ?? 0) + 1
+
+    let responseCode: number | null = null
+    let responseBody: string | null = null
+    let succeeded = false
+
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-fbm-event-id": String(delivery.event_id ?? ""),
+          "x-fbm-signature": signature,
+        },
+        body: rawBody,
+      })
+      responseCode = res.status
+      responseBody = (await res.text()).slice(0, 2000)
+      succeeded = res.ok
+    } catch (err) {
+      responseBody = err instanceof Error ? err.message.slice(0, 2000) : "fetch_error"
+    }
+
+    if (succeeded) {
+      await (this as any).updateWebhookDeliveries({
+        id: delivery.id,
+        attempt,
+        status: WebhookDeliveryStatus.SUCCEEDED,
+        response_code: responseCode,
+        response_body: responseBody,
+        delivered_at: new Date(),
+        next_attempt_at: null,
+      })
+      return true
+    }
+
+    await this.scheduleRetryOrDie(delivery.id, attempt, responseCode, responseBody)
+    return false
+  }
+
+  /** Per-seller delivery (unchanged contract: wrapped envelope, sha256= header). */
+  private async attemptSellerDelivery(delivery: any): Promise<boolean> {
     const [subscription] = await this.listWebhookSubscriptions({
       id: delivery.subscription_id,
     })
@@ -156,28 +286,7 @@ class MarketplaceWebhooksService extends MedusaService({
       return true
     }
 
-    const isFinalAttempt = attempt >= MAX_ATTEMPTS
-    if (isFinalAttempt) {
-      await (this as any).updateWebhookDeliveries({
-        id: delivery.id,
-        attempt,
-        status: WebhookDeliveryStatus.DEAD,
-        response_code: responseCode,
-        response_body: responseBody,
-        next_attempt_at: null,
-      })
-    } else {
-      const backoffMinutes = RETRY_BACKOFF_MINUTES[attempt - 1] ?? 30
-      const next = new Date(Date.now() + backoffMinutes * 60_000)
-      await (this as any).updateWebhookDeliveries({
-        id: delivery.id,
-        attempt,
-        status: WebhookDeliveryStatus.FAILED,
-        response_code: responseCode,
-        response_body: responseBody,
-        next_attempt_at: next,
-      })
-    }
+    await this.scheduleRetryOrDie(delivery.id, attempt, responseCode, responseBody)
 
     await (this as any).updateWebhookSubscriptions({
       id: subscription.id,
@@ -186,6 +295,41 @@ class MarketplaceWebhooksService extends MedusaService({
     })
 
     return false
+  }
+
+  /**
+   * Mark a failed attempt: schedule the next retry with exponential backoff,
+   * or mark the delivery DEAD once attempts are exhausted. Shared by both the
+   * per-seller and Blackout delivery branches.
+   */
+  private async scheduleRetryOrDie(
+    deliveryId: string,
+    attempt: number,
+    responseCode: number | null,
+    responseBody: string | null
+  ): Promise<void> {
+    const isFinalAttempt = attempt >= MAX_ATTEMPTS
+    if (isFinalAttempt) {
+      await (this as any).updateWebhookDeliveries({
+        id: deliveryId,
+        attempt,
+        status: WebhookDeliveryStatus.DEAD,
+        response_code: responseCode,
+        response_body: responseBody,
+        next_attempt_at: null,
+      })
+      return
+    }
+    const backoffMinutes = RETRY_BACKOFF_MINUTES[attempt - 1] ?? 30
+    const next = new Date(Date.now() + backoffMinutes * 60_000)
+    await (this as any).updateWebhookDeliveries({
+      id: deliveryId,
+      attempt,
+      status: WebhookDeliveryStatus.FAILED,
+      response_code: responseCode,
+      response_body: responseBody,
+      next_attempt_at: next,
+    })
   }
 
   /**
@@ -218,6 +362,22 @@ class MarketplaceWebhooksService extends MedusaService({
 
 export function signWithSecret(secret: string, body: string): string {
   return createHmac("sha256", secret).update(body).digest("hex")
+}
+
+/**
+ * Resolved config for the Blackout outbound channel, or null when either the
+ * signing secret or the destination is missing. Read from the environment
+ * directly (not the cached `config` singleton) so tests can flip it per-case.
+ */
+export function blackoutEmitConfig(): { secret: string; apiBase: string } | null {
+  const secret = process.env.FREEBLACKMARKET_WEBHOOK_SECRET
+  const apiBase = process.env.BLACKOUT_API_BASE
+  if (!secret || !apiBase) return null
+  return { secret, apiBase }
+}
+
+export function isBlackoutEmitConfigured(): boolean {
+  return blackoutEmitConfig() !== null
 }
 
 export default MarketplaceWebhooksService
