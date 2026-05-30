@@ -40,3 +40,27 @@ export async function getMatrixChatConfig(): Promise<MatrixChatConfig | null> {
     return null
   }
 }
+
+/**
+ * Fetch the authenticated customer's total unread Matrix notification count.
+ * Best-effort: returns 0 on any error (the badge degrades silently).
+ */
+export async function getMatrixUnread(): Promise<number> {
+  try {
+    const authHeaders = await getAuthHeaders()
+    if (!authHeaders) {
+      return 0
+    }
+
+    const result = await medusaFetch<{ unread_count: number }>("/store/chat/unread", {
+      method: "GET",
+      headers: authHeaders,
+      cache: "no-store",
+    })
+
+    return result?.unread_count ?? 0
+  } catch (error) {
+    console.error("[getMatrixUnread] Error:", error)
+    return 0
+  }
+}

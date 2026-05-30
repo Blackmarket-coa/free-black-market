@@ -6,8 +6,9 @@ import {
   ReactNode,
   useCallback,
 } from "react"
+import { useQuery } from "@tanstack/react-query"
 import { useMe } from "../../hooks/api"
-import { sdk } from "../../lib/client"
+import { sdk, fetchQuery } from "../../lib/client"
 import { devLogger } from "../../lib/logger"
 import {
   elementBaseUrlFromEnv,
@@ -69,7 +70,18 @@ export const MatrixProvider = ({ children }: { children: ReactNode }) => {
   const [mxid, setMxid] = useState<string | null>(null)
   const [loginToken, setLoginToken] = useState<string | null>(null)
   const [defaultRoomAlias, setDefaultRoomAlias] = useState<string | null>(null)
-  const [unreadCount] = useState(0)
+
+  // Poll the unread badge count every 30s once chat is configured.
+  const { data: unreadData } = useQuery({
+    queryKey: ["matrix-unread"],
+    queryFn: () =>
+      fetchQuery("/vendor/chat/unread", { method: "GET" }) as Promise<{
+        unread_count: number
+      }>,
+    refetchInterval: 30_000,
+    enabled: isConfigured,
+  })
+  const unreadCount = unreadData?.unread_count ?? 0
 
   useEffect(() => {
     const fetchMatrixConfig = async () => {
