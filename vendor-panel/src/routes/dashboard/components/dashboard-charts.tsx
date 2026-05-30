@@ -23,7 +23,7 @@ import { ChartSkeleton } from "./chart-skeleton"
 import { useMemo, useState } from "react"
 import { addDays, differenceInDays, format, parseISO } from "date-fns"
 import { Calendar } from "../../../components/common/calendar/calendar"
-import { useRocketChat } from "../../../providers/rocketchat-provider"
+import { useMatrixChat } from "../../../providers/matrix-provider"
 import { CopyStorefrontLink } from "./copy-storefront-link"
 
 // Quick actions for established vendors
@@ -113,20 +113,20 @@ export const DashboardCharts = ({
 
   const [filters, setFilters] = useState(["customers", "orders"])
 
-  const { unreadCount, isConfigured: isRocketChatConfigured } = useRocketChat()
+  const { unreadCount, isConfigured: isMatrixConfigured } = useMatrixChat()
 
   const quickActions = useMemo(
     () => [
       ...QUICK_ACTIONS,
       {
         title: "Video Chat",
-        description: isRocketChatConfigured ? "Start a Jitsi call in chat" : "Enable Rocket.Chat to use video",
+        description: isMatrixConfigured ? "Start a call in chat" : "Enable Blackout Chat to use video",
         link: "/messages",
         icon: CalendarMini,
         color: "indigo",
       },
     ],
-    [isRocketChatConfigured]
+    [isMatrixConfigured]
   )
 
   const from = useMemo(() => {

@@ -6,11 +6,10 @@ import { sendVendorAcceptedNotificationWorkflow } from "../workflows/send-vendor
 import { appendPath } from "./url"
 import { sendCustomerAcceptedNotificationWorkflow } from "../workflows/send-customer-accepted-notification"
 import { VendorType } from "../modules/seller-extension/models/seller-metadata"
-import { getRocketChatService } from "./rocketchat-service"
+import { getMatrixService, GOVERNANCE_POWER_LEVEL } from "./matrix-service"
 import { REQUEST_MODULE } from "../modules/request"
 import RequestModuleService from "../modules/request/service"
 import { RequestStatus } from "../modules/request/models"
-import crypto from "crypto"
 import { REQUEST_TYPES, isSellerRequestType } from "../modules/request/validators"
 
 /**
@@ -26,7 +25,7 @@ export interface SellerApprovalResult {
     id: string
     status: RequestStatus
   }
-  rocketchatCreated: boolean
+  matrixCreated: boolean
 }
 
 /**
@@ -218,7 +217,7 @@ export class SellerApprovalService {
    * 2. Seller creation via workflow
    * 3. Auth identity linking
    * 4. Seller metadata creation
-   * 5. RocketChat user creation (non-blocking)
+   * 5. Matrix (Blackout) user + room provisioning (non-blocking)
    * 6. Request status update
    *
    * If critical steps fail, compensating actions are taken.
@@ -410,33 +409,35 @@ export class SellerApprovalService {
         console.warn(`[SellerApproval] Metadata creation failed (will use fallback): ${metadataError.message}`)
       }
 
-      // Step 6: Create RocketChat user (non-blocking)
-      let rocketchatCreated = false
-      const rocketchatService = getRocketChatService()
-      if (rocketchatService) {
+      // Step 6: Provision Matrix (Blackout) user + vendor room (non-blocking)
+      let matrixCreated = false
+      const matrixService = getMatrixService()
+      if (matrixService) {
         try {
-          const rocketchatPassword = crypto.randomBytes(32).toString("hex")
-          const username = seller.handle || data.member.email.split("@")[0]
-
-          const { username: rocketchatUsername } = await rocketchatService.createUser(
+          const localpartSource = seller.handle || data.member.email.split("@")[0]
+          const { mxid } = await matrixService.ensureUser(
+            localpartSource,
             data.member.name,
-            data.member.email,
-            username,
-            rocketchatPassword
+            { email: data.member.email }
           )
 
-          const channelName = await rocketchatService.createSellerChannel(
-            seller.id,
-            data.seller.name
+          const vendorAlias = `vendor-${seller.handle || seller.id}`
+          await matrixService.ensureRoom({
+            alias: vendorAlias,
+            name: `${data.seller.name} Channel`,
+            invite: [mxid],
+            powerLevels: { [mxid]: GOVERNANCE_POWER_LEVEL.vendor },
+          })
+
+          await matrixService.invite(
+            `#${matrixService.generalRoomAlias()}:${matrixService.getServerName()}`,
+            mxid
           )
 
-          await rocketchatService.addUserToChannel(channelName, rocketchatUsername)
-          await rocketchatService.addUserToChannel("general", rocketchatUsername)
-
-          rocketchatCreated = true
-          console.log(`[SellerApproval] RocketChat user created: ${rocketchatUsername}`)
-        } catch (rcError: any) {
-          console.warn(`[SellerApproval] RocketChat creation failed (non-blocking): ${rcError.message}`)
+          matrixCreated = true
+          console.log(`[SellerApproval] Matrix account provisioned: ${mxid}`)
+        } catch (matrixError: any) {
+          console.warn(`[SellerApproval] Matrix provisioning failed (non-blocking): ${matrixError.message}`)
         }
       }
 
@@ -498,7 +499,7 @@ export class SellerApprovalService {
           id: updatedRequest.id,
           status: updatedRequest.status as RequestStatus,
         },
-        rocketchatCreated,
+        matrixCreated,
       }
     } catch (error: any) {
       // Compensating actions for critical failures

@@ -22,7 +22,7 @@ import {
 import { ReactNode } from "react"
 import { useTranslation } from "react-i18next"
 import { useVendorType, VendorType, VendorFeatures } from "../../providers/vendor-type-provider"
-import { useRocketChat } from "../../providers/rocketchat-provider"
+import { useMatrixChat } from "../../providers/matrix-provider"
 import { StripeIcon } from "../../assets/icons/Stripe"
 import { phase1ModuleFlags } from "../../lib/phase0-feature-flags"
 
@@ -456,7 +456,7 @@ function getVendorNavigationConfig({
 export function useVendorNavigation() {
   const { t } = useTranslation()
   const { vendorType, features } = useVendorType()
-  const { unreadCount } = useRocketChat()
+  const { unreadCount } = useMatrixChat()
 
   const { coreRoutes, extensionRoutes } = getVendorNavigationConfig({
     t,

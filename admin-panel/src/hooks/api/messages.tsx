@@ -14,12 +14,12 @@ export const useTalkJS = () => {
   return { ...talkJs, isLoading };
 };
 
-export const useRocketChat = () => {
-  // Always fetch from API to get login token
-  const { data: rocketChat, isLoading } = useQuery({
-    queryKey: ["rocket-chat"],
+export const useMatrixChat = () => {
+  // Always fetch from API to get the single-use login token
+  const { data: matrixChat, isLoading } = useQuery({
+    queryKey: ["matrix-chat"],
     queryFn: () =>
-      fetch("/admin/rocketchat", {
+      fetch("/admin/chat", {
         credentials: "include", // Include auth cookies
       })
         .then((res) => res.json())
@@ -30,11 +30,11 @@ export const useRocketChat = () => {
   });
 
   return {
-    isConfigured: rocketChat?.configured ?? false,
-    rocketChatUrl: rocketChat?.url ?? null,
-    iframeUrl: rocketChat?.iframe_url ?? null,
-    loginToken: rocketChat?.login?.token ?? null,
-    username: rocketChat?.login?.username ?? null,
+    isConfigured: matrixChat?.configured ?? false,
+    elementUrl: matrixChat?.element_url ?? null,
+    serverName: matrixChat?.server_name ?? null,
+    defaultRoomAlias: matrixChat?.default_room_alias ?? null,
+    loginToken: matrixChat?.login?.login_token ?? null,
     isLoading,
   };
 };

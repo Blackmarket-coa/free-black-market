@@ -1,135 +1,61 @@
 "use client"
 
-import { useState, useRef, useEffect, useCallback } from "react"
-import { useRocketChat } from "@/providers/RocketChatProvider"
+import { useState, useMemo } from "react"
+import { useMatrixChat } from "@/providers/MatrixChatProvider"
+import {
+  elementRoomUrl,
+  elementHomeUrl,
+  vendorRoomAlias,
+  orderRoomAlias,
+} from "@/lib/util/element-url"
 
 interface UserMessagesSectionProps {
-  // Optional: specific channel to open (e.g., for vendor or order messaging)
+  // Optional: specific room alias (local part, e.g. "vendor-acme") to open.
   channelName?: string
-  // Optional: direct message to a specific user
-  directMessageUser?: string
 }
 
 export const UserMessagesSection = ({
   channelName,
-  directMessageUser
 }: UserMessagesSectionProps = {}) => {
   const {
     isConfigured,
     isLoading,
-    rocketChatUrl,
-    iframeUrl: defaultIframeUrl,
+    elementUrl,
+    serverName,
     loginToken,
-    connectionState,
-    activeRoom,
-    lastRoomEvent,
-    getChannelUrl,
-    getDirectMessageUrl,
-  } = useRocketChat()
+    defaultRoomAlias,
+  } = useMatrixChat()
 
   const [isFullscreen, setIsFullscreen] = useState(false)
-  const [isLoggedIn, setIsLoggedIn] = useState(false)
-  const iframeRef = useRef<HTMLIFrameElement>(null)
-  const loginAttemptedRef = useRef(false)
 
-  // Build the appropriate URL based on props
-  let iframeUrl = defaultIframeUrl
-  if (directMessageUser && rocketChatUrl) {
-    iframeUrl = getDirectMessageUrl(directMessageUser)
-  } else if (channelName && rocketChatUrl) {
-    iframeUrl = getChannelUrl(channelName)
-  }
+  // Build the Element URL: deep-link to a room if requested, otherwise the
+  // default room / home view. The single-use login token auto-logs the user in.
+  const iframeUrl = useMemo(() => {
+    if (!elementUrl) return null
 
-  // Auto-login to RocketChat via postMessage when iframe loads
-  const handleIframeLogin = useCallback(() => {
-    if (!iframeRef.current || !loginToken || !rocketChatUrl || loginAttemptedRef.current) return
-
-    try {
-      const iframe = iframeRef.current
-      const targetOrigin = new URL(rocketChatUrl).origin
-
-      // Send login-with-token message to RocketChat iframe
-      iframe.contentWindow?.postMessage({
-        externalCommand: "login-with-token",
-        token: loginToken
-      }, targetOrigin)
-
-      loginAttemptedRef.current = true
-      console.log("[RocketChat] Sent auto-login token to iframe")
-    } catch (error) {
-      console.error("[RocketChat] Failed to send login token:", error)
-    }
-  }, [loginToken, rocketChatUrl])
-
-  // Listen for messages from RocketChat iframe
-  useEffect(() => {
-    if (!rocketChatUrl) return
-
-    const handleMessage = (event: MessageEvent) => {
-      try {
-        const targetOrigin = new URL(rocketChatUrl).origin
-        if (event.origin !== targetOrigin) return
-
-        // Handle RocketChat ready event
-        if (event.data?.eventName === "startup") {
-          console.log("[RocketChat] Iframe ready, attempting auto-login")
-          handleIframeLogin()
-        }
-
-        // Handle successful login
-        if (event.data?.eventName === "login") {
-          setIsLoggedIn(true)
-          console.log("[RocketChat] Auto-login successful")
-        }
-
-        if (event.data?.eventName === "room-opened") {
-          setIsLoggedIn(true)
-        }
-      } catch (error) {
-        // Ignore origin parsing errors
-      }
+    if (channelName) {
+      return elementRoomUrl({
+        alias: channelName,
+        base: elementUrl,
+        serverName: serverName ?? undefined,
+        loginToken,
+      })
     }
 
-    window.addEventListener("message", handleMessage)
-    return () => window.removeEventListener("message", handleMessage)
-  }, [rocketChatUrl, handleIframeLogin])
-
-  // Reset login state when token changes
-  useEffect(() => {
-    loginAttemptedRef.current = false
-    setIsLoggedIn(false)
-  }, [loginToken])
-
-  // Handle iframe load event as fallback
-  const handleIframeLoad = useCallback(() => {
-    // Small delay to ensure RocketChat is fully loaded
-    setTimeout(() => {
-      if (!loginAttemptedRef.current) {
-        handleIframeLogin()
-      }
-    }, 1000)
-  }, [handleIframeLogin])
-
-  // Navigate to a channel using postMessage (preserves login state)
-  const navigateToChannel = useCallback((targetChannelName: string) => {
-    if (!iframeRef.current || !rocketChatUrl) return
-
-    try {
-      const targetOrigin = new URL(rocketChatUrl).origin
-      iframeRef.current.contentWindow?.postMessage({
-        externalCommand: "go",
-        path: `/channel/${targetChannelName}`
-      }, targetOrigin)
-    } catch (error) {
-      // Fallback to direct URL change
-      const url = getChannelUrl(targetChannelName)
-      if (iframeRef.current && url) {
-        iframeRef.current.src = url
-      }
+    // Default room alias from backend is a full "#alias:server"; strip to local.
+    if (defaultRoomAlias) {
+      const localAlias = defaultRoomAlias.replace(/^#/, "").split(":")[0]
+      return elementRoomUrl({
+        alias: localAlias,
+        base: elementUrl,
+        serverName: serverName ?? undefined,
+        loginToken,
+      })
     }
-  }, [rocketChatUrl, getChannelUrl])
 
-  // Show loading state
+    return elementHomeUrl(elementUrl, loginToken)
+  }, [elementUrl, serverName, loginToken, channelName, defaultRoomAlias])
+
   if (isLoading) {
     return (
       <div className="max-w-full h-[655px] flex items-center justify-center text-gray-500">
@@ -141,7 +67,7 @@ export const UserMessagesSection = ({
     )
   }
 
-  if (!isConfigured || !rocketChatUrl) {
+  if (!isConfigured || !elementUrl || !iframeUrl) {
     return (
       <div className="max-w-full h-[655px] flex items-center justify-center text-gray-500">
         <div className="text-center">
@@ -152,51 +78,15 @@ export const UserMessagesSection = ({
     )
   }
 
-  // Quick links to common channels
-  const quickLinks = [
-    { label: "Support", channelName: "support" },
-    { label: "General", channelName: "general" },
-  ]
-
   return (
-    <div className={`max-w-full ${isFullscreen ? "fixed inset-0 z-50 bg-white" : "h-[655px]"}`}>
+    <div
+      className={`max-w-full ${
+        isFullscreen ? "fixed inset-0 z-50 bg-white" : "h-[655px]"
+      }`}
+    >
       <div className="flex justify-between items-center mb-2">
-        <div className="flex items-center gap-3">
-          <h2 className="text-xl font-semibold">Messages</h2>
-          {isLoggedIn && (
-            <span className="text-xs text-green-600 bg-green-100 px-2 py-1 rounded">
-              Connected
-            </span>
-          )}
-        </div>
+        <h2 className="text-xl font-semibold">Messages</h2>
         <div className="flex items-center gap-4">
-          <div className="hidden md:flex items-center gap-2 text-xs text-gray-500">
-            <span>
-              State: <strong className="text-gray-700">{connectionState}</strong>
-            </span>
-            {activeRoom && (
-              <span>
-                Room: <strong className="text-gray-700">{activeRoom}</strong>
-              </span>
-            )}
-            {lastRoomEvent && (
-              <span>
-                Event: <strong className="text-gray-700">{lastRoomEvent}</strong>
-              </span>
-            )}
-          </div>
-          {/* Quick channel links */}
-          <div className="flex items-center gap-2 text-sm">
-            {quickLinks.map((link, idx) => (
-              <button
-                key={idx}
-                onClick={() => navigateToChannel(link.channelName)}
-                className="text-gray-500 hover:text-primary transition-colors"
-              >
-                {link.label}
-              </button>
-            ))}
-          </div>
           <button
             onClick={() => setIsFullscreen(!isFullscreen)}
             className="text-sm text-primary hover:underline"
@@ -204,7 +94,7 @@ export const UserMessagesSection = ({
             {isFullscreen ? "Exit Fullscreen" : "Fullscreen"}
           </button>
           <a
-            href={rocketChatUrl}
+            href={elementUrl}
             target="_blank"
             rel="noopener noreferrer"
             className="text-sm text-primary hover:underline"
@@ -214,28 +104,21 @@ export const UserMessagesSection = ({
         </div>
       </div>
       <iframe
-        ref={iframeRef}
-        src={iframeUrl || `${rocketChatUrl}/home`}
+        src={iframeUrl}
         title="Messages"
-        className={`w-full border-0 rounded-lg ${isFullscreen ? "h-[calc(100vh-60px)]" : "h-[600px]"}`}
+        className={`w-full border-0 rounded-lg ${
+          isFullscreen ? "h-[calc(100vh-60px)]" : "h-[600px]"
+        }`}
         allow="camera; microphone; fullscreen; display-capture; autoplay"
-        onLoad={handleIframeLoad}
       />
     </div>
   )
 }
 
-// Helper function to get vendor channel URL (for use outside the component)
-export const getVendorChannelUrl = (vendorHandle: string) => {
-  const rocketChatUrl = process.env.NEXT_PUBLIC_ROCKETCHAT_URL
-  if (!rocketChatUrl) return null
-  return `${rocketChatUrl}/channel/vendor-${vendorHandle}`
-}
+// Helper to get a vendor room URL (for use outside the component / SSR).
+export const getVendorChannelUrl = (vendorHandle: string) =>
+  elementRoomUrl({ alias: vendorRoomAlias(vendorHandle) })
 
-// Helper function to get order channel URL (for use outside the component)
-export const getOrderChannelUrl = (orderId: string) => {
-  const rocketChatUrl = process.env.NEXT_PUBLIC_ROCKETCHAT_URL
-  if (!rocketChatUrl) return null
-  const cleanOrderId = orderId.replace("order_", "")
-  return `${rocketChatUrl}/channel/order-${cleanOrderId}`
-}
+// Helper to get an order room URL (for use outside the component / SSR).
+export const getOrderChannelUrl = (orderId: string) =>
+  elementRoomUrl({ alias: orderRoomAlias(orderId) })

@@ -7,7 +7,7 @@ import {
   NavigationItem,
 } from "@/components/atoms"
 import { BugReportButton } from "@/components/molecules/BugReportButton/BugReportButton"
-import { useRocketChat } from "@/providers/RocketChatProvider"
+import { useMatrixChat } from "@/providers/MatrixChatProvider"
 import { usePathname } from "next/navigation"
 
 const navigationItems = [
@@ -43,7 +43,7 @@ const navigationItems = [
 ]
 
 export const UserNavigation = () => {
-  const { unreadCount } = useRocketChat()
+  const { unreadCount } = useMatrixChat()
   const path = usePathname()
 
   return (

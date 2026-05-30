@@ -1,1 +1,1 @@
-export { RocketChatProvider, useRocketChat } from "./RocketChatProvider"
+export { MatrixChatProvider, useMatrixChat } from "./MatrixChatProvider"

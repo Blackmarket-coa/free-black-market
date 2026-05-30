@@ -12,7 +12,7 @@ import { requireAdminId } from "../../../../../shared/auth-helpers"
  * 1. Create the seller using MercurJS workflow
  * 2. Link auth identity to seller
  * 3. Create seller metadata
- * 4. Create RocketChat user (if configured)
+ * 4. Provision Matrix (Blackout) user + vendor room (if configured)
  * 5. Mark the request as accepted
  *
  * Uses the shared SellerApprovalService for consistent behavior.

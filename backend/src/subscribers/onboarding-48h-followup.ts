@@ -10,7 +10,7 @@ import type MarketplaceWebhooksService from "../modules/marketplace-webhooks/ser
  * `FEATURE_BUILD_PLAN.md`). Branch A (signed up but no listing) is handled
  * by a separate scheduled job (out of scope this pass).
  *
- * Best-effort. Listeners (email automations, RocketChat nudges) plug in
+ * Best-effort. Listeners (email automations, Matrix chat nudges) plug in
  * via `marketplace-webhooks`.
  */
 export default async function onboardingFollowup({

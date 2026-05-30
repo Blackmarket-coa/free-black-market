@@ -6,8 +6,7 @@ import { useState } from "react"
 import { HttpTypes } from "@medusajs/types"
 import { SellerProps } from "@/types/seller"
 import { MessageIcon } from "@/icons"
-
-const ROCKETCHAT_URL = process.env.NEXT_PUBLIC_ROCKETCHAT_URL || ""
+import { elementRoomUrl } from "@/lib/util/element-url"
 
 export const Chat = ({
   user,
@@ -28,13 +27,13 @@ export const Chat = ({
 }) => {
   const [modal, setModal] = useState(false)
 
-  if (!ROCKETCHAT_URL) {
+  // Build a room alias for the conversation
+  const roomAlias = `product-${product?.id || order_id}-${user?.id}-${seller?.id}`
+  const iframeUrl = elementRoomUrl({ alias: roomAlias })
+
+  if (!iframeUrl) {
     return null
   }
-
-  // Build a channel name for the conversation
-  const channelName = `product-${product?.id || order_id}-${user?.id}-${seller?.id}`
-  const iframeUrl = `${ROCKETCHAT_URL}/channel/${channelName}`
 
   return (
     <>

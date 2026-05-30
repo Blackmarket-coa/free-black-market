@@ -2,11 +2,11 @@
 
 import { useMemo } from "react"
 import { Button } from "@/components/atoms"
-import { useRocketChat } from "@/providers/RocketChatProvider"
+import { useMatrixChat } from "@/providers/MatrixChatProvider"
 import type { SellerProps, SellerScheduling as SellerSchedulingMeta } from "@/types/seller"
 
 const PLATFORM_LABELS: Record<string, string> = {
-  rocketchat: "Rocket.Chat",
+  matrix: "Blackout Chat",
   zoom: "Zoom",
   signal: "Signal",
   custom: "video call",
@@ -28,7 +28,7 @@ const openExternalLink = (url: string) => {
 }
 
 export const SellerScheduling = ({ seller }: { seller: SellerProps }) => {
-  const { getVendorChannelUrl, isConfigured } = useRocketChat()
+  const { getVendorChannelUrl, isConfigured } = useMatrixChat()
   const scheduling = seller.metadata?.scheduling
 
   const vendorChannelUrl = useMemo(() => {
@@ -79,14 +79,14 @@ export const SellerScheduling = ({ seller }: { seller: SellerProps }) => {
               Book a ticket
             </Button>
           )}
-          {meetingPlatform === "rocketchat" && isConfigured && vendorChannelUrl && (
+          {meetingPlatform === "matrix" && isConfigured && vendorChannelUrl && (
             <Button
               type="button"
               variant="tonal"
               size="large"
               onClick={() => openExternalLink(vendorChannelUrl)}
             >
-              Start a Rocket.Chat session
+              Start a Blackout Chat session
             </Button>
           )}
           {scheduling?.meeting_url && (
@@ -105,9 +105,9 @@ export const SellerScheduling = ({ seller }: { seller: SellerProps }) => {
             {scheduling.meeting_instructions}
           </p>
         )}
-        {meetingPlatform === "rocketchat" && !isConfigured && (
+        {meetingPlatform === "matrix" && !isConfigured && (
           <p className="text-sm text-secondary">
-            Rocket.Chat is not configured yet. Please use the booking link or
+            Blackout Chat is not configured yet. Please use the booking link or
             contact the seller for details.
           </p>
         )}

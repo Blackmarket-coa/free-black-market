@@ -3,7 +3,7 @@ import { Navigate, Outlet, useLocation } from "react-router-dom"
 import { useSellerSession } from "../../../hooks/api/users"
 import { SearchProvider } from "../../../providers/search-provider"
 import { SidebarProvider } from "../../../providers/sidebar-provider"
-import { RocketChatProvider } from "../../../providers/rocketchat-provider"
+import { MatrixProvider } from "../../../providers/matrix-provider"
 import { getAuthToken } from "../../../lib/client"
 
 export const ProtectedRoute = () => {
@@ -98,12 +98,12 @@ export const ProtectedRoute = () => {
 
   // User is approved and seller data is loaded - render the protected content
   return (
-    <RocketChatProvider>
+    <MatrixProvider>
       <SidebarProvider>
         <SearchProvider>
           <Outlet />
         </SearchProvider>
       </SidebarProvider>
-    </RocketChatProvider>
+    </MatrixProvider>
   )
 }
