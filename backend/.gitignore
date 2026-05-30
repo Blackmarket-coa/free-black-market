@@ -29,4 +29,4 @@ build
 # migrations/ directory when `pnpm test:integration:http` runs against
 # an ephemeral DB. They're per-run artifacts (filename contains the
 # transient DB id), not part of the migration graph.
-src/modules/*/migrations/.snapshot-medusa-*.json
+src/modules/*/migrations/.snapshot-medusa-*.jsonbackend/package-lock.json
