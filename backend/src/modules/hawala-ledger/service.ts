@@ -235,6 +235,12 @@ class HawalaLedgerModuleService extends MedusaService({
    * Fund a creator reward pool from the funder's earnings (vendor) or the
    * platform reserve (when funderSellerId is null). Used when a vendor
    * opens a $X engagement pool for a program.
+   *
+   * AUTHZ: Funding from the platform RESERVE (funderSellerId null) moves
+   * platform money with no counterparty paying in, so it must be
+   * explicitly authorized via `allowPlatformFunding === true`. Route
+   * callers MUST gate that flag behind admin authentication — never pass
+   * it from unauthenticated/seller-facing handlers.
    */
   async fundCreatorRewardPool(args: {
     poolId: string
@@ -242,6 +248,7 @@ class HawalaLedgerModuleService extends MedusaService({
     amountCents: number
     currencyCode?: string
     idempotencyKey?: string
+    allowPlatformFunding?: boolean
   }) {
     if (args.amountCents <= 0) {
       throw new Error("fundCreatorRewardPool amountCents must be > 0")
@@ -252,6 +259,10 @@ class HawalaLedgerModuleService extends MedusaService({
     if (args.funderSellerId) {
       sourceAccount = await this.getOrCreateSellerEarnings(args.funderSellerId, currency)
     } else {
+      // Platform-funded: require explicit, admin-gated authorization.
+      if (args.allowPlatformFunding !== true) {
+        throw new Error("Platform-funded reward pools require explicit authorization")
+      }
       sourceAccount = await this.getOrCreateSystemAccount("RESERVE")
     }
     return this.createTransfer({
@@ -501,6 +512,11 @@ class HawalaLedgerModuleService extends MedusaService({
     investment_pool_id?: string
     idempotency_key?: string
     metadata?: Record<string, any>
+    // Optional pg connection. When supplied, balance mutations use the
+    // atomic CAS UPDATE (updateBalancesAtomic) instead of the legacy
+    // read-modify-write updateBalances. Additive/non-breaking: callers
+    // that don't pass it keep the old behavior.
+    pgConnection?: any
   }) {
     // Check idempotency
     if (data.idempotency_key) {
@@ -560,9 +576,15 @@ class HawalaLedgerModuleService extends MedusaService({
       metadata: data.metadata,
     })
 
-    // Update account balances
-    await this.updateBalances(data.debit_account_id, -data.amount)
-    await this.updateBalances(data.credit_account_id, data.amount)
+    // Update account balances. Prefer the atomic CAS path when a pg
+    // connection is supplied; fall back to the legacy read-modify-write.
+    if (data.pgConnection) {
+      await this.updateBalancesAtomic(data.pgConnection, data.debit_account_id, -data.amount)
+      await this.updateBalancesAtomic(data.pgConnection, data.credit_account_id, data.amount)
+    } else {
+      await this.updateBalances(data.debit_account_id, -data.amount)
+      await this.updateBalances(data.credit_account_id, data.amount)
+    }
 
     // Update running balances on entry
     const [newDebitAccount, newCreditAccount] = await Promise.all([
@@ -608,7 +630,47 @@ class HawalaLedgerModuleService extends MedusaService({
    * 
    * For debits, validates sufficient balance before update.
    */
-  private async updateBalances(accountId: string, delta: number, maxRetries = 3) {
+  /**
+   * Atomically apply a balance delta using a single conditional UPDATE.
+   *
+   * This is a true DB-level compare-and-swap: the `balance + ? >= 0`
+   * predicate in the WHERE clause guarantees we never overdraw and never
+   * lose a concurrent write (no read-modify-write TOCTOU window). If no
+   * row is updated (`rowCount === 0`) the account is missing, deleted, or
+   * has insufficient balance for a debit, so we throw.
+   *
+   * Uses the same `?` positional raw-SQL style as getMemberBalanceByMxid.
+   */
+  private async updateBalancesAtomic(
+    pgConnection: any,
+    accountId: string,
+    delta: number
+  ): Promise<void> {
+    const result = await pgConnection.raw(
+      `UPDATE ledger_account
+         SET balance = balance + ?,
+             available_balance = available_balance + ?,
+             updated_at = NOW()
+       WHERE id = ?
+         AND deleted_at IS NULL
+         AND balance + ? >= 0`,
+      [delta, delta, accountId, delta]
+    )
+
+    // knex/pg raw returns rowCount on the result object (or nested rowCount).
+    const rowCount =
+      typeof result?.rowCount === "number"
+        ? result.rowCount
+        : typeof result?.rows?.length === "number" && result.rowCount === undefined
+          ? result.rows.length
+          : result?.rowCount
+
+    if (!rowCount) {
+      throw new Error("Insufficient balance in account " + accountId)
+    }
+  }
+
+  private async updateBalances(accountId: string, delta: number, maxRetries = 5) {
     let attempt = 0
     
     while (attempt < maxRetries) {
@@ -642,8 +704,9 @@ class HawalaLedgerModuleService extends MedusaService({
         if (Number(freshAccount.balance) !== currentBalance) {
           // Concurrent modification detected - retry
           if (attempt < maxRetries) {
-            // Exponential backoff: 10ms, 20ms, 40ms
-            await new Promise(resolve => setTimeout(resolve, 10 * Math.pow(2, attempt - 1)))
+            // Exponential backoff with random jitter to de-correlate retries.
+            const backoff = 10 * Math.pow(2, attempt - 1) + Math.floor(Math.random() * 10)
+            await new Promise(resolve => setTimeout(resolve, backoff))
             continue
           }
           throw new Error(
@@ -664,8 +727,9 @@ class HawalaLedgerModuleService extends MedusaService({
         if (attempt >= maxRetries) {
           throw error
         }
-        // Exponential backoff before retry
-        await new Promise(resolve => setTimeout(resolve, 10 * Math.pow(2, attempt - 1)))
+        // Exponential backoff with random jitter before retry
+        const backoff = 10 * Math.pow(2, attempt - 1) + Math.floor(Math.random() * 10)
+        await new Promise(resolve => setTimeout(resolve, backoff))
       }
     }
   }
@@ -1055,6 +1119,11 @@ class HawalaLedgerModuleService extends MedusaService({
     })
 
     // Update pool totals
+    // FOLLOW-UP: these total_raised/total_investors increments are a
+    // read-modify-write and can lose updates under concurrent investments.
+    // Move to an atomic SQL UPDATE (... SET total_raised = total_raised + ?,
+    // total_investors = total_investors + 1 WHERE id = ?) once a pgConnection
+    // is threaded through this path.
     await this.updateInvestmentPools({
       id: data.pool_id,
       total_raised: Number(pool.total_raised) + data.amount,
@@ -1096,7 +1165,11 @@ class HawalaLedgerModuleService extends MedusaService({
           amount: dividend,
           entry_type: "DIVIDEND",
           investment_pool_id: data.pool_id,
-          idempotency_key: `div-${pool.id}-${investment.id}-${Date.now()}`,
+          // Deterministic key so a re-run of the same distribution does not
+          // double-pay. NOTE: if/when distinct distribution *rounds* are
+          // introduced, fold a round/distribution id into this key so a
+          // second legitimate round to the same investor isn't deduped away.
+          idempotency_key: `div-${pool.id}-${investment.id}`,
         })
 
         // Update investment record
@@ -1111,6 +1184,8 @@ class HawalaLedgerModuleService extends MedusaService({
     }
 
     // Update pool totals
+    // FOLLOW-UP: read-modify-write; move total_distributed increment to an
+    // atomic SQL UPDATE once a pgConnection is threaded through this path.
     await this.updateInvestmentPools({
       id: data.pool_id,
       total_distributed: Number(pool.total_distributed) + data.total_amount,
@@ -1348,9 +1423,12 @@ class HawalaLedgerModuleService extends MedusaService({
       default_tier: config?.default_payout_tier || "WEEKLY",
       instant_payout_eligible: config?.instant_payout_eligible ?? false,
       instant_payout_daily_limit: config?.instant_payout_daily_limit ?? 10000,
-      instant_payout_remaining: config 
-        ? Number(config.instant_payout_daily_limit) - Number(config.instant_payout_used_today)
-        : 0,
+      // Null-safe: coalesce unset limit/used so we never surface NaN.
+      instant_payout_remaining: Math.max(
+        0,
+        Number(config?.instant_payout_daily_limit ?? 10000) -
+          Number(config?.instant_payout_used_today ?? 0)
+      ),
     }
   }
 
@@ -1384,6 +1462,24 @@ class HawalaLedgerModuleService extends MedusaService({
     // Validate balance
     if (Number(account.available_balance) < data.amount) {
       throw new Error("Insufficient balance")
+    }
+
+    // INSTANT tier: enforce the per-vendor daily instant-payout limit using
+    // a null-safe (finite) remaining value, so an unset config can't yield
+    // NaN and silently pass this guard.
+    if (data.payout_tier === "INSTANT") {
+      const configs = await this.listPayoutConfigs({ vendor_id: data.vendor_id })
+      const config = configs[0]
+      const instantRemaining = Math.max(
+        0,
+        Number(config?.instant_payout_daily_limit ?? 10000) -
+          Number(config?.instant_payout_used_today ?? 0)
+      )
+      if (instantRemaining < data.amount) {
+        throw new Error(
+          `Instant payout daily limit exceeded: requested ${data.amount}, remaining ${instantRemaining}`
+        )
+      }
     }
 
     // Calculate fees

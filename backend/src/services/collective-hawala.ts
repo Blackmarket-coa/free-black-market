@@ -9,6 +9,7 @@ import type HawalaLedgerModuleService from "../modules/hawala-ledger/service"
 import type DemandPoolModuleService from "../modules/demand-pool/service"
 import { ParticipantStatus } from "../modules/demand-pool/models/demand-participant"
 import { DemandPostStatus } from "../modules/demand-pool/models/demand-post"
+import { BountyStatus } from "../modules/demand-pool/models/demand-bounty"
 
 export class CollectiveHawalaService {
   private hawalaService: HawalaLedgerModuleService
@@ -212,8 +213,8 @@ export class CollectiveHawalaService {
       amount: input.amount,
       entry_type: "FEE",
       description: `Bounty escrow for demand pool ${input.demand_post_id}`,
-      reference_type: "ORDER",
-      reference_id: input.demand_post_id,
+      reference_type: "DEMAND_BOUNTY",
+      reference_id: input.bounty_id,
       idempotency_key: `bounty-escrow-${input.bounty_id}`,
     })
 
@@ -233,6 +234,7 @@ export class CollectiveHawalaService {
   async payBountyMilestone(input: {
     demand_post_id: string
     bounty_id: string
+    milestone_index: number
     assignee_id: string
     amount: number
     milestone_description: string
@@ -272,12 +274,194 @@ export class CollectiveHawalaService {
       amount: input.amount,
       entry_type: "TRANSFER",
       description: `Bounty payout: ${input.milestone_description}`,
-      reference_type: "ORDER",
-      reference_id: input.demand_post_id,
-      idempotency_key: `bounty-payout-${input.bounty_id}-${Date.now()}`,
+      reference_type: "DEMAND_BOUNTY",
+      reference_id: input.bounty_id,
+      // Deterministic key so retries of the same milestone payout are
+      // idempotent (createTransfer returns the existing entry on match).
+      idempotency_key: `bounty-payout-${input.bounty_id}-m${input.milestone_index}`,
     })
 
     return entry
+  }
+
+  /**
+   * Authorized milestone completion that also pays out the assignee.
+   *
+   * Completes the milestone on the bounty record (which enforces a
+   * read-check-write concurrency guard), then transfers the milestone's
+   * payout from escrow to the assignee's wallet. Optionally captures a
+   * proof artifact on the bounty's metadata.
+   */
+  async completeAndPayMilestone(input: {
+    demand_post_id: string
+    bounty_id: string
+    milestone_index: number
+    proof?: { url?: string; note?: string }
+  }) {
+    const completion = await this.demandPoolService.completeBountyMilestone(
+      input.bounty_id,
+      input.milestone_index
+    )
+
+    const bounties = await this.demandPoolService.listDemandBounties({
+      id: input.bounty_id,
+    })
+    if (bounties.length === 0) {
+      throw new Error("Bounty not found")
+    }
+    const bounty = bounties[0]
+
+    if (!bounty.assignee_id) {
+      throw new Error("Bounty has no assignee to pay")
+    }
+
+    const milestones = (bounty.milestones || []) as Array<{
+      description: string
+      percentage: number
+      condition: string
+      completed?: boolean
+    }>
+    const milestoneDescription =
+      milestones[input.milestone_index]?.description ||
+      `Milestone ${input.milestone_index}`
+
+    const entry = await this.payBountyMilestone({
+      demand_post_id: input.demand_post_id,
+      bounty_id: input.bounty_id,
+      milestone_index: input.milestone_index,
+      assignee_id: bounty.assignee_id as string,
+      amount: completion.payout_amount,
+      milestone_description: milestoneDescription,
+    })
+
+    if (input.proof) {
+      const existingMetadata = (bounty.metadata || {}) as Record<string, unknown>
+      const proofs = Array.isArray(
+        (existingMetadata as { proofs?: unknown }).proofs
+      )
+        ? ((existingMetadata as { proofs: unknown[] }).proofs as unknown[])
+        : []
+      await this.demandPoolService.updateDemandBounties({
+        id: input.bounty_id,
+        metadata: {
+          ...existingMetadata,
+          proofs: [
+            ...proofs,
+            {
+              milestone_index: input.milestone_index,
+              ...input.proof,
+              captured_at: new Date().toISOString(),
+            },
+          ],
+        } as Record<string, unknown>,
+      })
+    }
+
+    return {
+      ...completion,
+      ledger_entry_id: entry.id,
+    }
+  }
+
+  /**
+   * Refund the un-paid remainder of a bounty's escrow back to its
+   * contributor (e.g. when the demand pool is cancelled or expires).
+   * No-op (returns null) if the bounty is already fully paid out.
+   */
+  async refundBountyEscrow(input: {
+    demand_post_id: string
+    bounty_id: string
+  }) {
+    const bounties = await this.demandPoolService.listDemandBounties({
+      id: input.bounty_id,
+    })
+    if (bounties.length === 0) {
+      throw new Error("Bounty not found")
+    }
+    const bounty = bounties[0]
+
+    const remainder =
+      Number(bounty.amount) - Number(bounty.amount_paid_out)
+    if (remainder <= 0) {
+      return null
+    }
+
+    const posts = await this.demandPoolService.listDemandPosts({
+      id: input.demand_post_id,
+    })
+    if (posts.length === 0) {
+      throw new Error("Demand post not found")
+    }
+    const escrowAccountId = posts[0].escrow_account_id as string
+    if (!escrowAccountId) {
+      throw new Error("Escrow account not found")
+    }
+
+    const contributorAccounts = await this.hawalaService.listLedgerAccounts({
+      owner_id: bounty.contributor_id,
+      account_type: "USER_WALLET",
+    })
+    if (contributorAccounts.length === 0) {
+      throw new Error("Contributor wallet not found")
+    }
+
+    const entry = await this.hawalaService.createTransfer({
+      debit_account_id: escrowAccountId,
+      credit_account_id: contributorAccounts[0].id,
+      amount: remainder,
+      entry_type: "REFUND",
+      description: `Bounty escrow refund for demand pool ${input.demand_post_id}`,
+      reference_type: "DEMAND_BOUNTY",
+      reference_id: input.bounty_id,
+      idempotency_key: `bounty-refund-${input.bounty_id}`,
+    })
+
+    await this.demandPoolService.updateDemandBounties({
+      id: input.bounty_id,
+      status: BountyStatus.CANCELLED,
+    })
+
+    return entry
+  }
+
+  /**
+   * Refund all active/partial bounties for a demand pool. Continues on
+   * per-bounty errors and collects the outcome for each.
+   */
+  async refundAllBounties(demandPostId: string) {
+    const bounties = await this.demandPoolService.listDemandBounties({
+      demand_post_id: demandPostId,
+      status: ["ACTIVE", "MILESTONE_PARTIAL"],
+    })
+
+    const results: Array<{
+      bounty_id: string
+      status: "refunded" | "skipped" | "failed"
+      entry_id?: string
+      error?: string
+    }> = []
+
+    for (const bounty of bounties) {
+      try {
+        const entry = await this.refundBountyEscrow({
+          demand_post_id: demandPostId,
+          bounty_id: bounty.id,
+        })
+        results.push({
+          bounty_id: bounty.id,
+          status: entry ? "refunded" : "skipped",
+          entry_id: entry?.id,
+        })
+      } catch (error: any) {
+        results.push({
+          bounty_id: bounty.id,
+          status: "failed",
+          error: error.message,
+        })
+      }
+    }
+
+    return results
   }
 
   // ──────────────────────────────────────────────────────────────────────────

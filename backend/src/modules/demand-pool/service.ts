@@ -267,6 +267,18 @@ class DemandPoolModuleService extends MedusaService({
       throw new Error("Demand post not found")
     }
 
+    // Milestone percentages must sum to exactly 100 so the full bounty
+    // amount is accounted for across payouts.
+    if (input.milestones && input.milestones.length > 0) {
+      const total = input.milestones.reduce(
+        (sum, m) => sum + m.percentage,
+        0
+      )
+      if (total !== 100) {
+        throw new Error("Bounty milestone percentages must sum to 100")
+      }
+    }
+
     const [bounty] = await this.createDemandBounties([
       {
         demand_post_id: input.demand_post_id,
@@ -329,6 +341,35 @@ class DemandPoolModuleService extends MedusaService({
       throw new Error("Milestone already completed")
     }
 
+    // Concurrency guard: re-read the bounty immediately before the write
+    // and verify the milestone is still un-completed and the bounty is
+    // still payable. This read-check-write mirrors the pattern used
+    // elsewhere in this service; a DB-level compare-and-set (atomic
+    // UPDATE ... WHERE milestones[idx].completed = false) is the
+    // hardening follow-up.
+    const fresh = await this.listDemandBounties({ id: bountyId })
+    if (fresh.length === 0) {
+      throw new Error("Bounty not found")
+    }
+    const freshBounty = fresh[0]
+    if (
+      freshBounty.status !== BountyStatus.ACTIVE &&
+      freshBounty.status !== BountyStatus.MILESTONE_PARTIAL
+    ) {
+      throw new Error(
+        `Cannot complete milestone on bounty with status "${freshBounty.status}"`
+      )
+    }
+    const freshMilestones = (freshBounty.milestones || []) as Array<{
+      description: string
+      percentage: number
+      condition: string
+      completed?: boolean
+    }>
+    if (freshMilestones[milestoneIndex]?.completed) {
+      throw new Error("Milestone already completed")
+    }
+
     milestones[milestoneIndex].completed = true
     const completedCount = milestones.filter((m) => m.completed).length
     const payoutAmount =
@@ -356,6 +397,62 @@ class DemandPoolModuleService extends MedusaService({
       new_status: newStatus,
       all_completed: completedCount === milestones.length,
     }
+  }
+
+  /**
+   * First-come claim of an unassigned bounty. Throws if already claimed.
+   *
+   * This is a read-check-write claim; a DB-atomic
+   * `UPDATE ... SET assignee_id = :actor WHERE assignee_id IS NULL`
+   * is the hardening follow-up to fully close the race window.
+   */
+  async claimBounty(
+    bountyId: string,
+    actorId: string,
+    actorType: "CUSTOMER" | "SELLER" | "ORGANIZER"
+  ) {
+    const bounties = await this.listDemandBounties({ id: bountyId })
+    if (bounties.length === 0) {
+      throw new Error("Bounty not found")
+    }
+
+    const bounty = bounties[0]
+    if (bounty.assignee_id) {
+      throw new Error("Bounty already claimed")
+    }
+
+    await this.updateDemandBounties({
+      id: bountyId,
+      assignee_id: actorId,
+      assignee_type: actorType,
+    })
+
+    const [updated] = await this.listDemandBounties({ id: bountyId })
+    return updated
+  }
+
+  /**
+   * Creator-driven assignment of a bounty to a specific actor,
+   * overriding any existing assignee.
+   */
+  async assignBounty(
+    bountyId: string,
+    actorId: string,
+    actorType: "CUSTOMER" | "SELLER" | "ORGANIZER"
+  ) {
+    const bounties = await this.listDemandBounties({ id: bountyId })
+    if (bounties.length === 0) {
+      throw new Error("Bounty not found")
+    }
+
+    await this.updateDemandBounties({
+      id: bountyId,
+      assignee_id: actorId,
+      assignee_type: actorType,
+    })
+
+    const [updated] = await this.listDemandBounties({ id: bountyId })
+    return updated
   }
 
   // ──────────────────────────────────────────────────────────────────────────
