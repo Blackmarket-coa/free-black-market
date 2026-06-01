@@ -187,6 +187,7 @@ const marketplaceModules = [
   { resolve: './src/modules/sell-signup' },
   { resolve: './src/modules/vendor-verification' },
   { resolve: './src/modules/impact-metrics' },
+  { resolve: './src/modules/progression' },
   { resolve: './src/modules/payout-breakdown' },
   { resolve: './src/modules/harvest-batches' },
   { resolve: './src/modules/vendor-rules' },

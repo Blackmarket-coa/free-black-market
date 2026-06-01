@@ -1,11 +1,11 @@
 "use client"
 
 import {
-  CartIcon,
-  HeartIcon,
+  CharacterIcon,
+  CompassIcon,
   HomeIcon,
-  LeafIcon,
-  ProfileIcon,
+  QuestIcon,
+  UsersIcon,
 } from "@/icons"
 import {
   RadialLauncher,
@@ -18,9 +18,10 @@ import {
  * Five-item quick nav, fanning upward from a bottom-centre FAB. Mobile
  * only — desktop has the full header nav.
  *
- * Item set is the today-shipping surface; the deferred composition-
- * layer surfaces (Refrain, Threshold, Blackstar) join this list as
- * they land. See docs/COMPOSITION_LAYER.md.
+ * The item set follows the Solarpunk-MMORPG navigation model: Home,
+ * Explore (the market/regions), Quests (collective demand & bounties),
+ * Coalition (mutual aid & community), and Character (the player's
+ * levelled profile). See docs/SOLARPUNK_MMORPG_BLUEPRINT.md.
  */
 const ITEMS: RadialLauncherItem[] = [
   {
@@ -30,28 +31,28 @@ const ITEMS: RadialLauncherItem[] = [
     icon: <HomeIcon />,
   },
   {
-    key: "shop",
-    label: "Shop",
+    key: "explore",
+    label: "Explore",
     href: "/shop",
-    icon: <LeafIcon />,
+    icon: <CompassIcon />,
   },
   {
-    key: "cart",
-    label: "Cart",
-    href: "/cart",
-    icon: <CartIcon />,
+    key: "quests",
+    label: "Quests",
+    href: "/collective",
+    icon: <QuestIcon />,
   },
   {
-    key: "donate",
-    label: "Donate",
-    href: "/donations",
-    icon: <HeartIcon />,
+    key: "coalition",
+    label: "Coalition",
+    href: "/community-resources",
+    icon: <UsersIcon />,
   },
   {
-    key: "account",
-    label: "Account",
-    href: "/user",
-    icon: <ProfileIcon />,
+    key: "character",
+    label: "Character",
+    href: "/character",
+    icon: <CharacterIcon />,
   },
 ]
 
