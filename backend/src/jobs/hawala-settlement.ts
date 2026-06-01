@@ -112,6 +112,21 @@ export default async function hawalaSettlementJob(container: MedusaContainer) {
         )
 
         if (decision.rail === "stripe_ach") {
+          // This batch is left PENDING for manual Stripe-ACH action. Emit an
+          // alert so ops don't silently let it sit unsettled.
+          stellarMetrics.inc("hawala.settlement_pending_manual", {
+            batch_id: batch.id,
+          })
+          console.warn(
+            "[Hawala Settlement] Batch left PENDING for manual Stripe-ACH action",
+            JSON.stringify({
+              batch_id: batch.id,
+              batch_number: batchNumber,
+              total_volume: totalVolume,
+              total_entries: unsettledEntries.length,
+              dual_rail_reasons: decision.reasons,
+            })
+          )
           await hawalaService.updateSettlementBatches({
             id: batch.id,
             status: "PENDING",
@@ -124,18 +139,45 @@ export default async function hawalaSettlementJob(container: MedusaContainer) {
           return
         }
 
-        const stellarResult = await stellarService.submitSettlementBatch({
-          batchId: batch.id,
-          entries: unsettledEntries.map(e => ({
-            id: e.id,
-            amount: Number(e.amount),
-            debit_account_id: e.debit_account_id,
-            credit_account_id: e.credit_account_id,
-            created_at: new Date(e.created_at),
-          })),
-          periodStart,
-          periodEnd,
-        })
+        let stellarResult
+        try {
+          stellarResult = await stellarService.submitSettlementBatch({
+            batchId: batch.id,
+            entries: unsettledEntries.map(e => ({
+              id: e.id,
+              amount: Number(e.amount),
+              debit_account_id: e.debit_account_id,
+              credit_account_id: e.credit_account_id,
+              created_at: new Date(e.created_at),
+            })),
+            periodStart,
+            periodEnd,
+          })
+        } catch (submitError) {
+          // Move the batch to a terminal FAILED state with the error recorded
+          // before rethrowing, so it never lingers in PENDING after a Stellar
+          // submission failure.
+          const errorMessage =
+            submitError instanceof Error ? submitError.message : String(submitError)
+          stellarMetrics.inc("hawala.settlement_failed", { batch_id: batch.id })
+          console.error(
+            `[Hawala Settlement] Stellar submission failed for batch #${batchNumber}:`,
+            errorMessage
+          )
+          await hawalaService.updateSettlementBatches({
+            id: batch.id,
+            status: "FAILED" as const,
+            error_message: errorMessage,
+            metadata: {
+              error: errorMessage,
+              failed_stage: "stellar_submit",
+              // failed_at lives in metadata (no dedicated model column,
+              // symmetric with confirmed_at conceptually).
+              failed_at: new Date().toISOString(),
+            },
+          })
+          throw submitError
+        }
 
         // Update batch with Stellar info
         await hawalaService.updateSettlementBatches({

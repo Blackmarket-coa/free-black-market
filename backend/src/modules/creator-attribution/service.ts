@@ -1,4 +1,4 @@
-import { MedusaService } from "@medusajs/framework/utils"
+import { MedusaService, ContainerRegistrationKeys } from "@medusajs/framework/utils"
 import { randomBytes, createHmac } from "crypto"
 import AffiliateLink, {
   AffiliateLinkStatus,
@@ -170,10 +170,7 @@ class CreatorAttributionService extends MedusaService({
     })
 
     if (!input.isBotSuspected) {
-      await (this as any).updateAffiliateLinks({
-        id: link.id,
-        click_count: Number(link.click_count) + 1,
-      })
+      await this.atomicIncrementAffiliateLink("click_count", link.id)
     }
 
     return event
@@ -430,17 +427,69 @@ class CreatorAttributionService extends MedusaService({
     }
 
     if (chosen.affiliateLinkId) {
-      const links = await this.listAffiliateLinks({ id: chosen.affiliateLinkId })
-      const link = links[0]
-      if (link) {
-        await (this as any).updateAffiliateLinks({
-          id: link.id,
-          attributed_order_count: Number(link.attributed_order_count) + 1,
-        })
-      }
+      await this.atomicIncrementAffiliateLink(
+        "attributed_order_count",
+        chosen.affiliateLinkId
+      )
     }
 
     return primaryAttribution
+  }
+
+  /**
+   * Atomically increment an integer counter column on the `affiliate_link`
+   * row identified by `id`, using a single `col = col + 1` SQL UPDATE so
+   * concurrent clicks/orders don't clobber each other (read-modify-write
+   * loses increments under concurrency).
+   *
+   * Resolves a pg connection from the module container (the same container
+   * used to resolve `query` in loadProgramReferralConfig). If the connection
+   * is not reachable (e.g. in unit tests without a DB), falls back to the
+   * MedusaService read-modify-write so behavior degrades gracefully.
+   *
+   * `column` is restricted to a known allowlist so it can be safely
+   * interpolated into the SQL identifier position (bindings can't bind
+   * identifiers).
+   */
+  private async atomicIncrementAffiliateLink(
+    column: "click_count" | "attributed_order_count",
+    id: string
+  ): Promise<void> {
+    const container = (this as any).container_
+    let pgConnection:
+      | {
+          raw: (
+            sql: string,
+            bindings?: unknown[]
+          ) => Promise<{ rows?: Array<Record<string, unknown>> }>
+        }
+      | undefined
+    try {
+      // Medusa's awilix container throws on an unregistered key, so guard it.
+      pgConnection = container?.resolve?.(
+        ContainerRegistrationKeys.PG_CONNECTION
+      )
+    } catch {
+      pgConnection = undefined
+    }
+
+    if (pgConnection?.raw) {
+      await pgConnection.raw(
+        `UPDATE affiliate_link SET ${column} = ${column} + 1 WHERE id = ? AND deleted_at IS NULL`,
+        [id]
+      )
+      return
+    }
+
+    // Fallback: no reachable pg connection. Read-modify-write — not safe
+    // under concurrency, but preserves functionality where SQL is unavailable.
+    const links = await this.listAffiliateLinks({ id })
+    const link = links[0]
+    if (!link) return
+    await (this as any).updateAffiliateLinks({
+      id,
+      [column]: Number((link as any)[column]) + 1,
+    })
   }
 
   /**
