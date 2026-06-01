@@ -2165,3 +2165,95 @@ export function UsersIcon({
     </svg>
   );
 }
+
+export function CompassIcon({
+  color = 'currentColor',
+  size = 24,
+  className = '',
+}: IconProps) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox='0 0 24 24'
+      fill='none'
+      xmlns='http://www.w3.org/2000/svg'
+      className={className}
+      aria-hidden='true'
+    >
+      <circle cx='12' cy='12' r='9' stroke={color} strokeWidth='1.5' />
+      <path
+        d='M15.5 8.5L13.5 13.5L8.5 15.5L10.5 10.5L15.5 8.5Z'
+        stroke={color}
+        strokeWidth='1.5'
+        strokeLinecap='round'
+        strokeLinejoin='round'
+      />
+    </svg>
+  );
+}
+
+export function QuestIcon({
+  color = 'currentColor',
+  size = 24,
+  className = '',
+}: IconProps) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox='0 0 24 24'
+      fill='none'
+      xmlns='http://www.w3.org/2000/svg'
+      className={className}
+      aria-hidden='true'
+    >
+      <path
+        d='M5 21V4C5 3.44772 5.44772 3 6 3H18C18.5523 3 19 3.44772 19 4V14C19 14.5523 18.5523 15 18 15H5'
+        stroke={color}
+        strokeWidth='1.5'
+        strokeLinecap='round'
+        strokeLinejoin='round'
+      />
+      <path
+        d='M9 7H15M9 10.5H13'
+        stroke={color}
+        strokeWidth='1.5'
+        strokeLinecap='round'
+        strokeLinejoin='round'
+      />
+    </svg>
+  );
+}
+
+export function CharacterIcon({
+  color = 'currentColor',
+  size = 24,
+  className = '',
+}: IconProps) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox='0 0 24 24'
+      fill='none'
+      xmlns='http://www.w3.org/2000/svg'
+      className={className}
+      aria-hidden='true'
+    >
+      <path
+        d='M12 3L19 5.5V11C19 15.5 16 19 12 21C8 19 5 15.5 5 11V5.5L12 3Z'
+        stroke={color}
+        strokeWidth='1.5'
+        strokeLinejoin='round'
+      />
+      <circle cx='12' cy='10' r='2' stroke={color} strokeWidth='1.5' />
+      <path
+        d='M8.5 16C8.9 14.3 10.3 13.5 12 13.5C13.7 13.5 15.1 14.3 15.5 16'
+        stroke={color}
+        strokeWidth='1.5'
+        strokeLinecap='round'
+      />
+    </svg>
+  );
+}
