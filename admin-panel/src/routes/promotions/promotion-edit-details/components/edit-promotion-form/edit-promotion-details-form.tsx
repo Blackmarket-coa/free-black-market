@@ -46,7 +46,7 @@ export const EditPromotionDetailsForm = ({
       code: promotion.code,
       status: promotion.status,
       value: promotion.application_method!.value,
-      allocation: promotion.application_method!.allocation,
+      allocation: promotion.application_method!.allocation as any,
       value_type: promotion.application_method!.type,
       target_type: promotion.application_method!.target_type,
     },

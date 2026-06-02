@@ -13,6 +13,7 @@ overrides:
   next: 15.5.18
   picomatch: '>=4.0.4'
   postcss: '>=8.5.10'
+  zod: 4.2.0
 
 importers:
 
@@ -25,17 +26,17 @@ importers:
         specifier: ^3.10.0
         version: 3.10.0(react-hook-form@7.66.0(react@19.2.0))
       '@medusajs/icons':
-        specifier: ^2.13.1
-        version: 2.13.1(react@19.2.0)
+        specifier: ^2.14.2
+        version: 2.15.5(react@19.2.0)
       '@medusajs/js-sdk':
-        specifier: 2.12.5
-        version: 2.12.5
+        specifier: 2.14.2
+        version: 2.14.2
       '@medusajs/types':
-        specifier: 2.12.5
-        version: 2.12.5(vite@7.3.2(@types/node@20.19.25)(jiti@1.21.7)(terser@5.44.1))
+        specifier: 2.14.2
+        version: 2.14.2(vite@7.3.2(@types/node@20.19.25)(jiti@1.21.7)(terser@5.44.1))
       '@medusajs/ui':
-        specifier: ^4.0.28
-        version: 4.1.0(@types/react-dom@19.2.3(@types/react@19.2.5))(@types/react@19.2.5)(react-dom@19.2.0(react@19.2.0))(react@19.2.0)(typescript@5.9.3)
+        specifier: ^4.1.9
+        version: 4.1.15(@types/react-dom@19.2.3(@types/react@19.2.5))(@types/react@19.2.5)(react-dom@19.2.0(react@19.2.0))(react@19.2.0)(typescript@5.9.3)
       '@stripe/react-stripe-js':
         specifier: ^3.7.0
         version: 3.10.0(@stripe/stripe-js@7.9.0)(react-dom@19.2.0(react@19.2.0))(react@19.2.0)
@@ -121,8 +122,8 @@ importers:
         specifier: ^11.1.1
         version: 11.1.1
       zod:
-        specifier: ^3.24.1
-        version: 3.25.76
+        specifier: 4.2.0
+        version: 4.2.0
     devDependencies:
       '@chromatic-com/storybook':
         specifier: ^3.2.3
@@ -203,13 +204,13 @@ packages:
     resolution: {integrity: sha512-E6x4h5CPPPJ0za1r5HsLtHbeI+Tp3H+YFtcH8G3dSSPFE6w+PZINzB4NxLZmg1QqSeA5HTP3ZEzzsohp0o2GEw==}
     engines: {node: '>=18'}
     peerDependencies:
-      zod: ^3.25.76 || ^4.1.8
+      zod: 4.2.0
 
   '@ai-sdk/provider-utils@3.0.17':
     resolution: {integrity: sha512-TR3Gs4I3Tym4Ll+EPdzRdvo/rc8Js6c4nVhFLuvGLX/Y4V9ZcQMa/HTiYsHEgmYrf1zVi6Q145UEZUfleOwOjw==}
     engines: {node: '>=18'}
     peerDependencies:
-      zod: ^3.25.76 || ^4.1.8
+      zod: 4.2.0
 
   '@ai-sdk/provider@2.0.0':
     resolution: {integrity: sha512-6o7Y2SeO9vFKB8lArHXehNuusnpddKPk7xqL7T2/b+OvXMRIXUO1rR4wcv1hAFUAT9avGZshty3Wlua/XA7TvA==}
@@ -1593,22 +1594,17 @@ packages:
       '@types/react': '>=16'
       react: '>=16'
 
-  '@medusajs/icons@2.13.0':
-    resolution: {integrity: sha512-krc2HxIoeZY4XQ7z5qhhYGoooDwBJdO9MdP5zVrnVCzA2qbuPNWIjrNWN4EEky933X3oBVPIZU5JmQCRxA8YzA==}
+  '@medusajs/icons@2.15.5':
+    resolution: {integrity: sha512-cFPNZ26BeXt4joE3nQbMnlmszlWrJitNgOSwEZ7cK+1B483CjhcLtXYzo60OvtYsHB6flBQ9My7JkCtUAFYnEQ==}
     peerDependencies:
-      react: ^18.3.1
+      react: ^18.3.1 || ^19.0.0
 
-  '@medusajs/icons@2.13.1':
-    resolution: {integrity: sha512-A0j+C4jURXSWARbxjEOXh3get9N7dY7n3TNTdmpOeY0XPZeDfKaL1yVBD2EC90jVTWY045whrMBCJUuV7kjYPg==}
-    peerDependencies:
-      react: ^18.3.1
-
-  '@medusajs/js-sdk@2.12.5':
-    resolution: {integrity: sha512-z7h1xxvx4lc1SMqOgihVAbqnZd0Yxq4u/s1JnI24e4kdr9A+lmbtajvpdD6/9gAf9HfL4qNDOJMb4rl8E+x8sQ==}
+  '@medusajs/js-sdk@2.14.2':
+    resolution: {integrity: sha512-nNpkzcQU8WhPEcXIoh7ET+1y8qSaRsAeoYtci+naCdT7U0/f4jT4vpBH1vI5E3P+sWvSO+fAVvkhVoHc0OY+bQ==}
     engines: {node: '>=20'}
 
-  '@medusajs/types@2.12.5':
-    resolution: {integrity: sha512-8VyCFX2JQIHQxbHZla+nr4kAXuJB4d0rhrcGHGvx4h0dYcZlcl4DJWfdtn6/2rvEWMQwb5NDCBzH1tfEvj1lyQ==}
+  '@medusajs/types@2.14.2':
+    resolution: {integrity: sha512-vWzzuG9hXrGMVhrwrUL+LiOi2cuvAoPRyDVdQeA7USdt7ooC+Tb6tWv6E9Sf1wFR3OoUa3S7Ft25qIXmVpV1AQ==}
     engines: {node: '>=20'}
     peerDependencies:
       ioredis: ^5.4.1
@@ -1619,8 +1615,8 @@ packages:
       vite:
         optional: true
 
-  '@medusajs/ui@4.1.0':
-    resolution: {integrity: sha512-VrvWksw+QdjM2Ez36akVN11LbLETWohN2WV7/Zz7wb02IzCBtIqq40Z1l8l5mSl8bO7tJHHqeRieYh5u0qND3w==}
+  '@medusajs/ui@4.1.15':
+    resolution: {integrity: sha512-8m+J54uMjA934BBWXqb7lKlg+Ja1cudcAbdXJp4GQgd0TSru+hEvkhAlH5baKeADB6tqo2H5BkBIwIFcJMxxnA==}
     peerDependencies:
       react: ^18.3.1
       react-dom: ^18.3.1
@@ -3899,7 +3895,7 @@ packages:
     resolution: {integrity: sha512-9eGcu+1PJgPg4pRNV4L7tLjRR3wdJC9CXQoNMvtqvYNOLZHFCzjHtVIOr2SIkoJJeu2+sOy3hyiSuTmy2MA40g==}
     engines: {node: '>=18'}
     peerDependencies:
-      zod: ^3.25.76 || ^4.1.8
+      zod: 4.2.0
 
   ajv-formats@2.1.1:
     resolution: {integrity: sha512-Wx0Kx52hxE7C18hkMEggYlEifqWZtYaRgouJor+WMdPnQyEK13vgEWyVNup7SoeeoLMsr4kf5h6dOW11I15MUA==}
@@ -5406,6 +5402,10 @@ packages:
 
   lodash.debounce@4.0.8:
     resolution: {integrity: sha512-FT1yDzDYEoYWhnSGnpE/4Kj1fLZkDFyqRb7fNt6FdYOSxlUWAtp42Eh6Wb0rGIv/m9Bgo7x4GhQbm5Ys4SG5ow==}
+
+  lodash.isequal@4.5.0:
+    resolution: {integrity: sha512-pDo3lu8Jhfjqls6GkMgpahsF9kCyayhgykjyLMNFTKWrpVdAQtYyB4muAMWozBB4ig/dtWAmsMxLEI8wuz+DYQ==}
+    deprecated: This package is deprecated. Use require('node:util').isDeepStrictEqual instead.
 
   lodash.merge@4.6.2:
     resolution: {integrity: sha512-0KpjqXRVvrYyCsX1swR/XTK0va6VQkQM6MNo7PqW77ByjAhoARA8EfrP1N4+KlKj8YS0ZUCtRT/YUuhyYDujIQ==}
@@ -6996,28 +6996,28 @@ packages:
   zod-to-json-schema@3.24.6:
     resolution: {integrity: sha512-h/z3PKvcTcTetyjl1fkj79MHNEjm+HpD6NXheWjzOekY7kV+lwDYnHw+ivHkijnCSMz1yJaWBD9vu/Fcmk+vEg==}
     peerDependencies:
-      zod: ^3.24.1
+      zod: 4.2.0
 
-  zod@3.25.76:
-    resolution: {integrity: sha512-gzUt/qt81nXsFGKIFcC3YnfEAx5NkunCfnDlvuBSSFS02bcXu4Lmea0AFIUwbLWxWPx3d9p8S5QoaujKcNQxcQ==}
+  zod@4.2.0:
+    resolution: {integrity: sha512-Bd5fw9wlIhtqCCxotZgdTOMwGm1a0u75wARVEY9HMs1X17trvA/lMi4+MGK5EUfYkXVTbX8UDiDKW4OgzHVUZw==}
 
 snapshots:
 
   '@adobe/css-tools@4.4.4': {}
 
-  '@ai-sdk/gateway@2.0.9(zod@3.25.76)':
+  '@ai-sdk/gateway@2.0.9(zod@4.2.0)':
     dependencies:
       '@ai-sdk/provider': 2.0.0
-      '@ai-sdk/provider-utils': 3.0.17(zod@3.25.76)
+      '@ai-sdk/provider-utils': 3.0.17(zod@4.2.0)
       '@vercel/oidc': 3.0.3
-      zod: 3.25.76
+      zod: 4.2.0
 
-  '@ai-sdk/provider-utils@3.0.17(zod@3.25.76)':
+  '@ai-sdk/provider-utils@3.0.17(zod@4.2.0)':
     dependencies:
       '@ai-sdk/provider': 2.0.0
       '@standard-schema/spec': 1.0.0
       eventsource-parser: 3.0.6
-      zod: 3.25.76
+      zod: 4.2.0
 
   '@ai-sdk/provider@2.0.0':
     dependencies:
@@ -8429,37 +8429,34 @@ snapshots:
       '@types/react': 19.2.5
       react: 19.2.0
 
-  '@medusajs/icons@2.13.0(react@19.2.0)':
+  '@medusajs/icons@2.15.5(react@19.2.0)':
     dependencies:
       react: 19.2.0
 
-  '@medusajs/icons@2.13.1(react@19.2.0)':
-    dependencies:
-      react: 19.2.0
-
-  '@medusajs/js-sdk@2.12.5':
+  '@medusajs/js-sdk@2.14.2':
     dependencies:
       fetch-event-stream: 0.1.6
       qs: 6.15.2
 
-  '@medusajs/types@2.12.5(vite@7.3.2(@types/node@20.19.25)(jiti@1.21.7)(terser@5.44.1))':
+  '@medusajs/types@2.14.2(vite@7.3.2(@types/node@20.19.25)(jiti@1.21.7)(terser@5.44.1))':
     dependencies:
       bignumber.js: 9.3.1
     optionalDependencies:
       vite: 7.3.2(@types/node@20.19.25)(jiti@1.21.7)(terser@5.44.1)
 
-  '@medusajs/ui@4.1.0(@types/react-dom@19.2.3(@types/react@19.2.5))(@types/react@19.2.5)(react-dom@19.2.0(react@19.2.0))(react@19.2.0)(typescript@5.9.3)':
+  '@medusajs/ui@4.1.15(@types/react-dom@19.2.3(@types/react@19.2.5))(@types/react@19.2.5)(react-dom@19.2.0(react@19.2.0))(react@19.2.0)(typescript@5.9.3)':
     dependencies:
       '@dnd-kit/core': 6.3.1(react-dom@19.2.0(react@19.2.0))(react@19.2.0)
       '@dnd-kit/sortable': 8.0.0(@dnd-kit/core@6.3.1(react-dom@19.2.0(react@19.2.0))(react@19.2.0))(react@19.2.0)
       '@dnd-kit/utilities': 3.2.2(react@19.2.0)
-      '@medusajs/icons': 2.13.0(react@19.2.0)
+      '@medusajs/icons': 2.15.5(react@19.2.0)
       '@radix-ui/react-dialog': 1.1.4(@types/react-dom@19.2.3(@types/react@19.2.5))(@types/react@19.2.5)(react-dom@19.2.0(react@19.2.0))(react@19.2.0)
       '@radix-ui/react-dismissable-layer': 1.1.4(@types/react-dom@19.2.3(@types/react@19.2.5))(@types/react@19.2.5)(react-dom@19.2.0(react@19.2.0))(react@19.2.0)
       '@tanstack/react-table': 8.20.5(react-dom@19.2.0(react@19.2.0))(react@19.2.0)
       clsx: 1.2.1
       copy-to-clipboard: 3.3.3
       cva: 1.0.0-beta.1(typescript@5.9.3)
+      lodash.isequal: 4.5.0
       prism-react-renderer: 2.4.1(react@19.2.0)
       prismjs: 1.30.0
       radix-ui: 1.1.2(@types/react-dom@19.2.3(@types/react@19.2.5))(@types/react@19.2.5)(react-dom@19.2.0(react@19.2.0))(react@19.2.0)
@@ -11283,13 +11280,13 @@ snapshots:
       loader-utils: 2.0.4
       regex-parser: 2.3.1
 
-  ai@5.0.93(zod@3.25.76):
+  ai@5.0.93(zod@4.2.0):
     dependencies:
-      '@ai-sdk/gateway': 2.0.9(zod@3.25.76)
+      '@ai-sdk/gateway': 2.0.9(zod@4.2.0)
       '@ai-sdk/provider': 2.0.0
-      '@ai-sdk/provider-utils': 3.0.17(zod@3.25.76)
+      '@ai-sdk/provider-utils': 3.0.17(zod@4.2.0)
       '@opentelemetry/api': 1.9.0
-      zod: 3.25.76
+      zod: 4.2.0
 
   ajv-formats@2.1.1(ajv@8.17.1):
     optionalDependencies:
@@ -12794,10 +12791,10 @@ snapshots:
   instantsearch-ui-components@0.14.0(react@19.2.0):
     dependencies:
       '@babel/runtime': 7.28.4
-      ai: 5.0.93(zod@3.25.76)
+      ai: 5.0.93(zod@4.2.0)
       markdown-to-jsx: 7.7.17(react@19.2.0)
-      zod: 3.25.76
-      zod-to-json-schema: 3.24.6(zod@3.25.76)
+      zod: 4.2.0
+      zod-to-json-schema: 3.24.6(zod@4.2.0)
     transitivePeerDependencies:
       - react
 
@@ -12808,7 +12805,7 @@ snapshots:
       '@types/google.maps': 3.58.1
       '@types/hogan.js': 3.0.5
       '@types/qs': 6.14.0
-      ai: 5.0.93(zod@3.25.76)
+      ai: 5.0.93(zod@4.2.0)
       algoliasearch: 5.44.0
       algoliasearch-helper: 3.26.1(algoliasearch@5.44.0)
       hogan.js: 3.0.2
@@ -12818,8 +12815,8 @@ snapshots:
       qs: 6.15.2
       react: 19.2.0
       search-insights: 2.17.3
-      zod: 3.25.76
-      zod-to-json-schema: 3.24.6(zod@3.25.76)
+      zod: 4.2.0
+      zod-to-json-schema: 3.24.6(zod@4.2.0)
 
   internal-slot@1.1.0:
     dependencies:
@@ -13088,6 +13085,8 @@ snapshots:
       p-locate: 6.0.0
 
   lodash.debounce@4.0.8: {}
+
+  lodash.isequal@4.5.0: {}
 
   lodash.merge@4.6.2: {}
 
@@ -13849,14 +13848,14 @@ snapshots:
   react-instantsearch-core@7.19.0(algoliasearch@5.44.0)(react@19.2.0):
     dependencies:
       '@babel/runtime': 7.28.4
-      ai: 5.0.93(zod@3.25.76)
+      ai: 5.0.93(zod@4.2.0)
       algoliasearch: 5.44.0
       algoliasearch-helper: 3.26.1(algoliasearch@5.44.0)
       instantsearch.js: 4.83.0(algoliasearch@5.44.0)
       react: 19.2.0
       use-sync-external-store: 1.6.0(react@19.2.0)
-      zod: 3.25.76
-      zod-to-json-schema: 3.24.6(zod@3.25.76)
+      zod: 4.2.0
+      zod-to-json-schema: 3.24.6(zod@4.2.0)
 
   react-instantsearch-nextjs@0.4.9(next@15.5.18(@babel/core@7.28.5)(@opentelemetry/api@1.9.0)(react-dom@19.2.0(react@19.2.0))(react@19.2.0))(react-instantsearch@7.19.0(algoliasearch@5.44.0)(react-dom@19.2.0(react@19.2.0))(react@19.2.0)):
     dependencies:
@@ -14965,8 +14964,8 @@ snapshots:
 
   yocto-queue@1.2.2: {}
 
-  zod-to-json-schema@3.24.6(zod@3.25.76):
+  zod-to-json-schema@3.24.6(zod@4.2.0):
     dependencies:
-      zod: 3.25.76
+      zod: 4.2.0
 
-  zod@3.25.76: {}
+  zod@4.2.0: {}

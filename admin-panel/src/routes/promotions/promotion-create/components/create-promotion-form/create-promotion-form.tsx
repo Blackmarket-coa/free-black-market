@@ -84,7 +84,7 @@ export const CreatePromotionForm = () => {
   const { handleSuccess } = useRouteModal()
   const direction = useDocumentDirection()
   const form = useForm<z.infer<typeof CreatePromotionSchema>>({
-    defaultValues,
+    defaultValues: defaultValues as unknown as z.infer<typeof CreatePromotionSchema>,
     resolver: zodResolver(CreatePromotionSchema),
   })
   const { setValue, reset, getValues } = form
@@ -263,7 +263,9 @@ export const CreatePromotionForm = () => {
       return
     }
 
-    reset({ ...defaultValues, template_id: watchTemplateId })
+    reset({ ...defaultValues, template_id: watchTemplateId } as unknown as z.infer<
+      typeof CreatePromotionSchema
+    >)
 
     for (const [key, value] of Object.entries(currentTemplate.defaults)) {
       if (typeof value === "object") {

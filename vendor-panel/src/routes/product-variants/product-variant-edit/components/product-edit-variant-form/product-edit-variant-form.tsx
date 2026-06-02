@@ -38,7 +38,7 @@ const ProductEditVariantSchema = z.object({
   mid_code: z.string().optional(),
   hs_code: z.string().optional(),
   origin_country: z.string().optional(),
-  options: z.record(z.string()),
+  options: z.record(z.string(), z.string()),
 })
 
 export const ProductEditVariantForm = ({

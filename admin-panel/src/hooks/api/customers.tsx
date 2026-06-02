@@ -227,7 +227,8 @@ export const useDeleteCustomerAddress = (
 
 export const useListCustomerAddresses = (
   id: string,
-  query?: Record<string, any>,
+  // kept for call-site compatibility; the 2.14 SDK listAddresses no longer accepts a query
+  _query?: Record<string, any>,
   options?: UseQueryOptions<
     HttpTypes.AdminCustomerResponse,
     FetchError,
@@ -236,7 +237,8 @@ export const useListCustomerAddresses = (
   >
 ) => {
   const { data, ...rest } = useQuery({
-    queryFn: () => sdk.admin.customer.listAddresses(id, query),
+    // 2.14 SDK: listAddresses(id, headers?) no longer accepts a query arg.
+    queryFn: () => sdk.admin.customer.listAddresses(id) as any,
     queryKey: customerAddressesQueryKeys.list(id),
     ...options,
   })

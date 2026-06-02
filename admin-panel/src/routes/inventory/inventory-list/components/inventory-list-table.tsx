@@ -39,7 +39,7 @@ export const InventoryListTable = () => {
   const columns = useInventoryTableColumns()
 
   const { table } = useDataTable({
-    data: (inventory_items ?? []) as InventoryTypes.InventoryItemDTO[],
+    data: (inventory_items ?? []) as unknown as InventoryTypes.InventoryItemDTO[],
     columns,
     count,
     enablePagination: true,

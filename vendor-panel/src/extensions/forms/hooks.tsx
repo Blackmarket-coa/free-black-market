@@ -1,11 +1,11 @@
 import { zodResolver } from "@hookform/resolvers/zod"
 import { FieldValues, useForm, UseFormProps } from "react-hook-form"
-import { z, ZodEffects, ZodObject } from "zod"
+import { z } from "zod"
 
 import { ConfigField } from "../types"
 
 interface UseExtendableFormProps<
-  TSchema extends ZodObject<any> | ZodEffects<ZodObject<any>>,
+  TSchema extends z.ZodType<any>,
   TContext = any,
   TData = any,
 > extends Omit<UseFormProps<z.infer<TSchema>, TContext>, "resolver"> {
@@ -20,30 +20,20 @@ function createAdditionalDataSchema(configs: ConfigField[]) {
       acc[config.name] = config.validation
       return acc
     },
-    {} as Record<string, z.ZodTypeAny>
+    {} as Record<string, z.ZodType>
   )
 }
 
 function createExtendedSchema<
-  TSchema extends ZodObject<any> | ZodEffects<ZodObject<any>>,
->(baseSchema: TSchema, additionalDataSchema: Record<string, z.ZodTypeAny>) {
-  const extendedObjectSchema = z.object({
-    ...(baseSchema instanceof ZodEffects
-      ? baseSchema.innerType().shape
-      : baseSchema.shape),
-    additional_data: z.object(additionalDataSchema).optional(),
-  })
+  TSchema extends z.ZodType<any>,
+>(baseSchema: TSchema, additionalDataSchema: Record<string, z.ZodType>) {
+  const additionalData = z.object(additionalDataSchema).optional()
 
-  return baseSchema instanceof ZodEffects
-    ? baseSchema
-        .superRefine((data, ctx) => {
-          const result = extendedObjectSchema.safeParse(data)
-          if (!result.success) {
-            result.error.issues.forEach((issue) => ctx.addIssue(issue))
-          }
-        })
-        .and(extendedObjectSchema)
-    : extendedObjectSchema
+  // Zod 4 removed ZodEffects: refined/superRefined objects stay ZodObjects and
+  // transforms become ZodPipe. Intersecting the base schema with the additional_data
+  // object preserves all of the base schema's fields and refinements while adding the
+  // optional extension data, without needing to branch on the schema's internal type.
+  return z.intersection(baseSchema, z.object({ additional_data: additionalData }))
 }
 
 function createExtendedDefaultValues<TData>(
@@ -66,7 +56,7 @@ function createExtendedDefaultValues<TData>(
 }
 
 export const useExtendableForm = <
-  TSchema extends ZodObject<any> | ZodEffects<ZodObject<any>>,
+  TSchema extends z.ZodType<any>,
   TContext = any,
   TTransformedValues extends FieldValues | undefined = undefined,
 >({

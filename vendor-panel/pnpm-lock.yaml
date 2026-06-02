@@ -10,12 +10,13 @@ overrides:
   qs: '>=6.14.2'
   '@remix-run/router': 1.23.2
   react-router: 6.30.2
-  '@medusajs/framework': 2.12.5
+  '@medusajs/framework': 2.14.2
   lodash: '>=4.18.0'
   nodemailer: '>=8.0.5'
   '@isaacs/brace-expansion': '>=5.0.1'
   picomatch: '>=4.0.4'
   postcss: '>=8.5.10'
+  zod: 4.2.0
 
 importers:
 
@@ -40,20 +41,20 @@ importers:
         specifier: 3.4.2
         version: 3.4.2(react-hook-form@7.49.1(react@18.3.1))
       '@medusajs/admin-sdk':
-        specifier: 2.12.5
-        version: 2.12.5
+        specifier: 2.14.2
+        version: 2.14.2
       '@medusajs/admin-shared':
-        specifier: 2.12.5
-        version: 2.12.5
+        specifier: 2.14.2
+        version: 2.14.2
       '@medusajs/icons':
-        specifier: 2.12.5
-        version: 2.12.5(react@18.3.1)
+        specifier: 2.14.2
+        version: 2.14.2(react@18.3.1)
       '@medusajs/js-sdk':
-        specifier: 2.12.5
-        version: 2.12.5
+        specifier: 2.14.2
+        version: 2.14.2
       '@medusajs/ui':
-        specifier: 4.0.28
-        version: 4.0.28(@types/react-dom@18.3.7(@types/react@18.3.26))(@types/react@18.3.26)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(typescript@5.2.2)
+        specifier: 4.1.9
+        version: 4.1.9(@types/react-dom@18.3.7(@types/react@18.3.26))(@types/react@18.3.26)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(typescript@5.2.2)
       '@tanstack/react-query':
         specifier: 5.64.2
         version: 5.64.2(react@18.3.1)
@@ -136,18 +137,18 @@ importers:
         specifier: ^2.15.1
         version: 2.15.4(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       zod:
-        specifier: 3.22.4
-        version: 3.22.4
+        specifier: 4.2.0
+        version: 4.2.0
     devDependencies:
       '@medusajs/admin-vite-plugin':
-        specifier: 2.12.5
-        version: 2.12.5(picomatch@4.0.4)(vite@5.4.21(@types/node@20.19.25)(lightningcss@1.32.0))
+        specifier: 2.14.2
+        version: 2.14.2(picomatch@4.0.4)(vite@5.4.21(@types/node@20.19.25)(lightningcss@1.32.0))
       '@medusajs/types':
-        specifier: 2.12.5
-        version: 2.12.5(vite@5.4.21(@types/node@20.19.25)(lightningcss@1.32.0))
+        specifier: 2.14.2
+        version: 2.14.2(vite@5.4.21(@types/node@20.19.25)(lightningcss@1.32.0))
       '@medusajs/ui-preset':
-        specifier: 2.12.5
-        version: 2.12.5(tailwindcss@3.4.18)
+        specifier: 2.14.2
+        version: 2.14.2(tailwindcss@3.4.18)
       '@types/lodash':
         specifier: ^4.17.20
         version: 4.17.20
@@ -782,33 +783,28 @@ packages:
   '@jridgewell/trace-mapping@0.3.31':
     resolution: {integrity: sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw==}
 
-  '@medusajs/admin-sdk@2.12.5':
-    resolution: {integrity: sha512-KxNN/Iuu+o8TgWZHbR4RWxBNZF9bON5UWfBd2VDHvU5pdWewXuizroQSLL+QF+PCWmpxFijQy0v128XzgyHXZg==}
+  '@medusajs/admin-sdk@2.14.2':
+    resolution: {integrity: sha512-JYeV7BMGQ5VUnlJHFCjrHX7qO0skU9D0vGAbEwoJxyysqO1G6iDrAbB/KbQ+136qY71IVLvbQZ3UbtpDIMUflA==}
 
-  '@medusajs/admin-shared@2.12.5':
-    resolution: {integrity: sha512-LKO7QhMmCsvP0dGibBBjNxjwOhWnBTFYfb4y5zsejzzvrrcFhEn7dn9gg4L5XkqtgDRIuiDkEi45ng3xWPPIpQ==}
+  '@medusajs/admin-shared@2.14.2':
+    resolution: {integrity: sha512-NsYYI6aghCG6dY+jq0Qkhug7x0MVgGsZ38B+h+VO+C3jPIfwxwRafWd9ZSDioQDrRr3ua9MwQrRMjrWJLWfIgg==}
 
-  '@medusajs/admin-vite-plugin@2.12.5':
-    resolution: {integrity: sha512-gbt04lDMvclzBR52ugqid9BfI3okw2dg85Swj37EKvxhhV7788/no4MiQtBrsT1xcVms54V4HIwZ4L5jE9W5Yg==}
+  '@medusajs/admin-vite-plugin@2.14.2':
+    resolution: {integrity: sha512-NFlc8RrAI4rEnKxo0jr7/0nChGc9OqmQHcQ8IP07O6NCYVykjxUPpfIhcldmVab21HyE59yBJcuP8XBE9oV5bQ==}
     peerDependencies:
       vite: ^5.4.21
 
-  '@medusajs/icons@2.12.0':
-    resolution: {integrity: sha512-M+mKiTxSxtHOuy0VPgxIuB7y+V23ahXdhXcwpba5F+aG9N7rQ3Tty8KKuXv7M3MLbC7P9BH08E9Lm82j19yg/w==}
+  '@medusajs/icons@2.14.2':
+    resolution: {integrity: sha512-MdiX1Z3h9yMTqJ5Jmd4XC8goMzMttZJiDSPEBTzWAYpsfXn9G0Dp3bbFg2k7DiJPb4lOBzLPbw+LuwtnUCfpGA==}
     peerDependencies:
-      react: ^18.3.1
+      react: ^19.2.5
 
-  '@medusajs/icons@2.12.5':
-    resolution: {integrity: sha512-aOhhT2xcIHVYBMGaNjHBCekP592xyM7N0BM9LVWohc9dk3Z5df6tHBn9D8dW7wqnvaDh0BIrAVanmaiOHJPqBg==}
-    peerDependencies:
-      react: ^18.3.1
-
-  '@medusajs/js-sdk@2.12.5':
-    resolution: {integrity: sha512-z7h1xxvx4lc1SMqOgihVAbqnZd0Yxq4u/s1JnI24e4kdr9A+lmbtajvpdD6/9gAf9HfL4qNDOJMb4rl8E+x8sQ==}
+  '@medusajs/js-sdk@2.14.2':
+    resolution: {integrity: sha512-nNpkzcQU8WhPEcXIoh7ET+1y8qSaRsAeoYtci+naCdT7U0/f4jT4vpBH1vI5E3P+sWvSO+fAVvkhVoHc0OY+bQ==}
     engines: {node: '>=20'}
 
-  '@medusajs/types@2.12.5':
-    resolution: {integrity: sha512-8VyCFX2JQIHQxbHZla+nr4kAXuJB4d0rhrcGHGvx4h0dYcZlcl4DJWfdtn6/2rvEWMQwb5NDCBzH1tfEvj1lyQ==}
+  '@medusajs/types@2.14.2':
+    resolution: {integrity: sha512-vWzzuG9hXrGMVhrwrUL+LiOi2cuvAoPRyDVdQeA7USdt7ooC+Tb6tWv6E9Sf1wFR3OoUa3S7Ft25qIXmVpV1AQ==}
     engines: {node: '>=20'}
     peerDependencies:
       ioredis: ^5.4.1
@@ -819,13 +815,13 @@ packages:
       vite:
         optional: true
 
-  '@medusajs/ui-preset@2.12.5':
-    resolution: {integrity: sha512-kcZCJijVoLWqpouEDdEvAmju+nQmal9ee5dbHEM8KeyA7SRnopwOwyjlzRDVhYhAHTFY6C1lGVWebMTwexsMAw==}
+  '@medusajs/ui-preset@2.14.2':
+    resolution: {integrity: sha512-1+0xDeV8zJkmTN+vyHQY7YFF3JW+nmRETT5pnrJQtQOALVofYO0tM3hM8W15ahg8HJV8c5hKRVpoffplB1mU3w==}
     peerDependencies:
       tailwindcss: ^3.4.3
 
-  '@medusajs/ui@4.0.28':
-    resolution: {integrity: sha512-8bmO2ajhHm69y0zbY5Flauz/4EsJlmNqILdKnHQXIFrezh3ckwYoaopUYG9xVdm/epTjGcV3IN/090LQBa9ZMw==}
+  '@medusajs/ui@4.1.9':
+    resolution: {integrity: sha512-yMG+LfPH5hgmz5b/xbVYu1e9VPjqPl8uHU9I0IuLSVDiy+fqBlYbMtc8Ojk/UNeSpD8WPrp9aoLrPD+weL6Uvw==}
     peerDependencies:
       react: ^18.3.1
       react-dom: ^18.3.1
@@ -3287,6 +3283,10 @@ packages:
     resolution: {integrity: sha512-iPZK6eYjbxRu3uB4/WZ3EsEIMJFMqAoopl3R+zuq0UjcAm/MO6KCweDgPfP3elTztoKP3KtnVHxTn2NHBSDVUw==}
     engines: {node: '>=10'}
 
+  lodash.isequal@4.5.0:
+    resolution: {integrity: sha512-pDo3lu8Jhfjqls6GkMgpahsF9kCyayhgykjyLMNFTKWrpVdAQtYyB4muAMWozBB4ig/dtWAmsMxLEI8wuz+DYQ==}
+    deprecated: This package is deprecated. Use require('node:util').isDeepStrictEqual instead.
+
   lodash.merge@4.6.2:
     resolution: {integrity: sha512-0KpjqXRVvrYyCsX1swR/XTK0va6VQkQM6MNo7PqW77ByjAhoARA8EfrP1N4+KlKj8YS0ZUCtRT/YUuhyYDujIQ==}
 
@@ -4219,13 +4219,10 @@ packages:
     resolution: {integrity: sha512-Q6/nZLe6jxuU80qb/4uJ4t5v2VEZ44lzQjPDhYJNztRQ4wyWc6VF3D3Kb/fAuPetZQnhS3hnajCf9CsWesghLQ==}
     engines: {node: '>=18.0.0'}
     peerDependencies:
-      zod: ^3.25.0 || ^4.0.0
+      zod: 4.2.0
 
-  zod@3.22.4:
-    resolution: {integrity: sha512-iC+8Io04lddc+mVqQ9AZ7OQ2MrUKGN+oIQyq1vemgt46jwCwLfhq7/pwnBnNXXXZb8VTVLKwp9EDkx+ryxIWmg==}
-
-  zod@3.25.76:
-    resolution: {integrity: sha512-gzUt/qt81nXsFGKIFcC3YnfEAx5NkunCfnDlvuBSSFS02bcXu4Lmea0AFIUwbLWxWPx3d9p8S5QoaujKcNQxcQ==}
+  zod@4.2.0:
+    resolution: {integrity: sha512-Bd5fw9wlIhtqCCxotZgdTOMwGm1a0u75wARVEY9HMs1X17trvA/lMi4+MGK5EUfYkXVTbX8UDiDKW4OgzHVUZw==}
 
 snapshots:
 
@@ -4713,19 +4710,19 @@ snapshots:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.5
 
-  '@medusajs/admin-sdk@2.12.5':
+  '@medusajs/admin-sdk@2.14.2':
     dependencies:
-      '@medusajs/admin-shared': 2.12.5
-      zod: 3.25.76
+      '@medusajs/admin-shared': 2.14.2
+      zod: 4.2.0
 
-  '@medusajs/admin-shared@2.12.5': {}
+  '@medusajs/admin-shared@2.14.2': {}
 
-  '@medusajs/admin-vite-plugin@2.12.5(picomatch@4.0.4)(vite@5.4.21(@types/node@20.19.25)(lightningcss@1.32.0))':
+  '@medusajs/admin-vite-plugin@2.14.2(picomatch@4.0.4)(vite@5.4.21(@types/node@20.19.25)(lightningcss@1.32.0))':
     dependencies:
       '@babel/parser': 7.25.6
       '@babel/traverse': 7.25.6
       '@babel/types': 7.25.6
-      '@medusajs/admin-shared': 2.12.5
+      '@medusajs/admin-shared': 2.14.2
       chokidar: 3.6.0
       fdir: 6.1.1(picomatch@4.0.4)
       magic-string: 0.30.5
@@ -4736,43 +4733,40 @@ snapshots:
       - picomatch
       - supports-color
 
-  '@medusajs/icons@2.12.0(react@18.3.1)':
+  '@medusajs/icons@2.14.2(react@18.3.1)':
     dependencies:
       react: 18.3.1
 
-  '@medusajs/icons@2.12.5(react@18.3.1)':
-    dependencies:
-      react: 18.3.1
-
-  '@medusajs/js-sdk@2.12.5':
+  '@medusajs/js-sdk@2.14.2':
     dependencies:
       fetch-event-stream: 0.1.6
       qs: 6.14.2
 
-  '@medusajs/types@2.12.5(vite@5.4.21(@types/node@20.19.25)(lightningcss@1.32.0))':
+  '@medusajs/types@2.14.2(vite@5.4.21(@types/node@20.19.25)(lightningcss@1.32.0))':
     dependencies:
       bignumber.js: 9.3.1
     optionalDependencies:
       vite: 5.4.21(@types/node@20.19.25)(lightningcss@1.32.0)
 
-  '@medusajs/ui-preset@2.12.5(tailwindcss@3.4.18)':
+  '@medusajs/ui-preset@2.14.2(tailwindcss@3.4.18)':
     dependencies:
       '@tailwindcss/forms': 0.5.10(tailwindcss@3.4.18)
       tailwindcss: 3.4.18
       tailwindcss-animate: 1.0.7(tailwindcss@3.4.18)
 
-  '@medusajs/ui@4.0.28(@types/react-dom@18.3.7(@types/react@18.3.26))(@types/react@18.3.26)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(typescript@5.2.2)':
+  '@medusajs/ui@4.1.9(@types/react-dom@18.3.7(@types/react@18.3.26))(@types/react@18.3.26)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(typescript@5.2.2)':
     dependencies:
       '@dnd-kit/core': 6.3.1(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       '@dnd-kit/sortable': 8.0.0(@dnd-kit/core@6.3.1(react-dom@18.3.1(react@18.3.1))(react@18.3.1))(react@18.3.1)
       '@dnd-kit/utilities': 3.2.2(react@18.3.1)
-      '@medusajs/icons': 2.12.0(react@18.3.1)
+      '@medusajs/icons': 2.14.2(react@18.3.1)
       '@radix-ui/react-dialog': 1.1.4(@types/react-dom@18.3.7(@types/react@18.3.26))(@types/react@18.3.26)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       '@radix-ui/react-dismissable-layer': 1.1.4(@types/react-dom@18.3.7(@types/react@18.3.26))(@types/react@18.3.26)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       '@tanstack/react-table': 8.20.5(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       clsx: 1.2.1
       copy-to-clipboard: 3.3.3
       cva: 1.0.0-beta.1(typescript@5.2.2)
+      lodash.isequal: 4.5.0
       prism-react-renderer: 2.4.1(react@18.3.1)
       prismjs: 1.30.0
       radix-ui: 1.1.2(@types/react-dom@18.3.7(@types/react@18.3.26))(@types/react@18.3.26)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
@@ -7328,8 +7322,8 @@ snapshots:
       '@babel/parser': 7.28.5
       eslint: 9.39.2(jiti@1.21.7)
       hermes-parser: 0.25.1
-      zod: 3.25.76
-      zod-validation-error: 4.0.2(zod@3.25.76)
+      zod: 4.2.0
+      zod-validation-error: 4.0.2(zod@4.2.0)
     transitivePeerDependencies:
       - supports-color
 
@@ -7733,6 +7727,8 @@ snapshots:
   locate-path@6.0.0:
     dependencies:
       p-locate: 5.0.0
+
+  lodash.isequal@4.5.0: {}
 
   lodash.merge@4.6.2: {}
 
@@ -8744,10 +8740,8 @@ snapshots:
 
   yocto-queue@0.1.0: {}
 
-  zod-validation-error@4.0.2(zod@3.25.76):
+  zod-validation-error@4.0.2(zod@4.2.0):
     dependencies:
-      zod: 3.25.76
+      zod: 4.2.0
 
-  zod@3.22.4: {}
-
-  zod@3.25.76: {}
+  zod@4.2.0: {}
