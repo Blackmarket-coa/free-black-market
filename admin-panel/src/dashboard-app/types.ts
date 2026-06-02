@@ -8,7 +8,7 @@ import type {
 } from "@medusajs/admin-shared"
 import type { ComponentType } from "react"
 import type { LoaderFunction } from "react-router-dom"
-import type { ZodFirstPartySchemaTypes } from "zod"
+import type { ZodType } from "zod"
 import type { INavItem } from "@components/layout/nav-item"
 
 export type RouteExtension = {
@@ -37,7 +37,7 @@ export type DisplayExtension = {
 }
 
 export type FormFieldExtension = {
-  validation: ZodFirstPartySchemaTypes
+  validation: ZodType
   Component?: ComponentType<any>
   label?: string
   description?: string
@@ -52,7 +52,7 @@ export type FormExtension = {
 
 export type ConfigFieldExtension = {
   defaultValue: ((data: any) => any) | any
-  validation: ZodFirstPartySchemaTypes
+  validation: ZodType
 }
 
 export type ConfigExtension = {

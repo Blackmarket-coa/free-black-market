@@ -102,9 +102,9 @@ export interface ExtendedAdminOrderFulfillment
   }
 }
 
-export interface ExtendedAdminOrderChange extends HttpTypes.AdminOrderChange {
-  created_by?: string | null
-}
+// AdminOrderChange already provides `created_by` (required) as of Medusa 2.14, so the
+// previous optional override is no longer compatible; alias to the base type.
+export type ExtendedAdminOrderChange = HttpTypes.AdminOrderChange
 export interface OrderCommission {
   commission: {
     commission_value: {

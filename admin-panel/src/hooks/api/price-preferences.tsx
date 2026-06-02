@@ -19,7 +19,7 @@ export const pricePreferencesQueryKeys = queryKeysFactory(
 
 export const usePricePreference = (
   id: string,
-  query?: HttpTypes.AdminPricePreferenceParams,
+  query?: HttpTypes.AdminGetPricePreferenceParams,
   options?: Omit<
     UseQueryOptions<
       HttpTypes.AdminPricePreferenceResponse,
@@ -62,7 +62,7 @@ export const usePricePreferences = (
 
 export const useUpsertPricePreference = (
   id?: string | undefined,
-  query?: HttpTypes.AdminPricePreferenceParams,
+  query?: HttpTypes.AdminGetPricePreferenceParams,
   options?: UseMutationOptions<
     HttpTypes.AdminPricePreferenceResponse,
     FetchError,

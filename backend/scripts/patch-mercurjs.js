@@ -294,6 +294,32 @@ function patchCheckOwnershipForMissingSellerInventoryItem(filePath) {
   return true;
 }
 
+function patchPromotionGuardZod4(filePath) {
+  const content = fs.readFileSync(filePath, 'utf-8');
+
+  if (content.includes('// PATCHED: zod4 issues')) {
+    log(`  Already patched: ${filePath}`);
+    return false;
+  }
+
+  // Zod 4 renamed ZodError.errors -> ZodError.issues. MercurJS's compiled
+  // path-param guards still read `result.error.errors`, which is undefined
+  // under the zod 4 the backend now runs, so 400 responses lose their details.
+  const patched = content.replace(
+    /details: result\.error\.errors,/g,
+    'details: result.error.issues, // PATCHED: zod4 issues'
+  );
+
+  if (patched === content) {
+    log(`  Could not match pattern in: ${filePath}`);
+    return false;
+  }
+
+  fs.writeFileSync(filePath, patched);
+  log(`  Patched: ${filePath}`);
+  return true;
+}
+
 function main() {
   log('Applying MercurJS patches for store_status null-safety...');
 
@@ -338,6 +364,20 @@ function main() {
       if (patchCheckOwnershipForMissingSellerInventoryItem(checkOwnershipPath)) patchCount++;
     } else {
       log(`  Not found: check-ownership.js`);
+    }
+
+    // Patch vendor-promotions path-param guards for zod 4 (.error.errors -> .error.issues)
+    const middlewaresDir = path.join(dir, '.medusa', 'server', 'src', 'shared', 'infra', 'http', 'middlewares');
+    for (const guardFile of [
+      'vendor-promotions-rule-attribute-options-path-params-guard.js',
+      'vendor-promotions-rule-value-options-path-params-guard.js',
+    ]) {
+      const promoGuardPath = path.join(middlewaresDir, guardFile);
+      if (fs.existsSync(promoGuardPath)) {
+        if (patchPromotionGuardZod4(promoGuardPath)) patchCount++;
+      } else {
+        log(`  Not found: ${guardFile}`);
+      }
     }
   }
 

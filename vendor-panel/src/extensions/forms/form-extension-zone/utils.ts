@@ -1,10 +1,10 @@
 import {
   ZodBoolean,
-  ZodEffects,
   ZodNull,
   ZodNullable,
   ZodNumber,
   ZodOptional,
+  ZodPipe,
   ZodString,
   ZodType,
   ZodUndefined,
@@ -47,10 +47,9 @@ export function getFieldType(type: ZodType): FormFieldType {
     return getFieldType(innerType)
   }
 
-  if (type instanceof ZodEffects) {
-    const innerType = type.innerType()
-
-    return getFieldType(innerType)
+  if (type instanceof ZodPipe) {
+    // Zod 4 represents transforms/preprocess as ZodPipe; recurse into the input schema.
+    return getFieldType(type.in as ZodType)
   }
 
   return "unsupported"

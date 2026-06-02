@@ -45,10 +45,10 @@ export const InventoryStockForm = ({
   const { mutateAsync, isPending } = useBatchInventoryItemsLocationLevels()
 
   const onSubmit = form.handleSubmit(async (data) => {
-    const payload: HttpTypes.AdminBatchInventoryItemsLocationLevels = {
-      create: [],
-      update: [],
-      delete: [],
+    const payload = {
+      create: [] as NonNullable<HttpTypes.AdminBatchInventoryItemsLocationLevels["create"]>,
+      update: [] as NonNullable<HttpTypes.AdminBatchInventoryItemsLocationLevels["update"]>,
+      delete: [] as NonNullable<HttpTypes.AdminBatchInventoryItemsLocationLevels["delete"]>,
       force: true,
     }
 

@@ -149,7 +149,7 @@ return acc
     await mutateAsync(
       normalizeProductFormValues({
         ...payload,
-        media: uploadedMedia,
+        media: uploadedMedia as any,
         status: (isDraftSubmission ? "draft" : "published") as any,
         regionsCurrencyMap,
       }),

@@ -136,7 +136,7 @@ return acc
     const validationResult = schema.safeParse(values)
 
     if (!validationResult.success) {
-      validationResult.error.errors.forEach(({ path, message, code }) => {
+      validationResult.error.issues.forEach(({ path, message, code }) => {
         form.setError(path.join(".") as keyof PricingCreateSchemaType, {
           type: code,
           message,
