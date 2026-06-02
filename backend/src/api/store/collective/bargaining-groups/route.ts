@@ -7,10 +7,10 @@ const createGroupSchema = z.object({
   name: z.string().min(1),
   description: z.string().optional(),
   category: z.string().optional(),
-  common_requirements: z.record(z.unknown()).optional(),
-  delivery_specs: z.record(z.unknown()).optional(),
-  payment_terms: z.record(z.unknown()).optional(),
-  quality_standards: z.record(z.unknown()).optional(),
+  common_requirements: z.record(z.string(), z.unknown()).optional(),
+  delivery_specs: z.record(z.string(), z.unknown()).optional(),
+  payment_terms: z.record(z.string(), z.unknown()).optional(),
+  quality_standards: z.record(z.string(), z.unknown()).optional(),
   voting_rule: z
     .enum([
       "ONE_MEMBER_ONE_VOTE",
@@ -26,7 +26,7 @@ const createGroupSchema = z.object({
   demand_post_id: z.string().optional(),
   buyer_network_id: z.string().optional(),
   negotiation_deadline: z.string().datetime().optional(),
-  metadata: z.record(z.unknown()).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
 })
 
 const listGroupsSchema = z.object({
@@ -67,7 +67,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     })
   } catch (error: any) {
     if (error instanceof z.ZodError) {
-      return res.status(400).json({ error: "Validation failed", details: error.errors })
+      return res.status(400).json({ error: "Validation failed", details: error.issues })
     }
     console.error("[GET /store/collective/bargaining-groups] Error:", error.message)
     res.status(500).json({ error: "Failed to retrieve bargaining groups" })
@@ -99,7 +99,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     res.status(201).json({ bargaining_group: group })
   } catch (error: any) {
     if (error instanceof z.ZodError) {
-      return res.status(400).json({ error: "Validation failed", details: error.errors })
+      return res.status(400).json({ error: "Validation failed", details: error.issues })
     }
     console.error("[POST /store/collective/bargaining-groups] Error:", error.message)
     res.status(400).json({ error: error.message })

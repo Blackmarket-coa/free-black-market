@@ -56,7 +56,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     })
   } catch (error) {
     if (error instanceof z.ZodError) {
-      res.status(400).json({ message: "Validation failed", errors: error.errors })
+      res.status(400).json({ message: "Validation failed", errors: error.issues })
       return
     }
     throw error
@@ -122,7 +122,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     })
   } catch (error) {
     if (error instanceof z.ZodError) {
-      res.status(400).json({ message: "Validation failed", errors: error.errors })
+      res.status(400).json({ message: "Validation failed", errors: error.issues })
       return
     }
     throw error

@@ -17,7 +17,7 @@ import { requireAdminId } from "../../../../shared/auth-helpers"
 const updateRequestSchema = z.object({
   status: z.nativeEnum(RequestStatus).optional(),
   provider_id: z.string().optional(),
-  payload: z.record(z.unknown()).optional(),
+  payload: z.record(z.string(), z.unknown()).optional(),
   notes: z.string().optional(),
 })
 
@@ -125,7 +125,7 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
     }
   } catch (error: any) {
     if (error instanceof z.ZodError) {
-      res.status(400).json({ message: "Validation failed", errors: error.errors })
+      res.status(400).json({ message: "Validation failed", errors: error.issues })
       return
     }
 
@@ -185,7 +185,7 @@ export async function PATCH(req: AuthenticatedMedusaRequest, res: MedusaResponse
     })
   } catch (error: any) {
     if (error instanceof z.ZodError) {
-      res.status(400).json({ message: "Validation failed", errors: error.errors })
+      res.status(400).json({ message: "Validation failed", errors: error.issues })
       return
     }
     console.error(`[PATCH /admin/requests/${id}] Error:`, error.message)

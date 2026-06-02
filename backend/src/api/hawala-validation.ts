@@ -67,7 +67,7 @@ export const updatePoolSchema = z.object({
   target_amount: amountSchema.optional(),
   auto_invest_enabled: z.boolean().optional(),
   auto_invest_percentage: z.number().min(0).max(100).optional(),
-  metadata: z.record(z.unknown()).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
 })
 
 export const withdrawPoolSchema = z.object({
@@ -229,12 +229,12 @@ export const createAccountSchema = z.object({
   account_type: accountTypeSchema,
   owner_type: ownerTypeSchema,
   owner_id: idSchema,
-  metadata: z.record(z.unknown()).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
 })
 
 export const updateAccountSchema = z.object({
   status: z.enum(["ACTIVE", "FROZEN", "CLOSED"]).optional(),
-  metadata: z.record(z.unknown()).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
 })
 
 // =============================================================================
@@ -258,7 +258,7 @@ export function validateInput<T>(
   if (result.success) {
     return { success: true, data: result.data }
   }
-  const errorMessages = result.error.errors
+  const errorMessages = result.error.issues
     .map(e => `${e.path.join(".")}: ${e.message}`)
     .join(", ")
   return { success: false, error: errorMessages }

@@ -3,6 +3,7 @@ import {
   MedusaResponse
 } from "@medusajs/framework"
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
+import { CreateProductWorkflowInputDTO } from "@medusajs/framework/types"
 import { z } from "zod"
 import createDigitalProductWorkflow from "../../../workflows/create-digital-product"
 import { CreateDigitalProductMediaInput } from "../../../workflows/create-digital-product/steps/create-digital-product-medias"
@@ -72,7 +73,7 @@ export const POST = async (
       product: {
         ...req.validatedBody.product,
         shipping_profile_id: shippingProfile.id,
-      }
+      } as CreateProductWorkflowInputDTO
     }
   })
 

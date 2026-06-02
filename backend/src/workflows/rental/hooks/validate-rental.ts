@@ -1,12 +1,21 @@
 import { MedusaError } from "@medusajs/framework/utils";
-import { completeCartWorkflow } from "@medusajs/medusa/core-flows";
 import RentalModuleService from "../../../modules/rental/service";
 import { RENTAL_MODULE } from "../../../modules/rental";
 import hasCartOverlap from "../../../utils/has-cart-overlap";
 import validateRentalDates from "../../../utils/validate-rental-dates";
 
-completeCartWorkflow.hooks.validate(
-  async ({ cart }, { container }) => {
+/**
+ * Validate rental line items (active config, qty 1, required dates, no
+ * overlapping bookings) on cart completion.
+ *
+ * Registered once (alongside the sliding-scale validator) via
+ * `complete-cart-validate.ts` — Medusa v2 allows only one handler per
+ * `completeCartWorkflow.hooks.validate`.
+ */
+export async function validateRentalOnCompleteCart(
+  { cart }: { cart: { id: string } },
+  { container }: { container: { resolve: (key: string) => any } }
+): Promise<void> {
     const query = container.resolve("query")
     const rentalModuleService: RentalModuleService = container.resolve(RENTAL_MODULE)
 
@@ -128,5 +137,4 @@ completeCartWorkflow.hooks.validate(
         )
       }
     }
-  }
-)
+}

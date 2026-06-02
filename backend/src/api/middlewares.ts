@@ -27,6 +27,7 @@ import { CreateVenueSchema } from "./admin/venues/route";
 import { CreateTicketProductSchema } from "./admin/ticket-products/route";
 import { GetTicketProductSeatsSchema } from "./store/ticket-products/[id]/seats/route";
 import { requireFeatureFlagMiddleware } from "../shared/runtime-module-gates";
+import { enforceListingTypeAllowed } from "../shared/listing-type-guard";
 import { requireStorefrontContext } from "./middlewares/tenancy-context";
 import {
   inventoryLedgerEventSchema,
@@ -46,7 +47,7 @@ const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PostVendorSellersMeBodySchema = z
   .object({
     enabled_extensions: z.array(z.string()).nullable().optional(),
-    metadata: z.record(z.any()).optional(),
+    metadata: z.record(z.string(), z.any()).optional(),
   })
   .passthrough();
 
@@ -57,7 +58,7 @@ const PostVendorSellerExtensionsBodySchema = z.object({
 const PostVendorHermesRuntimeBodySchema = z.object({
   tool_call: z.object({
     action: z.string().min(1),
-    parameters: z.record(z.unknown()),
+    parameters: z.record(z.string(), z.unknown()),
   }),
   confirmation: z
     .object({
@@ -647,6 +648,19 @@ export default defineMiddlewares({
       matcher: "/vendor/register",
       method: "POST",
       middlewares: [vendorRegistrationRateLimiter, normalizeEmailMiddleware],
+    },
+    // Vendor product creation - enforce playbook × listing-type compatibility
+    // pre-commit (replaces the productsCreated workflow hook, which collided
+    // with mercurjs b2c-core's single-handler registration).
+    {
+      matcher: "/vendor/products",
+      method: "POST",
+      middlewares: [enforceListingTypeAllowed],
+    },
+    {
+      matcher: "/vendor/seller-products",
+      method: "POST",
+      middlewares: [enforceListingTypeAllowed],
     },
     // Auth write routes - login and register (tighter rate limit)
     {

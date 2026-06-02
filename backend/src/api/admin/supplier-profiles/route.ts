@@ -12,7 +12,7 @@ const upsertSchema = z.object({
   api_base_url: z.string().url().optional().nullable(),
   api_key: z.string().optional().nullable(),
   is_active: z.boolean().optional(),
-  metadata: z.record(z.unknown()).optional().nullable(),
+  metadata: z.record(z.string(), z.unknown()).optional().nullable(),
 })
 
 export async function GET(req: MedusaRequest, res: MedusaResponse) {

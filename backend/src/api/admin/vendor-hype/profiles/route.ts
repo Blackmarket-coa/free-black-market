@@ -16,7 +16,7 @@ const createSchema = z.object({
   trust_score: z.number().optional(),
   readiness_score: z.number().optional(),
   capital_need_amount: z.number().optional(),
-  metadata: z.record(z.unknown()).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
 })
 
 const ensureAdminActor = (req: MedusaRequest, res: MedusaResponse) => {

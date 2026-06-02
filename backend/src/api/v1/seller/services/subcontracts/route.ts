@@ -18,7 +18,7 @@ const ProposeSchema = z.object({
   unit_price_cents: z.number().int().min(1).max(1_000_000_000),
   currency_code: z.string().length(3).optional(),
   pickup_at: z.string().datetime().optional().nullable(),
-  deliver_to: z.record(z.unknown()).optional().nullable(),
+  deliver_to: z.record(z.string(), z.unknown()).optional().nullable(),
 })
 
 /**

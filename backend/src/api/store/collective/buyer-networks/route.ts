@@ -17,7 +17,7 @@ const createNetworkSchema = z.object({
   requires_approval: z.boolean().optional(),
   min_purchase_commitment: z.number().positive().optional(),
   currency_code: z.string().optional(),
-  metadata: z.record(z.unknown()).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
 })
 
 const discoverSchema = z.object({
@@ -63,7 +63,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     })
   } catch (error: any) {
     if (error instanceof z.ZodError) {
-      return res.status(400).json({ error: "Validation failed", details: error.errors })
+      return res.status(400).json({ error: "Validation failed", details: error.issues })
     }
     console.error("[GET buyer-networks] Error:", error.message)
     res.status(500).json({ error: "Failed to retrieve networks" })
@@ -91,7 +91,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     res.status(201).json({ buyer_network: network })
   } catch (error: any) {
     if (error instanceof z.ZodError) {
-      return res.status(400).json({ error: "Validation failed", details: error.errors })
+      return res.status(400).json({ error: "Validation failed", details: error.issues })
     }
     console.error("[POST buyer-networks] Error:", error.message)
     res.status(400).json({ error: error.message })

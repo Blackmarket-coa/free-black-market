@@ -7,7 +7,7 @@ const settleSchema = z.object({
   settlement_ref: z.string().min(1),
   oracle_outcome_key: z.string().min(1),
   oracle_evidence_uri: z.string().url(),
-  oracle_payload: z.record(z.unknown()),
+  oracle_payload: z.record(z.string(), z.unknown()),
   oracle_signature: z.string().min(32),
   oracle_key_id: z.string().min(1),
   oracle_nonce: z.string().min(12),

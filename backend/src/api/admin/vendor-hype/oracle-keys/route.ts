@@ -11,7 +11,7 @@ const schema = z.object({
   valid_from: z.string().datetime().optional(),
   valid_to: z.string().datetime().optional(),
   rotation_note: z.string().optional(),
-  metadata: z.record(z.unknown()).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
 })
 
 const ensureAdmin = (req: MedusaRequest, res: MedusaResponse) => {

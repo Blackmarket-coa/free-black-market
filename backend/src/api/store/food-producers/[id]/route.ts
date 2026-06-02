@@ -29,7 +29,7 @@ const updateProducerSchema = z.object({
   longitude: z.number().min(-180).max(180).optional(),
   
   // Operating hours
-  operating_hours: z.record(z.object({
+  operating_hours: z.record(z.string(), z.object({
     open: z.string().regex(/^\d{2}:\d{2}$/),
     close: z.string().regex(/^\d{2}:\d{2}$/),
   })).optional(),
@@ -65,7 +65,7 @@ const updateProducerSchema = z.object({
   accepts_ebt: z.boolean().optional(),
   accepts_snap: z.boolean().optional(),
   
-  metadata: z.record(z.any()).optional(),
+  metadata: z.record(z.string(), z.any()).optional(),
 })
 
 // ===========================================
@@ -126,7 +126,7 @@ export async function PUT(req: MedusaRequest, res: MedusaResponse) {
     res.json({ producer })
   } catch (error) {
     if (error instanceof z.ZodError) {
-      res.status(400).json({ message: "Validation failed", errors: error.errors })
+      res.status(400).json({ message: "Validation failed", errors: error.issues })
       return
     }
     throw error

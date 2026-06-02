@@ -3,27 +3,7 @@ import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils"
 import { createProductsWorkflow } from "@medusajs/medusa/core-flows"
 import { SELLER_MODULE } from "@mercurjs/b2c-core/modules/seller"
 
-async function resolveSellerId(req: MedusaRequest, actorId?: string): Promise<string | undefined> {
-  if (!actorId) {
-    return undefined
-  }
-
-  if (!actorId.startsWith("mem_")) {
-    return actorId
-  }
-
-  try {
-    const pgConnection = req.scope.resolve(ContainerRegistrationKeys.PG_CONNECTION)
-    const memberResult = await pgConnection.raw(
-      `SELECT seller_id FROM member WHERE id = ? LIMIT 1`,
-      [actorId]
-    )
-
-    return memberResult.rows?.[0]?.seller_id || actorId
-  } catch {
-    return actorId
-  }
-}
+import { resolveSellerId } from "../../../shared/listing-type-guard"
 
 async function linkSellerInventoryItems(
   req: MedusaRequest,

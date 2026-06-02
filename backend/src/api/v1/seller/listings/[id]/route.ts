@@ -14,7 +14,7 @@ const PatchSchema = z
   .object({
     title: z.string().min(1).max(120).optional(),
     description: z.string().max(2000).nullable().optional(),
-    manifest: z.record(z.unknown()).optional(),
+    manifest: z.record(z.string(), z.unknown()).optional(),
     code_blob_url: httpsUrl.nullable().optional(),
     code_blob_sha256: z.string().regex(/^[a-f0-9]{64}$/i).nullable().optional(),
     assets: z

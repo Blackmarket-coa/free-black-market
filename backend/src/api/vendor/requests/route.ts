@@ -12,7 +12,7 @@ import { requireSellerId } from "../../../shared/auth-helpers"
 const createRequestSchema = z.object({
   request: z.object({
     type: z.string().min(1, "Request type is required"),
-    data: z.record(z.unknown()).default({}),
+    data: z.record(z.string(), z.unknown()).default({}),
   }),
 })
 
@@ -57,7 +57,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     })
   } catch (error: any) {
     if (error instanceof z.ZodError) {
-      res.status(400).json({ message: "Validation failed", errors: error.errors })
+      res.status(400).json({ message: "Validation failed", errors: error.issues })
       return
     }
     console.error("[GET /vendor/requests] Error:", error.message)
@@ -94,7 +94,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     })
   } catch (error: any) {
     if (error instanceof z.ZodError) {
-      res.status(400).json({ message: "Validation failed", errors: error.errors })
+      res.status(400).json({ message: "Validation failed", errors: error.issues })
       return
     }
     console.error("[POST /vendor/requests] Error:", error.message)

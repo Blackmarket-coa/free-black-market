@@ -43,7 +43,7 @@ const envSchema = z.object({
   REDIS_URL: optionalString,
   
   // Server configuration
-  PORT: z.string().transform(Number).default("9000"),
+  PORT: z.string().transform(Number).default(9000),
   BACKEND_URL: optionalString,
   STOREFRONT_URL: optionalString,
   ADMIN_URL: optionalString,
@@ -89,7 +89,7 @@ const envSchema = z.object({
   ALGOLIA_ADMIN_KEY: optionalString,
   
   // OpenTelemetry
-  OTEL_ENABLED: z.string().transform(v => v === "true").default("false"),
+  OTEL_ENABLED: z.string().transform(v => v === "true").default(false),
   OTEL_EXPORTER_OTLP_ENDPOINT: optionalString,
   OTEL_SERVICE_NAME: z.string().default("freeblackmarket-backend"),
   
@@ -97,14 +97,14 @@ const envSchema = z.object({
   SENTRY_DSN: optionalString,
   SENTRY_ENVIRONMENT: optionalString,
   SENTRY_RELEASE: optionalString,
-  SENTRY_SAMPLE_RATE: z.string().transform(v => parseFloat(v) || 0.1).default("0.1"),
+  SENTRY_SAMPLE_RATE: z.string().transform(v => parseFloat(v) || 0.1).default(0.1),
   
   // Logging
   LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
   
   // Feature flags
-  ENABLE_STELLAR_SETTLEMENT: z.string().transform(v => v === "true").default("false"),
-  ENABLE_STRIPE_ACH: z.string().transform(v => v === "true").default("false"),
+  ENABLE_STELLAR_SETTLEMENT: z.string().transform(v => v === "true").default(false),
+  ENABLE_STRIPE_ACH: z.string().transform(v => v === "true").default(false),
 })
 
 export type Config = z.infer<typeof envSchema>
@@ -116,7 +116,7 @@ function loadConfig(): Config {
   const result = envSchema.safeParse(process.env)
   
   if (!result.success) {
-    const errors = result.error.errors.map(e => `  - ${e.path.join(".")}: ${e.message}`)
+    const errors = result.error.issues.map(e => `  - ${e.path.join(".")}: ${e.message}`)
     logger.error("Configuration validation failed:\n" + errors.join("\n"))
     
     // In development, log helpful hints

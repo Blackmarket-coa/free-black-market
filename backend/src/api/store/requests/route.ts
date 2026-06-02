@@ -10,7 +10,7 @@ import { requireCustomerId } from "../../../shared"
 
 const createRequestSchema = z.object({
   type: z.string().min(1, "Request type is required"),
-  data: z.record(z.unknown()).default({}),
+  data: z.record(z.string(), z.unknown()).default({}),
   reviewer_note: z.string().optional(),
 })
 
@@ -64,7 +64,7 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
     })
   } catch (error) {
     if (error instanceof z.ZodError) {
-      res.status(400).json({ message: "Validation failed", errors: error.errors })
+      res.status(400).json({ message: "Validation failed", errors: error.issues })
       return
     }
     throw error
