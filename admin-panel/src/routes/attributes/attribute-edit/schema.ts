@@ -16,7 +16,7 @@ export const AdminUpdateAttributeValue = z.object({
   id: z.string().optional(),
   value: z.string().optional(),
   rank: z.number().optional(),
-  metadata: z.record(z.unknown()).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
 });
 
 export type AdminCreateAttributeValueType = z.infer<
@@ -25,7 +25,7 @@ export type AdminCreateAttributeValueType = z.infer<
 export const AdminCreateAttributeValue = z.object({
   value: z.string().min(1),
   rank: z.number(),
-  metadata: z.record(z.unknown()).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
 });
 
 export type AdminUpdateAttributeType = z.infer<typeof AdminUpdateAttribute>;
@@ -36,7 +36,7 @@ export const AdminUpdateAttribute = z
     handle: z.string().optional(),
     is_filterable: z.boolean().optional(),
     is_required: z.boolean().optional(),
-    metadata: z.record(z.unknown()).optional(),
+    metadata: z.record(z.string(), z.unknown()).optional(),
     ui_component: z.nativeEnum(AttributeUIComponent).optional(),
     product_category_ids: z.array(z.string()).optional(),
     possible_values: z.array(AdminUpdateAttributeValue).optional(),
@@ -53,7 +53,7 @@ export const CreateAttribute = z.object({
     .nativeEnum(AttributeUIComponent)
     .default(AttributeUIComponent.SELECT),
   handle: z.string().optional(),
-  metadata: z.record(z.unknown()).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
   possible_values: z.array(AdminCreateAttributeValue).optional(),
   product_category_ids: z.array(z.string()).optional(),
 });
