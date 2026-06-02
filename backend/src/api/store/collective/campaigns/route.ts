@@ -10,7 +10,7 @@ import CollectiveCampaignModuleService from "../../../../modules/collective-camp
 const createCampaignSchema = z.object({
   name: z.string().min(1),
   description: z.string().min(1),
-  media: z.record(z.unknown()).optional(),
+  media: z.record(z.string(), z.unknown()).optional(),
   campaign_type: z.nativeEnum(CampaignType),
   batch_minimum: z.number().int().positive().optional(),
   funding_goal_override: z.number().positive().optional(),
@@ -27,7 +27,7 @@ const createCampaignSchema = z.object({
       quantity_per_output_unit: z.number().positive().optional(),
       quantity_per_full_campaign: z.number().positive(),
       auto_purchase_supported: z.boolean().optional(),
-      metadata: z.record(z.unknown()).optional(),
+      metadata: z.record(z.string(), z.unknown()).optional(),
     })
   ).min(1),
   asset_type: z.string().optional(),
@@ -36,8 +36,8 @@ const createCampaignSchema = z.object({
   cycle_frequency: z.string().optional(),
   time_to_first_yield_days: z.number().int().positive().optional(),
   compounding_profile: z.string().optional(),
-  projected_return_curve: z.record(z.unknown()).optional(),
-  metadata: z.record(z.unknown()).optional(),
+  projected_return_curve: z.record(z.string(), z.unknown()).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
 })
 
 const listCampaignSchema = z.object({
@@ -72,7 +72,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     return res.json({ campaigns, count: campaigns.length, offset: query.offset, limit: query.limit })
   } catch (error: unknown) {
     if (error instanceof z.ZodError) {
-      return res.status(400).json({ error: "Validation failed", details: error.errors })
+      return res.status(400).json({ error: "Validation failed", details: error.issues })
     }
     return res.status(500).json({ error: getErrorMessage(error) })
   }
@@ -117,7 +117,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     return res.status(201).json({ campaign, backer_modes: Object.values(BackingMode) })
   } catch (error: unknown) {
     if (error instanceof z.ZodError) {
-      return res.status(400).json({ error: "Validation failed", details: error.errors })
+      return res.status(400).json({ error: "Validation failed", details: error.issues })
     }
     return res.status(400).json({ error: getErrorMessage(error) })
   }

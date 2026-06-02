@@ -41,7 +41,7 @@ const submitProposalSchema = z.object({
   // Optional: submit to a bargaining group
   bargaining_group_id: z.string().optional(),
   bargaining_proposal_title: z.string().optional(),
-  bargaining_terms: z.record(z.unknown()).optional(),
+  bargaining_terms: z.record(z.string(), z.unknown()).optional(),
 })
 
 // GET /vendor/collective/demand-pools/:id/proposals (vendor's own proposals)
@@ -138,7 +138,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     })
   } catch (error: unknown) {
     if (error instanceof z.ZodError) {
-      return res.status(400).json({ error: "Validation failed", details: error.errors })
+      return res.status(400).json({ error: "Validation failed", details: error.issues })
     }
     const message = getErrorMessage(error)
     console.error("[POST vendor proposal] Error:", message)

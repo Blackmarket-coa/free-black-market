@@ -148,7 +148,7 @@ export function createBugReportHandler(options: BugReportHandlerOptions) {
         res.status(400).json({
           message: "Validation failed",
           type: "invalid_data",
-          errors: error.errors,
+          errors: error.issues,
         })
         return
       }

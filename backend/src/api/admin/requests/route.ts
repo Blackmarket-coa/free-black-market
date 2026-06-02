@@ -13,7 +13,7 @@ import { requireAdminId } from "../../../shared/auth-helpers"
 
 const createRequestSchema = z.object({
   type: z.string().min(1, "Request type is required"),
-  data: z.record(z.unknown()).default({}),
+  data: z.record(z.string(), z.unknown()).default({}),
   requester_id: z.string().min(1, "Requester ID is required"),
   reviewer_note: z.string().optional(),
 })
@@ -65,7 +65,7 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
     })
   } catch (error: any) {
     if (error instanceof z.ZodError) {
-      res.status(400).json({ message: "Validation failed", errors: error.errors })
+      res.status(400).json({ message: "Validation failed", errors: error.issues })
       return
     }
     console.error("[GET /admin/requests] Error:", error.message)
@@ -107,7 +107,7 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
     })
   } catch (error: any) {
     if (error instanceof z.ZodError) {
-      res.status(400).json({ message: "Validation failed", errors: error.errors })
+      res.status(400).json({ message: "Validation failed", errors: error.issues })
       return
     }
     console.error("[POST /admin/requests] Error:", error.message)

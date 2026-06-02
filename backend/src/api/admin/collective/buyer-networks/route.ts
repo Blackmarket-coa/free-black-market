@@ -41,7 +41,7 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
     })
   } catch (error: any) {
     if (error instanceof z.ZodError) {
-      return res.status(400).json({ error: "Validation failed", details: error.errors })
+      return res.status(400).json({ error: "Validation failed", details: error.issues })
     }
     console.error("[GET /admin/collective/buyer-networks] Error:", error.message)
     res.status(500).json({ error: "Failed to retrieve buyer networks" })

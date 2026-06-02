@@ -6,7 +6,7 @@ import BargainingModuleService from "../../../../../../modules/bargaining/servic
 const joinSchema = z.object({
   quantity_needed: z.number().int().positive().optional(),
   budget: z.number().positive().optional(),
-  specific_requirements: z.record(z.unknown()).optional(),
+  specific_requirements: z.record(z.string(), z.unknown()).optional(),
 })
 
 // POST /store/collective/bargaining-groups/:id/join
@@ -35,7 +35,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     res.status(201).json({ member })
   } catch (error: any) {
     if (error instanceof z.ZodError) {
-      return res.status(400).json({ error: "Validation failed", details: error.errors })
+      return res.status(400).json({ error: "Validation failed", details: error.issues })
     }
     console.error(`[POST /store/collective/bargaining-groups/${id}/join] Error:`, error.message)
     res.status(400).json({ error: error.message })

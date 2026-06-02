@@ -19,14 +19,14 @@ const createDemandPostSchema = z.object({
   title: z.string().min(1, "Title is required"),
   description: z.string().min(1, "Description is required"),
   category: z.string().optional(),
-  specs: z.record(z.unknown()).optional(),
+  specs: z.record(z.string(), z.unknown()).optional(),
   target_quantity: z.number().int().positive(),
   min_quantity: z.number().int().positive(),
   unit_of_measure: z.string().optional(),
   target_price: z.number().positive().optional(),
   currency_code: z.string().default("USD"),
   delivery_region: z.string().optional(),
-  delivery_address: z.record(z.unknown()).optional(),
+  delivery_address: z.record(z.string(), z.unknown()).optional(),
   delivery_window_start: z.string().datetime().optional(),
   delivery_window_end: z.string().datetime().optional(),
   deadline: z.string().datetime().optional(),
@@ -34,7 +34,7 @@ const createDemandPostSchema = z.object({
   visibility: z.enum(["PUBLIC", "NETWORK_ONLY", "INVITE_ONLY"]).optional(),
   parent_demand_id: z.string().optional(),
   recurring_rule: z.string().optional(),
-  metadata: z.record(z.unknown()).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
 })
 
 const listDemandPostsSchema = z.object({
@@ -66,7 +66,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     res.json({ demand_pools: pools, count: pools.length, offset: query.offset, limit: query.limit })
   } catch (error: unknown) {
     if (error instanceof z.ZodError) {
-      return res.status(400).json({ error: "Validation failed", details: error.errors })
+      return res.status(400).json({ error: "Validation failed", details: error.issues })
     }
     const message = getErrorMessage(error)
     console.error("[GET /store/collective/demand-pools] Error:", message)
@@ -118,7 +118,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     res.status(201).json({ demand_post: post })
   } catch (error: unknown) {
     if (error instanceof z.ZodError) {
-      return res.status(400).json({ error: "Validation failed", details: error.errors })
+      return res.status(400).json({ error: "Validation failed", details: error.issues })
     }
     const message = getErrorMessage(error)
     console.error("[POST /store/collective/demand-pools] Error:", message)

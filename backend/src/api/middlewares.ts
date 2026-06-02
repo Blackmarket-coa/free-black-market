@@ -47,7 +47,7 @@ const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PostVendorSellersMeBodySchema = z
   .object({
     enabled_extensions: z.array(z.string()).nullable().optional(),
-    metadata: z.record(z.any()).optional(),
+    metadata: z.record(z.string(), z.any()).optional(),
   })
   .passthrough();
 
@@ -58,7 +58,7 @@ const PostVendorSellerExtensionsBodySchema = z.object({
 const PostVendorHermesRuntimeBodySchema = z.object({
   tool_call: z.object({
     action: z.string().min(1),
-    parameters: z.record(z.unknown()),
+    parameters: z.record(z.string(), z.unknown()),
   }),
   confirmation: z
     .object({

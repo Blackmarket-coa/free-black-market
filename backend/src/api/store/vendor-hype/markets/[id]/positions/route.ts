@@ -16,7 +16,7 @@ const placePositionSchema = z.object({
   disclosure_acknowledged: z.boolean().default(false),
   age_verified: z.boolean().default(false),
   self_excluded: z.boolean().default(false),
-  metadata: z.record(z.unknown()).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
 })
 
 export async function POST(req: MedusaRequest, res: MedusaResponse) {

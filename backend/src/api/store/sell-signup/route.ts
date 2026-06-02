@@ -57,7 +57,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     return res.status(400).json({
       message: "Validation failed",
       type: "invalid_data",
-      errors: parsed.error.errors,
+      errors: parsed.error.issues,
     })
   }
 

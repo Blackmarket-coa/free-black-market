@@ -40,7 +40,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 
 const createBody = z.object({
   kind_slug: z.string().min(1),
-  attributes: z.record(z.unknown()).default({}),
+  attributes: z.record(z.string(), z.unknown()).default({}),
   lifecycle: z
     .enum([
       "one-time",
@@ -53,12 +53,12 @@ const createBody = z.object({
   sensitivity_tier: z
     .enum(["public", "member-visible", "room-scoped", "match-only"])
     .optional(),
-  availability: z.record(z.unknown()).nullable().optional(),
-  geography: z.record(z.unknown()).nullable().optional(),
+  availability: z.record(z.string(), z.unknown()).nullable().optional(),
+  geography: z.record(z.string(), z.unknown()).nullable().optional(),
   governance_model: z
     .enum(["individual", "collective", "vote-weighted", "consensus"])
     .optional(),
-  metadata: z.record(z.unknown()).nullable().optional(),
+  metadata: z.record(z.string(), z.unknown()).nullable().optional(),
 })
 
 /**

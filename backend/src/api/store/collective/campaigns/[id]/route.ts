@@ -80,7 +80,7 @@ export async function PATCH(req: MedusaRequest, res: MedusaResponse) {
     return res.json(result)
   } catch (error: unknown) {
     if (error instanceof z.ZodError) {
-      return res.status(400).json({ error: "Validation failed", details: error.errors })
+      return res.status(400).json({ error: "Validation failed", details: error.issues })
     }
 
     const message = getErrorMessage(error)

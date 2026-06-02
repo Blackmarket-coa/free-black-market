@@ -58,7 +58,7 @@ const CredentialSubject = z
  * Allow either v1 or v2 W3C credentials context, plus arbitrary extra
  * contexts the issuer may add.
  */
-const ContextEntry = z.union([z.string(), z.record(z.unknown())])
+const ContextEntry = z.union([z.string(), z.record(z.string(), z.unknown())])
 const Context = z.union([ContextEntry, z.array(ContextEntry).min(1)])
 
 /**
@@ -76,8 +76,8 @@ const Type = z.union([
 
 /** Proof block — kept opaque in v0.1 (verification is deferred). */
 const Proof = z.union([
-  z.record(z.unknown()),
-  z.array(z.record(z.unknown())),
+  z.record(z.string(), z.unknown()),
+  z.array(z.record(z.string(), z.unknown())),
 ])
 
 export const VerifiableCredentialSchema = z

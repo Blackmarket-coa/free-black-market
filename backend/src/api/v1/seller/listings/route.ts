@@ -20,7 +20,7 @@ const CreateListingSchema = z.object({
   slug: z.string().regex(slugRegex),
   title: z.string().min(1).max(120),
   description: z.string().max(2000).nullish(),
-  manifest: z.record(z.unknown()),
+  manifest: z.record(z.string(), z.unknown()),
   code_blob_url: httpsUrl.nullish(),
   code_blob_sha256: z.string().regex(/^[a-f0-9]{64}$/i).nullish(),
   assets: z.array(AssetSchema).max(64).nullish(),

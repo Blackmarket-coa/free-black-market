@@ -18,8 +18,8 @@ const createMarketSchema = z.object({
   starts_at: z.string().datetime(),
   locks_at: z.string().datetime(),
   settlement_deadline_at: z.string().datetime().optional(),
-  payout_cap_config: z.record(z.unknown()).optional(),
-  metadata: z.record(z.unknown()).optional(),
+  payout_cap_config: z.record(z.string(), z.unknown()).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
 })
 
 export async function GET(req: MedusaRequest, res: MedusaResponse) {

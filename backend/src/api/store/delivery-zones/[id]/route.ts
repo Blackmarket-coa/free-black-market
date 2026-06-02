@@ -26,7 +26,7 @@ const updateZoneSchema = z.object({
   minimum_order: z.number().min(0).optional(),
   
   // Service hours
-  service_hours: z.record(z.object({
+  service_hours: z.record(z.string(), z.object({
     open: z.string().regex(/^\d{2}:\d{2}$/),
     close: z.string().regex(/^\d{2}:\d{2}$/),
   })).optional(),
@@ -91,7 +91,7 @@ export async function PUT(req: MedusaRequest, res: MedusaResponse) {
     res.json({ zone })
   } catch (error) {
     if (error instanceof z.ZodError) {
-      res.status(400).json({ message: "Validation failed", errors: error.errors })
+      res.status(400).json({ message: "Validation failed", errors: error.issues })
       return
     }
     throw error
@@ -185,7 +185,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     })
   } catch (error) {
     if (error instanceof z.ZodError) {
-      res.status(400).json({ message: "Validation failed", errors: error.errors })
+      res.status(400).json({ message: "Validation failed", errors: error.issues })
       return
     }
     throw error

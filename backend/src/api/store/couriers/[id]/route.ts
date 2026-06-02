@@ -48,7 +48,7 @@ const updateCourierSchema = z.object({
   // Active status
   is_active: z.boolean().optional(),
   
-  metadata: z.record(z.any()).optional(),
+  metadata: z.record(z.string(), z.any()).optional(),
 })
 
 const claimDeliverySchema = z.object({
@@ -121,7 +121,7 @@ export async function PUT(req: MedusaRequest, res: MedusaResponse) {
     res.json({ courier })
   } catch (error) {
     if (error instanceof z.ZodError) {
-      res.status(400).json({ message: "Validation failed", errors: error.errors })
+      res.status(400).json({ message: "Validation failed", errors: error.issues })
       return
     }
     throw error
@@ -176,7 +176,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     res.json({ delivery: updatedDelivery })
   } catch (error) {
     if (error instanceof z.ZodError) {
-      res.status(400).json({ message: "Validation failed", errors: error.errors })
+      res.status(400).json({ message: "Validation failed", errors: error.issues })
       return
     }
     throw error

@@ -9,6 +9,7 @@ export const deliveryBoundarySchema = z.object({
 
 export const serviceHoursSchema = z
   .record(
+    z.string(),
     z.object({
       open: z.string().regex(/^\d{2}:\d{2}$/),
       close: z.string().regex(/^\d{2}:\d{2}$/),

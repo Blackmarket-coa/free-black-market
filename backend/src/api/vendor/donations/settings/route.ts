@@ -7,7 +7,7 @@ const updateSettingsSchema = z.object({
   default_percentage: z.number().min(0).max(100).optional(),
   round_up_enabled: z.boolean().optional(),
   settlement_mode: z.enum(["direct", "ledger_batch"]).optional(),
-  metadata: z.record(z.any()).optional(),
+  metadata: z.record(z.string(), z.any()).optional(),
 })
 
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
@@ -24,7 +24,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     res.status(200).json({ settings })
   } catch (error) {
     if (error instanceof z.ZodError) {
-      return res.status(400).json({ code: "DONATION_SETTINGS_VALIDATION_ERROR", message: "Validation failed", errors: error.errors })
+      return res.status(400).json({ code: "DONATION_SETTINGS_VALIDATION_ERROR", message: "Validation failed", errors: error.issues })
     }
     throw error
   }

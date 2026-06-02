@@ -50,7 +50,7 @@ const createProducerSchema = z.object({
   longitude: z.number().min(-180).max(180).optional(),
   
   // Operating hours (object with day keys)
-  operating_hours: z.record(z.object({
+  operating_hours: z.record(z.string(), z.object({
     open: z.string().regex(/^\d{2}:\d{2}$/),
     close: z.string().regex(/^\d{2}:\d{2}$/),
   })).optional(),
@@ -85,7 +85,7 @@ const createProducerSchema = z.object({
   // Hawala integration
   hawala_account_id: z.string().optional(),
   
-  metadata: z.record(z.any()).optional(),
+  metadata: z.record(z.string(), z.any()).optional(),
 })
 
 const updateProducerSchema = createProducerSchema.partial()
@@ -139,7 +139,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     })
   } catch (error) {
     if (error instanceof z.ZodError) {
-      res.status(400).json({ message: "Validation failed", errors: error.errors })
+      res.status(400).json({ message: "Validation failed", errors: error.issues })
       return
     }
     throw error
@@ -172,7 +172,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     res.status(201).json({ producer })
   } catch (error) {
     if (error instanceof z.ZodError) {
-      res.status(400).json({ message: "Validation failed", errors: error.errors })
+      res.status(400).json({ message: "Validation failed", errors: error.issues })
       return
     }
     throw error

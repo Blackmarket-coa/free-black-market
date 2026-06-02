@@ -26,7 +26,7 @@ const DeliverSchema = z.object({
           .optional()
           .nullable(),
         captured_at: z.string().datetime().optional().nullable(),
-        metadata: z.record(z.unknown()).optional().nullable(),
+        metadata: z.record(z.string(), z.unknown()).optional().nullable(),
       })
     )
     .max(32)

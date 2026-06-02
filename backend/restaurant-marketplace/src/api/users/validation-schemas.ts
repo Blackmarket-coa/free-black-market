@@ -8,5 +8,5 @@ export const createUserSchema = z
     phone: z.string(),
     avatar_url: z.string().optional(),
     restaurant_id: z.string().optional(),
-    actor_type: z.ZodEnum.create(["restaurant", "driver"]),
+    actor_type: z.enum(["restaurant", "driver"]),
   })

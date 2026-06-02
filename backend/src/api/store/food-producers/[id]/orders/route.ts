@@ -89,7 +89,7 @@ const createOrderSchema = z.object({
   dietary_restrictions: z.array(z.string()).optional(),
   allergen_notes: z.string().max(500).optional(),
   
-  metadata: z.record(z.any()).optional(),
+  metadata: z.record(z.string(), z.any()).optional(),
 })
 
 const listOrdersQuerySchema = z.object({
@@ -137,7 +137,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     })
   } catch (error) {
     if (error instanceof z.ZodError) {
-      res.status(400).json({ message: "Validation failed", errors: error.errors })
+      res.status(400).json({ message: "Validation failed", errors: error.issues })
       return
     }
     throw error
@@ -220,7 +220,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     })
   } catch (error) {
     if (error instanceof z.ZodError) {
-      res.status(400).json({ message: "Validation failed", errors: error.errors })
+      res.status(400).json({ message: "Validation failed", errors: error.issues })
       return
     }
     throw error

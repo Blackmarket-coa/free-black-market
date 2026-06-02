@@ -10,7 +10,7 @@ const updateSchema = z.object({
   trust_score: z.number().optional(),
   readiness_score: z.number().optional(),
   capital_need_amount: z.number().optional(),
-  metadata: z.record(z.unknown()).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
 })
 
 export async function GET(req: MedusaRequest, res: MedusaResponse) {

@@ -72,5 +72,5 @@ export function validatePhase0Contract<T extends Phase0ContractKey>(
   key: T,
   payload: unknown
 ): z.infer<(typeof contractSchemas)[T]> {
-  return contractSchemas[key].parse(payload)
+  return contractSchemas[key].parse(payload) as z.infer<(typeof contractSchemas)[T]>
 }

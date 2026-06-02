@@ -5,7 +5,7 @@ import BargainingModuleService from "../../../../../../modules/bargaining/servic
 
 const counterOfferSchema = z.object({
   proposal_id: z.string().min(1),
-  counter_terms: z.record(z.unknown()),
+  counter_terms: z.record(z.string(), z.unknown()),
 })
 
 // GET /store/collective/bargaining-groups/:id/proposals
@@ -52,7 +52,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     res.status(201).json({ proposal: counter })
   } catch (error: any) {
     if (error instanceof z.ZodError) {
-      return res.status(400).json({ error: "Validation failed", details: error.errors })
+      return res.status(400).json({ error: "Validation failed", details: error.issues })
     }
     console.error(`[POST counter-offer] Error:`, error.message)
     res.status(400).json({ error: error.message })

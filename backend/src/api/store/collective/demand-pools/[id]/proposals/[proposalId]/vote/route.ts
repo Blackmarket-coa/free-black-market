@@ -34,7 +34,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     res.status(201).json({ vote })
   } catch (error: any) {
     if (error instanceof z.ZodError) {
-      return res.status(400).json({ error: "Validation failed", details: error.errors })
+      return res.status(400).json({ error: "Validation failed", details: error.issues })
     }
     console.error(`[POST vote] Error:`, error.message)
     res.status(400).json({ error: error.message })

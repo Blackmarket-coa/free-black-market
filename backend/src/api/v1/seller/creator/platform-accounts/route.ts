@@ -20,7 +20,7 @@ const ConnectNonOAuthSchema = z.object({
   platform: z.enum(PLATFORMS),
   external_account_id: z.string().min(1).max(256),
   handle: z.string().min(1).max(128).optional().nullable(),
-  metadata: z.record(z.unknown()).optional().nullable(),
+  metadata: z.record(z.string(), z.unknown()).optional().nullable(),
 })
 
 /**

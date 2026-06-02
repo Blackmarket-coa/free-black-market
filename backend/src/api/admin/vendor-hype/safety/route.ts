@@ -9,7 +9,7 @@ const schema = z.object({
   cooldown_until: z.string().datetime().optional().nullable(),
   daily_position_limit: z.number().int().positive().optional(),
   risk_level: z.nativeEnum(SafetyRiskLevel).optional(),
-  metadata: z.record(z.unknown()).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
 })
 
 export async function POST(req: MedusaRequest, res: MedusaResponse) {

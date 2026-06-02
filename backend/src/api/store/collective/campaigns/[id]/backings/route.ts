@@ -10,7 +10,7 @@ const createBackingSchema = z.object({
   mode: z.nativeEnum(BackingMode),
   amount: z.number().positive(),
   units_reserved: z.number().int().positive().optional(),
-  metadata: z.record(z.unknown()).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
 })
 
 const getErrorMessage = (error: unknown) => {
@@ -47,7 +47,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     return res.status(201).json({ backing })
   } catch (error: unknown) {
     if (error instanceof z.ZodError) {
-      return res.status(400).json({ error: "Validation failed", details: error.errors })
+      return res.status(400).json({ error: "Validation failed", details: error.issues })
     }
 
     const message = getErrorMessage(error)

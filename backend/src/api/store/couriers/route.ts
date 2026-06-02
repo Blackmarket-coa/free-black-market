@@ -54,7 +54,7 @@ const createCourierSchema = z.object({
   // Hawala
   hawala_account_id: z.string().optional(),
   
-  metadata: z.record(z.any()).optional(),
+  metadata: z.record(z.string(), z.any()).optional(),
 })
 
 const listCouriersQuerySchema = z.object({
@@ -100,7 +100,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     })
   } catch (error) {
     if (error instanceof z.ZodError) {
-      res.status(400).json({ message: "Validation failed", errors: error.errors })
+      res.status(400).json({ message: "Validation failed", errors: error.issues })
       return
     }
     throw error
@@ -137,7 +137,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     res.status(201).json({ courier })
   } catch (error) {
     if (error instanceof z.ZodError) {
-      res.status(400).json({ message: "Validation failed", errors: error.errors })
+      res.status(400).json({ message: "Validation failed", errors: error.issues })
       return
     }
     throw error

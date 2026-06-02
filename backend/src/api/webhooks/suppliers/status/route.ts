@@ -9,7 +9,7 @@ const schema = z.object({
   supplier_id: z.string(),
   status: z.nativeEnum(ManualFulfillmentStatus),
   notes: z.string().optional(),
-  metadata: z.record(z.unknown()).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
 })
 
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
