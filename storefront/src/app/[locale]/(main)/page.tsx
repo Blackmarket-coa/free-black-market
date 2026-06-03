@@ -8,6 +8,7 @@ import {
   ShopByStyleSection,
   JustJoinedVendors,
   HomeDiscoveryModule,
+  HomeOpportunityBoard,
 } from "@/components/sections"
 import { ValueProposition, BecomeProducerCTA } from "@/components/molecules"
 
@@ -264,6 +265,10 @@ export default async function Home({
       <div className="px-4 lg:px-8 w-full">
         <JustJoinedVendors />
       </div>
+
+      <Suspense fallback={null}>
+        <HomeOpportunityBoard />
+      </Suspense>
 
       <div className="px-4 lg:px-8 w-full">
         <HomeCategories heading="COMMUNITY PROGRAMS & SALES CHANNELS" />

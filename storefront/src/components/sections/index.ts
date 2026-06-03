@@ -21,6 +21,7 @@ import { VendorsPage } from "./VendorsPage/VendorsPage"
 import { JustJoinedVendors } from "./JustJoinedVendors/JustJoinedVendors"
 import { CollectionsPage } from "./CollectionsPage/CollectionsPage"
 import { HomeDiscoveryModule } from "./HomeDiscoveryModule/HomeDiscoveryModule"
+import { HomeOpportunityBoard } from "./HomeOpportunityBoard/HomeOpportunityBoard"
 
 export {
   Hero,
@@ -49,4 +50,5 @@ export {
   JustJoinedVendors,
   CollectionsPage,
   HomeDiscoveryModule,
+  HomeOpportunityBoard,
 }
