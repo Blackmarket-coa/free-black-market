@@ -111,6 +111,12 @@ function getVendorNavigationConfig({
       showFor: (_, type) => type !== "creator",
     },
     {
+      icon: <Star />,
+      label: "Find Creators",
+      to: "/find-creators",
+      showFor: (_, type) => type !== "creator",
+    },
+    {
       icon: <SquaresPlus />,
       label: "Services",
       to: "/services",
