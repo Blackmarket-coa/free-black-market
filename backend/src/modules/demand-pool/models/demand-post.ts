@@ -77,6 +77,15 @@ const DemandPost = model.define("demand_post", {
   recurring_rule: model.text().nullable(),
   is_template: model.boolean().default(false),
 
+  // Ecosystem growth-loop linkage
+  // A coalition (cooperative) this need/marketing bounty belongs to. Nullable
+  // preserves the standalone demand-post behavior.
+  cooperative_id: model.text().nullable(),
+  // Groups every artifact created by a single Launch run (idempotency/tracing).
+  launch_id: model.text().nullable(),
+  // The Medusa product this marketing bounty promotes (set by Launch).
+  product_id: model.text().nullable(),
+
   metadata: model.json().nullable(),
 }).indexes([
   { on: ["status"], name: "IDX_demand_post_status" },
@@ -88,6 +97,8 @@ const DemandPost = model.define("demand_post", {
     on: ["attractiveness_score"],
     name: "IDX_demand_post_attractiveness",
   },
+  { on: ["cooperative_id"], name: "IDX_demand_post_cooperative" },
+  { on: ["launch_id"], name: "IDX_demand_post_launch" },
 ])
 
 export default DemandPost

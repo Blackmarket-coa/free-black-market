@@ -40,9 +40,20 @@ export const BLACKOUT_BRIDGE_EVENTS = [
   "entitlements.changed",
 ] as const
 
+/**
+ * Growth-loop events emitted by the Launch orchestration so the Blackout
+ * Creator Hub / home feed can surface new launches and open marketing
+ * bounties. FBM only emits these; the Blackout-side consumer is out of scope.
+ */
+export const BLACKOUT_LAUNCH_EVENTS = [
+  "launch.created",
+  "bounty.opened",
+] as const
+
 export const BLACKOUT_EVENT_TYPES = [
   ...BLACKOUT_LIFECYCLE_EVENTS,
   ...BLACKOUT_BRIDGE_EVENTS,
+  ...BLACKOUT_LAUNCH_EVENTS,
 ] as const
 
 export type BlackoutEventType = (typeof BLACKOUT_EVENT_TYPES)[number]
