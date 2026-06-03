@@ -1,4 +1,8 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
+import {
+  normalizeStorefrontLinks,
+  type ExternalStore,
+} from "../../../../shared/external-stores"
 
 /**
  * GET /store/producers/:handle
@@ -104,11 +108,29 @@ export async function GET(
       products = sellerProducts || []
     }
 
+    // External storefront links live on seller_metadata (Commerce Hub).
+    let externalStores: ExternalStore[] = []
+    if (producer.seller_id) {
+      const { data: metaRows } = await query.graph({
+        entity: "seller_metadata",
+        fields: ["storefront_links", "website_url"],
+        filters: { seller_id: producer.seller_id },
+      })
+      const meta = metaRows?.[0]
+      if (meta) {
+        externalStores = normalizeStorefrontLinks(
+          meta.storefront_links,
+          meta.website_url
+        )
+      }
+    }
+
     res.json({
       producer: {
         ...producer,
         harvests: harvests || [],
         products,
+        external_stores: externalStores,
       },
     })
   } catch (error: any) {
