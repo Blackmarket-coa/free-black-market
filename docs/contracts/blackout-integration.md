@@ -59,6 +59,26 @@ and `BLACKOUT_API_BASE` are set (`features.freeblackmarketEmit()`).
 | `dispute.opened` | wired | `api/v1/seller/services/subcontracts/[id]/dispute` |
 | `dispute.resolved` | wired | `api/v1/admin/marketplace/subcontracts/[id]/resolve` |
 | `entitlements.changed` | wired | `subscribers/emit-blackout-order-refund-cancel` |
+| `launch.created` | wired | `workflows/launch-product` (emit-launch-events step) |
+| `bounty.opened` | wired | `workflows/launch-product` (emit-launch-events step) |
+
+**Growth-loop events (§ ecosystem build).** Emitted by the Launch
+orchestration (`POST /v1/seller/launches` → `launch-product` workflow) so the
+Blackout Creator Hub / home feed can surface new launches and open marketing
+bounties. Both use a stable `eventId` of `<type>:<launch_id>`:
+
+- `launch.created` — `{ launchId, vendorMxid, productId, cooperativeId?,
+  demandPostId, bountyId, dealId?, affiliateShortCode? }`. A single Launch
+  materializes the product (Producer), a `cooperative_listing` (Coalition), a
+  `demand_post` + `demand_bounty` (creator marketing bounty), and — when a
+  creator is pre-matched — a `creator_deal` + default affiliate link.
+- `bounty.opened` — `{ demandPostId, bountyId, objective, amount, currencyCode,
+  cooperativeId? }`. Emitted only when the launch carries a funded bounty.
+
+The Sale→Reward tail is unchanged: attributed sales flow through
+`creator-attribution` → `collective-hawala` → `creator.payout.completed`.
+Registered in `marketplace-webhooks/models/blackout-events.ts`
+(`BLACKOUT_LAUNCH_EVENTS`).
 
 ¹ `inventory.low` emits only for items whose seller is resolvable from item
 metadata; the seller-link join is the remaining one-line wire-up.

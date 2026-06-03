@@ -108,6 +108,66 @@ export async function publishDemandPool(id: string) {
   )
 }
 
+// ── Coalition (cooperative) storefront surfaces ──────────────────────────────
+
+export type CoalitionNeed = {
+  id: string
+  title: string
+  description: string
+  category?: string | null
+  status: string
+  product_id?: string | null
+  target_quantity: number
+  committed_quantity: number
+  total_bounty_amount: number
+}
+
+export type CoalitionListing = {
+  id: string
+  name: string
+  product_id?: string | null
+  unified_price?: number | null
+  currency_code?: string | null
+  featured?: boolean
+  launch_id?: string | null
+}
+
+export type CoalitionSummary = {
+  id: string
+  handle: string
+  name: string
+  description?: string | null
+  cover_image?: string | null
+}
+
+/** Open needs raised under a coalition (the coalition needs board). */
+export async function getCoalitionNeeds(handle: string) {
+  const response = await medusaFetch<{
+    cooperative: CoalitionSummary
+    needs: CoalitionNeed[]
+    count: number
+  }>(`/store/cooperatives/${handle}/needs`, {
+    method: "GET",
+    cache: "no-store",
+  })
+
+  return response
+}
+
+/** Products a coalition hosts/displays (transaction stays in FBM). */
+export async function getCoalitionListings(handle: string) {
+  const response = await medusaFetch<{
+    cooperative: CoalitionSummary
+    listings: CoalitionListing[]
+    count: number
+  }>(`/store/cooperatives/${handle}/listings`, {
+    method: "GET",
+    cache: "no-store",
+  })
+
+  return response
+}
+
 export async function joinDemandPool(
   id: string,
   input: { quantity_committed: number; price_willing_to_pay?: number }

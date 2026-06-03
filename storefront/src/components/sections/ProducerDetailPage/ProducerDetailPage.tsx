@@ -88,15 +88,8 @@ interface Producer {
     linkedin?: string
     pinterest?: string
   }
-  storefront_links?: {
-    website?: string
-    etsy?: string
-    amazon?: string
-    shopify?: string
-    ebay?: string
-    farmers_market?: string
-    other?: { name: string; url: string }[]
-  }
+  // Normalized external stores from the backend (Commerce Hub).
+  external_stores?: { platform: string; name: string; url: string }[]
   featured?: boolean
   verified?: boolean
   harvests?: Harvest[]
@@ -304,7 +297,7 @@ export function ProducerDetailPage({ handle, locale }: ProducerDetailPageProps) 
         )}
 
         {/* Connect - Website & Social Links */}
-        {(producer.website || producer.website_url || producer.social_links || producer.storefront_links) && (
+        {(producer.website || producer.website_url || producer.social_links || (producer.external_stores && producer.external_stores.length > 0)) && (
           <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
             <h3 className="font-medium text-blue-800 mb-3 flex items-center gap-2">
               <EarthIcon className="w-4 h-4" />
@@ -395,46 +388,22 @@ export function ProducerDetailPage({ handle, locale }: ProducerDetailPageProps) 
               </div>
             )}
             
-            {/* Other Storefronts */}
-            {producer.storefront_links && Object.values(producer.storefront_links).some(v => v) && (
+            {/* External storefronts (Commerce Hub) */}
+            {producer.external_stores && producer.external_stores.length > 0 && (
               <div className="border-t border-blue-200 pt-3">
                 <p className="text-xs text-blue-600 mb-2">Also find us on:</p>
                 <div className="flex flex-wrap gap-2">
-                  {producer.storefront_links.etsy && (
+                  {producer.external_stores.map((store, i) => (
                     <a
-                      href={producer.storefront_links.etsy}
+                      key={`${store.platform}-${i}`}
+                      href={store.url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-xs bg-white text-orange-700 px-2 py-1 rounded border border-blue-200 hover:bg-orange-50 transition-colors"
+                      className="text-xs bg-white text-blue-700 px-2 py-1 rounded border border-blue-200 hover:bg-blue-100 transition-colors"
                     >
-                      Etsy
+                      {store.name}
                     </a>
-                  )}
-                  {producer.storefront_links.amazon && (
-                    <a
-                      href={producer.storefront_links.amazon}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-xs bg-white text-orange-600 px-2 py-1 rounded border border-blue-200 hover:bg-orange-50 transition-colors"
-                    >
-                      Amazon
-                    </a>
-                  )}
-                  {producer.storefront_links.shopify && (
-                    <a
-                      href={producer.storefront_links.shopify}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-xs bg-white text-green-700 px-2 py-1 rounded border border-blue-200 hover:bg-green-50 transition-colors"
-                    >
-                      Online Store
-                    </a>
-                  )}
-                  {producer.storefront_links.farmers_market && (
-                    <span className="text-xs bg-white text-green-800 px-2 py-1 rounded border border-blue-200">
-                      📍 {producer.storefront_links.farmers_market}
-                    </span>
-                  )}
+                  ))}
                 </div>
               </div>
             )}

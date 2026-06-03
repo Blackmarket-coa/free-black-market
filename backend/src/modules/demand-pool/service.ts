@@ -78,6 +78,9 @@ class DemandPoolModuleService extends MedusaService({
     visibility?: string
     parent_demand_id?: string
     recurring_rule?: string
+    cooperative_id?: string
+    launch_id?: string
+    product_id?: string
     metadata?: Record<string, unknown>
   }) {
     if (input.min_quantity > input.target_quantity) {
