@@ -34,7 +34,7 @@ Legend: ✅ complete · 🟡 partial · 🔴 missing/stub
 | **Money rails** | (implied by fees) | ✅ Stripe ACH + Stellar/USDC + double-entry ledger; 3% fee charged. ⚠️ verification debt | `backend/src/modules/hawala-ledger/`, `stripe-ach.ts`, `stellar-settlement.ts` |
 | **Demand Pools & Bounties** | Create, apply, complete, payout | ✅ Wired e2e (create/claim/escrow/vote) | `backend/src/modules/demand-pool/`, `.../bounties/[bountyId]/claim/route.ts` |
 | **Digital Marketplace** | Plugins, themes, downloads | ✅ Complete (signed manifests + Minio delivery) | `backend/src/modules/digital-product/`, `digital-product-fulfillment/` |
-| **Referral System** | Creator/vendor/coalition referrals, see earnings | 🟡 Backend solid; **no earnings UI** | `backend/src/modules/creator-attribution/`; endpoints exist, no dashboard |
+| **Referral System** | Creator/vendor/coalition referrals, see earnings | ✅ Per-creator earnings UI exists; 🟡 no platform-wide KPI rollup | `vendor-panel` `creator-studio` earnings tab + `referral-links` route → `/v1/seller/creator/earnings` |
 | **Coalition** | Create, join, feed, needs board, storefront, members | 🟡 Storefront + needs-board exist; **no join/member-list API** | `backend/src/modules/cooperative/`, `/store/cooperatives/[handle]/{listings,needs}` |
 | **Creator Hub** | Upload, campaigns, bounties, referrals, rewards | 🟡 APIs scattered; **no unified hub UI** | `/v1/seller/creator/*` routes; no hub surface |
 | **Home Feed** | Mixed content, "never feels empty" | 🟡 **Product-only**; no aggregation | `storefront/src/lib/data/feed.ts` (personalized/following = TODO) |
@@ -48,7 +48,7 @@ Legend: ✅ complete · 🟡 partial · 🔴 missing/stub
 ### Launch-critical path (ranked blockers for a full-ecosystem launch)
 
 1. **Money-path verification** (foundational — see §2).
-2. **Referral/creator earnings UI** — without it the founder's single KPI is unmeasurable.
+2. **Platform-wide "creator-driven sales" KPI rollup** — the *per-creator* earnings UI already exists (vendor-panel `creator-studio`); what's missing is the aggregate, platform-level metric the founder wants to watch.
 3. **Coalition join + member-list** — checklist success metric: "a coalition can function without admin intervention."
 4. **Sponsorship fee logic** — turns on Revenue Stream 4.
 5. **Unified Home Feed** — checklist success metric: "feed never feels empty."
@@ -105,7 +105,7 @@ The model's mechanics map to real code — with two exceptions.
 
 **Re-ranked by build-readiness:** digital products → marketplace fees → creator marketplace (all ready now) → sponsorship (Wave 2) → featured (defer). The conservative Phase-1 targets ($1k–$5k digital, $25k–$100k GMV) are achievable on the **already-built** streams.
 
-**The single KPI is not yet measurable.** "How many sales happened because a creator/coalition/bounty/referral generated them?" requires the referral/attribution earnings surface (Wave 1) plus feed attribution (Wave 2). **You cannot watch your one KPI until Wave 1 ships.** That alone makes the earnings UI a launch blocker, not a nice-to-have.
+**The single KPI is close, but not yet aggregated.** The per-creator attribution data and earnings surface already exist (`creator-attribution` module + vendor-panel `creator-studio` earnings tab). What's missing is a **platform-wide rollup** answering "how many sales happened because a creator/coalition/bounty/referral generated them?" across all creators — plus feed attribution once the unified feed lands (Wave 2). The data exists; the aggregate view does not. Building that rollup is Wave 1.
 
 ---
 
@@ -113,7 +113,7 @@ The model's mechanics map to real code — with two exceptions.
 
 | Wave | Contents | Gates |
 |---|---|---|
-| **1 — now** | Money-path verification tests; referral/creator earnings UI; coalition join + member-list API | Unblocks KPI + Founding-100 beta |
+| **1 — now** | Money-path verification tests; platform-wide creator-driven-sales KPI rollup; coalition join + member-list API | Unblocks KPI + Founding-100 beta |
 | **2 — revenue + feed** | Sponsorship 10% fee; unified Home Feed aggregation + seed data | "Feed never empty"; Revenue Stream 4 live |
 | **3 — net-new** | Coliseum (phased sub-plan); Dens (polymorphic threads); Creator Hub UI; Commerce Hub; Launch Center wizard | Closes the discovery loop → **full-ecosystem launch date** |
 
