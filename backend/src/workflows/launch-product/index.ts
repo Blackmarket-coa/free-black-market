@@ -152,6 +152,7 @@ const launchProductWorkflow = createWorkflow(
           deal_id: d.deal.deal_id,
           affiliate_link_id: d.deal.affiliate_link_id,
           affiliate_short_code: d.deal.affiliate_short_code,
+          invited_creator_seller_id: d.deal.invited_creator_seller_id,
         })
       )
     )

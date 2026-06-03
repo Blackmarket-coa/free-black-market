@@ -7,6 +7,10 @@ import { DEMAND_POOL_MODULE } from "../../../../modules/demand-pool"
 import type DemandPoolModuleService from "../../../../modules/demand-pool/service"
 import { BountyObjective } from "../../../../modules/demand-pool/models/demand-bounty"
 import { CreatorProgramType } from "../../../../modules/creator-program/models/creator-program"
+import { PRODUCER_MODULE } from "../../../../modules/producer"
+import type ProducerService from "../../../../modules/producer/service"
+import { COOPERATIVE_MODULE } from "../../../../modules/cooperative"
+import type CooperativeService from "../../../../modules/cooperative/service"
 
 const slugRegex = /^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$/
 
@@ -100,6 +104,40 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       },
       idempotent: true,
     })
+  }
+
+  // Coalition guard: a launch may only attach a listing to a cooperative the
+  // seller actually belongs to. Requires a producer profile that is an active
+  // member of the named cooperative.
+  if (data.cooperative_id) {
+    const producers = req.scope.resolve<ProducerService>(PRODUCER_MODULE)
+    const coops = req.scope.resolve<CooperativeService>(COOPERATIVE_MODULE)
+
+    const producer = (await producers.listProducers({ seller_id: sellerId }))[0]
+    if (!producer) {
+      return res.status(403).json({
+        message: "A producer profile is required to launch into a cooperative",
+        type: "not_allowed",
+      })
+    }
+    const coop = (await coops.listCooperatives({ id: data.cooperative_id }))[0]
+    if (!coop) {
+      return res.status(404).json({
+        message: "Cooperative not found",
+        type: "not_found",
+      })
+    }
+    const memberships = await coops.listCooperativeMembers({
+      cooperative_id: data.cooperative_id,
+      producer_id: producer.id,
+      is_active: true,
+    })
+    if (memberships.length === 0) {
+      return res.status(403).json({
+        message: "You are not an active member of this cooperative",
+        type: "not_allowed",
+      })
+    }
   }
 
   // Resolve a default sales channel so the product is purchasable.

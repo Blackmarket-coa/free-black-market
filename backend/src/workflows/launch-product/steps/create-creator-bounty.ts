@@ -2,6 +2,7 @@ import { createStep, StepResponse } from "@medusajs/framework/workflows-sdk"
 import DemandPoolModuleService from "../../../modules/demand-pool/service"
 import { DEMAND_POOL_MODULE } from "../../../modules/demand-pool"
 import { DemandPostStatus } from "../../../modules/demand-pool/models/demand-post"
+import { getCollectiveHawalaService } from "../../../services/collective-hawala"
 
 export type CreateCreatorBountyInput = {
   launch_id: string
@@ -81,6 +82,19 @@ const createCreatorBountyStep = createStep(
       currency_code: data.bounty.currency_code ?? "USD",
       milestones: data.bounty.milestones,
     })
+
+    // A funded bounty must be backed by escrow so the displayed reward is real.
+    // Locks the amount from the seller's wallet into the demand-pool escrow; if
+    // the wallet can't cover it the step throws and the post is rolled back.
+    if (Number(data.bounty.amount) > 0) {
+      const hawala = getCollectiveHawalaService(container)
+      await hawala.escrowBountyFunds({
+        demand_post_id: post.id,
+        bounty_id: bounty.id,
+        contributor_id: data.seller_id,
+        amount: Number(data.bounty.amount),
+      })
+    }
 
     return new StepResponse(
       {

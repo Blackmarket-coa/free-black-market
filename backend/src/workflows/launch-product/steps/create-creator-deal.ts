@@ -2,15 +2,18 @@ import { createStep, StepResponse } from "@medusajs/framework/workflows-sdk"
 import CreatorProgramService from "../../../modules/creator-program/service"
 import { CREATOR_PROGRAM_MODULE } from "../../../modules/creator-program"
 import { CreatorProgramType } from "../../../modules/creator-program/models/creator-program"
-import { CreatorApplicationStatus } from "../../../modules/creator-program/models/creator-application"
 import CreatorAttributionService from "../../../modules/creator-attribution/service"
 import { CREATOR_ATTRIBUTION_MODULE } from "../../../modules/creator-attribution"
+import { decideDealAction } from "./_decide-deal-action"
 
 export type CreateCreatorDealInput = {
   launch_id: string
   vendor_id: string
   product_id: string
-  // Optional pre-matched creator to auto-approve + issue an affiliate link to.
+  // Optional pre-matched creator. A deal + affiliate link is only opened when
+  // the creator has ALREADY consented (an APPROVED application or an existing
+  // ACTIVE deal). Otherwise the creator is merely invited — no link is minted
+  // on their behalf; they opt in by applying or by claiming the bounty.
   target_creator_seller_id?: string | null
   program: {
     title: string
@@ -27,20 +30,31 @@ export type CreateCreatorDealOutput = {
   deal_id: string | null
   affiliate_link_id: string | null
   affiliate_short_code: string | null
+  // Set when a creator was targeted but had not yet consented: recorded as an
+  // invitation on the program instead of an auto-minted deal.
+  invited_creator_seller_id: string | null
 }
 
 type CreateCreatorDealComp = {
   program_id: string | null
   programCreated: boolean
+  // Only deals this step opened may be rolled back; a pre-existing ACTIVE deal
+  // (reuse case) must be left untouched.
   deal_id: string | null
+  dealCreated: boolean
 }
 
 /**
  * Stands up the creator side of a launch: a marketing program for the product,
- * and (when a creator is pre-matched) an approved deal plus a default affiliate
- * link. This performs the link wiring that `creator-program` intentionally
- * leaves to the caller (it does not depend on `creator-attribution`).
- * Idempotent: program reused by (vendor, slug); deal reused by application.
+ * and — only when a pre-matched creator has already consented — an affiliate
+ * deal plus a default link. This performs the link wiring that `creator-program`
+ * intentionally leaves to the caller (it does not depend on `creator-attribution`).
+ *
+ * Consent gate (see `_decide-deal-action`): a launch never applies/approves on a
+ * creator's behalf. With no consent on record the creator is recorded as an
+ * invitee on the program; they opt in later by applying or by claiming the bounty.
+ *
+ * Idempotent: program reused by (vendor, slug); deal reused by (vendor, creator).
  */
 const createCreatorDealStep = createStep(
   "create-creator-deal-step",
@@ -74,33 +88,73 @@ const createCreatorDealStep = createStep(
     }
     await programs.publishProgram(program.id)
 
-    // No pre-matched creator: program stands open for applications.
-    if (!data.target_creator_seller_id) {
-      return new StepResponse<CreateCreatorDealOutput, CreateCreatorDealComp>(
+    const noDeal = (
+      invited: string | null
+    ): StepResponse<CreateCreatorDealOutput, CreateCreatorDealComp> =>
+      new StepResponse(
         {
           program_id: program.id as string,
           deal_id: null,
           affiliate_link_id: null,
           affiliate_short_code: null,
+          invited_creator_seller_id: invited,
         },
-        { program_id: program.id as string, programCreated, deal_id: null }
+        {
+          program_id: program.id as string,
+          programCreated,
+          deal_id: null,
+          dealCreated: false,
+        }
       )
+
+    // No pre-matched creator: program stands open for applications.
+    if (!data.target_creator_seller_id) {
+      return noDeal(null)
+    }
+    const target = data.target_creator_seller_id
+
+    // Consent gate — decide purely from existing records whether this creator
+    // has opted in. We never apply/approve on their behalf.
+    const [applications, deals] = await Promise.all([
+      programs.listCreatorApplications({
+        program_id: program.id,
+        creator_seller_id: target,
+      }),
+      programs.listCreatorDeals({
+        vendor_id: data.vendor_id,
+        creator_seller_id: target,
+      }),
+    ])
+    const decision = decideDealAction(applications as any, deals as any)
+
+    if (decision.action === "invite") {
+      // Record the invitation on the program; no deal/link is minted.
+      const meta = (program.metadata ?? {}) as Record<string, any>
+      const invited: string[] = Array.isArray(meta.invited_creator_seller_ids)
+        ? meta.invited_creator_seller_ids
+        : []
+      if (!invited.includes(target)) {
+        await (programs as any).updateCreatorPrograms({
+          id: program.id,
+          metadata: {
+            ...meta,
+            invited_creator_seller_ids: [...invited, target],
+          },
+        })
+      }
+      return noDeal(target)
     }
 
-    // Application -> approve -> deal (each idempotent in the service).
-    const application = await programs.applyToProgram({
-      programId: program.id,
-      creatorSellerId: data.target_creator_seller_id,
-    })
-    if (application.status === CreatorApplicationStatus.PENDING) {
-      await programs.decideApplication({
-        applicationId: application.id,
-        decision: "approve",
-        decidedBy: data.vendor_id,
-        reason: "Auto-approved by product launch",
-      })
+    // Consent on record: open a deal (or reuse the existing ACTIVE one).
+    let deal: any
+    let dealCreated = false
+    if (decision.action === "open_deal") {
+      deal = await programs.openDealForApprovedApp(decision.applicationId)
+      dealCreated = true
+    } else {
+      const existing = await programs.listCreatorDeals({ id: decision.dealId })
+      deal = existing[0]
     }
-    const deal = await programs.openDealForApprovedApp(application.id)
 
     // Issue the default affiliate link and wire it onto the deal.
     let affiliateLinkId = deal.default_affiliate_link_id as string | null
@@ -110,7 +164,7 @@ const createCreatorDealStep = createStep(
       affiliateShortCode = (links[0]?.short_code ?? null) as string | null
     } else {
       const link: any = await attribution.generateLink({
-        creatorSellerId: data.target_creator_seller_id,
+        creatorSellerId: target,
         vendorId: data.vendor_id,
         dealId: deal.id,
         programId: program.id,
@@ -129,11 +183,13 @@ const createCreatorDealStep = createStep(
         deal_id: deal.id as string,
         affiliate_link_id: affiliateLinkId,
         affiliate_short_code: affiliateShortCode,
+        invited_creator_seller_id: null,
       },
       {
         program_id: program.id as string,
         programCreated,
         deal_id: deal.id as string,
+        dealCreated,
       }
     )
   },
@@ -144,7 +200,8 @@ const createCreatorDealStep = createStep(
     const programs =
       container.resolve<CreatorProgramService>(CREATOR_PROGRAM_MODULE)
     try {
-      if (comp.deal_id) {
+      // Only cancel a deal this step actually opened — never a pre-existing one.
+      if (comp.dealCreated && comp.deal_id) {
         await programs.cancelDeal(comp.deal_id)
       }
       if (comp.programCreated && comp.program_id) {

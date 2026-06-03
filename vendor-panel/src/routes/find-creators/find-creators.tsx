@@ -34,6 +34,7 @@ interface LaunchResult {
   deal_id: string | null
   affiliate_link_id: string | null
   affiliate_short_code: string | null
+  invited_creator_seller_id: string | null
 }
 
 const slugify = (s: string) =>
@@ -213,7 +214,7 @@ export const FindCreatorsPage = () => {
                     setLaunchFor(creator.creator_seller_id)
                   }}
                 >
-                  Launch with this creator
+                  Launch &amp; invite this creator
                 </Button>
               </div>
 
@@ -229,10 +230,16 @@ export const FindCreatorsPage = () => {
                         Bounty: {result.bounty_id ?? "—"} · Deal:{" "}
                         {result.deal_id ?? "—"}
                       </Text>
-                      <Text size="small" className="text-ui-fg-subtle">
-                        Affiliate code:{" "}
-                        {result.affiliate_short_code ?? "—"}
-                      </Text>
+                      {result.deal_id ? (
+                        <Text size="small" className="text-ui-fg-subtle">
+                          Affiliate code: {result.affiliate_short_code ?? "—"}
+                        </Text>
+                      ) : (
+                        <Text size="small" className="text-ui-fg-subtle">
+                          Creator invited — they'll get an affiliate link once
+                          they accept or claim the bounty.
+                        </Text>
+                      )}
                       <div className="mt-2">
                         <Button size="small" variant="secondary" onClick={resetForm}>
                           Done
