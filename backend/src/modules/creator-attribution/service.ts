@@ -711,6 +711,86 @@ class CreatorAttributionService extends MedusaService({
   }
 
   /**
+   * Platform-wide attribution rollup — the founder's single KPI:
+   * "how many sales happened because a creator/coalition/bounty/referral
+   * generated them?" Aggregates attributed GMV and commission across ALL
+   * creators (not scoped to one seller), with a per-source breakdown.
+   *
+   * `attributed_gmv_cents` is the valid creator-driven sales figure
+   * (excludes reversed + disqualified). `gross_attributed_gmv_cents`
+   * includes everything for reconciliation.
+   */
+  async platformAttributionRollup(range?: { from?: Date; to?: Date }): Promise<{
+    attributed_gmv_cents: number
+    gross_attributed_gmv_cents: number
+    commission_pending_cents: number
+    commission_approved_cents: number
+    commission_paid_cents: number
+    total_attributed_orders: number
+    valid_attributed_orders: number
+    distinct_creators: number
+    by_source: Record<string, { orders: number; attributed_gmv_cents: number }>
+  }> {
+    const list = await this.listOrderAttributions({})
+    const filtered = list.filter((a: any) => {
+      const at = new Date(a.attribution_decided_at as any)
+      if (range?.from && at < range.from) return false
+      if (range?.to && at > range.to) return false
+      return true
+    })
+
+    const creators = new Set<string>()
+    const by_source: Record<string, { orders: number; attributed_gmv_cents: number }> = {}
+    const out = {
+      attributed_gmv_cents: 0,
+      gross_attributed_gmv_cents: 0,
+      commission_pending_cents: 0,
+      commission_approved_cents: 0,
+      commission_paid_cents: 0,
+      total_attributed_orders: filtered.length,
+      valid_attributed_orders: 0,
+      distinct_creators: 0,
+      by_source,
+    }
+
+    for (const a of filtered) {
+      const subtotal = Number(a.attributed_subtotal_cents) || 0
+      const commission = Number(a.commission_amount_cents) || 0
+      const status = a.commission_status
+      const invalid =
+        status === CommissionStatus.REVERSED ||
+        status === CommissionStatus.DISQUALIFIED
+
+      out.gross_attributed_gmv_cents += subtotal
+      if (a.creator_seller_id) creators.add(a.creator_seller_id)
+
+      if (!invalid) {
+        out.attributed_gmv_cents += subtotal
+        out.valid_attributed_orders += 1
+        const src = String(a.source ?? "unknown")
+        const bucket = by_source[src] ?? (by_source[src] = { orders: 0, attributed_gmv_cents: 0 })
+        bucket.orders += 1
+        bucket.attributed_gmv_cents += subtotal
+      }
+
+      switch (status) {
+        case CommissionStatus.PENDING:
+          out.commission_pending_cents += commission
+          break
+        case CommissionStatus.APPROVED:
+          out.commission_approved_cents += commission
+          break
+        case CommissionStatus.PAID:
+          out.commission_paid_cents += commission
+          break
+      }
+    }
+
+    out.distinct_creators = creators.size
+    return out
+  }
+
+  /**
    * Sign a visitor cookie value with HMAC. Used by the storefront and the
    * /r/:shortCode redirector to detect tampering.
    */
