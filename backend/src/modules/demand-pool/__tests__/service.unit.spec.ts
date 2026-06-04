@@ -60,6 +60,31 @@ describe("DemandPoolModuleService", () => {
       expect(ctx.createDemandBounties).toHaveBeenCalledTimes(1)
       expect(bounty).toEqual({ id: "b_1" })
     })
+
+    it.each([
+      "CREATOR_NEEDED",
+      "MARKETING_NEEDED",
+      "PHOTOGRAPHY_NEEDED",
+    ])("accepts the %s producer→creator objective", async (objective) => {
+      const ctx: any = makeCtx()
+
+      const bounty = await DemandPoolModuleService.prototype.addBounty.call(
+        ctx,
+        {
+          demand_post_id: "dp_1",
+          contributor_id: "seller_1",
+          contributor_type: "SELLER",
+          objective,
+          amount: 50,
+        }
+      )
+
+      expect(bounty).toEqual({ id: "b_1" })
+      expect(ctx.createDemandBounties).toHaveBeenCalledTimes(1)
+      expect(ctx.createDemandBounties).toHaveBeenCalledWith([
+        expect.objectContaining({ objective }),
+      ])
+    })
   })
 
   describe("claimBounty", () => {

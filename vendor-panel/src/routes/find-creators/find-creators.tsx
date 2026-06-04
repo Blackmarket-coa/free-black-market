@@ -6,10 +6,20 @@ import {
   Heading,
   Input,
   Label,
+  Select,
   Text,
   toast,
 } from "@medusajs/ui"
 import { backendUrl, getAuthToken } from "../../lib/client"
+
+// Producer→creator marketing bounty objectives surfaced in the launch form.
+// Mirrors the BountyObjective values the backend accepts at
+// /v1/seller/launches (CREATOR_NEEDED is the default for a creator launch).
+const BOUNTY_OBJECTIVES: { value: string; label: string }[] = [
+  { value: "CREATOR_NEEDED", label: "Creator needed" },
+  { value: "MARKETING_NEEDED", label: "Marketing needed" },
+  { value: "PHOTOGRAPHY_NEEDED", label: "Photography needed" },
+]
 
 interface RankedCreator {
   creator_seller_id: string
@@ -74,6 +84,7 @@ export const FindCreatorsPage = () => {
   const [price, setPrice] = useState("")
   const [cooperativeId, setCooperativeId] = useState("")
   const [bountyAmount, setBountyAmount] = useState("")
+  const [bountyObjective, setBountyObjective] = useState("CREATOR_NEEDED")
   const [submitting, setSubmitting] = useState(false)
   const [result, setResult] = useState<LaunchResult | null>(null)
 
@@ -102,6 +113,7 @@ export const FindCreatorsPage = () => {
     setPrice("")
     setCooperativeId("")
     setBountyAmount("")
+    setBountyObjective("CREATOR_NEEDED")
     setResult(null)
   }
 
@@ -124,6 +136,7 @@ export const FindCreatorsPage = () => {
       }
       if (bountyAmount.trim()) {
         body.bounty_amount = parseFloat(bountyAmount)
+        body.bounty_objective = bountyObjective
       }
       const res = await authedFetch<{ launch: LaunchResult }>(
         "/v1/seller/launches",
@@ -281,6 +294,24 @@ export const FindCreatorsPage = () => {
                           placeholder="50"
                           inputMode="decimal"
                         />
+                      </div>
+                      <div className="flex flex-col gap-1">
+                        <Label size="small">Bounty objective</Label>
+                        <Select
+                          value={bountyObjective}
+                          onValueChange={setBountyObjective}
+                        >
+                          <Select.Trigger>
+                            <Select.Value placeholder="Select objective" />
+                          </Select.Trigger>
+                          <Select.Content>
+                            {BOUNTY_OBJECTIVES.map((o) => (
+                              <Select.Item key={o.value} value={o.value}>
+                                {o.label}
+                              </Select.Item>
+                            ))}
+                          </Select.Content>
+                        </Select>
                       </div>
                       <div className="flex gap-2 md:col-span-2">
                         <Button
