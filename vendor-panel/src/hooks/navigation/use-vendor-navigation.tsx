@@ -124,6 +124,13 @@ function getVendorNavigationConfig({
       // photography / service) and providers browse open ones to claim.
     },
     {
+      icon: <Buildings />,
+      label: "Launch a Business",
+      to: "/launch-business",
+      // Guided onboarding: stand up a producer profile + first product in one
+      // flow. Most useful for new sellers without a profile yet.
+    },
+    {
       icon: <SquaresPlus />,
       label: "Services",
       to: "/services",

@@ -85,6 +85,7 @@ export const FindCreatorsPage = () => {
   const [cooperativeId, setCooperativeId] = useState("")
   const [bountyAmount, setBountyAmount] = useState("")
   const [bountyObjective, setBountyObjective] = useState("CREATOR_NEEDED")
+  const [sponsorshipAmount, setSponsorshipAmount] = useState("")
   const [submitting, setSubmitting] = useState(false)
   const [result, setResult] = useState<LaunchResult | null>(null)
 
@@ -114,6 +115,7 @@ export const FindCreatorsPage = () => {
     setCooperativeId("")
     setBountyAmount("")
     setBountyObjective("CREATOR_NEEDED")
+    setSponsorshipAmount("")
     setResult(null)
   }
 
@@ -144,6 +146,43 @@ export const FindCreatorsPage = () => {
       )
       setResult(res.launch)
       toast.success("Launch created")
+    } catch (e) {
+      toast.error((e as Error).message)
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  // Flat-fee sponsorship of a creator (launch_type=SPONSORSHIP). Escrows the
+  // producer's budget; the 90/10 creator/platform split is taken at payout.
+  const submitSponsorship = async (creatorSellerId: string) => {
+    if (!title.trim() || !sponsorshipAmount.trim()) {
+      toast.error("Title and sponsorship amount are required")
+      return
+    }
+    setSubmitting(true)
+    try {
+      const amountCents = Math.round(parseFloat(sponsorshipAmount) * 100)
+      const res = await authedFetch<{ sponsorship: { deal_id: string | null; escrowed: boolean; invited_creator_seller_id: string | null } }>(
+        "/v1/seller/launches",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            launch_type: "SPONSORSHIP",
+            title: title.trim(),
+            slug: slugify(title),
+            target_creator_seller_id: creatorSellerId,
+            sponsorship_amount: Number.isFinite(amountCents) ? amountCents : 0,
+          }),
+        }
+      )
+      const s = res.sponsorship
+      toast.success(
+        s.deal_id
+          ? "Sponsorship created and funded"
+          : "Creator invited — sponsorship activates once they accept"
+      )
+      resetForm()
     } catch (e) {
       toast.error((e as Error).message)
     } finally {
@@ -313,13 +352,32 @@ export const FindCreatorsPage = () => {
                           </Select.Content>
                         </Select>
                       </div>
-                      <div className="flex gap-2 md:col-span-2">
+                      <div className="flex flex-col gap-1">
+                        <Label size="small">Sponsorship amount (USD)</Label>
+                        <Input
+                          value={sponsorshipAmount}
+                          onChange={(e) => setSponsorshipAmount(e.target.value)}
+                          placeholder="250"
+                          inputMode="decimal"
+                        />
+                      </div>
+                      <div className="flex flex-wrap gap-2 md:col-span-2">
                         <Button
                           size="small"
                           onClick={() => submitLaunch(creator.creator_seller_id)}
                           isLoading={submitting}
                         >
                           Create launch
+                        </Button>
+                        <Button
+                          size="small"
+                          variant="secondary"
+                          onClick={() =>
+                            submitSponsorship(creator.creator_seller_id)
+                          }
+                          isLoading={submitting}
+                        >
+                          Sponsor this creator
                         </Button>
                         <Button
                           size="small"
