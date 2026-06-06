@@ -6,6 +6,10 @@ export enum BountyObjective {
   RECRUIT_BUYERS = "RECRUIT_BUYERS",
   COORDINATE_LOGISTICS = "COORDINATE_LOGISTICS",
   FINALIZE_DEAL = "FINALIZE_DEAL",
+  // Producer→creator marketing bounties (FBM Bounty Integration).
+  CREATOR_NEEDED = "CREATOR_NEEDED",
+  MARKETING_NEEDED = "MARKETING_NEEDED",
+  PHOTOGRAPHY_NEEDED = "PHOTOGRAPHY_NEEDED",
 }
 
 export enum BountyStatus {

@@ -48,6 +48,7 @@ export const BLACKOUT_BRIDGE_EVENTS = [
 export const BLACKOUT_LAUNCH_EVENTS = [
   "launch.created",
   "bounty.opened",
+  "sponsorship.created",
 ] as const
 
 export const BLACKOUT_EVENT_TYPES = [

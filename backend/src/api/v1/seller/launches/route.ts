@@ -3,6 +3,7 @@ import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 import { z } from "zod"
 import type { SellerAuthRequest } from "../../../middlewares/seller-context-v1"
 import launchProductWorkflow from "../../../../workflows/launch-product"
+import launchSponsorshipWorkflow from "../../../../workflows/launch-sponsorship"
 import { DEMAND_POOL_MODULE } from "../../../../modules/demand-pool"
 import type DemandPoolModuleService from "../../../../modules/demand-pool/service"
 import { BountyObjective } from "../../../../modules/demand-pool/models/demand-bounty"
@@ -20,13 +21,27 @@ const MilestoneSchema = z.object({
   condition: z.string().min(1).max(500),
 })
 
+const BusinessSchema = z.object({
+  producer_name: z.string().min(2).max(200),
+  producer_handle: z.string().regex(slugRegex),
+  region: z.string().max(120).optional().nullable(),
+})
+
 const LaunchSchema = z.object({
+  // Launch type discriminator. PRODUCT (default) and BUSINESS run the
+  // product-launch flow (BUSINESS first ensures a producer profile exists);
+  // SPONSORSHIP runs the flat-fee creator-sponsorship flow.
+  launch_type: z.enum(["PRODUCT", "BUSINESS", "SPONSORSHIP"]).default("PRODUCT"),
   // Product
   title: z.string().min(2).max(200),
   slug: z.string().regex(slugRegex),
   description: z.string().max(4000).optional().nullable(),
-  price: z.number().int().min(0).max(100_000_000), // minor units (cents)
+  price: z.number().int().min(0).max(100_000_000).optional(), // minor units (cents)
   currency_code: z.string().length(3).optional(),
+  // Launch Business — producer profile for the guided onboarding wizard.
+  business: BusinessSchema.optional(),
+  // Launch Sponsorship — flat sponsorship budget in minor units (cents).
+  sponsorship_amount: z.number().int().min(0).max(100_000_000).optional(),
   // Coalition + creator wiring
   cooperative_id: z.string().optional().nullable(),
   target_creator_seller_id: z.string().optional().nullable(),
@@ -85,6 +100,62 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
   const data = parsed.data
   const currency = (data.currency_code ?? "usd").toLowerCase()
   const launchId = `launch_${sellerId}_${data.slug}`
+  const launchType = data.launch_type ?? "PRODUCT"
+
+  // ── Launch Sponsorship ──────────────────────────────────────────────────
+  // A producer funds a flat-fee creator sponsorship. No product/demand-post is
+  // created; idempotency is handled by the workflow's deterministic keys
+  // (program slug reuse + sponsorship escrow key).
+  if (launchType === "SPONSORSHIP") {
+    try {
+      const { result } = await launchSponsorshipWorkflow(req.scope).run({
+        input: {
+          launch_id: launchId,
+          seller_id: sellerId,
+          target_creator_seller_id: data.target_creator_seller_id ?? null,
+          amount_cents: data.sponsorship_amount ?? 0,
+          currency_code: (data.currency_code ?? "USD").toUpperCase(),
+          program: {
+            title: `${data.title} — creator sponsorship`,
+            slug: data.slug,
+            description: data.description ?? null,
+          },
+        },
+      })
+      return res.status(201).json({ sponsorship: result })
+    } catch (err) {
+      return res
+        .status(409)
+        .json({ message: (err as Error).message, type: "launch_failed" })
+    }
+  }
+
+  // PRODUCT and BUSINESS both launch a first product, which requires a price.
+  const priceCents = data.price
+  if (priceCents == null) {
+    return res.status(400).json({
+      message: "price is required for product and business launches",
+      type: "invalid_request",
+    })
+  }
+
+  // ── Launch Business ───────────────────────────────────────────────────────
+  // Guided onboarding: make sure a producer profile exists (idempotent), then
+  // fall through to the standard product-launch flow for the first listing.
+  if (launchType === "BUSINESS" && data.business) {
+    const producers = req.scope.resolve<ProducerService>(PRODUCER_MODULE)
+    const existingProducer = (
+      await producers.listProducers({ seller_id: sellerId })
+    )[0]
+    if (!existingProducer) {
+      await (producers as any).createProducers({
+        seller_id: sellerId,
+        name: data.business.producer_name,
+        handle: data.business.producer_handle,
+        region: data.business.region ?? null,
+      })
+    }
+  }
 
   const demand = req.scope.resolve<DemandPoolModuleService>(DEMAND_POOL_MODULE)
 
@@ -158,7 +229,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       {
         title: "Default",
         manage_inventory: false,
-        prices: [{ amount: data.price, currency_code: currency }],
+        prices: [{ amount: priceCents, currency_code: currency }],
         options: { "Default option": "Default" },
       },
     ],

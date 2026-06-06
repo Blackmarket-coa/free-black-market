@@ -64,6 +64,7 @@ export const LedgerEntry = model.define("hawala_ledger_entry", {
     "MANUAL",
     "CREATOR_ATTRIBUTION",
     "CREATOR_REWARD_POOL",
+    "SPONSORSHIP",
   ]).nullable(),
   reference_id: model.text().nullable(),
   
