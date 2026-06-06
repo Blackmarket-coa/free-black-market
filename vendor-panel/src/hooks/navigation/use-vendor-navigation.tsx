@@ -117,6 +117,13 @@ function getVendorNavigationConfig({
       showFor: (_, type) => type !== "creator",
     },
     {
+      icon: <CurrencyDollar />,
+      label: "Bounties",
+      to: "/bounties",
+      // Visible to all sellers — buyers post bounties (creator / marketing /
+      // photography / service) and providers browse open ones to claim.
+    },
+    {
       icon: <SquaresPlus />,
       label: "Services",
       to: "/services",

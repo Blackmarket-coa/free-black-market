@@ -110,6 +110,14 @@ export const RouteMap: RouteObject[] = [
             lazy: () => import("../../routes/services"),
           },
           {
+            path: "bounties",
+            errorElement: <ErrorBoundary />,
+            handle: {
+              breadcrumb: () => "Bounties",
+            },
+            lazy: () => import("../../routes/bounties"),
+          },
+          {
             path: "/requests",
             errorElement: <ErrorBoundary />,
             handle: {
