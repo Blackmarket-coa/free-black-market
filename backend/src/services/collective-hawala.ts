@@ -11,6 +11,15 @@ import { ParticipantStatus } from "../modules/demand-pool/models/demand-particip
 import { DemandPostStatus } from "../modules/demand-pool/models/demand-post"
 import { BountyStatus } from "../modules/demand-pool/models/demand-bounty"
 
+/**
+ * Platform's cut of a creator sponsorship, in percent. Unlike order platform
+ * fees (which default to 3% and are seller-configurable via payout-config),
+ * the sponsorship fee is a flat product-level 10% taken at payout time.
+ */
+export const SPONSORSHIP_PLATFORM_FEE_PERCENT = 10
+
+const roundCents = (dollars: number) => Math.round(dollars * 100) / 100
+
 export class CollectiveHawalaService {
   private hawalaService: HawalaLedgerModuleService
   private demandPoolService: DemandPoolModuleService
@@ -465,6 +474,119 @@ export class CollectiveHawalaService {
   }
 
   // ──────────────────────────────────────────────────────────────────────────
+  // Creator Sponsorship Escrow & Payout
+  // ──────────────────────────────────────────────────────────────────────────
+
+  /**
+   * Lock a producer's sponsorship budget in escrow when they sponsor a creator.
+   * Mirrors `escrowBountyFunds`: moves funds from the producer's wallet into a
+   * per-sponsorship escrow account. Idempotent on `sponsorship-escrow-${id}`.
+   * All amounts are in dollars (the ledger's working unit).
+   */
+  async escrowSponsorshipFunds(input: {
+    sponsorship_id: string
+    producer_id: string
+    amount: number
+  }) {
+    const escrowAccount = await this.getOrCreateSponsorshipEscrow(
+      input.sponsorship_id
+    )
+
+    const producerAccounts = await this.hawalaService.listLedgerAccounts({
+      owner_id: input.producer_id,
+      account_type: "USER_WALLET",
+    })
+    if (producerAccounts.length === 0) {
+      throw new Error("Producer wallet not found")
+    }
+
+    const producerAccount = producerAccounts[0]
+    if (Number(producerAccount.available_balance) < input.amount) {
+      throw new Error("Insufficient balance for sponsorship escrow")
+    }
+
+    return this.hawalaService.createTransfer({
+      debit_account_id: producerAccount.id,
+      credit_account_id: escrowAccount.id,
+      amount: input.amount,
+      entry_type: "FEE",
+      description: `Sponsorship escrow ${input.sponsorship_id}`,
+      reference_type: "SPONSORSHIP",
+      reference_id: input.sponsorship_id,
+      idempotency_key: `sponsorship-escrow-${input.sponsorship_id}`,
+    })
+  }
+
+  /**
+   * Pay out a sponsorship once the creator has delivered. Splits the escrowed
+   * amount into exactly two ledger entries — a 10% platform fee and the 90%
+   * creator payout — each with a deterministic idempotency key so retries are
+   * safe. The two legs always sum to the original amount (fee is rounded to the
+   * cent, the creator gets the remainder).
+   */
+  async paySponsorship(input: {
+    sponsorship_id: string
+    creator_id: string
+    amount: number
+  }) {
+    const escrowAccount = await this.getOrCreateSponsorshipEscrow(
+      input.sponsorship_id
+    )
+
+    const platformFee = roundCents(
+      input.amount * (SPONSORSHIP_PLATFORM_FEE_PERCENT / 100)
+    )
+    const creatorAmount = roundCents(input.amount - platformFee)
+
+    // Creators earn into SELLER_EARNINGS; fall back to a plain wallet.
+    let creatorAccounts = await this.hawalaService.listLedgerAccounts({
+      owner_id: input.creator_id,
+      account_type: "SELLER_EARNINGS",
+    })
+    if (creatorAccounts.length === 0) {
+      creatorAccounts = await this.hawalaService.listLedgerAccounts({
+        owner_id: input.creator_id,
+        account_type: "USER_WALLET",
+      })
+    }
+    if (creatorAccounts.length === 0) {
+      throw new Error("Creator earnings account not found")
+    }
+
+    const platformAccount =
+      await this.hawalaService.getOrCreateSystemAccount("PLATFORM_FEE")
+
+    const feeEntry = await this.hawalaService.createTransfer({
+      debit_account_id: escrowAccount.id,
+      credit_account_id: platformAccount.id,
+      amount: platformFee,
+      entry_type: "COMMISSION",
+      description: `Sponsorship platform fee ${input.sponsorship_id}`,
+      reference_type: "SPONSORSHIP",
+      reference_id: input.sponsorship_id,
+      idempotency_key: `sponsorship-fee-${input.sponsorship_id}`,
+    })
+
+    const payoutEntry = await this.hawalaService.createTransfer({
+      debit_account_id: escrowAccount.id,
+      credit_account_id: creatorAccounts[0].id,
+      amount: creatorAmount,
+      entry_type: "TRANSFER",
+      description: `Sponsorship payout ${input.sponsorship_id}`,
+      reference_type: "SPONSORSHIP",
+      reference_id: input.sponsorship_id,
+      idempotency_key: `sponsorship-payout-${input.sponsorship_id}`,
+    })
+
+    return {
+      fee_entry: feeEntry,
+      payout_entry: payoutEntry,
+      platform_fee: platformFee,
+      creator_amount: creatorAmount,
+    }
+  }
+
+  // ──────────────────────────────────────────────────────────────────────────
   // Group Payment Processing
   // ──────────────────────────────────────────────────────────────────────────
 
@@ -630,6 +752,29 @@ export class CollectiveHawalaService {
     }
 
     return account
+  }
+
+  /**
+   * Get or create the escrow account that holds a single sponsorship's funds.
+   * Keyed by `sponsorship-${id}` so escrow and payout resolve the same account.
+   */
+  private async getOrCreateSponsorshipEscrow(sponsorshipId: string) {
+    const ownerId = `sponsorship-${sponsorshipId}`
+    const existing = await this.hawalaService.listLedgerAccounts({
+      account_type: "ESCROW",
+      owner_type: "SYSTEM",
+      owner_id: ownerId,
+    })
+    if (existing.length > 0) {
+      return existing[0]
+    }
+
+    return this.hawalaService.createAccount({
+      account_type: "ESCROW",
+      owner_type: "SYSTEM",
+      owner_id: ownerId,
+      metadata: { sponsorship_id: sponsorshipId },
+    })
   }
 }
 
