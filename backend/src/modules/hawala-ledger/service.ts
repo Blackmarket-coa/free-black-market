@@ -1,4 +1,4 @@
-import { MedusaService } from "@medusajs/framework/utils"
+import { MedusaService, ContainerRegistrationKeys } from "@medusajs/framework/utils"
 import { auditFinancialTransaction, logAuditEvent } from "./audit-logger"
 import { assertRailInvariants } from "./posture-a-guard"
 import {
@@ -576,11 +576,16 @@ class HawalaLedgerModuleService extends MedusaService({
       metadata: data.metadata,
     })
 
-    // Update account balances. Prefer the atomic CAS path when a pg
-    // connection is supplied; fall back to the legacy read-modify-write.
-    if (data.pgConnection) {
-      await this.updateBalancesAtomic(data.pgConnection, data.debit_account_id, -data.amount)
-      await this.updateBalancesAtomic(data.pgConnection, data.credit_account_id, data.amount)
+    // Update account balances. Prefer the atomic CAS path: use the caller's
+    // pg connection when supplied, otherwise self-resolve one from the module
+    // container so production money moves are atomic by default (the ~39
+    // createTransfer call sites don't have to thread a connection). Only when
+    // no connection is reachable at all (e.g. unit tests without DI) do we
+    // fall back to the legacy read-modify-write updateBalances.
+    const pgConnection = data.pgConnection ?? this.resolvePgConnection()
+    if (pgConnection) {
+      await this.updateBalancesAtomic(pgConnection, data.debit_account_id, -data.amount)
+      await this.updateBalancesAtomic(pgConnection, data.credit_account_id, data.amount)
     } else {
       await this.updateBalances(data.debit_account_id, -data.amount)
       await this.updateBalances(data.credit_account_id, data.amount)
@@ -630,6 +635,65 @@ class HawalaLedgerModuleService extends MedusaService({
    * 
    * For debits, validates sufficient balance before update.
    */
+  /**
+   * Resolve a raw pg connection from the module container, or undefined when
+   * one isn't reachable (e.g. unit tests instantiated without Medusa DI).
+   *
+   * This lets money-moving methods default to the atomic CAS / atomic-SQL
+   * paths in production WITHOUT every one of the ~39 createTransfer call
+   * sites having to thread a connection by hand. Mirrors the proven pattern
+   * in creator-attribution's `atomicIncrementAffiliateLink`. The awilix
+   * container throws on an unregistered key, so the resolve is guarded.
+   */
+  private resolvePgConnection():
+    | { raw: (sql: string, bindings?: any[]) => Promise<any> }
+    | undefined {
+    const container = (this as any).container_
+    try {
+      const pg = container?.resolve?.(ContainerRegistrationKeys.PG_CONNECTION)
+      return pg?.raw ? pg : undefined
+    } catch {
+      return undefined
+    }
+  }
+
+  /**
+   * Atomically apply integer/decimal deltas to investment-pool counter
+   * columns in a single `col = col + ?` UPDATE, so concurrent
+   * investments/distributions don't clobber each other (read-modify-write
+   * loses updates under concurrency). Returns true when the atomic UPDATE
+   * ran; false when no pg connection is reachable so the caller can fall
+   * back to the legacy read-modify-write.
+   *
+   * Column names come from a fixed allowlist and are interpolated into the
+   * SQL identifier position (bindings can't bind identifiers); deltas are
+   * always parameter-bound.
+   */
+  private async atomicPoolIncrement(
+    poolId: string,
+    increments: Partial<
+      Record<"total_raised" | "total_investors" | "total_distributed", number>
+    >
+  ): Promise<boolean> {
+    const pg = this.resolvePgConnection()
+    if (!pg) return false
+
+    const ALLOWED = ["total_raised", "total_investors", "total_distributed"] as const
+    const cols = Object.keys(increments).filter(
+      (c): c is (typeof ALLOWED)[number] =>
+        (ALLOWED as readonly string[]).includes(c)
+    )
+    if (cols.length === 0) return true
+
+    const setClause = cols.map((c) => `${c} = ${c} + ?`).join(", ")
+    const bindings = [...cols.map((c) => increments[c] as number), poolId]
+    await pg.raw(
+      `UPDATE hawala_investment_pool SET ${setClause}, updated_at = NOW() WHERE id = ? AND deleted_at IS NULL`,
+      bindings
+    )
+    return true
+  }
+
   /**
    * Atomically apply a balance delta using a single conditional UPDATE.
    *
@@ -1118,17 +1182,20 @@ class HawalaLedgerModuleService extends MedusaService({
       invested_at: new Date(),
     })
 
-    // Update pool totals
-    // FOLLOW-UP: these total_raised/total_investors increments are a
-    // read-modify-write and can lose updates under concurrent investments.
-    // Move to an atomic SQL UPDATE (... SET total_raised = total_raised + ?,
-    // total_investors = total_investors + 1 WHERE id = ?) once a pgConnection
-    // is threaded through this path.
-    await this.updateInvestmentPools({
-      id: data.pool_id,
-      total_raised: Number(pool.total_raised) + data.amount,
-      total_investors: pool.total_investors + 1,
+    // Update pool totals atomically (col = col + ?) so concurrent investments
+    // don't clobber each other. Falls back to read-modify-write only when no
+    // pg connection is reachable (e.g. unit tests without DI).
+    const atomicallyUpdated = await this.atomicPoolIncrement(data.pool_id, {
+      total_raised: data.amount,
+      total_investors: 1,
     })
+    if (!atomicallyUpdated) {
+      await this.updateInvestmentPools({
+        id: data.pool_id,
+        total_raised: Number(pool.total_raised) + data.amount,
+        total_investors: pool.total_investors + 1,
+      })
+    }
 
     return investment
   }
@@ -1183,13 +1250,18 @@ class HawalaLedgerModuleService extends MedusaService({
       }
     }
 
-    // Update pool totals
-    // FOLLOW-UP: read-modify-write; move total_distributed increment to an
-    // atomic SQL UPDATE once a pgConnection is threaded through this path.
-    await this.updateInvestmentPools({
-      id: data.pool_id,
-      total_distributed: Number(pool.total_distributed) + data.total_amount,
+    // Update pool totals atomically (col = col + ?) so concurrent
+    // distributions don't clobber each other. Falls back to read-modify-write
+    // only when no pg connection is reachable (e.g. unit tests without DI).
+    const distributedAtomically = await this.atomicPoolIncrement(data.pool_id, {
+      total_distributed: data.total_amount,
     })
+    if (!distributedAtomically) {
+      await this.updateInvestmentPools({
+        id: data.pool_id,
+        total_distributed: Number(pool.total_distributed) + data.total_amount,
+      })
+    }
 
     return distributions
   }

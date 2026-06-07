@@ -68,7 +68,7 @@ Legend: ✅ complete · 🟡 partial · 🔴 missing/stub · ⏸️ deferred
 
 ### FBM launch-critical path (remaining)
 
-1. **Money-path verification** under real concurrency (foundational — see §2). This is the one genuine FBM gate.
+1. **Money-path concurrency soak** against a real Postgres (foundational — see §2). The code-side hardening is **done** (atomic balance CAS + atomic pool totals are now the default); the residual gate is running the soak under parallel load in a DB-equipped env.
 2. *(Deferred)* Multi-seller "all businesses in one profile" — tracked, not a launch blocker per founder.
 
 ### Blackout (separate repo) — NOT FBM scope
@@ -102,13 +102,27 @@ The `ECONOMIC_REVIEW.md` remediation table marks the critical money bugs
 > An earlier automated read reported these as still broken. That read was
 > **stale** — the fixes are present. Do not act on the "money is broken" claim.
 
-**The genuine caveat:** the atomic balance path only runs **when a caller passes
-`pgConnection`**; otherwise it falls back to the legacy non-atomic path. Pool-total
-increments are still flagged non-atomic TODO. So "fixed" is *conditional on
-caller wiring* and currently unproven under real concurrency.
+**Status update (this session) — code-side gate closed.** The atomic path is
+now the **default**, not conditional on caller wiring:
 
-**Before real funds at scale:** confirm every money-moving caller threads
-`pgConnection`, and add concurrency tests. (Idempotency is now well-covered:
+- `createTransfer` self-resolves a pg connection from the module container
+  (`resolvePgConnection`, mirroring `creator-attribution`) and uses the atomic
+  balance CAS by default. None of the ~39 call sites have to thread
+  `pgConnection`; the legacy read-modify-write only runs when no connection is
+  reachable (DI-less unit tests).
+- The two flagged pool-total read-modify-writes (`createInvestment`
+  total_raised/total_investors; `distributeDividends` total_distributed) now use
+  a single atomic `col = col + ?` UPDATE (`atomicPoolIncrement`), with the same
+  graceful fallback.
+- New regression specs: `atomic-by-default.unit.spec.ts` (atomic-by-default,
+  explicit-over-resolved precedence, fallback, atomic pool increments). Full
+  hawala unit suite green (112 tests).
+
+**The one part that still cannot be closed from the web env:** a **concurrency
+soak test against a real Postgres** under parallel load. This container has no
+DB (`pg_isready` → no response), and integration tests (`TEST_TYPE=integration:*`)
+require one. This is the residual gate — run the soak in a DB-equipped
+environment before scaling real funds. (Idempotency is already well-covered:
 bounty transfer, sponsorship split, and `createTransfer` all have regression
 specs.)
 
