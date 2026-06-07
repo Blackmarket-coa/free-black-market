@@ -711,7 +711,7 @@ class HawalaLedgerModuleService extends MedusaService({
     delta: number
   ): Promise<void> {
     const result = await pgConnection.raw(
-      `UPDATE ledger_account
+      `UPDATE hawala_ledger_account
          SET balance = balance + ?,
              available_balance = available_balance + ?,
              updated_at = NOW()

@@ -118,13 +118,40 @@ now the **default**, not conditional on caller wiring:
   explicit-over-resolved precedence, fallback, atomic pool increments). Full
   hawala unit suite green (112 tests).
 
-**The one part that still cannot be closed from the web env:** a **concurrency
-soak test against a real Postgres** under parallel load. This container has no
-DB (`pg_isready` → no response), and integration tests (`TEST_TYPE=integration:*`)
-require one. This is the residual gate — run the soak in a DB-equipped
-environment before scaling real funds. (Idempotency is already well-covered:
-bounty transfer, sponsorship split, and `createTransfer` all have regression
-specs.)
+**Latent table-name bug found and fixed while writing the soak.** Wiring the
+atomic path on by default exposed two raw-SQL statements that targeted
+**non-existent tables** (no compatibility view exists):
+
+- `updateBalancesAtomic` did `UPDATE ledger_account` — the real table is
+  `hawala_ledger_account`. As dormant code this never fired; as the new default
+  it would have thrown on **every** transfer. Fixed.
+- `reconciler.ts` summed `FROM ledger_entry` — real table `hawala_ledger_entry`
+  — so the balance-drift reconciler job was silently erroring on every run.
+  Fixed (both queries).
+
+This is exactly the class of bug the gate existed to catch.
+
+**The soak harness now exists** —
+`backend/src/modules/hawala-ledger/__tests__/concurrency-soak.integration.spec.ts`
+spins up a real Postgres via `moduleIntegrationTestRunner`, wires a live
+`PG_CONNECTION` (so the atomic-by-default paths are exercised), and fires
+concurrent operations to assert three invariants: (1) no overdraw under
+concurrent debits, (2) total value conserved across interleaved bidirectional
+transfers, (3) exact pool totals under concurrent investments.
+
+**The one part that still cannot be closed from the web env:** actually
+*running* that soak. This container has no DB (`pg_isready` → no response), and
+`TEST_TYPE=integration:modules` requires one. Run it in a DB-equipped
+environment before scaling real funds:
+
+```
+cd backend && TEST_TYPE=integration:modules NODE_OPTIONS=--experimental-vm-modules \
+  npx jest --runInBand --forceExit \
+  src/modules/hawala-ledger/__tests__/concurrency-soak.integration.spec.ts
+```
+
+(Idempotency is already well-covered: bounty transfer, sponsorship split, and
+`createTransfer` all have regression specs.)
 
 ---
 

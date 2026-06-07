@@ -82,7 +82,7 @@ describe("createTransfer — atomic balance update by default", () => {
 
     // Two atomic balance UPDATEs ran; the legacy RMW path did not.
     expect(pg.raw).toHaveBeenCalledTimes(2)
-    expect(pg.calls[0].sql).toContain("UPDATE ledger_account")
+    expect(pg.calls[0].sql).toContain("UPDATE hawala_ledger_account")
     expect(pg.calls[0].sql).toContain("balance + ? >= 0")
     expect(pg.calls[0].bindings[0]).toBe(-100)
     expect(pg.calls[1].bindings[0]).toBe(100)
