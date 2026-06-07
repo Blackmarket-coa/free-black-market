@@ -71,7 +71,7 @@ describe("updateBalancesAtomic (via createTransfer)", () => {
     expect(pgConnection.raw).toHaveBeenCalledTimes(2)
 
     const debitCall = rawCalls[0]
-    expect(debitCall.sql).toContain("UPDATE ledger_account")
+    expect(debitCall.sql).toContain("UPDATE hawala_ledger_account")
     expect(debitCall.sql).toContain("balance = balance + ?")
     expect(debitCall.sql).toContain("balance + ? >= 0")
     // delta is the first binding and is negative for the debit

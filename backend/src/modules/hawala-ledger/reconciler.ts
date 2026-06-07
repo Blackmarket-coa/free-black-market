@@ -2,10 +2,10 @@
  * Ledger balance reconciler.
  *
  * Recomputes the "ledger truth" for every account from the immutable
- * `ledger_entry` rows (sum of credits minus sum of debits over terminal
- * COMPLETED/SETTLED entries) and compares it to the cached
- * `ledger_account.balance`. Any drift above a small epsilon is reported
- * and logged.
+ * `hawala_ledger_entry` rows (sum of credits minus sum of debits over
+ * terminal COMPLETED/SETTLED entries) and compares it to the cached
+ * `hawala_ledger_account.balance`. Any drift above a small epsilon is
+ * reported and logged.
  *
  * This is intentionally READ-ONLY: it never auto-corrects balances. A
  * detected drift is an operational signal that the cached balance and the
@@ -53,7 +53,7 @@ export async function reconcileLedgerBalances(
   // entries only. Two grouped scans, combined in memory.
   const creditResult = await pgConnection.raw(
     `SELECT credit_account_id AS account_id, COALESCE(SUM(amount), 0) AS total
-       FROM ledger_entry
+       FROM hawala_ledger_entry
       WHERE deleted_at IS NULL
         AND status IN ('COMPLETED', 'SETTLED')
         AND credit_account_id IS NOT NULL
@@ -62,7 +62,7 @@ export async function reconcileLedgerBalances(
   )
   const debitResult = await pgConnection.raw(
     `SELECT debit_account_id AS account_id, COALESCE(SUM(amount), 0) AS total
-       FROM ledger_entry
+       FROM hawala_ledger_entry
       WHERE deleted_at IS NULL
         AND status IN ('COMPLETED', 'SETTLED')
         AND debit_account_id IS NOT NULL

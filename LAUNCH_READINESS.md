@@ -68,7 +68,7 @@ Legend: ✅ complete · 🟡 partial · 🔴 missing/stub · ⏸️ deferred
 
 ### FBM launch-critical path (remaining)
 
-1. **Money-path verification** under real concurrency (foundational — see §2). This is the one genuine FBM gate.
+1. **Money-path concurrency soak** against a real Postgres (foundational — see §2). The code-side hardening is **done** (atomic balance CAS + atomic pool totals are now the default); the residual gate is running the soak under parallel load in a DB-equipped env.
 2. *(Deferred)* Multi-seller "all businesses in one profile" — tracked, not a launch blocker per founder.
 
 ### Blackout (separate repo) — NOT FBM scope
@@ -102,15 +102,66 @@ The `ECONOMIC_REVIEW.md` remediation table marks the critical money bugs
 > An earlier automated read reported these as still broken. That read was
 > **stale** — the fixes are present. Do not act on the "money is broken" claim.
 
-**The genuine caveat:** the atomic balance path only runs **when a caller passes
-`pgConnection`**; otherwise it falls back to the legacy non-atomic path. Pool-total
-increments are still flagged non-atomic TODO. So "fixed" is *conditional on
-caller wiring* and currently unproven under real concurrency.
+**Status update (this session) — code-side gate closed.** The atomic path is
+now the **default**, not conditional on caller wiring:
 
-**Before real funds at scale:** confirm every money-moving caller threads
-`pgConnection`, and add concurrency tests. (Idempotency is now well-covered:
-bounty transfer, sponsorship split, and `createTransfer` all have regression
-specs.)
+- `createTransfer` self-resolves a pg connection from the module container
+  (`resolvePgConnection`, mirroring `creator-attribution`) and uses the atomic
+  balance CAS by default. None of the ~39 call sites have to thread
+  `pgConnection`; the legacy read-modify-write only runs when no connection is
+  reachable (DI-less unit tests).
+- The two flagged pool-total read-modify-writes (`createInvestment`
+  total_raised/total_investors; `distributeDividends` total_distributed) now use
+  a single atomic `col = col + ?` UPDATE (`atomicPoolIncrement`), with the same
+  graceful fallback.
+- New regression specs: `atomic-by-default.unit.spec.ts` (atomic-by-default,
+  explicit-over-resolved precedence, fallback, atomic pool increments). Full
+  hawala unit suite green (112 tests).
+
+**Latent table-name bug found and fixed while writing the soak.** Wiring the
+atomic path on by default exposed two raw-SQL statements that targeted
+**non-existent tables** (no compatibility view exists):
+
+- `updateBalancesAtomic` did `UPDATE ledger_account` — the real table is
+  `hawala_ledger_account`. As dormant code this never fired; as the new default
+  it would have thrown on **every** transfer. Fixed.
+- `reconciler.ts` summed `FROM ledger_entry` — real table `hawala_ledger_entry`
+  — so the balance-drift reconciler job was silently erroring on every run.
+  Fixed (both queries).
+
+This is exactly the class of bug the gate existed to catch.
+
+**The soak harness now exists** —
+`backend/src/modules/hawala-ledger/__tests__/concurrency-soak.integration.spec.ts`
+spins up a real Postgres via `moduleIntegrationTestRunner`, wires a live
+`PG_CONNECTION` (so the atomic-by-default paths are exercised), and fires
+concurrent operations to assert three invariants: (1) no overdraw under
+concurrent debits, (2) total value conserved across interleaved bidirectional
+transfers, (3) exact pool totals under concurrent investments.
+
+**The soak is wired into CI.** A dedicated `test-soak` ("Money-Path
+Concurrency Soak") job in `.github/workflows/ci.yml` runs it on every push/PR
+against a Postgres service. It's independent of the `integration:http`
+app-boot debt (TI-3) because `moduleIntegrationTestRunner` stands up its own
+isolated module schema without booting the full app. Per the repo's own
+live-Postgres rollout convention (see the `test-integration` TI-1/TI-3
+history), it lands **non-blocking** (`continue-on-error: true`) because it was
+authored in a DB-less env; **flip it to fail-fast** (delete that one line)
+once it's been observed green against live Postgres.
+
+**The one part that still cannot be closed from the web env:** actually
+*running* the soak — this container has no DB (`pg_isready` → no response).
+The CI job above is the automated path; to run it locally in a DB-equipped
+environment:
+
+```
+cd backend && TEST_TYPE=integration:modules NODE_OPTIONS=--experimental-vm-modules \
+  npx jest --runInBand --forceExit \
+  src/modules/hawala-ledger/__tests__/concurrency-soak.integration.spec.ts
+```
+
+(Idempotency is already well-covered: bounty transfer, sponsorship split, and
+`createTransfer` all have regression specs.)
 
 ---
 
