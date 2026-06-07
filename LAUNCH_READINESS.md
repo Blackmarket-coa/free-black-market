@@ -139,10 +139,20 @@ concurrent operations to assert three invariants: (1) no overdraw under
 concurrent debits, (2) total value conserved across interleaved bidirectional
 transfers, (3) exact pool totals under concurrent investments.
 
+**The soak is wired into CI.** A dedicated `test-soak` ("Money-Path
+Concurrency Soak") job in `.github/workflows/ci.yml` runs it on every push/PR
+against a Postgres service. It's independent of the `integration:http`
+app-boot debt (TI-3) because `moduleIntegrationTestRunner` stands up its own
+isolated module schema without booting the full app. Per the repo's own
+live-Postgres rollout convention (see the `test-integration` TI-1/TI-3
+history), it lands **non-blocking** (`continue-on-error: true`) because it was
+authored in a DB-less env; **flip it to fail-fast** (delete that one line)
+once it's been observed green against live Postgres.
+
 **The one part that still cannot be closed from the web env:** actually
-*running* that soak. This container has no DB (`pg_isready` → no response), and
-`TEST_TYPE=integration:modules` requires one. Run it in a DB-equipped
-environment before scaling real funds:
+*running* the soak — this container has no DB (`pg_isready` → no response).
+The CI job above is the automated path; to run it locally in a DB-equipped
+environment:
 
 ```
 cd backend && TEST_TYPE=integration:modules NODE_OPTIONS=--experimental-vm-modules \

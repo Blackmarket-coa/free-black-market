@@ -473,6 +473,77 @@ jobs:
           JWT_SECRET: ci-jwt-secret-at-least-32-characters-long-deterministic
           COOKIE_SECRET: ci-cookie-secret-at-least-32-characters-long-determinis
 
+  test-soak:
+    name: Money-Path Concurrency Soak
+    runs-on: ubuntu-latest
+    # Independent of the integration:http app-boot chain (TI-3): the module
+    # soak uses @medusajs/test-utils' moduleIntegrationTestRunner, which spins
+    # up its own isolated Postgres schema for the hawala-ledger module and
+    # never boots the full Medusa app. So it can run early and on its own.
+    services:
+      postgres:
+        image: postgres:15
+        # Test-fixture credentials only; bound to localhost on the runner and
+        # torn down at job end. The module runner needs CREATEDB (pg-god
+        # creates a per-worker schema); the default postgres superuser has it.
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: ci_test_postgres_fixture_only_not_a_secret
+          POSTGRES_DB: medusa_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm via corepack
+        run: |
+          corepack enable
+          corepack prepare pnpm@${{ env.PNPM_VERSION }} --activate
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+          cache-dependency-path: backend/pnpm-lock.yaml
+
+      - name: Install dependencies
+        working-directory: backend
+        run: pnpm install --frozen-lockfile
+
+      # Closes the LAUNCH_READINESS §2 money-path gate: proves the
+      # atomic-by-default balance CAS + pool-total increments hold under real
+      # concurrency (no overdraw, value conservation, exact pool totals).
+      # Scoped to the soak spec so the signal stays clean.
+      #
+      # Authored in a DB-less web env, so this lands non-blocking
+      # (continue-on-error) following the repo's own live-Postgres rollout
+      # convention (see the test-integration TI-1/TI-3 history above). Flip to
+      # fail-fast — delete the `continue-on-error` line — once it's been
+      # observed green against live Postgres here.
+      - name: Run hawala money-path concurrency soak
+        working-directory: backend
+        run: pnpm test:integration:modules src/modules/hawala-ledger/__tests__/concurrency-soak.integration.spec.ts
+        continue-on-error: true
+        env:
+          NODE_ENV: test
+          # @medusajs/test-utils reads DB_HOST/DB_USERNAME/DB_PASSWORD/DB_PORT
+          # individually (not DATABASE_URL) to build the per-module test DB URL.
+          DB_HOST: localhost
+          DB_PORT: "5432"
+          DB_USERNAME: postgres
+          DB_PASSWORD: ci_test_postgres_fixture_only_not_a_secret
+          DATABASE_URL: postgres://postgres:ci_test_postgres_fixture_only_not_a_secret@localhost:5432/medusa_test
+          JWT_SECRET: ci-jwt-secret-at-least-32-characters-long-deterministic
+          COOKIE_SECRET: ci-cookie-secret-at-least-32-characters-long-determinis
+
   release-validation:
     name: Release Validation Gate
     runs-on: ubuntu-latest
