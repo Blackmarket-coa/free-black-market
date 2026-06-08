@@ -226,6 +226,15 @@ const collectiveModules = [
   { resolve: './src/modules/collective-campaign' },
 ]
 
+// Phase 2 discovery layer: Opportunity Engine (§5) + Economic Intelligence
+// (§15) + startup guides (§12); Product Knowledge Base / DIY library (§14);
+// plugin ecosystem (§16). See PHASE_2_CHECKLIST.md.
+const discoveryModules = [
+  { resolve: './src/modules/opportunity-engine' },
+  { resolve: './src/modules/knowledge-base' },
+  { resolve: './src/modules/plugin-registry' },
+]
+
 // Content/utility modules
 const utilityModules = [
   { resolve: './src/modules/cms-blueprint' },
@@ -538,6 +547,7 @@ module.exports = defineConfig({
     ...marketplaceModules,
     ...communityModules,
     ...collectiveModules,
+    ...discoveryModules,
     ...utilityModules,
     ...optionalModules,
 
