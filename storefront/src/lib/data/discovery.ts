@@ -150,3 +150,23 @@ export async function getStartupGuide(slug: string): Promise<any | null> {
     return null
   }
 }
+
+// ── §13 Community product page panel ──
+export type ProductCommunity = {
+  coalition_recommendations: { id: string; name: string }[]
+  creator_content: { slug: string; title: string; type: string }[]
+  discussion: { provider: string; deep_link: string | null }
+}
+
+export async function getProductCommunity(
+  handle: string
+): Promise<ProductCommunity | null> {
+  try {
+    return await medusaFetch<ProductCommunity>(
+      `/store/products/${encodeURIComponent(handle)}/community`,
+      { method: "GET", cache: "no-store" }
+    )
+  } catch {
+    return null
+  }
+}
