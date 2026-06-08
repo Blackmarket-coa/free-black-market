@@ -64,7 +64,10 @@ Legend: ✅ complete · 🟡 partial · 🔴 missing/stub · ⏸️ deferred
 | **Launch Center** | Launch product / business / sponsorship | ✅ One entrypoint, three launch types | `/v1/seller/launches` + `workflows/launch-{product,sponsorship}/` |
 | **Sponsorship marketplace** | Producer↔creator, 10% fee | ✅ Escrow + 90/10 split, deterministic idempotency | `collective-hawala.ts` `paySponsorship`, `SPONSORSHIP_PLATFORM_FEE_PERCENT` |
 | **"All businesses in one profile"** | Multi-seller per identity | ⏸️ Deferred (one-auth→many-sellers architecture) | — |
-| **Opportunity Engine** | Demand/opportunity scoring | ⏸️ Phase 2 (score fields exist, no algorithm) | `demand-post.attractiveness_score` |
+| **Opportunity Engine** | Demand/opportunity scoring | ✅ Implemented (deterministic 0–10 score + price tracker) | `modules/opportunity-engine/`, `api/store/opportunities`, `/store/price-tracker` — see `PHASE_2_CHECKLIST.md` |
+| **Knowledge Base / DIY** | DIY library + guides (§14) | ✅ Implemented | `modules/knowledge-base/`, `api/store/knowledge-base` |
+| **Economic Intelligence** | Market/price trends (§15) | ✅ Implemented | `api/v1/seller/economic-intelligence/trends` |
+| **Plugin ecosystem** | Browse/install plugins (§16) | ✅ Implemented | `modules/plugin-registry/`, `api/store/plugins` |
 
 ### FBM launch-critical path (remaining)
 
@@ -213,7 +216,7 @@ Blackout's unified feed ships (Blackout repo).
 |---|---|---|---|
 | **1 — now** | Money-path concurrency verification (thread `pgConnection`, concurrency tests) | FBM | Final FBM money gate before scale |
 | **2 — Blackout surfaces** | Coliseum (phased), Dens, unified Feed, Creator Hub UI | **Blackout repo** | Closes the discovery loop |
-| **Deferred** | Multi-seller ("all businesses in one profile"); Opportunity Engine; Featured Placement | FBM (later) | Not launch blockers |
+| **Deferred** | Multi-seller ("all businesses in one profile"); Featured Placement | FBM (later) | Not launch blockers |
 
 Founding-100 private beta runs concurrently from Wave 1 onward on the working
 FBM commerce engine.
