@@ -90,6 +90,17 @@ export const CategoryNavbar = ({
       </LocalizedClientLink>
 
       <LocalizedClientLink
+        href="/opportunities"
+        onClick={() => (onClose ? onClose(false) : null)}
+        className={cn(
+          "label-md uppercase px-4 my-3 md:my-0 flex items-center justify-between",
+          pathname?.includes("/opportunities") && "md:border-b md:border-primary"
+        )}
+      >
+        Opportunities
+      </LocalizedClientLink>
+
+      <LocalizedClientLink
         href="/community-resources"
         onClick={() => (onClose ? onClose(false) : null)}
         className={cn(
