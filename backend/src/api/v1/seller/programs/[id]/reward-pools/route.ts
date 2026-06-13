@@ -1,3 +1,5 @@
+import { createLogger } from "../../../../../../shared/logger"
+const log = createLogger("api/v1/seller/programs/[id]/reward-pools")
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { z } from "zod"
 import type { SellerAuthRequest } from "../../../../../middlewares/seller-context-v1"
@@ -110,7 +112,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       currencyCode: (parsed.data.currency_code ?? program.currency_code).toUpperCase(),
     })
   } catch (err) {
-    console.error("[reward-pools] funding failed", err)
+    log.error("[reward-pools] funding failed", err)
     return res.status(402).json({
       message: `Pool created but funding failed: ${(err as Error).message}`,
       type: "funding_failed",
@@ -132,7 +134,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     await webhooks.dispatch("creator.reward.pool_opened", sellerId, payload)
     await webhooks.dispatch("creator.reward.pool_funded", sellerId, payload)
   } catch (err) {
-    console.error("[reward-pools] webhook dispatch failed", err)
+    log.error("[reward-pools] webhook dispatch failed", err)
   }
 
   return res.status(201).json({ pool })

@@ -1,3 +1,5 @@
+import { createLogger } from "../../../../../../../../shared/logger"
+const log = createLogger("api/v1/seller/programs/[id]/applications/[appId]/decide")
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { z } from "zod"
 import type { SellerAuthRequest } from "../../../../../../../middlewares/seller-context-v1"
@@ -95,7 +97,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
         })
       }
     } catch (err) {
-      console.error("[program/decide] KYC check failed", err)
+      log.error("[program/decide] KYC check failed", err)
       return res.status(500).json({
         message: "KYC verification check failed",
         type: "kyc_check_failed",
@@ -135,7 +137,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       })) as any
       deal = await programService.attachDefaultLinkToDeal(deal.id, link.id)
     } catch (err) {
-      console.error("[program/decide] auto-link generation failed", err)
+      log.error("[program/decide] auto-link generation failed", err)
     }
 
     try {
@@ -157,7 +159,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
         deal_id: deal.id,
       })
     } catch (err) {
-      console.error("[program/decide] webhook dispatch failed", err)
+      log.error("[program/decide] webhook dispatch failed", err)
     }
   } else {
     try {
@@ -168,7 +170,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
         reason: parsed.data.reason ?? null,
       })
     } catch (err) {
-      console.error("[program/decide] reject webhook dispatch failed", err)
+      log.error("[program/decide] reject webhook dispatch failed", err)
     }
   }
 

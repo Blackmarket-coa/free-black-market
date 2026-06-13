@@ -1,3 +1,5 @@
+import { createLogger } from "../../../../../../../shared/logger"
+const log = createLogger("api/v1/seller/services/subcontracts/[id]/accept-delivery")
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import type { SellerAuthRequest } from "../../../../../../middlewares/seller-context-v1"
 import { ORDER_SUBCONTRACT_MODULE } from "../../../../../../../modules/order-subcontract"
@@ -73,7 +75,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     )
     await programSvc.incrementContractPayout(sub.contract_id, Number(sub.total_cents))
   } catch (err) {
-    console.error("[accept-delivery] contract payout update failed", err)
+    log.error("[accept-delivery] contract payout update failed", err)
   }
 
   try {
@@ -88,7 +90,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     await webhooks.dispatch("subcontract.completed", sellerId, payload)
     await webhooks.dispatch("subcontract.completed", sub.subcontract_seller_id, payload)
   } catch (err) {
-    console.error("[accept-delivery] webhook dispatch failed", err)
+    log.error("[accept-delivery] webhook dispatch failed", err)
   }
 
   return res.status(200).json({

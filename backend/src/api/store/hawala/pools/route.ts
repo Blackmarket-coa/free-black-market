@@ -1,3 +1,5 @@
+import { createLogger } from "../../../../shared/logger"
+const log = createLogger("api/store/hawala/pools")
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { HAWALA_LEDGER_MODULE } from "../../../../modules/hawala-ledger"
 import HawalaLedgerModuleService from "../../../../modules/hawala-ledger/service"
@@ -55,7 +57,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       offset: parseInt(offset as string),
     })
   } catch (error) {
-    console.error("Error listing pools:", error)
+    log.error("Error listing pools:", error)
     res.status(500).json({ error: "Failed to retrieve investment pools" })
   }
 }

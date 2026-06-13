@@ -1,3 +1,5 @@
+import { createLogger } from "../../../../shared/logger"
+const log = createLogger("api/vendor/hawala/advances")
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { HAWALA_LEDGER_MODULE } from "../../../../modules/hawala-ledger"
 import HawalaLedgerModuleService from "../../../../modules/hawala-ledger/service"
@@ -42,7 +44,7 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
       })),
     })
   } catch (error: any) {
-    console.error("Error getting advance info:", error)
+    log.error("Error getting advance info:", error)
     res.status(400).json({ error: "Failed to retrieve advance information" })
   }
 }
@@ -89,7 +91,7 @@ export const POST = async (req: MedusaRequest, res: MedusaResponse) => {
       },
     })
   } catch (error: any) {
-    console.error("Error requesting advance:", error)
+    log.error("Error requesting advance:", error)
     res.status(400).json({ error: "Failed to request advance" })
   }
 }

@@ -1,3 +1,5 @@
+import { createLogger } from "./logger"
+const log = createLogger("shared/access-control")
 import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils"
 import { ENTITLEMENT_MODULE } from "../modules/entitlement"
 import type EntitlementModuleService from "../modules/entitlement/service"
@@ -53,7 +55,7 @@ export async function evaluateFbmAccess(
     const service = scope.resolve(ENTITLEMENT_MODULE) as EntitlementModuleService
     return await service.evaluateAccess(input)
   } catch (error: any) {
-    console.error("[AccessControl] evaluateFbmAccess failed:", error.message)
+    log.error("[AccessControl] evaluateFbmAccess failed:", error.message)
     return {
       allowed: false,
       reasons: [

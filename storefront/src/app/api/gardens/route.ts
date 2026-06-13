@@ -1,3 +1,4 @@
+import { logger } from "@/lib/logger"
 import { NextResponse } from "next/server"
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_MEDUSA_BACKEND_URL || "http://localhost:9000"
@@ -21,7 +22,7 @@ export async function GET() {
     const data = await response.json()
     return NextResponse.json({ gardens: data.gardens || [] })
   } catch (error) {
-    console.error("Failed to fetch gardens:", error)
+    logger.error("Failed to fetch gardens:", error)
     // Return empty array on error
     return NextResponse.json({ gardens: [] })
   }

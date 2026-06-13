@@ -1,4 +1,5 @@
 "use client"
+import { logger } from "@/lib/logger"
 
 import { Button, Card } from "@/components/atoms"
 import { LabeledInput } from "@/components/cells"
@@ -82,7 +83,7 @@ const Form = ({
           toast.error(res.error || "Something went wrong")
         }
       } catch (err) {
-        console.log(err)
+        logger.info(err)
         return
       }
     }

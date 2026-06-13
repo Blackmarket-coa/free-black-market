@@ -1,3 +1,5 @@
+import { createLogger } from "../../shared/logger"
+const log = createLogger("api/shared/seller-registration")
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { Modules } from "@medusajs/framework/utils"
 import { REQUEST_MODULE } from "../../modules/request"
@@ -18,7 +20,7 @@ export const handleSellerRegistration = async (
   try {
     body = createSellerRegistrationSchema.parse(req.body)
   } catch (validationError: any) {
-    console.error("[Seller registration] Validation error")
+    log.error("[Seller registration] Validation error")
     return res.status(400).json({
       type: "invalid_data",
       message: validationError.errors?.[0]?.message || "Invalid request data",
@@ -26,7 +28,7 @@ export const handleSellerRegistration = async (
     })
   }
 
-  console.log(
+  log.info(
     `[Seller registration] Creating request: "${body.name}" (email: ${maskEmail(
       body.member.email
     )})`
@@ -41,7 +43,7 @@ export const handleSellerRegistration = async (
     })
 
     if (!authIdentity) {
-      console.error(
+      log.error(
         `[Seller registration] Auth identity not found for email: ${maskEmail(
           body.member.email
         )}`
@@ -52,7 +54,7 @@ export const handleSellerRegistration = async (
       })
     }
 
-    console.log(`[Seller registration] Found auth identity: ${authIdentity.id}`)
+    log.info(`[Seller registration] Found auth identity: ${authIdentity.id}`)
 
     const requestService = req.scope.resolve<RequestModuleService>(REQUEST_MODULE)
     const existingRequests = await requestService.listRequests({
@@ -64,7 +66,7 @@ export const handleSellerRegistration = async (
     const userExistingRequest = existingRequests[0]
 
     if (userExistingRequest) {
-      console.log(
+      log.info(
         `[Seller registration] Found existing pending request: ${userExistingRequest.id}`
       )
       return res.status(200).json({
@@ -94,7 +96,7 @@ export const handleSellerRegistration = async (
       reviewer_note: `Seller registration request for "${body.name}"`,
     })
 
-    console.log(`[Seller registration] Created request: ${sellerRequest.id}`)
+    log.info(`[Seller registration] Created request: ${sellerRequest.id}`)
 
     return res.status(201).json({
       request: {
@@ -105,7 +107,7 @@ export const handleSellerRegistration = async (
       },
     })
   } catch (error: any) {
-    console.error("[Seller registration] Failed to create request:", error.message)
+    log.error("[Seller registration] Failed to create request:", error.message)
 
     return res.status(400).json({
       type: "invalid_data",

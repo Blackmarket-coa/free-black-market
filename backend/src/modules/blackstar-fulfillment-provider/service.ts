@@ -1,3 +1,5 @@
+import { createLogger } from "../../shared/logger"
+const log = createLogger("modules/blackstar-fulfillment-provider/service")
 import { AbstractFulfillmentProviderService } from "@medusajs/framework/utils"
 import {
   CreateFulfillmentResult,
@@ -76,7 +78,7 @@ class BlackstarFulfillmentProviderService extends AbstractFulfillmentProviderSer
           metadata: (data.metadata as Record<string, unknown> | undefined) ?? null,
         })
       } catch (err) {
-        console.error("[blackstar-fulfillment] failed to persist BlackstarShipment", err)
+        log.error("[blackstar-fulfillment] failed to persist BlackstarShipment", err)
       }
     }
 

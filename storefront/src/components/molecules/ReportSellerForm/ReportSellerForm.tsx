@@ -1,4 +1,5 @@
 'use client';
+import { logger } from "@/lib/logger"
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -41,7 +42,7 @@ export const ReportSellerForm = ({
   });
 
   const onSubmit = (data: FormData) => {
-    console.log('Form Data:', data);
+    logger.info('Form Data:', data);
   };
 
   return (

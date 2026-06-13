@@ -1,3 +1,5 @@
+import { createLogger } from "../../../../shared/logger"
+const log = createLogger("api/admin/creator-attribution/rollup")
 import { z } from "zod"
 import { AuthenticatedMedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { CREATOR_ATTRIBUTION_MODULE } from "../../../../modules/creator-attribution"
@@ -35,7 +37,7 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
         .status(400)
         .json({ message: "Validation failed", details: error.issues })
     }
-    console.error("[GET /admin/creator-attribution/rollup] Error:", error.message)
+    log.error("[GET /admin/creator-attribution/rollup] Error:", error.message)
     return res.status(400).json({ message: error.message })
   }
 }

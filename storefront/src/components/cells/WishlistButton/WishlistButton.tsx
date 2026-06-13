@@ -1,4 +1,5 @@
 "use client"
+import { logger } from "@/lib/logger"
 
 import { Button } from "@/components/atoms"
 import { HeartFilledIcon, HeartIcon } from "@/icons"
@@ -39,7 +40,7 @@ export const WishlistButton = ({
         reference: "product",
       })
     } catch (error) {
-      console.error(error)
+      logger.error(error)
     } finally {
       setIsWishlistAdding(false)
     }
@@ -48,7 +49,7 @@ export const WishlistButton = ({
   const handleRemoveFromWishlist = async () => {
     const wishlistId = wishlist?.[0]?.id
     if (!wishlistId) {
-      console.error("Cannot remove from wishlist: wishlist ID not found")
+      logger.error("Cannot remove from wishlist: wishlist ID not found")
       return
     }
 
@@ -60,7 +61,7 @@ export const WishlistButton = ({
         product_id: productId,
       })
     } catch (error) {
-      console.error(error)
+      logger.error(error)
     } finally {
       setIsWishlistAdding(false)
     }

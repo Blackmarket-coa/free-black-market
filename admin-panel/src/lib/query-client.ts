@@ -1,3 +1,4 @@
+import { logger } from "@lib/logger"
 import { QueryClient, QueryCache, MutationCache } from "@tanstack/react-query"
 
 const runtimeBackend = typeof window !== 'undefined' && (window as any).__MEDUSA_BACKEND_URL__
@@ -25,7 +26,7 @@ export const queryClient = new QueryClient({
     onError: (error, query) => {
       // Log errors for debugging in development
       if (process.env.NODE_ENV === 'development') {
-        console.error(`Query error [${query.queryKey}]:`, error)
+        logger.error(`Query error [${query.queryKey}]:`, error)
       }
     },
   }),
@@ -33,7 +34,7 @@ export const queryClient = new QueryClient({
     onError: (error) => {
       // Log mutation errors for debugging in development
       if (process.env.NODE_ENV === 'development') {
-        console.error('Mutation error:', error)
+        logger.error('Mutation error:', error)
       }
     },
   }),

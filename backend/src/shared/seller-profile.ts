@@ -1,3 +1,5 @@
+import { createLogger } from "./logger"
+const log = createLogger("shared/seller-profile")
 import { MedusaRequest } from "@medusajs/framework/http"
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 
@@ -125,7 +127,7 @@ export const fetchSellerProfile = async ({
         response[field] = sellerMetadata[field]
       }
     } catch (error) {
-      console.warn("[fetchSellerProfile] Failed to load seller metadata:", error)
+      log.warn("[fetchSellerProfile] Failed to load seller metadata:", error)
     }
   }
 

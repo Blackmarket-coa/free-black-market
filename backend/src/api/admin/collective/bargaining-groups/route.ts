@@ -1,3 +1,5 @@
+import { createLogger } from "../../../../shared/logger"
+const log = createLogger("api/admin/collective/bargaining-groups")
 import { z } from "zod"
 import { AuthenticatedMedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { BARGAINING_MODULE } from "../../../../modules/bargaining"
@@ -41,7 +43,7 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: "Validation failed", details: error.issues })
     }
-    console.error("[GET /admin/collective/bargaining-groups] Error:", error.message)
+    log.error("[GET /admin/collective/bargaining-groups] Error:", error.message)
     res.status(500).json({ error: "Failed to retrieve bargaining groups" })
   }
 }

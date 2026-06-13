@@ -1,3 +1,5 @@
+import { createLogger } from "../../../../shared/logger"
+const log = createLogger("api/webhooks/hawala/stripe")
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { HAWALA_LEDGER_MODULE } from "../../../../modules/hawala-ledger"
 import HawalaLedgerModuleService from "../../../../modules/hawala-ledger/service"
@@ -21,13 +23,13 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
 
     // SECURITY: Require raw body buffer for proper signature verification
     if (!rawBody || !Buffer.isBuffer(rawBody)) {
-      console.error("Webhook raw body missing or not a buffer - signature verification would be invalid")
+      log.error("Webhook raw body missing or not a buffer - signature verification would be invalid")
       return res.status(400).json({ error: "Invalid request body format" })
     }
 
     const event = await achService.handleWebhook(rawBody, signature)
 
-    console.log(`Stripe webhook received: ${event.type}`)
+    log.info(`Stripe webhook received: ${event.type}`)
 
     switch (event.type) {
       case "payment_intent.succeeded": {
@@ -162,12 +164,12 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       }
 
       default:
-        console.log(`Unhandled Stripe event type: ${event.type}`)
+        log.info(`Unhandled Stripe event type: ${event.type}`)
     }
 
     res.json({ received: true })
   } catch (error) {
-    console.error("Stripe webhook error:", error)
+    log.error("Stripe webhook error:", error)
     res.status(400).json({ error: (error as Error).message })
   }
 }

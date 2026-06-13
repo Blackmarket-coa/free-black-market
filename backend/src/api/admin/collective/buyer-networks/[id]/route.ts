@@ -1,3 +1,5 @@
+import { createLogger } from "../../../../../shared/logger"
+const log = createLogger("api/admin/collective/buyer-networks/[id]")
 import { AuthenticatedMedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { BUYER_NETWORK_MODULE } from "../../../../../modules/buyer-network"
 import BuyerNetworkModuleService from "../../../../../modules/buyer-network/service"
@@ -15,7 +17,7 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
     const details = await networkService.getNetworkDetails(id)
     res.json({ buyer_network: details })
   } catch (error: any) {
-    console.error(`[GET /admin/collective/buyer-networks/${id}] Error:`, error.message)
+    log.error(`[GET /admin/collective/buyer-networks/${id}] Error:`, error.message)
     res.status(error.message.includes("not found") ? 404 : 500).json({
       error: error.message,
     })
@@ -61,7 +63,7 @@ export async function PATCH(req: AuthenticatedMedusaRequest, res: MedusaResponse
     const [updated] = await networkService.listBuyerNetworks({ id })
     res.json({ buyer_network: updated })
   } catch (error: any) {
-    console.error(`[PATCH /admin/collective/buyer-networks/${id}] Error:`, error.message)
+    log.error(`[PATCH /admin/collective/buyer-networks/${id}] Error:`, error.message)
     res.status(400).json({ error: error.message })
   }
 }

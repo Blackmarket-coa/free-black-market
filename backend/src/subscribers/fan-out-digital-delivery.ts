@@ -1,3 +1,5 @@
+import { createLogger } from "../shared/logger"
+const log = createLogger("subscribers/fan-out-digital-delivery")
 import type { SubscriberArgs, SubscriberConfig } from "@medusajs/framework"
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 import { MARKETPLACE_WEBHOOKS_MODULE } from "../modules/marketplace-webhooks"
@@ -88,7 +90,7 @@ export default async function fanOutDigitalDelivery({
     // the order's seller (or a wildcard) receives the event.
     await webhooks.dispatch("digital_delivery.ready", orderId, payload)
   } catch (err) {
-    console.error(
+    log.error(
       `[fan-out-digital-delivery] failed for digital_product_order ${digitalOrderId}:`,
       err
     )

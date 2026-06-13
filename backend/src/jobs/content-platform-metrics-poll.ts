@@ -1,3 +1,5 @@
+import { createLogger } from "../shared/logger"
+const log = createLogger("jobs/content-platform-metrics-poll")
 import { MedusaContainer } from "@medusajs/framework/types"
 import { CREATOR_REWARDS_MODULE } from "../modules/creator-rewards"
 import type CreatorRewardsService from "../modules/creator-rewards/service"
@@ -61,7 +63,7 @@ export default async function contentPlatformMetricsPollJob(
       if (msg.includes("not support")) {
         skipped++
       } else {
-        console.error(
+        log.error(
           `[content-platform-metrics-poll] post ${post.id} failed`,
           err
         )
@@ -70,7 +72,7 @@ export default async function contentPlatformMetricsPollJob(
   }
 
   if (attempted > 0 || updated > 0) {
-    console.log(
+    log.info(
       `[content-platform-metrics-poll] attempted=${attempted} updated=${updated} skipped=${skipped}`
     )
   }

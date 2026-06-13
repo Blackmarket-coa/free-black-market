@@ -1,3 +1,5 @@
+import { createLogger } from "../../../../../shared/logger"
+const log = createLogger("api/vendor/products/[id]/status")
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 import { updateProductsWorkflow } from "@medusajs/medusa/core-flows"
@@ -61,7 +63,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
 
     return res.json({ product: products?.[0] })
   } catch (error: any) {
-    console.error(`Error updating product status ${id}:`, error)
+    log.error(`Error updating product status ${id}:`, error)
     res.status(500).json({ message: "Failed to update product status" })
   }
 }

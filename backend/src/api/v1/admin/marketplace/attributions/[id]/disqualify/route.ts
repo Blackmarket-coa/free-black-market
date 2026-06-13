@@ -1,3 +1,5 @@
+import { createLogger } from "../../../../../../../shared/logger"
+const log = createLogger("api/v1/admin/marketplace/attributions/[id]/disqualify")
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { z } from "zod"
 import { CREATOR_ATTRIBUTION_MODULE } from "../../../../../../../modules/creator-attribution"
@@ -69,7 +71,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       }
     )
   } catch (err) {
-    console.error("[admin/disqualify] webhook dispatch failed", err)
+    log.error("[admin/disqualify] webhook dispatch failed", err)
   }
 
   return res.status(200).json({ attribution: updated })

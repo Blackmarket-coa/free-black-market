@@ -1,3 +1,5 @@
+import { createLogger } from "../../../../../../../shared/logger"
+const log = createLogger("api/v1/seller/services/subcontracts/[id]/dispute")
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { z } from "zod"
 import type { SellerAuthRequest } from "../../../../../../middlewares/seller-context-v1"
@@ -78,7 +80,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     await webhooks.dispatch("subcontract.disputed", sub.parent_seller_id, payload)
     await webhooks.dispatch("subcontract.disputed", sub.subcontract_seller_id, payload)
   } catch (err) {
-    console.error("[subcontract/dispute] webhook dispatch failed", err)
+    log.error("[subcontract/dispute] webhook dispatch failed", err)
   }
 
   // §3 bridge: open the three-party dispute room. vendorId is the counterparty

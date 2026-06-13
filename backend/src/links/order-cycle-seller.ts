@@ -1,3 +1,5 @@
+import { createLogger } from "../shared/logger"
+const log = createLogger("links/order-cycle-seller")
 import { defineLink } from "@medusajs/framework/utils"
 import OrderCycleModule from "../modules/order-cycle"
 
@@ -23,7 +25,7 @@ try {
   try {
     SellerModule = require("../modules/marketplace").default
   } catch {
-    console.warn("No seller module found - order cycle links will not be created")
+    log.warn("No seller module found - order cycle links will not be created")
     SellerModule = null
   }
 }

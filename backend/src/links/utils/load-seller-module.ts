@@ -1,3 +1,5 @@
+import { createLogger } from "../../shared/logger"
+const log = createLogger("links/utils/load-seller-module")
 /**
  * Utility to load the MercurJS SellerModule
  *
@@ -27,7 +29,7 @@ export function loadSellerModule(linkName: string): LoadResult {
   try {
     const SellerModule = require("@mercurjs/framework").SellerModule
     if (SellerModule) {
-      console.log(`${LOG_PREFIX} Loaded SellerModule from @mercurjs/framework`)
+      log.info(`${LOG_PREFIX} Loaded SellerModule from @mercurjs/framework`)
       return { SellerModule, error: null, source: "@mercurjs/framework" }
     }
   } catch (e: any) {
@@ -38,7 +40,7 @@ export function loadSellerModule(linkName: string): LoadResult {
   try {
     const SellerModule = require("@mercurjs/b2c-core/modules/seller").default
     if (SellerModule) {
-      console.log(`${LOG_PREFIX} Loaded SellerModule from @mercurjs/b2c-core/modules/seller`)
+      log.info(`${LOG_PREFIX} Loaded SellerModule from @mercurjs/b2c-core/modules/seller`)
       return { SellerModule, error: null, source: "@mercurjs/b2c-core/modules/seller" }
     }
   } catch (e: any) {
@@ -49,7 +51,7 @@ export function loadSellerModule(linkName: string): LoadResult {
   try {
     const b2cCore = require("@mercurjs/b2c-core")
     if (b2cCore.SellerModule) {
-      console.log(`${LOG_PREFIX} Loaded SellerModule from @mercurjs/b2c-core`)
+      log.info(`${LOG_PREFIX} Loaded SellerModule from @mercurjs/b2c-core`)
       return { SellerModule: b2cCore.SellerModule, error: null, source: "@mercurjs/b2c-core" }
     }
   } catch (e: any) {
@@ -68,7 +70,7 @@ export function loadSellerModule(linkName: string): LoadResult {
     Links requiring SellerModule will not be created.
   `.trim()
 
-  console.error(error)
+  log.error(error)
   return { SellerModule: null, error, source: null }
 }
 

@@ -1,3 +1,5 @@
+import { createLogger } from "../../../shared/logger"
+const log = createLogger("api/admin/seller-metadata")
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 import { SELLER_EXTENSION_MODULE } from "../../../modules/seller-extension"
@@ -89,7 +91,7 @@ export const POST = async (
       },
     })
   } catch (error) {
-    console.warn("Could not create seller-metadata link:", error)
+    log.warn("Could not create seller-metadata link:", error)
   }
 
   return res.status(201).json({

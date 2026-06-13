@@ -1,4 +1,5 @@
 "use server"
+import { logger } from "@/lib/logger"
 
 import { medusaFetch, sdk } from "../config"
 import { HttpTypes } from "@medusajs/types"
@@ -127,7 +128,7 @@ function getErrorMessage(error: any): string {
     return error.errors.map((e: any) => e.message || e).join(", ")
   }
   if (typeof error === "string") return error
-  console.error("Unhandled error:", error)
+  logger.error("Unhandled error:", error)
   return "An unexpected error occurred. Please try again."
 }
 
@@ -176,7 +177,7 @@ export async function signup(formData: FormData) {
 
     return customer
   } catch (error) {
-    console.error("Signup error:", error)
+    logger.error("Signup error:", error)
     return getErrorMessage(error)
   }
 }
@@ -202,24 +203,24 @@ export async function login(formData: FormData) {
       : (tokenResponse as any)?.token
 
     if (!token || typeof token !== "string") {
-      console.error("[login] Invalid token response:", tokenResponse)
+      logger.error("[login] Invalid token response:", tokenResponse)
       return "Login failed: Invalid authentication response"
     }
 
-    console.log("[login] Token received, length:", token.length)
+    logger.info("[login] Token received, length:", token.length)
     await setAuthToken(token)
 
     const customerCacheTag = await getCacheTag("customers")
     revalidateTag(customerCacheTag)
   } catch (error) {
-    console.error("Login error:", error)
+    logger.error("Login error:", error)
     return getErrorMessage(error)
   }
 
   try {
     await transferCart()
   } catch {
-    console.warn("Cart transfer failed — continuing login")
+    logger.warn("Cart transfer failed — continuing login")
   }
 }
 

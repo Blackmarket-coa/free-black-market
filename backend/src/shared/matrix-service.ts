@@ -1,3 +1,5 @@
+import { createLogger } from "./logger"
+const log = createLogger("shared/matrix-service")
 import axios, { AxiosInstance } from "axios"
 
 /**
@@ -143,10 +145,10 @@ export class MatrixService {
         `/_synapse/admin/v2/users/${encodeURIComponent(mxid)}`,
         body
       )
-      console.log(`[Matrix] Ensured user ${mxid}`)
+      log.info(`[Matrix] Ensured user ${mxid}`)
       return { mxid, localpart }
     } catch (error: any) {
-      console.error(
+      log.error(
         "[Matrix] ensureUser failed:",
         error.response?.data || error.message
       )
@@ -187,7 +189,7 @@ export class MatrixService {
       }
       return userAccessToken
     } catch (error: any) {
-      console.error(
+      log.error(
         "[Matrix] admin user login failed:",
         error.response?.data || error.message
       )
@@ -226,7 +228,7 @@ export class MatrixService {
             : 120000,
       }
     } catch (error: any) {
-      console.error(
+      log.error(
         "[Matrix] login token mint failed:",
         error.response?.data || error.message
       )
@@ -270,7 +272,7 @@ export class MatrixService {
       }
       return total
     } catch (error: any) {
-      console.error(
+      log.error(
         "[Matrix] getUnreadCount failed:",
         error.response?.data || error.message
       )
@@ -292,7 +294,7 @@ export class MatrixService {
       if (error.response?.status === 404) {
         return null
       }
-      console.error(
+      log.error(
         "[Matrix] resolveRoomId failed:",
         error.response?.data || error.message
       )
@@ -329,14 +331,14 @@ export class MatrixService {
 
     try {
       const res = await this.client.post("/_matrix/client/v3/createRoom", body)
-      console.log(`[Matrix] Created room ${fullAlias}`)
+      log.info(`[Matrix] Created room ${fullAlias}`)
       return res.data.room_id || null
     } catch (error: any) {
       // Lost a create race — the alias now exists, so resolve it.
       if (error.response?.data?.errcode === "M_ROOM_IN_USE") {
         return this.resolveRoomId(fullAlias)
       }
-      console.error(
+      log.error(
         "[Matrix] ensureRoom failed:",
         error.response?.data || error.message
       )
@@ -353,7 +355,7 @@ export class MatrixService {
     if (roomIdOrAlias.startsWith("#")) {
       const resolved = await this.resolveRoomId(roomIdOrAlias)
       if (!resolved) {
-        console.warn(`[Matrix] invite skipped, alias not found: ${roomIdOrAlias}`)
+        log.warn(`[Matrix] invite skipped, alias not found: ${roomIdOrAlias}`)
         return
       }
       roomId = resolved
@@ -364,7 +366,7 @@ export class MatrixService {
         `/_matrix/client/v3/rooms/${encodeURIComponent(roomId)}/invite`,
         { user_id: mxid }
       )
-      console.log(`[Matrix] Invited ${mxid} to ${roomId}`)
+      log.info(`[Matrix] Invited ${mxid} to ${roomId}`)
     } catch (error: any) {
       const errcode = error.response?.data?.errcode
       const message: string = error.response?.data?.error || ""
@@ -375,7 +377,7 @@ export class MatrixService {
       ) {
         return
       }
-      console.error(
+      log.error(
         "[Matrix] invite failed:",
         error.response?.data || error.message
       )
@@ -404,7 +406,7 @@ export function getMatrixService(): MatrixService | null {
     !process.env.MATRIX_SERVER_NAME ||
     !process.env.MATRIX_ADMIN_TOKEN
   ) {
-    console.log("[Matrix] Service not configured, skipping")
+    log.info("[Matrix] Service not configured, skipping")
     return null
   }
 
@@ -412,7 +414,7 @@ export function getMatrixService(): MatrixService | null {
     try {
       matrixService = new MatrixService()
     } catch (error: any) {
-      console.error("[Matrix] Failed to initialize service:", error.message)
+      log.error("[Matrix] Failed to initialize service:", error.message)
       return null
     }
   }

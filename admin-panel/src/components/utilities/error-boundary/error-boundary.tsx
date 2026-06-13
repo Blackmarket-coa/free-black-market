@@ -1,3 +1,4 @@
+import { logger } from "@lib/logger"
 import { ExclamationCircle } from "@medusajs/icons"
 import { Text } from "@medusajs/ui"
 import { useTranslation } from "react-i18next"
@@ -27,7 +28,7 @@ export const ErrorBoundary = () => {
    * so this ensures that we always log it.
    */
   if (process.env.NODE_ENV === "development") {
-    console.error(error)
+    logger.error(error)
   }
 
   let title: string

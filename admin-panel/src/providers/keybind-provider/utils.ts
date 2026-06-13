@@ -1,3 +1,4 @@
+import { logger } from "@lib/logger"
 import type { Keys, Platform, Shortcut } from "@providers/keybind-provider/types"
 
 export const findFirstPlatformMatch = (keys: Keys) => {
@@ -22,7 +23,7 @@ export const getShortcutKeys = (shortcut: Shortcut) => {
   if (!keys) {
     const defaultPlatform = findFirstPlatformMatch(shortcut.keys)
 
-    console.warn(
+    logger.warn(
       `No keys found for platform "${platform}" in "${shortcut.label}" ${
         defaultPlatform
           ? `using keys for platform "${defaultPlatform.platform}"`

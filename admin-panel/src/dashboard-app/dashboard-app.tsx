@@ -1,3 +1,4 @@
+import { logger } from "@lib/logger"
 import type {
   CustomFieldContainerZone,
   CustomFieldFormTab,
@@ -128,7 +129,7 @@ export class DashboardApp {
     allMenuItems.forEach((item) => {
       if (item.path.includes("/:")) {
         if (process.env.NODE_ENV === "development") {
-          console.warn(
+          logger.warn(
             `[@medusajs/dashboard] Menu item for path "${item.path}" can't be added to the sidebar as it contains a parameter.`
           )
         }
@@ -145,7 +146,7 @@ return
       // Check if this is a nested settings path
       if (isSettingsPath && pathParts.length > 2) {
         if (process.env.NODE_ENV === "development") {
-          console.warn(
+          logger.warn(
             `[@medusajs/dashboard] Nested settings menu item "${item.path}" can't be added to the sidebar. Only top-level settings items are allowed.`
           )
         }
@@ -165,7 +166,7 @@ return // Skip this item entirely
         pathParts.length > 1
       ) {
         if (process.env.NODE_ENV === "development") {
-          console.warn(
+          logger.warn(
             `[@medusajs/dashboard] Nested menu item "${item.path}" can't be added to the sidebar as it is nested under "${parentItem.nested}".`
           )
         }

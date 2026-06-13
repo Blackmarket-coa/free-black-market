@@ -1,3 +1,5 @@
+import { createLogger } from "../../shared/logger"
+const log = createLogger("api/product-feed")
 import type { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import generateProductFeedWorkflow from "../../workflows/product-feed"
 
@@ -23,7 +25,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     res.setHeader("Cache-Control", "public, max-age=3600") // Cache for 1 hour
     res.status(200).send(result.xml)
   } catch (error) {
-    console.error("Error generating product feed:", error)
+    log.error("Error generating product feed:", error)
     res.status(500).json({
       message: "Failed to generate product feed",
       error: error instanceof Error ? error.message : "Unknown error"

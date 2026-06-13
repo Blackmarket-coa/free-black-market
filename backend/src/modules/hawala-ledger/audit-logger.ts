@@ -1,3 +1,5 @@
+import { createLogger } from "../../shared/logger"
+const log = createLogger("modules/hawala-ledger/audit-logger")
 /**
  * Hawala Financial Audit Logger
  * 
@@ -56,7 +58,7 @@ export function logAuditEvent(event: Omit<AuditEvent, "timestamp">) {
   }
 
   // Structured logging for production systems
-  console.log(JSON.stringify({
+  log.info(JSON.stringify({
     level: "audit",
     ...fullEvent,
   }))

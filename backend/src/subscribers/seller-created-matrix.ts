@@ -1,3 +1,5 @@
+import { createLogger } from "../shared/logger"
+const log = createLogger("subscribers/seller-created-matrix")
 import { SubscriberArgs, SubscriberConfig } from "@medusajs/framework"
 import { SELLER_MODULE } from "@mercurjs/b2c-core/modules/seller"
 import {
@@ -29,17 +31,17 @@ export default async function sellerCreatedMatrixHandler({
   const sellerId = event.data.id
 
   if (!sellerId) {
-    console.warn("[sellerCreated Matrix] Event received without seller ID")
+    log.warn("[sellerCreated Matrix] Event received without seller ID")
     return
   }
 
-  console.log(`[sellerCreated Matrix] Processing seller ${sellerId}`)
+  log.info(`[sellerCreated Matrix] Processing seller ${sellerId}`)
 
   try {
     const matrixService = getMatrixService()
 
     if (!matrixService) {
-      console.log("[sellerCreated Matrix] Matrix not configured, skipping")
+      log.info("[sellerCreated Matrix] Matrix not configured, skipping")
       return
     }
 
@@ -49,13 +51,13 @@ export default async function sellerCreatedMatrixHandler({
     })
 
     if (!seller || !seller.members || seller.members.length === 0) {
-      console.warn(`[sellerCreated Matrix] Seller ${sellerId} not found or has no members`)
+      log.warn(`[sellerCreated Matrix] Seller ${sellerId} not found or has no members`)
       return
     }
 
     const member = seller.members[0]
     if (!member.email) {
-      console.warn(`[sellerCreated Matrix] Seller member has no email`)
+      log.warn(`[sellerCreated Matrix] Seller member has no email`)
       return
     }
 
@@ -79,9 +81,9 @@ export default async function sellerCreatedMatrixHandler({
       mxid
     )
 
-    console.log(`[sellerCreated Matrix] Provisioned Matrix account and room for vendor: ${mxid}`)
+    log.info(`[sellerCreated Matrix] Provisioned Matrix account and room for vendor: ${mxid}`)
   } catch (error: any) {
-    console.error(`[sellerCreated Matrix] Failed for seller ${sellerId}:`, error.message)
+    log.error(`[sellerCreated Matrix] Failed for seller ${sellerId}:`, error.message)
     // Don't throw - this is a non-critical enhancement
   }
 }

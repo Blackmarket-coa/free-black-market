@@ -1,3 +1,5 @@
+import { createLogger } from "../../../../../../../shared/logger"
+const log = createLogger("api/v1/admin/marketplace/reward-pools/[id]/distribute")
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { CREATOR_REWARDS_MODULE } from "../../../../../../../modules/creator-rewards"
 import type CreatorRewardsService from "../../../../../../../modules/creator-rewards/service"
@@ -63,7 +65,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       await rewards.markPayoutPaid(payout.id, entry.id)
       succeeded.push(payout.id)
     } catch (err) {
-      console.error(
+      log.error(
         `[admin/distribute] payout ${payout.id} failed`,
         err
       )
@@ -92,7 +94,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       }
     }
   } catch (err) {
-    console.error("[admin/distribute] webhook dispatch failed", err)
+    log.error("[admin/distribute] webhook dispatch failed", err)
   }
 
   return res.status(200).json({

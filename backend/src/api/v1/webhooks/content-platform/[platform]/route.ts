@@ -1,3 +1,5 @@
+import { createLogger } from "../../../../../shared/logger"
+const log = createLogger("api/v1/webhooks/content-platform/[platform]")
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { CONTENT_PLATFORM_MODULE } from "../../../../../modules/content-platform"
 import type ContentPlatformService from "../../../../../modules/content-platform/service"
@@ -91,7 +93,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       snapshotsCreated++
     }
   } catch (err) {
-    console.error("[content-platform-webhook] snapshot ingest failed", err)
+    log.error("[content-platform-webhook] snapshot ingest failed", err)
   }
 
   return res.status(200).json({

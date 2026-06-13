@@ -1,3 +1,5 @@
+import { createLogger } from "../../../../../shared/logger"
+const log = createLogger("api/store/collective/demand-pools/[id]")
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { DEMAND_POOL_MODULE } from "../../../../../modules/demand-pool"
 import DemandPoolModuleService from "../../../../../modules/demand-pool/service"
@@ -27,7 +29,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     res.json({ demand_pool: details })
   } catch (error: unknown) {
     const message = getErrorMessage(error)
-    console.error(`[GET /store/collective/demand-pools/${id}] Error:`, message)
+    log.error(`[GET /store/collective/demand-pools/${id}] Error:`, message)
     res.status(message.toLowerCase().includes("not found") ? 404 : 500).json({
       error: message,
     })
@@ -81,7 +83,7 @@ export async function PATCH(req: MedusaRequest, res: MedusaResponse) {
     res.json({ demand_post: updated })
   } catch (error: unknown) {
     const message = getErrorMessage(error)
-    console.error(`[PATCH /store/collective/demand-pools/${id}] Error:`, message)
+    log.error(`[PATCH /store/collective/demand-pools/${id}] Error:`, message)
     res.status(400).json({ error: message })
   }
 }

@@ -1,3 +1,5 @@
+import { createLogger } from "../../../shared/logger"
+const log = createLogger("workflows/launch-product/steps/emit-launch-events")
 import { createStep, StepResponse } from "@medusajs/framework/workflows-sdk"
 import MarketplaceWebhooksService from "../../../modules/marketplace-webhooks/service"
 import { MARKETPLACE_WEBHOOKS_MODULE } from "../../../modules/marketplace-webhooks"
@@ -61,7 +63,7 @@ const emitLaunchEventsStep = createStep(
       }
     } catch (err) {
       // Never fail a launch because the outbound channel hiccuped.
-      console.error("[launch] emit-launch-events failed:", (err as Error).message)
+      log.error("[launch] emit-launch-events failed:", (err as Error).message)
     }
 
     return new StepResponse({ emitted: true })

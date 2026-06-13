@@ -1,3 +1,5 @@
+import { createLogger } from "../../../../../shared/logger"
+const log = createLogger("api/store/food-deliveries/[id]/subscribe")
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { FOOD_DISTRIBUTION_MODULE } from "../../../../../modules/food-distribution"
 import type FoodDistributionService from "../../../../../modules/food-distribution/service"
@@ -111,7 +113,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       // Send heartbeat to keep connection alive
       res.write(`: heartbeat\n\n`)
     } catch (error) {
-      console.error("SSE polling error:", error)
+      log.error("SSE polling error:", error)
     }
   }, 3000) // Poll every 3 seconds
 

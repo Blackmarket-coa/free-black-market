@@ -1,3 +1,5 @@
+import { createLogger } from "../../../../../../shared/logger"
+const log = createLogger("api/store/collective/demand-pools/[id]/bounties")
 import { z } from "zod"
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { DEMAND_POOL_MODULE } from "../../../../../../modules/demand-pool"
@@ -64,7 +66,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 
     res.json({ bounties: visibleBounties })
   } catch (error: any) {
-    console.error(`[GET /store/collective/demand-pools/${id}/bounties] Error:`, error.message)
+    log.error(`[GET /store/collective/demand-pools/${id}/bounties] Error:`, error.message)
     res.status(500).json({ error: "Failed to retrieve bounties" })
   }
 }
@@ -121,7 +123,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: "Validation failed", details: error.issues })
     }
-    console.error(`[POST /store/collective/demand-pools/${id}/bounties] Error:`, error.message)
+    log.error(`[POST /store/collective/demand-pools/${id}/bounties] Error:`, error.message)
     res.status(400).json({ error: error.message })
   }
 }

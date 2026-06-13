@@ -1,3 +1,5 @@
+import { createLogger } from "../../../shared/logger"
+const log = createLogger("api/vendor/order-cycles")
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { ORDER_CYCLE_MODULE } from "../../../modules/order-cycle"
 import type OrderCycleModuleService from "../../../modules/order-cycle/service"
@@ -38,7 +40,7 @@ export async function GET(
       offset: offsetNum,
     })
   } catch (error) {
-    console.error("Error fetching order cycles:", error)
+    log.error("Error fetching order cycles:", error)
     res.status(500).json({ message: "Failed to fetch order cycles", error: String(error) })
   }
 }
@@ -111,7 +113,7 @@ export async function POST(
 
     res.status(201).json({ order_cycle: orderCycle })
   } catch (error) {
-    console.error("Error creating order cycle:", error)
+    log.error("Error creating order cycle:", error)
     res.status(500).json({ message: "Failed to create order cycle", error: String(error) })
   }
 }

@@ -1,3 +1,5 @@
+import { createLogger } from "../../../../shared/logger"
+const log = createLogger("api/deliveries/[id]/ready")
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework";
 import { MedusaError } from "@medusajs/framework/utils";
 import { DeliveryStatus } from "../../../../modules/delivery/types";
@@ -20,7 +22,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       },
     })
     .catch((error) => {
-      console.log(error)
+      log.info(error)
       return MedusaError.Types.UNEXPECTED_STATE;
     });
 

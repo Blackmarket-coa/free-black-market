@@ -1,3 +1,5 @@
+import { createLogger } from "../../../../shared/logger"
+const log = createLogger("api/store/hawala/withdraw")
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { HAWALA_LEDGER_MODULE } from "../../../../modules/hawala-ledger"
 import HawalaLedgerModuleService from "../../../../modules/hawala-ledger/service"
@@ -96,7 +98,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       message: "Withdrawal initiated. Funds will arrive in 2-3 business days.",
     })
   } catch (error) {
-    console.error("Error processing withdrawal:", error)
+    log.error("Error processing withdrawal:", error)
     res.status(500).json({ error: "Failed to process withdrawal" })
   }
 }

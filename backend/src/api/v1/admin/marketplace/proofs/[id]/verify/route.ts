@@ -1,3 +1,5 @@
+import { createLogger } from "../../../../../../../shared/logger"
+const log = createLogger("api/v1/admin/marketplace/proofs/[id]/verify")
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { WORK_VERIFICATION_MODULE } from "../../../../../../../modules/work-verification"
 import type WorkVerificationService from "../../../../../../../modules/work-verification/service"
@@ -31,7 +33,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       context_id: proof.context_id,
     })
   } catch (err) {
-    console.error("[admin/proof/verify] webhook failed", err)
+    log.error("[admin/proof/verify] webhook failed", err)
   }
   return res.status(200).json({ proof: updated })
 }

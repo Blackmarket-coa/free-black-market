@@ -1,4 +1,5 @@
 "use client"
+import { logger } from "@/lib/logger"
 import { HttpTypes } from "@medusajs/types"
 import { Button, Input } from "@/components/atoms"
 import { Heading, Label } from "@medusajs/ui"
@@ -25,7 +26,7 @@ export default function CartPromotionCode({
       }
       setPromotionCode("")
     } catch (err) {
-      console.log(err)
+      logger.info(err)
     } finally {
       setIsLoading(false)
     }

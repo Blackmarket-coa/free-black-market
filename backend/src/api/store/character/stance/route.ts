@@ -1,3 +1,5 @@
+import { createLogger } from "../../../../shared/logger"
+const log = createLogger("api/store/character/stance")
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { PROGRESSION_MODULE } from "../../../../modules/progression"
 import { isStance } from "../../../../modules/progression/stance"
@@ -30,7 +32,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     const character = await progression.getCharacterSheetSummary(customerId)
     res.json({ character })
   } catch (error) {
-    console.error("Error setting stance:", error)
+    log.error("Error setting stance:", error)
     res.status(500).json({ error: "Failed to set stance" })
   }
 }

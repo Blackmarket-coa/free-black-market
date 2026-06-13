@@ -1,3 +1,5 @@
+import { createLogger } from "../shared/logger"
+const log = createLogger("jobs/donation-batch-disbursement")
 import { MedusaContainer } from "@medusajs/framework/types"
 import { DONATION_MODULE } from "../modules/donation"
 import DonationModuleService from "../modules/donation/service"
@@ -9,9 +11,9 @@ export default async function donationBatchDisbursementJob(container: MedusaCont
 
   const result = await service.queueBatchDisbursement(start, now)
   if ((result as any).skipped) {
-    console.log("[DonationBatch] skipped:", (result as any).reason)
+    log.info("[DonationBatch] skipped:", (result as any).reason)
   } else {
-    console.log("[DonationBatch] queued disbursements:", (result as any).count)
+    log.info("[DonationBatch] queued disbursements:", (result as any).count)
   }
 }
 

@@ -1,3 +1,5 @@
+import { createLogger } from "../../../../shared/logger"
+const log = createLogger("api/vendor/collective/demand-pools")
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { DEMAND_POOL_MODULE } from "../../../../modules/demand-pool"
 import DemandPoolModuleService from "../../../../modules/demand-pool/service"
@@ -45,7 +47,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     })
   } catch (error: unknown) {
     const message = getErrorMessage(error)
-    console.error("[GET /vendor/collective/demand-pools] Error:", message)
+    log.error("[GET /vendor/collective/demand-pools] Error:", message)
     res.status(500).json({ error: "Failed to retrieve demand pools", details: message })
   }
 }

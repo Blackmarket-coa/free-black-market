@@ -1,3 +1,4 @@
+import { logger } from "@lib/logger"
 import { clx } from "@medusajs/ui"
 import type { ComponentPropsWithoutRef, ComponentType } from "react";
 import { Children } from "react"
@@ -43,7 +44,7 @@ const Root = <TData,>({
 
   if (showJSON && !data) {
     if (process.env.NODE_ENV === "development") {
-      console.warn(
+      logger.warn(
         "`showJSON` is true but no data is provided. To display JSON, provide data prop."
       )
     }
@@ -53,7 +54,7 @@ const Root = <TData,>({
 
   if (showMetadata && !data) {
     if (process.env.NODE_ENV === "development") {
-      console.warn(
+      logger.warn(
         "`showMetadata` is true but no data is provided. To display metadata, provide data prop."
       )
     }

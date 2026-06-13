@@ -121,9 +121,9 @@ function loadConfig(): Config {
     
     // In development, log helpful hints
     if (process.env.NODE_ENV !== "production") {
-      console.error("\n❌ Environment configuration errors found:")
-      errors.forEach(e => console.error(e))
-      console.error("\nCheck your .env file and ensure all required variables are set.\n")
+      logger.error("\n❌ Environment configuration errors found:")
+      errors.forEach(e => logger.error(e))
+      logger.error("\nCheck your .env file and ensure all required variables are set.\n")
     }
     
     // Don't throw in development to allow partial startup

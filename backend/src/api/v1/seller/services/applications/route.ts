@@ -1,3 +1,5 @@
+import { createLogger } from "../../../../../shared/logger"
+const log = createLogger("api/v1/seller/services/applications")
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { z } from "zod"
 import type { SellerAuthRequest } from "../../../../middlewares/seller-context-v1"
@@ -69,7 +71,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
         })
       }
     } catch (err) {
-      console.error("[service-applications] webhook dispatch failed", err)
+      log.error("[service-applications] webhook dispatch failed", err)
     }
 
     return res.status(201).json({ application })

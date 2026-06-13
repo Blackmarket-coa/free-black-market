@@ -1,3 +1,4 @@
+import { logger } from "@lib/logger"
 import { useQueryClient } from "@tanstack/react-query";
 import { FocusModal, Button, toast, ProgressTabs } from "@medusajs/ui";
 import { useNavigate, useParams } from "react-router-dom";
@@ -48,7 +49,7 @@ export const AttributeEdit = () => {
         });
         setCategories(response.product_categories);
       } catch (error) {
-        console.error("Failed to fetch categories:", error);
+        logger.error("Failed to fetch categories:", error);
       }
     };
     fetchCategories();
@@ -67,7 +68,7 @@ export const AttributeEdit = () => {
       navigate(-1);
     } catch (error) {
       toast.error((error as Error).message);
-      console.error(error);
+      logger.error(error);
     }
   };
 

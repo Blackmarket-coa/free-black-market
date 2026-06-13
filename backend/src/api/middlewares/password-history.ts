@@ -1,3 +1,5 @@
+import { createLogger } from "../../shared/logger"
+const log = createLogger("api/middlewares/password-history")
 import type {
   MedusaRequest,
   MedusaResponse,
@@ -18,7 +20,7 @@ async function verifyPassword(password: string, hashBase64: string): Promise<boo
     const hashBuffer = Buffer.from(hashBase64, "base64")
     return await Scrypt.verify(hashBuffer, password)
   } catch (error) {
-    console.error("[password-history] Error verifying password:", error)
+    log.error("[password-history] Error verifying password:", error)
     return false
   }
 }
@@ -55,7 +57,7 @@ function decodeResetToken(token: string): { entityId: string; provider: string }
 
     return { entityId, provider }
   } catch (error) {
-    console.error("[password-history] Failed to decode reset token:", error)
+    log.error("[password-history] Failed to decode reset token:", error)
     return null
   }
 }
@@ -75,18 +77,18 @@ export async function preventPasswordReuseMiddleware(
   res: MedusaResponse,
   next: MedusaNextFunction
 ) {
-  console.log(`[password-history] Middleware invoked for ${req.method} ${req.path}`)
+  log.info(`[password-history] Middleware invoked for ${req.method} ${req.path}`)
 
   // Skip if password history is disabled
   if (!PASSWORD_HISTORY_CONFIG.enabled) {
-    console.log("[password-history] Password history disabled, skipping")
+    log.info("[password-history] Password history disabled, skipping")
     return next()
   }
 
   // Only process requests with password in the body
   const body = req.body as Record<string, unknown> | undefined
   if (!body?.password || typeof body.password !== "string") {
-    console.log("[password-history] No password in body, skipping")
+    log.info("[password-history] No password in body, skipping")
     return next()
   }
 
@@ -99,14 +101,14 @@ export async function preventPasswordReuseMiddleware(
     : (req.query.token as string)
 
   if (!token) {
-    console.log("[password-history] No token found, skipping")
+    log.info("[password-history] No token found, skipping")
     return next()
   }
 
   // Decode the reset token to get auth identity info
   const tokenInfo = decodeResetToken(token)
   if (!tokenInfo) {
-    console.warn("[password-history] Could not decode reset token - skipping history check")
+    log.warn("[password-history] Could not decode reset token - skipping history check")
     return next()
   }
 
@@ -127,7 +129,7 @@ export async function preventPasswordReuseMiddleware(
 
     const providerData = providerResult.rows?.[0]
     if (!providerData?.auth_identity_id) {
-      console.warn(`[password-history] Could not find auth identity for email: ${entityId}`)
+      log.warn(`[password-history] Could not find auth identity for email: ${entityId}`)
       return next()
     }
 
@@ -140,7 +142,7 @@ export async function preventPasswordReuseMiddleware(
         try {
           providerMetadata = JSON.parse(providerData.provider_metadata)
         } catch (e) {
-          console.warn("[password-history] Failed to parse provider_metadata:", e)
+          log.warn("[password-history] Failed to parse provider_metadata:", e)
         }
       } else {
         // Already an object (e.g., if using a different query method)
@@ -150,11 +152,11 @@ export async function preventPasswordReuseMiddleware(
 
     const currentPasswordHash = providerMetadata.password as string | undefined
 
-    console.log(`[password-history] Auth identity: ${authIdentityId}`)
-    console.log(`[password-history] Provider metadata keys: ${Object.keys(providerMetadata).join(", ")}`)
-    console.log(`[password-history] Has current password hash: ${!!currentPasswordHash}`)
+    log.info(`[password-history] Auth identity: ${authIdentityId}`)
+    log.info(`[password-history] Provider metadata keys: ${Object.keys(providerMetadata).join(", ")}`)
+    log.info(`[password-history] Has current password hash: ${!!currentPasswordHash}`)
     if (currentPasswordHash) {
-      console.log(`[password-history] Password hash prefix: ${currentPasswordHash.substring(0, 10)}...`)
+      log.info(`[password-history] Password hash prefix: ${currentPasswordHash.substring(0, 10)}...`)
     }
 
     // Get password history for this auth identity
@@ -163,24 +165,24 @@ export async function preventPasswordReuseMiddleware(
       passwordHistoryService = req.scope.resolve(PASSWORD_HISTORY_MODULE)
     } catch (e) {
       // Module not registered yet - skip history check but continue
-      console.warn("[password-history] Password history module not available - skipping history check")
+      log.warn("[password-history] Password history module not available - skipping history check")
     }
 
     // Always check against current password (shouldn't set same password)
     // This check runs regardless of whether the password history module is available
     if (currentPasswordHash) {
-      console.log(`[password-history] Comparing new password against current hash using scrypt...`)
+      log.info(`[password-history] Comparing new password against current hash using scrypt...`)
       const matchesCurrent = await verifyPassword(newPassword, currentPasswordHash)
-      console.log(`[password-history] Password match result: ${matchesCurrent}`)
+      log.info(`[password-history] Password match result: ${matchesCurrent}`)
       if (matchesCurrent) {
-        console.log(`[password-history] User tried to reuse current password for auth_identity: ${authIdentityId}`)
+        log.info(`[password-history] User tried to reuse current password for auth_identity: ${authIdentityId}`)
         return res.status(400).json({
           message: "New password must be different from your current password.",
           type: "password_same_as_current",
         })
       }
     } else {
-      console.log(`[password-history] No current password hash found, skipping current password check`)
+      log.info(`[password-history] No current password hash found, skipping current password check`)
     }
 
     if (passwordHistoryService) {
@@ -197,7 +199,7 @@ export async function preventPasswordReuseMiddleware(
       for (const entry of historyEntries) {
         const isMatch = await verifyPassword(newPassword, entry.password_hash)
         if (isMatch) {
-          console.log(`[password-history] Password reuse detected for auth_identity: ${authIdentityId}`)
+          log.info(`[password-history] Password reuse detected for auth_identity: ${authIdentityId}`)
           return res.status(400).json({
             message: "This password has been used before. Please choose a different password.",
             type: "password_reuse",
@@ -222,10 +224,10 @@ export async function preventPasswordReuseMiddleware(
             },
           ])
           .then(() => {
-            console.log(`[password-history] Stored old password hash for auth_identity: ${authIdentityId}`)
+            log.info(`[password-history] Stored old password hash for auth_identity: ${authIdentityId}`)
           })
           .catch((err) => {
-            console.error("[password-history] Failed to store password history:", err)
+            log.error("[password-history] Failed to store password history:", err)
           })
       }
       return originalSend(data)
@@ -233,7 +235,7 @@ export async function preventPasswordReuseMiddleware(
 
     next()
   } catch (error) {
-    console.error("[password-history] Error checking password history:", error)
+    log.error("[password-history] Error checking password history:", error)
     // Don't block password reset on error - log and continue
     next()
   }

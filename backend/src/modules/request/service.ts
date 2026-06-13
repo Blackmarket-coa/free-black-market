@@ -1,3 +1,5 @@
+import { createLogger } from "../../shared/logger"
+const log = createLogger("modules/request/service")
 import { MedusaService } from "@medusajs/framework/utils"
 import Request, { RequestStatus } from "./models/request"
 
@@ -227,16 +229,16 @@ class RequestModuleService extends MedusaService({
     reviewerId: string,
     reviewerNote?: string
   ) {
-    console.log(`[RequestService] acceptRequestWithReview called for id: ${id}`)
+    log.info(`[RequestService] acceptRequestWithReview called for id: ${id}`)
 
     const existingRequest = await this.getRequestForStatusChange(id)
-    console.log(`[RequestService] Found request with status: ${existingRequest.status}`)
+    log.info(`[RequestService] Found request with status: ${existingRequest.status}`)
 
     this.validateStatusTransition(
       existingRequest.status as RequestStatus,
       RequestStatus.ACCEPTED
     )
-    console.log(`[RequestService] Status transition validated`)
+    log.info(`[RequestService] Status transition validated`)
 
     // Build update data
     const updateData: Record<string, unknown> = {
@@ -248,7 +250,7 @@ class RequestModuleService extends MedusaService({
       updateData.reviewer_note = reviewerNote
     }
 
-    console.log(`[RequestService] Updating request with data:`, JSON.stringify(updateData))
+    log.info(`[RequestService] Updating request with data:`, JSON.stringify(updateData))
 
     // Use retrieveRequest + update pattern for more reliable single-record update
     try {
@@ -266,11 +268,11 @@ class RequestModuleService extends MedusaService({
         throw new Error("Request status update did not persist")
       }
 
-      console.log(`[RequestService] Request updated successfully, new status: ${updatedRequest.status}`)
+      log.info(`[RequestService] Request updated successfully, new status: ${updatedRequest.status}`)
       return updatedRequest
     } catch (error: any) {
-      console.error(`[RequestService] Failed to update request:`, error.message)
-      console.error(`[RequestService] Error stack:`, error.stack)
+      log.error(`[RequestService] Failed to update request:`, error.message)
+      log.error(`[RequestService] Error stack:`, error.stack)
       throw error
     }
   }
@@ -285,7 +287,7 @@ class RequestModuleService extends MedusaService({
     reviewerId: string,
     reason?: string
   ) {
-    console.log(`[RequestService] rejectRequestWithReview called for id: ${id}`)
+    log.info(`[RequestService] rejectRequestWithReview called for id: ${id}`)
 
     const existingRequest = await this.getRequestForStatusChange(id)
 
@@ -323,7 +325,7 @@ class RequestModuleService extends MedusaService({
       throw new Error("Request status update did not persist")
     }
 
-    console.log(`[RequestService] Request rejected successfully`)
+    log.info(`[RequestService] Request rejected successfully`)
     return updatedRequest
   }
 }

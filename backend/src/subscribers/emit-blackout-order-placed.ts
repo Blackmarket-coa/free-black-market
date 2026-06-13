@@ -1,3 +1,5 @@
+import { createLogger } from "../shared/logger"
+const log = createLogger("subscribers/emit-blackout-order-placed")
 import { SubscriberArgs, type SubscriberConfig } from "@medusajs/medusa"
 import { emitBlackoutEvent } from "../lib/blackout-emit"
 import {
@@ -113,7 +115,7 @@ export default async function emitBlackoutOrderPlaced({
       { eventId: `order.created:${orderId}` }
     )
   } catch (err) {
-    console.error(`[emit-blackout-order-placed] failed for order ${orderId}:`, err)
+    log.error(`[emit-blackout-order-placed] failed for order ${orderId}:`, err)
   }
 }
 

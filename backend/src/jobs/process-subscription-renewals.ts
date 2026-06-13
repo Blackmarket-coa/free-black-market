@@ -1,3 +1,5 @@
+import { createLogger } from "../shared/logger"
+const log = createLogger("jobs/process-subscription-renewals")
 import { MedusaContainer } from "@medusajs/framework/types"
 import { SUBSCRIPTION_MODULE } from "../modules/subscription"
 import SubscriptionModuleService from "../modules/subscription/service"
@@ -62,14 +64,14 @@ export default async function processSubscriptionRenewals(
 
   const liveMode = process.env.FBM_SUBSCRIPTION_RENEWAL_LIVE === "1"
 
-  console.log(
+  log.info(
     `[Subscription Job] Starting subscription renewal check (live_mode=${liveMode})...`
   )
 
   try {
     const dueSubscriptions = await subscriptionService.getDueSubscriptions()
 
-    console.log(
+    log.info(
       `[Subscription Job] Found ${dueSubscriptions.length} subscriptions due for renewal`
     )
 
@@ -83,7 +85,7 @@ export default async function processSubscriptionRenewals(
           subscription.expiration_date &&
           new Date() > new Date(subscription.expiration_date)
         ) {
-          console.log(
+          log.info(
             `[Subscription Job] Expiring subscription ${subscription.id}`
           )
           await subscriptionService.expireSubscription(subscription.id)
@@ -95,7 +97,7 @@ export default async function processSubscriptionRenewals(
           // Legacy path — preserved for environments that haven't been
           // cut over to the workflow-driven loop yet.
           await subscriptionService.recordNewSubscriptionOrder(subscription.id)
-          console.log(
+          log.info(
             `[Subscription Job] (legacy) advanced dates for ${subscription.id}`
           )
           continue
@@ -109,13 +111,13 @@ export default async function processSubscriptionRenewals(
         await subscriptionService.clearDunningAttempts(subscription.id)
         await emitSubscriptionState(container, subscription, "activated")
 
-        console.log(
+        log.info(
           `[Subscription Job] Renewed subscription ${subscription.id}`
         )
       } catch (error) {
         const message =
           error instanceof Error ? error.message : "Unknown error"
-        console.error(
+        log.error(
           `[Subscription Job] Renewal failed for ${subscription.id}: ${message}`
         )
 
@@ -134,7 +136,7 @@ export default async function processSubscriptionRenewals(
             },
           })
         } catch (dunningError) {
-          console.error(
+          log.error(
             `[Subscription Job] Dunning workflow failed for ${subscription.id}:`,
             dunningError
           )
@@ -155,7 +157,7 @@ export default async function processSubscriptionRenewals(
       .map((s) => s.id)
 
     if (expiredIds.length > 0) {
-      console.log(
+      log.info(
         `[Subscription Job] Expiring ${expiredIds.length} past-due subscriptions`
       )
       await subscriptionService.expireSubscription(expiredIds)
@@ -164,9 +166,9 @@ export default async function processSubscriptionRenewals(
       }
     }
 
-    console.log("[Subscription Job] Completed subscription renewal check")
+    log.info("[Subscription Job] Completed subscription renewal check")
   } catch (error) {
-    console.error(
+    log.error(
       "[Subscription Job] Error in subscription renewal job:",
       error
     )

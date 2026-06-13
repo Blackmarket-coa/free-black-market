@@ -25,9 +25,11 @@ Effort key: **S** ≤ 1 day · **M** 2–5 days · **L** > 1 week.
 
 | # | Item | Location | Count | Owner | Effort | Target milestone |
 |---|------|----------|------:|-------|:------:|------------------|
-| LG-1 | Replace `console.*` with structured logger in backend runtime | `backend/src/**` | ~172 | backend team | M | `v1.1.0` |
-| LG-2 | Replace `console.*` in storefront request wrappers and middleware | `storefront/src/lib/config.ts`, `storefront/src/lib/data/*`, `storefront/src/middleware.ts`, `storefront/src/app/[locale]/(main)/page.tsx`, `storefront/src/components/sections/*` | 54 | storefront team | S | `v1.1.0` |
-| LG-3 | Replace `console.*` in admin-panel runtime | `admin-panel/src/lib/query-client.ts`, `admin-panel/src/components/layout/pages/*`, `admin-panel/src/components/data-grid/*` | 27 | admin-panel team | S | `v1.1.0` |
+| ~~LG-1~~ | ~~Replace `console.*` with structured logger in backend runtime~~ — **resolved 2026-06-13**: 503 runtime `console.*` calls across 188 files migrated to the existing structured logger `backend/src/shared/logger.ts` (`createLogger`), whose methods were widened to a console-compatible variadic signature (`(message?, ...rest)`) so the migration was a clean level-mapped swap (`log/info`→`info`, `warn`→`warn`, `error`→`error`, `debug`→`debug`); trailing args fold into structured context and a leading `Error` is promoted to the structured `error` field. Excluded by design: `backend/src/scripts/**` (CLI/seed output) and tests. Backend typecheck 0 errors; unit suite green (733 tests; `posture-a-invariants` updated for the single-string log shape). | `backend/src/**` (excl. `scripts/**`, tests) | 0 | — | — | done |
+| ~~LG-2~~ | ~~Replace `console.*` in storefront request wrappers and middleware~~ — **resolved 2026-06-13**: 56 calls across 34 files routed through the **existing** gated `storefront/src/lib/logger.ts` (`import { logger } from "@/lib/logger"`); imports inserted after any `"use client"`/`"use server"` directive. `pnpm typecheck` + `pnpm lint` clean. | `storefront/src/**` | 0 | — | — | done |
+| ~~LG-3~~ | ~~Replace `console.*` in admin-panel runtime~~ — **resolved 2026-06-13**: new `admin-panel/src/lib/logger.ts` (gated, mirrors the storefront logger); 26 calls across 18 files migrated via `@lib/logger` (the `__tests__` translation spec's diagnostic `console.error` left intentionally). Typecheck 0 errors; ESLint 912 warnings (unchanged baseline, under the 1000 cap). | `admin-panel/src/**` (excl. tests) | 0 | — | — | done |
+
+A single repo-wide regression guard `scripts/check-no-console.mjs` (`pnpm check:no-console`, wired into the CI `lint` job) now fails on any bare `console.*` in runtime code, excluding each app's logger file, `backend/src/scripts/**`, and tests. Chosen over three separate ESLint `no-console` rules to keep one mechanism across all three apps and avoid disturbing admin-panel's `--max-warnings 1000` ratchet (LR-1).
 
 ## Lint/typecheck baseline ratchet
 

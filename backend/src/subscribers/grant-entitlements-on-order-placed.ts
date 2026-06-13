@@ -1,3 +1,5 @@
+import { createLogger } from "../shared/logger"
+const log = createLogger("subscribers/grant-entitlements-on-order-placed")
 import { SubscriberArgs, type SubscriberConfig } from "@medusajs/medusa"
 import { ENTITLEMENT_MODULE } from "../modules/entitlement"
 import type EntitlementModuleService from "../modules/entitlement/service"
@@ -58,7 +60,7 @@ export default async function grantEntitlementsOnOrderPlaced({
       source_subscription_id: sourceSubscriptionId,
     })
   } catch (err) {
-    console.error(`[grant-entitlements-on-order-placed] failed for order ${orderId}:`, err)
+    log.error(`[grant-entitlements-on-order-placed] failed for order ${orderId}:`, err)
   }
 }
 

@@ -64,6 +64,48 @@ function getLogLevelFromEnv(): LogLevel {
   return process.env.NODE_ENV === "production" ? "info" : "debug"
 }
 
+/**
+ * Coerce an arbitrary first argument (this logger accepts a console-compatible
+ * variadic signature) into a human-readable message string.
+ */
+function coerceMessage(value: unknown): string {
+  if (typeof value === "string") return value
+  if (value instanceof Error) return value.message
+  if (value === undefined) return ""
+  try {
+    return typeof value === "object" ? JSON.stringify(value) : String(value)
+  } catch {
+    return String(value)
+  }
+}
+
+/**
+ * Fold the trailing console-style arguments into a structured context object and,
+ * for error logging, surface the first Error. Plain objects are merged; primitives
+ * and arrays are collected under `args`.
+ */
+function collectArgs(rest: unknown[]): { context?: LogContext; error?: Error } {
+  let error: Error | undefined
+  const extras: unknown[] = []
+  const merged: LogContext = {}
+  for (const item of rest) {
+    if (item instanceof Error && !error) {
+      error = item
+      continue
+    }
+    if (item && typeof item === "object" && !Array.isArray(item)) {
+      Object.assign(merged, item as LogContext)
+    } else {
+      extras.push(item)
+    }
+  }
+  if (extras.length > 0) {
+    merged.args = extras.length === 1 ? extras[0] : extras
+  }
+  const context = Object.keys(merged).length > 0 ? merged : undefined
+  return { context, error }
+}
+
 class Logger {
   private prefix: string
   private minLevel: LogLevel
@@ -126,29 +168,36 @@ class Logger {
     }
   }
 
-  debug(message: string, context?: LogContext): void {
+  debug(message?: unknown, ...rest: unknown[]): void {
     if (this.shouldLog("debug")) {
-      this.output("debug", this.formatEntry("debug", message, context))
+      const { context } = collectArgs(rest)
+      this.output("debug", this.formatEntry("debug", coerceMessage(message), context))
     }
   }
 
-  info(message: string, context?: LogContext): void {
+  info(message?: unknown, ...rest: unknown[]): void {
     if (this.shouldLog("info")) {
-      this.output("info", this.formatEntry("info", message, context))
+      const { context } = collectArgs(rest)
+      this.output("info", this.formatEntry("info", coerceMessage(message), context))
     }
   }
 
-  warn(message: string, context?: LogContext): void {
+  warn(message?: unknown, ...rest: unknown[]): void {
     if (this.shouldLog("warn")) {
-      this.output("warn", this.formatEntry("warn", message, context))
+      const { context } = collectArgs(rest)
+      this.output("warn", this.formatEntry("warn", coerceMessage(message), context))
     }
   }
 
-  error(message: string, error?: unknown, context?: LogContext): void {
+  error(message?: unknown, ...rest: unknown[]): void {
     if (this.shouldLog("error")) {
-      const err = error instanceof Error ? error : undefined
-      const ctx = error && !(error instanceof Error) ? { ...context, error } : context
-      this.output("error", this.formatEntry("error", message, ctx, err))
+      // A leading Error (e.g. `log.error(err)`) is promoted to the structured error field.
+      const leadError = message instanceof Error ? message : undefined
+      const { context, error } = collectArgs(rest)
+      this.output(
+        "error",
+        this.formatEntry("error", coerceMessage(message), context, error ?? leadError)
+      )
     }
   }
 

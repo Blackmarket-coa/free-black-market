@@ -1,3 +1,5 @@
+import { createLogger } from "../../../shared/logger"
+const log = createLogger("workflows/food-distribution/steps/notify-producer")
 import { createStep, StepResponse } from "@medusajs/framework/workflows-sdk"
 import { FOOD_DISTRIBUTION_MODULE } from "../../../modules/food-distribution"
 import type FoodDistributionService from "../../../modules/food-distribution/service"
@@ -56,7 +58,7 @@ export const notifyProducerStep = createStep(
           }, notificationUrls.length > 0 ? notificationUrls : undefined)
         }
       } catch (error) {
-        console.error("[NotifyProducer] Apprise notification failed:", error)
+        log.error("[NotifyProducer] Apprise notification failed:", error)
         // Don't fail the step if notification fails
       }
     }

@@ -1,3 +1,4 @@
+import { logger } from "@/lib/logger"
 import { NextRequest, NextResponse } from "next/server"
 
 const BACKEND_URL = process.env.MEDUSA_BACKEND_URL || "http://localhost:9000"
@@ -29,7 +30,7 @@ export async function GET(
     const data = await response.json()
     return NextResponse.json(data)
   } catch (error) {
-    console.error("Error fetching provenance:", error)
+    logger.error("Error fetching provenance:", error)
     return NextResponse.json(
       { provenance: null, message: "Internal error" },
       { status: 500 }

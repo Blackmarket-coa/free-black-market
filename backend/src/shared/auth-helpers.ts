@@ -1,3 +1,5 @@
+import { createLogger } from "./logger"
+const log = createLogger("shared/auth-helpers")
 import type { MedusaResponse } from "@medusajs/framework/http"
 import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils"
 import jwt from "jsonwebtoken"
@@ -246,7 +248,7 @@ export function decodeAuthToken(token: string): AuthTokenInfo | null {
 
 export function decodeAuthTokenWithError(token: string): TokenDecodeResult {
   if (!config.JWT_SECRET) {
-    console.error("[Auth] JWT_SECRET not configured")
+    log.error("[Auth] JWT_SECRET not configured")
     return {
       success: false,
       error: "no_secret",
@@ -304,7 +306,7 @@ export function decodeAuthTokenWithError(token: string): TokenDecodeResult {
         message: "Invalid authentication token format. Please log in again.",
       }
     }
-    console.error("[Auth] Unknown JWT verification error:", err)
+    log.error("[Auth] Unknown JWT verification error:", err)
     return {
       success: false,
       error: "unknown_error",

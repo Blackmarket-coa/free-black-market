@@ -27,6 +27,7 @@
   },
   "scripts": {
     "check:vendor-completeness": "node scripts/check-vendor-completeness.mjs",
+    "check:no-console": "node scripts/check-no-console.mjs",
     "validate:hermes-prompt": "node scripts/validate-hermes-prompt.mjs",
     "test:hermes-langgraph": "npx --yes -p tsx tsx --test services/ai-orchestrator/langgraph/supervisor-agent.entrypoint.test.ts",
     "test:hermes-vendor-runtime": "npx --yes -p tsx tsx --test services/ai-orchestrator/langgraph/vendor-runtime.contract.test.ts",

@@ -1,3 +1,5 @@
+import { createLogger } from "../shared/logger"
+const log = createLogger("jobs/asset-graph-settlement-reconciler")
 import { MedusaContainer } from "@medusajs/framework/types"
 import { HAWALA_LEDGER_MODULE } from "../modules/hawala-ledger"
 import { ASSET_GRAPH_MODULE } from "../modules/asset-graph"
@@ -40,7 +42,7 @@ export default async function assetGraphSettlementReconcilerJob(
   const hawala: any = container.resolve(HAWALA_LEDGER_MODULE)
   const assetGraph: any = container.resolve(ASSET_GRAPH_MODULE)
 
-  console.log("[asset-graph-reconciler] Starting unsettled-record sweep")
+  log.info("[asset-graph-reconciler] Starting unsettled-record sweep")
 
   const results = await reconcileAllUnsettled(hawala, assetGraph)
 
@@ -49,7 +51,7 @@ export default async function assetGraphSettlementReconcilerJob(
     return acc
   }, {})
 
-  console.log(
+  log.info(
     `[asset-graph-reconciler] Processed ${results.length} records: ` +
       Object.entries(counts)
         .map(([k, v]) => `${k}=${v}`)
@@ -58,7 +60,7 @@ export default async function assetGraphSettlementReconcilerJob(
 
   const failures = results.filter((r) => r.status === "failed")
   for (const f of failures) {
-    console.error(
+    log.error(
       `[asset-graph-reconciler] FAILED ${f.record_id}: ${
         (f as { error: string }).error
       }`

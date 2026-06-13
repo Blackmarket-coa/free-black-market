@@ -1,3 +1,5 @@
+import { createLogger } from "../../../../../../../../shared/logger"
+const log = createLogger("api/store/collective/demand-pools/[id]/bounties/[bountyId]/claim")
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { DEMAND_POOL_MODULE } from "../../../../../../../../modules/demand-pool"
 import DemandPoolModuleService from "../../../../../../../../modules/demand-pool/service"
@@ -24,7 +26,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
 
     res.status(200).json({ bounty })
   } catch (error: any) {
-    console.error(
+    log.error(
       `[POST /store/collective/demand-pools/${id}/bounties/${bountyId}/claim] Error:`,
       error.message
     )

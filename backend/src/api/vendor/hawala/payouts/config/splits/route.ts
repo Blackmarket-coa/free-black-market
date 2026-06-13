@@ -1,3 +1,5 @@
+import { createLogger } from "../../../../../../shared/logger"
+const log = createLogger("api/vendor/hawala/payouts/config/splits")
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { HAWALA_LEDGER_MODULE } from "../../../../../../modules/hawala-ledger"
 import HawalaLedgerModuleService from "../../../../../../modules/hawala-ledger/service"
@@ -59,7 +61,7 @@ export const POST = async (req: MedusaRequest, res: MedusaResponse) => {
 
     res.status(201).json({ split_rule: rule })
   } catch (error: any) {
-    console.error("Error creating split rule:", error)
+    log.error("Error creating split rule:", error)
     res.status(400).json({ error: error.message })
   }
 }
@@ -102,7 +104,7 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
       })),
     })
   } catch (error: any) {
-    console.error("Error getting split rules:", error)
+    log.error("Error getting split rules:", error)
     res.status(400).json({ error: error.message })
   }
 }

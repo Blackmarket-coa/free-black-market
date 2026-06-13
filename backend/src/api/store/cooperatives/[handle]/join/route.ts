@@ -1,3 +1,5 @@
+import { createLogger } from "../../../../../shared/logger"
+const log = createLogger("api/store/cooperatives/[handle]/join")
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { COOPERATIVE_MODULE } from "../../../../../modules/cooperative"
 import type CooperativeService from "../../../../../modules/cooperative/service"
@@ -35,7 +37,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
 
     return res.status(201).json({ member })
   } catch (error: any) {
-    console.error(`[POST /store/cooperatives/${handle}/join] Error:`, error.message)
+    log.error(`[POST /store/cooperatives/${handle}/join] Error:`, error.message)
     return res.status(400).json({ error: error.message })
   }
 }
@@ -69,7 +71,7 @@ export async function DELETE(req: MedusaRequest, res: MedusaResponse) {
 
     return res.status(200).json(result)
   } catch (error: any) {
-    console.error(`[DELETE /store/cooperatives/${handle}/join] Error:`, error.message)
+    log.error(`[DELETE /store/cooperatives/${handle}/join] Error:`, error.message)
     return res.status(400).json({ error: error.message })
   }
 }

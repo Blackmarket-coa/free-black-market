@@ -1,3 +1,5 @@
+import { createLogger } from "../shared/logger"
+const log = createLogger("subscribers/product-created-sales-channel")
 import {
   SubscriberArgs,
   SubscriberConfig,
@@ -36,7 +38,7 @@ export default async function productCreatedSalesChannelHandler({
     const defaultSalesChannelId = store?.default_sales_channel_id
 
     if (!defaultSalesChannelId) {
-      console.warn(
+      log.warn(
         `[productCreatedSalesChannel] No default sales channel configured for the store`
       )
       return
@@ -67,7 +69,7 @@ export default async function productCreatedSalesChannelHandler({
       },
     })
   } catch (error) {
-    console.error(
+    log.error(
       `[productCreatedSalesChannel] Failed to link product ${productId} to default sales channel:`,
       error
     )

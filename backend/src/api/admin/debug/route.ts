@@ -1,3 +1,5 @@
+import { createLogger } from "../../../shared/logger"
+const log = createLogger("api/admin/debug")
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 
@@ -40,7 +42,7 @@ export async function GET(
       instruction: "POST to this endpoint with {\"action\": \"fix\"} to link orphaned products to sellers"
     })
   } catch (error: any) {
-    console.error("Debug endpoint error:", error)
+    log.error("Debug endpoint error:", error)
     res.status(500).json({
       error: error.message
     })
@@ -120,7 +122,7 @@ export async function POST(
       error: "Invalid action. Use 'diagnose' or 'fix'."
     })
   } catch (error: any) {
-    console.error("Debug endpoint error:", error)
+    log.error("Debug endpoint error:", error)
     res.status(500).json({
       error: error.message
     })

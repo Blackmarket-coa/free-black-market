@@ -1,3 +1,5 @@
+import { createLogger } from "../shared/logger"
+const log = createLogger("api/middlewares")
 import {
   defineMiddlewares,
   authenticate,
@@ -359,7 +361,7 @@ function vendorCorsMiddleware(
       // Invalid URL, continue to rejection
     }
 
-    console.warn(`[VENDOR CORS] Origin not allowed: ${reqOrigin}`);
+    log.warn(`[VENDOR CORS] Origin not allowed: ${reqOrigin}`);
     callback(null, false);
   };
 

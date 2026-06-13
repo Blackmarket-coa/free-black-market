@@ -1,3 +1,5 @@
+import { createLogger } from "../../../../shared/logger"
+const log = createLogger("api/store/analytics/events")
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { CREATOR_ATTRIBUTION_MODULE } from "../../../../modules/creator-attribution"
 import type CreatorAttributionService from "../../../../modules/creator-attribution/service"
@@ -125,7 +127,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     })
   } catch (err) {
     // Never block the storefront on analytics failure — log and 202.
-    console.error("[store/analytics/events] failed:", err)
+    log.error("[store/analytics/events] failed:", err)
     return res.status(202).json({ recorded: false })
   }
 

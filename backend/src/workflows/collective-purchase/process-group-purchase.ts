@@ -1,3 +1,5 @@
+import { createLogger } from "../../shared/logger"
+const log = createLogger("workflows/collective-purchase/process-group-purchase")
 import {
   createWorkflow,
   WorkflowResponse,
@@ -30,7 +32,7 @@ const processGroupPurchaseStep = createStep(
   async (demandPostId, { container }) => {
     if (!demandPostId) return
     // Note: Financial reversals should be handled via refund process
-    console.log(
+    log.info(
       `[process-group-purchase] Compensation triggered for demand post ${demandPostId}. Manual review required for financial reversal.`
     )
   }

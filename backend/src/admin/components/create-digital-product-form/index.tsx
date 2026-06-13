@@ -1,3 +1,5 @@
+import { createLogger } from "../../../shared/logger"
+const log = createLogger("admin/create-digital-product-form")
 import { useState } from "react"
 import { Input, Button, Select, toast } from "@medusajs/ui"
 import { MediaType } from "../../types/index"
@@ -147,14 +149,14 @@ const CreateDigitalProductForm = ({
         onSuccess?.()
       })
       .catch((e) => {
-        console.error(e)
+        log.error(e)
         toast.error("Error", {
           description: `An error occurred while creating the digital product: ${e}`
         })
       })
       .finally(() => setLoading(false))
     } catch (e) {
-      console.error(e)
+      log.error(e)
       setLoading(false)
     }
   }

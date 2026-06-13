@@ -1,3 +1,4 @@
+import { logger } from "@lib/logger"
 // Browser telemetry init for the admin panel.
 // Loaded by the app entrypoint (e.g. main.tsx). Sentry init is dynamic so the
 // dep is optional until the team commits to a SaaS provider.
@@ -20,6 +21,6 @@ export async function initTelemetry(): Promise<void> {
     })
   } catch {
     // eslint-disable-next-line no-console
-    console.warn("[telemetry] @sentry/browser is not installed; skipping init.")
+    logger.warn("[telemetry] @sentry/browser is not installed; skipping init.")
   }
 }

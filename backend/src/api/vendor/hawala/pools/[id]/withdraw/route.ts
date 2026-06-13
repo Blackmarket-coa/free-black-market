@@ -1,3 +1,5 @@
+import { createLogger } from "../../../../../../shared/logger"
+const log = createLogger("api/vendor/hawala/pools/[id]/withdraw")
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { randomUUID } from "crypto"
 import { HAWALA_LEDGER_MODULE } from "../../../../../../modules/hawala-ledger"
@@ -75,7 +77,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       message: `$${amount.toFixed(2)} transferred to earnings account`,
     })
   } catch (error) {
-    console.error("Error withdrawing from pool:", error)
+    log.error("Error withdrawing from pool:", error)
     res.status(400).json({ error: "Failed to process withdrawal" })
   }
 }

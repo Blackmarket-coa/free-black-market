@@ -1,3 +1,5 @@
+import { createLogger } from "../../../../../shared/logger"
+const log = createLogger("api/store/collective/buyer-networks/[id]")
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { BUYER_NETWORK_MODULE } from "../../../../../modules/buyer-network"
 import BuyerNetworkModuleService from "../../../../../modules/buyer-network/service"
@@ -14,7 +16,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     const details = await networkService.getNetworkDetails(id)
     res.json({ buyer_network: details })
   } catch (error: any) {
-    console.error(`[GET buyer-networks/${id}] Error:`, error.message)
+    log.error(`[GET buyer-networks/${id}] Error:`, error.message)
     res.status(error.message.includes("not found") ? 404 : 500).json({
       error: error.message,
     })

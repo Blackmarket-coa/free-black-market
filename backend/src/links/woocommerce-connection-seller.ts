@@ -1,3 +1,5 @@
+import { createLogger } from "../shared/logger"
+const log = createLogger("links/woocommerce-connection-seller")
 import { defineLink } from "@medusajs/framework/utils"
 import WooCommerceImportModule from "../modules/woocommerce-import"
 
@@ -21,14 +23,14 @@ let SellerModule: any = null
 
 try {
   SellerModule = require("@mercurjs/framework").SellerModule
-  console.log(`${LOG_PREFIX} Loaded SellerModule from @mercurjs/framework`)
+  log.info(`${LOG_PREFIX} Loaded SellerModule from @mercurjs/framework`)
 } catch (frameworkError: any) {
   try {
     SellerModule = require("@mercurjs/b2c-core/modules/seller").default
-    console.log(`${LOG_PREFIX} Loaded SellerModule from @mercurjs/b2c-core`)
+    log.info(`${LOG_PREFIX} Loaded SellerModule from @mercurjs/b2c-core`)
   } catch (b2cError: any) {
-    console.error(`${LOG_PREFIX} Failed to load SellerModule`)
-    console.error(`${LOG_PREFIX} woocommerce_connection link will NOT be created`)
+    log.error(`${LOG_PREFIX} Failed to load SellerModule`)
+    log.error(`${LOG_PREFIX} woocommerce_connection link will NOT be created`)
   }
 }
 
@@ -53,9 +55,9 @@ if (SellerModule) {
         isList: false,
       }
     )
-    console.log(`${LOG_PREFIX} Link defined successfully`)
+    log.info(`${LOG_PREFIX} Link defined successfully`)
   } catch (linkError: any) {
-    console.error(`${LOG_PREFIX} Failed to define link: ${linkError.message}`)
+    log.error(`${LOG_PREFIX} Failed to define link: ${linkError.message}`)
     wooConnectionSellerLink = null
   }
 }

@@ -1,3 +1,4 @@
+import { logger } from "@/lib/logger"
 import { medusaFetch } from "@/lib/config"
 
 export interface CmsType {
@@ -68,7 +69,7 @@ export async function getCmsTaxonomy(): Promise<CmsTaxonomy> {
     )
     return response
   } catch (error) {
-    console.error("Failed to fetch CMS taxonomy:", error)
+    logger.error("Failed to fetch CMS taxonomy:", error)
     // Return empty taxonomy on error
     return {
       taxonomy: [],
@@ -92,7 +93,7 @@ export async function getCmsTypes(): Promise<CmsType[]> {
     )
     return response.types || []
   } catch (error) {
-    console.error("Failed to fetch CMS types:", error)
+    logger.error("Failed to fetch CMS types:", error)
     return []
   }
 }
@@ -111,7 +112,7 @@ export async function getCmsTypeByHandle(handle: string): Promise<CmsType | null
     )
     return response.type || null
   } catch (error) {
-    console.error(`Failed to fetch CMS type ${handle}:`, error)
+    logger.error(`Failed to fetch CMS type ${handle}:`, error)
     return null
   }
 }
@@ -130,7 +131,7 @@ export async function getCmsCategoryByHandle(handle: string): Promise<CmsCategor
     )
     return response.category || null
   } catch (error) {
-    console.error(`Failed to fetch CMS category ${handle}:`, error)
+    logger.error(`Failed to fetch CMS category ${handle}:`, error)
     return null
   }
 }
@@ -155,7 +156,7 @@ export async function getCmsTags(options?: {
     })
     return response.tags || []
   } catch (error) {
-    console.error("Failed to fetch CMS tags:", error)
+    logger.error("Failed to fetch CMS tags:", error)
     return []
   }
 }

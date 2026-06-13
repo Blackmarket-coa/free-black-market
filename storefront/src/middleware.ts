@@ -1,3 +1,4 @@
+import { logger } from "@/lib/logger"
 import { HttpTypes } from "@medusajs/types"
 import { NextRequest, NextResponse } from "next/server"
 import { detectEmbedContext } from "./lib/runtime/embed-context"
@@ -16,7 +17,7 @@ async function getRegionMap(cacheId: string) {
 
   if (!BACKEND_URL || !PUBLISHABLE_API_KEY) {
     if (process.env.NODE_ENV === "development") {
-      console.warn(
+      logger.warn(
         "Middleware.ts: MEDUSA_BACKEND_URL/NEXT_PUBLIC_MEDUSA_BACKEND_URL or NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY missing; skipping dynamic region fetch."
       )
     }
@@ -92,7 +93,7 @@ async function getCountryCode(
     return countryCode
   } catch (error) {
     if (process.env.NODE_ENV === "development") {
-      console.error(
+      logger.error(
         "Middleware.ts: Error getting the country code. Did you set up regions in your Medusa Admin and define a MEDUSA_BACKEND_URL environment variable? Note that the variable is no longer named NEXT_PUBLIC_MEDUSA_BACKEND_URL."
       )
     }

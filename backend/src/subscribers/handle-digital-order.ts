@@ -1,3 +1,5 @@
+import { createLogger } from "../shared/logger"
+const log = createLogger("subscribers/handle-digital-order")
 import type {
   SubscriberArgs,
   SubscriberConfig,
@@ -15,7 +17,7 @@ async function digitalProductOrderCreatedHandler({
       }
     })
   } catch (error) {
-    console.error(`[digital-order] Failed to fulfill digital order ${data.id}:`, error)
+    log.error(`[digital-order] Failed to fulfill digital order ${data.id}:`, error)
     // Don't throw - subscriber failure shouldn't crash the event bus
   }
 }

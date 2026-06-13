@@ -1,3 +1,5 @@
+import { createLogger } from "../../../../shared/logger"
+const log = createLogger("api/deliveries/[id]/accept")
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework";
 import { MedusaError } from "@medusajs/framework/utils";
 import { DeliveryStatus } from "../../../../modules/delivery/types";
@@ -25,7 +27,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       },
     })
     .catch((error) => {
-      console.error("[delivery/accept] Failed to update delivery:", error);
+      log.error("[delivery/accept] Failed to update delivery:", error);
       return MedusaError.Types.UNEXPECTED_STATE;
     });
 

@@ -1,3 +1,5 @@
+import { createLogger } from "../../../../../shared/logger"
+const log = createLogger("api/admin/requests/[id]/reject")
 import { z } from "zod"
 import { AuthenticatedMedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { RequestStatus } from "../../../../../modules/request/models"
@@ -59,7 +61,7 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
       return
     }
 
-    console.error(`[POST /admin/requests/${id}/reject] Error:`, error.message)
+    log.error(`[POST /admin/requests/${id}/reject] Error:`, error.message)
     res.status(500).json({
       message: error.message || "Failed to reject request",
     })

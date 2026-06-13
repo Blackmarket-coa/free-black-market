@@ -1,3 +1,5 @@
+import { createLogger } from "../shared/logger"
+const log = createLogger("subscribers/emit-blackout-order-updated")
 import { SubscriberArgs, type SubscriberConfig } from "@medusajs/medusa"
 import { emitBlackoutEvent } from "../lib/blackout-emit"
 import { resolveBlackoutUserId } from "../lib/blackout-identity"
@@ -48,7 +50,7 @@ export default async function emitBlackoutOrderUpdated({
       { eventId: `order.updated:${orderId}:${status}` }
     )
   } catch (err) {
-    console.error(`[emit-blackout-order-updated] failed for order ${orderId}:`, err)
+    log.error(`[emit-blackout-order-updated] failed for order ${orderId}:`, err)
   }
 }
 

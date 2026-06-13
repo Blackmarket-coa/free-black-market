@@ -1,3 +1,5 @@
+import { createLogger } from "../../../../../../shared/logger"
+const log = createLogger("api/store/collective/bargaining-groups/[id]/proposals")
 import { z } from "zod"
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { BARGAINING_MODULE } from "../../../../../../modules/bargaining"
@@ -23,7 +25,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 
     res.json({ proposals })
   } catch (error: any) {
-    console.error(`[GET proposals] Error:`, error.message)
+    log.error(`[GET proposals] Error:`, error.message)
     res.status(500).json({ error: "Failed to retrieve proposals" })
   }
 }
@@ -54,7 +56,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: "Validation failed", details: error.issues })
     }
-    console.error(`[POST counter-offer] Error:`, error.message)
+    log.error(`[POST counter-offer] Error:`, error.message)
     res.status(400).json({ error: error.message })
   }
 }

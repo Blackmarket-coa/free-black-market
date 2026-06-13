@@ -1,3 +1,4 @@
+import { logger } from "@/lib/logger"
 import { NextResponse } from "next/server"
 
 /**
@@ -54,7 +55,7 @@ export async function POST(request: Request) {
   }
 
   if (!BACKEND_URL || !PUBLISHABLE_KEY) {
-    console.warn(
+    logger.warn(
       "[sell-signup] backend not configured; capture not persisted",
       { email: payload.email, store_name: payload.store_name },
     )
@@ -86,7 +87,7 @@ export async function POST(request: Request) {
     }
 
     if (!backendRes.ok) {
-      console.warn("[sell-signup] backend rejected capture", {
+      logger.warn("[sell-signup] backend rejected capture", {
         status: backendRes.status,
         email: payload.email,
       })
@@ -98,7 +99,7 @@ export async function POST(request: Request) {
     const data = await backendRes.json().catch(() => ({ status: "accepted" }))
     return NextResponse.json(data, { status: 202 })
   } catch (err) {
-    console.warn("[sell-signup] backend forward failed", {
+    logger.warn("[sell-signup] backend forward failed", {
       email: payload.email,
       error: err instanceof Error ? err.message : String(err),
     })

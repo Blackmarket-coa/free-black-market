@@ -1,3 +1,5 @@
+import { createLogger } from "../../../../../../shared/logger"
+const log = createLogger("api/v1/seller/programs/[id]/publish")
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import type { SellerAuthRequest } from "../../../../../middlewares/seller-context-v1"
 import { CREATOR_PROGRAM_MODULE } from "../../../../../../modules/creator-program"
@@ -33,7 +35,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       program_type: program.program_type,
     })
   } catch (err) {
-    console.error("[program/publish] webhook dispatch failed", err)
+    log.error("[program/publish] webhook dispatch failed", err)
   }
 
   return res.status(200).json({ program: updated })

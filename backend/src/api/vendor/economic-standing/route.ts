@@ -1,3 +1,5 @@
+import { createLogger } from "../../../shared/logger"
+const log = createLogger("api/vendor/economic-standing")
 import { AuthenticatedMedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 import { requireSellerId } from "../../../shared/auth-helpers"
@@ -84,7 +86,7 @@ export async function GET(
       evaluated_at: new Date().toISOString(),
     })
   } catch (error: any) {
-    console.error("[GET /vendor/economic-standing] Error:", error.message)
+    log.error("[GET /vendor/economic-standing] Error:", error.message)
     res.json(zeroedStanding(null))
   }
 }

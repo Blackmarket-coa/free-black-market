@@ -1,3 +1,5 @@
+import { createLogger } from "../../shared/logger"
+const log = createLogger("modules/hawala-ledger/stripe-ach")
 import Stripe from "stripe"
 
 export interface AchConfig {
@@ -401,7 +403,7 @@ export function createStripeAchService(): StripeAchService {
   }
 
   if (!config.stripeSecretKey) {
-    console.warn("STRIPE_SECRET_KEY not configured - ACH features disabled")
+    log.warn("STRIPE_SECRET_KEY not configured - ACH features disabled")
   }
 
   return new StripeAchService(config)

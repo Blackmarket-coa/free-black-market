@@ -1,3 +1,4 @@
+import { logger } from "@/lib/logger"
 import {
   BannerSection,
   BlogSection,
@@ -61,7 +62,7 @@ export async function generateMetadata({
       return acc
     }, {})
   } catch (error) {
-    console.error("[generateMetadata] listRegions failed:", error)
+    logger.error("[generateMetadata] listRegions failed:", error)
   }
 
   const title = "Home"

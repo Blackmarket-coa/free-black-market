@@ -1,3 +1,5 @@
+import { createLogger } from "../../../../../shared/logger"
+const log = createLogger("api/admin/requests/[id]/approve")
 import { AuthenticatedMedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { REQUEST_MODULE } from "../../../../../modules/request"
 import RequestModuleService from "../../../../../modules/request/service"
@@ -81,7 +83,7 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
       return
     }
 
-    console.error(`[POST /admin/requests/${id}/approve] Error:`, error.message)
+    log.error(`[POST /admin/requests/${id}/approve] Error:`, error.message)
     res.status(500).json({
       message: error.message || "Failed to approve request",
     })

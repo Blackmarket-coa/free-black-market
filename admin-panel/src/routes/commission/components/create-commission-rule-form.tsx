@@ -1,3 +1,4 @@
+import { logger } from "@lib/logger"
 import { useEffect, useState } from "react";
 
 import { Button, Input, Label, Select, Switch, toast } from "@medusajs/ui";
@@ -102,7 +103,7 @@ const CreateCommissionRuleForm = ({ onSuccess }: Props) => {
       onSuccess?.();
     } catch (e: unknown) {
       toast.error("Error!");
-      console.error(e);
+      logger.error(e);
       setLoading(false);
     }
   };

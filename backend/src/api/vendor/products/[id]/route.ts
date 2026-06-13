@@ -1,3 +1,5 @@
+import { createLogger } from "../../../../shared/logger"
+const log = createLogger("api/vendor/products/[id]")
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 import { updateProductsWorkflow } from "@medusajs/medusa/core-flows"
@@ -100,7 +102,7 @@ export async function GET(
 
     return res.status(404).json({ message: "Product not found" })
   } catch (error: any) {
-    console.error(`Error fetching product ${id} for seller ${sellerId}:`, error)
+    log.error(`Error fetching product ${id} for seller ${sellerId}:`, error)
     res.status(500).json({
       message: "Failed to fetch product"
     })
@@ -165,7 +167,7 @@ export async function POST(
 
     return res.status(404).json({ message: "Product not found after update" })
   } catch (error: any) {
-    console.error(`Error updating product ${id} for seller ${sellerId}:`, error)
+    log.error(`Error updating product ${id} for seller ${sellerId}:`, error)
     res.status(500).json({
       message: "Failed to update product"
     })
@@ -217,7 +219,7 @@ export async function DELETE(
       deleted: true
     })
   } catch (error: any) {
-    console.error(`Error deleting product ${id} for seller ${sellerId}:`, error)
+    log.error(`Error deleting product ${id} for seller ${sellerId}:`, error)
     res.status(500).json({
       message: "Failed to delete product"
     })

@@ -1,3 +1,5 @@
+import { createLogger } from "../../../shared/logger"
+const log = createLogger("api/r/[shortCode]")
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { createHash, randomUUID } from "crypto"
 import { CREATOR_ATTRIBUTION_MODULE } from "../../../modules/creator-attribution"
@@ -145,7 +147,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       country,
     })
     .catch((err) => {
-      console.error("[creator-attribution] recordClick failed", err)
+      log.error("[creator-attribution] recordClick failed", err)
     })
 
   // Compose the redirect URL.

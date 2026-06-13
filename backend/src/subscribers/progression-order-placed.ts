@@ -1,3 +1,5 @@
+import { createLogger } from "../shared/logger"
+const log = createLogger("subscribers/progression-order-placed")
 import { SubscriberArgs, type SubscriberConfig } from "@medusajs/medusa"
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 import { PROGRESSION_MODULE } from "../modules/progression"
@@ -44,7 +46,7 @@ export default async function progressionOrderPlaced({
 
     await progression.recomputeAggregates(customerId, query as never)
   } catch (error) {
-    console.error(
+    log.error(
       `[progression-order-placed] Failed to award XP for order ${data.id}:`,
       error
     )

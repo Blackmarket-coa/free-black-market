@@ -1,3 +1,5 @@
+import { createLogger } from "../../../shared/logger"
+const log = createLogger("api/vendor/invoices")
 import type { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { ulid } from "ulid"
 import { invoiceSchema } from "../../../shared/phase0-contracts"
@@ -98,7 +100,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       idempotencyKey: payload.invoice_id,
       handler: async () => undefined,
       publishToDlq: async (message) => {
-        console.error("[POST /vendor/invoices][DLQ]", JSON.stringify(message))
+        log.error("[POST /vendor/invoices][DLQ]", JSON.stringify(message))
       },
       requeue: async (message, delaySeconds) => {
         await requeueWithBackoff(message, delaySeconds)

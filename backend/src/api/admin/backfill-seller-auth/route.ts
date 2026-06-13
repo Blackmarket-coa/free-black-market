@@ -1,3 +1,5 @@
+import { createLogger } from "../../../shared/logger"
+const log = createLogger("api/admin/backfill-seller-auth")
 import { AuthenticatedMedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { Modules, ContainerRegistrationKeys } from "@medusajs/framework/utils"
 
@@ -97,7 +99,7 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
     })
 
   } catch (error: any) {
-    console.error("Backfill error:", error)
+    log.error("Backfill error:", error)
     res.status(500).json({
       success: false,
       error: error.message,

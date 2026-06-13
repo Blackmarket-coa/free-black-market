@@ -1,3 +1,5 @@
+import { createLogger } from "../shared/logger"
+const log = createLogger("subscribers/hawala-order-payment")
 import { SubscriberArgs, SubscriberConfig } from "@medusajs/framework"
 import { HAWALA_LEDGER_MODULE } from "../modules/hawala-ledger"
 import HawalaLedgerModuleService from "../modules/hawala-ledger/service"
@@ -20,10 +22,10 @@ import { emitBlackoutEvent } from "../lib/blackout-emit"
 function centsToDollars(cents: number): number {
   // Sanity check: if value looks like dollars already (has decimals or > $10000), warn
   if (cents !== Math.floor(cents)) {
-    console.warn(`[Hawala] Warning: centsToDollars received non-integer value: ${cents}`)
+    log.warn(`[Hawala] Warning: centsToDollars received non-integer value: ${cents}`)
   }
   if (cents > 0 && cents < 1) {
-    console.warn(`[Hawala] Warning: centsToDollars received value < 1, likely already in dollars: ${cents}`)
+    log.warn(`[Hawala] Warning: centsToDollars received value < 1, likely already in dollars: ${cents}`)
     return cents // Return as-is to avoid double conversion
   }
   return cents / 100
@@ -48,7 +50,7 @@ export default async function hawalaOrderPaymentSubscriber({
   const orderModuleService = container.resolve("order")
 
   const orderId = event.data.id
-  console.log(`[Hawala] Processing payment for order: ${orderId}`)
+  log.info(`[Hawala] Processing payment for order: ${orderId}`)
 
   try {
     // Get order details
@@ -57,14 +59,14 @@ export default async function hawalaOrderPaymentSubscriber({
     })
 
     if (!order) {
-      console.log(`[Hawala] Order not found: ${orderId}`)
+      log.info(`[Hawala] Order not found: ${orderId}`)
       return
     }
 
     // Get or create customer wallet
     const customerId = order.customer_id
     if (!customerId) {
-      console.log(`[Hawala] No customer ID for order: ${orderId}`)
+      log.info(`[Hawala] No customer ID for order: ${orderId}`)
       return
     }
 
@@ -129,7 +131,7 @@ export default async function hawalaOrderPaymentSubscriber({
         creatorSellerId = attribution.creator_seller_id
       }
     } catch (attributionError) {
-      console.warn(`[Hawala] Could not look up creator attribution for order ${orderId}:`, attributionError)
+      log.warn(`[Hawala] Could not look up creator attribution for order ${orderId}:`, attributionError)
     }
 
     // Store the breakdown for this order (for transparency reporting)
@@ -149,7 +151,7 @@ export default async function hawalaOrderPaymentSubscriber({
         order.currency_code
       )
     } catch (breakdownError) {
-      console.warn(`[Hawala] Could not store breakdown for order ${orderId}:`, breakdownError)
+      log.warn(`[Hawala] Could not store breakdown for order ${orderId}:`, breakdownError)
     }
 
     // Check for auto-invest settings
@@ -168,7 +170,7 @@ export default async function hawalaOrderPaymentSubscriber({
       idempotency_key: `order-payment-${orderId}`,
     })
 
-    console.log(`[Hawala] Order ${orderId} processed: ${entries.length} ledger entries created`)
+    log.info(`[Hawala] Order ${orderId} processed: ${entries.length} ledger entries created`)
 
     // §3 bridge: post to the vendor's private ledger room. order.total is in
     // CENTS already, which is exactly the minor-units the contract wants.
@@ -187,7 +189,7 @@ export default async function hawalaOrderPaymentSubscriber({
       { eventId: `ledger.payment_received:${orderId}` }
     )
   } catch (error) {
-    console.error(`[Hawala] Error processing order ${orderId}:`, error)
+    log.error(`[Hawala] Error processing order ${orderId}:`, error)
     // Don't throw - order completion should not fail due to ledger issues
   }
 }

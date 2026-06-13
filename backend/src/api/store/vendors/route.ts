@@ -1,3 +1,5 @@
+import { createLogger } from "../../../shared/logger"
+const log = createLogger("api/store/vendors")
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 
 /**
@@ -463,7 +465,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
           })
         }
       } catch (err) {
-        console.warn("Could not fetch producers:", err)
+        log.warn("Could not fetch producers:", err)
       }
     }
 
@@ -522,7 +524,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
           })
         }
       } catch (err) {
-        console.warn("Could not fetch kitchens:", err)
+        log.warn("Could not fetch kitchens:", err)
       }
     }
 
@@ -577,7 +579,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
           })
         }
       } catch (err) {
-        console.warn("Could not fetch gardens:", err)
+        log.warn("Could not fetch gardens:", err)
       }
     }
 
@@ -664,7 +666,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
           }
         }
       } catch (err) {
-        console.warn("Could not fetch seller metadata:", err)
+        log.warn("Could not fetch seller metadata:", err)
       }
     }
 

@@ -1,3 +1,5 @@
+import { createLogger } from "../../../../../../../../shared/logger"
+const log = createLogger("api/v1/seller/programs/[id]/deals/[dealId]/violate")
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { z } from "zod"
 import type { SellerAuthRequest } from "../../../../../../../middlewares/seller-context-v1"
@@ -69,7 +71,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
         })
       }
     } catch (err) {
-      console.error("[deal/violate] failed to pause links", err)
+      log.error("[deal/violate] failed to pause links", err)
     }
   }
 
@@ -86,7 +88,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     await webhooks.dispatch("creator.deal.violated", sellerId, payload)
     await webhooks.dispatch("creator.deal.violated", deal.creator_seller_id, payload)
   } catch (err) {
-    console.error("[deal/violate] webhook dispatch failed", err)
+    log.error("[deal/violate] webhook dispatch failed", err)
   }
 
   return res.status(200).json({ deal: updated })

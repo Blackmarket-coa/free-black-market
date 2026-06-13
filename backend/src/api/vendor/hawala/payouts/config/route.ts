@@ -1,3 +1,5 @@
+import { createLogger } from "../../../../../shared/logger"
+const log = createLogger("api/vendor/hawala/payouts/config")
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { HAWALA_LEDGER_MODULE } from "../../../../../modules/hawala-ledger"
 import HawalaLedgerModuleService from "../../../../../modules/hawala-ledger/service"
@@ -54,7 +56,7 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
       })),
     })
   } catch (error: any) {
-    console.error("Error getting payout config:", error)
+    log.error("Error getting payout config:", error)
     res.status(400).json({ error: error.message })
   }
 }
@@ -94,7 +96,7 @@ export const PUT = async (req: MedusaRequest, res: MedusaResponse) => {
 
     res.json({ config: updated })
   } catch (error: any) {
-    console.error("Error updating payout config:", error)
+    log.error("Error updating payout config:", error)
     res.status(400).json({ error: error.message })
   }
 }

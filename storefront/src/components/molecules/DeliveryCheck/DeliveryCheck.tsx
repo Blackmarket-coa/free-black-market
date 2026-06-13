@@ -1,4 +1,5 @@
 "use client"
+import { logger } from "@/lib/logger"
 
 import { useState, useEffect, useCallback } from "react"
 
@@ -90,7 +91,7 @@ export function DeliveryCheck({
       setResult(data)
       onAvailabilityChange?.(data)
     } catch (err) {
-      console.error("Delivery check error:", err)
+      logger.error("Delivery check error:", err)
       setError("Unable to check delivery availability. Please try again.")
       onAvailabilityChange?.(null)
     } finally {

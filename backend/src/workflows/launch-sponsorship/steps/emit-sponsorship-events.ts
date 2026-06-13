@@ -1,3 +1,5 @@
+import { createLogger } from "../../../shared/logger"
+const log = createLogger("workflows/launch-sponsorship/steps/emit-sponsorship-events")
 import { createStep, StepResponse } from "@medusajs/framework/workflows-sdk"
 import MarketplaceWebhooksService from "../../../modules/marketplace-webhooks/service"
 import { MARKETPLACE_WEBHOOKS_MODULE } from "../../../modules/marketplace-webhooks"
@@ -49,7 +51,7 @@ const emitSponsorshipEventsStep = createStep(
         { eventId: `sponsorship.created:${data.launch_id}` }
       )
     } catch (err) {
-      console.error(
+      log.error(
         "[sponsorship] emit-sponsorship-events failed:",
         (err as Error).message
       )
