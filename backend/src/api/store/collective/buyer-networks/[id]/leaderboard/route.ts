@@ -1,3 +1,5 @@
+import { createLogger } from "../../../../../../shared/logger"
+const log = createLogger("api/store/collective/buyer-networks/[id]/leaderboard")
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { BUYER_NETWORK_MODULE } from "../../../../../../modules/buyer-network"
 import BuyerNetworkModuleService from "../../../../../../modules/buyer-network/service"
@@ -15,7 +17,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     const leaderboard = await networkService.getNetworkLeaderboard(id, limit)
     res.json({ leaderboard })
   } catch (error: any) {
-    console.error(`[GET leaderboard] Error:`, error.message)
+    log.error(`[GET leaderboard] Error:`, error.message)
     res.status(500).json({ error: "Failed to retrieve leaderboard" })
   }
 }

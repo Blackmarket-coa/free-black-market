@@ -1,3 +1,5 @@
+import { createLogger } from "../../../shared/logger"
+const log = createLogger("api/admin/auth-debug")
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 
@@ -192,7 +194,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       diagnosis,
     })
   } catch (error: any) {
-    console.error("[auth-debug] Error:", error)
+    log.error("[auth-debug] Error:", error)
     return res.status(500).json({
       error: error.message,
       stack: process.env.NODE_ENV === "development" ? error.stack : undefined,

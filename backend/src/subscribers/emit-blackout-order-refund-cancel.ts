@@ -1,3 +1,5 @@
+import { createLogger } from "../shared/logger"
+const log = createLogger("subscribers/emit-blackout-order-refund-cancel")
 import { SubscriberArgs, type SubscriberConfig } from "@medusajs/medusa"
 import { emitBlackoutEvent } from "../lib/blackout-emit"
 import {
@@ -98,7 +100,7 @@ export default async function emitBlackoutOrderRefundCancel({
       }
     }
   } catch (err) {
-    console.error(`[emit-blackout-order-refund-cancel] failed for order ${orderId}:`, err)
+    log.error(`[emit-blackout-order-refund-cancel] failed for order ${orderId}:`, err)
   }
 }
 

@@ -1,3 +1,5 @@
+import { createLogger } from "../shared/logger"
+const log = createLogger("subscribers/attribute-order-on-placed")
 import { SubscriberArgs, type SubscriberConfig } from "@medusajs/medusa"
 import { CREATOR_ATTRIBUTION_MODULE } from "../modules/creator-attribution"
 import CreatorAttributionService from "../modules/creator-attribution/service"
@@ -115,12 +117,12 @@ export default async function attributeOrderOnPlacedSubscriber({
           )
         }
       } catch (err) {
-        console.error("[attribute-order-on-placed] webhook dispatch failed", err)
+        log.error("[attribute-order-on-placed] webhook dispatch failed", err)
       }
     }
   } catch (err) {
     // Never fail the order placement because attribution failed.
-    console.error(`[attribute-order-on-placed] failed for order ${orderId}:`, err)
+    log.error(`[attribute-order-on-placed] failed for order ${orderId}:`, err)
   }
 }
 

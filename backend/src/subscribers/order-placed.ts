@@ -1,3 +1,5 @@
+import { createLogger } from "../shared/logger"
+const log = createLogger("subscribers/order-placed")
 ﻿import { SubscriberArgs, type SubscriberConfig } from "@medusajs/medusa"
 import { TICKET_BOOKING_MODULE } from "../modules/ticket-booking"
 import TicketBookingModuleService from "../modules/ticket-booking/service"
@@ -69,7 +71,7 @@ export default async function handleOrderPlaced({
     },
   })
   } catch (error) {
-    console.error(`[order-placed] Failed to process order ${data.id}:`, error)
+    log.error(`[order-placed] Failed to process order ${data.id}:`, error)
     // Don't throw - notification failure shouldn't break the order flow
   }
 }

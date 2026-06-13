@@ -1,3 +1,4 @@
+import { logger } from "@/lib/logger"
 import { Footer, Header } from "@/components/organisms"
 import { BackToTop } from "@/components/atoms"
 import { MobileLauncher } from "@/components/molecules"
@@ -24,7 +25,7 @@ export default async function RootLayout({
   try {
     regionIsValid = await checkRegion(locale)
   } catch (error) {
-    console.error("[RootLayout] Region check failed:", error)
+    logger.error("[RootLayout] Region check failed:", error)
   }
 
   if (!regionIsValid) {

@@ -124,11 +124,12 @@ describe("posture-a-guard: warn / off modes", () => {
   }
 
   it("warn mode logs but does not throw", () => {
+    // Routed through the structured logger, which formats message + context into a
+    // single string before handing it to console.warn.
     const spy = jest.spyOn(console, "warn").mockImplementation(() => {})
     expect(() => assertPurchaseContext(base, "warn")).not.toThrow()
     expect(spy).toHaveBeenCalledWith(
-      expect.stringContaining("Posture A closed-loop violation"),
-      expect.any(Object)
+      expect.stringContaining("Posture A closed-loop violation")
     )
     spy.mockRestore()
   })

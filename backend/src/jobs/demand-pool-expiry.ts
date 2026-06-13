@@ -1,3 +1,5 @@
+import { createLogger } from "../shared/logger"
+const log = createLogger("jobs/demand-pool-expiry")
 import { MedusaContainer } from "@medusajs/framework/types"
 import { DEMAND_POOL_MODULE } from "../modules/demand-pool"
 import { DemandPostStatus } from "../modules/demand-pool/models/demand-post"
@@ -75,7 +77,7 @@ export default async function demandPoolExpiryJob(
     container.resolve<DemandPoolModuleService>(DEMAND_POOL_MODULE)
   const collectiveHawala = getCollectiveHawalaService(container)
 
-  console.log("[demand-pool-expiry] Starting overdue-pool sweep")
+  log.info("[demand-pool-expiry] Starting overdue-pool sweep")
 
   const results = await expireOverduePools(
     demandPoolService,
@@ -86,13 +88,13 @@ export default async function demandPoolExpiryJob(
   const expired = results.filter((r) => r.status === "expired").length
   const failed = results.filter((r) => r.status === "failed")
 
-  console.log(
+  log.info(
     `[demand-pool-expiry] Processed ${results.length} overdue pools: ` +
       `expired=${expired}, failed=${failed.length}`
   )
 
   for (const f of failed) {
-    console.error(
+    log.error(
       `[demand-pool-expiry] FAILED ${f.demand_post_id}: ${f.error}`
     )
   }

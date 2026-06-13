@@ -1,3 +1,5 @@
+import { createLogger } from "../../../shared/logger"
+const log = createLogger("api/vendor/seller-products")
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils"
 import { createProductsWorkflow } from "@medusajs/medusa/core-flows"
@@ -169,7 +171,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
 
       await linkSellerInventoryItems(req, resolvedSellerId, createdProduct.id)
     } catch (linkError: any) {
-      console.warn(
+      log.warn(
         `Could not create seller-product link for ${createdProduct.id}: ${linkError.message}`
       )
     }
@@ -200,7 +202,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
   } catch (error: any) {
     const status = getErrorStatus(error)
 
-    console.error("Error creating product for seller", {
+    log.error("Error creating product for seller", {
       sellerId: resolvedSellerId,
       status,
       message: error?.message,

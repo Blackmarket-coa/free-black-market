@@ -1,4 +1,5 @@
 "use client"
+import { logger } from "@/lib/logger"
 
 import { useState, useEffect } from "react"
 import Link from "next/link"
@@ -43,7 +44,7 @@ export function JustJoinedVendors() {
         const data = await response.json()
         setVendors(data.vendors || [])
       } catch (error) {
-        console.error("Error fetching recently joined vendors:", error)
+        logger.error("Error fetching recently joined vendors:", error)
       } finally {
         setLoading(false)
       }

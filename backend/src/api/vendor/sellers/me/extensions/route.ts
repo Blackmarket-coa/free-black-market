@@ -1,3 +1,5 @@
+import { createLogger } from "../../../../../shared/logger"
+const log = createLogger("api/vendor/sellers/me/extensions")
 import { AuthenticatedMedusaRequest, MedusaResponse } from "@medusajs/framework"
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 import { requireSellerId } from "../../../../../shared"
@@ -57,7 +59,7 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
     return res.json({ seller })
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : "Unknown error"
-    console.error("[POST /vendor/sellers/me/extensions] Error:", errorMessage)
+    log.error("[POST /vendor/sellers/me/extensions] Error:", errorMessage)
     return res.status(500).json({
       type: "server_error",
       message: "Failed to update seller extensions",

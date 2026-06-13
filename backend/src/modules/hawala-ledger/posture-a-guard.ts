@@ -1,3 +1,5 @@
+import { createLogger } from "../../shared/logger"
+const log = createLogger("modules/hawala-ledger/posture-a-guard")
 /**
  * Coalition Credits closed-loop guard (Posture A).
  *
@@ -146,7 +148,7 @@ export const assertPurchaseContext = (
   }
 
   if (mode === "warn") {
-    console.warn(
+    log.warn(
       "[hawala-ledger] Posture A closed-loop violation (warn mode): " +
         "CCR transfer outside a goods/services purchase context. " +
         "See docs/POSTURE_A_COMPLIANCE.md.",
@@ -284,7 +286,7 @@ const raiseOrWarn = (
 ): void => {
   if (mode === "off") return
   if (mode === "warn") {
-    console.warn(`[hawala-ledger] ${message}`, details)
+    log.warn(`[hawala-ledger] ${message}`, details)
     return
   }
   throw new ClosedLoopViolationError(message, details)

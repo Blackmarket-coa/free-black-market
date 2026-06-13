@@ -1,4 +1,5 @@
 "use server"
+import { logger } from "@/lib/logger"
 
 import { medusaFetch } from "../config"
 import { getAuthHeaders } from "./cookies"
@@ -36,7 +37,7 @@ export async function getMatrixChatConfig(): Promise<MatrixChatConfig | null> {
 
     return config
   } catch (error) {
-    console.error("[getMatrixChatConfig] Error:", error)
+    logger.error("[getMatrixChatConfig] Error:", error)
     return null
   }
 }
@@ -60,7 +61,7 @@ export async function getMatrixUnread(): Promise<number> {
 
     return result?.unread_count ?? 0
   } catch (error) {
-    console.error("[getMatrixUnread] Error:", error)
+    logger.error("[getMatrixUnread] Error:", error)
     return 0
   }
 }

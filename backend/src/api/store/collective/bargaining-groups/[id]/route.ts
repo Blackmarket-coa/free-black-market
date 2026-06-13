@@ -1,3 +1,5 @@
+import { createLogger } from "../../../../../shared/logger"
+const log = createLogger("api/store/collective/bargaining-groups/[id]")
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { BARGAINING_MODULE } from "../../../../../modules/bargaining"
 import BargainingModuleService from "../../../../../modules/bargaining/service"
@@ -14,7 +16,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     const details = await bargainingService.getGroupDetails(id)
     res.json({ bargaining_group: details })
   } catch (error: any) {
-    console.error(`[GET /store/collective/bargaining-groups/${id}] Error:`, error.message)
+    log.error(`[GET /store/collective/bargaining-groups/${id}] Error:`, error.message)
     res.status(error.message.includes("not found") ? 404 : 500).json({
       error: error.message,
     })
@@ -62,7 +64,7 @@ export async function PATCH(req: MedusaRequest, res: MedusaResponse) {
 
     res.status(400).json({ error: "Invalid action" })
   } catch (error: any) {
-    console.error(`[PATCH /store/collective/bargaining-groups/${id}] Error:`, error.message)
+    log.error(`[PATCH /store/collective/bargaining-groups/${id}] Error:`, error.message)
     res.status(400).json({ error: error.message })
   }
 }

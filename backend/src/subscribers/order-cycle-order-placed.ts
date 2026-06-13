@@ -1,3 +1,5 @@
+import { createLogger } from "../shared/logger"
+const log = createLogger("subscribers/order-cycle-order-placed")
 import { SubscriberArgs, SubscriberConfig } from "@medusajs/framework"
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 import { ORDER_CYCLE_MODULE } from "../modules/order-cycle"
@@ -20,7 +22,7 @@ export default async function orderPlacedHandler({
   const query = container.resolve(ContainerRegistrationKeys.QUERY)
   const remoteLink = container.resolve(ContainerRegistrationKeys.REMOTE_LINK)
   
-  console.log(`[Order Cycle Subscriber] Processing order ${orderId}`)
+  log.info(`[Order Cycle Subscriber] Processing order ${orderId}`)
   
   try {
     // Get order with line items
@@ -39,7 +41,7 @@ export default async function orderPlacedHandler({
     const order = orders[0]
     
     if (!order) {
-      console.log(`[Order Cycle Subscriber] Order ${orderId} not found`)
+      log.info(`[Order Cycle Subscriber] Order ${orderId} not found`)
       return
     }
     
@@ -52,14 +54,14 @@ export default async function orderPlacedHandler({
       return
     }
     
-    console.log(`[Order Cycle Subscriber] Order ${orderId} placed in cycle ${orderCycleId}`)
+    log.info(`[Order Cycle Subscriber] Order ${orderId} placed in cycle ${orderCycleId}`)
     
     // Verify the order cycle exists and is valid
     let orderCycle
     try {
       orderCycle = await orderCycleService.retrieveOrderCycle(orderCycleId)
     } catch {
-      console.log(`[Order Cycle Subscriber] Order cycle ${orderCycleId} not found`)
+      log.info(`[Order Cycle Subscriber] Order cycle ${orderCycleId} not found`)
       return
     }
     
@@ -72,10 +74,10 @@ export default async function orderPlacedHandler({
       
       try {
         await orderCycleService.recordSale(orderCycleId, variantId, quantity)
-        console.log(`[Order Cycle Subscriber] Recorded sale: ${quantity}x ${variantId}`)
+        log.info(`[Order Cycle Subscriber] Recorded sale: ${quantity}x ${variantId}`)
       } catch (error) {
         // Product might not be in the cycle - that's okay
-        console.log(`[Order Cycle Subscriber] Could not record sale for ${variantId}:`, error)
+        log.info(`[Order Cycle Subscriber] Could not record sale for ${variantId}:`, error)
       }
     }
     
@@ -89,13 +91,13 @@ export default async function orderPlacedHandler({
           order_cycle_id: orderCycleId,
         },
       })
-      console.log(`[Order Cycle Subscriber] Linked order ${orderId} to cycle ${orderCycleId}`)
+      log.info(`[Order Cycle Subscriber] Linked order ${orderId} to cycle ${orderCycleId}`)
     } catch (error) {
-      console.log(`[Order Cycle Subscriber] Could not link order:`, error)
+      log.info(`[Order Cycle Subscriber] Could not link order:`, error)
     }
     
   } catch (error) {
-    console.error(`[Order Cycle Subscriber] Error processing order ${orderId}:`, error)
+    log.error(`[Order Cycle Subscriber] Error processing order ${orderId}:`, error)
   }
 }
 

@@ -1,3 +1,5 @@
+import { createLogger } from "../../../../shared/logger"
+const log = createLogger("api/store/printful/webhooks")
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { createHmac, timingSafeEqual } from "crypto"
 
@@ -20,25 +22,25 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
 
     switch (eventType) {
       case "package_shipped":
-        console.info("Printful package_shipped webhook received", payload.data)
+        log.info("Printful package_shipped webhook received", payload.data)
         break
       case "order_failed":
-        console.warn("Printful order_failed webhook received", payload.data)
+        log.warn("Printful order_failed webhook received", payload.data)
         break
       case "order_canceled":
-        console.info("Printful order_canceled webhook received", payload.data)
+        log.info("Printful order_canceled webhook received", payload.data)
         break
       case "product_synced":
-        console.info("Printful product_synced webhook received", payload.data)
+        log.info("Printful product_synced webhook received", payload.data)
         break
       default:
-        console.info(`Unhandled Printful webhook event: ${eventType}`)
+        log.info(`Unhandled Printful webhook event: ${eventType}`)
         break
     }
 
     return res.status(200).json({ received: true })
   } catch (error) {
-    console.error("Failed to process Printful webhook", error)
+    log.error("Failed to process Printful webhook", error)
     return res.status(500).json({ error: "Failed to process webhook" })
   }
 }

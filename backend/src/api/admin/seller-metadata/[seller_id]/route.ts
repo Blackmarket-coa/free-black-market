@@ -1,3 +1,5 @@
+import { createLogger } from "../../../../shared/logger"
+const log = createLogger("api/admin/seller-metadata/[seller_id]")
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils"
 import { IEventBusModuleService } from "@medusajs/framework/types"
@@ -118,7 +120,7 @@ export const PUT = async (
         seller_id,
       },
     })
-    console.log(`Emitted vendor.verified event for seller ${seller_id}`)
+    log.info(`Emitted vendor.verified event for seller ${seller_id}`)
   }
 
   return res.json({

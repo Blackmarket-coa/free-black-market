@@ -1,3 +1,5 @@
+import { createLogger } from "../../../shared/logger"
+const log = createLogger("api/health/ready")
 /**
  * Readiness Check Endpoint
  *
@@ -61,7 +63,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       checks.database = result !== null
       lastDbCheck = { healthy: checks.database, timestamp: now }
     } catch (error) {
-      console.error("[Health] Database check failed:", error)
+      log.error("[Health] Database check failed:", error)
       checks.database = false
       lastDbCheck = { healthy: false, timestamp: now }
     }
@@ -74,7 +76,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       const redisCheckPromise = cache.isAvailable()
       checks.redis = await withTimeout(redisCheckPromise, 2000, false)
     } catch (error) {
-      console.error("[Health] Redis check failed:", error)
+      log.error("[Health] Redis check failed:", error)
       checks.redis = false
     }
   }

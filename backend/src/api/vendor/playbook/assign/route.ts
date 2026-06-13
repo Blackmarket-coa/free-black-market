@@ -1,3 +1,5 @@
+import { createLogger } from "../../../../shared/logger"
+const log = createLogger("api/vendor/playbook/assign")
 import { AuthenticatedMedusaRequest, MedusaResponse } from "@medusajs/framework"
 import { requireSellerId } from "../../../../shared"
 import {
@@ -87,7 +89,7 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
     return res.json({ playbook_assignment: assignment ?? null })
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Unknown error"
-    console.error("[GET /vendor/playbook/assign] Error:", message)
+    log.error("[GET /vendor/playbook/assign] Error:", message)
     return res.status(500).json({
       type: "server_error",
       message: "Failed to fetch playbook assignment",
@@ -162,7 +164,7 @@ export async function POST(
     return res.json({ playbook_assignment: result.playbook_assignment })
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Unknown error"
-    console.error("[POST /vendor/playbook/assign] Error:", message)
+    log.error("[POST /vendor/playbook/assign] Error:", message)
     return res.status(500).json({
       type: "server_error",
       message: `Failed to assign playbook: ${message}`,

@@ -1,3 +1,5 @@
+import { createLogger } from "../shared/logger"
+const log = createLogger("links/subscription-seller")
 import { defineLink } from "@medusajs/framework/utils"
 import SubscriptionModule from "../modules/subscription"
 
@@ -13,7 +15,7 @@ try {
   try {
     SellerModule = require("@mercurjs/b2c-core/modules/seller").default
   } catch {
-    console.warn("No seller module found - subscription-seller links will not be created")
+    log.warn("No seller module found - subscription-seller links will not be created")
     SellerModule = null
   }
 }

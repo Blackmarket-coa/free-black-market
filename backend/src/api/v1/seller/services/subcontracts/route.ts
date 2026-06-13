@@ -1,3 +1,5 @@
+import { createLogger } from "../../../../../shared/logger"
+const log = createLogger("api/v1/seller/services/subcontracts")
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { z } from "zod"
 import type { SellerAuthRequest } from "../../../../middlewares/seller-context-v1"
@@ -103,7 +105,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       escrowLedgerEntryId: entry.id,
     })
   } catch (err) {
-    console.error("[subcontracts] escrow open failed", err)
+    log.error("[subcontracts] escrow open failed", err)
     return res.status(402).json({
       message: `Subcontract proposed but escrow failed: ${(err as Error).message}`,
       type: "escrow_failed",
@@ -124,7 +126,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     await webhooks.dispatch("subcontract.proposed", sellerId, payload)
     await webhooks.dispatch("subcontract.proposed", contract.service_seller_id, payload)
   } catch (err) {
-    console.error("[subcontracts] webhook dispatch failed", err)
+    log.error("[subcontracts] webhook dispatch failed", err)
   }
 
   return res.status(201).json({ subcontract: sub })

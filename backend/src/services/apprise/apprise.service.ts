@@ -1,3 +1,5 @@
+import { createLogger } from "../../shared/logger"
+const log = createLogger("services/apprise/apprise.service")
 /**
  * Apprise Notification Service
  * 
@@ -145,13 +147,13 @@ export class AppriseService {
 
       if (!response.ok) {
         const errorText = await response.text()
-        console.error("[Apprise] Notification failed:", errorText)
+        log.error("[Apprise] Notification failed:", errorText)
         return { success: false, error: errorText }
       }
 
       return { success: true }
     } catch (error) {
-      console.error("[Apprise] Error sending notification:", error)
+      log.error("[Apprise] Error sending notification:", error)
       return { 
         success: false, 
         error: error instanceof Error ? error.message : "Unknown error" 
@@ -174,7 +176,7 @@ export class AppriseService {
 
       return response.ok
     } catch (error) {
-      console.error("[Apprise] Error adding config:", error)
+      log.error("[Apprise] Error adding config:", error)
       return false
     }
   }
@@ -192,7 +194,7 @@ export class AppriseService {
 
       return await response.json()
     } catch (error) {
-      console.error("[Apprise] Error getting config:", error)
+      log.error("[Apprise] Error getting config:", error)
       return null
     }
   }
@@ -208,7 +210,7 @@ export class AppriseService {
 
       return response.ok
     } catch (error) {
-      console.error("[Apprise] Error deleting config:", error)
+      log.error("[Apprise] Error deleting config:", error)
       return false
     }
   }

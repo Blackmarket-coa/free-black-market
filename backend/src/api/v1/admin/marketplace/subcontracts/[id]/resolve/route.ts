@@ -1,3 +1,5 @@
+import { createLogger } from "../../../../../../../shared/logger"
+const log = createLogger("api/v1/admin/marketplace/subcontracts/[id]/resolve")
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { z } from "zod"
 import { ORDER_SUBCONTRACT_MODULE } from "../../../../../../../modules/order-subcontract"
@@ -121,7 +123,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     await webhooks.dispatch("subcontract.completed", sub.parent_seller_id, payload)
     await webhooks.dispatch("subcontract.completed", sub.subcontract_seller_id, payload)
   } catch (err) {
-    console.error("[admin/resolve] webhook dispatch failed", err)
+    log.error("[admin/resolve] webhook dispatch failed", err)
   }
 
   // §3 bridge: dispute resolution + ledger escrow disposition.

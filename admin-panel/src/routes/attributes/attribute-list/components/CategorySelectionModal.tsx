@@ -1,3 +1,4 @@
+import { logger } from "@lib/logger"
 import type React from "react";
 import { useState, useEffect } from "react";
 import { Prompt } from "@medusajs/ui";
@@ -36,7 +37,7 @@ export const CategorySelectionModal: React.FC<CategorySelectionModalProps> = ({
       });
       setCategories(response.product_categories || []);
     } catch (error) {
-      console.error("Failed to fetch categories:", error);
+      logger.error("Failed to fetch categories:", error);
     } finally {
       setIsLoading(false);
     }

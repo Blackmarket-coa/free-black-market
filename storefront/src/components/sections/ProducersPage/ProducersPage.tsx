@@ -1,4 +1,5 @@
 "use client"
+import { logger } from "@/lib/logger"
 
 import { useState, useEffect, useCallback } from "react"
 import Link from "next/link"
@@ -82,7 +83,7 @@ export function ProducersPage({ locale }: ProducersPageProps) {
       const data = await response.json()
       setProducers(data.producers || [])
     } catch (error) {
-      console.error("Error fetching producers:", error)
+      logger.error("Error fetching producers:", error)
     } finally {
       setLoading(false)
     }

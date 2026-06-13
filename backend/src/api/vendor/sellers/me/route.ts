@@ -1,3 +1,5 @@
+import { createLogger } from "../../../../shared/logger"
+const log = createLogger("api/vendor/sellers/me")
 import { AuthenticatedMedusaRequest, MedusaResponse } from "@medusajs/framework"
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 import { requireSellerId } from "../../../../shared"
@@ -38,7 +40,7 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
     return res.json({ seller })
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : "Unknown error"
-    console.error("[GET /vendor/sellers/me] Error:", errorMessage)
+    log.error("[GET /vendor/sellers/me] Error:", errorMessage)
     return res.status(500).json({
       message: "Failed to fetch seller profile",
       type: "server_error",
@@ -134,7 +136,7 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
     return res.json({ seller })
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : "Unknown error"
-    console.error("[POST /vendor/sellers/me] Error:", errorMessage)
+    log.error("[POST /vendor/sellers/me] Error:", errorMessage)
     return res.status(500).json({
       message: "Failed to update seller profile",
       type: "server_error",

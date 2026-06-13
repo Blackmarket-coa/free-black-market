@@ -1,3 +1,5 @@
+import { createLogger } from "../shared/logger"
+const log = createLogger("jobs/attribution-fraud-sweep")
 import { MedusaContainer } from "@medusajs/framework/types"
 import { CREATOR_ATTRIBUTION_MODULE } from "../modules/creator-attribution"
 import type CreatorAttributionService from "../modules/creator-attribution/service"
@@ -72,7 +74,7 @@ export default async function attributionFraudSweepJob(
         })
         flagged++
       } catch (err) {
-        console.error("[attribution-fraud-sweep] click update failed", err)
+        log.error("[attribution-fraud-sweep] click update failed", err)
       }
     }
   }
@@ -105,16 +107,16 @@ export default async function attributionFraudSweepJob(
             }
           )
         } catch (err) {
-          console.error("[attribution-fraud-sweep] webhook dispatch failed", err)
+          log.error("[attribution-fraud-sweep] webhook dispatch failed", err)
         }
       }
     } catch (err) {
-      console.error("[attribution-fraud-sweep] disqualify failed", err)
+      log.error("[attribution-fraud-sweep] disqualify failed", err)
     }
   }
 
   if (flagged > 0) {
-    console.log(`[attribution-fraud-sweep] flagged ${flagged} clicks`)
+    log.info(`[attribution-fraud-sweep] flagged ${flagged} clicks`)
   }
 }
 

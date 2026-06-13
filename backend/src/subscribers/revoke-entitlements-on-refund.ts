@@ -1,3 +1,5 @@
+import { createLogger } from "../shared/logger"
+const log = createLogger("subscribers/revoke-entitlements-on-refund")
 import { SubscriberArgs, SubscriberConfig } from "@medusajs/framework"
 import { ENTITLEMENT_MODULE } from "../modules/entitlement"
 import type EntitlementModuleService from "../modules/entitlement/service"
@@ -16,7 +18,7 @@ export default async function revokeEntitlementsOnRefund({
   try {
     await service.revokeByOrderId(orderId, "order_refund_or_cancel")
   } catch (err) {
-    console.error(`[revoke-entitlements-on-refund] failed for order ${orderId}:`, err)
+    log.error(`[revoke-entitlements-on-refund] failed for order ${orderId}:`, err)
   }
 }
 

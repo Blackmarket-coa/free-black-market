@@ -1,3 +1,5 @@
+import { createLogger } from "../shared/logger"
+const log = createLogger("jobs/creator-rewards-pool-close")
 import { MedusaContainer } from "@medusajs/framework/types"
 import { CREATOR_REWARDS_MODULE } from "../modules/creator-rewards"
 import type CreatorRewardsService from "../modules/creator-rewards/service"
@@ -24,13 +26,13 @@ export default async function creatorRewardsPoolCloseJob(container: MedusaContai
 
   const due = await rewards.listPoolsDueForDistribution()
   if (due.length === 0) return
-  console.log(`[creator-rewards-pool-close] processing ${due.length} due pools`)
+  log.info(`[creator-rewards-pool-close] processing ${due.length} due pools`)
 
   for (const pool of due) {
     try {
       const result = await rewards.calculatePoolDistribution(pool.id)
       if (result.total_distributed_cents === 0) {
-        console.log(`[creator-rewards-pool-close] no eligible creators in pool ${pool.id}`)
+        log.info(`[creator-rewards-pool-close] no eligible creators in pool ${pool.id}`)
         await rewards.markPoolDistributed(pool.id)
         continue
       }
@@ -61,14 +63,14 @@ export default async function creatorRewardsPoolCloseJob(container: MedusaContai
                 }
               )
             } catch (err) {
-              console.error(
+              log.error(
                 `[creator-rewards-pool-close] webhook failed for ${payout.id}`,
                 err
               )
             }
           }
         } catch (err) {
-          console.error(
+          log.error(
             `[creator-rewards-pool-close] payout ${payout.id} failed`,
             err
           )
@@ -89,14 +91,14 @@ export default async function creatorRewardsPoolCloseJob(container: MedusaContai
             }
           )
         } catch (err) {
-          console.error(
+          log.error(
             `[creator-rewards-pool-close] funder webhook failed`,
             err
           )
         }
       }
     } catch (err) {
-      console.error(`[creator-rewards-pool-close] pool ${pool.id} failed`, err)
+      log.error(`[creator-rewards-pool-close] pool ${pool.id} failed`, err)
     }
   }
 }

@@ -1,3 +1,5 @@
+import { createLogger } from "../../../../shared/logger"
+const log = createLogger("api/admin/chat/unread")
 import { AuthenticatedMedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { Modules } from "@medusajs/framework/utils"
 import { requireAdminId } from "../../../../shared/auth-helpers"
@@ -34,7 +36,7 @@ export async function GET(
     const unreadCount = await matrixService.getUnreadCount(mxid)
     res.json({ unread_count: unreadCount })
   } catch (error: any) {
-    console.warn(
+    log.warn(
       "[GET /admin/chat/unread] Matrix unavailable, returning degraded count:",
       error?.message
     )

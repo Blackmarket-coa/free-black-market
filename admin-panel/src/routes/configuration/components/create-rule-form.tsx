@@ -1,3 +1,4 @@
+import { logger } from "@lib/logger"
 import { useState } from "react";
 
 import { Button, Label, Select, Switch, toast } from "@medusajs/ui";
@@ -35,7 +36,7 @@ const CreateConfigurationRuleForm = ({ onSuccess }: Props) => {
       setLoading(false);
     } catch (e: unknown) {
       toast.error((e as Error).message);
-      console.error(e);
+      logger.error(e);
       setLoading(false);
     }
   };

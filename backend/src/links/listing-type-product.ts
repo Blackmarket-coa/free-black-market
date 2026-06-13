@@ -1,3 +1,5 @@
+import { createLogger } from "../shared/logger"
+const log = createLogger("links/listing-type-product")
 import { defineLink } from "@medusajs/framework/utils"
 import ProductModule from "@medusajs/medusa/product"
 import ListingTypeModule from "../modules/listing-type"
@@ -35,9 +37,9 @@ try {
       isList: false,
     }
   )
-  console.log(`${LOG_PREFIX} Link defined successfully: product ↔ listing_type`)
+  log.info(`${LOG_PREFIX} Link defined successfully: product ↔ listing_type`)
 } catch (linkError: any) {
-  console.error(`${LOG_PREFIX} Failed to define link: ${linkError.message}`)
+  log.error(`${LOG_PREFIX} Failed to define link: ${linkError.message}`)
   listingTypeProductLink = null
 }
 

@@ -1,3 +1,5 @@
+import { createLogger } from "../shared/logger"
+const log = createLogger("links/seller-metadata")
 import { defineLink } from "@medusajs/framework/utils"
 import SellerExtensionModule from "../modules/seller-extension"
 
@@ -30,21 +32,21 @@ let loadError: string | null = null
 try {
   // Try the newer @mercurjs/framework export first
   SellerModule = require("@mercurjs/framework").SellerModule
-  console.log(`${LOG_PREFIX} Loaded SellerModule from @mercurjs/framework`)
+  log.info(`${LOG_PREFIX} Loaded SellerModule from @mercurjs/framework`)
 } catch (frameworkError: any) {
   try {
     // Fallback to @mercurjs/b2c-core direct import
     SellerModule = require("@mercurjs/b2c-core/modules/seller").default
-    console.log(`${LOG_PREFIX} Loaded SellerModule from @mercurjs/b2c-core/modules/seller`)
+    log.info(`${LOG_PREFIX} Loaded SellerModule from @mercurjs/b2c-core/modules/seller`)
   } catch (b2cError: any) {
     loadError = `
       Failed to load SellerModule:
       - @mercurjs/framework: ${frameworkError.message}
       - @mercurjs/b2c-core/modules/seller: ${b2cError.message}
     `.trim()
-    console.error(`${LOG_PREFIX} ${loadError}`)
-    console.error(`${LOG_PREFIX} seller_metadata link will NOT be created`)
-    console.error(`${LOG_PREFIX} Queries like "seller.seller_metadata.*" will fail`)
+    log.error(`${LOG_PREFIX} ${loadError}`)
+    log.error(`${LOG_PREFIX} seller_metadata link will NOT be created`)
+    log.error(`${LOG_PREFIX} Queries like "seller.seller_metadata.*" will fail`)
   }
 }
 
@@ -71,9 +73,9 @@ if (SellerModule) {
         isList: false,
       }
     )
-    console.log(`${LOG_PREFIX} Link defined successfully: seller ↔ seller_metadata`)
+    log.info(`${LOG_PREFIX} Link defined successfully: seller ↔ seller_metadata`)
   } catch (linkError: any) {
-    console.error(`${LOG_PREFIX} Failed to define link: ${linkError.message}`)
+    log.error(`${LOG_PREFIX} Failed to define link: ${linkError.message}`)
     sellerMetadataLink = null
   }
 }

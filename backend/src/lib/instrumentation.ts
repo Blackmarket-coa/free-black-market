@@ -1,3 +1,5 @@
+import { createLogger } from "../shared/logger"
+const log = createLogger("lib/instrumentation")
 /**
  * Lightweight instrumentation surface for FBM modules.
  *
@@ -28,7 +30,7 @@ export function emitMetric(
     ts: new Date().toISOString(),
   }
   // eslint-disable-next-line no-console -- structured-metric sink
-  console.warn(JSON.stringify(payload))
+  log.warn(JSON.stringify(payload))
 }
 
 export function snapshotMetrics(): Array<{

@@ -1,4 +1,5 @@
 "use server"
+import { logger } from "@/lib/logger"
 
 import { SellerProps } from "@/types/seller"
 import { medusaFetch, sdk } from "../config"
@@ -74,7 +75,7 @@ export const getReturns = async () => {
   })
     .then((res) => res)
     .catch((err) => {
-      console.error("[getReturns] Failed to fetch returns:", err?.message || err)
+      logger.error("[getReturns] Failed to fetch returns:", err?.message || err)
       return { order_return_requests: [] }
     })
 }
@@ -194,7 +195,7 @@ export const retrieveReturnReasons = async () => {
   })
     .then(({ return_reasons }) => return_reasons)
     .catch((err) => {
-      console.error("[retrieveReturnReasons] Failed to fetch return reasons:", err?.message || err)
+      logger.error("[retrieveReturnReasons] Failed to fetch return reasons:", err?.message || err)
       return []
     })
 }

@@ -1,4 +1,5 @@
 "use server"
+import { logger } from "@/lib/logger"
 
 import { listProducts } from "./products"
 import { HttpTypes } from "@medusajs/types"
@@ -74,7 +75,7 @@ export async function getProductFeed({
       totalCount: response.count,
     }
   } catch (error) {
-    console.error("Error fetching product feed:", error)
+    logger.error("Error fetching product feed:", error)
     return {
       products: [],
       nextPage: null,

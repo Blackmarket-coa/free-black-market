@@ -1,3 +1,5 @@
+import { createLogger } from "../shared/logger"
+const log = createLogger("lib/blackout-emit")
 import type { MedusaContainer } from "@medusajs/framework/types"
 import { MARKETPLACE_WEBHOOKS_MODULE } from "../modules/marketplace-webhooks"
 import type MarketplaceWebhooksService from "../modules/marketplace-webhooks/service"
@@ -23,7 +25,7 @@ export async function emitBlackoutEvent(
     const result = await webhooks.emitBlackout(type, fields, opts)
     return result ? opts.eventId ?? null : null
   } catch (err) {
-    console.error(
+    log.error(
       `[blackout-emit] failed to enqueue ${type}:`,
       err instanceof Error ? err.message : err
     )

@@ -1,3 +1,5 @@
+import { createLogger } from "../shared/logger"
+const log = createLogger("jobs/order-cycle-status-update")
 import { MedusaContainer } from "@medusajs/framework/types"
 import { ORDER_CYCLE_MODULE } from "../modules/order-cycle"
 import type OrderCycleModuleService from "../modules/order-cycle/service"
@@ -17,20 +19,20 @@ export default async function orderCycleStatusUpdateJob(
 ) {
   const orderCycleService = container.resolve<OrderCycleModuleService>(ORDER_CYCLE_MODULE)
   
-  console.log("[Order Cycle Job] Checking for status updates...")
+  log.info("[Order Cycle Job] Checking for status updates...")
   
   try {
     const results = await orderCycleService.updateOrderCycleStatuses()
     
     if (results.opened > 0 || results.closed > 0) {
-      console.log(
+      log.info(
         `[Order Cycle Job] Updated ${results.opened} cycles to open, ${results.closed} cycles to closed`
       )
     }
     
     return results
   } catch (error) {
-    console.error("[Order Cycle Job] Error updating statuses:", error)
+    log.error("[Order Cycle Job] Error updating statuses:", error)
     throw error
   }
 }

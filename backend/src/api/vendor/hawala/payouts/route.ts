@@ -1,3 +1,5 @@
+import { createLogger } from "../../../../shared/logger"
+const log = createLogger("api/vendor/hawala/payouts")
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { HAWALA_LEDGER_MODULE } from "../../../../modules/hawala-ledger"
 import HawalaLedgerModuleService from "../../../../modules/hawala-ledger/service"
@@ -20,7 +22,7 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
     
     res.json({ payout_options: options })
   } catch (error: any) {
-    console.error("Error getting payout options:", error)
+    log.error("Error getting payout options:", error)
     res.status(400).json({ error: error.message })
   }
 }
@@ -58,7 +60,7 @@ export const POST = async (req: MedusaRequest, res: MedusaResponse) => {
 
     res.status(201).json({ payout_request: payoutRequest })
   } catch (error: any) {
-    console.error("Error requesting payout:", error)
+    log.error("Error requesting payout:", error)
     res.status(400).json({ error: error.message })
   }
 }

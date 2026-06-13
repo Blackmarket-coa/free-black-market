@@ -1,3 +1,5 @@
+import { createLogger } from "../../../../../../../shared/logger"
+const log = createLogger("api/v1/seller/creator/programs/[id]/apply")
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { z } from "zod"
 import type { SellerAuthRequest } from "../../../../../../middlewares/seller-context-v1"
@@ -62,7 +64,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
             creator_seller_id: sellerId,
           })
         } catch (err) {
-          console.error("[apply] webhook dispatch failed", err)
+          log.error("[apply] webhook dispatch failed", err)
         }
       }
     }

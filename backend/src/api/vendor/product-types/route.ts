@@ -1,3 +1,5 @@
+import { createLogger } from "../../../shared/logger"
+const log = createLogger("api/vendor/product-types")
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { Modules } from "@medusajs/framework/utils"
 
@@ -62,7 +64,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       limit: parseInt(limit as string, 10) || 20,
     })
   } catch (error: any) {
-    console.error("[VENDOR] Failed to fetch product types:", error)
+    log.error("[VENDOR] Failed to fetch product types:", error)
     res.status(500).json({
       message: "Failed to fetch product types",
       error: error.message,

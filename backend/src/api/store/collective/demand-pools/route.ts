@@ -1,3 +1,5 @@
+import { createLogger } from "../../../../shared/logger"
+const log = createLogger("api/store/collective/demand-pools")
 import { z } from "zod"
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { DEMAND_POOL_MODULE } from "../../../../modules/demand-pool"
@@ -69,7 +71,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       return res.status(400).json({ error: "Validation failed", details: error.issues })
     }
     const message = getErrorMessage(error)
-    console.error("[GET /store/collective/demand-pools] Error:", message)
+    log.error("[GET /store/collective/demand-pools] Error:", message)
     res.status(500).json({ error: "Failed to retrieve demand pools", details: message })
   }
 }
@@ -121,7 +123,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       return res.status(400).json({ error: "Validation failed", details: error.issues })
     }
     const message = getErrorMessage(error)
-    console.error("[POST /store/collective/demand-pools] Error:", message)
+    log.error("[POST /store/collective/demand-pools] Error:", message)
     res.status(400).json({ error: message })
   }
 }

@@ -1,3 +1,5 @@
+import { createLogger } from "../../../../../../shared/logger"
+const log = createLogger("api/vendor/collective/demand-pools/[id]/proposals")
 import { z } from "zod"
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { DEMAND_POOL_MODULE } from "../../../../../../modules/demand-pool"
@@ -66,7 +68,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     res.json({ proposals })
   } catch (error: unknown) {
     const message = getErrorMessage(error)
-    console.error("[GET vendor proposals] Error:", message)
+    log.error("[GET vendor proposals] Error:", message)
     res.status(500).json({ error: "Failed to retrieve proposals", details: message })
   }
 }
@@ -141,7 +143,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       return res.status(400).json({ error: "Validation failed", details: error.issues })
     }
     const message = getErrorMessage(error)
-    console.error("[POST vendor proposal] Error:", message)
+    log.error("[POST vendor proposal] Error:", message)
     res.status(400).json({ error: message })
   }
 }

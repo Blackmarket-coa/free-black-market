@@ -1,3 +1,5 @@
+import { createLogger } from "../../../../shared/logger"
+const log = createLogger("api/vendor/inventory-sync/events")
 import type { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { inventoryLedgerEventSchema } from "../../../../shared/phase0-contracts"
 import { runQueueConsumer } from "../../../../shared/queue-runtime"
@@ -19,7 +21,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     idempotencyKey: payload.idempotency_key,
     handler: async () => undefined,
     publishToDlq: async (message) => {
-      console.error("[POST /vendor/inventory-sync/events][DLQ]", JSON.stringify(message))
+      log.error("[POST /vendor/inventory-sync/events][DLQ]", JSON.stringify(message))
     },
     requeue: async (message, delaySeconds) => {
       await requeueWithBackoff(message, delaySeconds)

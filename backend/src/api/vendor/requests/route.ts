@@ -1,3 +1,5 @@
+import { createLogger } from "../../../shared/logger"
+const log = createLogger("api/vendor/requests")
 import { z } from "zod"
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { REQUEST_MODULE } from "../../../modules/request"
@@ -60,7 +62,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       res.status(400).json({ message: "Validation failed", errors: error.issues })
       return
     }
-    console.error("[GET /vendor/requests] Error:", error.message)
+    log.error("[GET /vendor/requests] Error:", error.message)
     res.status(500).json({ message: "Failed to retrieve requests" })
   }
 }
@@ -86,7 +88,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       requester_id: sellerId,
     })
 
-    console.log(`[POST /vendor/requests] Request ${request.id} created by seller ${sellerId}. Type: ${body.request.type}`)
+    log.info(`[POST /vendor/requests] Request ${request.id} created by seller ${sellerId}. Type: ${body.request.type}`)
 
     res.status(201).json({
       request,
@@ -97,7 +99,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       res.status(400).json({ message: "Validation failed", errors: error.issues })
       return
     }
-    console.error("[POST /vendor/requests] Error:", error.message)
+    log.error("[POST /vendor/requests] Error:", error.message)
     res.status(500).json({ message: "Failed to create request" })
   }
 }

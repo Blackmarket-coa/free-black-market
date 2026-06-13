@@ -1,3 +1,5 @@
+import { createLogger } from "./logger"
+const log = createLogger("shared/seller-approval-service")
 import { MedusaContainer } from "@medusajs/framework/types"
 import { Modules, ContainerRegistrationKeys } from "@medusajs/framework/utils"
 import { createSellerWorkflow } from "@mercurjs/b2c-core/workflows"
@@ -249,29 +251,29 @@ export class SellerApprovalService {
     try {
       data = validateSellerRequestData(request.data)
     } catch (validationError: any) {
-      console.error(`[SellerApproval] Request data validation failed:`, validationError.message)
-      console.error(`[SellerApproval] Request data was:`, JSON.stringify(request.data, null, 2))
+      log.error(`[SellerApproval] Request data validation failed:`, validationError.message)
+      log.error(`[SellerApproval] Request data was:`, JSON.stringify(request.data, null, 2))
       throw new Error(`Invalid request data: ${validationError.message}`)
     }
     const vendorType = data.vendor_type || "producer"
 
-    console.log(`[SellerApproval] Processing approval for seller "${data.seller.name}" (email: ${maskEmail(data.member.email)})`)
+    log.info(`[SellerApproval] Processing approval for seller "${data.seller.name}" (email: ${maskEmail(data.member.email)})`)
 
     // Step 2.5: Verify auth identity exists before proceeding
     const authModule = this.container.resolve(Modules.AUTH)
     const authIdentities = await authModule.listAuthIdentities({ id: [data.auth_identity_id] })
     if (!authIdentities || authIdentities.length === 0) {
-      console.error(`[SellerApproval] Auth identity not found: ${data.auth_identity_id}`)
+      log.error(`[SellerApproval] Auth identity not found: ${data.auth_identity_id}`)
       throw new Error(`Auth identity not found. The user may need to re-register.`)
     }
-    console.log(`[SellerApproval] Auth identity verified: ${data.auth_identity_id}`)
+    log.info(`[SellerApproval] Auth identity verified: ${data.auth_identity_id}`)
 
     let createdSeller: { id: string; name: string; handle?: string } | null = null
     let authUpdated = false
 
     try {
       // Step 3: Create the seller using MercurJS workflow
-      console.log(`[SellerApproval] Starting seller workflow with auth_identity_id: ${data.auth_identity_id}`)
+      log.info(`[SellerApproval] Starting seller workflow with auth_identity_id: ${data.auth_identity_id}`)
 
       const workflowInput = {
         auth_identity_id: data.auth_identity_id,
@@ -283,7 +285,7 @@ export class SellerApprovalService {
           name: data.seller.name,
         },
       }
-      console.log(`[SellerApproval] Workflow input:`, JSON.stringify(workflowInput, null, 2))
+      log.info(`[SellerApproval] Workflow input:`, JSON.stringify(workflowInput, null, 2))
 
       let seller: { id: string; name: string; handle?: string }
 
@@ -299,11 +301,11 @@ export class SellerApprovalService {
         }
         seller = result
         createdSeller = seller
-        console.log(`[SellerApproval] Seller created with ID: ${seller.id}`)
+        log.info(`[SellerApproval] Seller created with ID: ${seller.id}`)
       } catch (workflowError: any) {
         // Check if it's a duplicate handle error - if so, try to find and link existing seller
         if (workflowError.message?.includes("already exists")) {
-          console.log(`[SellerApproval] Seller already exists, attempting to find and link existing seller...`)
+          log.info(`[SellerApproval] Seller already exists, attempting to find and link existing seller...`)
 
           const query = this.container.resolve(ContainerRegistrationKeys.QUERY)
           const pgConnection = this.container.resolve(ContainerRegistrationKeys.PG_CONNECTION)
@@ -333,7 +335,7 @@ export class SellerApprovalService {
 
           // If not found by email, try to find by handle (derived from seller name)
           if (!existingSeller) {
-            console.log(`[SellerApproval] Seller not found by email, trying by handle...`)
+            log.info(`[SellerApproval] Seller not found by email, trying by handle...`)
 
             // Generate expected handle from seller name (MercurJS uses kebab-case)
             const expectedHandle = data.seller.name
@@ -362,21 +364,21 @@ export class SellerApprovalService {
             }
 
             if (existingSeller) {
-              console.log(`[SellerApproval] Found seller by handle: ${existingSeller.handle}`)
+              log.info(`[SellerApproval] Found seller by handle: ${existingSeller.handle}`)
             }
           }
 
           if (existingSeller) {
-            console.log(`[SellerApproval] Found existing seller: ${existingSeller.id} (${existingSeller.name})`)
+            log.info(`[SellerApproval] Found existing seller: ${existingSeller.id} (${existingSeller.name})`)
             seller = { id: existingSeller.id, name: existingSeller.name, handle: existingSeller.handle }
             createdSeller = seller
           } else {
-            console.error(`[SellerApproval] Could not find existing seller to link. Email: ${data.member.email}, Name: ${data.seller.name}`)
+            log.error(`[SellerApproval] Could not find existing seller to link. Email: ${data.member.email}, Name: ${data.seller.name}`)
             throw new Error(`Seller creation workflow failed: ${workflowError.message}`)
           }
         } else {
-          console.error(`[SellerApproval] Workflow execution failed:`, workflowError.message)
-          console.error(`[SellerApproval] Workflow error details:`, workflowError)
+          log.error(`[SellerApproval] Workflow execution failed:`, workflowError.message)
+          log.error(`[SellerApproval] Workflow error details:`, workflowError)
           throw new Error(`Seller creation workflow failed: ${workflowError.message}`)
         }
       }
@@ -390,7 +392,7 @@ export class SellerApprovalService {
         },
       }])
       authUpdated = true
-      console.log(`[SellerApproval] Auth identity linked successfully`)
+      log.info(`[SellerApproval] Auth identity linked successfully`)
 
       // Step 5: Create seller metadata with vendor_type
       try {
@@ -403,10 +405,10 @@ export class SellerApprovalService {
             vendor_type: vendorTypeEnum,
           },
         })
-        console.log(`[SellerApproval] Metadata created with vendor_type: ${vendorTypeEnum}`)
+        log.info(`[SellerApproval] Metadata created with vendor_type: ${vendorTypeEnum}`)
       } catch (metadataError: any) {
         // Non-critical: subscriber will create with default type
-        console.warn(`[SellerApproval] Metadata creation failed (will use fallback): ${metadataError.message}`)
+        log.warn(`[SellerApproval] Metadata creation failed (will use fallback): ${metadataError.message}`)
       }
 
       // Step 6: Provision Matrix (Blackout) user + vendor room (non-blocking)
@@ -435,14 +437,14 @@ export class SellerApprovalService {
           )
 
           matrixCreated = true
-          console.log(`[SellerApproval] Matrix account provisioned: ${mxid}`)
+          log.info(`[SellerApproval] Matrix account provisioned: ${mxid}`)
         } catch (matrixError: any) {
-          console.warn(`[SellerApproval] Matrix provisioning failed (non-blocking): ${matrixError.message}`)
+          log.warn(`[SellerApproval] Matrix provisioning failed (non-blocking): ${matrixError.message}`)
         }
       }
 
       // Step 7: Update request status and reviewer info using dedicated service method
-      console.log(`[SellerApproval] Step 7: Updating request status to ACCEPTED...`)
+      log.info(`[SellerApproval] Step 7: Updating request status to ACCEPTED...`)
       const sanitizedNote = sanitizeInput(reviewerNote)
       const updatedNote = request.reviewer_note
         ? `${request.reviewer_note}\n${sanitizedNote}`.trim()
@@ -456,14 +458,14 @@ export class SellerApprovalService {
           reviewerId,
           updatedNote || undefined
         )
-        console.log(`[SellerApproval] Request ${requestId} status updated to ACCEPTED`)
+        log.info(`[SellerApproval] Request ${requestId} status updated to ACCEPTED`)
       } catch (updateError: any) {
-        console.error(`[SellerApproval] Failed to update request status:`, updateError.message)
-        console.error(`[SellerApproval] Update error details:`, updateError.stack || updateError)
+        log.error(`[SellerApproval] Failed to update request status:`, updateError.message)
+        log.error(`[SellerApproval] Update error details:`, updateError.stack || updateError)
         throw updateError
       }
 
-      console.log(`[SellerApproval] Request ${requestId} approved by reviewer ${reviewerId}`)
+      log.info(`[SellerApproval] Request ${requestId} approved by reviewer ${reviewerId}`)
 
       try {
         const vendorPanelUrl = process.env.VENDOR_PANEL_URL || process.env.VENDOR_URL || ""
@@ -484,9 +486,9 @@ export class SellerApprovalService {
             login_url: loginUrl || undefined,
           },
         })
-        console.log(`[SellerApproval] Vendor acceptance notification sent to ${maskEmail(data.member.email)}`)
+        log.info(`[SellerApproval] Vendor acceptance notification sent to ${maskEmail(data.member.email)}`)
       } catch (notificationError: any) {
-        console.warn(`[SellerApproval] Failed to send vendor acceptance notification: ${notificationError.message}`)
+        log.warn(`[SellerApproval] Failed to send vendor acceptance notification: ${notificationError.message}`)
       }
 
       return {
@@ -503,12 +505,12 @@ export class SellerApprovalService {
       }
     } catch (error: any) {
       // Compensating actions for critical failures
-      console.error(`[SellerApproval] Error during approval: ${error.message}`)
+      log.error(`[SellerApproval] Error during approval: ${error.message}`)
 
       // If seller was created but auth wasn't updated, we have an orphaned seller
       // Log this for manual intervention as we can't easily delete the seller
       if (createdSeller && !authUpdated) {
-        console.error(`[SellerApproval] CRITICAL: Seller ${createdSeller.id} created but auth not linked. Manual intervention required.`)
+        log.error(`[SellerApproval] CRITICAL: Seller ${createdSeller.id} created but auth not linked. Manual intervention required.`)
       }
 
       throw error
@@ -543,7 +545,7 @@ export class SellerApprovalService {
       sanitizedReason || undefined
     )
 
-    console.log(`[SellerApproval] Request ${requestId} rejected by reviewer ${reviewerId}${sanitizedReason ? `: ${sanitizedReason}` : ""}`)
+    log.info(`[SellerApproval] Request ${requestId} rejected by reviewer ${reviewerId}${sanitizedReason ? `: ${sanitizedReason}` : ""}`)
 
     return {
       id: updatedRequest.id,
@@ -584,7 +586,7 @@ export class SellerApprovalService {
       updatedNote || undefined
     )
 
-    console.log(`[SellerApproval] Generic request ${requestId} approved by reviewer ${reviewerId}`)
+    log.info(`[SellerApproval] Generic request ${requestId} approved by reviewer ${reviewerId}`)
 
     try {
       const customerContact = await this.resolveCustomerContact({
@@ -593,7 +595,7 @@ export class SellerApprovalService {
       })
 
       if (!customerContact?.email) {
-        console.warn(`[SellerApproval] No customer contact found for request ${requestId}`)
+        log.warn(`[SellerApproval] No customer contact found for request ${requestId}`)
       } else {
         const storefrontUrl = process.env.STOREFRONT_URL || process.env.NEXT_PUBLIC_BASE_URL || ""
         const loginUrl = storefrontUrl ? `${storefrontUrl}/account` : ""
@@ -607,10 +609,10 @@ export class SellerApprovalService {
             login_url: loginUrl || undefined,
           },
         })
-        console.log(`[SellerApproval] Customer acceptance notification sent to ${maskEmail(customerContact.email)}`)
+        log.info(`[SellerApproval] Customer acceptance notification sent to ${maskEmail(customerContact.email)}`)
       }
     } catch (notificationError: any) {
-      console.warn(`[SellerApproval] Failed to send customer acceptance notification: ${notificationError.message}`)
+      log.warn(`[SellerApproval] Failed to send customer acceptance notification: ${notificationError.message}`)
     }
 
     return {

@@ -1,3 +1,5 @@
+import { createLogger } from "../../../../shared/logger"
+const log = createLogger("api/vendor/chat/unread")
 import { AuthenticatedMedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { SELLER_MODULE } from "@mercurjs/b2c-core/modules/seller"
 import { requireSellerId } from "../../../../shared/auth-helpers"
@@ -48,7 +50,7 @@ export async function GET(
     const unreadCount = await matrixService.getUnreadCount(mxid)
     res.json({ unread_count: unreadCount })
   } catch (error: any) {
-    console.warn(
+    log.warn(
       "[GET /vendor/chat/unread] Matrix unavailable, returning degraded count:",
       error?.message
     )

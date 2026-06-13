@@ -1,3 +1,5 @@
+import { createLogger } from "../../../shared/logger"
+const log = createLogger("api/vendor/chat")
 import { AuthenticatedMedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { SELLER_MODULE } from "@mercurjs/b2c-core/modules/seller"
 import { requireSellerId } from "../../../shared/auth-helpers"
@@ -79,7 +81,7 @@ export async function GET(
 
       login = await matrixService.mintLoginToken(mxid)
     } catch (error: any) {
-      console.error("[GET /vendor/chat] Provisioning failed:", error.message)
+      log.error("[GET /vendor/chat] Provisioning failed:", error.message)
     }
 
     const response: Record<string, unknown> = {
@@ -98,7 +100,7 @@ export async function GET(
 
     res.json(response)
   } catch (error: any) {
-    console.error("[GET /vendor/chat] Error:", error)
+    log.error("[GET /vendor/chat] Error:", error)
     res.status(500).json({
       message: error.message || "Failed to retrieve chat configuration",
     })

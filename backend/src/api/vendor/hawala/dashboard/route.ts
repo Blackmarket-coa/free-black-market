@@ -1,3 +1,5 @@
+import { createLogger } from "../../../../shared/logger"
+const log = createLogger("api/vendor/hawala/dashboard")
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { HAWALA_LEDGER_MODULE } from "../../../../modules/hawala-ledger"
 import HawalaLedgerModuleService from "../../../../modules/hawala-ledger/service"
@@ -38,7 +40,7 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
     
     res.json({ dashboard })
   } catch (error: any) {
-    console.error("Error getting vendor dashboard:", error)
+    log.error("Error getting vendor dashboard:", error)
     res.status(400).json({ error: error.message })
   }
 }

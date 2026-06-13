@@ -1,3 +1,5 @@
+import { createLogger } from "../../../../../../shared/logger"
+const log = createLogger("api/store/collective/bargaining-groups/[id]/join")
 import { z } from "zod"
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { BARGAINING_MODULE } from "../../../../../../modules/bargaining"
@@ -37,7 +39,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: "Validation failed", details: error.issues })
     }
-    console.error(`[POST /store/collective/bargaining-groups/${id}/join] Error:`, error.message)
+    log.error(`[POST /store/collective/bargaining-groups/${id}/join] Error:`, error.message)
     res.status(400).json({ error: error.message })
   }
 }
@@ -59,7 +61,7 @@ export async function DELETE(req: MedusaRequest, res: MedusaResponse) {
     await bargainingService.leaveGroup(id, customerId)
     res.json({ message: "Successfully left bargaining group" })
   } catch (error: any) {
-    console.error(`[DELETE /store/collective/bargaining-groups/${id}/join] Error:`, error.message)
+    log.error(`[DELETE /store/collective/bargaining-groups/${id}/join] Error:`, error.message)
     res.status(400).json({ error: error.message })
   }
 }

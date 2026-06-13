@@ -1,3 +1,5 @@
+import { createLogger } from "../../shared/logger"
+const log = createLogger("api/vendor/_middlewares")
 import { defineMiddlewares } from "@medusajs/framework/http"
 import type { MedusaRequest, MedusaResponse, MedusaNextFunction } from "@medusajs/framework/http"
 import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils"
@@ -75,7 +77,7 @@ async function vendorCorsMiddleware(
     res.setHeader("Access-Control-Max-Age", "86400")
     res.setHeader("Vary", "Origin")
   } else if (origin) {
-    console.warn(`[VENDOR CORS] Origin not allowed: "${origin}"`)
+    log.warn(`[VENDOR CORS] Origin not allowed: "${origin}"`)
   }
 
   // Handle preflight
@@ -271,7 +273,7 @@ export async function ensureSellerContext(
     const seller = sellers[0]
     ;(req as MedusaRequest & { seller?: unknown }).seller = seller
   } catch (error) {
-    console.error("[VENDOR AUTH] Failed to validate seller context:", error)
+    log.error("[VENDOR AUTH] Failed to validate seller context:", error)
     res.status(500).json({
       message: "Failed to validate seller context",
       type: "server_error",

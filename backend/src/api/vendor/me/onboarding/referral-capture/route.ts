@@ -1,3 +1,5 @@
+import { createLogger } from "../../../../../shared/logger"
+const log = createLogger("api/vendor/me/onboarding/referral-capture")
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 import { TENANCY_MODULE } from "../../../../../modules/tenancy"
@@ -100,7 +102,7 @@ export async function POST(req: MedusaRequest<Body>, res: MedusaResponse) {
       onboardingUpdated = true
     }
   } catch (err) {
-    console.error("[vendor/me/onboarding/referral-capture] tenancy update failed:", err)
+    log.error("[vendor/me/onboarding/referral-capture] tenancy update failed:", err)
   }
 
   // Seed a primary AffiliateLink for the new seller pointing back at
@@ -139,7 +141,7 @@ export async function POST(req: MedusaRequest<Body>, res: MedusaResponse) {
       }
     }
   } catch (err) {
-    console.error("[vendor/me/onboarding/referral-capture] link seed failed:", err)
+    log.error("[vendor/me/onboarding/referral-capture] link seed failed:", err)
   }
 
   return res.status(200).json({

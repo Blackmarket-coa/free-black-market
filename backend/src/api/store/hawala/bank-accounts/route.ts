@@ -1,3 +1,5 @@
+import { createLogger } from "../../../../shared/logger"
+const log = createLogger("api/store/hawala/bank-accounts")
 import { AuthenticatedMedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { HAWALA_LEDGER_MODULE } from "../../../../modules/hawala-ledger"
 import HawalaLedgerModuleService from "../../../../modules/hawala-ledger/service"
@@ -22,7 +24,7 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
 
     res.json({ bank_accounts: bankAccounts })
   } catch (error) {
-    console.error("Error listing bank accounts:", error)
+    log.error("Error listing bank accounts:", error)
     res.status(500).json({ error: "Failed to retrieve bank accounts" })
   }
 }
@@ -81,7 +83,7 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
       })
     }
   } catch (error) {
-    console.error("Error linking bank account:", error)
+    log.error("Error linking bank account:", error)
     res.status(500).json({ error: "Failed to initiate bank account linking" })
   }
 }

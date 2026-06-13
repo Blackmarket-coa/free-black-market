@@ -1,3 +1,4 @@
+import { logger } from "@/lib/logger"
 import { sdk } from "@/lib/config"
 import { HttpTypes } from "@medusajs/types"
 
@@ -136,7 +137,7 @@ export const listFeaturedCategories = async (limit = 10) => {
     const { categories } = await listCategories({ query: { limit } })
     return categories
   } catch (error) {
-    console.error("Failed to fetch featured categories:", error)
+    logger.error("Failed to fetch featured categories:", error)
     return []
   }
 }

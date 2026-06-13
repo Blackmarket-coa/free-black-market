@@ -1,3 +1,5 @@
+import { createLogger } from "../../../../../../shared/logger"
+const log = createLogger("api/store/collective/bargaining-groups/[id]/threads")
 import { z } from "zod"
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { BARGAINING_MODULE } from "../../../../../../modules/bargaining"
@@ -24,7 +26,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     const threads = await bargainingService.getThreads(id, proposalId)
     res.json({ threads })
   } catch (error: any) {
-    console.error(`[GET threads] Error:`, error.message)
+    log.error(`[GET threads] Error:`, error.message)
     res.status(500).json({ error: "Failed to retrieve threads" })
   }
 }
@@ -60,7 +62,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: "Validation failed", details: error.issues })
     }
-    console.error(`[POST thread] Error:`, error.message)
+    log.error(`[POST thread] Error:`, error.message)
     res.status(400).json({ error: error.message })
   }
 }

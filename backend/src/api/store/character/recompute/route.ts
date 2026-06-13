@@ -1,3 +1,5 @@
+import { createLogger } from "../../../../shared/logger"
+const log = createLogger("api/store/character/recompute")
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 import { PROGRESSION_MODULE } from "../../../../modules/progression"
@@ -28,7 +30,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     const character = await progression.getCharacterSheetSummary(customerId)
     res.json({ character })
   } catch (error) {
-    console.error("Error recomputing character sheet:", error)
+    log.error("Error recomputing character sheet:", error)
     res.status(500).json({ error: "Failed to recompute character sheet" })
   }
 }

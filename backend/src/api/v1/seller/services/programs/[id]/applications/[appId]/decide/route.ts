@@ -1,3 +1,5 @@
+import { createLogger } from "../../../../../../../../../shared/logger"
+const log = createLogger("api/v1/seller/services/programs/[id]/applications/[appId]/decide")
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { z } from "zod"
 import type { SellerAuthRequest } from "../../../../../../../../middlewares/seller-context-v1"
@@ -90,7 +92,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
         })
       }
     } catch (err) {
-      console.error("[service-decide] KYC check failed", err)
+      log.error("[service-decide] KYC check failed", err)
       return res.status(500).json({
         message: "KYC verification check failed",
         type: "kyc_check_failed",
@@ -135,7 +137,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
         }
       )
     } catch (err) {
-      console.error("[service-decide] webhook dispatch failed", err)
+      log.error("[service-decide] webhook dispatch failed", err)
     }
   } else {
     try {
@@ -150,7 +152,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
         }
       )
     } catch (err) {
-      console.error("[service-decide] reject webhook dispatch failed", err)
+      log.error("[service-decide] reject webhook dispatch failed", err)
     }
   }
 

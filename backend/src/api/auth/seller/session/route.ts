@@ -1,3 +1,5 @@
+import { createLogger } from "../../../../shared/logger"
+const log = createLogger("api/auth/seller/session")
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { fetchSellerProfile } from "../../../../shared/seller-profile"
 import { getSellerRegistrationStatus } from "../../../../shared/seller-registration"
@@ -51,7 +53,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     })
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Unknown error"
-    console.error("[GET /auth/seller/session] Error:", message)
+    log.error("[GET /auth/seller/session] Error:", message)
     return res.status(500).json({
       registration_status: {
         status: "error",

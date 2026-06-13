@@ -1,3 +1,5 @@
+import { createLogger } from "../../shared/logger"
+const log = createLogger("modules/hawala-ledger/service")
 import { MedusaService, ContainerRegistrationKeys } from "@medusajs/framework/utils"
 import { auditFinancialTransaction, logAuditEvent } from "./audit-logger"
 import { assertRailInvariants } from "./posture-a-guard"
@@ -973,7 +975,7 @@ class HawalaLedgerModuleService extends MedusaService({
       idempotency_key: `${idempotencyKey}-customer`,
     })
     if (existingRefunds.length > 0) {
-      console.log(`[Hawala] Refund already processed for order ${data.order_id}`)
+      log.info(`[Hawala] Refund already processed for order ${data.order_id}`)
       return existingRefunds
     }
 
@@ -1097,7 +1099,7 @@ class HawalaLedgerModuleService extends MedusaService({
       }
     )
 
-    console.log(
+    log.info(
       `[Hawala] Refund processed for order ${data.order_id}: ` +
       `$${refundAmount} total ($${sellerRefund} from seller, $${feeRefund} fee reversal)`
     )
@@ -2205,7 +2207,7 @@ class HawalaLedgerModuleService extends MedusaService({
     // Validate rules sum to 100%
     const totalPercentage = rules.reduce((sum, r) => sum + Number(r.percentage), 0)
     if (Math.abs(totalPercentage - 100) > 0.01) {
-      console.warn(`Split rules for vendor ${vendorId} do not sum to 100%: ${totalPercentage}`)
+      log.warn(`Split rules for vendor ${vendorId} do not sum to 100%: ${totalPercentage}`)
     }
 
     const splits: Array<{ destination: string; amount: number; ledger_entry_id?: string }> = []

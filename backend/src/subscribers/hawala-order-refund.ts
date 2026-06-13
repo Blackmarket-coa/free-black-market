@@ -1,3 +1,5 @@
+import { createLogger } from "../shared/logger"
+const log = createLogger("subscribers/hawala-order-refund")
 import { SubscriberArgs, SubscriberConfig } from "@medusajs/framework"
 import { HAWALA_LEDGER_MODULE } from "../modules/hawala-ledger"
 import HawalaLedgerModuleService from "../modules/hawala-ledger/service"
@@ -29,7 +31,7 @@ export default async function hawalaOrderRefundSubscriber({
   const refundAmount = event.data.refund_amount
   const reason = event.data.reason || "Order cancelled"
 
-  console.log(`[Hawala] Processing refund for order: ${orderId}`)
+  log.info(`[Hawala] Processing refund for order: ${orderId}`)
 
   try {
     const refundEntries = await hawalaService.processRefund({
@@ -39,18 +41,18 @@ export default async function hawalaOrderRefundSubscriber({
       idempotency_key: `order-refund-${orderId}`,
     })
 
-    console.log(
+    log.info(
       `[Hawala] Refund for order ${orderId} processed: ` +
       `${refundEntries.length} ledger entries created`
     )
   } catch (error) {
     // Log but don't throw - we don't want to fail the cancellation
     // if the ledger processing has issues
-    console.error(`[Hawala] Error processing refund for order ${orderId}:`, error)
+    log.error(`[Hawala] Error processing refund for order ${orderId}:`, error)
     
     // If no payments found, this order may not have been processed yet
     if ((error as Error).message?.includes("No completed payments found")) {
-      console.log(`[Hawala] Order ${orderId} has no payments to refund - skipping`)
+      log.info(`[Hawala] Order ${orderId} has no payments to refund - skipping`)
       return
     }
   }

@@ -1,3 +1,5 @@
+import { createLogger } from "../shared/logger"
+const log = createLogger("subscribers/seller-created")
 import { SubscriberArgs, SubscriberConfig } from "@medusajs/framework"
 import { createSellerMetadataWorkflow } from "../workflows/create-seller-metadata"
 import { VendorType } from "../modules/seller-extension/models/seller-metadata"
@@ -19,11 +21,11 @@ export default async function sellerCreatedHandler({
   const sellerId = event.data.id
 
   if (!sellerId) {
-    console.warn("sellerCreated event received without seller ID")
+    log.warn("sellerCreated event received without seller ID")
     return
   }
 
-  console.log(`[sellerCreated subscriber] Checking metadata for seller ${sellerId}`)
+  log.info(`[sellerCreated subscriber] Checking metadata for seller ${sellerId}`)
 
   try {
     // Check if metadata already exists
@@ -36,12 +38,12 @@ export default async function sellerCreatedHandler({
     })
 
     if (existingMetadata && existingMetadata.length > 0) {
-      console.log(`[sellerCreated subscriber] Metadata already exists for seller ${sellerId}, skipping creation`)
+      log.info(`[sellerCreated subscriber] Metadata already exists for seller ${sellerId}, skipping creation`)
       return
     }
 
     // Create metadata if it doesn't exist
-    console.log(`[sellerCreated subscriber] Creating metadata for seller ${sellerId}`)
+    log.info(`[sellerCreated subscriber] Creating metadata for seller ${sellerId}`)
 
     const { result } = await createSellerMetadataWorkflow.run({
       container,
@@ -51,9 +53,9 @@ export default async function sellerCreatedHandler({
       },
     })
 
-    console.log(`[sellerCreated subscriber] Seller metadata created: ${result.seller_metadata.id}`)
+    log.info(`[sellerCreated subscriber] Seller metadata created: ${result.seller_metadata.id}`)
   } catch (error) {
-    console.error(`[sellerCreated subscriber] Failed to create seller metadata for ${sellerId}:`, error)
+    log.error(`[sellerCreated subscriber] Failed to create seller metadata for ${sellerId}:`, error)
     throw error
   }
 }

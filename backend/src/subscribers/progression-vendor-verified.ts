@@ -1,3 +1,5 @@
+import { createLogger } from "../shared/logger"
+const log = createLogger("subscribers/progression-vendor-verified")
 import { SubscriberArgs, type SubscriberConfig } from "@medusajs/medusa"
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 import { PROGRESSION_MODULE } from "../modules/progression"
@@ -50,7 +52,7 @@ export default async function progressionVendorVerified({
     // Mirror the seller's trust score onto the sheet snapshot.
     await progression.recomputeAggregates(memberId, query as never, sellerId)
   } catch (error) {
-    console.error(
+    log.error(
       `[progression-vendor-verified] Failed for seller ${data.seller_id}:`,
       error
     )

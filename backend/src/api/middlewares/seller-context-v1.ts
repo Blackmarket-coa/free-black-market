@@ -1,3 +1,5 @@
+import { createLogger } from "../../shared/logger"
+const log = createLogger("api/middlewares/seller-context-v1")
 import type {
   MedusaRequest,
   MedusaResponse,
@@ -64,7 +66,7 @@ export async function requireSellerContextV1(
       )
       sellerId = result.rows?.[0]?.seller_id ?? null
     } catch (err) {
-      console.error("[v1 seller context] member lookup failed", err)
+      log.error("[v1 seller context] member lookup failed", err)
     }
   } else if (authContext.auth_identity_id) {
     try {
@@ -89,7 +91,7 @@ export async function requireSellerContextV1(
         sellerId = result.rows?.[0]?.seller_id ?? null
       }
     } catch (err) {
-      console.error("[v1 seller context] auth identity lookup failed", err)
+      log.error("[v1 seller context] auth identity lookup failed", err)
     }
   }
 

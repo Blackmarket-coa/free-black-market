@@ -1,3 +1,5 @@
+import { createLogger } from "../../../../../../../shared/logger"
+const log = createLogger("api/v1/seller/services/subcontracts/[id]/accept")
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import type { SellerAuthRequest } from "../../../../../../middlewares/seller-context-v1"
 import { ORDER_SUBCONTRACT_MODULE } from "../../../../../../../modules/order-subcontract"
@@ -33,7 +35,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
         accepted_by: sellerId,
       })
     } catch (err) {
-      console.error("[subcontract/accept] webhook dispatch failed", err)
+      log.error("[subcontract/accept] webhook dispatch failed", err)
     }
     return res.status(200).json({ subcontract: sub })
   } catch (err) {

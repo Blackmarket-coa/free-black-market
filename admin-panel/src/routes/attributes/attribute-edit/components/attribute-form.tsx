@@ -1,3 +1,4 @@
+import { logger } from "@lib/logger"
 import {
   Text,
   Input,
@@ -97,7 +98,7 @@ export const AttributeForm = ({
 
       await onSubmit(data);
     } catch (error) {
-      console.error(error);
+      logger.error(error);
     }
   });
 

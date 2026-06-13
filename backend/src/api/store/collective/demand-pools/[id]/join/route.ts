@@ -1,3 +1,5 @@
+import { createLogger } from "../../../../../../shared/logger"
+const log = createLogger("api/store/collective/demand-pools/[id]/join")
 import { z } from "zod"
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { DEMAND_POOL_MODULE } from "../../../../../../modules/demand-pool"
@@ -35,7 +37,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: "Validation failed", details: error.issues })
     }
-    console.error(`[POST /store/collective/demand-pools/${id}/join] Error:`, error.message)
+    log.error(`[POST /store/collective/demand-pools/${id}/join] Error:`, error.message)
     res.status(400).json({ error: error.message })
   }
 }
@@ -57,7 +59,7 @@ export async function DELETE(req: MedusaRequest, res: MedusaResponse) {
     await demandPoolService.withdrawFromPool(id, customerId)
     res.json({ message: "Successfully withdrawn from demand pool" })
   } catch (error: any) {
-    console.error(`[DELETE /store/collective/demand-pools/${id}/join] Error:`, error.message)
+    log.error(`[DELETE /store/collective/demand-pools/${id}/join] Error:`, error.message)
     res.status(400).json({ error: error.message })
   }
 }

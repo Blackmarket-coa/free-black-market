@@ -1,3 +1,5 @@
+import { createLogger } from "../../../shared/logger"
+const log = createLogger("workflows/woocommerce-import/steps/fetch-woo-products")
 import {
   createStep,
   StepResponse,
@@ -30,7 +32,7 @@ const fetchWooProductsStep = createStep(
           variationsMap[product.id] = await client.fetchProductVariations(product.id)
         } catch (error: any) {
           // Log but don't fail - product will be imported as simple
-          console.warn(
+          log.warn(
             `Failed to fetch variations for product ${product.id}: ${error.message}`
           )
         }

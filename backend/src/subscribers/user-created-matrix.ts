@@ -1,3 +1,5 @@
+import { createLogger } from "../shared/logger"
+const log = createLogger("subscribers/user-created-matrix")
 import { SubscriberArgs, SubscriberConfig } from "@medusajs/framework"
 import { Modules } from "@medusajs/framework/utils"
 import { getMatrixService } from "../shared/matrix-service"
@@ -15,17 +17,17 @@ export default async function userCreatedMatrixHandler({
   const userId = event.data.id
 
   if (!userId) {
-    console.warn("[userCreated Matrix] Event received without user ID")
+    log.warn("[userCreated Matrix] Event received without user ID")
     return
   }
 
-  console.log(`[userCreated Matrix] Processing user ${userId}`)
+  log.info(`[userCreated Matrix] Processing user ${userId}`)
 
   try {
     const matrixService = getMatrixService()
 
     if (!matrixService) {
-      console.log("[userCreated Matrix] Matrix not configured, skipping")
+      log.info("[userCreated Matrix] Matrix not configured, skipping")
       return
     }
 
@@ -33,7 +35,7 @@ export default async function userCreatedMatrixHandler({
     const user = await userModule.retrieveUser(userId)
 
     if (!user || !user.email) {
-      console.warn(`[userCreated Matrix] User ${userId} not found or has no email`)
+      log.warn(`[userCreated Matrix] User ${userId} not found or has no email`)
       return
     }
 
@@ -53,9 +55,9 @@ export default async function userCreatedMatrixHandler({
       mxid
     )
 
-    console.log(`[userCreated Matrix] Provisioned Matrix account for admin user: ${mxid}`)
+    log.info(`[userCreated Matrix] Provisioned Matrix account for admin user: ${mxid}`)
   } catch (error: any) {
-    console.error(`[userCreated Matrix] Failed for user ${userId}:`, error.message)
+    log.error(`[userCreated Matrix] Failed for user ${userId}:`, error.message)
     // Don't throw - this is a non-critical enhancement
   }
 }

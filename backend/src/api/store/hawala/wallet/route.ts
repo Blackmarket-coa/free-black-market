@@ -1,3 +1,5 @@
+import { createLogger } from "../../../../shared/logger"
+const log = createLogger("api/store/hawala/wallet")
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { HAWALA_LEDGER_MODULE } from "../../../../modules/hawala-ledger"
 import HawalaLedgerModuleService from "../../../../modules/hawala-ledger/service"
@@ -38,7 +40,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 
     res.json({ wallet, balance })
   } catch (error) {
-    console.error("Error getting wallet:", error)
+    log.error("Error getting wallet:", error)
     res.status(500).json({ error: "Failed to retrieve wallet" })
   }
 }
@@ -79,7 +81,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
 
     res.status(201).json({ wallet, balance, created: true })
   } catch (error) {
-    console.error("Error creating wallet:", error)
+    log.error("Error creating wallet:", error)
     res.status(500).json({ error: "Failed to create wallet" })
   }
 }

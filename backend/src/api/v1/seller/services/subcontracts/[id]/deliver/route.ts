@@ -1,3 +1,5 @@
+import { createLogger } from "../../../../../../../shared/logger"
+const log = createLogger("api/v1/seller/services/subcontracts/[id]/deliver")
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { z } from "zod"
 import type { SellerAuthRequest } from "../../../../../../middlewares/seller-context-v1"
@@ -133,7 +135,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
         if (!firstProofId) firstProofId = proof.id
       }
     } catch (err) {
-      console.error("[subcontract/deliver] proof submission failed", err)
+      log.error("[subcontract/deliver] proof submission failed", err)
     }
   }
 
@@ -161,7 +163,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       })
     }
   } catch (err) {
-    console.error("[subcontract/deliver] webhook dispatch failed", err)
+    log.error("[subcontract/deliver] webhook dispatch failed", err)
   }
 
   return res.status(200).json({ subcontract: updated, proof_ids: proofIds })

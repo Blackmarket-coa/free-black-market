@@ -1,3 +1,4 @@
+import { logger } from "@/lib/logger"
 import { CollectionsPage } from "@/components/sections/CollectionsPage/CollectionsPage"
 import { Breadcrumbs } from "@/components/atoms"
 import { listCollections } from "@/lib/data/categories"
@@ -17,7 +18,7 @@ export default async function Collections() {
   try {
     collections = await listCollections()
   } catch (error) {
-    console.error("Failed to fetch collections:", error)
+    logger.error("Failed to fetch collections:", error)
   }
 
   const breadcrumbsItems = [

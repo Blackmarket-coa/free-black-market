@@ -1,3 +1,5 @@
+import { createLogger } from "../shared/logger"
+const log = createLogger("links/producer-seller")
 import { defineLink } from "@medusajs/framework/utils"
 import ProducerModule from "../modules/producer"
 
@@ -25,16 +27,16 @@ let SellerModule: any = null
 
 try {
   SellerModule = require("@mercurjs/framework").SellerModule
-  console.log(`${LOG_PREFIX} Loaded SellerModule from @mercurjs/framework`)
+  log.info(`${LOG_PREFIX} Loaded SellerModule from @mercurjs/framework`)
 } catch (frameworkError: any) {
   try {
     SellerModule = require("@mercurjs/b2c-core/modules/seller").default
-    console.log(`${LOG_PREFIX} Loaded SellerModule from @mercurjs/b2c-core/modules/seller`)
+    log.info(`${LOG_PREFIX} Loaded SellerModule from @mercurjs/b2c-core/modules/seller`)
   } catch (b2cError: any) {
-    console.error(`${LOG_PREFIX} Failed to load SellerModule:`)
-    console.error(`${LOG_PREFIX}   @mercurjs/framework: ${frameworkError.message}`)
-    console.error(`${LOG_PREFIX}   @mercurjs/b2c-core/modules/seller: ${b2cError.message}`)
-    console.error(`${LOG_PREFIX} producer link will NOT be created`)
+    log.error(`${LOG_PREFIX} Failed to load SellerModule:`)
+    log.error(`${LOG_PREFIX}   @mercurjs/framework: ${frameworkError.message}`)
+    log.error(`${LOG_PREFIX}   @mercurjs/b2c-core/modules/seller: ${b2cError.message}`)
+    log.error(`${LOG_PREFIX} producer link will NOT be created`)
   }
 }
 
@@ -60,9 +62,9 @@ if (SellerModule) {
         isList: false,
       }
     )
-    console.log(`${LOG_PREFIX} Link defined successfully: seller ↔ producer`)
+    log.info(`${LOG_PREFIX} Link defined successfully: seller ↔ producer`)
   } catch (linkError: any) {
-    console.error(`${LOG_PREFIX} Failed to define link: ${linkError.message}`)
+    log.error(`${LOG_PREFIX} Failed to define link: ${linkError.message}`)
     producerSellerLink = null
   }
 }

@@ -1,3 +1,5 @@
+import { createLogger } from "../../shared/logger"
+const log = createLogger("api/users")
 import {
   AuthenticatedMedusaRequest,
   MedusaResponse,
@@ -43,7 +45,7 @@ export const POST = async (
       user: result.user,
     })
   } catch (error) {
-    console.error("[POST /users] Registration failed:", error)
+    log.error("[POST /users] Registration failed:", error)
 
     if (error instanceof MedusaError) {
       return res.status(400).json({

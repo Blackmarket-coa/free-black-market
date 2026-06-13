@@ -1,3 +1,5 @@
+import { createLogger } from "../../../../../../shared/logger"
+const log = createLogger("api/store/collective/buyer-networks/[id]/join")
 import { z } from "zod"
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { BUYER_NETWORK_MODULE } from "../../../../../../modules/buyer-network"
@@ -39,7 +41,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: "Validation failed", details: error.issues })
     }
-    console.error(`[POST join network] Error:`, error.message)
+    log.error(`[POST join network] Error:`, error.message)
     res.status(400).json({ error: error.message })
   }
 }
@@ -61,7 +63,7 @@ export async function DELETE(req: MedusaRequest, res: MedusaResponse) {
     await networkService.leaveNetwork(id, customerId)
     res.json({ message: "Successfully left network" })
   } catch (error: any) {
-    console.error(`[DELETE leave network] Error:`, error.message)
+    log.error(`[DELETE leave network] Error:`, error.message)
     res.status(400).json({ error: error.message })
   }
 }

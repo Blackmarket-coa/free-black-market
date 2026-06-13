@@ -1,3 +1,5 @@
+import { createLogger } from "../../../shared/logger"
+const log = createLogger("api/vendor/sales-report")
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 
@@ -156,7 +158,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       },
     })
   } catch (error: any) {
-    console.error(`Error fetching sales report for seller ${sellerId}:`, error)
+    log.error(`Error fetching sales report for seller ${sellerId}:`, error)
     res.status(500).json({ message: "Failed to fetch sales report", error: error.message })
   }
 }

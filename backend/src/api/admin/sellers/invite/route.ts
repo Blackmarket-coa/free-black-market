@@ -1,3 +1,5 @@
+import { createLogger } from "../../../../shared/logger"
+const log = createLogger("api/admin/sellers/invite")
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { Modules } from "@medusajs/framework/utils"
 import { INotificationModuleService } from "@medusajs/framework/types"
@@ -52,7 +54,7 @@ export const POST = async (
       email,
     })
   } catch (error) {
-    console.error("Failed to send seller invitation:", error)
+    log.error("Failed to send seller invitation:", error)
     return res.status(500).json({
       message: error instanceof Error ? error.message : "Failed to send invitation",
     })

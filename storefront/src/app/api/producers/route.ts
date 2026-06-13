@@ -1,3 +1,4 @@
+import { logger } from "@/lib/logger"
 import { NextRequest, NextResponse } from "next/server"
 
 const BACKEND_URL = process.env.MEDUSA_BACKEND_URL || "http://localhost:9000"
@@ -39,7 +40,7 @@ export async function GET(request: NextRequest) {
         response.headers.get("x-correlation-id") ||
         null
 
-      console.error("[storefront/api/producers] Backend request failed", {
+      logger.error("[storefront/api/producers] Backend request failed", {
         status: response.status,
         statusText: response.statusText,
         requestId,
@@ -62,7 +63,7 @@ export async function GET(request: NextRequest) {
     const data = await response.json()
     return NextResponse.json(data)
   } catch (error) {
-    console.error("[storefront/api/producers] Unhandled error", {
+    logger.error("[storefront/api/producers] Unhandled error", {
       backendUrl: `${BACKEND_URL}/store/producers`,
       message: error instanceof Error ? error.message : String(error),
       stack: error instanceof Error ? error.stack : undefined,

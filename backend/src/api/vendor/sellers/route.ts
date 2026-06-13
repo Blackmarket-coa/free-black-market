@@ -1,3 +1,5 @@
+import { createLogger } from "../../../shared/logger"
+const log = createLogger("api/vendor/sellers")
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { Modules } from "@medusajs/framework/utils"
 import { REQUEST_MODULE } from "../../../modules/request"
@@ -28,7 +30,7 @@ export const POST = async (
   try {
     body = createSellerSchema.parse(req.body)
   } catch (validationError: any) {
-    console.error("[POST /vendor/sellers] Validation error")
+    log.error("[POST /vendor/sellers] Validation error")
     return res.status(400).json({
       type: "invalid_data",
       message: validationError.errors?.[0]?.message || "Invalid request data",
@@ -36,7 +38,7 @@ export const POST = async (
     })
   }
 
-  console.log(`[POST /vendor/sellers] Creating seller request: "${body.name}" (email: ${maskEmail(body.member.email)})`)
+  log.info(`[POST /vendor/sellers] Creating seller request: "${body.name}" (email: ${maskEmail(body.member.email)})`)
 
   try {
     // Look up the auth identity by email (created during auth registration)
@@ -48,14 +50,14 @@ export const POST = async (
     })
 
     if (!authIdentity) {
-      console.error(`[POST /vendor/sellers] Auth identity not found for email: ${maskEmail(body.member.email)}`)
+      log.error(`[POST /vendor/sellers] Auth identity not found for email: ${maskEmail(body.member.email)}`)
       return res.status(400).json({
         type: "invalid_data",
         message: "Please complete authentication registration first",
       })
     }
 
-    console.log(`[POST /vendor/sellers] Found auth identity: ${authIdentity.id}`)
+    log.info(`[POST /vendor/sellers] Found auth identity: ${authIdentity.id}`)
 
     // Create a seller creation REQUEST using the custom Request module
     // This will appear in the admin panel for approval
@@ -79,7 +81,7 @@ export const POST = async (
       reviewer_note: `Seller registration request for "${body.name}"`,
     })
 
-    console.log(`[POST /vendor/sellers] Created seller request: ${sellerRequest.id}`)
+    log.info(`[POST /vendor/sellers] Created seller request: ${sellerRequest.id}`)
 
     return res.status(201).json({
       request: {
@@ -89,7 +91,7 @@ export const POST = async (
       },
     })
   } catch (error: any) {
-    console.error("[POST /vendor/sellers] Failed to create seller request:", error.message)
+    log.error("[POST /vendor/sellers] Failed to create seller request:", error.message)
 
     // Return proper error response
     return res.status(400).json({

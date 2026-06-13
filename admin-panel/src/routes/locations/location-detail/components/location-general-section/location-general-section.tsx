@@ -1,3 +1,4 @@
+import { logger } from "@lib/logger"
 import {
   ArchiveBox,
   CurrencyDollar,
@@ -336,7 +337,7 @@ function ServiceZone({
       process.env.NODE_ENV === "development" &&
       countryGeoZones.length !== countries.length
     ) {
-      console.warn(
+      logger.warn(
         "Some countries are missing in the static countries list",
         countryGeoZones
           .filter((g) => !countries.find((c) => c.iso_2 === g.country_code))

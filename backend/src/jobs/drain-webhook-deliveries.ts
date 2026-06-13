@@ -1,3 +1,5 @@
+import { createLogger } from "../shared/logger"
+const log = createLogger("jobs/drain-webhook-deliveries")
 import { MedusaContainer } from "@medusajs/framework/types"
 import { MARKETPLACE_WEBHOOKS_MODULE } from "../modules/marketplace-webhooks"
 import type MarketplaceWebhooksService from "../modules/marketplace-webhooks/service"
@@ -22,11 +24,11 @@ export default async function drainWebhookDeliveriesJob(
   try {
     const attempted = await webhooks.drainDueDeliveries(50)
     if (attempted > 0) {
-      console.log(`[Webhook Drain] Attempted ${attempted} delivery(ies)`)
+      log.info(`[Webhook Drain] Attempted ${attempted} delivery(ies)`)
     }
     return { attempted }
   } catch (error) {
-    console.error("[Webhook Drain] Error draining deliveries:", error)
+    log.error("[Webhook Drain] Error draining deliveries:", error)
     throw error
   }
 }

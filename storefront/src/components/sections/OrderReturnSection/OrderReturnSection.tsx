@@ -1,4 +1,5 @@
 "use client"
+import { logger } from "@/lib/logger"
 
 import { Button } from "@/components/atoms"
 import { UserNavigation } from "@/components/molecules"
@@ -72,7 +73,7 @@ export const OrderReturnSection = ({
     const { order_return_request } = await createReturnRequest(data)
 
     if (!order_return_request.id) {
-      return console.log("Error creating return request")
+      return logger.info("Error creating return request")
     }
 
     router.push(`/user/orders/${order_return_request.id}/request-success`)

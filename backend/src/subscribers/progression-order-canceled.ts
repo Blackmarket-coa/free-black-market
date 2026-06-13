@@ -1,3 +1,5 @@
+import { createLogger } from "../shared/logger"
+const log = createLogger("subscribers/progression-order-canceled")
 import { SubscriberArgs, type SubscriberConfig } from "@medusajs/medusa"
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 import { PROGRESSION_MODULE } from "../modules/progression"
@@ -42,7 +44,7 @@ export default async function progressionOrderCanceled({
 
     await progression.recomputeAggregates(customerId, query as never)
   } catch (error) {
-    console.error(
+    log.error(
       `[progression-order-canceled] Failed to claw back XP for order ${data.id}:`,
       error
     )

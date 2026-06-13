@@ -1,4 +1,5 @@
 "use client"
+import { logger } from "@/lib/logger"
 
 import {
   createContext,
@@ -123,7 +124,7 @@ export const MatrixChatProvider = ({
         setConnectionState(fallbackUrl ? "connecting" : "idle")
       }
     } catch (error) {
-      console.error("[MatrixChatProvider] Failed to fetch config:", error)
+      logger.error("[MatrixChatProvider] Failed to fetch config:", error)
       const fallbackUrl = elementBaseUrl()
       setIsConfigured(Boolean(fallbackUrl))
       setElementUrl(fallbackUrl)

@@ -1,3 +1,5 @@
+import { createLogger } from "../shared/logger"
+const log = createLogger("jobs/hawala-settlement")
 import { MedusaContainer } from "@medusajs/framework/types"
 import { HAWALA_LEDGER_MODULE } from "../modules/hawala-ledger"
 import HawalaLedgerModuleService from "../modules/hawala-ledger/service"
@@ -17,10 +19,10 @@ import { requeueWithBackoff } from "../shared/queue-requeue-adapter"
 export default async function hawalaSettlementJob(container: MedusaContainer) {
   const hawalaService = container.resolve<HawalaLedgerModuleService>(HAWALA_LEDGER_MODULE)
 
-  console.log("[Hawala Settlement] Starting daily settlement batch...")
+  log.info("[Hawala Settlement] Starting daily settlement batch...")
 
   const publishToDlq = async (message: any) => {
-    console.error("[Hawala Settlement][DLQ]", JSON.stringify(message))
+    log.error("[Hawala Settlement][DLQ]", JSON.stringify(message))
   }
   const requeue = async (message: any, delaySeconds: number) => {
     await requeueWithBackoff(message, delaySeconds)
@@ -37,11 +39,11 @@ export default async function hawalaSettlementJob(container: MedusaContainer) {
     const unsettledEntries = entries.filter(e => !e.settlement_batch_id)
 
     if (unsettledEntries.length === 0) {
-      console.log("[Hawala Settlement] No unsettled entries found")
+      log.info("[Hawala Settlement] No unsettled entries found")
       return
     }
 
-    console.log(`[Hawala Settlement] Found ${unsettledEntries.length} unsettled entries`)
+    log.info(`[Hawala Settlement] Found ${unsettledEntries.length} unsettled entries`)
 
     // Calculate totals
     const totalVolume = unsettledEntries.reduce((sum, e) => sum + Number(e.amount), 0)
@@ -63,7 +65,7 @@ export default async function hawalaSettlementJob(container: MedusaContainer) {
       status: "PENDING",
     })
 
-    console.log(`[Hawala Settlement] Created batch #${batchNumber}`)
+    log.info(`[Hawala Settlement] Created batch #${batchNumber}`)
 
     const invoiceEvent = {
       invoice_id: `settlement-${batch.id}`,
@@ -105,7 +107,7 @@ export default async function hawalaSettlementJob(container: MedusaContainer) {
           rail: decision.rail,
           batch_id: batch.id,
         })
-        console.log(
+        log.info(
           `[Hawala Settlement] Dual-rail decision: ${decision.rail} (` +
             decision.reasons.map((r) => `${r.check}=${r.outcome}`).join(", ") +
             `)`
@@ -117,7 +119,7 @@ export default async function hawalaSettlementJob(container: MedusaContainer) {
           stellarMetrics.inc("hawala.settlement_pending_manual", {
             batch_id: batch.id,
           })
-          console.warn(
+          log.warn(
             "[Hawala Settlement] Batch left PENDING for manual Stripe-ACH action",
             JSON.stringify({
               batch_id: batch.id,
@@ -160,7 +162,7 @@ export default async function hawalaSettlementJob(container: MedusaContainer) {
           const errorMessage =
             submitError instanceof Error ? submitError.message : String(submitError)
           stellarMetrics.inc("hawala.settlement_failed", { batch_id: batch.id })
-          console.error(
+          log.error(
             `[Hawala Settlement] Stellar submission failed for batch #${batchNumber}:`,
             errorMessage
           )
@@ -200,11 +202,11 @@ export default async function hawalaSettlementJob(container: MedusaContainer) {
           })
         }
 
-        console.log(`[Hawala Settlement] Batch #${batchNumber} anchored to Stellar:`)
-        console.log(`  - TX Hash: ${stellarResult.txHash}`)
-        console.log(`  - Merkle Root: ${stellarResult.merkleRoot}`)
-        console.log(`  - Entries: ${unsettledEntries.length}`)
-        console.log(`  - Volume: $${totalVolume.toFixed(2)}`)
+        log.info(`[Hawala Settlement] Batch #${batchNumber} anchored to Stellar:`)
+        log.info(`  - TX Hash: ${stellarResult.txHash}`)
+        log.info(`  - Merkle Root: ${stellarResult.merkleRoot}`)
+        log.info(`  - Entries: ${unsettledEntries.length}`)
+        log.info(`  - Volume: $${totalVolume.toFixed(2)}`)
       },
       publishToDlq,
       requeue,
@@ -222,7 +224,7 @@ export default async function hawalaSettlementJob(container: MedusaContainer) {
       })
     }
   } catch (error) {
-    console.error("[Hawala Settlement] Settlement job failed:", error)
+    log.error("[Hawala Settlement] Settlement job failed:", error)
   }
 }
 

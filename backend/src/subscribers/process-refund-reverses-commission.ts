@@ -1,3 +1,5 @@
+import { createLogger } from "../shared/logger"
+const log = createLogger("subscribers/process-refund-reverses-commission")
 import { SubscriberArgs, SubscriberConfig } from "@medusajs/framework"
 import { CREATOR_ATTRIBUTION_MODULE } from "../modules/creator-attribution"
 import CreatorAttributionService from "../modules/creator-attribution/service"
@@ -71,7 +73,7 @@ export default async function processRefundReversesCommission({
           currencyCode: attribution.currency_code,
         })
       } catch (err) {
-        console.error(`[refund-reverses-commission] ledger reversal failed for ${attribution.id}:`, err)
+        log.error(`[refund-reverses-commission] ledger reversal failed for ${attribution.id}:`, err)
       }
     }
 
@@ -101,11 +103,11 @@ export default async function processRefundReversesCommission({
           )
         }
       } catch (err) {
-        console.error("[refund-reverses-commission] webhook dispatch failed", err)
+        log.error("[refund-reverses-commission] webhook dispatch failed", err)
       }
     }
   } catch (err) {
-    console.error(`[refund-reverses-commission] failed for order ${orderId}:`, err)
+    log.error(`[refund-reverses-commission] failed for order ${orderId}:`, err)
   }
 }
 

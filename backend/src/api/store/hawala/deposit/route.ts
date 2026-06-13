@@ -1,3 +1,5 @@
+import { createLogger } from "../../../../shared/logger"
+const log = createLogger("api/store/hawala/deposit")
 import { AuthenticatedMedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { HAWALA_LEDGER_MODULE } from "../../../../modules/hawala-ledger"
 import HawalaLedgerModuleService from "../../../../modules/hawala-ledger/service"
@@ -108,7 +110,7 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
         : "Deposit completed successfully.",
     })
   } catch (error) {
-    console.error("Error processing deposit:", error)
+    log.error("Error processing deposit:", error)
     res.status(500).json({ error: "Failed to process deposit" })
   }
 }

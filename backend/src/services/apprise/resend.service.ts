@@ -1,3 +1,5 @@
+import { createLogger } from "../../shared/logger"
+const log = createLogger("services/apprise/resend.service")
 /**
  * Resend Email Service
  * 
@@ -65,7 +67,7 @@ export class ResendService {
    */
   async sendEmail(params: SendEmailParams): Promise<ResendResponse> {
     if (!this.apiKey) {
-      console.warn("[Resend] No API key configured, email not sent")
+      log.warn("[Resend] No API key configured, email not sent")
       return { success: false, error: "No API key configured" }
     }
 
@@ -112,7 +114,7 @@ export class ResendService {
       const data = await response.json()
 
       if (!response.ok) {
-        console.error("[Resend] API error:", data)
+        log.error("[Resend] API error:", data)
         return { 
           success: false, 
           error: data.message || data.error || "Failed to send email" 
@@ -121,7 +123,7 @@ export class ResendService {
 
       return { success: true, id: data.id }
     } catch (error) {
-      console.error("[Resend] Error sending email:", error)
+      log.error("[Resend] Error sending email:", error)
       return { 
         success: false, 
         error: error instanceof Error ? error.message : "Unknown error" 

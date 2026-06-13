@@ -1,4 +1,5 @@
 "use client"
+import { logger } from "@/lib/logger"
 
 import { Button, Checkbox, Divider } from "@/components/atoms"
 import { Modal } from "@/components/molecules"
@@ -12,7 +13,7 @@ export const OrderCancel = ({ order }: { order: any }) => {
   const [selectedItems, setSelectedItems] = useState<any[]>([])
 
   const handleCancel = () => {
-    console.log("cancel")
+    logger.info("cancel")
   }
 
   const handleSelectItem = (item: any) => {

@@ -1,3 +1,5 @@
+import { createLogger } from "../../../shared/logger"
+const log = createLogger("api/vendor/registration-status")
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 
 // Allow this endpoint to be accessed without seller authentication
@@ -13,7 +15,7 @@ export const AUTHENTICATE = false
  * This endpoint now redirects to the new location.
  */
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
-  console.log("[GET /vendor/registration-status] DEPRECATED - redirecting to /auth/seller/registration-status")
+  log.info("[GET /vendor/registration-status] DEPRECATED - redirecting to /auth/seller/registration-status")
 
   // Get the base URL from the request
   const protocol = req.headers['x-forwarded-proto'] || req.protocol || 'https'

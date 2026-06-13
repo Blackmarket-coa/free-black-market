@@ -1,3 +1,5 @@
+import { createLogger } from "./logger"
+const log = createLogger("shared/seller-registration")
 import { MedusaRequest } from "@medusajs/framework/http"
 import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils"
 import { REQUEST_MODULE } from "../modules/request"
@@ -34,13 +36,13 @@ async function resolveToSellerId(req: MedusaRequest, id: string | null | undefin
       )
       const sellerId = result.rows?.[0]?.seller_id
       if (sellerId) {
-        console.log(`[SellerRegistration] Resolved member ${id} to seller ${sellerId}`)
+        log.info(`[SellerRegistration] Resolved member ${id} to seller ${sellerId}`)
         return sellerId
       }
-      console.warn(`[SellerRegistration] Member ${id} has no associated seller_id`)
+      log.warn(`[SellerRegistration] Member ${id} has no associated seller_id`)
       return null
     } catch (err) {
-      console.error(`[SellerRegistration] Error resolving member to seller:`, err)
+      log.error(`[SellerRegistration] Error resolving member to seller:`, err)
       return null
     }
   }
@@ -162,7 +164,7 @@ export const getSellerRegistrationStatus = async (
         }
       }
 
-      console.warn(
+      log.warn(
         "[GET /auth/seller/registration-status] Seller ID present in token but not found:",
         sellerId
       )
@@ -203,7 +205,7 @@ export const getSellerRegistrationStatus = async (
     if (appMetadata?.seller_id) {
       const seller = await findSellerById(req, String(appMetadata.seller_id))
       if (!seller) {
-        console.warn(
+        log.warn(
           "[GET /auth/seller/registration-status] Seller ID present in auth metadata but not found:",
           appMetadata.seller_id
         )
@@ -222,7 +224,7 @@ export const getSellerRegistrationStatus = async (
     return await checkRequests(req, authIdentityId, authModule)
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Unknown error"
-    console.error("[GET /auth/seller/registration-status] Error:", message)
+    log.error("[GET /auth/seller/registration-status] Error:", message)
     return {
       statusCode: 500,
       status: {
@@ -246,7 +248,7 @@ async function findSellerById(req: MedusaRequest, sellerId: string) {
 async function getAuthIdentity(authModule: any, authIdentityId: string) {
   const identities = await authModule.listAuthIdentities({ id: [authIdentityId] })
   if (!identities || identities.length === 0) return null
-  console.log("[Auth identity] Found:", authIdentityId)
+  log.info("[Auth identity] Found:", authIdentityId)
   return identities[0]
 }
 
@@ -265,7 +267,7 @@ async function checkRequests(
       order: { created_at: "DESC" },
     }
   )
-  console.log(
+  log.info(
     `[Requests] Found ${userRequests.length} requests for authIdentityId: ${authIdentityId}`
   )
 
@@ -281,7 +283,7 @@ async function checkRequests(
 
   const latestRequest = userRequests[0]
 
-  console.log(
+  log.info(
     `[Requests] Latest request status: ${latestRequest.status}, id: ${latestRequest.id}`
   )
 
@@ -362,7 +364,7 @@ async function handleAcceptedRequest(
       if (sellerId) {
         const seller = await findSellerById(req, sellerId)
         if (seller) {
-          console.log("[Accepted request] Found seller, updating auth_identity")
+          log.info("[Accepted request] Found seller, updating auth_identity")
           await authModule.updateAuthIdentities([
             { id: authIdentityId, app_metadata: { seller_id: sellerId } },
           ])
@@ -389,7 +391,7 @@ async function handleAcceptedRequest(
       },
     }
   } catch (err: any) {
-    console.error("[Accepted request] Error:", err.message)
+    log.error("[Accepted request] Error:", err.message)
     return {
       statusCode: 200,
       status: {

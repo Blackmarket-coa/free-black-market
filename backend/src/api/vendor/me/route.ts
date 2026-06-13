@@ -1,3 +1,5 @@
+import { createLogger } from "../../../shared/logger"
+const log = createLogger("api/vendor/me")
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils"
 
@@ -93,7 +95,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     return res.json({ member })
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : "Unknown error"
-    console.error("[GET /vendor/me] Error:", errorMessage)
+    log.error("[GET /vendor/me] Error:", errorMessage)
     return res.status(500).json({
       message: "Failed to fetch vendor member profile",
       type: "server_error",

@@ -1,4 +1,5 @@
 "use client"
+import { logger } from "@/lib/logger"
 
 import { useState, useEffect, useCallback } from "react"
 import Link from "next/link"
@@ -116,7 +117,7 @@ export function VendorsPage({ locale }: VendorsPageProps) {
       const data = await response.json()
       setVendors(data.vendors || [])
     } catch (error) {
-      console.error("Error fetching vendors:", error)
+      logger.error("Error fetching vendors:", error)
     } finally {
       setLoading(false)
     }
@@ -147,7 +148,7 @@ export function VendorsPage({ locale }: VendorsPageProps) {
           setVendors(data.vendors || [])
           setDistanceActive(true)
         } catch (error) {
-          console.error("Error fetching vendors:", error)
+          logger.error("Error fetching vendors:", error)
         } finally {
           setGeolocating(false)
         }

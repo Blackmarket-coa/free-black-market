@@ -1,3 +1,5 @@
+import { createLogger } from "../../../../shared/logger"
+const log = createLogger("api/admin/requests/[id]")
 import { z } from "zod"
 import { AuthenticatedMedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { REQUEST_MODULE } from "../../../../modules/request"
@@ -45,7 +47,7 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
 
     res.json({ request: requests[0] })
   } catch (error: any) {
-    console.error(`[GET /admin/requests/${id}] Error:`, error.message)
+    log.error(`[GET /admin/requests/${id}] Error:`, error.message)
     res.status(500).json({ message: "Failed to retrieve request" })
   }
 }
@@ -140,7 +142,7 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
       return
     }
 
-    console.error(`[POST /admin/requests/${id}] Error:`, error.message)
+    log.error(`[POST /admin/requests/${id}] Error:`, error.message)
     res.status(500).json({
       message: error.message || "Failed to review request",
     })
@@ -188,7 +190,7 @@ export async function PATCH(req: AuthenticatedMedusaRequest, res: MedusaResponse
       res.status(400).json({ message: "Validation failed", errors: error.issues })
       return
     }
-    console.error(`[PATCH /admin/requests/${id}] Error:`, error.message)
+    log.error(`[PATCH /admin/requests/${id}] Error:`, error.message)
     res.status(500).json({ message: "Failed to update request" })
   }
 }
@@ -227,7 +229,7 @@ export async function DELETE(req: AuthenticatedMedusaRequest, res: MedusaRespons
     }
 
     // Audit log the deletion
-    console.log(`[DELETE /admin/requests/${id}] Request deleted by admin ${actorId}. Type: ${request.type}, Status: ${request.status}`)
+    log.info(`[DELETE /admin/requests/${id}] Request deleted by admin ${actorId}. Type: ${request.type}, Status: ${request.status}`)
 
     await requestService.deleteRequests(id)
 
@@ -236,7 +238,7 @@ export async function DELETE(req: AuthenticatedMedusaRequest, res: MedusaRespons
       deleted: { id, type: request.type, status: request.status },
     })
   } catch (error: any) {
-    console.error(`[DELETE /admin/requests/${id}] Error:`, error.message)
+    log.error(`[DELETE /admin/requests/${id}] Error:`, error.message)
     res.status(500).json({ message: "Failed to delete request" })
   }
 }

@@ -1,3 +1,4 @@
+import { logger } from "@/lib/logger"
 export type AnalyticsPayload = Record<string, string | number | boolean | null | undefined>
 
 /**
@@ -220,6 +221,6 @@ export const emitWebsiteEvent = (
   }
 
   if (process.env.NODE_ENV !== "production") {
-    console.info("[analytics]", eventPayload)
+    logger.info("[analytics]", eventPayload)
   }
 }

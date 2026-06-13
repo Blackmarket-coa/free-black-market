@@ -1,3 +1,5 @@
+import { createLogger } from "../shared/logger"
+const log = createLogger("jobs/hawala-balance-reconciler")
 import { MedusaContainer } from "@medusajs/framework/types"
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 import { HAWALA_LEDGER_MODULE } from "../modules/hawala-ledger"
@@ -21,27 +23,27 @@ export default async function hawalaBalanceReconcilerJob(
   const hawala: any = container.resolve(HAWALA_LEDGER_MODULE)
   const pgConnection: any = container.resolve(ContainerRegistrationKeys.PG_CONNECTION)
 
-  console.log("[hawala-balance-reconciler] Starting balance drift sweep")
+  log.info("[hawala-balance-reconciler] Starting balance drift sweep")
 
   let drifts
   try {
     drifts = await reconcileLedgerBalances(hawala, pgConnection)
   } catch (error) {
-    console.error("[hawala-balance-reconciler] Sweep failed:", error)
+    log.error("[hawala-balance-reconciler] Sweep failed:", error)
     return
   }
 
   if (drifts.length === 0) {
-    console.log("[hawala-balance-reconciler] No balance drift detected")
+    log.info("[hawala-balance-reconciler] No balance drift detected")
     return
   }
 
-  console.warn(
+  log.warn(
     `[hawala-balance-reconciler] Detected ${drifts.length} account(s) with balance drift; ` +
       `manual investigation required (NOT auto-corrected)`
   )
   for (const d of drifts) {
-    console.warn(
+    log.warn(
       `[hawala-balance-reconciler]   account=${d.account_id} ` +
         `cached=${d.cached} computed=${d.computed} drift=${d.drift}`
     )

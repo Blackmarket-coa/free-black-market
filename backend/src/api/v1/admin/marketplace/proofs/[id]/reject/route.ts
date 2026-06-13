@@ -1,3 +1,5 @@
+import { createLogger } from "../../../../../../../shared/logger"
+const log = createLogger("api/v1/admin/marketplace/proofs/[id]/reject")
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { z } from "zod"
 import { WORK_VERIFICATION_MODULE } from "../../../../../../../modules/work-verification"
@@ -42,7 +44,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       reason: parsed.data.reason,
     })
   } catch (err) {
-    console.error("[admin/proof/reject] webhook failed", err)
+    log.error("[admin/proof/reject] webhook failed", err)
   }
   return res.status(200).json({ proof: updated })
 }

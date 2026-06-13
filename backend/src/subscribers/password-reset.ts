@@ -1,3 +1,5 @@
+import { createLogger } from "../shared/logger"
+const log = createLogger("subscribers/password-reset")
 import { SubscriberArgs, SubscriberConfig } from "@medusajs/framework"
 import { appendPath } from "../shared/url"
 
@@ -14,11 +16,11 @@ export default async function passwordResetHandler({
   const { entity_id: email, token, actor_type } = event.data
 
   if (!email || !token) {
-    console.warn("Password reset event received without email or token")
+    log.warn("Password reset event received without email or token")
     return
   }
 
-  console.log(`[passwordReset subscriber] Processing password reset for ${actor_type}: ${email}`)
+  log.info(`[passwordReset subscriber] Processing password reset for ${actor_type}: ${email}`)
 
   try {
     const notificationModuleService = container.resolve("notification") as any
@@ -51,7 +53,7 @@ export default async function passwordResetHandler({
         baseUrl = getEnvVar("VENDOR_URL") || getEnvVar("VENDOR_PANEL_URL")
         break
       default:
-        console.warn(`Unknown actor_type: ${actorType}, defaulting to storefront`)
+        log.warn(`Unknown actor_type: ${actorType}, defaulting to storefront`)
         baseUrl = getEnvVar("STOREFRONT_URL") || getEnvVar("NEXT_PUBLIC_BASE_URL")
     }
 
@@ -60,9 +62,9 @@ export default async function passwordResetHandler({
 
     // Validate that base URL is set and looks like a valid URL
     if (!baseUrl || !baseUrl.startsWith("http")) {
-      console.error(`[passwordReset subscriber] Missing or invalid base URL for actor_type: ${actorType}.`)
-      console.error(`[passwordReset subscriber] STOREFRONT_URL="${process.env.STOREFRONT_URL}", NEXT_PUBLIC_BASE_URL="${process.env.NEXT_PUBLIC_BASE_URL}"`)
-      console.error(`[passwordReset subscriber] Please set the appropriate environment variable (VENDOR_URL, STOREFRONT_URL, or ADMIN_URL) with a valid URL starting with http:// or https://`)
+      log.error(`[passwordReset subscriber] Missing or invalid base URL for actor_type: ${actorType}.`)
+      log.error(`[passwordReset subscriber] STOREFRONT_URL="${process.env.STOREFRONT_URL}", NEXT_PUBLIC_BASE_URL="${process.env.NEXT_PUBLIC_BASE_URL}"`)
+      log.error(`[passwordReset subscriber] Please set the appropriate environment variable (VENDOR_URL, STOREFRONT_URL, or ADMIN_URL) with a valid URL starting with http:// or https://`)
       return
     }
 
@@ -80,9 +82,9 @@ export default async function passwordResetHandler({
       },
     })
 
-    console.log(`[passwordReset subscriber] Password reset email sent successfully to ${email}`)
+    log.info(`[passwordReset subscriber] Password reset email sent successfully to ${email}`)
   } catch (error) {
-    console.error(`[passwordReset subscriber] Failed to send password reset email to ${email}:`, error)
+    log.error(`[passwordReset subscriber] Failed to send password reset email to ${email}:`, error)
     // Don't throw - notification failure shouldn't break the password reset flow
   }
 }

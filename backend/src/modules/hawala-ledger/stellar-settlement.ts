@@ -1,3 +1,5 @@
+import { createLogger } from "../../shared/logger"
+const log = createLogger("modules/hawala-ledger/stellar-settlement")
 import {
   Keypair,
   Horizon,
@@ -35,7 +37,7 @@ export const stellarMetrics = {
   inc(name: string, labels: Record<string, string | number> = {}) {
     const payload = { metric: name, labels, ts: new Date().toISOString() }
     // eslint-disable-next-line no-console -- structured-metric sink
-    console.warn(JSON.stringify(payload))
+    log.warn(JSON.stringify(payload))
   },
 }
 
@@ -385,7 +387,7 @@ export function createStellarSettlementService(): StellarSettlementService {
   }
 
   if (!config.signerSecretKey) {
-    console.warn("STELLAR_SIGNER_SECRET not configured - settlement features disabled")
+    log.warn("STELLAR_SIGNER_SECRET not configured - settlement features disabled")
   }
 
   return new StellarSettlementService(config)

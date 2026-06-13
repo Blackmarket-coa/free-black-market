@@ -1,3 +1,5 @@
+import { createLogger } from "../../../../shared/logger"
+const log = createLogger("api/vendor/hawala/payments")
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { HAWALA_LEDGER_MODULE } from "../../../../modules/hawala-ledger"
 import HawalaLedgerModuleService from "../../../../modules/hawala-ledger/service"
@@ -50,7 +52,7 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
       })),
     })
   } catch (error: any) {
-    console.error("Error getting vendor payments:", error)
+    log.error("Error getting vendor payments:", error)
     res.status(400).json({ error: "Failed to retrieve payment history" })
   }
 }
@@ -110,7 +112,7 @@ export const POST = async (req: MedusaRequest, res: MedusaResponse) => {
       message: "Payment completed successfully. Funds transferred instantly with zero fees.",
     })
   } catch (error: any) {
-    console.error("Error creating vendor payment:", error)
+    log.error("Error creating vendor payment:", error)
     res.status(400).json({ error: "Failed to process payment" })
   }
 }

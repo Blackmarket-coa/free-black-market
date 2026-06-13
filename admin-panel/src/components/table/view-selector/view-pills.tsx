@@ -1,3 +1,4 @@
+import { logger } from "@lib/logger"
 import type React from "react";
 import { useEffect, useState } from "react"
 import {
@@ -68,7 +69,7 @@ return
         await setActiveView.mutateAsync(viewId)
       }
     } catch (error) {
-      console.error("Error in handleViewSelect:", error)
+      logger.error("Error in handleViewSelect:", error)
     }
   }
 

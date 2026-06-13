@@ -53,6 +53,9 @@ jobs:
       - name: Check vendor/module completeness
         run: pnpm check:vendor-completeness
 
+      - name: Check logging hygiene (no bare console.* in runtime code)
+        run: pnpm check:no-console
+
       - name: Lint storefront
         working-directory: storefront
         run: pnpm lint

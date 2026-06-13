@@ -1,3 +1,5 @@
+import { createLogger } from "../shared/logger"
+const log = createLogger("subscribers/customer-created-matrix")
 import { SubscriberArgs, SubscriberConfig } from "@medusajs/framework"
 import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils"
 import { getMatrixService } from "../shared/matrix-service"
@@ -15,17 +17,17 @@ export default async function customerCreatedMatrixHandler({
   const customerId = event.data.id
 
   if (!customerId) {
-    console.warn("[customerCreated Matrix] Event received without customer ID")
+    log.warn("[customerCreated Matrix] Event received without customer ID")
     return
   }
 
-  console.log(`[customerCreated Matrix] Processing customer ${customerId}`)
+  log.info(`[customerCreated Matrix] Processing customer ${customerId}`)
 
   try {
     const matrixService = getMatrixService()
 
     if (!matrixService) {
-      console.log("[customerCreated Matrix] Matrix not configured, skipping")
+      log.info("[customerCreated Matrix] Matrix not configured, skipping")
       return
     }
 
@@ -37,7 +39,7 @@ export default async function customerCreatedMatrixHandler({
     })
 
     if (!customer || !customer.email) {
-      console.warn(`[customerCreated Matrix] Customer ${customerId} not found or has no email`)
+      log.warn(`[customerCreated Matrix] Customer ${customerId} not found or has no email`)
       return
     }
 
@@ -65,13 +67,13 @@ export default async function customerCreatedMatrixHandler({
           metadata: { ...(customer.metadata || {}), mxid },
         })
       } catch (persistError: any) {
-        console.warn(`[customerCreated Matrix] Failed to persist mxid: ${persistError.message}`)
+        log.warn(`[customerCreated Matrix] Failed to persist mxid: ${persistError.message}`)
       }
     }
 
-    console.log(`[customerCreated Matrix] Provisioned Matrix account for customer: ${mxid}`)
+    log.info(`[customerCreated Matrix] Provisioned Matrix account for customer: ${mxid}`)
   } catch (error: any) {
-    console.error(`[customerCreated Matrix] Failed for customer ${customerId}:`, error.message)
+    log.error(`[customerCreated Matrix] Failed for customer ${customerId}:`, error.message)
     // Don't throw - this is a non-critical enhancement
   }
 }

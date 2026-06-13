@@ -1,3 +1,5 @@
+import { createLogger } from "../../../../../shared/logger"
+const log = createLogger("api/admin/collective/demand-pools/[id]")
 import { AuthenticatedMedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { DEMAND_POOL_MODULE } from "../../../../../modules/demand-pool"
 import DemandPoolModuleService from "../../../../../modules/demand-pool/service"
@@ -23,7 +25,7 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
 
     res.json({ demand_pool: details, savings })
   } catch (error: any) {
-    console.error(`[GET /admin/collective/demand-pools/${id}] Error:`, error.message)
+    log.error(`[GET /admin/collective/demand-pools/${id}] Error:`, error.message)
     res.status(error.message.includes("not found") ? 404 : 500).json({
       error: error.message,
     })
@@ -81,7 +83,7 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
 
     res.status(400).json({ error: "Invalid action" })
   } catch (error: any) {
-    console.error(`[POST /admin/collective/demand-pools/${id}] Error:`, error.message)
+    log.error(`[POST /admin/collective/demand-pools/${id}] Error:`, error.message)
     res.status(400).json({ error: error.message })
   }
 }
@@ -109,7 +111,7 @@ export async function DELETE(req: AuthenticatedMedusaRequest, res: MedusaRespons
     await demandPoolService.deleteDemandPosts(id)
     res.json({ message: "Demand pool deleted", deleted: { id } })
   } catch (error: any) {
-    console.error(`[DELETE /admin/collective/demand-pools/${id}] Error:`, error.message)
+    log.error(`[DELETE /admin/collective/demand-pools/${id}] Error:`, error.message)
     res.status(500).json({ error: "Failed to delete demand pool" })
   }
 }

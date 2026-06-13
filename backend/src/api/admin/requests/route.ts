@@ -1,3 +1,5 @@
+import { createLogger } from "../../../shared/logger"
+const log = createLogger("api/admin/requests")
 import { z } from "zod"
 import { AuthenticatedMedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { REQUEST_MODULE } from "../../../modules/request"
@@ -68,7 +70,7 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
       res.status(400).json({ message: "Validation failed", errors: error.issues })
       return
     }
-    console.error("[GET /admin/requests] Error:", error.message)
+    log.error("[GET /admin/requests] Error:", error.message)
     res.status(500).json({ message: "Failed to retrieve requests" })
   }
 }
@@ -99,7 +101,7 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
     })
 
     // Get actor info for audit logging
-    console.log(`[POST /admin/requests] Request ${request.id} created by admin ${adminId}. Type: ${body.type}`)
+    log.info(`[POST /admin/requests] Request ${request.id} created by admin ${adminId}. Type: ${body.type}`)
 
     res.status(201).json({
       request,
@@ -110,7 +112,7 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
       res.status(400).json({ message: "Validation failed", errors: error.issues })
       return
     }
-    console.error("[POST /admin/requests] Error:", error.message)
+    log.error("[POST /admin/requests] Error:", error.message)
     res.status(500).json({ message: "Failed to create request" })
   }
 }

@@ -1,3 +1,5 @@
+import { createLogger } from "../../../../shared/logger"
+const log = createLogger("api/admin/collective/buyer-networks")
 import { z } from "zod"
 import { AuthenticatedMedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { BUYER_NETWORK_MODULE } from "../../../../modules/buyer-network"
@@ -43,7 +45,7 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: "Validation failed", details: error.issues })
     }
-    console.error("[GET /admin/collective/buyer-networks] Error:", error.message)
+    log.error("[GET /admin/collective/buyer-networks] Error:", error.message)
     res.status(500).json({ error: "Failed to retrieve buyer networks" })
   }
 }

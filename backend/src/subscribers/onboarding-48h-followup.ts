@@ -1,3 +1,5 @@
+import { createLogger } from "../shared/logger"
+const log = createLogger("subscribers/onboarding-48h-followup")
 import type { SubscriberArgs, SubscriberConfig } from "@medusajs/framework"
 import { Modules } from "@medusajs/framework/utils"
 import type { IEventBusModuleService } from "@medusajs/framework/types"
@@ -57,7 +59,7 @@ export default async function onboardingFollowup({
   try {
     await webhooks.dispatch("vendor.onboarding.followup_scheduled", seller_id, payload)
   } catch (err) {
-    console.error("[onboarding-48h-followup] webhook dispatch failed", err)
+    log.error("[onboarding-48h-followup] webhook dispatch failed", err)
   }
 }
 

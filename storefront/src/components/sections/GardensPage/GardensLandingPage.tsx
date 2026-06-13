@@ -1,4 +1,5 @@
 "use client"
+import { logger } from "@/lib/logger"
 
 import { useState, useEffect } from "react"
 import Link from "next/link"
@@ -58,7 +59,7 @@ export function GardensLandingPage({ locale }: GardensLandingPageProps) {
           setGardens(data.gardens || [])
         }
       } catch (err) {
-        console.error("Failed to fetch gardens:", err)
+        logger.error("Failed to fetch gardens:", err)
       } finally {
         setLoading(false)
       }

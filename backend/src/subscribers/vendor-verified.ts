@@ -1,3 +1,5 @@
+import { createLogger } from "../shared/logger"
+const log = createLogger("subscribers/vendor-verified")
 import { SubscriberArgs, SubscriberConfig } from "@medusajs/framework"
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 import { sendVendorAcceptedNotificationWorkflow } from "../workflows/send-vendor-accepted-notification"
@@ -23,11 +25,11 @@ export default async function vendorVerifiedHandler({
   const sellerId = event.data.seller_id
 
   if (!sellerId) {
-    console.warn("vendor.verified event received without seller_id")
+    log.warn("vendor.verified event received without seller_id")
     return
   }
 
-  console.log(`Processing vendor verification notification for seller ${sellerId}`)
+  log.info(`Processing vendor verification notification for seller ${sellerId}`)
 
   try {
     const query = container.resolve(ContainerRegistrationKeys.QUERY)
@@ -48,7 +50,7 @@ export default async function vendorVerifiedHandler({
     })
 
     if (!sellers || sellers.length === 0) {
-      console.error(`Seller ${sellerId} not found for verification notification`)
+      log.error(`Seller ${sellerId} not found for verification notification`)
       return
     }
 
@@ -58,7 +60,7 @@ export default async function vendorVerifiedHandler({
     const primaryMember = seller.members?.[0]
     
     if (!primaryMember?.email) {
-      console.error(`No member with email found for seller ${sellerId}`)
+      log.error(`No member with email found for seller ${sellerId}`)
       return
     }
 
@@ -73,9 +75,9 @@ export default async function vendorVerifiedHandler({
       },
     })
 
-    console.log(`Vendor acceptance notification sent to ${primaryMember.email}`)
+    log.info(`Vendor acceptance notification sent to ${primaryMember.email}`)
   } catch (error) {
-    console.error(`Failed to send vendor verification notification for ${sellerId}:`, error)
+    log.error(`Failed to send vendor verification notification for ${sellerId}:`, error)
     // Don't throw - notification failure shouldn't break the verification flow
   }
 }

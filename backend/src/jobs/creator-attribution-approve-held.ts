@@ -1,3 +1,5 @@
+import { createLogger } from "../shared/logger"
+const log = createLogger("jobs/creator-attribution-approve-held")
 import { MedusaContainer } from "@medusajs/framework/types"
 import { CREATOR_ATTRIBUTION_MODULE } from "../modules/creator-attribution"
 import CreatorAttributionService from "../modules/creator-attribution/service"
@@ -36,7 +38,7 @@ export default async function approveHeldCreatorAttributionsJob(
   const due = await attributionService.listHeldAttributionsDue()
   if (due.length === 0) return
 
-  console.log(`[creator-approve-held] processing ${due.length} due attributions`)
+  log.info(`[creator-approve-held] processing ${due.length} due attributions`)
 
   for (const a of due) {
     const amountCents = Number(a.commission_amount_cents)
@@ -45,7 +47,7 @@ export default async function approveHeldCreatorAttributionsJob(
       try {
         await attributionService.approveCommission(a.id, "")
       } catch (err) {
-        console.error(`[creator-approve-held] zero-cent approve failed for ${a.id}`, err)
+        log.error(`[creator-approve-held] zero-cent approve failed for ${a.id}`, err)
       }
       continue
     }
@@ -56,7 +58,7 @@ export default async function approveHeldCreatorAttributionsJob(
       try {
         await attributionService.disqualifyAttribution(a.id, "missing_vendor_id")
       } catch (err) {
-        console.error(`[creator-approve-held] disqualify failed for ${a.id}`, err)
+        log.error(`[creator-approve-held] disqualify failed for ${a.id}`, err)
       }
       continue
     }
@@ -94,11 +96,11 @@ export default async function approveHeldCreatorAttributionsJob(
             payload
           )
         } catch (err) {
-          console.error(`[creator-approve-held] webhook dispatch failed for ${a.id}`, err)
+          log.error(`[creator-approve-held] webhook dispatch failed for ${a.id}`, err)
         }
       }
     } catch (err) {
-      console.error(`[creator-approve-held] approval failed for ${a.id}`, err)
+      log.error(`[creator-approve-held] approval failed for ${a.id}`, err)
     }
   }
 }
