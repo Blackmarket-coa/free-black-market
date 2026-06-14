@@ -1,7 +1,7 @@
 import { Module } from "@medusajs/framework/utils"
 import OpportunityEngineService from "./service"
 
-export const OPPORTUNITY_ENGINE_MODULE = "opportunity-engine"
+export const OPPORTUNITY_ENGINE_MODULE = "opportunity_engine"
 
 export default Module(OPPORTUNITY_ENGINE_MODULE, {
   service: OpportunityEngineService,
