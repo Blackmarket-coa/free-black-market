@@ -158,7 +158,7 @@ const accountsFor = (
   account_type: string,
   currency_code: string
 ): FakeAccount[] =>
-  members.map((m, i) => ({
+  members.map((m, _i) => ({
     id: `acct_${currency_code}_${m}`,
     owner_id: m,
     owner_type: "CUSTOMER",

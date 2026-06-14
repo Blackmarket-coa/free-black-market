@@ -36,7 +36,7 @@ export interface StellarConfig {
 export const stellarMetrics = {
   inc(name: string, labels: Record<string, string | number> = {}) {
     const payload = { metric: name, labels, ts: new Date().toISOString() }
-    // eslint-disable-next-line no-console -- structured-metric sink
+     
     log.warn(JSON.stringify(payload))
   },
 }
@@ -343,7 +343,7 @@ export class StellarSettlementService {
       }
       
       return { found: false }
-    } catch (error) {
+    } catch (_error) {
       return { found: false }
     }
   }

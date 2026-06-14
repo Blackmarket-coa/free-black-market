@@ -1,7 +1,6 @@
 import {
   ContentPlatformProvider,
   ExchangeCodeResult,
-  NormalizedPlatformAccount,
   ProviderMetrics,
   ProviderNotSupportedError,
   RefreshResult,

@@ -2,7 +2,7 @@ import React from "react"
 import { Heading } from "@medusajs/ui"
 import { RowType, VenueRow } from "../types"
 
-interface ChartVenueRow extends Pick<VenueRow, "row_number" | "row_type" | "seat_count"> {}
+type ChartVenueRow = Pick<VenueRow, "row_number" | "row_type" | "seat_count">
 
 interface SeatChartProps {
   rows: ChartVenueRow[]

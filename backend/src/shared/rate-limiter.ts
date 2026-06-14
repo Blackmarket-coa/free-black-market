@@ -95,7 +95,7 @@ class RedisStore implements RateLimitStore {
         await this.client.connect()
         this.connected = true
         logger.info("Redis rate limiter connected")
-      } catch (error) {
+      } catch (_error) {
         logger.warn("Redis rate limiter unavailable, using memory store")
         this.connected = false
       }

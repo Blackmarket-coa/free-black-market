@@ -65,7 +65,7 @@ export default async function backfillMxid({ container }: ExecArgs) {
   const seenMxids = new Map<string, string>() // mxid -> seller_metadata_id
 
   for (const row of sellers) {
-    const { seller_metadata_id, seller_id, existing_mxid, member_email, seller_name } = row
+    const { seller_metadata_id, _seller_id, existing_mxid, member_email, seller_name } = row
     try {
       if (existing_mxid) {
         seenMxids.set(existing_mxid, seller_metadata_id)

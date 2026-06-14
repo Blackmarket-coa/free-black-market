@@ -12,7 +12,7 @@ import {
 import { CreateVenueRequest, RowType, VenueRow } from "../types"
 import { SeatChart } from "./seat-chart"
 
-interface NewVenueRow extends Pick<VenueRow, "row_number" | "row_type" | "seat_count"> {}
+type NewVenueRow = Pick<VenueRow, "row_number" | "row_type" | "seat_count">
 
 interface CreateVenueModalProps {
   open: boolean

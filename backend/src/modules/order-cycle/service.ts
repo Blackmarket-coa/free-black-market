@@ -11,10 +11,10 @@ import {
   ShareBox,
 } from "./models"
 
-type OrderCycleStatus = "draft" | "upcoming" | "open" | "closed" | "dispatched" | "cancelled"
+type _OrderCycleStatus = "draft" | "upcoming" | "open" | "closed" | "dispatched" | "cancelled"
 type FeeType = "admin" | "packing" | "transport" | "fundraising" | "sales" | "coordinator"
 type CalculatorType = "flat_rate" | "flat_per_item" | "percentage" | "weight"
-type ExchangeType = "incoming" | "outgoing"
+type _ExchangeType = "incoming" | "outgoing"
 type ApplicationType = "coordinator" | "incoming" | "outgoing"
 
 export type ShareBoxSlot = {

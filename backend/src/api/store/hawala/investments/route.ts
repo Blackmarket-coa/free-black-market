@@ -55,7 +55,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         active_investments: investments.filter(i => i.status === "CONFIRMED").length,
       },
     })
-  } catch (error) {
+  } catch (_error) {
     res.status(500).json({ error: "Failed to fetch investments" })
   }
 }

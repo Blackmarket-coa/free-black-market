@@ -16,7 +16,7 @@ export const GET = async (
   req: MedusaRequest,
   res: MedusaResponse
 ) => {
-  const sellerExtensionService: SellerExtensionService = req.scope.resolve(
+  const _sellerExtensionService: SellerExtensionService = req.scope.resolve(
     SELLER_EXTENSION_MODULE
   )
 

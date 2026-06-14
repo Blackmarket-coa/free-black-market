@@ -14,7 +14,7 @@ const createShiftSchema = z.object({
   notes: z.string().max(500).optional(),
 })
 
-const updateShiftSchema = z.object({
+const _updateShiftSchema = z.object({
   scheduled_start: z.string().datetime().optional(),
   scheduled_end: z.string().datetime().optional(),
   actual_start: z.string().datetime().optional(),

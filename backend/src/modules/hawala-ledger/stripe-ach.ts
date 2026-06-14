@@ -189,7 +189,7 @@ export class StripeAchService {
         { amounts: data.amounts }
       )
       return { verified: true }
-    } catch (error) {
+    } catch (_error) {
       return { verified: false }
     }
   }

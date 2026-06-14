@@ -59,7 +59,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       })
     }
 
-    const achService = createStripeAchService()
+    const _achService = createStripeAchService()
 
     // No fee on withdrawals (or you could add one)
     const fee = 0

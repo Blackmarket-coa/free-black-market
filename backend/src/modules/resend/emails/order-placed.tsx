@@ -515,5 +515,5 @@ const mockOrder = {
     }
   }
 }
-// @ts-ignore
+// @ts-expect-error preview render uses partial mock order props
 export default () => <OrderPlacedEmailComponent {...mockOrder} />

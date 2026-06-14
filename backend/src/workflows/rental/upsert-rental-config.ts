@@ -61,7 +61,6 @@ export const upsertRentalConfigWorkflow = createWorkflow(
     })
 
     // If rental config exists, update it
-    // @ts-ignore
     const updatedConfig = when({ products }, (data) => {
       return !!data.products[0]?.rental_configuration
     }).then(() => {

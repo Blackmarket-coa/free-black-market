@@ -77,6 +77,6 @@ export class Migration20260114FixVendorTypeEnum extends Migration {
 
     // Convert the column back to the legacy enum (if desired by rollback)
     this.addSql('ALTER TABLE "seller_metadata" ALTER COLUMN "vendor_type" TYPE vendor_type_enum USING "vendor_type"::vendor_type_enum;')
-    this.addSql('ALTER TABLE "seller_metadata" ALTER COLUMN "vendor_type" SET DEFAULT \"RETAIL\";')
+    this.addSql('ALTER TABLE "seller_metadata" ALTER COLUMN "vendor_type" SET DEFAULT "RETAIL";')
   }
 }

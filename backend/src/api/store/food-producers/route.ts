@@ -88,7 +88,7 @@ const createProducerSchema = z.object({
   metadata: z.record(z.string(), z.any()).optional(),
 })
 
-const updateProducerSchema = createProducerSchema.partial()
+const _updateProducerSchema = createProducerSchema.partial()
 
 const listProducersQuerySchema = z.object({
   producer_type: ProducerTypeEnum.optional(),

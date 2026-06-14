@@ -266,7 +266,6 @@ class SubscriptionModuleService extends MedusaService({
     last_order_date,
     expiration_date,
     interval,
-    period
   }: {
     last_order_date: Date
     expiration_date: Date

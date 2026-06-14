@@ -20,7 +20,6 @@ import {
   CLOSED_LOOP_RAILS,
   RAIL_CODE_BY_MANIFEST_RAIL,
   getRail,
-  type RailCode,
   type ManifestRail,
 } from "../rails"
 

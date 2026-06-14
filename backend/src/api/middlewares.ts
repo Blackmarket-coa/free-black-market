@@ -144,7 +144,7 @@ async function validatePasswordMiddleware(
  * existing property LinkModel.q" database errors. This middleware strips
  * the 'q' parameter from routes that don't support it.
  */
-async function stripQueryParamMiddleware(
+async function _stripQueryParamMiddleware(
   req: MedusaRequest,
   res: MedusaResponse,
   next: MedusaNextFunction,
@@ -305,7 +305,7 @@ function vendorCorsMiddleware(
   res: MedusaResponse,
   next: MedusaNextFunction,
 ) {
-  const origin = req.headers.origin || "";
+  const _origin = req.headers.origin || "";
 
   // Get CORS origins
   const corsOrigins = getVendorCorsOrigins();
@@ -357,7 +357,7 @@ function vendorCorsMiddleware(
         callback(null, true);
         return;
       }
-    } catch (e) {
+    } catch (_e) {
       // Invalid URL, continue to rejection
     }
 
@@ -391,7 +391,7 @@ function adminCorsMiddleware(
   res: MedusaResponse,
   next: MedusaNextFunction,
 ) {
-  const origin = req.headers.origin || "";
+  const _origin = req.headers.origin || "";
 
   // Custom origin function to allow admin dashboards and Railway
   const customOriginHandler = (
@@ -436,7 +436,7 @@ function adminCorsMiddleware(
         callback(null, true);
         return;
       }
-    } catch (e) {
+    } catch (_e) {
       // Invalid URL
     }
 

@@ -65,7 +65,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     }
 
     // 3. For seller actor type, check the member/seller chain
-    let sellerChain: any[] = []
+    const sellerChain: any[] = []
     if (!actorType || actorType === "seller") {
       for (const authId of authIdentities) {
         const appMetadata = authId.app_metadata || {}

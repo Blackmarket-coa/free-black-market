@@ -33,7 +33,7 @@ export async function seedCmsBlueprint(container: MedusaContainer) {
       logger.info("CMS Blueprint data already exists, skipping seed...")
       return
     }
-  } catch (error) {
+  } catch (_error) {
     // Table might not exist yet, continue with seeding
     logger.info("CMS tables may not exist yet, will seed after migration...")
   }

@@ -1,7 +1,7 @@
 import { AuthenticatedMedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { WISHLIST_MODULE } from "../../../../../../modules/wishlist"
 import WishlistModuleService from "../../../../../../modules/wishlist/service"
-import { requireCustomerId, notFound, forbidden } from "../../../../../../shared"
+import { requireCustomerId, notFound } from "../../../../../../shared"
 
 // ===========================================
 // DELETE /store/wishlist/:id/product/:productId

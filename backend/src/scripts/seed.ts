@@ -142,7 +142,7 @@ export default async function seedDemoData({ container }: ExecArgs) {
         } else {
           throw error;
         }
-      } catch (queryError) {
+      } catch (_queryError) {
         throw error;
       }
     } else {

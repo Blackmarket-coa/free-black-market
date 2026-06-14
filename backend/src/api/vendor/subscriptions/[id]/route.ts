@@ -1,7 +1,7 @@
 import { AuthenticatedMedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { SUBSCRIPTION_MODULE } from "../../../../modules/subscription"
 import SubscriptionModuleService from "../../../../modules/subscription/service"
-import { requireSellerId, notFound, forbidden } from "../../../../shared"
+import { requireSellerId } from "../../../../shared"
 
 // ===========================================
 // GET /vendor/subscriptions/:id

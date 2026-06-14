@@ -60,7 +60,7 @@ const finalizeProposalStep = createStep(
     // Calculate results
     const votesFor = proposal.votes_for as number
     const votesAgainst = proposal.votes_against as number
-    const votesAbstain = proposal.votes_abstain as number
+    const _votesAbstain = proposal.votes_abstain as number
     const uniqueVoters = proposal.unique_voters as number
     const quorumRequired = proposal.quorum_required as number
     const approvalThreshold = proposal.approval_threshold as number

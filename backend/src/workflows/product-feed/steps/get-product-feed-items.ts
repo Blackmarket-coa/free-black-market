@@ -40,7 +40,7 @@ export const getProductFeedItemsStep = createStep(
     const limit = 100
     let offset = 0
     let count = 0
-    const countryCode = input.country_code.toLowerCase()
+    const _countryCode = input.country_code.toLowerCase()
     const currencyCode = input.currency_code.toLowerCase()
 
     do {
@@ -85,7 +85,6 @@ export const getProductFeedItemsStep = createStep(
         if (!product.variants?.length) continue
 
         for (const variant of product.variants) {
-          // @ts-ignore
           const calculatedPrice = variant.calculated_price as CalculatedPriceSet
           if (!calculatedPrice?.calculated_amount) continue
 

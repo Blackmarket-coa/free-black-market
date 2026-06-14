@@ -29,7 +29,7 @@ const processGroupPurchaseStep = createStep(
 
     return new StepResponse(result, input.demand_post_id)
   },
-  async (demandPostId, { container }) => {
+  async (demandPostId) => {
     if (!demandPostId) return
     // Note: Financial reversals should be handled via refund process
     log.info(

@@ -19,7 +19,6 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
     filters.tag_type = tag_type
   }
 
-  let tags: any[]
 
   if (category_id) {
     // Get tags for a specific category
@@ -59,7 +58,7 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
     filters,
   })
 
-  tags = tagData
+  const tags: any[] = tagData
 
   return res.json({
     tags,

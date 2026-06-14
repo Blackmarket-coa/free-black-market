@@ -25,7 +25,7 @@ const getLotQuantityStep = createStep(
   "get-lot-quantity",
   async (input: SyncLotInventoryInput, { container }) => {
     const query = container.resolve("query");
-    const logger = container.resolve("logger");
+    const _logger = container.resolve("logger");
 
     const { data: lots } = await query.graph({
       entity: "lot",

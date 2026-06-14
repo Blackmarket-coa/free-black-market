@@ -112,7 +112,7 @@ export class GitHubService {
 
     // Prefer the default branch raw URL from the commit response when available.
     const sha = data.content?.sha
-    const branch = data.commit?.tree?.sha ? undefined : undefined // placeholder; we use HEAD
+    const _branch = data.commit?.tree?.sha ? undefined : undefined // placeholder; we use HEAD
     const rawUrl = sha
       ? `https://raw.githubusercontent.com/${this.repo.owner}/${this.repo.repo}/HEAD/${path}`
       : `https://raw.githubusercontent.com/${this.repo.owner}/${this.repo.repo}/HEAD/${path}`

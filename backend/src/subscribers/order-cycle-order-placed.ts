@@ -57,9 +57,8 @@ export default async function orderPlacedHandler({
     log.info(`[Order Cycle Subscriber] Order ${orderId} placed in cycle ${orderCycleId}`)
     
     // Verify the order cycle exists and is valid
-    let orderCycle
     try {
-      orderCycle = await orderCycleService.retrieveOrderCycle(orderCycleId)
+      await orderCycleService.retrieveOrderCycle(orderCycleId)
     } catch {
       log.info(`[Order Cycle Subscriber] Order cycle ${orderCycleId} not found`)
       return

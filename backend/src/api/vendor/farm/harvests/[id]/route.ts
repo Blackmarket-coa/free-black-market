@@ -254,7 +254,7 @@ export async function DELETE(
       filters: { id: producerId },
       pagination: { take: 1 },
     })
-    const producerProfile = (producers && producers[0]) || {}
+    const _producerProfile = (producers && producers[0]) || {}
 
     // Verify harvest belongs to this producer
     const { data: existingHarvests } = await query.graph({

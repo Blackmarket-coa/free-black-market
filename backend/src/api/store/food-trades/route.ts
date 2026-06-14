@@ -58,7 +58,7 @@ const createTradeSchema = z.object({
   metadata: z.record(z.string(), z.any()).optional(),
 })
 
-const respondToTradeSchema = z.object({
+const _respondToTradeSchema = z.object({
   accepted: z.boolean(),
   counter_offer: z.string().max(1000).optional(),
   producer_notes: z.string().max(500).optional(),

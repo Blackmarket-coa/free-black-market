@@ -56,7 +56,8 @@
     "dev": "medusa develop",
     "seed": "medusa exec ./src/scripts/seed.ts",
     "seed:if-needed": "node scripts/conditional-seed.js",
-    "lint": "tsc --noEmit",
+    "lint": "eslint src --max-warnings 0",
+    "lint:fix": "eslint src --fix",
     "typecheck": "tsc --noEmit",
     "assert-env": "node ../scripts/assert-env.mjs --app=backend",
     "test:integration:http": "TEST_TYPE=integration:http NODE_OPTIONS=--experimental-vm-modules jest --silent=false --runInBand --forceExit",
@@ -116,6 +117,7 @@
     "zod": "^4.2.0"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.4",
     "@graphql-codegen/visitor-plugin-common": "^6.2.2",
     "@medusajs/medusa": "2.14.2",
     "@medusajs/test-utils": "2.14.2",
@@ -132,6 +134,7 @@
     "@types/react": "^18.3.2",
     "@types/react-dom": "^18.2.25",
     "bcrypt": "^6.0.0",
+    "eslint": "^9.39.4",
     "jest": "^29.7.0",
     "prop-types": "^15.8.1",
     "react": "^18.2.0",
@@ -139,6 +142,7 @@
     "react-router-dom": "6.30.2",
     "ts-node": "^10.9.2",
     "typescript": "^5.6.2",
+    "typescript-eslint": "^8.61.0",
     "yalc": "^1.0.0-pre.53"
   },
   "engines": {

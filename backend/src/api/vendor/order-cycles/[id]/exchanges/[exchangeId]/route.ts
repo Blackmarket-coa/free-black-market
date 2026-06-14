@@ -16,7 +16,7 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
   try {
     const exchange = await orderCycleService.retrieveOrderCycleExchange(exchangeId)
     res.json({ exchange })
-  } catch (error: any) {
+  } catch (_error: any) {
     res.status(404).json({ message: "Exchange not found" })
   }
 }

@@ -26,7 +26,7 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
     }
 
     res.json({ enterprise_fee })
-  } catch (error: any) {
+  } catch (_error: any) {
     res.status(404).json({ message: "Enterprise fee not found" })
   }
 }

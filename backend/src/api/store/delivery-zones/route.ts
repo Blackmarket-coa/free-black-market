@@ -37,7 +37,7 @@ const createZoneSchema = z.object({
   priority: z.number().int().min(0).default(0),
 })
 
-const updateZoneSchema = createZoneSchema.partial()
+const _updateZoneSchema = createZoneSchema.partial()
 
 const listZonesQuerySchema = z.object({
   active: z.coerce.boolean().optional(),
