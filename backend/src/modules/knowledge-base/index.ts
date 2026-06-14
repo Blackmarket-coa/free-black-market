@@ -1,7 +1,7 @@
 import { Module } from "@medusajs/framework/utils"
 import KnowledgeBaseService from "./service"
 
-export const KNOWLEDGE_BASE_MODULE = "knowledge-base"
+export const KNOWLEDGE_BASE_MODULE = "knowledge_base"
 
 export default Module(KNOWLEDGE_BASE_MODULE, {
   service: KnowledgeBaseService,
