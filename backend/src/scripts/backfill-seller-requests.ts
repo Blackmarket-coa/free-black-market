@@ -1,5 +1,4 @@
 import { ExecArgs } from "@medusajs/framework/types"
-import { Modules } from "@medusajs/framework/utils"
 
 /**
  * Backfill script to create request records for existing sellers

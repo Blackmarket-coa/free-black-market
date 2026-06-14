@@ -49,7 +49,7 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
         sellers,
       }
     })
-  } catch (error) {
+  } catch (_error) {
     res.status(404).json({ message: "Order cycle not found" })
   }
 }
@@ -92,7 +92,7 @@ export const PUT = async (req: MedusaRequest, res: MedusaResponse) => {
     const updated = await orderCycleService.updateOrderCycles(updates)
     
     res.json({ order_cycle: updated })
-  } catch (error) {
+  } catch (_error) {
     res.status(404).json({ message: "Order cycle not found" })
   }
 }
@@ -129,7 +129,7 @@ export const DELETE = async (req: MedusaRequest, res: MedusaResponse) => {
       await orderCycleService.deleteOrderCycles(id)
       res.json({ message: "Order cycle deleted" })
     }
-  } catch (error) {
+  } catch (_error) {
     res.status(404).json({ message: "Order cycle not found" })
   }
 }

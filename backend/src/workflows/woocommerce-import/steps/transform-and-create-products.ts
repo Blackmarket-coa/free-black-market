@@ -134,7 +134,7 @@ const transformAndCreateProductsStep = createStep(
     const productService = container.resolve(Modules.PRODUCT)
     try {
       await productService.deleteProducts(createdProductIds)
-    } catch (error) {
+    } catch (_error) {
       // Best effort cleanup
     }
   }

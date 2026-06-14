@@ -32,7 +32,7 @@ export function loadSellerModule(linkName: string): LoadResult {
       log.info(`${LOG_PREFIX} Loaded SellerModule from @mercurjs/framework`)
       return { SellerModule, error: null, source: "@mercurjs/framework" }
     }
-  } catch (e: any) {
+  } catch (_e: any) {
     // Continue to next attempt
   }
 
@@ -43,7 +43,7 @@ export function loadSellerModule(linkName: string): LoadResult {
       log.info(`${LOG_PREFIX} Loaded SellerModule from @mercurjs/b2c-core/modules/seller`)
       return { SellerModule, error: null, source: "@mercurjs/b2c-core/modules/seller" }
     }
-  } catch (e: any) {
+  } catch (_e: any) {
     // Continue to next attempt
   }
 
@@ -54,7 +54,7 @@ export function loadSellerModule(linkName: string): LoadResult {
       log.info(`${LOG_PREFIX} Loaded SellerModule from @mercurjs/b2c-core`)
       return { SellerModule: b2cCore.SellerModule, error: null, source: "@mercurjs/b2c-core" }
     }
-  } catch (e: any) {
+  } catch (_e: any) {
     // Continue to error handling
   }
 

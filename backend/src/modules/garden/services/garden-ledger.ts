@@ -130,17 +130,19 @@ export class GardenLedgerService extends MedusaService({}) {
       case "equal_vote":
         return base_votes + role_bonus
         
-      case "labor_weighted":
+      case "labor_weighted": {
         // 1 vote per 10 hours of labor
         const laborBonus = Math.floor(labor_hours / 10)
         return base_votes + laborBonus + role_bonus
+      }
         
-      case "investment_weighted":
+      case "investment_weighted": {
         // 1 vote per $100 invested
         const investmentBonus = Math.floor(investment_amount / 100)
         return base_votes + investmentBonus + role_bonus
+      }
         
-      case "hybrid":
+      case "hybrid": {
         const baseWeight = weights.base_weight || 0.4
         const laborWeight = weights.labor_weight || 0.3
         const investWeight = weights.investment_weight || 0.3
@@ -150,6 +152,7 @@ export class GardenLedgerService extends MedusaService({}) {
         const basePower = base_votes * baseWeight
         
         return Math.round(basePower + laborPower + investPower + role_bonus)
+      }
         
       default:
         return base_votes

@@ -14,7 +14,7 @@ export const updateRentalStep = createStep(
     const rentalModuleService: RentalModuleService = container.resolve(RENTAL_MODULE)
 
     const existingRental = await rentalModuleService.retrieveRental(rental_id)
-    let actualReturnDate = status === "returned" ? new Date() : null
+    const actualReturnDate = status === "returned" ? new Date() : null
 
     if (status === "active" && existingRental.status !== "pending") {
       throw new MedusaError(

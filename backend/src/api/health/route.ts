@@ -17,7 +17,7 @@ import type { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { getRuntimeModuleGateSnapshot } from "../../shared/runtime-module-gates"
 
 // Track startup time
-const startTime = Date.now()
+const _startTime = Date.now()
 
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
   const memUsage = process.memoryUsage()

@@ -1,7 +1,7 @@
 import { createStep, StepResponse } from "@medusajs/framework/workflows-sdk"
 import { SUBSCRIPTION_MODULE } from "../../../modules/subscription"
 import SubscriptionModuleService from "../../../modules/subscription/service"
-import { SubscriptionData, SubscriptionStatus } from "../../../modules/subscription/types"
+import { SubscriptionStatus } from "../../../modules/subscription/types"
 
 type StepInput = {
   limit?: number

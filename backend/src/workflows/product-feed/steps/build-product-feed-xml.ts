@@ -13,7 +13,7 @@ export const buildProductFeedXmlStep = createStep(
         .replace(/&/g, "&amp;")
         .replace(/</g, "&lt;")
         .replace(/>/g, "&gt;")
-        .replace(/\"/g, "&quot;")
+        .replace(/"/g, "&quot;")
         .replace(/'/g, "&apos;")
 
     const siteName = process.env.NEXT_PUBLIC_SITE_NAME || "Coalition Marketplace"

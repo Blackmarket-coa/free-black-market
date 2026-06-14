@@ -72,6 +72,10 @@ jobs:
         working-directory: backend
         run: pnpm exec tsc --noEmit
 
+      - name: Lint backend
+        working-directory: backend
+        run: pnpm lint
+
   i18n-contracts:
     name: Translation Contract Validation
     runs-on: ubuntu-latest

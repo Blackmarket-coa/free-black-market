@@ -1,5 +1,5 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
-import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils"
+import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 
 /**
  * GET /admin/sellers
@@ -59,7 +59,7 @@ export const GET = async (
 
   // Fetch producer info for all sellers via producer_seller link
   const sellerIds = sellers.map((s: { id: string }) => s.id)
-  let producerMap: Record<string, unknown> = {}
+  const producerMap: Record<string, unknown> = {}
 
   if (sellerIds.length > 0) {
     try {

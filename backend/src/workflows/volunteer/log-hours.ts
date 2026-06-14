@@ -49,7 +49,7 @@ const logVolunteerHoursStep = createStep(
     const query = container.resolve(ContainerRegistrationKeys.QUERY)
 
     // Get base credit rate
-    let creditRate = 15 // Default $15/hour
+    const creditRate = 15 // Default $15/hour
     let creditMultiplier = 1.0
 
     // Check for work party bonus

@@ -28,7 +28,7 @@ export default async function initSalesChannels(
     const query = container.resolve(ContainerRegistrationKeys.QUERY)
 
     // 1. Ensure Default Sales Channel exists
-    let channels = await salesChannelService.listSalesChannels({
+    const channels = await salesChannelService.listSalesChannels({
       name: "Default Sales Channel",
     })
 

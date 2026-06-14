@@ -1,5 +1,4 @@
 import { model } from "@medusajs/framework/utils"
-import { DayOfWeek } from "./vendor-rules"
 
 /**
  * Fulfillment Window

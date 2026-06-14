@@ -123,7 +123,7 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
       products: productsWithDetails,
       seller_count: cycleSellers.length,
     })
-  } catch (error) {
+  } catch (_error) {
     res.status(404).json({ message: "Order cycle not found" })
   }
 }

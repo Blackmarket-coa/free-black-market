@@ -5,8 +5,6 @@ import {
   VendorCustomerTier,
   StandingOrder,
   FulfillmentMethod,
-  DayOfWeek,
-  CustomerTierType,
 } from "./models"
 
 /**
@@ -268,7 +266,7 @@ class VendorRulesService extends MedusaService({
     customer_notes?: string
   }) {
     // Calculate first order date
-    let nextOrderDate = new Date(data.start_date)
+    const nextOrderDate = new Date(data.start_date)
     
     return this.createStandingOrders({
       seller_id: data.seller_id,

@@ -32,7 +32,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 
 // POST /store/collective/bargaining-groups/:id/proposals (counter-offer)
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
-  const { id } = req.params
+  const { _id } = req.params
 
   try {
     const body = counterOfferSchema.parse(req.body)

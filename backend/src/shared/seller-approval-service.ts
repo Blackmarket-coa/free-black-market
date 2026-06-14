@@ -12,7 +12,7 @@ import { getMatrixService, GOVERNANCE_POWER_LEVEL } from "./matrix-service"
 import { REQUEST_MODULE } from "../modules/request"
 import RequestModuleService from "../modules/request/service"
 import { RequestStatus } from "../modules/request/models"
-import { REQUEST_TYPES, isSellerRequestType } from "../modules/request/validators"
+import { isSellerRequestType } from "../modules/request/validators"
 
 /**
  * Result of a successful seller approval

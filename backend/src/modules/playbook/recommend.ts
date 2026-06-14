@@ -98,7 +98,7 @@ const rankSimplicity = (id: PlaybookId): number => {
  */
 const reasonFor = (
   playbook: PlaybookId,
-  answers: PickerAnswers
+  _answers: PickerAnswers
 ): string => {
   switch (playbook) {
     case "stall":

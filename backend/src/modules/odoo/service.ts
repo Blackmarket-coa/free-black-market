@@ -92,7 +92,7 @@ export default class OdooModuleService {
   private client: JSONRPCClient
   private uid?: number
 
-  constructor({}, options: Options) {
+  constructor(_container: Record<string, unknown>, options: Options) {
     this.options = options
 
     this.client = new JSONRPCClient((jsonRPCRequest) =>

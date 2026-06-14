@@ -19,20 +19,20 @@ class DigitalProductFulfillmentService extends AbstractFulfillmentProviderServic
   async validateFulfillmentData(
     optionData: Record<string, unknown>,
     data: Record<string, unknown>,
-    context: Record<string, unknown>
+    _context: Record<string, unknown>
   ): Promise<any> {
     return data
   }
 
-  async validateOption(data: Record<string, any>): Promise<boolean> {
+  async validateOption(_data: Record<string, any>): Promise<boolean> {
     return true
   }
 
   async createFulfillment(
     data: Record<string, unknown>, 
-    items: Partial<Omit<FulfillmentItemDTO, "fulfillment">>[], 
-    order: Partial<FulfillmentOrderDTO> | undefined, 
-    fulfillment: Partial<Omit<FulfillmentDTO, "provider_id" | "data" | "items">>
+    _items: Partial<Omit<FulfillmentItemDTO, "fulfillment">>[], 
+    _order: Partial<FulfillmentOrderDTO> | undefined, 
+    _fulfillment: Partial<Omit<FulfillmentDTO, "provider_id" | "data" | "items">>
   ): Promise<CreateFulfillmentResult> {
     // No data is being sent anywhere
     return {

@@ -4,7 +4,6 @@ import { CREATOR_PROGRAM_MODULE } from "../../../../../modules/creator-program"
 import CreatorProgramService from "../../../../../modules/creator-program/service"
 import {
   CreatorProgramType,
-  CreatorProgramStatus,
 } from "../../../../../modules/creator-program/models"
 
 /**

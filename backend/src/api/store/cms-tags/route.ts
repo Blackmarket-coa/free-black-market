@@ -18,7 +18,6 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
     filters.tag_type = tag_type
   }
 
-  let tags: any[]
 
   if (category_handle) {
     // First get category by handle
@@ -68,7 +67,7 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
     filters,
   })
 
-  tags = tagData
+  const tags: any[] = tagData
 
   // Group by type for easier frontend usage
   const tagsByType = tags.reduce((acc: Record<string, any[]>, tag: any) => {

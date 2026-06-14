@@ -120,7 +120,6 @@ export const createRentalsWorkflow = createWorkflow(
       key: cart_id,
     })
 
-    // @ts-ignore
     return new WorkflowResponse({
       order: orders[0],
     })

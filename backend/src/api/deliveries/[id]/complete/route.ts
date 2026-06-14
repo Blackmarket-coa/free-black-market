@@ -20,7 +20,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
         stepIdToSucceed: awaitDeliveryStepId,
       },
     })
-    .catch((error) => {
+    .catch((_error) => {
       return MedusaError.Types.UNEXPECTED_STATE;
     });
 

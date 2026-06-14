@@ -28,8 +28,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       limit = 20,
       offset = 0,
       order,
-      fields,
-      ...rest
+      _fields,
+      ..._rest
     } = req.query as Record<string, any>
 
     // Build filters

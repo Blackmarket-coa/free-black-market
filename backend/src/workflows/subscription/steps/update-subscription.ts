@@ -1,7 +1,6 @@
 import { createStep, StepResponse } from "@medusajs/framework/workflows-sdk"
 import { SUBSCRIPTION_MODULE } from "../../../modules/subscription"
 import SubscriptionModuleService from "../../../modules/subscription/service"
-import { SubscriptionStatus } from "../../../modules/subscription/types"
 
 type StepInput = {
   subscription_id: string
@@ -35,14 +34,16 @@ export const updateSubscriptionStep = createStep(
       case "resume":
         subscription = await subscriptionService.resumeSubscription(subscription_id)
         break
-      case "cancel":
+      case "cancel": {
         const canceled = await subscriptionService.cancelSubscriptions(subscription_id)
         subscription = canceled[0]
         break
-      case "expire":
+      }
+      case "expire": {
         const expired = await subscriptionService.expireSubscription(subscription_id)
         subscription = expired[0]
         break
+      }
       case "fail":
         subscription = await subscriptionService.failSubscription(subscription_id, reason)
         break

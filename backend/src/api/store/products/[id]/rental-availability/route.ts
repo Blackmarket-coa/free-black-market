@@ -20,7 +20,7 @@ export const GetRentalAvailabilitySchema = z.object({
 })
 
 export const GET = async (
-  req: MedusaRequest<{}, z.infer<typeof GetRentalAvailabilitySchema>>,
+  req: MedusaRequest<Record<string, unknown>, z.infer<typeof GetRentalAvailabilitySchema>>,
   res: MedusaResponse
 ) => {
 

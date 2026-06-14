@@ -57,7 +57,7 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
     })
 
     // Store or update Stripe customer ID
-    const existingAccounts = await hawalaService.listBankAccounts({
+    const _existingAccounts = await hawalaService.listBankAccounts({
       customer_id: customerId,
     })
 

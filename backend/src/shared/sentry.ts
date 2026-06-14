@@ -28,7 +28,6 @@
  * ```
  */
 
-/// <reference path="../types/optional-deps.d.ts" />
 
 import { createLogger } from "./logger"
 
@@ -94,7 +93,7 @@ export async function initSentry(config: SentryConfig = {}): Promise<boolean> {
 
   try {
     // Dynamic import to avoid requiring @sentry/node as a dependency
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
+     
     const sentryModule = await import("@sentry/node").catch(() => null)
     if (!sentryModule) {
       logger.warn("@sentry/node not installed, error tracking disabled. Install with: pnpm add @sentry/node")

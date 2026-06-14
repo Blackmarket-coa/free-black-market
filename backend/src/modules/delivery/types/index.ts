@@ -1,5 +1,4 @@
 import { InferTypeOf } from "@medusajs/framework/types";
-import DeliveryModuleService from "../service";
 import { Delivery } from "../models/delivery";
 
 export enum DeliveryStatus {

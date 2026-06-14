@@ -24,11 +24,11 @@ let SellerModule: any = null
 try {
   SellerModule = require("@mercurjs/framework").SellerModule
   log.info(`${LOG_PREFIX} Loaded SellerModule from @mercurjs/framework`)
-} catch (frameworkError: any) {
+} catch (_frameworkError: any) {
   try {
     SellerModule = require("@mercurjs/b2c-core/modules/seller").default
     log.info(`${LOG_PREFIX} Loaded SellerModule from @mercurjs/b2c-core`)
-  } catch (b2cError: any) {
+  } catch (_b2cError: any) {
     log.error(`${LOG_PREFIX} Failed to load SellerModule`)
     log.error(`${LOG_PREFIX} woocommerce_connection link will NOT be created`)
   }

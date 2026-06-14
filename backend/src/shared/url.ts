@@ -11,7 +11,7 @@ export const appendPath = (baseUrl: string, path: string): string => {
     url.pathname = `${normalizedBasePath}${normalizedPath}`
 
     return url.toString()
-  } catch (error) {
+  } catch (_error) {
     return ""
   }
 }

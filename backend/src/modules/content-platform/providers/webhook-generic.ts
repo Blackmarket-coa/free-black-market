@@ -4,7 +4,6 @@ import {
   ExchangeCodeResult,
   InboundWebhookRequest,
   NormalizedEvent,
-  NormalizedPlatformAccount,
   ProviderMetrics,
   ProviderNotSupportedError,
   VerifyAccountResult,

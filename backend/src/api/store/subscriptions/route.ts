@@ -2,9 +2,9 @@ import { z } from "zod"
 import { AuthenticatedMedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { SUBSCRIPTION_MODULE } from "../../../modules/subscription"
 import SubscriptionModuleService from "../../../modules/subscription/service"
-import { SubscriptionInterval, SubscriptionType, SubscriptionStatus } from "../../../modules/subscription/types"
+import { SubscriptionInterval, SubscriptionType } from "../../../modules/subscription/types"
 import { createSubscriptionWorkflow } from "../../../workflows/subscription"
-import { requireCustomerId, validationError } from "../../../shared"
+import { requireCustomerId } from "../../../shared"
 
 // ===========================================
 // VALIDATION SCHEMAS

@@ -120,17 +120,19 @@ export class KitchenLedgerService extends MedusaService({}) {
       case "equal_vote":
         return base_votes + role_bonus
 
-      case "usage_weighted":
+      case "usage_weighted": {
         // 1 vote per 20 hours of kitchen usage
         const usageBonus = Math.floor(usage_hours / 20)
         return base_votes + usageBonus + role_bonus
+      }
 
-      case "investment_weighted":
+      case "investment_weighted": {
         // 1 vote per $100 invested
         const investmentBonus = Math.floor(investment_amount / 100)
         return base_votes + investmentBonus + role_bonus
+      }
 
-      case "hybrid":
+      case "hybrid": {
         const baseWeight = weights.base_weight || 0.4
         const usageWeight = weights.usage_weight || 0.3
         const investWeight = weights.investment_weight || 0.3
@@ -140,6 +142,7 @@ export class KitchenLedgerService extends MedusaService({}) {
         const basePower = base_votes * baseWeight
 
         return Math.round(basePower + usagePower + investPower + role_bonus)
+      }
 
       default:
         return base_votes

@@ -1,7 +1,7 @@
 import { createLogger } from "../../shared/logger"
 const log = createLogger("modules/hawala-ledger/service")
 import { MedusaService, ContainerRegistrationKeys } from "@medusajs/framework/utils"
-import { auditFinancialTransaction, logAuditEvent } from "./audit-logger"
+import { auditFinancialTransaction } from "./audit-logger"
 import { assertRailInvariants } from "./posture-a-guard"
 import {
   LedgerAccount,
@@ -1228,7 +1228,7 @@ class HawalaLedgerModuleService extends MedusaService({
 
       if (dividend > 0) {
         // Transfer dividend
-        const entry = await this.createTransfer({
+        const _entry = await this.createTransfer({
           debit_account_id: pool.ledger_account_id,
           credit_account_id: investment.investor_account_id,
           amount: dividend,
@@ -1412,7 +1412,7 @@ class HawalaLedgerModuleService extends MedusaService({
   /**
    * Get ledger summary for reporting
    */
-  async getLedgerSummary(options?: { start_date?: Date; end_date?: Date }) {
+  async getLedgerSummary(_options?: { start_date?: Date; end_date?: Date }) {
     const accounts = await this.listLedgerAccounts({})
     
     const summary = {

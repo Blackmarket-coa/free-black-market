@@ -24,7 +24,7 @@ export type ValidateTicketOrderStepInput = {
 
 export const validateTicketOrderStep = createStep(
   "validate-ticket-order",
-  async ({ items, order_id }: ValidateTicketOrderStepInput, { container }) => {
+  async ({ items, order_id }: ValidateTicketOrderStepInput) => {
     // Check for duplicate seats within the cart
     const seatDateCombinations = new Set<string>()
     

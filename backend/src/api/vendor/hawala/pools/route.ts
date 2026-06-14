@@ -3,8 +3,7 @@ const log = createLogger("api/vendor/hawala/pools")
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { HAWALA_LEDGER_MODULE } from "../../../../modules/hawala-ledger"
 import HawalaLedgerModuleService from "../../../../modules/hawala-ledger/service"
-import { createPoolSchema, validateInput, paginationSchema } from "../../../hawala-validation"
-import { randomUUID } from "crypto"
+import { createPoolSchema, validateInput } from "../../../hawala-validation"
 
 /**
  * GET /vendor/hawala/pools
@@ -58,7 +57,6 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     roi_type,
     fixed_roi_rate,
     revenue_share_percentage,
-    product_credit_multiplier,
     end_date,
     auto_invest_enabled,
     auto_invest_percentage,

@@ -267,7 +267,7 @@ class ImpactMetricsService extends MedusaService({
   private async updateProducerImpactFromOrder(
     sellerId: string,
     amount: number,
-    customerId: string
+    _customerId: string
   ): Promise<void> {
     const producerImpact = await this.getOrCreateProducerImpact(sellerId)
     

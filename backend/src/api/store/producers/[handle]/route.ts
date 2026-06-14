@@ -97,7 +97,6 @@ export async function GET(
           "status",
         ],
         filters: {
-          // @ts-ignore - seller relation exists
           "seller.id": producer.seller_id,
           status: "published",
         },

@@ -175,7 +175,7 @@ class PayoutBreakdownService extends MedusaService({
       net: number
     }> = []
     
-    let totalSubtotal = input.subtotal
+    const totalSubtotal = input.subtotal
     let totalToProducers = 0
     let totalPlatformFees = 0
     let totalCreatorCommission = 0

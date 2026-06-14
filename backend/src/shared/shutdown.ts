@@ -12,7 +12,7 @@
  * registerShutdownHandlers()
  * ```
  */
-import { createClient, RedisClientType } from "redis"
+import { RedisClientType } from "redis"
 import { createLogger } from "./logger"
 
 const logger = createLogger("Shutdown")

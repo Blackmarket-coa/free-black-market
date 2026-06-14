@@ -63,7 +63,7 @@ async function vendorCorsMiddleware(
         else if (hostname.endsWith(".up.railway.app")) {
           matchedOrigin = origin
         }
-      } catch (e) {
+      } catch (_e) {
         // Invalid origin URL
       }
     }

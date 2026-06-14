@@ -29,7 +29,7 @@ export function emitMetric(
     labels,
     ts: new Date().toISOString(),
   }
-  // eslint-disable-next-line no-console -- structured-metric sink
+   
   log.warn(JSON.stringify(payload))
 }
 

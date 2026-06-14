@@ -1,6 +1,6 @@
 import { createLogger } from "../shared/logger"
 const log = createLogger("subscribers/order-placed")
-﻿import { SubscriberArgs, type SubscriberConfig } from "@medusajs/medusa"
+import { SubscriberArgs, type SubscriberConfig } from "@medusajs/medusa"
 import { TICKET_BOOKING_MODULE } from "../modules/ticket-booking"
 import TicketBookingModuleService from "../modules/ticket-booking/service"
 

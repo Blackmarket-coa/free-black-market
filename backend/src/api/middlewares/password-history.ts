@@ -163,7 +163,7 @@ export async function preventPasswordReuseMiddleware(
     let passwordHistoryService: PasswordHistoryService | null = null
     try {
       passwordHistoryService = req.scope.resolve(PASSWORD_HISTORY_MODULE)
-    } catch (e) {
+    } catch (_e) {
       // Module not registered yet - skip history check but continue
       log.warn("[password-history] Password history module not available - skipping history check")
     }

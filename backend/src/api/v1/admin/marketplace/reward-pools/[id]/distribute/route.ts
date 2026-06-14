@@ -9,7 +9,6 @@ import { MARKETPLACE_WEBHOOKS_MODULE } from "../../../../../../../modules/market
 import type MarketplaceWebhooksService from "../../../../../../../modules/marketplace-webhooks/service"
 import {
   RewardPoolStatus,
-  RewardPayoutStatus,
 } from "../../../../../../../modules/creator-rewards/models"
 
 /**
