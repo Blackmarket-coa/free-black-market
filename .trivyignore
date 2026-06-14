@@ -37,3 +37,13 @@ GHSA-67mh-4wv8-2f99
 # until @eslint/eslintrc is patched upstream or both panels migrate
 # to ESLint flat config (which doesn't use the legacy schema path).
 CVE-2025-69873
+
+# SD-16: activesupport (a Ruby gem) is reported HIGH only because the
+# `@stellar/js-xdr` npm package ships a stray `Gemfile.lock` in its
+# published tarball (backend/node_modules/.pnpm/@stellar+js-xdr@3.1.2/
+# node_modules/@stellar/js-xdr/Gemfile.lock). FBM has no Ruby runtime and
+# does not install/execute that gem — it is dev tooling vendored inside a
+# third-party npm package, not reachable in our app. There is nothing to
+# bump in our lockfiles. Suppressing until @stellar/js-xdr drops the file
+# upstream.
+CVE-2026-33176
