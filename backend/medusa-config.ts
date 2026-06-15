@@ -428,6 +428,10 @@ const notificationModules = (() => {
             channels: ['email'],
             api_key: process.env.RESEND_API_KEY,
             from: process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev',
+            retry: {
+              maxAttempts: Number(process.env.RESEND_MAX_RETRIES) || 3,
+              baseDelayMs: Number(process.env.RESEND_RETRY_BASE_MS) || 250,
+            },
           },
         }],
       },

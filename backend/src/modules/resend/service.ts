@@ -33,6 +33,39 @@ const templates: {[key in Templates]?: (props: unknown) => React.ReactNode} = {
   [Templates.CUSTOMER_ACCEPTED]: customerAcceptedEmail,
 }
 
+/**
+ * Resend error names that indicate a transient failure worth retrying. Anything
+ * else (validation errors, unverified domain, bad recipient) is permanent and
+ * would fail every attempt, so it is surfaced immediately without retrying.
+ */
+const TRANSIENT_RESEND_ERROR_NAMES = new Set<string>([
+  "rate_limit_exceeded",
+  "internal_server_error",
+  "application_error",
+])
+
+function isTransientResendError(error: unknown): boolean {
+  if (!error || typeof error !== "object") {
+    return false
+  }
+  const statusCode = (error as { statusCode?: unknown }).statusCode
+  if (
+    typeof statusCode === "number" &&
+    (statusCode === 429 || statusCode >= 500)
+  ) {
+    return true
+  }
+  const name = (error as { name?: unknown }).name
+  return typeof name === "string" && TRANSIENT_RESEND_ERROR_NAMES.has(name)
+}
+
+// Loosened view of the Resend send result so we can build synthetic outcomes
+// (e.g. for a network throw) without fighting the SDK's strict response union.
+type EmailSendOutcome = {
+  data: { id: string } | null
+  error: { name: string; message: string; statusCode?: number | null } | null
+}
+
 type ResendOptions = {
   api_key: string
   from: string
@@ -40,6 +73,12 @@ type ResendOptions = {
     subject?: string
     content: string
   }>
+  // Bounded exponential-backoff retry for transient send failures. Defaults to
+  // 3 attempts / 250ms base when omitted.
+  retry?: {
+    maxAttempts?: number
+    baseDelayMs?: number
+  }
 }
 
 type InjectedDependencies = {
@@ -51,15 +90,68 @@ class ResendNotificationProviderService extends AbstractNotificationProviderServ
   private resendClient: Resend
   private options: ResendOptions
   private logger: Logger
+  private retryMaxAttempts: number
+  private retryBaseDelayMs: number
 
   constructor(
-    { logger }: InjectedDependencies, 
+    { logger }: InjectedDependencies,
     options: ResendOptions
   ) {
     super()
     this.resendClient = new Resend(options.api_key)
     this.options = options
     this.logger = logger
+    this.retryMaxAttempts = Math.max(1, options.retry?.maxAttempts ?? 3)
+    this.retryBaseDelayMs = Math.max(0, options.retry?.baseDelayMs ?? 250)
+  }
+
+  private delay(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms))
+  }
+
+  /**
+   * Send through Resend, retrying transient failures (network errors, 429s,
+   * 5xx) with exponential backoff. Permanent failures and the final attempt's
+   * result are returned as-is for the caller to report and throw on.
+   */
+  private async sendWithRetry(
+    emailOptions: CreateEmailOptions,
+    to: string
+  ): Promise<EmailSendOutcome> {
+    let result: EmailSendOutcome = { data: null, error: null }
+
+    for (let attempt = 1; attempt <= this.retryMaxAttempts; attempt++) {
+      try {
+        result = await this.resendClient.emails.send(emailOptions)
+      } catch (thrown) {
+        // Network / unexpected throw — fold into a transient application error
+        // so it flows through the same retry + reporting path as a returned one.
+        result = {
+          data: null,
+          error: {
+            name: "application_error",
+            message: thrown instanceof Error ? thrown.message : String(thrown),
+          },
+        }
+      }
+
+      if (!result.error && result.data) {
+        return result
+      }
+
+      const isLastAttempt = attempt >= this.retryMaxAttempts
+      if (!isTransientResendError(result.error) || isLastAttempt) {
+        return result
+      }
+
+      this.logger.warn(
+        `Transient email send failure to ${to} (attempt ${attempt}/${this.retryMaxAttempts}); ` +
+          `retrying: ${result.error?.message ?? "unknown error"}`
+      )
+      await this.delay(this.retryBaseDelayMs * 2 ** (attempt - 1))
+    }
+
+    return result
   }
 
   static validateOptions(options: Record<any, any>) {
@@ -140,7 +232,7 @@ class ResendNotificationProviderService extends AbstractNotificationProviderServ
       }
     }
 
-    const { data, error } = await this.resendClient.emails.send(emailOptions)
+    const { data, error } = await this.sendWithRetry(emailOptions, notification.to)
 
     if (error || !data) {
       if (error) {
