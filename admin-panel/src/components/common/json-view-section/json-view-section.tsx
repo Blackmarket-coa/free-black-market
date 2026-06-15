@@ -195,7 +195,18 @@ const Copied = ({ style, value }: CopiedProps) => {
   }
 
   return (
-    <span style={{ ...style, ...styl }} onClick={handler}>
+    <span
+      style={{ ...style, ...styl }}
+      onClick={handler}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault()
+          e.currentTarget.click()
+        }
+      }}
+      role="button"
+      tabIndex={0}
+    >
       <SquareTwoStack className="text-ui-contrast-fg-secondary" />
     </span>
   )

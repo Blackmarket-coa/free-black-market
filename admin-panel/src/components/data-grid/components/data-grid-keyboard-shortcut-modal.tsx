@@ -212,6 +212,7 @@ export const DataGridKeyboardShortcutModal = ({
               <Input
                 type="search"
                 value={searchValue}
+                // eslint-disable-next-line jsx-a11y/no-autofocus -- intentional initial focus on this admin input
                 autoFocus
                 onChange={(e) => onSearchValueChange(e.target.value)}
               />

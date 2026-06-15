@@ -43,6 +43,7 @@ function ActivityItems(props: ActivityItemsProps) {
       <Popover.Trigger
         onMouseEnter={handleMouseEnter}
         onMouseLeave={handleMouseLeave}
+        // eslint-disable-next-line jsx-a11y/no-autofocus -- intentional initial focus on this admin input
         autoFocus={false}
         className="focus-visible:outline-none"
       >

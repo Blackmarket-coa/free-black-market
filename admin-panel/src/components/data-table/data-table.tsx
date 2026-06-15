@@ -412,6 +412,7 @@ return
               <div className="w-full md:w-auto">
                 <UiDataTable.Search
                   placeholder={t("filters.searchLabel")}
+                  // eslint-disable-next-line jsx-a11y/no-autofocus -- intentional initial focus on this admin input
                   autoFocus={autoFocusSearch}
                 />
               </div>

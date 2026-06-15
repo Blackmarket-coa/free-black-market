@@ -192,6 +192,7 @@ export const useAttributeTableColumns = () => {
           const attribute = info.row.original;
 
           return (
+            // eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions -- wrapper only stops row-click propagation; the inner Switch is the keyboard control
             <div onClick={(e) => e.stopPropagation()}>
               <Switch
                 checked={info.getValue()}

@@ -611,6 +611,14 @@ const CostBreakdown = ({
         label={
           <div
             onClick={() => setIsShippingOpen((o) => !o)}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault()
+                e.currentTarget.click()
+              }
+            }}
             className="flex cursor-pointer items-center gap-1"
           >
             <span>{t("orders.summary.shippingSubtotal")}</span>
@@ -660,6 +668,14 @@ const CostBreakdown = ({
         <div className="flex justify-between">
           <div
             onClick={() => hasTaxes && setIsTaxOpen((o) => !o)}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault()
+                e.currentTarget.click()
+              }
+            }}
             className={clx("flex items-center gap-1", {
               "cursor-pointer": hasTaxes,
             })}
@@ -783,6 +799,14 @@ return discounts
         label={
           <div
             onClick={() => hasDiscount && setIsDiscountOpen((o) => !o)}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault()
+                e.currentTarget.click()
+              }
+            }}
             className={clx("flex items-center gap-1", {
               "cursor-pointer": hasDiscount,
             })}
@@ -829,6 +853,14 @@ return discounts
             label={
               <div
                 onClick={() => setIsCreditLinesOpen((o) => !o)}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault()
+                    e.currentTarget.click()
+                  }
+                }}
                 className="flex cursor-pointer items-center gap-1"
               >
                 <span>
@@ -946,6 +978,14 @@ const InventoryKitBreakdown = ({ item }: { item: AdminOrderLineItem }) => {
     <>
       <div
         onClick={() => setIsOpen((o) => !o)}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault()
+            e.currentTarget.click()
+          }
+        }}
         className="flex cursor-pointer items-center gap-2 border-t border-dashed px-6 py-4"
       >
         <TriangleDownMini

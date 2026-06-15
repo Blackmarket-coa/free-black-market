@@ -177,6 +177,7 @@ return
                 onValueChange={(val) => setOperator(val as Comparison)}
                 className="flex flex-col items-start"
                 orientation="vertical"
+                // eslint-disable-next-line jsx-a11y/no-autofocus -- intentional initial focus on this admin input
                 autoFocus
               >
                 {operators.map((o) => (
