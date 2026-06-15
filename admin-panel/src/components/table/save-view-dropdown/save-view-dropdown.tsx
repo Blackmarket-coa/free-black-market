@@ -71,7 +71,7 @@ export const SaveViewDropdown: React.FC<SaveViewDropdownProps> = ({
         {!isDefaultView && currentViewId && onUpdateExisting && (
           <DropdownMenu.Item onClick={handleUpdateExisting}>
             <CloudArrowUp className="h-4 w-4" />
-            Update "{currentViewName}"
+            Update &quot;{currentViewName}&quot;
           </DropdownMenu.Item>
         )}
         {onSaveAsNew && (

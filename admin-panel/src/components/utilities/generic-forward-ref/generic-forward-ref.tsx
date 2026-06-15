@@ -1,7 +1,7 @@
 import type { ReactNode, Ref, RefAttributes} from "react";
 import { forwardRef } from "react"
 
-export function genericForwardRef<T, P = {}>(
+export function genericForwardRef<T, P = object>(
   render: (props: P, ref: Ref<T>) => ReactNode
 ): (props: P & RefAttributes<T>) => ReactNode {
   return forwardRef(render as any) as any

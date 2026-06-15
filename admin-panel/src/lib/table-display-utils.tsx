@@ -27,19 +27,20 @@ const formatDate = (date: string | Date, format: 'short' | 'long' | 'relative' =
         hour: '2-digit',
         minute: '2-digit'
       })
-    case 'relative':
+    case 'relative': {
       const now = new Date()
       const diffInMs = now.getTime() - dateObj.getTime()
       const diffInDays = Math.floor(diffInMs / (1000 * 60 * 60 * 24))
-      
+
       if (diffInDays === 0) return 'Today'
       if (diffInDays === 1) return 'Yesterday'
       if (diffInDays < 7) return `${diffInDays} days ago`
-      
-      return dateObj.toLocaleDateString('en-GB', { 
-        day: 'numeric', 
-        month: 'short' 
+
+      return dateObj.toLocaleDateString('en-GB', {
+        day: 'numeric',
+        month: 'short'
       })
+    }
     default:
       return dateObj.toLocaleDateString()
   }

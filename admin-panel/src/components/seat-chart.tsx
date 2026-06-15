@@ -3,7 +3,7 @@ import { Heading } from "@medusajs/ui"
 import type { VenueRow } from "@/types";
 import { RowType } from "@/types"
 
-interface ChartVenueRow extends Pick<VenueRow, "row_number" | "row_type" | "seat_count"> {}
+type ChartVenueRow = Pick<VenueRow, "row_number" | "row_type" | "seat_count">
 
 interface SeatChartProps {
   rows: ChartVenueRow[]

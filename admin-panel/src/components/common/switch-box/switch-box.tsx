@@ -4,10 +4,10 @@ import type { ControllerProps, FieldPath, FieldValues } from "react-hook-form"
 
 import { Form } from "@components/common/form"
 
-interface HeadlessControllerProps<
+type HeadlessControllerProps<
   TFieldValues extends FieldValues = FieldValues,
   TName extends FieldPath<TFieldValues> = FieldPath<TFieldValues>,
-> extends Omit<ControllerProps<TFieldValues, TName>, "render"> {}
+> = Omit<ControllerProps<TFieldValues, TName>, "render">
 
 interface SwitchBoxProps<
   TFieldValues extends FieldValues = FieldValues,

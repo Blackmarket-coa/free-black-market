@@ -173,7 +173,7 @@ const CreateDigitalProductForm = ({
         <legend className="mb-2">Media</legend>
         <Button type="button" onClick={onAddMedia}>Add Media</Button>
         {medias.map((media, index) => (
-          <fieldset className="my-2 p-2 border-solid border rounded">
+          <fieldset key={index} className="my-2 p-2 border-solid border rounded">
             <legend>Media {index + 1}</legend>
             <Select 
               value={media.type} 

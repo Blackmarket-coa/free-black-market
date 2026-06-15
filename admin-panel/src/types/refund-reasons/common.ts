@@ -73,13 +73,12 @@ export interface AdminRefundReasonResponse {
   refund_reason: AdminRefundReason;
 }
 
-export interface AdminRefundReasonListResponse
-  extends PaginatedResponse<{
-    /**
-     * The list of refund reasons.
-     */
-    refund_reasons: AdminRefundReason[];
-  }> {}
+export type AdminRefundReasonListResponse = PaginatedResponse<{
+  /**
+   * The list of refund reasons.
+   */
+  refund_reasons: AdminRefundReason[];
+}>;
 
 export type AdminBaseRefundReasonPayload = {
   /**
@@ -102,11 +101,11 @@ export type AdminBaseRefundReasonPayload = {
   metadata?: Record<string, unknown> | null;
 };
 
-export interface AdminRefundReasonDeleteResponse
-  extends DeleteResponse<"refund_reason"> {}
+export type AdminRefundReasonDeleteResponse =
+  DeleteResponse<"refund_reason">;
 
-export interface AdminRefundReasonParams extends SelectParams {}
+export type AdminRefundReasonParams = SelectParams;
 
-export interface AdminCreateRefundReason extends AdminBaseRefundReasonPayload {}
+export type AdminCreateRefundReason = AdminBaseRefundReasonPayload;
 
-export interface AdminUpdateRefundReason extends AdminBaseRefundReasonPayload {}
+export type AdminUpdateRefundReason = AdminBaseRefundReasonPayload;
