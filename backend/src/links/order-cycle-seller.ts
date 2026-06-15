@@ -1,45 +1,33 @@
-import { createLogger } from "../shared/logger"
-const log = createLogger("links/order-cycle-seller")
 import { defineLink } from "@medusajs/framework/utils"
 import OrderCycleModule from "../modules/order-cycle"
+import { loadSellerModule, hasLinkable } from "./utils/load-seller-module"
 
 /**
- * Link Order Cycle to MercurJS Seller
- * 
- * This links the order cycle's coordinator to a MercurJS seller.
- * Note: MercurJS uses @mercurjs/b2c-core which exports a seller module.
- * 
- * If MercurJS seller module is not available, fall back to Medusa's 
- * marketplace recipe vendor pattern.
+ * Link: Order Cycle ↔ Seller
+ *
+ * Links an order cycle's coordinator to a MercurJS seller.
+ *
+ * The seller module is resolved via loadSellerModule() (MercurJS 1.5.0 no
+ * longer exports SellerModule from @mercurjs/framework). hasLinkable() guards
+ * prevent registering a link with an undefined target.
  */
 
-// Try to import MercurJS seller module, fall back to custom marketplace module
-let SellerModule: any
-try {
-  // MercurJS packages export their modules
-  // The seller module key is typically "seller" or from @mercurjs/framework
-  SellerModule = require("@mercurjs/framework").SellerModule
-} catch {
-  // Fallback: If not using MercurJS, use your own marketplace module
-  // This follows the Medusa marketplace recipe pattern
-  try {
-    SellerModule = require("../modules/marketplace").default
-  } catch {
-    log.warn("No seller module found - order cycle links will not be created")
-    SellerModule = null
-  }
-}
+const { SellerModule } = loadSellerModule("order-cycle-seller")
 
-// Only define link if seller module is available
-const orderCycleSellerLink = SellerModule
-  ? defineLink(
-      // Order cycles can have one coordinator seller
-      OrderCycleModule.linkable.orderCycle,
-      {
-        linkable: SellerModule.linkable.seller,
-        isList: false,
-      }
-    )
-  : null
+let orderCycleSellerLink: ReturnType<typeof defineLink> | null = null
+
+if (
+  hasLinkable(OrderCycleModule, "orderCycle") &&
+  hasLinkable(SellerModule, "seller")
+) {
+  orderCycleSellerLink = defineLink(
+    // Order cycles can have one coordinator seller
+    OrderCycleModule.linkable.orderCycle,
+    {
+      linkable: SellerModule.linkable.seller,
+      isList: false,
+    }
+  )
+}
 
 export default orderCycleSellerLink
