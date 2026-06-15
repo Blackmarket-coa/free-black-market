@@ -1,33 +1,24 @@
-import { defineLink } from "@medusajs/framework/utils"
-import OrderCycleModule from "../modules/order-cycle"
-import { loadSellerModule, hasLinkable } from "./utils/load-seller-module"
-
 /**
- * Link: Order Cycle ↔ Seller
+ * Link: Order Cycle ↔ Seller — INTENTIONALLY DISABLED.
  *
- * Links an order cycle's coordinator to a MercurJS seller.
+ * The order-cycle module already models the cycle↔seller association with its own
+ * `order_cycle_seller` entity (`src/modules/order-cycle/models/order-cycle-seller.ts`,
+ * created by `migrations/Migration20251227015616.ts`), which stores `seller_id`, `role`,
+ * and `commission_rate`. Defining a *separate* Medusa module-link between OrderCycle and
+ * the MercurJS seller entity makes RemoteJoiner derive the alias `order_cycle_seller`,
+ * which collides with that existing module entity at `medusa build`:
  *
- * The seller module is resolved via loadSellerModule() (MercurJS 1.5.0 no
- * longer exports SellerModule from @mercurjs/framework). hasLinkable() guards
- * prevent registering a link with an undefined target.
+ *   Cannot add alias "order_cycle_seller" for "OrderCycleModuleOrderCycleSellerSellerLink".
+ *   It is already defined for Service "orderCycleModuleService".
+ *
+ * This link was dormant until now: under MercurJS 1.5.0 the old loader silently resolved
+ * the seller module to `undefined`, so the link never registered. Now that the seller
+ * module resolves correctly via `loadSellerModule()`, the collision surfaces. We keep the
+ * link disabled (export null, which Medusa's link loader safely skips) — the module's own
+ * `order_cycle_seller` model remains the source of truth for cycle↔seller relationships.
+ *
+ * To expose remote-query navigation from an order cycle to the MercurJS seller *entity* in
+ * the future, this must be redesigned with a non-colliding alias (it cannot reuse
+ * `order_cycle_seller`).
  */
-
-const { SellerModule } = loadSellerModule("order-cycle-seller")
-
-let orderCycleSellerLink: ReturnType<typeof defineLink> | null = null
-
-if (
-  hasLinkable(OrderCycleModule, "orderCycle") &&
-  hasLinkable(SellerModule, "seller")
-) {
-  orderCycleSellerLink = defineLink(
-    // Order cycles can have one coordinator seller
-    OrderCycleModule.linkable.orderCycle,
-    {
-      linkable: SellerModule.linkable.seller,
-      isList: false,
-    }
-  )
-}
-
-export default orderCycleSellerLink
+export default null
