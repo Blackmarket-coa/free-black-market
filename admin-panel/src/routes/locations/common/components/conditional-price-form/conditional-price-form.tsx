@@ -344,6 +344,7 @@ const ConditionalPriceItem = ({
                         onValueChange={(_value, _name, values) =>
                           onChange(values?.value ? values?.value : "")
                         }
+                        // eslint-disable-next-line jsx-a11y/no-autofocus -- intentional initial focus on this admin input
                         autoFocus={false}
                         {...props}
                       />

@@ -253,7 +253,7 @@ const Payment = ({
             <Text size="small" leading="compact">
               <Trans
                 i18nKey="orders.payment.isReadyToBeCaptured"
-                components={[<DisplayId id={payment.id} />]}
+                components={[<DisplayId key="display-id" id={payment.id} />]}
               />
             </Text>
           </div>

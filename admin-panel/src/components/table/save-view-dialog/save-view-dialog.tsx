@@ -136,6 +136,7 @@ export const SaveViewDialog: React.FC<SaveViewDialogProps> = ({
                 })}
                 type="text"
                 placeholder="Enter view name"
+                // eslint-disable-next-line jsx-a11y/no-autofocus -- intentional initial focus on this admin input
                 autoFocus
               />
               {errors.name && (

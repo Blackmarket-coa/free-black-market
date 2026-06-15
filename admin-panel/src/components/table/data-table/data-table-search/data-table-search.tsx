@@ -53,6 +53,7 @@ export const DataTableSearch = ({
       name="q"
       type="search"
       size="small"
+      // eslint-disable-next-line jsx-a11y/no-autofocus -- intentional initial focus on this admin input
       autoFocus={autofocus}
       defaultValue={query?.[0] || undefined}
       onChange={debouncedOnChange}

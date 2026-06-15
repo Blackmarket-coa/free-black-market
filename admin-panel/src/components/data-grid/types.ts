@@ -92,7 +92,7 @@ interface OverlayProps {
   onMouseDown: (e: React.MouseEvent<HTMLElement>) => void
 }
 
-export interface DataGridCellContainerProps extends PropsWithChildren<{}> {
+export interface DataGridCellContainerProps extends PropsWithChildren {
   field: string
   innerProps: InnerProps
   overlayProps: OverlayProps

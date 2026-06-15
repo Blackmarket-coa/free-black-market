@@ -85,7 +85,7 @@ export const CreateRefundForm = ({ order }: CreateRefundFormProps) => {
     })
   }, [payment?.id || ""])
 
-  const { mutateAsync, isPending } = useRefundPayment(order.id, payment?.id!)
+  const { mutateAsync, isPending } = useRefundPayment(order.id, payment?.id ?? "")
 
   const handleSubmit = form.handleSubmit(async (data) => {
     await mutateAsync(
@@ -100,7 +100,7 @@ export const CreateRefundForm = ({ order }: CreateRefundFormProps) => {
             t("orders.payment.refundPaymentSuccess", {
               amount: formatCurrency(
                 data.amount.float!,
-                payment?.currency_code!
+                payment?.currency_code ?? ""
               ),
             })
           )
@@ -181,7 +181,7 @@ export const CreateRefundForm = ({ order }: CreateRefundFormProps) => {
                     payment!.currency_code
                   )}
                 </span>
-                <span> - </span>
+                <span>&nbsp;-&nbsp;</span>
                 <span>(#{payment!.id.substring(23)})</span>
               </div>
             )}
@@ -217,6 +217,7 @@ export const CreateRefundForm = ({ order }: CreateRefundFormProps) => {
                             float: values?.float ?? null,
                           })
                         }
+                        // eslint-disable-next-line jsx-a11y/no-autofocus -- intentional initial focus on this admin input
                         autoFocus
                       />
                     </Form.Control>

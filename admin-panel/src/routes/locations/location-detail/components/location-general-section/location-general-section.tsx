@@ -466,7 +466,7 @@ function FulfillmentSet(props: FulfillmentSetProps) {
     useCreateStockLocationFulfillmentSet(locationId)
 
   const { mutateAsync: deleteFulfillmentSet } = useDeleteFulfillmentSet(
-    fulfillmentSet?.id!
+    fulfillmentSet?.id ?? ""
   )
 
   const handleCreate = async () => {

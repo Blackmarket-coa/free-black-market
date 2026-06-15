@@ -22,6 +22,7 @@ function RuleBlock({ rule }: RuleProps) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     values?: any
   }
+
   return (
     <div className="bg-ui-bg-subtle shadow-borders-base align-center flex justify-around rounded-md p-2">
       <div className="text-ui-fg-subtle txt-compact-xsmall flex items-center whitespace-nowrap">

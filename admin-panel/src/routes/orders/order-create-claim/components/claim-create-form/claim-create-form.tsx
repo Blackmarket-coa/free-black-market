@@ -116,7 +116,7 @@ export const ClaimCreateForm = ({
   // NOTE: Update claim request is not implemented yet
 
   const { mutateAsync: updateReturn, isPending: isUpdating } = useUpdateReturn(
-    preview?.order_change?.return_id!,
+    preview?.order_change?.return_id ?? "",
     order.id
   )
 
@@ -406,8 +406,8 @@ export const ClaimCreateForm = ({
   })
 
   const onItemsSelected = async () => {
-    itemsToAdd.length &&
-      (await addInboundItem(
+    if (itemsToAdd.length) {
+      await addInboundItem(
         {
           items: itemsToAdd.map((id) => ({
             id,
@@ -419,7 +419,8 @@ export const ClaimCreateForm = ({
             toast.error(error.message)
           },
         }
-      ))
+      )
+    }
 
     for (const itemToRemove of itemsToRemove) {
       const actionId = previewItems
@@ -619,9 +620,9 @@ export const ClaimCreateForm = ({
 
               <StackedFocusModal id="inbound-items">
                 <StackedFocusModal.Trigger asChild>
-                  <a className="focus-visible:shadow-borders-focus transition-fg txt-compact-small-plus cursor-pointer text-blue-500 outline-none hover:text-blue-400">
+                  <button type="button" className="appearance-none focus-visible:shadow-borders-focus transition-fg txt-compact-small-plus cursor-pointer text-blue-500 outline-none hover:text-blue-400">
                     {t("actions.addItems")}
-                  </a>
+                  </button>
                 </StackedFocusModal.Trigger>
                 <StackedFocusModal.Content>
                   <StackedFocusModal.Header />

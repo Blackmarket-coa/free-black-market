@@ -31,6 +31,7 @@ export function createProductTableAdapter(): TableAdapter<HttpTypes.AdminProduct
               return undefined
             }
             // Fields are the same, keep previous data for smooth transitions
+
             return previousData
           },
         }

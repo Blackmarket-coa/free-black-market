@@ -45,6 +45,7 @@ function ReturnInfoPopover({ orderReturn }: ReturnInfoPopoverProps) {
       <Popover.Trigger
         onMouseEnter={handleMouseEnter}
         onMouseLeave={handleMouseLeave}
+        // eslint-disable-next-line jsx-a11y/no-autofocus -- intentional initial focus on this admin input
         autoFocus={false}
         className="align-sub focus-visible:outline-none"
       >

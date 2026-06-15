@@ -1,4 +1,4 @@
-export type KeybindContextState = {}
+export type KeybindContextState = object
 
 export type Platform = "Mac" | "Windows" | "Linux"
 

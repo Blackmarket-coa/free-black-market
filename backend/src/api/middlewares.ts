@@ -30,6 +30,7 @@ import { CreateTicketProductSchema } from "./admin/ticket-products/route";
 import { GetTicketProductSeatsSchema } from "./store/ticket-products/[id]/seats/route";
 import { requireFeatureFlagMiddleware } from "../shared/runtime-module-gates";
 import { enforceListingTypeAllowed } from "../shared/listing-type-guard";
+import { enforceSameOriginForCookieAuth } from "../shared/csrf-guard";
 import { requireStorefrontContext } from "./middlewares/tenancy-context";
 import {
   inventoryLedgerEventSchema,
@@ -543,6 +544,24 @@ export default defineMiddlewares({
       matcher: "/store/**",
       method: "GET",
       middlewares: [stripQueryParamForAdminMiddleware],
+    },
+    // ============================================================
+    // CSRF: reject forged cross-site, cookie-authenticated writes
+    // ============================================================
+    // admin-panel and vendor-panel authenticate with session cookies, so a
+    // forged cross-site write riding the operator's/seller's cookie would
+    // execute even though CORS withholds the response. enforceSameOriginForCookieAuth
+    // requires a first-party Origin/Referer on state-changing methods for
+    // cookie-authenticated requests (bearer-only and safe methods are exempt).
+    // See src/shared/csrf-guard.ts. The storefront uses bearer tokens (/store/**)
+    // and is intentionally not covered here.
+    {
+      matcher: "/admin/**",
+      middlewares: [enforceSameOriginForCookieAuth],
+    },
+    {
+      matcher: "/vendor/**",
+      middlewares: [enforceSameOriginForCookieAuth],
     },
     // Block vendor access to API key management endpoints
     // Vendors should not be able to create, read, update, or delete API keys

@@ -243,6 +243,14 @@ export function OrderAllocateItemsItem({
         <div className="px-4 py-2">
           <div
             onClick={() => setIsOpen((o) => !o)}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault()
+                e.currentTarget.click()
+              }
+            }}
             className="flex items-center gap-x-2"
           >
             <TriangleDownMini

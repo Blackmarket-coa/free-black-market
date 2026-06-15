@@ -29,7 +29,7 @@ export const ExchangeCreate = () => {
     enabled: !!activeExchangeId,
   })
 
-  const { return: orderReturn } = useReturn(exchange?.return_id!, undefined, {
+  const { return: orderReturn } = useReturn(exchange?.return_id ?? "", undefined, {
     enabled: !!exchange?.return_id,
   })
 

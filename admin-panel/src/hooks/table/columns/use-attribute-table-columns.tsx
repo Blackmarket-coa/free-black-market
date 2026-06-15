@@ -192,6 +192,7 @@ export const useAttributeTableColumns = () => {
           const attribute = info.row.original;
 
           return (
+            // eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions -- wrapper only stops row-click propagation; the inner Switch is the keyboard control
             <div onClick={(e) => e.stopPropagation()}>
               <Switch
                 checked={info.getValue()}
@@ -277,7 +278,8 @@ export const useAttributeTableColumns = () => {
                 <DropdownMenu.Content align="end">
                   <DropdownMenu.Item
                     onClick={(e) => {
-                      (e.stopPropagation(), handleEdit(attribute.id));
+                      e.stopPropagation()
+                      handleEdit(attribute.id)
                     }}
                   >
                     <span className="flex items-center gap-2">
@@ -286,8 +288,8 @@ export const useAttributeTableColumns = () => {
                   </DropdownMenu.Item>
                   <DropdownMenu.Item
                     onClick={(e) => {
-                      (e.stopPropagation(),
-                        handleDelete(attribute.id, attribute.name));
+                      e.stopPropagation()
+                      handleDelete(attribute.id, attribute.name)
                     }}
                   >
                     <span className="flex items-center gap-2">

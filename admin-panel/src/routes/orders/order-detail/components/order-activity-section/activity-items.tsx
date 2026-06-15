@@ -43,6 +43,7 @@ function ActivityItems(props: ActivityItemsProps) {
       <Popover.Trigger
         onMouseEnter={handleMouseEnter}
         onMouseLeave={handleMouseLeave}
+        // eslint-disable-next-line jsx-a11y/no-autofocus -- intentional initial focus on this admin input
         autoFocus={false}
         className="focus-visible:outline-none"
       >
@@ -65,7 +66,7 @@ function ActivityItems(props: ActivityItemsProps) {
 
               <div className="flex flex-col">
                 {itemsToSend?.map((item) => {
-                  const originalItem = itemsMap?.get(item.item_id)!
+                  const originalItem = itemsMap?.get(item.item_id)
 
                   return (
                     <div className="flex items-center gap-x-3" key={item.id}>
@@ -95,7 +96,7 @@ function ActivityItems(props: ActivityItemsProps) {
 
               <div className="flex flex-col">
                 {itemsToReturn?.map((item) => {
-                  const originalItem = itemsMap?.get(item.item_id)!
+                  const originalItem = itemsMap?.get(item.item_id)
 
                   return (
                     <div className="flex items-center gap-x-3" key={item.id}>

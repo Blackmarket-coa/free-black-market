@@ -8,7 +8,7 @@ export const ProductTagMetadata = () => {
   const { product_tag, isPending, isError, error } = useProductTag(id!)
 
   const { mutateAsync, isPending: isMutating } = useUpdateProductTag(
-    product_tag?.id!
+    product_tag?.id ?? ""
   )
 
   if (isError) {

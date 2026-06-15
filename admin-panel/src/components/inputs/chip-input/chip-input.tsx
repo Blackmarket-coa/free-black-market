@@ -122,6 +122,7 @@ export const ChipInput = forwardRef<HTMLInputElement, ChipInputProps>(
     }
 
     return (
+      // eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions -- container click forwards focus to the inner input, which is the keyboard-accessible control
       <div
         className={clx(
           "shadow-borders-base flex min-h-8 flex-wrap items-center gap-1 rounded-md px-2 py-1.5",

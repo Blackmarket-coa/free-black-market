@@ -91,7 +91,7 @@ export const OrderBalanceSettlementForm = ({
     useCreateOrderCreditLine(order.id)
 
   const { mutateAsync: createRefund, isPending: isRefundPending } =
-    useRefundPayment(order.id, activePayment?.id!)
+    useRefundPayment(order.id, activePayment?.id ?? "")
 
   const settlementType = form.watch("settlement_type")
 
@@ -299,6 +299,7 @@ export const OrderBalanceSettlementForm = ({
                                 float: values?.float ?? null,
                               })
                             }
+                            // eslint-disable-next-line jsx-a11y/no-autofocus -- intentional initial focus on this admin input
                             autoFocus
                           />
                         </Form.Control>
@@ -357,6 +358,7 @@ export const OrderBalanceSettlementForm = ({
                                 float: values?.float ?? null,
                               })
                             }}
+                            // eslint-disable-next-line jsx-a11y/no-autofocus -- intentional initial focus on this admin input
                             autoFocus
                           />
                         </Form.Control>

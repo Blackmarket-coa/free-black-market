@@ -89,7 +89,7 @@ export function VariantGeneralSection({ variant }: VariantGeneralSectionProps) {
       {variant.options?.map((o) => (
         <SectionRow
           key={o.id}
-          title={o.option?.title!}
+          title={o.option?.title ?? ""}
           value={<Badge size="2xsmall">{o.value}</Badge>}
         />
       ))}

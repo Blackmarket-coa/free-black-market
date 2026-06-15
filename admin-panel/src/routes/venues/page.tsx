@@ -104,8 +104,8 @@ const VenuesPage = () => {
       })
       queryClient.invalidateQueries({ queryKey: ["venues"] })
       handleCloseModal()
-    } catch (error: any) {
-      throw new Error(`Failed to create venue: ${error.message}`)
+    } catch (error) {
+      throw new Error(`Failed to create venue: ${error instanceof Error ? error.message : String(error)}`)
     }
   }
 

@@ -133,7 +133,7 @@ return rest
                 <Link to="media" state={{ curr: index }}>
                   <img
                     src={i.url}
-                    alt={`${product.title} image`}
+                    alt={product.title}
                     className="size-full object-cover"
                   />
                 </Link>

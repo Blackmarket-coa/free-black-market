@@ -569,6 +569,7 @@ return
         <div className="size-full overflow-hidden">
           <div
             ref={containerRef}
+            // eslint-disable-next-line jsx-a11y/no-autofocus -- intentional initial focus on this admin input
             autoFocus
             tabIndex={0}
             className="relative h-full select-none overflow-auto outline-none"

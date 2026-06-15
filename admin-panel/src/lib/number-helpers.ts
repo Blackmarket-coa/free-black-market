@@ -17,6 +17,7 @@ export function getNumberOfDecimalPlaces(num: number): number {
     return 0;
   }
   // Return the length of the part after the decimal point
+
   return str.split(".")[1].length;
 }
 

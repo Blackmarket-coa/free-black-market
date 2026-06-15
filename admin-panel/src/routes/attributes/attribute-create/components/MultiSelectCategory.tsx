@@ -94,6 +94,14 @@ return parentCategory?.name || "";
         ref={triggerRef}
         className="focus-within:ring-ui-ring-interactive relative flex h-10 w-full cursor-pointer items-center justify-between overflow-hidden rounded-md border border-ui-border-base bg-ui-bg-field text-ui-fg-base shadow-sm transition-colors duration-150 ease-in-out focus-within:border-ui-border-interactive focus-within:ring-1 hover:bg-ui-bg-field-hover"
         onClick={handleToggle}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault()
+            e.currentTarget.click()
+          }
+        }}
       >
         <div className="flex items-center gap-2 px-3 py-2">
           {value.length > 0 ? (
@@ -129,6 +137,14 @@ return parentCategory?.name || "";
             <div
               className="flex cursor-pointer items-center gap-3 border-b border-ui-border-base px-3 py-2 text-ui-fg-subtle hover:bg-ui-bg-base-hover"
               onClick={handleGoBack}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault()
+                  e.currentTarget.click()
+                }
+              }}
             >
               <ArrowUturnLeft />
               <Text>{getBackButtonText()}</Text>
@@ -146,6 +162,14 @@ return (
                   key={category.id}
                   className="flex cursor-pointer items-center justify-between px-1 py-1"
                   onClick={() => handleItemClick(category.id)}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault()
+                      e.currentTarget.click()
+                    }
+                  }}
                 >
                   <div className="relative mr-2 flex flex-1 items-center rounded-md px-2 py-1.5 hover:bg-ui-bg-base-hover">
                     {isSelected && (
@@ -156,6 +180,14 @@ return (
                   {hasChildrenNode && (
                     <div
                       onClick={(e) => handleDrillDown(category, e)}
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault()
+                          e.currentTarget.click()
+                        }
+                      }}
                       className="rounded-md p-2 hover:bg-ui-bg-base-hover"
                     >
                       <TriangleRightMiniHover className="mr-1" />

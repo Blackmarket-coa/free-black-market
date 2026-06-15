@@ -119,8 +119,8 @@ const TicketProductsPage = () => {
       })
       queryClient.invalidateQueries({ queryKey: ["ticket-products"] })
       handleCloseModal()
-    } catch (error: any) {
-      toast.error(`Failed to create show: ${error.message}`)
+    } catch (error) {
+      toast.error(`Failed to create show: ${error instanceof Error ? error.message : String(error)}`)
     }
   }
 

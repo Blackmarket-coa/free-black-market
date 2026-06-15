@@ -347,7 +347,6 @@ return
             <div className="p-1">
               <button
                 data-active={focusedIndex === 0}
-                role="button"
                 className={clx(
                   "transition-fg grid w-full appearance-none grid-cols-[20px_1fr] items-center justify-center gap-2 rounded-md px-2 py-1.5 text-start outline-none",
                   "data-[active=true]:bg-ui-bg-field-hover"
@@ -388,6 +387,7 @@ return
                   }
                   type="button"
                   role="option"
+                  aria-selected={showLevelUp ? focusedIndex === index + 1 : focusedIndex === index}
                   className={clx(
                     "grid h-full w-full appearance-none grid-cols-[20px_1fr] items-center gap-2 overflow-hidden rounded-md px-2 py-1.5 text-start outline-none",
                     "data-[active=true]:bg-ui-bg-field-hover"

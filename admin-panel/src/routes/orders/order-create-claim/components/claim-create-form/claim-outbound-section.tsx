@@ -168,8 +168,8 @@ export const ClaimOutboundSection = ({
   const showOutboundItemsPlaceholder = !outboundItems.length
 
   const onItemsSelected = async () => {
-    itemsToAdd.length &&
-      (await addOutboundItem(
+    if (itemsToAdd.length) {
+      await addOutboundItem(
         {
           // The SDK type now expects { id, quantity, reason?, ... } but
           // this admin screen has always sent { variant_id, quantity }
@@ -186,7 +186,8 @@ export const ClaimOutboundSection = ({
             toast.error(error.message)
           },
         }
-      ))
+      )
+    }
 
     for (const itemToRemove of itemsToRemove) {
       const action = previewOutboundItems
@@ -326,9 +327,9 @@ export const ClaimOutboundSection = ({
 
         <StackedFocusModal id="outbound-items">
           <StackedFocusModal.Trigger asChild>
-            <a className="focus-visible:shadow-borders-focus transition-fg txt-compact-small-plus cursor-pointer text-blue-500 outline-none hover:text-blue-400">
+            <button type="button" className="appearance-none focus-visible:shadow-borders-focus transition-fg txt-compact-small-plus cursor-pointer text-blue-500 outline-none hover:text-blue-400">
               {t("actions.addItems")}
-            </a>
+            </button>
           </StackedFocusModal.Trigger>
           <StackedFocusModal.Content>
             <StackedFocusModal.Header />

@@ -16,10 +16,17 @@
  * ```
  */
 import { z } from "zod"
+import { randomBytes } from "crypto"
 import { createLogger } from "./logger"
 
 const logger = createLogger("Config")
-const DEV_JWT_SECRET = "dev-only-secret-change-in-production-32chars"
+// Ephemeral, per-process development fallback for JWT_SECRET. Generated at
+// startup rather than shipped as a literal so a well-known dev secret can't be
+// copy-pasted into a real deployment. Production boot fails fast below if
+// JWT_SECRET is unset, so this value is never used outside dev/test. It only
+// ever signs/verifies self-issued tokens (e.g. checkout-session tokens) within
+// the same process, so a fresh value per start is safe.
+const DEV_JWT_SECRET = randomBytes(32).toString("hex")
 
 /**
  * Helper for optional string env vars - converts empty strings to undefined
@@ -147,6 +154,16 @@ function loadConfig(): Config {
       throw new Error("JWT_SECRET is required in production.")
     }
 
+    // COOKIE_SECRET is required in production. The authoritative Medusa boot
+    // (medusa-config.ts getRequiredSecret) already refuses to start without it;
+    // fail fast here too so this validator stays consistent rather than emitting
+    // a misleading "using default (INSECURE)" warning for a default that the real
+    // config never applies.
+    if (!result.data.COOKIE_SECRET) {
+      logger.error("COOKIE_SECRET is required in production.")
+      throw new Error("COOKIE_SECRET is required in production.")
+    }
+
     // Blackout integration secrets are mandatory in production: the webhook
     // emitter cannot sign deliveries and the commerce API cannot authenticate
     // Blackout without them. Fail fast rather than booting a half-wired bridge.
@@ -163,9 +180,6 @@ function loadConfig(): Config {
     
     if (!result.data.REDIS_URL) {
       warnings.push("REDIS_URL not set - rate limiting and caching will use in-memory storage")
-    }
-    if (!result.data.COOKIE_SECRET) {
-      warnings.push("COOKIE_SECRET not set - using default (INSECURE)")
     }
     if (!result.data.OTEL_ENABLED) {
       warnings.push("OTEL_ENABLED=false - OpenTelemetry observability disabled")

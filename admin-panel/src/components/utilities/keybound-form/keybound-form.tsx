@@ -30,6 +30,7 @@ export const KeyboundForm = React.forwardRef<
   }
 
   return (
+    // eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions -- form-level keyboard handling (e.g. submit shortcuts)
     <form
       {...rest}
       onSubmit={handleSubmit}

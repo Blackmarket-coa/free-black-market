@@ -67,7 +67,7 @@ export const ExchangeInboundSection = ({
    * MUTATIONS
    */
   const { mutateAsync: updateReturn } = useUpdateReturn(
-    preview?.order_change?.return_id!,
+    preview?.order_change?.return_id ?? "",
     order.id
   )
 
@@ -211,8 +211,8 @@ export const ExchangeInboundSection = ({
   const showInboundItemsPlaceholder = !inboundItems.length
 
   const onItemsSelected = async () => {
-    itemsToAdd.length &&
-      (await addInboundItem(
+    if (itemsToAdd.length) {
+      await addInboundItem(
         {
           items: itemsToAdd.map((id) => ({
             id,
@@ -224,7 +224,8 @@ export const ExchangeInboundSection = ({
             toast.error(error.message)
           },
         }
-      ))
+      )
+    }
 
     for (const itemToRemove of itemsToRemove) {
       const actionId = previewInboundItems
@@ -359,9 +360,9 @@ export const ExchangeInboundSection = ({
 
         <StackedFocusModal id="inbound-items">
           <StackedFocusModal.Trigger asChild>
-            <a className="focus-visible:shadow-borders-focus transition-fg txt-compact-small-plus cursor-pointer text-blue-500 outline-none hover:text-blue-400">
+            <button type="button" className="appearance-none focus-visible:shadow-borders-focus transition-fg txt-compact-small-plus cursor-pointer text-blue-500 outline-none hover:text-blue-400">
               {t("actions.addItems")}
-            </a>
+            </button>
           </StackedFocusModal.Trigger>
 
           <StackedFocusModal.Content>

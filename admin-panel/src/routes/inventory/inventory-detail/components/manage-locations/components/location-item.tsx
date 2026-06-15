@@ -22,6 +22,14 @@ export const LocationItem = ({
         }
       )}
       onClick={() => onSelect(!selected)}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault()
+          e.currentTarget.click()
+        }
+      }}
     >
       <div className="h-5 w-5">
         <Checkbox
