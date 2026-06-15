@@ -97,9 +97,11 @@ export async function GET(
           "status",
         ],
         filters: {
+          // RemoteQueryFilters<"product"> doesn't type the joined "seller.id"
+          // key; the join is resolved at runtime.
           "seller.id": producer.seller_id,
           status: "published",
-        },
+        } as any,
         pagination: {
           take: 12,
         }

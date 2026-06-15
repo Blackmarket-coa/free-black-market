@@ -85,7 +85,7 @@ export const getProductFeedItemsStep = createStep(
         if (!product.variants?.length) continue
 
         for (const variant of product.variants) {
-          const calculatedPrice = variant.calculated_price as CalculatedPriceSet
+          const calculatedPrice = (variant as any).calculated_price as CalculatedPriceSet
           if (!calculatedPrice?.calculated_amount) continue
 
           const hasOriginalPrice = calculatedPrice?.original_amount !== calculatedPrice?.calculated_amount

@@ -29,7 +29,7 @@ export const deleteRestaurantAdminWorkflow = createWorkflow(
         app_metadata: {
           restaurant_id: input.id,
         },
-      },
+      } as any,
     })
 
     const authIdentity = transform(
