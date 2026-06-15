@@ -1,23 +1,30 @@
 import { logger } from "@/lib/logger"
+
+/**
+ * Normalize an error thrown by the Medusa JS SDK (or fetch) into a clean Error.
+ *
+ * The SDK error is NOT axios-shaped, so we must never assume `error.config` or
+ * `error.response` exist — dereferencing `error.config.url` on a plain Error is
+ * what produced the `Cannot access 'u' before initialization` / TDZ crash that
+ * white-screened the storefront whenever a backend call failed. This formatter
+ * reads whatever shape it gets and only ever throws its final, normalized Error.
+ */
 export default function medusaError(error: any): never {
-  if (error.response) {
-    // The request was made and the server responded with a status code
-    // that falls out of the range of 2xx
-    const u = new URL(error.config.url, error.config.baseURL)
-    logger.error("Resource:", u.toString())
-    logger.error("Response data:", error.response.data)
-    logger.error("Status code:", error.response.status)
-    logger.error("Headers:", error.response.headers)
+  const status =
+    error?.status ??
+    error?.statusCode ??
+    error?.response?.status ??
+    error?.cause?.status ??
+    null
 
-    // Extracting the error message from the response data
-    const message = error.response.data.message || error.response.data
+  const data = error?.response?.data ?? error?.data ?? null
+  const rawMessage =
+    data?.message ?? data ?? error?.message ?? "An unknown error occurred."
+  const message =
+    typeof rawMessage === "string" ? rawMessage : JSON.stringify(rawMessage)
 
-    throw new Error(message.charAt(0).toUpperCase() + message.slice(1) + ".")
-  } else if (error.request) {
-    // The request was made but no response was received
-    throw new Error("No response received: " + error.request)
-  } else {
-    // Something happened in setting up the request that triggered an Error
-    throw new Error("Error setting up the request: " + error.message)
-  }
+  logger.error("[medusaError] Request failed", { status, message })
+
+  const normalized = message.charAt(0).toUpperCase() + message.slice(1)
+  throw new Error(normalized.endsWith(".") ? normalized : `${normalized}.`)
 }
