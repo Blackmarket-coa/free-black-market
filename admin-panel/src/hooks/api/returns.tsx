@@ -66,7 +66,7 @@ export const useInitiateReturn = (
   return useMutation({
     mutationFn: (payload: HttpTypes.AdminInitiateReturnRequest) =>
       sdk.admin.return.initiateRequest(payload),
-    onSuccess: (data: any, variables: any, context: any) => {
+    onSuccess: (data, variables, context) => {
       queryClient.invalidateQueries({
         queryKey: ordersQueryKeys.details(),
       })
@@ -91,7 +91,7 @@ export const useCancelReturn = (
 ) => {
   return useMutation({
     mutationFn: () => sdk.admin.return.cancel(id),
-    onSuccess: (data: any, variables: any, context: any) => {
+    onSuccess: (data, variables, context) => {
       queryClient.invalidateQueries({
         queryKey: ordersQueryKeys.details(),
       })
@@ -129,7 +129,7 @@ export const useConfirmReturnRequest = (
   return useMutation({
     mutationFn: (payload: HttpTypes.AdminConfirmReturnRequest) =>
       sdk.admin.return.confirmRequest(id, payload),
-    onSuccess: (data: any, variables: any, context: any) => {
+    onSuccess: (data, variables, context) => {
       queryClient.invalidateQueries({
         queryKey: ordersQueryKeys.details(),
       })
@@ -157,7 +157,7 @@ export const useCancelReturnRequest = (
 ) => {
   return useMutation({
     mutationFn: () => sdk.admin.return.cancelRequest(id),
-    onSuccess: (data: any, variables: any, context: any) => {
+    onSuccess: (data, variables, context) => {
       queryClient.invalidateQueries({
         queryKey: ordersQueryKeys.details(),
       })
@@ -193,7 +193,7 @@ export const useAddReturnItem = (
   return useMutation({
     mutationFn: (payload: HttpTypes.AdminAddReturnItems) =>
       sdk.admin.return.addReturnItem(id, payload),
-    onSuccess: (data: any, variables: any, context: any) => {
+    onSuccess: (data, variables, context) => {
       queryClient.invalidateQueries({
         queryKey: ordersQueryKeys.details(),
       })
@@ -224,7 +224,7 @@ export const useUpdateReturnItem = (
     }: HttpTypes.AdminUpdateReturnItems & { actionId: string }) => {
       return sdk.admin.return.updateReturnItem(id, actionId, payload)
     },
-    onSuccess: (data: any, variables: any, context: any) => {
+    onSuccess: (data, variables, context) => {
       queryClient.invalidateQueries({
         queryKey: ordersQueryKeys.details(),
       })
@@ -251,7 +251,7 @@ export const useRemoveReturnItem = (
   return useMutation({
     mutationFn: (actionId: string) =>
       sdk.admin.return.removeReturnItem(id, actionId),
-    onSuccess: (data: any, variables: any, context: any) => {
+    onSuccess: (data, variables, context) => {
       queryClient.invalidateQueries({
         queryKey: ordersQueryKeys.details(),
       })
@@ -283,7 +283,7 @@ export const useUpdateReturn = (
     mutationFn: (payload: HttpTypes.AdminUpdateReturnRequest) => {
       return sdk.admin.return.updateRequest(id, payload)
     },
-    onSuccess: (data: any, variables: any, context: any) => {
+    onSuccess: (data, variables, context) => {
       queryClient.invalidateQueries({
         queryKey: ordersQueryKeys.details(),
       })
@@ -310,7 +310,7 @@ export const useAddReturnShipping = (
   return useMutation({
     mutationFn: (payload: HttpTypes.AdminAddReturnShipping) =>
       sdk.admin.return.addReturnShipping(id, payload),
-    onSuccess: (data: any, variables: any, context: any) => {
+    onSuccess: (data, variables, context) => {
       queryClient.invalidateQueries({
         queryKey: ordersQueryKeys.details(),
       })
@@ -340,7 +340,7 @@ export const useUpdateReturnShipping = (
       ...payload
     }: HttpTypes.AdminAddReturnShipping & { actionId: string }) =>
       sdk.admin.return.updateReturnShipping(id, actionId, payload),
-    onSuccess: (data: any, variables: any, context: any) => {
+    onSuccess: (data, variables, context) => {
       queryClient.invalidateQueries({
         queryKey: ordersQueryKeys.details(),
       })
@@ -367,7 +367,7 @@ export const useDeleteReturnShipping = (
   return useMutation({
     mutationFn: (actionId: string) =>
       sdk.admin.return.deleteReturnShipping(id, actionId),
-    onSuccess: (data: any, variables: any, context: any) => {
+    onSuccess: (data, variables, context) => {
       queryClient.invalidateQueries({
         queryKey: ordersQueryKeys.details(),
       })
@@ -402,7 +402,7 @@ export const useInitiateReceiveReturn = (
   return useMutation({
     mutationFn: (payload: HttpTypes.AdminInitiateReceiveReturn) =>
       sdk.admin.return.initiateReceive(id, payload),
-    onSuccess: (data: any, variables: any, context: any) => {
+    onSuccess: (data, variables, context) => {
       queryClient.invalidateQueries({
         queryKey: ordersQueryKeys.details(),
       })
@@ -429,7 +429,7 @@ export const useAddReceiveItems = (
   return useMutation({
     mutationFn: (payload: HttpTypes.AdminReceiveItems) =>
       sdk.admin.return.receiveItems(id, payload),
-    onSuccess: (data: any, variables: any, context: any) => {
+    onSuccess: (data, variables, context) => {
       queryClient.invalidateQueries({
         queryKey: ordersQueryKeys.details(),
       })
@@ -460,7 +460,7 @@ export const useUpdateReceiveItem = (
     }: HttpTypes.AdminUpdateReceiveItems & { actionId: string }) => {
       return sdk.admin.return.updateReceiveItem(id, actionId, payload)
     },
-    onSuccess: (data: any, variables: any, context: any) => {
+    onSuccess: (data, variables, context) => {
       queryClient.invalidateQueries({
         queryKey: ordersQueryKeys.details(),
       })
@@ -488,7 +488,7 @@ export const useRemoveReceiveItems = (
     mutationFn: (actionId: string) => {
       return sdk.admin.return.removeReceiveItem(id, actionId)
     },
-    onSuccess: (data: any, variables: any, context: any) => {
+    onSuccess: (data, variables, context) => {
       queryClient.invalidateQueries({
         queryKey: ordersQueryKeys.details(),
       })
@@ -515,7 +515,7 @@ export const useAddDismissItems = (
   return useMutation({
     mutationFn: (payload: HttpTypes.AdminDismissItems) =>
       sdk.admin.return.dismissItems(id, payload),
-    onSuccess: (data: any, variables: any, context: any) => {
+    onSuccess: (data, variables, context) => {
       queryClient.invalidateQueries({
         queryKey: ordersQueryKeys.details(),
       })
@@ -546,7 +546,7 @@ export const useUpdateDismissItem = (
     }: HttpTypes.AdminUpdateReceiveItems & { actionId: string }) => {
       return sdk.admin.return.updateDismissItem(id, actionId, payload)
     },
-    onSuccess: (data: any, variables: any, context: any) => {
+    onSuccess: (data, variables, context) => {
       queryClient.invalidateQueries({
         queryKey: ordersQueryKeys.details(),
       })
@@ -574,7 +574,7 @@ export const useRemoveDismissItem = (
     mutationFn: (actionId: string) => {
       return sdk.admin.return.removeDismissItem(id, actionId)
     },
-    onSuccess: (data: any, variables: any, context: any) => {
+    onSuccess: (data, variables, context) => {
       queryClient.invalidateQueries({
         queryKey: ordersQueryKeys.details(),
       })
@@ -601,7 +601,7 @@ export const useConfirmReturnReceive = (
   return useMutation({
     mutationFn: (payload: HttpTypes.AdminConfirmReceiveReturn) =>
       sdk.admin.return.confirmReceive(id, payload),
-    onSuccess: (data: any, variables: any, context: any) => {
+    onSuccess: (data, variables, context) => {
       queryClient.invalidateQueries({
         queryKey: ordersQueryKeys.details(),
       })
@@ -629,7 +629,7 @@ export const useCancelReceiveReturn = (
 ) => {
   return useMutation({
     mutationFn: () => sdk.admin.return.cancelReceive(id),
-    onSuccess: (data: any, variables: any, context: any) => {
+    onSuccess: (data, variables, context) => {
       queryClient.invalidateQueries({
         queryKey: ordersQueryKeys.details(),
       })
