@@ -127,6 +127,10 @@ async function main() {
   // Step 0: Apply MercurJS patches (null-safety for store_status)
   runCommand('node scripts/patch-mercurjs.js', 'MercurJS patches');
 
+  // Step 0b: Apply MikroORM patch (null-safe pruneToOneRelations — fixes
+  // relation-expansion 500s on store/admin queries; idempotent)
+  runCommand('node scripts/patch-mikro-orm.js', 'MikroORM patches');
+
   // Step 0.5: Wait for database to accept connections
   await waitForDatabase();
 

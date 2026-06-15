@@ -37,14 +37,21 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=9000
 
-RUN corepack enable \
+# `corepack prepare` caches pnpm in the image so `pnpm start` does NOT download
+# it from the npm registry on every container boot (which was DNS-flaky and
+# forced a `sleep` workaround in production).
+RUN corepack enable && corepack prepare pnpm@10.13.1 --activate \
     && groupadd -g 10001 medusa \
     && useradd -u 10001 -g medusa -s /usr/sbin/nologin -m medusa \
     && apt-get update && apt-get install -y --no-install-recommends wget tini ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
 # Bring in the built app, dependency tree, and runtime scripts.
+# `src/` is required at runtime: medusa-config.ts resolves ~67 custom modules
+# via `./src/modules/...` paths, so it must be present in the runtime image
+# (otherwise module resolution fails and the server had to bind-mount src).
 COPY --from=build --chown=medusa:medusa /app/.medusa ./.medusa
+COPY --from=build --chown=medusa:medusa /app/src ./src
 COPY --from=build --chown=medusa:medusa /app/node_modules ./node_modules
 COPY --from=build --chown=medusa:medusa /app/restaurant-marketplace ./restaurant-marketplace
 COPY --from=build --chown=medusa:medusa /app/package.json /app/pnpm-lock.yaml ./

@@ -21,18 +21,37 @@ FROM node:${NODE_VERSION} AS build
 WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
-# Build-time placeholders: `pnpm run build` calls
-# `await-backend` + `launch-storefront build`, which polls
-# http://localhost:9000 for a publishable key. There's no backend during a
-# Docker build, so we invoke `next build` directly with placeholder
-# `NEXT_PUBLIC_*` values. The actual values are injected at run-time via
-# the Deployment's secretRef envFrom (`storefront-env`).
-ENV NEXT_PUBLIC_MEDUSA_BACKEND_URL=http://backend:9000
-ENV NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY=pk_local_publishable_key_set_at_runtime
-ENV NEXT_PUBLIC_BASE_URL=http://localhost:3000
-ENV NEXT_PUBLIC_DEFAULT_REGION=us
-ENV NEXT_PUBLIC_STRIPE_KEY=pk_test_local_for_build
-ENV REVALIDATE_SECRET=build-time-revalidate-secret-min-32-chars-x
+# Next.js INLINES every NEXT_PUBLIC_* value into the client bundle at build
+# time — runtime env (compose `environment:` / .env / k8s secretRef) CANNOT
+# override them. So CI must pass the real values as `--build-arg` (see
+# .github/workflows/docker-build.yml and docker-compose.yml `build.args`).
+# The ARG defaults below are placeholders so a bare `docker build` still works.
+ARG NEXT_PUBLIC_MEDUSA_BACKEND_URL=http://backend:9000
+ARG NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY=pk_local_publishable_key_set_at_build_time
+ARG NEXT_PUBLIC_BASE_URL=http://localhost:3000
+ARG NEXT_PUBLIC_DEFAULT_REGION=us
+ARG NEXT_PUBLIC_STRIPE_KEY=pk_test_local_for_build
+ARG REVALIDATE_SECRET=build-time-revalidate-secret-min-32-chars-x
+ARG NEXT_PUBLIC_SITE_NAME="Black Market Coalition"
+ARG NEXT_PUBLIC_SITE_DESCRIPTION="Black Market Coalition"
+ARG NEXT_PUBLIC_VENDOR_URL=https://vendor.freeblackmarket.com
+ARG NEXT_PUBLIC_ALGOLIA_ID=
+ARG NEXT_PUBLIC_ALGOLIA_SEARCH_KEY=
+ARG NEXT_PUBLIC_MATRIX_ELEMENT_URL=
+ARG NEXT_PUBLIC_MATRIX_SERVER_NAME=
+ENV NEXT_PUBLIC_MEDUSA_BACKEND_URL=$NEXT_PUBLIC_MEDUSA_BACKEND_URL \
+    NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY=$NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY \
+    NEXT_PUBLIC_BASE_URL=$NEXT_PUBLIC_BASE_URL \
+    NEXT_PUBLIC_DEFAULT_REGION=$NEXT_PUBLIC_DEFAULT_REGION \
+    NEXT_PUBLIC_STRIPE_KEY=$NEXT_PUBLIC_STRIPE_KEY \
+    REVALIDATE_SECRET=$REVALIDATE_SECRET \
+    NEXT_PUBLIC_SITE_NAME=$NEXT_PUBLIC_SITE_NAME \
+    NEXT_PUBLIC_SITE_DESCRIPTION=$NEXT_PUBLIC_SITE_DESCRIPTION \
+    NEXT_PUBLIC_VENDOR_URL=$NEXT_PUBLIC_VENDOR_URL \
+    NEXT_PUBLIC_ALGOLIA_ID=$NEXT_PUBLIC_ALGOLIA_ID \
+    NEXT_PUBLIC_ALGOLIA_SEARCH_KEY=$NEXT_PUBLIC_ALGOLIA_SEARCH_KEY \
+    NEXT_PUBLIC_MATRIX_ELEMENT_URL=$NEXT_PUBLIC_MATRIX_ELEMENT_URL \
+    NEXT_PUBLIC_MATRIX_SERVER_NAME=$NEXT_PUBLIC_MATRIX_SERVER_NAME
 
 RUN corepack enable
 COPY --from=deps /app/node_modules ./node_modules

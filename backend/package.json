@@ -49,7 +49,7 @@
     }
   },
   "scripts": {
-    "postinstall": "node scripts/patch-mercurjs.js || true",
+    "postinstall": "node scripts/patch-mercurjs.js || true; node scripts/patch-mikro-orm.js || true",
     "build": "medusa build",
     "ib": "init-backend",
     "start": "node scripts/railway-start.js",

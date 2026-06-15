@@ -1,45 +1,24 @@
-import { createLogger } from "../shared/logger"
-const log = createLogger("links/order-cycle-seller")
-import { defineLink } from "@medusajs/framework/utils"
-import OrderCycleModule from "../modules/order-cycle"
-
 /**
- * Link Order Cycle to MercurJS Seller
- * 
- * This links the order cycle's coordinator to a MercurJS seller.
- * Note: MercurJS uses @mercurjs/b2c-core which exports a seller module.
- * 
- * If MercurJS seller module is not available, fall back to Medusa's 
- * marketplace recipe vendor pattern.
+ * Link: Order Cycle ↔ Seller — INTENTIONALLY DISABLED.
+ *
+ * The order-cycle module already models the cycle↔seller association with its own
+ * `order_cycle_seller` entity (`src/modules/order-cycle/models/order-cycle-seller.ts`,
+ * created by `migrations/Migration20251227015616.ts`), which stores `seller_id`, `role`,
+ * and `commission_rate`. Defining a *separate* Medusa module-link between OrderCycle and
+ * the MercurJS seller entity makes RemoteJoiner derive the alias `order_cycle_seller`,
+ * which collides with that existing module entity at `medusa build`:
+ *
+ *   Cannot add alias "order_cycle_seller" for "OrderCycleModuleOrderCycleSellerSellerLink".
+ *   It is already defined for Service "orderCycleModuleService".
+ *
+ * This link was dormant until now: under MercurJS 1.5.0 the old loader silently resolved
+ * the seller module to `undefined`, so the link never registered. Now that the seller
+ * module resolves correctly via `loadSellerModule()`, the collision surfaces. We keep the
+ * link disabled (export null, which Medusa's link loader safely skips) — the module's own
+ * `order_cycle_seller` model remains the source of truth for cycle↔seller relationships.
+ *
+ * To expose remote-query navigation from an order cycle to the MercurJS seller *entity* in
+ * the future, this must be redesigned with a non-colliding alias (it cannot reuse
+ * `order_cycle_seller`).
  */
-
-// Try to import MercurJS seller module, fall back to custom marketplace module
-let SellerModule: any
-try {
-  // MercurJS packages export their modules
-  // The seller module key is typically "seller" or from @mercurjs/framework
-  SellerModule = require("@mercurjs/framework").SellerModule
-} catch {
-  // Fallback: If not using MercurJS, use your own marketplace module
-  // This follows the Medusa marketplace recipe pattern
-  try {
-    SellerModule = require("../modules/marketplace").default
-  } catch {
-    log.warn("No seller module found - order cycle links will not be created")
-    SellerModule = null
-  }
-}
-
-// Only define link if seller module is available
-const orderCycleSellerLink = SellerModule
-  ? defineLink(
-      // Order cycles can have one coordinator seller
-      OrderCycleModule.linkable.orderCycle,
-      {
-        linkable: SellerModule.linkable.seller,
-        isList: false,
-      }
-    )
-  : null
-
-export default orderCycleSellerLink
+export default null
