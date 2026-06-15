@@ -455,10 +455,17 @@ jobs:
       #     and @mercurjs/b2c-core/.../hooks/product-created.ts both register
       #     `createProductsWorkflow.hooks.productsCreated`, and Medusa v2
       #     allows only one handler per hook — see TI-3
-      # TI-3 in docs/AUDIT_DEBT.md tracks the remaining work. Step kept
-      # non-blocking until that follow-up lands; flip to fail-fast once
-      # `pnpm test:integration:http` is green against a live Postgres.
-      - name: Run integration tests (non-blocking until TI-3 lands)
+      # TI-3 in docs/AUDIT_DEBT.md tracks the remaining work. Both documented
+      # blockers are now addressed: (a) the productsCreated hook conflict was
+      # resolved by moving listing-type enforcement to a route middleware
+      # (src/shared/listing-type-guard.ts `enforceListingTypeAllowed`, wired in
+      # src/api/middlewares.ts), and (b) the missing Stripe bootstrap keys are
+      # supplied below. Step is kept non-blocking for one more cycle: per the
+      # repo's live-Postgres convention (TI-1 was flipped then reverted same day
+      # when a deeper chain surfaced), flip to fail-fast — delete the
+      # `continue-on-error: true` line — only after observing this job green
+      # against the live Postgres service on a real run.
+      - name: Run integration tests (non-blocking until TI-3 verified green)
         working-directory: backend
         run: pnpm test:integration:http
         continue-on-error: true
@@ -479,6 +486,12 @@ jobs:
           # placeholder set used by medusa-config.ts in production.
           JWT_SECRET: ci-jwt-secret-at-least-32-characters-long-deterministic
           COOKIE_SECRET: ci-cookie-secret-at-least-32-characters-long-determinis
+          # @mercurjs/b2c-core's PayoutProvider instantiates Stripe at module
+          # bootstrap and rejects an undefined apiKey, which previously aborted
+          # app boot during integration tests (TI-3b). Dummy test keys satisfy
+          # the constructor; no live Stripe calls are made in these tests.
+          STRIPE_SECRET_API_KEY: sk_test_dummy
+          STRIPE_API_KEY: sk_test_dummy
 
   test-soak:
     name: Money-Path Concurrency Soak

@@ -66,3 +66,26 @@ describe("config boot — Blackout secrets (§7)", () => {
     ).not.toThrow()
   })
 })
+
+describe("config boot — required secrets", () => {
+  it("throws in production when COOKIE_SECRET is missing", () => {
+    expect(() =>
+      loadConfigWith({
+        ...baseProd,
+        COOKIE_SECRET: undefined,
+        FREEBLACKMARKET_WEBHOOK_SECRET: "whsec",
+        FREEBLACKMARKET_API_KEY: "apikey",
+      })
+    ).toThrow(/COOKIE_SECRET is required in production/)
+  })
+
+  it("does NOT require COOKIE_SECRET outside production", () => {
+    expect(() =>
+      loadConfigWith({
+        NODE_ENV: "development",
+        DATABASE_URL: "postgres://localhost:5432/fbm",
+        COOKIE_SECRET: undefined,
+      })
+    ).not.toThrow()
+  })
+})
