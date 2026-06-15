@@ -158,8 +158,8 @@ return
       })
       toast.success("Show created successfully")
       handleCloseModal(false)
-    } catch (error: any) {
-      toast.error(error.message || "Failed to create show")
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to create show")
     } finally {
       setIsLoading(false)
     }

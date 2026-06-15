@@ -137,9 +137,9 @@ return
       toast.success("Bug report sent", {
         description: `Tracking as issue #${result.number}`,
       })
-    } catch (err: any) {
+    } catch (err) {
       toast.error("Bug report failed", {
-        description: err?.message || "Could not send your report",
+        description: err instanceof Error ? err.message : "Could not send your report",
       })
     } finally {
       setSubmitting(false)
