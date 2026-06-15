@@ -135,7 +135,7 @@ export const OrderSummarySection = ({
 
   const { mutateAsync: markAsPaid } = useMarkPaymentCollectionAsPaid(
     order.id,
-    unpaidPaymentCollection?.id!
+    unpaidPaymentCollection?.id ?? ""
   )
 
   const pendingDifference = order.summary?.pending_difference || 0

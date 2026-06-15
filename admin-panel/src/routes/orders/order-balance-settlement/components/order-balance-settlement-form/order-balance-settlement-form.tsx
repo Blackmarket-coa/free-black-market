@@ -91,7 +91,7 @@ export const OrderBalanceSettlementForm = ({
     useCreateOrderCreditLine(order.id)
 
   const { mutateAsync: createRefund, isPending: isRefundPending } =
-    useRefundPayment(order.id, activePayment?.id!)
+    useRefundPayment(order.id, activePayment?.id ?? "")
 
   const settlementType = form.watch("settlement_type")
 

@@ -145,7 +145,7 @@ export function CreateShippingOptionsForm({
 
     const fulfillmentOptionData = fulfillmentProviderOptions?.find(
       (fo) => fo.id === data.fulfillment_option_id
-    )!
+    )
 
     await mutateAsync(
       {

@@ -104,6 +104,7 @@ return value ? (
           cell: ({ getValue }) => {
             const value = getValue()
             // Format as currency if we have the value
+
             return value !== null && value !== undefined ? `$${(value / 100).toFixed(2)}` : null
           },
           meta: {

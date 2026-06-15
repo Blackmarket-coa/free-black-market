@@ -68,11 +68,11 @@ export const AttributeForm = ({
       ui_component: initialData?.ui_component || AttributeUIComponent.SELECT,
       is_filterable: initialData?.is_filterable ?? true,
       is_required: initialData?.is_required ?? false,
-      //@ts-ignore
+      // @ts-expect-error possible_values is not on the resolved form-default type
       possible_values: initialData?.possible_values || [],
       product_category_ids:
         initialData?.product_categories?.map((c) => c.id) || [],
-      //@ts-ignore
+      // @ts-expect-error metadata is not on the resolved form-default type
       metadata: initialData?.metadata || {},
     },
   });

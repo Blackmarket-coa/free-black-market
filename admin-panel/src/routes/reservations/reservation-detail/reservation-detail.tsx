@@ -26,9 +26,9 @@ export const ReservationDetail = () => {
 
   // TEMP: fetch directly since the fields are not populated with reservation call
   const { inventory_item } = useInventoryItem(
-    reservation?.inventory_item?.id!,
+    reservation?.inventory_item?.id ?? "",
     undefined,
-    { enabled: !!reservation?.inventory_item?.id! }
+    { enabled: !!reservation?.inventory_item?.id }
   )
 
   const { getWidgets } = useExtension()

@@ -26,7 +26,7 @@ const ResetPasswordSchema = z
       .min(8, "Password must be at least 8 characters")
       .regex(/[a-z]/, "Password must contain at least one lowercase letter")
       .regex(/[A-Z]/, "Password must contain at least one uppercase letter")
-      .regex(/[0-9!@#$%^&*(),.?":{}|<>_\-+=\[\]\\\/~`]/, "Password must contain at least one number or symbol"),
+      .regex(/[0-9!@#$%^&*(),.?":{}|<>_\-+=[\]\\/~`]/, "Password must contain at least one number or symbol"),
     repeat_password: z.string().min(1),
   })
   .superRefine(({ password, repeat_password }, ctx) => {

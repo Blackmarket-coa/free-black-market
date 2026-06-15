@@ -8,7 +8,7 @@ export const ProductTypeMetadata = () => {
   const { product_type, isPending, isError, error } = useProductType(id!)
 
   const { mutateAsync, isPending: isMutating } = useUpdateProductType(
-    product_type?.id!
+    product_type?.id ?? ""
   )
 
   if (isError) {

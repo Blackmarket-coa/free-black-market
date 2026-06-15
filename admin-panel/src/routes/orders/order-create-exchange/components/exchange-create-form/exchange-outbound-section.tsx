@@ -165,8 +165,8 @@ export const ExchangeOutboundSection = ({
   const showOutboundItemsPlaceholder = !outboundItems.length
 
   const onItemsSelected = async () => {
-    itemsToAdd.length &&
-      (await addOutboundItem(
+    if (itemsToAdd.length) {
+      await addOutboundItem(
         {
           items: itemsToAdd.map((variantId) => ({
             variant_id: variantId,
@@ -178,7 +178,8 @@ export const ExchangeOutboundSection = ({
             toast.error(error.message)
           },
         }
-      ))
+      )
+    }
 
     for (const itemToRemove of itemsToRemove) {
       const action = previewOutboundItems

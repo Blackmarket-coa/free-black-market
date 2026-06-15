@@ -372,8 +372,7 @@ export const RulesFormField = ({
                     type="button"
                     onClick={() => {
                       if (!fieldRule.required) {
-                        setRulesToRemove &&
-                          setRulesToRemove([...rulesToRemove, fieldRule])
+                        setRulesToRemove?.([...rulesToRemove, fieldRule])
 
                         remove(index)
                       }
@@ -425,8 +424,7 @@ export const RulesFormField = ({
                 .map((field: any, index) => (field.required ? null : index))
                 .filter((f): f is number => f !== null)
 
-              setRulesToRemove &&
-                setRulesToRemove(fields.filter((field: any) => !field.required))
+              setRulesToRemove?.(fields.filter((field: any) => !field.required))
               remove(indicesToRemove)
             }}
           >

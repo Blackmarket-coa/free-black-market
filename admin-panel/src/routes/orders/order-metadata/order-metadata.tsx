@@ -9,7 +9,7 @@ export const OrderMetadata = () => {
     fields: "id,metadata",
   })
 
-  const { mutateAsync, isPending: isMutating } = useUpdateOrder(order?.id!)
+  const { mutateAsync, isPending: isMutating } = useUpdateOrder(order?.id ?? "")
 
   if (isError) {
     throw error

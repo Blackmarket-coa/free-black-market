@@ -168,8 +168,8 @@ export const ClaimOutboundSection = ({
   const showOutboundItemsPlaceholder = !outboundItems.length
 
   const onItemsSelected = async () => {
-    itemsToAdd.length &&
-      (await addOutboundItem(
+    if (itemsToAdd.length) {
+      await addOutboundItem(
         {
           // The SDK type now expects { id, quantity, reason?, ... } but
           // this admin screen has always sent { variant_id, quantity }
@@ -186,7 +186,8 @@ export const ClaimOutboundSection = ({
             toast.error(error.message)
           },
         }
-      ))
+      )
+    }
 
     for (const itemToRemove of itemsToRemove) {
       const action = previewOutboundItems

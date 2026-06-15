@@ -37,6 +37,7 @@ export function createOrderTableAdapter(): TableAdapter<HttpTypes.AdminOrder> {
               return undefined
             }
             // Fields are the same, keep previous data for smooth transitions
+
             return previousData
           },
         }

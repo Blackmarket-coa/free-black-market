@@ -13,7 +13,7 @@ export const ReservationEdit = () => {
 
   const { reservation, isPending, isError, error } = useReservationItem(id!)
   const { inventory_item: inventoryItem } = useInventoryItem(
-    reservation?.inventory_item_id!,
+    reservation?.inventory_item_id ?? "",
     {
       enabled: !!reservation,
     }

@@ -66,7 +66,7 @@ export const RuleValueFormField = ({
     queryFn: async (params) => {
       return await sdk.admin.promotion.listRuleValues(
         ruleType,
-        attribute?.id!,
+        attribute?.id ?? "",
         {
           ...params,
           ...buildFilters(attribute?.id, store!),

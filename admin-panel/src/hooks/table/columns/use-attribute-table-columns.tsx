@@ -277,7 +277,8 @@ export const useAttributeTableColumns = () => {
                 <DropdownMenu.Content align="end">
                   <DropdownMenu.Item
                     onClick={(e) => {
-                      (e.stopPropagation(), handleEdit(attribute.id));
+                      e.stopPropagation()
+                      handleEdit(attribute.id)
                     }}
                   >
                     <span className="flex items-center gap-2">
@@ -286,8 +287,8 @@ export const useAttributeTableColumns = () => {
                   </DropdownMenu.Item>
                   <DropdownMenu.Item
                     onClick={(e) => {
-                      (e.stopPropagation(),
-                        handleDelete(attribute.id, attribute.name));
+                      e.stopPropagation()
+                      handleDelete(attribute.id, attribute.name)
                     }}
                   >
                     <span className="flex items-center gap-2">

@@ -8,7 +8,7 @@ export const CollectionMetadata = () => {
   const { collection, isPending, isError, error } = useCollection(id!)
 
   const { mutateAsync, isPending: isMutating } = useUpdateCollection(
-    collection?.id!
+    collection?.id ?? ""
   )
 
   if (isError) {

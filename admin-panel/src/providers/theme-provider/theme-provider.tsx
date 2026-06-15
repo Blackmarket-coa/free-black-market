@@ -73,6 +73,8 @@ export const ThemeProvider = ({ children }: PropsWithChildren) => {
        * Re-enable transitions after the theme has been set,
        * and force the browser to repaint.
        */
+      // Read a layout property to force a synchronous reflow before re-enabling transitions.
+      // eslint-disable-next-line @typescript-eslint/no-unused-expressions
       window.getComputedStyle(css).opacity
       document.head.removeChild(css)
     }
