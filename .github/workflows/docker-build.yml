@@ -67,6 +67,33 @@ jobs:
             type=semver,pattern={{version}}
             type=raw,value=latest,enable={{is_default_branch}}
 
+      # The storefront's NEXT_PUBLIC_* values are inlined into the bundle at
+      # build time by Next.js, so they MUST be passed as build args here (runtime
+      # env cannot override them). Sourced from repo Variables / Secrets with
+      # production-sane fallbacks; set `NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY` and
+      # `REVALIDATE_SECRET` as repo Secrets for a working production storefront.
+      - name: Resolve storefront build args
+        id: sfargs
+        if: matrix.app == 'storefront'
+        run: |
+          {
+            echo 'args<<SFARGS_EOF'
+            echo "NEXT_PUBLIC_MEDUSA_BACKEND_URL=${{ vars.NEXT_PUBLIC_MEDUSA_BACKEND_URL || 'https://api.freeblackmarket.com' }}"
+            echo "NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY=${{ secrets.NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY }}"
+            echo "NEXT_PUBLIC_BASE_URL=${{ vars.NEXT_PUBLIC_BASE_URL || 'https://freeblackmarket.com' }}"
+            echo "NEXT_PUBLIC_DEFAULT_REGION=${{ vars.NEXT_PUBLIC_DEFAULT_REGION || 'us' }}"
+            echo "NEXT_PUBLIC_STRIPE_KEY=${{ vars.NEXT_PUBLIC_STRIPE_KEY }}"
+            echo "REVALIDATE_SECRET=${{ secrets.REVALIDATE_SECRET }}"
+            echo "NEXT_PUBLIC_VENDOR_URL=${{ vars.NEXT_PUBLIC_VENDOR_URL || 'https://vendor.freeblackmarket.com' }}"
+            echo "NEXT_PUBLIC_SITE_NAME=${{ vars.NEXT_PUBLIC_SITE_NAME || 'Black Market Coalition' }}"
+            echo "NEXT_PUBLIC_SITE_DESCRIPTION=${{ vars.NEXT_PUBLIC_SITE_DESCRIPTION || 'Black Market Coalition' }}"
+            echo "NEXT_PUBLIC_ALGOLIA_ID=${{ vars.NEXT_PUBLIC_ALGOLIA_ID }}"
+            echo "NEXT_PUBLIC_ALGOLIA_SEARCH_KEY=${{ secrets.NEXT_PUBLIC_ALGOLIA_SEARCH_KEY }}"
+            echo "NEXT_PUBLIC_MATRIX_ELEMENT_URL=${{ vars.NEXT_PUBLIC_MATRIX_ELEMENT_URL }}"
+            echo "NEXT_PUBLIC_MATRIX_SERVER_NAME=${{ vars.NEXT_PUBLIC_MATRIX_SERVER_NAME }}"
+            echo SFARGS_EOF
+          } >> "$GITHUB_OUTPUT"
+
       # docker/build-push-action with `provenance: true` produces a manifest
       # list that the local docker daemon's image store cannot import via
       # `load`. On PRs we don't push to the registry — we only verify the
@@ -81,6 +108,7 @@ jobs:
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: ${{ steps.sfargs.outputs.args }}
           cache-from: type=gha,scope=${{ matrix.app }}
           cache-to: type=gha,mode=max,scope=${{ matrix.app }}
           provenance: ${{ github.event_name != 'pull_request' }}
