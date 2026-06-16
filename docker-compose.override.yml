@@ -1,0 +1,9 @@
+services:
+  backend:
+    command: ["sh", "-c", "sleep 8 && pnpm start"]
+    volumes:
+      - ./backend/src:/app/src
+  storefront:
+    environment:
+      PORT: "3000"
+      HOSTNAME: "0.0.0.0"
