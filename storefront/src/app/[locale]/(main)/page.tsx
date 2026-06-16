@@ -192,8 +192,8 @@ export default async function Home({
       <Hero
         variant="mission"
         image="/images/hero/Image.jpg"
-        heading="Shop local vendors. Launch your storefront. Grow community programs."
-        paragraph="A community-commerce marketplace for products, services, subscriptions, events, and local initiatives. Buyers can discover trusted vendors quickly, and sellers get a clear path to launch and manage operations while keeping 97% of every sale."
+        heading="Buy direct from real people. Sell on your own terms. Build community wealth."
+        paragraph="Free Black Market is community-owned commerce for goods, services, local food and CSA, creators, and mutual aid. Shoppers buy directly from verified makers — no middlemen, no markups. Vendors launch fast and keep 97% of every sale, with a flat 3% coalition fee and no listing, monthly, or processing fees passed to you."
         buttons={[
           {
             label: "Explore the Marketplace",
@@ -278,7 +278,8 @@ export default async function Home({
       <section className="px-4 lg:px-8 w-full">
         <div className="rounded-2xl border border-green-200 bg-green-50 p-6 md:p-8">
           <p className="text-sm font-semibold uppercase tracking-wide text-green-700 mb-2">For vendors</p>
-          <h2 className="text-3xl font-semibold text-green-900 mb-4">Everything you can run through one storefront stack.</h2>
+          <h2 className="text-3xl font-semibold text-green-900 mb-2">Everything you can run through one storefront stack.</h2>
+          <p className="text-green-900/80 mb-4 max-w-2xl">Stop renting your business from extractive platforms. Own your customer relationship, sell across every model from one account, and keep 97% of what you earn — no listing, monthly, or processing fees.</p>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 text-sm">
             <div><span className="font-semibold">Products:</span> physical goods, local food, and digital downloads.</div>
             <div><span className="font-semibold">Services:</span> bookings, custom requests, and provider messaging.</div>
@@ -316,8 +317,8 @@ export default async function Home({
 
       <section className="px-4 lg:px-8 w-full">
         <div className="rounded-2xl border p-6 md:p-8 bg-neutral-50">
-          <h2 className="text-2xl md:text-3xl font-semibold mb-2">Vendor economics: simple, clear, predictable</h2>
-          <p className="text-gray-700 mb-4">Transparent Stripe Connect payouts, vendor-controlled fulfillment, and a flat coalition fee.</p>
+          <h2 className="text-2xl md:text-3xl font-semibold mb-2">The financials: you keep 97%</h2>
+          <p className="text-gray-700 mb-4">A flat 3% coalition fee — and that&apos;s it. No listing fees, no monthly subscription, and no payment processing fees passed to you. Transparent Stripe Connect payouts with vendor-controlled fulfillment.</p>
           <div className="grid sm:grid-cols-3 gap-3 mb-4">
             <div className="rounded-lg bg-white p-4 border"><p className="text-sm text-gray-500">Sale</p><p className="text-xl font-semibold">$100.00</p></div>
             <div className="rounded-lg bg-white p-4 border"><p className="text-sm text-gray-500">Coalition fee (3%)</p><p className="text-xl font-semibold">$3.00</p></div>
@@ -325,9 +326,35 @@ export default async function Home({
           </div>
           <details className="mb-4 rounded-lg border bg-white p-4" data-event="pricing_breakdown_expanded">
             <summary className="cursor-pointer font-medium text-gray-900">How this compares to typical channels</summary>
-            <p className="text-sm text-gray-700 mt-2">Many channels stack listing, subscription, and fulfillment charges. Our model stays simple: one transparent 3% coalition fee.</p>
+            <p className="text-sm text-gray-700 mt-2">Etsy, Shopify, Amazon, and delivery apps stack listing fees, monthly subscriptions, ad spend, and fulfillment charges — often 15–30% all-in. Our model stays simple: one transparent 3% coalition fee. Settle through our internal ledger (Coalition Credits) to move value between members with no card processing cost — an internal payment processor is coming soon.</p>
           </details>
           <Link href="/sell" className="text-green-700 font-medium underline">See this in the vendor onboarding guide</Link>
+        </div>
+      </section>
+
+      <section className="px-4 lg:px-8 w-full">
+        <div className="rounded-2xl border p-6 md:p-8">
+          <p className="text-sm font-semibold uppercase tracking-wide text-green-700 mb-2">Our goals</p>
+          <h2 className="text-2xl md:text-3xl font-semibold mb-2">Building community wealth, not extracting it</h2>
+          <p className="text-gray-600 mb-6 max-w-2xl">We&apos;re building the easiest place for communities to earn together — keeping more money local and circulating it among the people who create real value.</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-sm">
+            <Link href="/gardens" className="rounded-xl border p-4 hover:border-green-400 hover:bg-green-50 transition-colors">
+              <p className="font-semibold mb-1">🥬 Local food &amp; agriculture</p>
+              <p className="text-gray-600">CSA shares, farm boxes, and order cycles that connect growers directly to neighbors.</p>
+            </Link>
+            <Link href="/creators" className="rounded-xl border p-4 hover:border-green-400 hover:bg-green-50 transition-colors">
+              <p className="font-semibold mb-1">🎨 Creators &amp; vendor marketing</p>
+              <p className="text-gray-600">Storefronts, referrals, and audience tools that help makers get discovered and paid.</p>
+            </Link>
+            <Link href="/community-resources" className="rounded-xl border p-4 hover:border-green-400 hover:bg-green-50 transition-colors">
+              <p className="font-semibold mb-1">🤝 Mutual aid &amp; community programs</p>
+              <p className="text-gray-600">Fund fridges, free stores, and local initiatives through transparent, fiscally-sponsored giving.</p>
+            </Link>
+            <Link href="/why-we-exist" className="rounded-xl border p-4 hover:border-green-400 hover:bg-green-50 transition-colors">
+              <p className="font-semibold mb-1">🌍 Why we exist</p>
+              <p className="text-gray-600">Read the full mission, strategy, and how community governance works.</p>
+            </Link>
+          </div>
         </div>
       </section>
 
@@ -342,9 +369,12 @@ export default async function Home({
         </div>
       </section>
 
-      <div className="px-4 lg:px-8 w-full py-12">
+      <section className="px-4 lg:px-8 w-full py-12">
+        <p className="text-sm font-semibold uppercase tracking-wide text-green-700 mb-2">For shoppers</p>
+        <h2 className="text-2xl md:text-3xl font-semibold mb-2">What you get when you buy here</h2>
+        <p className="text-gray-600 mb-8 max-w-2xl">No corporate middlemen marking up the things you buy. You pay fair prices, your money reaches the people who actually made your goods, grew your food, or provided your service — and you can see exactly who they are.</p>
         <ValueProposition />
-      </div>
+      </section>
 
       <BannerSection />
       <ShopByStyleSection />
