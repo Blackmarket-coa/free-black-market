@@ -13,18 +13,23 @@ import {
 import type { Recommendation, PlaybookId } from "../playbook-picker/recommend"
 
 export type ResourceQuizResult = {
+  /** Primary playbook — drives dashboard chrome, labels, commission. */
   recipe_id: PlaybookId
+  /** All selected roles (includes the primary). */
+  roles: PlaybookId[]
   resources: ResourceKey[]
   recommended_recipe_id: PlaybookId
   overridden: boolean
 }
 
 type ResourceQuizProps = {
-  /** Initial playbook for sellers re-running the quiz. */
+  /** Initial primary playbook for sellers re-running the quiz. */
   initial?: PlaybookId
+  /** Pre-selected roles when re-running. */
+  initialRoles?: PlaybookId[]
   /** Pre-selected resources when re-running. */
   initialResources?: ResourceKey[]
-  /** Called when the user confirms a playbook. */
+  /** Called when the user confirms their role selection. */
   onComplete: (result: ResourceQuizResult) => void
   /** Optional cancel handler. */
   onCancel?: () => void
@@ -34,6 +39,7 @@ type Phase = "questions" | "reveal" | "override"
 
 export function ResourceQuiz({
   initial,
+  initialRoles,
   initialResources,
   onComplete,
   onCancel,
@@ -42,14 +48,26 @@ export function ResourceQuiz({
   const [groupIndex, setGroupIndex] = useState(0)
   const [phase, setPhase] = useState<Phase>("questions")
   const [selected, setSelected] = useState<ResourceKey[]>(initialResources ?? [])
-  const [overrideChoice, setOverrideChoice] = useState<PlaybookId | null>(
-    initial ?? null
+  const [selectedRoles, setSelectedRoles] = useState<PlaybookId[]>(
+    initialRoles ?? (initial ? [initial] : [])
   )
 
   const recommendation: Recommendation = useMemo(
     () => recommendPlaybookFromResources(selected),
     [selected]
   )
+
+  // The role set in play: the user's explicit selection, or — before they
+  // touch the override grid — just the recommended playbook.
+  const effectiveRoles: PlaybookId[] =
+    selectedRoles.length > 0 ? selectedRoles : [recommendation.playbook]
+
+  const toggleRole = (id: PlaybookId) => {
+    setSelectedRoles((prev) => {
+      const base = prev.length > 0 ? prev : [recommendation.playbook]
+      return base.includes(id) ? base.filter((r) => r !== id) : [...base, id]
+    })
+  }
 
   const stepNumber = phase === "questions" ? groupIndex + 1 : totalGroups
 
@@ -80,12 +98,17 @@ export function ResourceQuiz({
   }
 
   const handleConfirm = () => {
-    const chosen = overrideChoice ?? recommendation.playbook
+    const roles = phase === "override" ? effectiveRoles : [recommendation.playbook]
+    const safeRoles = roles.length > 0 ? roles : [recommendation.playbook]
+    const primary = safeRoles.includes(recommendation.playbook)
+      ? recommendation.playbook
+      : safeRoles[0]
     onComplete({
-      recipe_id: chosen,
+      recipe_id: primary,
+      roles: safeRoles,
       resources: selected,
       recommended_recipe_id: recommendation.playbook,
-      overridden: chosen !== recommendation.playbook,
+      overridden: primary !== recommendation.playbook || safeRoles.length > 1,
     })
   }
 
@@ -156,7 +179,7 @@ export function ResourceQuiz({
             onClick={() => setPhase("override")}
             className="text-sm text-ui-fg-subtle hover:text-ui-fg-base underline"
           >
-            See other options
+            Add or change roles
           </button>
         </div>
       )}
@@ -164,17 +187,22 @@ export function ResourceQuiz({
       {phase === "override" && (
         <div className="flex flex-col w-full gap-y-3">
           <Text size="small" className="text-ui-fg-subtle text-center">
-            Pick any setup. You can change it later from settings.
+            Pick all the roles that fit — you can have more than one. Change
+            these anytime from settings.
           </Text>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
             {ALL_PLAYBOOKS.map((id) => {
-              const isSelected = (overrideChoice ?? recommendation.playbook) === id
+              const isSelected = effectiveRoles.includes(id)
               const isRecommended = id === recommendation.playbook
+              const primary = effectiveRoles.includes(recommendation.playbook)
+                ? recommendation.playbook
+                : effectiveRoles[0]
               return (
                 <button
                   key={id}
                   type="button"
-                  onClick={() => setOverrideChoice(id)}
+                  aria-pressed={isSelected}
+                  onClick={() => toggleRole(id)}
                   className={
                     "relative flex flex-col p-3 rounded-lg border-2 transition-all text-left text-sm " +
                     (isSelected
@@ -182,7 +210,14 @@ export function ResourceQuiz({
                       : "border-ui-border-base bg-ui-bg-field hover:border-ui-fg-muted")
                   }
                 >
-                  <span className="font-semibold">{PLAYBOOK_DISPLAY_NAMES[id]}</span>
+                  <span className="font-semibold">
+                    {PLAYBOOK_DISPLAY_NAMES[id]}
+                    {isSelected && id === primary && (
+                      <span className="ml-1 text-xs font-normal text-ui-fg-interactive">
+                        · main
+                      </span>
+                    )}
+                  </span>
                   <span className="text-xs text-ui-fg-muted mt-0.5 leading-relaxed">
                     {PLAYBOOK_BLURBS[id]}
                   </span>
@@ -216,10 +251,8 @@ export function ResourceQuiz({
 
         {(phase === "reveal" || phase === "override") && (
           <Button type="button" onClick={handleConfirm}>
-            {phase === "override" &&
-            overrideChoice &&
-            overrideChoice !== recommendation.playbook
-              ? `Confirm ${PLAYBOOK_DISPLAY_NAMES[overrideChoice]}`
+            {phase === "override" && effectiveRoles.length > 1
+              ? `Confirm ${effectiveRoles.length} roles`
               : "Confirm"}
           </Button>
         )}

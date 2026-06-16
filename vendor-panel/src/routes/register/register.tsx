@@ -75,6 +75,7 @@ export const Register = () => {
   const [step, setStep] = useState<"quiz" | "details">("quiz")
   const [selectedPlaybook, setSelectedPlaybook] = useState<PlaybookId | null>(null)
   const [recommendedPlaybook, setRecommendedPlaybook] = useState<PlaybookId | null>(null)
+  const [roles, setRoles] = useState<PlaybookId[]>([])
   const [resources, setResources] = useState<ResourceKey[]>([])
   const [success, setSuccess] = useState(false)
   const [showOptionalFields, setShowOptionalFields] = useState(false)
@@ -100,6 +101,7 @@ export const Register = () => {
   const handleQuizComplete = (result: ResourceQuizResult) => {
     setSelectedPlaybook(result.recipe_id)
     setRecommendedPlaybook(result.recommended_recipe_id)
+    setRoles(result.roles)
     setResources(result.resources)
     setStep("details")
   }
@@ -114,6 +116,7 @@ export const Register = () => {
         confirmPassword,
         playbook: selectedPlaybook || undefined,
         recommended_playbook: recommendedPlaybook || undefined,
+        roles,
         resources,
       },
       {
@@ -220,6 +223,7 @@ export const Register = () => {
               <div className="bg-ui-bg-component flex items-center gap-2 rounded-full px-3 py-1.5">
                 <Text size="small" className="text-ui-fg-base font-medium">
                   {playbookLabel} playbook
+                  {roles.length > 1 ? ` +${roles.length - 1} more` : ""}
                 </Text>
                 <button
                   type="button"

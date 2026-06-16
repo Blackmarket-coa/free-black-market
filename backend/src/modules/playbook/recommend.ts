@@ -74,6 +74,7 @@ const OFFERING_SETS: Record<OfferingAnswer, PlaybookId[]> = {
 const SIMPLICITY_RANK: PlaybookId[] = [
   "stall",
   "service",
+  "creator",
   "atelier",
   "cycle",
   "kitchen",
@@ -121,6 +122,8 @@ const reasonFor = (
       return "Aggregating other vendors — Hub is the federation shape: many vendors, one storefront, governance shared."
     case "grove":
       return "Mutual-aid posture — Grove pairs sliding-scale pricing with co-op governance and a volunteer-rich front desk."
+    case "creator":
+      return "An audience you can sell to — Creator gives you memberships, digital drops, and a shows calendar."
   }
 }
 

@@ -117,7 +117,7 @@ describe("recommendPlaybook", () => {
     expect(r.playbook).toBe("service")
   })
 
-  it("returns one of the ten playbooks for every (size × governance × offering) combination", () => {
+  it("returns one of the canonical playbooks for every (size × governance × offering) combination", () => {
     for (const size of allSizes) {
       for (const governance of allGovernances) {
         for (const offering of allOfferings) {

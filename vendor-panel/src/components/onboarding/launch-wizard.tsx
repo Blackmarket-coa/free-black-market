@@ -16,7 +16,8 @@ import { ArrowLeft, ArrowRight, CheckCircleSolid } from "@medusajs/icons"
 import { backendUrl, getAuthToken } from "../../lib/client"
 import { PlaybookPicker } from "../playbook/playbook-picker"
 import { PLAYBOOK_DISPLAY_NAMES } from "../playbook/playbook-picker"
-import { ResourceQuiz } from "../playbook/resource-quiz"
+import { ResourceQuiz, type ResourceKey } from "../playbook/resource-quiz"
+import type { PlaybookId } from "../playbook/playbook-picker/recommend"
 import {
   usePlaybookAssignment,
   useAssignPlaybook,
@@ -281,17 +282,25 @@ export function LaunchWizard() {
   }
 
   if (hasPlaybook && editingPlaybook) {
+    const currentMeta = assignmentData?.playbook_assignment?.metadata
+    const initialRoles = (currentMeta?.roles ??
+      (currentRecipeId ? [currentRecipeId] : [])) as PlaybookId[]
+    const initialResources = (currentMeta?.resources ?? []) as ResourceKey[]
     return (
       <div className="min-h-screen bg-ui-bg-base">
         <Container className="py-8">
           <ResourceQuiz
             initial={currentRecipeId ?? undefined}
+            initialRoles={initialRoles}
+            initialResources={initialResources}
             onComplete={async (result) => {
               try {
                 await assignPlaybook({
                   recipe_id: result.recipe_id,
                   recommended_recipe_id: result.recommended_recipe_id,
                   overridden: result.overridden,
+                  roles: result.roles,
+                  resources: result.resources,
                 })
                 toast.success("Playbook updated")
               } catch (err) {

@@ -69,6 +69,7 @@ const OFFERING_SETS: Record<OfferingAnswer, PlaybookId[]> = {
 export const SIMPLICITY_RANK: PlaybookId[] = [
   "stall",
   "service",
+  "creator",
   "atelier",
   "cycle",
   "kitchen",
@@ -109,6 +110,8 @@ export const reasonFor = (playbook: PlaybookId): string => {
       return "Aggregating other vendors — Hub is the federation shape: many vendors, one storefront, governance shared."
     case "grove":
       return "Mutual-aid posture — Grove pairs sliding-scale pricing with co-op governance and a volunteer-rich front desk."
+    case "creator":
+      return "An audience you can sell to — Creator gives you memberships, digital drops, and a shows calendar."
   }
 }
 
@@ -148,6 +151,7 @@ export const ALL_PLAYBOOKS: PlaybookId[] = [
   "harvest",
   "hub",
   "service",
+  "creator",
 ]
 
 export const PLAYBOOK_DISPLAY_NAMES: Record<PlaybookId, string> = {
@@ -161,4 +165,5 @@ export const PLAYBOOK_DISPLAY_NAMES: Record<PlaybookId, string> = {
   harvest: "Harvest",
   hub: "Hub",
   service: "Service",
+  creator: "Creator",
 }

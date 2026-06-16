@@ -9,15 +9,35 @@ import {
 import {
   PLAYBOOK_MODULE,
   PLAYBOOK_IDS,
+  unionFeatureKeys,
   type PlaybookId,
 } from "../../../../modules/playbook"
+import { SELLER_EXTENSION_MODULE } from "../../../../modules/seller-extension"
+import { updateSellerMetadataRecord } from "../../../../modules/seller-extension/metadata-service"
 
 type PostBody = {
   recipe_id?: string
   answers?: AssignPlaybookInput["answers"]
   recommended_recipe_id?: string
   overridden?: boolean
+  /** All roles the seller selected (primary is `recipe_id`). */
+  roles?: string[]
+  /** Resources reported in the quiz. */
+  resources?: string[]
 }
+
+const RESOURCE_KEYS = new Set([
+  "land",
+  "time",
+  "transportation",
+  "materials_skills",
+  "equipment",
+  "audience",
+  "network",
+  "organization",
+  "manufacturing",
+  "marketing",
+])
 
 const SIZE_VALUES = new Set(["solo", "small", "medium", "federation"])
 const GOVERNANCE_VALUES = new Set([
@@ -147,6 +167,35 @@ export async function POST(
     })
   }
 
+  // Optional multi-role + resource payload (sent by the resource quiz). The
+  // primary playbook is always `recipe_id`; `roles` is the full set.
+  let roles: PlaybookId[] | undefined
+  if (body.roles !== undefined) {
+    if (!Array.isArray(body.roles) || !body.roles.every(isPlaybookId)) {
+      return res.status(400).json({
+        type: "invalid_data",
+        message: `roles must be an array of valid playbook ids (${PLAYBOOK_IDS.join(", ")})`,
+      })
+    }
+    roles = Array.from(
+      new Set<PlaybookId>([body.recipe_id, ...(body.roles as PlaybookId[])])
+    )
+  }
+
+  let resources: string[] | undefined
+  if (body.resources !== undefined) {
+    if (
+      !Array.isArray(body.resources) ||
+      !body.resources.every((r) => typeof r === "string" && RESOURCE_KEYS.has(r))
+    ) {
+      return res.status(400).json({
+        type: "invalid_data",
+        message: "resources must be an array of valid resource keys",
+      })
+    }
+    resources = body.resources
+  }
+
   try {
     const input: AssignPlaybookInput = {
       seller_id: sellerId,
@@ -160,7 +209,38 @@ export async function POST(
       migrated_from: null,
     }
 
+    // Persist the role set + resources on the assignment (no schema change —
+    // playbook_assignment.metadata is JSON).
+    if (roles || resources) {
+      input.metadata = {
+        ...(roles ? { roles } : {}),
+        ...(resources ? { resources } : {}),
+      }
+    }
+
     const { result } = await assignPlaybookWorkflow(req.scope).run({ input })
+
+    // Keep the seller's feature override in sync with the chosen roles:
+    // multi-role → union of all roles' default features; single role → clear
+    // the override so the primary playbook's defaults apply. Non-blocking.
+    if (roles) {
+      try {
+        const sellerExtensionService: any = req.scope.resolve(SELLER_EXTENSION_MODULE)
+        const [meta] = await sellerExtensionService.listSellerMetadatas({
+          seller_id: sellerId,
+        })
+        if (meta) {
+          await updateSellerMetadataRecord(sellerExtensionService, {
+            id: meta.id,
+            enabled_extensions: roles.length > 1 ? unionFeatureKeys(roles) : null,
+          })
+        }
+      } catch (syncError: unknown) {
+        const message = syncError instanceof Error ? syncError.message : "unknown"
+        log.warn(`[POST /vendor/playbook/assign] enabled_extensions sync failed: ${message}`)
+      }
+    }
+
     return res.json({ playbook_assignment: result.playbook_assignment })
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Unknown error"

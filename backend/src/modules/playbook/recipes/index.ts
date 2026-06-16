@@ -16,6 +16,7 @@ import { KITCHEN } from "./kitchen"
 import { HARVEST } from "./harvest"
 import { HUB } from "./hub"
 import { SERVICE } from "./service"
+import { CREATOR } from "./creator"
 
 import type { PlaybookId, PlaybookRecipe } from "./types"
 
@@ -30,6 +31,7 @@ export const PLAYBOOK_RECIPES: Record<PlaybookId, PlaybookRecipe> = {
   harvest: HARVEST,
   hub: HUB,
   service: SERVICE,
+  creator: CREATOR,
 }
 
 export const PLAYBOOK_IDS: PlaybookId[] = Object.keys(PLAYBOOK_RECIPES) as PlaybookId[]

@@ -27,6 +27,8 @@ type CreateSellerMetadataInput = {
   service_types?: string[]
   featured?: boolean
   verified?: boolean
+  /** Feature-key override (union of multi-role default features). */
+  enabled_extensions?: string[] | null
   metadata?: Record<string, any>
 }
 
@@ -57,6 +59,7 @@ const createSellerMetadataStep = createStep(
       service_types: input.service_types || null,
       featured: input.featured ?? false,
       verified: input.verified ?? false,
+      enabled_extensions: input.enabled_extensions ?? null,
       metadata: input.metadata || null,
     } as any)
 

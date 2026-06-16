@@ -47,9 +47,14 @@ describe("recommendPlaybookFromResources", () => {
     expect(r.playbook).toBe("commons")
   })
 
-  it("audience + marketing → Stall (a solo brand)", () => {
+  it("audience → Creator", () => {
+    const r = recommendPlaybookFromResources(["audience"])
+    expect(r.playbook).toBe("creator")
+  })
+
+  it("audience + marketing → Creator (an audience to monetize)", () => {
     const r = recommendPlaybookFromResources(["audience", "marketing"])
-    expect(r.playbook).toBe("stall")
+    expect(r.playbook).toBe("creator")
   })
 
   it("empty selection → Stall (the simplest default)", () => {
@@ -65,7 +70,7 @@ describe("recommendPlaybookFromResources", () => {
     expect(r.alternatives).not.toContain(r.playbook)
   })
 
-  it("always returns one of the ten playbooks for any single resource", () => {
+  it("always returns one of the canonical playbooks for any single resource", () => {
     for (const key of ALL_RESOURCES) {
       const r = recommendPlaybookFromResources([key])
       expect(PLAYBOOK_IDS).toContain(r.playbook as PlaybookId)

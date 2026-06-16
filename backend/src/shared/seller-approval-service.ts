@@ -5,7 +5,7 @@ import { Modules, ContainerRegistrationKeys } from "@medusajs/framework/utils"
 import { createSellerWorkflow } from "@mercurjs/b2c-core/workflows"
 import { createSellerMetadataWorkflow } from "../workflows/create-seller-metadata"
 import { assignPlaybookWorkflow } from "../workflows/assign-playbook"
-import { PLAYBOOK_IDS, type PlaybookId } from "../modules/playbook"
+import { PLAYBOOK_IDS, unionFeatureKeys, type PlaybookId } from "../modules/playbook"
 import { sendVendorAcceptedNotificationWorkflow } from "../workflows/send-vendor-accepted-notification"
 import { appendPath } from "./url"
 import { sendCustomerAcceptedNotificationWorkflow } from "../workflows/send-customer-accepted-notification"
@@ -63,8 +63,10 @@ interface SellerRequestData {
     name: string
   }
   vendor_type?: string
-  /** Playbook chosen via the resource quiz (canonical classification). */
+  /** Primary playbook chosen via the resource quiz (canonical classification). */
   playbook?: string
+  /** All roles the user selected (includes the primary). */
+  roles?: string[]
   /** Playbook the quiz recommended before any override. */
   recommended_playbook?: string
   /** Resources the user reported in the quiz. */
@@ -155,6 +157,9 @@ function validateSellerRequestData(data: unknown): SellerRequestData {
     },
     vendor_type: typeof d.vendor_type === "string" ? d.vendor_type : undefined,
     playbook: typeof d.playbook === "string" ? d.playbook : undefined,
+    roles: Array.isArray(d.roles)
+      ? d.roles.filter((r): r is string => typeof r === "string")
+      : undefined,
     recommended_playbook:
       typeof d.recommended_playbook === "string" ? d.recommended_playbook : undefined,
     resources: Array.isArray(d.resources)
@@ -422,6 +427,21 @@ export class SellerApprovalService {
       authUpdated = true
       log.info(`[SellerApproval] Auth identity linked successfully`)
 
+      // Resolve the primary playbook + the full role set the seller chose,
+      // plus the feature-union override applied for multi-role sellers.
+      const primaryPlaybook: PlaybookId =
+        data.playbook && (PLAYBOOK_IDS as string[]).includes(data.playbook)
+          ? (data.playbook as PlaybookId)
+          : LEGACY_VENDOR_TYPE_TO_PLAYBOOK[vendorType] ?? "stall"
+      const selectedRoles: PlaybookId[] = Array.isArray(data.roles)
+        ? (data.roles.filter((r) => (PLAYBOOK_IDS as string[]).includes(r)) as PlaybookId[])
+        : []
+      const roles: PlaybookId[] = Array.from(
+        new Set<PlaybookId>([primaryPlaybook, ...selectedRoles])
+      )
+      const enabledExtensions: string[] | null =
+        roles.length > 1 ? unionFeatureKeys(roles) : null
+
       // Step 5: Create seller metadata with vendor_type
       try {
         const vendorTypeEnum = VendorType[vendorType.toUpperCase() as keyof typeof VendorType] || VendorType.PRODUCER
@@ -431,24 +451,20 @@ export class SellerApprovalService {
           input: {
             seller_id: seller.id,
             vendor_type: vendorTypeEnum,
+            enabled_extensions: enabledExtensions,
           },
         })
-        log.info(`[SellerApproval] Metadata created with vendor_type: ${vendorTypeEnum}`)
+        log.info(`[SellerApproval] Metadata created with vendor_type: ${vendorTypeEnum}${enabledExtensions ? ` (+${enabledExtensions.length} union features)` : ""}`)
       } catch (metadataError: any) {
         // Non-critical: subscriber will create with default type
         log.warn(`[SellerApproval] Metadata creation failed (will use fallback): ${metadataError.message}`)
       }
 
-      // Step 5.5: Assign the canonical playbook captured by the registration
-      // resource quiz. Falls back to the legacy vendor_type mapping for
-      // requests that predate the quiz. Non-blocking: a vendor without an
-      // assignment is offered the picker during onboarding.
+      // Step 5.5: Assign the canonical (primary) playbook captured by the
+      // registration resource quiz, recording the full role set + resources
+      // on the assignment. Non-blocking: a vendor without an assignment is
+      // offered the picker during onboarding.
       try {
-        const requestedPlaybook: PlaybookId =
-          data.playbook && (PLAYBOOK_IDS as string[]).includes(data.playbook)
-            ? (data.playbook as PlaybookId)
-            : LEGACY_VENDOR_TYPE_TO_PLAYBOOK[vendorType] ?? "stall"
-
         const recommendedPlaybook: PlaybookId | undefined =
           data.recommended_playbook &&
           (PLAYBOOK_IDS as string[]).includes(data.recommended_playbook)
@@ -459,14 +475,15 @@ export class SellerApprovalService {
           container: this.container,
           input: {
             seller_id: seller.id,
-            recipe_id: requestedPlaybook,
+            recipe_id: primaryPlaybook,
             recommended_recipe_id: recommendedPlaybook,
-            metadata: data.resources?.length
-              ? { resources: data.resources }
-              : undefined,
+            metadata: {
+              roles,
+              ...(data.resources?.length ? { resources: data.resources } : {}),
+            },
           },
         })
-        log.info(`[SellerApproval] Playbook assigned: ${requestedPlaybook}`)
+        log.info(`[SellerApproval] Playbook assigned: ${primaryPlaybook} (roles: ${roles.join(", ")})`)
       } catch (playbookError: any) {
         // Non-critical: vendor can pick a playbook during onboarding.
         log.warn(`[SellerApproval] Playbook assignment failed (onboarding picker will handle it): ${playbookError.message}`)

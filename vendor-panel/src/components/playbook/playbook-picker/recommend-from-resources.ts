@@ -91,13 +91,13 @@ const RESOURCE_SCORES: Record<ResourceKey, Partial<Record<PlaybookId, number>>> 
   land: { cycle: 3, harvest: 3, grove: 1 },
   time: { service: 3, harvest: 2, grove: 2 },
   transportation: { hub: 3, kitchen: 1 },
-  materials_skills: { atelier: 2, stall: 2, service: 2, workshop: 1 },
+  materials_skills: { atelier: 2, stall: 2, service: 2, workshop: 1, creator: 1 },
   equipment: { kitchen: 3, atelier: 2, workshop: 2 },
-  audience: { stall: 2, atelier: 1 },
-  network: { hub: 3, commons: 2, grove: 1 },
+  audience: { creator: 3, stall: 2, atelier: 1 },
+  network: { hub: 3, commons: 2, grove: 1, creator: 1 },
   organization: { commons: 3, workshop: 2, grove: 2, hub: 1 },
   manufacturing: { atelier: 3, workshop: 2, stall: 1 },
-  marketing: { stall: 2, hub: 2, atelier: 1 },
+  marketing: { creator: 2, stall: 2, hub: 2, atelier: 1 },
 }
 
 const rankSimplicity = (id: PlaybookId): number => {
@@ -121,6 +121,7 @@ export const PLAYBOOK_BLURBS: Record<PlaybookId, string> = {
   harvest: "Community garden or collective harvest with a shared pool.",
   hub: "Federation hub that aggregates many vendors under one storefront.",
   service: "Time-bank or sliding-scale practitioner offering bookable time.",
+  creator: "Independent creator — memberships, digital drops, and live shows.",
 }
 
 export function recommendPlaybookFromResources(selected: ResourceKey[]): Recommendation {

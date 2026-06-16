@@ -50,6 +50,7 @@ const PLAYBOOK_TO_VENDOR_TYPE: Record<string, string> = {
   atelier: "maker",
   workshop: "maker",
   service: "maker",
+  creator: "maker",
   grove: "mutual_aid",
   commons: "mutual_aid",
   hub: "mutual_aid",
@@ -100,6 +101,7 @@ export const useSignUpWithEmailPass = (
       vendor_type?: string
       playbook?: string
       recommended_playbook?: string
+      roles?: string[]
       resources?: string[]
     }
   >
@@ -111,6 +113,7 @@ export const useSignUpWithEmailPass = (
         vendor_type,
         playbook,
         recommended_playbook,
+        roles,
         resources,
         ...authPayload
       } = payload
@@ -168,6 +171,7 @@ export const useSignUpWithEmailPass = (
               "producer",
             playbook: variables.playbook,
             recommended_playbook: variables.recommended_playbook,
+            roles: variables.roles,
             resources: variables.resources,
             member: {
               name: variables.name,

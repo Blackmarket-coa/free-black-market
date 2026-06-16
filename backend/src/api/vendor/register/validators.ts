@@ -28,6 +28,7 @@ export const playbookIdEnum = z.enum([
   "harvest",
   "hub",
   "service",
+  "creator",
 ])
 
 /**

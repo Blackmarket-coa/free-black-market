@@ -36,19 +36,20 @@ const RESOURCE_SCORES: Record<ResourceKey, Partial<Record<PlaybookId, number>>> 
   land: { cycle: 3, harvest: 3, grove: 1 },
   time: { service: 3, harvest: 2, grove: 2 },
   transportation: { hub: 3, kitchen: 1 },
-  materials_skills: { atelier: 2, stall: 2, service: 2, workshop: 1 },
+  materials_skills: { atelier: 2, stall: 2, service: 2, workshop: 1, creator: 1 },
   equipment: { kitchen: 3, atelier: 2, workshop: 2 },
-  audience: { stall: 2, atelier: 1 },
-  network: { hub: 3, commons: 2, grove: 1 },
+  audience: { creator: 3, stall: 2, atelier: 1 },
+  network: { hub: 3, commons: 2, grove: 1, creator: 1 },
   organization: { commons: 3, workshop: 2, grove: 2, hub: 1 },
   manufacturing: { atelier: 3, workshop: 2, stall: 1 },
-  marketing: { stall: 2, hub: 2, atelier: 1 },
+  marketing: { creator: 2, stall: 2, hub: 2, atelier: 1 },
 }
 
 // Simpler-playbook tie-break order. Mirrors SIMPLICITY_RANK in recommend.ts.
 const SIMPLICITY_RANK: PlaybookId[] = [
   "stall",
   "service",
+  "creator",
   "atelier",
   "cycle",
   "kitchen",
@@ -79,6 +80,8 @@ const REASONS: Record<PlaybookId, string> = {
   hub: "Aggregating other vendors — Hub is the federation shape: many vendors, one storefront, governance shared.",
   grove:
     "Mutual-aid posture — Grove pairs sliding-scale pricing with co-op governance and a volunteer-rich front desk.",
+  creator:
+    "An audience you can sell to — Creator gives you memberships, digital drops, and a shows calendar.",
 }
 
 const rankSimplicity = (id: PlaybookId): number => {
