@@ -39,6 +39,30 @@ const normalizePassword = (password: unknown) => {
 }
 
 /**
+ * Best-effort map from a chosen playbook to the legacy `vendor_type`
+ * value. `vendor_type` is now only a denormalized read-cache (the
+ * playbook is the source of truth via `playbook_assignment`), so a lossy
+ * mapping is fine. Mirrors the reverse of `LEGACY_VENDOR_TYPE_MAP` in
+ * `playbook-provider/playbook-context.tsx`.
+ */
+const PLAYBOOK_TO_VENDOR_TYPE: Record<string, string> = {
+  stall: "maker",
+  atelier: "maker",
+  workshop: "maker",
+  service: "maker",
+  creator: "maker",
+  grove: "mutual_aid",
+  commons: "mutual_aid",
+  hub: "mutual_aid",
+  cycle: "producer",
+  harvest: "garden",
+  kitchen: "kitchen",
+}
+
+const playbookToVendorType = (playbook?: string): string | undefined =>
+  playbook ? PLAYBOOK_TO_VENDOR_TYPE[playbook] : undefined
+
+/**
  * Sign in with email/password
  */
 export const useSignInWithEmailPass = (
@@ -75,12 +99,24 @@ export const useSignUpWithEmailPass = (
       confirmPassword: string
       name: string
       vendor_type?: string
+      playbook?: string
+      recommended_playbook?: string
+      roles?: string[]
+      resources?: string[]
     }
   >
 ) => {
   return useMutation({
     mutationFn: async (payload) => {
-      const { confirmPassword, vendor_type, ...authPayload } = payload
+      const {
+        confirmPassword,
+        vendor_type,
+        playbook,
+        recommended_playbook,
+        roles,
+        resources,
+        ...authPayload
+      } = payload
       const normalizedEmail = payload.email.toLowerCase().trim()
       const normalizedPassword = normalizePassword(payload.password)
 
@@ -129,7 +165,14 @@ export const useSignUpWithEmailPass = (
           method: "POST",
           body: {
             name: variables.name,
-            vendor_type: variables.vendor_type || "producer",
+            vendor_type:
+              variables.vendor_type ||
+              playbookToVendorType(variables.playbook) ||
+              "producer",
+            playbook: variables.playbook,
+            recommended_playbook: variables.recommended_playbook,
+            roles: variables.roles,
+            resources: variables.resources,
             member: {
               name: variables.name,
               email: variables.email.toLowerCase().trim(),

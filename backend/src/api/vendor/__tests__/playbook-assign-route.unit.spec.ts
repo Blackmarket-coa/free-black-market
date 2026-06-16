@@ -149,6 +149,59 @@ describe("POST /vendor/playbook/assign", () => {
     })
   })
 
+  it("persists roles + resources on the assignment metadata", async () => {
+    ;(requireSellerId as jest.Mock).mockResolvedValue("sel_123")
+    mockWorkflowRun.mockResolvedValue({
+      result: {
+        playbook_assignment: { id: "pa_9", seller_id: "sel_123", recipe_id: "stall" },
+      },
+    })
+    const res = createRes()
+    await POST(
+      makeReq({
+        recipe_id: "stall",
+        roles: ["stall", "atelier"],
+        resources: ["audience", "marketing"],
+      }) as any,
+      res as any
+    )
+    expect(res.statusCode).toBe(200)
+    expect(mockWorkflowRun).toHaveBeenCalledWith(
+      expect.objectContaining({
+        input: expect.objectContaining({
+          seller_id: "sel_123",
+          recipe_id: "stall",
+          metadata: {
+            roles: ["stall", "atelier"],
+            resources: ["audience", "marketing"],
+          },
+        }),
+      })
+    )
+  })
+
+  it("rejects invalid role ids with 400", async () => {
+    ;(requireSellerId as jest.Mock).mockResolvedValue("sel_123")
+    const res = createRes()
+    await POST(
+      makeReq({ recipe_id: "stall", roles: ["stall", "not_real"] }) as any,
+      res as any
+    )
+    expect(res.statusCode).toBe(400)
+    expect(mockWorkflowRun).not.toHaveBeenCalled()
+  })
+
+  it("rejects invalid resource keys with 400", async () => {
+    ;(requireSellerId as jest.Mock).mockResolvedValue("sel_123")
+    const res = createRes()
+    await POST(
+      makeReq({ recipe_id: "stall", resources: ["land", "not_a_resource"] }) as any,
+      res as any
+    )
+    expect(res.statusCode).toBe(400)
+    expect(mockWorkflowRun).not.toHaveBeenCalled()
+  })
+
   it("rejects invalid recipe_id with 400", async () => {
     ;(requireSellerId as jest.Mock).mockResolvedValue("sel_123")
     const res = createRes()

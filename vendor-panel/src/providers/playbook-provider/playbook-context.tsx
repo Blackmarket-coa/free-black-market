@@ -20,6 +20,7 @@ export type Playbook =
   | "harvest"
   | "hub"
   | "service"
+  | "creator"
   | "default"
 
 /**
@@ -112,6 +113,7 @@ const LEGACY_VENDOR_TYPE_MAP: Record<string, Playbook> = {
   restaurant: "kitchen",
   maker: "stall",
   mutual_aid: "grove",
+  creator: "creator",
 }
 
 const VALID_PLAYBOOKS: Playbook[] = [
@@ -125,6 +127,7 @@ const VALID_PLAYBOOKS: Playbook[] = [
   "harvest",
   "hub",
   "service",
+  "creator",
 ]
 
 /**
@@ -218,6 +221,14 @@ export function getFeaturesByPlaybook(playbook: Playbook): PlaybookFeatures {
       hasSupport: true,
       hasRequests: true,
     },
+    creator: {
+      ...EMPTY_FEATURES,
+      hasProducts: true,
+      hasInventory: true,
+      hasSubscriptions: true,
+      hasShows: true,
+      hasSupport: true,
+    },
     default: { ...EMPTY_FEATURES, hasProducts: true, hasInventory: true },
   }
   return map[playbook]
@@ -245,6 +256,7 @@ function getTypeLabels(playbook: Playbook): { label: string; plural: string } {
     harvest: { label: "Harvest", plural: "Harvests" },
     hub: { label: "Hub", plural: "Hubs" },
     service: { label: "Service", plural: "Services" },
+    creator: { label: "Creator", plural: "Creators" },
     default: { label: "Vendor", plural: "Vendors" },
   }
   return labels[playbook]

@@ -3,8 +3,14 @@ import { LISTING_TYPE_IDS } from "../../listing-type/catalog"
 import type { ListingTypeId } from "../../listing-type/catalog"
 
 describe("playbook recipe catalog", () => {
-  it("exposes exactly ten playbooks", () => {
-    expect(PLAYBOOK_IDS).toHaveLength(10)
+  it("exposes exactly eleven playbooks", () => {
+    expect(PLAYBOOK_IDS).toHaveLength(11)
+  })
+
+  it("includes the creator playbook with audience-monetization features", () => {
+    expect(PLAYBOOK_IDS).toContain("creator")
+    expect(PLAYBOOK_RECIPES.creator.default_features.hasSubscriptions).toBe(true)
+    expect(PLAYBOOK_RECIPES.creator.default_features.hasShows).toBe(true)
   })
 
   it("every playbook id matches its recipe.id", () => {

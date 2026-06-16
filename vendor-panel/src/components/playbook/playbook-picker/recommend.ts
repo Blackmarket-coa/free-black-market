@@ -40,7 +40,7 @@ export type Recommendation = {
   alternatives: Exclude<Playbook, "default">[]
 }
 
-type PlaybookId = Exclude<Playbook, "default">
+export type PlaybookId = Exclude<Playbook, "default">
 
 const SIZE_SETS: Record<SizeAnswer, PlaybookId[]> = {
   solo: ["stall", "service"],
@@ -66,9 +66,10 @@ const OFFERING_SETS: Record<OfferingAnswer, PlaybookId[]> = {
   aggregator: ["hub"],
 }
 
-const SIMPLICITY_RANK: PlaybookId[] = [
+export const SIMPLICITY_RANK: PlaybookId[] = [
   "stall",
   "service",
+  "creator",
   "atelier",
   "cycle",
   "kitchen",
@@ -87,7 +88,7 @@ const rankSimplicity = (id: PlaybookId): number => {
   return rank === -1 ? SIMPLICITY_RANK.length : rank
 }
 
-const reasonFor = (playbook: PlaybookId): string => {
+export const reasonFor = (playbook: PlaybookId): string => {
   switch (playbook) {
     case "stall":
       return "You said solo and you decide — Stall keeps things simple. You list, you fulfill, you get paid."
@@ -109,6 +110,8 @@ const reasonFor = (playbook: PlaybookId): string => {
       return "Aggregating other vendors — Hub is the federation shape: many vendors, one storefront, governance shared."
     case "grove":
       return "Mutual-aid posture — Grove pairs sliding-scale pricing with co-op governance and a volunteer-rich front desk."
+    case "creator":
+      return "An audience you can sell to — Creator gives you memberships, digital drops, and a shows calendar."
   }
 }
 
@@ -148,6 +151,7 @@ export const ALL_PLAYBOOKS: PlaybookId[] = [
   "harvest",
   "hub",
   "service",
+  "creator",
 ]
 
 export const PLAYBOOK_DISPLAY_NAMES: Record<PlaybookId, string> = {
@@ -161,4 +165,5 @@ export const PLAYBOOK_DISPLAY_NAMES: Record<PlaybookId, string> = {
   harvest: "Harvest",
   hub: "Hub",
   service: "Service",
+  creator: "Creator",
 }

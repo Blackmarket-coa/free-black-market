@@ -7,10 +7,11 @@ import * as z from "zod"
 
 import { Form } from "../../components/common/form"
 import AvatarBox from "../../components/common/logo-box/avatar-box"
-import { VendorTypeSelection, vendorTypeOptions } from "../../components/vendor-type"
+import { ResourceQuiz, type ResourceKey, type ResourceQuizResult } from "../../components/playbook/resource-quiz"
+import { PLAYBOOK_DISPLAY_NAMES } from "../../components/playbook/playbook-picker"
+import type { PlaybookId } from "../../components/playbook/playbook-picker/recommend"
 import { useSignUpWithEmailPass } from "../../hooks/api"
 import { isFetchError } from "../../lib/is-fetch-error"
-import { VendorType } from "../../providers/vendor-type-provider"
 import { useState } from "react"
 
 // URL validation helper
@@ -38,35 +39,44 @@ const RegisterSchema = z
     path: ["confirmPassword"],
   })
 
-function getNamePlaceholder(type: VendorType): string {
-  const placeholders: Record<VendorType, string> = {
-    producer: "Farm or business name",
-    garden: "Garden name",
-    kitchen: "Kitchen name",
-    maker: "Business or studio name",
-    restaurant: "Restaurant name",
-    mutual_aid: "Organization name",
-    default: "Company name",
+function getNamePlaceholder(playbook: PlaybookId | null): string {
+  const placeholders: Record<PlaybookId, string> = {
+    stall: "Your business name",
+    atelier: "Studio or collective name",
+    grove: "Project or co-op name",
+    workshop: "Co-op name",
+    commons: "Co-op name",
+    cycle: "Farm name",
+    kitchen: "Kitchen or restaurant name",
+    harvest: "Garden name",
+    hub: "Hub or network name",
+    service: "Your name or practice",
   }
-  return placeholders[type]
+  return playbook ? placeholders[playbook] : "Business name"
 }
 
-function getOptionalFieldsHint(type: VendorType): string {
-  const hints: Record<VendorType, string> = {
-    producer: "Add your farm website & social media",
-    garden: "Add your garden's website & social media",
+function getOptionalFieldsHint(playbook: PlaybookId | null): string {
+  const hints: Record<PlaybookId, string> = {
+    stall: "Add your website & social media",
+    atelier: "Add your studio's website & social media",
+    grove: "Add your project's website & social media",
+    workshop: "Add your co-op's website & social media",
+    commons: "Add your co-op's website & social media",
+    cycle: "Add your farm website & social media",
     kitchen: "Add your kitchen website & social media",
-    maker: "Add your portfolio & social media",
-    restaurant: "Add your restaurant website & social media",
-    mutual_aid: "Add your organization's website & social media",
-    default: "Add website & social links",
+    harvest: "Add your garden's website & social media",
+    hub: "Add your hub's website & social media",
+    service: "Add your website & social media",
   }
-  return hints[type]
+  return playbook ? hints[playbook] : "Add website & social links"
 }
 
 export const Register = () => {
-  const [step, setStep] = useState<"type" | "details">("type")
-  const [selectedType, setSelectedType] = useState<VendorType | null>(null)
+  const [step, setStep] = useState<"quiz" | "details">("quiz")
+  const [selectedPlaybook, setSelectedPlaybook] = useState<PlaybookId | null>(null)
+  const [recommendedPlaybook, setRecommendedPlaybook] = useState<PlaybookId | null>(null)
+  const [roles, setRoles] = useState<PlaybookId[]>([])
+  const [resources, setResources] = useState<ResourceKey[]>([])
   const [success, setSuccess] = useState(false)
   const [showOptionalFields, setShowOptionalFields] = useState(false)
   const { t } = useTranslation()
@@ -88,9 +98,14 @@ export const Register = () => {
 
   const { mutateAsync, isPending } = useSignUpWithEmailPass()
 
-  const handleTypeSelect = (type: VendorType) => setSelectedType(type)
-  const handleContinueToDetails = () => selectedType && setStep("details")
-  const handleBackToType = () => setStep("type")
+  const handleQuizComplete = (result: ResourceQuizResult) => {
+    setSelectedPlaybook(result.recipe_id)
+    setRecommendedPlaybook(result.recommended_recipe_id)
+    setRoles(result.roles)
+    setResources(result.resources)
+    setStep("details")
+  }
+  const handleBackToQuiz = () => setStep("quiz")
 
   const handleSubmit = form.handleSubmit(async ({ name, email, password, confirmPassword }) => {
     await mutateAsync(
@@ -99,7 +114,10 @@ export const Register = () => {
         email,
         password,
         confirmPassword,
-        vendor_type: selectedType || "producer",
+        playbook: selectedPlaybook || undefined,
+        recommended_playbook: recommendedPlaybook || undefined,
+        roles,
+        resources,
       },
       {
         onError: (error) => {
@@ -121,7 +139,7 @@ export const Register = () => {
     form.formState.errors.name?.message ||
     form.formState.errors.confirmPassword?.message
 
-  const selectedTypeInfo = selectedType ? vendorTypeOptions.find((o) => o.type === selectedType) : null
+  const playbookLabel = selectedPlaybook ? PLAYBOOK_DISPLAY_NAMES[selectedPlaybook] : null
 
   if (success)
     return (
@@ -148,7 +166,11 @@ export const Register = () => {
               size="small"
               className="text-ui-fg-subtle mt-2 max-w-[320px] text-center"
             >
-              You've registered as a <strong>{selectedTypeInfo?.title}</strong>.
+              {playbookLabel ? (
+                <>
+                  You've registered with the <strong>{playbookLabel}</strong> playbook.{" "}
+                </>
+              ) : null}
               You may need to wait for admin authorization before logging in. A
               confirmation email will be sent shortly.
             </Text>
@@ -160,30 +182,20 @@ export const Register = () => {
       </div>
     )
 
-  if (step === "type")
+  if (step === "quiz")
     return (
       <div className="bg-ui-bg-subtle flex min-h-dvh w-dvw items-center justify-center px-4 py-10">
         <div className="w-full max-w-2xl">
           <div className="bg-ui-bg-base shadow-elevation-card-rest border-ui-border-base rounded-2xl border p-6 sm:p-8">
-            <div className="mb-6 flex flex-col items-center gap-3 text-center">
+            <div className="mb-2 flex flex-col items-center gap-3 text-center">
               <AvatarBox />
-              <div className="flex flex-col items-center gap-1">
-                <Heading>{t("register.title")}</Heading>
-                <Text size="small" className="text-ui-fg-subtle max-w-md">
-                  Choose the seller profile that best matches your business.
-                  You can update details later.
-                </Text>
-              </div>
-              <div className="bg-ui-bg-component text-ui-fg-subtle inline-flex items-center rounded-full px-3 py-1 text-xs font-medium">
-                Step 1 of 2
-              </div>
+              <Text size="small" className="text-ui-fg-subtle max-w-md">
+                Answer a few quick questions and we'll match you to the right
+                seller setup. You can change it later.
+              </Text>
             </div>
-            <VendorTypeSelection
-              selectedType={selectedType}
-              onSelect={handleTypeSelect}
-              onContinue={handleContinueToDetails}
-            />
-            <div className="mt-6 text-center">
+            <ResourceQuiz onComplete={handleQuizComplete} />
+            <div className="mt-2 text-center">
               <span className="text-ui-fg-muted txt-small">
                 <Trans
                   i18nKey="register.alreadySeller"
@@ -207,20 +219,17 @@ export const Register = () => {
         <div className="bg-ui-bg-base shadow-elevation-card-rest border-ui-border-base flex flex-col items-center rounded-2xl border p-6 sm:p-8">
           <div className="mb-6 flex w-full flex-col items-center gap-4 text-center">
             <AvatarBox />
-            {selectedTypeInfo && (
+            {playbookLabel && (
               <div className="bg-ui-bg-component flex items-center gap-2 rounded-full px-3 py-1.5">
-                <span
-                  className={`flex h-6 w-6 items-center justify-center rounded-full ${selectedTypeInfo.color}`}
-                >
-                  {selectedTypeInfo.icon}
-                </span>
                 <Text size="small" className="text-ui-fg-base font-medium">
-                  {selectedTypeInfo.title}
+                  {playbookLabel} playbook
+                  {roles.length > 1 ? ` +${roles.length - 1} more` : ""}
                 </Text>
                 <button
                   type="button"
-                  onClick={handleBackToType}
+                  onClick={handleBackToQuiz}
                   className="text-ui-fg-muted hover:text-ui-fg-base ml-1"
+                  aria-label="Change playbook"
                 >
                   <svg
                     className="h-4 w-4"
@@ -245,7 +254,7 @@ export const Register = () => {
               </Text>
             </div>
             <div className="bg-ui-bg-component text-ui-fg-subtle inline-flex items-center rounded-full px-3 py-1 text-xs font-medium">
-              Step 2 of 2
+              Last step
             </div>
           </div>
           <div className="flex w-full flex-col gap-y-3">
@@ -266,7 +275,7 @@ export const Register = () => {
                         <Form.Control>
                           <Input
                             {...field}
-                            placeholder={getNamePlaceholder(selectedType || "default")}
+                            placeholder={getNamePlaceholder(selectedPlaybook)}
                             className="bg-ui-bg-field-component"
                           />
                         </Form.Control>
@@ -346,7 +355,7 @@ export const Register = () => {
                   >
                     {showOptionalFields
                       ? "Hide"
-                      : getOptionalFieldsHint(selectedType || "default")}{" "}
+                      : getOptionalFieldsHint(selectedPlaybook)}{" "}
                     (optional)
                     <svg
                       className={`h-4 w-4 transition-transform ${showOptionalFields ? "rotate-180" : ""}`}
@@ -405,7 +414,7 @@ export const Register = () => {
                 )}
 
                 <Button className="w-full" type="submit" isLoading={isPending}>
-                  Sign up as {selectedTypeInfo?.title || "Vendor"}
+                  Create account
                 </Button>
               </form>
             </Form>

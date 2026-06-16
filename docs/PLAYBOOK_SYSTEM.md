@@ -10,7 +10,7 @@ Playbook is the canonical concept that replaces `vendor-type`. The existing
 `vendor-type` provider remains as a deprecated re-export shim for one
 release to avoid breaking the 100+ call sites currently in vendor-panel.
 
-## The ten playbooks
+## The eleven playbooks
 
 | Playbook  | Form                                                | Commission | Sliding-scale | Credits payout | Multi-member payout |
 |-----------|-----------------------------------------------------|-----------:|:-------------:|:--------------:|:-------------------:|
@@ -24,6 +24,13 @@ release to avoid breaking the 100+ call sites currently in vendor-panel.
 | Harvest   | Community garden, collective harvest                | 3 %        | yes           | yes            | yes                 |
 | Hub       | Federation hub, aggregates other vendors            | 3 %        | yes           | yes            | yes                 |
 | Service   | Time-bank service, sliding-scale practitioner       | 3 %        | yes           | opt-in         | yes                 |
+| Creator   | Independent creator monetizing an audience          | 3 %        | opt-in        | opt-in         | no                  |
+
+A vendor picks a **primary** playbook plus, optionally, **additional roles**
+(e.g. a Stall that is also a Creator). The primary drives storefront identity,
+dashboard chrome, and commission; the feature modules a multi-role vendor sees
+are the union of every selected role's defaults, persisted to
+`seller_metadata.enabled_extensions`.
 
 Notes:
 
@@ -55,6 +62,7 @@ enforced as a workflow step on `product.created`.
 | Harvest   | ✓        | ✓     |         | ✓         |           |             | ✓      | ✓        | ✓        |
 | Hub       | ✓        | ✓     | ✓       | ✓         | ✓         | ✓           | ✓      | ✓        | ✓        |
 | Service   |          | ✓     | ✓       | ✓         |           |             |        | ✓        |          |
+| Creator   | ✓        | ✓     | ✓       | ✓         |           |             | ✓      |          | ✓        |
 
 See `docs/LISTING_TYPES.md` for the listing-type specifications.
 
@@ -73,6 +81,7 @@ playbooks as follows. The mapping is applied as a denormalized cache on
 | `restaurant`         | `kitchen`        | (consolidated with `kitchen`) |
 | `maker`              | `stall`          | "There are 2–12 of us" → `atelier`; "We're worker-owned" → `workshop` |
 | `mutual_aid`         | `grove`          | "We're a multi-stakeholder co-op" → `commons` |
+| `creator`            | `creator`        | (creator-monetization vendors map straight across) |
 
 Migration of existing sellers is non-destructive: a one-time backfill assigns
 the default playbook above; the existing `vendor_type` column remains for
@@ -170,6 +179,10 @@ backend `playbook.recipes/*.ts` and frontend `playbook-provider`
 | hasFarm          |       |         |       |          |         | ✓     |         | ✓       |     |         |
 | hasShows         |       |         |       |          |         |       | ✓       |         |     |         |
 
+The matrix above omits **Creator** (the eleventh playbook) for width;
+Creator defaults to `hasProducts`, `hasInventory`, `hasSubscriptions`,
+`hasShows`, and `hasSupport`.
+
 The above set are the existing 14 keys on `vendor-type-provider`. Adding
 new governance-specific keys (e.g. `hasMembers`, `hasGovernance`,
 `hasBookings`) is deferred to a follow-up branch that ships the
@@ -201,7 +214,7 @@ playbook-assignment events.
 
 ## Future playbooks
 
-A future v3 may add an 11th playbook, **Lattice** — a representation-and-
+A future v3 may add a further playbook, **Lattice** — a representation-and-
 licensing co-op (Stocksy / Resonate / publisher-of-record shape) where
 members upload work and the co-op licenses on their behalf with royalties
 splitting atomically. Deferred until consignment-heavy demand surfaces.

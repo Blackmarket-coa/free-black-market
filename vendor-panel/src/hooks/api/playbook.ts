@@ -15,6 +15,7 @@ export type PlaybookAssignment = {
   overridden: boolean
   migrated_from: string | null
   assigned_at: string | null
+  metadata?: { roles?: string[]; resources?: string[] } | null
 }
 
 export type AssignPlaybookBody = {
@@ -26,6 +27,10 @@ export type AssignPlaybookBody = {
   }
   recommended_recipe_id?: Exclude<Playbook, "default">
   overridden?: boolean
+  /** All roles the seller selected (primary is `recipe_id`). */
+  roles?: Exclude<Playbook, "default">[]
+  /** Resources reported in the resource quiz. */
+  resources?: string[]
 }
 
 export const playbookQueryKeys = {

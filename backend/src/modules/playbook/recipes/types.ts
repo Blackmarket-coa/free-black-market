@@ -20,6 +20,7 @@ export type PlaybookId =
   | "harvest"
   | "hub"
   | "service"
+  | "creator"
 
 export type MemberModel =
   | "solo"
