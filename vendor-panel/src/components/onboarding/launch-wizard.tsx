@@ -15,6 +15,8 @@ import {
 import { ArrowLeft, ArrowRight, CheckCircleSolid } from "@medusajs/icons"
 import { backendUrl, getAuthToken } from "../../lib/client"
 import { PlaybookPicker } from "../playbook/playbook-picker"
+import { PLAYBOOK_DISPLAY_NAMES } from "../playbook/playbook-picker"
+import { ResourceQuiz } from "../playbook/resource-quiz"
 import {
   usePlaybookAssignment,
   useAssignPlaybook,
@@ -118,6 +120,8 @@ export function LaunchWizard() {
   } = usePlaybookAssignment()
   const { mutateAsync: assignPlaybook, isPending: assigning } = useAssignPlaybook()
   const hasPlaybook = !!assignmentData?.playbook_assignment
+  const currentRecipeId = assignmentData?.playbook_assignment?.recipe_id ?? null
+  const [editingPlaybook, setEditingPlaybook] = useState(false)
 
   // Step 1
   const [sellingType, setSellingType] = useState<SellingType | "">("")
@@ -276,6 +280,40 @@ export function LaunchWizard() {
     )
   }
 
+  if (hasPlaybook && editingPlaybook) {
+    return (
+      <div className="min-h-screen bg-ui-bg-base">
+        <Container className="py-8">
+          <ResourceQuiz
+            initial={currentRecipeId ?? undefined}
+            onComplete={async (result) => {
+              try {
+                await assignPlaybook({
+                  recipe_id: result.recipe_id,
+                  recommended_recipe_id: result.recommended_recipe_id,
+                  overridden: result.overridden,
+                })
+                toast.success("Playbook updated")
+              } catch (err) {
+                toast.error("Could not update playbook", {
+                  description: (err as Error).message,
+                })
+              } finally {
+                setEditingPlaybook(false)
+              }
+            }}
+            onCancel={() => setEditingPlaybook(false)}
+          />
+          {assigning ? (
+            <div className="text-center mt-4">
+              <Text size="small" className="text-ui-fg-subtle">Saving…</Text>
+            </div>
+          ) : null}
+        </Container>
+      </div>
+    )
+  }
+
   if (state?.wizard_step === "published") {
     return (
       <Container className="py-8 max-w-2xl mx-auto">
@@ -339,6 +377,23 @@ export function LaunchWizard() {
       </div>
 
       <Container className="py-8 max-w-2xl mx-auto">
+        {hasPlaybook && currentRecipeId ? (
+          <div className="mb-6 flex items-center justify-between rounded-md border border-ui-border-base bg-ui-bg-subtle px-4 py-2">
+            <Text size="small" className="text-ui-fg-subtle">
+              Your playbook:{" "}
+              <span className="text-ui-fg-base font-medium">
+                {PLAYBOOK_DISPLAY_NAMES[currentRecipeId]}
+              </span>
+            </Text>
+            <button
+              type="button"
+              onClick={() => setEditingPlaybook(true)}
+              className="text-sm text-ui-fg-interactive hover:underline"
+            >
+              Change
+            </button>
+          </div>
+        ) : null}
         {stepId === "step_1" || stepId === "signup" ? (
           <div>
             <Heading level="h1">What are you selling?</Heading>

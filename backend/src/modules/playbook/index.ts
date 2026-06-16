@@ -10,3 +10,4 @@ export default Module(PLAYBOOK_MODULE, {
 export * from "./models"
 export * from "./recipes"
 export * from "./recommend"
+export * from "./recommend-from-resources"

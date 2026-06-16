@@ -40,7 +40,7 @@ export type Recommendation = {
   alternatives: Exclude<Playbook, "default">[]
 }
 
-type PlaybookId = Exclude<Playbook, "default">
+export type PlaybookId = Exclude<Playbook, "default">
 
 const SIZE_SETS: Record<SizeAnswer, PlaybookId[]> = {
   solo: ["stall", "service"],
@@ -66,7 +66,7 @@ const OFFERING_SETS: Record<OfferingAnswer, PlaybookId[]> = {
   aggregator: ["hub"],
 }
 
-const SIMPLICITY_RANK: PlaybookId[] = [
+export const SIMPLICITY_RANK: PlaybookId[] = [
   "stall",
   "service",
   "atelier",
@@ -87,7 +87,7 @@ const rankSimplicity = (id: PlaybookId): number => {
   return rank === -1 ? SIMPLICITY_RANK.length : rank
 }
 
-const reasonFor = (playbook: PlaybookId): string => {
+export const reasonFor = (playbook: PlaybookId): string => {
   switch (playbook) {
     case "stall":
       return "You said solo and you decide — Stall keeps things simple. You list, you fulfill, you get paid."

@@ -4,6 +4,8 @@ import { MedusaContainer } from "@medusajs/framework/types"
 import { Modules, ContainerRegistrationKeys } from "@medusajs/framework/utils"
 import { createSellerWorkflow } from "@mercurjs/b2c-core/workflows"
 import { createSellerMetadataWorkflow } from "../workflows/create-seller-metadata"
+import { assignPlaybookWorkflow } from "../workflows/assign-playbook"
+import { PLAYBOOK_IDS, type PlaybookId } from "../modules/playbook"
 import { sendVendorAcceptedNotificationWorkflow } from "../workflows/send-vendor-accepted-notification"
 import { appendPath } from "./url"
 import { sendCustomerAcceptedNotificationWorkflow } from "../workflows/send-customer-accepted-notification"
@@ -61,6 +63,26 @@ interface SellerRequestData {
     name: string
   }
   vendor_type?: string
+  /** Playbook chosen via the resource quiz (canonical classification). */
+  playbook?: string
+  /** Playbook the quiz recommended before any override. */
+  recommended_playbook?: string
+  /** Resources the user reported in the quiz. */
+  resources?: string[]
+}
+
+/**
+ * Fallback map from legacy vendor_type → playbook, used only when a
+ * request predates the resource quiz (no `playbook` on the request).
+ * Mirrors LEGACY_VENDOR_TYPE_MAP in playbook-provider/playbook-context.tsx.
+ */
+const LEGACY_VENDOR_TYPE_TO_PLAYBOOK: Record<string, PlaybookId> = {
+  producer: "cycle",
+  garden: "harvest",
+  kitchen: "kitchen",
+  restaurant: "kitchen",
+  maker: "stall",
+  mutual_aid: "grove",
 }
 
 /**
@@ -132,6 +154,12 @@ function validateSellerRequestData(data: unknown): SellerRequestData {
       name: seller.name,
     },
     vendor_type: typeof d.vendor_type === "string" ? d.vendor_type : undefined,
+    playbook: typeof d.playbook === "string" ? d.playbook : undefined,
+    recommended_playbook:
+      typeof d.recommended_playbook === "string" ? d.recommended_playbook : undefined,
+    resources: Array.isArray(d.resources)
+      ? d.resources.filter((r): r is string => typeof r === "string")
+      : undefined,
   }
 }
 
@@ -409,6 +437,39 @@ export class SellerApprovalService {
       } catch (metadataError: any) {
         // Non-critical: subscriber will create with default type
         log.warn(`[SellerApproval] Metadata creation failed (will use fallback): ${metadataError.message}`)
+      }
+
+      // Step 5.5: Assign the canonical playbook captured by the registration
+      // resource quiz. Falls back to the legacy vendor_type mapping for
+      // requests that predate the quiz. Non-blocking: a vendor without an
+      // assignment is offered the picker during onboarding.
+      try {
+        const requestedPlaybook: PlaybookId =
+          data.playbook && (PLAYBOOK_IDS as string[]).includes(data.playbook)
+            ? (data.playbook as PlaybookId)
+            : LEGACY_VENDOR_TYPE_TO_PLAYBOOK[vendorType] ?? "stall"
+
+        const recommendedPlaybook: PlaybookId | undefined =
+          data.recommended_playbook &&
+          (PLAYBOOK_IDS as string[]).includes(data.recommended_playbook)
+            ? (data.recommended_playbook as PlaybookId)
+            : undefined
+
+        await assignPlaybookWorkflow.run({
+          container: this.container,
+          input: {
+            seller_id: seller.id,
+            recipe_id: requestedPlaybook,
+            recommended_recipe_id: recommendedPlaybook,
+            metadata: data.resources?.length
+              ? { resources: data.resources }
+              : undefined,
+          },
+        })
+        log.info(`[SellerApproval] Playbook assigned: ${requestedPlaybook}`)
+      } catch (playbookError: any) {
+        // Non-critical: vendor can pick a playbook during onboarding.
+        log.warn(`[SellerApproval] Playbook assignment failed (onboarding picker will handle it): ${playbookError.message}`)
       }
 
       // Step 6: Provision Matrix (Blackout) user + vendor room (non-blocking)
