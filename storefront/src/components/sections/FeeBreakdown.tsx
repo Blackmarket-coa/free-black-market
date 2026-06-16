@@ -28,16 +28,15 @@ const platforms: Platform[] = [
     icon: "🌿",
     calcFees: (price) => {
       const commission = price * 0.03
-      const processing = price * 0.029 + 0.3
-      return { commission, processing, ads: 0, fulfillment: 0, listing: 0, other: 0, total: commission + processing }
+      return { commission, processing: 0, ads: 0, fulfillment: 0, listing: 0, other: 0, total: commission }
     },
     breakdown: [
       "3% marketplace commission",
-      "2.9% + $0.30 Stripe processing",
+      "No payment processing fees passed to you",
       "No listing fees",
       "No mandatory ads",
       "No monthly subscription",
-      "Community-owned cooperative",
+      "Internal ledger settlement (Coalition Credits) — internal processor coming soon",
     ],
     verdict: "COOPERATIVE",
   },

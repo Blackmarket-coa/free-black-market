@@ -129,7 +129,8 @@ export const ProducerPriceExplanation = ({
     <span className="font-medium text-green-700">
       {producerEarnings}% goes to the producer.
     </span>
-    {" "}{platformFee}% coalition fee keeps the marketplace running.
+    {" "}A flat {platformFee}% coalition fee keeps the marketplace running — no listing,
+    monthly, or payment processing fees passed to vendors.
   </div>
 )
 
