@@ -1,12 +1,10 @@
 "use client"
 
 import { HttpTypes } from "@medusajs/types"
-import {
-  AlgoliaProductSidebar,
-  ProductCard,
-  ProductListingActiveFilters,
-  ProductsPagination,
-} from "@/components/organisms"
+import { AlgoliaProductSidebar } from "@/components/organisms/ProductSidebar/AlgoliaProductSidebar"
+import { ProductCard } from "@/components/organisms/ProductCard/ProductCard"
+import { ProductListingActiveFilters } from "@/components/organisms/ProductListingActiveFilters/ProductListingActiveFilters"
+import { ProductsPagination } from "@/components/organisms/ProductsPagination/ProductsPagination"
 import { client } from "@/lib/client"
 import { Configure, useHits } from "react-instantsearch"
 import { InstantSearchNext } from "react-instantsearch-nextjs"

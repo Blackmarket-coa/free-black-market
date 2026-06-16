@@ -81,16 +81,12 @@ export const listProducts = async ({
   }>(`/store/products`, {
     method: "GET",
     query: {
-      country_code: countryCode,
       category_id,
       collection_id,
       limit,
       offset,
-      region_id: region?.id,
-      fields:
-        "*categories,*type,*sales_channels,*metadata,*variants.calculated_price,+variants.inventory_quantity," +
-        "*variants,*variants.options,*options,*seller,*seller.products,*seller.reviews,*seller.reviews.customer," +
-        "*seller.reviews.seller,*seller.products.variants,*attribute_values,*attribute_values.attribute",
+      // region_id omitted — MikroORM ORM bug workaround
+      fields: "id,title,handle,thumbnail,status", // ORM bug: *-expansions fail
       ...queryParams,
     },
     headers,

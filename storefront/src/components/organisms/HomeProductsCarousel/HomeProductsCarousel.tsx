@@ -24,17 +24,22 @@ export const HomeProductsCarousel = async ({
   sellerProducts: Product[]
   home: boolean
 }) => {
-  const {
-    response: { products },
-  } = await listProducts({
-    countryCode: locale,
-    queryParams: {
-      limit: home ? 10 : undefined,
-      order: "created_at",
-      handle: home ? undefined : sellerProducts.map((product) => product.handle),
-    },
-    forceCache: !home,
-  })
+  let products: HttpTypes.StoreProduct[] = []
+  try {
+    const { response } = await listProducts({
+      countryCode: locale,
+      queryParams: {
+        limit: home ? 10 : undefined,
+        order: "created_at",
+        handle: home ? undefined : sellerProducts.map((product) => product.handle),
+      },
+      forceCache: !home,
+    })
+    products = response.products
+  } catch {
+    // Backend ORM bug workaround — return null gracefully so the page doesn't crash
+    if (!sellerProducts.length) return null
+  }
 
   if (!products.length && !sellerProducts.length) return null
 

@@ -1,6 +1,7 @@
 import { Suspense } from "react"
 import { ProductListingSkeleton } from "../ProductListingSkeleton/ProductListingSkeleton"
-import { AlgoliaProductsListing, ProductListing } from "@/components/sections"
+import { ProductListing } from "@/components/sections/ProductListing/ProductListing"
+import { AlgoliaProductsListing } from "@/components/sections/ProductListing/AlgoliaProductsListing"
 import { TabsContent, TabsList } from "@/components/molecules"
 import { SellerReviewTab } from "@/components/cells"
 import { isUnifiedListingEnabled } from "@/lib/feature-flags"
