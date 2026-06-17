@@ -30,6 +30,8 @@
       "postcss": ">=8.5.10",
       "@grpc/grpc-js": ">=1.14.4",
       "esbuild": ">=0.28.1",
+      "form-data": ">=4.0.6",
+      "vite": "^6.4.3",
       "@mikro-orm/core": "6.6.14",
       "@mikro-orm/cli": "6.6.14",
       "@mikro-orm/knex": "6.6.14",
@@ -43,7 +45,7 @@
       "multer": ">=2.1.0",
       "path-to-regexp@0": "^0.1.13",
       "path-to-regexp@8": "^8.4.0",
-      "protobufjs": ">=7.5.5",
+      "protobufjs": ">=8.4.1",
       "rollup": ">=4.59.0",
       "zod": "4.2.0"
     }
