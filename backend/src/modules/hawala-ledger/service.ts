@@ -655,14 +655,30 @@ class HawalaLedgerModuleService extends MedusaService({
     // and an awilix cradle (property access) so the atomic money paths actually
     // engage. The cradle throws on an unknown registration, hence the guard.
     const container = (this as any).__container__
+    // 1) A registered PG_CONNECTION (knex) on the container or its cradle.
     try {
       const pg =
         container?.resolve?.(ContainerRegistrationKeys.PG_CONNECTION) ??
         container?.[ContainerRegistrationKeys.PG_CONNECTION]
-      return pg?.raw ? pg : undefined
+      if (pg?.raw) return pg
     } catch {
-      return undefined
+      // fall through
     }
+    // 2) Derive a knex from the module's MikroORM EntityManager. Some scoped
+    //    containers (notably the module integration-test harness) don't register
+    //    PG_CONNECTION, but the manager's PostgreSQL connection exposes a knex
+    //    with `.raw`. In production path (1) resolves first, so this is a
+    //    last-resort fallback.
+    try {
+      const em =
+        (this as any).baseRepository_?.getActiveManager?.() ??
+        container?.manager
+      const knex = em?.getConnection?.()?.getKnex?.()
+      if (knex?.raw) return knex
+    } catch {
+      // no reachable connection (e.g. unit tests without DI)
+    }
+    return undefined
   }
 
   /**

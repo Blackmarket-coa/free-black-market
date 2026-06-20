@@ -4,6 +4,40 @@ Deferred work captured from prior audits and direct repo inspection. **Items her
 
 Effort key: **S** ≤ 1 day · **M** 2–5 days · **L** > 1 week.
 
+## ⚠️ Critical: money-path atomicity was silently disabled (FIXED 2026-06-20)
+
+**Severity: high (financial correctness).** Surfaced by the money-path concurrency
+soak once it was made runnable in the production-readiness pass.
+
+The "atomic-by-default" balance/counter CAS paths **never engaged in production**.
+`HawalaLedgerModuleService.resolvePgConnection()` (and the equivalent in
+`creator-attribution`) read `this.container_`, but Medusa's `MedusaService` base
+stores the module container as `this.__container__` — `container_` is never set.
+So `resolvePgConnection()` always returned `undefined`, and every
+`createTransfer` / `createInvestment` / affiliate-counter increment silently fell
+back to the **non-atomic read-modify-write** path. Under concurrency that allows
+account overdraw and lost pool/counter updates (real money/value integrity risk).
+
+The unit tests that "verified" the atomic feature mocked the same wrong
+`container_` property, so they passed and masked the bug.
+
+**Fix (this pass):**
+- Corrected the container access to `__container__` in
+  `backend/src/modules/hawala-ledger/service.ts` and
+  `backend/src/modules/creator-attribution/service.ts` (supports both a
+  container `.resolve()` and an awilix cradle, plus a MikroORM-manager-derived
+  knex fallback for harnesses that don't register `PG_CONNECTION`).
+- Updated the two atomic unit specs to mock `__container__` (they now validate
+  the real path).
+- The money-path concurrency soak (`hawala-ledger/__tests__/concurrency-soak`)
+  now runs against live Postgres and passes 3/3: no overdraw under 150 concurrent
+  debits on a 100-balance account, value conservation across bidirectional
+  transfers, and exact investment-pool totals under concurrent investments.
+
+**Follow-up to verify:** confirm in a full-app (not module-test) context that
+`PG_CONNECTION` resolves so production takes tier-1 (registered knex) rather than
+the manager fallback; audit any other module copying the `container_` pattern.
+
 ## Type-safety debt
 
 | # | Item | Location | Count | Owner | Effort | Target milestone |
