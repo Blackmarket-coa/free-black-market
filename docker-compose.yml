@@ -93,6 +93,13 @@ services:
       MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
       MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
       MINIO_BUCKET: ${MINIO_BUCKET:-medusa-media}
+      # @mercurjs/b2c-core's PayoutProvider instantiates Stripe at module
+      # bootstrap and throws "Neither apiKey nor config.authenticator provided"
+      # on an empty key, crashing the backend on boot. A dummy test key
+      # satisfies the constructor for local dev / e2e (no live calls); real
+      # deployments override these via the environment.
+      STRIPE_API_KEY: ${STRIPE_API_KEY:-sk_test_dummy}
+      STRIPE_SECRET_API_KEY: ${STRIPE_SECRET_API_KEY:-sk_test_dummy}
     ports:
       - "${BACKEND_PORT:-9000}:9000"
     healthcheck:
