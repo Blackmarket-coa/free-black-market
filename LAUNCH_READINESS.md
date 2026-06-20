@@ -146,11 +146,13 @@ transfers, (3) exact pool totals under concurrent investments.
 Concurrency Soak") job in `.github/workflows/ci.yml` runs it on every push/PR
 against a Postgres service. It's independent of the `integration:http`
 app-boot debt (TI-3) because `moduleIntegrationTestRunner` stands up its own
-isolated module schema without booting the full app. Per the repo's own
-live-Postgres rollout convention (see the `test-integration` TI-1/TI-3
-history), it lands **non-blocking** (`continue-on-error: true`) because it was
-authored in a DB-less env; **flip it to fail-fast** (delete that one line)
-once it's been observed green against live Postgres.
+isolated module schema without booting the full app. **Flipped to fail-fast
+on 2026-06-20** (production-readiness pass): the `continue-on-error: true` line
+on the `test-soak` step was deleted, so the money-path concurrency soak now
+blocks CI against the Postgres service. This was done per an explicit
+"flip anyway" decision — CI's Postgres service is the verification surface; a
+regression in the atomic balance CAS or pool-total increments will now fail the
+build. The `test-integration` (TI-3) step was flipped the same way.
 
 **The one part that still cannot be closed from the web env:** actually
 *running* the soak — this container has no DB (`pg_isready` → no response).

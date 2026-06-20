@@ -124,13 +124,32 @@ export async function initSentry(config: SentryConfig = {}): Promise<boolean> {
         "ResizeObserver loop limit exceeded",
       ],
 
-      // Sanitize sensitive data
+      // Sanitize sensitive data before anything leaves the process.
       beforeSend(event) {
-        // Remove sensitive headers
-        if (event.request?.headers) {
-          delete event.request.headers["authorization"]
-          delete event.request.headers["cookie"]
-          delete event.request.headers["x-api-key"]
+        const SENSITIVE_HEADERS = [
+          "authorization",
+          "cookie",
+          "set-cookie",
+          "x-api-key",
+          "x-medusa-access-token",
+          "x-publishable-api-key",
+        ]
+        const headers = event.request?.headers
+        if (headers) {
+          for (const name of Object.keys(headers)) {
+            if (SENSITIVE_HEADERS.includes(name.toLowerCase())) {
+              delete headers[name]
+            }
+          }
+        }
+        // Parsed cookies are as sensitive as the raw header.
+        if (event.request?.cookies) {
+          delete event.request.cookies
+        }
+        // Drop token/secret-bearing query params (e.g. ?token=, ?api_key=).
+        const qs = event.request?.query_string
+        if (typeof qs === "string" && /(?:token|secret|api[_-]?key|password)=/i.test(qs)) {
+          event.request.query_string = "[redacted]"
         }
         return event
       },

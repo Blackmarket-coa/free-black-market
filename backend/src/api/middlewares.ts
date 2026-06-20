@@ -31,6 +31,7 @@ import { GetTicketProductSeatsSchema } from "./store/ticket-products/[id]/seats/
 import { requireFeatureFlagMiddleware } from "../shared/runtime-module-gates";
 import { enforceListingTypeAllowed } from "../shared/listing-type-guard";
 import { enforceSameOriginForCookieAuth } from "../shared/csrf-guard";
+import { sanitizedErrorHandler } from "../shared/error-sanitizer";
 import { requireStorefrontContext } from "./middlewares/tenancy-context";
 import {
   inventoryLedgerEventSchema,
@@ -954,4 +955,8 @@ export default defineMiddlewares({
       middlewares: [bugReportAuthRateLimiter],
     },
   ],
+  // Sanitizes 5xx error responses in production so internal detail
+  // (ORM/SQL text, stack traces) never reaches clients; reuses Medusa's
+  // canonical status mapping. See src/shared/error-sanitizer.ts.
+  errorHandler: sanitizedErrorHandler(),
 });

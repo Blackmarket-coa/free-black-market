@@ -455,7 +455,7 @@ class CreatorAttributionService extends MedusaService({
     column: "click_count" | "attributed_order_count",
     id: string
   ): Promise<void> {
-    const container = (this as any).container_
+    const container = (this as any).__container__
     let pgConnection:
       | {
           raw: (
@@ -465,10 +465,14 @@ class CreatorAttributionService extends MedusaService({
         }
       | undefined
     try {
-      // Medusa's awilix container throws on an unregistered key, so guard it.
-      pgConnection = container?.resolve?.(
-        ContainerRegistrationKeys.PG_CONNECTION
-      )
+      // MedusaService stores the container/cradle as `__container__` (not
+      // `container_`). Support both a container (`.resolve`) and an awilix
+      // cradle (property access); the cradle throws on unknown keys, hence
+      // the guard. (Previously read `container_`, which is never set, so the
+      // atomic increment silently fell back to read-modify-write.)
+      pgConnection =
+        container?.resolve?.(ContainerRegistrationKeys.PG_CONNECTION) ??
+        container?.[ContainerRegistrationKeys.PG_CONNECTION]
     } catch {
       pgConnection = undefined
     }
@@ -520,8 +524,8 @@ class CreatorAttributionService extends MedusaService({
     referral_level_splits?: Record<string, number> | null
   } | null> {
     if (!programId) return null
-    const container = (this as any).container_
-    const query = container?.resolve?.("query") as any
+    const container = (this as any).__container__
+    const query = (container?.resolve?.("query") ?? container?.["query"]) as any
     if (!query) return null
     try {
       const { data } = await query.graph({

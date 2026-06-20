@@ -27,8 +27,11 @@ test.describe("§5.1 vendor verification funnel", () => {
   })
 
   test("entitlements economic-standing returns 503 when integration disabled, or zeroed totals when MXID is unknown", async ({ request }) => {
+    // mxid is a PATH parameter (route is .../economic-standing/[mxid]), not a
+    // query param — the old `?mxid=` form matched no route and returned 404.
+    const mxid = encodeURIComponent("@e2e-unknown:bmc.example")
     const r = await request.get(
-      `${BACKEND}/v1/integrations/blackout/entitlements/economic-standing?mxid=@e2e-unknown:bmc.example`,
+      `${BACKEND}/v1/integrations/blackout/entitlements/economic-standing/${mxid}`,
       {
         headers: {
           Authorization: "Bearer test-token-not-real",

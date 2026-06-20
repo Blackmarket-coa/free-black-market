@@ -48,6 +48,10 @@ import {
  */
 moduleIntegrationTestRunner<HawalaLedgerModuleService>({
   moduleName: HAWALA_LEDGER_MODULE,
+  // hawalaLedger is a custom (non-builtin) module, so the runner can't infer its
+  // location from ModulesDefinition; point it at the module dir explicitly or
+  // bootstrap fails with "Cannot resolve module ''".
+  resolve: "./src/modules/hawala-ledger",
   moduleModels: [
     LedgerAccount,
     LedgerEntry,
@@ -91,9 +95,24 @@ moduleIntegrationTestRunner<HawalaLedgerModuleService>({
       return account.id
     }
 
+    // Read post-state straight from Postgres. The money mutations run as raw
+    // atomic SQL UPDATEs, so the service's MikroORM identity map would return
+    // stale cached rows here; raw reads reflect the committed truth.
+    function pg(): { raw: (sql: string, bindings?: unknown[]) => Promise<any> } {
+      const conn = (service as any).resolvePgConnection()
+      if (!conn) throw new Error("soak: no pg connection reachable")
+      return conn
+    }
+    function firstRow(result: any): any {
+      return result?.rows?.[0] ?? result?.[0]
+    }
+
     async function balanceOf(accountId: string): Promise<number> {
-      const a = await service.retrieveLedgerAccount(accountId)
-      return Number(a.balance)
+      const r = await pg().raw(
+        "SELECT balance FROM hawala_ledger_account WHERE id = ?",
+        [accountId]
+      )
+      return Number(firstRow(r)?.balance)
     }
 
     describe("hawala money-path concurrency soak (atomic by default)", () => {
@@ -187,10 +206,15 @@ moduleIntegrationTestRunner<HawalaLedgerModuleService>({
         const ok = results.filter((r) => r.status === "fulfilled").length
         expect(ok).toBe(M)
 
-        const finalPool = await service.retrieveInvestmentPool(pool!.id)
+        const totals = firstRow(
+          await pg().raw(
+            "SELECT total_raised, total_investors FROM hawala_investment_pool WHERE id = ?",
+            [pool!.id]
+          )
+        )
         // Atomic col = col + ? increments: no lost updates under concurrency.
-        expect(Number(finalPool.total_raised)).toBe(M * X)
-        expect(Number(finalPool.total_investors)).toBe(M)
+        expect(Number(totals.total_raised)).toBe(M * X)
+        expect(Number(totals.total_investors)).toBe(M)
 
         // Funds fully moved investor -> pool ledger account.
         expect(await balanceOf(investor)).toBe(0)

@@ -29,7 +29,7 @@ function makeService(pg: ReturnType<typeof makeFakePg> | null) {
   // The container resolves the pg connection (the service uses
   // ContainerRegistrationKeys.PG_CONNECTION; we return the fake for any key so
   // the test doesn't couple to the exact registration string).
-  svc.container_ = pg
+  svc.__container__ = pg
     ? { resolve: () => pg }
     : { resolve: () => undefined }
 

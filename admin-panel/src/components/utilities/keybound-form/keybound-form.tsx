@@ -6,6 +6,7 @@ import React from "react"
 export const KeyboundForm = React.forwardRef<
   HTMLFormElement,
   React.FormHTMLAttributes<HTMLFormElement>
+  // eslint-disable-next-line react/prop-types -- props are typed via React.FormHTMLAttributes generic; rule false-positives on forwardRef
 >(({ onSubmit, onKeyDown, ...rest }, ref) => {
   const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()

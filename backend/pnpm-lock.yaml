@@ -32,7 +32,8 @@ overrides:
   immutable: '>=3.8.3'
   minimatch@3: ^3.1.3
   minimatch@10: ^10.2.1
-  multer: '>=2.1.0'
+  multer: '>=2.2.0'
+  nodemailer: '>=9.0.1'
   path-to-regexp@0: ^0.1.13
   path-to-regexp@8: ^8.4.0
   protobufjs: '>=8.4.1'
@@ -158,11 +159,11 @@ importers:
         specifier: ^8.0.3
         version: 8.0.6
       multer:
-        specifier: '>=2.1.0'
-        version: 2.1.1
+        specifier: '>=2.2.0'
+        version: 2.2.0
       nodemailer:
-        specifier: ^8.0.5
-        version: 8.0.7
+        specifier: '>=9.0.1'
+        version: 9.0.1
       pg:
         specifier: ^8.13.0
         version: 8.16.3
@@ -6852,8 +6853,8 @@ packages:
   msgpackr@1.11.8:
     resolution: {integrity: sha512-bC4UGzHhVvgDNS7kn9tV8fAucIYUBuGojcaLiz7v+P63Lmtm0Xeji8B/8tYKddALXxJLpwIeBmUN3u64C4YkRA==}
 
-  multer@2.1.1:
-    resolution: {integrity: sha512-mo+QTzKlx8R7E5ylSXxWzGoXoZbOsRMpyitcht8By2KHvMbf3tjwosZ/Mu/XYU6UuJ3VZnODIrak5ZrPiPyB6A==}
+  multer@2.2.0:
+    resolution: {integrity: sha512-6rdyFg2kLrMh9Jee7/BMPuV9lEAd7lLW2YUpF9/YxR7njyoUwwQ0ZPh3TaIY50Sw6vlyD2HW3wGOkTS4P79xrQ==}
     engines: {node: '>= 10.16.0'}
 
   mute-stream@0.0.8:
@@ -6926,8 +6927,8 @@ packages:
     resolution: {integrity: sha512-OXdegQq03OmXEjt2hZP33W2YPs/E5BcFQks46+G2gAxs4gHOIVD1u7EqlYLYSKsaIpyKCK9Gbk0ta1/gjRSMRQ==}
     engines: {node: '>=6'}
 
-  nodemailer@8.0.7:
-    resolution: {integrity: sha512-pkjE4mkBzQjdJT4/UmlKl3pX0rC9fZmjh7c6C9o7lv66Ac6w9WCnzPzhbPNxwZAzlF4mdq4CSWB5+FbK6FWCow==}
+  nodemailer@9.0.1:
+    resolution: {integrity: sha512-Gwv8SQewT616ZM/URn0H54b8PWo/Wum7md3EW2aWy1lO27+WZCX+Xyak3J+NlmHUjDh5ME+uesJUDRbR3Ye8Bw==}
     engines: {node: '>=6.0.0'}
 
   normalize-path@3.0.0:
@@ -11055,7 +11056,7 @@ snapshots:
       express: 4.22.1
       fs-exists-cached: 1.0.0
       jsonwebtoken: 9.0.3
-      multer: 2.1.1
+      multer: 2.2.0
       node-schedule: 2.1.1
       qs: 6.15.2
       request-ip: 3.3.0
@@ -17599,7 +17600,7 @@ snapshots:
     optionalDependencies:
       msgpackr-extract: 3.0.3
 
-  multer@2.1.1:
+  multer@2.2.0:
     dependencies:
       append-field: 1.0.0
       busboy: 1.6.0
@@ -17660,7 +17661,7 @@ snapshots:
       long-timeout: 0.1.1
       sorted-array-functions: 1.3.0
 
-  nodemailer@8.0.7: {}
+  nodemailer@9.0.1: {}
 
   normalize-path@3.0.0: {}
 
