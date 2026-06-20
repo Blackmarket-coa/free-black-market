@@ -11,36 +11,46 @@ medusaIntegrationTestRunner({
   testSuite: ({ api }) => {
     describe("Phase 3 vendor operations authz smoke", () => {
       it("requires seller auth for farm harvest creation", async () => {
-        const response = await api.post("/vendor/farm/harvests", {
-          crop_name: "Tomatoes",
-          year: 2026,
-        })
+        const response = await api
+          .post("/vendor/farm/harvests", {
+            crop_name: "Tomatoes",
+            year: 2026,
+          })
+          .catch((e) => e.response)
 
         expect(response.status).toBe(401)
       })
 
       it("requires seller auth for invoicing endpoints", async () => {
-        const listResponse = await api.get("/vendor/invoices")
+        const listResponse = await api
+          .get("/vendor/invoices")
+          .catch((e) => e.response)
         expect(listResponse.status).toBe(401)
 
-        const createResponse = await api.post("/vendor/invoices", {
-          order_id: "ord_test",
-          total: 1000,
-          currency_code: "USD",
-          status: "draft",
-        })
+        const createResponse = await api
+          .post("/vendor/invoices", {
+            order_id: "ord_test",
+            total: 1000,
+            currency_code: "USD",
+            status: "draft",
+          })
+          .catch((e) => e.response)
         expect(createResponse.status).toBe(401)
       })
 
       it("requires seller auth for POS endpoints", async () => {
-        const configResponse = await api.get("/vendor/pos/config")
+        const configResponse = await api
+          .get("/vendor/pos/config")
+          .catch((e) => e.response)
         expect(configResponse.status).toBe(401)
 
-        const checkoutResponse = await api.post("/vendor/pos/checkout", {
-          payee_vendor_id: "seller_receiver",
-          amount: 120,
-          payment_method: "manual",
-        })
+        const checkoutResponse = await api
+          .post("/vendor/pos/checkout", {
+            payee_vendor_id: "seller_receiver",
+            amount: 120,
+            payment_method: "manual",
+          })
+          .catch((e) => e.response)
         expect(checkoutResponse.status).toBe(401)
       })
     })

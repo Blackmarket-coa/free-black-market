@@ -650,9 +650,15 @@ class HawalaLedgerModuleService extends MedusaService({
   private resolvePgConnection():
     | { raw: (sql: string, bindings?: any[]) => Promise<any> }
     | undefined {
-    const container = (this as any).container_
+    // MedusaService stores the module's scoped container/cradle as
+    // `__container__` (NOT `container_`). Support both a container (`.resolve`)
+    // and an awilix cradle (property access) so the atomic money paths actually
+    // engage. The cradle throws on an unknown registration, hence the guard.
+    const container = (this as any).__container__
     try {
-      const pg = container?.resolve?.(ContainerRegistrationKeys.PG_CONNECTION)
+      const pg =
+        container?.resolve?.(ContainerRegistrationKeys.PG_CONNECTION) ??
+        container?.[ContainerRegistrationKeys.PG_CONNECTION]
       return pg?.raw ? pg : undefined
     } catch {
       return undefined

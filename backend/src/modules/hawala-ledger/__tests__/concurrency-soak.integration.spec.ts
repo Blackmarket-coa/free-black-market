@@ -48,6 +48,10 @@ import {
  */
 moduleIntegrationTestRunner<HawalaLedgerModuleService>({
   moduleName: HAWALA_LEDGER_MODULE,
+  // hawalaLedger is a custom (non-builtin) module, so the runner can't infer its
+  // location from ModulesDefinition; point it at the module dir explicitly or
+  // bootstrap fails with "Cannot resolve module ''".
+  resolve: "./src/modules/hawala-ledger",
   moduleModels: [
     LedgerAccount,
     LedgerEntry,
