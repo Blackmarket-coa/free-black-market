@@ -481,7 +481,14 @@ jobs:
           DB_USERNAME: postgres
           DB_PASSWORD: ci_test_postgres_fixture_only_not_a_secret
           DATABASE_URL: postgres://postgres:ci_test_postgres_fixture_only_not_a_secret@localhost:5432/medusa_test
-          REDIS_URL: redis://localhost:6379
+          # REDIS_URL intentionally NOT set: with it, medusa-config wires the
+          # Redis-backed event bus + workflow engine (bullmq), whose ioredis
+          # connections throw an unhandled "Connection is closed" on app
+          # teardown and fail an unrelated test (the rejection is attributed to
+          # whichever spec is mid-flight). These HTTP specs assert auth/
+          # validation, not event-bus behavior, so the in-memory event bus +
+          # workflow engine (medusa-config's default when REDIS_URL is absent)
+          # is the correct, deterministic choice — matches local runs (13/13).
           # Test secrets must be 32+ chars but must not match the banned
           # placeholder set used by medusa-config.ts in production.
           JWT_SECRET: ci-jwt-secret-at-least-32-characters-long-deterministic
