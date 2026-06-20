@@ -31,7 +31,7 @@ function makeAccount(id: string, balance = 1000) {
 }
 
 /**
- * Build a service whose container_ resolves the given pgConnection (or, when
+ * Build a service whose __container__ resolves the given pgConnection (or, when
  * `pg` is undefined, throws on resolve like awilix does for an unregistered
  * key — exercising the guarded fallback).
  */
@@ -49,7 +49,7 @@ function buildTransferService(pg?: { raw: jest.Mock }) {
   svc.updateLedgerEntries = jest.fn(async (data: any) => data)
   svc.updateBalances = jest.fn(async () => undefined)
 
-  svc.container_ = {
+  svc.__container__ = {
     resolve: jest.fn(() => {
       if (!pg) throw new Error("AwilixResolutionError: pgConnection not registered")
       return pg
@@ -138,7 +138,7 @@ describe("investment-pool totals — atomic increments", () => {
     svc.updateInvestmentPools = jest.fn(async (d: any) => d)
     // Isolate the pool-total path from the balance machinery.
     svc.createTransfer = jest.fn(async () => ({ id: "entry-1" }))
-    svc.container_ = {
+    svc.__container__ = {
       resolve: jest.fn(() => {
         if (!pg) throw new Error("AwilixResolutionError")
         return pg
