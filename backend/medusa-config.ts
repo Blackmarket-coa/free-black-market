@@ -530,6 +530,20 @@ module.exports = defineConfig({
       jwtSecret: getRequiredSecret('JWT_SECRET'),
       cookieSecret: getRequiredSecret('COOKIE_SECRET'),
     } as any,
+    // Harden the admin/vendor session cookie (connect.sid): http-only, secure in
+    // production, same-site lax (admin/api share the freeblackmarket.com site so
+    // first-party requests still carry it; the CSRF guard enforces same-origin on
+    // writes), and an explicit 24h lifetime so sessions don't live indefinitely.
+    cookieOptions: {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 24 * 60 * 60 * 1000,
+    },
+    sessionOptions: {
+      // Align the express-session store TTL / cookie Expires with the 24h cookie.
+      ttl: 24 * 60 * 60 * 1000,
+    },
   },
   admin: {
     disable: true,

@@ -460,15 +460,15 @@ jobs:
       # resolved by moving listing-type enforcement to a route middleware
       # (src/shared/listing-type-guard.ts `enforceListingTypeAllowed`, wired in
       # src/api/middlewares.ts), and (b) the missing Stripe bootstrap keys are
-      # supplied below. Step is kept non-blocking for one more cycle: per the
-      # repo's live-Postgres convention (TI-1 was flipped then reverted same day
-      # when a deeper chain surfaced), flip to fail-fast — delete the
-      # `continue-on-error: true` line — only after observing this job green
-      # against the live Postgres service on a real run.
-      - name: Run integration tests (non-blocking until TI-3 verified green)
+      # supplied below. TI-3 was flipped to fail-fast in the production-readiness
+      # pass: this step now blocks CI. The live Postgres service below is the
+      # verification surface. If a deeper boot/migration chain surfaces here (as
+      # happened when TI-1 was briefly flipped on 2026-05-17), this job will fail
+      # the build — that is the intended behavior; fix forward rather than
+      # re-masking with continue-on-error.
+      - name: Run integration tests
         working-directory: backend
         run: pnpm test:integration:http
-        continue-on-error: true
         env:
           NODE_ENV: test
           # `@medusajs/test-utils` reads DB_HOST/DB_USERNAME/DB_PASSWORD/DB_PORT
@@ -543,15 +543,13 @@ jobs:
       # concurrency (no overdraw, value conservation, exact pool totals).
       # Scoped to the soak spec so the signal stays clean.
       #
-      # Authored in a DB-less web env, so this lands non-blocking
-      # (continue-on-error) following the repo's own live-Postgres rollout
-      # convention (see the test-integration TI-1/TI-3 history above). Flip to
-      # fail-fast — delete the `continue-on-error` line — once it's been
-      # observed green against live Postgres here.
+      # Flipped to fail-fast in the production-readiness pass: this step now
+      # blocks CI. The Postgres service below is the verification surface for
+      # the atomic-by-default money paths under real concurrency. A regression
+      # in the balance CAS or pool-total increments will fail the build here.
       - name: Run hawala money-path concurrency soak
         working-directory: backend
         run: pnpm test:integration:modules src/modules/hawala-ledger/__tests__/concurrency-soak.integration.spec.ts
-        continue-on-error: true
         env:
           NODE_ENV: test
           # @medusajs/test-utils reads DB_HOST/DB_USERNAME/DB_PASSWORD/DB_PORT

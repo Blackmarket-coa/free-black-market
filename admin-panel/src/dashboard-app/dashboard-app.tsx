@@ -17,7 +17,9 @@ import {
 } from "react-router-dom"
 import type { INavItem } from "@components/layout/nav-item"
 import { Providers } from "@/providers"
+// eslint-disable-next-line no-restricted-imports -- dashboard-app-local ./routes dir; no @ alias applies (false positive)
 import { getRouteMap } from "./routes/get-route.map"
+// eslint-disable-next-line no-restricted-imports -- dashboard-app-local ./routes dir; no @ alias applies (false positive)
 import { createRouteMap, getRouteExtensions } from "./routes/utils"
 import type {
   ConfigExtension,
