@@ -157,6 +157,17 @@ const SellerMetadata = model.define("seller_metadata", {
   // entitlement grants and webhook `userId` on. Nullable until linked.
   blackout_user_id: model.text().nullable(),
 
+  // ── FBM Sites — "commerce anywhere" (see Migration20260620AddWebsiteFields) ──
+  // Mode 1 (Connect): bare hostnames where the vendor embeds the Connect SDK.
+  connect_domains: model.json().nullable(), // string[]
+  // Mode 2 (Launch): provisioning lifecycle of an FBM-hosted standalone site.
+  // One of: "none" | "provisioning" | "live" | "failed".
+  site_status: model.text().default("none"),
+  // Public URL of the launched site once it is live.
+  site_url: model.text().nullable(),
+  // GitHub repository (org/name) backing the launched site.
+  site_repo: model.text().nullable(),
+
   // Metadata for additional extensions
   metadata: model.json().nullable(),
 })

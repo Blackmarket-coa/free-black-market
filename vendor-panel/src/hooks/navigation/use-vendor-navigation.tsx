@@ -18,6 +18,7 @@ import {
   Newspaper,
   SquaresPlus,
   MapPin,
+  Globe,
 } from "@medusajs/icons"
 import { ReactNode } from "react"
 import { useTranslation } from "react-i18next"
@@ -95,6 +96,12 @@ function getVendorNavigationConfig({
       label: "Sales Report",
       to: "/sales-report",
       // Always visible
+    },
+    {
+      icon: <Globe />,
+      label: "My Website",
+      to: "/my-website",
+      // Always visible — embed FBM on your own site, or launch a hosted one.
     },
     {
       icon: <Star />,

@@ -78,6 +78,14 @@ export const RouteMap: RouteObject[] = [
             lazy: () => import("../../routes/creator-studio"),
           },
           {
+            path: "my-website",
+            errorElement: <ErrorBoundary />,
+            handle: {
+              breadcrumb: () => "My Website",
+            },
+            lazy: () => import("../../routes/my-website"),
+          },
+          {
             path: "programs",
             errorElement: <ErrorBoundary />,
             handle: {

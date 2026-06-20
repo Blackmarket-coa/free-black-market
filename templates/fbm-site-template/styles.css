@@ -1,0 +1,61 @@
+/*
+ * Page chrome for the standardized FBM site template.
+ * The FBM Connect SDK injects its own .fbm-* styles for the product/event
+ * grids; this file only styles the surrounding page (header, sections, footer).
+ * Edit freely — everything here is yours to customize.
+ */
+:root {
+  --fbm-ink: #111;
+  --fbm-muted: #666;
+  --fbm-line: #e7e7e7;
+  --fbm-bg: #fff;
+  --fbm-max: 1080px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family:
+    system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  color: var(--fbm-ink);
+  background: var(--fbm-bg);
+  line-height: 1.5;
+}
+
+a {
+  color: inherit;
+}
+
+.wrap {
+  max-width: var(--fbm-max);
+  margin: 0 auto;
+  padding: 0 20px;
+}
+
+.site-header {
+  border-bottom: 1px solid var(--fbm-line);
+  padding: 28px 0;
+}
+
+.section {
+  padding: 36px 0;
+}
+
+.section__title {
+  font-size: 20px;
+  margin: 0 0 18px;
+}
+
+.site-footer {
+  border-top: 1px solid var(--fbm-line);
+  padding: 28px 0;
+  color: var(--fbm-muted);
+  font-size: 14px;
+}
+
+.site-footer a {
+  text-decoration: none;
+}
