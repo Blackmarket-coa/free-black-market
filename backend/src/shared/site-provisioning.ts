@@ -1,3 +1,4 @@
+import { createHmac, timingSafeEqual } from "crypto";
 import { createLogger } from "./logger";
 
 const log = createLogger("shared/site-provisioning");
@@ -36,6 +37,63 @@ export function isLaunchConfigured(): boolean {
 /** Public URL a launched site is served at. */
 export function launchedSiteUrl(subdomain: string): string {
   return `https://${subdomain}.${SITES_DOMAIN}`;
+}
+
+// ─── Deploy → live status flip ───────────────────────────────────────────────
+
+/** True when the deploy → live webhook callback is wired (shared HMAC secret). */
+export function isDeployCallbackConfigured(): boolean {
+  return Boolean(process.env.SITE_DEPLOY_SECRET);
+}
+
+/**
+ * Verify an HMAC-SHA256 signature over the raw webhook body using
+ * SITE_DEPLOY_SECRET. Timing-safe. Mirrors the Printful webhook verification at
+ * src/api/store/printful/webhooks/route.ts.
+ */
+export function verifyDeploySignature(
+  rawBody: Buffer | string,
+  signature: string,
+): boolean {
+  const secret = process.env.SITE_DEPLOY_SECRET;
+  if (!secret || !signature) return false;
+
+  const body = Buffer.isBuffer(rawBody)
+    ? rawBody.toString("utf8")
+    : String(rawBody ?? "");
+  const digest = createHmac("sha256", secret).update(body).digest("hex");
+
+  const expected = Buffer.from(digest);
+  const provided = Buffer.from(signature);
+  // timingSafeEqual throws on length mismatch — guard first.
+  if (expected.length !== provided.length) return false;
+  try {
+    return timingSafeEqual(expected, provided);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Lightweight liveness probe for a launched site. `url` is always server-derived
+ * (launchedSiteUrl / persisted site_url), never user input, so this is not an
+ * SSRF vector. Never throws — returns false on any error or timeout.
+ */
+export async function probeSiteLive(
+  url: string,
+  timeoutMs = 2500,
+): Promise<boolean> {
+  try {
+    const res = await fetch(url, {
+      method: "HEAD",
+      redirect: "follow",
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    // 2xx/3xx means the host is serving the site; 404 = not published yet.
+    return res.status >= 200 && res.status < 400;
+  } catch {
+    return false;
+  }
 }
 
 /**

@@ -43,6 +43,13 @@ export const useWebsite = (
   const { data, ...rest } = useQuery({
     queryFn: () => fetchQuery("/vendor/website", { method: "GET" }),
     queryKey: websiteQueryKeys.details(),
+    // Auto-poll while a launched site is provisioning so the panel flips to
+    // "Live" on its own — the backend promotes the row once the site answers.
+    refetchInterval: (query) =>
+      (query.state.data as FbmWebsiteResponse | undefined)?.website
+        ?.site_status === "provisioning"
+        ? 8000
+        : false,
     ...options,
   })
 

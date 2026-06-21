@@ -10,7 +10,10 @@ import {
   createSellerMetadataRecord,
   updateSellerMetadataRecord,
 } from "../../../modules/seller-extension/metadata-service";
-import { normalizeDomains } from "../../../shared/site-provisioning";
+import {
+  normalizeDomains,
+  probeSiteLive,
+} from "../../../shared/site-provisioning";
 import { serializeWebsite } from "../../../shared/website-config";
 
 type SellerRow = { id: string; handle: string };
@@ -62,7 +65,26 @@ export async function GET(
         .status(404)
         .json({ message: "Seller not found", type: "not_found" });
     }
-    return res.json({ website: serializeWebsite(seller.handle, meta) });
+
+    // Self-healing promote: while a launched site is provisioning, probe it and
+    // flip to "live" the moment it answers. Bounded + awaited so the response
+    // reflects the new status immediately (the panel polls this endpoint). This
+    // is the always-on fallback for the optional /webhooks/site-deploy callback.
+    let effectiveMeta = meta;
+    if (meta?.site_status === "provisioning" && meta.site_url) {
+      const live = await probeSiteLive(meta.site_url);
+      if (live) {
+        const sellerExtension = req.scope.resolve("sellerExtension");
+        await updateSellerMetadataRecord(sellerExtension as any, [
+          { id: meta.id, site_status: "live" },
+        ]);
+        effectiveMeta = { ...meta, site_status: "live" };
+      }
+    }
+
+    return res.json({
+      website: serializeWebsite(seller.handle, effectiveMeta),
+    });
   } catch (error: unknown) {
     const msg = error instanceof Error ? error.message : "Unknown error";
     log.error("[GET /vendor/website] failed:", msg);
