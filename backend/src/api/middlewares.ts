@@ -59,6 +59,26 @@ const PostVendorSellerExtensionsBodySchema = z.object({
   enabled_extensions: z.array(z.string()).nullable(),
 });
 
+/**
+ * "My Website" (Connect mode) — save the bare hostnames the vendor embeds the
+ * Connect SDK on. We normalize/validate hostnames in the route handler; here we
+ * just enforce the array-of-strings shape.
+ */
+const PostVendorWebsiteBodySchema = z.object({
+  connect_domains: z.array(z.string()).max(50).nullable().optional(),
+});
+
+/**
+ * "My Website" (Launch mode) — provision a standardized FBM-hosted site.
+ * The subdomain is optional; when omitted the vendor handle is used.
+ */
+const PostVendorWebsiteLaunchBodySchema = z.object({
+  subdomain: z
+    .string()
+    .regex(/^[a-z0-9-]{2,63}$/i, "subdomain must be 2-63 chars: a-z, 0-9, -")
+    .optional(),
+});
+
 const PostVendorHermesRuntimeBodySchema = z.object({
   tool_call: z.object({
     action: z.string().min(1),
@@ -462,6 +482,34 @@ function adminCorsMiddleware(
 }
 
 /**
+ * Public Store CORS Middleware
+ *
+ * The FBM Store API (`/store/vendors` and `/store/vendors/:handle`) is the
+ * public, website-agnostic contract that any third-party site embeds via the
+ * Connect SDK (connect.js). Those sites have arbitrary origins that will never
+ * appear in STORE_CORS, so we reflect the request origin and keep the endpoints
+ * open + read-only (no credentials, so there is no `*`-with-credentials hazard).
+ * The `cors` package also answers preflight OPTIONS for us.
+ */
+function publicStoreCorsMiddleware(
+  req: MedusaRequest,
+  res: MedusaResponse,
+  next: MedusaNextFunction,
+) {
+  return cors({
+    origin: true, // reflect any origin — public read-only catalog
+    credentials: false,
+    methods: ["GET", "OPTIONS"],
+    allowedHeaders: [
+      "Content-Type",
+      "X-Publishable-API-Key",
+      "x-publishable-api-key",
+    ],
+    maxAge: 86400,
+  })(req, res, next);
+}
+
+/**
  * Security Headers Middleware
  * Applies security headers to all routes
  */
@@ -545,6 +593,18 @@ export default defineMiddlewares({
       matcher: "/store/**",
       method: "GET",
       middlewares: [stripQueryParamForAdminMiddleware],
+    },
+    // ============================================================
+    // FBM Store API — public, website-agnostic vendor catalog
+    // ============================================================
+    // Open read-only CORS so any third-party site can embed the Connect SDK.
+    {
+      matcher: "/store/vendors",
+      middlewares: [publicStoreCorsMiddleware],
+    },
+    {
+      matcher: "/store/vendors/**",
+      middlewares: [publicStoreCorsMiddleware],
     },
     // ============================================================
     // CSRF: reject forged cross-site, cookie-authenticated writes
@@ -754,6 +814,25 @@ export default defineMiddlewares({
     {
       matcher: "/vendor/me",
       middlewares: [authenticate("seller", "bearer")],
+    },
+    // "My Website" tab — Connect settings + Launch provisioning
+    {
+      matcher: "/vendor/website",
+      middlewares: [authenticate("seller", "bearer")],
+    },
+    {
+      matcher: "/vendor/website",
+      method: "POST",
+      middlewares: [validateAndTransformBody(PostVendorWebsiteBodySchema)],
+    },
+    {
+      matcher: "/vendor/website/launch",
+      middlewares: [authenticate("seller", "bearer")],
+    },
+    {
+      matcher: "/vendor/website/launch",
+      method: "POST",
+      middlewares: [validateAndTransformBody(PostVendorWebsiteLaunchBodySchema)],
     },
     {
       matcher: "/vendor/hermes/runtime",

@@ -1,0 +1,83 @@
+name: Configure & Deploy FBM Site
+
+# Triggered by the FBM backend's /vendor/website/launch endpoint via the GitHub
+# "dispatch workflow" API. It bakes the vendor handle into the template, commits
+# the result, then publishes the static site to GitHub Pages.
+on:
+  workflow_dispatch:
+    inputs:
+      vendor_handle:
+        description: "FBM vendor handle (slug)"
+        required: true
+        type: string
+      subdomain:
+        description: "Subdomain for {subdomain}.sites.freeblackmarket.com"
+        required: false
+        type: string
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: fbm-pages
+  cancel-in-progress: true
+
+jobs:
+  configure:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Bake vendor handle into the template
+        env:
+          HANDLE: ${{ inputs.vendor_handle }}
+          SUBDOMAIN: ${{ inputs.subdomain }}
+        run: |
+          set -euo pipefail
+          # Sanitize handle to a safe slug.
+          SAFE_HANDLE=$(printf '%s' "$HANDLE" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9-')
+          if [ -z "$SAFE_HANDLE" ]; then
+            echo "::error::vendor_handle resolved to an empty slug"; exit 1
+          fi
+          echo "Configuring site for: $SAFE_HANDLE"
+
+          # Replace every __VENDOR_HANDLE__ placeholder.
+          grep -rl '__VENDOR_HANDLE__' . --include='*.html' --include='*.css' --include='*.js' \
+            | while read -r f; do
+                sed -i "s/__VENDOR_HANDLE__/${SAFE_HANDLE}/g" "$f"
+              done
+
+          # Write a CNAME so Pages serves the custom domain once DNS is pointed.
+          SUB="${SUBDOMAIN:-$SAFE_HANDLE}"
+          echo "${SUB}.sites.freeblackmarket.com" > CNAME
+
+      - name: Commit configured site
+        run: |
+          set -euo pipefail
+          git config user.name "fbm-bot"
+          git config user.email "bot@freeblackmarket.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+          else
+            git commit -m "Configure site for ${{ inputs.vendor_handle }}"
+            git push
+          fi
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: "."
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>__VENDOR_HANDLE__ — Free Black Market</title>
+    <meta
+      name="description"
+      content="Shop with __VENDOR_HANDLE__ on Free Black Market."
+    />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <!--
+      This is the standardized FBM site template. It is Mode 1 (Connect)
+      pre-configured: the single <script> at the bottom of <body> wires the page
+      to the vendor's catalog. The __VENDOR_HANDLE__ token is replaced by the
+      `configure` GitHub Action when FBM provisions the site.
+    -->
+    <header class="site-header">
+      <div class="wrap">
+        <!-- Vendor profile header renders itself -->
+        <div data-fbm="vendor"></div>
+      </div>
+    </header>
+
+    <main class="wrap">
+      <section class="section">
+        <h2 class="section__title">Shop</h2>
+        <!-- A responsive grid of the vendor's products -->
+        <div data-fbm="products" data-fbm-limit="12"></div>
+      </section>
+
+      <section class="section">
+        <h2 class="section__title">Upcoming events</h2>
+        <!-- The vendor's ticketed events (hidden automatically if none) -->
+        <div data-fbm="events" data-fbm-limit="6"></div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="wrap">
+        <p>
+          Powered by
+          <a href="https://freeblackmarket.com" rel="noopener">Free Black Market</a>
+        </p>
+      </div>
+    </footer>
+
+    <!--
+      FBM Connect SDK. `data-fbm-handle` is the only required setting.
+      `data-fbm-api` points at the FBM Store API.
+    -->
+    <script
+      src="https://freeblackmarket.com/connect.js"
+      data-fbm-handle="__VENDOR_HANDLE__"
+      data-fbm-api="https://api.freeblackmarket.com"
+      async
+    ></script>
+  </body>
+</html>
