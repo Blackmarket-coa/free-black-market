@@ -4,6 +4,7 @@ import { retrieveCustomerContext } from "@/lib/data/customer"
 import { getCharacterSheet } from "@/lib/data/progression"
 import { RoleTrackBar } from "@/components/organisms/CharacterSheet/RoleTrackBar"
 import { TitleBadge } from "@/components/organisms/CharacterSheet/TitleBadge"
+import { ProgressWatcher } from "@/components/organisms/CharacterSheet/ProgressWatcher"
 
 export const metadata: Metadata = {
   title: "Character",
@@ -46,6 +47,10 @@ export default async function CharacterPage() {
 
   return (
     <main className="container">
+      <ProgressWatcher
+        overallLevel={overallLevel}
+        titleCount={character?.titles.length ?? 0}
+      />
       <div className="mt-6 space-y-8">
         <header className="rounded-lg border border-tertiary bg-green-50 p-6">
           <p className="text-secondary text-sm uppercase tracking-wide">

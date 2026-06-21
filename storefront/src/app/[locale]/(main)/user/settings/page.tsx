@@ -1,6 +1,7 @@
 import type { Metadata } from "next"
 import { AccountLoadingState, LoginForm, ProfileDetails, UserNavigation } from "@/components/molecules"
 import { ProfilePassword } from "@/components/molecules/ProfileDetails/ProfilePassword"
+import { BlackoutEffectsSettings } from "@/components/molecules/BlackoutEffectsSettings/BlackoutEffectsSettings"
 import { retrieveCustomerContext } from "@/lib/data/customer"
 
 
@@ -25,6 +26,7 @@ export default async function ReviewsPage() {
           <h1 className="heading-md uppercase mb-8">Settings</h1>
           <ProfileDetails user={customer} />
           <ProfilePassword user={customer} />
+          <BlackoutEffectsSettings />
         </div>
       </div>
     </main>

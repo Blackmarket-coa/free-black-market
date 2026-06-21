@@ -3,6 +3,7 @@
 import { PropsWithChildren, useEffect, useState } from "react"
 
 import { CartContext } from "./context"
+import { useBlackoutEffects } from "../BlackoutEffects"
 import { Cart, StoreCartLineItemOptimisticUpdate } from "@/types/cart"
 
 interface CartProviderProps extends PropsWithChildren {
@@ -11,6 +12,7 @@ interface CartProviderProps extends PropsWithChildren {
 
 export function CartProvider({ cart, children }: CartProviderProps) {
   const [cartState, setCartState] = useState(cart)
+  const { celebrate } = useBlackoutEffects()
 
   useEffect(() => {
     setCartState(cart)
@@ -20,6 +22,8 @@ export function CartProvider({ cart, children }: CartProviderProps) {
     newItem: StoreCartLineItemOptimisticUpdate,
     currency_code: string
   ) {
+    // A soft, calm acknowledgement for a small positive action.
+    celebrate("confirm")
     setCartState((prev) => {
       const currentItems = prev?.items || []
       const isNewItemInCart = currentItems.find(

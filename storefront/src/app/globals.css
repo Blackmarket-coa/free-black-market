@@ -292,3 +292,57 @@ a.link-solarpunk:hover {
   background: rgba(var(--brand-300), 0.4);
   color: rgb(var(--brand-900));
 }
+
+/* ------------------------------------------------------------------ */
+/* Blackout effects — calm "bloom" celebration + warm night grading   */
+/* ------------------------------------------------------------------ */
+
+/* Transient warm glow shown on positive interactions. Decorative only. */
+.blackout-bloom {
+  animation: blackout-bloom-fade 1100ms ease-out forwards;
+}
+.blackout-bloom__glow {
+  background: radial-gradient(
+    circle,
+    rgba(var(--amber-300), 0.5) 0%,
+    rgba(var(--amber-200), 0.3) 30%,
+    rgba(var(--brand-300), 0.12) 55%,
+    rgba(var(--brand-300), 0) 72%
+  );
+  filter: blur(8px);
+  transform: scale(0.4);
+  animation: blackout-bloom-grow 1100ms ease-out forwards;
+}
+
+@keyframes blackout-bloom-fade {
+  0% { opacity: 0; }
+  18% { opacity: 1; }
+  100% { opacity: 0; }
+}
+@keyframes blackout-bloom-grow {
+  0% { transform: scale(0.4); }
+  100% { transform: scale(1); }
+}
+
+/* Gentle organic "breathing" pulse, available for ambient accents. */
+@keyframes blackout-breathe {
+  0%, 100% { opacity: 0.85; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.015); }
+}
+
+/*
+ * Warm night grading: shift the whole UI toward a low-strain, warm palette
+ * (a softened, slightly amber, lower-contrast feel). Toggled by the effects
+ * provider via the `data-blackout-night` attribute on <html>.
+ */
+html[data-blackout-night] body {
+  filter: sepia(0.12) saturate(0.92) brightness(0.97) hue-rotate(-6deg);
+}
+
+/* Respect users who prefer reduced motion: drop all effect animation. */
+@media (prefers-reduced-motion: reduce) {
+  .blackout-bloom,
+  .blackout-bloom__glow {
+    animation: none !important;
+  }
+}

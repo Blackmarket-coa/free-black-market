@@ -1,6 +1,11 @@
 import type { Metadata } from "next"
+import { cookies } from "next/headers"
 import { redirect } from "next/navigation"
-import { setStance, type Stance } from "@/lib/data/progression"
+import { getCharacterSheet, setStance, type Stance } from "@/lib/data/progression"
+import {
+  OnboardingChecklist,
+  type OnboardingStep,
+} from "@/components/sections/Onboarding/OnboardingChecklist"
 
 export const metadata: Metadata = {
   title: "What are you doing today?",
@@ -64,9 +69,51 @@ async function chooseStance(formData: FormData) {
   redirect(destination)
 }
 
-export default function StartPage() {
+/**
+ * Build the endowed-progress onboarding steps from real account signals.
+ * Returns null for logged-out visitors (the stance cards are their entry point).
+ */
+async function buildOnboardingSteps(): Promise<OnboardingStep[] | null> {
+  const character = await getCharacterSheet()
+  if (!character) return null
+
+  const cookieStore = await cookies()
+  const hasChosenRole = Boolean(cookieStore.get("fbm_stance")?.value)
+
+  return [
+    {
+      id: "join",
+      label: "Account created",
+      hint: "You're in — welcome to the coalition.",
+      done: true, // Endowed-progress head start: the first step is already yours.
+    },
+    {
+      id: "role",
+      label: "Pick how you'll take part",
+      hint: "Produce, acquire, invest, or support — choose a stance below.",
+      done: hasChosenRole,
+    },
+    {
+      id: "xp",
+      label: "Make your first contribution",
+      hint: "Your first action earns experience and grows your character.",
+      done: character.totalXp > 0,
+    },
+    {
+      id: "order",
+      label: "Complete your first exchange",
+      hint: "Place an order to close the loop with another member.",
+      done: character.stats.ordersCompleted > 0,
+    },
+  ]
+}
+
+export default async function StartPage() {
+  const onboardingSteps = await buildOnboardingSteps()
+
   return (
     <main className="container py-10">
+      {onboardingSteps && <OnboardingChecklist steps={onboardingSteps} />}
       <header className="text-center max-w-2xl mx-auto mb-10">
         <h1 className="heading-xl">What are you doing today?</h1>
         <p className="text-secondary mt-3">
