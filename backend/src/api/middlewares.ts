@@ -19,6 +19,7 @@ import {
   authSessionRateLimiter,
   bugReportAnonymousRateLimiter,
   bugReportAuthRateLimiter,
+  standardRateLimiter,
   strictAuthRateLimiter,
   vendorRegistrationRateLimiter,
 } from "../shared/rate-limiter";
@@ -1032,6 +1033,12 @@ export default defineMiddlewares({
       matcher: "/admin/bug-report",
       method: "POST",
       middlewares: [bugReportAuthRateLimiter],
+    },
+    // FBM Sites — inbound deploy callback (HMAC-verified in the handler).
+    {
+      matcher: "/webhooks/site-deploy",
+      method: "POST",
+      middlewares: [standardRateLimiter],
     },
   ],
   // Sanitizes 5xx error responses in production so internal detail

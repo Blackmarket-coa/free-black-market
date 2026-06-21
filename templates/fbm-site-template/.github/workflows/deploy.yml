@@ -37,3 +37,29 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
+
+      # Tell FBM the site is live so the vendor panel flips provisioning -> live.
+      # Inert unless the FBM_DEPLOY_SECRET repo/org secret is set.
+      - name: Notify FBM that the site is live
+        continue-on-error: true
+        env:
+          FBM_DEPLOY_SECRET: ${{ secrets.FBM_DEPLOY_SECRET }}
+          FBM_API: ${{ vars.FBM_API }}
+          PAGE_URL: ${{ steps.deployment.outputs.page_url }}
+        run: |
+          set -euo pipefail
+          if [ -z "${FBM_DEPLOY_SECRET:-}" ]; then
+            echo "FBM_DEPLOY_SECRET not set; skipping status callback."
+            exit 0
+          fi
+          API="${FBM_API:-https://api.freeblackmarket.com}"
+          BODY=$(printf '{"repo":"%s","url":"%s","status":"live"}' \
+            "$GITHUB_REPOSITORY" "${PAGE_URL:-}")
+          SIG=$(printf '%s' "$BODY" \
+            | openssl dgst -sha256 -hmac "$FBM_DEPLOY_SECRET" \
+            | sed 's/^.*= *//')
+          echo "Notifying $API/webhooks/site-deploy"
+          curl -fsS -X POST "$API/webhooks/site-deploy" \
+            -H "Content-Type: application/json" \
+            -H "x-fbm-signature: $SIG" \
+            --data "$BODY"

@@ -208,3 +208,28 @@ When set, `POST /vendor/website/launch`:
    [`configure`](../../templates/fbm-site-template/.github/workflows/configure.yml)
    workflow bakes the handle in and deploys to GitHub Pages.
 3. Records `site_status=provisioning`, `site_url`, `site_repo` on the vendor.
+
+### Status lifecycle: `none → provisioning → live | failed`
+
+A launched site starts at `provisioning`. It is promoted to `live` by **either**
+mechanism (both safe, independent):
+
+- **Liveness probe + poll (always on, zero config).** While `provisioning`, the
+  vendor panel polls `GET /vendor/website` every 8s. That read fires a bounded,
+  server-side `HEAD` probe against the (server-derived) `site_url` and flips the
+  row to `live` the moment the site answers. No secret required.
+- **Deploy webhook (real-time, opt-in).** `POST /webhooks/site-deploy` —
+  unauthenticated but HMAC-verified. The launched site's deploy workflow signs
+  `{ repo, url, status }` with `SITE_DEPLOY_SECRET` (header `x-fbm-signature`,
+  HMAC-SHA256 over the raw body) and posts it the instant Pages publishes. The
+  backend finds the row by `site_repo` and sets `site_status` + `site_url`.
+
+  | Condition                       | Response |
+  | ------------------------------- | -------- |
+  | `SITE_DEPLOY_SECRET` unset      | `501`    |
+  | bad/missing signature           | `401`    |
+  | valid (matched or not)          | `200 { ok: true }` |
+
+  Enablement: set `SITE_DEPLOY_SECRET` on the backend **and** the same value as an
+  org-level `FBM_DEPLOY_SECRET` Actions secret on the launched-site repos (the
+  template's deploy step is inert without it).
