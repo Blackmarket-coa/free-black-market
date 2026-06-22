@@ -1,3 +1,5 @@
 export { default as CharacterSheet } from "./character-sheet"
 export { default as XpEvent } from "./xp-event"
 export { default as ProgressionTitle } from "./progression-title"
+export { default as XpRedemption } from "./xp-redemption"
+export { XpRedemptionStatus, XpRewardKind } from "./xp-redemption"

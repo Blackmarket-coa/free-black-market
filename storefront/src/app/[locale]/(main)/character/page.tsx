@@ -5,6 +5,7 @@ import { getCharacterSheet } from "@/lib/data/progression"
 import { RoleTrackBar } from "@/components/organisms/CharacterSheet/RoleTrackBar"
 import { TitleBadge } from "@/components/organisms/CharacterSheet/TitleBadge"
 import { ProgressWatcher } from "@/components/organisms/CharacterSheet/ProgressWatcher"
+import LocalizedClientLink from "@/components/molecules/LocalizedLink/LocalizedLink"
 
 export const metadata: Metadata = {
   title: "Character",
@@ -62,6 +63,17 @@ export default async function CharacterPage() {
             {STANCE_LABEL[character?.activeStance ?? "consumer"]} stance ·{" "}
             {character?.totalXp ?? 0} total XP
           </p>
+          <div className="mt-4 flex flex-wrap items-center gap-3">
+            <span className="badge-accent">
+              {(character?.spendableXp ?? 0).toLocaleString()} spendable XP
+            </span>
+            <LocalizedClientLink
+              href="/rewards"
+              className="link-solarpunk text-sm font-medium"
+            >
+              Spend XP on rewards →
+            </LocalizedClientLink>
+          </div>
         </header>
 
         {/* Role tracks */}

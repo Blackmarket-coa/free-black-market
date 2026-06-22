@@ -61,18 +61,45 @@ Rendered on `/start` for authenticated members; steps derived from real account 
 Cover the pure earcon acoustics (intervals, attack/release, frequency band, retuning) and the
 preferences normalization (defaults-on, validation/clamping).
 
-## Deferred — Stage 2 (XP economy; NOT yet built)
+## Stage 2 — XP economy (dual balance + redemption) — IMPLEMENTED
 
-Design decisions already made with the product owner, recorded here for continuity:
+### Dual balance
+- `character_sheet.spendable_xp` (new column) holds the **spendable** balance, kept separate
+  from the lifetime status `total_xp`. `recordXpEvent` lifts both when XP is earned; a clawback
+  reduces spendable too (floored at 0). **Spending never lowers `total_xp`, levels, or titles.**
+- Migration: `progression/migrations/Migration20260622AddXpEconomy.ts`.
 
-- **Dual balance.** Keep `total_xp` as non-spendable lifetime *status* (drives levels/titles).
-  Add a separate **spendable** balance — either a `spendable_xp` column on `character_sheet`
-  or a dedicated `xp_wallet` reusing the append-only `XpEvent`/ledger pattern. Spending never
-  lowers a member's level.
-- **Redemption** for **both** entitlement perks (themes, emoji packs, access passes, featured
-  slots — via the `entitlement` module) **and** digital-product downloads (via
-  `digital-product` fulfillment). Follow the `volunteer/TimeCredit` earn→redeem precedent.
-- **Accrual wiring.** Call `progression.recordXpEvent` from the blackout/FBM subscribers
-  (`backend/src/subscribers/emit-blackout-*`) so XP accrues from both platforms.
-- Threshold gating via `entitlement`; anti-speculation guaranteed because XP is
-  non-transferable by construction.
+### Redemption ledger
+- New `xp_redemption` model (append-only spend ledger): `pending → fulfilled | refunded`.
+- Service methods (`progression/service.ts`): `getSpendableXp`, `listRewards(balance)`,
+  `beginRedemption` (validates + debits, throws `InsufficientXpError`), `completeRedemption`,
+  `refundRedemption` (credits XP back if granting fails), `listRedemptionsForCustomer`.
+
+### Reward catalog — `progression/rewards.ts`
+- Static, auditable price list. Every reward grants an **entitlement**:
+  - `ENTITLEMENT` perks (theme, emoji pack, access pass) → entitlement kinds theme/emoji_pack/
+    access_pass.
+  - `DIGITAL_DOWNLOAD` rewards → entitlement kind `digital` (file delivery gated on the grant,
+    handled by the `digital-product` module).
+
+### API — `backend/src/api/store/xp/`
+- `GET /store/xp/rewards` → `{ balance, rewards (with affordability), history }`.
+- `POST /store/xp/redeem { reward_key }` → orchestrates debit → `entitlement.grant` →
+  complete; refunds XP and returns 502 if the grant fails; 409 (`InsufficientXpError`) when
+  the balance is too low; 404 for unknown rewards. The cross-module entitlement grant lives in
+  the route, keeping `progression` decoupled from `entitlement`.
+
+### Storefront
+- `lib/data/progression.ts`: `spendableXp` on the sheet, `getXpRewards`, `redeemXpReward`.
+- `/rewards` page + `XpRewardsList` client component (redeem, history, calm milestone
+  celebration on success, server refresh). Spendable balance + link surfaced on `/character`.
+
+### Accrual & anti-speculation
+- Accrual is automatic: spendable XP rises wherever `recordXpEvent` is already called (FBM +
+  Blackout-bridged award paths), so no new subscribers were required.
+- Anti-speculation guaranteed because XP is non-transferable by construction (no wallet→wallet
+  transfer exists); redemption only ever debits the owner's own balance against the catalog.
+
+### Tests — `progression/__tests__/rewards.unit.spec.ts`
+Cover catalog integrity (unique keys, positive integer costs, every reward grants an
+entitlement, both kinds offered, downloads map to the `digital` kind).
