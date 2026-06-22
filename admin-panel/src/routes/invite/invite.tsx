@@ -40,7 +40,7 @@ const CreateAccountSchema = z
 // NOTE: Update to V2 format
 type DecodedInvite = {
   id: string
-  jti: any
+  jti: string
   exp: string
   iat: number
   email: string
@@ -417,6 +417,6 @@ const InviteSchema = z.object({
   iat: z.number(),
 })
 
-const validateDecodedInvite = (decoded: any): decoded is DecodedInvite => {
+const validateDecodedInvite = (decoded: unknown): decoded is DecodedInvite => {
   return InviteSchema.safeParse(decoded).success
 }

@@ -54,7 +54,7 @@ type DecodedResetPasswordToken = {
 }
 
 const validateDecodedResetPasswordToken = (
-  decoded: any
+  decoded: unknown
 ): decoded is DecodedResetPasswordToken => {
   return ResetPasswordTokenSchema.safeParse(decoded).success
 }
