@@ -60,12 +60,18 @@ export const retrieveCustomerContext = async (): Promise<{
       })
 
       return { customer: customer ?? null, isAuthenticated: true }
-    } catch (error: any) {
+    } catch (error) {
+      const err = error as {
+        status?: number
+        statusCode?: number
+        response?: { status?: number }
+        cause?: { status?: number }
+      }
       const status =
-        error?.status ||
-        error?.statusCode ||
-        error?.response?.status ||
-        error?.cause?.status
+        err?.status ||
+        err?.statusCode ||
+        err?.response?.status ||
+        err?.cause?.status
 
       if (status === 401) {
         // Try to clear invalid tokens (best effort in Server Component context)
@@ -121,11 +127,18 @@ export const updateCustomer = async (formData: FormData) => {
 /* ---------------------------------------------
  * ERROR NORMALIZER
  * -------------------------------------------- */
-function getErrorMessage(error: any): string {
-  if (error?.message) return error.message
-  if (error?.body?.message) return error.body.message
-  if (Array.isArray(error?.errors)) {
-    return error.errors.map((e: any) => e.message || e).join(", ")
+function getErrorMessage(error: unknown): string {
+  const err = error as {
+    message?: string
+    body?: { message?: string }
+    errors?: Array<{ message?: string } | string>
+  }
+  if (err?.message) return err.message
+  if (err?.body?.message) return err.body.message
+  if (Array.isArray(err?.errors)) {
+    return err.errors
+      .map((e) => (typeof e === "string" ? e : e.message || String(e)))
+      .join(", ")
   }
   if (typeof error === "string") return error
   logger.error("Unhandled error:", error)

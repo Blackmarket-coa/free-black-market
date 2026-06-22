@@ -78,12 +78,19 @@ export async function medusaFetch<T>(
         ...headers,
       },
     })
-  } catch (error: any) {
+  } catch (error) {
+    const err = error as {
+      status?: number
+      statusCode?: number
+      response?: { status?: number; data?: unknown }
+      cause?: { status?: number }
+      message?: string
+    }
     const status =
-      error?.status ||
-      error?.statusCode ||
-      error?.response?.status ||
-      error?.cause?.status
+      err?.status ||
+      err?.statusCode ||
+      err?.response?.status ||
+      err?.cause?.status
 
     const method = (restOptions?.method || "GET").toUpperCase()
     const isExpectedCustomerAuthMiss =
@@ -101,9 +108,9 @@ export async function medusaFetch<T>(
       method,
       backendUrl: MEDUSA_BACKEND_URL,
       status,
-      message: error?.message || String(error),
-      responseData: error?.response?.data || null,
-      cause: error?.cause || null,
+      message: err?.message || String(error),
+      responseData: err?.response?.data || null,
+      cause: err?.cause || null,
     })
     throw error
   }
@@ -191,10 +198,11 @@ export async function fetchQuery(
           },
       data: res.ok ? data : null,
     }
-  } catch (error: any) {
+  } catch (error) {
+    const err = error as { message?: string }
     logger.error(
       `[fetchQuery] Network error for ${fullUrl}:`,
-      error?.message || error
+      err?.message || error
     )
     throw error
   }
