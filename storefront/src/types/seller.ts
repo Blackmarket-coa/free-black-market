@@ -3,6 +3,7 @@ import { Product } from "./product"
 type SellerAddress = {
   address_line?: string
   city?: string
+  state?: string
   country_code?: string
   postal_code?: string
 }
@@ -20,6 +21,7 @@ export type SellerProps = SellerAddress & {
   email?: string
   store_status?: "ACTIVE" | "SUSPENDED" | "INACTIVE"
   verified?: boolean
+  phone?: string
   metadata?: SellerMetadata
 }
 
