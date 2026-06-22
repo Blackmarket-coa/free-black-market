@@ -61,7 +61,7 @@ function DetailsTab({ form, product }: DetailsTabProps) {
             }}
           />
 
-          {product.options?.map((option: any) => (
+          {product.options?.map((option) => (
             <Form.Field
               key={option.id}
               control={form.control}
@@ -77,7 +77,7 @@ function DetailsTab({ form, product }: DetailsTabProps) {
                           onChange(v)
                         }}
                         {...field}
-                        options={option.values.map((v: any) => ({
+                        options={(option.values ?? []).map((v) => ({
                           label: v.value,
                           value: v.value,
                         }))}
