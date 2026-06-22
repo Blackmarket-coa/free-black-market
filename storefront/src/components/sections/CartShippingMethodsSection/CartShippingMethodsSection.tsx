@@ -65,21 +65,31 @@ type DeliveryEligibilityResult = {
   next_action?: string
 }
 
+type ShippingMethodRule = { attribute: string; value: string }
+
+// A shipping option as surfaced to the cart, with the marketplace fields the UI
+// relies on (seller grouping, flat/calculated pricing, return-method rules, and
+// an optional pickup location address).
+type AvailableShippingMethod = StoreCardShippingMethod & {
+  rules?: ShippingMethodRule[]
+  seller_id: string
+  price_type: string
+  id: string
+  amount?: number
+  location_address?: {
+    address_1?: string
+    address_2?: string
+    city?: string
+    postal_code?: string
+    country_code?: string
+  }
+}
+
 type ShippingProps = {
   cart: Omit<HttpTypes.StoreCart, "items"> & {
     items?: CartItem[]
   }
-  availableShippingMethods:
-    | Array<
-        StoreCardShippingMethod & {
-          rules: any
-          seller_id: string
-          price_type: string
-          id: string
-          amount?: number
-        }
-      >
-    | null
+  availableShippingMethods: AvailableShippingMethod[] | null
 }
 
 // Helper to format address
@@ -126,7 +136,7 @@ const CartShippingMethodsSection: React.FC<ShippingProps> = ({
   // Filter out return methods
   const _allMethods = availableShippingMethods?.filter(
     (sm) =>
-      sm.rules?.find((rule: any) => rule.attribute === "is_return")?.value !==
+      sm.rules?.find((rule) => rule.attribute === "is_return")?.value !==
       "true"
   )
 
@@ -229,9 +239,10 @@ const CartShippingMethodsSection: React.FC<ShippingProps> = ({
       if (!res.ok) {
         return setError(res.error?.message)
       }
-    } catch (error: any) {
+    } catch (error) {
+      const message = error instanceof Error ? error.message : ""
       setError(
-        error?.message?.replace("Error setting up the request: ", "") ||
+        message.replace("Error setting up the request: ", "") ||
           "An error occurred"
       )
     } finally {
@@ -318,8 +329,10 @@ const CartShippingMethodsSection: React.FC<ShippingProps> = ({
 
   const currentMethods = getMethodsForType(selectedFulfillmentType)
 
-  const groupedBySellerId = currentMethods?.reduce((acc: any, method) => {
-    const sellerId = method.seller_id!
+  const groupedBySellerId = currentMethods?.reduce<
+    Record<string, AvailableShippingMethod[]>
+  >((acc, method) => {
+    const sellerId = method.seller_id
 
     if (!acc[sellerId]) {
       acc[sellerId] = []
@@ -502,8 +515,8 @@ const CartShippingMethodsSection: React.FC<ShippingProps> = ({
                         )}
 
                         <Listbox
-                          value={cart.shipping_methods?.find(sm => 
-                            methods.some((m: any) => m.id === sm.shipping_option_id)
+                          value={cart.shipping_methods?.find(sm =>
+                            methods.some((m) => m.id === sm.shipping_option_id)
                           )?.shipping_option_id || null}
                           onChange={(value) => {
                             handleSetShippingMethod(value)
@@ -516,7 +529,7 @@ const CartShippingMethodsSection: React.FC<ShippingProps> = ({
                               )}
                             >
                               {({ open }) => {
-                                const selectedMethod = methods.find((m: any) => 
+                                const selectedMethod = methods.find((m) =>
                                   cart.shipping_methods?.some(sm => sm.shipping_option_id === m.id)
                                 )
                                 return (
@@ -560,7 +573,7 @@ const CartShippingMethodsSection: React.FC<ShippingProps> = ({
                                 className="absolute z-20 w-full overflow-auto text-small-regular bg-white border rounded-lg border-top-0 max-h-60 focus:outline-none sm:text-sm"
                                 data-testid="shipping-address-options"
                               >
-                                {methods.map((option: any) => {
+                                {methods.map((option) => {
                                   return (
                                     <Listbox.Option
                                       className="cursor-pointer select-none relative pl-6 pr-10 hover:bg-gray-50 py-4 border-b"
