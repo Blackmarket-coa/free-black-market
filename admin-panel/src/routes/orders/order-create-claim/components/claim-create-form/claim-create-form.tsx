@@ -584,10 +584,23 @@ export const ClaimCreateForm = ({
           },
         })
 
-        // TODO: add this on ESC press
         IS_CANCELING = false
       }
     }
+  }, [])
+
+  // Closing the modal via the Escape key should cancel the in-progress claim,
+  // mirroring the Cancel button (which sets IS_CANCELING before unmount).
+  useEffect(() => {
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        IS_CANCELING = true
+      }
+    }
+
+    document.addEventListener("keydown", handleEscape)
+
+    return () => document.removeEventListener("keydown", handleEscape)
   }, [])
 
   const inboundShippingTotal = useMemo(() => {
