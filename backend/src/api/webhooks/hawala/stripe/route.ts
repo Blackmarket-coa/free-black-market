@@ -19,7 +19,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
 
   try {
     const achService = createStripeAchService()
-    const rawBody = (req as any).rawBody
+    const rawBody = (req as MedusaRequest & { rawBody?: Buffer }).rawBody
 
     // SECURITY: Require raw body buffer for proper signature verification
     if (!rawBody || !Buffer.isBuffer(rawBody)) {
@@ -58,9 +58,9 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
             })
 
             // Update ACH transaction
-            const updateData: any = {
+            const updateData = {
               id: txn.id,
-              status: "SUCCEEDED",
+              status: "SUCCEEDED" as const,
               actual_settlement_date: new Date(),
             }
             await hawalaService.updateAchTransactions(updateData)
@@ -79,9 +79,9 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
         })
 
         if (transactions.length > 0) {
-          const updateData: any = {
+          const updateData = {
             id: transactions[0].id,
-            status: "FAILED",
+            status: "FAILED" as const,
             failure_reason: paymentIntent.last_payment_error?.message || "Payment failed",
           }
           await hawalaService.updateAchTransactions(updateData)
@@ -101,9 +101,9 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
           })
 
           if (transactions.length > 0) {
-            const updateData: any = {
+            const updateData = {
               id: transactions[0].id,
-              status: "SUCCEEDED",
+              status: "SUCCEEDED" as const,
               actual_settlement_date: new Date(),
             }
             await hawalaService.updateAchTransactions(updateData)
@@ -134,9 +134,9 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
             idempotency_key: `refund-${payout.id}`,
           })
 
-          const failedUpdateData: any = {
+          const failedUpdateData = {
             id: txn.id,
-            status: "FAILED",
+            status: "FAILED" as const,
             failure_reason: payout.failure_message || "Payout failed",
           }
           await hawalaService.updateAchTransactions(failedUpdateData)
@@ -153,9 +153,9 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
         })
 
         if (bankAccounts.length > 0) {
-          const bankUpdateData: any = {
+          const bankUpdateData = {
             id: bankAccounts[0].id,
-            verification_status: "ERRORED",
+            verification_status: "ERRORED" as const,
             is_default: false,
           }
           await hawalaService.updateBankAccounts(bankUpdateData)

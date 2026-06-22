@@ -1,9 +1,13 @@
-import type { MedusaRequest, MedusaResponse, MedusaNextFunction } from "@medusajs/framework/http"
+import type { AuthenticatedMedusaRequest, MedusaRequest, MedusaResponse, MedusaNextFunction } from "@medusajs/framework/http"
 import { TENANCY_MODULE } from "../../modules/tenancy"
 import TenancyModuleService, { TenancyRole, TierFlag } from "../../modules/tenancy/service"
 
-const actorFromRequest = (req: MedusaRequest) =>
-  String(((req as any).auth_context as any)?.actor_id || ((req as any).auth_context as any)?.user_id || "")
+const actorFromRequest = (req: MedusaRequest) => {
+  const authContext = (req as AuthenticatedMedusaRequest).auth_context as
+    | { actor_id?: string; user_id?: string }
+    | undefined
+  return String(authContext?.actor_id || authContext?.user_id || "")
+}
 
 export const requireStorefrontContext = (requiredRoles?: TenancyRole[], minimumTier?: TierFlag) => {
   return async (req: MedusaRequest, res: MedusaResponse, next: MedusaNextFunction) => {
@@ -39,7 +43,7 @@ export const requireStorefrontContext = (requiredRoles?: TenancyRole[], minimumT
       })
     }
 
-    ;(req as any).storefront_context = {
+    ;(req as MedusaRequest & { storefront_context?: unknown }).storefront_context = {
       organization_id,
       storefront_id,
       role: context.membership.role,

@@ -19,12 +19,13 @@ export const handleSellerRegistration = async (
   let body: CreateSellerRegistrationInput
   try {
     body = createSellerRegistrationSchema.parse(req.body)
-  } catch (validationError: any) {
+  } catch (validationError) {
+    const ve = validationError as { errors?: Array<{ message?: string }> }
     log.error("[Seller registration] Validation error")
     return res.status(400).json({
       type: "invalid_data",
-      message: validationError.errors?.[0]?.message || "Invalid request data",
-      errors: validationError.errors,
+      message: ve.errors?.[0]?.message || "Invalid request data",
+      errors: ve.errors,
     })
   }
 
@@ -109,12 +110,13 @@ export const handleSellerRegistration = async (
           "Your seller registration request has been submitted and is pending approval.",
       },
     })
-  } catch (error: any) {
-    log.error("[Seller registration] Failed to create request:", error.message)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    log.error("[Seller registration] Failed to create request:", message)
 
     return res.status(400).json({
       type: "invalid_data",
-      message: error.message || "Failed to submit seller registration request",
+      message: message || "Failed to submit seller registration request",
     })
   }
 }

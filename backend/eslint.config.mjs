@@ -63,5 +63,20 @@ export default tseslint.config(
         },
       ],
     },
+  },
+  {
+    // TS-3 enforcement ratchet. `no-explicit-any` is parked globally (above),
+    // but these subtrees have been fully de-`any`'d and are now gated at
+    // `error` so regressions are caught at `--max-warnings 0`. Grow this list
+    // one cleared directory at a time (see docs/AUDIT_DEBT.md, TS-3).
+    files: [
+      "src/api/users/**/*.{ts,tsx}",
+      "src/api/shared/**/*.{ts,tsx}",
+      "src/api/webhooks/**/*.{ts,tsx}",
+      "src/api/middlewares/**/*.{ts,tsx}",
+    ],
+    rules: {
+      "@typescript-eslint/no-explicit-any": "error",
+    },
   }
 )
