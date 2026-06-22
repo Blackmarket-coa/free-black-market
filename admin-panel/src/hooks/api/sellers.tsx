@@ -19,15 +19,15 @@ type SortableOrderFields = "display_id" | "created_at" | "updated_at";
 type SortableProductFields = "title" | "created_at" | "updated_at";
 type SortableCustomerGroupFields = "name" | "created_at" | "updated_at";
 
-const sortOrders = (orders: any[], order: string) => {
+const sortOrders = (orders: AdminOrder[], order: string) => {
   const field = order.startsWith("-")
     ? (order.slice(1) as SortableOrderFields)
     : (order as SortableOrderFields);
   const isDesc = order.startsWith("-");
 
   return [...orders].sort((a, b) => {
-    const aValue: string | number | null | undefined = a[field];
-    const bValue: string | number | null | undefined = b[field];
+    const aValue: string | number | Date | null | undefined = a[field];
+    const bValue: string | number | Date | null | undefined = b[field];
 
     // Handle null/undefined values
     if (!aValue && aValue !== "") return isDesc ? -1 : 1;
@@ -60,15 +60,15 @@ return 0;
   });
 };
 
-const sortProducts = (products: any[], order: string) => {
+const sortProducts = (products: AdminProduct[], order: string) => {
   const field = order.startsWith("-")
     ? (order.slice(1) as SortableProductFields)
     : (order as SortableProductFields);
   const isDesc = order.startsWith("-");
 
   return [...products].sort((a, b) => {
-    const aValue: string | number | null | undefined = a[field];
-    const bValue: string | number | null | undefined = b[field];
+    const aValue: string | number | Date | null | undefined = a[field];
+    const bValue: string | number | Date | null | undefined = b[field];
 
     // Handle null/undefined values
     if (!aValue && aValue !== "") return isDesc ? -1 : 1;
@@ -93,15 +93,15 @@ return 0;
   });
 };
 
-const sortCustomerGroups = (customerGroups: any[], order: string) => {
+const sortCustomerGroups = (customerGroups: AdminCustomerGroup[], order: string) => {
   const field = order.startsWith("-")
     ? (order.slice(1) as SortableCustomerGroupFields)
     : (order as SortableCustomerGroupFields);
   const isDesc = order.startsWith("-");
 
   return [...customerGroups].sort((a, b) => {
-    const aValue: string | number | null | undefined = a[field];
-    const bValue: string | number | null | undefined = b[field];
+    const aValue: string | number | Date | null | undefined = a[field];
+    const bValue: string | number | Date | null | undefined = b[field];
 
     // Handle null/undefined values
     if (!aValue && aValue !== "") return isDesc ? -1 : 1;
@@ -225,7 +225,7 @@ export const useSellerOrders = (
 
   // Filter by created_at date ranges
   if (filters?.created_at) {
-    const dateFilter = filters.created_at as any;
+    const dateFilter = filters.created_at;
     if (dateFilter.$gte) {
       const filterDate = new Date(dateFilter.$gte);
       processedOrders = processedOrders.filter((order) => {
@@ -246,7 +246,7 @@ return orderCreatedAt <= filterDate;
 
   // Filter by updated_at date ranges
   if (filters?.updated_at) {
-    const dateFilter = filters.updated_at as any;
+    const dateFilter = filters.updated_at;
 
     if (dateFilter.$gte) {
       const filterDate = new Date(dateFilter.$gte);
@@ -354,7 +354,7 @@ export const useSellerProducts = (
   // Filter by tag_id
   if (filters?.tag_id && Array.isArray(filters.tag_id)) {
     processedProducts = processedProducts.filter((product) =>
-      product.tags?.some((tag: any) => filters.tag_id.includes(tag.id))
+      product.tags?.some((tag) => filters.tag_id.includes(tag.id))
     );
   }
 
@@ -368,7 +368,7 @@ export const useSellerProducts = (
   // Filter by sales_channel_id
   if (filters?.sales_channel_id && Array.isArray(filters.sales_channel_id)) {
     processedProducts = processedProducts.filter((product) =>
-      product.sales_channels?.some((channel: any) =>
+      product.sales_channels?.some((channel) =>
         filters.sales_channel_id.includes(channel.id)
       )
     );
@@ -383,7 +383,7 @@ export const useSellerProducts = (
 
   // Filter by created_at date ranges
   if (filters?.created_at) {
-    const dateFilter = filters.created_at as any;
+    const dateFilter = filters.created_at;
     if (dateFilter.$gte) {
       const filterDate = new Date(dateFilter.$gte);
       processedProducts = processedProducts.filter((product) => {
@@ -404,7 +404,7 @@ return productCreatedAt <= filterDate;
 
   // Filter by updated_at date ranges
   if (filters?.updated_at) {
-    const dateFilter = filters.updated_at as any;
+    const dateFilter = filters.updated_at;
     if (dateFilter.$gte) {
       const filterDate = new Date(dateFilter.$gte);
       processedProducts = processedProducts.filter((product) => {
@@ -482,7 +482,7 @@ export const useSellerCustomerGroups = (
   }
 
   let processedCustomerGroups = [
-    ...data.customer_groups.filter((group: any) => !!group),
+    ...data.customer_groups.filter((group) => !!group),
   ];
 
   // Apply search filter if present
@@ -495,7 +495,10 @@ export const useSellerCustomerGroups = (
 
   // Filter by created_at date ranges
   if (filters?.created_at) {
-    const dateFilter = filters.created_at as any;
+    const dateFilter = filters.created_at as unknown as {
+      $gte?: string
+      $lte?: string
+    };
     if (dateFilter.$gte) {
       const filterDate = new Date(dateFilter.$gte);
       processedCustomerGroups = processedCustomerGroups.filter((group) => {
@@ -516,7 +519,10 @@ return groupCreatedAt <= filterDate;
 
   // Filter by updated_at date ranges
   if (filters?.updated_at) {
-    const dateFilter = filters.updated_at as any;
+    const dateFilter = filters.updated_at as unknown as {
+      $gte?: string
+      $lte?: string
+    };
     if (dateFilter.$gte) {
       const filterDate = new Date(dateFilter.$gte);
       processedCustomerGroups = processedCustomerGroups.filter((group) => {
