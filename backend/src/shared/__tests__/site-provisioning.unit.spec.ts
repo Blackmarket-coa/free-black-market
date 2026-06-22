@@ -1,6 +1,9 @@
 import { createHmac } from "crypto";
 import {
   isDeployCallbackConfigured,
+  isProvisioningStale,
+  normalizeDomains,
+  PROVISIONING_TIMEOUT_MS,
   verifyDeploySignature,
 } from "../site-provisioning";
 
@@ -47,5 +50,50 @@ describe("site-provisioning deploy callback verification", () => {
     expect(verifyDeploySignature("{}", "")).toBe(false);
     delete process.env.SITE_DEPLOY_SECRET;
     expect(verifyDeploySignature("{}", "abc123")).toBe(false);
+  });
+});
+
+describe("isProvisioningStale (launch timeout)", () => {
+  const now = 1_000_000_000_000;
+
+  it("is false for missing/unparseable timestamps", () => {
+    expect(isProvisioningStale(null, now)).toBe(false);
+    expect(isProvisioningStale(undefined, now)).toBe(false);
+    expect(isProvisioningStale("not-a-date", now)).toBe(false);
+  });
+
+  it("is false within the timeout window", () => {
+    const recent = now - (PROVISIONING_TIMEOUT_MS - 1000);
+    expect(isProvisioningStale(new Date(recent), now)).toBe(false);
+    expect(isProvisioningStale(new Date(recent).toISOString(), now)).toBe(false);
+  });
+
+  it("is true once past the timeout window", () => {
+    const old = now - (PROVISIONING_TIMEOUT_MS + 1000);
+    expect(isProvisioningStale(new Date(old), now)).toBe(true);
+    expect(isProvisioningStale(new Date(old).toISOString(), now)).toBe(true);
+    expect(isProvisioningStale(old, now)).toBe(true);
+  });
+});
+
+describe("normalizeDomains (Connect whitelist)", () => {
+  it("strips protocol, path, query, and www; lowercases; dedupes", () => {
+    expect(
+      normalizeDomains([
+        "https://www.Example.com/shop?ref=1",
+        "example.com",
+        "  SHOP.example.com  ",
+      ]),
+    ).toEqual(["example.com", "shop.example.com"]);
+  });
+
+  it("drops non-strings and implausible hostnames", () => {
+    expect(normalizeDomains(["localhost", "no-tld", 42, null, ""])).toEqual([]);
+  });
+
+  it("returns [] for non-array input and caps the list at 50", () => {
+    expect(normalizeDomains("example.com")).toEqual([]);
+    const many = Array.from({ length: 80 }, (_, i) => `site${i}.com`);
+    expect(normalizeDomains(many)).toHaveLength(50);
   });
 });

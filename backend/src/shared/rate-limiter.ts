@@ -254,6 +254,22 @@ export const standardRateLimiter = createRateLimiter({
   keyPrefix: "standard",
 })
 
+/**
+ * Public catalog rate limiter: 120 requests per minute per IP.
+ *
+ * Protects the open, unauthenticated FBM Store API (`/store/vendors`,
+ * `/store/vendors/:handle`) — the contract every Connect embed reads. Because
+ * the SDK runs in each visitor's browser, the key is the visitor's IP, so a
+ * generous ceiling avoids throttling legitimate multi-widget pages / SPA
+ * navigation while still capping a single scraper. Aggregate load is absorbed
+ * by the response's Cache-Control (CDN/browser caching), not by this limiter.
+ */
+export const publicCatalogRateLimiter = createRateLimiter({
+  windowMs: 60_000,
+  max: 120,
+  keyPrefix: "public-catalog",
+})
+
 /** Auth rate limiter: 20 attempts per minute (login, register, etc.) */
 export const authRateLimiter = createRateLimiter({
   windowMs: 60_000,

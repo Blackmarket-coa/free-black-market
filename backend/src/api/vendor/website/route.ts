@@ -11,6 +11,7 @@ import {
   updateSellerMetadataRecord,
 } from "../../../modules/seller-extension/metadata-service";
 import {
+  isProvisioningStale,
   normalizeDomains,
   probeSiteLive,
 } from "../../../shared/site-provisioning";
@@ -23,6 +24,7 @@ type MetaRow = {
   site_status: string | null;
   site_url: string | null;
   site_repo: string | null;
+  updated_at?: string | Date | null;
 };
 
 async function loadContext(req: AuthenticatedMedusaRequest, sellerId: string) {
@@ -37,7 +39,14 @@ async function loadContext(req: AuthenticatedMedusaRequest, sellerId: string) {
 
   const { data: metaRows } = await query.graph({
     entity: "seller_metadata",
-    fields: ["id", "connect_domains", "site_status", "site_url", "site_repo"],
+    fields: [
+      "id",
+      "connect_domains",
+      "site_status",
+      "site_url",
+      "site_repo",
+      "updated_at",
+    ],
     filters: { seller_id: sellerId },
   });
   const meta = (metaRows?.[0] as MetaRow | undefined) || null;
@@ -70,15 +79,23 @@ export async function GET(
     // flip to "live" the moment it answers. Bounded + awaited so the response
     // reflects the new status immediately (the panel polls this endpoint). This
     // is the always-on fallback for the optional /webhooks/site-deploy callback.
+    // If it stays stuck past PROVISIONING_TIMEOUT_MS without ever answering,
+    // flip it to "failed" so the panel stops spinning and the vendor can retry.
     let effectiveMeta = meta;
-    if (meta?.site_status === "provisioning" && meta.site_url) {
-      const live = await probeSiteLive(meta.site_url);
+    if (meta?.site_status === "provisioning") {
+      const live = meta.site_url ? await probeSiteLive(meta.site_url) : false;
       if (live) {
         const sellerExtension = req.scope.resolve("sellerExtension");
         await updateSellerMetadataRecord(sellerExtension as any, [
           { id: meta.id, site_status: "live" },
         ]);
         effectiveMeta = { ...meta, site_status: "live" };
+      } else if (isProvisioningStale(meta.updated_at)) {
+        const sellerExtension = req.scope.resolve("sellerExtension");
+        await updateSellerMetadataRecord(sellerExtension as any, [
+          { id: meta.id, site_status: "failed" },
+        ]);
+        effectiveMeta = { ...meta, site_status: "failed" };
       }
     }
 

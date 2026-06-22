@@ -233,3 +233,46 @@ mechanism (both safe, independent):
   Enablement: set `SITE_DEPLOY_SECRET` on the backend **and** the same value as an
   org-level `FBM_DEPLOY_SECRET` Actions secret on the launched-site repos (the
   template's deploy step is inert without it).
+
+A site that never answers is **not** left spinning forever: if it sits in
+`provisioning` for longer than 15 minutes (`PROVISIONING_TIMEOUT_MS`) without a
+successful probe or webhook, the next `GET /vendor/website` flips it to `failed`
+so the vendor can retry. This is the safety net for a misconfigured launch (token
+scope, Pages disabled, DNS not pointed).
+
+## 4. Rate limiting & caching (public Store API)
+
+The Store API is unauthenticated and embedded on arbitrary third-party sites, so:
+
+- **Rate limit:** `/store/vendors` and `/store/vendors/:handle` are capped at
+  **120 requests/min per IP** (`publicCatalogRateLimiter`). The SDK runs in each
+  visitor's browser, so the key is the visitor's IP — generous enough for
+  multi-widget pages and SPA navigation, low enough to stop a single scraper.
+  Over-limit returns `429` with `Retry-After`.
+- **Caching:** successful responses set
+  `Cache-Control: public, max-age=60, s-maxage=300, stale-while-revalidate=600`,
+  so browsers and any CDN in front of the API absorb embed traffic instead of
+  hitting the DB on every page load. `404`/error responses are not cached.
+
+## 5. Production-readiness checklist (Launch / Mode 2)
+
+Connect (Mode 1) needs no infra beyond the backend itself. Launch (Mode 2) stays
+disabled (`501`) until **all** of the following are in place — verify each before
+enabling the panel button in production:
+
+- [ ] **GitHub token** — `GITHUB_TOKEN` with repo-create scope on `GITHUB_ORG`
+      (fine-grained: Administration + Contents + Actions: read/write).
+- [ ] **Template repo** — `SITE_TEMPLATE_REPO` points at
+      `templates/fbm-site-template` published as a GitHub *template* repository.
+- [ ] **DNS wildcard** — `*.sites.freeblackmarket.com` (or your `SITES_DOMAIN`)
+      `CNAME` → GitHub Pages, **and** the apex/subdomain verified at the org level
+      ("Verified domains") to prevent subdomain takeover of unclaimed names.
+- [ ] **Deploy callback (recommended)** — `SITE_DEPLOY_SECRET` on the backend and
+      the same value as the org-level `FBM_DEPLOY_SECRET` Actions secret; set the
+      `FBM_API` Actions *variable* on the org so the template can call back.
+- [ ] **Repo policy** — decide visibility/cleanup for the per-vendor
+      `site-<handle>` repos (they are created public; failed launches leave the
+      repo behind — re-launch is idempotent via GitHub's `422`).
+- [ ] **Smoke test** — run one real `POST /vendor/website/launch`, confirm the
+      repo is generated, Pages deploys, and `site_status` flips
+      `provisioning → live` via both the probe and the signed webhook.

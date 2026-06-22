@@ -39,6 +39,32 @@ export function launchedSiteUrl(subdomain: string): string {
   return `https://${subdomain}.${SITES_DOMAIN}`;
 }
 
+/**
+ * How long a launched site may sit in "provisioning" before we give up and mark
+ * it "failed". A GitHub-template generate + Pages deploy normally completes in a
+ * couple of minutes; well past that with no successful liveness probe (and no
+ * deploy webhook) means something went wrong (bad token scope, Pages disabled,
+ * DNS not pointed). Flipping to "failed" stops the panel spinning forever and
+ * lets the vendor retry.
+ */
+export const PROVISIONING_TIMEOUT_MS = 15 * 60 * 1000;
+
+/**
+ * True when a row that's still "provisioning" has been stuck longer than
+ * PROVISIONING_TIMEOUT_MS. `since` is the row's last-touched timestamp
+ * (updated_at). Returns false for missing/unparseable input so we never flip a
+ * site we can't reason about.
+ */
+export function isProvisioningStale(
+  since: Date | string | number | null | undefined,
+  now: number = Date.now(),
+): boolean {
+  if (since === null || since === undefined) return false;
+  const ts = since instanceof Date ? since.getTime() : new Date(since).getTime();
+  if (Number.isNaN(ts)) return false;
+  return now - ts > PROVISIONING_TIMEOUT_MS;
+}
+
 // ─── Deploy → live status flip ───────────────────────────────────────────────
 
 /** True when the deploy → live webhook callback is wired (shared HMAC secret). */

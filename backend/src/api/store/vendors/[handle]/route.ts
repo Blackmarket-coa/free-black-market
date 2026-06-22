@@ -257,6 +257,15 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       }
     }
 
+    // This is a public, read-only catalog embedded on arbitrary third-party
+    // sites — make it cacheable so browsers/CDNs absorb embed traffic instead
+    // of hitting the DB on every page load. Short browser TTL, longer shared
+    // (CDN) TTL, with stale-while-revalidate for a smooth refresh.
+    res.setHeader(
+      "Cache-Control",
+      "public, max-age=60, s-maxage=300, stale-while-revalidate=600",
+    );
+
     return res.json({
       vendor,
       products: wantProducts ? products : undefined,
