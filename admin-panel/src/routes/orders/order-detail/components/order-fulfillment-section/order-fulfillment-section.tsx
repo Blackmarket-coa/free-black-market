@@ -332,7 +332,7 @@ return
     })
 
     if (res) {
-      await mutateAsync(undefined, {
+      await mutateAsync({}, {
         onSuccess: () => {
           toast.success(t("orders.fulfillment.toast.canceled"))
         },

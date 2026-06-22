@@ -256,7 +256,7 @@ return
 
             return ret
           })
-          .filter(Boolean),
+          .filter((p): p is AdminCreateProductVariantPrice => Boolean(p)),
         inventory_items: (data.inventory || [])
           .map((i) => {
             if (!i.required_quantity || !i.inventory_item_id) {
@@ -268,7 +268,10 @@ return
               required_quantity: castNumber(i.required_quantity),
             }
           })
-          .filter(Boolean),
+          .filter(
+            (i): i is HttpTypes.AdminCreateProductVariantInventoryKit =>
+              Boolean(i)
+          ),
       },
       {
         onSuccess: () => {
