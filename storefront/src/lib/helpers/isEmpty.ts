@@ -5,7 +5,7 @@ export const isEmpty = (input: unknown) => {
     input === null ||
     input === undefined ||
     (isObject(input) && Object.keys(input).length === 0) ||
-    (isArray(input) && (input as any[]).length === 0) ||
+    (isArray(input) && (input as unknown[]).length === 0) ||
     (typeof input === "string" && input.trim().length === 0)
   )
 }

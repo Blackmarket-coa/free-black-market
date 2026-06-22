@@ -23,7 +23,7 @@ const ShippingAddress = ({
   const pathname = usePathname()
 
   const locale = pathname.split("/")[1]
-  const [formData, setFormData] = useState<Record<string, any>>({
+  const [formData, setFormData] = useState<Record<string, string>>({
     "shipping_address.first_name": cart?.shipping_address?.first_name || "",
     "shipping_address.last_name": cart?.shipping_address?.last_name || "",
     "shipping_address.address_1": cart?.shipping_address?.address_1 || "",
@@ -51,7 +51,7 @@ const ShippingAddress = ({
     email?: string
   ) => {
     address &&
-      setFormData((prevState: Record<string, any>) => ({
+      setFormData((prevState: Record<string, string>) => ({
         ...prevState,
         "shipping_address.first_name": address?.first_name || "",
         "shipping_address.last_name": address?.last_name || "",
@@ -65,7 +65,7 @@ const ShippingAddress = ({
       }))
 
     email &&
-      setFormData((prevState: Record<string, any>) => ({
+      setFormData((prevState: Record<string, string>) => ({
         ...prevState,
         email: email,
       }))
@@ -106,7 +106,7 @@ const ShippingAddress = ({
               addressInput={
                 mapKeys(formData, (_, key) =>
                   key.replace("shipping_address.", "")
-                ) as HttpTypes.StoreCartAddress
+                ) as unknown as HttpTypes.StoreCartAddress
               }
               onSelect={setFormAddress}
             />

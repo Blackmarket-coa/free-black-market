@@ -97,7 +97,27 @@ const includesAny = (values: string[], selected: string[]) => {
   return selected.some((value) => normalizedValues.includes(normalize(value)))
 }
 
-const getVariantMetadataValue = (variant: any, key: string) => {
+// Marketplace facet fields read off products/variants that aren't on the
+// Medusa SDK types (or are typed more strictly there).
+type FacetVariant = {
+  metadata?: Record<string, unknown> | null
+  size?: string
+  color?: string
+  condition?: string
+}
+
+type FacetProduct = Omit<
+  HttpTypes.StoreProduct,
+  "categories" | "type" | "sales_channels" | "variants"
+> & {
+  categories?: { name?: string }[] | null
+  type?: { value?: string } | null
+  sales_channels?: { name?: string }[] | null
+  seller?: { vendor_type?: string } | null
+  variants?: FacetVariant[] | null
+}
+
+const getVariantMetadataValue = (variant: FacetVariant, key: string) => {
   const metadata = variant?.metadata
   if (!metadata || typeof metadata !== "object") {
     return ""
@@ -133,48 +153,48 @@ const applyFacetFilters = (
   }
 
   return products.filter((product) => {
-    const productAny = product as any
+    const p = product as FacetProduct
 
-    const categoryNames = (productAny?.categories || []).map((category: any) =>
+    const categoryNames = (p.categories || []).map((category) =>
       String(category?.name || "")
     )
     if (!includesAny(categoryNames, selectedCategories)) {
       return false
     }
 
-    const productType = String(productAny?.type?.value || "")
+    const productType = String(p.type?.value || "")
     if (!includesAny(productType ? [productType] : [], selectedTypes)) {
       return false
     }
 
-    const salesChannelNames = (productAny?.sales_channels || []).map((channel: any) =>
+    const salesChannelNames = (p.sales_channels || []).map((channel) =>
       String(channel?.name || "")
     )
     if (!includesAny(salesChannelNames, selectedSalesChannels)) {
       return false
     }
 
-    const vendorType = String(productAny?.seller?.vendor_type || "")
+    const vendorType = String(p.seller?.vendor_type || "")
     if (!includesAny(vendorType ? [vendorType] : [], selectedVendorTypes)) {
       return false
     }
 
-    const variants = productAny?.variants || []
-    const variantSizes = variants.map((variant: any) =>
+    const variants = p.variants || []
+    const variantSizes = variants.map((variant) =>
       String(getVariantMetadataValue(variant, "size") || variant?.size || "")
     )
     if (!includesAny(variantSizes, selectedSizes)) {
       return false
     }
 
-    const variantColors = variants.map((variant: any) =>
+    const variantColors = variants.map((variant) =>
       String(getVariantMetadataValue(variant, "color") || variant?.color || "")
     )
     if (!includesAny(variantColors, selectedColors)) {
       return false
     }
 
-    const variantConditions = variants.map((variant: any) =>
+    const variantConditions = variants.map((variant) =>
       String(getVariantMetadataValue(variant, "condition") || variant?.condition || "")
     )
     if (!includesAny(variantConditions, selectedConditions)) {
