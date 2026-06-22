@@ -2,14 +2,15 @@ import { useEffect, useState } from "react"
 import { Select, Text } from "@medusajs/ui"
 import type { StorefrontContext } from "@lib/tenancy/context";
 import { getStoredContext, setStoredContext } from "@lib/tenancy/context"
+import type { TenancyOrganization, TenancyStorefront } from "@lib/tenancy/types"
 
 export const StorefrontSwitcher = ({
   organizations,
   storefronts,
   onContextChange,
 }: {
-  organizations: Array<{ id: string; name: string }>
-  storefronts: Array<{ id: string; name: string; organization_id: string; tier: string }>
+  organizations: TenancyOrganization[]
+  storefronts: TenancyStorefront[]
   onContextChange: (ctx: StorefrontContext) => void
 }) => {
   const [organizationId, setOrganizationId] = useState("")
