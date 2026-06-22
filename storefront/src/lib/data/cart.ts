@@ -144,15 +144,15 @@ export async function setCartTier(
     ...((await getAuthHeaders()) ?? {}),
   }
 
-  const result = (await medusaFetch(`/store/carts/${cartId}/tier`, {
-    method: "POST",
-    headers,
-    body: JSON.stringify({ tier }),
-  } as any)) as {
+  const result = await medusaFetch<{
     cart_id: string
     tier: SlidingScaleTier
     line_items_repriced: number
-  }
+  }>(`/store/carts/${cartId}/tier`, {
+    method: "POST",
+    headers,
+    body: { tier },
+  })
 
   const cartCacheTag = await getCacheTag("carts")
   await revalidateTag(cartCacheTag)
@@ -339,9 +339,9 @@ export async function applyPromotions(codes: string[]) {
     .then(async ({ cart }) => {
       const cartCacheTag = await getCacheTag("carts")
       revalidateTag(cartCacheTag)
-      // @ts-ignore
-      const applied = cart.promotions?.some((promotion: any) =>
-        codes.includes(promotion.code)
+      const applied = cart.promotions?.some(
+        (promotion: HttpTypes.StoreCartPromotion) =>
+          promotion.code ? codes.includes(promotion.code) : false
       )
       return applied
     })
@@ -563,15 +563,16 @@ export async function updateRegionWithValidation(
 
     try {
       await updateCart({ region_id: region.id })
-    } catch (error: any) {
+    } catch (error) {
+      const message = error instanceof Error ? error.message : ""
       // Check if error is about variants not having prices
-      if (!error?.message?.includes("do not have a price")) {
+      if (!message.includes("do not have a price")) {
         // Re-throw if it's a different error
         throw error
       }
 
       // Parse variant IDs from error message
-      const problematicVariantIds = parseVariantIdsFromError(error.message)
+      const problematicVariantIds = parseVariantIdsFromError(message)
 
       // Early return if no variant IDs found
       if (!problematicVariantIds.length) {

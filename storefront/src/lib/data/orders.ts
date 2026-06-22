@@ -1,7 +1,11 @@
 "use server"
 import { logger } from "@/lib/logger"
 
-import { SellerProps } from "@/types/seller"
+import {
+  ReturnOrder,
+  ReturnRequest,
+  ReturnRequestPayload,
+} from "@/types/order-return"
 import { medusaFetch, sdk } from "../config"
 import medusaError from "../helpers/medusa-error"
 import { getAuthHeaders, getCacheOptions } from "./cookies"
@@ -30,7 +34,7 @@ export const retrieveOrder = async (id: string) => {
     ...(await getCacheOptions("orders")),
   }
 
-  return medusaFetch<HttpTypes.StoreOrderResponse & { seller: SellerProps }>(
+  return medusaFetch<{ order: ReturnOrder }>(
     `/store/orders/${id}`,
     {
       method: "GET",
@@ -47,17 +51,19 @@ export const retrieveOrder = async (id: string) => {
     .catch((err) => medusaError(err))
 }
 
-export const createReturnRequest = async (data: any) => {
+export const createReturnRequest = async (data: ReturnRequestPayload) => {
   const headers = {
     ...(await getAuthHeaders()),
   }
 
-  const response = await medusaFetch<any>(`/store/return-request`, {
-    method: "POST",
-    headers,
-    body: data,
-  })
-    .catch((err) => medusaError(err))
+  const response = await medusaFetch<{ order_return_request: ReturnRequest }>(
+    `/store/return-request`,
+    {
+      method: "POST",
+      headers,
+      body: data,
+    }
+  ).catch((err) => medusaError(err))
 
   return response
 }
@@ -66,7 +72,7 @@ export const getReturns = async () => {
   const headers = (await getAuthHeaders()) ?? undefined
 
   return medusaFetch<{
-    order_return_requests: Array<any>
+    order_return_requests: ReturnRequest[]
   }>(`/store/return-request`, {
     method: "GET",
     headers,
@@ -84,7 +90,7 @@ export const retriveReturnMethods = async (order_id: string) => {
   const headers = (await getAuthHeaders()) ?? undefined
 
   return medusaFetch<{
-    shipping_options: Array<any>
+    shipping_options: Array<HttpTypes.StoreShippingOption>
   }>(`/store/shipping-options/return?order_id=${order_id}`, {
     method: "GET",
     headers,
