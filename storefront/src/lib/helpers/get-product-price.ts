@@ -3,65 +3,77 @@ import { getPercentageDiff } from "./get-precentage-diff"
 import { convertToLocale } from "./money"
 import { BaseHit, Hit } from "instantsearch.js"
 
-export const getPricesForVariant = (variant: any) => {
-  if (
-    !variant?.calculated_price?.calculated_amount_with_tax &&
-    !variant?.calculated_price?.calculated_amount
-  ) {
+/**
+ * Minimal shape of the price data this module reads off a variant. The
+ * storefront extends Medusa's `StoreCalculatedPrice` with tax-inclusive/
+ * exclusive amounts that are not on the SDK type, so we model the fields we
+ * actually touch here rather than fighting the upstream types.
+ */
+type CalculatedPrice = {
+  calculated_amount?: number | null
+  calculated_amount_with_tax?: number | null
+  calculated_amount_without_tax?: number | null
+  original_amount?: number | null
+  original_amount_with_tax?: number | null
+  currency_code?: string
+  calculated_price?: { price_list_type?: string | null } | null
+}
+
+type PricedVariant = {
+  id?: string
+  sku?: string | null
+  options?: HttpTypes.StoreProductVariant["options"]
+  calculated_price?: CalculatedPrice | null
+}
+
+export const getPricesForVariant = (
+  variant: PricedVariant | null | undefined
+) => {
+  const cp = variant?.calculated_price
+  if (!cp || (!cp.calculated_amount_with_tax && !cp.calculated_amount)) {
     return null
   }
 
-  if (!variant?.calculated_price?.calculated_amount_with_tax) {
+  // Hoist into locals so narrowing survives the intervening convertToLocale
+  // calls and the optional API fields resolve to concrete numbers.
+  const currency_code = cp.currency_code ?? ""
+  const priceType = cp.calculated_price?.price_list_type ?? null
+  const withTax = cp.calculated_amount_with_tax
+  const withoutTax = cp.calculated_amount_without_tax ?? 0
+  const original = cp.original_amount ?? 0
+  const originalWithTax = cp.original_amount_with_tax ?? 0
+  const calculated = cp.calculated_amount ?? 0
+
+  if (!withTax) {
     return {
-      calculated_price_number: variant.calculated_price.calculated_amount,
-      calculated_price: convertToLocale({
-        amount: variant.calculated_price.calculated_amount,
-        currency_code: variant.calculated_price.currency_code,
-      }),
+      calculated_price_number: calculated,
+      calculated_price: convertToLocale({ amount: calculated, currency_code }),
       calculated_price_without_tax: convertToLocale({
-        amount: variant.calculated_price.calculated_amount_without_tax,
-        currency_code: variant.calculated_price.currency_code,
+        amount: withoutTax,
+        currency_code,
       }),
-      calculated_price_without_tax_number:
-        variant.calculated_price.calculated_amount_without_tax,
-      original_price_number: variant.calculated_price.original_amount,
-      original_price: convertToLocale({
-        amount: variant.calculated_price.original_amount,
-        currency_code: variant.calculated_price.currency_code,
-      }),
-      currency_code: variant.calculated_price.currency_code,
-      price_type: variant.calculated_price.calculated_price.price_list_type,
-      percentage_diff: getPercentageDiff(
-        variant.calculated_price.original_amount,
-        variant.calculated_price.calculated_amount
-      ),
+      calculated_price_without_tax_number: withoutTax,
+      original_price_number: original,
+      original_price: convertToLocale({ amount: original, currency_code }),
+      currency_code,
+      price_type: priceType,
+      percentage_diff: getPercentageDiff(original, calculated),
     }
   }
 
   return {
-    calculated_price_number:
-      variant.calculated_price.calculated_amount_with_tax,
-    calculated_price: convertToLocale({
-      amount: variant.calculated_price.calculated_amount_with_tax,
-      currency_code: variant.calculated_price.currency_code,
-    }),
+    calculated_price_number: withTax,
+    calculated_price: convertToLocale({ amount: withTax, currency_code }),
     calculated_price_without_tax: convertToLocale({
-      amount: variant.calculated_price.calculated_amount_without_tax,
-      currency_code: variant.calculated_price.currency_code,
+      amount: withoutTax,
+      currency_code,
     }),
-    calculated_price_without_tax_number:
-      variant.calculated_price.calculated_amount_without_tax,
-    original_price_number: variant.calculated_price.original_amount_with_tax,
-    original_price: convertToLocale({
-      amount: variant.calculated_price.original_amount_with_tax,
-      currency_code: variant.calculated_price.currency_code,
-    }),
-    currency_code: variant.calculated_price.currency_code,
-    price_type: variant.calculated_price.calculated_price.price_list_type,
-    percentage_diff: getPercentageDiff(
-      variant.calculated_price.original_amount,
-      variant.calculated_price.calculated_amount
-    ),
+    calculated_price_without_tax_number: withoutTax,
+    original_price_number: originalWithTax,
+    original_price: convertToLocale({ amount: originalWithTax, currency_code }),
+    currency_code,
+    price_type: priceType,
+    percentage_diff: getPercentageDiff(original, calculated),
   }
 }
 
@@ -76,39 +88,40 @@ export function getProductPrice({
     throw new Error("No product provided")
   }
 
-  const cheapestVariant = () => {
-    if (!product || !product.variants?.length) {
+  const variants = (product.variants ?? []) as PricedVariant[]
+
+  const cheapestVariant = (): PricedVariant | null => {
+    if (!variants.length) {
       return null
     }
 
-    return product.variants
-      .filter((v: any) => !!v.calculated_price)
-      .sort((a: any, b: any) => {
-        return a.calculated_price.calculated_amount_with_tax &&
-          b.calculated_price.calculated_amount_with_tax
-          ? a.calculated_price.calculated_amount_with_tax -
-              b.calculated_price.calculated_amount_with_tax
-          : a.calculated_amount - b.calculated_amount
+    return variants
+      .filter((v) => !!v.calculated_price)
+      .sort((a, b) => {
+        const aWithTax = a.calculated_price?.calculated_amount_with_tax
+        const bWithTax = b.calculated_price?.calculated_amount_with_tax
+        return aWithTax && bWithTax
+          ? aWithTax - bWithTax
+          : (a.calculated_price?.calculated_amount ?? 0) -
+              (b.calculated_price?.calculated_amount ?? 0)
       })[0]
   }
 
   const cheapestPrice = () => {
-    if (!product || !product.variants?.length) {
+    if (!variants.length) {
       return null
     }
 
-    const variant: any = cheapestVariant()
-
-    return getPricesForVariant(variant)
+    return getPricesForVariant(cheapestVariant())
   }
 
   const variantPrice = () => {
-    if (!product || !variantId) {
+    if (!variantId) {
       return null
     }
 
-    const variant: any = product.variants?.find(
-      (v: any) => v.id === variantId || v.sku === variantId
+    const variant = variants.find(
+      (v) => v.id === variantId || v.sku === variantId
     )
 
     if (!variant) {

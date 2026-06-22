@@ -1,6 +1,6 @@
-export const isObject = (input: any) => input instanceof Object
-export const isArray = (input: any) => Array.isArray(input)
-export const isEmpty = (input: any) => {
+export const isObject = (input: unknown) => input instanceof Object
+export const isArray = (input: unknown) => Array.isArray(input)
+export const isEmpty = (input: unknown) => {
   return (
     input === null ||
     input === undefined ||
