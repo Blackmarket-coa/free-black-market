@@ -124,8 +124,8 @@ return isGlobal === filters.global;
 
     if (sorting.field) {
       filtered.sort((a, b) => {
-        let aValue: any;
-        let bValue: any;
+        let aValue = "";
+        let bValue = "";
 
         switch (sorting.field) {
           case "name":

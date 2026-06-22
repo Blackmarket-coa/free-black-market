@@ -190,7 +190,7 @@ export const RulesFormField = ({
                     const { onChange, ref, ...fieldProps } = field
 
                     const existingAttributes =
-                      fields?.map((field: any) => field.attribute) || []
+                      fields?.map((field) => field.attribute) || []
                     const attributeOptions =
                       attributes?.filter((attr) => {
                         if (attr.value === fieldRule.attribute) {
@@ -421,10 +421,10 @@ export const RulesFormField = ({
             className="text-ui-fg-muted hover:text-ui-fg-subtle ml-2 inline-block"
             onClick={() => {
               const indicesToRemove = fields
-                .map((field: any, index) => (field.required ? null : index))
+                .map((field, index) => (field.required ? null : index))
                 .filter((f): f is number => f !== null)
 
-              setRulesToRemove?.(fields.filter((field: any) => !field.required))
+              setRulesToRemove?.(fields.filter((field) => !field.required))
               remove(indicesToRemove)
             }}
           >
