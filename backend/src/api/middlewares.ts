@@ -19,6 +19,7 @@ import {
   authSessionRateLimiter,
   bugReportAnonymousRateLimiter,
   bugReportAuthRateLimiter,
+  publicCatalogRateLimiter,
   standardRateLimiter,
   strictAuthRateLimiter,
   vendorRegistrationRateLimiter,
@@ -599,13 +600,16 @@ export default defineMiddlewares({
     // FBM Store API — public, website-agnostic vendor catalog
     // ============================================================
     // Open read-only CORS so any third-party site can embed the Connect SDK.
+    // Rate-limited per visitor IP (the SDK runs client-side) so a single
+    // scraper can't hammer the unauthenticated catalog; aggregate embed traffic
+    // is absorbed by the response Cache-Control headers (set in the handler).
     {
       matcher: "/store/vendors",
-      middlewares: [publicStoreCorsMiddleware],
+      middlewares: [publicStoreCorsMiddleware, publicCatalogRateLimiter],
     },
     {
       matcher: "/store/vendors/**",
-      middlewares: [publicStoreCorsMiddleware],
+      middlewares: [publicStoreCorsMiddleware, publicCatalogRateLimiter],
     },
     // ============================================================
     // CSRF: reject forged cross-site, cookie-authenticated writes
