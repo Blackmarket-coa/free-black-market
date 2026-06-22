@@ -1,7 +1,9 @@
 import { MedusaService } from "@medusajs/framework/utils"
-import { CharacterSheet, XpEvent, ProgressionTitle } from "./models"
+import { CharacterSheet, XpEvent, ProgressionTitle, XpRedemption } from "./models"
+import { XpRedemptionStatus } from "./models/xp-redemption"
 import { Stance, isStance } from "./stance"
 import { levelForXp, levelProgress, ROLE_XP_WEIGHTS } from "./leveling"
+import { getXpReward, XP_REWARDS, type XpReward } from "./rewards"
 
 /**
  * Per-role XP column names on the character sheet, keyed by stance.
@@ -42,10 +44,19 @@ export const DEFAULT_TITLES: Array<{
 
 export type EarnedTitle = { title_slug: string; role: string; earned_at: Date }
 
+/** Raised when a redemption is attempted with insufficient spendable XP. */
+export class InsufficientXpError extends Error {
+  constructor(public required: number, public available: number) {
+    super(`Insufficient spendable XP: need ${required}, have ${available}`)
+    this.name = "InsufficientXpError"
+  }
+}
+
 class ProgressionModuleService extends MedusaService({
   CharacterSheet,
   XpEvent,
   ProgressionTitle,
+  XpRedemption,
 }) {
   /**
    * Get or create the character sheet for a customer.
@@ -94,11 +105,20 @@ class ProgressionModuleService extends MedusaService({
     const newRoleXp = Math.max(0, currentRoleXp + weighted)
     const newTotalXp = Math.max(0, Number(sheet.total_xp ?? 0) + weighted)
 
+    // Spendable balance accrues alongside lifetime XP. Earning lifts both;
+    // a clawback (negative amount) also reduces the spendable balance, floored
+    // at 0 so it can never go negative from an earn event.
+    const newSpendableXp = Math.max(
+      0,
+      Number(sheet.spendable_xp ?? 0) + weighted
+    )
+
     await this.updateCharacterSheets({
       id: sheet.id,
       [col.xp]: newRoleXp,
       [col.level]: levelForXp(newRoleXp),
       total_xp: newTotalXp,
+      spendable_xp: newSpendableXp,
     })
 
     await this.checkAndGrantTitles(data.customer_id)
@@ -248,6 +268,111 @@ class ProgressionModuleService extends MedusaService({
     return newlyEarned
   }
 
+  /** The current spendable-XP balance for a customer. */
+  async getSpendableXp(customerId: string): Promise<number> {
+    const sheet = await this.getOrCreateCharacterSheet(customerId)
+    return Number(sheet.spendable_xp ?? 0)
+  }
+
+  /** The redeemable reward catalog, annotated with affordability for a balance. */
+  listRewards(balance = 0): Array<XpReward & { affordable: boolean }> {
+    return XP_REWARDS.map((r) => ({ ...r, affordable: balance >= r.xpCost }))
+  }
+
+  /**
+   * Debit spendable XP and open a `pending` redemption for a catalog reward.
+   *
+   * This is the money-movement half of a redemption; the caller (an API route
+   * or workflow) is responsible for granting the entitlement and then calling
+   * `completeRedemption` — or `refundRedemption` if granting fails. Splitting
+   * it this way keeps the cross-module entitlement grant out of this module
+   * while guaranteeing XP is never spent without an audit row.
+   *
+   * @throws InsufficientXpError when the balance can't cover the reward.
+   */
+  async beginRedemption(customerId: string, rewardKey: string) {
+    const reward = getXpReward(rewardKey)
+    if (!reward) {
+      throw new Error(`Unknown reward: ${rewardKey}`)
+    }
+
+    const sheet = await this.getOrCreateCharacterSheet(customerId)
+    const balance = Number(sheet.spendable_xp ?? 0)
+    if (balance < reward.xpCost) {
+      throw new InsufficientXpError(reward.xpCost, balance)
+    }
+
+    // Debit first, then write the audit row, so concurrent reads never see the
+    // balance before it has been reduced.
+    await this.updateCharacterSheets({
+      id: sheet.id,
+      spendable_xp: balance - reward.xpCost,
+    })
+
+    const [redemption] = await this.createXpRedemptions([
+      {
+        customer_id: customerId,
+        reward_key: reward.key,
+        reward_name: reward.name,
+        reward_kind: reward.kind,
+        xp_cost: reward.xpCost,
+        feature_key: reward.featureKey,
+        status: XpRedemptionStatus.PENDING,
+        metadata: { entitlement_kind: reward.entitlementKind },
+      },
+    ])
+
+    return { redemption, reward }
+  }
+
+  /** Mark a redemption fulfilled and record the granted entitlement. */
+  async completeRedemption(redemptionId: string, entitlementId?: string) {
+    const [updated] = await this.updateXpRedemptions([
+      {
+        id: redemptionId,
+        status: XpRedemptionStatus.FULFILLED,
+        entitlement_id: entitlementId ?? null,
+        fulfilled_at: new Date(),
+      },
+    ])
+    return updated
+  }
+
+  /**
+   * Refund a redemption: credit the XP back and mark it refunded. Used when the
+   * downstream entitlement grant fails so XP is never lost.
+   */
+  async refundRedemption(redemptionId: string) {
+    const [redemption] = await this.listXpRedemptions({ id: redemptionId })
+    if (!redemption) {
+      throw new Error(`Unknown redemption: ${redemptionId}`)
+    }
+    if (redemption.status === XpRedemptionStatus.REFUNDED) {
+      return redemption
+    }
+
+    const sheet = await this.getOrCreateCharacterSheet(redemption.customer_id)
+    await this.updateCharacterSheets({
+      id: sheet.id,
+      spendable_xp: Number(sheet.spendable_xp ?? 0) + Number(redemption.xp_cost),
+    })
+
+    const [updated] = await this.updateXpRedemptions([
+      { id: redemptionId, status: XpRedemptionStatus.REFUNDED },
+    ])
+    return updated
+  }
+
+  /** A customer's redemption history, newest first. */
+  async listRedemptionsForCustomer(customerId: string) {
+    const items = await this.listXpRedemptions({ customer_id: customerId })
+    return items.sort(
+      (a, b) =>
+        new Date(b.created_at as unknown as string).getTime() -
+        new Date(a.created_at as unknown as string).getTime()
+    )
+  }
+
   /**
    * Display shape for the storefront `/character` page and `/store/character`.
    */
@@ -291,6 +416,7 @@ class ProgressionModuleService extends MedusaService({
       customerId: sheet.customer_id,
       activeStance: sheet.active_stance,
       totalXp: Number(sheet.total_xp ?? 0),
+      spendableXp: Number(sheet.spendable_xp ?? 0),
       tracks,
       stats: {
         foodProducedCents: Number(sheet.food_produced_cents ?? 0),

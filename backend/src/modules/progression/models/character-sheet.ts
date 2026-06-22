@@ -39,6 +39,11 @@ const CharacterSheet = model.define("character_sheet", {
   // Sum of all role XP — used for leaderboards / "overall level".
   total_xp: model.number().default(0),
 
+  // Spendable XP balance ("dual balance"): accrues alongside total_xp when XP
+  // is earned, and is debited by redemptions. Spending never lowers total_xp,
+  // levels, or titles — status and currency are kept separate.
+  spendable_xp: model.number().default(0),
+
   // === Aggregate stats snapshot (DERIVED — recomputed from source modules) ===
   // Value (cents) of food/goods produced and sold — from producer impact.
   food_produced_cents: model.bigNumber().default(0),

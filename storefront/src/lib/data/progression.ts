@@ -35,6 +35,8 @@ export type CharacterSheet = {
   customerId: string
   activeStance: Stance
   totalXp: number
+  /** Spendable XP balance (separate from lifetime status `totalXp`). */
+  spendableXp: number
   tracks: RoleTrack[]
   stats: {
     foodProducedCents: number
@@ -117,4 +119,94 @@ export const getStanceCookie = async (): Promise<Stance> => {
     "creator",
   ]
   return valid.includes(value as Stance) ? (value as Stance) : "consumer"
+}
+
+// ─── XP economy: spendable balance + reward redemption ─────────────────────
+
+export type XpRewardKind = "entitlement" | "digital_download"
+
+export type XpReward = {
+  key: string
+  name: string
+  description: string
+  xpCost: number
+  kind: XpRewardKind
+  featureKey: string
+  entitlementKind: string
+  durationDays?: number
+  icon?: string
+  /** Whether the current balance can afford this reward. */
+  affordable: boolean
+}
+
+export type XpRedemption = {
+  id: string
+  reward_key: string
+  reward_name: string
+  reward_kind: XpRewardKind
+  xp_cost: number
+  status: "pending" | "fulfilled" | "refunded"
+  feature_key?: string | null
+  entitlement_id?: string | null
+  created_at?: string
+  fulfilled_at?: string | null
+}
+
+export type XpRewardsResponse = {
+  balance: number
+  rewards: XpReward[]
+  history: XpRedemption[]
+}
+
+/**
+ * Fetch the spendable-XP balance, reward catalog, and redemption history.
+ * Returns null when logged out.
+ */
+export const getXpRewards = async (): Promise<XpRewardsResponse | null> => {
+  const authHeaders = await getAuthHeaders()
+  if (!authHeaders) return null
+
+  try {
+    return await medusaFetch<XpRewardsResponse>("/store/xp/rewards", {
+      method: "GET",
+      headers: authHeaders,
+      cache: "no-store",
+    })
+  } catch {
+    return null
+  }
+}
+
+export type RedeemResult =
+  | { ok: true; balance: number; redemption: XpRedemption }
+  | { ok: false; error: string; required?: number; available?: number }
+
+/** Redeem spendable XP for a catalog reward. */
+export const redeemXpReward = async (
+  rewardKey: string
+): Promise<RedeemResult> => {
+  const authHeaders = await getAuthHeaders()
+  if (!authHeaders) return { ok: false, error: "Authentication required" }
+
+  try {
+    const data = await medusaFetch<{
+      success: boolean
+      balance: number
+      redemption: XpRedemption
+    }>("/store/xp/redeem", {
+      method: "POST",
+      headers: authHeaders,
+      body: { reward_key: rewardKey },
+      cache: "no-store",
+    })
+    return { ok: true, balance: data.balance, redemption: data.redemption }
+  } catch (e) {
+    const err = e as { message?: string; status?: number; required?: number; available?: number }
+    return {
+      ok: false,
+      error: err?.message ?? "Failed to redeem reward",
+      required: err?.required,
+      available: err?.available,
+    }
+  }
 }
