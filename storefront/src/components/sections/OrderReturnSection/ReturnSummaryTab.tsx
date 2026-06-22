@@ -1,6 +1,8 @@
 import { Button, Card } from "@/components/atoms"
 import { convertToLocale } from "@/lib/helpers/money"
 import Image from "next/image"
+import { HttpTypes } from "@medusajs/types"
+import { SelectedReturnItem } from "@/types/order-return"
 
 export const ReturnSummaryTab = ({
   selectedItems,
@@ -11,12 +13,12 @@ export const ReturnSummaryTab = ({
   returnMethod,
   handleSubmit,
 }: {
-  selectedItems: any[]
-  items: any[]
+  selectedItems: SelectedReturnItem[]
+  items: HttpTypes.StoreOrderLineItem[]
   currency_code: string
   handleTabChange: (tab: number) => void
   tab: number
-  returnMethod: any
+  returnMethod: string | null
   handleSubmit: () => void
 }) => {
   const selected = items.filter((item) =>
@@ -42,7 +44,7 @@ export const ReturnSummaryTab = ({
                     {item.thumbnail ? (
                       <Image
                         src={item.thumbnail}
-                        alt={item.subtitle}
+                        alt={item.subtitle ?? ""}
                         width={64}
                         height={64}
                         className="rounded-sm"
@@ -50,7 +52,7 @@ export const ReturnSummaryTab = ({
                     ) : (
                       <Image
                         src={"/images/placeholder.svg"}
-                        alt={item.subtitle}
+                        alt={item.subtitle ?? ""}
                         width={64}
                         height={64}
                         className="opacity-25 scale-75"

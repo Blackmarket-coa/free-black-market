@@ -11,6 +11,8 @@ import { ChevronUpDown } from "@medusajs/icons"
 
 import Image from "next/image"
 import { cn } from "@/lib/utils"
+import { HttpTypes } from "@medusajs/types"
+import { ReturnOrder, SelectedReturnItem } from "@/types/order-return"
 
 export const ReturnItemsTab = ({
   order,
@@ -19,10 +21,13 @@ export const ReturnItemsTab = ({
   returnReasons,
   error,
 }: {
-  order: any
-  selectedItems: any[]
-  handleSelectItem: (item: any, reason_id: string) => void
-  returnReasons: any[]
+  order: ReturnOrder
+  selectedItems: SelectedReturnItem[]
+  handleSelectItem: (
+    item: HttpTypes.StoreOrderLineItem,
+    reason_id: string
+  ) => void
+  returnReasons: HttpTypes.StoreReturnReason[]
   error: boolean
 }) => {
   return (
@@ -34,7 +39,7 @@ export const ReturnItemsTab = ({
       </Card>
       <Card className="flex items-center justify-between p-4">
         <ul className="w-full">
-          {order.items.map((item: any) => (
+          {order.items?.map((item) => (
             <li key={item.id} className="md:flex justify-between gap-2 w-full">
               <div className="flex items-center gap-2 md:w-2/3 mb-4 md:mb-0">
                 <Checkbox
@@ -48,7 +53,7 @@ export const ReturnItemsTab = ({
                     {item.thumbnail ? (
                       <Image
                         src={item.thumbnail}
-                        alt={item.subtitle}
+                        alt={item.subtitle ?? ""}
                         width={64}
                         height={64}
                         className="rounded-sm"
@@ -56,7 +61,7 @@ export const ReturnItemsTab = ({
                     ) : (
                       <Image
                         src={"/images/placeholder.svg"}
-                        alt={item.subtitle}
+                        alt={item.subtitle ?? ""}
                         width={64}
                         height={64}
                         className="opacity-25 scale-75"

@@ -28,7 +28,7 @@ export default async function ReturnOrderPage({
     return <AccountLoadingState title="Return Order" />
   }
 
-  const order = (await retrieveOrder(id)) as any
+  const order = await retrieveOrder(id)
 
   if (!order) {
     notFound()
@@ -42,7 +42,7 @@ export default async function ReturnOrderPage({
       <OrderReturnSection
         order={order}
         returnReasons={returnReasons}
-        shippingMethods={returnMethods as any}
+        shippingMethods={returnMethods}
       />
     </main>
   )

@@ -10,6 +10,12 @@ import { Chat } from "../Chat/Chat"
 import Image from "next/image"
 import { convertToLocale } from "@/lib/helpers/money"
 import { StepProgressBar } from "@/components/cells/StepProgressBar/StepProgressBar"
+import { HttpTypes } from "@medusajs/types"
+import {
+  OrderLineItemWithReason,
+  ReturnLineItem,
+  ReturnRequest,
+} from "@/types/order-return"
 
 const steps = ["pending", "processing", "sent"]
 
@@ -19,10 +25,10 @@ export const SingleOrderReturn = ({
   defaultOpen,
   returnReason,
 }: {
-  item: any
-  user: any
+  item: ReturnRequest
+  user: HttpTypes.StoreCustomer | null
   defaultOpen: boolean
-  returnReason: any[]
+  returnReason: HttpTypes.StoreReturnReason[]
 }) => {
   const [isOpen, setIsOpen] = useState(defaultOpen)
   const [height, setHeight] = useState(0)
@@ -36,15 +42,15 @@ export const SingleOrderReturn = ({
     }, 100)
   }, [])
 
-  const filteredItems = item.order.items
-    .filter((orderItem: any) =>
+  const filteredItems: OrderLineItemWithReason[] = (item.order.items ?? [])
+    .filter((orderItem) =>
       item.line_items.some(
-        (lineItem: any) => lineItem.line_item_id === orderItem.id
+        (lineItem) => lineItem.line_item_id === orderItem.id
       )
     )
-    .map((orderItem: any) => {
+    .map((orderItem) => {
       const correspondingLineItem = item.line_items.find(
-        (lineItem: any) => lineItem.line_item_id === orderItem.id
+        (lineItem: ReturnLineItem) => lineItem.line_item_id === orderItem.id
       )
       return {
         ...orderItem,
@@ -56,7 +62,7 @@ export const SingleOrderReturn = ({
 
   const currency_code = item.order.currency_code || "usd"
 
-  const total = filteredItems.reduce((acc: number, item: any) => {
+  const total = filteredItems.reduce((acc: number, item) => {
     return acc + item.unit_price
   }, 0)
 
@@ -123,21 +129,21 @@ export const SingleOrderReturn = ({
           <Divider />
           <div className="p-4 flex justify-between w-full">
             <div className="flex flex-col gap-4 w-full">
-              {filteredItems.map((item: any) => (
+              {filteredItems.map((item) => (
                 <div key={item.id} className="flex items-center gap-2">
                   <div className="flex items-center gap-4 w-1/2">
                     <div className="rounded-sm overflow-hidden border">
                       {item.thumbnail ? (
                         <Image
                           src={item.thumbnail}
-                          alt={item.product_title}
+                          alt={item.product_title ?? ""}
                           width={60}
                           height={60}
                         />
                       ) : (
                         <Image
                           src="/images/placeholder.svg"
-                          alt={item.product_title}
+                          alt={item.product_title ?? ""}
                           width={60}
                           height={60}
                           className="scale-50 opacity-25"
