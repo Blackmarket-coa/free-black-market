@@ -6,6 +6,13 @@ import { StorefrontSwitcher } from "@components/tenancy/storefront-switcher"
 import type { StorefrontContext} from "@lib/tenancy/context";
 import { withStorefrontHeaders } from "@lib/tenancy/context"
 import type { TenancyOrganization, TenancyStorefront } from "@lib/tenancy/types"
+import type {
+  DonationBeneficiary,
+  DonationImportError,
+  DonationImportResult,
+  DonationSettings,
+  StorefrontTemplate,
+} from "@custom-types/donations/common"
 
 const SHOPIFY_EXAMPLE = `Handle,Title,Body (HTML),Variant SKU,Variant Price\norganic-kale,Organic Kale,<p>Fresh kale</p>,KALE-001,3.99`
 
@@ -13,7 +20,9 @@ export const DonationsPage = () => {
   const [ctx, setCtx] = useState<StorefrontContext | null>(null)
   const [csv, setCsv] = useState(SHOPIFY_EXAMPLE)
   const [preset, setPreset] = useState<"shopify" | "custom">("shopify")
-  const [importResult, setImportResult] = useState<any>(null)
+  const [importResult, setImportResult] = useState<DonationImportResult | null>(
+    null
+  )
   const [templateKey, setTemplateKey] = useState("food_coop")
   const [newStorefrontName, setNewStorefrontName] = useState("")
   const [newStorefrontSlug, setNewStorefrontSlug] = useState("")
@@ -37,19 +46,19 @@ export const DonationsPage = () => {
 
   const { data, refetch } = useQuery({
     queryKey: ["donations-beneficiaries", ctx?.organizationId, ctx?.storefrontId],
-    queryFn: () => sdk.client.fetch<{ beneficiaries: any[] }>("/admin/donations/beneficiaries", { headers }),
+    queryFn: () => sdk.client.fetch<{ beneficiaries: DonationBeneficiary[] }>("/admin/donations/beneficiaries", { headers }),
     enabled: Boolean(ctx),
   })
 
   const { data: settings, refetch: refetchSettings } = useQuery({
     queryKey: ["donations-settings", ctx?.organizationId, ctx?.storefrontId],
-    queryFn: () => sdk.client.fetch<{ settings: any }>("/admin/donations/settings", { headers }),
+    queryFn: () => sdk.client.fetch<{ settings: DonationSettings }>("/admin/donations/settings", { headers }),
     enabled: Boolean(ctx),
   })
 
   const { data: templates } = useQuery({
     queryKey: ["tenancy-storefront-templates"],
-    queryFn: () => sdk.client.fetch<{ templates: any[] }>("/admin/tenancy/storefronts/templates"),
+    queryFn: () => sdk.client.fetch<{ templates: StorefrontTemplate[] }>("/admin/tenancy/storefronts/templates"),
   })
 
   const updateStatus = async (id: string, verification_status: string) => {
@@ -82,10 +91,13 @@ export const DonationsPage = () => {
   }
 
   const runImporter = async () => {
-    const result = await sdk.client.fetch("/admin/tenancy/storefronts/import", {
-      method: "POST",
-      body: { csv, preset },
-    })
+    const result = await sdk.client.fetch<DonationImportResult>(
+      "/admin/tenancy/storefronts/import",
+      {
+        method: "POST",
+        body: { csv, preset },
+      }
+    )
     setImportResult(result)
   }
 
@@ -148,7 +160,7 @@ export const DonationsPage = () => {
         <Text size="small" className="text-ui-fg-subtle">Field mapping + validation errors with Shopify CSV-compatible preset.</Text>
         <div className="mt-3">
           <Label>Preset</Label>
-          <Select value={preset} onValueChange={(v: any) => setPreset(v)}>
+          <Select value={preset} onValueChange={(v) => setPreset(v as "shopify" | "custom")}>
             <Select.Trigger><Select.Value /></Select.Trigger>
             <Select.Content>
               <Select.Item value="shopify">Shopify CSV preset</Select.Item>
@@ -163,7 +175,7 @@ export const DonationsPage = () => {
           <div className="mt-3 text-sm">
             <div>Total rows: {importResult.total_rows} / Valid rows: {importResult.valid_rows}</div>
             <div className="mt-2">Errors:</div>
-            <ul className="list-disc pl-6">{(importResult.errors || []).slice(0, 10).map((e: any, i: number) => <li key={i}>Row {e.row} [{e.field}] {e.message}</li>)}</ul>
+            <ul className="list-disc pl-6">{(importResult.errors || []).slice(0, 10).map((e: DonationImportError, i: number) => <li key={i}>Row {e.row} [{e.field}] {e.message}</li>)}</ul>
           </div>
         )}
       </Container>
