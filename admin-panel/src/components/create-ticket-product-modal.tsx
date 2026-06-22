@@ -132,7 +132,11 @@ return
         const key = combo.region_id ? `${combo.currency}_${combo.region_id}` : `${combo.currency}_store`
         const amount = prices[rowType as RowType]?.[key] || 0
         
-        const price: any = {
+        const price: {
+          currency_code: string
+          amount: number
+          rules?: { region_id: string }
+        } = {
           currency_code: combo.currency,
           amount: amount
         }

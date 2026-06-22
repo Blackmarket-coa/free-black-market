@@ -57,17 +57,24 @@ return acc
 
   const form = useForm<UpdateVariantPricesSchemaType>({
     defaultValues: {
-      variants: variants?.map((variant: any) => ({
+      variants: variants?.map((variant) => ({
         title: variant.title,
-        prices: variant.prices.reduce((acc: any, price: any) => {
-          if (price.rules?.region_id) {
-            acc[price.rules.region_id] = price.amount
-          } else {
-            acc[price.currency_code] = price.amount
-          }
-          
-return acc
-        }, {}),
+        prices: (variant.prices ?? []).reduce<Record<string, number>>(
+          (acc, price) => {
+            // AdminPrice omits the region-pricing `rules` the API returns.
+            const p = price as typeof price & {
+              rules?: { region_id?: string }
+            }
+            if (p.rules?.region_id) {
+              acc[p.rules.region_id] = p.amount
+            } else {
+              acc[p.currency_code] = p.amount
+            }
+
+            return acc
+          },
+          {}
+        ),
       })) as any,
     },
 
