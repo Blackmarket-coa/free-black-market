@@ -39,13 +39,11 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     ENTITLEMENT_MODULE
   )
 
-  let redemptionId: string | undefined
   try {
     const { redemption, reward } = await progression.beginRedemption(
       customerId,
       reward_key
     )
-    redemptionId = redemption.id
 
     try {
       const expires_at = reward.durationDays
