@@ -1,4 +1,5 @@
 import { OrderConfirmedSection } from "@/components/sections/OrderConfirmedSection/OrderConfirmedSection"
+import { CelebrateOnMount } from "@/components/providers/BlackoutEffects"
 import { retrieveOrder } from "@/lib/data/orders"
 import { Metadata } from "next"
 import { notFound } from "next/navigation"
@@ -21,6 +22,8 @@ export default async function OrderConfirmedPage(props: Props) {
 
   return (
     <main className="container">
+      {/* Calm tone + warm bloom for the purchase.succeeded moment (once per order). */}
+      <CelebrateOnMount kind="celebrate" dedupeKey={`order:${order.id}`} />
       <OrderConfirmedSection order={order} />
     </main>
   )
