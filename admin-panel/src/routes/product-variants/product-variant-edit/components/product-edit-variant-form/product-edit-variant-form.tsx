@@ -48,12 +48,15 @@ export const ProductEditVariantForm = ({
 }: ProductEditVariantFormProps) => {
   const { t } = useTranslation()
   const { handleSuccess } = useRouteModal()
-  const defaultOptions = product.options?.reduce((acc: any, option: any) => {
-    const varOpt = variant.options?.find((o: any) => o.option_id === option.id)
-    acc[option.title] = varOpt?.value
-    
-return acc
-  }, {})
+  const defaultOptions = product.options?.reduce<Record<string, string | undefined>>(
+    (acc, option) => {
+      const varOpt = variant.options?.find((o) => o.option_id === option.id)
+      acc[option.title] = varOpt?.value
+
+      return acc
+    },
+    {}
+  )
 
   const form = useForm<z.infer<typeof ProductEditVariantSchema>>({
     defaultValues: {
@@ -160,7 +163,7 @@ return acc
                 )
               }}
             />
-            {product.options?.map((option: any) => {
+            {product.options?.map((option) => {
               return (
                 <Form.Field
                   key={option.id}
@@ -177,7 +180,7 @@ return acc
                               onChange(v)
                             }}
                             {...field}
-                            options={option.values.map((v: any) => ({
+                            options={(option.values ?? []).map((v) => ({
                               label: v.value,
                               value: v.value,
                             }))}

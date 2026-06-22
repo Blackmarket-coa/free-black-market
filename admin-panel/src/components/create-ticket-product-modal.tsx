@@ -58,7 +58,7 @@ export const CreateTicketProductModal = ({
     const combinations: Array<CurrencyRegionCombination> = []
     
     // Add combinations from regions
-    regions.forEach((region: any) => {
+    regions.forEach((region) => {
       combinations.push({
         currency: region.currency_code,
         region_id: region.id,
