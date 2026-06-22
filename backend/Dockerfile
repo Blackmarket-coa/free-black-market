@@ -61,6 +61,16 @@ COPY --from=build --chown=medusa:medusa /app/instrumentation.ts ./instrumentatio
 COPY --from=build --chown=medusa:medusa /app/tsconfig.json ./tsconfig.json
 COPY --from=build --chown=medusa:medusa /app/sql ./sql
 
+# Pre-create a `migrations` directory inside every custom module. At runtime the
+# non-root `medusa` user runs `medusa db:migrate --execute-safe-links`, which
+# attempts to `mkdir` these paths for any module that lacks one; that mkdir
+# fails with EACCES, aborting the migrate step so the
+# `publishable_api_key_sales_channel` link table is never created and `pnpm
+# seed` later dies with TableNotFoundException. Creating the dirs at build time
+# (and re-asserting ownership) keeps migrate idempotent and seed-safe.
+RUN for d in /app/src/modules/*/; do mkdir -p "$d/migrations"; done \
+    && chown -R medusa:medusa /app/src
+
 USER medusa
 EXPOSE 9000
 
