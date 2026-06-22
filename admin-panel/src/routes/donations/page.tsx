@@ -5,6 +5,7 @@ import { sdk } from "@lib/client"
 import { StorefrontSwitcher } from "@components/tenancy/storefront-switcher"
 import type { StorefrontContext} from "@lib/tenancy/context";
 import { withStorefrontHeaders } from "@lib/tenancy/context"
+import type { TenancyOrganization, TenancyStorefront } from "@lib/tenancy/types"
 
 const SHOPIFY_EXAMPLE = `Handle,Title,Body (HTML),Variant SKU,Variant Price\norganic-kale,Organic Kale,<p>Fresh kale</p>,KALE-001,3.99`
 
@@ -21,12 +22,12 @@ export const DonationsPage = () => {
 
   const { data: orgs } = useQuery({
     queryKey: ["tenancy-organizations"],
-    queryFn: () => sdk.client.fetch<{ organizations: any[] }>("/admin/tenancy/organizations"),
+    queryFn: () => sdk.client.fetch<{ organizations: TenancyOrganization[] }>("/admin/tenancy/organizations"),
   })
 
   const { data: storefronts, refetch: refetchStorefronts } = useQuery({
     queryKey: ["tenancy-storefronts"],
-    queryFn: () => sdk.client.fetch<{ storefronts: any[] }>("/admin/tenancy/storefronts"),
+    queryFn: () => sdk.client.fetch<{ storefronts: TenancyStorefront[] }>("/admin/tenancy/storefronts"),
   })
 
   const currentStorefront = useMemo(
@@ -171,8 +172,8 @@ export const DonationsPage = () => {
         <Heading>Sandbox mode</Heading>
         <Text size="small" className="text-ui-fg-subtle">Enable test payments and order simulation for this storefront.</Text>
         <div className="mt-3 flex gap-2">
-          <Button variant={(currentStorefront?.metadata as any)?.sandbox_mode ? "primary" : "secondary"} onClick={() => setSandboxMode(true)}>Enable sandbox</Button>
-          <Button variant={!(currentStorefront?.metadata as any)?.sandbox_mode ? "primary" : "secondary"} onClick={() => setSandboxMode(false)}>Disable sandbox</Button>
+          <Button variant={currentStorefront?.metadata?.sandbox_mode ? "primary" : "secondary"} onClick={() => setSandboxMode(true)}>Enable sandbox</Button>
+          <Button variant={!currentStorefront?.metadata?.sandbox_mode ? "primary" : "secondary"} onClick={() => setSandboxMode(false)}>Disable sandbox</Button>
         </div>
       </Container>
 

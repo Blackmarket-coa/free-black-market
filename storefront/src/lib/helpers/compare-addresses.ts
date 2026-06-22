@@ -1,6 +1,9 @@
 import { isEqual, pick } from "lodash"
 
-export default function compareAddresses(address1: any, address2: any) {
+export default function compareAddresses(
+  address1: object | null | undefined,
+  address2: object | null | undefined
+) {
   return isEqual(
     pick(address1, [
       "first_name",

@@ -408,6 +408,9 @@ type AddressFormInput = {
   email: FormDataEntryValue | null
 }
 
+const toFormString = (value: FormDataEntryValue | null): string =>
+  typeof value === "string" ? value : ""
+
 const mapAddressFormData = (formData: FormData): AddressFormInput => ({
   shipping_address: {
     first_name: formData.get("shipping_address.first_name"),
@@ -439,44 +442,34 @@ export async function setAddresses(
     const normalizedInput =
       formInput instanceof FormData ? mapAddressFormData(formInput) : formInput
 
-    const data = {
-      shipping_address: {
-        first_name: normalizedInput.shipping_address.first_name,
-        last_name: normalizedInput.shipping_address.last_name,
-        address_1: normalizedInput.shipping_address.address_1,
-        address_2: "",
-        company: normalizedInput.shipping_address.company,
-        postal_code: normalizedInput.shipping_address.postal_code,
-        city: normalizedInput.shipping_address.city,
-        country_code: normalizedInput.shipping_address.country_code,
-        province: normalizedInput.shipping_address.province,
-        phone: normalizedInput.shipping_address.phone,
-      },
-      email: normalizedInput.email,
-    } as any
+    // FormData entries are `FormDataEntryValue | null` (string | File | null);
+    // the address form only carries text inputs, so coerce to plain strings to
+    // satisfy the `StoreUpdateCart` address shape without an `as any` escape.
+    const address: NonNullable<HttpTypes.StoreUpdateCart["shipping_address"]> = {
+      first_name: toFormString(normalizedInput.shipping_address.first_name),
+      last_name: toFormString(normalizedInput.shipping_address.last_name),
+      address_1: toFormString(normalizedInput.shipping_address.address_1),
+      address_2: "",
+      company: toFormString(normalizedInput.shipping_address.company),
+      postal_code: toFormString(normalizedInput.shipping_address.postal_code),
+      city: toFormString(normalizedInput.shipping_address.city),
+      country_code: toFormString(normalizedInput.shipping_address.country_code),
+      province: toFormString(normalizedInput.shipping_address.province),
+      phone: toFormString(normalizedInput.shipping_address.phone),
+    }
 
     // const sameAsBilling = formData.get("same_as_billing")
-    // if (sameAsBilling === "on") data.billing_address = data.shipping_address
-    data.billing_address = data.shipping_address
-
-    // if (sameAsBilling !== "on")
-    //   data.billing_address = {
-    //     first_name: formData.get("billing_address.first_name"),
-    //     last_name: formData.get("billing_address.last_name"),
-    //     address_1: formData.get("billing_address.address_1"),
-    //     address_2: "",
-    //     company: formData.get("billing_address.company"),
-    //     postal_code: formData.get("billing_address.postal_code"),
-    //     city: formData.get("billing_address.city"),
-    //     country_code: formData.get("billing_address.country_code"),
-    //     province: formData.get("billing_address.province"),
-    //     phone: formData.get("billing_address.phone"),
-    //   }
+    // if (sameAsBilling !== "on") billing would be mapped separately.
+    const data: HttpTypes.StoreUpdateCart = {
+      shipping_address: address,
+      billing_address: address,
+      email: toFormString(normalizedInput.email),
+    }
 
     await updateCart(data)
     await revalidatePath("/cart")
-  } catch (e: any) {
-    return e.message
+  } catch (e) {
+    return e instanceof Error ? e.message : "Failed to set addresses"
   }
 }
 

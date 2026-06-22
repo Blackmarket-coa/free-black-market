@@ -4,18 +4,19 @@ import { Button, Checkbox, Container, Heading, Text } from "@medusajs/ui"
 import { sdk } from "@lib/client"
 import { StorefrontSwitcher } from "@components/tenancy/storefront-switcher"
 import type { StorefrontContext } from "@lib/tenancy/context"
+import type { TenancyOrganization, TenancyStorefront } from "@lib/tenancy/types"
 
 export const OnboardingChecklistPage = () => {
   const [ctx, setCtx] = useState<StorefrontContext | null>(null)
 
   const { data: orgs } = useQuery({
     queryKey: ["tenancy-organizations"],
-    queryFn: () => sdk.client.fetch<{ organizations: any[] }>("/admin/tenancy/organizations"),
+    queryFn: () => sdk.client.fetch<{ organizations: TenancyOrganization[] }>("/admin/tenancy/organizations"),
   })
 
   const { data: storefronts } = useQuery({
     queryKey: ["tenancy-storefronts"],
-    queryFn: () => sdk.client.fetch<{ storefronts: any[] }>("/admin/tenancy/storefronts"),
+    queryFn: () => sdk.client.fetch<{ storefronts: TenancyStorefront[] }>("/admin/tenancy/storefronts"),
   })
 
   const { data, refetch } = useQuery({
