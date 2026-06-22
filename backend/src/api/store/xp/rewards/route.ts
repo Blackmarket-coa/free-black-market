@@ -24,7 +24,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     const balance = await progression.getSpendableXp(customerId)
     const rewards = progression.listRewards(balance)
     const history = await progression.listRedemptionsForCustomer(customerId)
-    res.json({ balance, rewards, history })
+    const treesPlanted = await progression.getCommunityTreesPlanted()
+    res.json({ balance, rewards, history, community: { treesPlanted } })
   } catch (error) {
     log.error("Error listing XP rewards:", error)
     res.status(500).json({ error: "Failed to list XP rewards" })

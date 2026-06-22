@@ -21,10 +21,12 @@ export function XpRewardsList({
   balance,
   rewards,
   history,
+  treesPlanted = 0,
 }: {
   balance: number
   rewards: XpReward[]
   history: XpRedemption[]
+  treesPlanted?: number
 }) {
   const router = useRouter()
   const { celebrate } = useBlackoutEffects()
@@ -41,7 +43,12 @@ export function XpRewardsList({
         celebrate("milestone")
         setFeedback({
           kind: "success",
-          message: `Redeemed “${reward.name}”. Enjoy!`,
+          message:
+            reward.impact === "tree"
+              ? `Thank you! You funded ${reward.impactUnits ?? 1} ${
+                  (reward.impactUnits ?? 1) === 1 ? "tree" : "trees"
+                }. 🌳`
+              : `Redeemed “${reward.name}”. Enjoy!`,
         })
         router.refresh()
       } else {
@@ -65,10 +72,22 @@ export function XpRewardsList({
         </p>
         <p className="heading-lg">{balance.toLocaleString()} XP</p>
         <p className="text-secondary mt-1 text-sm">
-          Spend earned XP on perks and downloads. Spending never lowers your
-          level or titles — those are yours for good.
+          Spend earned XP on perks, downloads, and real-world impact. Spending
+          never lowers your level or titles — those are yours for good.
         </p>
       </header>
+
+      <div className="rounded-lg border border-green-300 bg-green-50 p-4 flex items-center gap-3">
+        <span aria-hidden className="text-2xl">
+          🌳
+        </span>
+        <p className="text-green-800 text-sm">
+          The community has planted{" "}
+          <strong>{treesPlanted.toLocaleString()}</strong>{" "}
+          {treesPlanted === 1 ? "tree" : "trees"} with XP. Redeem below to grow
+          the canopy.
+        </p>
+      </div>
 
       {feedback && (
         <div
@@ -96,7 +115,13 @@ export function XpRewardsList({
                 <div className="flex items-center justify-between gap-3">
                   <h3 className="heading-sm">{reward.name}</h3>
                   <span className="badge-accent shrink-0">
-                    {reward.kind === "digital_download" ? "Download" : "Perk"}
+                    {reward.impact === "tree"
+                      ? `🌳 ${reward.impactUnits ?? 1} ${
+                          (reward.impactUnits ?? 1) === 1 ? "tree" : "trees"
+                        }`
+                      : reward.kind === "digital_download"
+                        ? "Download"
+                        : "Perk"}
                   </span>
                 </div>
                 <p className="text-secondary text-sm mt-2">

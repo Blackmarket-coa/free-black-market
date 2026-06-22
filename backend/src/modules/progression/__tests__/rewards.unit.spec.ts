@@ -7,7 +7,7 @@
  *   - both reward kinds (perk + download) are offered
  */
 
-import { XP_REWARDS, getXpReward } from "../rewards"
+import { XP_REWARDS, getXpReward, treesForRewardKey } from "../rewards"
 import { XpRewardKind } from "../models/xp-redemption"
 
 describe("XP reward catalog", () => {
@@ -49,5 +49,29 @@ describe("XP reward catalog", () => {
         expect(r.entitlementKind).toBe("digital")
       }
     }
+  })
+
+  describe("tree-planting impact rewards", () => {
+    it("offers at least one tree reward with positive impact units", () => {
+      const trees = XP_REWARDS.filter((r) => r.impact === "tree")
+      expect(trees.length).toBeGreaterThan(0)
+      for (const r of trees) {
+        expect(r.impactUnits).toBeGreaterThan(0)
+      }
+    })
+
+    it("counts trees for tree rewards and zero for everything else", () => {
+      for (const r of XP_REWARDS) {
+        if (r.impact === "tree") {
+          expect(treesForRewardKey(r.key)).toBe(r.impactUnits ?? 1)
+        } else {
+          expect(treesForRewardKey(r.key)).toBe(0)
+        }
+      }
+    })
+
+    it("returns 0 trees for an unknown reward key", () => {
+      expect(treesForRewardKey("nope")).toBe(0)
+    })
   })
 })

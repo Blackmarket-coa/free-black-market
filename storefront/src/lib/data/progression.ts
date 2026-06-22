@@ -135,6 +135,10 @@ export type XpReward = {
   entitlementKind: string
   durationDays?: number
   icon?: string
+  /** Real-world mutual-aid impact (e.g. "tree") this redemption funds. */
+  impact?: "tree"
+  /** Units of `impact` one redemption funds (e.g. trees planted). */
+  impactUnits?: number
   /** Whether the current balance can afford this reward. */
   affordable: boolean
 }
@@ -156,6 +160,7 @@ export type XpRewardsResponse = {
   balance: number
   rewards: XpReward[]
   history: XpRedemption[]
+  community?: { treesPlanted: number }
 }
 
 /**

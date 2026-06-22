@@ -81,6 +81,12 @@ preferences normalization (defaults-on, validation/clamping).
     access_pass.
   - `DIGITAL_DOWNLOAD` rewards → entitlement kind `digital` (file delivery gated on the grant,
     handled by the `digital-product` module).
+  - **Mutual-aid impact** rewards (e.g. *Plant a Tree*, *Plant a Grove*) carry an
+    `impact: "tree"` + `impactUnits`. Redeeming funds real-world tree planting; the community
+    total is derived from fulfilled redemptions via `treesForRewardKey` /
+    `getCommunityTreesPlanted` (no separate counter to drift, and refunds are excluded). The
+    tally is returned on `GET /store/xp/rewards` as `community.treesPlanted` and surfaced as a
+    banner on `/rewards`.
 
 ### API — `backend/src/api/store/xp/`
 - `GET /store/xp/rewards` → `{ balance, rewards (with affordability), history }`.

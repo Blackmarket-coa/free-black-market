@@ -33,6 +33,7 @@ export default async function RewardsPage() {
           balance={data?.balance ?? 0}
           rewards={data?.rewards ?? []}
           history={data?.history ?? []}
+          treesPlanted={data?.community?.treesPlanted ?? 0}
         />
       </div>
     </main>

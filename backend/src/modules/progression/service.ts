@@ -3,7 +3,12 @@ import { CharacterSheet, XpEvent, ProgressionTitle, XpRedemption } from "./model
 import { XpRedemptionStatus } from "./models/xp-redemption"
 import { Stance, isStance } from "./stance"
 import { levelForXp, levelProgress, ROLE_XP_WEIGHTS } from "./leveling"
-import { getXpReward, XP_REWARDS, type XpReward } from "./rewards"
+import {
+  getXpReward,
+  treesForRewardKey,
+  XP_REWARDS,
+  type XpReward,
+} from "./rewards"
 
 /**
  * Per-role XP column names on the character sheet, keyed by stance.
@@ -361,6 +366,21 @@ class ProgressionModuleService extends MedusaService({
       { id: redemptionId, status: XpRedemptionStatus.REFUNDED },
     ])
     return updated
+  }
+
+  /**
+   * Total trees the whole community has funded through XP redemptions.
+   * Derived from fulfilled redemptions in the ledger (no separate counter to
+   * drift), so it stays correct even after refunds.
+   */
+  async getCommunityTreesPlanted(): Promise<number> {
+    const fulfilled = await this.listXpRedemptions({
+      status: XpRedemptionStatus.FULFILLED,
+    })
+    return fulfilled.reduce(
+      (sum, r) => sum + treesForRewardKey(r.reward_key),
+      0
+    )
   }
 
   /** A customer's redemption history, newest first. */
