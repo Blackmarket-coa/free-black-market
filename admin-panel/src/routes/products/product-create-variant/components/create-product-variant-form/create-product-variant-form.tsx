@@ -124,13 +124,27 @@ return acc
     }
   }, [isInventoryKitEnabled])
 
+  // A tab is "dirty" when any of its form fields has been edited. Used when
+  // navigating backwards so a touched tab keeps its progress status instead of
+  // being reset to "not-started".
+  const isTabDirty = (tabToCheck: Tab) => {
+    const dirtyFields = form.formState.dirtyFields as Record<string, unknown>
+    const fieldsByTab: Record<Tab, readonly string[]> = {
+      [Tab.DETAIL]: CreateVariantDetailsFields,
+      [Tab.PRICE]: CreateVariantPriceFields,
+      [Tab.INVENTORY]: ["inventory"],
+    }
+
+    return fieldsByTab[tabToCheck].some((field) => Boolean(dirtyFields[field]))
+  }
+
   const handleChangeTab = (update: Tab) => {
     if (tab === update) {
       return
     }
 
     if (tabOrder.indexOf(update) < tabOrder.indexOf(tab)) {
-      const isCurrentTabDirty = false // isTabDirty(tab) TODO
+      const isCurrentTabDirty = isTabDirty(tab)
 
       setTabState((prev) => ({
         ...prev,
