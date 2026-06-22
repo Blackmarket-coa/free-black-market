@@ -67,8 +67,11 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     const row = rows?.[0] as { id: string } | undefined;
 
     if (row) {
-      const sellerExtension = req.scope.resolve("sellerExtension");
-      await updateSellerMetadataRecord(sellerExtension as any, [
+      const sellerExtension =
+        req.scope.resolve<Parameters<typeof updateSellerMetadataRecord>[0]>(
+          "sellerExtension"
+        );
+      await updateSellerMetadataRecord(sellerExtension, [
         { id: row.id, site_status: status, ...(url ? { site_url: url } : {}) },
       ]);
       log.info(`site-deploy callback: ${repo} -> ${status}`);

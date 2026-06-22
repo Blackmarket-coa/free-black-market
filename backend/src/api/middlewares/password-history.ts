@@ -211,7 +211,7 @@ export async function preventPasswordReuseMiddleware(
     // Store the current password hash after successful update
     // We use response interception to do this
     const originalSend = res.send.bind(res)
-    res.send = function (data: any) {
+    res.send = function (data: unknown) {
       // Only store history on successful responses
       if (res.statusCode >= 200 && res.statusCode < 300 && currentPasswordHash && passwordHistoryService) {
         // Store the old password hash asynchronously (don't block response)

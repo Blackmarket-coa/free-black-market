@@ -27,10 +27,10 @@ export const POST = async (
     let validatedBody
     try {
       validatedBody = createUserSchema.parse(req.body)
-    } catch (err: any) {
+    } catch (err) {
       return res.status(400).json({
         message: "Invalid request body",
-        errors: err?.errors ?? err,
+        errors: (err as { errors?: unknown })?.errors ?? err,
       })
     }
 
