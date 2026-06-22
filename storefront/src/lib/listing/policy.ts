@@ -4,23 +4,44 @@ export const SUSPENDED_STATUS = "SUSPENDED"
 
 export const SUSPENDED_SELLER_ALGOLIA_CLAUSE = `NOT seller.store_status:${SUSPENDED_STATUS}`
 
+// Storefront products carry marketplace seller fields that are not on the
+// Medusa SDK `StoreProduct` type; model just the fields these helpers read.
+type ProductWithSellerFields = HttpTypes.StoreProduct & {
+  seller?: {
+    id?: string
+    seller_id?: string
+    handle?: string
+    store_status?: string
+  } | null
+  seller_id?: string
+  metadata?: { seller_id?: string; seller_handle?: string } | null
+}
+
+// A variant whose price we read either from the calculated price or the raw
+// prices array (the latter is a marketplace extension, hence optional).
+type PricedVariant = {
+  calculated_price?: {
+    calculated_amount?: number | null
+    original_amount?: number | null
+    currency_code?: string | null
+  } | null
+  prices?: { amount?: number | null }[] | null
+}
+
 export const isSuspended = (product: HttpTypes.StoreProduct): boolean =>
-  ((product as any)?.seller?.store_status as string | undefined) === SUSPENDED_STATUS
+  (product as ProductWithSellerFields).seller?.store_status === SUSPENDED_STATUS
 
 export const getProductSellerIdentifiers = (product: HttpTypes.StoreProduct) => {
-  const productAny = product as any
+  const p = product as ProductWithSellerFields
 
   return {
     id:
-      (productAny?.seller?.id as string | undefined) ??
-      (productAny?.seller?.seller_id as string | undefined) ??
-      (productAny?.seller_id as string | undefined) ??
-      (productAny?.metadata?.seller_id as string | undefined) ??
+      p.seller?.id ??
+      p.seller?.seller_id ??
+      p.seller_id ??
+      p.metadata?.seller_id ??
       "",
-    handle:
-      (productAny?.seller?.handle as string | undefined) ??
-      (productAny?.metadata?.seller_handle as string | undefined) ??
-      "",
+    handle: p.seller?.handle ?? p.metadata?.seller_handle ?? "",
   }
 }
 
@@ -30,7 +51,7 @@ export type PriceRangeOptions = {
   maxPrice?: number
 }
 
-const getVariantAmount = (variant: any): number | undefined => {
+const getVariantAmount = (variant: PricedVariant): number | undefined => {
   const amount =
     variant?.calculated_price?.calculated_amount ??
     variant?.calculated_price?.original_amount ??
@@ -50,7 +71,7 @@ export const productMatchesPriceRange = (
     return true
   }
 
-  const variants = ((product as any)?.variants || []) as any[]
+  const variants = product.variants ?? []
   const eligible = currencyCode
     ? variants.filter((v) => v?.calculated_price?.currency_code === currencyCode)
     : variants
