@@ -5,6 +5,7 @@ import { sdk } from "@lib/client"
 import { StorefrontSwitcher } from "@components/tenancy/storefront-switcher"
 import type { StorefrontContext } from "@lib/tenancy/context"
 import type { TenancyOrganization, TenancyStorefront } from "@lib/tenancy/types"
+import type { FirstListingChecklistState } from "@custom-types/donations/common"
 
 export const OnboardingChecklistPage = () => {
   const [ctx, setCtx] = useState<StorefrontContext | null>(null)
@@ -22,7 +23,7 @@ export const OnboardingChecklistPage = () => {
   const { data, refetch } = useQuery({
     queryKey: ["first-listing-checklist", ctx?.organizationId, ctx?.storefrontId],
     queryFn: () =>
-      sdk.client.fetch<{ state: any }>(
+      sdk.client.fetch<{ state: FirstListingChecklistState }>(
         `/admin/tenancy/onboarding/first-listing?organization_id=${ctx?.organizationId}&storefront_id=${ctx?.storefrontId}`
       ),
     enabled: Boolean(ctx?.organizationId && ctx?.storefrontId),

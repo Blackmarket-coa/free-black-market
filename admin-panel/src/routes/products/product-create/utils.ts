@@ -86,7 +86,7 @@ export const normalizeVariants = (
           item !== false
       ),
     prices: Object.entries(variant.prices || {})
-      .map(([key, value]: any) => {
+      .map(([key, value]) => {
         if (value === "" || value === undefined) {
           return undefined
         }

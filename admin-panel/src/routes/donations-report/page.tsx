@@ -6,6 +6,7 @@ import { StorefrontSwitcher } from "@components/tenancy/storefront-switcher"
 import type { StorefrontContext} from "@lib/tenancy/context";
 import { withStorefrontHeaders } from "@lib/tenancy/context"
 import type { TenancyOrganization, TenancyStorefront } from "@lib/tenancy/types"
+import type { DonationsReport } from "@custom-types/donations/common"
 
 export const DonationReportPage = () => {
   const [ctx, setCtx] = useState<StorefrontContext | null>(null)
@@ -23,7 +24,7 @@ export const DonationReportPage = () => {
 
   const { data } = useQuery({
     queryKey: ["donations-report", ctx?.organizationId, ctx?.storefrontId],
-    queryFn: () => sdk.client.fetch<{ report: any }>("/admin/donations/report", { headers }),
+    queryFn: () => sdk.client.fetch<{ report: DonationsReport }>("/admin/donations/report", { headers }),
     enabled: Boolean(ctx),
   })
 
@@ -49,7 +50,7 @@ export const DonationReportPage = () => {
       </div>
 
       <div className="mt-6 space-y-2">
-        {data?.report?.beneficiaries?.map((row: any) => (
+        {data?.report?.beneficiaries?.map((row) => (
           <div key={row.beneficiary_id} className="border rounded p-3 flex justify-between">
             <div>{row.beneficiary_name}</div>
             <div>Accrued: {row.total_accrued} / Disbursed: {row.total_disbursed} / Outstanding: {row.outstanding}</div>
