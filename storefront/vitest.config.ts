@@ -12,14 +12,18 @@ export default defineConfig({
     coverage: {
       provider: "v8",
       reporter: ["text", "text-summary"],
-      // Scope coverage gating to the pure helper layer that unit tests target.
-      // The network-bound `src/lib/data/**` modules require mocked-fetch
-      // integration suites to cover meaningfully; that remains tracked as TC-1
-      // in docs/AUDIT_DEBT.md.
-      include: ["src/lib/helpers/**"],
+      // TC-1: gate both the pure helper layer and the (mocked-fetch tested)
+      // data-access layer at >=30%. Per-glob thresholds keep each layer
+      // independently honest rather than letting one mask the other.
+      include: ["src/lib/helpers/**", "src/lib/data/**"],
       thresholds: {
-        lines: 30,
-        functions: 30,
+        "src/lib/helpers/**": {
+          lines: 30,
+          functions: 30,
+        },
+        "src/lib/data/**": {
+          lines: 30,
+        },
       },
     },
   },
