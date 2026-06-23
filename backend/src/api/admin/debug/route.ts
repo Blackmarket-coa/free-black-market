@@ -41,7 +41,7 @@ export async function GET(
       sellers: sellers.rows || [],
       instruction: "POST to this endpoint with {\"action\": \"fix\"} to link orphaned products to sellers"
     })
-  } catch (error: any) {
+  } catch (error) {
     log.error("Debug endpoint error:", error)
     res.status(500).json({
       error: error.message
@@ -121,7 +121,7 @@ export async function POST(
     return res.status(400).json({
       error: "Invalid action. Use 'diagnose' or 'fix'."
     })
-  } catch (error: any) {
+  } catch (error) {
     log.error("Debug endpoint error:", error)
     res.status(500).json({
       error: error.message

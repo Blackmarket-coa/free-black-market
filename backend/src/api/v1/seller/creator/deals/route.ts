@@ -18,14 +18,14 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
   const deals = await service.listCreatorDeals({ creator_seller_id: sellerId })
 
   // Hydrate each deal with program title for nicer display
-  const programIds = Array.from(new Set(deals.map((d: any) => d.program_id)))
+  const programIds = Array.from(new Set(deals.map((d) => d.program_id)))
   const programs = programIds.length
     ? await service.listCreatorPrograms({ id: programIds })
     : []
-  const programById = new Map(programs.map((p: any) => [p.id, p]))
+  const programById = new Map(programs.map((p) => [p.id, p]))
 
   return res.status(200).json({
-    deals: deals.map((d: any) => ({
+    deals: deals.map((d) => ({
       ...d,
       program_title: programById.get(d.program_id)?.title ?? null,
     })),

@@ -31,7 +31,7 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
     const rollup = await service.platformAttributionRollup({ from, to })
 
     return res.status(200).json({ rollup })
-  } catch (error: any) {
+  } catch (error) {
     if (error instanceof z.ZodError) {
       return res
         .status(400)

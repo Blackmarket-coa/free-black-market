@@ -3,6 +3,7 @@ import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 import { z } from "zod"
 import type { SellerAuthRequest } from "../../../middlewares/seller-context-v1"
 import launchProductWorkflow from "../../../../workflows/launch-product"
+import type { CreateProductWorkflowInputDTO } from "@medusajs/framework/types"
 import launchSponsorshipWorkflow from "../../../../workflows/launch-sponsorship"
 import { DEMAND_POOL_MODULE } from "../../../../modules/demand-pool"
 import type DemandPoolModuleService from "../../../../modules/demand-pool/service"
@@ -70,8 +71,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     creator_id: sellerId,
   })
   const launches = posts
-    .filter((p: any) => p.launch_id)
-    .map((p: any) => ({
+    .filter((p) => p.launch_id)
+    .map((p) => ({
       launch_id: p.launch_id,
       demand_post_id: p.id,
       product_id: p.product_id,
@@ -148,7 +149,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       await producers.listProducers({ seller_id: sellerId })
     )[0]
     if (!existingProducer) {
-      await (producers as any).createProducers({
+      await producers.createProducers({
         seller_id: sellerId,
         name: data.business.producer_name,
         handle: data.business.producer_handle,
@@ -163,7 +164,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
   // launch instead of creating a second product/bounty.
   const existing = await demand.listDemandPosts({ launch_id: launchId })
   if (existing.length > 0) {
-    const post: any = existing[0]
+    const post = existing[0]
     const bounties = await demand.listDemandBounties({ demand_post_id: post.id })
     return res.status(200).json({
       launch: {
@@ -220,7 +221,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
   })
   const salesChannelId = channels?.[0]?.id
 
-  const productInput: any = {
+  const productInput: CreateProductWorkflowInputDTO = {
     title: data.title,
     status: "published",
     description: data.description ?? undefined,

@@ -20,7 +20,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
   const proofs = await wv.listProofArtifacts(filter, {
     take: limit,
     skip: offset,
-    order: { created_at: "DESC" } as any,
+    order: { created_at: "DESC" } as const,
   })
   return res.status(200).json({ proofs, limit, offset })
 }

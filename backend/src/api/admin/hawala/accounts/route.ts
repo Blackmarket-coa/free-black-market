@@ -22,7 +22,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
   // Safe pagination with bounds checking
   const pagination = safePagination(limit as string, offset as string)
 
-  const filters: Record<string, any> = {}
+  const filters: Record<string, unknown> = {}
   if (account_type) filters.account_type = account_type
   if (owner_type) filters.owner_type = owner_type
   if (owner_id) filters.owner_id = owner_id
@@ -58,7 +58,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     owner_type?: string
     owner_id?: string
     stellar_address?: string
-    metadata?: Record<string, any>
+    metadata?: Record<string, unknown>
   }
 
   if (!account_type) {

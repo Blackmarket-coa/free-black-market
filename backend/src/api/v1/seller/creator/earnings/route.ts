@@ -34,7 +34,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     service.creatorEarningsRollup(sellerId, { from, to }),
     service.listOrderAttributions(
       { creator_seller_id: sellerId },
-      { take: limit, skip: offset, order: { attribution_decided_at: "DESC" } as any }
+      { take: limit, skip: offset, order: { attribution_decided_at: "DESC" } as const }
     ),
   ])
 

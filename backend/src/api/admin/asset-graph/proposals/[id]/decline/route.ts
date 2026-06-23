@@ -13,10 +13,10 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
   const id = req.params.id
   if (!id) return res.status(400).json({ message: "id is required" })
 
-  const service: any = req.scope.resolve(ASSET_GRAPH_MODULE)
+  const service = req.scope.resolve<AssetGraphService>(ASSET_GRAPH_MODULE)
 
   try {
-    const proposal = await (service as AssetGraphService).declineProposal({
+    const proposal = await service.declineProposal({
       proposal_id: id,
     })
     return res.json({ proposal })

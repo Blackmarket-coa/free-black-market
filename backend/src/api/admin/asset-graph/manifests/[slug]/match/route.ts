@@ -28,9 +28,9 @@ export async function POST(
   const body = (req.validatedBody || req.body || {}) as MatchBody
   const persist = body.persist === true
 
-  const service: any = req.scope.resolve(ASSET_GRAPH_MODULE)
+  const service = req.scope.resolve<AssetGraphService>(ASSET_GRAPH_MODULE)
   try {
-    const result = await (service as AssetGraphService).proposeMatches({
+    const result = await service.proposeMatches({
       manifest_slug: slug as ManifestSlug,
       persist,
     })

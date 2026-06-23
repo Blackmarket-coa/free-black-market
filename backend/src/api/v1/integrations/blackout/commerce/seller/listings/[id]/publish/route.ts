@@ -18,7 +18,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     return res.status(404).json({ code: "not_found", message: "Listing not found" })
   }
 
-  const [updated] = await (service as any).updateCreatorListings([
+  const [updated] = await service.updateCreatorListings([
     { id, status: CreatorListingStatus.PUBLISHED, signed_at: new Date() },
   ])
 

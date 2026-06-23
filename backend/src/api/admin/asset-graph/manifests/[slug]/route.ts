@@ -12,9 +12,9 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
   const slug = req.params.slug
   if (!slug) return res.status(400).json({ message: "slug is required" })
 
-  const service: any = req.scope.resolve(ASSET_GRAPH_MODULE)
+  const service = req.scope.resolve<AssetGraphService>(ASSET_GRAPH_MODULE)
   try {
-    const manifest = (service as AssetGraphService).getManifestRecipe(
+    const manifest = service.getManifestRecipe(
       slug as ManifestSlug
     )
     return res.json({ manifest })

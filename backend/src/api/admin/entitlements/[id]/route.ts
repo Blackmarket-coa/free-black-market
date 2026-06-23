@@ -28,7 +28,7 @@ export async function PATCH(req: MedusaRequest<PatchBody>, res: MedusaResponse) 
     update.expires_at = body.expires_at ? new Date(body.expires_at) : null
   }
   if (body.metadata !== undefined) update.metadata = body.metadata
-  const [updated] = await service.updateEntitlements([update as any])
+  const [updated] = await service.updateEntitlements([update])
   return res.json({ entitlement: updated })
 }
 

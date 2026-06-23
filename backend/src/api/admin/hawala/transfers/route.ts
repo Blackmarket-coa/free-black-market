@@ -19,7 +19,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     offset = "0",
   } = req.query
 
-  const filters: Record<string, any> = {}
+  const filters: Record<string, unknown> = {}
   if (entry_type) filters.entry_type = entry_type
   if (status) filters.status = status
   if (order_id) filters.order_id = order_id
@@ -67,7 +67,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     reference_type?: string
     reference_id?: string
     idempotency_key?: string
-    metadata?: Record<string, any>
+    metadata?: Record<string, unknown>
   }
 
   if (!debit_account_id || !credit_account_id || !amount || !entry_type) {

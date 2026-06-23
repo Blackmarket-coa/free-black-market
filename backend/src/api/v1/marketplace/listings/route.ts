@@ -38,7 +38,11 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
   })
 }
 
-function toPublicListing(listing: any) {
+type CreatorListingRow = Awaited<
+  ReturnType<MarketplaceListingService["listCreatorListings"]>
+>[number]
+
+function toPublicListing(listing: CreatorListingRow) {
   return {
     id: listing.id,
     seller_id: listing.seller_id,

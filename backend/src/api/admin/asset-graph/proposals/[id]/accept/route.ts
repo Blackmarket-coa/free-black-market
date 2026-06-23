@@ -23,10 +23,10 @@ export async function POST(
   if (!id) return res.status(400).json({ message: "id is required" })
 
   const body = (req.validatedBody || req.body || {}) as AcceptBody
-  const service: any = req.scope.resolve(ASSET_GRAPH_MODULE)
+  const service = req.scope.resolve<AssetGraphService>(ASSET_GRAPH_MODULE)
 
   try {
-    const result = await (service as AssetGraphService).acceptProposal({
+    const result = await service.acceptProposal({
       proposal_id: id,
       state: body.state,
     })

@@ -35,11 +35,11 @@ export async function PATCH(req: MedusaRequest, res: MedusaResponse) {
   const { status, stellar_address, metadata } = req.body as {
     status?: string
     stellar_address?: string
-    metadata?: Record<string, any>
+    metadata?: Record<string, unknown>
   }
 
   try {
-    const updateData: Record<string, any> = { id }
+    const updateData: Record<string, unknown> = { id }
     if (status) updateData.status = status
     if (stellar_address) updateData.stellar_address = stellar_address
     if (metadata) updateData.metadata = metadata

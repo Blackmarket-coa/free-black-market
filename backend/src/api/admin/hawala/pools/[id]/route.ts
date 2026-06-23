@@ -53,11 +53,11 @@ export async function PATCH(req: MedusaRequest, res: MedusaResponse) {
     target_amount?: number
     auto_invest_enabled?: boolean
     auto_invest_percentage?: number
-    metadata?: Record<string, any>
+    metadata?: Record<string, unknown>
   }
 
   try {
-    const updateData: Record<string, any> = { id }
+    const updateData: Record<string, unknown> = { id }
     if (name) updateData.name = name
     if (description !== undefined) updateData.description = description
     if (status) updateData.status = status

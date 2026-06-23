@@ -33,10 +33,10 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
   const [existing] = await service.listSupplierProfiles({ supplier_id: body.supplier_id })
 
   if (existing) {
-    const profile = await service.updateSupplierProfiles({ id: existing.id, ...payload } as any)
+    const profile = await service.updateSupplierProfiles({ id: existing.id, ...payload })
     return res.json({ supplier_profile: profile })
   }
 
-  const profile = await service.createSupplierProfiles(payload as any)
+  const profile = await service.createSupplierProfiles(payload)
   return res.status(201).json({ supplier_profile: profile })
 }

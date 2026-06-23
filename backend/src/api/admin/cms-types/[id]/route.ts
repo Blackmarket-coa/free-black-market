@@ -53,7 +53,7 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
     },
   })
 
-  const sortedCategories = categories.sort((a: any, b: any) => a.display_order - b.display_order)
+  const sortedCategories = categories.sort((a, b) => a.display_order - b.display_order)
 
   return res.json({
     type: {

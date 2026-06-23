@@ -15,7 +15,7 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
 
     const details = await bargainingService.getGroupDetails(id)
     res.json({ bargaining_group: details })
-  } catch (error: any) {
+  } catch (error) {
     log.error(`[GET /admin/collective/bargaining-groups/${id}] Error:`, error.message)
     res.status(error.message.includes("not found") ? 404 : 500).json({
       error: error.message,
@@ -28,7 +28,7 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
   const { id } = req.params
 
   try {
-    const { action, proposal_id } = req.body as any
+    const { action, proposal_id } = req.body as { action?: string; proposal_id?: string }
     const bargainingService = req.scope.resolve<BargainingModuleService>(
       BARGAINING_MODULE
     )
@@ -44,7 +44,7 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
     }
 
     res.status(400).json({ error: "Invalid action" })
-  } catch (error: any) {
+  } catch (error) {
     log.error(`[POST /admin/collective/bargaining-groups/${id}] Error:`, error.message)
     res.status(400).json({ error: error.message })
   }

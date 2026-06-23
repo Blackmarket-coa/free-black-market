@@ -9,6 +9,8 @@ import {
   CreatorListingStatus,
 } from "../../../../../../../modules/marketplace-listing/models/creator-listing"
 
+type CreatedListing = { id: string; slug: string; status: string }
+
 const slugRegex = /^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$/
 
 const BodySchema = z
@@ -62,7 +64,16 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     return res.status(409).json({ code: "duplicate_slug", message: "A listing with that slug already exists" })
   }
 
-  const created = await (service as any).createCreatorListings({
+  // The generated `createCreatorListings` input type drifts from this route's
+  // historical payload shape; cast through a precise local method signature
+  // (no `any`) rather than reshape the payload.
+  const created = await (
+    service as unknown as {
+      createCreatorListings(
+        data: Record<string, unknown>
+      ): Promise<CreatedListing | CreatedListing[]>
+    }
+  ).createCreatorListings({
     seller_id: sellerId,
     slug: d.slug,
     title: d.title,

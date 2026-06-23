@@ -11,7 +11,7 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
   const query = req.scope.resolve(ContainerRegistrationKeys.QUERY)
   const { tag_type, category_id } = req.query as { tag_type?: string; category_id?: string }
 
-  const filters: Record<string, any> = {
+  const filters: Record<string, unknown> = {
     deleted_at: null,
   }
 
@@ -31,7 +31,7 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
       },
     })
 
-    const tagIds = categoryTags.map((ct: any) => ct.tag_id)
+    const tagIds = categoryTags.map((ct) => ct.tag_id)
 
     if (tagIds.length === 0) {
       return res.json({ tags: [], count: 0 })
@@ -58,7 +58,7 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
     filters,
   })
 
-  const tags: any[] = tagData
+  const tags = tagData
 
   return res.json({
     tags,

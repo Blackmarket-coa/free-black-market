@@ -66,7 +66,7 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
         request: result,
       })
     }
-  } catch (error: any) {
+  } catch (error) {
     // Handle specific error types
     if (error.message === "Request not found") {
       res.status(404).json({ message: error.message })

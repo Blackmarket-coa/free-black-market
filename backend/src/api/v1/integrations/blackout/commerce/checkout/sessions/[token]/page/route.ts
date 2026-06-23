@@ -14,7 +14,7 @@ interface BlackoutSessionPayload {
 function decodeSession(token: string): BlackoutSessionPayload | null {
   if (!config.JWT_SECRET) return null
   try {
-    const decoded = (jwt.verify as any)(token, config.JWT_SECRET, {
+    const decoded = jwt.verify(token, config.JWT_SECRET, {
       audience: "fbm-blackout-checkout",
     })
     if (typeof decoded !== "object" || !decoded || !("listingId" in decoded)) return null

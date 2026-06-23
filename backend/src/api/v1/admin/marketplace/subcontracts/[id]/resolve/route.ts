@@ -4,7 +4,10 @@ import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { z } from "zod"
 import { ORDER_SUBCONTRACT_MODULE } from "../../../../../../../modules/order-subcontract"
 import type OrderSubcontractService from "../../../../../../../modules/order-subcontract/service"
-import { OrderSubcontractStatus } from "../../../../../../../modules/order-subcontract/models"
+import {
+  OrderSubcontractStatus,
+  SubcontractEventType,
+} from "../../../../../../../modules/order-subcontract/models"
 import { HAWALA_LEDGER_MODULE } from "../../../../../../../modules/hawala-ledger"
 import type HawalaLedgerModuleService from "../../../../../../../modules/hawala-ledger/service"
 import { MARKETPLACE_WEBHOOKS_MODULE } from "../../../../../../../modules/marketplace-webhooks"
@@ -96,7 +99,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
   }
   await subSvc.recordEvent({
     subcontractId: id,
-    eventType: "resolved" as any,
+    eventType: SubcontractEventType.RESOLVED,
     note: `${parsed.data.decision}: ${parsed.data.reason}`,
     metadata: {
       release_amount_cents: releaseAmount,
@@ -104,7 +107,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       ledger_entries: ops,
     },
   })
-  const finalSub = await (subSvc as any).updateOrderSubcontracts({
+  const finalSub = await subSvc.updateOrderSubcontracts({
     id,
     status: newStatus,
     release_ledger_entry_id:

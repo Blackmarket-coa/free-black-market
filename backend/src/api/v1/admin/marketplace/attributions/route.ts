@@ -24,7 +24,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
   const attributions = await service.listOrderAttributions(filter, {
     take: limit,
     skip: offset,
-    order: { attribution_decided_at: "DESC" } as any,
+    order: { attribution_decided_at: "DESC" } as const,
   })
 
   return res.status(200).json({ attributions, limit, offset })

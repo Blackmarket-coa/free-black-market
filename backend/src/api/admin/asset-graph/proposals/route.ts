@@ -16,7 +16,7 @@ import type AssetGraphService from "../../../../modules/asset-graph/service"
  * `persist: true`) to populate.
  */
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
-  const service: any = req.scope.resolve(ASSET_GRAPH_MODULE)
+  const service = req.scope.resolve<AssetGraphService>(ASSET_GRAPH_MODULE)
 
   const filters: Record<string, unknown> = {}
   if (req.query.manifest_slug) filters.manifest_slug = req.query.manifest_slug
@@ -26,9 +26,9 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
   const limit = req.query.limit ? Number(req.query.limit) : 20
   const offset = req.query.offset ? Number(req.query.offset) : 0
 
-  const proposals = await (service as AssetGraphService).listMatchProposals(
-    filters as any,
-    { take: limit, skip: offset } as any
+  const proposals = await service.listMatchProposals(
+    filters,
+    { take: limit, skip: offset }
   )
 
   return res.json({

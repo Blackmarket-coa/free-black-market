@@ -31,7 +31,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 
   return res.status(200).json({
     installed,
-    available: (available as any[]).map((p) => ({
+    available: available.map((p) => ({
       slug: p.slug,
       name: p.name,
       category: p.category,

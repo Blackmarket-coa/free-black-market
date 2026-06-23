@@ -59,7 +59,7 @@ export async function GET(
         invite: [mxid],
       })
       login = await matrixService.mintLoginToken(mxid)
-    } catch (error: any) {
+    } catch (error) {
       log.error("[GET /admin/chat] Provisioning failed:", error.message)
     }
 
@@ -78,7 +78,7 @@ export async function GET(
     }
 
     res.json(response)
-  } catch (error: any) {
+  } catch (error) {
     log.error("[GET /admin/chat] Error:", error)
     res.status(500).json({
       message: error.message || "Failed to retrieve chat configuration",

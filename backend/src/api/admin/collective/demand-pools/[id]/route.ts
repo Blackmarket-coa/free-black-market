@@ -17,14 +17,14 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
     const details = await demandPoolService.getDemandPoolDetails(id)
 
     // Include savings calculation if fulfilled
-    let savings: any = null
+    let savings: unknown = null
     if (details.status === "FULFILLED" || details.final_unit_price) {
       const hawalaService = getCollectiveHawalaService(req.scope)
       savings = await hawalaService.calculateSavings(id)
     }
 
     res.json({ demand_pool: details, savings })
-  } catch (error: any) {
+  } catch (error) {
     log.error(`[GET /admin/collective/demand-pools/${id}] Error:`, error.message)
     res.status(error.message.includes("not found") ? 404 : 500).json({
       error: error.message,
@@ -37,7 +37,7 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
   const { id } = req.params
 
   try {
-    const { action, proposal_id, platform_fee_percentage } = req.body as any
+    const { action, proposal_id, platform_fee_percentage } = req.body as { action?: string; proposal_id?: string; platform_fee_percentage?: number }
     const demandPoolService = req.scope.resolve<DemandPoolModuleService>(
       DEMAND_POOL_MODULE
     )
@@ -82,7 +82,7 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
     }
 
     res.status(400).json({ error: "Invalid action" })
-  } catch (error: any) {
+  } catch (error) {
     log.error(`[POST /admin/collective/demand-pools/${id}] Error:`, error.message)
     res.status(400).json({ error: error.message })
   }
@@ -110,7 +110,7 @@ export async function DELETE(req: AuthenticatedMedusaRequest, res: MedusaRespons
 
     await demandPoolService.deleteDemandPosts(id)
     res.json({ message: "Demand pool deleted", deleted: { id } })
-  } catch (error: any) {
+  } catch (error) {
     log.error(`[DELETE /admin/collective/demand-pools/${id}] Error:`, error.message)
     res.status(500).json({ error: "Failed to delete demand pool" })
   }

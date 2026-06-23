@@ -56,10 +56,14 @@ export const POST = async (
     requires_lot_tracking?: boolean
     supports_surplus_pricing?: boolean
     requires_producer_link?: boolean
-    metadata?: Record<string, any>
+    metadata?: Record<string, unknown>
   }
 
-  const archetype = await productArchetypeService.createProductArchetypes(body as any)
+  const archetype = await (
+    productArchetypeService as unknown as {
+      createProductArchetypes(data: Record<string, unknown>): Promise<unknown>
+    }
+  ).createProductArchetypes(body)
 
   return res.status(201).json({
     product_archetype: archetype,

@@ -46,7 +46,7 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
     }
 
     res.json({ request: requests[0] })
-  } catch (error: any) {
+  } catch (error) {
     log.error(`[GET /admin/requests/${id}] Error:`, error.message)
     res.status(500).json({ message: "Failed to retrieve request" })
   }
@@ -125,7 +125,7 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
         request: result,
       })
     }
-  } catch (error: any) {
+  } catch (error) {
     if (error instanceof z.ZodError) {
       res.status(400).json({ message: "Validation failed", errors: error.issues })
       return
@@ -185,7 +185,7 @@ export async function PATCH(req: AuthenticatedMedusaRequest, res: MedusaResponse
       request: updated,
       message: "Request updated successfully",
     })
-  } catch (error: any) {
+  } catch (error) {
     if (error instanceof z.ZodError) {
       res.status(400).json({ message: "Validation failed", errors: error.issues })
       return
@@ -237,7 +237,7 @@ export async function DELETE(req: AuthenticatedMedusaRequest, res: MedusaRespons
       message: "Request deleted successfully",
       deleted: { id, type: request.type, status: request.status },
     })
-  } catch (error: any) {
+  } catch (error) {
     log.error(`[DELETE /admin/requests/${id}] Error:`, error.message)
     res.status(500).json({ message: "Failed to delete request" })
   }

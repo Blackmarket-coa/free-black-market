@@ -10,7 +10,7 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
   const query = req.scope.resolve(ContainerRegistrationKeys.QUERY)
   const { type_id } = req.query as { type_id?: string }
 
-  const filters: Record<string, any> = {
+  const filters: Record<string, unknown> = {
     deleted_at: null,
   }
 
@@ -38,7 +38,7 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
   })
 
   // Sort by display_order
-  const sortedCategories = categories.sort((a: any, b: any) => a.display_order - b.display_order)
+  const sortedCategories = categories.sort((a, b) => a.display_order - b.display_order)
 
   return res.json({
     categories: sortedCategories,

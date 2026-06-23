@@ -61,7 +61,7 @@ export async function PATCH(req: MedusaRequest, res: MedusaResponse) {
     return res.status(404).json({ message: "Link not found", type: "not_found" })
   }
 
-  const updated = await (service as any).updateAffiliateLinks({
+  const updated = await service.updateAffiliateLinks({
     id: linkId,
     ...parsed.data,
   })

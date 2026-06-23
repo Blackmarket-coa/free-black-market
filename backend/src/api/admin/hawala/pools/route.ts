@@ -16,7 +16,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     offset = "0",
   } = req.query
 
-  const filters: Record<string, any> = {}
+  const filters: Record<string, unknown> = {}
   if (producer_id) filters.producer_id = producer_id
   if (status) filters.status = status
 
@@ -70,7 +70,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     end_date?: string
     auto_invest_enabled?: boolean
     auto_invest_percentage?: number
-    metadata?: Record<string, any>
+    metadata?: Record<string, unknown>
   }
 
   if (!name || !producer_id || !target_amount || !roi_type) {

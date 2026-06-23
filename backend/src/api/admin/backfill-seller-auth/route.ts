@@ -55,7 +55,7 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
         }
 
         // Check if seller_id is already set
-        const currentSellerId = (authIdentity.app_metadata as any)?.seller_id
+        const currentSellerId = (authIdentity.app_metadata as Record<string, unknown>)?.seller_id
 
         if (currentSellerId === seller_id) {
           results.push(`✓ Already linked: ${member_email} -> ${seller_id}`)
@@ -81,7 +81,7 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
         results.push(`✅ Updated: ${member_email} -> ${seller_id} (${seller_name}) [${store_status}]`)
         updated++
 
-      } catch (err: any) {
+      } catch (err) {
         results.push(`❌ Error processing ${member_email}: ${err.message}`)
         errors++
       }
@@ -98,7 +98,7 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
       details: results,
     })
 
-  } catch (error: any) {
+  } catch (error) {
     log.error("Backfill error:", error)
     res.status(500).json({
       success: false,

@@ -65,7 +65,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       )
       const links = await attributionSvc.listAffiliateLinks({ deal_id: dealId })
       for (const l of links) {
-        await (attributionSvc as any).updateAffiliateLinks({
+        await attributionSvc.updateAffiliateLinks({
           id: l.id,
           status: AffiliateLinkStatus.PAUSED,
         })

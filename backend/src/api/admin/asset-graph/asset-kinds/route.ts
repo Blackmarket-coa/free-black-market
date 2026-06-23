@@ -12,8 +12,8 @@ import type AssetGraphService from "../../../../modules/asset-graph/service"
  * through the module's exported `getAssetKind` directly.
  */
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
-  const service: any = req.scope.resolve(ASSET_GRAPH_MODULE)
-  const catalog = (service as AssetGraphService).listAssetKindCatalog()
+  const service = req.scope.resolve<AssetGraphService>(ASSET_GRAPH_MODULE)
+  const catalog = service.listAssetKindCatalog()
 
   // Elide the zod schema from the wire payload. Same pattern the
   // seeder uses for the DB column.

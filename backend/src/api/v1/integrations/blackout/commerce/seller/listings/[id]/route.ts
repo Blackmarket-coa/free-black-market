@@ -17,6 +17,6 @@ export async function DELETE(req: MedusaRequest, res: MedusaResponse) {
     return res.status(404).json({ code: "not_found", message: "Listing not found" })
   }
 
-  await (service as any).deleteCreatorListings(id)
+  await service.deleteCreatorListings(id)
   return res.json({ ok: true })
 }

@@ -6,6 +6,7 @@ import type { SellerAuthRequest } from "../../../../../../../../middlewares/sell
 import { SERVICE_PROGRAM_MODULE } from "../../../../../../../../../modules/service-program"
 import type ServiceProgramService from "../../../../../../../../../modules/service-program/service"
 import { VENDOR_VERIFICATION_MODULE } from "../../../../../../../../../modules/vendor-verification"
+import type VendorVerificationService from "../../../../../../../../../modules/vendor-verification/service"
 import { VerificationLevel } from "../../../../../../../../../modules/vendor-verification/models/verification"
 import { MARKETPLACE_WEBHOOKS_MODULE } from "../../../../../../../../../modules/marketplace-webhooks"
 import type MarketplaceWebhooksService from "../../../../../../../../../modules/marketplace-webhooks/service"
@@ -76,7 +77,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
   // KYC gate
   if (parsed.data.decision === "approve" && program.requires_kyc) {
     try {
-      const verificationSvc = req.scope.resolve<any>(VENDOR_VERIFICATION_MODULE)
+      const verificationSvc = req.scope.resolve<VendorVerificationService>(VENDOR_VERIFICATION_MODULE)
       const verification = await verificationSvc.getOrCreateVerification(
         app.service_seller_id
       )
@@ -112,7 +113,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     return res.status(409).json({ message: (err as Error).message, type: "conflict" })
   }
 
-  let contract: any | null = null
+  let contract: Awaited<ReturnType<ServiceProgramService["openContractForApprovedApp"]>> | null = null
   if (parsed.data.decision === "approve") {
     contract = await service.openContractForApprovedApp(appId)
     try {

@@ -39,7 +39,7 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
       offset: query.offset,
       limit: query.limit,
     })
-  } catch (error: any) {
+  } catch (error) {
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: "Validation failed", details: error.issues })
     }

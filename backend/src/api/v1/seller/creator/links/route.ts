@@ -37,7 +37,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 
   const links = await service.listAffiliateLinks(
     { creator_seller_id: sellerId },
-    { take: limit, skip: offset, order: { created_at: "DESC" } as any }
+    { take: limit, skip: offset, order: { created_at: "DESC" } as const }
   )
   return res.status(200).json({ links, limit, offset })
 }

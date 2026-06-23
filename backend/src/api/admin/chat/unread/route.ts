@@ -35,7 +35,7 @@ export async function GET(
     const mxid = matrixService.buildMxid(admin.email.split("@")[0])
     const unreadCount = await matrixService.getUnreadCount(mxid)
     res.json({ unread_count: unreadCount })
-  } catch (error: any) {
+  } catch (error) {
     log.warn(
       "[GET /admin/chat/unread] Matrix unavailable, returning degraded count:",
       error?.message
