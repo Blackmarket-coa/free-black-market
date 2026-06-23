@@ -56,7 +56,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     ? `cs_${createHash("sha256").update(String(idempotencyKey)).digest("hex").slice(0, 32)}`
     : `cs_${randomUUID().replace(/-/g, "")}`
 
-  const token = (jwt.sign as any)(
+  const token = jwt.sign(
     {
       id,
       userId: parsed.data.userId,

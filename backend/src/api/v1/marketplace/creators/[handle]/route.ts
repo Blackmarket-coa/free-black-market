@@ -1,5 +1,6 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { SELLER_EXTENSION_MODULE } from "../../../../../modules/seller-extension"
+import type SellerExtensionService from "../../../../../modules/seller-extension/service"
 
 /**
  * Public creator profile endpoint.
@@ -19,9 +20,10 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     })
   }
 
-  const service = req.scope.resolve<any>(SELLER_EXTENSION_MODULE)
+  const service =
+    req.scope.resolve<SellerExtensionService>(SELLER_EXTENSION_MODULE)
 
-  const matches = await service.listSellerMetadata({
+  const matches = await service.listSellerMetadatas({
     creator_handle: handle,
     vendor_type: "creator",
   })

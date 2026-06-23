@@ -25,7 +25,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
   const programs = await service.listServicePrograms(filter, {
     take: limit,
     skip: offset,
-    order: { created_at: "DESC" } as any,
+    order: { created_at: "DESC" } as const,
   })
   return res.status(200).json({ programs, limit, offset })
 }

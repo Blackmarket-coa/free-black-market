@@ -14,7 +14,7 @@ interface SessionTokenPayload {
 function decodeSession(token: string): SessionTokenPayload | null {
   if (!config.JWT_SECRET) return null
   try {
-    const decoded = (jwt.verify as any)(token, config.JWT_SECRET, {
+    const decoded = jwt.verify(token, config.JWT_SECRET, {
       audience: "fbm-checkout",
     })
     if (typeof decoded !== "object" || !decoded || !("cart_id" in decoded)) {

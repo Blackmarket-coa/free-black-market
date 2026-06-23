@@ -19,7 +19,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
   const subcontracts = await service.listOrderSubcontracts(filter, {
     take: limit,
     skip: offset,
-    order: { created_at: "DESC" } as any,
+    order: { created_at: "DESC" } as const,
   })
   return res.status(200).json({ subcontracts, limit, offset })
 }

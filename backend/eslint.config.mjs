@@ -84,6 +84,11 @@ export default tseslint.config(
       "src/api/restaurants/**/*.{ts,tsx}",
       "src/api/tickets/**/*.{ts,tsx}",
       "src/api/utils/**/*.{ts,tsx}",
+      "src/api/v1/admin/**/*.{ts,tsx}",
+      "src/api/v1/checkout/**/*.{ts,tsx}",
+      "src/api/v1/integrations/**/*.{ts,tsx}",
+      "src/api/v1/marketplace/**/*.{ts,tsx}",
+      "src/api/v1/webhooks/**/*.{ts,tsx}",
     ],
     rules: {
       "@typescript-eslint/no-explicit-any": "error",

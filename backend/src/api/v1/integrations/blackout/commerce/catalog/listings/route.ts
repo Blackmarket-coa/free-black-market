@@ -40,7 +40,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 
   let page = rows
   if (q) {
-    page = page.filter((l: any) =>
+    page = page.filter((l) =>
       String(l.title ?? "").toLowerCase().includes(q) ||
       String(l.description ?? "").toLowerCase().includes(q)
     )

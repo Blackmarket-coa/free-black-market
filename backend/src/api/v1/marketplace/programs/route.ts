@@ -34,7 +34,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 
   // Only surface open-application program types in public listing
   const filtered = open.filter(
-    (p: any) =>
+    (p) =>
       p.program_type === CreatorProgramType.AFFILIATE_OPEN ||
       p.program_type === CreatorProgramType.ENGAGEMENT_POOL ||
       p.program_type === CreatorProgramType.COMMISSION_BOOST
@@ -43,7 +43,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
   const slice = filtered.slice(offset, offset + limit)
 
   return res.status(200).json({
-    programs: slice.map((p: any) => ({
+    programs: slice.map((p) => ({
       id: p.id,
       vendor_id: p.vendor_id,
       title: p.title,

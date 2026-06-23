@@ -22,7 +22,7 @@ const BodySchema = z
 
 const SESSION_TTL_SECONDS = 30 * 60 // 30 minutes
 
-interface SessionTokenPayload {
+type SessionTokenPayload = {
   cart_id: string
   embed: boolean
   embed_origin?: string
@@ -54,7 +54,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     return_url: parsed.data.return_url,
   }
 
-  const token = (jwt.sign as any)(payload, getJwtSecret(), {
+  const token = jwt.sign(payload, getJwtSecret(), {
     expiresIn: SESSION_TTL_SECONDS,
     audience: "fbm-checkout",
   })

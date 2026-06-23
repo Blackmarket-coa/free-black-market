@@ -34,7 +34,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
   })
 
   const filtered = open.filter(
-    (p: any) =>
+    (p) =>
       p.program_type === ServiceProgramType.BOUNTY_OPEN ||
       p.program_type === ServiceProgramType.THROUGHPUT_POOL
   )
@@ -42,7 +42,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
   const slice = filtered.slice(offset, offset + limit)
 
   return res.status(200).json({
-    programs: slice.map((p: any) => ({
+    programs: slice.map((p) => ({
       id: p.id,
       vendor_id: p.vendor_id,
       title: p.title,

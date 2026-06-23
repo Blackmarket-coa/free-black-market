@@ -52,7 +52,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     events = await cp.dispatchInbound({
       platform,
       headers: req.headers as Record<string, string | string[] | undefined>,
-      rawBody: (req as any).rawBody ?? null,
+      rawBody: (req as MedusaRequest & { rawBody?: unknown }).rawBody ?? null,
       body: req.body,
     })
   } catch (err) {
