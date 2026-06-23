@@ -1,5 +1,6 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework";
-import { 
+import { CreateProductWorkflowInputDTO } from "@medusajs/framework/types";
+import {
   AdminCreateProduct,
 } from "@medusajs/medusa/api/admin/products/validators"
 import { z } from "zod";
@@ -19,7 +20,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     req.scope
   ).run({
     input: {
-      products: validatedBody.products as any[],
+      products: validatedBody.products as CreateProductWorkflowInputDTO[],
       restaurant_id: req.params.id,
     },
   });

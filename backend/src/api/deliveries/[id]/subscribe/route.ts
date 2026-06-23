@@ -33,7 +33,7 @@ export const GET = async (
     Modules.WORKFLOW_ENGINE
   );
 
-  const workflowSubHandler = (data: any) => {
+  const workflowSubHandler = (data: unknown) => {
     res.write("data: " + JSON.stringify(data) + "\n\n");
   };
 
