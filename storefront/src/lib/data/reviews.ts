@@ -3,6 +3,7 @@ import { revalidatePath } from "next/cache"
 import { fetchQuery } from "../config"
 import { getAuthHeaders } from "./cookies"
 import { HttpTypes } from "@medusajs/types"
+import { CreateReviewPayload, OrderReview } from "@/types/review"
 
 export type Review = {
   id: string
@@ -18,8 +19,8 @@ export type Review = {
 }
 
 export type Order = HttpTypes.StoreOrder & {
-  seller: { id: string; name: string; reviews?: any[] }
-  reviews: any[]
+  seller: { id: string; name: string; reviews?: OrderReview[] }
+  reviews: OrderReview[]
 }
 
 const getReviews = async () => {
@@ -36,7 +37,7 @@ const getReviews = async () => {
   return res
 }
 
-const createReview = async (review: any) => {
+const createReview = async (review: CreateReviewPayload) => {
   const headers = {
     ...(await getAuthHeaders()),
   }
