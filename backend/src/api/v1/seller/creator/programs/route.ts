@@ -27,18 +27,18 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     service.listCreatorDeals({ creator_seller_id: sellerId }),
   ])
 
-  const appProgramIds = new Set(myApplications.map((a: any) => a.program_id))
+  const appProgramIds = new Set(myApplications.map((a) => a.program_id))
 
   return res.status(200).json({
     open: openPrograms
       .filter(
-        (p: any) =>
+        (p) =>
           (p.program_type === CreatorProgramType.AFFILIATE_OPEN ||
             p.program_type === CreatorProgramType.ENGAGEMENT_POOL ||
             p.program_type === CreatorProgramType.COMMISSION_BOOST) &&
           !appProgramIds.has(p.id)
       )
-      .map((p: any) => ({
+      .map((p) => ({
         id: p.id,
         vendor_id: p.vendor_id,
         title: p.title,

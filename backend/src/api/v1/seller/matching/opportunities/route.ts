@@ -30,7 +30,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
   })
   const niches = [
     ...new Set(
-      (myApps as any[])
+      myApps
         .flatMap((a) =>
           Array.isArray(a?.proposed_platforms) ? a.proposed_platforms : []
         )
@@ -38,7 +38,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     ),
   ]
   const appliedProgramIds = new Set(
-    (myApps as any[]).map((a) => a.program_id).filter(Boolean)
+    myApps.map((a) => a.program_id).filter(Boolean)
   )
 
   // Open marketing bounties (demand-posts), ranked by category vs niche overlap.
@@ -47,11 +47,11 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     limit: 100,
   })
   const bounties = await Promise.all(
-    (openPosts as any[]).map(async (post) => {
+    openPosts.map(async (post) => {
       const postBounties = await demand.listDemandBounties({
         demand_post_id: post.id,
       })
-      const open = postBounties.filter((b: any) => !b.assignee_id)
+      const open = postBounties.filter((b) => !b.assignee_id)
       const overlap = post.category ? jaccard(niches, [post.category]) : 0
       const score =
         Math.round(
@@ -64,7 +64,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         category: post.category,
         cooperative_id: post.cooperative_id ?? null,
         product_id: post.product_id ?? null,
-        open_bounties: open.map((b: any) => ({
+        open_bounties: open.map((b) => ({
           bounty_id: b.id,
           objective: b.objective,
           amount: Number(b.amount),
@@ -82,9 +82,9 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 
   // Open programs the creator hasn't applied to yet.
   const openPrograms = (await programs.listOpenPrograms())
-    .filter((p: any) => !appliedProgramIds.has(p.id))
+    .filter((p) => !appliedProgramIds.has(p.id))
     .slice(0, limit)
-    .map((p: any) => ({
+    .map((p) => ({
       program_id: p.id,
       title: p.title,
       slug: p.slug,

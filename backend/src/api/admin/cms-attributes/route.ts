@@ -11,7 +11,7 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
   const query = req.scope.resolve(ContainerRegistrationKeys.QUERY)
   const { category_id, is_filterable } = req.query as { category_id?: string; is_filterable?: string }
 
-  const filters: Record<string, any> = {
+  const filters: Record<string, unknown> = {
     deleted_at: null,
   }
 
@@ -19,7 +19,7 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
     filters.is_filterable = is_filterable === "true"
   }
 
-  let attributes: any[]
+  let attributes
 
   if (category_id) {
     // Get attributes for a specific category
@@ -32,7 +32,7 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
       },
     })
 
-    const attributeIds = categoryAttributes.map((ca: any) => ca.attribute_id)
+    const attributeIds = categoryAttributes.map((ca) => ca.attribute_id)
 
     if (attributeIds.length === 0) {
       return res.json({ attributes: [], count: 0 })
@@ -64,8 +64,8 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
     })
 
     // Merge with category-specific overrides
-    attributes = attrData.map((attr: any) => {
-      const mapping = categoryAttributes.find((ca: any) => ca.attribute_id === attr.id)
+    attributes = attrData.map((attr) => {
+      const mapping = categoryAttributes.find((ca) => ca.attribute_id === attr.id)
       return {
         ...attr,
         category_is_required: mapping?.is_required || false,
@@ -74,7 +74,7 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
     })
 
     // Sort by category display order
-    attributes.sort((a: any, b: any) => a.category_display_order - b.category_display_order)
+    attributes.sort((a, b) => a.category_display_order - b.category_display_order)
   } else {
     const { data: attrData } = await query.graph({
       entity: "cms_attribute",
@@ -99,7 +99,7 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
       filters,
     })
 
-    attributes = attrData.sort((a: any, b: any) => a.display_order - b.display_order)
+    attributes = attrData.sort((a, b) => a.display_order - b.display_order)
   }
 
   return res.json({

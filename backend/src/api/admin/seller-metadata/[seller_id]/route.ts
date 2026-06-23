@@ -83,18 +83,18 @@ export const PUT = async (
     vendor_type?: VendorType
     business_registration_number?: string
     tax_classification?: string
-    farm_practices?: Record<string, any>
-    certifications?: Record<string, any>[]
+    farm_practices?: Record<string, unknown>
+    certifications?: Record<string, unknown>[]
     growing_region?: string
     cuisine_types?: string[]
     service_types?: string[]
     featured?: boolean
     verified?: boolean
     enabled_extensions?: string[] | null
-    metadata?: Record<string, any>
+    metadata?: Record<string, unknown>
   }
 
-  const updateData: any = {
+  const updateData: Record<string, unknown> = {
     id: existingMetadata[0].id,
     ...body,
   }

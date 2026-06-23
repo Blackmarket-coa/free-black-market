@@ -16,7 +16,7 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
 
     const details = await networkService.getNetworkDetails(id)
     res.json({ buyer_network: details })
-  } catch (error: any) {
+  } catch (error) {
     log.error(`[GET /admin/collective/buyer-networks/${id}] Error:`, error.message)
     res.status(error.message.includes("not found") ? 404 : 500).json({
       error: error.message,
@@ -33,7 +33,7 @@ export async function PATCH(req: AuthenticatedMedusaRequest, res: MedusaResponse
       BUYER_NETWORK_MODULE
     )
 
-    const { action, member_id, ...updateData } = req.body as any
+    const { action, member_id, ...updateData } = req.body as { action?: string; member_id?: string; [key: string]: unknown }
 
     if (action === "verify") {
       await networkService.updateBuyerNetworks({
@@ -62,7 +62,7 @@ export async function PATCH(req: AuthenticatedMedusaRequest, res: MedusaResponse
     await networkService.updateBuyerNetworks({ id, ...updateData })
     const [updated] = await networkService.listBuyerNetworks({ id })
     res.json({ buyer_network: updated })
-  } catch (error: any) {
+  } catch (error) {
     log.error(`[PATCH /admin/collective/buyer-networks/${id}] Error:`, error.message)
     res.status(400).json({ error: error.message })
   }

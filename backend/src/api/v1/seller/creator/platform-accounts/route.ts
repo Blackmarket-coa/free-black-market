@@ -41,7 +41,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
   const accounts = await cp.listPlatformAccounts({ creator_seller_id: sellerId })
   // Don't leak encrypted tokens to the client.
   return res.status(200).json({
-    accounts: accounts.map((a: any) => ({
+    accounts: accounts.map((a) => ({
       id: a.id,
       platform: a.platform,
       external_account_id: a.external_account_id,

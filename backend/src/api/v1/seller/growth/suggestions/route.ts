@@ -8,6 +8,7 @@ import type CreatorProgramService from "../../../../../modules/creator-program/s
 import { CREATOR_ATTRIBUTION_MODULE } from "../../../../../modules/creator-attribution"
 import type CreatorAttributionService from "../../../../../modules/creator-attribution/service"
 import { COOPERATIVE_MODULE } from "../../../../../modules/cooperative"
+import type CooperativeService from "../../../../../modules/cooperative/service"
 import { OPPORTUNITY_ENGINE_MODULE } from "../../../../../modules/opportunity-engine"
 import type OpportunityEngineService from "../../../../../modules/opportunity-engine/service"
 import { rankCreators, type CreatorSignal } from "../../matching/_ranking"
@@ -58,8 +59,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     categories = [
       ...new Set(
         (sellerProducts || [])
-          .flatMap((sp: any) => sp?.product?.categories ?? [])
-          .map((c: any) => c?.name)
+          .flatMap((sp) => sp?.product?.categories ?? [])
+          .map((c) => c?.name)
           .filter((n: unknown): n is string => typeof n === "string")
       ),
     ]
@@ -94,7 +95,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       }
       return sig
     }
-    for (const app of applications as any[]) {
+    for (const app of applications) {
       if (!app?.creator_seller_id) continue
       const sig = ensure(app.creator_seller_id)
       const platforms = Array.isArray(app.proposed_platforms)
@@ -106,12 +107,12 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         sumSnapshot(app.follower_snapshot)
       )
     }
-    for (const deal of deals as any[]) {
+    for (const deal of deals) {
       if (!deal?.creator_seller_id) continue
       ensure(deal.creator_seller_id).attributed_cents +=
         Number(deal.total_attributed_cents) || 0
     }
-    for (const link of links as any[]) {
+    for (const link of links) {
       if (!link?.creator_seller_id) continue
       ensure(link.creator_seller_id).clicks += Number(link.click_count) || 0
     }
@@ -127,7 +128,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
   // ── Recommended coalitions (public, best-effort) ──
   let recommendedCoalitions: Array<{ id: string; name: string }> = []
   try {
-    const coop: any = req.scope.resolve(COOPERATIVE_MODULE)
+    const coop = req.scope.resolve<CooperativeService>(COOPERATIVE_MODULE)
     const filters: Record<string, unknown> = {
       public_storefront_enabled: true,
     }
@@ -135,7 +136,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       filters.region = region
     }
     const coops = await coop.listCooperatives(filters, { take: 5 })
-    recommendedCoalitions = (coops as any[]).map((c) => ({
+    recommendedCoalitions = coops.map((c) => ({
       id: c.id,
       name: c.name,
     }))
@@ -150,14 +151,14 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       OPPORTUNITY_ENGINE_MODULE
     )
     const scores = await engine.listTopOpportunities({ limit: 100 })
-    const preferred = (scores as any[]).filter(
+    const preferred = scores.filter(
       (s) =>
         categories.length === 0 ||
         categories.some(
           (c) => c.toLowerCase() === String(s.subject_key).toLowerCase()
         )
     )
-    const pool = preferred.length > 0 ? preferred : (scores as any[])
+    const pool = preferred.length > 0 ? preferred : scores
     highDemand = pool.slice(0, 5).map((s) => ({
       subject_key: s.subject_key,
       opportunity_score: Number(s.composite),

@@ -11,13 +11,13 @@ type Body = {
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
   const service = req.scope.resolve<DonationModuleService>(DONATION_MODULE)
   const settings = await service.getOrCreateDefaultSettings()
-  return res.status(200).json({ settings, storefront_context: (req as any).storefront_context || null })
+  return res.status(200).json({ settings, storefront_context: (req as MedusaRequest & { storefront_context?: { storefront_id?: string; organization_id?: string; role?: string; tier?: string; gates?: Record<string, unknown> } | null }).storefront_context || null })
 }
 
 export async function POST(req: MedusaRequest<Body>, res: MedusaResponse) {
   const service = req.scope.resolve<DonationModuleService>(DONATION_MODULE)
   const body = req.validatedBody || req.body
-  const context = (req as any).storefront_context || null
+  const context = (req as MedusaRequest & { storefront_context?: { storefront_id?: string; organization_id?: string; role?: string; tier?: string; gates?: Record<string, unknown> } | null }).storefront_context || null
 
   if (body.settlement_mode === "ledger_batch" && !context?.gates?.advanced_automation) {
     return res.status(403).json({

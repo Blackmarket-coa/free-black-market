@@ -68,12 +68,12 @@ export const PUT = async (
     requires_lot_tracking?: boolean
     supports_surplus_pricing?: boolean
     requires_producer_link?: boolean
-    metadata?: Record<string, any>
+    metadata?: Record<string, unknown>
   }
 
   const updated = await productArchetypeService.updateProductArchetypes(
     { id },
-    body as any
+    body
   )
 
   return res.json({

@@ -29,7 +29,7 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
   })
 
   // Sort by display_order
-  const sortedTypes = types.sort((a: any, b: any) => a.display_order - b.display_order)
+  const sortedTypes = types.sort((a, b) => a.display_order - b.display_order)
 
   return res.json({
     types: sortedTypes,

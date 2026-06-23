@@ -58,7 +58,11 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     })
   }
 
-  const listing = await (service as any).createCreatorListings({
+  const listing = await (
+    service as unknown as {
+      createCreatorListings(data: Record<string, unknown>): Promise<unknown>
+    }
+  ).createCreatorListings({
     seller_id: sellerId,
     slug: parsed.data.slug,
     title: parsed.data.title,

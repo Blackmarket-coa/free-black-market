@@ -42,15 +42,23 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
 
   const next = [...current, slug]
   if (meta) {
-    await sellerExt.updateSellerMetadatas({
+    await (
+      sellerExt as unknown as {
+        updateSellerMetadatas(data: Record<string, unknown>): Promise<unknown>
+      }
+    ).updateSellerMetadatas({
       id: meta.id,
       enabled_extensions: next,
-    } as any)
+    })
   } else {
-    await sellerExt.createSellerMetadatas({
+    await (
+      sellerExt as unknown as {
+        createSellerMetadatas(data: Record<string, unknown>): Promise<unknown>
+      }
+    ).createSellerMetadatas({
       seller_id: sellerId,
       enabled_extensions: next,
-    } as any)
+    })
   }
   await registry.incrementInstallCount(slug)
 

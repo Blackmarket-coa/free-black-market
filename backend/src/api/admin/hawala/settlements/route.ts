@@ -16,7 +16,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     offset = "0",
   } = req.query
 
-  const queryFilters: Record<string, any> = {}
+  const queryFilters: Record<string, unknown> = {}
   if (status) queryFilters.status = status
 
   const batches = await hawalaService.listSettlementBatches(queryFilters)

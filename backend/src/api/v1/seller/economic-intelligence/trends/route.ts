@@ -26,8 +26,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
   )
 
   const scores = await engine.listTopOpportunities({ region, limit: 100 })
-  const byKey = new Map<string, any>()
-  for (const s of scores as any[]) {
+  const byKey = new Map<string, (typeof scores)[number]>()
+  for (const s of scores) {
     byKey.set(String(s.subject_key), s)
   }
 
@@ -54,7 +54,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
   )
 
   // Rising opportunities the vendor could move into now.
-  const rising = (scores as any[])
+  const rising = scores
     .filter((s) => Number(s.composite) >= 7)
     .slice(0, 10)
     .map((s) => ({

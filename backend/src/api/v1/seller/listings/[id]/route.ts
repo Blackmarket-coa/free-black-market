@@ -92,7 +92,11 @@ export async function PATCH(req: MedusaRequest, res: MedusaResponse) {
   const service = req.scope.resolve<MarketplaceListingService>(
     MARKETPLACE_LISTING_MODULE
   )
-  const updated = await (service as any).updateCreatorListings({
+  const updated = await (
+    service as unknown as {
+      updateCreatorListings(data: Record<string, unknown>): Promise<unknown>
+    }
+  ).updateCreatorListings({
     id: listing.id,
     ...parsed.data,
   })

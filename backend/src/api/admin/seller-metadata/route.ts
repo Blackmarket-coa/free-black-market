@@ -51,15 +51,15 @@ export const POST = async (
     vendor_type?: VendorType
     business_registration_number?: string
     tax_classification?: string
-    farm_practices?: Record<string, any>
-    certifications?: Record<string, any>[]
+    farm_practices?: Record<string, unknown>
+    certifications?: Record<string, unknown>[]
     growing_region?: string
     cuisine_types?: string[]
     service_types?: string[]
     featured?: boolean
     verified?: boolean
     enabled_extensions?: string[] | null
-    metadata?: Record<string, any>
+    metadata?: Record<string, unknown>
   }
 
   const sellerMetadata = await createSellerMetadataRecord(sellerExtensionService, {
@@ -76,7 +76,7 @@ export const POST = async (
     verified: body.verified ?? false,
     enabled_extensions: body.enabled_extensions ?? null,
     metadata: body.metadata || null,
-  } as any)
+  })
 
   // Create link between seller and seller_metadata
   const link = req.scope.resolve(ContainerRegistrationKeys.LINK)

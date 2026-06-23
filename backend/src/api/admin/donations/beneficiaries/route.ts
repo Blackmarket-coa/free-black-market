@@ -13,11 +13,11 @@ type Body = {
 
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
   const service = req.scope.resolve<DonationModuleService>(DONATION_MODULE)
-  const context = (req as any).storefront_context || null
+  const context = (req as MedusaRequest & { storefront_context?: { storefront_id?: string; organization_id?: string; role?: string; tier?: string; gates?: unknown } | null }).storefront_context || null
   const all = await service.listBeneficiaries(true)
 
   const beneficiaries = context?.storefront_id
-    ? all.filter((b) => String((b.metadata as any)?.storefront_id || "") === context.storefront_id)
+    ? all.filter((b) => String((b.metadata as Record<string, unknown>)?.storefront_id || "") === context.storefront_id)
     : all
 
   return res.status(200).json({ beneficiaries, storefront_context: context })
@@ -25,7 +25,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 
 export async function POST(req: MedusaRequest<Body>, res: MedusaResponse) {
   const service = req.scope.resolve<DonationModuleService>(DONATION_MODULE)
-  const context = (req as any).storefront_context || null
+  const context = (req as MedusaRequest & { storefront_context?: { storefront_id?: string; organization_id?: string; role?: string; tier?: string; gates?: unknown } | null }).storefront_context || null
   const body = req.validatedBody || req.body
 
   const beneficiary = await service.createDonationBeneficiaries({

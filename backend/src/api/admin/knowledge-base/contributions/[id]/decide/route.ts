@@ -17,7 +17,7 @@ const decideSchema = z.object({
  * reject. Admin-authed.
  */
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
-  const reviewerId = (req as any).auth_context?.actor_id || "admin"
+  const reviewerId = (req as MedusaRequest & { auth_context?: { actor_id?: string } }).auth_context?.actor_id || "admin"
   const id = String(req.params.id)
 
   const parsed = decideSchema.safeParse(req.body)

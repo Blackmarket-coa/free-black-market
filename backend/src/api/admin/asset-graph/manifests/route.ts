@@ -10,8 +10,8 @@ import type AssetGraphService from "../../../../modules/asset-graph/service"
  * what's registered. No DB read.
  */
 export async function GET(_req: MedusaRequest, res: MedusaResponse) {
-  const service: any = _req.scope.resolve(ASSET_GRAPH_MODULE)
-  const manifests = (service as AssetGraphService).listManifests()
+  const service = _req.scope.resolve<AssetGraphService>(ASSET_GRAPH_MODULE)
+  const manifests = service.listManifests()
   return res.json({
     manifests,
     count: manifests.length,

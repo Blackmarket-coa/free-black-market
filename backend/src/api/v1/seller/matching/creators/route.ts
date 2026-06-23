@@ -56,8 +56,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     categories = [
       ...new Set(
         (sellerProducts || [])
-          .flatMap((sp: any) => sp?.product?.categories ?? [])
-          .map((c: any) => c?.name)
+          .flatMap((sp) => sp?.product?.categories ?? [])
+          .map((c) => c?.name)
           .filter((n: unknown): n is string => typeof n === "string")
       ),
     ]
@@ -90,7 +90,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     return sig
   }
 
-  for (const app of applications as any[]) {
+  for (const app of applications) {
     if (!app?.creator_seller_id) continue
     const sig = ensure(app.creator_seller_id)
     const platforms = Array.isArray(app.proposed_platforms)
@@ -103,13 +103,13 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     )
   }
 
-  for (const deal of deals as any[]) {
+  for (const deal of deals) {
     if (!deal?.creator_seller_id) continue
     const sig = ensure(deal.creator_seller_id)
     sig.attributed_cents += Number(deal.total_attributed_cents) || 0
   }
 
-  for (const link of links as any[]) {
+  for (const link of links) {
     if (!link?.creator_seller_id) continue
     const sig = ensure(link.creator_seller_id)
     sig.clicks += Number(link.click_count) || 0

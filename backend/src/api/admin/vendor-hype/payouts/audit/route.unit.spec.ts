@@ -6,7 +6,7 @@ const createRes = () => {
     res.statusCode = code
     return res
   }
-  res.json = (payload: any) => {
+  res.json = (payload) => {
     res.body = payload
     return res
   }
