@@ -12,21 +12,21 @@ export default defineMiddlewares({
       matcher: "/deliveries/:id/accept",
       middlewares: [
         authenticate("restaurant", "bearer"),
-        isDeliveryRestaurant as any
+        isDeliveryRestaurant
       ]
     },
     {
       matcher: "/deliveries/:id/prepare",
       middlewares: [
         authenticate("restaurant", "bearer"),
-        isDeliveryRestaurant as any
+        isDeliveryRestaurant
       ]
     },
     {
       matcher: "/deliveries/:id/ready",
       middlewares: [
         authenticate("restaurant", "bearer"),
-        isDeliveryRestaurant as any
+        isDeliveryRestaurant
       ]
     },
     // driver routes
@@ -40,14 +40,14 @@ export default defineMiddlewares({
       matcher: "/deliveries/:id/pick-up",
       middlewares: [
         authenticate("driver", "bearer"),
-        isDeliveryDriver as any
+        isDeliveryDriver
       ]
     },
     {
       matcher: "/deliveries/:id/complete",
       middlewares: [
         authenticate("driver", "bearer"),
-        isDeliveryDriver as any
+        isDeliveryDriver
       ]
     },
   ]
