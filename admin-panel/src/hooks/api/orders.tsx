@@ -235,7 +235,11 @@ export const useCreateOrderFulfillment = (
 export const useCancelOrderFulfillment = (
   orderId: string,
   fulfillmentId: string,
-  options?: UseMutationOptions<any, FetchError, any>
+  options?: UseMutationOptions<
+    HttpTypes.AdminOrderResponse,
+    FetchError,
+    { no_notification?: boolean }
+  >
 ) => {
   return useMutation({
     mutationFn: (payload: { no_notification?: boolean }) =>
@@ -365,7 +369,7 @@ export const useRequestTransferOrder = (
 
 export const useCancelOrderTransfer = (
   orderId: string,
-  options?: UseMutationOptions<any, FetchError, void>
+  options?: UseMutationOptions<HttpTypes.AdminOrderResponse, FetchError, void>
 ) => {
   return useMutation({
     mutationFn: () => sdk.admin.order.cancelTransfer(orderId),

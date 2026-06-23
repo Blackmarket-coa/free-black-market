@@ -37,7 +37,7 @@ export const CreateProductOptionForm = ({
   const { mutateAsync, isPending } = useCreateProductOption(product.id)
 
   const handleSubmit = form.handleSubmit(async (values) => {
-    mutateAsync(values, {
+    mutateAsync({ title: values.title, values: values.values ?? [] }, {
       onSuccess: () => {
         toast.success(
           t("products.options.create.successToast", {
