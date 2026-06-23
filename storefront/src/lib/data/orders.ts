@@ -6,6 +6,7 @@ import {
   ReturnRequest,
   ReturnRequestPayload,
 } from "@/types/order-return"
+import { OrderReview } from "@/types/review"
 import { medusaFetch, sdk } from "../config"
 import medusaError from "../helpers/medusa-error"
 import { getAuthHeaders, getCacheOptions } from "./cookies"
@@ -116,8 +117,8 @@ export const listOrders = async (
   return medusaFetch<{
     orders: Array<
       HttpTypes.StoreOrder & {
-        seller: { id: string; name: string; reviews?: any[] }
-        reviews: any[]
+        seller: { id: string; name: string; reviews?: OrderReview[] }
+        reviews: OrderReview[]
       }
     >
   }>(`/store/orders`, {
