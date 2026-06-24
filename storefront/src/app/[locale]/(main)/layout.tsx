@@ -6,6 +6,7 @@ import { retrieveCustomer } from "@/lib/data/customer"
 import { checkRegion } from "@/lib/helpers/check-region"
 import { MatrixChatProvider } from "@/providers/MatrixChatProvider"
 import { AnalyticsEventBinder } from "@/components/providers/AnalyticsEventBinder"
+import { GlobalProgressWatcher } from "@/components/organisms/CharacterSheet/GlobalProgressWatcher"
 import { redirect } from "next/navigation"
 
 export default async function RootLayout({
@@ -46,6 +47,7 @@ export default async function RootLayout({
       <>
         <Header />
         <AnalyticsEventBinder />
+        <GlobalProgressWatcher />
         {children}
         <Footer />
         <BackToTop />
@@ -60,6 +62,7 @@ export default async function RootLayout({
       <MatrixChatProvider>
         <Header />
         <AnalyticsEventBinder />
+        <GlobalProgressWatcher />
         {children}
         <Footer />
         <BackToTop />

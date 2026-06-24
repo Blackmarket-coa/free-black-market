@@ -9,6 +9,7 @@ import {
 import { XpRedemptionStatus } from "./models/xp-redemption"
 import { Stance, isStance } from "./stance"
 import { levelForXp, levelProgress, ROLE_XP_WEIGHTS } from "./leveling"
+import { unlockedFeatures, nextUnlock } from "./thresholds"
 import { getXpReward, XP_REWARDS, type XpReward } from "./rewards"
 
 /**
@@ -576,10 +577,14 @@ class ProgressionModuleService extends MedusaService({
       }
     })
 
+    const totalXp = Number(sheet.total_xp ?? 0)
+    const trackSnapshots = tracks.map((t) => ({ role: t.role, level: t.level, xp: t.xp }))
+    const next = nextUnlock(trackSnapshots, totalXp)
+
     return {
       customerId: sheet.customer_id,
       activeStance: sheet.active_stance,
-      totalXp: Number(sheet.total_xp ?? 0),
+      totalXp,
       spendableXp: Number(sheet.spendable_xp ?? 0),
       tracks,
       stats: {
@@ -592,8 +597,20 @@ class ProgressionModuleService extends MedusaService({
         timeCredits: Number(sheet.time_credits ?? 0),
       },
       titles: earnedTitles,
+      // Threshold privileges are derived (auto-lapsing): the keys unlocked now,
+      // plus the closest upcoming unlock for just-in-time "you're close" guidance.
+      unlockedFeatures: unlockedFeatures(trackSnapshots, totalXp),
+      nextUnlock: next
+        ? { featureKey: next.featureKey, label: next.label, blurb: next.blurb, xpToGo: next.xpToGo }
+        : null,
       lastRecomputedAt: sheet.last_recomputed_at,
     }
+  }
+
+  /** The internal-benefit featureKeys a customer has currently unlocked. */
+  async getUnlockedFeatures(customerId: string): Promise<string[]> {
+    const summary = await this.getCharacterSheetSummary(customerId)
+    return summary.unlockedFeatures
   }
 
   /**
