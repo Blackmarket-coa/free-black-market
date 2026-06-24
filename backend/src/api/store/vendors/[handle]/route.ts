@@ -1,6 +1,8 @@
 import { createLogger } from "../../../../shared/logger";
 const log = createLogger("api/store/vendors/handle");
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http";
+import { BOOKING_MODULE } from "../../../../modules/booking";
+import type BookingService from "../../../../modules/booking/service";
 
 /**
  * GET /store/vendors/:handle  —  FBM Store API (public, website-agnostic)
@@ -125,6 +127,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
           "review_count",
           "website_url",
           "social_links",
+          "mxid",
+          "blackout_user_id",
         ],
         filters: { seller_id: seller.id },
       });
@@ -132,6 +136,9 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     } catch (err) {
       log.warn(`seller_metadata lookup failed for ${seller.id}`, err);
     }
+
+    // Chat is offered when the vendor has a reachable Blackout/Matrix identity.
+    const chatEnabled = Boolean(meta?.mxid || meta?.blackout_user_id);
 
     const vendor = wantVendor
       ? {
@@ -193,11 +200,82 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
             price: cheapestPrice([v], currency_code),
           })),
           url: productUrl(p.handle),
+          // Classified below; defaults to "physical" when no listing-type link.
+          type: "physical" as string,
         }));
+
+        // Classify products by their linked listing-type so connect.js can
+        // render dedicated digital/services grids. Done as a separate, isolated
+        // query so a missing link or schema change can never break the catalog.
+        try {
+          const { data: typeRows } = await query.graph({
+            entity: "product",
+            fields: ["id", "listing_type.catalog_id"],
+            filters: {
+              "seller.id": seller.id,
+              status: "published",
+            } as any,
+            pagination: { take: limitProducts },
+          });
+          const catalogById = new Map<string, string>();
+          for (const r of typeRows || []) {
+            const cid = (r as any)?.listing_type?.catalog_id;
+            if (cid) catalogById.set((r as any).id, String(cid));
+          }
+          for (const p of products) {
+            const cid = catalogById.get(p.id);
+            if (cid === "digital") p.type = "digital";
+            else if (cid === "bookable") p.type = "service";
+            else if (cid === "event") p.type = "event";
+            else if (cid === "physical_product") p.type = "physical";
+            else if (cid) p.type = cid;
+          }
+        } catch (err) {
+          log.warn(`listing-type classification failed for ${seller.id}`, err);
+        }
       } catch (err) {
         log.warn(`product lookup failed for ${seller.id}`, err);
       }
     }
+
+    // Attach booking config to bookable products so the embed can render a
+    // booking widget without a second round-trip. Isolated + best-effort.
+    if (products.length) {
+      try {
+        const bookingService = req.scope.resolve(
+          BOOKING_MODULE
+        ) as BookingService;
+        const configs = await bookingService.listProductBookingConfigs({
+          seller_id: seller.id,
+          is_active: true,
+        });
+        const configByProduct = new Map<string, any>();
+        for (const c of configs || []) configByProduct.set(c.product_id, c);
+        for (const p of products) {
+          const c = configByProduct.get(p.id);
+          if (c) {
+            p.type = "service";
+            (p as any).booking_config = {
+              duration_minutes: c.duration_minutes,
+              buffer_minutes: c.buffer_minutes,
+              timezone: c.timezone,
+              advance_days: c.advance_days,
+              min_notice_hours: c.min_notice_hours,
+            };
+          }
+        }
+      } catch (err) {
+        log.warn(`booking config lookup failed for ${seller.id}`, err);
+      }
+    }
+
+    // Grouped views for the specialized connect.js components. The flat
+    // `products` array above stays the back-compat contract; these are additive.
+    const productGroups = {
+      digital: products.filter((p) => p.type === "digital"),
+      services: products.filter((p) => p.type === "service"),
+      physical: products.filter((p) => p.type === "physical"),
+    };
 
     // 4) Events (ticket products) for this seller — best effort.
     let events: any[] = [];
@@ -269,7 +347,24 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     return res.json({
       vendor,
       products: wantProducts ? products : undefined,
+      // Additive grouped view; `events` stays its own top-level array for
+      // back-compat. Mirrors it under product_groups.events for symmetry.
+      product_groups: wantProducts
+        ? { ...productGroups, events: wantEvents ? events : [] }
+        : undefined,
       events: wantEvents ? events : undefined,
+      // Capability flags so an embed can decide which widgets to render without
+      // a second request. `booking_enabled` is finalized in the booking phase;
+      // it is true when any service product exists.
+      capabilities: {
+        chat_enabled: chatEnabled,
+        booking_enabled: productGroups.services.length > 0,
+        reviews_enabled: true,
+      },
+      reviews_summary: {
+        average: meta?.rating ?? null,
+        count: meta?.review_count ?? 0,
+      },
       _meta: {
         handle: seller.handle,
         currency_code,

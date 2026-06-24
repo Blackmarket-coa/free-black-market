@@ -86,6 +86,22 @@ export const RouteMap: RouteObject[] = [
             lazy: () => import("../../routes/my-website"),
           },
           {
+            path: "bookings",
+            errorElement: <ErrorBoundary />,
+            handle: {
+              breadcrumb: () => "Bookings",
+            },
+            lazy: () => import("../../routes/bookings"),
+          },
+          {
+            path: "embed-analytics",
+            errorElement: <ErrorBoundary />,
+            handle: {
+              breadcrumb: () => "Embed Analytics",
+            },
+            lazy: () => import("../../routes/embed-analytics"),
+          },
+          {
             path: "programs",
             errorElement: <ErrorBoundary />,
             handle: {

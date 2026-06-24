@@ -174,6 +174,11 @@ const commerceModules = [
   { resolve: './src/modules/rental' },
   { resolve: './src/modules/wishlist' },
   { resolve: './src/modules/woocommerce-import' },
+  // connect.js commerce embed network
+  { resolve: './src/modules/embed-keys' },
+  { resolve: './src/modules/booking' },
+  { resolve: './src/modules/reviews' },
+  { resolve: './src/modules/embed-analytics' },
 ]
 
 // Financial/ledger modules

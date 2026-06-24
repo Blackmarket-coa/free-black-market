@@ -19,6 +19,7 @@ import {
   authSessionRateLimiter,
   bugReportAnonymousRateLimiter,
   bugReportAuthRateLimiter,
+  embedKeyRateLimiter,
   publicCatalogRateLimiter,
   standardRateLimiter,
   strictAuthRateLimiter,
@@ -35,6 +36,11 @@ import { enforceListingTypeAllowed } from "../shared/listing-type-guard";
 import { enforceSameOriginForCookieAuth } from "../shared/csrf-guard";
 import { sanitizedErrorHandler } from "../shared/error-sanitizer";
 import { requireStorefrontContext } from "./middlewares/tenancy-context";
+import {
+  embedCorsMiddleware,
+  requireEmbedKey,
+  optionalEmbedKey,
+} from "./middlewares/embed-key";
 import {
   inventoryLedgerEventSchema,
   pickPackBatchSchema,
@@ -608,8 +614,32 @@ export default defineMiddlewares({
       middlewares: [publicStoreCorsMiddleware, publicCatalogRateLimiter],
     },
     {
+      // Keyless fallback stays public + IP rate-limited. When a connect.js
+      // publishable key IS present, optionalEmbedKey validates it and enforces
+      // the vendor's connect_domains origin allow-list (401/403 on failure).
       matcher: "/store/vendors/**",
-      middlewares: [publicStoreCorsMiddleware, publicCatalogRateLimiter],
+      middlewares: [
+        publicStoreCorsMiddleware,
+        publicCatalogRateLimiter,
+        optionalEmbedKey,
+      ],
+    },
+    // ============================================================
+    // connect.js embed network — key-required write/runtime endpoints
+    // ============================================================
+    // Bookings, reviews, chat-start, and analytics ingestion. Open CORS
+    // (reflect origin) so connect.js can call from any vendor site; every
+    // request is gated by a valid publishable key from an allowed origin and
+    // rate-limited per key.
+    {
+      matcher: "/store/embed/**",
+      middlewares: [embedCorsMiddleware, requireEmbedKey, embedKeyRateLimiter],
+    },
+    {
+      // Verified-purchase reviews — require a logged-in customer.
+      matcher: "/store/reviews",
+      method: "POST",
+      middlewares: [authenticate("customer", ["bearer", "session"])],
     },
     // ============================================================
     // CSRF: reject forged cross-site, cookie-authenticated writes

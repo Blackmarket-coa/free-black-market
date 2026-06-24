@@ -79,6 +79,20 @@ const nextConfig: NextConfig = {
           },
         ],
       },
+      // FBM Connect SDK (connect.js): the single <script> any vendor drops on
+      // their own site. Open CORS + long, immutable-friendly caching so CDNs
+      // and browsers absorb the load; nosniff to lock the JS content type.
+      {
+        source: "/connect.js",
+        headers: [
+          { key: "Access-Control-Allow-Origin", value: "*" },
+          { key: "X-Content-Type-Options", value: "nosniff" },
+          {
+            key: "Cache-Control",
+            value: "public, max-age=600, s-maxage=3600, stale-while-revalidate=86400",
+          },
+        ],
+      },
     ]
   },
   async redirects() {

@@ -104,6 +104,18 @@ function getVendorNavigationConfig({
       // Always visible — embed FBM on your own site, or launch a hosted one.
     },
     {
+      icon: <CalendarMini />,
+      label: "Bookings",
+      to: "/bookings",
+      // Availability + appointment requests from the embedded booking widget.
+    },
+    {
+      icon: <ChartBar />,
+      label: "Embed Analytics",
+      to: "/embed-analytics",
+      // Funnel + traffic for the connect.js embed across vendor sites.
+    },
+    {
       icon: <Star />,
       label: "Creator Studio",
       to: "/creator-studio",
