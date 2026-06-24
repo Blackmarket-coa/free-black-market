@@ -1,4 +1,5 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
+import type { VendorRequest } from "../types"
 import { createTicketProductWorkflow } from "../../../workflows/create-ticket-product"
 import { RowType } from "../../../modules/ticket-booking/models/venue-row"
 import { z } from "zod"
@@ -8,7 +9,7 @@ export async function GET(
   res: MedusaResponse
 ) {
   const query = req.scope.resolve("query")
-  const sellerId = (req as any).auth_context?.actor_id
+  const sellerId = (req as VendorRequest).auth_context?.actor_id
 
   if (!sellerId) {
     return res.status(401).json({ message: "Unauthorized" })
@@ -16,8 +17,8 @@ export async function GET(
 
   try {
     // Try with seller_id filter first, fall back to no filter if column doesn't exist
-    let ticketProducts: any[] = []
-    let metadata: any = {}
+    let ticketProducts: unknown[] = []
+    let metadata: { count?: number; take?: number; skip?: number } | undefined = {}
     
     try {
       const result = await query.graph({
@@ -25,11 +26,11 @@ export async function GET(
         fields: ["id", "product_id", "venue_id", "dates", "venue.*"],
         filters: {
           seller_id: sellerId
-        } as any, // seller_id may not be in the generated types yet
+        } as Record<string, unknown>, // seller_id may not be in the generated types yet
       })
       ticketProducts = result.data
       metadata = result.metadata
-    } catch (filterError: any) {
+    } catch (filterError) {
       // If seller_id column doesn't exist, fetch all (temporary)
       if (filterError.message?.includes("seller_id")) {
         const result = await query.graph({
@@ -49,7 +50,7 @@ export async function GET(
       limit: metadata?.take,
       offset: metadata?.skip,
     })
-  } catch (error: any) {
+  } catch (error) {
     res.status(500).json({ message: "Failed to fetch ticket products", error: error.message })
   }
 }
@@ -79,7 +80,7 @@ export async function POST(
   req: MedusaRequest<CreateTicketProductSchema>,
   res: MedusaResponse
 ) {
-  const sellerId = (req as any).auth_context?.actor_id
+  const sellerId = (req as VendorRequest).auth_context?.actor_id
 
   if (!sellerId) {
     return res.status(401).json({ message: "Unauthorized" })
@@ -94,7 +95,7 @@ export async function POST(
     })
 
     res.status(201).json(result)
-  } catch (error: any) {
+  } catch (error) {
     res.status(500).json({
       message: "Failed to create ticket product",
       error: error.message,

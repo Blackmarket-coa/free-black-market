@@ -1,4 +1,5 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
+import type { VendorRequest } from "../types"
 import { createVenueWorkflow } from "../../../workflows/create-venue"
 import { RowType } from "../../../modules/ticket-booking/models/venue-row"
 import { z } from "zod"
@@ -8,7 +9,7 @@ export async function GET(
   res: MedusaResponse
 ) {
   const query = req.scope.resolve("query")
-  const sellerId = (req as any).auth_context?.actor_id
+  const sellerId = (req as VendorRequest).auth_context?.actor_id
 
   if (!sellerId) {
     return res.status(401).json({ message: "Unauthorized" })
@@ -29,7 +30,7 @@ export async function GET(
       limit: metadata?.take,
       offset: metadata?.skip,
     })
-  } catch (error: any) {
+  } catch (error) {
     res.status(500).json({ message: "Failed to fetch venues", error: error.message })
   }
 }
@@ -50,7 +51,7 @@ export async function POST(
   req: MedusaRequest<CreateVenueSchema>,
   res: MedusaResponse
 ) {
-  const sellerId = (req as any).auth_context?.actor_id
+  const sellerId = (req as VendorRequest).auth_context?.actor_id
 
   if (!sellerId) {
     return res.status(401).json({ message: "Unauthorized" })
@@ -62,7 +63,7 @@ export async function POST(
     })
 
     res.status(201).json(result)
-  } catch (error: any) {
+  } catch (error) {
     res.status(500).json({ message: "Failed to create venue", error: error.message })
   }
 }

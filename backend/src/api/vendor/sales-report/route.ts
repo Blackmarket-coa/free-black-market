@@ -1,4 +1,5 @@
 import { createLogger } from "../../../shared/logger"
+import type { VendorRequest } from "../types"
 const log = createLogger("api/vendor/sales-report")
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
@@ -20,7 +21,7 @@ async function resolveSellerId(req: MedusaRequest, actorId?: string): Promise<st
 
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
   const pgConnection = req.scope.resolve(ContainerRegistrationKeys.PG_CONNECTION)
-  const actorId = (req as any)._seller_id || (req as any).auth_context?.actor_id
+  const actorId = (req as VendorRequest)._seller_id || (req as VendorRequest).auth_context?.actor_id
   const sellerId = await resolveSellerId(req, actorId)
 
   if (!sellerId) {
@@ -48,7 +49,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       filters: { id: sellerId },
     })
 
-    const productIds = sellerProducts?.[0]?.products?.map((p: any) => p.id) || []
+    const productIds = sellerProducts?.[0]?.products?.map((p) => p.id) || []
 
     if (productIds.length === 0) {
       const emptyResult = {
@@ -75,7 +76,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     }
 
     // Query order line items for this seller's products
-    const placeholders = productIds.map((_: any, i: number) => `$${i + 3}`).join(", ")
+    const placeholders = productIds.map((_, i: number) => `$${i + 3}`).join(", ")
     const salesQuery = `
       SELECT
         oli.id as line_item_id,
@@ -108,15 +109,15 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     const lineItems = result.rows || []
 
     // Calculate summary
-    const totalRevenue = lineItems.reduce((sum: number, item: any) => sum + (parseFloat(item.line_total) || 0), 0)
-    const totalUnits = lineItems.reduce((sum: number, item: any) => sum + (parseInt(item.quantity) || 0), 0)
-    const uniqueOrders = new Set(lineItems.map((item: any) => item.order_id))
+    const totalRevenue = lineItems.reduce((sum: number, item) => sum + (parseFloat(item.line_total) || 0), 0)
+    const totalUnits = lineItems.reduce((sum: number, item) => sum + (parseInt(item.quantity) || 0), 0)
+    const uniqueOrders = new Set(lineItems.map((item) => item.order_id))
     const totalOrders = uniqueOrders.size
     const avgOrderValue = totalOrders > 0 ? totalRevenue / totalOrders : 0
 
     if (format === "csv") {
       const csvHeader = "Order ID,Date,Product,Variant,SKU,Quantity,Unit Price,Total,Currency\n"
-      const csvRows = lineItems.map((item: any) => {
+      const csvRows = lineItems.map((item) => {
         const date = new Date(item.order_date).toISOString().split("T")[0]
         const title = (item.product_title || "").replace(/"/g, '""')
         const variant = (item.variant_title || "").replace(/"/g, '""')
@@ -138,7 +139,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         total_units_sold: totalUnits,
         avg_order_value: avgOrderValue,
       },
-      line_items: lineItems.map((item: any) => ({
+      line_items: lineItems.map((item) => ({
         line_item_id: item.line_item_id,
         order_id: item.order_id,
         display_id: item.display_id,
@@ -157,7 +158,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         end: endDate.toISOString(),
       },
     })
-  } catch (error: any) {
+  } catch (error) {
     log.error(`Error fetching sales report for seller ${sellerId}:`, error)
     res.status(500).json({ message: "Failed to fetch sales report", error: error.message })
   }

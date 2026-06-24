@@ -90,7 +90,7 @@ export async function GET(
     const recertification_alerts = buildRecertificationAlerts(producer?.certifications)
 
     res.json({ producer, recertification_alerts })
-  } catch (error: any) {
+  } catch (error) {
     res.status(500).json({ 
       message: "Failed to fetch farm profile", 
       error: error.message 
@@ -130,7 +130,7 @@ export async function POST(
       website,
       photo,
       cover_image,
-    } = req.body as Record<string, any>
+    } = req.body as Record<string, unknown>
 
     // Create the producer
     const producer = await producerService.createProducers({
@@ -160,7 +160,7 @@ export async function POST(
     })
 
     res.status(201).json({ producer })
-  } catch (error: any) {
+  } catch (error) {
     res.status(500).json({ 
       message: "Failed to create farm profile", 
       error: error.message 
@@ -216,7 +216,7 @@ export async function PUT(
       photo,
       cover_image,
       public_profile_enabled,
-    } = req.body as Record<string, any>
+    } = req.body as Record<string, unknown>
 
     // Update the producer
     const producer = await producerService.updateProducers({
@@ -239,7 +239,7 @@ export async function PUT(
     })
 
     res.json({ producer })
-  } catch (error: any) {
+  } catch (error) {
     res.status(500).json({ 
       message: "Failed to update farm profile", 
       error: error.message 

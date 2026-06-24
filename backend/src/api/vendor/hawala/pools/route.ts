@@ -1,4 +1,5 @@
 import { createLogger } from "../../../../shared/logger"
+import type { VendorRequest } from "../../types"
 const log = createLogger("api/vendor/hawala/pools")
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { HAWALA_LEDGER_MODULE } from "../../../../modules/hawala-ledger"
@@ -16,7 +17,7 @@ import { createPoolSchema, validateInput } from "../../../hawala-validation"
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
   const hawalaService = req.scope.resolve<HawalaLedgerModuleService>(HAWALA_LEDGER_MODULE)
 
-  const sellerId = (req as any).auth_context?.actor_id
+  const sellerId = (req as VendorRequest).auth_context?.actor_id
   if (!sellerId) {
     return res.status(401).json({ error: "Authentication required" })
   }
@@ -39,7 +40,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
   const hawalaService = req.scope.resolve<HawalaLedgerModuleService>(HAWALA_LEDGER_MODULE)
 
-  const sellerId = (req as any).auth_context?.actor_id
+  const sellerId = (req as VendorRequest).auth_context?.actor_id
   if (!sellerId) {
     return res.status(401).json({ error: "Authentication required" })
   }
@@ -71,7 +72,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     })
 
     // Create investment pool - cast entire input to bypass type checking for optional model fields
-    const poolInput: any = {
+    const poolInput: Record<string, unknown> = {
       name,
       description,
       producer_id: sellerId,

@@ -1,4 +1,5 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
+import type { VendorRequest } from "../../types"
 import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils"
 import type { IEventBusModuleService } from "@medusajs/framework/types"
 import { TENANCY_MODULE } from "../../../../modules/tenancy"
@@ -29,7 +30,7 @@ type Body = {
  * event for analytics + 48h follow-up automation.
  */
 export async function POST(req: MedusaRequest<Body>, res: MedusaResponse) {
-  const actorId = (req as any)._seller_id || (req as any).auth_context?.actor_id
+  const actorId = (req as VendorRequest)._seller_id || (req as VendorRequest).auth_context?.actor_id
   const sellerId = await resolveSellerId(req, actorId)
   if (!sellerId) return res.status(401).json({ message: "Unauthorized" })
 

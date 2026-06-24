@@ -1,4 +1,5 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
+import type { VendorRequest } from "../../types"
 import { WOOCOMMERCE_IMPORT_MODULE } from "../../../../modules/woocommerce-import"
 import WooCommerceImportModuleService from "../../../../modules/woocommerce-import/service"
 import { connectWooCommerceWorkflow } from "../../../../workflows/woocommerce-import/connect-woocommerce"
@@ -9,7 +10,7 @@ import { decrypt } from "../../../../modules/woocommerce-import/lib/encryption"
  * Get the current vendor's WooCommerce connection status.
  */
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
-  const sellerId = (req as any).auth_context?.actor_id
+  const sellerId = (req as VendorRequest).auth_context?.actor_id
 
   if (!sellerId) {
     return res.status(401).json({ message: "Unauthorized" })
@@ -44,7 +45,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         updated_at: conn.updated_at,
       },
     })
-  } catch (error: any) {
+  } catch (error) {
     return res.status(500).json({
       message: "Failed to fetch connection",
       error: error.message,
@@ -57,7 +58,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
  * Connect a WooCommerce store (validate + save credentials).
  */
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
-  const sellerId = (req as any).auth_context?.actor_id
+  const sellerId = (req as VendorRequest).auth_context?.actor_id
 
   if (!sellerId) {
     return res.status(401).json({ message: "Unauthorized" })
@@ -108,7 +109,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       },
       message: "WooCommerce store connected successfully",
     })
-  } catch (error: any) {
+  } catch (error) {
     return res.status(400).json({
       message: error.message || "Failed to connect WooCommerce store",
     })
@@ -120,7 +121,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
  * Remove the WooCommerce connection for the current vendor.
  */
 export async function DELETE(req: MedusaRequest, res: MedusaResponse) {
-  const sellerId = (req as any).auth_context?.actor_id
+  const sellerId = (req as VendorRequest).auth_context?.actor_id
 
   if (!sellerId) {
     return res.status(401).json({ message: "Unauthorized" })
@@ -146,7 +147,7 @@ export async function DELETE(req: MedusaRequest, res: MedusaResponse) {
       deleted: true,
       message: "WooCommerce connection removed",
     })
-  } catch (error: any) {
+  } catch (error) {
     return res.status(500).json({
       message: "Failed to remove connection",
       error: error.message,

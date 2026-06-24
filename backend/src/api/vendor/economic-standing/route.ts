@@ -85,7 +85,7 @@ export async function GET(
       },
       evaluated_at: new Date().toISOString(),
     })
-  } catch (error: any) {
+  } catch (error) {
     log.error("[GET /vendor/economic-standing] Error:", error.message)
     res.json(zeroedStanding(null))
   }

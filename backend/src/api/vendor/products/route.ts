@@ -1,8 +1,10 @@
 import { createLogger } from "../../../shared/logger"
+import type { VendorRequest } from "../types"
 const log = createLogger("api/vendor/products")
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils"
 import { createProductsWorkflow } from "@medusajs/medusa/core-flows"
+import type { CreateProductWorkflowInputDTO } from "@medusajs/framework/types"
 import { SELLER_MODULE } from "@mercurjs/b2c-core/modules/seller"
 
 import { resolveSellerId } from "../../../shared/listing-type-guard"
@@ -24,8 +26,8 @@ async function linkSellerInventoryItems(
   const inventoryItemIds = [
     ...new Set(
       (variants || [])
-        .flatMap((variant: any) => variant.inventory_items || [])
-        .map((item: any) => item.inventory_item_id)
+        .flatMap((variant) => variant.inventory_items || [])
+        .map((item) => item.inventory_item_id)
         .filter(Boolean)
     ),
   ]
@@ -37,7 +39,7 @@ async function linkSellerInventoryItems(
           [SELLER_MODULE]: { seller_id: sellerId },
           [Modules.INVENTORY]: { inventory_item_id },
         })
-      } catch (error: any) {
+      } catch (error) {
         const message = error?.message || ""
         const isAlreadyLinked =
           message.includes("already exists") || message.includes("duplicate")
@@ -55,7 +57,7 @@ export async function GET(
   res: MedusaResponse
 ) {
   const query = req.scope.resolve("query")
-  const actorId = (req as any)._seller_id || (req as any).auth_context?.actor_id
+  const actorId = (req as VendorRequest)._seller_id || (req as VendorRequest).auth_context?.actor_id
   const sellerId = await resolveSellerId(req, actorId)
 
   if (!sellerId) {
@@ -72,13 +74,13 @@ export async function GET(
       },
     })
 
-    const products = sellerProducts.map((sp: any) => sp.product)
+    const products = sellerProducts.map((sp) => sp.product)
 
     res.json({
       products,
       count: products.length
     })
-  } catch (error: any) {
+  } catch (error) {
     res.status(500).json({ message: "Failed to fetch products", error: error.message })
   }
 }
@@ -89,7 +91,7 @@ export async function POST(
 ) {
   const query = req.scope.resolve(ContainerRegistrationKeys.QUERY)
   const remoteLink = req.scope.resolve(ContainerRegistrationKeys.REMOTE_LINK)
-  const actorId = (req as any)._seller_id || (req as any).auth_context?.actor_id
+  const actorId = (req as VendorRequest)._seller_id || (req as VendorRequest).auth_context?.actor_id
   const sellerId = await resolveSellerId(req, actorId)
 
   if (!sellerId) {
@@ -99,12 +101,12 @@ export async function POST(
   const resolvedSellerId = sellerId
 
   try {
-    const { additional_data, ...productData } = req.body as any
+    const { additional_data, ...productData } = req.body as { additional_data?: Record<string, unknown> } & Record<string, unknown>
 
     // Create the product using Medusa workflow
     const { result } = await createProductsWorkflow(req.scope).run({
       input: {
-        products: [productData],
+        products: [productData as CreateProductWorkflowInputDTO],
         additional_data,
       },
     })
@@ -119,7 +121,7 @@ export async function POST(
       })
 
       await linkSellerInventoryItems(req, resolvedSellerId, createdProduct.id)
-    } catch (linkError: any) {
+    } catch (linkError) {
       log.warn(
         `Could not create seller-product link for ${createdProduct.id}: ${linkError.message}`
       )
@@ -139,7 +141,7 @@ export async function POST(
     return res.json({
       product: products?.[0] || createdProduct,
     })
-  } catch (error: any) {
+  } catch (error) {
     log.error(`Error creating product for seller ${resolvedSellerId}:`, error)
     res.status(500).json({
       message: "Failed to create product",

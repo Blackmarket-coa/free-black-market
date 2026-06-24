@@ -1,4 +1,5 @@
 import { createLogger } from "../../../../shared/logger"
+import type { VendorRequest } from "../../types"
 const log = createLogger("api/vendor/hawala/payments")
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { HAWALA_LEDGER_MODULE } from "../../../../modules/hawala-ledger"
@@ -14,7 +15,7 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
     const hawalaService = req.scope.resolve<HawalaLedgerModuleService>(HAWALA_LEDGER_MODULE)
     
     // Get vendor ID from auth context
-    const vendorId = (req as any).auth_context?.actor_id
+    const vendorId = (req as VendorRequest).auth_context?.actor_id
     if (!vendorId) {
       return res.status(401).json({ error: "Unauthorized" })
     }
@@ -51,7 +52,7 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
         created_at: p.created_at,
       })),
     })
-  } catch (error: any) {
+  } catch (error) {
     log.error("Error getting vendor payments:", error)
     res.status(400).json({ error: "Failed to retrieve payment history" })
   }
@@ -66,7 +67,7 @@ export const POST = async (req: MedusaRequest, res: MedusaResponse) => {
     const hawalaService = req.scope.resolve<HawalaLedgerModuleService>(HAWALA_LEDGER_MODULE)
     
     // Get vendor ID from auth context
-    const vendorId = (req as any).auth_context?.actor_id
+    const vendorId = (req as VendorRequest).auth_context?.actor_id
     if (!vendorId) {
       return res.status(401).json({ error: "Unauthorized" })
     }
@@ -111,7 +112,7 @@ export const POST = async (req: MedusaRequest, res: MedusaResponse) => {
       },
       message: "Payment completed successfully. Funds transferred instantly with zero fees.",
     })
-  } catch (error: any) {
+  } catch (error) {
     log.error("Error creating vendor payment:", error)
     res.status(400).json({ error: "Failed to process payment" })
   }

@@ -1,4 +1,5 @@
 import type { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
+import type { VendorRequest } from "../types"
 import OrderCycleModuleService from "../../../modules/order-cycle/service"
 
 interface CreateEnterpriseFeeBody {
@@ -15,14 +16,14 @@ interface CreateEnterpriseFeeBody {
 // GET /vendor/enterprise-fees - List enterprise fees for vendor
 export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
   const orderCycleService: OrderCycleModuleService = req.scope.resolve("orderCycleModuleService")
-  const sellerId = (req as any).auth_context?.actor_id
+  const sellerId = (req as VendorRequest).auth_context?.actor_id
 
   if (!sellerId) {
     return res.status(401).json({ message: "Unauthorized" })
   }
 
   try {
-    const filters: Record<string, any> = { seller_id: sellerId }
+    const filters: Record<string, unknown> = { seller_id: sellerId }
     
     if (req.query.is_active !== undefined) {
       filters.is_active = req.query.is_active === "true"
@@ -30,7 +31,7 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
 
     const enterprise_fees = await orderCycleService.listEnterpriseFees(filters)
     res.json({ enterprise_fees, count: enterprise_fees.length })
-  } catch (error: any) {
+  } catch (error) {
     res.status(500).json({ message: "Failed to fetch enterprise fees", error: error.message })
   }
 }
@@ -38,7 +39,7 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
 // POST /vendor/enterprise-fees - Create enterprise fee
 export const POST = async (req: MedusaRequest<CreateEnterpriseFeeBody>, res: MedusaResponse) => {
   const orderCycleService: OrderCycleModuleService = req.scope.resolve("orderCycleModuleService")
-  const sellerId = (req as any).auth_context?.actor_id
+  const sellerId = (req as VendorRequest).auth_context?.actor_id
 
   if (!sellerId) {
     return res.status(401).json({ message: "Unauthorized" })
@@ -60,7 +61,7 @@ export const POST = async (req: MedusaRequest<CreateEnterpriseFeeBody>, res: Med
     })
 
     res.status(201).json({ enterprise_fee })
-  } catch (error: any) {
+  } catch (error) {
     res.status(500).json({ message: "Failed to create enterprise fee", error: error.message })
   }
 }

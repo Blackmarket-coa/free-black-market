@@ -1,7 +1,8 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
+import type { VendorRequest } from "../../types"
 
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
-  const sellerId = (req as any).auth_context?.actor_id
+  const sellerId = (req as VendorRequest).auth_context?.actor_id
   if (!sellerId) return res.status(401).json({ message: "Unauthorized" })
 
   res.json({

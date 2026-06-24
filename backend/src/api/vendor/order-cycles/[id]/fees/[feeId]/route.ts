@@ -9,7 +9,7 @@ export const DELETE = async (req: MedusaRequest, res: MedusaResponse) => {
   try {
     await orderCycleService.deleteOrderCycleFees(feeId)
     res.status(200).json({ success: true })
-  } catch (error: any) {
+  } catch (error) {
     res.status(500).json({ message: "Failed to remove fee from order cycle", error: error.message })
   }
 }

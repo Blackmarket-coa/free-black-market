@@ -1,8 +1,10 @@
 import { createLogger } from "../../../shared/logger"
+import type { VendorRequest } from "../types"
 const log = createLogger("api/vendor/seller-products")
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils"
 import { createProductsWorkflow } from "@medusajs/medusa/core-flows"
+import type { CreateProductWorkflowInputDTO } from "@medusajs/framework/types"
 import { SELLER_MODULE } from "@mercurjs/b2c-core/modules/seller"
 
 type VariantPrice = {
@@ -10,10 +12,12 @@ type VariantPrice = {
   currency_code?: string | null
 }
 
-function validateAndNormalizeVariantPrices(variants: any[] = []) {
+function validateAndNormalizeVariantPrices(
+  variants: Array<{ prices?: VariantPrice[] } & Record<string, unknown>> = []
+) {
   const errors: string[] = []
 
-  const normalizedVariants = variants.map((variant: any, variantIndex: number) => {
+  const normalizedVariants = variants.map((variant, variantIndex: number) => {
     if (!Array.isArray(variant?.prices)) {
       return variant
     }
@@ -51,7 +55,7 @@ function validateAndNormalizeVariantPrices(variants: any[] = []) {
   }
 }
 
-function getErrorStatus(error: any) {
+function getErrorStatus(error) {
   const knownStatus =
     error?.statusCode ||
     error?.status_code ||
@@ -87,8 +91,8 @@ async function linkSellerInventoryItems(
   const inventoryItemIds = [
     ...new Set(
       (variants || [])
-        .flatMap((variant: any) => variant.inventory_items || [])
-        .map((item: any) => item.inventory_item_id)
+        .flatMap((variant) => variant.inventory_items || [])
+        .map((item) => item.inventory_item_id)
         .filter(Boolean)
     ),
   ]
@@ -100,7 +104,7 @@ async function linkSellerInventoryItems(
           [SELLER_MODULE]: { seller_id: sellerId },
           [Modules.INVENTORY]: { inventory_item_id },
         })
-      } catch (error: any) {
+      } catch (error) {
         const message = error?.message || ""
         const isAlreadyLinked =
           message.includes("already exists") || message.includes("duplicate")
@@ -116,7 +120,7 @@ async function linkSellerInventoryItems(
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
   const query = req.scope.resolve(ContainerRegistrationKeys.QUERY)
   const remoteLink = req.scope.resolve(ContainerRegistrationKeys.REMOTE_LINK)
-  const sellerId = (req as any)._seller_id || (req as any).auth_context?.actor_id
+  const sellerId = (req as VendorRequest)._seller_id || (req as VendorRequest).auth_context?.actor_id
 
   if (!sellerId) {
     return res.status(401).json({ message: "Unauthorized" })
@@ -138,7 +142,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
   }
 
   try {
-    const { additional_data, ...productData } = req.body as any
+    const { additional_data, ...productData } = req.body as { additional_data?: Record<string, unknown> } & Record<string, unknown>
 
     if (Array.isArray(productData?.variants)) {
       const { errors, variants } = validateAndNormalizeVariantPrices(productData.variants)
@@ -156,7 +160,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
 
     const { result } = await createProductsWorkflow(req.scope).run({
       input: {
-        products: [productData],
+        products: [productData as CreateProductWorkflowInputDTO],
         additional_data,
       },
     })
@@ -170,7 +174,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       })
 
       await linkSellerInventoryItems(req, resolvedSellerId, createdProduct.id)
-    } catch (linkError: any) {
+    } catch (linkError) {
       log.warn(
         `Could not create seller-product link for ${createdProduct.id}: ${linkError.message}`
       )
@@ -199,7 +203,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     return res.json({
       product: products?.[0] || createdProduct,
     })
-  } catch (error: any) {
+  } catch (error) {
     const status = getErrorStatus(error)
 
     log.error("Error creating product for seller", {

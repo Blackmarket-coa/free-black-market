@@ -1,4 +1,5 @@
 import type { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
+import type { VendorRequest } from "../../types"
 import OrderCycleModuleService from "../../../../modules/order-cycle/service"
 
 interface UpdateEnterpriseFeeBody {
@@ -15,7 +16,7 @@ interface UpdateEnterpriseFeeBody {
 export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
   const { id } = req.params
   const orderCycleService: OrderCycleModuleService = req.scope.resolve("orderCycleModuleService")
-  const sellerId = (req as any).auth_context?.actor_id
+  const sellerId = (req as VendorRequest).auth_context?.actor_id
 
   try {
     const enterprise_fee = await orderCycleService.retrieveEnterpriseFee(id)
@@ -26,7 +27,7 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
     }
 
     res.json({ enterprise_fee })
-  } catch (_error: any) {
+  } catch (_error) {
     res.status(404).json({ message: "Enterprise fee not found" })
   }
 }
@@ -35,7 +36,7 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
 export const PUT = async (req: MedusaRequest<UpdateEnterpriseFeeBody>, res: MedusaResponse) => {
   const { id } = req.params
   const orderCycleService: OrderCycleModuleService = req.scope.resolve("orderCycleModuleService")
-  const sellerId = (req as any).auth_context?.actor_id
+  const sellerId = (req as VendorRequest).auth_context?.actor_id
 
   try {
     // Verify ownership
@@ -58,7 +59,7 @@ export const PUT = async (req: MedusaRequest<UpdateEnterpriseFeeBody>, res: Medu
     })
 
     res.json({ enterprise_fee })
-  } catch (error: any) {
+  } catch (error) {
     res.status(500).json({ message: "Failed to update enterprise fee", error: error.message })
   }
 }
@@ -67,7 +68,7 @@ export const PUT = async (req: MedusaRequest<UpdateEnterpriseFeeBody>, res: Medu
 export const DELETE = async (req: MedusaRequest, res: MedusaResponse) => {
   const { id } = req.params
   const orderCycleService: OrderCycleModuleService = req.scope.resolve("orderCycleModuleService")
-  const sellerId = (req as any).auth_context?.actor_id
+  const sellerId = (req as VendorRequest).auth_context?.actor_id
 
   try {
     // Verify ownership
@@ -78,7 +79,7 @@ export const DELETE = async (req: MedusaRequest, res: MedusaResponse) => {
 
     await orderCycleService.deleteEnterpriseFees(id)
     res.status(200).json({ success: true })
-  } catch (error: any) {
+  } catch (error) {
     res.status(500).json({ message: "Failed to delete enterprise fee", error: error.message })
   }
 }

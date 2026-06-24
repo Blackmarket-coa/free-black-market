@@ -1,4 +1,5 @@
 import { createLogger } from "../../../shared/logger"
+import type { VendorRequest } from "../types"
 const log = createLogger("api/vendor/product-types")
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { Modules } from "@medusajs/framework/utils"
@@ -11,7 +12,7 @@ import { Modules } from "@medusajs/framework/utils"
  * vendors can view the full list to categorize their products.
  */
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
-  const sellerId = (req as any).auth_context?.actor_id
+  const sellerId = (req as VendorRequest).auth_context?.actor_id
 
   if (!sellerId) {
     return res.status(401).json({ message: "Unauthorized" })
@@ -30,10 +31,10 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       order,
       _fields,
       ..._rest
-    } = req.query as Record<string, any>
+    } = req.query as Record<string, unknown>
 
     // Build filters
-    const filters: Record<string, any> = {}
+    const filters: Record<string, unknown> = {}
 
     if (id) {
       filters.id = Array.isArray(id) ? id : [id]
@@ -63,7 +64,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       offset: parseInt(offset as string, 10) || 0,
       limit: parseInt(limit as string, 10) || 20,
     })
-  } catch (error: any) {
+  } catch (error) {
     log.error("[VENDOR] Failed to fetch product types:", error)
     res.status(500).json({
       message: "Failed to fetch product types",

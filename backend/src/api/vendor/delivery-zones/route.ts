@@ -9,7 +9,7 @@ import { requireSellerId } from "../../../shared"
 // ===========================================
 
 import { createDeliveryZoneSchema } from "../../delivery-zones/contracts"
-import { detectDeliveryZoneConflicts } from "./conflict-utils"
+import { detectDeliveryZoneConflicts, type ExistingZone } from "./conflict-utils"
 
 const listZonesQuerySchema = z.object({
   active: z.coerce.boolean().optional(),
@@ -32,7 +32,7 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
 
     // Note: In a full implementation, zones would be filtered by producer_id.
     // For now, we return all zones for any authenticated vendor.
-    const filters: Record<string, any> = {}
+    const filters: Record<string, unknown> = {}
     if (query.active !== undefined) filters.active = query.active
 
     const zones = await foodDistribution.listDeliveryZones(filters, {
@@ -82,7 +82,7 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
 
     const activeZones = await foodDistribution.listDeliveryZones({ active: true })
     const conflicts = data.active
-      ? detectDeliveryZoneConflicts(data, activeZones as any)
+      ? detectDeliveryZoneConflicts(data, activeZones as unknown as ExistingZone[])
       : []
 
     if (conflicts.length) {

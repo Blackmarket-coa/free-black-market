@@ -1,4 +1,5 @@
 import { createLogger } from "../../../shared/logger"
+import type SellerExtensionService from "../../../modules/seller-extension/service"
 const log = createLogger("api/vendor/invoices")
 import type { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { ulid } from "ulid"
@@ -66,12 +67,12 @@ async function writeInvoiceStore(req: MedusaRequest, sellerId: string, metadataI
   const sellerExtensionModule = req.scope.resolve("sellerExtension")
 
   if (metadataId) {
-    await updateSellerMetadataRecord(sellerExtensionModule as any, [{
+    await updateSellerMetadataRecord(sellerExtensionModule as SellerExtensionService, [{
       id: metadataId,
       metadata: { invoices_v1: invoices },
     }])
   } else {
-    await createSellerMetadataRecord(sellerExtensionModule as any, [{
+    await createSellerMetadataRecord(sellerExtensionModule as SellerExtensionService, [{
       seller_id: sellerId,
       metadata: { invoices_v1: invoices },
     }])

@@ -1,4 +1,5 @@
 import { createLogger } from "../../../../../../shared/logger"
+import type { VendorRequest } from "../../../../types"
 const log = createLogger("api/vendor/hawala/pools/[id]/withdraw")
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { randomUUID } from "crypto"
@@ -14,7 +15,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
   const hawalaService = req.scope.resolve<HawalaLedgerModuleService>(HAWALA_LEDGER_MODULE)
   const { id } = req.params
 
-  const sellerId = (req as any).auth_context?.actor_id
+  const sellerId = (req as VendorRequest).auth_context?.actor_id
   if (!sellerId) {
     return res.status(401).json({ error: "Authentication required" })
   }

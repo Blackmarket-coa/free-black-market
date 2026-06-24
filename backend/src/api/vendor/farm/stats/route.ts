@@ -50,7 +50,7 @@ export async function GET(
       },
     })
 
-    const harvestIds = harvests?.map((h: any) => h.id) || []
+    const harvestIds = harvests?.map((h) => h.id) || []
 
     // OPTIMIZATION: If we have harvests, get lot counts
     // Future: add parallel queries for available_products and pending_orders
@@ -121,7 +121,7 @@ export async function GET(
         pending_orders: pendingOrdersCount,
       }
     })
-  } catch (error: any) {
+  } catch (error) {
     res.status(500).json({
       message: "Failed to fetch farm stats",
       error: error.message

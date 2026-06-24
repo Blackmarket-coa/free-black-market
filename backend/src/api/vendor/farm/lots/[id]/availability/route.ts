@@ -78,7 +78,7 @@ export async function POST(
       surplus_discount_percent,
       featured,
       is_active,
-    } = req.body as Record<string, any>
+    } = req.body as Record<string, unknown>
 
     // Create the availability window
     const availabilityWindow = await agricultureService.createAvailabilityWindows({
@@ -111,7 +111,7 @@ export async function POST(
     })
 
     res.status(201).json({ availability_window: availabilityWindow })
-  } catch (error: any) {
+  } catch (error) {
     res.status(500).json({ 
       message: "Failed to create availability window", 
       error: error.message 
@@ -191,7 +191,7 @@ export async function GET(
     })
 
     res.json({ availability_windows: windows || [] })
-  } catch (error: any) {
+  } catch (error) {
     res.status(500).json({ 
       message: "Failed to fetch availability windows", 
       error: error.message 

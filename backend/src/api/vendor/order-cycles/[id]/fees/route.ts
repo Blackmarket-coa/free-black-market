@@ -30,7 +30,7 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
     )
 
     res.json({ fees: feesWithDetails })
-  } catch (error: any) {
+  } catch (error) {
     res.status(500).json({ message: "Failed to fetch order cycle fees", error: error.message })
   }
 }
@@ -60,7 +60,7 @@ export const POST = async (req: MedusaRequest<ApplyFeeBody>, res: MedusaResponse
     const enterprise_fee = await orderCycleService.retrieveEnterpriseFee(enterprise_fee_id)
 
     res.status(201).json({ fee: { ...fee, enterprise_fee } })
-  } catch (error: any) {
+  } catch (error) {
     res.status(500).json({ message: "Failed to apply fee to order cycle", error: error.message })
   }
 }

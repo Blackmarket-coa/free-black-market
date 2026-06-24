@@ -1,12 +1,13 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
+import type { VendorRequest } from "../../types"
 import { HAWALA_LEDGER_MODULE } from "../../../../modules/hawala-ledger"
 import HawalaLedgerModuleService from "../../../../modules/hawala-ledger/service"
 
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
-  const sellerId = (req as any).auth_context?.actor_id
+  const sellerId = (req as VendorRequest).auth_context?.actor_id
   if (!sellerId) return res.status(401).json({ message: "Unauthorized" })
 
-  const { payee_vendor_id, amount, payment_method = "manual", invoice_number, reference_note } = req.body as any
+  const { payee_vendor_id, amount, payment_method = "manual", invoice_number, reference_note } = req.body as { payee_vendor_id?: string; amount?: number; payment_method?: string; invoice_number?: string; reference_note?: string }
 
   if (!payee_vendor_id || !amount) {
     return res.status(400).json({ message: "payee_vendor_id and amount are required" })

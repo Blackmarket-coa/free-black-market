@@ -1,4 +1,5 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
+import type { VendorRequest } from "../types"
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 import { TENANCY_MODULE } from "../../../modules/tenancy"
 import {
@@ -23,7 +24,7 @@ async function resolveSellerId(req: MedusaRequest, actorId?: string): Promise<st
 }
 
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
-  const actorId = (req as any)._seller_id || (req as any).auth_context?.actor_id
+  const actorId = (req as VendorRequest)._seller_id || (req as VendorRequest).auth_context?.actor_id
   const sellerId = await resolveSellerId(req, actorId)
   if (!sellerId) return res.status(401).json({ message: "Unauthorized" })
 
@@ -39,7 +40,7 @@ type PatchBody = {
 }
 
 export async function PATCH(req: MedusaRequest<PatchBody>, res: MedusaResponse) {
-  const actorId = (req as any)._seller_id || (req as any).auth_context?.actor_id
+  const actorId = (req as VendorRequest)._seller_id || (req as VendorRequest).auth_context?.actor_id
   const sellerId = await resolveSellerId(req, actorId)
   if (!sellerId) return res.status(401).json({ message: "Unauthorized" })
 
@@ -67,7 +68,7 @@ export async function PATCH(req: MedusaRequest<PatchBody>, res: MedusaResponse) 
         {
           id: state.id,
           payout_deferred_until_first_sale: body.payout_deferred_until_first_sale,
-        } as any,
+        },
       ])
       return res.json({ state: updated })
     }

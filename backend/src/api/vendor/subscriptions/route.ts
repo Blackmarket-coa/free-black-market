@@ -29,7 +29,7 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
       return
     }
 
-    const productIds = sellerData[0].products?.map((p: any) => p.id) || []
+    const productIds = sellerData[0].products?.map((p) => p.id) || []
 
     if (!productIds.length) {
       res.json({ subscriptions: [], count: 0 })
@@ -38,7 +38,7 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
 
     const { status, type } = req.query as { status?: string; type?: string }
     
-    const filters: Record<string, any> = { 
+    const filters: Record<string, unknown> = { 
       seller_id: sellerId 
     }
     if (status) filters.status = status

@@ -1,4 +1,5 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
+import type { VendorRequest } from "../../../types"
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 import {
   PRODUCT_ARCHETYPE_MODULE,
@@ -28,12 +29,12 @@ async function verifySellerOwnsProduct(req: MedusaRequest, sellerId: string, pro
     fields: ["products.id"],
     filters: { id: sellerId },
   })
-  const owned = sellerProducts?.[0]?.products?.map((p: any) => p.id) || []
+  const owned = sellerProducts?.[0]?.products?.map((p) => p.id) || []
   return owned.includes(productId)
 }
 
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
-  const actorId = (req as any)._seller_id || (req as any).auth_context?.actor_id
+  const actorId = (req as VendorRequest)._seller_id || (req as VendorRequest).auth_context?.actor_id
   const sellerId = await resolveSellerId(req, actorId)
   const { id } = req.params
 
@@ -52,7 +53,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 type Body = { code: ProductArchetypeCode }
 
 export async function PUT(req: MedusaRequest<Body>, res: MedusaResponse) {
-  const actorId = (req as any)._seller_id || (req as any).auth_context?.actor_id
+  const actorId = (req as VendorRequest)._seller_id || (req as VendorRequest).auth_context?.actor_id
   const sellerId = await resolveSellerId(req, actorId)
   const { id } = req.params
   const body = (req.validatedBody || req.body) as Body

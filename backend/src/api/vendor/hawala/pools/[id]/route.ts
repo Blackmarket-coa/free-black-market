@@ -1,4 +1,5 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
+import type { VendorRequest } from "../../../types"
 import { HAWALA_LEDGER_MODULE } from "../../../../../modules/hawala-ledger"
 import HawalaLedgerModuleService from "../../../../../modules/hawala-ledger/service"
 
@@ -10,7 +11,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
   const hawalaService = req.scope.resolve<HawalaLedgerModuleService>(HAWALA_LEDGER_MODULE)
   const { id } = req.params
 
-  const sellerId = (req as any).auth_context?.actor_id
+  const sellerId = (req as VendorRequest).auth_context?.actor_id
   if (!sellerId) {
     return res.status(401).json({ error: "Authentication required" })
   }
@@ -45,7 +46,7 @@ export async function PATCH(req: MedusaRequest, res: MedusaResponse) {
   const hawalaService = req.scope.resolve<HawalaLedgerModuleService>(HAWALA_LEDGER_MODULE)
   const { id } = req.params
 
-  const sellerId = (req as any).auth_context?.actor_id
+  const sellerId = (req as VendorRequest).auth_context?.actor_id
   if (!sellerId) {
     return res.status(401).json({ error: "Authentication required" })
   }
@@ -74,7 +75,7 @@ export async function PATCH(req: MedusaRequest, res: MedusaResponse) {
       auto_invest_percentage?: number
     }
 
-    const updateData: Record<string, any> = { id }
+    const updateData: Record<string, unknown> = { id }
     if (name) updateData.name = name
     if (description !== undefined) updateData.description = description
     if (status) updateData.status = status

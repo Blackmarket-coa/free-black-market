@@ -1,4 +1,5 @@
 import { createLogger } from "../../../../shared/logger"
+import type { VendorRequest } from "../../types"
 const log = createLogger("api/vendor/products/[id]")
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
@@ -60,7 +61,7 @@ export async function GET(
   res: MedusaResponse
 ) {
   const query = req.scope.resolve(ContainerRegistrationKeys.QUERY)
-  const actorId = (req as any)._seller_id || (req as any).auth_context?.actor_id
+  const actorId = (req as VendorRequest)._seller_id || (req as VendorRequest).auth_context?.actor_id
   const sellerId = await resolveSellerId(req, actorId)
   const { id } = req.params
 
@@ -80,7 +81,7 @@ export async function GET(
       filters: { id: sellerId },
     })
 
-    const ownedProductIds = sellerProducts?.[0]?.products?.map((p: any) => p.id) || []
+    const ownedProductIds = sellerProducts?.[0]?.products?.map((p) => p.id) || []
     if (!ownedProductIds.includes(id)) {
       return res.status(403).json({ message: "You do not have access to this product" })
     }
@@ -101,7 +102,7 @@ export async function GET(
     }
 
     return res.status(404).json({ message: "Product not found" })
-  } catch (error: any) {
+  } catch (error) {
     log.error(`Error fetching product ${id} for seller ${sellerId}:`, error)
     res.status(500).json({
       message: "Failed to fetch product"
@@ -114,7 +115,7 @@ export async function POST(
   res: MedusaResponse
 ) {
   const query = req.scope.resolve(ContainerRegistrationKeys.QUERY)
-  const actorId = (req as any)._seller_id || (req as any).auth_context?.actor_id
+  const actorId = (req as VendorRequest)._seller_id || (req as VendorRequest).auth_context?.actor_id
   const sellerId = await resolveSellerId(req, actorId)
   const { id } = req.params
 
@@ -134,12 +135,12 @@ export async function POST(
       filters: { id: sellerId },
     })
 
-    const ownedProductIds = sellerProducts?.[0]?.products?.map((p: any) => p.id) || []
+    const ownedProductIds = sellerProducts?.[0]?.products?.map((p) => p.id) || []
     if (!ownedProductIds.includes(id)) {
       return res.status(403).json({ message: "You do not have access to this product" })
     }
 
-    const { additional_data, ...update } = req.body as any
+    const { additional_data, ...update } = req.body as { additional_data?: Record<string, unknown> } & Record<string, unknown>
 
     // Run the update workflow
     const { result } = await updateProductsWorkflow(req.scope).run({
@@ -166,7 +167,7 @@ export async function POST(
     }
 
     return res.status(404).json({ message: "Product not found after update" })
-  } catch (error: any) {
+  } catch (error) {
     log.error(`Error updating product ${id} for seller ${sellerId}:`, error)
     res.status(500).json({
       message: "Failed to update product"
@@ -178,7 +179,7 @@ export async function DELETE(
   req: MedusaRequest,
   res: MedusaResponse
 ) {
-  const actorId = (req as any)._seller_id || (req as any).auth_context?.actor_id
+  const actorId = (req as VendorRequest)._seller_id || (req as VendorRequest).auth_context?.actor_id
   const sellerId = await resolveSellerId(req, actorId)
   const { id } = req.params
 
@@ -200,7 +201,7 @@ export async function DELETE(
       filters: { id: sellerId },
     })
 
-    const ownedProductIds = sellerProducts?.[0]?.products?.map((p: any) => p.id) || []
+    const ownedProductIds = sellerProducts?.[0]?.products?.map((p) => p.id) || []
     if (!ownedProductIds.includes(id)) {
       return res.status(403).json({ message: "You do not have access to this product" })
     }
@@ -218,7 +219,7 @@ export async function DELETE(
       object: "product",
       deleted: true
     })
-  } catch (error: any) {
+  } catch (error) {
     log.error(`Error deleting product ${id} for seller ${sellerId}:`, error)
     res.status(500).json({
       message: "Failed to delete product"

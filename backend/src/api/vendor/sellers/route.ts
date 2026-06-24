@@ -29,7 +29,7 @@ export const POST = async (
   let body: CreateSellerInput
   try {
     body = createSellerSchema.parse(req.body)
-  } catch (validationError: any) {
+  } catch (validationError) {
     log.error("[POST /vendor/sellers] Validation error")
     return res.status(400).json({
       type: "invalid_data",
@@ -90,7 +90,7 @@ export const POST = async (
         message: "Your seller registration request has been submitted and is pending approval.",
       },
     })
-  } catch (error: any) {
+  } catch (error) {
     log.error("[POST /vendor/sellers] Failed to create seller request:", error.message)
 
     // Return proper error response

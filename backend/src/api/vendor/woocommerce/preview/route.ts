@@ -1,4 +1,5 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
+import type { VendorRequest } from "../../types"
 import { WOOCOMMERCE_IMPORT_MODULE } from "../../../../modules/woocommerce-import"
 import WooCommerceImportModuleService from "../../../../modules/woocommerce-import/service"
 import { WooApiClient } from "../../../../modules/woocommerce-import/lib/woo-api-client"
@@ -10,7 +11,7 @@ import type { ImportPreview } from "../../../../modules/woocommerce-import/types
  * Preview what products would be imported from the connected WooCommerce store.
  */
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
-  const sellerId = (req as any).auth_context?.actor_id
+  const sellerId = (req as VendorRequest).auth_context?.actor_id
 
   if (!sellerId) {
     return res.status(401).json({ message: "Unauthorized" })
@@ -66,7 +67,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     }
 
     return res.json({ preview })
-  } catch (error: any) {
+  } catch (error) {
     return res.status(500).json({
       message: "Failed to preview products",
       error: error.message,

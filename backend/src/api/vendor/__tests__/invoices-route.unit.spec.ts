@@ -15,7 +15,7 @@ const createRes = () => {
     res.statusCode = code
     return res
   }
-  res.json = (payload: any) => {
+  res.json = (payload) => {
     res.body = payload
     return res
   }
@@ -24,7 +24,7 @@ const createRes = () => {
 
 describe("vendor invoices route", () => {
   it("supports create -> list -> patch lifecycle in seller metadata store", async () => {
-    const metadataStore: { id: string; metadata: Record<string, any> }[] = []
+    const metadataStore: { id: string; metadata: Record<string, unknown> }[] = []
 
     ;(createSellerMetadataRecord as jest.Mock).mockImplementation(async (_module, input) => {
       const first = input[0]
@@ -38,7 +38,7 @@ describe("vendor invoices route", () => {
       return metadataStore
     })
 
-    const makeReq = (body: Record<string, any> = {}) => ({
+    const makeReq = (body: Record<string, unknown> = {}) => ({
       body,
       auth_context: { actor_id: "seller_123" },
       scope: {

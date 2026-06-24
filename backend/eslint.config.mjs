@@ -93,6 +93,9 @@ export default tseslint.config(
       // four subtrees still carrying load-bearing anys (re-enabled below).
       "src/api/admin/**/*.{ts,tsx}",
       "src/api/v1/seller/**/*.{ts,tsx}",
+      // Vendor tree gated except a few load-bearing subtrees + test mocks
+      // (re-enabled below).
+      "src/api/vendor/**/*.{ts,tsx}",
     ],
     rules: {
       "@typescript-eslint/no-explicit-any": "error",
@@ -101,13 +104,21 @@ export default tseslint.config(
   {
     // TS-3 deferred subtrees: still carry load-bearing anys (mis-typed service
     // returns / raw-query result arrays). Re-disable the rule here so the broad
-    // admin/** + v1/seller/** gate above stays green. Clear these and delete
-    // each entry to finish the trees (see docs/AUDIT_DEBT.md, TS-3).
+    // admin/** + v1/seller/** + vendor/** gates above stay green. Clear these
+    // and delete each entry to finish the trees (see docs/AUDIT_DEBT.md, TS-3).
     files: [
       "src/api/admin/auth-debug/**/*.{ts,tsx}",
       "src/api/admin/cms-categories/**/*.{ts,tsx}",
       "src/api/admin/vendor-hype/**/*.{ts,tsx}",
       "src/api/v1/seller/programs/**/*.{ts,tsx}",
+      // vendor: load-bearing subtrees (model-coupled casts, raw-query / SDK
+      // result arrays) + unit-test mock casts.
+      "src/api/vendor/deliveries/**/*.{ts,tsx}",
+      "src/api/vendor/farm/**/*.{ts,tsx}",
+      "src/api/vendor/me/**/*.{ts,tsx}",
+      "src/api/vendor/printful/**/*.{ts,tsx}",
+      "src/api/vendor/**/__tests__/**/*.{ts,tsx}",
+      "src/api/vendor/**/*.spec.ts",
     ],
     rules: {
       "@typescript-eslint/no-explicit-any": "off",

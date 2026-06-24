@@ -16,7 +16,7 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
   try {
     const exchange = await orderCycleService.retrieveOrderCycleExchange(exchangeId)
     res.json({ exchange })
-  } catch (_error: any) {
+  } catch (_error) {
     res.status(404).json({ message: "Exchange not found" })
   }
 }
@@ -37,7 +37,7 @@ export const PUT = async (req: MedusaRequest<UpdateExchangeBody>, res: MedusaRes
     })
 
     res.json({ exchange })
-  } catch (error: any) {
+  } catch (error) {
     res.status(500).json({ message: "Failed to update exchange", error: error.message })
   }
 }
@@ -50,7 +50,7 @@ export const DELETE = async (req: MedusaRequest, res: MedusaResponse) => {
   try {
     await orderCycleService.deleteOrderCycleExchanges(exchangeId)
     res.status(200).json({ success: true })
-  } catch (error: any) {
+  } catch (error) {
     res.status(500).json({ message: "Failed to delete exchange", error: error.message })
   }
 }

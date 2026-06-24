@@ -1,4 +1,5 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
+import type { VendorRequest } from "../../types"
 import { WOOCOMMERCE_IMPORT_MODULE } from "../../../../modules/woocommerce-import"
 import WooCommerceImportModuleService from "../../../../modules/woocommerce-import/service"
 import { importWooProductsWorkflow } from "../../../../workflows/woocommerce-import/import-woo-products"
@@ -10,7 +11,7 @@ import { ImportStatus } from "../../../../modules/woocommerce-import/types"
  * Start importing products from the connected WooCommerce store.
  */
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
-  const sellerId = (req as any).auth_context?.actor_id
+  const sellerId = (req as VendorRequest).auth_context?.actor_id
 
   if (!sellerId) {
     return res.status(401).json({ message: "Unauthorized" })
@@ -90,7 +91,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       result: result.result,
       message: `Import completed: ${result.result.imported} imported, ${result.result.failed} failed, ${result.result.skipped} skipped`,
     })
-  } catch (error: any) {
+  } catch (error) {
     return res.status(500).json({
       message: "Import failed",
       error: error.message,
@@ -103,7 +104,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
  * Get import history for the current vendor.
  */
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
-  const sellerId = (req as any).auth_context?.actor_id
+  const sellerId = (req as VendorRequest).auth_context?.actor_id
 
   if (!sellerId) {
     return res.status(401).json({ message: "Unauthorized" })
@@ -129,7 +130,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     )
 
     return res.json({
-      imports: importLogs.map((log: any) => ({
+      imports: importLogs.map((log) => ({
         id: log.id,
         status: log.status,
         total_products: log.total_products,
@@ -143,7 +144,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         created_at: log.created_at,
       })),
     })
-  } catch (error: any) {
+  } catch (error) {
     return res.status(500).json({
       message: "Failed to fetch import history",
       error: error.message,

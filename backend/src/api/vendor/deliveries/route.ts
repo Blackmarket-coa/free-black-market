@@ -73,7 +73,7 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
     const producerId = producers[0].id
 
     // Build filters
-    const filters: Record<string, any> = {
+    const filters: Record<string, unknown> = {
       producer_id: producerId,
     }
     
