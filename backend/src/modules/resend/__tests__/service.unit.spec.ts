@@ -6,6 +6,9 @@ jest.mock("../emails/user-invited", () => ({ userInvitedEmail: () => null }), { 
 jest.mock("../emails/password-reset", () => ({ passwordResetEmail: () => null }), { virtual: true })
 jest.mock("../emails/vendor-accepted", () => ({ vendorAcceptedEmail: () => null }), { virtual: true })
 jest.mock("../emails/customer-accepted", () => ({ customerAcceptedEmail: () => null }), { virtual: true })
+jest.mock("../emails/booking-confirmation", () => ({ bookingConfirmationEmail: () => null }), { virtual: true })
+jest.mock("../emails/review-request", () => ({ reviewRequestEmail: () => null }), { virtual: true })
+jest.mock("../emails/embed-chat-message", () => ({ embedChatMessageEmail: () => null }), { virtual: true })
 
 import ResendNotificationProviderService from "../service"
 

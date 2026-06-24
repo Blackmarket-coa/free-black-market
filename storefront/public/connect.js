@@ -369,12 +369,29 @@
   // ---------------------------------------------------------------------------
   var analyticsQueue = [];
   var flushTimer = null;
+  // Generate a random token using the Web Crypto API (CSPRNG). Falls back to a
+  // time-based id only if crypto is unavailable — never Math.random(), which is
+  // not cryptographically secure.
+  function randomToken() {
+    try {
+      var crypto = window.crypto || window.msCrypto;
+      var bytes = new Uint8Array(16);
+      crypto.getRandomValues(bytes);
+      var out = "";
+      for (var i = 0; i < bytes.length; i++) {
+        out += (bytes[i] + 0x100).toString(16).slice(1);
+      }
+      return out;
+    } catch (e) {
+      return Date.now().toString(36);
+    }
+  }
   var sessionId = (function () {
     try {
       var k = "fbm_sid";
       var v = window.sessionStorage.getItem(k);
       if (!v) {
-        v = "s_" + Math.random().toString(36).slice(2) + Date.now().toString(36);
+        v = "s_" + randomToken();
         window.sessionStorage.setItem(k, v);
       }
       return v;

@@ -9,7 +9,7 @@ import { Migration } from "@mikro-orm/migrations"
 export class Migration20260624CreateProductReview extends Migration {
   async up(): Promise<void> {
     this.addSql(`
-      CREATE TABLE IF NOT EXISTS "product_review" (
+      CREATE TABLE IF NOT EXISTS "embed_product_review" (
         "id" TEXT NOT NULL,
         "product_id" TEXT NOT NULL,
         "seller_id" TEXT NOT NULL,
@@ -24,24 +24,24 @@ export class Migration20260624CreateProductReview extends Migration {
         "created_at" TIMESTAMPTZ NOT NULL DEFAULT now(),
         "updated_at" TIMESTAMPTZ NOT NULL DEFAULT now(),
         "deleted_at" TIMESTAMPTZ NULL,
-        CONSTRAINT "product_review_pkey" PRIMARY KEY ("id")
+        CONSTRAINT "embed_product_review_pkey" PRIMARY KEY ("id")
       );
     `)
     this.addSql(`
-      CREATE INDEX IF NOT EXISTS "IDX_product_review_product_id"
-      ON "product_review" ("product_id") WHERE "deleted_at" IS NULL;
+      CREATE INDEX IF NOT EXISTS "IDX_embed_product_review_product_id"
+      ON "embed_product_review" ("product_id") WHERE "deleted_at" IS NULL;
     `)
     this.addSql(`
-      CREATE INDEX IF NOT EXISTS "IDX_product_review_seller_id"
-      ON "product_review" ("seller_id") WHERE "deleted_at" IS NULL;
+      CREATE INDEX IF NOT EXISTS "IDX_embed_product_review_seller_id"
+      ON "embed_product_review" ("seller_id") WHERE "deleted_at" IS NULL;
     `)
     this.addSql(`
-      CREATE UNIQUE INDEX IF NOT EXISTS "UQ_product_review_order_product"
-      ON "product_review" ("order_id", "product_id") WHERE "deleted_at" IS NULL;
+      CREATE UNIQUE INDEX IF NOT EXISTS "UQ_embed_product_review_order_product"
+      ON "embed_product_review" ("order_id", "product_id") WHERE "deleted_at" IS NULL;
     `)
   }
 
   async down(): Promise<void> {
-    this.addSql('DROP TABLE IF EXISTS "product_review" CASCADE;')
+    this.addSql('DROP TABLE IF EXISTS "embed_product_review" CASCADE;')
   }
 }

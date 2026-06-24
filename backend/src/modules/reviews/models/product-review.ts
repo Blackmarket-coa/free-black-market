@@ -13,7 +13,7 @@ export enum ReviewStatus {
  * product per order. `customer_display_name` is the privacy-safe name shown
  * publicly ("Jordan R."); the full customer is referenced by id only.
  */
-const ProductReview = model.define("product_review", {
+const ProductReview = model.define("embed_product_review", {
   id: model.id().primaryKey(),
 
   product_id: model.text(),
@@ -31,11 +31,11 @@ const ProductReview = model.define("product_review", {
   status: model.enum(Object.values(ReviewStatus)).default(ReviewStatus.PUBLISHED),
 })
   .indexes([
-    { on: ["product_id"], name: "IDX_product_review_product_id" },
-    { on: ["seller_id"], name: "IDX_product_review_seller_id" },
+    { on: ["product_id"], name: "IDX_embed_product_review_product_id" },
+    { on: ["seller_id"], name: "IDX_embed_product_review_seller_id" },
     {
       on: ["order_id", "product_id"],
-      name: "UQ_product_review_order_product",
+      name: "UQ_embed_product_review_order_product",
       unique: true,
     },
   ])
