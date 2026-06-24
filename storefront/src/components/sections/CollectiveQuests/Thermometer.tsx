@@ -32,7 +32,7 @@ export function Thermometer({ goal }: { goal: CollectiveGoal }) {
         <p className="text-secondary text-sm">{goal.description}</p>
       )}
       <div
-        className="h-4 w-full overflow-hidden rounded-full bg-green-50"
+        className="h-4 w-full overflow-hidden rounded-full bg-component"
         role="progressbar"
         aria-valuenow={pct}
         aria-valuemin={0}
