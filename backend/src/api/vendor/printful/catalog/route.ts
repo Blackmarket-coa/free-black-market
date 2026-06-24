@@ -44,7 +44,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       limit,
       offset,
     })
-  } catch (error: any) {
+  } catch (error) {
     return res.status(500).json({
       message: "Failed to fetch Printful catalog products",
       error: error.message,

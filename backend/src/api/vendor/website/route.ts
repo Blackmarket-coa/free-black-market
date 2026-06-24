@@ -1,4 +1,5 @@
 import { createLogger } from "../../../shared/logger";
+import type SellerExtensionService from "../../../modules/seller-extension/service"
 const log = createLogger("api/vendor/website");
 import {
   AuthenticatedMedusaRequest,
@@ -86,13 +87,13 @@ export async function GET(
       const live = meta.site_url ? await probeSiteLive(meta.site_url) : false;
       if (live) {
         const sellerExtension = req.scope.resolve("sellerExtension");
-        await updateSellerMetadataRecord(sellerExtension as any, [
+        await updateSellerMetadataRecord(sellerExtension as SellerExtensionService, [
           { id: meta.id, site_status: "live" },
         ]);
         effectiveMeta = { ...meta, site_status: "live" };
       } else if (isProvisioningStale(meta.updated_at)) {
         const sellerExtension = req.scope.resolve("sellerExtension");
-        await updateSellerMetadataRecord(sellerExtension as any, [
+        await updateSellerMetadataRecord(sellerExtension as SellerExtensionService, [
           { id: meta.id, site_status: "failed" },
         ]);
         effectiveMeta = { ...meta, site_status: "failed" };
@@ -138,11 +139,11 @@ export async function POST(
 
     const sellerExtension = req.scope.resolve("sellerExtension");
     if (meta) {
-      await updateSellerMetadataRecord(sellerExtension as any, [
+      await updateSellerMetadataRecord(sellerExtension as SellerExtensionService, [
         { id: meta.id, connect_domains: domains },
       ]);
     } else {
-      await createSellerMetadataRecord(sellerExtension as any, [
+      await createSellerMetadataRecord(sellerExtension as SellerExtensionService, [
         { seller_id: sellerId, connect_domains: domains },
       ]);
     }

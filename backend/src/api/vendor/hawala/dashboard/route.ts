@@ -1,4 +1,5 @@
 import { createLogger } from "../../../../shared/logger"
+import type { VendorRequest } from "../../types"
 const log = createLogger("api/vendor/hawala/dashboard")
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { HAWALA_LEDGER_MODULE } from "../../../../modules/hawala-ledger"
@@ -13,7 +14,7 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
     const hawalaService = req.scope.resolve<HawalaLedgerModuleService>(HAWALA_LEDGER_MODULE)
     
     // Get vendor ID from auth context
-    const vendorId = (req as any).auth_context?.actor_id
+    const vendorId = (req as VendorRequest).auth_context?.actor_id
     if (!vendorId) {
       return res.status(401).json({ error: "Unauthorized" })
     }
@@ -22,7 +23,7 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
     let dashboard
     try {
       dashboard = await hawalaService.getVendorDashboard(vendorId)
-    } catch (error: any) {
+    } catch (error) {
       if (error.message === "Vendor account not found") {
         // Auto-create vendor account
         await hawalaService.createAccount({
@@ -39,7 +40,7 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
     }
     
     res.json({ dashboard })
-  } catch (error: any) {
+  } catch (error) {
     log.error("Error getting vendor dashboard:", error)
     res.status(400).json({ error: error.message })
   }

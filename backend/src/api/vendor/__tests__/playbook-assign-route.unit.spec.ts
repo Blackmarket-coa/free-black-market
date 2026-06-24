@@ -7,7 +7,7 @@ jest.mock("../../../shared", () => ({
 const mockWorkflowRun = jest.fn()
 jest.mock("../../../workflows/assign-playbook", () => ({
   assignPlaybookWorkflow: jest.fn(() => ({
-    run: (args: any) => mockWorkflowRun(args),
+    run: (args) => mockWorkflowRun(args),
   })),
 }))
 
@@ -35,7 +35,7 @@ const createRes = () => {
     res.statusCode = code
     return res
   }
-  res.json = (payload: any) => {
+  res.json = (payload) => {
     res.body = payload
     return res
   }
@@ -43,7 +43,7 @@ const createRes = () => {
 }
 
 const makeReq = (
-  body: any,
+  body,
   opts: { listPlaybookAssignments?: jest.Mock } = {}
 ) => ({
   body,

@@ -74,7 +74,7 @@ export async function POST(
       storage_requirements,
       external_lot_id,
       is_active,
-    } = req.body as Record<string, any>
+    } = req.body as Record<string, unknown>
 
     // Generate lot number if not provided
     const finalLotNumber = lot_number || 
@@ -105,7 +105,7 @@ export async function POST(
     })
 
     res.status(201).json({ lot })
-  } catch (error: any) {
+  } catch (error) {
     res.status(500).json({ 
       message: "Failed to create lot", 
       error: error.message 

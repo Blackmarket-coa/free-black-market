@@ -1,4 +1,5 @@
 import { createLogger } from "../../../../../../shared/logger"
+import type { VendorRequest } from "../../../../types"
 const log = createLogger("api/vendor/collective/demand-pools/[id]/proposals")
 import { z } from "zod"
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
@@ -51,7 +52,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
   const { id } = req.params
 
   try {
-    const vendorId = (req as any).auth_context?.actor_id
+    const vendorId = (req as VendorRequest).auth_context?.actor_id
     if (!vendorId) {
       return res.status(401).json({ error: "Unauthorized" })
     }
@@ -79,7 +80,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
 
   try {
     const body = submitProposalSchema.parse(req.body)
-    const vendorId = (req as any).auth_context?.actor_id
+    const vendorId = (req as VendorRequest).auth_context?.actor_id
     if (!vendorId) {
       return res.status(401).json({ error: "Unauthorized" })
     }
@@ -107,7 +108,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     })
 
     // Also submit to bargaining group if specified
-    let bargainingProposal: any = null
+    let bargainingProposal: unknown = null
     if (body.bargaining_group_id) {
       const bargainingService = req.scope.resolve<BargainingModuleService>(
         BARGAINING_MODULE

@@ -1,4 +1,5 @@
 import { createLogger } from "../../../shared/logger"
+import type { VendorRequest } from "../types"
 const log = createLogger("api/vendor/order-cycles")
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { ORDER_CYCLE_MODULE } from "../../../modules/order-cycle"
@@ -53,7 +54,7 @@ export async function POST(
 
   try {
     // Get seller ID from authenticated context
-    const sellerId = (req as any).auth_context?.actor_id
+    const sellerId = (req as VendorRequest).auth_context?.actor_id
     
     if (!sellerId) {
       return res.status(401).json({ message: "Unauthorized - seller ID not found" })

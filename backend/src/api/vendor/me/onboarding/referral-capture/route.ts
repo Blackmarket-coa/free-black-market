@@ -1,4 +1,5 @@
 import { createLogger } from "../../../../../shared/logger"
+import type { VendorRequest } from "../../../types"
 const log = createLogger("api/vendor/me/onboarding/referral-capture")
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
@@ -56,7 +57,7 @@ type Body = {
 }
 
 export async function POST(req: MedusaRequest<Body>, res: MedusaResponse) {
-  const actorId = (req as any)._seller_id || (req as any).auth_context?.actor_id
+  const actorId = (req as VendorRequest)._seller_id || (req as VendorRequest).auth_context?.actor_id
   const sellerId = await resolveSellerId(req, actorId)
   if (!sellerId) {
     return res.status(401).json({ message: "Unauthorized" })

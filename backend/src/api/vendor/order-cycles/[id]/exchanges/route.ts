@@ -27,7 +27,7 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
     })
 
     res.json({ incoming, outgoing })
-  } catch (error: any) {
+  } catch (error) {
     res.status(500).json({ message: "Failed to fetch exchanges", error: error.message })
   }
 }
@@ -50,7 +50,7 @@ export const POST = async (req: MedusaRequest<CreateExchangeBody>, res: MedusaRe
     })
 
     res.status(201).json({ exchange })
-  } catch (error: any) {
+  } catch (error) {
     res.status(500).json({ message: "Failed to create exchange", error: error.message })
   }
 }

@@ -92,7 +92,7 @@ export async function GET(
     }
 
     res.json({ lot })
-  } catch (error: any) {
+  } catch (error) {
     res.status(500).json({ 
       message: "Failed to fetch lot", 
       error: error.message 
@@ -148,7 +148,7 @@ export async function PUT(
       storage_requirements,
       external_lot_id,
       is_active,
-    } = req.body as Record<string, any>
+    } = req.body as Record<string, unknown>
 
     // Update the lot
     const lot = await agricultureService.updateLots({
@@ -172,7 +172,7 @@ export async function PUT(
     })
 
     res.json({ lot })
-  } catch (error: any) {
+  } catch (error) {
     res.status(500).json({ 
       message: "Failed to update lot", 
       error: error.message 
@@ -215,7 +215,7 @@ export async function DELETE(
     await agricultureService.deleteLots(lotId)
 
     res.status(204).send()
-  } catch (error: any) {
+  } catch (error) {
     res.status(500).json({ 
       message: "Failed to delete lot", 
       error: error.message 

@@ -49,7 +49,7 @@ export async function GET(
     const mxid = matrixService.buildMxid(localpartSource)
     const unreadCount = await matrixService.getUnreadCount(mxid)
     res.json({ unread_count: unreadCount })
-  } catch (error: any) {
+  } catch (error) {
     log.warn(
       "[GET /vendor/chat/unread] Matrix unavailable, returning degraded count:",
       error?.message

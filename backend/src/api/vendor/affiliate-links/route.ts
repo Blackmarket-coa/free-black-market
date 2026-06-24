@@ -1,4 +1,5 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
+import type { VendorRequest } from "../types"
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 import { CREATOR_ATTRIBUTION_MODULE } from "../../../modules/creator-attribution"
 import type CreatorAttributionService from "../../../modules/creator-attribution/service"
@@ -19,7 +20,7 @@ async function resolveSellerId(req: MedusaRequest, actorId?: string): Promise<st
 }
 
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
-  const actorId = (req as any)._seller_id || (req as any).auth_context?.actor_id
+  const actorId = (req as VendorRequest)._seller_id || (req as VendorRequest).auth_context?.actor_id
   const sellerId = await resolveSellerId(req, actorId)
   if (!sellerId) return res.status(401).json({ message: "Unauthorized" })
 
@@ -42,7 +43,7 @@ type Body = {
 }
 
 export async function POST(req: MedusaRequest<Body>, res: MedusaResponse) {
-  const actorId = (req as any)._seller_id || (req as any).auth_context?.actor_id
+  const actorId = (req as VendorRequest)._seller_id || (req as VendorRequest).auth_context?.actor_id
   const sellerId = await resolveSellerId(req, actorId)
   if (!sellerId) return res.status(401).json({ message: "Unauthorized" })
 

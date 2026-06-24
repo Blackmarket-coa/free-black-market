@@ -1,4 +1,5 @@
 import { createLogger } from "../../../../shared/logger"
+import type { VendorRequest } from "../../types"
 const log = createLogger("api/vendor/collective/demand-pools")
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { DEMAND_POOL_MODULE } from "../../../../modules/demand-pool"
@@ -19,7 +20,7 @@ const getErrorMessage = (error: unknown) => {
 // GET /vendor/collective/demand-pools (supplier view of open demand pools)
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
   try {
-    const vendorId = (req as any).auth_context?.actor_id
+    const vendorId = (req as VendorRequest).auth_context?.actor_id
     if (!vendorId) {
       return res.status(401).json({ error: "Unauthorized" })
     }

@@ -12,6 +12,8 @@ import {
   unionFeatureKeys,
   type PlaybookId,
 } from "../../../../modules/playbook"
+import type PlaybookService from "../../../../modules/playbook/service"
+import type SellerExtensionService from "../../../../modules/seller-extension/service"
 import { SELLER_EXTENSION_MODULE } from "../../../../modules/seller-extension"
 import { updateSellerMetadataRecord } from "../../../../modules/seller-extension/metadata-service"
 
@@ -102,7 +104,7 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
   if (!sellerId) return
 
   try {
-    const playbookService: any = req.scope.resolve(PLAYBOOK_MODULE)
+    const playbookService = req.scope.resolve<PlaybookService>(PLAYBOOK_MODULE)
     const [assignment] = await playbookService.listPlaybookAssignments({
       seller_id: sellerId,
     })
@@ -225,7 +227,7 @@ export async function POST(
     // the override so the primary playbook's defaults apply. Non-blocking.
     if (roles) {
       try {
-        const sellerExtensionService: any = req.scope.resolve(SELLER_EXTENSION_MODULE)
+        const sellerExtensionService = req.scope.resolve<SellerExtensionService>(SELLER_EXTENSION_MODULE)
         const [meta] = await sellerExtensionService.listSellerMetadatas({
           seller_id: sellerId,
         })

@@ -4,7 +4,9 @@ import {
   MedusaNextFunction,
   MedusaRequest,
   MedusaResponse,
+  MiddlewareFunction,
 } from "@medusajs/framework/http"
+import type { VendorRequest } from "../types"
 
 /**
  * Simple in-memory rate limiter for vendor hawala routes
@@ -16,7 +18,7 @@ const rateLimitStore = new Map<string, { count: number; resetAt: number }>()
 
 function createRateLimiter(options: { windowMs: number; max: number }) {
   return async (req: MedusaRequest, res: MedusaResponse, next: MedusaNextFunction) => {
-    const vendorId = (req as any).auth_context?.actor_id || req.ip
+    const vendorId = (req as VendorRequest).auth_context?.actor_id || req.ip
     const key = `${vendorId}-${req.path}`
     const now = Date.now()
 
@@ -70,42 +72,42 @@ export default defineMiddlewares({
     {
       matcher: "/vendor/hawala/payouts",
       method: "POST",
-      middlewares: [strictRateLimiter as any],
+      middlewares: [strictRateLimiter as MiddlewareFunction],
     },
     
     // Rate limit advance requests (5 per minute)
     {
       matcher: "/vendor/hawala/advances",
       method: "POST",
-      middlewares: [strictRateLimiter as any],
+      middlewares: [strictRateLimiter as MiddlewareFunction],
     },
     
     // Rate limit vendor payments (5 per minute)
     {
       matcher: "/vendor/hawala/payments",
       method: "POST",
-      middlewares: [strictRateLimiter as any],
+      middlewares: [strictRateLimiter as MiddlewareFunction],
     },
     
     // Rate limit pool withdrawals (5 per minute)
     {
       matcher: "/vendor/hawala/pools/*/withdraw",
       method: "POST",
-      middlewares: [strictRateLimiter as any],
+      middlewares: [strictRateLimiter as MiddlewareFunction],
     },
     
     // Rate limit pool creation (10 per hour)
     {
       matcher: "/vendor/hawala/pools",
       method: "POST",
-      middlewares: [createRateLimiter({ windowMs: 3600_000, max: 10 }) as any],
+      middlewares: [createRateLimiter({ windowMs: 3600_000, max: 10 }) as MiddlewareFunction],
     },
     
     // Standard rate limit for reads
     {
       matcher: "/vendor/hawala/**",
       method: "GET",
-      middlewares: [standardRateLimiter as any],
+      middlewares: [standardRateLimiter as MiddlewareFunction],
     },
   ],
 })

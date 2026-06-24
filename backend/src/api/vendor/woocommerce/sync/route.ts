@@ -1,4 +1,5 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http";
+import type { VendorRequest } from "../../types"
 import { WOOCOMMERCE_IMPORT_MODULE } from "../../../../modules/woocommerce-import";
 import WooCommerceImportModuleService from "../../../../modules/woocommerce-import/service";
 import { syncWooInventoryWorkflow } from "../../../../workflows/woocommerce-import/sync-woo-inventory";
@@ -8,7 +9,7 @@ import { syncWooInventoryWorkflow } from "../../../../workflows/woocommerce-impo
  * Manually trigger an inventory sync from WooCommerce.
  */
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
-  const sellerId = (req as any).auth_context?.actor_id;
+  const sellerId = (req as VendorRequest).auth_context?.actor_id;
 
   if (!sellerId) {
     return res.status(401).json({ code: "INVENTORY_SYNC_UNAUTHORIZED", message: "Unauthorized" });
@@ -46,7 +47,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       message: "Inventory sync completed",
       report: result.report,
     });
-  } catch (error: any) {
+  } catch (error) {
     return res.status(500).json({
       code: "INVENTORY_SYNC_FAILED",
       message: "Inventory sync failed",
@@ -60,7 +61,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
  * Get the latest sync report.
  */
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
-  const sellerId = (req as any).auth_context?.actor_id;
+  const sellerId = (req as VendorRequest).auth_context?.actor_id;
 
   if (!sellerId) {
     return res.status(401).json({ code: "INVENTORY_SYNC_UNAUTHORIZED", message: "Unauthorized" });
@@ -88,7 +89,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         last_sync_report: conn.last_sync_report,
       },
     });
-  } catch (error: any) {
+  } catch (error) {
     return res.status(500).json({
       code: "INVENTORY_SYNC_STATUS_FAILED",
       message: "Failed to fetch sync status",

@@ -1,4 +1,5 @@
 import { createLogger } from "../../../../shared/logger"
+import type SellerExtensionService from "../../../../modules/seller-extension/service"
 const log = createLogger("api/vendor/sellers/me")
 import { AuthenticatedMedusaRequest, MedusaResponse } from "@medusajs/framework"
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
@@ -110,12 +111,12 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
       if (metadataRecords && metadataRecords.length > 0) {
         // Update existing metadata
         const metadataId = (metadataRecords[0] as { id: string }).id
-        await updateSellerMetadataRecord(sellerExtensionModule as any, [
+        await updateSellerMetadataRecord(sellerExtensionModule as SellerExtensionService, [
           { id: metadataId, ...metadataUpdate },
         ])
       } else {
         // Create new metadata record
-        await createSellerMetadataRecord(sellerExtensionModule as any, [
+        await createSellerMetadataRecord(sellerExtensionModule as SellerExtensionService, [
           { seller_id: sellerId, ...metadataUpdate },
         ])
       }

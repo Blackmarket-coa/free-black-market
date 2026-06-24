@@ -1,4 +1,5 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
+import type { VendorRequest } from "../../types"
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 import { CREATOR_ATTRIBUTION_MODULE } from "../../../../modules/creator-attribution"
 import { AffiliateLinkStatus } from "../../../../modules/creator-attribution/models/affiliate-link"
@@ -30,7 +31,7 @@ async function loadOwned(
 }
 
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
-  const actorId = (req as any)._seller_id || (req as any).auth_context?.actor_id
+  const actorId = (req as VendorRequest)._seller_id || (req as VendorRequest).auth_context?.actor_id
   const sellerId = await resolveSellerId(req, actorId)
   const { id } = req.params
   if (!sellerId) return res.status(401).json({ message: "Unauthorized" })
@@ -53,7 +54,7 @@ type PatchBody = {
 }
 
 export async function PATCH(req: MedusaRequest<PatchBody>, res: MedusaResponse) {
-  const actorId = (req as any)._seller_id || (req as any).auth_context?.actor_id
+  const actorId = (req as VendorRequest)._seller_id || (req as VendorRequest).auth_context?.actor_id
   const sellerId = await resolveSellerId(req, actorId)
   const { id } = req.params
   if (!sellerId) return res.status(401).json({ message: "Unauthorized" })
@@ -72,12 +73,12 @@ export async function PATCH(req: MedusaRequest<PatchBody>, res: MedusaResponse) 
   if (body.utm_campaign !== undefined) update.utm_campaign = body.utm_campaign
   if (body.utm_content !== undefined) update.utm_content = body.utm_content
   if (body.metadata !== undefined) update.metadata = body.metadata
-  const [updated] = await (service as any).updateAffiliateLinks([update])
+  const [updated] = await service.updateAffiliateLinks([update])
   return res.json({ link: updated })
 }
 
 export async function DELETE(req: MedusaRequest, res: MedusaResponse) {
-  const actorId = (req as any)._seller_id || (req as any).auth_context?.actor_id
+  const actorId = (req as VendorRequest)._seller_id || (req as VendorRequest).auth_context?.actor_id
   const sellerId = await resolveSellerId(req, actorId)
   const { id } = req.params
   if (!sellerId) return res.status(401).json({ message: "Unauthorized" })
@@ -89,7 +90,7 @@ export async function DELETE(req: MedusaRequest, res: MedusaResponse) {
   if (!owned) return res.status(403).json({ message: "Not your link" })
 
   // Soft revoke instead of hard delete to preserve historical attribution.
-  const [updated] = await (service as any).updateAffiliateLinks([
+  const [updated] = await service.updateAffiliateLinks([
     { id, status: AffiliateLinkStatus.REVOKED },
   ])
   return res.json({ link: updated, revoked: true })

@@ -1,4 +1,5 @@
 import { createLogger } from "../../../../../../shared/logger"
+import type { VendorRequest } from "../../../../types"
 const log = createLogger("api/vendor/hawala/payouts/config/splits")
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { HAWALA_LEDGER_MODULE } from "../../../../../../modules/hawala-ledger"
@@ -13,7 +14,7 @@ export const POST = async (req: MedusaRequest, res: MedusaResponse) => {
     const hawalaService = req.scope.resolve<HawalaLedgerModuleService>(HAWALA_LEDGER_MODULE)
     
     // Get vendor ID from auth context
-    const vendorId = (req as any).auth_context?.actor_id
+    const vendorId = (req as VendorRequest).auth_context?.actor_id
     if (!vendorId) {
       return res.status(401).json({ error: "Unauthorized" })
     }
@@ -60,7 +61,7 @@ export const POST = async (req: MedusaRequest, res: MedusaResponse) => {
     })
 
     res.status(201).json({ split_rule: rule })
-  } catch (error: any) {
+  } catch (error) {
     log.error("Error creating split rule:", error)
     res.status(400).json({ error: error.message })
   }
@@ -75,7 +76,7 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
     const hawalaService = req.scope.resolve<HawalaLedgerModuleService>(HAWALA_LEDGER_MODULE)
     
     // Get vendor ID from auth context
-    const vendorId = (req as any).auth_context?.actor_id
+    const vendorId = (req as VendorRequest).auth_context?.actor_id
     if (!vendorId) {
       return res.status(401).json({ error: "Unauthorized" })
     }
@@ -103,7 +104,7 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
         is_active: r.is_active,
       })),
     })
-  } catch (error: any) {
+  } catch (error) {
     log.error("Error getting split rules:", error)
     res.status(400).json({ error: error.message })
   }

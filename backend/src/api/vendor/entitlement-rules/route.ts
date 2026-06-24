@@ -1,4 +1,5 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
+import type { VendorRequest } from "../types"
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 import {
   ENTITLEMENT_MODULE,
@@ -28,12 +29,12 @@ async function sellerOwnsProduct(req: MedusaRequest, sellerId: string, productId
     fields: ["products.id"],
     filters: { id: sellerId },
   })
-  const owned = sellerProducts?.[0]?.products?.map((p: any) => p.id) || []
+  const owned = sellerProducts?.[0]?.products?.map((p) => p.id) || []
   return owned.includes(productId)
 }
 
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
-  const actorId = (req as any)._seller_id || (req as any).auth_context?.actor_id
+  const actorId = (req as VendorRequest)._seller_id || (req as VendorRequest).auth_context?.actor_id
   const sellerId = await resolveSellerId(req, actorId)
   if (!sellerId) return res.status(401).json({ message: "Unauthorized" })
 
@@ -52,7 +53,7 @@ type Body = {
 }
 
 export async function POST(req: MedusaRequest<Body>, res: MedusaResponse) {
-  const actorId = (req as any)._seller_id || (req as any).auth_context?.actor_id
+  const actorId = (req as VendorRequest)._seller_id || (req as VendorRequest).auth_context?.actor_id
   const sellerId = await resolveSellerId(req, actorId)
   if (!sellerId) return res.status(401).json({ message: "Unauthorized" })
 

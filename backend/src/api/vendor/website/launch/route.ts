@@ -1,4 +1,5 @@
 import { createLogger } from "../../../../shared/logger";
+import type SellerExtensionService from "../../../../modules/seller-extension/service"
 const log = createLogger("api/vendor/website/launch");
 import {
   AuthenticatedMedusaRequest,
@@ -82,7 +83,7 @@ export async function POST(
   // would violate the unique seller_id constraint.
   let metaId = (metaRows?.[0] as MetaRow | undefined)?.id;
   if (!metaId) {
-    const created = (await createSellerMetadataRecord(sellerExtension as any, [
+    const created = (await createSellerMetadataRecord(sellerExtension as SellerExtensionService, [
       { seller_id: sellerId, site_status: "provisioning" },
     ])) as Array<{ id: string }> | { id: string };
     metaId = Array.isArray(created) ? created[0]?.id : created?.id;
@@ -90,7 +91,7 @@ export async function POST(
 
   const persist = async (fields: Record<string, unknown>) => {
     if (!metaId) return;
-    await updateSellerMetadataRecord(sellerExtension as any, [
+    await updateSellerMetadataRecord(sellerExtension as SellerExtensionService, [
       { id: metaId, ...fields },
     ]);
   };

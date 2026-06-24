@@ -42,7 +42,7 @@ export async function POST(
       return res.status(403).json({ message: "No farm profile found" })
     }
 
-    const { reason } = req.body as Record<string, any>
+    const { reason } = req.body as Record<string, unknown>
 
     // Update the lot to mark as surplus
     const lot = await agricultureService.updateLots({
@@ -53,7 +53,7 @@ export async function POST(
     })
 
     res.json({ lot })
-  } catch (error: any) {
+  } catch (error) {
     res.status(500).json({ 
       message: "Failed to mark lot as surplus", 
       error: error.message 
@@ -101,7 +101,7 @@ export async function DELETE(
     })
 
     res.json({ lot })
-  } catch (error: any) {
+  } catch (error) {
     res.status(500).json({ 
       message: "Failed to remove surplus flag", 
       error: error.message 

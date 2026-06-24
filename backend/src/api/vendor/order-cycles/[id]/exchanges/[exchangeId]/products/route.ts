@@ -1,4 +1,5 @@
 import type { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
+import type { VendorRequest } from "../../../../../types"
 import OrderCycleModuleService from "../../../../../../../modules/order-cycle/service"
 
 interface AddProductsBody {
@@ -19,7 +20,7 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
       exchange_id: exchangeId,
     })
     res.json({ products })
-  } catch (error: any) {
+  } catch (error) {
     res.status(500).json({ message: "Failed to fetch products", error: error.message })
   }
 }
@@ -29,12 +30,12 @@ export const POST = async (req: MedusaRequest<AddProductsBody>, res: MedusaRespo
   const { id, exchangeId } = req.params
   const { products } = req.body
   const orderCycleService: OrderCycleModuleService = req.scope.resolve("orderCycleModuleService")
-  const sellerId = (req as any).auth_context?.actor_id
+  const sellerId = (req as VendorRequest).auth_context?.actor_id
 
   try {
     const exchange = await orderCycleService.retrieveOrderCycleExchange(exchangeId)
     
-    const createdProducts: any[] = []
+    const createdProducts: unknown[] = []
     for (const product of products) {
       const created = await orderCycleService.createOrderCycleProducts({
         order_cycle_id: id,
@@ -48,7 +49,7 @@ export const POST = async (req: MedusaRequest<AddProductsBody>, res: MedusaRespo
     }
 
     res.status(201).json({ products: createdProducts })
-  } catch (error: any) {
+  } catch (error) {
     res.status(500).json({ message: "Failed to add products", error: error.message })
   }
 }

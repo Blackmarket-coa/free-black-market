@@ -1,4 +1,5 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
+import type { VendorRequest } from "../../types"
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 import { TENANCY_MODULE } from "../../../../modules/tenancy"
 import {
@@ -51,7 +52,7 @@ type Body = {
 }
 
 export async function POST(req: MedusaRequest<Body>, res: MedusaResponse) {
-  const actorId = (req as any)._seller_id || (req as any).auth_context?.actor_id
+  const actorId = (req as VendorRequest)._seller_id || (req as VendorRequest).auth_context?.actor_id
   const sellerId = await resolveSellerId(req, actorId)
   if (!sellerId) return res.status(401).json({ message: "Unauthorized" })
 
@@ -95,7 +96,7 @@ export async function POST(req: MedusaRequest<Body>, res: MedusaResponse) {
       payout_deferred_until_first_sale: true,
       wizard_started_at: state.wizard_started_at ?? new Date(),
       metadata,
-    } as any,
+    },
   ])
 
   return res.status(200).json({

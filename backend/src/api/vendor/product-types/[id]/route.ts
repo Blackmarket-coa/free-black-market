@@ -1,4 +1,5 @@
 import { createLogger } from "../../../../shared/logger"
+import type { VendorRequest } from "../../types"
 const log = createLogger("api/vendor/product-types/[id]")
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { Modules } from "@medusajs/framework/utils"
@@ -10,7 +11,7 @@ import { Modules } from "@medusajs/framework/utils"
  * Product types are global and not vendor-specific.
  */
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
-  const sellerId = (req as any).auth_context?.actor_id
+  const sellerId = (req as VendorRequest).auth_context?.actor_id
 
   if (!sellerId) {
     return res.status(401).json({ message: "Unauthorized" })
@@ -36,7 +37,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     res.json({
       product_type: productType,
     })
-  } catch (error: any) {
+  } catch (error) {
     // Handle not found errors specifically
     if (error.type === "not_found" || error.message?.includes("not found")) {
       return res.status(404).json({

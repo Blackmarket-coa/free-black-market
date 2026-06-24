@@ -3,7 +3,7 @@ import { createDeliveryZoneSchema } from "../../delivery-zones/contracts"
 
 type ZoneInput = z.infer<typeof createDeliveryZoneSchema>
 
-type ExistingZone = {
+export type ExistingZone = {
   id: string
   name: string
   code: string

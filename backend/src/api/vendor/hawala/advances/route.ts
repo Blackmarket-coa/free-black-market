@@ -1,4 +1,5 @@
 import { createLogger } from "../../../../shared/logger"
+import type { VendorRequest } from "../../types"
 const log = createLogger("api/vendor/hawala/advances")
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { HAWALA_LEDGER_MODULE } from "../../../../modules/hawala-ledger"
@@ -16,7 +17,7 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
     const hawalaService = req.scope.resolve<HawalaLedgerModuleService>(HAWALA_LEDGER_MODULE)
 
     // Get vendor ID from auth context
-    const vendorId = (req as any).auth_context?.actor_id
+    const vendorId = (req as VendorRequest).auth_context?.actor_id
     if (!vendorId) {
       return res.status(401).json({ error: "Unauthorized" })
     }
@@ -43,7 +44,7 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
         status: a.status,
       })),
     })
-  } catch (error: any) {
+  } catch (error) {
     log.error("Error getting advance info:", error)
     res.status(400).json({ error: "Failed to retrieve advance information" })
   }
@@ -58,7 +59,7 @@ export const POST = async (req: MedusaRequest, res: MedusaResponse) => {
     const hawalaService = req.scope.resolve<HawalaLedgerModuleService>(HAWALA_LEDGER_MODULE)
     
     // Get vendor ID from auth context
-    const vendorId = (req as any).auth_context?.actor_id
+    const vendorId = (req as VendorRequest).auth_context?.actor_id
     if (!vendorId) {
       return res.status(401).json({ error: "Unauthorized" })
     }
@@ -90,7 +91,7 @@ export const POST = async (req: MedusaRequest, res: MedusaResponse) => {
         status: advance.status,
       },
     })
-  } catch (error: any) {
+  } catch (error) {
     log.error("Error requesting advance:", error)
     res.status(400).json({ error: "Failed to request advance" })
   }

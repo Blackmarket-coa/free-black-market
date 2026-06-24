@@ -1,4 +1,5 @@
 import { createLogger } from "../../shared/logger"
+import type { VendorRequest } from "./types"
 const log = createLogger("api/vendor/_middlewares")
 import { defineMiddlewares } from "@medusajs/framework/http"
 import type { MedusaRequest, MedusaResponse, MedusaNextFunction } from "@medusajs/framework/http"
@@ -127,7 +128,7 @@ export async function ensureSellerContext(
 
   // Skip if already processed by a previous middleware invocation
   // (this middleware may be registered multiple times via different matchers)
-  if ((req as any)._sellerContextResolved) {
+  if ((req as VendorRequest)._sellerContextResolved) {
     next()
     return
   }
@@ -176,7 +177,7 @@ export async function ensureSellerContext(
 
   if (authContext.actor_id?.startsWith("sel_")) {
     // Store original seller ID for route handlers that need it
-    ;(req as any)._seller_id = authContext.actor_id
+    ;(req as VendorRequest)._seller_id = authContext.actor_id
 
     // Try to convert seller ID to member ID for MercurJS compatibility.
     // MercurJS storeActiveGuard queries sellers by members.id,
@@ -203,7 +204,7 @@ export async function ensureSellerContext(
           get() {
             return _currentAuthContext
           },
-          set(value: any) {
+          set(value) {
             _currentAuthContext = value
             if (value && value.actor_id === originalSellerId) {
               value.actor_id = memberId
@@ -233,7 +234,7 @@ export async function ensureSellerContext(
 
   try {
     // Use pre-resolved seller ID if available (from sel_* to mem_* conversion above)
-    let sellerId = (req as any)._seller_id || authContext.actor_id
+    let sellerId = (req as VendorRequest)._seller_id || authContext.actor_id
     if (sellerId.startsWith("mem_")) {
       const pgConnection = req.scope.resolve(ContainerRegistrationKeys.PG_CONNECTION)
       const memberResult = await pgConnection.raw(
@@ -281,7 +282,7 @@ export async function ensureSellerContext(
     return
   }
 
-  ;(req as any)._sellerContextResolved = true
+  ;(req as VendorRequest)._sellerContextResolved = true
   next()
 }
 

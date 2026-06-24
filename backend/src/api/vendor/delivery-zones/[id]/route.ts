@@ -4,7 +4,7 @@ import { FOOD_DISTRIBUTION_MODULE } from "../../../../modules/food-distribution"
 import type FoodDistributionService from "../../../../modules/food-distribution/service"
 import { requireSellerId } from "../../../../shared"
 import { createDeliveryZoneSchema, updateDeliveryZoneSchema } from "../../../delivery-zones/contracts"
-import { detectDeliveryZoneConflicts } from "../conflict-utils"
+import { detectDeliveryZoneConflicts, type ExistingZone } from "../conflict-utils"
 
 // ===========================================
 // VALIDATION SCHEMAS
@@ -45,7 +45,7 @@ export async function GET(
 // ===========================================
 
 export async function POST(
-  req: AuthenticatedMedusaRequest<Record<string, any>, { id: string }>,
+  req: AuthenticatedMedusaRequest<Record<string, unknown>, { id: string }>,
   res: MedusaResponse
 ) {
   try {
@@ -86,7 +86,7 @@ export async function POST(
 
     const activeZones = await foodDistribution.listDeliveryZones({ active: true })
     const conflicts = mergedCandidate.active
-      ? detectDeliveryZoneConflicts(mergedCandidate, activeZones as any, id)
+      ? detectDeliveryZoneConflicts(mergedCandidate, activeZones as unknown as ExistingZone[], id)
       : []
 
     if (conflicts.length) {
@@ -98,7 +98,7 @@ export async function POST(
     }
 
     // Prepare update data (convert dollars to cents)
-    const updateData: Record<string, any> = { id }
+    const updateData: Record<string, unknown> = { id }
     
     if (data.name !== undefined) updateData.name = data.name
     if (data.boundary !== undefined) updateData.boundary = data.boundary
