@@ -362,6 +362,82 @@ class ProgressionModuleService extends MedusaService({
     return Number(sheet.spendable_xp ?? 0)
   }
 
+  /**
+   * Apply demurrage to a single sheet: reduce the **spendable** balance only.
+   *
+   * Unlike `recordXpEvent`'s negative path, this NEVER touches `total_xp`, role
+   * XP, levels, or titles — lifetime status is permanent (ADR-0003). Writes an
+   * audited `xp_event` (`reason: "demurrage"`) so the decay is reversible.
+   * `amount` is the positive decay magnitude; the balance is floored at 0.
+   */
+  async recordDemurrage(customerId: string, amount: number) {
+    const decay = Math.max(0, Math.round(amount))
+    if (decay === 0) return this.getOrCreateCharacterSheet(customerId)
+
+    const sheet = await this.getOrCreateCharacterSheet(customerId)
+    const current = Number(sheet.spendable_xp ?? 0)
+    const next = Math.max(0, current - decay)
+    const applied = current - next // never more than the balance
+
+    if (applied <= 0) return sheet
+
+    await this.createXpEvents({
+      customer_id: customerId,
+      // Demurrage is balance-level, not role-level; attribute to the active
+      // stance for the audit trail without affecting any role track.
+      role: (sheet.active_stance as Stance) ?? Stance.CONSUMER,
+      amount: -applied,
+      reason: "demurrage",
+      source_module: "demurrage-job",
+      source_id: null,
+      occurred_at: new Date(),
+      metadata: { kind: "demurrage" },
+    })
+
+    await this.updateCharacterSheets({ id: sheet.id, spendable_xp: next })
+    return this.getOrCreateCharacterSheet(customerId)
+  }
+
+  /**
+   * Sweep all sheets and decay spendable XP above a grace floor.
+   *
+   * Only the portion of `spendable_xp` *above* `minBalance` decays, so small
+   * balances never erode below the floor. `rate` is a fraction (e.g. 0.02 = 2%
+   * per period). Each sheet is processed in its own try/catch so one failure
+   * can't abort the sweep. Returns a per-sheet summary for logging.
+   */
+  async applyDemurrage(opts: {
+    rate: number
+    minBalance?: number
+  }): Promise<Array<{ customer_id: string; decayed: number; error?: string }>> {
+    const rate = Math.min(1, Math.max(0, opts.rate))
+    const minBalance = Math.max(0, opts.minBalance ?? 0)
+    const results: Array<{ customer_id: string; decayed: number; error?: string }> = []
+    if (rate === 0) return results
+
+    const sheets = await this.listCharacterSheets({
+      spendable_xp: { $gt: minBalance },
+    })
+
+    for (const sheet of sheets) {
+      const customerId = sheet.customer_id as string
+      try {
+        const spendable = Number(sheet.spendable_xp ?? 0)
+        const decay = Math.round((spendable - minBalance) * rate)
+        if (decay <= 0) {
+          results.push({ customer_id: customerId, decayed: 0 })
+          continue
+        }
+        await this.recordDemurrage(customerId, decay)
+        results.push({ customer_id: customerId, decayed: decay })
+      } catch (error: any) {
+        results.push({ customer_id: customerId, decayed: 0, error: error?.message })
+      }
+    }
+
+    return results
+  }
+
   /** The redeemable reward catalog, annotated with affordability for a balance. */
   listRewards(balance = 0): Array<XpReward & { affordable: boolean }> {
     return XP_REWARDS.map((r) => ({ ...r, affordable: balance >= r.xpCost }))
