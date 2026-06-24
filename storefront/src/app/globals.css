@@ -9,7 +9,10 @@
 @layer base {
   body {
     font-family: var(--font-solarpunk-body), ui-sans-serif, system-ui, sans-serif;
-    background-color: rgb(var(--neutral-0));
+    /* Follow the semantic surface token so the dark-first base (and the
+       light opt-out) both apply without a second source of truth. */
+    background-color: rgb(var(--bg-primary));
+    color: rgb(var(--content-primary));
   }
 
   h1,

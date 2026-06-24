@@ -146,16 +146,17 @@
     --fg-interactive-hover: #48bb78;
     --fg-on-inverted: #181610;
 
-    /* Background Colors - Deep Forest */
-    --bg-base: #181610;
-    --bg-subtle: #201d16;
-    --bg-subtle-hover: #282418;
-    --bg-subtle-pressed: #373228;
-    --bg-component: #282418;
-    --bg-field: #201d16;
-    --bg-field-hover: #282418;
-    --bg-field-component: #373228;
-    --bg-field-component-hover: #474030;
+    /* Background Colors - Off-black canopy (aligned with the storefront
+       dark-first base: #121212 with warm-shifted raised surfaces). */
+    --bg-base: #121212;
+    --bg-subtle: #1a1f1b;
+    --bg-subtle-hover: #222820;
+    --bg-subtle-pressed: #2c322a;
+    --bg-component: #222820;
+    --bg-field: #1a1f1b;
+    --bg-field-hover: #222820;
+    --bg-field-component: #2c322a;
+    --bg-field-component-hover: #3a4034;
     --bg-interactive: #34a362;
     --bg-highlight: rgba(72, 187, 120, 0.15);
     --bg-highlight-hover: rgba(72, 187, 120, 0.22);
@@ -170,7 +171,7 @@
     --border-transparent: transparent;
 
     /* Foreground/Text Colors */
-    --fg-base: #faf7f1;
+    --fg-base: #ededed;
     --fg-subtle: #b4aa98;
     --fg-muted: #8c8270;
     --fg-disabled: #645c4c;

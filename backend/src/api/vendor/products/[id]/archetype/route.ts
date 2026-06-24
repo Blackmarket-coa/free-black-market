@@ -29,7 +29,7 @@ async function verifySellerOwnsProduct(req: MedusaRequest, sellerId: string, pro
     fields: ["products.id"],
     filters: { id: sellerId },
   })
-  const owned = sellerProducts?.[0]?.products?.map((p) => p.id) || []
+  const owned = sellerProducts?.[0]?.products?.map((p) => p?.id) || []
   return owned.includes(productId)
 }
 

@@ -48,6 +48,15 @@ export type CharacterSheet = {
     timeCredits: number
   }
   titles: EarnedTitle[]
+  /** Internal-benefit featureKeys currently unlocked (auto-lapsing thresholds). */
+  unlockedFeatures?: string[]
+  /** Closest not-yet-unlocked privilege, for just-in-time guidance. */
+  nextUnlock?: {
+    featureKey: string
+    label: string
+    blurb: string
+    xpToGo: number
+  } | null
   lastRecomputedAt?: string | null
 }
 

@@ -10,7 +10,10 @@ function getDefaultValue(): ThemeOption {
     return persisted
   }
 
-  return "system"
+  // Dark-first: new sessions default to the off-black solarpunk theme. A user's
+  // persisted choice (light/system) always wins. See
+  // docs/BMC_UNIFIED_DESIGN_BEHAVIORAL_SPEC.md.
+  return "dark"
 }
 
 function getThemeValue(selected: ThemeOption): ThemeValue {

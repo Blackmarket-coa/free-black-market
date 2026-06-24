@@ -1,8 +1,15 @@
 import { MedusaService } from "@medusajs/framework/utils"
-import { CharacterSheet, XpEvent, ProgressionTitle, XpRedemption } from "./models"
+import {
+  CharacterSheet,
+  XpEvent,
+  ProgressionTitle,
+  XpRedemption,
+  XpAttestation,
+} from "./models"
 import { XpRedemptionStatus } from "./models/xp-redemption"
 import { Stance, isStance } from "./stance"
 import { levelForXp, levelProgress, ROLE_XP_WEIGHTS } from "./leveling"
+import { unlockedFeatures, nextUnlock } from "./thresholds"
 import { getXpReward, XP_REWARDS, type XpReward } from "./rewards"
 
 /**
@@ -52,11 +59,24 @@ export class InsufficientXpError extends Error {
   }
 }
 
+/** Raised when an attestation names the same account as subject and attester. */
+export class SelfAttestationError extends Error {
+  constructor(public customerId: string) {
+    super(`Self-attestation is not allowed for customer ${customerId}`)
+    this.name = "SelfAttestationError"
+  }
+}
+
+/** Attestation weight is clamped to this range to bound any single award. */
+export const ATTESTATION_WEIGHT_MIN = 0.5
+export const ATTESTATION_WEIGHT_MAX = 2
+
 class ProgressionModuleService extends MedusaService({
   CharacterSheet,
   XpEvent,
   ProgressionTitle,
   XpRedemption,
+  XpAttestation,
 }) {
   /**
    * Get or create the character sheet for a customer.
@@ -124,6 +144,58 @@ class ProgressionModuleService extends MedusaService({
     await this.checkAndGrantTitles(data.customer_id)
 
     return this.getOrCreateCharacterSheet(data.customer_id)
+  }
+
+  /**
+   * Record an XP event vouched for by a *trusted peer* (the attester), writing
+   * an `xp_attestation` row and awarding `base × weight`.
+   *
+   * This is the anti-karma-farming control: high-trust XP is granted only when
+   * someone other than the subject confirms the value. Self-attestation is
+   * rejected. The weight (default 1) is clamped to [ATTESTATION_WEIGHT_MIN,
+   * ATTESTATION_WEIGHT_MAX] so no single attestation can over-inflate an award.
+   *
+   * @throws SelfAttestationError when attester and subject are the same account.
+   */
+  async recordAttestedXpEvent(
+    data: {
+      customer_id: string
+      role: Stance
+      amount: number
+      reason: string
+      source_module?: string
+      source_id?: string
+      metadata?: Record<string, unknown>
+    },
+    opts: {
+      attesterId: string
+      weight?: number
+    }
+  ) {
+    if (!opts.attesterId || opts.attesterId === data.customer_id) {
+      throw new SelfAttestationError(data.customer_id)
+    }
+
+    const clamped = Math.min(
+      ATTESTATION_WEIGHT_MAX,
+      Math.max(ATTESTATION_WEIGHT_MIN, opts.weight ?? 1)
+    )
+
+    await this.createXpAttestations({
+      subject_customer_id: data.customer_id,
+      attester_customer_id: opts.attesterId,
+      source_module: data.source_module ?? null,
+      source_id: data.source_id ?? null,
+      weight: clamped,
+      reason: data.reason,
+      metadata: (data.metadata as Record<string, unknown>) ?? null,
+    })
+
+    return this.recordXpEvent({
+      ...data,
+      amount: Math.max(1, Math.round(data.amount * clamped)),
+      metadata: { ...(data.metadata ?? {}), attested_by: opts.attesterId, weight: clamped },
+    })
   }
 
   /**
@@ -195,6 +267,23 @@ class ProgressionModuleService extends MedusaService({
       }
     } catch {
       /* ignore */
+    }
+
+    // Collective-campaign backings → capital deployed.
+    try {
+      const { data } = await query.graph({
+        entity: "collective_backing",
+        fields: ["amount"],
+        filters: { backer_id: customerId },
+      })
+      if (Array.isArray(data)) {
+        patch.capital_deployed_cents = data.reduce(
+          (sum, b) => sum + Number(b.amount ?? 0),
+          0
+        )
+      }
+    } catch {
+      /* module absent — leave snapshot as-is */
     }
 
     // Seller-scoped aggregates (producer trust + revenue) when a seller id is known.
@@ -272,6 +361,82 @@ class ProgressionModuleService extends MedusaService({
   async getSpendableXp(customerId: string): Promise<number> {
     const sheet = await this.getOrCreateCharacterSheet(customerId)
     return Number(sheet.spendable_xp ?? 0)
+  }
+
+  /**
+   * Apply demurrage to a single sheet: reduce the **spendable** balance only.
+   *
+   * Unlike `recordXpEvent`'s negative path, this NEVER touches `total_xp`, role
+   * XP, levels, or titles — lifetime status is permanent (ADR-0003). Writes an
+   * audited `xp_event` (`reason: "demurrage"`) so the decay is reversible.
+   * `amount` is the positive decay magnitude; the balance is floored at 0.
+   */
+  async recordDemurrage(customerId: string, amount: number) {
+    const decay = Math.max(0, Math.round(amount))
+    if (decay === 0) return this.getOrCreateCharacterSheet(customerId)
+
+    const sheet = await this.getOrCreateCharacterSheet(customerId)
+    const current = Number(sheet.spendable_xp ?? 0)
+    const next = Math.max(0, current - decay)
+    const applied = current - next // never more than the balance
+
+    if (applied <= 0) return sheet
+
+    await this.createXpEvents({
+      customer_id: customerId,
+      // Demurrage is balance-level, not role-level; attribute to the active
+      // stance for the audit trail without affecting any role track.
+      role: (sheet.active_stance as Stance) ?? Stance.CONSUMER,
+      amount: -applied,
+      reason: "demurrage",
+      source_module: "demurrage-job",
+      source_id: null,
+      occurred_at: new Date(),
+      metadata: { kind: "demurrage" },
+    })
+
+    await this.updateCharacterSheets({ id: sheet.id, spendable_xp: next })
+    return this.getOrCreateCharacterSheet(customerId)
+  }
+
+  /**
+   * Sweep all sheets and decay spendable XP above a grace floor.
+   *
+   * Only the portion of `spendable_xp` *above* `minBalance` decays, so small
+   * balances never erode below the floor. `rate` is a fraction (e.g. 0.02 = 2%
+   * per period). Each sheet is processed in its own try/catch so one failure
+   * can't abort the sweep. Returns a per-sheet summary for logging.
+   */
+  async applyDemurrage(opts: {
+    rate: number
+    minBalance?: number
+  }): Promise<Array<{ customer_id: string; decayed: number; error?: string }>> {
+    const rate = Math.min(1, Math.max(0, opts.rate))
+    const minBalance = Math.max(0, opts.minBalance ?? 0)
+    const results: Array<{ customer_id: string; decayed: number; error?: string }> = []
+    if (rate === 0) return results
+
+    const sheets = await this.listCharacterSheets({
+      spendable_xp: { $gt: minBalance },
+    })
+
+    for (const sheet of sheets) {
+      const customerId = sheet.customer_id as string
+      try {
+        const spendable = Number(sheet.spendable_xp ?? 0)
+        const decay = Math.round((spendable - minBalance) * rate)
+        if (decay <= 0) {
+          results.push({ customer_id: customerId, decayed: 0 })
+          continue
+        }
+        await this.recordDemurrage(customerId, decay)
+        results.push({ customer_id: customerId, decayed: decay })
+      } catch (error: any) {
+        results.push({ customer_id: customerId, decayed: 0, error: error?.message })
+      }
+    }
+
+    return results
   }
 
   /** The redeemable reward catalog, annotated with affordability for a balance. */
@@ -412,10 +577,14 @@ class ProgressionModuleService extends MedusaService({
       }
     })
 
+    const totalXp = Number(sheet.total_xp ?? 0)
+    const trackSnapshots = tracks.map((t) => ({ role: t.role, level: t.level, xp: t.xp }))
+    const next = nextUnlock(trackSnapshots, totalXp)
+
     return {
       customerId: sheet.customer_id,
       activeStance: sheet.active_stance,
-      totalXp: Number(sheet.total_xp ?? 0),
+      totalXp,
       spendableXp: Number(sheet.spendable_xp ?? 0),
       tracks,
       stats: {
@@ -428,8 +597,20 @@ class ProgressionModuleService extends MedusaService({
         timeCredits: Number(sheet.time_credits ?? 0),
       },
       titles: earnedTitles,
+      // Threshold privileges are derived (auto-lapsing): the keys unlocked now,
+      // plus the closest upcoming unlock for just-in-time "you're close" guidance.
+      unlockedFeatures: unlockedFeatures(trackSnapshots, totalXp),
+      nextUnlock: next
+        ? { featureKey: next.featureKey, label: next.label, blurb: next.blurb, xpToGo: next.xpToGo }
+        : null,
       lastRecomputedAt: sheet.last_recomputed_at,
     }
+  }
+
+  /** The internal-benefit featureKeys a customer has currently unlocked. */
+  async getUnlockedFeatures(customerId: string): Promise<string[]> {
+    const summary = await this.getCharacterSheetSummary(customerId)
+    return summary.unlockedFeatures
   }
 
   /**

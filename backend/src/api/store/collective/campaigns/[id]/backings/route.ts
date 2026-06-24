@@ -1,4 +1,6 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
+import { Modules } from "@medusajs/framework/utils"
+import { IEventBusModuleService } from "@medusajs/framework/types"
 import { z } from "zod"
 import {
   BackingMode,
@@ -43,6 +45,26 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       units_reserved: body.units_reserved,
       metadata: body.metadata,
     })
+
+    // Emit a domain event so the progression layer can award INVESTOR XP.
+    // Isolated so an event-bus hiccup never fails the backing itself.
+    try {
+      const eventBus = req.scope.resolve<IEventBusModuleService>(
+        Modules.EVENT_BUS
+      )
+      await eventBus.emit({
+        name: "campaign.backed",
+        data: {
+          backing_id: backing.id,
+          campaign_id: req.params.id,
+          backer_id: backerId,
+          mode: body.mode,
+          amount: body.amount,
+        },
+      })
+    } catch {
+      /* event emission is best-effort */
+    }
 
     return res.status(201).json({ backing })
   } catch (error: unknown) {

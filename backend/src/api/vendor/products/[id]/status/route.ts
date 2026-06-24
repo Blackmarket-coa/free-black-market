@@ -45,7 +45,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       filters: { id: sellerId },
     })
 
-    const ownedProductIds = sellerProducts?.[0]?.products?.map((p) => p.id) || []
+    const ownedProductIds = sellerProducts?.[0]?.products?.map((p) => p?.id) || []
     if (!ownedProductIds.includes(id)) {
       return res.status(403).json({ message: "You do not have access to this product" })
     }
