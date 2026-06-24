@@ -386,6 +386,30 @@ export class MatrixService {
   }
 
   /**
+   * Post a plain-text message into a room as the admin/bot user. Best-effort:
+   * returns false on failure rather than throwing, so callers (e.g. the embed
+   * chat bridge) can fall back to email.
+   */
+  async sendMessage(roomId: string, text: string): Promise<boolean> {
+    const txnId = `fbm-${Date.now()}-${Math.floor(Math.random() * 1e6)}`
+    try {
+      await this.client.put(
+        `/_matrix/client/v3/rooms/${encodeURIComponent(
+          roomId
+        )}/send/m.room.message/${encodeURIComponent(txnId)}`,
+        { msgtype: "m.text", body: text }
+      )
+      return true
+    } catch (error: any) {
+      log.error(
+        "[Matrix] sendMessage failed:",
+        error.response?.data || error.message
+      )
+      return false
+    }
+  }
+
+  /**
    * Alias for the community-wide room (`#general:server`).
    */
   generalRoomAlias(): string {

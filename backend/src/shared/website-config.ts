@@ -33,7 +33,7 @@ export function storefrontBase(): string {
 export function buildSnippet(handle: string): string {
   return [
     `<script src="${storefrontBase()}/connect.js"`,
-    `        data-fbm-handle="${handle}"`,
+    `        data-fbm-vendor="${handle}"`,
     `        data-fbm-api="${apiBase()}" async></script>`,
   ].join("\n");
 }

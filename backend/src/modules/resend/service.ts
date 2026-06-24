@@ -16,6 +16,9 @@ import { userInvitedEmail } from "./emails/user-invited";
 import { passwordResetEmail } from "./emails/password-reset";
 import { vendorAcceptedEmail } from "./emails/vendor-accepted";
 import { customerAcceptedEmail } from "./emails/customer-accepted";
+import { bookingConfirmationEmail } from "./emails/booking-confirmation";
+import { reviewRequestEmail } from "./emails/review-request";
+import { embedChatMessageEmail } from "./emails/embed-chat-message";
 
 enum Templates {
   ORDER_PLACED = "order-placed",
@@ -23,6 +26,9 @@ enum Templates {
   PASSWORD_RESET = "password-reset",
   VENDOR_ACCEPTED = "vendor-accepted",
   CUSTOMER_ACCEPTED = "customer-accepted",
+  BOOKING_CONFIRMATION = "booking-confirmation",
+  REVIEW_REQUEST = "review-request",
+  EMBED_CHAT_MESSAGE = "embed-chat-message",
 }
 
 const templates: {[key in Templates]?: (props: unknown) => React.ReactNode} = {
@@ -31,6 +37,9 @@ const templates: {[key in Templates]?: (props: unknown) => React.ReactNode} = {
   [Templates.PASSWORD_RESET]: passwordResetEmail,
   [Templates.VENDOR_ACCEPTED]: vendorAcceptedEmail,
   [Templates.CUSTOMER_ACCEPTED]: customerAcceptedEmail,
+  [Templates.BOOKING_CONFIRMATION]: bookingConfirmationEmail,
+  [Templates.REVIEW_REQUEST]: reviewRequestEmail,
+  [Templates.EMBED_CHAT_MESSAGE]: embedChatMessageEmail,
 }
 
 /**
@@ -198,6 +207,12 @@ class ResendNotificationProviderService extends AbstractNotificationProviderServ
         return "Your Free Black Market vendor access is ready"
       case Templates.CUSTOMER_ACCEPTED:
         return "Your account has been approved"
+      case Templates.BOOKING_CONFIRMATION:
+        return "Your booking is confirmed"
+      case Templates.REVIEW_REQUEST:
+        return "How was your order? Leave a review"
+      case Templates.EMBED_CHAT_MESSAGE:
+        return "New message from your website"
       default:
         return "New Email"
     }

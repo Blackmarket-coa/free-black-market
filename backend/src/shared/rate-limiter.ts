@@ -270,6 +270,26 @@ export const publicCatalogRateLimiter = createRateLimiter({
   keyPrefix: "public-catalog",
 })
 
+/**
+ * Embed key rate limiter: 100 requests per minute per publishable key.
+ *
+ * Applied to key-authenticated embed endpoints (`/store/embed/*` and the
+ * optional keyed path of `/store/vendors/:handle`). Keyed by the resolved
+ * embed key id (set on the request by the embed-key middleware) so a single
+ * misbehaving site is throttled independently of others, falling back to IP
+ * when no key id is present.
+ */
+export const embedKeyRateLimiter = createRateLimiter({
+  windowMs: 60_000,
+  max: 100,
+  keyPrefix: "embed-key",
+  keyGenerator: (req) => {
+    const keyId = (req as any).embed_key_id
+    if (keyId) return `key:${keyId}`
+    return req.ip || (req.headers["x-forwarded-for"] as string) || "unknown"
+  },
+})
+
 /** Auth rate limiter: 20 attempts per minute (login, register, etc.) */
 export const authRateLimiter = createRateLimiter({
   windowMs: 60_000,

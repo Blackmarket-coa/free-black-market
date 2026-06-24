@@ -8,9 +8,11 @@ import {
   Text,
   toast,
 } from "@medusajs/ui"
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { FbmWebsite, useUpdateWebsiteDomains } from "../../../hooks/api/website"
 import { CodeBlock, Step } from "./shared"
+import { KeysSection } from "./keys-section"
+import { EmbedPreview } from "./embed-preview"
 
 /** Bare-hostname validation that mirrors the backend normalizer. */
 function cleanHost(input: string): string | null {
@@ -40,9 +42,37 @@ const SDK_METHODS: Array<{ call: string; desc: string }> = [
   { call: "FBM.renderEvents('#events')", desc: "Inject a styled events list." },
   { call: "FBM.renderVendor('#me')", desc: "Inject your profile header." },
   {
+    call: "FBM.renderReviews('#reviews')",
+    desc: "Inject your verified-purchase reviews.",
+  },
+  {
+    call: "FBM.renderBooking('#book', { product })",
+    desc: "Calendar + slot picker for a bookable service (needs a key).",
+  },
+  {
+    call: "FBM.openChat('#chat')",
+    desc: "Message button that opens a Blackout chat (needs a key).",
+  },
+  {
     call: "FBM.cartUrl(product)",
     desc: "Deep-link into FBM checkout for a product.",
   },
+  {
+    call: "FBM.on('booking:confirmed', fn)",
+    desc: "Listen for cart, order, and booking events.",
+  },
+]
+
+/** Component catalog for the picker / preview. */
+const COMPONENTS: Array<{ kind: string; label: string; needsKey?: boolean; attrs?: string }> = [
+  { kind: "vendor", label: "Profile header" },
+  { kind: "products", label: "Product grid", attrs: ' data-fbm-limit="6"' },
+  { kind: "digital", label: "Digital products" },
+  { kind: "services", label: "Services" },
+  { kind: "events", label: "Events" },
+  { kind: "reviews", label: "Reviews" },
+  { kind: "booking", label: "Booking", needsKey: true, attrs: ' data-fbm-product="prod_…"' },
+  { kind: "chat", label: "Chat", needsKey: true },
 ]
 
 export const ConnectPanel = ({ website }: { website: FbmWebsite }) => {
@@ -56,16 +86,21 @@ export const ConnectPanel = ({ website }: { website: FbmWebsite }) => {
     setDomains(website.connect_domains || [])
   }, [website.connect_domains])
 
-  const zeroJsExample = [
-    "<!-- Your profile header -->",
-    '<div data-fbm="vendor"></div>',
-    "",
-    "<!-- A grid of your products -->",
-    '<div data-fbm="products" data-fbm-limit="6"></div>',
-    "",
-    "<!-- Your upcoming events -->",
-    '<div data-fbm="events"></div>',
-  ].join("\n")
+  const [picked, setPicked] = useState<string[]>(["vendor", "products"])
+
+  const togglePicked = (kind: string) => {
+    setPicked((cur) =>
+      cur.includes(kind) ? cur.filter((k) => k !== kind) : [...cur, kind]
+    )
+  }
+
+  // Build the component markup from the picker, preserving catalog order.
+  const componentSnippet = useMemo(() => {
+    const lines = COMPONENTS.filter((c) => picked.includes(c.kind)).map(
+      (c) => `<div data-fbm="${c.kind}"${c.attrs || ""}></div>`
+    )
+    return lines.length ? lines.join("\n") : '<div data-fbm="products"></div>'
+  }, [picked])
 
   const addDomain = () => {
     const host = cleanHost(draft)
@@ -114,15 +149,50 @@ export const ConnectPanel = ({ website }: { website: FbmWebsite }) => {
         </Text>
       </Step>
 
-      <Step n={2} title="Show your store — no code required">
-        <Text className="text-ui-fg-subtle mb-2" size="small">
-          Paste any of these where you want them to appear. They render
-          themselves and stay in sync with your catalog.
+      <Step
+        n={2}
+        title="Create a publishable key (for booking, chat & analytics)"
+      >
+        <Text className="text-ui-fg-subtle mb-3" size="small">
+          The catalog works keyless. Add a key to your snippet —{" "}
+          <code className="bg-ui-bg-subtle rounded px-1">
+            data-fbm-key="pk_live_…"
+          </code>{" "}
+          — to unlock bookings, chat, and analytics. Keys only work from the
+          domains you whitelist in step&nbsp;4.
         </Text>
-        <CodeBlock code={zeroJsExample} />
+        <KeysSection />
       </Step>
 
-      <Step n={3} title="Want full control? Use the JavaScript API">
+      <Step n={3} title="Pick what to show — then preview it live">
+        <Text className="text-ui-fg-subtle mb-2" size="small">
+          Choose the components you want, paste the markup where they should
+          appear, and watch the live preview update.
+        </Text>
+        <div className="mb-3 flex flex-wrap gap-2">
+          {COMPONENTS.map((c) => {
+            const on = picked.includes(c.kind)
+            return (
+              <Button
+                key={c.kind}
+                size="small"
+                variant={on ? "primary" : "secondary"}
+                onClick={() => togglePicked(c.kind)}
+                type="button"
+              >
+                {c.label}
+                {c.needsKey ? " 🔑" : ""}
+              </Button>
+            )
+          })}
+        </div>
+        <CodeBlock code={componentSnippet} />
+        <div className="mt-3">
+          <EmbedPreview website={website} components={picked} />
+        </div>
+      </Step>
+
+      <Step n={4} title="Want full control? Use the JavaScript API">
         <Text className="text-ui-fg-subtle mb-3" size="small">
           Every method returns enriched objects with{" "}
           <code className="bg-ui-bg-subtle rounded px-1">_price</code> and{" "}
@@ -146,7 +216,7 @@ export const ConnectPanel = ({ website }: { website: FbmWebsite }) => {
         </div>
       </Step>
 
-      <Step n={4} title="Whitelist your domains (optional)">
+      <Step n={5} title="Whitelist your domains (required for keys)">
         <Text className="text-ui-fg-subtle mb-3" size="small">
           The catalog API is public and read-only, so the snippet works
           everywhere immediately. Listing your domains here keeps a record of
