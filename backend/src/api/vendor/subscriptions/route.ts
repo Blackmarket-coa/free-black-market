@@ -29,7 +29,7 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
       return
     }
 
-    const productIds = sellerData[0].products?.map((p) => p.id) || []
+    const productIds = sellerData[0].products?.map((p) => p?.id) || []
 
     if (!productIds.length) {
       res.json({ subscriptions: [], count: 0 })

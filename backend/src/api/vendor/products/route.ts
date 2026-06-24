@@ -27,7 +27,7 @@ async function linkSellerInventoryItems(
     ...new Set(
       (variants || [])
         .flatMap((variant) => variant.inventory_items || [])
-        .map((item) => item.inventory_item_id)
+        .map((item) => item?.inventory_item_id)
         .filter(Boolean)
     ),
   ]

@@ -49,7 +49,10 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       filters: { id: sellerId },
     })
 
-    const productIds = sellerProducts?.[0]?.products?.map((p) => p.id) || []
+    const productIds =
+      sellerProducts?.[0]?.products
+        ?.map((p) => p?.id)
+        .filter((id): id is string => Boolean(id)) || []
 
     if (productIds.length === 0) {
       const emptyResult = {
