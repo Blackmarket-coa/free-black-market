@@ -4,7 +4,8 @@ import {
   createStep,
   StepResponse,
 } from "@medusajs/framework/workflows-sdk"
-import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
+import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils"
+import { IEventBusModuleService } from "@medusajs/framework/types"
 
 const VOLUNTEER_MODULE = "volunteerModuleService"
 const GARDEN_MODULE = "gardenModuleService"
@@ -143,6 +144,27 @@ const verifyHoursStep = createStep(
         harvest_credits_balance: ((membership.harvest_credits_balance as number) || 0) + finalCredits,
         volunteer_hours_balance: ((membership.volunteer_hours_balance as number) || 0) + hoursDiff,
       })
+
+      // Emit a domain event so the progression layer can award COALITION XP,
+      // weighted by the verifier as a peer attestation. Best-effort: an
+      // event-bus failure must not roll back a verified contribution.
+      try {
+        const eventBus = container.resolve(
+          Modules.EVENT_BUS
+        ) as IEventBusModuleService
+        await eventBus.emit({
+          name: "volunteer.verified",
+          data: {
+            log_id: input.log_id,
+            customer_id: log.customer_id,
+            verified_by_id: input.verified_by_id,
+            hours: finalHours,
+            credits: finalCredits,
+          },
+        })
+      } catch {
+        /* event emission is best-effort */
+      }
 
       return new StepResponse({
         log_id: input.log_id,

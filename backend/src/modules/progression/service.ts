@@ -1,5 +1,11 @@
 import { MedusaService } from "@medusajs/framework/utils"
-import { CharacterSheet, XpEvent, ProgressionTitle, XpRedemption } from "./models"
+import {
+  CharacterSheet,
+  XpEvent,
+  ProgressionTitle,
+  XpRedemption,
+  XpAttestation,
+} from "./models"
 import { XpRedemptionStatus } from "./models/xp-redemption"
 import { Stance, isStance } from "./stance"
 import { levelForXp, levelProgress, ROLE_XP_WEIGHTS } from "./leveling"
@@ -52,11 +58,24 @@ export class InsufficientXpError extends Error {
   }
 }
 
+/** Raised when an attestation names the same account as subject and attester. */
+export class SelfAttestationError extends Error {
+  constructor(public customerId: string) {
+    super(`Self-attestation is not allowed for customer ${customerId}`)
+    this.name = "SelfAttestationError"
+  }
+}
+
+/** Attestation weight is clamped to this range to bound any single award. */
+export const ATTESTATION_WEIGHT_MIN = 0.5
+export const ATTESTATION_WEIGHT_MAX = 2
+
 class ProgressionModuleService extends MedusaService({
   CharacterSheet,
   XpEvent,
   ProgressionTitle,
   XpRedemption,
+  XpAttestation,
 }) {
   /**
    * Get or create the character sheet for a customer.
@@ -124,6 +143,58 @@ class ProgressionModuleService extends MedusaService({
     await this.checkAndGrantTitles(data.customer_id)
 
     return this.getOrCreateCharacterSheet(data.customer_id)
+  }
+
+  /**
+   * Record an XP event vouched for by a *trusted peer* (the attester), writing
+   * an `xp_attestation` row and awarding `base × weight`.
+   *
+   * This is the anti-karma-farming control: high-trust XP is granted only when
+   * someone other than the subject confirms the value. Self-attestation is
+   * rejected. The weight (default 1) is clamped to [ATTESTATION_WEIGHT_MIN,
+   * ATTESTATION_WEIGHT_MAX] so no single attestation can over-inflate an award.
+   *
+   * @throws SelfAttestationError when attester and subject are the same account.
+   */
+  async recordAttestedXpEvent(
+    data: {
+      customer_id: string
+      role: Stance
+      amount: number
+      reason: string
+      source_module?: string
+      source_id?: string
+      metadata?: Record<string, unknown>
+    },
+    opts: {
+      attesterId: string
+      weight?: number
+    }
+  ) {
+    if (!opts.attesterId || opts.attesterId === data.customer_id) {
+      throw new SelfAttestationError(data.customer_id)
+    }
+
+    const clamped = Math.min(
+      ATTESTATION_WEIGHT_MAX,
+      Math.max(ATTESTATION_WEIGHT_MIN, opts.weight ?? 1)
+    )
+
+    await this.createXpAttestations({
+      subject_customer_id: data.customer_id,
+      attester_customer_id: opts.attesterId,
+      source_module: data.source_module ?? null,
+      source_id: data.source_id ?? null,
+      weight: clamped,
+      reason: data.reason,
+      metadata: (data.metadata as Record<string, unknown>) ?? null,
+    })
+
+    return this.recordXpEvent({
+      ...data,
+      amount: Math.max(1, Math.round(data.amount * clamped)),
+      metadata: { ...(data.metadata ?? {}), attested_by: opts.attesterId, weight: clamped },
+    })
   }
 
   /**
@@ -195,6 +266,23 @@ class ProgressionModuleService extends MedusaService({
       }
     } catch {
       /* ignore */
+    }
+
+    // Collective-campaign backings → capital deployed.
+    try {
+      const { data } = await query.graph({
+        entity: "collective_backing",
+        fields: ["amount"],
+        filters: { backer_id: customerId },
+      })
+      if (Array.isArray(data)) {
+        patch.capital_deployed_cents = data.reduce(
+          (sum, b) => sum + Number(b.amount ?? 0),
+          0
+        )
+      }
+    } catch {
+      /* module absent — leave snapshot as-is */
     }
 
     // Seller-scoped aggregates (producer trust + revenue) when a seller id is known.
