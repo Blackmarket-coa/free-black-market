@@ -17,6 +17,17 @@ This index organizes project docs by purpose.
 - `docs/VENDOR_PORTAL_IMPROVEMENT_PLAN.md`
 - `docs/WEBSITE_POSITIONING_ALIGNMENT_PLAN.md`
 
+## Design & Behavioral System
+
+- `docs/BMC_UNIFIED_DESIGN_BEHAVIORAL_SPEC.md` — the canonical, research-grounded
+  spec for the unified FBM × Blackout experience (XP/reputation, onboarding,
+  solarpunk visuals, calm audio, cooperative gamification). Maps the brief to
+  repo evidence (Present/Partial/Missing) and indexes the remaining gaps.
+- `docs/SOLARPUNK_MMORPG_BLUEPRINT.md` — progression/stance/region/leveling model.
+- `docs/BLACKOUT_EXPERIENCE_LAYER.md` — shipped earcons/bloom/onboarding + XP economy.
+- `docs/adr/ADR-0003-xp-demurrage-and-soulbound-semantics.md`
+- `docs/adr/ADR-0004-cooperative-gamification-and-opt-in-leaderboards.md`
+
 ## Composition Layer
 
 - `docs/COMPOSITION_LAYER.md` — how playbooks, listing-types, hawala ledger,
