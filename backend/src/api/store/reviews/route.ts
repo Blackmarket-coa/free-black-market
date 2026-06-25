@@ -1,7 +1,9 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
+import { createReviewWorkflow } from "@mercurjs/reviews/workflows"
 import { createLogger } from "../../../shared/logger"
 import { REVIEWS_MODULE } from "../../../modules/reviews"
 import type ReviewsService from "../../../modules/reviews/service"
+import { sellerReviewSummary } from "../../../modules/reviews/read-helpers"
 import { updateSellerMetadataRecord } from "../../../modules/seller-extension/metadata-service"
 import type SellerExtensionService from "../../../modules/seller-extension/service"
 
@@ -21,9 +23,15 @@ function displayName(
 /**
  * POST /store/reviews  (authenticated customer)
  *
- * Creates a verified-purchase review. Accepted ONLY when the referenced order
- * belongs to the authenticated customer and actually contains the product.
- * Recomputes the seller's rating/review_count afterward.
+ * Creates a verified-purchase review. The canonical review (rating + comment +
+ * product/customer/order links + Algolia indexing) is created via the platform
+ * `createReviewWorkflow`; this route then attaches an `embed_review_detail` row
+ * for the embed-specific extras (title, public author name, status) and
+ * recomputes the seller's denormalized rating/review_count.
+ *
+ * The platform workflow already verifies order ownership and dedupes one
+ * review per (order, product); we additionally require the product to actually
+ * be in the order.
  *
  * Body: { order_id, product_id, rating(1-5), title?, body? }
  */
@@ -111,35 +119,47 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       /* non-fatal */
     }
 
-    const reviews = req.scope.resolve(REVIEWS_MODULE) as ReviewsService
-
-    // Guard the one-review-per-order-product rule before hitting the unique idx.
-    const existing = await reviews.listProductReviews(
-      { order_id, product_id },
-      { take: 1 }
-    )
-    if (existing?.length) {
-      return res.status(409).json({
-        message: "You already reviewed this product for this order",
-        type: "conflict",
+    // 4) Create the canonical platform review (handles ownership + dedup +
+    //    product/customer/order links + Algolia re-index).
+    let review: { id: string; created_at?: unknown }
+    try {
+      const { result } = await createReviewWorkflow.run({
+        container: req.scope,
+        input: {
+          order_id,
+          reference: "product",
+          reference_id: product_id,
+          rating,
+          customer_note: body.body?.slice(0, 4000) ?? null,
+          customer_id: customerId,
+        } as any,
       })
+      review = result as any
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      if (/already exists/i.test(msg)) {
+        return res.status(409).json({
+          message: "You already reviewed this product for this order",
+          type: "conflict",
+        })
+      }
+      throw err
     }
 
-    const created = await reviews.createProductReviews({
-      product_id,
+    // 5) Attach the embed-specific detail row (1:1 with the platform review).
+    const reviews = req.scope.resolve(REVIEWS_MODULE) as ReviewsService
+    const detail = await reviews.createEmbedReviewDetails({
+      review_id: review.id,
       seller_id: sellerId,
-      order_id,
-      customer_id: customerId,
-      rating,
+      product_id,
       title: body.title?.slice(0, 120) ?? null,
-      body: body.body?.slice(0, 4000) ?? null,
       customer_display_name: author,
       is_verified: true,
     })
 
-    // 4) Recompute the seller's denormalized rating/review_count.
+    // 6) Recompute the seller's denormalized rating/review_count.
     try {
-      const aggregate = await reviews.getSellerAggregate(sellerId)
+      const aggregate = await sellerReviewSummary(query, reviews, sellerId)
       const { data: metaRows } = await query.graph({
         entity: "seller_metadata",
         fields: ["id"],
@@ -160,14 +180,14 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
 
     return res.status(201).json({
       review: {
-        id: created.id,
+        id: review.id,
         product_id,
         rating,
-        title: created.title ?? null,
-        body: created.body ?? null,
-        author: created.customer_display_name ?? "Verified buyer",
+        title: detail.title ?? null,
+        body: body.body?.slice(0, 4000) ?? null,
+        author: detail.customer_display_name ?? "Verified buyer",
         verified: true,
-        created_at: created.created_at,
+        created_at: review.created_at ?? detail.created_at,
       },
     })
   } catch (error: unknown) {

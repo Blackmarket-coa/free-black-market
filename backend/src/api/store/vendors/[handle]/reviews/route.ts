@@ -1,16 +1,20 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { createLogger } from "../../../../../shared/logger"
 import { REVIEWS_MODULE } from "../../../../../modules/reviews"
-import { ReviewStatus } from "../../../../../modules/reviews/models/product-review"
 import type ReviewsService from "../../../../../modules/reviews/service"
+import {
+  listSellerReviews,
+  sellerReviewSummary,
+} from "../../../../../modules/reviews/read-helpers"
 
 const log = createLogger("api/store/vendors/reviews")
 
 /**
  * GET /store/vendors/:handle/reviews?limit=&offset=
  *
- * Public, paginated published reviews for a vendor. Exposes only the
- * privacy-safe display name (never email or full name).
+ * Public, paginated published reviews for a vendor. Rating/comment come from the
+ * platform `review`; title/author/verified from `embed_review_detail`. Exposes
+ * only the privacy-safe display name (never email or full name).
  */
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
   const handle = req.params.handle
@@ -32,26 +36,26 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     }
 
     const reviews = req.scope.resolve(REVIEWS_MODULE) as ReviewsService
-    const [rows, count] = await reviews.listAndCountProductReviews(
-      { seller_id: seller.id, status: ReviewStatus.PUBLISHED },
-      { order: { created_at: "DESC" }, take, skip }
-    )
-    const aggregate = await reviews.getSellerAggregate(seller.id)
+    const { rows, count } = await listSellerReviews(query, reviews, seller.id, {
+      take,
+      skip,
+    })
+    const summary = await sellerReviewSummary(query, reviews, seller.id)
 
     res.setHeader(
       "Cache-Control",
       "public, max-age=60, s-maxage=300, stale-while-revalidate=600"
     )
     return res.json({
-      summary: aggregate,
+      summary,
       reviews: rows.map((r) => ({
         id: r.id,
         product_id: r.product_id,
         rating: r.rating,
-        title: r.title ?? null,
-        body: r.body ?? null,
-        author: r.customer_display_name ?? "Verified buyer",
-        verified: !!r.is_verified,
+        title: r.title,
+        body: r.body,
+        author: r.author,
+        verified: r.verified,
         created_at: r.created_at,
       })),
       count,

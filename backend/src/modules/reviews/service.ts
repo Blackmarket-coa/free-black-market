@@ -1,40 +1,16 @@
 import { MedusaService } from "@medusajs/framework/utils"
-import ProductReview, { ReviewStatus } from "./models/product-review"
+import EmbedReviewDetail from "./models/embed-review-detail"
 
-export type SellerRatingAggregate = {
-  average: number | null
-  count: number
-}
-
+/**
+ * Reviews module service.
+ *
+ * Thin CRUD over `embed_review_detail` only. Rating/comment data lives in the
+ * platform `@mercurjs/reviews` `review` model — which this isolated module
+ * service cannot query — so all aggregation that needs ratings is done at the
+ * route layer via `query.graph` (see `./read-helpers`).
+ */
 class ReviewsService extends MedusaService({
-  ProductReview,
-}) {
-  /** Average rating + count of published reviews for a seller. */
-  async getSellerAggregate(seller_id: string): Promise<SellerRatingAggregate> {
-    const rows = await this.listProductReviews(
-      { seller_id, status: ReviewStatus.PUBLISHED },
-      { select: ["rating"], take: 100_000 }
-    )
-    const count = rows.length
-    if (!count) return { average: null, count: 0 }
-    const sum = rows.reduce((acc, r) => acc + (Number(r.rating) || 0), 0)
-    // Round to one decimal place.
-    return { average: Math.round((sum / count) * 10) / 10, count }
-  }
-
-  /** Average rating + count of published reviews for a single product. */
-  async getProductAggregate(
-    product_id: string
-  ): Promise<SellerRatingAggregate> {
-    const rows = await this.listProductReviews(
-      { product_id, status: ReviewStatus.PUBLISHED },
-      { select: ["rating"], take: 100_000 }
-    )
-    const count = rows.length
-    if (!count) return { average: null, count: 0 }
-    const sum = rows.reduce((acc, r) => acc + (Number(r.rating) || 0), 0)
-    return { average: Math.round((sum / count) * 10) / 10, count }
-  }
-}
+  EmbedReviewDetail,
+}) {}
 
 export default ReviewsService
