@@ -34,7 +34,7 @@ export default async function CoalitionQuestsPage({
     <main className="container">
       <QuestProgressWatcher completedCount={completedQuests.length} />
       <div className="mt-6 space-y-8">
-        <header className="rounded-lg border border-tertiary bg-component p-6">
+        <header className="rounded-lg border border-tertiary bg-green-50 p-6">
           <p className="text-secondary text-sm uppercase tracking-wide">Coalition</p>
           <h1 className="heading-lg">Shared Goals & Group Quests</h1>
           <p className="text-secondary mt-1">

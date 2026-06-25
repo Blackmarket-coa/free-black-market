@@ -101,33 +101,17 @@
 }
 
 :root {
-    /*
-     * DARK-FIRST SOLARPUNK SURFACES
-     * Off-black canopy surfaces (never pure #000000 — halation/eye strain) with
-     * off-white text (never pure #FFFFFF). Warm-shifted raised surfaces keep the
-     * biophilic feel. Accents use the brighter brand/amber ramp stops so they
-     * clear WCAG AA on off-black. The light theme is preserved as an opt-out
-     * under :root[data-theme="light"] further down. See
-     * docs/BMC_UNIFIED_DESIGN_BEHAVIORAL_SPEC.md (dark-mode contrast checklist).
-     */
-    --surface-0: 18, 18, 18;       /* #121212 deep canopy off-black (base) */
-    --surface-1: 26, 31, 27;       /* #1A1F1B warm-shifted raised surface */
-    --surface-2: 34, 40, 32;       /* #222820 elevated surface */
-    --surface-3: 44, 50, 42;       /* hover/pressed elevation */
-    --offwhite: 237, 237, 237;     /* #EDEDED body text (not pure white) */
-    --offwhite-muted: 176, 176, 176; /* #B0B0B0 secondary text */
-
     /* Background colors */
-    --bg-primary: var(--surface-0);
-    --bg-secondary: var(--surface-1);
+    --bg-primary: var(--neutral-0);
+    --bg-secondary: var(--neutral-25);
     --bg-tertiary: var(--brand-900);        /* Deep forest green for tertiary backgrounds */
 
-    --bg-component-primary: var(--surface-1);
-    --bg-component-primary-hover: var(--surface-2);
-    --bg-component-primary-pressed: var(--surface-3);
-    --bg-component-secondary: var(--surface-1);
-    --bg-component-secondary-hover: var(--surface-2);
-    --bg-component-secondary-pressed: var(--surface-3);
+    --bg-component-primary: var(--neutral-0);
+    --bg-component-primary-hover: var(--neutral-25);
+    --bg-component-primary-pressed: var(--neutral-50);
+    --bg-component-secondary: var(--neutral-25);
+    --bg-component-secondary-hover: var(--neutral-50);
+    --bg-component-secondary-pressed: var(--neutral-100);
 
     /* Primary action - Vibrant moss green */
     --bg-action-primary: var(--brand-400);
@@ -144,29 +128,27 @@
     --bg-negative-primary: var(--red-600);
     --bg-negative-primary-hover: var(--red-700);
     --bg-negative-primary-pressed: var(--red-800);
-    /* On dark surfaces, status "secondary" chips are translucent tints, not
-       bright light fills, so they read as part of the dark canopy. */
-    --bg-negative-secondary: rgba(var(--red-400), 0.16);
-    --bg-negative-secondary-hover: rgba(var(--red-400), 0.22);
-    --bg-negative-secondary-pressed: rgba(var(--red-400), 0.30);
+    --bg-negative-secondary: var(--red-50);
+    --bg-negative-secondary-hover: var(--red-100);
+    --bg-negative-secondary-pressed: var(--red-200);
 
     /* Positive - Success greens */
     --bg-positive-primary: var(--green-600);
     --bg-positive-primary-hover: var(--green-700);
     --bg-positive-primary-pressed: var(--green-800);
-    --bg-positive-secondary: rgba(var(--green-400), 0.16);
-    --bg-positive-secondary-hover: rgba(var(--green-400), 0.22);
-    --bg-positive-secondary-pressed: rgba(var(--green-400), 0.30);
+    --bg-positive-secondary: var(--green-50);
+    --bg-positive-secondary-hover: var(--green-100);
+    --bg-positive-secondary-pressed: var(--green-200);
 
     /* Warning - Warm amber */
     --bg-warning-primary: var(--amber-600);
     --bg-warning-primary-hover: var(--amber-700);
     --bg-warning-primary-pressed: var(--amber-800);
-    --bg-warning-secondary: rgba(var(--amber-400), 0.16);
-    --bg-warning-secondary-hover: rgba(var(--amber-400), 0.22);
-    --bg-warning-secondary-pressed: rgba(var(--amber-400), 0.30);
+    --bg-warning-secondary: var(--amber-50);
+    --bg-warning-secondary-hover: var(--amber-100);
+    --bg-warning-secondary-pressed: var(--amber-200);
 
-    --bg-disabled: var(--surface-2);
+    --bg-disabled: var(--neutral-200);
 
     /* Accent background for special highlights */
     --bg-accent-primary: var(--amber-400);
@@ -176,86 +158,7 @@
     --bg-accent-secondary-hover: rgba(var(--amber-400), 0.18);
     --bg-accent-secondary-pressed: rgba(var(--amber-400), 0.28);
 
-    /* Content/Text colors — off-white on off-black; accents use brighter ramp
-       stops so each foreground clears WCAG AA on #121212. */
-    --content-primary: var(--offwhite);
-    --content-secondary: var(--offwhite-muted);
-    --content-tertiary: var(--neutral-0);
-
-    --content-action-primary: var(--brand-300);
-    --content-action-primary-hover: var(--brand-200);
-    --content-action-primary-pressed: var(--brand-100);
-    --content-action-on-primary: var(--neutral-1000);     /* Dark text on bright green fills */
-    --content-action-on-secondary: var(--brand-300);      /* Light green text on dark tonal bg */
-    --content-action-on-tertiary: var(--offwhite);
-
-    --content-positive-primary: var(--green-300);
-    --content-positive-on-primary: var(--neutral-1000);
-    --content-positive-on-secondary: var(--green-300);
-
-    --content-negative-primary: var(--red-300);
-    --content-negative-on-primary: var(--neutral-0);
-    --content-negative-on-secondary: var(--red-300);
-
-    --content-warning-primary: var(--amber-300);
-    --content-warning-on-primary: var(--neutral-900);
-    --content-warning-on-secondary: var(--amber-300);
-
-    --content-accent-primary: var(--amber-300);
-    --content-accent-on-primary: var(--neutral-900);
-    --content-accent-on-secondary: var(--amber-300);
-
-    --content-disabled: var(--neutral-400);
-
-    /* Border colors */
-    --border-primary: 42, 42, 42;
-    --border-secondary: 70, 78, 66;
-    --border-action: var(--brand-400);
-    --border-accent: var(--amber-400);
-    --border-negative-primary: var(--red-600);
-    --border-negative-secondary: var(--red-200);
-    --border-positive-primary: var(--green-600);
-    --border-positive-secondary: var(--green-200);
-    --border-warning-primary: var(--amber-600);
-    --border-warning-secondary: var(--amber-200);
-    --border-disabled: var(--neutral-400);
-
-    /* Solarpunk special gradients */
-    --gradient-solarpunk: linear-gradient(135deg, rgba(var(--brand-400), 1) 0%, rgba(var(--amber-400), 1) 100%);
-    --gradient-forest: linear-gradient(180deg, rgba(var(--brand-600), 1) 0%, rgba(var(--brand-900), 1) 100%);
-    --gradient-sunrise: linear-gradient(180deg, rgba(var(--amber-300), 1) 0%, rgba(var(--amber-500), 1) 100%);
-    --gradient-nature: linear-gradient(135deg, rgba(var(--brand-300), 0.3) 0%, rgba(var(--amber-200), 0.3) 100%);
-}
-
-/*
- * LIGHT THEME (opt-out)
- * The original light-first solarpunk mapping, preserved verbatim. Activated by
- * setting `data-theme="light"` on <html>. Only the tokens that differ from the
- * dark-first default are overridden here, so nothing is lost — the warm cream
- * theme remains one attribute away (and powers the "Solarpunk Dusk" XP reward).
- */
-:root[data-theme="light"] {
-    --bg-primary: var(--neutral-0);
-    --bg-secondary: var(--neutral-25);
-
-    --bg-component-primary: var(--neutral-0);
-    --bg-component-primary-hover: var(--neutral-25);
-    --bg-component-primary-pressed: var(--neutral-50);
-    --bg-component-secondary: var(--neutral-25);
-    --bg-component-secondary-hover: var(--neutral-50);
-    --bg-component-secondary-pressed: var(--neutral-100);
-
-    --bg-negative-secondary: var(--red-50);
-    --bg-negative-secondary-hover: var(--red-100);
-    --bg-negative-secondary-pressed: var(--red-200);
-    --bg-positive-secondary: var(--green-50);
-    --bg-positive-secondary-hover: var(--green-100);
-    --bg-positive-secondary-pressed: var(--green-200);
-    --bg-warning-secondary: var(--amber-50);
-    --bg-warning-secondary-hover: var(--amber-100);
-    --bg-warning-secondary-pressed: var(--amber-200);
-    --bg-disabled: var(--neutral-200);
-
+    /* Content/Text colors */
     --content-primary: var(--neutral-1000);
     --content-secondary: var(--neutral-500);
     --content-tertiary: var(--neutral-0);
@@ -263,8 +166,8 @@
     --content-action-primary: var(--brand-600);
     --content-action-primary-hover: var(--brand-700);
     --content-action-primary-pressed: var(--brand-800);
-    --content-action-on-primary: var(--neutral-0);
-    --content-action-on-secondary: var(--brand-700);
+    --content-action-on-primary: var(--neutral-0);        /* White text on green buttons */
+    --content-action-on-secondary: var(--brand-700);      /* Dark green text for secondary actions */
     --content-action-on-tertiary: var(--neutral-0);
 
     --content-positive-primary: var(--green-700);
@@ -283,6 +186,24 @@
     --content-accent-on-primary: var(--neutral-900);
     --content-accent-on-secondary: var(--amber-700);
 
+    --content-disabled: var(--neutral-400);
+
+    /* Border colors */
     --border-primary: var(--neutral-100);
     --border-secondary: var(--neutral-700);
+    --border-action: var(--brand-400);
+    --border-accent: var(--amber-400);
+    --border-negative-primary: var(--red-600);
+    --border-negative-secondary: var(--red-200);
+    --border-positive-primary: var(--green-600);
+    --border-positive-secondary: var(--green-200);
+    --border-warning-primary: var(--amber-600);
+    --border-warning-secondary: var(--amber-200);
+    --border-disabled: var(--neutral-400);
+
+    /* Solarpunk special gradients */
+    --gradient-solarpunk: linear-gradient(135deg, rgba(var(--brand-400), 1) 0%, rgba(var(--amber-400), 1) 100%);
+    --gradient-forest: linear-gradient(180deg, rgba(var(--brand-600), 1) 0%, rgba(var(--brand-900), 1) 100%);
+    --gradient-sunrise: linear-gradient(180deg, rgba(var(--amber-300), 1) 0%, rgba(var(--amber-500), 1) 100%);
+    --gradient-nature: linear-gradient(135deg, rgba(var(--brand-300), 0.3) 0%, rgba(var(--amber-200), 0.3) 100%);
 }

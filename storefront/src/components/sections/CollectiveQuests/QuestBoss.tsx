@@ -23,7 +23,7 @@ export function QuestBoss({ quest }: { quest: CollectiveQuest }) {
         <p className="text-secondary text-sm">{quest.description}</p>
       )}
       <div
-        className="h-4 w-full overflow-hidden rounded-full bg-component"
+        className="h-4 w-full overflow-hidden rounded-full bg-red-50"
         role="progressbar"
         aria-valuenow={100 - pct}
         aria-valuemin={0}
