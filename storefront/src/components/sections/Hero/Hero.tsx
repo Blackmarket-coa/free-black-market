@@ -24,13 +24,14 @@ export const Hero = ({ image, heading, paragraph, buttons, variant = "default" }
   if (variant === "mission") {
     return (
       <section className="w-full min-h-[60vh] flex flex-col justify-center px-6 lg:px-12 bg-gradient-nature relative overflow-hidden">
-        {/* Subtle decorative leaf pattern overlay */}
-        <div className="absolute inset-0 leaf-pattern opacity-50 pointer-events-none" />
+        {/* Subtle decorative leaf pattern overlay — kept light so it never
+            competes with the headline for contrast. */}
+        <div className="absolute inset-0 leaf-pattern opacity-30 pointer-events-none" />
         <div className="max-w-3xl relative z-10">
-          <h1 className="text-4xl md:text-5xl lg:text-6xl font-serif text-primary leading-tight">
+          <h1 className="text-4xl md:text-5xl lg:text-6xl font-serif font-bold text-primary leading-tight">
             {heading}
           </h1>
-          <p className="mt-6 text-lg md:text-xl text-secondary max-w-xl leading-relaxed">
+          <p className="mt-6 text-lg md:text-xl font-normal text-primary max-w-xl leading-relaxed">
             {paragraph}
           </p>
           <div className="mt-10 flex flex-wrap gap-4">

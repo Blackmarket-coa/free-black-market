@@ -9,10 +9,7 @@
 @layer base {
   body {
     font-family: var(--font-solarpunk-body), ui-sans-serif, system-ui, sans-serif;
-    /* Follow the semantic surface token so the dark-first base (and the
-       light opt-out) both apply without a second source of truth. */
-    background-color: rgb(var(--bg-primary));
-    color: rgb(var(--content-primary));
+    background-color: rgb(var(--neutral-0));
   }
 
   h1,
@@ -42,18 +39,19 @@ svg.solarpunk-icon {
   color: rgb(var(--brand-700));
 }
 
-/* Typography */
+/* Typography — body copy uses a normal (400) weight rather than light (300)
+   so small/medium text stays legible and high-contrast. */
 .text-xl {
-  @apply font-light tracking-normal;
+  @apply font-normal tracking-normal;
 }
 .text-lg {
-  @apply text-base font-light tracking-normal;
+  @apply text-base font-normal tracking-normal;
 }
 .text-md {
-  @apply text-[14px] leading-[22px] font-light tracking-normal;
+  @apply text-[14px] leading-[22px] font-normal tracking-normal;
 }
 .text-sm {
-  @apply text-[12px] font-light tracking-normal;
+  @apply text-[12px] font-normal tracking-normal;
 }
 
 .label-sm {
