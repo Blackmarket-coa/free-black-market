@@ -1,6 +1,5 @@
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 import type { MedusaContainer } from "@medusajs/framework/types"
-import { HAWALA_LEDGER_MODULE } from "../modules/hawala-ledger"
 import type HawalaLedgerModuleService from "../modules/hawala-ledger/service"
 import { SUBSCRIPTION_MODULE } from "../modules/subscription"
 import type SubscriptionModuleService from "../modules/subscription/service"
