@@ -179,6 +179,8 @@ const commerceModules = [
   { resolve: './src/modules/booking' },
   { resolve: './src/modules/reviews' },
   { resolve: './src/modules/embed-analytics' },
+  // Wellness practitioner portal (sessions, classes, memberships, CRM)
+  { resolve: './src/modules/wellness' },
 ]
 
 // Financial/ledger modules
