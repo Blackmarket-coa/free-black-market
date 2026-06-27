@@ -43,7 +43,22 @@ export const GROWER_TIERS = {
 
 export type GrowerTierName = keyof typeof GROWER_TIERS
 
-const TIER_ORDER: GrowerTierName[] = ["Seedling", "Sprout", "Root", "Canopy", "Ancestor"]
+export const TIER_ORDER: GrowerTierName[] = [
+  "Seedling",
+  "Sprout",
+  "Root",
+  "Canopy",
+  "Ancestor",
+]
+
+/** Pure: map a PRODUCER-track XP total to its grower tier. Extracted for testing. */
+export function growerTierForXp(xp: number): GrowerTierName {
+  let tier: GrowerTierName = "Seedling"
+  for (const name of TIER_ORDER) {
+    if (xp >= GROWER_TIERS[name].min) tier = name
+  }
+  return tier
+}
 
 export interface EmitGrowerKarmaInput {
   seller_id: string
@@ -112,14 +127,6 @@ export class GrowerKarmaService {
     return true
   }
 
-  private static tierForXp(xp: number): GrowerTierName {
-    let tier: GrowerTierName = "Seedling"
-    for (const name of TIER_ORDER) {
-      if (xp >= GROWER_TIERS[name].min) tier = name
-    }
-    return tier
-  }
-
   /** Current grower tier + progress, derived from PRODUCER-track XP. */
   async getGrowerTier(sellerId: string): Promise<{
     current_karma: number
@@ -135,7 +142,7 @@ export class GrowerKarmaService {
       producerXp = summary.tracks.find((t) => t.role === Stance.PRODUCER)?.xp ?? 0
     }
 
-    const tier = GrowerKarmaService.tierForXp(producerXp)
+    const tier = growerTierForXp(producerXp)
     const idx = TIER_ORDER.indexOf(tier)
     const nextTier = idx < TIER_ORDER.length - 1 ? TIER_ORDER[idx + 1] : null
     const karmaToNext = nextTier ? GROWER_TIERS[nextTier].min - producerXp : null

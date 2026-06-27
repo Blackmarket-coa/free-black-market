@@ -6,24 +6,67 @@
  * location, and gates dispatch on phytosanitary-cert requirements for live
  * plants shipping into restricted states.
  *
- * External SEAMS (need third-party creds): EasyPost label purchase and the S3
- * presigned cert-upload URL. All grouping/phyto logic is implemented here; the
- * seams are clearly marked and never crash the happy path before them.
+ * The cert-upload URL is generated via the existing MinIO File module
+ * (`Modules.FILE` presign). Carrier label purchase is delegated to a
+ * provider-agnostic `LabelProvider` (no-op by default) so EasyPost / Shippo /
+ * direct USPS can be dropped in without touching this logic.
  */
 
 import type { MedusaContainer } from "@medusajs/framework/types"
-import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
+import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils"
 import { emitBlackoutEvent } from "../../lib/blackout-emit"
 import {
   loadOrderNodeContext,
   type OrderNodeItem,
 } from "./plant-order-helpers"
+import { resolveLabelProvider, type LabelResult } from "./label-provider"
 import type { GrowerNode } from "../../types/plant"
 
 /** Destination states that restrict live-plant import outright. */
 export const RESTRICTED_STATES = ["CA", "AZ", "HI"]
 /** States that restrict specific (e.g. citrus) species rather than all plants. */
 export const CITRUS_RESTRICTED_STATES = ["TX", "FL"]
+
+/** Minimal item shape needed for phyto classification. */
+export interface PhytoItemInput {
+  line_item_id: string
+  title: string | null
+  is_live_plant: boolean
+  requires_phyto_cert: boolean
+}
+
+/**
+ * Pure phyto-restriction classifier (no I/O). Returns the items that need a
+ * phytosanitary certificate given the destination state. Extracted for testing.
+ */
+export function classifyPhytoRestrictions(
+  state: string | null,
+  items: PhytoItemInput[]
+): Array<{ item_id: string; species: string | null; reason: string }> {
+  const restricted: Array<{ item_id: string; species: string | null; reason: string }> = []
+  if (!state) return restricted
+
+  const fullyRestricted = RESTRICTED_STATES.includes(state)
+  const citrusRestricted = CITRUS_RESTRICTED_STATES.includes(state)
+  for (const item of items) {
+    const live = item.is_live_plant || item.requires_phyto_cert
+    if (!live) continue
+    if (fullyRestricted) {
+      restricted.push({
+        item_id: item.line_item_id,
+        species: item.title,
+        reason: `Live plant into ${state}: state requires phytosanitary certificate`,
+      })
+    } else if (citrusRestricted && item.requires_phyto_cert) {
+      restricted.push({
+        item_id: item.line_item_id,
+        species: item.title,
+        reason: `Restricted species into ${state}: phytosanitary certificate required`,
+      })
+    }
+  }
+  return restricted
+}
 
 export interface NodeFulfillmentGroup {
   grower_node: GrowerNode | null
@@ -120,36 +163,32 @@ export class NodeFulfillmentService {
     if (!ctx) return { required: false, restricted_items: [], cert_upload_url: null }
 
     const state = normState(ctx.ship_to_province)
-    const restricted: PhytoCertCheck["restricted_items"] = []
-
-    if (state) {
-      const fullyRestricted = RESTRICTED_STATES.includes(state)
-      const citrusRestricted = CITRUS_RESTRICTED_STATES.includes(state)
-      for (const item of ctx.items) {
-        const live = item.is_live_plant || item.requires_phyto_cert
-        if (!live) continue
-        if (fullyRestricted) {
-          restricted.push({
-            item_id: item.line_item_id,
-            species: item.title,
-            reason: `Live plant into ${state}: state requires phytosanitary certificate`,
-          })
-        } else if (citrusRestricted && item.requires_phyto_cert) {
-          restricted.push({
-            item_id: item.line_item_id,
-            species: item.title,
-            reason: `Restricted species into ${state}: phytosanitary certificate required`,
-          })
-        }
-      }
-    }
+    const restricted = classifyPhytoRestrictions(state, ctx.items)
 
     return {
       required: restricted.length > 0,
       restricted_items: restricted,
-      // SEAM: external — generate an S3 presigned PUT URL for the grower/admin to
-      // upload the signed cert document. Requires S3 creds; null until wired.
-      cert_upload_url: null,
+      cert_upload_url: restricted.length > 0 ? await this.presignCertUpload(orderId) : null,
+    }
+  }
+
+  /**
+   * Generate a presigned PUT URL for the cert document via the existing MinIO
+   * File module. Returns null when the active file provider doesn't support
+   * presign (e.g. the local dev provider) — never throws.
+   */
+  private async presignCertUpload(orderId: string): Promise<string | null> {
+    try {
+      const fileService = this.container.resolve(Modules.FILE) as {
+        getPresignedUploadUrl?: (d: { filename: string }) => Promise<{ url?: string }>
+      }
+      if (typeof fileService.getPresignedUploadUrl !== "function") return null
+      const result = await fileService.getPresignedUploadUrl({
+        filename: `phyto-cert-${orderId}-${Date.now()}.pdf`,
+      })
+      return result?.url ?? null
+    } catch {
+      return null
     }
   }
 
@@ -161,15 +200,31 @@ export class NodeFulfillmentService {
   async dispatchFulfillmentsToNodes(
     orderId: string,
     groups?: NodeFulfillmentGroup[]
-  ): Promise<{ dispatched: number; blocked: boolean; reason?: string }> {
+  ): Promise<{
+    dispatched: number
+    blocked: boolean
+    reason?: string
+    labels?: Array<{ seller_id: string; result: LabelResult }>
+  }> {
     const phyto = await this.checkPhytoCertRequirement(orderId)
     if (phyto.required) {
       return { dispatched: 0, blocked: true, reason: "phyto_cert_required" }
     }
 
     const resolved = groups ?? (await this.groupOrderByNode(orderId))
+    const labelProvider = resolveLabelProvider(this.container)
     let dispatched = 0
+    const labels: Array<{ seller_id: string; result: LabelResult }> = []
     for (const group of resolved) {
+      // Purchase the carrier label via the active provider (no-op by default).
+      const result = await labelProvider.buyLabel({
+        order_id: orderId,
+        seller_id: group.seller_id,
+        stock_location_id: group.stock_location_id,
+        line_item_ids: group.line_item_ids,
+      })
+      labels.push({ seller_id: group.seller_id, result })
+
       // Notify the grower a shipment is ready to pack/ship.
       await emitBlackoutEvent(
         this.container,
@@ -180,14 +235,13 @@ export class NodeFulfillmentService {
           growerNode: group.grower_node,
           stockLocationId: group.stock_location_id,
           lineItemIds: group.line_item_ids,
+          labelProvider: labelProvider.name,
+          trackingNumber: result.tracking_number,
         },
         { eventId: `node_fulfillment.dispatched:${orderId}:${group.seller_id}` }
       )
-      // SEAM: external — purchase the EasyPost shipping label for this group's
-      // stock location, create the Medusa fulfillment record, and email the
-      // label + packing slip PDF to the grower. Requires EasyPost creds.
       dispatched += 1
     }
-    return { dispatched, blocked: false }
+    return { dispatched, blocked: false, labels }
   }
 }
