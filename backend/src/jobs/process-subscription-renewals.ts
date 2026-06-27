@@ -6,39 +6,7 @@ import SubscriptionModuleService from "../modules/subscription/service"
 import { SubscriptionStatus } from "../modules/subscription/types"
 import { renewSubscriptionWorkflow } from "../workflows/subscription/workflows/renew-subscription"
 import { handleSubscriptionFailureWorkflow } from "../workflows/subscription/workflows/handle-subscription-failure"
-import { emitBlackoutEvent } from "../lib/blackout-emit"
-import { resolveBlackoutUserId } from "../lib/blackout-identity"
-import { mapSubscriptionTier } from "../modules/marketplace-webhooks/models/blackout-events"
-
-/**
- * Emit a §3 subscription.activated / subscription.lapsed bridge event. Resolves
- * the customer's Blackout user id; skips silently when unlinked. `epoch` keeps
- * the eventId stable per state-change without colliding across cycles.
- */
-async function emitSubscriptionState(
-  container: MedusaContainer,
-  subscription: { id: string; customer_id?: string | null; metadata?: unknown; expiration_date?: unknown },
-  state: "activated" | "lapsed"
-) {
-  const userId = await resolveBlackoutUserId(container, {
-    customerId: subscription.customer_id ?? null,
-  })
-  if (!userId) return
-  const tier = mapSubscriptionTier(subscription.metadata)
-  await emitBlackoutEvent(
-    container,
-    state === "activated" ? "subscription.activated" : "subscription.lapsed",
-    {
-      userId,
-      tier,
-      subscriptionId: subscription.id,
-      ...(state === "activated" && subscription.expiration_date
-        ? { expiresAt: new Date(subscription.expiration_date as string).toISOString() }
-        : {}),
-    },
-    { eventId: `subscription.${state}:${subscription.id}:${state === "lapsed" ? "expired" : "renew"}` }
-  )
-}
+import { emitSubscriptionState } from "../lib/blackout-subscription"
 
 /**
  * Subscription Renewal Job
@@ -89,7 +57,7 @@ export default async function processSubscriptionRenewals(
             `[Subscription Job] Expiring subscription ${subscription.id}`
           )
           await subscriptionService.expireSubscription(subscription.id)
-          await emitSubscriptionState(container, subscription, "lapsed")
+          await emitSubscriptionState(container, subscription, "expire")
           continue
         }
 
@@ -109,7 +77,7 @@ export default async function processSubscriptionRenewals(
 
         // Successful renewal — clear any prior dunning state.
         await subscriptionService.clearDunningAttempts(subscription.id)
-        await emitSubscriptionState(container, subscription, "activated")
+        await emitSubscriptionState(container, subscription, "renew")
 
         log.info(
           `[Subscription Job] Renewed subscription ${subscription.id}`
@@ -162,7 +130,7 @@ export default async function processSubscriptionRenewals(
       )
       await subscriptionService.expireSubscription(expiredIds)
       for (const s of allSubscriptions.filter((x) => expiredIds.includes(x.id))) {
-        await emitSubscriptionState(container, s, "lapsed")
+        await emitSubscriptionState(container, s, "expire")
       }
     }
 
