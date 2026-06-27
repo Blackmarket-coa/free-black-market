@@ -1,11 +1,14 @@
 import { MedusaService } from "@medusajs/framework/utils"
-import { 
-  VendorRules, 
-  FulfillmentWindow, 
+import {
+  VendorRules,
+  FulfillmentWindow,
   VendorCustomerTier,
   StandingOrder,
+  WholesaleApplication,
   FulfillmentMethod,
 } from "./models"
+import { CustomerTierType } from "./models/vendor-customer-tier"
+import { WholesaleApplicationStatus } from "./models/wholesale-application"
 
 /**
  * Order validation result
@@ -37,6 +40,7 @@ class VendorRulesService extends MedusaService({
   FulfillmentWindow,
   VendorCustomerTier,
   StandingOrder,
+  WholesaleApplication,
 }) {
   /**
    * Get or create vendor rules
@@ -247,6 +251,96 @@ class VendorRulesService extends MedusaService({
     }
   }
   
+  /**
+   * Get or create the WHOLESALE tier for a seller, so approved buyers have a
+   * tier to join. Defaults mirror the Plant Network wholesale terms (Net-30,
+   * application-gated, order-minimum waived).
+   */
+  async getOrCreateWholesaleTier(sellerId: string) {
+    const tiers = await this.listVendorCustomerTiers({
+      seller_id: sellerId,
+      tier_type: CustomerTierType.WHOLESALE,
+    })
+    if (tiers.length > 0) return tiers[0]
+
+    const [tier] = await this.createVendorCustomerTiers([
+      {
+        seller_id: sellerId,
+        tier_type: CustomerTierType.WHOLESALE,
+        name: "Wholesale",
+        description: "Approved wholesale buyers (garden centers, contractors, restoration).",
+        discount_percent: 45,
+        waive_order_minimum: false,
+        priority_fulfillment: true,
+        payment_terms_days: 30,
+        requires_application: true,
+        customer_ids: [] as unknown as Record<string, unknown>,
+        active: true,
+      },
+    ])
+    return tier
+  }
+
+  /**
+   * Create a wholesale application (intake).
+   */
+  async createWholesaleApplication(data: {
+    business_name: string
+    contact_name: string
+    email: string
+    phone: string
+    state: string
+    nursery_license_number?: string | null
+    estimated_annual_volume_usd?: number
+    species_interests?: string[]
+    buyer_type?: string
+    metadata?: Record<string, unknown>
+  }) {
+    const [app] = await this.createWholesaleApplications([
+      {
+        business_name: data.business_name,
+        contact_name: data.contact_name,
+        email: data.email,
+        phone: data.phone,
+        state: data.state,
+        nursery_license_number: data.nursery_license_number ?? null,
+        estimated_annual_volume_usd: data.estimated_annual_volume_usd ?? 0,
+        species_interests: (data.species_interests ?? null) as unknown as Record<string, unknown>,
+        buyer_type: (data.buyer_type ?? "other") as never,
+        status: WholesaleApplicationStatus.PENDING,
+        metadata: (data.metadata ?? null) as Record<string, unknown> | null,
+      },
+    ])
+    return app
+  }
+
+  /**
+   * Approve a wholesale application: stamp it approved and add the customer to
+   * the seller's WHOLESALE tier. Returns the updated application + tier.
+   */
+  async approveWholesaleApplication(args: {
+    application_id: string
+    seller_id: string
+    customer_id: string
+    reviewed_by?: string
+    review_notes?: string
+  }) {
+    const tier = await this.getOrCreateWholesaleTier(args.seller_id)
+    await this.addCustomerToTier(tier.id, args.customer_id)
+
+    const [app] = await this.updateWholesaleApplications([
+      {
+        id: args.application_id,
+        status: WholesaleApplicationStatus.APPROVED,
+        customer_id: args.customer_id,
+        reviewed_by: args.reviewed_by ?? null,
+        review_notes: args.review_notes ?? null,
+        reviewed_at: new Date(),
+      },
+    ])
+    return { application: app, tier }
+  }
+
   /**
    * Create a standing order
    */

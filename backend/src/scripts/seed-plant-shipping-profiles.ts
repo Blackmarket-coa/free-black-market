@@ -12,6 +12,8 @@
  */
 
 import type { ExecArgs } from "@medusajs/framework/types"
+import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils"
+import { createShippingProfilesWorkflow } from "@medusajs/medusa/core-flows"
 
 export const PLANT_SHIPPING_PROFILES = [
   {
@@ -56,11 +58,43 @@ export const PLANT_SHIPPING_PROFILES = [
 ] as const
 
 /**
- * TODO: Seed the profiles above using the EXISTING fulfillment workflow used in
- * `scripts/seed/seed-functions.ts` (createShippingProfilesWorkflow /
- * createShippingOptionsWorkflow), then attach each profile to the matching
- * products. Idempotent: skip profiles that already exist by name.
+ * Idempotently seed the live-plant shipping profiles via the same workflow used
+ * by `scripts/seed/seed-functions.ts`. Profiles already present (by name) are
+ * skipped, so this is safe to re-run.
+ *
+ * Attaching options/products to each profile (carrier rules, prices) is left to
+ * the admin / a follow-up migration — `createShippingOptionsWorkflow` needs a
+ * service zone + region which are environment-specific.
  */
-export default async function seedPlantShippingProfiles(_args: ExecArgs) {
-  throw new Error("TODO: seedPlantShippingProfiles not implemented")
+export default async function seedPlantShippingProfiles({ container }: ExecArgs) {
+  const logger = container.resolve(ContainerRegistrationKeys.LOGGER)
+  const fulfillment = container.resolve(Modules.FULFILLMENT) as {
+    listShippingProfiles: (filters: Record<string, unknown>) => Promise<Array<{ name: string }>>
+  }
+
+  const existing = await fulfillment.listShippingProfiles({})
+  const existingNames = new Set(existing.map((p) => p.name))
+
+  const toCreate = PLANT_SHIPPING_PROFILES.filter((p) => !existingNames.has(p.name))
+
+  if (toCreate.length === 0) {
+    logger.info("[seed-plant-shipping-profiles] all profiles already present; nothing to do")
+    return
+  }
+
+  const { result } = await createShippingProfilesWorkflow(container).run({
+    input: {
+      data: toCreate.map((p) => ({
+        name: p.name,
+        type: p.type,
+        metadata: p.metadata as Record<string, unknown>,
+      })),
+    },
+  })
+
+  logger.info(
+    `[seed-plant-shipping-profiles] created ${result.length} profile(s): ${toCreate
+      .map((p) => p.name)
+      .join(", ")}`
+  )
 }
