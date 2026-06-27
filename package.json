@@ -35,6 +35,8 @@
     "nursery-portal:dev": "pnpm --dir nursery-portal dev",
     "nursery-portal:build": "pnpm --dir nursery-portal build",
     "creator-portal:dev": "pnpm --dir creator-portal dev",
-    "creator-portal:build": "pnpm --dir creator-portal build"
+    "creator-portal:build": "pnpm --dir creator-portal build",
+    "botanical-portal:dev": "pnpm --dir botanical-portal dev",
+    "botanical-portal:build": "pnpm --dir botanical-portal build"
   }
 }
