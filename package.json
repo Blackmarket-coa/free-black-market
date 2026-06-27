@@ -31,6 +31,8 @@
     "validate:hermes-prompt": "node scripts/validate-hermes-prompt.mjs",
     "test:hermes-langgraph": "npx --yes -p tsx tsx --test services/ai-orchestrator/langgraph/supervisor-agent.entrypoint.test.ts",
     "test:hermes-vendor-runtime": "npx --yes -p tsx tsx --test services/ai-orchestrator/langgraph/vendor-runtime.contract.test.ts",
-    "test:hermes-vendor-suite": "pnpm -s test:hermes-langgraph && pnpm -s test:hermes-vendor-runtime"
+    "test:hermes-vendor-suite": "pnpm -s test:hermes-langgraph && pnpm -s test:hermes-vendor-runtime",
+    "nursery-portal:dev": "pnpm --dir nursery-portal dev",
+    "nursery-portal:build": "pnpm --dir nursery-portal build"
   }
 }
