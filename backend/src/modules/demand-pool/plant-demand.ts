@@ -43,6 +43,41 @@ const speciesKey = (s: string) => s.trim().toLowerCase().replace(/\s+/g, "-")
 
 const isEmail = (v: string) => /.+@.+\..+/.test(v)
 
+/**
+ * Pure species-demand aggregation (no I/O). Summarises a demand post + its
+ * participants into the report row. Extracted for testing.
+ */
+export function summarizeSpeciesDemand(
+  post: {
+    id: string
+    title?: string
+    committed_quantity?: number
+    target_quantity?: number
+    specs?: { species_name?: string; zone_counts?: Record<string, number>; max_prices?: number[] } | null
+  },
+  participants: Array<{ status?: string; quantity_committed?: number }>
+): SpeciesDemandSummary {
+  const active = participants.filter((p) => p.status !== "WITHDRAWN")
+  const totalUnits = active.reduce((s, p) => s + Number(p.quantity_committed ?? 0), 0)
+  const specs = post.specs ?? {}
+  const prices = specs.max_prices ?? []
+  const avgMax = prices.length ? prices.reduce((s, n) => s + n, 0) / prices.length : 0
+  const topZones = Object.entries(specs.zone_counts ?? {})
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3)
+    .map(([z]) => Number(z))
+  return {
+    species_name: specs.species_name ?? post.title ?? "",
+    demand_post_id: post.id,
+    total_expressions: active.length,
+    total_units_requested: totalUnits,
+    avg_max_price: Math.round(avgMax * 100) / 100,
+    top_zones: topZones,
+    production_threshold_met:
+      Number(post.committed_quantity ?? 0) >= Number(post.target_quantity ?? PRODUCTION_THRESHOLD),
+  }
+}
+
 type DemandService = {
   listDemandPosts: (filters: Record<string, unknown>) => Promise<any[]>
   createDemandPost: (input: Record<string, unknown>) => Promise<any>
@@ -137,28 +172,7 @@ export class PlantDemandService {
     const summaries: SpeciesDemandSummary[] = []
     for (const post of posts) {
       const participants = await this.demand.listDemandParticipants({ demand_post_id: post.id })
-      const active = participants.filter((p) => p.status !== "WITHDRAWN")
-      const totalUnits = active.reduce((s, p) => s + Number(p.quantity_committed ?? 0), 0)
-      const specs = (post.specs ?? {}) as {
-        species_name?: string
-        zone_counts?: Record<string, number>
-        max_prices?: number[]
-      }
-      const prices = specs.max_prices ?? []
-      const avgMax = prices.length ? prices.reduce((s, n) => s + n, 0) / prices.length : 0
-      const topZones = Object.entries(specs.zone_counts ?? {})
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, 3)
-        .map(([z]) => Number(z))
-      summaries.push({
-        species_name: specs.species_name ?? post.title,
-        demand_post_id: post.id,
-        total_expressions: active.length,
-        total_units_requested: totalUnits,
-        avg_max_price: Math.round(avgMax * 100) / 100,
-        top_zones: topZones,
-        production_threshold_met: Number(post.committed_quantity ?? 0) >= Number(post.target_quantity ?? PRODUCTION_THRESHOLD),
-      })
+      summaries.push(summarizeSpeciesDemand(post, participants))
     }
     return summaries.sort((a, b) => b.total_units_requested - a.total_units_requested)
   }

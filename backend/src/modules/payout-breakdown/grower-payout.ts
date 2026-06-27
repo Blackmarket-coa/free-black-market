@@ -48,6 +48,31 @@ export const PLATFORM_FEE = 0.05
 /** Owner id of the system account that receives hub cuts. */
 const HUB_ACCOUNT_OWNER = "hub_sc"
 
+export interface NodeSplit {
+  grossDollars: number
+  platformFee: number
+  net: number
+  growerAmount: number
+  hubAmount: number
+}
+
+/**
+ * Pure node-split math (no I/O). gross (cents) → platform fee → net → grower /
+ * hub amounts in dollars, hub amount rounded to cents. Extracted for testing.
+ */
+export function computeNodeSplit(
+  grossCents: number,
+  platformFeeFraction: number,
+  growerSplit: number
+): NodeSplit {
+  const grossDollars = grossCents / 100
+  const platformFee = grossDollars * platformFeeFraction
+  const net = grossDollars - platformFee
+  const growerAmount = net * growerSplit
+  const hubAmount = Math.round((net - growerAmount) * 100) / 100
+  return { grossDollars, platformFee, net, growerAmount, hubAmount }
+}
+
 export type GrowerPayoutStatus = "transferred" | "pending" | "skipped"
 
 export interface GrowerPayoutEvent {
@@ -72,6 +97,12 @@ type HawalaService = {
   createTransfer: (data: Record<string, unknown>) => Promise<any>
   listLedgerEntries: (filters: Record<string, unknown>) => Promise<any[]>
   getAccountBalance: (id: string) => Promise<{ available_balance: number }>
+  requestPayout: (data: {
+    vendor_id: string
+    amount: number
+    payout_tier: "INSTANT" | "SAME_DAY" | "NEXT_DAY" | "WEEKLY"
+    bank_account_id?: string
+  }) => Promise<{ id: string; status?: string }>
 }
 
 type PayoutBreakdownService = {
@@ -150,11 +181,12 @@ export class GrowerPayoutService {
     }
 
     const feeFraction = await this.platformFeeFraction(item.seller_id)
-    const platformFee = grossDollars * feeFraction
-    const net = grossDollars - platformFee
     const split = GROWER_SPLIT_CONFIG[item.grower_node] ?? 0.6
-    const growerAmount = net * split
-    const hubAmount = Math.round((net - growerAmount) * 100) / 100
+    const { platformFee, net, growerAmount, hubAmount } = computeNodeSplit(
+      item.gross_cents,
+      feeFraction,
+      split
+    )
 
     base.platform_fee = platformFee
     base.net_after_fee = net
@@ -260,28 +292,76 @@ export class GrowerPayoutService {
   }
 
   /**
-   * Monthly settlement. Aggregates each grower's net USD earnings into a payout
-   * figure. The actual bank/ACH execution is the external SEAM — here we compute
-   * the per-seller settlement amounts and return them for an ACH provider to
-   * disburse (Moov/Stripe at launch). Callers should mark settled entries via the
-   * hawala SettlementBatch flow once the transfer clears.
+   * Monthly settlement. Aggregates each grower's net USD earnings for the period
+   * and hands each to the EXISTING hawala payout pipeline via `requestPayout`,
+   * which debits SELLER_EARNINGS → SETTLEMENT and creates a PayoutRequest. The
+   * actual Stripe ACH push is performed downstream by the existing
+   * StripeAchService pipeline (gated by Stripe credentials), so there is no new
+   * external provider here.
+   *
+   * Balance-guarded + per-seller try/catch: a seller whose available balance is
+   * below the computed net (e.g. funds not yet settled) is reported as deferred
+   * rather than throwing.
    */
   async processMonthlyPayouts(
     sellerIds: string[],
-    period: { from: Date; to: Date }
-  ): Promise<Array<{ seller_id: string; amount: number; currency: "USD" }>> {
-    const settlements: Array<{ seller_id: string; amount: number; currency: "USD" }> = []
+    period: { from: Date; to: Date },
+    payoutTier: "INSTANT" | "SAME_DAY" | "NEXT_DAY" | "WEEKLY" = "WEEKLY"
+  ): Promise<
+    Array<{
+      seller_id: string
+      amount: number
+      currency: "USD"
+      status: "requested" | "deferred"
+      payout_request_id?: string
+      reason?: string
+    }>
+  > {
+    const results: Array<{
+      seller_id: string
+      amount: number
+      currency: "USD"
+      status: "requested" | "deferred"
+      payout_request_id?: string
+      reason?: string
+    }> = []
+
     for (const sellerId of sellerIds) {
       const rows = await this.getGrowerPayoutHistory(sellerId, period.from, period.to)
-      const net = rows.reduce(
-        (sum, r) => sum + (r.direction === "credit" ? r.amount : -r.amount),
-        0
-      )
-      if (net > 0) settlements.push({ seller_id: sellerId, amount: net, currency: "USD" })
+      const net =
+        Math.round(
+          rows.reduce(
+            (sum, r) => sum + (r.direction === "credit" ? r.amount : -r.amount),
+            0
+          ) * 100
+        ) / 100
+      if (net <= 0) continue
+
+      try {
+        const payout = await this.hawala.requestPayout({
+          vendor_id: sellerId,
+          amount: net,
+          payout_tier: payoutTier,
+        })
+        results.push({
+          seller_id: sellerId,
+          amount: net,
+          currency: "USD",
+          status: "requested",
+          payout_request_id: payout.id,
+        })
+      } catch (err) {
+        // Insufficient balance / no account → defer rather than fail the run.
+        results.push({
+          seller_id: sellerId,
+          amount: net,
+          currency: "USD",
+          status: "deferred",
+          reason: err instanceof Error ? err.message : "payout_request_failed",
+        })
+      }
     }
-    // TODO: external — hand `settlements` to the ACH provider (Moov/Stripe) and,
-    // on success, record a hawala SettlementBatch + mark entries SETTLED.
-    return settlements
+    return results
   }
 
   /**

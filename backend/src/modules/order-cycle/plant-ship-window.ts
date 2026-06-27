@@ -32,6 +32,38 @@ export interface OrderableResult {
 
 type QueryLike = { graph: (args: Record<string, unknown>) => Promise<{ data: any[] }> }
 
+export interface ShipWindowInput {
+  opensAt: Date | null
+  closesAt: Date | null
+  allowPreorder: boolean
+  /** true only when inventory is known and all variants are at/below zero. */
+  inventoryKnownZero: boolean
+}
+
+/**
+ * Pure ship-window evaluation (no I/O). Extracted for testing. Precedence:
+ * not-open → closed → sold-out → available.
+ */
+export function evaluateShipWindow(input: ShipWindowInput, now: Date): OrderableResult {
+  const { opensAt, closesAt, allowPreorder, inventoryKnownZero } = input
+  if (opensAt && now < opensAt) {
+    return {
+      orderable: allowPreorder,
+      reason: "window_not_open",
+      opens_at: opensAt,
+      closes_at: closesAt,
+      preorder_available: allowPreorder,
+    }
+  }
+  if (closesAt && now > closesAt) {
+    return { orderable: false, reason: "window_closed", opens_at: opensAt, closes_at: closesAt }
+  }
+  if (inventoryKnownZero) {
+    return { orderable: false, reason: "sold_out", opens_at: opensAt, closes_at: closesAt }
+  }
+  return { orderable: true, reason: "available", opens_at: opensAt, closes_at: closesAt }
+}
+
 export class PlantShipWindowService {
   private readonly container: MedusaContainer
 
@@ -67,27 +99,13 @@ export class PlantShipWindowService {
     const allowPreorder =
       (product.metadata as Record<string, unknown> | null)?.allow_preorder === true
 
-    if (opensAt && now < opensAt) {
-      return {
-        orderable: allowPreorder,
-        reason: "window_not_open",
-        opens_at: opensAt,
-        closes_at: closesAt,
-        preorder_available: allowPreorder,
-      }
-    }
-    if (closesAt && now > closesAt) {
-      return { orderable: false, reason: "window_closed", opens_at: opensAt, closes_at: closesAt }
-    }
-
     // Best-effort inventory check (only when the field is populated).
     const variants = (product.variants ?? []) as Array<{ inventory_quantity?: number | null }>
     const known = variants.filter((v) => typeof v.inventory_quantity === "number")
-    if (known.length > 0 && known.every((v) => (v.inventory_quantity ?? 0) <= 0)) {
-      return { orderable: false, reason: "sold_out", opens_at: opensAt, closes_at: closesAt }
-    }
+    const inventoryKnownZero =
+      known.length > 0 && known.every((v) => (v.inventory_quantity ?? 0) <= 0)
 
-    return { orderable: true, reason: "available", opens_at: opensAt, closes_at: closesAt }
+    return evaluateShipWindow({ opensAt, closesAt, allowPreorder, inventoryKnownZero }, now)
   }
 
   /**
