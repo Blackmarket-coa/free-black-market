@@ -35,19 +35,32 @@ import type {
   XpBalance,
 } from "@/types"
 
-// Each read hook mirrors a future /vendor/creator/* (or /vendor/hawala/*) route.
-// While USE_MOCK_DATA is true it resolves the typed mock layer. The two
-// mutations at the bottom call the REAL backend bridge endpoints that already
-// exist (stream overlay URL, Blackout membership force-resync).
+// Surfaces with a real backend route (memberships, members, credits, hub-data)
+// are "live-first": they call the FBM API and only fall back to the typed mock
+// layer when USE_MOCK_DATA is on AND the request fails (e.g. no dev session).
+// Surfaces whose backend module doesn't exist yet (boosts, splits, xp, analytics,
+// embed, Blackout feeds, governance) still resolve the mock layer directly.
+//
+// The two mutations at the bottom call the REAL backend bridge endpoints that
+// already exist (stream overlay URL, Blackout membership force-resync).
+
+async function liveFirst<T>(fetcher: () => Promise<T>, mock: T): Promise<T> {
+  try {
+    return await fetcher()
+  } catch (err) {
+    if (USE_MOCK_DATA) return mockResolve(mock)
+    throw err
+  }
+}
 
 export function useDashboard() {
   return useQuery<DashboardSummary>({
     queryKey: ["creator", "dashboard"],
-    queryFn: async () => {
-      if (USE_MOCK_DATA) return mockResolve(MOCK_DASHBOARD)
-      const { data } = await api.get("/vendor/creator/hub-data")
-      return data
-    },
+    queryFn: () =>
+      liveFirst(async () => {
+        const { data } = await api.get("/vendor/creator/hub-data")
+        return data as DashboardSummary
+      }, MOCK_DASHBOARD),
     staleTime: 30_000,
   })
 }
@@ -66,44 +79,44 @@ export function usePayouts() {
 export function useMembershipTiers() {
   return useQuery<MembershipTier[]>({
     queryKey: ["creator", "membership-tiers"],
-    queryFn: async () => {
-      if (USE_MOCK_DATA) return mockResolve(MOCK_MEMBERSHIP_TIERS)
-      const { data } = await api.get("/vendor/creator/memberships")
-      return data.membership_tiers
-    },
+    queryFn: () =>
+      liveFirst(async () => {
+        const { data } = await api.get("/vendor/creator/memberships")
+        return data.membership_tiers as MembershipTier[]
+      }, MOCK_MEMBERSHIP_TIERS),
   })
 }
 
 export function useMembers() {
   return useQuery<Member[]>({
     queryKey: ["creator", "members"],
-    queryFn: async () => {
-      if (USE_MOCK_DATA) return mockResolve(MOCK_MEMBERS)
-      const { data } = await api.get("/vendor/creator/members")
-      return data.members
-    },
+    queryFn: () =>
+      liveFirst(async () => {
+        const { data } = await api.get("/vendor/creator/members")
+        return data.members as Member[]
+      }, MOCK_MEMBERS),
   })
 }
 
 export function useCreditBalance() {
   return useQuery<CreditBalance>({
     queryKey: ["creator", "credit-balance"],
-    queryFn: async () => {
-      if (USE_MOCK_DATA) return mockResolve(MOCK_CREDIT_BALANCE)
-      const { data } = await api.get("/vendor/creator/credits/balance")
-      return data
-    },
+    queryFn: () =>
+      liveFirst(async () => {
+        const { data } = await api.get("/vendor/creator/credits/balance")
+        return data as CreditBalance
+      }, MOCK_CREDIT_BALANCE),
   })
 }
 
 export function useCreditTransactions() {
   return useQuery<CreditTransaction[]>({
     queryKey: ["creator", "credit-transactions"],
-    queryFn: async () => {
-      if (USE_MOCK_DATA) return mockResolve(MOCK_CREDIT_TXNS)
-      const { data } = await api.get("/vendor/creator/credits/transactions")
-      return data.transactions
-    },
+    queryFn: () =>
+      liveFirst(async () => {
+        const { data } = await api.get("/vendor/creator/credits/transactions")
+        return data.transactions as CreditTransaction[]
+      }, MOCK_CREDIT_TXNS),
   })
 }
 
