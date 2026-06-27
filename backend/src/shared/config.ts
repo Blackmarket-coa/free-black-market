@@ -85,6 +85,14 @@ const envSchema = z.object({
   BLACKOUT_API_BASE: optionalString,
   ENTITLEMENTS_SERVICE_TOKEN: optionalString,
   ENTITLEMENTS_BASE_URL: optionalString,
+  // Public Blackout web app origin (the user-facing app, e.g.
+  // https://theblackout.app) — distinct from BLACKOUT_API_BASE which is the
+  // service API. Used to build creator-facing links such as the stream overlay.
+  BLACKOUT_APP_URL: optionalString,
+  // HS256 signing secret for the OBS stream-overlay JWT. When unset the
+  // overlay-url endpoint returns 503 (feature off) rather than minting an
+  // unverifiable token.
+  BLACKOUT_OVERLAY_SECRET: optionalString,
 
   // External services (optional - just strings, no URL validation)
   APPRISE_API_URL: optionalString,

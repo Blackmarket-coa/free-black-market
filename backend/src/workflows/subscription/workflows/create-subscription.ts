@@ -10,6 +10,7 @@ import {
 } from "@medusajs/medusa/core-flows"
 import { SubscriptionInterval, SubscriptionType } from "../../../modules/subscription/types"
 import { createSubscriptionStep } from "../steps/create-subscription"
+import { emitSubscriptionStateStep } from "../steps/emit-subscription-state"
 import subscriptionOrderLink from "../../../links/subscription-order"
 
 type WorkflowInput = {
@@ -95,6 +96,10 @@ export const createSubscriptionWorkflow = createWorkflow(
       })
   
       createRemoteLinkStep(linkDefs)
+
+      // Real-time Blackout membership sync: a brand-new subscribe activates the
+      // member's Space ACL immediately, without waiting for the renewal cron.
+      emitSubscriptionStateStep({ subscription, transition: "subscribe" })
 
       return subscription
     })

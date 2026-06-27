@@ -1,0 +1,65 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: theme("colors.soil");
+  color: theme("colors.cream.100");
+  font-family: theme("fontFamily.sans");
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+@layer components {
+  .panel {
+    @apply bg-bark border border-moss rounded-md;
+  }
+
+  .panel-pad {
+    @apply panel p-4;
+  }
+
+  .btn {
+    @apply inline-flex items-center justify-center gap-1.5 rounded-sm px-3 py-1.5 text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  /* Creator portal shares the BMC solarpunk palette with the wellness/nursery
+     portals — amber accents on dark bark surfaces — so components stay token
+     compatible across the portal family. */
+  .btn-primary {
+    @apply btn bg-amber-600 text-white hover:bg-amber-500;
+  }
+
+  .btn-ghost {
+    @apply btn border border-moss text-mist hover:text-cream-100 hover:border-amber-600;
+  }
+
+  .btn-clay {
+    @apply btn text-white;
+    background-color: theme("colors.clay");
+  }
+
+  .heading {
+    @apply font-display text-cream-50 tracking-tight;
+  }
+
+  .scroll-area {
+    scrollbar-width: thin;
+    scrollbar-color: theme("colors.moss") transparent;
+  }
+}

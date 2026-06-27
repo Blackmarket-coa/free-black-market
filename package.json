@@ -33,6 +33,8 @@
     "test:hermes-vendor-runtime": "npx --yes -p tsx tsx --test services/ai-orchestrator/langgraph/vendor-runtime.contract.test.ts",
     "test:hermes-vendor-suite": "pnpm -s test:hermes-langgraph && pnpm -s test:hermes-vendor-runtime",
     "nursery-portal:dev": "pnpm --dir nursery-portal dev",
-    "nursery-portal:build": "pnpm --dir nursery-portal build"
+    "nursery-portal:build": "pnpm --dir nursery-portal build",
+    "creator-portal:dev": "pnpm --dir creator-portal dev",
+    "creator-portal:build": "pnpm --dir creator-portal build"
   }
 }

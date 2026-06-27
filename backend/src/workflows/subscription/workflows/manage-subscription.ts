@@ -3,6 +3,7 @@ import {
   WorkflowResponse
 } from "@medusajs/framework/workflows-sdk"
 import { updateSubscriptionStep } from "../steps/update-subscription"
+import { emitSubscriptionStateStep } from "../steps/emit-subscription-state"
 
 type WorkflowInput = {
   subscription_id: string
@@ -27,6 +28,11 @@ export const manageSubscriptionWorkflow = createWorkflow(
       action: input.action,
       reason: input.reason
     })
+
+    // Mirror the lifecycle change to Blackout: pause/cancel lapse the member's
+    // Space access, resume reactivates it. `action` is a subset of
+    // SubscriptionTransition, so it maps straight through.
+    emitSubscriptionStateStep({ subscription, transition: input.action })
 
     return new WorkflowResponse({
       subscription,
