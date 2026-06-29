@@ -23,6 +23,7 @@ type MetaRow = {
   site_status: string | null;
   site_url: string | null;
   site_repo: string | null;
+  embed_features: string[] | null;
 };
 
 /**
@@ -74,7 +75,7 @@ export async function POST(
 
   const { data: metaRows } = await query.graph({
     entity: "seller_metadata",
-    fields: ["id", "connect_domains", "site_status", "site_url", "site_repo"],
+    fields: ["id", "connect_domains", "site_status", "site_url", "site_repo", "embed_features"],
     filters: { seller_id: sellerId },
   });
 
@@ -109,7 +110,7 @@ export async function POST(
 
     const { data: refreshed } = await query.graph({
       entity: "seller_metadata",
-      fields: ["connect_domains", "site_status", "site_url", "site_repo"],
+      fields: ["connect_domains", "site_status", "site_url", "site_repo", "embed_features"],
       filters: { seller_id: sellerId },
     });
 

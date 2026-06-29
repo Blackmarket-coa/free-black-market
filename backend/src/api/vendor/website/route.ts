@@ -16,7 +16,10 @@ import {
   normalizeDomains,
   probeSiteLive,
 } from "../../../shared/site-provisioning";
-import { serializeWebsite } from "../../../shared/website-config";
+import {
+  EMBED_FEATURE_KEYS,
+  serializeWebsite,
+} from "../../../shared/website-config";
 
 type SellerRow = { id: string; handle: string };
 type MetaRow = {
@@ -25,8 +28,22 @@ type MetaRow = {
   site_status: string | null;
   site_url: string | null;
   site_repo: string | null;
+  embed_features: string[] | null;
   updated_at?: string | Date | null;
 };
+
+/**
+ * Normalize an incoming embed_features value. `null`/undefined resets to the
+ * default (all surfaces on). An array is filtered to the known surface keys so
+ * unknown keys can never be persisted.
+ */
+function normalizeEmbedFeatures(
+  value: unknown,
+): string[] | null {
+  if (!Array.isArray(value)) return null;
+  const allowed = new Set<string>(EMBED_FEATURE_KEYS);
+  return value.filter((k): k is string => typeof k === "string" && allowed.has(k));
+}
 
 async function loadContext(req: AuthenticatedMedusaRequest, sellerId: string) {
   const query = req.scope.resolve(ContainerRegistrationKeys.QUERY);
@@ -46,6 +63,7 @@ async function loadContext(req: AuthenticatedMedusaRequest, sellerId: string) {
       "site_status",
       "site_url",
       "site_repo",
+      "embed_features",
       "updated_at",
     ],
     filters: { seller_id: sellerId },
@@ -116,8 +134,10 @@ export async function GET(
 /**
  * POST /vendor/website
  *
- * Save the Connect whitelist (bare hostnames). Body is validated upstream:
- *   { connect_domains: string[] | null }
+ * Save the Connect whitelist and/or the embed feature toggles. Each field is
+ * optional and applied only when present, so the domain editor and the
+ * "what to show" toggles can save independently:
+ *   { connect_domains?: string[] | null, embed_features?: string[] | null }
  */
 export async function POST(
   req: AuthenticatedMedusaRequest,
@@ -127,8 +147,10 @@ export async function POST(
   if (!sellerId) return;
 
   try {
-    const body = req.body as { connect_domains?: string[] | null };
-    const domains = normalizeDomains(body.connect_domains ?? []);
+    const body = req.body as {
+      connect_domains?: string[] | null;
+      embed_features?: string[] | null;
+    };
 
     const { seller, meta } = await loadContext(req, sellerId);
     if (!seller) {
@@ -137,14 +159,23 @@ export async function POST(
         .json({ message: "Seller not found", type: "not_found" });
     }
 
+    // Build a partial update from only the fields the caller actually sent.
+    const updates: Record<string, unknown> = {};
+    if ("connect_domains" in body) {
+      updates.connect_domains = normalizeDomains(body.connect_domains ?? []);
+    }
+    if ("embed_features" in body) {
+      updates.embed_features = normalizeEmbedFeatures(body.embed_features);
+    }
+
     const sellerExtension = req.scope.resolve("sellerExtension");
     if (meta) {
       await updateSellerMetadataRecord(sellerExtension as SellerExtensionService, [
-        { id: meta.id, connect_domains: domains },
+        { id: meta.id, ...updates },
       ]);
     } else {
       await createSellerMetadataRecord(sellerExtension as SellerExtensionService, [
-        { seller_id: sellerId, connect_domains: domains },
+        { seller_id: sellerId, ...updates },
       ]);
     }
 

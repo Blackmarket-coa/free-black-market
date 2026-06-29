@@ -9,7 +9,12 @@ import {
   toast,
 } from "@medusajs/ui"
 import { useEffect, useMemo, useState } from "react"
-import { FbmWebsite, useUpdateWebsiteDomains } from "../../../hooks/api/website"
+import {
+  EmbedFeatureKey,
+  FbmWebsite,
+  useUpdateWebsiteDomains,
+  useUpdateWebsiteFeatures,
+} from "../../../hooks/api/website"
 import { CodeBlock, Step } from "./shared"
 import { KeysSection } from "./keys-section"
 import { EmbedPreview } from "./embed-preview"
@@ -64,7 +69,7 @@ const SDK_METHODS: Array<{ call: string; desc: string }> = [
 ]
 
 /** Component catalog for the picker / preview. */
-const COMPONENTS: Array<{ kind: string; label: string; needsKey?: boolean; attrs?: string }> = [
+const COMPONENTS: Array<{ kind: EmbedFeatureKey; label: string; needsKey?: boolean; attrs?: string }> = [
   { kind: "vendor", label: "Profile header" },
   { kind: "products", label: "Product grid", attrs: ' data-fbm-limit="6"' },
   { kind: "digital", label: "Digital products" },
@@ -86,12 +91,43 @@ export const ConnectPanel = ({ website }: { website: FbmWebsite }) => {
     setDomains(website.connect_domains || [])
   }, [website.connect_domains])
 
-  const [picked, setPicked] = useState<string[]>(["vendor", "products"])
+  const { mutate: saveFeatures, isPending: isSavingFeatures } =
+    useUpdateWebsiteFeatures()
 
-  const togglePicked = (kind: string) => {
+  // Enabled surfaces persisted on the seller — the authoritative list of what
+  // the embed shows, in catalog order. Default (all on) yields every kind.
+  const enabledKeys = useMemo(
+    () => COMPONENTS.filter((c) => website.embed_features?.[c.kind]).map((c) => c.kind),
+    [website.embed_features]
+  )
+
+  const [picked, setPicked] = useState<EmbedFeatureKey[]>(enabledKeys)
+
+  // Re-sync local toggles whenever the persisted selection changes (e.g. after
+  // a save or a refetch).
+  useEffect(() => {
+    setPicked(enabledKeys)
+  }, [enabledKeys])
+
+  const togglePicked = (kind: EmbedFeatureKey) => {
     setPicked((cur) =>
       cur.includes(kind) ? cur.filter((k) => k !== kind) : [...cur, kind]
     )
+  }
+
+  const featuresDirty =
+    JSON.stringify([...picked].sort()) !==
+    JSON.stringify([...enabledKeys].sort())
+
+  const persistFeatures = () => {
+    // Preserve catalog order so the stored list is stable/readable.
+    const ordered = COMPONENTS.filter((c) => picked.includes(c.kind)).map(
+      (c) => c.kind
+    )
+    saveFeatures(ordered, {
+      onSuccess: () => toast.success("Embed visibility saved"),
+      onError: () => toast.error("Could not save embed visibility"),
+    })
   }
 
   // Build the component markup from the picker, preserving catalog order.
@@ -166,8 +202,10 @@ export const ConnectPanel = ({ website }: { website: FbmWebsite }) => {
 
       <Step n={3} title="Pick what to show — then preview it live">
         <Text className="text-ui-fg-subtle mb-2" size="small">
-          Choose the components you want, paste the markup where they should
-          appear, and watch the live preview update.
+          These toggles control what your embed is allowed to show on your
+          external site. Turn a surface off and it won't render anywhere — even
+          if its markup is still on the page. Save to apply, then paste the
+          markup below where each component should appear.
         </Text>
         <div className="mb-3 flex flex-wrap gap-2">
           {COMPONENTS.map((c) => {
@@ -186,6 +224,18 @@ export const ConnectPanel = ({ website }: { website: FbmWebsite }) => {
             )
           })}
         </div>
+        {featuresDirty && (
+          <div className="mb-3">
+            <Button
+              size="small"
+              onClick={persistFeatures}
+              isLoading={isSavingFeatures}
+              type="button"
+            >
+              Save visibility
+            </Button>
+          </div>
+        )}
         <CodeBlock code={componentSnippet} />
         <div className="mt-3">
           <EmbedPreview website={website} components={picked} />
