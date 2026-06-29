@@ -3,6 +3,7 @@ const log = createLogger("api/store/vendors/handle");
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http";
 import { BOOKING_MODULE } from "../../../../modules/booking";
 import type BookingService from "../../../../modules/booking/service";
+import { resolveEmbedFeatures } from "../../../../shared/website-config";
 
 /**
  * GET /store/vendors/:handle  —  FBM Store API (public, website-agnostic)
@@ -129,6 +130,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
           "social_links",
           "mxid",
           "blackout_user_id",
+          "embed_features",
         ],
         filters: { seller_id: seller.id },
       });
@@ -137,10 +139,18 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       log.warn(`seller_metadata lookup failed for ${seller.id}`, err);
     }
 
-    // Chat is offered when the vendor has a reachable Blackout/Matrix identity.
-    const chatEnabled = Boolean(meta?.mxid || meta?.blackout_user_id);
+    // Vendor-controlled embed toggles. Null/missing ⇒ all surfaces on, so
+    // existing embeds are unchanged. These gate the public response below in
+    // addition to the data-presence checks, so a turned-off surface never
+    // leaves the server even if a host page still has the markup.
+    const features = resolveEmbedFeatures(meta?.embed_features);
 
-    const vendor = wantVendor
+    // Chat is offered when the vendor has a reachable Blackout/Matrix identity
+    // AND the vendor has not turned the chat surface off.
+    const chatEnabled =
+      Boolean(meta?.mxid || meta?.blackout_user_id) && features.chat;
+
+    const vendor = wantVendor && features.vendor
       ? {
           id: seller.id,
           handle: seller.handle,
@@ -160,8 +170,14 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       : undefined;
 
     // 3) Published products for this seller (with variant prices).
+    // Fetch when the caller asked for products AND at least one product-backed
+    // surface (flat grid, digital, or services) is enabled — digital/services
+    // are derived from the same query.
+    const fetchProducts =
+      wantProducts &&
+      (features.products || features.digital || features.services);
     let products: any[] = [];
-    if (wantProducts) {
+    if (fetchProducts) {
       try {
         const { data: rows } = await query.graph({
           entity: "product",
@@ -272,14 +288,22 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     // Grouped views for the specialized connect.js components. The flat
     // `products` array above stays the back-compat contract; these are additive.
     const productGroups = {
-      digital: products.filter((p) => p.type === "digital"),
-      services: products.filter((p) => p.type === "service"),
-      physical: products.filter((p) => p.type === "physical"),
+      digital: features.digital
+        ? products.filter((p) => p.type === "digital")
+        : [],
+      services: features.services
+        ? products.filter((p) => p.type === "service")
+        : [],
+      physical: features.products
+        ? products.filter((p) => p.type === "physical")
+        : [],
     };
 
-    // 4) Events (ticket products) for this seller — best effort.
+    // 4) Events (ticket products) for this seller — best effort. Skipped when
+    // the vendor has turned the events surface off.
+    const fetchEvents = wantEvents && features.events;
     let events: any[] = [];
-    if (wantEvents) {
+    if (fetchEvents) {
       try {
         const { data: ticketRows } = await query.graph({
           entity: "ticket_product",
@@ -346,20 +370,28 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 
     return res.json({
       vendor,
-      products: wantProducts ? products : undefined,
+      // The flat list backs the general product grid (`data-fbm="products"`).
+      // Emptied when the vendor turns the products surface off; digital and
+      // services still arrive via product_groups below.
+      products: wantProducts ? (features.products ? products : []) : undefined,
       // Additive grouped view; `events` stays its own top-level array for
       // back-compat. Mirrors it under product_groups.events for symmetry.
       product_groups: wantProducts
-        ? { ...productGroups, events: wantEvents ? events : [] }
+        ? { ...productGroups, events: fetchEvents ? events : [] }
         : undefined,
       events: wantEvents ? events : undefined,
       // Capability flags so an embed can decide which widgets to render without
-      // a second request. `booking_enabled` is finalized in the booking phase;
-      // it is true when any service product exists.
+      // a second request. Each is the vendor's toggle AND-ed with data
+      // availability, so a disabled surface is always false here.
       capabilities: {
+        vendor_enabled: features.vendor,
+        products_enabled: features.products,
+        digital_enabled: features.digital,
+        services_enabled: features.services,
+        events_enabled: features.events,
+        reviews_enabled: features.reviews,
         chat_enabled: chatEnabled,
-        booking_enabled: productGroups.services.length > 0,
-        reviews_enabled: true,
+        booking_enabled: productGroups.services.length > 0 && features.booking,
       },
       reviews_summary: {
         average: meta?.rating ?? null,

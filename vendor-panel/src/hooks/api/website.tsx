@@ -15,9 +15,24 @@ export const websiteQueryKeys = queryKeysFactory(WEBSITE_QUERY_KEY)
 
 export type SiteStatus = "none" | "provisioning" | "live" | "failed"
 
+/** Embed surfaces the vendor can toggle on/off for their FBM Connect embed. */
+export type EmbedFeatureKey =
+  | "vendor"
+  | "products"
+  | "digital"
+  | "services"
+  | "events"
+  | "reviews"
+  | "booking"
+  | "chat"
+
+export type EmbedFeatures = Record<EmbedFeatureKey, boolean>
+
 export type FbmWebsite = {
   handle: string
   connect_domains: string[]
+  /** Resolved on/off map for every embed surface (default = all on). */
+  embed_features: EmbedFeatures
   site_status: SiteStatus
   site_url: string | null
   site_repo: string | null
@@ -68,6 +83,28 @@ export const useUpdateWebsiteDomains = (
       fetchQuery("/vendor/website", {
         method: "POST",
         body: { connect_domains },
+      }),
+    onSuccess: (data, variables, context) => {
+      queryClient.invalidateQueries({ queryKey: websiteQueryKeys.details() })
+      options?.onSuccess?.(data, variables, context)
+    },
+    ...options,
+  })
+}
+
+/**
+ * POST /vendor/website — save which embed surfaces show on the external site.
+ * Pass the array of enabled surface keys, or `null` to reset to "all on".
+ */
+export const useUpdateWebsiteFeatures = (
+  options?: UseMutationOptions<FbmWebsiteResponse, FetchError, EmbedFeatureKey[] | null>
+) => {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (embed_features: EmbedFeatureKey[] | null) =>
+      fetchQuery("/vendor/website", {
+        method: "POST",
+        body: { embed_features },
       }),
     onSuccess: (data, variables, context) => {
       queryClient.invalidateQueries({ queryKey: websiteQueryKeys.details() })

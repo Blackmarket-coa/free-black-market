@@ -933,6 +933,44 @@
   }
 
   // ---------------------------------------------------------------------------
+  // Capability gating — the vendor toggles which surfaces their embed shows
+  // from the FBM portal. The Store API returns a `capabilities` map; a surface
+  // is hidden only when its flag is explicitly false, so an older API that
+  // omits capabilities still renders everything (opt-out, never opt-in).
+  // ---------------------------------------------------------------------------
+  var CAP_FOR_KIND = {
+    vendor: "vendor_enabled",
+    products: "products_enabled",
+    digital: "digital_enabled",
+    services: "services_enabled",
+    events: "events_enabled",
+    reviews: "reviews_enabled",
+    booking: "booking_enabled",
+    chat: "chat_enabled",
+  };
+
+  function getCapabilities(handle) {
+    return getData(handle || config.handle, { include: "vendor,products,events" })
+      .then(function (d) {
+        return (d && d.capabilities) || {};
+      })
+      .catch(function () {
+        return {}; // never block rendering on a failed capabilities probe
+      });
+  }
+
+  function renderKind(kind, node, opts) {
+    if (kind === "products") renderProducts(node, opts);
+    else if (kind === "digital") renderDigital(node, opts);
+    else if (kind === "services") renderServices(node, opts);
+    else if (kind === "events") renderEvents(node, opts);
+    else if (kind === "reviews") renderReviews(node, opts);
+    else if (kind === "vendor") renderVendor(node, opts);
+    else if (kind === "booking") renderBooking(node, opts);
+    else if (kind === "chat") renderChat(node, opts);
+  }
+
+  // ---------------------------------------------------------------------------
   // Zero-JS auto-mount: scan for [data-fbm] elements and render them
   // ---------------------------------------------------------------------------
   function autoMount(root) {
@@ -949,14 +987,15 @@
         product: node.getAttribute("data-fbm-product") || undefined,
         label: node.getAttribute("data-fbm-label") || undefined,
       };
-      if (kind === "products") renderProducts(node, opts);
-      else if (kind === "digital") renderDigital(node, opts);
-      else if (kind === "services") renderServices(node, opts);
-      else if (kind === "events") renderEvents(node, opts);
-      else if (kind === "reviews") renderReviews(node, opts);
-      else if (kind === "vendor") renderVendor(node, opts);
-      else if (kind === "booking") renderBooking(node, opts);
-      else if (kind === "chat") renderChat(node, opts);
+      var capKey = CAP_FOR_KIND[kind];
+      getCapabilities(opts.handle).then(function (caps) {
+        // Vendor turned this surface off — render nothing.
+        if (capKey && caps[capKey] === false) {
+          node.innerHTML = "";
+          return;
+        }
+        renderKind(kind, node, opts);
+      });
     });
     wireBuyButtons(root);
   }

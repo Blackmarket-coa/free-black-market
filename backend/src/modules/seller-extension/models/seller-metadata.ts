@@ -140,6 +140,11 @@ const SellerMetadata = model.define("seller_metadata", {
   // Vendor-selected dashboard extensions (feature keys)
   enabled_extensions: model.json().nullable(),
 
+  // Vendor-selected embed surfaces for the FBM Connect embed. Array of enabled
+  // keys (see EMBED_FEATURE_KEYS in shared/website-config). Null ⇒ all surfaces
+  // enabled (default-on), so existing embeds are unaffected.
+  embed_features: model.json().nullable(),
+
   // Creator-specific fields (used when vendor_type === CREATOR)
   creator_handle: model.text().nullable(),
   creator_bio: model.text().nullable(),
