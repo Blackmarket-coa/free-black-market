@@ -23,7 +23,10 @@
     "@tanstack/react-query": "^5.90.20"
   },
   "devDependencies": {
-    "@types/node": "^25.0.10"
+    "@types/node": "^25.0.10",
+    "eslint": "^9.39.4",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "typescript-eslint": "^8.62.1"
   },
   "scripts": {
     "check:vendor-completeness": "node scripts/check-vendor-completeness.mjs",
@@ -41,6 +44,8 @@
     "botanical-portal:dev": "pnpm --filter @bmc/botanical-portal dev",
     "botanical-portal:build": "pnpm --filter @bmc/botanical-portal build",
     "portals:build": "pnpm --filter \"@bmc/*-portal\" -r build",
-    "portals:typecheck": "pnpm --filter \"@bmc/*-portal\" -r typecheck"
+    "portals:typecheck": "pnpm --filter \"@bmc/*-portal\" -r typecheck",
+    "portals:test": "pnpm --filter \"@bmc/portal-kit\" test",
+    "portals:lint": "eslint --config eslint.portals.config.mjs --max-warnings 0 \"nursery-portal/src/**/*.{ts,tsx}\" \"wellness-portal/src/**/*.{ts,tsx}\" \"botanical-portal/src/**/*.{ts,tsx}\" \"creator-portal/src/**/*.{ts,tsx}\" \"packages/*/src/**/*.{ts,tsx}\""
   }
 }
