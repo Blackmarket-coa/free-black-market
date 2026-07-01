@@ -946,6 +946,36 @@ export default defineMiddlewares({
         requireFeatureFlagMiddleware("INVOICING_V1"),
       ],
     },
+    // Vendor Quest engine + its opt-in substrate/vertical modules. Each is
+    // feature-flagged independently so enabling one never forces another.
+    {
+      matcher: "/vendor/quests*",
+      middlewares: [
+        authenticate("seller", "bearer"),
+        requireFeatureFlagMiddleware("VENDOR_QUESTS_V1"),
+      ],
+    },
+    {
+      matcher: "/vendor/production-batches*",
+      middlewares: [
+        authenticate("seller", "bearer"),
+        requireFeatureFlagMiddleware("PRODUCTION_LEDGER_V1"),
+      ],
+    },
+    {
+      matcher: "/vendor/vault*",
+      middlewares: [
+        authenticate("seller", "bearer"),
+        requireFeatureFlagMiddleware("DOCUMENT_VAULT_V1"),
+      ],
+    },
+    {
+      matcher: "/vendor/nursery*",
+      middlewares: [
+        authenticate("seller", "bearer"),
+        requireFeatureFlagMiddleware("NURSERY_VERTICAL_V1"),
+      ],
+    },
     // Driver routes - driver authentication
     {
       matcher: "/driver/*",
