@@ -62,4 +62,6 @@ CVE-2026-54904
 # The bypass is Windows-only and affects the dev server's fs.deny; FBM CI and
 # runtime are Linux and deploy built artifacts, not the vite dev server.
 # Suppressing until the vite major bump is tackled as a separate workstream.
+# (CVE-2026-53571 is the CVE alias Trivy keys this npm advisory under.)
+CVE-2026-53571
 GHSA-fx2h-pf6j-xcff
