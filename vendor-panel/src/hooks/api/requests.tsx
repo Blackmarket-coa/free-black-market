@@ -45,7 +45,7 @@ export const useRequest = (
 }
 
 export const useRequests = (
-  query?: Record<string, any>,
+  query?: Record<string, string | number>,
   options?: Omit<
     UseQueryOptions<
       PaginatedResponse<{
@@ -156,7 +156,7 @@ export const useOrderReturnRequest = (
 }
 
 export const useOrderReturnRequests = (
-  query?: Record<string, any>,
+  query?: Record<string, string | number>,
   options?: Omit<
     UseQueryOptions<
       PaginatedResponse<{
