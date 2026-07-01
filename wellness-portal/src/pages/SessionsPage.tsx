@@ -1,6 +1,6 @@
 import { useState } from "react"
-import { PageHeader } from "@/components/ui/PageHeader"
-import { QueryState } from "@/components/ui/QueryState"
+import { PageHeader } from "@bmc/ui"
+import { QueryState } from "@bmc/ui"
 import { useSessionTypes } from "@/hooks/useWellness"
 import { money, classNames } from "@bmc/portal-kit"
 

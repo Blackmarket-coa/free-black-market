@@ -12,8 +12,8 @@ import {
   XAxis,
   YAxis,
 } from "recharts"
-import { PageHeader } from "@/components/ui/PageHeader"
-import { QueryState } from "@/components/ui/QueryState"
+import { PageHeader } from "@bmc/ui"
+import { QueryState } from "@bmc/ui"
 import { useAnalytics } from "@/hooks/useWellness"
 
 const AXIS = { stroke: "#8c8270", fontSize: 11 }

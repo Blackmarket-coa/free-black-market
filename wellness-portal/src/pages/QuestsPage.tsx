@@ -1,5 +1,5 @@
-import { PageHeader } from "@/components/ui/PageHeader"
-import { QueryState } from "@/components/ui/QueryState"
+import { PageHeader } from "@bmc/ui"
+import { QueryState } from "@bmc/ui"
 import { TierBadge } from "@/components/payouts/TierBadge"
 import { KarmaBar } from "@/components/payouts/KarmaBar"
 import { usePayouts } from "@/hooks/useWellness"

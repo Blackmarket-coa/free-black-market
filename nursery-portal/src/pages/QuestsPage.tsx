@@ -1,4 +1,4 @@
-import { StubPage } from "@/components/ui/StubPage"
+import { StubPage } from "@bmc/ui"
 import { TIERS } from "@bmc/portal-kit"
 import { TierBadge } from "@/components/payouts/TierBadge"
 

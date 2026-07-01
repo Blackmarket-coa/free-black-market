@@ -1,6 +1,6 @@
 import { usePropagation } from "@/hooks/usePropagation"
-import { PageHeader } from "@/components/ui/PageHeader"
-import { QueryState } from "@/components/ui/QueryState"
+import { PageHeader } from "@bmc/ui"
+import { QueryState } from "@bmc/ui"
 import { BatchCard } from "@/components/inventory/BatchCard"
 import {
   PROPAGATION_WINDOWS,

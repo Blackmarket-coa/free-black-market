@@ -1,4 +1,4 @@
-import { StubPage } from "@/components/ui/StubPage"
+import { StubPage } from "@bmc/ui"
 
 // Collective only — guarded at the route level in App.tsx.
 export function CollectiveSplitsPage() {

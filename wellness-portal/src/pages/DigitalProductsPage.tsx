@@ -1,5 +1,5 @@
-import { PageHeader } from "@/components/ui/PageHeader"
-import { QueryState } from "@/components/ui/QueryState"
+import { PageHeader } from "@bmc/ui"
+import { QueryState } from "@bmc/ui"
 import { useDigitalProducts } from "@/hooks/useWellness"
 import { money, classNames } from "@bmc/portal-kit"
 

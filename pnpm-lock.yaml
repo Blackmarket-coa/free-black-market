@@ -50,6 +50,9 @@ importers:
       '@bmc/portal-kit':
         specifier: workspace:*
         version: link:../packages/bmc-portal-kit
+      '@bmc/ui':
+        specifier: workspace:*
+        version: link:../packages/bmc-ui
       '@tanstack/react-query':
         specifier: ^5.56.2
         version: 5.90.20(react@18.3.1)
@@ -102,6 +105,9 @@ importers:
       '@bmc/portal-kit':
         specifier: workspace:*
         version: link:../packages/bmc-portal-kit
+      '@bmc/ui':
+        specifier: workspace:*
+        version: link:../packages/bmc-ui
       '@tanstack/react-query':
         specifier: ^5.56.2
         version: 5.90.20(react@18.3.1)
@@ -154,6 +160,9 @@ importers:
       '@bmc/portal-kit':
         specifier: workspace:*
         version: link:../packages/bmc-portal-kit
+      '@bmc/ui':
+        specifier: workspace:*
+        version: link:../packages/bmc-ui
       '@tanstack/react-query':
         specifier: ^5.56.2
         version: 5.90.20(react@18.3.1)
@@ -210,11 +219,33 @@ importers:
         specifier: ^3.6.0
         version: 3.6.0
 
+  packages/bmc-ui:
+    dependencies:
+      '@bmc/portal-kit':
+        specifier: workspace:*
+        version: link:../bmc-portal-kit
+    devDependencies:
+      '@types/react':
+        specifier: ^18.3.31
+        version: 18.3.31
+      '@types/react-dom':
+        specifier: ^18.3.7
+        version: 18.3.7(@types/react@18.3.31)
+      react:
+        specifier: ^18.3.1
+        version: 18.3.1
+      react-dom:
+        specifier: ^18.3.1
+        version: 18.3.1(react@18.3.1)
+
   wellness-portal:
     dependencies:
       '@bmc/portal-kit':
         specifier: workspace:*
         version: link:../packages/bmc-portal-kit
+      '@bmc/ui':
+        specifier: workspace:*
+        version: link:../packages/bmc-ui
       '@tanstack/react-query':
         specifier: ^5.56.2
         version: 5.90.20(react@18.3.1)

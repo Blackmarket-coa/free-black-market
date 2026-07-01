@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { PageHeader } from "@/components/ui/PageHeader"
+import { PageHeader } from "@bmc/ui"
 import { useOverlayUrl } from "@/hooks/useCreatorData"
 import { dateTime } from "@bmc/portal-kit"
 import type { OverlayUrlResponse } from "@/types"

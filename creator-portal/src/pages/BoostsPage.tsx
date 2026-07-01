@@ -1,8 +1,8 @@
 import { useState } from "react"
-import { PageHeader } from "@/components/ui/PageHeader"
-import { QueryState } from "@/components/ui/QueryState"
+import { PageHeader } from "@bmc/ui"
+import { QueryState } from "@bmc/ui"
 import { Tabs } from "@/components/ui/Tabs"
-import { EmptyState } from "@/components/ui/EmptyState"
+import { EmptyState } from "@bmc/ui"
 import { BoostCard } from "@/components/boost/BoostCard"
 import { useBoosts } from "@/hooks/useCreatorData"
 

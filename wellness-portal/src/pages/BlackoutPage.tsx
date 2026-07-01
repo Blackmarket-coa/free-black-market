@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { PageHeader } from "@/components/ui/PageHeader"
+import { PageHeader } from "@bmc/ui"
 import { Tabs } from "@/components/ui/Tabs"
 import { MessageFeed } from "@/components/blackout/MessageFeed"
 import {

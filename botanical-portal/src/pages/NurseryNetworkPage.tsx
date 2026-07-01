@@ -1,4 +1,4 @@
-import { StubPage } from "@/components/ui/StubPage"
+import { StubPage } from "@bmc/ui"
 
 export function NurseryNetworkPage() {
   return (
