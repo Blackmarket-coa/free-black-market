@@ -2,11 +2,21 @@ import { Link } from "react-router-dom"
 import { PageHeader } from "@bmc/ui"
 import { MetricCard } from "@bmc/ui"
 import { QueryState } from "@bmc/ui"
-import { UrgentBanner } from "@/components/ui/UrgentBanner"
+import { UrgentBanner } from "@bmc/ui"
 import { BoostCard } from "@/components/boost/BoostCard"
 import { MessageFeed } from "@/components/blackout/MessageFeed"
 import { useDashboard } from "@/hooks/useCreatorData"
 import { credits, money, pct } from "@bmc/portal-kit"
+
+// Per-portal urgent-action icon map passed to the shared UrgentBanner.
+const URGENT_ICONS: Record<string, string> = {
+  boost: "🚀",
+  refrain: "🎯",
+  membership: "💎",
+  split: "🤝",
+  message: "💬",
+  payout: "💸",
+}
 
 export function DashboardPage() {
   const { data, isLoading, isError } = useDashboard()
@@ -39,7 +49,7 @@ export function DashboardPage() {
               <section className="space-y-2">
                 <h2 className="heading text-sm">Needs attention</h2>
                 {data.urgent_actions.map((a, i) => (
-                  <UrgentBanner key={i} action={a} />
+                  <UrgentBanner key={i} action={a} icons={URGENT_ICONS} />
                 ))}
               </section>
             )}

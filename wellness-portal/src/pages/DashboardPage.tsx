@@ -2,11 +2,21 @@ import { Link } from "react-router-dom"
 import { PageHeader } from "@bmc/ui"
 import { MetricCard } from "@bmc/ui"
 import { QueryState } from "@bmc/ui"
-import { UrgentBanner } from "@/components/ui/UrgentBanner"
+import { UrgentBanner } from "@bmc/ui"
 import { EmptyState } from "@bmc/ui"
 import { useDashboard } from "@/hooks/useWellness"
 import { money, shortDate, classNames } from "@bmc/portal-kit"
 import type { BookingStatus } from "@/types"
+
+// Per-portal urgent-action icon map passed to the shared UrgentBanner.
+const URGENT_ICONS: Record<string, string> = {
+  booking: "📅",
+  intake: "📋",
+  membership: "💎",
+  delivery: "📦",
+  message: "💬",
+  quest: "🎯",
+}
 
 const STATUS_COLOR: Record<BookingStatus, string> = {
   confirmed: "text-forest-300",
@@ -76,7 +86,7 @@ export function DashboardPage() {
               <section className="space-y-2">
                 <h2 className="heading text-sm">Needs attention</h2>
                 {data.urgent_actions.map((a, i) => (
-                  <UrgentBanner key={i} action={a} />
+                  <UrgentBanner key={i} action={a} icons={URGENT_ICONS} />
                 ))}
               </section>
             )}

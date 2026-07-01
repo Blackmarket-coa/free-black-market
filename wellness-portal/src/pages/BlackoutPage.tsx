@@ -1,6 +1,6 @@
 import { useState } from "react"
 import { PageHeader } from "@bmc/ui"
-import { Tabs } from "@/components/ui/Tabs"
+import { Tabs } from "@bmc/ui"
 import { MessageFeed } from "@/components/blackout/MessageFeed"
 import {
   useAutomations,
@@ -27,6 +27,7 @@ export function BlackoutPage() {
         subtitle="End-to-end encrypted client messaging, your community room, and automations."
       />
       <Tabs
+        activeClassName="border-amber-500 text-cream-50"
         tabs={[
           { key: "dms", label: "Client DMs", count: totalUnread },
           { key: "community", label: "Community" },

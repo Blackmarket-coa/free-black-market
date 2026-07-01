@@ -1,7 +1,7 @@
 import { useState } from "react"
 import { useInventory } from "@/hooks/useInventory"
 import { PageHeader } from "@bmc/ui"
-import { Tabs } from "@/components/ui/Tabs"
+import { Tabs } from "@bmc/ui"
 import { QueryState } from "@bmc/ui"
 import { DataTable, type Column } from "@bmc/ui"
 import { BatchCard } from "@/components/inventory/BatchCard"

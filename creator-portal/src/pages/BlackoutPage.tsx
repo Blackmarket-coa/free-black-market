@@ -1,6 +1,6 @@
 import { useState } from "react"
 import { PageHeader } from "@bmc/ui"
-import { Tabs } from "@/components/ui/Tabs"
+import { Tabs } from "@bmc/ui"
 import { MessageFeed } from "@/components/blackout/MessageFeed"
 import { GovernanceProposalCard } from "@/components/blackout/GovernanceProposal"
 import {
@@ -29,6 +29,7 @@ export function BlackoutPage() {
         subtitle="Member DMs, your community room, and Space governance — all end-to-end encrypted."
       />
       <Tabs
+        activeClassName="border-amber-500 text-cream-50"
         tabs={[
           { key: "dms", label: "Member DMs", count: totalUnread },
           { key: "community", label: "Community" },

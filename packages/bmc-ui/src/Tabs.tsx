@@ -1,4 +1,3 @@
-// TODO: extract to packages/bmc-ui
 import { classNames } from "@bmc/portal-kit"
 
 export interface TabDef {
@@ -7,14 +6,19 @@ export interface TabDef {
   count?: number
 }
 
+// Portals share the tab strip; the active-tab accent differs by brand
+// (forest for nursery/botanical, amber for wellness/creator), so it is passed
+// via `activeClassName` (defaults to forest).
 export function Tabs({
   tabs,
   active,
   onChange,
+  activeClassName = "border-forest-500 text-cream-50",
 }: {
   tabs: TabDef[]
   active: string
   onChange: (key: string) => void
+  activeClassName?: string
 }) {
   return (
     <div className="flex gap-1 border-b border-moss mb-4 overflow-x-auto scroll-area">
@@ -25,7 +29,7 @@ export function Tabs({
           className={classNames(
             "px-3 py-2 text-sm whitespace-nowrap border-b-2 -mb-px transition-colors",
             active === t.key
-              ? "border-amber-500 text-cream-50"
+              ? activeClassName
               : "border-transparent text-mist hover:text-cream-100"
           )}
         >

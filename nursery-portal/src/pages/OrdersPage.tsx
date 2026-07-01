@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react"
 import { useOrders } from "@/hooks/useOrders"
 import { PageHeader } from "@bmc/ui"
-import { Tabs } from "@/components/ui/Tabs"
+import { Tabs } from "@bmc/ui"
 import { QueryState } from "@bmc/ui"
 import { DataTable, type Column } from "@bmc/ui"
 import { OrderCard } from "@/components/orders/OrderCard"
