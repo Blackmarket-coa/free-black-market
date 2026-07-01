@@ -1,9 +1,9 @@
 import { useState } from "react"
-import { PageHeader } from "@/components/ui/PageHeader"
-import { QueryState } from "@/components/ui/QueryState"
-import { Tabs } from "@/components/ui/Tabs"
+import { PageHeader } from "@bmc/ui"
+import { QueryState } from "@bmc/ui"
+import { Tabs } from "@bmc/ui"
 import { useClasses, useClassAttendees } from "@/hooks/useWellness"
-import { money, shortDate, classNames } from "@/lib/format"
+import { money, shortDate, classNames } from "@bmc/portal-kit"
 import type { ClassEvent } from "@/types"
 
 export function ClassesPage() {
@@ -23,6 +23,7 @@ export function ClassesPage() {
         action={<button className="btn-primary text-sm">New class</button>}
       />
       <Tabs
+        activeClassName="border-amber-500 text-cream-50"
         tabs={[
           { key: "upcoming", label: "Upcoming", count: upcoming.length },
           { key: "past", label: "Past", count: past.length },

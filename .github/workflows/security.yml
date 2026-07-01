@@ -52,7 +52,7 @@ jobs:
 
       - name: Install backend dependencies
         working-directory: backend
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile --ignore-workspace
 
       - name: Run Posture A invariants
         working-directory: backend

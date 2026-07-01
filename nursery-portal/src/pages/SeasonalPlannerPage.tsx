@@ -1,4 +1,4 @@
-import { StubPage } from "@/components/ui/StubPage"
+import { StubPage } from "@bmc/ui"
 import { PROPAGATION_WINDOWS, windowLabel } from "@/lib/seasonal-windows"
 
 export function SeasonalPlannerPage() {

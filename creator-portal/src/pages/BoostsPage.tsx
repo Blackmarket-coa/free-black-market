@@ -1,8 +1,8 @@
 import { useState } from "react"
-import { PageHeader } from "@/components/ui/PageHeader"
-import { QueryState } from "@/components/ui/QueryState"
-import { Tabs } from "@/components/ui/Tabs"
-import { EmptyState } from "@/components/ui/EmptyState"
+import { PageHeader } from "@bmc/ui"
+import { QueryState } from "@bmc/ui"
+import { Tabs } from "@bmc/ui"
+import { EmptyState } from "@bmc/ui"
 import { BoostCard } from "@/components/boost/BoostCard"
 import { useBoosts } from "@/hooks/useCreatorData"
 
@@ -23,6 +23,7 @@ export function BoostsPage() {
       />
 
       <Tabs
+        activeClassName="border-amber-500 text-cream-50"
         tabs={[
           { key: "active", label: "Active", count: active.length },
           { key: "past", label: "Past", count: past.length },

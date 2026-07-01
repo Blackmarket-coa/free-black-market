@@ -2,7 +2,10 @@
 // These mirror the shapes the FBM backend (src/modules/wellness) returns; for
 // now they are satisfied by the typed mock layer in src/lib/mock.
 
-export type TierKey = "seedling" | "sprout" | "root" | "canopy" | "ancestor"
+// Canonical KARMA tier ladder lives in @bmc/portal-kit; import for local use
+// and re-export so existing `import type { TierKey } from "@/types"` sites resolve.
+import type { TierKey } from "@bmc/portal-kit"
+export type { TierKey }
 
 // ---- Sessions (1:1) --------------------------------------------------------
 export type SessionLocationType = "video" | "in_person" | "phone" | "either"

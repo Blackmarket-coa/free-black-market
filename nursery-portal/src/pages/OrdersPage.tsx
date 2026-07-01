@@ -1,13 +1,13 @@
 import { useMemo, useState } from "react"
 import { useOrders } from "@/hooks/useOrders"
-import { PageHeader } from "@/components/ui/PageHeader"
-import { Tabs } from "@/components/ui/Tabs"
-import { QueryState } from "@/components/ui/QueryState"
-import { DataTable, type Column } from "@/components/ui/DataTable"
+import { PageHeader } from "@bmc/ui"
+import { Tabs } from "@bmc/ui"
+import { QueryState } from "@bmc/ui"
+import { DataTable, type Column } from "@bmc/ui"
 import { OrderCard } from "@/components/orders/OrderCard"
-import { EmptyState } from "@/components/ui/EmptyState"
+import { EmptyState } from "@bmc/ui"
 import type { NurseryOrder, DoaClaim } from "@/types"
-import { money, shortDate } from "@/lib/format"
+import { money, shortDate } from "@bmc/portal-kit"
 
 export function OrdersPage() {
   const { data, isLoading, isError } = useOrders()

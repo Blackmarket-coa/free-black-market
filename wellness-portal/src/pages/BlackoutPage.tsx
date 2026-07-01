@@ -1,6 +1,6 @@
 import { useState } from "react"
-import { PageHeader } from "@/components/ui/PageHeader"
-import { Tabs } from "@/components/ui/Tabs"
+import { PageHeader } from "@bmc/ui"
+import { Tabs } from "@bmc/ui"
 import { MessageFeed } from "@/components/blackout/MessageFeed"
 import {
   useAutomations,
@@ -8,7 +8,7 @@ import {
   useClientThreads,
   useCommunityFeed,
 } from "@/hooks/useWellness"
-import { shortDate, classNames } from "@/lib/format"
+import { shortDate, classNames } from "@bmc/portal-kit"
 
 export function BlackoutPage() {
   const [tab, setTab] = useState("dms")
@@ -27,6 +27,7 @@ export function BlackoutPage() {
         subtitle="End-to-end encrypted client messaging, your community room, and automations."
       />
       <Tabs
+        activeClassName="border-amber-500 text-cream-50"
         tabs={[
           { key: "dms", label: "Client DMs", count: totalUnread },
           { key: "community", label: "Community" },

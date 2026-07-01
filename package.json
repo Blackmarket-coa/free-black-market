@@ -23,7 +23,10 @@
     "@tanstack/react-query": "^5.90.20"
   },
   "devDependencies": {
-    "@types/node": "^25.0.10"
+    "@types/node": "^25.0.10",
+    "eslint": "^9.39.4",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "typescript-eslint": "^8.62.1"
   },
   "scripts": {
     "check:vendor-completeness": "node scripts/check-vendor-completeness.mjs",
@@ -32,11 +35,17 @@
     "test:hermes-langgraph": "npx --yes -p tsx tsx --test services/ai-orchestrator/langgraph/supervisor-agent.entrypoint.test.ts",
     "test:hermes-vendor-runtime": "npx --yes -p tsx tsx --test services/ai-orchestrator/langgraph/vendor-runtime.contract.test.ts",
     "test:hermes-vendor-suite": "pnpm -s test:hermes-langgraph && pnpm -s test:hermes-vendor-runtime",
-    "nursery-portal:dev": "pnpm --dir nursery-portal dev",
-    "nursery-portal:build": "pnpm --dir nursery-portal build",
-    "creator-portal:dev": "pnpm --dir creator-portal dev",
-    "creator-portal:build": "pnpm --dir creator-portal build",
-    "botanical-portal:dev": "pnpm --dir botanical-portal dev",
-    "botanical-portal:build": "pnpm --dir botanical-portal build"
+    "nursery-portal:dev": "pnpm --filter @bmc/nursery-portal dev",
+    "nursery-portal:build": "pnpm --filter @bmc/nursery-portal build",
+    "wellness-portal:dev": "pnpm --filter @bmc/wellness-portal dev",
+    "wellness-portal:build": "pnpm --filter @bmc/wellness-portal build",
+    "creator-portal:dev": "pnpm --filter @bmc/creator-portal dev",
+    "creator-portal:build": "pnpm --filter @bmc/creator-portal build",
+    "botanical-portal:dev": "pnpm --filter @bmc/botanical-portal dev",
+    "botanical-portal:build": "pnpm --filter @bmc/botanical-portal build",
+    "portals:build": "pnpm --filter \"@bmc/*-portal\" -r build",
+    "portals:typecheck": "pnpm --filter \"@bmc/*-portal\" -r typecheck",
+    "portals:test": "pnpm --filter \"@bmc/portal-kit\" test",
+    "portals:lint": "eslint --config eslint.portals.config.mjs --max-warnings 0 \"nursery-portal/src/**/*.{ts,tsx}\" \"wellness-portal/src/**/*.{ts,tsx}\" \"botanical-portal/src/**/*.{ts,tsx}\" \"creator-portal/src/**/*.{ts,tsx}\" \"packages/*/src/**/*.{ts,tsx}\""
   }
 }

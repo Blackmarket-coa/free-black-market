@@ -10,10 +10,10 @@ import {
   XAxis,
   YAxis,
 } from "recharts"
-import { PageHeader } from "@/components/ui/PageHeader"
-import { QueryState } from "@/components/ui/QueryState"
+import { PageHeader } from "@bmc/ui"
+import { QueryState } from "@bmc/ui"
 import { useAnalytics } from "@/hooks/useCreatorData"
-import { credits, money } from "@/lib/format"
+import { credits, money } from "@bmc/portal-kit"
 
 const AXIS = { stroke: "#5a6b52", fontSize: 11 }
 const GRID = "#242b14"

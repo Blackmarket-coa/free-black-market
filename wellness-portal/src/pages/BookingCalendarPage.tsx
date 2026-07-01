@@ -1,8 +1,8 @@
 import { useMemo, useState } from "react"
-import { PageHeader } from "@/components/ui/PageHeader"
-import { QueryState } from "@/components/ui/QueryState"
+import { PageHeader } from "@bmc/ui"
+import { QueryState } from "@bmc/ui"
 import { useClasses, useDashboard } from "@/hooks/useWellness"
-import { classNames } from "@/lib/format"
+import { classNames } from "@bmc/portal-kit"
 
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
 const HOURS = Array.from({ length: 11 }, (_, i) => 9 + i) // 9am–7pm

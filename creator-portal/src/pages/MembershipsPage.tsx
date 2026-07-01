@@ -1,10 +1,10 @@
 import { useState } from "react"
-import { PageHeader } from "@/components/ui/PageHeader"
-import { MetricCard } from "@/components/ui/MetricCard"
-import { QueryState } from "@/components/ui/QueryState"
-import { DataTable, Column } from "@/components/ui/DataTable"
+import { PageHeader } from "@bmc/ui"
+import { MetricCard } from "@bmc/ui"
+import { QueryState } from "@bmc/ui"
+import { DataTable, Column } from "@bmc/ui"
 import { useMembershipTiers, useMembers, useForceResync } from "@/hooks/useCreatorData"
-import { money, shortDate, classNames } from "@/lib/format"
+import { money, shortDate, classNames } from "@bmc/portal-kit"
 import type { Member, SyncStatus } from "@/types"
 
 const STATUS_COLOR: Record<string, string> = {

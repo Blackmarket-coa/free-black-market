@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query"
-import { USE_MOCK_DATA, mockResolve, api } from "@/lib/api"
+import { USE_MOCK_DATA, mockResolve, api } from "@bmc/portal-kit"
 import { MOCK_BATCHES, MOCK_STRATIFICATION } from "@/lib/mock/data"
 import type { PropagationBatch, StratificationRecord } from "@/types"
 

@@ -1,10 +1,10 @@
-import { PageHeader } from "@/components/ui/PageHeader"
-import { QueryState } from "@/components/ui/QueryState"
-import { TierBadge } from "@/components/payouts/TierBadge"
-import { KarmaBar } from "@/components/payouts/KarmaBar"
+import { PageHeader } from "@bmc/ui"
+import { QueryState } from "@bmc/ui"
+import { TierBadge } from "@bmc/ui"
+import { KarmaBar } from "@bmc/ui"
 import { usePayouts } from "@/hooks/useCreatorData"
 import { MOCK_QUESTS } from "@/lib/mock/data"
-import { classNames } from "@/lib/format"
+import { classNames } from "@bmc/portal-kit"
 
 export function QuestsPage() {
   const { data: payouts, isLoading, isError } = usePayouts()

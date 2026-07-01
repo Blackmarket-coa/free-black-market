@@ -15,7 +15,7 @@ export default defineConfig(({ mode }) => {
     },
     server: {
       host: true,
-      // 7001 = nursery-portal, 7002 = creator/wellness — botanical takes 7003.
+      // Distinct dev ports: 7001 nursery, 7002 wellness, 7003 botanical, 7004 creator.
       port: parseInt(process.env.PORT || "7003"),
       open: false,
       proxy: {

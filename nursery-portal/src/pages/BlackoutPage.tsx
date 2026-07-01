@@ -1,10 +1,10 @@
 import { useBlackoutFeed, useGovernanceProposals } from "@/hooks/useBlackoutFeed"
 import { usePayouts } from "@/hooks/usePayouts"
-import { PageHeader } from "@/components/ui/PageHeader"
-import { QueryState } from "@/components/ui/QueryState"
+import { PageHeader } from "@bmc/ui"
+import { QueryState } from "@bmc/ui"
 import { MessageFeed } from "@/components/blackout/MessageFeed"
 import { GovernanceProposalCard } from "@/components/blackout/GovernanceProposal"
-import { canAccessGovernance } from "@/lib/tiers"
+import { canAccessGovernance } from "@bmc/portal-kit"
 
 export function BlackoutPage() {
   const node = useBlackoutFeed("node")

@@ -1,5 +1,5 @@
 import type { BatchStatus } from "@/types"
-import { classNames } from "@/lib/format"
+import { classNames } from "@bmc/portal-kit"
 
 const META: Record<BatchStatus, { label: string; icon: string; cls: string }> = {
   started: { label: "Started", icon: "•", cls: "text-mist border-moss" },

@@ -75,8 +75,8 @@ export interface SellerMetadataDTO {
   vendor_type: VendorType
   business_registration_number?: string | null
   tax_classification?: string | null
-  farm_practices?: Record<string, any> | null
-  certifications?: Record<string, any>[] | null
+  farm_practices?: Record<string, unknown> | null
+  certifications?: Record<string, unknown>[] | null
   growing_region?: string | null
   cuisine_types?: string[] | null
   service_types?: string[] | null
@@ -84,7 +84,7 @@ export interface SellerMetadataDTO {
   verified: boolean
   rating?: number | null
   review_count: number
-  metadata?: Record<string, any> | null
+  metadata?: Record<string, unknown> | null
   created_at: string
   updated_at: string
 }
@@ -112,7 +112,7 @@ export interface ProductArchetypeDTO {
   requires_lot_tracking: boolean
   supports_surplus_pricing: boolean
   requires_producer_link: boolean
-  metadata?: Record<string, any> | null
+  metadata?: Record<string, unknown> | null
 }
 
 /**
@@ -126,7 +126,7 @@ export interface ProductArchetypeAssignmentDTO {
   override_refundable?: boolean | null
   override_return_window_days?: number | null
   override_fulfillment_lead_time_hours?: number | null
-  metadata?: Record<string, any> | null
+  metadata?: Record<string, unknown> | null
 }
 
 /**
@@ -214,7 +214,7 @@ export interface ProducerDTO {
   featured: boolean
   verified: boolean
   verified_at?: string | null
-  metadata?: Record<string, any> | null
+  metadata?: Record<string, unknown> | null
   created_at: string
   updated_at: string
 }
@@ -287,7 +287,7 @@ export interface HarvestDTO {
   expected_yield_unit?: string | null
   visibility_status: HarvestVisibility
   published_at?: string | null
-  metadata?: Record<string, any> | null
+  metadata?: Record<string, unknown> | null
   created_at: string
   updated_at: string
   // Relations
@@ -366,7 +366,7 @@ export interface LotDTO {
   storage_requirements?: string | null
   external_lot_id?: string | null
   is_active: boolean
-  metadata?: Record<string, any> | null
+  metadata?: Record<string, unknown> | null
   created_at: string
   updated_at: string
   // Relations
@@ -445,7 +445,7 @@ export interface AvailabilityWindowDTO {
   pause_reason?: string | null
   view_count: number
   order_count: number
-  metadata?: Record<string, any> | null
+  metadata?: Record<string, unknown> | null
   created_at: string
   updated_at: string
   // Relations
@@ -554,7 +554,7 @@ export interface CooperativeDTO {
   is_active: boolean
   verified: boolean
   verified_at?: string | null
-  metadata?: Record<string, any> | null
+  metadata?: Record<string, unknown> | null
   created_at: string
   updated_at: string
   // Relations
@@ -578,7 +578,7 @@ export interface CooperativeMemberDTO {
   is_active: boolean
   suspended_at?: string | null
   suspension_reason?: string | null
-  metadata?: Record<string, any> | null
+  metadata?: Record<string, unknown> | null
   created_at: string
   updated_at: string
   // Relations
@@ -606,7 +606,7 @@ export interface CooperativeListingDTO {
   featured: boolean
   sort_order: number
   is_active: boolean
-  metadata?: Record<string, any> | null
+  metadata?: Record<string, unknown> | null
   created_at: string
   updated_at: string
   // Relations

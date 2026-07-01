@@ -1,0 +1,44 @@
+import { classNames } from "@bmc/portal-kit"
+
+export interface TabDef {
+  key: string
+  label: string
+  count?: number
+}
+
+// Portals share the tab strip; the active-tab accent differs by brand
+// (forest for nursery/botanical, amber for wellness/creator), so it is passed
+// via `activeClassName` (defaults to forest).
+export function Tabs({
+  tabs,
+  active,
+  onChange,
+  activeClassName = "border-forest-500 text-cream-50",
+}: {
+  tabs: TabDef[]
+  active: string
+  onChange: (key: string) => void
+  activeClassName?: string
+}) {
+  return (
+    <div className="flex gap-1 border-b border-moss mb-4 overflow-x-auto scroll-area">
+      {tabs.map((t) => (
+        <button
+          key={t.key}
+          onClick={() => onChange(t.key)}
+          className={classNames(
+            "px-3 py-2 text-sm whitespace-nowrap border-b-2 -mb-px transition-colors",
+            active === t.key
+              ? activeClassName
+              : "border-transparent text-mist hover:text-cream-100"
+          )}
+        >
+          {t.label}
+          {typeof t.count === "number" && (
+            <span className="ml-1.5 text-xs text-ghost">({t.count})</span>
+          )}
+        </button>
+      ))}
+    </div>
+  )
+}

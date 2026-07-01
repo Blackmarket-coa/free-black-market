@@ -1,12 +1,12 @@
 import { usePayouts } from "@/hooks/usePayouts"
-import { PageHeader } from "@/components/ui/PageHeader"
-import { MetricCard } from "@/components/ui/MetricCard"
-import { QueryState } from "@/components/ui/QueryState"
-import { TierBadge } from "@/components/payouts/TierBadge"
-import { KarmaBar } from "@/components/payouts/KarmaBar"
+import { PageHeader } from "@bmc/ui"
+import { MetricCard } from "@bmc/ui"
+import { QueryState } from "@bmc/ui"
+import { TierBadge } from "@bmc/ui"
+import { KarmaBar } from "@bmc/ui"
 import { PayoutRow } from "@/components/payouts/PayoutRow"
-import { money, shortDate, pct } from "@/lib/format"
-import { TIERS } from "@/lib/tiers"
+import { money, shortDate, pct } from "@bmc/portal-kit"
+import { TIERS } from "@bmc/portal-kit"
 
 export function PayoutsPage() {
   const { data, isLoading, isError } = usePayouts()

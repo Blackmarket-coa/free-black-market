@@ -1,13 +1,13 @@
 import { usePropagation } from "@/hooks/usePropagation"
-import { PageHeader } from "@/components/ui/PageHeader"
-import { QueryState } from "@/components/ui/QueryState"
+import { PageHeader } from "@bmc/ui"
+import { QueryState } from "@bmc/ui"
 import { BatchCard } from "@/components/inventory/BatchCard"
 import {
   PROPAGATION_WINDOWS,
   windowsOpenIn,
   windowLabel,
 } from "@/lib/seasonal-windows"
-import { shortDate, daysUntil } from "@/lib/format"
+import { shortDate, daysUntil } from "@bmc/portal-kit"
 
 const THIS_MONTH = new Date().getMonth() + 1
 

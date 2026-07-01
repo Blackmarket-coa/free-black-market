@@ -1,6 +1,6 @@
-import { StubPage } from "@/components/ui/StubPage"
-import { TIERS } from "@/lib/tiers"
-import { TierBadge } from "@/components/payouts/TierBadge"
+import { StubPage } from "@bmc/ui"
+import { TIERS } from "@bmc/portal-kit"
+import { TierBadge } from "@bmc/ui"
 
 export function QuestsPage() {
   return (

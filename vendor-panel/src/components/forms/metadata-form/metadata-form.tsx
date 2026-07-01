@@ -27,12 +27,12 @@ import { RouteDrawer, useRouteModal } from "../../modals"
 import { KeyboundForm } from "../../utilities/keybound-form"
 
 type MetaDataSubmitHook<TRes> = (
-  params: { metadata?: Record<string, any> | null },
+  params: { metadata?: Record<string, unknown> | null },
   callbacks: { onSuccess: () => void; onError: (error: FetchError) => void }
 ) => Promise<TRes>
 
 type MetadataFormProps<TRes> = {
-  metadata?: Record<string, any> | null
+  metadata?: Record<string, unknown> | null
   hook: MetaDataSubmitHook<TRes>
   isPending: boolean
   isMutating: boolean
@@ -328,7 +328,7 @@ const PlaceholderInner = () => {
 const EDITABLE_TYPES = ["string", "number", "boolean"]
 
 function getDefaultValues(
-  metadata?: Record<string, any> | null
+  metadata?: Record<string, unknown> | null
 ): z.infer<typeof MetadataFieldSchema>[] {
   if (!metadata || !Object.keys(metadata).length) {
     return [
@@ -365,8 +365,8 @@ function getDefaultValues(
 
 function parseValues(
   values: z.infer<typeof MetadataSchema>,
-  original?: Record<string, any> | null
-): Record<string, any> | null {
+  original?: Record<string, unknown> | null
+): Record<string, unknown> | null {
   const metadata = values.metadata
 
   const isEmpty =
@@ -377,7 +377,7 @@ function parseValues(
     return null
   }
 
-  const update: Record<string, any> = {}
+  const update: Record<string, unknown> = {}
 
   // First, handle removed keys from original
   if (original) {
@@ -424,7 +424,7 @@ function parseValues(
   return update
 }
 
-function getHasUneditableRows(metadata?: Record<string, any> | null) {
+function getHasUneditableRows(metadata?: Record<string, unknown> | null) {
   if (!metadata) {
     return false
   }

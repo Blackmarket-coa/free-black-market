@@ -1,14 +1,14 @@
 import { useState } from "react"
-import { PageHeader } from "@/components/ui/PageHeader"
-import { MetricCard } from "@/components/ui/MetricCard"
-import { QueryState } from "@/components/ui/QueryState"
-import { DataTable, Column } from "@/components/ui/DataTable"
+import { PageHeader } from "@bmc/ui"
+import { MetricCard } from "@bmc/ui"
+import { QueryState } from "@bmc/ui"
+import { DataTable, Column } from "@bmc/ui"
 import {
   useCreditBalance,
   useCreditTransactions,
   useXpBalances,
 } from "@/hooks/useCreatorData"
-import { credits, dateTime, classNames } from "@/lib/format"
+import { credits, dateTime, classNames } from "@bmc/portal-kit"
 import type { CreditTransaction, CreditTxnType } from "@/types"
 
 const TXN_LABEL: Record<CreditTxnType, string> = {

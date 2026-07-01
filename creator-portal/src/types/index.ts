@@ -5,7 +5,10 @@
 // layer in src/lib/mock; the live bridge mutations (stream overlay, membership
 // force-resync) hit the real backend — see hooks/useCreatorData.ts.
 
-export type TierKey = "seedling" | "sprout" | "root" | "canopy" | "ancestor"
+// Canonical KARMA tier ladder lives in @bmc/portal-kit; import for local use
+// and re-export so existing `import type { TierKey } from "@/types"` sites resolve.
+import type { TierKey } from "@bmc/portal-kit"
+export type { TierKey }
 
 // ---- Memberships -----------------------------------------------------------
 export type MemberStatus = "active" | "paused" | "past_due" | "cancelled" | "expired"

@@ -1,11 +1,11 @@
 import { useState } from "react"
 import { useQueryClient } from "@tanstack/react-query"
-import { PageHeader } from "@/components/ui/PageHeader"
-import { QueryState } from "@/components/ui/QueryState"
-import { EmptyState } from "@/components/ui/EmptyState"
+import { PageHeader } from "@bmc/ui"
+import { QueryState } from "@bmc/ui"
+import { EmptyState } from "@bmc/ui"
 import { SplitContractCard } from "@/components/splits/SplitContractCard"
 import { useSplits } from "@/hooks/useCreatorData"
-import { USE_MOCK_DATA, api } from "@/lib/api"
+import { USE_MOCK_DATA, api } from "@bmc/portal-kit"
 
 export function SplitsPage() {
   const { data, isLoading, isError } = useSplits()

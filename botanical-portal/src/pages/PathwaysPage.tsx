@@ -1,10 +1,10 @@
 import { useState } from "react"
 import { useActivePathways } from "@/hooks/useActivePathways"
 import { usePathwayTemplates } from "@/hooks/usePathwayTemplates"
-import { PageHeader } from "@/components/ui/PageHeader"
-import { QueryState } from "@/components/ui/QueryState"
+import { PageHeader } from "@bmc/ui"
+import { QueryState } from "@bmc/ui"
 import { COMPLIANCE_FRAMEWORKS, iconForOutput } from "@/lib/pathways"
-import { classNames } from "@/lib/format"
+import { classNames } from "@bmc/portal-kit"
 import type { PathwayTemplate } from "@/types"
 
 // Onboarding surface: the maker shapes everything else here by activating one or

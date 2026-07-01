@@ -1,9 +1,9 @@
 import { useState } from "react"
-import { PageHeader } from "@/components/ui/PageHeader"
-import { MetricCard } from "@/components/ui/MetricCard"
-import { QueryState } from "@/components/ui/QueryState"
+import { PageHeader } from "@bmc/ui"
+import { MetricCard } from "@bmc/ui"
+import { QueryState } from "@bmc/ui"
 import { useEmbedConfig } from "@/hooks/useWellness"
-import { classNames } from "@/lib/format"
+import { classNames } from "@bmc/portal-kit"
 
 const THEMES = ["warm", "forest", "minimal", "dark"] as const
 

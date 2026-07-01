@@ -1,9 +1,9 @@
-import { PageHeader } from "@/components/ui/PageHeader"
-import { QueryState } from "@/components/ui/QueryState"
-import { TierBadge } from "@/components/payouts/TierBadge"
-import { KarmaBar } from "@/components/payouts/KarmaBar"
+import { PageHeader } from "@bmc/ui"
+import { QueryState } from "@bmc/ui"
+import { TierBadge } from "@bmc/ui"
+import { KarmaBar } from "@bmc/ui"
 import { usePayouts } from "@/hooks/useWellness"
-import { TIERS } from "@/lib/tiers"
+import { TIERS } from "@bmc/portal-kit"
 
 // Wellness quest definitions surface through the shared progression/KARMA engine
 // (same tier ladder as the nursery portal). These mirror the seeds on the

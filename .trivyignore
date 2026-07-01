@@ -53,3 +53,15 @@ CVE-2026-33176
 # runtime in FBM, nothing to bump in our lockfiles. Suppressing until
 # @stellar/js-xdr drops the vendored Gemfile.lock upstream.
 CVE-2026-54904
+
+# SD-15: vite <=6.4.2 `server.fs.deny` bypass via Windows alternate data
+# streams (GHSA-fx2h-pf6j-xcff). Reached transitively through the root
+# `@medusajs/types>vite` prod path (and the portals' devDep vite ^5.4.8).
+# Patched only in vite >=6.4.3 — a vite 5→6 major bump, blocked for the same
+# Rolldown/`@vitejs/plugin-react` reasons as the other SD-15 vite rows above.
+# The bypass is Windows-only and affects the dev server's fs.deny; FBM CI and
+# runtime are Linux and deploy built artifacts, not the vite dev server.
+# Suppressing until the vite major bump is tackled as a separate workstream.
+# (CVE-2026-53571 is the CVE alias Trivy keys this npm advisory under.)
+CVE-2026-53571
+GHSA-fx2h-pf6j-xcff

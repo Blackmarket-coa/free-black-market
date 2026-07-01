@@ -1,14 +1,14 @@
 import { useState } from "react"
 import { useInventory } from "@/hooks/useInventory"
-import { PageHeader } from "@/components/ui/PageHeader"
-import { Tabs } from "@/components/ui/Tabs"
-import { QueryState } from "@/components/ui/QueryState"
-import { DataTable, type Column } from "@/components/ui/DataTable"
+import { PageHeader } from "@bmc/ui"
+import { Tabs } from "@bmc/ui"
+import { QueryState } from "@bmc/ui"
+import { DataTable, type Column } from "@bmc/ui"
 import { BatchCard } from "@/components/inventory/BatchCard"
 import { SpeciesIcon } from "@/components/inventory/SpeciesIcon"
 import { NewBatchForm } from "@/components/inventory/NewBatchForm"
 import type { InventoryItem, MotherPlant } from "@/types"
-import { shortDate } from "@/lib/format"
+import { shortDate } from "@bmc/portal-kit"
 
 export function InventoryPage() {
   const { data, isLoading, isError } = useInventory()

@@ -1,7 +1,7 @@
 import type { PropagationBatch } from "@/types"
 import { BatchStatusBadge } from "./BatchStatusBadge"
 import { SpeciesIcon } from "./SpeciesIcon"
-import { daysUntil, shortDate, classNames } from "@/lib/format"
+import { daysUntil, shortDate, classNames } from "@bmc/portal-kit"
 
 // Progress 0..1 across the batch lifecycle, by status then by time as fallback.
 function batchProgress(b: PropagationBatch): number {

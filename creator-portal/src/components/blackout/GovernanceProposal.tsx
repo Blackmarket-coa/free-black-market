@@ -1,5 +1,5 @@
 import type { GovernanceProposal } from "@/types"
-import { shortDate, classNames } from "@/lib/format"
+import { shortDate, classNames } from "@bmc/portal-kit"
 
 export function GovernanceProposalCard({ proposal }: { proposal: GovernanceProposal }) {
   const total = Object.values(proposal.tally).reduce((a, b) => a + b, 0) || 1

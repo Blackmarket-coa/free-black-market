@@ -1,14 +1,23 @@
 import { Link } from "react-router-dom"
 import { useDashboardSummary } from "@/hooks/useDashboardSummary"
 import { useActivePathways } from "@/hooks/useActivePathways"
-import { PageHeader } from "@/components/ui/PageHeader"
-import { MetricCard } from "@/components/ui/MetricCard"
-import { UrgentBanner } from "@/components/ui/UrgentBanner"
-import { QueryState } from "@/components/ui/QueryState"
+import { PageHeader } from "@bmc/ui"
+import { MetricCard } from "@bmc/ui"
+import { UrgentBanner } from "@bmc/ui"
+import { QueryState } from "@bmc/ui"
 import { RunStatusBadge } from "@/components/production/RunStatusBadge"
 import { CureTimer } from "@/components/production/CureTimer"
-import { money, classNames } from "@/lib/format"
+import { money, classNames } from "@bmc/portal-kit"
 import type { ProductionPathway } from "@/types"
+
+// Per-portal urgent-action icon map passed to the shared UrgentBanner.
+const URGENT_ICONS: Record<string, string> = {
+  orders: "🛒",
+  inventory: "🪴",
+  seasonal: "📅",
+  quest: "🏆",
+  compliance: "⚠️",
+}
 
 const SEVERITY_DOT: Record<string, string> = {
   high: "bg-clay",
@@ -38,7 +47,7 @@ export function DashboardPage() {
             {data.urgent_actions.length > 0 && (
               <div className="space-y-2">
                 {data.urgent_actions.map((a, i) => (
-                  <UrgentBanner key={i} action={a} />
+                  <UrgentBanner key={i} action={a} icons={URGENT_ICONS} />
                 ))}
               </div>
             )}

@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query"
-import { USE_MOCK_DATA, mockResolve, api } from "@/lib/api"
+import { USE_MOCK_DATA, mockResolve, api } from "@bmc/portal-kit"
 import { PATHWAY_TEMPLATES } from "@/lib/pathways"
 import type { PathwayTemplate } from "@/types"
 
