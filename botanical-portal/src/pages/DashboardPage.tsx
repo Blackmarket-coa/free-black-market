@@ -7,7 +7,7 @@ import { UrgentBanner } from "@/components/ui/UrgentBanner"
 import { QueryState } from "@/components/ui/QueryState"
 import { RunStatusBadge } from "@/components/production/RunStatusBadge"
 import { CureTimer } from "@/components/production/CureTimer"
-import { money, classNames } from "@/lib/format"
+import { money, classNames } from "@bmc/portal-kit"
 import type { ProductionPathway } from "@/types"
 
 const SEVERITY_DOT: Record<string, string> = {

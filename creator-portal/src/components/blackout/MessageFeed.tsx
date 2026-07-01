@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom"
 import type { BlackoutMessage } from "@/types"
-import { shortDate } from "@/lib/format"
+import { shortDate } from "@bmc/portal-kit"
 
 // Renders a Blackout (Matrix) message. Action-bearing types get an accent card;
 // plain text is a bubble.

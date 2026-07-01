@@ -2,7 +2,7 @@ import { useState } from "react"
 import { PageHeader } from "@/components/ui/PageHeader"
 import { QueryState } from "@/components/ui/QueryState"
 import { useSessionTypes } from "@/hooks/useWellness"
-import { money, classNames } from "@/lib/format"
+import { money, classNames } from "@bmc/portal-kit"
 
 export function SessionsPage() {
   const { data, isLoading, isError } = useSessionTypes()

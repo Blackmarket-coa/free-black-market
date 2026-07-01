@@ -1,7 +1,7 @@
 import { useState } from "react"
 import { PageHeader } from "@/components/ui/PageHeader"
 import { useOverlayUrl } from "@/hooks/useCreatorData"
-import { dateTime } from "@/lib/format"
+import { dateTime } from "@bmc/portal-kit"
 import type { OverlayUrlResponse } from "@/types"
 
 export function StreamPage() {

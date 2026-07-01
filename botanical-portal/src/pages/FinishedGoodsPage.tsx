@@ -4,7 +4,7 @@ import { PageHeader } from "@/components/ui/PageHeader"
 import { QueryState } from "@/components/ui/QueryState"
 import { EmptyState } from "@/components/ui/EmptyState"
 import { iconForOutput } from "@/lib/pathways"
-import { money, shortDate, daysUntil, classNames } from "@/lib/format"
+import { money, shortDate, daysUntil, classNames } from "@bmc/portal-kit"
 import type { FinishedGood, ProductionPathway } from "@/types"
 
 const STATUS_STYLE: Record<FinishedGood["status"], string> = {

@@ -3,7 +3,7 @@ import { PageHeader } from "@/components/ui/PageHeader"
 import { QueryState } from "@/components/ui/QueryState"
 import { DataTable, Column } from "@/components/ui/DataTable"
 import { useClients } from "@/hooks/useWellness"
-import { money, shortDate, daysUntil, classNames } from "@/lib/format"
+import { money, shortDate, daysUntil, classNames } from "@bmc/portal-kit"
 import type { ClientProfile } from "@/types"
 
 export function ClientsPage() {

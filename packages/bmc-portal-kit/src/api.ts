@@ -19,10 +19,11 @@ api.interceptors.response.use(
   }
 )
 
-// Toggle for the data seam. While the wellness backend routes are still being
-// built, hooks resolve from the typed mock layer. Flip to false (or wire per
-// hook) to hit the real API.
-export const USE_MOCK_DATA = true
+// Toggle for the data seam. While the portal backend routes are still being
+// built, hooks resolve from the typed mock layer. Set VITE_USE_MOCK_DATA=false
+// (per portal/deploy) to hit the real API instead.
+export const USE_MOCK_DATA =
+  import.meta.env.VITE_USE_MOCK_DATA !== "false"
 
 // Small helper so mock hooks share a realistic async shape.
 export function mockResolve<T>(data: T, delayMs = 120): Promise<T> {

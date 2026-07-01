@@ -1,5 +1,5 @@
 import type { PayoutRecord } from "@/types"
-import { money, monthLabel, shortDate, pct } from "@/lib/format"
+import { money, monthLabel, shortDate, pct } from "@bmc/portal-kit"
 
 export function PayoutRow({ p }: { p: PayoutRecord }) {
   return (

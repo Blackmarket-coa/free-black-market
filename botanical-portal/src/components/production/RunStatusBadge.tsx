@@ -1,5 +1,5 @@
 import { getRunStatusLabel } from "@/lib/pathways"
-import { classNames } from "@/lib/format"
+import { classNames } from "@bmc/portal-kit"
 import type { ProductionPathway, RunStatus } from "@/types"
 
 // Color by underlying status; label is pathway-specific ("Macerating", "Dyeing").

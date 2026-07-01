@@ -3,7 +3,7 @@ import { PageHeader } from "@/components/ui/PageHeader"
 import { MetricCard } from "@/components/ui/MetricCard"
 import { QueryState } from "@/components/ui/QueryState"
 import { useEmbedConfig } from "@/hooks/useWellness"
-import { classNames } from "@/lib/format"
+import { classNames } from "@bmc/portal-kit"
 
 const THEMES = ["warm", "forest", "minimal", "dark"] as const
 

@@ -2,7 +2,7 @@ import { PageHeader } from "@/components/ui/PageHeader"
 import { QueryState } from "@/components/ui/QueryState"
 import { DataTable, Column } from "@/components/ui/DataTable"
 import { usePhysicalProducts } from "@/hooks/useWellness"
-import { money, classNames } from "@/lib/format"
+import { money, classNames } from "@bmc/portal-kit"
 import type { PhysicalProduct } from "@/types"
 
 export function PhysicalProductsPage() {

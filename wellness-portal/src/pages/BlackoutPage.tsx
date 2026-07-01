@@ -8,7 +8,7 @@ import {
   useClientThreads,
   useCommunityFeed,
 } from "@/hooks/useWellness"
-import { shortDate, classNames } from "@/lib/format"
+import { shortDate, classNames } from "@bmc/portal-kit"
 
 export function BlackoutPage() {
   const [tab, setTab] = useState("dms")

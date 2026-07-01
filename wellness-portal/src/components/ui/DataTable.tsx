@@ -1,6 +1,6 @@
 // TODO: extract to packages/bmc-ui
 import { useMemo, useState } from "react"
-import { classNames } from "@/lib/format"
+import { classNames } from "@bmc/portal-kit"
 
 export interface Column<T> {
   key: string

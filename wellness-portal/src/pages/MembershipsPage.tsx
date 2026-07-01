@@ -3,7 +3,7 @@ import { MetricCard } from "@/components/ui/MetricCard"
 import { QueryState } from "@/components/ui/QueryState"
 import { DataTable, Column } from "@/components/ui/DataTable"
 import { useMembershipTiers, useMembers } from "@/hooks/useWellness"
-import { money, shortDate, classNames } from "@/lib/format"
+import { money, shortDate, classNames } from "@bmc/portal-kit"
 import type { Member } from "@/types"
 
 const STATUS_COLOR: Record<string, string> = {

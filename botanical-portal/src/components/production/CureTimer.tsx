@@ -1,6 +1,6 @@
 import { differenceInCalendarDays, parseISO } from "date-fns"
 import { getRunStatusLabel } from "@/lib/pathways"
-import { classNames } from "@/lib/format"
+import { classNames } from "@bmc/portal-kit"
 import type { ProductionPathway, ProductionRun } from "@/types"
 
 // Cure progress bar for pathways with a cure time (tincture macerating, ferment

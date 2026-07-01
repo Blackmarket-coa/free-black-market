@@ -3,7 +3,7 @@ import { usePractitioner } from "@/hooks/usePractitioner"
 import { usePayouts } from "@/hooks/useWellness"
 import { NAV_ITEMS } from "./navItems"
 import { TierBadge } from "@/components/payouts/TierBadge"
-import { classNames } from "@/lib/format"
+import { classNames } from "@bmc/portal-kit"
 
 // Warm, practitioner-focused sidebar. Collapses to an icon rail under md;
 // labels are hidden but kept as title tooltips.

@@ -1,6 +1,6 @@
 // TODO: extract to packages/bmc-ui/quests
 import type { TierKey } from "@/types"
-import { getTier, getNextTier } from "@/lib/tiers"
+import { getTier, getNextTier } from "@bmc/portal-kit"
 
 // Progress from the current tier threshold to the next tier threshold.
 export function KarmaBar({ tier, karma }: { tier: TierKey; karma: number }) {

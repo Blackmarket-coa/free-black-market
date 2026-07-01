@@ -1,7 +1,7 @@
 import { NavLink } from "react-router-dom"
 import { useOperatorType } from "@/hooks/useOperatorType"
 import { navItemsForOperator } from "./navItems"
-import { classNames } from "@/lib/format"
+import { classNames } from "@bmc/portal-kit"
 
 // Operator-aware sidebar. Collapses to an icon rail under md; labels are hidden
 // but kept as title tooltips.

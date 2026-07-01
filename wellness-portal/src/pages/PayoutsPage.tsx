@@ -5,7 +5,7 @@ import { DataTable, Column } from "@/components/ui/DataTable"
 import { TierBadge } from "@/components/payouts/TierBadge"
 import { KarmaBar } from "@/components/payouts/KarmaBar"
 import { usePayouts } from "@/hooks/useWellness"
-import { money, monthLabel, shortDate } from "@/lib/format"
+import { money, monthLabel, shortDate } from "@bmc/portal-kit"
 import type { PayoutRecord } from "@/types"
 
 export function PayoutsPage() {

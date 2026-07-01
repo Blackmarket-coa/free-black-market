@@ -1,7 +1,7 @@
 import { PageHeader } from "@/components/ui/PageHeader"
 import { QueryState } from "@/components/ui/QueryState"
 import { useDigitalProducts } from "@/hooks/useWellness"
-import { money, classNames } from "@/lib/format"
+import { money, classNames } from "@bmc/portal-kit"
 
 const TYPE_LABEL: Record<string, string> = {
   single: "Single file",

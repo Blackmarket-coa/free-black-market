@@ -1,6 +1,6 @@
 import { useState } from "react"
 import type { SplitContract } from "@/types"
-import { shortDate, classNames } from "@/lib/format"
+import { shortDate, classNames } from "@bmc/portal-kit"
 
 const BLACKOUT_URL = import.meta.env.VITE_BLACKOUT_URL || "https://theblackout.app"
 

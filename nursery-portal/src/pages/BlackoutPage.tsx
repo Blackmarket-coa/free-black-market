@@ -4,7 +4,7 @@ import { PageHeader } from "@/components/ui/PageHeader"
 import { QueryState } from "@/components/ui/QueryState"
 import { MessageFeed } from "@/components/blackout/MessageFeed"
 import { GovernanceProposalCard } from "@/components/blackout/GovernanceProposal"
-import { canAccessGovernance } from "@/lib/tiers"
+import { canAccessGovernance } from "@bmc/portal-kit"
 
 export function BlackoutPage() {
   const node = useBlackoutFeed("node")

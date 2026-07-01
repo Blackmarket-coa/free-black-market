@@ -2,7 +2,7 @@ import { Link } from "react-router-dom"
 import type { BlackoutMessage } from "@/types"
 import { OrderAlertMessage } from "./OrderAlertMessage"
 import { LabelMessage } from "./LabelMessage"
-import { shortDate } from "@/lib/format"
+import { shortDate } from "@bmc/portal-kit"
 
 // Renders a Blackout (Matrix) message according to its type. Action-bearing
 // types (order/label/photo/low_stock/cert) get rich cards; text is a bubble.

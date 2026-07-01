@@ -47,6 +47,9 @@ importers:
 
   botanical-portal:
     dependencies:
+      '@bmc/portal-kit':
+        specifier: workspace:*
+        version: link:../packages/bmc-portal-kit
       '@tanstack/react-query':
         specifier: ^5.56.2
         version: 5.90.20(react@18.3.1)
@@ -96,6 +99,9 @@ importers:
 
   creator-portal:
     dependencies:
+      '@bmc/portal-kit':
+        specifier: workspace:*
+        version: link:../packages/bmc-portal-kit
       '@tanstack/react-query':
         specifier: ^5.56.2
         version: 5.90.20(react@18.3.1)
@@ -145,6 +151,9 @@ importers:
 
   nursery-portal:
     dependencies:
+      '@bmc/portal-kit':
+        specifier: workspace:*
+        version: link:../packages/bmc-portal-kit
       '@tanstack/react-query':
         specifier: ^5.56.2
         version: 5.90.20(react@18.3.1)
@@ -192,8 +201,20 @@ importers:
         specifier: ^5.4.8
         version: 5.4.21(@types/node@25.0.10)
 
+  packages/bmc-portal-kit:
+    dependencies:
+      axios:
+        specifier: ^1.7.7
+        version: 1.18.1
+      date-fns:
+        specifier: ^3.6.0
+        version: 3.6.0
+
   wellness-portal:
     dependencies:
+      '@bmc/portal-kit':
+        specifier: workspace:*
+        version: link:../packages/bmc-portal-kit
       '@tanstack/react-query':
         specifier: ^5.56.2
         version: 5.90.20(react@18.3.1)

@@ -1,5 +1,5 @@
 import type { Boost, BoostType } from "@/types"
-import { credits, shortDate, classNames, daysUntil } from "@/lib/format"
+import { credits, shortDate, classNames, daysUntil } from "@bmc/portal-kit"
 
 const TYPE_META: Record<BoostType, { icon: string; label: string }> = {
   hype_train: { icon: "🚂", label: "Hype Train" },

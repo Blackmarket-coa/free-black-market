@@ -6,7 +6,7 @@ import { QueryState } from "@/components/ui/QueryState"
 import { EmptyState } from "@/components/ui/EmptyState"
 import { ClaimChecker } from "@/components/formulas/ClaimChecker"
 import { iconForOutput, resolveCompliance } from "@/lib/pathways"
-import { money, classNames } from "@/lib/format"
+import { money, classNames } from "@bmc/portal-kit"
 import type { ProductionPathway } from "@/types"
 
 const STATUS_STYLE: Record<string, string> = {

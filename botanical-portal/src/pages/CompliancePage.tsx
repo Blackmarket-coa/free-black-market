@@ -3,7 +3,7 @@ import { useActivePathways } from "@/hooks/useActivePathways"
 import { PageHeader } from "@/components/ui/PageHeader"
 import { QueryState } from "@/components/ui/QueryState"
 import { COMPLIANCE_FRAMEWORKS, hasClaimRules, iconForOutput } from "@/lib/pathways"
-import { money, shortDate, pct, classNames } from "@/lib/format"
+import { money, shortDate, pct, classNames } from "@bmc/portal-kit"
 import type { ComplianceOverview } from "@/types"
 
 const ROW_STATUS: Record<ComplianceOverview["pathway_rows"][number]["status"], { icon: string; tone: string }> = {

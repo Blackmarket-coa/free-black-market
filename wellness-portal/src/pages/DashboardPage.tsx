@@ -5,7 +5,7 @@ import { QueryState } from "@/components/ui/QueryState"
 import { UrgentBanner } from "@/components/ui/UrgentBanner"
 import { EmptyState } from "@/components/ui/EmptyState"
 import { useDashboard } from "@/hooks/useWellness"
-import { money, shortDate, classNames } from "@/lib/format"
+import { money, shortDate, classNames } from "@bmc/portal-kit"
 import type { BookingStatus } from "@/types"
 
 const STATUS_COLOR: Record<BookingStatus, string> = {

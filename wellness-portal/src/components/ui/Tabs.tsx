@@ -1,5 +1,5 @@
 // TODO: extract to packages/bmc-ui
-import { classNames } from "@/lib/format"
+import { classNames } from "@bmc/portal-kit"
 
 export interface TabDef {
   key: string

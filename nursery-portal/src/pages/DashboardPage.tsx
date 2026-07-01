@@ -8,7 +8,7 @@ import { UrgentBanner } from "@/components/ui/UrgentBanner"
 import { QueryState } from "@/components/ui/QueryState"
 import { BatchCard } from "@/components/inventory/BatchCard"
 import { MessageFeed } from "@/components/blackout/MessageFeed"
-import { money, shortDate, classNames } from "@/lib/format"
+import { money, shortDate, classNames } from "@bmc/portal-kit"
 
 const HEALTH_COLOR: Record<string, string> = {
   green: "bg-forest-500",

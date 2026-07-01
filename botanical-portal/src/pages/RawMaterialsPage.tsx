@@ -7,7 +7,7 @@ import { Tabs } from "@/components/ui/Tabs"
 import { MetricCard } from "@/components/ui/MetricCard"
 import { DataTable, type Column } from "@/components/ui/DataTable"
 import { getMaterialCategoryLabel } from "@/lib/pathways"
-import { money, shortDate, classNames } from "@/lib/format"
+import { money, shortDate, classNames } from "@bmc/portal-kit"
 import type { ProductionPathway, RawMaterial, RawMaterialLot } from "@/types"
 
 export function RawMaterialsPage() {

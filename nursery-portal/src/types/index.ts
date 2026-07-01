@@ -4,7 +4,10 @@
 
 export type Role = "hub" | "node"
 
-export type TierKey = "seedling" | "sprout" | "root" | "canopy" | "ancestor"
+// Canonical KARMA tier ladder lives in @bmc/portal-kit; import for local use
+// and re-export so existing `import type { TierKey } from "@/types"` sites resolve.
+import type { TierKey } from "@bmc/portal-kit"
+export type { TierKey }
 
 export type PropagationMethod =
   | "seed"

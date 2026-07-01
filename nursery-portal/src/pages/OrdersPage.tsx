@@ -7,7 +7,7 @@ import { DataTable, type Column } from "@/components/ui/DataTable"
 import { OrderCard } from "@/components/orders/OrderCard"
 import { EmptyState } from "@/components/ui/EmptyState"
 import type { NurseryOrder, DoaClaim } from "@/types"
-import { money, shortDate } from "@/lib/format"
+import { money, shortDate } from "@bmc/portal-kit"
 
 export function OrdersPage() {
   const { data, isLoading, isError } = useOrders()

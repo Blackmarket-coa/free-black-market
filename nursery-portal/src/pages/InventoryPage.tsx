@@ -8,7 +8,7 @@ import { BatchCard } from "@/components/inventory/BatchCard"
 import { SpeciesIcon } from "@/components/inventory/SpeciesIcon"
 import { NewBatchForm } from "@/components/inventory/NewBatchForm"
 import type { InventoryItem, MotherPlant } from "@/types"
-import { shortDate } from "@/lib/format"
+import { shortDate } from "@bmc/portal-kit"
 
 export function InventoryPage() {
   const { data, isLoading, isError } = useInventory()

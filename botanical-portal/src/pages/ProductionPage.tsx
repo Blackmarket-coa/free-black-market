@@ -8,7 +8,7 @@ import { EmptyState } from "@/components/ui/EmptyState"
 import { RunStatusBadge } from "@/components/production/RunStatusBadge"
 import { CureTimer } from "@/components/production/CureTimer"
 import { iconForOutput } from "@/lib/pathways"
-import { money, shortDate } from "@/lib/format"
+import { money, shortDate } from "@bmc/portal-kit"
 import type { ProductionPathway } from "@/types"
 
 export function ProductionPage() {

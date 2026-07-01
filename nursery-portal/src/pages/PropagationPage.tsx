@@ -7,7 +7,7 @@ import {
   windowsOpenIn,
   windowLabel,
 } from "@/lib/seasonal-windows"
-import { shortDate, daysUntil } from "@/lib/format"
+import { shortDate, daysUntil } from "@bmc/portal-kit"
 
 const THIS_MONTH = new Date().getMonth() + 1
 

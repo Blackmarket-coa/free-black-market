@@ -1,4 +1,12 @@
-import type { TierKey } from "@/types"
+// Canonical KARMA tier ladder + TierKey, shared across the FBM portal family
+// (nursery, wellness, botanical, creator). The backend `progression` module
+// seeds the same plant-themed ladder. Split % rises with tier.
+//
+// `unlocks` is display copy; the ladder fields (key/name/icon/karma_required/
+// split_pct/color) are the contract. If a portal ever needs its own `unlocks`
+// wording it can override per key — see `buildTiers`.
+
+export type TierKey = "seedling" | "sprout" | "root" | "canopy" | "ancestor"
 
 export interface Tier {
   key: TierKey
@@ -10,9 +18,6 @@ export interface Tier {
   unlocks: string
 }
 
-// The KARMA tier ladder shared across the FBM portal family (progression
-// module). Split % rises with tier. Creators climb the same plant-themed ladder
-// as nursery/wellness vendors.
 export const TIERS: Tier[] = [
   {
     key: "seedling",
@@ -21,7 +26,7 @@ export const TIERS: Tier[] = [
     karma_required: 0,
     split_pct: 70,
     color: "#7EC850",
-    unlocks: "FBM listing, Space room access",
+    unlocks: "Listing on FBM, node room access",
   },
   {
     key: "sprout",
@@ -30,7 +35,7 @@ export const TIERS: Tier[] = [
     karma_required: 50,
     split_pct: 73,
     color: "#48bb78",
-    unlocks: "Memberships, Governance Boosts",
+    unlocks: "Order Cycles, demand pool activation",
   },
   {
     key: "root",
@@ -39,7 +44,7 @@ export const TIERS: Tier[] = [
     karma_required: 200,
     split_pct: 76,
     color: "#34a362",
-    unlocks: "Smart Splits, governance voting",
+    unlocks: "Governance voting, wholesale listings",
   },
   {
     key: "canopy",
@@ -48,7 +53,7 @@ export const TIERS: Tier[] = [
     karma_required: 500,
     split_pct: 80,
     color: "#268751",
-    unlocks: "Dead-drops, coalition co-launches",
+    unlocks: "Inter-node transfers, restoration contracts",
   },
   {
     key: "ancestor",
@@ -57,9 +62,16 @@ export const TIERS: Tier[] = [
     karma_required: 1000,
     split_pct: 85,
     color: "#164429",
-    unlocks: "Hub co-governance, creator mentorship",
+    unlocks: "Hub co-governance, node mentorship",
   },
 ]
+
+// Return the ladder with portal-specific `unlocks` copy substituted in.
+export function buildTiers(
+  unlocksByKey: Partial<Record<TierKey, string>>
+): Tier[] {
+  return TIERS.map((t) => ({ ...t, unlocks: unlocksByKey[t.key] ?? t.unlocks }))
+}
 
 export function getTier(key: TierKey): Tier {
   return TIERS.find((t) => t.key === key) ?? TIERS[0]

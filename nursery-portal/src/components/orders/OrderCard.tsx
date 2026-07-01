@@ -2,7 +2,7 @@ import type { NurseryOrder, OrderFulfillmentStatus } from "@/types"
 import { ComplianceBadge } from "./ComplianceBadge"
 import { HeatPackAlert } from "./HeatPackAlert"
 import { LabelButton } from "./LabelButton"
-import { money, shortDate, daysUntil, classNames } from "@/lib/format"
+import { money, shortDate, daysUntil, classNames } from "@bmc/portal-kit"
 
 const STATUS_LABEL: Record<OrderFulfillmentStatus, string> = {
   unfulfilled: "Unfulfilled",

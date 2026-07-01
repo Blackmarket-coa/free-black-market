@@ -6,7 +6,7 @@ import { UrgentBanner } from "@/components/ui/UrgentBanner"
 import { BoostCard } from "@/components/boost/BoostCard"
 import { MessageFeed } from "@/components/blackout/MessageFeed"
 import { useDashboard } from "@/hooks/useCreatorData"
-import { credits, money, pct } from "@/lib/format"
+import { credits, money, pct } from "@bmc/portal-kit"
 
 export function DashboardPage() {
   const { data, isLoading, isError } = useDashboard()

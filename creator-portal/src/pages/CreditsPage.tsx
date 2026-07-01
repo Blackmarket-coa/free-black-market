@@ -8,7 +8,7 @@ import {
   useCreditTransactions,
   useXpBalances,
 } from "@/hooks/useCreatorData"
-import { credits, dateTime, classNames } from "@/lib/format"
+import { credits, dateTime, classNames } from "@bmc/portal-kit"
 import type { CreditTransaction, CreditTxnType } from "@/types"
 
 const TXN_LABEL: Record<CreditTxnType, string> = {

@@ -4,7 +4,7 @@ import { TierBadge } from "@/components/payouts/TierBadge"
 import { KarmaBar } from "@/components/payouts/KarmaBar"
 import { usePayouts } from "@/hooks/useCreatorData"
 import { MOCK_QUESTS } from "@/lib/mock/data"
-import { classNames } from "@/lib/format"
+import { classNames } from "@bmc/portal-kit"
 
 export function QuestsPage() {
   const { data: payouts, isLoading, isError } = usePayouts()

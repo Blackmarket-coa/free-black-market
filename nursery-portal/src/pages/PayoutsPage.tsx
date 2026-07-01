@@ -5,8 +5,8 @@ import { QueryState } from "@/components/ui/QueryState"
 import { TierBadge } from "@/components/payouts/TierBadge"
 import { KarmaBar } from "@/components/payouts/KarmaBar"
 import { PayoutRow } from "@/components/payouts/PayoutRow"
-import { money, shortDate, pct } from "@/lib/format"
-import { TIERS } from "@/lib/tiers"
+import { money, shortDate, pct } from "@bmc/portal-kit"
+import { TIERS } from "@bmc/portal-kit"
 
 export function PayoutsPage() {
   const { data, isLoading, isError } = usePayouts()
