@@ -32,11 +32,15 @@
     "test:hermes-langgraph": "npx --yes -p tsx tsx --test services/ai-orchestrator/langgraph/supervisor-agent.entrypoint.test.ts",
     "test:hermes-vendor-runtime": "npx --yes -p tsx tsx --test services/ai-orchestrator/langgraph/vendor-runtime.contract.test.ts",
     "test:hermes-vendor-suite": "pnpm -s test:hermes-langgraph && pnpm -s test:hermes-vendor-runtime",
-    "nursery-portal:dev": "pnpm --dir nursery-portal dev",
-    "nursery-portal:build": "pnpm --dir nursery-portal build",
-    "creator-portal:dev": "pnpm --dir creator-portal dev",
-    "creator-portal:build": "pnpm --dir creator-portal build",
-    "botanical-portal:dev": "pnpm --dir botanical-portal dev",
-    "botanical-portal:build": "pnpm --dir botanical-portal build"
+    "nursery-portal:dev": "pnpm --filter @bmc/nursery-portal dev",
+    "nursery-portal:build": "pnpm --filter @bmc/nursery-portal build",
+    "wellness-portal:dev": "pnpm --filter @bmc/wellness-portal dev",
+    "wellness-portal:build": "pnpm --filter @bmc/wellness-portal build",
+    "creator-portal:dev": "pnpm --filter @bmc/creator-portal dev",
+    "creator-portal:build": "pnpm --filter @bmc/creator-portal build",
+    "botanical-portal:dev": "pnpm --filter @bmc/botanical-portal dev",
+    "botanical-portal:build": "pnpm --filter @bmc/botanical-portal build",
+    "portals:build": "pnpm --filter \"@bmc/*-portal\" -r build",
+    "portals:typecheck": "pnpm --filter \"@bmc/*-portal\" -r typecheck"
   }
 }

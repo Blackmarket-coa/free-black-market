@@ -19,7 +19,7 @@ api.interceptors.response.use(
   }
 )
 
-// Toggle for the data seam. While the nursery backend routes are still being
+// Toggle for the data seam. While the wellness backend routes are still being
 // built, hooks resolve from the typed mock layer. Flip to false (or wire per
 // hook) to hit the real API.
 export const USE_MOCK_DATA = true

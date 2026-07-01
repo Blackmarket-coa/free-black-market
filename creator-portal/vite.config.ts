@@ -15,7 +15,7 @@ export default defineConfig(({ mode }) => {
     },
     server: {
       host: true,
-      port: parseInt(process.env.PORT || "7003"),
+      port: parseInt(process.env.PORT || "7004"),
       open: false,
       proxy: {
         "/api": {
