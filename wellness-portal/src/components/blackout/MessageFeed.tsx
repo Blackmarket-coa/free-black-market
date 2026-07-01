@@ -1,8 +1,7 @@
 import { Link } from "react-router-dom"
 import type { BlackoutMessage } from "@/types"
-import { shortDate } from "@bmc/portal-kit"
+import { MessageFeed as MessageFeedShell } from "@bmc/ui"
 
-// TODO: extract to packages/bmc-ui/blackout
 // Renders a Blackout (Matrix) message. Action-bearing types get a warm accent
 // card; plain text is a bubble.
 function MessageRow({ msg }: { msg: BlackoutMessage }) {
@@ -55,24 +54,12 @@ export function MessageFeed({
   replyPlaceholder?: string
 }) {
   return (
-    <div className="panel">
-      <div className="divide-y divide-moss/50 max-h-[60vh] overflow-y-auto scroll-area">
-        {messages.map((m) => (
-          <div key={m.id} className="p-2">
-            <div className="text-[10px] text-ghost mb-1">{shortDate(m.timestamp)}</div>
-            <MessageRow msg={m} />
-          </div>
-        ))}
-      </div>
-      {showReply && (
-        <div className="flex gap-2 p-2 border-t border-moss">
-          <input
-            className="flex-1 bg-soil border border-moss rounded-sm px-3 py-1.5 text-sm text-cream-100 placeholder:text-ghost focus:outline-none focus:border-amber-600"
-            placeholder={replyPlaceholder}
-          />
-          <button className="btn-primary text-sm">Send</button>
-        </div>
-      )}
-    </div>
+    <MessageFeedShell
+      messages={messages}
+      showReply={showReply}
+      replyPlaceholder={replyPlaceholder}
+      replyAccentClassName="focus:border-amber-600"
+      renderMessage={(m) => <MessageRow msg={m} />}
+    />
   )
 }
