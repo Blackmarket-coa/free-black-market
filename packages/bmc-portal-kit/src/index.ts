@@ -1,4 +1,6 @@
 export { api, USE_MOCK_DATA, mockResolve } from "./api"
+export { parseResponse, fetchResource } from "./seam"
+export type { FetchResourceOptions } from "./seam"
 export {
   money,
   credits,
