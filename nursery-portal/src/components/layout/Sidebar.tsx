@@ -2,7 +2,7 @@ import { NavLink } from "react-router-dom"
 import { useRole } from "@/hooks/useRole"
 import { usePayouts } from "@/hooks/usePayouts"
 import { navItemsForRole } from "./navItems"
-import { TierBadge } from "@/components/payouts/TierBadge"
+import { TierBadge } from "@bmc/ui"
 import { classNames } from "@bmc/portal-kit"
 
 // Role-aware sidebar. Collapses to an icon rail under md (greenhouse phones);

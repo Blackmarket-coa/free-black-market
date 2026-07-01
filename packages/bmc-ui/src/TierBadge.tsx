@@ -1,4 +1,4 @@
-import type { TierKey } from "@/types"
+import type { TierKey } from "@bmc/portal-kit"
 import { getTier } from "@bmc/portal-kit"
 
 export function TierBadge({

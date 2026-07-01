@@ -2,7 +2,7 @@ import { NavLink } from "react-router-dom"
 import { useCreator } from "@/hooks/useCreator"
 import { usePayouts } from "@/hooks/useCreatorData"
 import { NAV_ITEMS } from "./navItems"
-import { TierBadge } from "@/components/payouts/TierBadge"
+import { TierBadge } from "@bmc/ui"
 import { classNames } from "@bmc/portal-kit"
 
 // Creator-focused sidebar. Collapses to an icon rail under md; labels are

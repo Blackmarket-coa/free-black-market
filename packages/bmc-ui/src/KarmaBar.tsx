@@ -1,5 +1,4 @@
-// TODO: extract to packages/bmc-ui/quests
-import type { TierKey } from "@/types"
+import type { TierKey } from "@bmc/portal-kit"
 import { getTier, getNextTier } from "@bmc/portal-kit"
 
 // Progress from the current tier threshold to the next tier threshold.

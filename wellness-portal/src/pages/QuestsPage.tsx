@@ -1,7 +1,7 @@
 import { PageHeader } from "@bmc/ui"
 import { QueryState } from "@bmc/ui"
-import { TierBadge } from "@/components/payouts/TierBadge"
-import { KarmaBar } from "@/components/payouts/KarmaBar"
+import { TierBadge } from "@bmc/ui"
+import { KarmaBar } from "@bmc/ui"
 import { usePayouts } from "@/hooks/useWellness"
 import { TIERS } from "@bmc/portal-kit"
 
