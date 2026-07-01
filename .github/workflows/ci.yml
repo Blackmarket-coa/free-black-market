@@ -44,11 +44,11 @@ jobs:
 
       - name: Install backend dependencies
         working-directory: backend
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile --ignore-workspace
 
       - name: Install storefront dependencies
         working-directory: storefront
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile --ignore-workspace
 
       - name: Check vendor/module completeness
         run: pnpm check:vendor-completeness
@@ -99,11 +99,11 @@ jobs:
 
       - name: Install admin panel dependencies
         working-directory: admin-panel
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile --ignore-workspace
 
       - name: Install vendor panel dependencies
         working-directory: vendor-panel
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile --ignore-workspace
 
       - name: Validate admin panel translation contracts
         working-directory: admin-panel
@@ -134,7 +134,7 @@ jobs:
 
       - name: Install vendor-panel dependencies
         working-directory: vendor-panel
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile --ignore-workspace
 
       - name: Lint vendor panel
         working-directory: vendor-panel
@@ -173,7 +173,7 @@ jobs:
 
       - name: Install admin-panel dependencies
         working-directory: admin-panel
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile --ignore-workspace
 
       - name: Lint admin panel
         working-directory: admin-panel
@@ -210,7 +210,7 @@ jobs:
 
       - name: Install storefront dependencies
         working-directory: storefront
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile --ignore-workspace
 
       - name: Run storefront tests
         working-directory: storefront
@@ -237,7 +237,7 @@ jobs:
 
       - name: Install dependencies
         working-directory: backend
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile --ignore-workspace
 
       - name: Run unit tests
         working-directory: backend
@@ -276,7 +276,7 @@ jobs:
 
       - name: Install dependencies
         working-directory: backend
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile --ignore-workspace
 
       - name: Build backend
         working-directory: backend
@@ -310,11 +310,11 @@ jobs:
 
       - name: Install backend dependencies
         working-directory: backend
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile --ignore-workspace
 
       - name: Install storefront dependencies
         working-directory: storefront
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile --ignore-workspace
 
       - name: Prepare audit artifact directory
         run: mkdir -p audit-reports
@@ -434,7 +434,7 @@ jobs:
 
       - name: Install dependencies
         working-directory: backend
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile --ignore-workspace
 
       # TI-1 closed 2026-05-13 (hawala-ledger + payout-breakdown migration
       # order). Briefly flipped to fail-fast on 2026-05-17 (PR #677) — the
@@ -543,7 +543,7 @@ jobs:
 
       - name: Install dependencies
         working-directory: backend
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile --ignore-workspace
 
       # Closes the LAUNCH_READINESS §2 money-path gate: proves the
       # atomic-by-default balance CAS + pool-total increments hold under real
