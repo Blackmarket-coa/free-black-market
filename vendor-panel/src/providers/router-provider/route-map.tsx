@@ -669,6 +669,31 @@ export const RouteMap: RouteObject[] = [
             ],
           },
           {
+            path: "/quests",
+            errorElement: <ErrorBoundary />,
+            handle: {
+              breadcrumb: () => "Quests",
+            },
+            children: [
+              {
+                path: "",
+                lazy: () => import("../../routes/quests/quest-list"),
+              },
+              {
+                path: ":id",
+                lazy: () => import("../../routes/quests/quest-detail"),
+              },
+            ],
+          },
+          {
+            path: "/nursery/profit-per-sqft",
+            errorElement: <ErrorBoundary />,
+            handle: {
+              breadcrumb: () => "Profit / SqFt",
+            },
+            lazy: () => import("../../routes/nursery/profit-per-sqft"),
+          },
+          {
             path: "/promotions",
             errorElement: <ErrorBoundary />,
             handle: {

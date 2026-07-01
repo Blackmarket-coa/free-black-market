@@ -19,6 +19,7 @@ import {
   SquaresPlus,
   MapPin,
   Globe,
+  Trophy,
 } from "@medusajs/icons"
 import { ReactNode } from "react"
 import { useTranslation } from "react-i18next"
@@ -96,6 +97,20 @@ function getVendorNavigationConfig({
       label: "Sales Report",
       to: "/sales-report",
       // Always visible
+    },
+    {
+      icon: <Trophy />,
+      label: "Quests",
+      to: "/quests",
+      // Always visible — quests are opt-in leverage toward loans, grants,
+      // wholesale accounts, and certifications from a vendor's real history.
+    },
+    {
+      icon: <ChartBar />,
+      label: "Profit / SqFt",
+      to: "/nursery/profit-per-sqft",
+      // Decision-support planner for product vendors; usable with no quest.
+      showFor: (f) => f.hasProducts,
     },
     {
       icon: <Globe />,
