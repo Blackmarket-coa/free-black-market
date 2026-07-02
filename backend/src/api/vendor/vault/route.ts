@@ -1,6 +1,7 @@
 import type { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { DOCUMENT_VAULT_MODULE } from "../../../modules/document-vault"
 import type DocumentVaultModuleService from "../../../modules/document-vault/service"
+import { VaultDocumentType } from "../../../modules/document-vault/models/vault-document"
 import { getSellerId } from "../quests/_helpers"
 
 /** GET /vendor/vault — a vendor's uploaded evidence documents (opt-in). */
@@ -38,7 +39,7 @@ export const POST = async (req: MedusaRequest<CreateDocBody>, res: MedusaRespons
   const service = req.scope.resolve<DocumentVaultModuleService>(DOCUMENT_VAULT_MODULE)
   const document = await service.createVaultDocuments({
     seller_id: sellerId,
-    doc_type: (b.doc_type ?? "other") as any,
+    doc_type: (b.doc_type ?? "other") as VaultDocumentType,
     label: b.label,
     file_id: b.file_id ?? null,
     issued_at: b.issued_at ? new Date(b.issued_at) : null,

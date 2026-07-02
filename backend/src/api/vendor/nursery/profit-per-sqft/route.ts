@@ -27,7 +27,7 @@ export const POST = async (
   try {
     const ranking = service.rankProfitPerSqFt(rows)
     res.json({ ranking, count: ranking.length })
-  } catch (e: any) {
-    res.status(400).json({ message: e.message })
+  } catch (e) {
+    res.status(400).json({ message: (e as Error).message })
   }
 }

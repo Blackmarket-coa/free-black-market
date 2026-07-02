@@ -1,6 +1,7 @@
 import type { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { PRODUCTION_LEDGER_MODULE } from "../../../modules/production-ledger"
 import type ProductionLedgerModuleService from "../../../modules/production-ledger/service"
+import { ProductionSource } from "../../../modules/production-ledger/models/production-batch"
 import { getSellerId } from "../quests/_helpers"
 
 /** GET /vendor/production-batches — a vendor's production ledger (opt-in). */
@@ -44,7 +45,7 @@ export const POST = async (
     method: b.method ?? null,
     start_date: b.start_date ? new Date(b.start_date) : null,
     qty_started: b.qty_started ?? 0,
-    source: (b.source ?? "own") as any,
+    source: (b.source ?? "own") as ProductionSource,
     controlled_environment: b.controlled_environment ?? false,
     yield_qty: b.yield_qty ?? null,
     product_variant_id: b.product_variant_id ?? null,

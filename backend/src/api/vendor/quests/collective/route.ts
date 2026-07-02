@@ -23,7 +23,7 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
     ? await service.listQuestCollectives({ id: memberCollectiveIds })
     : []
 
-  const byId = new Map<string, any>()
+  const byId = new Map<string, (typeof owned)[number]>()
   for (const c of [...owned, ...memberOf]) byId.set(c.id, c)
 
   res.json({ collectives: [...byId.values()], count: byId.size })
@@ -42,7 +42,7 @@ export const POST = async (
   const sellerId = getSellerId(req)
   if (!sellerId) return res.status(401).json({ message: "Unauthorized" })
 
-  const { quest_key, title } = req.body ?? ({} as any)
+  const { quest_key, title } = req.body ?? ({} as { quest_key?: string; title?: string })
   if (!quest_key || !title) {
     return res.status(400).json({ message: "quest_key and title are required" })
   }
@@ -53,7 +53,7 @@ export const POST = async (
     // Owner joins as the first member.
     await service.enroll(sellerId, quest_key, collective.id)
     res.status(201).json({ collective })
-  } catch (e: any) {
-    res.status(400).json({ message: e.message })
+  } catch (e) {
+    res.status(400).json({ message: (e as Error).message })
   }
 }

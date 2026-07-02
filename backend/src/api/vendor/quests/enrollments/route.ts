@@ -24,11 +24,15 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
   if (active.length) substrate = await buildSubstrate(sellerId, req.scope)
 
   const awardXp = makeAwardXp(req)
-  const items = [] as any[]
+  type SyncResult = Awaited<ReturnType<typeof service.syncProgress>>
+  const items: Array<{
+    enrollment: (typeof enrollments)[number]
+    evaluation: SyncResult | null
+  }> = []
   for (const e of enrollments) {
-    let evaluation: any = null
+    let evaluation: SyncResult | null = null
     if (e.status === "ACTIVE" && substrate) {
-      evaluation = await service.syncProgress(e as any, substrate, { awardXp })
+      evaluation = await service.syncProgress(e, substrate, { awardXp })
     }
     items.push({ enrollment: e, evaluation })
   }
@@ -48,14 +52,14 @@ export const POST = async (
   const sellerId = getSellerId(req)
   if (!sellerId) return res.status(401).json({ message: "Unauthorized" })
 
-  const { quest_key, collective_id } = req.body ?? ({} as any)
+  const { quest_key, collective_id } = req.body ?? ({} as { quest_key?: string; collective_id?: string })
   if (!quest_key) return res.status(400).json({ message: "quest_key is required" })
 
   const service = req.scope.resolve<VendorQuestModuleService>(VENDOR_QUEST_MODULE)
   try {
     const enrollment = await service.enroll(sellerId, quest_key, collective_id)
     res.status(201).json({ enrollment })
-  } catch (e: any) {
-    res.status(400).json({ message: e.message })
+  } catch (e) {
+    res.status(400).json({ message: (e as Error).message })
   }
 }

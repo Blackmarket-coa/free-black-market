@@ -19,8 +19,18 @@ export function getSellerId(req: MedusaRequest): string | null {
  */
 export function makeAwardXp(req: MedusaRequest) {
   return async (sellerId: string, amount: number, meta: Record<string, unknown>) => {
-    const query: any = req.scope.resolve(ContainerRegistrationKeys.QUERY)
-    const progression: any = req.scope.resolve("progressionModuleService")
+    const query = req.scope.resolve(ContainerRegistrationKeys.QUERY)
+    const progression = req.scope.resolve<{
+      recordXpEvent(data: {
+        customer_id: string
+        role: string
+        amount: number
+        reason: string
+        source_module?: string
+        source_id?: string
+        metadata?: Record<string, unknown>
+      }): Promise<unknown>
+    }>("progressionModuleService")
 
     // Resolve the seller's owner member to act as the XP subject.
     let customerId: string | null = null
@@ -30,9 +40,10 @@ export function makeAwardXp(req: MedusaRequest) {
         fields: ["id", "members.id", "members.role"],
         filters: { id: sellerId },
       })
-      const members = data?.[0]?.members ?? []
+      const members: Array<{ id?: string; role?: string }> =
+        data?.[0]?.members ?? []
       customerId =
-        members.find((m: any) => m.role === "owner")?.id ?? members[0]?.id ?? null
+        members.find((m) => m.role === "owner")?.id ?? members[0]?.id ?? null
     } catch {
       customerId = null
     }

@@ -7,6 +7,14 @@ import {
 } from "../../../../modules/nursery-vertical/channels"
 import { getSellerId } from "../../quests/_helpers"
 
+/** The subset of the vendor-rules service this route depends on. */
+type VendorRulesLike = {
+  listVendorCustomerTiers(filter: {
+    seller_id: string
+  }): Promise<Array<{ metadata?: Record<string, unknown> | null }>>
+  createVendorCustomerTiers(input: unknown): Promise<unknown>
+}
+
 /**
  * GET /vendor/nursery/channels
  *
@@ -18,10 +26,10 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
   const sellerId = getSellerId(req)
   if (!sellerId) return res.status(401).json({ message: "Unauthorized" })
 
-  const vendorRules: any = req.scope.resolve("vendorRules")
-  const tiers = await vendorRules.listVendorCustomerTiers({ seller_id: sellerId })
-  const channelTiers = (tiers ?? []).filter(
-    (t: any) => (t.metadata as any)?.vertical === "nursery"
+  const vendorRules = req.scope.resolve<VendorRulesLike>("vendorRules")
+  const tiers = (await vendorRules.listVendorCustomerTiers({ seller_id: sellerId })) ?? []
+  const channelTiers = tiers.filter(
+    (t) => t.metadata?.vertical === "nursery"
   )
 
   res.json({
@@ -63,7 +71,7 @@ export const POST = async (
     return res.status(400).json({ message: "discountPercent is required" })
   }
 
-  const vendorRules: any = req.scope.resolve("vendorRules")
+  const vendorRules = req.scope.resolve<VendorRulesLike>("vendorRules")
   const input = buildChannelTierInput(sellerId, {
     channel: b.channel,
     discountPercent: b.discountPercent,
