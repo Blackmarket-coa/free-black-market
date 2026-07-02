@@ -20,6 +20,7 @@ import {
   MapPin,
   Globe,
   Trophy,
+  DocumentText,
 } from "@medusajs/icons"
 import { ReactNode } from "react"
 import { useTranslation } from "react-i18next"
@@ -112,10 +113,29 @@ function getVendorNavigationConfig({
       ],
     },
     {
-      icon: <ChartBar />,
-      label: "Profit / SqFt",
-      to: "/nursery/profit-per-sqft",
-      // Decision-support planner for product vendors; usable with no quest.
+      icon: <Tag />,
+      label: "Nursery",
+      to: "/nursery/listings",
+      // Product vertical: listing attributes, wholesale channels, profit/sqft.
+      // Fully usable with no quest enrolled.
+      showFor: (f) => f.hasProducts,
+      items: [
+        { label: "Listings", to: "/nursery/listings" },
+        { label: "Wholesale Channels", to: "/nursery/channels" },
+        { label: "Profit / SqFt", to: "/nursery/profit-per-sqft" },
+      ],
+    },
+    {
+      icon: <DocumentText />,
+      label: "Document Vault",
+      to: "/vault",
+      // Opt-in evidence store; quests reference these documents.
+    },
+    {
+      icon: <Buildings />,
+      label: "Production Ledger",
+      to: "/production",
+      // Opt-in production records; feeds quests that need production data.
       showFor: (f) => f.hasProducts,
     },
     {

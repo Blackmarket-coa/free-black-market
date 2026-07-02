@@ -28,6 +28,10 @@ export enum NurseryListingSubtype {
 const NurseryProductAttribute = model.define("nursery_product_attribute", {
   id: model.id().primaryKey(),
 
+  // Owning vendor. Denormalized (the product already belongs to a seller) so
+  // attributes are trivially and safely scoped to the vendor in list queries.
+  seller_id: model.text(),
+
   product_id: model.text().unique(),
 
   subtype: model.enum(Object.values(NurseryListingSubtype)),
@@ -55,6 +59,7 @@ const NurseryProductAttribute = model.define("nursery_product_attribute", {
 })
   .indexes([
     { on: ["product_id"], name: "IDX_nursery_product_attribute_product_id" },
+    { on: ["seller_id"], name: "IDX_nursery_product_attribute_seller_id" },
     { on: ["subtype"], name: "IDX_nursery_product_attribute_subtype" },
   ])
 

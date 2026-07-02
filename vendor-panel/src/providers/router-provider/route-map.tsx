@@ -704,6 +704,30 @@ export const RouteMap: RouteObject[] = [
             lazy: () => import("../../routes/nursery/profit-per-sqft"),
           },
           {
+            path: "/nursery/listings",
+            errorElement: <ErrorBoundary />,
+            handle: { breadcrumb: () => "Nursery Listings" },
+            lazy: () => import("../../routes/nursery/listings"),
+          },
+          {
+            path: "/nursery/channels",
+            errorElement: <ErrorBoundary />,
+            handle: { breadcrumb: () => "Wholesale Channels" },
+            lazy: () => import("../../routes/nursery/channels"),
+          },
+          {
+            path: "/vault",
+            errorElement: <ErrorBoundary />,
+            handle: { breadcrumb: () => "Document Vault" },
+            lazy: () => import("../../routes/vault"),
+          },
+          {
+            path: "/production",
+            errorElement: <ErrorBoundary />,
+            handle: { breadcrumb: () => "Production Ledger" },
+            lazy: () => import("../../routes/production"),
+          },
+          {
             path: "/promotions",
             errorElement: <ErrorBoundary />,
             handle: {

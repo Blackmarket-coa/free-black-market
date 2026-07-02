@@ -21,6 +21,33 @@ class NurseryVerticalModuleService extends MedusaService({
     return attr ?? null
   }
 
+  /** A vendor's nursery listing attributes (seller-scoped). */
+  async listForSeller(sellerId: string) {
+    return this.listNurseryProductAttributes({ seller_id: sellerId })
+  }
+
+  /**
+   * Create or update the nursery attribute for a product (1:1). Upsert keyed by
+   * product_id; always stamped with the owning seller_id so listing management
+   * stays vendor-scoped.
+   */
+  async upsertForProduct(
+    sellerId: string,
+    productId: string,
+    data: Record<string, unknown>
+  ) {
+    const existing = await this.getAttributeForProduct(productId)
+    if (existing) {
+      await this.updateNurseryProductAttributes({ id: existing.id, ...data })
+      return this.retrieveNurseryProductAttribute(existing.id)
+    }
+    return this.createNurseryProductAttributes({
+      seller_id: sellerId,
+      product_id: productId,
+      ...data,
+    })
+  }
+
   /** Profit-per-sqft for a single input (decision-support only). */
   computeProfitPerSqFt(input: ProfitPerSqFtInput) {
     return profitPerSqFt(input)

@@ -21,6 +21,7 @@ export class Migration20260701CreateNurseryVertical extends Migration {
     this.addSql(`
       CREATE TABLE IF NOT EXISTS "nursery_product_attribute" (
         "id" TEXT NOT NULL,
+        "seller_id" TEXT NOT NULL,
         "product_id" TEXT NOT NULL,
         "subtype" nursery_listing_subtype_enum NOT NULL,
         "edible_use" JSONB NULL,
@@ -38,6 +39,7 @@ export class Migration20260701CreateNurseryVertical extends Migration {
       );
     `)
     this.addSql(`CREATE UNIQUE INDEX IF NOT EXISTS "IDX_nursery_product_attribute_product_id" ON "nursery_product_attribute" ("product_id") WHERE "deleted_at" IS NULL;`)
+    this.addSql(`CREATE INDEX IF NOT EXISTS "IDX_nursery_product_attribute_seller_id" ON "nursery_product_attribute" ("seller_id") WHERE "deleted_at" IS NULL;`)
     this.addSql(`CREATE INDEX IF NOT EXISTS "IDX_nursery_product_attribute_subtype" ON "nursery_product_attribute" ("subtype") WHERE "deleted_at" IS NULL;`)
   }
 
