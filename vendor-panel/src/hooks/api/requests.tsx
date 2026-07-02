@@ -119,24 +119,22 @@ export const useUpdateRequest = (
   })
 }
 
-export const useUpdateOrderReturnRequest = (id: string) => {
-  return useMutation({
-    mutationFn: (payload: any) =>
-      fetchQuery(`/vendor/return-request/${id}`, {
-        method: "POST",
-        body: payload,
-      }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: [REQUESTS_QUERY_KEY, "return-request", id],
-      })
+// Order return requests are served by the vendor Returns endpoint
+// (`/vendor/returns`). The `/vendor/return-request` path the panel was
+// originally built against has no handler in the current MercurJS core, so
+// these hooks read from `/vendor/returns` and normalize the `return`/`returns`
+// payload back onto the `order_return_request` shape the UI consumes.
+export const normalizeReturnDetailResponse = (data?: { return?: any }) => ({
+  order_return_request: data?.return,
+})
 
-      queryClient.invalidateQueries({
-        queryKey: [REQUESTS_QUERY_KEY, "return-requests"],
-      })
-    },
-  })
-}
+export const normalizeReturnListResponse = (data?: {
+  returns?: any
+  count?: number
+}) => ({
+  order_return_request: data?.returns,
+  count: data?.count || 0,
+})
 
 export const useOrderReturnRequest = (
   id: string,
@@ -145,14 +143,14 @@ export const useOrderReturnRequest = (
   const { data, ...rest } = useQuery({
     queryKey: [REQUESTS_QUERY_KEY, "return-request", id],
     queryFn: () =>
-      fetchQuery(`/vendor/return-request/${id}`, {
+      fetchQuery(`/vendor/returns/${id}`, {
         method: "GET",
-        query: { fields: "*order" },
+        query: { fields: "*order,*order.customer,*items" },
       }),
     ...options,
   })
 
-  return { ...data, ...rest }
+  return { ...normalizeReturnDetailResponse(data), ...rest }
 }
 
 export const useOrderReturnRequests = (
@@ -160,11 +158,11 @@ export const useOrderReturnRequests = (
   options?: Omit<
     UseQueryOptions<
       PaginatedResponse<{
-        order_return_request: any
+        returns: any
       }>,
       FetchError,
       PaginatedResponse<{
-        order_return_request: any
+        returns: any
       }>,
       QueryKey
     >,
@@ -173,33 +171,17 @@ export const useOrderReturnRequests = (
 ) => {
   const { data, ...rest } = useQuery({
     queryFn: () =>
-      fetchQuery("/vendor/return-request", {
+      fetchQuery("/vendor/returns", {
         method: "GET",
         query: {
-          fields: "*order.customer,+created_at",
+          fields: "id,status,created_at,*order,*order.customer,*items",
+          ...query,
         },
       }),
 
-    queryKey: [REQUESTS_QUERY_KEY, "return-requests"],
+    queryKey: [REQUESTS_QUERY_KEY, "return-requests", query],
     ...options,
   })
 
-  let processedData = data?.order_return_request
-
-  if (query?.limit) {
-    processedData = data?.order_return_request.slice(0, Number(query.limit))
-  }
-
-  if (query?.offset) {
-    processedData = data?.order_return_request.slice(
-      Number(query.offset),
-      Number(query.offset) + Number(query.limit)
-    )
-  }
-
-  return {
-    order_return_request: processedData,
-    count: data?.count || 0,
-    ...rest,
-  }
+  return { ...normalizeReturnListResponse(data), ...rest }
 }

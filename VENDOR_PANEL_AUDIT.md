@@ -26,7 +26,7 @@ the contract cross-check.
 | Unit tests | ✅ Passing (thin) | 13 tests / 4 spec files vs. ~70 route modules |
 | Code hygiene | Good | `console.*` usage is logger-gated (see below); TODO/FIXME = 0 |
 | `any` footprint | Watch | 438 token-level matches; diffuse long tail |
-| Frontend↔backend contract | Mixed | 3 orphaned/mismatched route items (see Findings) |
+| Frontend↔backend contract | ✅ Resolved | 3 orphaned/mismatched route items fixed 2026-07-02 (see Findings §3) |
 
 ---
 
@@ -58,27 +58,34 @@ product create, payout request, vendor-type gating). This is the highest-leverag
 `hooks/api/woocommerce.tsx`, `extensions/forms/hooks.tsx`, and `components/forms/metadata-form`.
 This erodes the guarantee that a green typecheck implies, especially at API boundaries.
 
-### 3) Frontend↔backend contract mismatches (Medium/High) — from route cross-check
+### 3) Frontend↔backend contract mismatches (Medium/High) — from route cross-check — RESOLVED (2026-07-02)
 
-- **`api-key-management` is dead *and* backend-blocked (High).** The full route folder
-  (`routes/api-key-management/*`, `hooks/api/api-keys.tsx`) calls `/vendor/api-keys`, but:
-  (a) it is **not registered** in `providers/router-provider/route-map.tsx`, not registered via
+- **`api-key-management` is dead *and* backend-blocked (High). — FIXED.** The full route folder
+  (`routes/api-key-management/*`, `hooks/api/api-keys.tsx`) called `/vendor/api-keys`, but:
+  (a) it was **not registered** in `providers/router-provider/route-map.tsx`, not registered via
   `defineRouteConfig`, and imported nowhere — i.e. unreachable dead code; and (b) the backend
   **intentionally 403s** `/vendor/api-keys` in `backend/src/api/middlewares.ts` ("Vendors do not
-  have access to API key management"). Recommend deleting the frontend module (or documenting the
-  intentional block) to remove the contradiction.
+  have access to API key management"). **Deleted** the frontend module (route folder + hook +
+  the barrel `export * from "./api-keys"`) to remove the contradiction.
 
-- **`enterprise-fees` route folder is orphaned (Low/Medium).** `routes/enterprise-fees/*` is not
-  in `route-map.tsx`, not `defineRouteConfig`-registered, and not imported elsewhere — unreachable.
-  (The backend `/vendor/enterprise-fees` endpoint itself exists and is used via order cycles; only
-  the standalone route UI is dead.)
+- **`enterprise-fees` route folder is orphaned (Low/Medium). — FIXED.** `routes/enterprise-fees/*`
+  was not in `route-map.tsx`, not `defineRouteConfig`-registered, and not imported anywhere.
+  **Deleted** the orphaned route folder and its unused `hooks/api/enterprise-fees.ts` hook.
+  (The backend `/vendor/enterprise-fees` endpoint is untouched — it is used via order cycles.)
 
-- **`/vendor/return-request` has no handler (Medium).** The order-return hooks in
-  `hooks/api/requests.tsx` (`useOrderReturnRequest`, `useOrderReturnRequests`,
-  `useUpdateOrderReturnRequest`) call `/vendor/return-request`, which exists nowhere in the app
-  backend or MercurJS core; MercurJS exposes `/vendor/returns` instead. The requests→order-return
-  flow (`routes/requests/request-order-return`) likely 404s. *Static evidence only — not
-  runtime-confirmed (no database available in the audit environment).*
+- **`/vendor/return-request` has no handler (Medium). — FIXED (repointed).** The order-return hooks
+  in `hooks/api/requests.tsx` (`useOrderReturnRequest`, `useOrderReturnRequests`,
+  `useUpdateOrderReturnRequest`) called `/vendor/return-request`, which exists nowhere in the app
+  backend or MercurJS core (only an OpenAPI stub). **Repointed** the read hooks to the real
+  `/vendor/returns` (list) and `/vendor/returns/{id}` (detail), normalizing the `returns`/`return`
+  payload back onto the `order_return_request` shape the UI consumes (see
+  `normalizeReturnListResponse` / `normalizeReturnDetailResponse`, covered by
+  `hooks/api/requests.spec.ts`). **Tradeoff:** `/vendor/returns` is GET-only — it has no
+  refund/escalate mutation — so `useUpdateOrderReturnRequest` was removed and the review drawer
+  (`routes/requests/request-order-return`) is now **read-only** (view order/customer/status/items;
+  returns are processed through the standard returns flow). Table columns were adapted to the
+  `return` shape (the `customer_note`/"Reason" column, which returns don't carry, was replaced with
+  an item count) with null-guards on the `order`/`customer` relations.
 
 ### 4) Order status helpers crashed on unmapped statuses (High) — FIXED
 `lib/order-helpers.ts` destructured a status→`[label, color]` lookup that returns `undefined`
@@ -108,6 +115,16 @@ half-finished flows, but no dead-shell problem was found.
 - Recorded the contract mismatches (Finding 3) for follow-up; no code deleted pending owner
   decision on `api-key-management` / `enterprise-fees` / the `return-request` path.
 - typecheck / lint / test all remain green after these changes.
+
+## Remediation Applied (2026-07-02)
+
+- **Resolved all three Finding 3 contract mismatches** (see §3 for detail): deleted the dead
+  `api-key-management` module (route folder + `hooks/api/api-keys.tsx` + barrel export) and the
+  orphaned `enterprise-fees` route folder + `hooks/api/enterprise-fees.ts`; repointed the
+  order-return read hooks from the nonexistent `/vendor/return-request` to the real
+  `/vendor/returns`, normalizing the payload and making the review drawer read-only.
+- **Added** `hooks/api/requests.spec.ts` covering the returns-response normalizers.
+- typecheck / lint / test / `vite build` all green after these changes.
 
 ## Recommended Remediation
 

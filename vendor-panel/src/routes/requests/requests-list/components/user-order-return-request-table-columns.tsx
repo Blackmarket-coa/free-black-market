@@ -6,12 +6,15 @@ const columnHelper = createColumnHelper<any>()
 
 const getStatusColor: any = (status: string) => {
   switch (status) {
+    case "requested":
     case "pending":
       return "orange"
+    case "received":
     case "refunded":
       return "green"
-    case "withdrawn":
+    case "partially_received":
       return "yellow"
+    case "canceled":
     case "escalated":
       return "red"
     default:
@@ -23,20 +26,28 @@ export const useOrderReturnRequestTableColumns = () => {
   return [
     columnHelper.accessor("id", {
       header: "Order",
-      cell: ({ row }) => `#${row.original.order.display_id}`,
+      cell: ({ row }) =>
+        row.original.order?.display_id
+          ? `#${row.original.order.display_id}`
+          : "-",
     }),
     columnHelper.accessor("order.customer.first_name", {
       header: "Customer",
-      cell: ({ row }) =>
-        `${row.original.order.customer.first_name} ${row.original.order.customer.last_name}`,
+      cell: ({ row }) => {
+        const customer = row.original.order?.customer
+        return customer
+          ? `${customer.first_name ?? ""} ${customer.last_name ?? ""}`.trim() ||
+              "-"
+          : "-"
+      },
     }),
     columnHelper.accessor("order.customer.email", {
       header: "Customer Email",
-      cell: ({ row }) => row.original.order.customer.email,
+      cell: ({ row }) => row.original.order?.customer?.email ?? "-",
     }),
-    columnHelper.accessor("customer_note", {
-      header: "Reason",
-      cell: ({ row }) => row.original.customer_note,
+    columnHelper.accessor("items", {
+      header: "Items",
+      cell: ({ row }) => row.original.items?.length ?? 0,
     }),
     columnHelper.accessor("created_at", {
       header: "Date",
