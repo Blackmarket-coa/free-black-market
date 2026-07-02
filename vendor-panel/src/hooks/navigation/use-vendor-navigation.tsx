@@ -104,6 +104,12 @@ function getVendorNavigationConfig({
       to: "/quests",
       // Always visible — quests are opt-in leverage toward loans, grants,
       // wholesale accounts, and certifications from a vendor's real history.
+      items: [
+        {
+          label: "Collectives",
+          to: "/quests/collectives",
+        },
+      ],
     },
     {
       icon: <ChartBar />,

@@ -88,11 +88,30 @@ export interface PacketExport {
   remaining_items: string[]
 }
 
+export interface QuestCollective {
+  id: string
+  quest_key: string
+  title: string
+  owner_seller_id: string
+  status: "FORMING" | "ACTIVE" | "COMPLETE" | "DISBANDED"
+}
+
+export interface CollectiveDetail {
+  collective: QuestCollective
+  is_owner: boolean
+  member_count: number
+  consented_member_ids: string[]
+  required_scopes: string[]
+  evaluation: QuestEvaluation | null
+}
+
 // ── Query keys ──────────────────────────────────────────────────────────────
 
 export const questKeys = {
   all: ["quests"] as const,
   catalog: () => [...questKeys.all, "catalog"] as const,
+  collectives: () => [...questKeys.all, "collectives"] as const,
+  collective: (id: string) => [...questKeys.all, "collective", id] as const,
   enrollments: () => [...questKeys.all, "enrollments"] as const,
   enrollment: (id: string) => [...questKeys.all, "enrollment", id] as const,
 }
@@ -202,6 +221,101 @@ export const useProfitPerSqFt = () => {
         body: { rows },
       })
       return res as { ranking: ProfitPerSqFtResult[]; count: number }
+    },
+  })
+}
+
+// ── Collective quests (Q11–Q13) ───────────────────────────────────────────
+
+export const useCollectives = () => {
+  return useQuery({
+    queryKey: questKeys.collectives(),
+    queryFn: async () => {
+      const res = await sdk.client.fetch("/vendor/quests/collective")
+      return res as { collectives: QuestCollective[]; count: number }
+    },
+  })
+}
+
+export const useCollective = (id: string) => {
+  return useQuery({
+    queryKey: questKeys.collective(id),
+    queryFn: async () => {
+      const res = await sdk.client.fetch("/vendor/quests/collective/" + id)
+      return res as CollectiveDetail
+    },
+    enabled: !!id,
+  })
+}
+
+export const useFormCollective = () => {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (input: { quest_key: string; title: string }) => {
+      const res = await sdk.client.fetch("/vendor/quests/collective", {
+        method: "POST",
+        body: input,
+      })
+      return res as { collective: QuestCollective }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: questKeys.collectives() })
+    },
+  })
+}
+
+export const useJoinCollective = () => {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (id: string) => {
+      await sdk.client.fetch("/vendor/quests/collective/" + id + "/join", {
+        method: "POST",
+        body: {},
+      })
+    },
+    onSuccess: (_d, id) => {
+      queryClient.invalidateQueries({ queryKey: questKeys.collective(id) })
+    },
+  })
+}
+
+export const useConsentCollective = (id: string) => {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (scopes: string[]) => {
+      await sdk.client.fetch("/vendor/quests/collective/" + id + "/consent", {
+        method: "POST",
+        body: { scopes },
+      })
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: questKeys.collective(id) })
+    },
+  })
+}
+
+export const useRevokeConsent = (id: string) => {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async () => {
+      await sdk.client.fetch("/vendor/quests/collective/" + id + "/consent", {
+        method: "DELETE",
+      })
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: questKeys.collective(id) })
+    },
+  })
+}
+
+export const useGenerateCollectivePacket = (id: string) => {
+  return useMutation({
+    mutationFn: async () => {
+      const res = await sdk.client.fetch(
+        "/vendor/quests/collective/" + id + "/packet",
+        { method: "POST", body: {} }
+      )
+      return res as { packet: PacketExport; html: string }
     },
   })
 }

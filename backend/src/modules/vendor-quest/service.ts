@@ -10,6 +10,7 @@ import { EnrollmentStatus } from "./models/quest-enrollment"
 import { CollectiveStatus } from "./models/quest-collective"
 import { getQuestDefinition, listQuestDefinitions } from "./definitions"
 import { evaluateQuest } from "./engine"
+import { aggregateSubstrates } from "./substrate/aggregate"
 import { buildPacketExport, renderPacketHtml, type PacketExport } from "./packet"
 import type { QuestDefinition, QuestEvaluation, VendorSubstrate } from "./types"
 
@@ -252,6 +253,88 @@ class VendorQuestModuleService extends MedusaService({
       .filter((c) => !c.revoked_at)
       .filter((c) => Array.isArray(c.consent_scopes) && (c.consent_scopes as string[]).includes(scope))
       .map((c) => c.seller_id as string)
+  }
+
+  /** Active (un-dropped) member enrollments of a collective. */
+  async listCollectiveMembers(collectiveId: string) {
+    const enrollments = await this.listQuestEnrollments({ collective_id: collectiveId })
+    return enrollments.filter((e) => e.status !== EnrollmentStatus.DROPPED)
+  }
+
+  /**
+   * Seller ids whose records may be aggregated: those with an un-revoked consent
+   * covering EVERY `requiredScope`. A member who consented to only some scopes is
+   * excluded — we never aggregate data a member didn't consent to. With no
+   * required scopes, returns every member that has any un-revoked consent.
+   */
+  async getConsentedMemberIds(
+    collectiveId: string,
+    requiredScopes: string[]
+  ): Promise<string[]> {
+    const consents = await this.listQuestMemberConsents({ collective_id: collectiveId })
+    const byMember = new Map<string, Set<string>>()
+    for (const c of consents) {
+      if (c.revoked_at) continue
+      const set = byMember.get(c.seller_id as string) ?? new Set<string>()
+      for (const s of (c.consent_scopes as unknown as string[]) ?? []) set.add(s)
+      byMember.set(c.seller_id as string, set)
+    }
+    return [...byMember.entries()]
+      .filter(([, scopes]) => requiredScopes.every((s) => scopes.has(s)))
+      .map(([sellerId]) => sellerId)
+  }
+
+  /**
+   * Aggregate the given members' substrates and evaluate the collective quest
+   * through the SAME engine. Callers MUST pass only consenting members'
+   * substrates (see `getConsentedMemberIds`); this method does not re-check
+   * consent — it just aggregates and evaluates.
+   */
+  evaluateCollective(
+    questKey: string,
+    substrates: VendorSubstrate[],
+    memberIds: string[]
+  ) {
+    const def = getQuestDefinition(questKey)
+    if (!def) throw new Error(`Unknown quest '${questKey}'`)
+    if (def.type !== "collective") {
+      throw new Error(`Quest '${questKey}' is not a collective quest`)
+    }
+    const aggregate = aggregateSubstrates(substrates, memberIds)
+    return { aggregate, evaluation: evaluateQuest(def, aggregate) }
+  }
+
+  /**
+   * Build and persist the joint packet from the aggregate substrate. Only
+   * succeeds when the final gate is open. The packet is recorded against the
+   * collective (owner as seller) with the collective id as enrollment id.
+   */
+  async generateCollectivePacket(
+    collective: { id: string; owner_seller_id: string; quest_key: string },
+    aggregate: VendorSubstrate
+  ): Promise<{ export: PacketExport; html: string }> {
+    const def = getQuestDefinition(collective.quest_key)
+    if (!def?.packetTemplate) {
+      throw new Error(`Quest '${collective.quest_key}' has no exportable packet`)
+    }
+    const evaluation = evaluateQuest(def, aggregate)
+    if (!evaluation.packet_available) {
+      throw new Error("Joint packet is only available once the final stage gate is open")
+    }
+    const exportData = buildPacketExport(def, aggregate)!
+    const html = renderPacketHtml(exportData)
+
+    await this.createQuestPackets({
+      enrollment_id: collective.id,
+      seller_id: collective.owner_seller_id,
+      quest_key: collective.quest_key,
+      packet_key: exportData.packet_key,
+      export_json: exportData as unknown as Record<string, unknown>,
+      disclaimer: exportData.disclaimer,
+      remaining_items: exportData.remaining_items as any,
+      generated_at: new Date(),
+    })
+    return { export: exportData, html }
   }
 }
 

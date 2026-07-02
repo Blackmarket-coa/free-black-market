@@ -61,6 +61,8 @@ export async function buildSubstrate(
     production,
     channels,
     documents,
+    // An individually-built substrate is never an aggregate.
+    collective: null,
   }
 }
 

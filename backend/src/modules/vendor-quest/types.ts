@@ -87,6 +87,17 @@ export interface VaultSummary {
   }[]
 }
 
+/**
+ * Present only on an AGGREGATE substrate (a collective quest's combined record).
+ * `null` for an individual vendor. Collective quest definitions read
+ * `s.collective?.member_count`; individual quests ignore it — so the engine
+ * stays generic and this behaves like any other domain-optional field.
+ */
+export interface CollectiveAggregateInfo {
+  member_count: number
+  member_ids: string[]
+}
+
 export interface VendorSubstrate {
   seller_id: string
   generated_at: string
@@ -100,6 +111,8 @@ export interface VendorSubstrate {
   production: ProductionSummary | null
   channels: ChannelSummary | null
   documents: VaultSummary | null
+  /** Null for individual vendors; populated when this is an aggregate. */
+  collective: CollectiveAggregateInfo | null
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -190,6 +203,10 @@ export interface QuestDefinition {
   /** When true, packet/tier copy reflects verified credentials ONLY and never
    *  implies clinical/medical authority (wellness health-claims guardrail). */
   healthClaimsGuardrail?: boolean
+  /** For collective quests: substrate scopes a member must consent to before
+   *  their record may be aggregated. A member is included ONLY if they consent
+   *  to every scope here (never aggregate data a member didn't consent to). */
+  requiredConsentScopes?: string[]
 }
 
 // ────────────────────────────────────────────────────────────────────────────

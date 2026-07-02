@@ -680,6 +680,16 @@ export const RouteMap: RouteObject[] = [
                 lazy: () => import("../../routes/quests/quest-list"),
               },
               {
+                path: "collectives",
+                lazy: () =>
+                  import("../../routes/quests/collectives/collectives-list"),
+              },
+              {
+                path: "collectives/:id",
+                lazy: () =>
+                  import("../../routes/quests/collectives/collective-detail"),
+              },
+              {
                 path: ":id",
                 lazy: () => import("../../routes/quests/quest-detail"),
               },

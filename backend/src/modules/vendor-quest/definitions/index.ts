@@ -2,6 +2,7 @@ import type { QuestDefinition } from "../types"
 import fsaFarmLoan from "./fsa-farm-loan"
 import wellnessInsurance from "./wellness-insurance"
 import trustTier from "./trust-tier"
+import coopFormation from "./coop-formation"
 
 /**
  * Quest definition registry.
@@ -15,6 +16,7 @@ export const QUEST_DEFINITIONS: QuestDefinition[] = [
   fsaFarmLoan,
   wellnessInsurance,
   trustTier,
+  coopFormation,
 ]
 
 const BY_KEY: Record<string, QuestDefinition> = Object.fromEntries(

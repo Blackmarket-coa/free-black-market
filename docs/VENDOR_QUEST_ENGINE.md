@@ -96,6 +96,32 @@ Adding, say, **Q5 Wholesale Account Readiness**:
 Verify with `TEST_TYPE=unit pnpm test:unit` — the engine test scans `engine.ts`
 and fails if any quest key or domain-field literal leaks into engine code.
 
+## Collective quests (Q11–Q13)
+
+Collective quests reuse the **same generic engine** — no collective-specific
+evaluation code. The flow:
+
+1. A vendor **forms** a collective for a `type: "collective"` quest (Q11 Co-op
+   Formation is implemented) and is auto-enrolled as the first member.
+2. Others **join** (an enrollment tagged with the `collective_id`). Joining grants
+   no data access.
+3. Each member records **scoped consent** (`quest_member_consent`, e.g.
+   `["revenue","operating","documents"]`). A member is aggregated only if they
+   consent to **every** scope in the definition's `requiredConsentScopes`.
+4. Evaluation builds each consenting member's substrate, combines them with
+   `aggregateSubstrates()` into one synthetic substrate (universal fields sum,
+   domain fields union, `collective.member_count` set), and runs the ordinary
+   `evaluateQuest()`. Non-consenting members and non-members are never read, so
+   one vendor's records never leak to another.
+5. The **owner** generates the joint packet once the final gate opens; it's
+   assembled from the aggregate exactly like an individual packet.
+
+`collective` is a domain-optional substrate field (`null` for individuals), so a
+collective definition reading `s.collective?.member_count` needs no engine
+branching. Routes live under `/vendor/quests/collective*`; consent is
+always self-scoped (a seller can only consent for themselves), and detail/packet
+access is limited to members/owner.
+
 ## Hard constraints (for all contributors)
 
 1. **Assemble, never fabricate.** No synthetic credit reports, IDs, legal
