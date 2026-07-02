@@ -15,6 +15,12 @@ export const PHASE0_FEATURE_FLAGS = {
   MANAGED_ONBOARDING_V1: "FF_MANAGED_ONBOARDING_V1",
   TRAINING_RESOURCES_V1: "FF_TRAINING_RESOURCES_V1",
   PROMO_CAMPAIGNS_V1: "FF_PROMO_CAMPAIGNS_V1",
+  // Vendor Quest engine + its opt-in substrate/vertical modules. Each is
+  // independently adoptable; enabling one never forces another.
+  VENDOR_QUESTS_V1: "FF_VENDOR_QUESTS_V1",
+  PRODUCTION_LEDGER_V1: "FF_PRODUCTION_LEDGER_V1",
+  DOCUMENT_VAULT_V1: "FF_DOCUMENT_VAULT_V1",
+  NURSERY_VERTICAL_V1: "FF_NURSERY_VERTICAL_V1",
 } as const
 
 export type Phase0FeatureFlag = keyof typeof PHASE0_FEATURE_FLAGS

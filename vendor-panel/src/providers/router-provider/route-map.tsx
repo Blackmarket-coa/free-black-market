@@ -669,6 +669,65 @@ export const RouteMap: RouteObject[] = [
             ],
           },
           {
+            path: "/quests",
+            errorElement: <ErrorBoundary />,
+            handle: {
+              breadcrumb: () => "Quests",
+            },
+            children: [
+              {
+                path: "",
+                lazy: () => import("../../routes/quests/quest-list"),
+              },
+              {
+                path: "collectives",
+                lazy: () =>
+                  import("../../routes/quests/collectives/collectives-list"),
+              },
+              {
+                path: "collectives/:id",
+                lazy: () =>
+                  import("../../routes/quests/collectives/collective-detail"),
+              },
+              {
+                path: ":id",
+                lazy: () => import("../../routes/quests/quest-detail"),
+              },
+            ],
+          },
+          {
+            path: "/nursery/profit-per-sqft",
+            errorElement: <ErrorBoundary />,
+            handle: {
+              breadcrumb: () => "Profit / SqFt",
+            },
+            lazy: () => import("../../routes/nursery/profit-per-sqft"),
+          },
+          {
+            path: "/nursery/listings",
+            errorElement: <ErrorBoundary />,
+            handle: { breadcrumb: () => "Nursery Listings" },
+            lazy: () => import("../../routes/nursery/listings"),
+          },
+          {
+            path: "/nursery/channels",
+            errorElement: <ErrorBoundary />,
+            handle: { breadcrumb: () => "Wholesale Channels" },
+            lazy: () => import("../../routes/nursery/channels"),
+          },
+          {
+            path: "/vault",
+            errorElement: <ErrorBoundary />,
+            handle: { breadcrumb: () => "Document Vault" },
+            lazy: () => import("../../routes/vault"),
+          },
+          {
+            path: "/production",
+            errorElement: <ErrorBoundary />,
+            handle: { breadcrumb: () => "Production Ledger" },
+            lazy: () => import("../../routes/production"),
+          },
+          {
             path: "/promotions",
             errorElement: <ErrorBoundary />,
             handle: {
