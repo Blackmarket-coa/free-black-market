@@ -66,6 +66,30 @@ gracefully around them:
 A service / digital / practitioner vendor has every domain field `null` and is a
 **first-class citizen** — this is enforced by tests, not just intent.
 
+## Implemented catalog (Q1–Q13)
+
+All thirteen catalog quests ship as definitions in `definitions/`, each running
+through the same engine:
+
+| # | Key | Type | Packet |
+|---|-----|------|--------|
+| Q1 | `fsa-farm-loan` | individual | Lender Packet |
+| Q2 | `grant-readiness` | individual | Grant Application Packet |
+| Q3 | `microlender-readiness` | individual | Lender Summary |
+| Q4 | `crowdfunding-traction` | individual | Traction One-Pager |
+| Q5 | `wholesale-account` | individual | Line Sheet + Capacity |
+| Q6 | `market-vendor` | individual | Vendor Application Bundle |
+| Q7 | `ready-to-hire` | individual | Hiring-Readiness Summary |
+| Q8 | `compliance-tracker` | individual | Certification Checklist *(guardrail)* |
+| Q9 | `wellness-insurance` | individual | Insurer Summary *(guardrail)* |
+| Q10 | `trust-tier` | individual | none (internal) *(guardrail)* |
+| Q11 | `coop-formation` | collective | Co-op Formation Bundle |
+| Q12 | `land-pooling` | collective | Joint Financing Packet |
+| Q13 | `commons-contribution` | individual | none (internal + XP) |
+
+A whole-catalog test (`__tests__/catalog.unit.spec.ts`) runs every definition
+through the engine, so a regression in any one is caught.
+
 ## How to author a new quest definition
 
 Adding, say, **Q5 Wholesale Account Readiness**:

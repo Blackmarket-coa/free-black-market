@@ -42,3 +42,24 @@ export const repeatCustomersAtLeast = (n: number) => (s: VendorSubstrate) =>
 
 export const verifiedDocsAtLeast = (n: number) => (s: VendorSubstrate) =>
   (s.documents?.documents.filter((d) => d.verified).length ?? 0) >= n
+
+export const ordersFulfilledAtLeast = (n: number) => (s: VendorSubstrate) =>
+  s.operating.orders_fulfilled >= n
+
+export const distinctCustomersAtLeast = (n: number) => (s: VendorSubstrate) =>
+  s.customers.distinct_customers >= n
+
+export const listingsAtLeast = (n: number) => (s: VendorSubstrate) =>
+  s.operating.listing_count >= n
+
+/** Reliability must be PROVEN — a null (not-enough-data) reading does not pass. */
+export const fulfillmentReliabilityAtLeast = (x: number) => (s: VendorSubstrate) =>
+  s.operating.fulfillment_reliability != null &&
+  s.operating.fulfillment_reliability >= x
+
+export const membersAtLeast = (n: number) => (s: VendorSubstrate) =>
+  (s.collective?.member_count ?? 0) >= n
+
+/** A verified document of a given type exists in the vault. */
+export const hasVerifiedDocType = (docType: string) => (s: VendorSubstrate) =>
+  (s.documents?.documents ?? []).some((d) => d.doc_type === docType && d.verified)
