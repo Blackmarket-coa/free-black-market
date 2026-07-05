@@ -40,10 +40,12 @@ export function makeAwardXp(req: MedusaRequest) {
         fields: ["id", "members.id", "members.role"],
         filters: { id: sellerId },
       })
-      const members: Array<{ id?: string; role?: string }> =
-        data?.[0]?.members ?? []
+      const members = (data?.[0]?.members ?? []) as Array<{
+        id?: string
+        role?: string
+      } | null>
       customerId =
-        members.find((m) => m.role === "owner")?.id ?? members[0]?.id ?? null
+        members.find((m) => m?.role === "owner")?.id ?? members[0]?.id ?? null
     } catch {
       customerId = null
     }
