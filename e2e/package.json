@@ -5,7 +5,12 @@
   "scripts": {
     "test": "playwright test",
     "test:ui": "playwright test --ui",
-    "report": "playwright show-report"
+    "report": "playwright show-report",
+    "report:agents": "playwright show-report playwright-report-agents",
+    "agents": "playwright test --config=agents/playwright.agents.config.ts",
+    "agents:instrument": "playwright test --config=agents/playwright.agents.config.ts instrument.spec.ts",
+    "test:agents": "playwright test --config=agents/playwright.agents.config.ts",
+    "test:agents:stress": "playwright test --config=agents/playwright.agents.config.ts stress"
   },
   "devDependencies": {
     "@playwright/test": "^1.48.2"
