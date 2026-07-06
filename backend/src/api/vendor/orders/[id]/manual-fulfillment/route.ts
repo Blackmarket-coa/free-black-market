@@ -31,10 +31,17 @@ const allowedTransitions: Record<ManualFulfillmentStatus, ManualFulfillmentStatu
  * check any authenticated vendor could read/drive the manual-fulfillment state
  * machine for any order id and forge a supplier transition.
  */
+type SellerRow = { id?: string; products?: Array<{ id?: string | null }> }
+type OwnedOrder = {
+  id: string
+  metadata?: Record<string, unknown> | null
+  items?: Array<{ product_id?: string | null }>
+}
+
 async function loadOwnedOrder(
   req: MedusaRequest,
   res: MedusaResponse
-): Promise<{ order: any } | null> {
+): Promise<{ order: OwnedOrder } | null> {
   const sellerId = (
     req as unknown as { auth_context?: { actor_id?: string } }
   ).auth_context?.actor_id
@@ -44,21 +51,21 @@ async function loadOwnedOrder(
   }
 
   const query = req.scope.resolve(ContainerRegistrationKeys.QUERY) as {
-    graph: (a: Record<string, unknown>) => Promise<{ data: any[] }>
+    graph: <T = unknown>(a: Record<string, unknown>) => Promise<{ data: T[] }>
   }
 
-  const { data: sellers } = await query.graph({
+  const { data: sellers } = await query.graph<SellerRow>({
     entity: "seller",
     fields: ["id", "products.id"],
     filters: { id: sellerId },
   })
   const productIds = new Set<string>(
     (sellers?.[0]?.products ?? [])
-      .map((p: { id?: string }) => p?.id)
-      .filter((x: string | undefined): x is string => !!x)
+      .map((p) => p?.id)
+      .filter((x): x is string => !!x)
   )
 
-  const { data: orders } = await query.graph({
+  const { data: orders } = await query.graph<OwnedOrder>({
     entity: "order",
     fields: ["id", "metadata", "items.product_id"],
     filters: { id: req.params.id },
@@ -70,7 +77,7 @@ async function loadOwnedOrder(
   }
 
   const owns = (order.items ?? []).some(
-    (it: { product_id?: string }) => it.product_id && productIds.has(it.product_id)
+    (it) => it.product_id && productIds.has(it.product_id)
   )
   if (!owns) {
     res.status(403).json({ message: "Access denied" })

@@ -3,9 +3,16 @@ import { ORDER_CYCLE_MODULE } from "../../../modules/order-cycle"
 import type OrderCycleModuleService from "../../../modules/order-cycle/service"
 import type { VendorRequest } from "../types"
 
+type OrderCycleRecord = Awaited<
+  ReturnType<OrderCycleModuleService["retrieveOrderCycle"]>
+>
+type OrderCycleSellerRecord = Awaited<
+  ReturnType<OrderCycleModuleService["listOrderCycleSellers"]>
+>[number]
+
 export type CycleAccess = {
   sellerId: string
-  orderCycle: any
+  orderCycle: OrderCycleRecord
   isCoordinator: boolean
 }
 
@@ -43,7 +50,7 @@ export async function resolveCycleAccess(
     ORDER_CYCLE_MODULE
   )
 
-  let orderCycle: any
+  let orderCycle: OrderCycleRecord
   try {
     orderCycle = await orderCycleService.retrieveOrderCycle(cycleId)
   } catch (_error) {
@@ -65,7 +72,7 @@ export async function resolveCycleAccess(
       order_cycle_id: cycleId,
     })
     const isParticipant = (sellers ?? []).some(
-      (s: any) => s.seller_id === sellerId && s.is_active
+      (s: OrderCycleSellerRecord) => s.seller_id === sellerId && s.is_active
     )
     if (!isCoordinator && !isParticipant) {
       res.status(403).json({ message: "Access denied" })

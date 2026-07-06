@@ -2,6 +2,10 @@ import type { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import OrderCycleModuleService from "../../../../../../modules/order-cycle/service"
 import { resolveCycleAccess } from "../../../_access"
 
+type OrderCycleFeeRecord = Awaited<
+  ReturnType<OrderCycleModuleService["retrieveOrderCycleFee"]>
+>
+
 // DELETE /vendor/order-cycles/:id/fees/:feeId - Remove fee from order cycle
 export const DELETE = async (req: MedusaRequest, res: MedusaResponse) => {
   const { id, feeId } = req.params
@@ -18,7 +22,7 @@ export const DELETE = async (req: MedusaRequest, res: MedusaResponse) => {
 
   // The fee must belong to the cycle named in the path — the previous handler
   // deleted by global feeId while ignoring :id entirely.
-  let fee: any
+  let fee: OrderCycleFeeRecord
   try {
     fee = await orderCycleService.retrieveOrderCycleFee(feeId)
   } catch (_error) {

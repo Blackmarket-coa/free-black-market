@@ -2,6 +2,10 @@ import type { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import OrderCycleModuleService from "../../../../../../modules/order-cycle/service"
 import { resolveCycleAccess } from "../../../_access"
 
+type OrderCycleExchangeRecord = Awaited<
+  ReturnType<OrderCycleModuleService["retrieveOrderCycleExchange"]>
+>
+
 interface UpdateExchangeBody {
   pickup_time?: string
   pickup_instructions?: string
@@ -18,7 +22,7 @@ async function loadAuthorizedExchange(
   req: MedusaRequest,
   res: MedusaResponse,
   requireCoordinator: boolean
-): Promise<{ exchange: any } | null> {
+): Promise<{ exchange: OrderCycleExchangeRecord } | null> {
   const { id, exchangeId } = req.params
 
   const access = await resolveCycleAccess(req, res, id, {
@@ -30,7 +34,7 @@ async function loadAuthorizedExchange(
     "orderCycleModuleService"
   )
 
-  let exchange: any
+  let exchange: OrderCycleExchangeRecord
   try {
     exchange = await orderCycleService.retrieveOrderCycleExchange(exchangeId)
   } catch (_error) {
