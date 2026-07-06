@@ -1,4 +1,4 @@
-import { MedusaService } from "@medusajs/framework/utils"
+import { MedusaService, ContainerRegistrationKeys } from "@medusajs/framework/utils"
 import {
   DemandPost,
   DemandParticipant,
@@ -315,6 +315,36 @@ class DemandPoolModuleService extends MedusaService({
     return bounty
   }
 
+  /**
+   * Resolve a knex-style pg connection with `.raw` for atomic updates the
+   * MedusaService CRUD can't express. Mirrors the resolver in
+   * modules/hawala-ledger/service.ts. Returns undefined when no connection is
+   * reachable (e.g. unit tests without DI).
+   */
+  private resolvePgConnection():
+    | { raw: (sql: string, bindings?: any[]) => Promise<any> }
+    | undefined {
+    const container = (this as any).__container__
+    try {
+      const pg =
+        container?.resolve?.(ContainerRegistrationKeys.PG_CONNECTION) ??
+        container?.[ContainerRegistrationKeys.PG_CONNECTION]
+      if (pg?.raw) return pg
+    } catch {
+      // fall through
+    }
+    try {
+      const em =
+        (this as any).baseRepository_?.getActiveManager?.() ??
+        container?.manager
+      const knex = em?.getConnection?.()?.getKnex?.()
+      if (knex?.raw) return knex
+    } catch {
+      // no reachable connection
+    }
+    return undefined
+  }
+
   async completeBountyMilestone(
     bountyId: string,
     milestoneIndex: number
@@ -344,12 +374,53 @@ class DemandPoolModuleService extends MedusaService({
       throw new Error("Milestone already completed")
     }
 
-    // Concurrency guard: re-read the bounty immediately before the write
-    // and verify the milestone is still un-completed and the bounty is
-    // still payable. This read-check-write mirrors the pattern used
-    // elsewhere in this service; a DB-level compare-and-set (atomic
-    // UPDATE ... WHERE milestones[idx].completed = false) is the
-    // hardening follow-up.
+    const payoutAmount =
+      (Number(bounty.amount) * milestones[milestoneIndex].percentage) / 100
+    const totalMilestones = milestones.length
+
+    // Atomic per-index completion (B-money-10). A single UPDATE flips exactly
+    // this milestone's `completed` flag via jsonb_set (so a concurrent
+    // completion of a DIFFERENT index cannot clobber it via a whole-array
+    // overwrite) and bumps milestones_completed / amount_paid_out with
+    // `col = col + delta`. The WHERE guard makes double-completion of the same
+    // index a no-op (rowCount 0). demand_bounty stores amount_paid_out as a
+    // plain NUMERIC with no `raw_` sibling, so the raw-SQL increment is read
+    // back correctly by the ORM.
+    const pg = this.resolvePgConnection()
+    if (pg) {
+      const result = await pg.raw(
+        `UPDATE demand_bounty
+            SET milestones = jsonb_set(milestones, array[?::text, 'completed'], 'true'::jsonb),
+                milestones_completed = milestones_completed + 1,
+                amount_paid_out = amount_paid_out + ?,
+                status = (CASE WHEN milestones_completed + 1 >= ? THEN 'COMPLETED' ELSE 'MILESTONE_PARTIAL' END)::bounty_status_enum,
+                updated_at = NOW()
+          WHERE id = ?
+            AND deleted_at IS NULL
+            AND status IN ('ACTIVE', 'MILESTONE_PARTIAL')
+            AND COALESCE((milestones -> ? ->> 'completed')::boolean, false) = false
+        RETURNING milestones_completed, amount_paid_out, status`,
+        [milestoneIndex, payoutAmount, totalMilestones, bountyId, milestoneIndex]
+      )
+      const row = result?.rows?.[0]
+      if (!row) {
+        // Nothing updated → the milestone was completed (or the bounty left a
+        // payable status) between our read and this write.
+        throw new Error("Milestone already completed")
+      }
+      const completedCount = Number(row.milestones_completed)
+      return {
+        bounty_id: bountyId,
+        milestone_index: milestoneIndex,
+        payout_amount: payoutAmount,
+        total_paid_out: Number(row.amount_paid_out),
+        new_status: row.status as BountyStatus,
+        all_completed: completedCount >= totalMilestones,
+      }
+    }
+
+    // Fallback (no reachable pg connection, e.g. unit tests without DI):
+    // re-read and do a best-effort read-modify-write off the freshest state.
     const fresh = await this.listDemandBounties({ id: bountyId })
     if (fresh.length === 0) {
       throw new Error("Bounty not found")
@@ -373,20 +444,17 @@ class DemandPoolModuleService extends MedusaService({
       throw new Error("Milestone already completed")
     }
 
-    milestones[milestoneIndex].completed = true
-    const completedCount = milestones.filter((m) => m.completed).length
-    const payoutAmount =
-      (Number(bounty.amount) * milestones[milestoneIndex].percentage) / 100
-    const totalPaidOut = Number(bounty.amount_paid_out) + payoutAmount
-
+    freshMilestones[milestoneIndex].completed = true
+    const completedCount = freshMilestones.filter((m) => m.completed).length
+    const totalPaidOut = Number(freshBounty.amount_paid_out) + payoutAmount
     const newStatus =
-      completedCount === milestones.length
+      completedCount === totalMilestones
         ? BountyStatus.COMPLETED
         : BountyStatus.MILESTONE_PARTIAL
 
     await this.updateDemandBounties({
       id: bountyId,
-      milestones: milestones as unknown as Record<string, unknown>,
+      milestones: freshMilestones as unknown as Record<string, unknown>,
       milestones_completed: completedCount,
       amount_paid_out: totalPaidOut,
       status: newStatus,
@@ -398,7 +466,7 @@ class DemandPoolModuleService extends MedusaService({
       payout_amount: payoutAmount,
       total_paid_out: totalPaidOut,
       new_status: newStatus,
-      all_completed: completedCount === milestones.length,
+      all_completed: completedCount === totalMilestones,
     }
   }
 
