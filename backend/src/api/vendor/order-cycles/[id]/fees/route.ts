@@ -1,5 +1,6 @@
 import type { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import OrderCycleModuleService from "../../../../../modules/order-cycle/service"
+import { resolveCycleAccess } from "../../_access"
 
 interface ApplyFeeBody {
   enterprise_fee_id: string
@@ -10,6 +11,11 @@ interface ApplyFeeBody {
 // GET /vendor/order-cycles/:id/fees - List fees for order cycle
 export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
   const { id } = req.params
+  const access = await resolveCycleAccess(req, res, id, {
+    requireCoordinator: false,
+  })
+  if (!access) return
+
   const orderCycleService: OrderCycleModuleService = req.scope.resolve("orderCycleModuleService")
 
   try {
@@ -39,6 +45,13 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
 export const POST = async (req: MedusaRequest<ApplyFeeBody>, res: MedusaResponse) => {
   const { id } = req.params
   const { enterprise_fee_id, application_type, target_seller_id } = req.body
+
+  // Applying a fee changes settlement amounts for the cycle — coordinator only.
+  const access = await resolveCycleAccess(req, res, id, {
+    requireCoordinator: true,
+  })
+  if (!access) return
+
   const orderCycleService: OrderCycleModuleService = req.scope.resolve("orderCycleModuleService")
 
   try {
