@@ -1,4 +1,4 @@
-import { MedusaService } from "@medusajs/framework/utils"
+import { MedusaService, ContainerRegistrationKeys } from "@medusajs/framework/utils"
 import {
   CharacterSheet,
   XpEvent,
@@ -445,6 +445,72 @@ class ProgressionModuleService extends MedusaService({
   }
 
   /**
+   * Resolve a knex-style pg connection with a `.raw` method, for atomic
+   * conditional updates that MedusaService's generated CRUD can't express.
+   * Mirrors the resolver in modules/hawala-ledger/service.ts. Returns undefined
+   * when no connection is reachable (e.g. unit tests without DI).
+   */
+  private resolvePgConnection():
+    | { raw: (sql: string, bindings?: any[]) => Promise<any> }
+    | undefined {
+    const container = (this as any).__container__
+    try {
+      const pg =
+        container?.resolve?.(ContainerRegistrationKeys.PG_CONNECTION) ??
+        container?.[ContainerRegistrationKeys.PG_CONNECTION]
+      if (pg?.raw) return pg
+    } catch {
+      // fall through
+    }
+    try {
+      const em =
+        (this as any).baseRepository_?.getActiveManager?.() ??
+        container?.manager
+      const knex = em?.getConnection?.()?.getKnex?.()
+      if (knex?.raw) return knex
+    } catch {
+      // no reachable connection
+    }
+    return undefined
+  }
+
+  /**
+   * Atomically debit spendable XP via a single conditional UPDATE
+   * (`spendable_xp = spendable_xp - cost WHERE spendable_xp >= cost`). This is a
+   * true DB-level compare-and-swap that prevents the redemption double-spend.
+   *
+   * @returns `true` when the debit committed, `false` when the balance was
+   * insufficient (0 rows updated), or `null` when no pg connection is reachable
+   * so the caller can fall back to a read-modify-write.
+   */
+  private async atomicDebitSpendableXp(
+    sheetId: string,
+    cost: number
+  ): Promise<boolean | null> {
+    const pg = this.resolvePgConnection()
+    if (!pg) return null
+
+    const result = await pg.raw(
+      `UPDATE character_sheet
+          SET spendable_xp = spendable_xp - ?,
+              updated_at = NOW()
+        WHERE id = ?
+          AND deleted_at IS NULL
+          AND spendable_xp >= ?`,
+      [cost, sheetId, cost]
+    )
+
+    const rowCount =
+      typeof result?.rowCount === "number"
+        ? result.rowCount
+        : typeof result?.rows?.length === "number" && result.rowCount === undefined
+          ? result.rows.length
+          : result?.rowCount
+
+    return !!rowCount
+  }
+
+  /**
    * Debit spendable XP and open a `pending` redemption for a catalog reward.
    *
    * This is the money-movement half of a redemption; the caller (an API route
@@ -462,17 +528,27 @@ class ProgressionModuleService extends MedusaService({
     }
 
     const sheet = await this.getOrCreateCharacterSheet(customerId)
-    const balance = Number(sheet.spendable_xp ?? 0)
-    if (balance < reward.xpCost) {
-      throw new InsufficientXpError(reward.xpCost, balance)
-    }
 
-    // Debit first, then write the audit row, so concurrent reads never see the
-    // balance before it has been reduced.
-    await this.updateCharacterSheets({
-      id: sheet.id,
-      spendable_xp: balance - reward.xpCost,
-    })
+    // Debit with a DB-level compare-and-swap so concurrent redemptions can't
+    // double-spend. The previous read-check-then-write let two simultaneous
+    // requests both pass the balance check and both write `balance - cost`,
+    // granting two entitlements for a single debit (TOCTOU lost update).
+    const debited = await this.atomicDebitSpendableXp(sheet.id, reward.xpCost)
+    if (debited === false) {
+      throw new InsufficientXpError(reward.xpCost, Number(sheet.spendable_xp ?? 0))
+    }
+    if (debited === null) {
+      // No pg connection reachable (e.g. unit tests without DI). Fall back to
+      // the legacy read-modify-write, which is still correct single-threaded.
+      const balance = Number(sheet.spendable_xp ?? 0)
+      if (balance < reward.xpCost) {
+        throw new InsufficientXpError(reward.xpCost, balance)
+      }
+      await this.updateCharacterSheets({
+        id: sheet.id,
+        spendable_xp: balance - reward.xpCost,
+      })
+    }
 
     const [redemption] = await this.createXpRedemptions([
       {
