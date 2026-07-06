@@ -3,9 +3,10 @@
  *
  * Recomputes the "ledger truth" for every account from the immutable
  * `hawala_ledger_entry` rows (sum of credits minus sum of debits over
- * terminal COMPLETED/SETTLED entries) and compares it to the cached
- * `hawala_ledger_account.balance`. Any drift above a small epsilon is
- * reported and logged.
+ * balance-moving COMPLETED/SETTLED/REVERSED entries — REVERSED originals
+ * still count because their offsetting refund entries are separate COMPLETED
+ * rows) and compares it to the cached `hawala_ledger_account.balance`. Any
+ * drift above a small epsilon is reported and logged.
  *
  * This is intentionally READ-ONLY: it never auto-corrects balances. A
  * detected drift is an operational signal that the cached balance and the
@@ -49,13 +50,21 @@ export async function reconcileLedgerBalances(
   const accounts = await hawala.listLedgerAccounts({})
 
   // Sum of credit amounts grouped by credit_account_id (money in) and sum
-  // of debit amounts grouped by debit_account_id (money out), over terminal
-  // entries only. Two grouped scans, combined in memory.
+  // of debit amounts grouped by debit_account_id (money out), over entries
+  // that actually moved a cached balance. Two grouped scans, combined in memory.
+  //
+  // REVERSED is included alongside COMPLETED/SETTLED: a REVERSED entry did move
+  // the cached balance while it was COMPLETED, and processRefund reverses it by
+  // creating a NEW offsetting COMPLETED entry (it does not un-move the cached
+  // balance on the reversed row). So the cache reflects BOTH the original and
+  // the offset; excluding the REVERSED originals would report false drift equal
+  // to the original leg on every refunded account (B-money-9). PENDING/FAILED
+  // entries never moved a balance and remain excluded.
   const creditResult = await pgConnection.raw(
     `SELECT credit_account_id AS account_id, COALESCE(SUM(amount), 0) AS total
        FROM hawala_ledger_entry
       WHERE deleted_at IS NULL
-        AND status IN ('COMPLETED', 'SETTLED')
+        AND status IN ('COMPLETED', 'SETTLED', 'REVERSED')
         AND credit_account_id IS NOT NULL
       GROUP BY credit_account_id`,
     []
@@ -64,7 +73,7 @@ export async function reconcileLedgerBalances(
     `SELECT debit_account_id AS account_id, COALESCE(SUM(amount), 0) AS total
        FROM hawala_ledger_entry
       WHERE deleted_at IS NULL
-        AND status IN ('COMPLETED', 'SETTLED')
+        AND status IN ('COMPLETED', 'SETTLED', 'REVERSED')
         AND debit_account_id IS NOT NULL
       GROUP BY debit_account_id`,
     []
