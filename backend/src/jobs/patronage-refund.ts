@@ -181,6 +181,14 @@ export default async function patronageRefundJob(container: MedusaContainer) {
 
 export const config = {
   name: "patronage-quarterly-refund",
-  // First day of each quarter at 02:00 UTC.
-  schedule: "0 2 1 1,4,7,10 *",
+  // First day of each quarter at 02:00 UTC (production, redis-backed workflow
+  // engine). When REDIS_URL is unset (integration tests / redis-less dev) Medusa
+  // uses the in-memory workflow engine, which schedules the next run with a raw
+  // `setTimeout(delayMs)`. A quarterly interval (~90 days) exceeds Node's 32-bit
+  // timer limit (~24.8 days), so the delay overflows, gets clamped to 1ms, fires
+  // immediately, reschedules a quarter further out, overflows again — an infinite
+  // 1ms busy-loop that leaks timers and OOMs the process. Fall back to a daily
+  // cron there: it never fits-to-overflow, is idempotent, and never actually
+  // fires during a short test run. Production (redis engine) is unaffected.
+  schedule: process.env.REDIS_URL ? "0 2 1 1,4,7,10 *" : "0 2 * * *",
 }

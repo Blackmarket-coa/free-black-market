@@ -37,6 +37,10 @@ export const POST = async (req: MedusaRequest<UpsertBody>, res: MedusaResponse) 
 
   const service = req.scope.resolve<NurseryVerticalModuleService>(NURSERY_VERTICAL_MODULE)
   const { product_id, ...data } = b
-  const attribute = await service.upsertForProduct(sellerId, product_id, data as any)
+  const attribute = await service.upsertForProduct(
+    sellerId,
+    product_id,
+    data as Record<string, unknown>
+  )
   res.status(201).json({ attribute })
 }

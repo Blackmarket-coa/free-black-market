@@ -20,14 +20,14 @@ export const POST = async (req: MedusaRequest, res: MedusaResponse) => {
     return res.status(403).json({ message: "Only the collective owner can generate the joint packet" })
   }
 
-  const agg = await evaluateCollectiveFromConsent(req, collective as any)
+  const agg = await evaluateCollectiveFromConsent(req, collective)
   if (!agg.aggregate) {
     return res.status(400).json({ message: "No consenting members to aggregate yet" })
   }
 
   try {
     const { export: exportData, html } = await service.generateCollectivePacket(
-      collective as any,
+      collective,
       agg.aggregate
     )
     if (req.query.format === "html") {
@@ -35,7 +35,7 @@ export const POST = async (req: MedusaRequest, res: MedusaResponse) => {
       return res.send(html)
     }
     res.json({ packet: exportData, html })
-  } catch (e: any) {
-    res.status(400).json({ message: e.message })
+  } catch (e) {
+    res.status(400).json({ message: (e as Error).message })
   }
 }

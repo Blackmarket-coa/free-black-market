@@ -15,10 +15,10 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
     return res.status(404).json({ message: "Not found" })
   }
 
-  let evaluation: any = null
+  let evaluation: Awaited<ReturnType<typeof service.syncProgress>> | null = null
   if (enrollment.status === "ACTIVE") {
     const substrate = await buildSubstrate(sellerId, req.scope)
-    evaluation = await service.syncProgress(enrollment as any, substrate, {
+    evaluation = await service.syncProgress(enrollment, substrate, {
       awardXp: makeAwardXp(req),
     })
   }

@@ -24,7 +24,7 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
     return res.status(404).json({ message: "Not found" })
   }
 
-  const agg = await evaluateCollectiveFromConsent(req, collective as any)
+  const agg = await evaluateCollectiveFromConsent(req, collective)
 
   res.json({
     collective,

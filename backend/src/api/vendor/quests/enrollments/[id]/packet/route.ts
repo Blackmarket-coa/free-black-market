@@ -25,7 +25,7 @@ export const POST = async (req: MedusaRequest, res: MedusaResponse) => {
   try {
     const substrate = await buildSubstrate(sellerId, req.scope)
     const { export: exportData, html } = await service.generatePacket(
-      enrollment as any,
+      enrollment,
       substrate
     )
 
@@ -34,7 +34,7 @@ export const POST = async (req: MedusaRequest, res: MedusaResponse) => {
       return res.send(html)
     }
     res.json({ packet: exportData, html })
-  } catch (e: any) {
-    res.status(400).json({ message: e.message })
+  } catch (e) {
+    res.status(400).json({ message: (e as Error).message })
   }
 }
