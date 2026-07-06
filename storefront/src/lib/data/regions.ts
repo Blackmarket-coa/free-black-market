@@ -11,7 +11,7 @@ export const listRegions = async () => {
     revalidate: 3600,
   }
 
-  return medusaFetch<{ regions: HttpTypes.StoreRegion[] }>(`/store/regions?fields=id,name,currency_code`, {
+  return medusaFetch<{ regions: HttpTypes.StoreRegion[] }>(`/store/regions?fields=id,name,currency_code,countries.*`, {
     method: "GET",
     next,
     cache: "force-cache",
@@ -55,7 +55,7 @@ export const getRegion = async (countryCode: string) => {
       })
     })
 
-    // Fallback: return first region when no country match (countries not fetched due to ORM bug)
+    // Fallback: return first region when no country match.
     const region = countryCode
       ? (regionMap.get(countryCode) ?? regions[0])
       : (regionMap.get("us") ?? regions[0])
