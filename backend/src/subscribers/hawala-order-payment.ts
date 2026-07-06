@@ -108,10 +108,17 @@ export default async function hawalaOrderPaymentSubscriber({
     // Calculate amounts using payout-breakdown service for accurate fees
     // IMPORTANT: order.total is in CENTS, convert to DOLLARS for ledger
     const totalAmount = centsToDollars(Number(order.total))
-    
-    // Get platform fee from payout config (respects seller-specific overrides)
+
+    // Get platform fee from payout config (respects seller-specific overrides).
+    // The fee is charged on the SUBTOTAL, not order.total — matching the
+    // customer-facing transparency breakdown (payout-breakdown/service.ts).
+    // Charging on order.total previously skimmed the platform's percentage off
+    // the customer's tax, delivery and tip, so the ledger and the displayed
+    // breakdown disagreed for the same order. Tax/delivery/tip remain in the
+    // seller leg pending a fuller multi-leg settlement.
+    const feeBaseAmount = centsToDollars(Number(order.subtotal ?? order.total))
     const platformFeePercent = await payoutService.getEffectivePlatformFee(sellerId)
-    const platformFeeAmount = totalAmount * (platformFeePercent / 100)
+    const platformFeeAmount = feeBaseAmount * (platformFeePercent / 100)
 
     // Look up creator attribution (idempotent — created earlier by
     // attribute-order-on-placed subscriber, but we look it up rather than

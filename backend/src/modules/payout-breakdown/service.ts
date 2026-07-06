@@ -130,11 +130,20 @@ class PayoutBreakdownService extends MedusaService({
     const config = await this.getDefaultConfig()
     const sellerSettings = await this.getSellerSettings(sellerId)
     
-    // Check for custom fee that's still valid
-    if (sellerSettings?.custom_platform_fee_percent !== null) {
-      const expiresAt = sellerSettings?.fee_reduction_expires_at
+    // Check for custom fee that's still valid.
+    // Guard on sellerSettings itself: when no settings row exists (the default
+    // for every seller today — createSellerPayoutSettings has no call site),
+    // getSellerSettings returns null and `null?.custom_platform_fee_percent !== null`
+    // is `undefined !== null` → true, which previously fell through to a
+    // non-null assertion and threw a TypeError swallowed by the order subscriber.
+    if (
+      sellerSettings &&
+      sellerSettings.custom_platform_fee_percent !== null &&
+      sellerSettings.custom_platform_fee_percent !== undefined
+    ) {
+      const expiresAt = sellerSettings.fee_reduction_expires_at
       if (!expiresAt || new Date(expiresAt) > new Date()) {
-        return sellerSettings!.custom_platform_fee_percent!
+        return sellerSettings.custom_platform_fee_percent
       }
     }
     

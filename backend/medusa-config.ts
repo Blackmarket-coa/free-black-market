@@ -201,6 +201,7 @@ const marketplaceModules = [
   { resolve: './src/modules/document-vault' },
   { resolve: './src/modules/nursery-vertical' },
   { resolve: './src/modules/payout-breakdown' },
+  { resolve: './src/modules/asset-graph' },
   { resolve: './src/modules/harvest-batches' },
   { resolve: './src/modules/vendor-rules' },
   { resolve: './src/modules/supplier-forwarding' },
