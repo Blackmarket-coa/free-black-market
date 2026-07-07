@@ -302,4 +302,11 @@ export const DeliveryZone = model.define("food_delivery_zone", {
   // Stats
   avg_delivery_time_minutes: model.number().nullable(),
   active_couriers: model.number().default(0),
+
+  // Ownership — the seller who created this zone. Used to authorize
+  // update/delete on the /vendor/delivery-zones routes so a vendor cannot
+  // mutate or delete a zone another vendor created. Nullable for legacy zones
+  // created before ownership tracking (those are treated as admin-managed and
+  // not mutable via the vendor routes).
+  created_by_seller_id: model.text().nullable(),
 })

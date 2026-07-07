@@ -63,6 +63,12 @@ export async function POST(
       return
     }
 
+    // Only the seller who created the zone may modify it (C-5). Legacy zones
+    // with no owner are admin-managed and not mutable via this route.
+    if (existing.created_by_seller_id !== sellerId) {
+      res.status(403).json({ message: "You do not have access to this delivery zone" })
+      return
+    }
 
     const mergedCandidate = createDeliveryZoneSchema.parse({
       name: data.name ?? existing.name,
@@ -143,6 +149,13 @@ export async function DELETE(
     const existing = await foodDistribution.retrieveDeliveryZone(id)
     if (!existing) {
       res.status(404).json({ message: "Delivery zone not found" })
+      return
+    }
+
+    // Only the seller who created the zone may delete it (C-5). Legacy zones
+    // with no owner are admin-managed and not deletable via this route.
+    if (existing.created_by_seller_id !== sellerId) {
+      res.status(403).json({ message: "You do not have access to this delivery zone" })
       return
     }
 

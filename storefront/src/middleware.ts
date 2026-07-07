@@ -33,7 +33,7 @@ async function getRegionMap(cacheId: string) {
     // 500 every route). On failure we return the (possibly empty) map and the
     // caller serves the page without a locale redirect.
     try {
-      const { regions } = await fetch(`${BACKEND_URL}/store/regions?fields=id,name,currency_code`, {
+      const { regions } = await fetch(`${BACKEND_URL}/store/regions?fields=id,name,currency_code,countries.*`, {
         headers: {
           "x-publishable-api-key": PUBLISHABLE_API_KEY!,
         },

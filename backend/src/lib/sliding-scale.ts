@@ -57,6 +57,14 @@ export const DEFAULT_TIER_MULTIPLIERS_BPS: Record<SlidingScaleTier, number> = {
 
 export const BASE_UNIT_PRICE_METADATA_KEY = "sliding_scale_base_unit_price_minor"
 
+/**
+ * Currency the stashed base price (BASE_UNIT_PRICE_METADATA_KEY) was captured
+ * in. The base is only valid while the cart stays in this currency; on a
+ * region/currency switch a stale base must not be reused (it would price the
+ * new-currency line off the old currency's amount).
+ */
+export const BASE_CURRENCY_METADATA_KEY = "sliding_scale_base_currency"
+
 export function isSlidingScaleTier(value: unknown): value is SlidingScaleTier {
   return (
     typeof value === "string" &&

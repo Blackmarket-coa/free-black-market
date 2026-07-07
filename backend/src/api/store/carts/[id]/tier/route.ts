@@ -1,7 +1,12 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
-import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils"
+import {
+  ContainerRegistrationKeys,
+  Modules,
+  defaultCurrencies,
+} from "@medusajs/framework/utils"
 import {
   BASE_UNIT_PRICE_METADATA_KEY,
+  BASE_CURRENCY_METADATA_KEY,
   computeTierUnitPriceMinor,
   isSlidingScaleTier,
   SLIDING_SCALE_TIERS,
@@ -59,6 +64,7 @@ export async function POST(req: MedusaRequest<Body>, res: MedusaResponse) {
     fields: [
       "id",
       "metadata",
+      "currency_code",
       "items.id",
       "items.product_id",
       "items.unit_price",
@@ -69,6 +75,23 @@ export async function POST(req: MedusaRequest<Body>, res: MedusaResponse) {
   })
   const cart = carts?.[0]
   if (!cart) return res.status(404).json({ message: "Cart not found" })
+
+  // Medusa line-item `unit_price` is a MAJOR-unit decimal (e.g. 19.99), but the
+  // sliding-scale helper works in MINOR units (integer cents). Convert with the
+  // currency's decimal_digits so the tier math keeps sub-unit precision instead
+  // of rounding to whole currency units (a $19.99 solidarity item was becoming
+  // $13 instead of $12.99), and so an absolute `sliding_scale_prices_minor`
+  // value is not written 100× too large.
+  const currencyCode = String(
+    (cart as { currency_code?: string }).currency_code || "usd"
+  ).toLowerCase()
+  const decimalDigits =
+    (defaultCurrencies as Record<string, { decimal_digits?: number }>)[
+      currencyCode
+    ]?.decimal_digits ?? 2
+  const minorFactor = 10 ** decimalDigits
+  const toMinor = (major: number) => Math.round(major * minorFactor)
+  const toMajor = (minor: number) => minor / minorFactor
 
   const items = (cart.items ?? []) as Array<{
     id: string
@@ -148,39 +171,61 @@ export async function POST(req: MedusaRequest<Body>, res: MedusaResponse) {
 
     const itemMeta = (item.metadata ?? {}) as Record<string, unknown>
     const stashed = itemMeta[BASE_UNIT_PRICE_METADATA_KEY]
+    const stashedCurrency = itemMeta[BASE_CURRENCY_METADATA_KEY]
     const currentUnitPrice =
       typeof item.unit_price === "string"
         ? Number(item.unit_price)
         : item.unit_price
 
-    // On first apply, stash the current unit_price as the base. On
-    // subsequent applies, always derive from the stash so toggling
+    // The stashed base is only valid in the currency it was captured in. If the
+    // cart's currency changed (region switch), a stashed base from the old
+    // currency must NOT be reused — that would price the new-currency line off
+    // the old amount (e.g. a €10 base applied in a USD cart). Legacy stashes
+    // with no currency tag are treated as current-currency for back-compat.
+    // On a currency mismatch we fall back to deriving the base from the current
+    // line price and re-stash it tagged with the new currency (B-money-7).
+    const stashCurrencyMatches =
+      typeof stashedCurrency !== "string" || stashedCurrency === currencyCode
+    const stashUsable =
+      typeof stashed === "number" &&
+      Number.isFinite(stashed) &&
+      stashed >= 0 &&
+      stashCurrencyMatches
+
+    // On first apply (or after a currency switch), stash the current unit_price
+    // (converted to minor units) as the base. On subsequent same-currency
+    // applies, derive from the stash — already in minor units — so toggling
     // between tiers stays referenced to the original listed price.
-    const basePriceMinor =
-      typeof stashed === "number" && Number.isFinite(stashed) && stashed >= 0
-        ? stashed
-        : currentUnitPrice
+    const basePriceMinor = stashUsable
+      ? (stashed as number)
+      : Number.isFinite(currentUnitPrice)
+        ? toMinor(currentUnitPrice)
+        : NaN
 
     if (!Number.isFinite(basePriceMinor) || basePriceMinor < 0) continue
 
-    const nextUnitPrice = computeTierUnitPriceMinor(
-      tier as SlidingScaleTier,
-      basePriceMinor,
-      info.metadata
+    const nextUnitPrice = toMajor(
+      computeTierUnitPriceMinor(
+        tier as SlidingScaleTier,
+        basePriceMinor,
+        info.metadata
+      )
     )
 
     const nextMetadata: Record<string, unknown> = {
       ...itemMeta,
       [BASE_UNIT_PRICE_METADATA_KEY]: basePriceMinor,
+      [BASE_CURRENCY_METADATA_KEY]: currencyCode,
       sliding_scale_tier: tier,
     }
 
     // True idempotency: re-saving the same tier on an already-priced
-    // line item is a no-op.
+    // line item (in the same currency) is a no-op.
     if (
       nextUnitPrice === currentUnitPrice &&
       item.is_custom_price === true &&
       itemMeta[BASE_UNIT_PRICE_METADATA_KEY] === basePriceMinor &&
+      itemMeta[BASE_CURRENCY_METADATA_KEY] === currencyCode &&
       itemMeta.sliding_scale_tier === tier
     ) {
       continue

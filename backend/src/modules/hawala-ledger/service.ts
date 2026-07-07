@@ -561,14 +561,19 @@ class HawalaLedgerModuleService extends MedusaService({
       throw new Error(`Insufficient balance in account ${debitAccount.account_number}`)
     }
 
-    // Create the entry
+    // Create the entry as PENDING first. The unique idempotency_key on this
+    // insert still guards against a concurrent duplicate transfer moving money
+    // twice (the second insert fails before any balance mutation). The entry is
+    // only flipped to COMPLETED once balances have actually moved, so a failed
+    // or partial balance move can never leave a phantom COMPLETED entry that
+    // moved no money (B-money-4).
     const entry = await this.createLedgerEntries({
       debit_account_id: data.debit_account_id,
       credit_account_id: data.credit_account_id,
       amount: data.amount,
       currency_code: debitAccount.currency_code,
       entry_type: data.entry_type as any,
-      status: "COMPLETED" as const,
+      status: "PENDING" as const,
       description: data.description,
       reference_type: data.reference_type as any,
       reference_id: data.reference_id,
@@ -578,22 +583,42 @@ class HawalaLedgerModuleService extends MedusaService({
       metadata: data.metadata,
     })
 
-    // Update account balances. Prefer the atomic CAS path: use the caller's
+    // Move account balances. Prefer the atomic CAS path: use the caller's
     // pg connection when supplied, otherwise self-resolve one from the module
     // container so production money moves are atomic by default (the ~39
     // createTransfer call sites don't have to thread a connection). Only when
     // no connection is reachable at all (e.g. unit tests without DI) do we
     // fall back to the legacy read-modify-write updateBalances.
+    //
+    // The debit and credit run inside a single DB transaction so they are
+    // all-or-nothing — a credit failure after a successful debit can no longer
+    // leave a one-sided balance change (B-money-4).
     const pgConnection = data.pgConnection ?? this.resolvePgConnection()
-    if (pgConnection) {
-      await this.updateBalancesAtomic(pgConnection, data.debit_account_id, -data.amount)
-      await this.updateBalancesAtomic(pgConnection, data.credit_account_id, data.amount)
-    } else {
-      await this.updateBalances(data.debit_account_id, -data.amount)
-      await this.updateBalances(data.credit_account_id, data.amount)
+    try {
+      if (pgConnection) {
+        if (typeof pgConnection.transaction === "function") {
+          await pgConnection.transaction(async (trx: any) => {
+            await this.updateBalancesAtomic(trx, data.debit_account_id, -data.amount)
+            await this.updateBalancesAtomic(trx, data.credit_account_id, data.amount)
+          })
+        } else {
+          await this.updateBalancesAtomic(pgConnection, data.debit_account_id, -data.amount)
+          await this.updateBalancesAtomic(pgConnection, data.credit_account_id, data.amount)
+        }
+      } else {
+        await this.updateBalances(data.debit_account_id, -data.amount)
+        await this.updateBalances(data.credit_account_id, data.amount)
+      }
+    } catch (balanceError) {
+      // Balances did not move (or were rolled back). Mark the entry FAILED so no
+      // phantom COMPLETED row survives, then surface the original error.
+      await this.updateLedgerEntries({ id: entry.id, status: "FAILED" as const }).catch(
+        () => undefined
+      )
+      throw balanceError
     }
 
-    // Update running balances on entry
+    // Balances moved — flip the entry to COMPLETED and record running balances.
     const [newDebitAccount, newCreditAccount] = await Promise.all([
       this.retrieveLedgerAccount(data.debit_account_id),
       this.retrieveLedgerAccount(data.credit_account_id),
@@ -601,9 +626,16 @@ class HawalaLedgerModuleService extends MedusaService({
 
     await this.updateLedgerEntries({
       id: entry.id,
+      status: "COMPLETED" as const,
       debit_balance_after: newDebitAccount.balance,
       credit_balance_after: newCreditAccount.balance,
     })
+
+    // Reflect the committed state on the returned in-memory entry (it was
+    // created as PENDING above).
+    ;(entry as any).status = "COMPLETED"
+    ;(entry as any).debit_balance_after = newDebitAccount.balance
+    ;(entry as any).credit_balance_after = newCreditAccount.balance
 
     // AUDIT: Log the transfer
     auditFinancialTransaction(
@@ -1029,18 +1061,24 @@ class HawalaLedgerModuleService extends MedusaService({
 
     // Calculate proportional refund amounts
     const refundRatio = refundAmount / originalAmount
-    
-    // Find fee entry to calculate proportional fee refund
+    const roundCents = (n: number) => Math.round(n * 100) / 100
+
+    // Fee portion (Platform → Escrow)
     const feeEntry = originalEntries.find(e => e.entry_type === "COMMISSION")
     const originalFee = feeEntry ? Number(feeEntry.amount) : 0
-    const feeRefund = Math.round(originalFee * refundRatio * 100) / 100
+    const feeRefund = roundCents(originalFee * refundRatio)
 
-    // Find seller entry
-    const sellerEntry = originalEntries.find(e => 
+    // Seller entry (reversed last, as the balancing leg — see below)
+    const sellerEntry = originalEntries.find(e =>
       e.entry_type === "TRANSFER" && e.credit_account_id !== purchaseEntry.debit_account_id
     )
-    const originalSellerAmount = sellerEntry ? Number(sellerEntry.amount) : 0
-    const sellerRefund = Math.round(originalSellerAmount * refundRatio * 100) / 100
+
+    // Auto-invest legs. Escrow originally funded each producer pool, so a refund
+    // that skips these leaves escrow short by the invested amount and the
+    // escrow → customer transfer fails on the balance CAS. Dormant today
+    // (auto_invest_percentage is never populated) but must be reversed for
+    // correctness if it is ever wired (B-money-8).
+    const investmentEntries = originalEntries.filter(e => e.entry_type === "INVESTMENT")
 
     // Get system accounts
     const escrowAccount = await this.getOrCreateSystemAccount("ESCROW")
@@ -1049,21 +1087,7 @@ class HawalaLedgerModuleService extends MedusaService({
     const refundEntries: any[] = []
     const description = data.reason || `Refund for order ${data.order_id}`
 
-    // 1. Reverse seller earnings (Seller → Escrow)
-    if (sellerEntry && sellerRefund > 0) {
-      const sellerRefundEntry = await this.createTransfer({
-        debit_account_id: sellerEntry.credit_account_id, // Seller account
-        credit_account_id: escrowAccount.id,
-        amount: sellerRefund,
-        entry_type: "REFUND",
-        order_id: data.order_id,
-        description: `${description} - seller portion`,
-        idempotency_key: `${idempotencyKey}-seller`,
-      })
-      refundEntries.push(sellerRefundEntry)
-    }
-
-    // 2. Reverse platform fee (Platform → Escrow)
+    // 1. Reverse platform fee (Platform → Escrow)
     if (feeRefund > 0) {
       const feeRefundEntry = await this.createTransfer({
         debit_account_id: platformAccount.id,
@@ -1077,7 +1101,44 @@ class HawalaLedgerModuleService extends MedusaService({
       refundEntries.push(feeRefundEntry)
     }
 
-    // 3. Reverse customer payment (Escrow → Customer)
+    // 2. Reverse auto-invest legs (Pool → Escrow)
+    let investmentRefundTotal = 0
+    for (let i = 0; i < investmentEntries.length; i++) {
+      const inv = investmentEntries[i]
+      const invRefund = roundCents(Number(inv.amount) * refundRatio)
+      if (invRefund <= 0) continue
+      investmentRefundTotal += invRefund
+      const invRefundEntry = await this.createTransfer({
+        debit_account_id: inv.credit_account_id, // producer pool ledger account
+        credit_account_id: escrowAccount.id,
+        amount: invRefund,
+        entry_type: "REFUND",
+        order_id: data.order_id,
+        description: `${description} - investment reversal`,
+        idempotency_key: `${idempotencyKey}-invest-${i}`,
+      })
+      refundEntries.push(invRefundEntry)
+    }
+
+    // 3. Reverse seller earnings (Seller → Escrow). Seller is the balancing leg:
+    // seller + fee + investment reversed INTO escrow must equal the customer
+    // refund OUT of escrow, so escrow nets to exactly zero and cannot accrue
+    // sub-cent drift across the independently-rounded legs (B-money-8).
+    const sellerRefund = roundCents(refundAmount - feeRefund - investmentRefundTotal)
+    if (sellerEntry && sellerRefund > 0) {
+      const sellerRefundEntry = await this.createTransfer({
+        debit_account_id: sellerEntry.credit_account_id, // Seller account
+        credit_account_id: escrowAccount.id,
+        amount: sellerRefund,
+        entry_type: "REFUND",
+        order_id: data.order_id,
+        description: `${description} - seller portion`,
+        idempotency_key: `${idempotencyKey}-seller`,
+      })
+      refundEntries.push(sellerRefundEntry)
+    }
+
+    // 4. Reverse customer payment (Escrow → Customer)
     // Note: The actual Stripe refund should be triggered separately
     const customerRefundEntry = await this.createTransfer({
       debit_account_id: escrowAccount.id,

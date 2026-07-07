@@ -93,9 +93,11 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
       })
     }
 
-    // Create the zone
+    // Create the zone, stamping the creating seller so update/delete can be
+    // authorized to the owner (security finding C-5).
     const zone = await foodDistribution.createDeliveryZones({
       ...data,
+      created_by_seller_id: sellerId,
       // Convert dollars to cents for storage
       base_delivery_fee: Math.round(data.base_delivery_fee * 100),
       per_mile_fee: Math.round(data.per_mile_fee * 100),

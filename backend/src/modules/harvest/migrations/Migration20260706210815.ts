@@ -1,0 +1,29 @@
+import { Migration } from "@medusajs/framework/mikro-orm/migrations";
+
+export class Migration20260706210815 extends Migration {
+
+  override async up(): Promise<void> {
+    this.addSql(`create table if not exists "garden_allocation_rule" ("id" text not null, "garden_id" text not null, "season_id" text null, "crop_type" text null, "name" text not null, "description" text null, "pool_type" text check ("pool_type" in ('investor', 'volunteer', 'plot_holder', 'communal', 'open_market', 'donation', 'seed_saving', 'reserved')) not null, "percentage" numeric not null, "priority" integer not null default 1, "min_quantity" numeric null, "max_quantity" numeric null, "is_active" boolean not null default true, "effective_from" timestamptz null, "effective_until" timestamptz null, "approved_by_proposal_id" text null, "metadata" jsonb null, "raw_percentage" jsonb not null, "raw_min_quantity" jsonb null, "raw_max_quantity" jsonb null, "created_at" timestamptz not null default now(), "updated_at" timestamptz not null default now(), "deleted_at" timestamptz null, constraint "garden_allocation_rule_pkey" primary key ("id"));`);
+    this.addSql(`CREATE INDEX IF NOT EXISTS "IDX_garden_allocation_rule_deleted_at" ON "garden_allocation_rule" ("deleted_at") WHERE deleted_at IS NULL;`);
+
+    this.addSql(`create table if not exists "garden_harvest" ("id" text not null, "garden_id" text not null, "season_id" text not null, "crop_type" text not null, "variety" text null, "harvested_at" timestamptz not null, "total_quantity" numeric not null, "unit" text not null, "quality_grade" text check ("quality_grade" in ('premium', 'standard', 'seconds', 'compost')) null, "estimated_value_per_unit" numeric null, "total_estimated_value" numeric null, "allocation_status" text check ("allocation_status" in ('pending', 'allocated', 'claimed', 'complete')) not null default 'pending', "planting_ids" jsonb null, "plot_ids" jsonb null, "harvested_by_ids" jsonb null, "storage_location" text null, "storage_notes" text null, "best_by" timestamptz null, "photo_urls" jsonb null, "notes" text null, "metadata" jsonb null, "raw_total_quantity" jsonb not null, "raw_estimated_value_per_unit" jsonb null, "raw_total_estimated_value" jsonb null, "created_at" timestamptz not null default now(), "updated_at" timestamptz not null default now(), "deleted_at" timestamptz null, constraint "garden_harvest_pkey" primary key ("id"));`);
+    this.addSql(`CREATE INDEX IF NOT EXISTS "IDX_garden_harvest_deleted_at" ON "garden_harvest" ("deleted_at") WHERE deleted_at IS NULL;`);
+
+    this.addSql(`create table if not exists "garden_harvest_allocation" ("id" text not null, "harvest_id" text not null, "garden_id" text not null, "pool_type" text check ("pool_type" in ('investor', 'volunteer', 'plot_holder', 'communal', 'open_market', 'donation', 'seed_saving', 'reserved')) not null, "quantity" numeric not null, "unit" text not null, "percentage" numeric not null, "estimated_value" numeric null, "priority" integer not null default 1, "status" text check ("status" in ('allocated', 'claiming', 'claimed', 'distributed', 'expired')) not null default 'allocated', "donation_recipient" text null, "donation_contact" jsonb null, "listing_id" text null, "claim_deadline" timestamptz null, "distribution_date" timestamptz null, "distribution_location" text null, "notes" text null, "metadata" jsonb null, "raw_quantity" jsonb not null, "raw_percentage" jsonb not null, "raw_estimated_value" jsonb null, "created_at" timestamptz not null default now(), "updated_at" timestamptz not null default now(), "deleted_at" timestamptz null, constraint "garden_harvest_allocation_pkey" primary key ("id"));`);
+    this.addSql(`CREATE INDEX IF NOT EXISTS "IDX_garden_harvest_allocation_deleted_at" ON "garden_harvest_allocation" ("deleted_at") WHERE deleted_at IS NULL;`);
+
+    this.addSql(`create table if not exists "garden_harvest_claim" ("id" text not null, "allocation_id" text not null, "harvest_id" text not null, "garden_id" text not null, "customer_id" text not null, "membership_id" text not null, "quantity_entitled" numeric not null, "quantity_claimed" numeric not null, "unit" text not null, "claim_basis" text check ("claim_basis" in ('volunteer_hours', 'investment', 'plot_holder', 'membership', 'gift', 'purchase')) not null, "credits_used" numeric null, "credit_type" text null, "purchase_amount" numeric null, "payment_id" text null, "status" text check ("status" in ('pending', 'approved', 'ready', 'picked_up', 'delivered', 'expired', 'forfeited', 'redistributed')) not null default 'pending', "fulfillment_type" text check ("fulfillment_type" in ('pickup', 'delivery')) not null default 'pickup', "pickup_date" timestamptz null, "pickup_location" text null, "picked_up_at" timestamptz null, "delivered_at" timestamptz null, "delivery_address" jsonb null, "delivery_notes" text null, "ledger_entry_id" text null, "notified_at" timestamptz null, "reminder_sent_at" timestamptz null, "notes" text null, "metadata" jsonb null, "raw_quantity_entitled" jsonb not null, "raw_quantity_claimed" jsonb not null, "raw_credits_used" jsonb null, "raw_purchase_amount" jsonb null, "created_at" timestamptz not null default now(), "updated_at" timestamptz not null default now(), "deleted_at" timestamptz null, constraint "garden_harvest_claim_pkey" primary key ("id"));`);
+    this.addSql(`CREATE INDEX IF NOT EXISTS "IDX_garden_harvest_claim_deleted_at" ON "garden_harvest_claim" ("deleted_at") WHERE deleted_at IS NULL;`);
+  }
+
+  override async down(): Promise<void> {
+    this.addSql(`drop table if exists "garden_allocation_rule" cascade;`);
+
+    this.addSql(`drop table if exists "garden_harvest" cascade;`);
+
+    this.addSql(`drop table if exists "garden_harvest_allocation" cascade;`);
+
+    this.addSql(`drop table if exists "garden_harvest_claim" cascade;`);
+  }
+
+}
