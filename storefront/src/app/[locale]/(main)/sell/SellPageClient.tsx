@@ -193,22 +193,17 @@ export default function SellPage() {
   ]
 
   const providerTypes = [
-    "Urban Farmers & Gardeners",
-    "Community Gardens",
-    "Mutual Aid Organizations",
-    "Community Kitchens",
-    "Shared-Use Kitchen Operators",
-    "Home Bakers & Cooks",
-    "Artisan Food Makers",
-    "Beekeepers",
-    "Mushroom Growers",
-    "Preservers & Canners",
-    "Fermenters",
-    "Small-Scale Ranchers",
-    "Wildcrafters & Foragers",
-    "Aquaponic/Hydroponic Growers",
-    "Food Co-ops & Collectives",
-    "Kitchen Incubators",
+    "Stall — solo seller",
+    "Atelier — small group of makers",
+    "Grove — mutual-aid co-op",
+    "Workshop — worker co-op",
+    "Commons — multi-stakeholder co-op",
+    "Cycle — CSA & order-cycle farm",
+    "Kitchen — restaurant or shared kitchen",
+    "Harvest — community garden",
+    "Hub — federation of vendors",
+    "Service — bookable time & skills",
+    "Creator — audience & digital drops",
   ]
 
   const faqs = [
@@ -442,8 +437,8 @@ export default function SellPage() {
                 Whether you&apos;re a backyard gardener with extra tomatoes, a shared-use kitchen
                 supporting food entrepreneurs, a community garden feeding your neighbors,
                 a mutual aid group distributing food, or a farmer running a small operation—
-                there&apos;s a place for you here. We believe everyone who grows food, prepares food,
-                or builds food infrastructure deserves a dignified way to reach their community.
+                there&apos;s a place for you here. When you sign up, a quick quiz matches you to
+                one of eleven playbooks—the seller setup shaped around how you actually work.
               </p>
               <div className="flex flex-wrap gap-3">
                 {providerTypes.map((type, index) => (
