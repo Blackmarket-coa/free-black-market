@@ -203,6 +203,11 @@ export class StripeAchService {
     amount: number // In dollars
     ledgerAccountId: string
     idempotencyKey: string
+    // Client IP + user agent captured at the request edge for the NACHA
+    // mandate authorization record. Falls back to documented sentinels when
+    // the request context genuinely can't supply them.
+    ipAddress?: string
+    userAgent?: string
   }): Promise<AchDepositResult> {
     const amountCents = Math.round(data.amount * 100)
     const fee = this.calculateFee(data.amount)
@@ -220,8 +225,11 @@ export class StripeAchService {
           customer_acceptance: {
             type: "online",
             online: {
-              ip_address: "0.0.0.0", // Should be actual IP in production
-              user_agent: "hawala-ledger",
+              // Real client IP is required for the NACHA mandate record; the
+              // deposit route threads it from x-forwarded-for / req.ip. The
+              // "0.0.0.0" sentinel only survives when no IP is resolvable.
+              ip_address: data.ipAddress || "0.0.0.0",
+              user_agent: data.userAgent || "hawala-ledger",
             },
           },
         },
@@ -407,4 +415,24 @@ export function createStripeAchService(): StripeAchService {
   }
 
   return new StripeAchService(config)
+}
+
+/**
+ * True when outbound ACH payouts (customer withdrawals) are fully wired.
+ *
+ * Real payouts push platform funds to a customer's bank via Stripe Connect /
+ * external accounts, which requires both a Stripe secret key AND an explicit
+ * operator opt-in (`ACH_PAYOUTS_ENABLED=true`) once the Connect payout
+ * destination mapping is provisioned. Until then the withdraw route must
+ * fail closed rather than debit a customer's ledger with no payout executed.
+ *
+ * Mirrors the graceful-degradation config gates in
+ * `shared/site-provisioning.ts` (`isLaunchConfigured`,
+ * `isDeployCallbackConfigured`).
+ */
+export function isAchPayoutConfigured(): boolean {
+  return Boolean(
+    process.env.STRIPE_SECRET_KEY &&
+    process.env.ACH_PAYOUTS_ENABLED === "true",
+  )
 }

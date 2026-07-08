@@ -6,6 +6,7 @@ Index of operational primitives added during the production-readiness pass on br
 
 | Area | Doc | State |
 |------|-----|-------|
+| Go-live checklist (infra + CI verification) | [`GO_LIVE_CHECKLIST.md`](./GO_LIVE_CHECKLIST.md) | live |
 | Audit debt (deferred) | [`AUDIT_DEBT.md`](./AUDIT_DEBT.md) | tracked |
 | Healthchecks (liveness / readiness) | [`HEALTHCHECKS.md`](./HEALTHCHECKS.md) | live |
 | Observability (OTel, Sentry, log format) | [`OBSERVABILITY.md`](./OBSERVABILITY.md) | live |

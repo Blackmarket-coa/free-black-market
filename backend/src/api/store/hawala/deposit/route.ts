@@ -59,6 +59,13 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
     const fee = achService.calculateFee(amount)
     const netAmount = amount - fee
 
+    // Capture the real client IP + user agent for the NACHA mandate record.
+    const ipAddress =
+      (req.headers["x-forwarded-for"] as string | undefined)?.split(",")[0]?.trim() ||
+      req.socket?.remoteAddress ||
+      undefined
+    const userAgent = (req.headers["user-agent"] as string | undefined) || undefined
+
     // Create ACH deposit
     const idempotencyKey = `deposit-${customerId}-${Date.now()}`
     const depositResult = await achService.createAchDeposit({
@@ -67,6 +74,8 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
       amount,
       ledgerAccountId: bankAccount.ledger_account_id,
       idempotencyKey,
+      ipAddress,
+      userAgent,
     })
 
     // Create ACH transaction record
