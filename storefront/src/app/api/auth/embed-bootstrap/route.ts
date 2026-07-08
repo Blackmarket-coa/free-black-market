@@ -8,16 +8,50 @@ import { detectEmbedContext } from "@/lib/runtime/embed-context"
  * Blackout's Capacitor wrapper POSTs a Blackout-issued JWT to this
  * endpoint after the webview loads. We validate the embed origin
  * matches the allowlist, set the `_medusa_jwt` cookie scoped to the
- * webview session, and return 204.
+ * webview session, and return 200.
  *
- * Token signature/audience verification will be added once Blackout
- * publishes the signing keys; the substrate today is the
- * entitlements OAuth surface (see backend
- * `/v1/integrations/blackout/oauth/token`). This route accepts the
- * token shape but does not yet verify the JWS — that lands in a
- * follow-up commit when the Blackout pubkey is available to pin.
+ * Fail-closed posture: this route is DISABLED by default and only
+ * accepts a token when an operator explicitly opts in via
+ * `BLACKOUT_EMBED_ENABLED=true`. Cryptographic JWS signature/audience
+ * verification lands once Blackout publishes its signing key (pinned via
+ * a follow-up); until then the route does structural token sanity checks
+ * only, and the FBM backend remains the real authorization gate — it
+ * independently validates `_medusa_jwt` against its own `JWT_SECRET`, so
+ * a token not signed by FBM cannot authorize backend calls even if set
+ * here. We therefore never write an unverified token into the auth cookie
+ * unless the embed flow is explicitly enabled.
  */
+
+/** True only when an operator has explicitly enabled the embed auth flow. */
+function isEmbedAuthEnabled(): boolean {
+  return process.env.BLACKOUT_EMBED_ENABLED === "true"
+}
+
+/**
+ * Structural sanity for a compact JWS: three non-empty base64url segments
+ * within a sane length bound. Not a signature check — that requires the
+ * Blackout pubkey — but it stops arbitrary/oversized values from being
+ * written into the auth cookie.
+ */
+function looksLikeCompactJws(token: string): boolean {
+  if (token.length > 4096) return false
+  const parts = token.split(".")
+  if (parts.length !== 3) return false
+  return parts.every((p) => /^[A-Za-z0-9_-]+$/.test(p) && p.length > 0)
+}
+
 export async function POST(request: NextRequest) {
+  // Fail closed: the embed auth path is off unless explicitly enabled.
+  if (!isEmbedAuthEnabled()) {
+    return NextResponse.json(
+      {
+        code: "embed_auth_disabled",
+        message: "Embed auth bootstrap is not enabled (set BLACKOUT_EMBED_ENABLED=true)",
+      },
+      { status: 501 }
+    )
+  }
+
   const ctx = detectEmbedContext({
     get: (name) => request.headers.get(name),
   })
@@ -52,6 +86,13 @@ export async function POST(request: NextRequest) {
     )
   }
 
+  if (!looksLikeCompactJws(token)) {
+    return NextResponse.json(
+      { code: "invalid_token", message: "token is not a well-formed JWS" },
+      { status: 400 }
+    )
+  }
+
   const response = NextResponse.json(
     { ok: true, embed_origin: ctx.origin },
     { status: 200 }
@@ -70,6 +111,10 @@ export async function POST(request: NextRequest) {
 
 export async function GET() {
   // Probe endpoint so the Capacitor wrapper can confirm the bootstrap
-  // surface exists before posting the token.
-  return NextResponse.json({ ok: true, surface: "embed-bootstrap" })
+  // surface exists (and whether it's enabled) before posting the token.
+  return NextResponse.json({
+    ok: true,
+    surface: "embed-bootstrap",
+    enabled: isEmbedAuthEnabled(),
+  })
 }

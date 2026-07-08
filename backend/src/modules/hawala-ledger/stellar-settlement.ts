@@ -375,6 +375,27 @@ export class StellarSettlementService {
  * Create configured settlement service
  */
 export function createStellarSettlementService(): StellarSettlementService {
+  // Fail fast rather than silently anchoring/settling real value against
+  // Stellar TESTNET (and the testnet Circle USDC issuer) in production. When
+  // on-chain settlement is enabled in a production deploy, the network MUST be
+  // mainnet and the USDC issuer MUST be set explicitly. Mirrors the fail-closed
+  // posture in `shared/config.ts`.
+  if (
+    process.env.NODE_ENV === "production" &&
+    process.env.ENABLE_STELLAR_SETTLEMENT === "true"
+  ) {
+    if (process.env.STELLAR_NETWORK !== "mainnet") {
+      throw new Error(
+        "Stellar settlement is enabled in production but STELLAR_NETWORK is not 'mainnet' — refusing to settle against testnet",
+      )
+    }
+    if (!process.env.STELLAR_USDC_ISSUER) {
+      throw new Error(
+        "Stellar settlement is enabled in production but STELLAR_USDC_ISSUER is not set — refusing to fall back to the testnet issuer",
+      )
+    }
+  }
+
   // Use environment variables for configuration
   const config: StellarConfig = {
     networkPassphrase: process.env.STELLAR_NETWORK === "mainnet" 
