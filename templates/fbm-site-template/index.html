@@ -3,6 +3,9 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!-- Liveness marker: the backend's provisioning probe only flips a site to
+         "live" when it sees this, so a wildcard/parking page can't false-positive. -->
+    <meta name="fbm-site" content="launched" />
     <title>__VENDOR_HANDLE__ — Free Black Market</title>
     <meta
       name="description"

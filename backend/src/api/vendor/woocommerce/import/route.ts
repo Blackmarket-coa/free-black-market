@@ -22,11 +22,16 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     enable_inventory_sync?: boolean
   }
 
-  try {
-    const wooService: WooCommerceImportModuleService = req.scope.resolve(
-      WOOCOMMERCE_IMPORT_MODULE
-    )
+  const wooService: WooCommerceImportModuleService = req.scope.resolve(
+    WOOCOMMERCE_IMPORT_MODULE
+  )
 
+  // Declared before the try so the catch can mark the log FAILED (defence in
+  // depth alongside the workflow's own compensation) rather than leaving it
+  // stuck IN_PROGRESS and permanently blocking future imports.
+  let importLogId: string | undefined
+
+  try {
     // Get the connection
     const connections = await wooService.listWooCommerceConnections({
       seller_id: sellerId,
@@ -40,7 +45,8 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
 
     const conn = connections[0]
 
-    // Check for in-progress imports (rate limit: 1 import at a time)
+    // Fast-path check for in-progress imports (1 import at a time). The
+    // authoritative guard is the partial unique index enforced on create below.
     const activeImports = await wooService.listWooCommerceImportLogs({
       connection_id: conn.id,
       status: [ImportStatus.PENDING, ImportStatus.IN_PROGRESS],
@@ -61,12 +67,25 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       })
     }
 
-    // Create an import log entry
-    const importLog = await wooService.createWooCommerceImportLogs({
-      connection_id: conn.id,
-      status: ImportStatus.PENDING,
-      import_as_draft,
-    })
+    // Create an import log entry. A concurrent import that slipped past the
+    // fast-path check will violate the partial unique index here → 429.
+    let importLog
+    try {
+      importLog = await wooService.createWooCommerceImportLogs({
+        connection_id: conn.id,
+        status: ImportStatus.PENDING,
+        import_as_draft,
+      })
+    } catch (createError: any) {
+      if (isUniqueViolation(createError)) {
+        return res.status(429).json({
+          message:
+            "An import is already in progress. Please wait for it to complete.",
+        })
+      }
+      throw createError
+    }
+    importLogId = importLog.id
 
     // Decrypt credentials
     const credentials = {
@@ -86,17 +105,42 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       },
     })
 
+    const summary = result.result
     return res.status(200).json({
       import_log_id: importLog.id,
-      result: result.result,
-      message: `Import completed: ${result.result.imported} imported, ${result.result.failed} failed, ${result.result.skipped} skipped`,
+      result: summary,
+      message: `Import completed: ${summary.imported} imported, ${summary.updated} updated, ${summary.failed} failed, ${summary.skipped} skipped`,
     })
   } catch (error) {
+    // Ensure a failed run never leaves the log stuck IN_PROGRESS.
+    if (importLogId) {
+      try {
+        await wooService.updateWooCommerceImportLogs({
+          id: importLogId,
+          status: ImportStatus.FAILED,
+          completed_at: new Date(),
+        })
+      } catch {
+        // Best-effort; do not mask the original error.
+      }
+    }
     return res.status(500).json({
       message: "Import failed",
       error: error.message,
     })
   }
+}
+
+/** Detect a Postgres unique-constraint violation (SQLSTATE 23505). */
+function isUniqueViolation(error: any): boolean {
+  const code = error?.code || error?.cause?.code
+  const text = `${error?.message || ""} ${error?.cause?.message || ""}`
+  return (
+    code === "23505" ||
+    /duplicate key value|unique constraint|UQ_woo_import_log_active_per_connection/i.test(
+      text
+    )
+  )
 }
 
 /**

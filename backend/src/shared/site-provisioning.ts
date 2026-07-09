@@ -101,9 +101,19 @@ export function verifyDeploySignature(
 }
 
 /**
+ * Marker the FBM site template emits in its <head>. The liveness probe requires
+ * it so a wildcard-DNS parking page (which happily returns 200 for a not-yet-
+ * deployed subdomain) can't be mistaken for a live vendor site.
+ */
+export const FBM_SITE_MARKER = 'name="fbm-site"';
+
+/**
  * Lightweight liveness probe for a launched site. `url` is always server-derived
  * (launchedSiteUrl / persisted site_url), never user input, so this is not an
  * SSRF vector. Never throws — returns false on any error or timeout.
+ *
+ * Uses GET (not HEAD) and confirms the response actually contains the FBM site
+ * marker, so a generic 200 from a catch-all host is not treated as "live".
  */
 export async function probeSiteLive(
   url: string,
@@ -111,12 +121,13 @@ export async function probeSiteLive(
 ): Promise<boolean> {
   try {
     const res = await fetch(url, {
-      method: "HEAD",
+      method: "GET",
       redirect: "follow",
       signal: AbortSignal.timeout(timeoutMs),
     });
-    // 2xx/3xx means the host is serving the site; 404 = not published yet.
-    return res.status >= 200 && res.status < 400;
+    if (res.status < 200 || res.status >= 400) return false;
+    const body = await res.text();
+    return body.includes(FBM_SITE_MARKER);
   } catch {
     return false;
   }

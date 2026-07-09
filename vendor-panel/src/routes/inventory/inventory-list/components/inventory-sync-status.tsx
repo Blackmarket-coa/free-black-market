@@ -38,9 +38,13 @@ export const InventorySyncStatus = () => {
               Unable to load sync status right now.
             </Text>
           ) : null}
-          {report?.summary ? (
+          {report ? (
             <Text size="small" className="text-ui-fg-subtle">
-              {report.summary}
+              {report.products_checked ?? 0} checked · {report.variants_updated ?? 0} updated
+              {report.out_of_stock?.length
+                ? ` · ${report.out_of_stock.length} out of stock`
+                : ""}
+              {report.errors?.length ? ` · ${report.errors.length} errors` : ""}
             </Text>
           ) : null}
         </div>

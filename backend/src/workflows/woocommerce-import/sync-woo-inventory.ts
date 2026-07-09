@@ -20,6 +20,42 @@ type SyncWooInventoryInput = {
 };
 
 /**
+ * Resolve the inventory item + first level for a specific product variant via
+ * its explicit link, rather than matching on SKU. A bare SKU match could return
+ * a *different tenant's* inventory item that happens to share the SKU and
+ * overwrite their stock; scoping by variant id keeps sync inside this seller.
+ */
+async function resolveVariantInventory(
+  query: any,
+  variantId: string,
+): Promise<{ itemId: string; levelId: string; stocked: number } | null> {
+  const { data: links } = await query.graph({
+    entity: "product_variant_inventory_item",
+    fields: ["inventory_item_id"],
+    filters: { variant_id: variantId },
+  });
+
+  const inventoryItemId = links?.[0]?.inventory_item_id;
+  if (!inventoryItemId) return null;
+
+  const { data: items } = await query.graph({
+    entity: "inventory_item",
+    fields: ["id", "inventory_levels.id", "inventory_levels.stocked_quantity"],
+    filters: { id: inventoryItemId },
+  });
+
+  const item = items?.[0];
+  const level = item?.inventory_levels?.[0];
+  if (!item || !level) return null;
+
+  return {
+    itemId: item.id,
+    levelId: level.id,
+    stocked: level.stocked_quantity ?? 0,
+  };
+}
+
+/**
  * Step: Perform the inventory sync for a single vendor connection.
  */
 const syncInventoryStep = createStep(
@@ -116,29 +152,15 @@ const syncInventoryStep = createStep(
           const variant = product.variants[0];
           if (variant && wooProduct.manage_stock) {
             try {
-              // Get inventory items linked to this variant
-              const { data: inventoryItems } = (await query.graph({
-                entity: "inventory_item",
-                fields: [
-                  "id",
-                  "inventory_levels.id",
-                  "inventory_levels.stocked_quantity",
-                ],
-                filters: {
-                  sku: variant.sku,
-                },
-              })) as { data: any[] };
-
-              if (inventoryItems?.[0]?.inventory_levels?.[0]) {
-                const level = inventoryItems[0].inventory_levels[0];
+              const inv = await resolveVariantInventory(query, variant.id);
+              if (inv) {
                 const newQty = wooProduct.stock_quantity ?? 0;
-                const currentQty = level.stocked_quantity ?? 0;
-                const adjustment = newQty - currentQty;
+                const adjustment = newQty - inv.stocked;
 
                 if (adjustment !== 0) {
                   await inventoryService.adjustInventory(
-                    inventoryItems[0].id,
-                    level.id,
+                    inv.itemId,
+                    inv.levelId,
                     adjustment,
                   );
                   report.variants_updated++;
@@ -176,28 +198,15 @@ const syncInventoryStep = createStep(
 
             if (wooVariation.manage_stock ?? wooProduct.manage_stock) {
               try {
-                const { data: inventoryItems } = (await query.graph({
-                  entity: "inventory_item",
-                  fields: [
-                    "id",
-                    "inventory_levels.id",
-                    "inventory_levels.stocked_quantity",
-                  ],
-                  filters: {
-                    sku: variant.sku,
-                  },
-                })) as { data: any[] };
-
-                if (inventoryItems?.[0]?.inventory_levels?.[0]) {
-                  const level = inventoryItems[0].inventory_levels[0];
+                const inv = await resolveVariantInventory(query, variant.id);
+                if (inv) {
                   const newQty = wooVariation.stock_quantity ?? 0;
-                  const currentQty = level.stocked_quantity ?? 0;
-                  const adjustment = newQty - currentQty;
+                  const adjustment = newQty - inv.stocked;
 
                   if (adjustment !== 0) {
                     await inventoryService.adjustInventory(
-                      inventoryItems[0].id,
-                      level.id,
+                      inv.itemId,
+                      inv.levelId,
                       adjustment,
                     );
                     report.variants_updated++;

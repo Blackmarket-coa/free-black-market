@@ -11,6 +11,10 @@ const WINDOW_MS = 10_000
 const COURTESY_DELAY_MS = 200
 const MAX_RETRIES = 3
 const INITIAL_BACKOFF_MS = 2_000
+const PER_PAGE = 100
+// Safety cap so a misbehaving store that always returns a full page can't loop
+// forever (PER_PAGE * MAX_PAGES = 50k items).
+const MAX_PAGES = 500
 
 export class WooApiClient {
   private client: WooCommerceRestApi
@@ -26,7 +30,10 @@ export class WooApiClient {
       consumerKey: credentials.consumer_key,
       consumerSecret: credentials.consumer_secret,
       version: "wc/v3",
-      queryStringAuth: true,
+      // Send credentials in the Authorization header, not the query string, so
+      // the key/secret aren't exposed in URLs/proxy logs. Over HTTPS the client
+      // uses Basic auth; for http it falls back to OAuth 1.0a signing.
+      queryStringAuth: false,
     })
   }
 
@@ -93,9 +100,9 @@ export class WooApiClient {
     let page = 1
     let totalProducts = 0
 
-    while (true) {
+    while (page <= MAX_PAGES) {
       const response = await this.makeRequest("products", {
-        per_page: 100,
+        per_page: PER_PAGE,
         page,
         status: "any",
         type: "simple,variable", // Only fetch supported types
@@ -114,8 +121,10 @@ export class WooApiClient {
         onProgress(allProducts.length, totalProducts)
       }
 
-      const totalPages = parseInt(response.headers?.["x-wp-totalpages"] || "1", 10)
-      if (page >= totalPages) break
+      // Terminate on a short page rather than trusting x-wp-totalpages, which a
+      // proxy/cache may strip — defaulting it to 1 would silently truncate the
+      // import to the first page.
+      if (products.length < PER_PAGE) break
 
       page++
       await this.courtesyDelay()
@@ -131,10 +140,10 @@ export class WooApiClient {
     const allVariations: WooVariation[] = []
     let page = 1
 
-    while (true) {
+    while (page <= MAX_PAGES) {
       const response = await this.makeRequest(
         `products/${productId}/variations`,
-        { per_page: 100, page }
+        { per_page: PER_PAGE, page }
       )
 
       const variations = response.data as WooVariation[]
@@ -142,8 +151,7 @@ export class WooApiClient {
 
       allVariations.push(...variations)
 
-      const totalPages = parseInt(response.headers?.["x-wp-totalpages"] || "1", 10)
-      if (page >= totalPages) break
+      if (variations.length < PER_PAGE) break
 
       page++
       await this.courtesyDelay()
@@ -159,9 +167,9 @@ export class WooApiClient {
     const allCategories: WooCategory[] = []
     let page = 1
 
-    while (true) {
+    while (page <= MAX_PAGES) {
       const response = await this.makeRequest("products/categories", {
-        per_page: 100,
+        per_page: PER_PAGE,
         page,
       })
 
@@ -170,8 +178,7 @@ export class WooApiClient {
 
       allCategories.push(...categories)
 
-      const totalPages = parseInt(response.headers?.["x-wp-totalpages"] || "1", 10)
-      if (page >= totalPages) break
+      if (categories.length < PER_PAGE) break
 
       page++
     }

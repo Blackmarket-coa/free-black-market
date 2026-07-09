@@ -1,4 +1,5 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
+import { safeFetch, BlockedUrlError } from "../../../../shared/safe-fetch"
 
 const BROWSER_USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36"
@@ -43,36 +44,38 @@ const buildFetchProfiles = (): FetchProfile[] => [
 ]
 
 const fetchHtmlWithRetryProfiles = async (reference: string) => {
-  const attempts: Array<{ profile: string; status: number }> = []
+  let lastStatus: number | undefined
 
   for (const profile of buildFetchProfiles()) {
-    const response = await fetch(reference, {
+    // `safeFetch` validates the URL (and every redirect hop) against the SSRF
+    // guard, enforces a timeout, and caps the response size. `allowHttp` is on
+    // because product pages are arbitrary public sites, some still on http; the
+    // private-address block is what protects internal targets.
+    const result = await safeFetch(reference, {
       headers: profile.headers,
-      redirect: "follow",
+      allowHttp: true,
     })
 
-    if (response.ok) {
-      const html = await response.text()
+    if (result.ok) {
       return {
-        response,
-        html,
+        finalUrl: result.url,
+        html: result.text,
       }
     }
 
-    attempts.push({ profile: profile.name, status: response.status })
+    lastStatus = result.status
 
-    if (!BLOCKED_BY_BOT_PROTECTION_STATUS.has(response.status)) {
-      throw new Error(`Source returned ${response.status}`)
+    if (!BLOCKED_BY_BOT_PROTECTION_STATUS.has(result.status)) {
+      throw new Error(`Source returned ${result.status}`)
     }
   }
 
-  const attemptedStatuses = attempts.map((attempt) => `${attempt.profile}:${attempt.status}`).join(", ")
   const host = getHostname(reference)
 
   throw new Error(
-    `Source returned ${attempts[attempts.length - 1]?.status ?? "unknown"}. ${
+    `Source returned ${lastStatus ?? "unknown"}. ${
       host ? `${host} appears to block automated fetches` : "The source appears to block automated fetches"
-    } (attempts: ${attemptedStatuses})`
+    }`
   )
 }
 
@@ -196,12 +199,12 @@ const extractDescription = (html: string) => {
 
 const resolveReference = async (reference: string) => {
   const parsed = new URL(reference)
-  const { response, html } = await fetchHtmlWithRetryProfiles(reference)
+  const { finalUrl, html } = await fetchHtmlWithRetryProfiles(reference)
 
   const canonical =
     getMetaContent(html, "og:url") ||
     firstMatch(html, [/<link[^>]+rel=["']canonical["'][^>]+href=["']([^"']+)["'][^>]*>/i]) ||
-    response.url ||
+    finalUrl ||
     reference
 
   const canonicalUrl = new URL(canonical, parsed)

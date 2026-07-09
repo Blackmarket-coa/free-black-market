@@ -45,9 +45,12 @@ export const importWooProductsWorkflow = createWorkflow(
       { importResult, import_log_id: input.import_log_id },
       (data) => ({
         import_log_id: data.import_log_id,
-        status: data.importResult.failed > 0 && data.importResult.imported === 0
-          ? ImportStatus.FAILED
-          : ImportStatus.COMPLETED,
+        status:
+          data.importResult.failed > 0 &&
+          data.importResult.imported === 0 &&
+          data.importResult.updated === 0
+            ? ImportStatus.FAILED
+            : ImportStatus.COMPLETED,
         result: data.importResult,
       })
     )

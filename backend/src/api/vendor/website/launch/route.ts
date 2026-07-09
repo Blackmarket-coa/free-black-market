@@ -79,16 +79,30 @@ export async function POST(
     filters: { seller_id: sellerId },
   });
 
-  // Resolve the metadata row id exactly once (creating it if absent) so every
-  // subsequent write is an idempotent update — never a second insert, which
-  // would violate the unique seller_id constraint.
-  let metaId = (metaRows?.[0] as MetaRow | undefined)?.id;
-  if (!metaId) {
-    const created = (await createSellerMetadataRecord(sellerExtension as SellerExtensionService, [
-      { seller_id: sellerId, site_status: "provisioning" },
-    ])) as Array<{ id: string }> | { id: string };
-    metaId = Array.isArray(created) ? created[0]?.id : created?.id;
+  const existingMeta = metaRows?.[0] as MetaRow | undefined;
+
+  // Don't regress an already-live or in-flight site back to "provisioning" on a
+  // re-click/double-submit. Callers that genuinely want to rebuild pass
+  // { reprovision: true }.
+  const reprovision = Boolean(
+    (req.body as { reprovision?: boolean } | undefined)?.reprovision,
+  );
+  const currentStatus = existingMeta?.site_status;
+  if (
+    !reprovision &&
+    (currentStatus === "provisioning" || currentStatus === "live")
+  ) {
+    return res.status(200).json({
+      launched: false,
+      website: serializeWebsite(seller.handle, existingMeta || null),
+      message:
+        currentStatus === "live"
+          ? "Your site is already live."
+          : "Your site is already being provisioned.",
+    });
   }
+
+  let metaId = existingMeta?.id;
 
   const persist = async (fields: Record<string, unknown>) => {
     if (!metaId) return;
@@ -98,6 +112,28 @@ export async function POST(
   };
 
   try {
+    // Resolve the metadata row id exactly once (creating it if absent) so every
+    // subsequent write is an idempotent update. Kept inside the try so a
+    // concurrent first-time launch that loses the unique-seller_id race is
+    // handled by re-reading the row rather than throwing an unhandled 500.
+    if (!metaId) {
+      try {
+        const created = (await createSellerMetadataRecord(
+          sellerExtension as SellerExtensionService,
+          [{ seller_id: sellerId, site_status: "provisioning" }],
+        )) as Array<{ id: string }> | { id: string };
+        metaId = Array.isArray(created) ? created[0]?.id : created?.id;
+      } catch (createErr) {
+        const { data: reRows } = await query.graph({
+          entity: "seller_metadata",
+          fields: ["id"],
+          filters: { seller_id: sellerId },
+        });
+        metaId = (reRows?.[0] as { id: string } | undefined)?.id;
+        if (!metaId) throw createErr;
+      }
+    }
+
     await persist({ site_status: "provisioning" });
 
     const result = await provisionSite({ handle: seller.handle, subdomain });
