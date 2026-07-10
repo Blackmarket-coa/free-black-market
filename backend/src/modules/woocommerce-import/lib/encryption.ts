@@ -1,4 +1,7 @@
 import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from "crypto"
+import { createLogger } from "../../../shared/logger"
+
+const log = createLogger("woocommerce-import/encryption")
 
 const ALGORITHM = "aes-256-gcm"
 const IV_LENGTH = 16
@@ -6,10 +9,29 @@ const _SALT_LENGTH = 16
 const _TAG_LENGTH = 16
 const KEY_LENGTH = 32
 
+let warnedAboutFallback = false
+
+/**
+ * Resolve the credential-encryption secret.
+ *
+ * Prefers a dedicated `WOO_ENCRYPTION_KEY` so a leak of the widely-used
+ * `JWT_SECRET` does not also decrypt stored WooCommerce credentials (key
+ * separation). The `JWT_SECRET` fallback is retained only so deployments that
+ * already encrypted credentials with it can still decrypt — but it warns once,
+ * loudly, so operators migrate to a dedicated key.
+ */
 function getEncryptionKey(): Buffer {
-  const key = process.env.WOO_ENCRYPTION_KEY || process.env.JWT_SECRET
+  const dedicated = process.env.WOO_ENCRYPTION_KEY
+  const key = dedicated || process.env.JWT_SECRET
   if (!key) {
-    throw new Error("WOO_ENCRYPTION_KEY or JWT_SECRET must be set for credential encryption")
+    throw new Error("WOO_ENCRYPTION_KEY (or, for legacy data, JWT_SECRET) must be set for credential encryption")
+  }
+  if (!dedicated && !warnedAboutFallback) {
+    warnedAboutFallback = true
+    log.warn(
+      "WOO_ENCRYPTION_KEY is not set; falling back to JWT_SECRET to encrypt vendor store credentials. " +
+        "This couples two trust domains — set a dedicated WOO_ENCRYPTION_KEY."
+    )
   }
   return scryptSync(key, "woo-import-salt", KEY_LENGTH)
 }

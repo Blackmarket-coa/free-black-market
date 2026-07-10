@@ -134,7 +134,10 @@ export async function POST(
       }
     }
 
-    await persist({ site_status: "provisioning" });
+    await persist({
+      site_status: "provisioning",
+      provisioning_started_at: new Date(),
+    });
 
     const result = await provisionSite({ handle: seller.handle, subdomain });
 

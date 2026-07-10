@@ -182,6 +182,54 @@ function getStore(): RateLimitStore {
   return rateLimitStore
 }
 
+/**
+ * Derive the client IP for rate-limit keying.
+ *
+ * Uses Express's `req.ip`, which is only derived from `X-Forwarded-For` when the
+ * app's `trust proxy` setting says so (configured from TRUST_PROXY — see
+ * trustProxyMiddleware). We deliberately never read the raw `X-Forwarded-For`
+ * header here: untrusted, it is attacker-controlled and lets a client mint an
+ * unbounded number of buckets to defeat the per-IP cap.
+ */
+export function clientIp(req: MedusaRequest): string {
+  return (
+    req.ip ||
+    (req.socket as { remoteAddress?: string } | undefined)?.remoteAddress ||
+    "unknown"
+  )
+}
+
+let trustProxyApplied = false
+
+/**
+ * Configure Express `trust proxy` from the TRUST_PROXY env var so `req.ip`
+ * reflects the real client when the app sits behind a known proxy/load balancer.
+ * TRUST_PROXY may be a hop count (e.g. "1") or a boolean-ish string. When unset,
+ * `trust proxy` stays disabled and `req.ip` is the direct socket address — which
+ * is exactly what we want, since an unproxied deployment must not trust
+ * `X-Forwarded-For`. Idempotent; safe to register on any matcher.
+ */
+export function trustProxyMiddleware(
+  req: MedusaRequest,
+  _res: MedusaResponse,
+  next: MedusaNextFunction
+) {
+  if (!trustProxyApplied) {
+    trustProxyApplied = true
+    const raw = process.env.TRUST_PROXY
+    if (raw && raw !== "false" && raw !== "0") {
+      const numeric = Number(raw)
+      const value: number | boolean = Number.isFinite(numeric) ? numeric : true
+      try {
+        ;(req as any).app?.set?.("trust proxy", value)
+      } catch {
+        // best-effort; keying still falls back to the socket address
+      }
+    }
+  }
+  next()
+}
+
 export interface RateLimiterOptions {
   /** Time window in milliseconds */
   windowMs: number
@@ -215,10 +263,8 @@ export function createRateLimiter(options: RateLimiterOptions) {
     res: MedusaResponse,
     next: MedusaNextFunction
   ) => {
-    const ip = keyGenerator 
-      ? keyGenerator(req)
-      : req.ip || (req.headers["x-forwarded-for"] as string) || "unknown"
-    
+    const ip = keyGenerator ? keyGenerator(req) : clientIp(req)
+
     const key = `${keyPrefix}:${ip}`
 
     // Use atomic increment from store
@@ -286,8 +332,23 @@ export const embedKeyRateLimiter = createRateLimiter({
   keyGenerator: (req) => {
     const keyId = (req as any).embed_key_id
     if (keyId) return `key:${keyId}`
-    return req.ip || (req.headers["x-forwarded-for"] as string) || "unknown"
+    return clientIp(req)
   },
+})
+
+/**
+ * Embed per-IP rate limiter: 40 requests per minute per client IP.
+ *
+ * Defense-in-depth for the `/store/embed/*` write/runtime endpoints on TOP of
+ * the per-key limiter. The publishable key is public (embedded in each vendor
+ * site's HTML) and the Origin header is spoofable by a non-browser client, so
+ * `connect_domains` is an advisory filter, not authentication. This caps abuse
+ * from a single source regardless of which (public) key it presents.
+ */
+export const embedIpRateLimiter = createRateLimiter({
+  windowMs: 60_000,
+  max: 40,
+  keyPrefix: "embed-ip",
 })
 
 /** Auth rate limiter: 20 attempts per minute (login, register, etc.) */
@@ -343,6 +404,6 @@ export const bugReportAuthRateLimiter = createRateLimiter({
   keyGenerator: (req) => {
     const actorId = (req as any).auth_context?.actor_id
     if (actorId) return `actor:${actorId}`
-    return req.ip || (req.headers["x-forwarded-for"] as string) || "unknown"
+    return clientIp(req)
   },
 })

@@ -172,6 +172,10 @@ const SellerMetadata = model.define("seller_metadata", {
   site_url: model.text().nullable(),
   // GitHub repository (org/name) backing the launched site.
   site_repo: model.text().nullable(),
+  // When the current provisioning attempt began. Staleness is measured from
+  // this — not `updated_at`, which unrelated edits (e.g. saving Connect
+  // domains) would reset, restarting the stuck-launch timeout indefinitely.
+  provisioning_started_at: model.dateTime().nullable(),
 
   // Metadata for additional extensions
   metadata: model.json().nullable(),
