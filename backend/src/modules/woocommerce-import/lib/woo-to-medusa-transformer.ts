@@ -1,36 +1,37 @@
 import type { WooProduct, WooVariation } from "../types"
 
 /**
- * Strips HTML tags from a string, keeping basic text content.
- * Uses a simple regex approach to avoid needing a DOM parser on the server.
+ * Reduce an HTML fragment to plain text for a product description.
+ *
+ * Deliberately uses NO tag-specific regexes (e.g. `<script>…</script>`), which
+ * are incomplete and bypassable (`<scr<script>ipt>`). Instead it decodes
+ * entities, then strips every `<…>` in a loop until the string is stable, and
+ * removes any residual angle bracket — so no markup (in particular `<script`)
+ * can survive. Product descriptions are plain text; no markup is intended.
  */
 function sanitizeHtml(html: string | null | undefined): string {
   if (!html) return ""
 
-  return html
-    // Remove script/style tags and their contents
-    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, "")
-    .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, "")
-    // Replace common block elements with newlines
-    .replace(/<\/?(p|div|br|h[1-6]|li|tr)\b[^>]*>/gi, "\n")
-    // Decode common HTML entities, &amp; LAST so "&amp;lt;" isn't
-    // double-unescaped into "<" (CodeQL: double unescaping)
+  // Decode entities first (&amp; LAST so "&amp;lt;" isn't double-unescaped into
+  // "<"), so any encoded tags become real tags the strip below removes.
+  let text = html
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">")
     .replace(/&quot;/g, '"')
     .replace(/&#039;/g, "'")
     .replace(/&nbsp;/g, " ")
     .replace(/&amp;/g, "&")
-    // Remove all remaining HTML tags (also any revealed by decoding)
-    .replace(/<[^>]+>/g, "")
-    // Belt-and-suspenders: drop any stray angle brackets so a nested/overlapping
-    // tag (e.g. "<scr<script>ipt>") can never leave a "<script" behind. This is
-    // a plain-text field, so no markup is intended. (CodeQL: incomplete
-    // multi-character sanitization.)
-    .replace(/[<>]/g, "")
-    // Collapse multiple newlines
-    .replace(/\n{3,}/g, "\n\n")
-    .trim()
+
+  // Strip all tags, looping until stable so nested/overlapping tags can't
+  // reconstruct markup, then drop any leftover angle bracket.
+  let prev: string
+  do {
+    prev = text
+    text = text.replace(/<[^>]*>/g, " ")
+  } while (text !== prev)
+  text = text.replace(/[<>]/g, " ")
+
+  return text.replace(/\s+/g, " ").trim()
 }
 
 function generateHandle(name: string): string {
