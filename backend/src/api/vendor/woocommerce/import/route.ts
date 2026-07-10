@@ -1,14 +1,21 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
+import { Modules } from "@medusajs/framework/utils"
+import type { IEventBusModuleService } from "@medusajs/framework/types"
 import type { VendorRequest } from "../../types"
 import { WOOCOMMERCE_IMPORT_MODULE } from "../../../../modules/woocommerce-import"
 import WooCommerceImportModuleService from "../../../../modules/woocommerce-import/service"
-import { importWooProductsWorkflow } from "../../../../workflows/woocommerce-import/import-woo-products"
-import { decrypt } from "../../../../modules/woocommerce-import/lib/encryption"
 import { ImportStatus } from "../../../../modules/woocommerce-import/types"
+
+/** Event that triggers the background Woo import (handled by a subscriber). */
+export const WOO_IMPORT_REQUESTED_EVENT = "woocommerce.import.requested"
 
 /**
  * POST /vendor/woocommerce/import
- * Start importing products from the connected WooCommerce store.
+ * Kick off a background import from the connected WooCommerce store.
+ *
+ * The import runs asynchronously (event → subscriber → workflow) so large stores
+ * don't exceed the request timeout. Returns 202 with an import_log_id the panel
+ * polls via GET /vendor/woocommerce/import.
  */
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
   const sellerId = (req as VendorRequest).auth_context?.actor_id
@@ -87,32 +94,27 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     }
     importLogId = importLog.id
 
-    // Decrypt credentials
-    const credentials = {
-      url: decrypt(conn.store_url),
-      consumer_key: decrypt(conn.consumer_key),
-      consumer_secret: decrypt(conn.consumer_secret),
-    }
-
-    // Run the import workflow
-    const { result } = await importWooProductsWorkflow(req.scope).run({
-      input: {
-        credentials,
+    // Hand off to the background worker. Credentials are NOT put on the event —
+    // the subscriber re-reads and decrypts the connection so secrets never sit
+    // in the event payload/log.
+    const eventBus = req.scope.resolve<IEventBusModuleService>(Modules.EVENT_BUS)
+    await eventBus.emit({
+      name: WOO_IMPORT_REQUESTED_EVENT,
+      data: {
         seller_id: sellerId,
-        currency: (conn.currency || "USD").toLowerCase(),
-        import_as_draft,
+        connection_id: conn.id,
         import_log_id: importLog.id,
+        import_as_draft,
       },
     })
 
-    const summary = result.result
-    return res.status(200).json({
+    return res.status(202).json({
       import_log_id: importLog.id,
-      result: summary,
-      message: `Import completed: ${summary.imported} imported, ${summary.updated} updated, ${summary.failed} failed, ${summary.skipped} skipped`,
+      status: "started",
+      message: "Import started. This runs in the background — track progress below.",
     })
   } catch (error) {
-    // Ensure a failed run never leaves the log stuck IN_PROGRESS.
+    // If we created a log but couldn't hand it off, don't leave it stuck.
     if (importLogId) {
       try {
         await wooService.updateWooCommerceImportLogs({

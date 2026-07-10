@@ -11,7 +11,7 @@ import {
   Text,
   toast,
 } from "@medusajs/ui"
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { useSearchParams } from "react-router-dom"
 import { useTranslation } from "react-i18next"
 import { FilePreview } from "../../../components/common/file-preview"
@@ -27,6 +27,7 @@ import {
   useDisconnectWooCommerce,
   useWooPreview,
   useWooImport,
+  useWooImportHistory,
   usePrintfulCatalogPreview,
   usePrintfulImport,
 } from "../../../hooks/api"
@@ -931,9 +932,55 @@ const WooConnectedView = ({
     error: previewError,
   } = useWooPreview({ enabled: true })
 
-  const { mutateAsync: startImport, isPending: isImporting } = useWooImport()
+  const { mutateAsync: startImport, isPending: isStarting } = useWooImport()
   const { mutateAsync: disconnect, isPending: isDisconnecting } =
     useDisconnectWooCommerce()
+
+  const [activeImportId, setActiveImportId] = useState<string | null>(null)
+
+  // Poll import history while an import is active (the import now runs in the
+  // background and returns 202, so we watch the log until it settles).
+  const { imports } = useWooImportHistory({
+    refetchInterval: (query: any) => {
+      const list = query.state.data?.imports || []
+      const latest = list[0]
+      return latest &&
+        (latest.status === "pending" || latest.status === "in_progress")
+        ? 4000
+        : false
+    },
+  })
+
+  const latestImport = (imports || [])[0]
+  const isRunning =
+    !!latestImport &&
+    (latestImport.status === "pending" ||
+      latestImport.status === "in_progress")
+
+  // When the import we started settles, surface the final counts + a toast.
+  useEffect(() => {
+    if (!activeImportId || !latestImport) return
+    if (latestImport.id !== activeImportId) return
+    if (latestImport.status === "completed" || latestImport.status === "failed") {
+      setImportResult({
+        message:
+          latestImport.status === "completed"
+            ? "Import completed."
+            : "Import finished with errors.",
+        result: {
+          imported: latestImport.imported_count ?? 0,
+          failed: latestImport.failed_count ?? 0,
+          skipped: latestImport.skipped_count ?? 0,
+        },
+      })
+      if (latestImport.status === "completed") {
+        toast.success("Import completed.")
+      } else {
+        toast.error("Import finished with errors.")
+      }
+      setActiveImportId(null)
+    }
+  }, [activeImportId, latestImport])
 
   const handleImport = async () => {
     await startImport(
@@ -943,15 +990,20 @@ const WooConnectedView = ({
       },
       {
         onSuccess: (data) => {
-          setImportResult(data)
-          toast.success(data.message || "Import completed.")
+          setImportResult(null)
+          if (data?.import_log_id) {
+            setActiveImportId(data.import_log_id)
+          }
+          toast.success(data.message || "Import started.")
         },
         onError: (err) => {
-          toast.error(err.message || "Import failed.")
+          toast.error(err.message || "Import failed to start.")
         },
       }
     )
   }
+
+  const isImporting = isStarting || isRunning
 
   const handleDisconnect = async () => {
     await disconnect(undefined, {
@@ -1107,10 +1159,18 @@ const WooConnectedView = ({
           size="small"
           onClick={handleImport}
           isLoading={isImporting}
-          disabled={!preview || preview.total_products === 0}
+          disabled={!preview || preview.total_products === 0 || isImporting}
         >
-          Import {preview?.total_products ?? 0} products
+          {isRunning
+            ? "Importing…"
+            : `Import ${preview?.total_products ?? 0} products`}
         </Button>
+        {isRunning && (
+          <Text size="xsmall" className="mt-2 text-ui-fg-subtle">
+            Import is running in the background. You can leave this page — track
+            progress here or under import history.
+          </Text>
+        )}
       </div>
 
       {/* Import result */}
