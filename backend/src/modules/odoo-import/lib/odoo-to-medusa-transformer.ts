@@ -12,6 +12,9 @@ function sanitize(html: string | false | undefined | null): string {
       .replace(/&nbsp;/g, " ")
       .replace(/&amp;/g, "&")
       .replace(/<[^>]+>/g, " ")
+      // Drop stray angle brackets so a nested/overlapping tag can't leave
+      // "<script" behind (CodeQL: incomplete multi-character sanitization).
+      .replace(/[<>]/g, " ")
       .replace(/\s+/g, " ")
       .trim()
   )

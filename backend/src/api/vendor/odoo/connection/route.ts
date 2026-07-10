@@ -32,7 +32,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         updated_at: conn.updated_at,
       },
     })
-  } catch (error: any) {
+  } catch (error) {
     return res.status(500).json({ message: "Failed to fetch connection", error: error.message })
   }
 }
@@ -79,7 +79,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       },
       message: "Odoo store connected successfully",
     })
-  } catch (error: any) {
+  } catch (error) {
     return res.status(400).json({
       message: error.message || "Failed to connect Odoo store",
     })
@@ -101,7 +101,7 @@ export async function DELETE(req: MedusaRequest, res: MedusaResponse) {
     }
     await svc.deleteOdooConnections(connections[0].id)
     return res.json({ id: connections[0].id, deleted: true, message: "Odoo connection removed" })
-  } catch (error: any) {
+  } catch (error) {
     return res.status(500).json({ message: "Failed to remove connection", error: error.message })
   }
 }

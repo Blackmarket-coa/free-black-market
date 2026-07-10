@@ -55,11 +55,17 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
         fields: ["product.id", "product.title", "product.status"],
         filters: { seller_id: seller },
       })
-      products = (rows || [])
-        .map((sp: any) => sp.product)
-        .filter((p: any) => p?.id && p.status === "published")
+      const sellerProducts = (rows || []) as Array<{
+        product?: { id?: string; title?: string; status?: string }
+      }>
+      products = sellerProducts
+        .map((sp) => sp.product)
+        .filter(
+          (p): p is { id: string; title: string; status: string } =>
+            !!p?.id && p.status === "published"
+        )
         .slice(0, 50)
-        .map((p: any) => ({ id: p.id, name: p.title, embedded: true }))
+        .map((p) => ({ id: p.id, name: p.title, embedded: true }))
     } catch (err) {
       log.warn("embed: product lookup failed", err)
     }

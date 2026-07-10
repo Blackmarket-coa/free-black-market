@@ -36,7 +36,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         currency: conn.currency || "USD",
       },
     })
-  } catch (error: any) {
+  } catch (error) {
     return res.status(400).json({ message: error.message || "Failed to load preview" })
   }
 }

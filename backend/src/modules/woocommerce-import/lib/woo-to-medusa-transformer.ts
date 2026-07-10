@@ -23,6 +23,11 @@ function sanitizeHtml(html: string | null | undefined): string {
     .replace(/&amp;/g, "&")
     // Remove all remaining HTML tags (also any revealed by decoding)
     .replace(/<[^>]+>/g, "")
+    // Belt-and-suspenders: drop any stray angle brackets so a nested/overlapping
+    // tag (e.g. "<scr<script>ipt>") can never leave a "<script" behind. This is
+    // a plain-text field, so no markup is intended. (CodeQL: incomplete
+    // multi-character sanitization.)
+    .replace(/[<>]/g, "")
     // Collapse multiple newlines
     .replace(/\n{3,}/g, "\n\n")
     .trim()

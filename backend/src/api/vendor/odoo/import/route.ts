@@ -9,9 +9,16 @@ import { OdooImportStatus } from "../../../../modules/odoo-import/types"
 /** Event that triggers the background Odoo import (handled by a subscriber). */
 export const ODOO_IMPORT_REQUESTED_EVENT = "odoo.import.requested"
 
-function isUniqueViolation(error: any): boolean {
-  const code = error?.code || error?.cause?.code
-  const text = `${error?.message || ""} ${error?.cause?.message || ""}`
+type DbError = {
+  code?: string
+  message?: string
+  cause?: { code?: string; message?: string }
+}
+
+function isUniqueViolation(error: unknown): boolean {
+  const e = (error ?? {}) as DbError
+  const code = e.code || e.cause?.code
+  const text = `${e.message || ""} ${e.cause?.message || ""}`
   return (
     code === "23505" ||
     /duplicate key value|unique constraint|UQ_odoo_import_log_active_per_connection/i.test(text)
@@ -56,7 +63,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
         status: OdooImportStatus.PENDING,
         import_as_draft,
       })
-    } catch (createError: any) {
+    } catch (createError) {
       if (isUniqueViolation(createError)) {
         return res.status(429).json({
           message: "An import is already in progress. Please wait for it to complete.",
@@ -82,7 +89,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       status: "started",
       message: "Import started. This runs in the background — track progress below.",
     })
-  } catch (error: any) {
+  } catch (error) {
     if (importLogId) {
       try {
         await svc.updateOdooImportLogs({
@@ -116,7 +123,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     )
 
     return res.json({
-      imports: logs.map((logRow: any) => ({
+      imports: logs.map((logRow) => ({
         id: logRow.id,
         status: logRow.status,
         total_products: logRow.total_products,
@@ -131,7 +138,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         created_at: logRow.created_at,
       })),
     })
-  } catch (error: any) {
+  } catch (error) {
     return res.status(500).json({ message: "Failed to fetch import history", error: error.message })
   }
 }

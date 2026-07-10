@@ -83,7 +83,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
         status: ImportStatus.PENDING,
         import_as_draft,
       })
-    } catch (createError: any) {
+    } catch (createError) {
       if (isUniqueViolation(createError)) {
         return res.status(429).json({
           message:
@@ -133,10 +133,17 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
   }
 }
 
+type DbError = {
+  code?: string
+  message?: string
+  cause?: { code?: string; message?: string }
+}
+
 /** Detect a Postgres unique-constraint violation (SQLSTATE 23505). */
-function isUniqueViolation(error: any): boolean {
-  const code = error?.code || error?.cause?.code
-  const text = `${error?.message || ""} ${error?.cause?.message || ""}`
+function isUniqueViolation(error: unknown): boolean {
+  const e = (error ?? {}) as DbError
+  const code = e.code || e.cause?.code
+  const text = `${e.message || ""} ${e.cause?.message || ""}`
   return (
     code === "23505" ||
     /duplicate key value|unique constraint|UQ_woo_import_log_active_per_connection/i.test(
