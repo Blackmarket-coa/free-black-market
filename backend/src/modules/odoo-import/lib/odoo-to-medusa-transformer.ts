@@ -2,14 +2,19 @@ import type { OdooProduct } from "../types"
 
 function sanitize(html: string | false | undefined | null): string {
   if (!html) return ""
-  return html
-    .replace(/<[^>]+>/g, " ")
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&nbsp;/g, " ")
-    .replace(/\s+/g, " ")
-    .trim()
+  return (
+    html
+      // Decode entities with &amp; LAST so "&amp;lt;" can't be double-unescaped
+      // into "<"; then strip tags once more to remove any markup the decode
+      // revealed. (CodeQL: double unescaping.)
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">")
+      .replace(/&nbsp;/g, " ")
+      .replace(/&amp;/g, "&")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+  )
 }
 
 function slugify(value: string): string {

@@ -88,12 +88,14 @@ const sanitizeHandlePart = (value: string) =>
 
 const decodeEntities = (value: string) =>
   value
-    .replace(/&amp;/g, "&")
+    // &amp; decoded LAST so "&amp;lt;" isn't double-unescaped into "<"
+    // (CodeQL: double unescaping).
     .replace(/&quot;/g, '"')
     .replace(/&#39;/g, "'")
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">")
     .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
 
 const stripTags = (value: string) => value.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim()
 

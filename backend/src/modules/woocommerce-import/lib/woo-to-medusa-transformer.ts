@@ -13,15 +13,16 @@ function sanitizeHtml(html: string | null | undefined): string {
     .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, "")
     // Replace common block elements with newlines
     .replace(/<\/?(p|div|br|h[1-6]|li|tr)\b[^>]*>/gi, "\n")
-    // Remove all remaining HTML tags
-    .replace(/<[^>]+>/g, "")
-    // Decode common HTML entities
-    .replace(/&amp;/g, "&")
+    // Decode common HTML entities, &amp; LAST so "&amp;lt;" isn't
+    // double-unescaped into "<" (CodeQL: double unescaping)
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">")
     .replace(/&quot;/g, '"')
     .replace(/&#039;/g, "'")
     .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    // Remove all remaining HTML tags (also any revealed by decoding)
+    .replace(/<[^>]+>/g, "")
     // Collapse multiple newlines
     .replace(/\n{3,}/g, "\n\n")
     .trim()
