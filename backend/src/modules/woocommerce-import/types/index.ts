@@ -131,6 +131,7 @@ export interface ImportPreview {
 
 export interface ImportResult {
   imported: number
+  updated: number
   failed: number
   skipped: number
   errors: Array<{

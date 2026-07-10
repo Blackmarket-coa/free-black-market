@@ -2,6 +2,8 @@ import { AuthenticatedMedusaRequest, MedusaResponse } from "@medusajs/framework"
 import { createLogger } from "../../../../shared/logger"
 import { EMBED_KEYS_MODULE } from "../../../../modules/embed-keys"
 import type EmbedKeysService from "../../../../modules/embed-keys/service"
+import { EMBED_ANALYTICS_MODULE } from "../../../../modules/embed-analytics"
+import type EmbedAnalyticsService from "../../../../modules/embed-analytics/service"
 import { sellerId, wellnessService, fail } from "../_helpers"
 
 const log = createLogger("api/vendor/wellness/embed")
@@ -35,6 +37,27 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
       seller_id: seller,
     })) as Array<{ id: string; title: string; is_embeddable: boolean }>
 
+    // Embed-traffic funnel (last 30 days), mapped onto the portal's shape.
+    // Degrades to zeros when analytics aren't available so the page renders.
+    let analytics = { views: 0, clicks: 0, purchases: 0, conversion_pct: 0 }
+    try {
+      const analyticsSvc = req.scope.resolve(
+        EMBED_ANALYTICS_MODULE
+      ) as EmbedAnalyticsService
+      const agg = await analyticsSvc.aggregateForSeller(seller, 30)
+      const views = agg.funnel.views
+      const purchases = agg.funnel.orders
+      analytics = {
+        views,
+        clicks: agg.funnel.checkout_start,
+        purchases,
+        conversion_pct:
+          views > 0 ? Math.round((purchases / views) * 1000) / 10 : 0,
+      }
+    } catch (err) {
+      log.warn("embed: analytics lookup failed", err)
+    }
+
     const snippet =
       `<script src="https://freeblackmarket.com/connect.js"\n` +
       `  data-fbm-vendor="${seller}"\n` +
@@ -44,6 +67,7 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
     return res.json({
       masked_key: maskedKey,
       snippet,
+      analytics,
       embeddable: {
         session_types: sessionTypes.map((s) => ({
           id: s.id,

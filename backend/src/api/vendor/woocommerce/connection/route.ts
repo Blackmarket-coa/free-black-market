@@ -4,6 +4,7 @@ import { WOOCOMMERCE_IMPORT_MODULE } from "../../../../modules/woocommerce-impor
 import WooCommerceImportModuleService from "../../../../modules/woocommerce-import/service"
 import { connectWooCommerceWorkflow } from "../../../../workflows/woocommerce-import/connect-woocommerce"
 import { decrypt } from "../../../../modules/woocommerce-import/lib/encryption"
+import { assertPublicHttpUrl, BlockedUrlError } from "../../../../shared/safe-fetch"
 
 /**
  * GET /vendor/woocommerce/connection
@@ -76,17 +77,17 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     })
   }
 
-  // Validate URL format
+  // Validate the store URL: require https and reject hosts that resolve to
+  // private/loopback/link-local addresses (SSRF hardening — this URL is fetched
+  // server-side by the WooCommerce client).
   try {
-    const url = new URL(store_url)
-    if (url.protocol !== "https:" && url.protocol !== "http:") {
-      return res.status(400).json({
-        message: "Store URL must use HTTP or HTTPS protocol",
-      })
-    }
-  } catch {
+    await assertPublicHttpUrl(store_url)
+  } catch (err) {
     return res.status(400).json({
-      message: "Invalid store URL format",
+      message:
+        err instanceof BlockedUrlError
+          ? err.message
+          : "Invalid store URL format",
     })
   }
 

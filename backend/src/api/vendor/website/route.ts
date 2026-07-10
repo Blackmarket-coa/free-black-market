@@ -29,6 +29,7 @@ type MetaRow = {
   site_url: string | null;
   site_repo: string | null;
   embed_features: string[] | null;
+  provisioning_started_at?: string | Date | null;
   updated_at?: string | Date | null;
 };
 
@@ -64,6 +65,7 @@ async function loadContext(req: AuthenticatedMedusaRequest, sellerId: string) {
       "site_url",
       "site_repo",
       "embed_features",
+      "provisioning_started_at",
       "updated_at",
     ],
     filters: { seller_id: sellerId },
@@ -109,7 +111,7 @@ export async function GET(
           { id: meta.id, site_status: "live" },
         ]);
         effectiveMeta = { ...meta, site_status: "live" };
-      } else if (isProvisioningStale(meta.updated_at)) {
+      } else if (isProvisioningStale(meta.provisioning_started_at ?? meta.updated_at)) {
         const sellerExtension = req.scope.resolve("sellerExtension");
         await updateSellerMetadataRecord(sellerExtension as SellerExtensionService, [
           { id: meta.id, site_status: "failed" },

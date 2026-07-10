@@ -174,6 +174,7 @@ const commerceModules = [
   { resolve: './src/modules/rental' },
   { resolve: './src/modules/wishlist' },
   { resolve: './src/modules/woocommerce-import' },
+  { resolve: './src/modules/odoo-import' },
   // connect.js commerce embed network
   { resolve: './src/modules/embed-keys' },
   { resolve: './src/modules/booking' },

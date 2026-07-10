@@ -19,10 +19,12 @@ import {
   authSessionRateLimiter,
   bugReportAnonymousRateLimiter,
   bugReportAuthRateLimiter,
+  embedIpRateLimiter,
   embedKeyRateLimiter,
   publicCatalogRateLimiter,
   standardRateLimiter,
   strictAuthRateLimiter,
+  trustProxyMiddleware,
   vendorRegistrationRateLimiter,
 } from "../shared/rate-limiter";
 import { preventPasswordReuseMiddleware } from "./middlewares/password-history";
@@ -611,7 +613,11 @@ export default defineMiddlewares({
     // is absorbed by the response Cache-Control headers (set in the handler).
     {
       matcher: "/store/vendors",
-      middlewares: [publicStoreCorsMiddleware, publicCatalogRateLimiter],
+      middlewares: [
+        trustProxyMiddleware,
+        publicStoreCorsMiddleware,
+        publicCatalogRateLimiter,
+      ],
     },
     {
       // Keyless fallback stays public + IP rate-limited. When a connect.js
@@ -619,6 +625,7 @@ export default defineMiddlewares({
       // the vendor's connect_domains origin allow-list (401/403 on failure).
       matcher: "/store/vendors/**",
       middlewares: [
+        trustProxyMiddleware,
         publicStoreCorsMiddleware,
         publicCatalogRateLimiter,
         optionalEmbedKey,
@@ -633,7 +640,16 @@ export default defineMiddlewares({
     // rate-limited per key.
     {
       matcher: "/store/embed/**",
-      middlewares: [embedCorsMiddleware, requireEmbedKey, embedKeyRateLimiter],
+      middlewares: [
+        trustProxyMiddleware,
+        embedCorsMiddleware,
+        requireEmbedKey,
+        // Per-key AND per-IP: the publishable key is public and Origin is
+        // spoofable, so connect_domains is advisory — the per-IP cap is the real
+        // anti-abuse backstop for a single source.
+        embedKeyRateLimiter,
+        embedIpRateLimiter,
+      ],
     },
     {
       // Verified-purchase reviews — require a logged-in customer.

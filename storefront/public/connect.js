@@ -445,6 +445,8 @@
     light: { bg: "#fff", fg: "#111", muted: "#666", border: "#e5e5e5", accent: "#111", accentFg: "#fff" },
     dark: { bg: "#161616", fg: "#f5f5f5", muted: "#a0a0a0", border: "#2c2c2c", accent: "#f5f5f5", accentFg: "#111" },
     minimal: { bg: "transparent", fg: "#111", muted: "#888", border: "#ddd", accent: "#111", accentFg: "#fff" },
+    warm: { bg: "#fdf6ee", fg: "#3a2a1a", muted: "#8a6f57", border: "#ecdcc7", accent: "#b45309", accentFg: "#fff" },
+    forest: { bg: "#f3f7f3", fg: "#14251a", muted: "#5c7263", border: "#d4e2d6", accent: "#1f5132", accentFg: "#fff" },
   };
 
   function themeVars(name) {
@@ -503,6 +505,19 @@
     });
   }
 
+  // Defense-in-depth: only ever navigate/frame http(s) URLs. These come from the
+  // FBM API today, but this stops a `javascript:`/`data:` value from ever
+  // reaching an iframe src or window.open.
+  function safeUrl(url) {
+    var s = String(url == null ? "" : url).trim();
+    return /^https?:\/\//i.test(s) ? s : "";
+  }
+
+  function openUrl(url) {
+    var safe = safeUrl(url);
+    if (safe) window.open(safe, "_blank", "noopener");
+  }
+
   function resolveEl(target) {
     if (!target) return null;
     if (typeof target === "string") return document.querySelector(target);
@@ -531,18 +546,20 @@
     if (config.checkout === "modal") {
       openModal(url);
     } else {
-      window.open(url, "_blank", "noopener");
+      openUrl(url);
     }
     return url;
   }
 
   function openModal(url) {
+    var safe = safeUrl(url);
+    if (!safe) return;
     injectStyles();
     var overlay = document.createElement("div");
     overlay.className = "fbm-modal";
     overlay.innerHTML =
       '<div class="fbm-modal__panel"><button class="fbm-modal__close" aria-label="Close">×</button>' +
-      '<iframe src="' + escapeHtml(url) + '" allow="payment"></iframe></div>';
+      '<iframe src="' + escapeHtml(safe) + '" allow="payment"></iframe></div>';
     function close() {
       if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
       document.removeEventListener("keydown", onKey);
@@ -599,6 +616,8 @@
 
   function stars(rating) {
     var r = Math.round(Number(rating) || 0);
+    if (r < 0) r = 0;
+    if (r > 5) r = 5;
     var full = "★★★★★".slice(0, r);
     var empty = "☆☆☆☆☆".slice(0, 5 - r);
     return '<span class="fbm-stars">' + full + empty + "</span>";
@@ -755,7 +774,7 @@
     function shell(inner) {
       node.innerHTML = scope(
         '<div class="fbm-field"><label>Choose a date</label>' +
-          '<input type="date" class="fbm-date" value="' + escapeHtml(date) + '" min="' + escapeHtml(todayInTz()) + '"></label></div>' +
+          '<input type="date" class="fbm-date" value="' + escapeHtml(date) + '" min="' + escapeHtml(todayInTz()) + '"></div>' +
           '<div class="fbm-slots-wrap">' + inner + "</div>" +
           '<form class="fbm-book-form" style="display:none">' +
           '<div class="fbm-field"><label>Your name</label><input type="text" name="name" required></div>' +
@@ -845,7 +864,7 @@
               track("booking_confirm", { product_id: productId });
               if (res.checkout_url && config.checkout !== "none") {
                 node.innerHTML = scope('<p class="fbm-empty">Booking created — taking you to checkout…</p>');
-                window.open(res.checkout_url, "_blank", "noopener");
+                openUrl(res.checkout_url);
               } else {
                 node.innerHTML = scope('<p class="fbm-empty">✓ Booking requested! The vendor will confirm by email.</p>');
               }

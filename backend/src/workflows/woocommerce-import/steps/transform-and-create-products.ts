@@ -23,16 +23,44 @@ const transformAndCreateProductsStep = createStep(
   ): Promise<StepResponse<ImportResult, string[]>> => {
     const productService = container.resolve(Modules.PRODUCT)
     const remoteLink = container.resolve(ContainerRegistrationKeys.REMOTE_LINK)
+    const query = container.resolve(ContainerRegistrationKeys.QUERY)
     const logger = container.resolve("logger")
 
-    const transformer = new WooToMedusaTransformer(input.currency)
+    const transformer = new WooToMedusaTransformer(
+      input.currency,
+      input.seller_id
+    )
     const result: ImportResult = {
       imported: 0,
+      updated: 0,
       failed: 0,
       skipped: 0,
       errors: [],
     }
     const createdProductIds: string[] = []
+
+    // Map of woo_product_id -> existing Medusa product id for THIS seller, so a
+    // re-import updates in place instead of colliding on the unique handle
+    // (which previously failed every product) or silently duplicating.
+    const existingByWooId = new Map<string, string>()
+    try {
+      const { data: existing } = await query.graph({
+        entity: "seller_product",
+        fields: ["product.id", "product.metadata"],
+        filters: { seller_id: input.seller_id },
+      })
+      for (const sp of existing || []) {
+        const wooId = (sp as any)?.product?.metadata?.woo_product_id
+        const productId = (sp as any)?.product?.id
+        if (wooId && productId) {
+          existingByWooId.set(String(wooId), productId)
+        }
+      }
+    } catch (error: any) {
+      logger.warn(
+        `Could not load existing products for idempotent import: ${error.message}`
+      )
+    }
 
     for (const wooProduct of input.products) {
       try {
@@ -89,6 +117,34 @@ const transformAndCreateProductsStep = createStep(
           options: v.options,
           metadata: v.metadata,
         }))
+
+        // Re-import: if this Woo product was imported before, refresh its core
+        // fields in place rather than creating a duplicate / colliding on the
+        // unique handle. Variants/prices/stock are intentionally left to the
+        // inventory-sync path; here we keep the update idempotent and safe.
+        const existingId = existingByWooId.get(String(wooProduct.id))
+        if (existingId) {
+          // Refresh core fields only. Tags/variant restructuring are left out
+          // to keep the update safe and idempotent (variants/prices/stock are
+          // reconciled by the inventory-sync path).
+          await productService.updateProducts(existingId, {
+            title: productData.title,
+            subtitle: productData.subtitle,
+            description: productData.description,
+            status: productData.status,
+            weight: productData.weight,
+            length: productData.length,
+            width: productData.width,
+            height: productData.height,
+            images: productData.images,
+            metadata: productData.metadata,
+          })
+          result.updated++
+          logger.info(
+            `Updated existing WooCommerce product "${wooProduct.name}" (${wooProduct.id}) -> ${existingId}`
+          )
+          continue
+        }
 
         // Create the product using Medusa product service
         const [createdProduct] = await productService.createProducts([productData])

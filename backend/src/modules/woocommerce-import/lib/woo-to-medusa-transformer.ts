@@ -1,30 +1,37 @@
 import type { WooProduct, WooVariation } from "../types"
 
 /**
- * Strips HTML tags from a string, keeping basic text content.
- * Uses a simple regex approach to avoid needing a DOM parser on the server.
+ * Reduce an HTML fragment to plain text for a product description.
+ *
+ * Deliberately uses NO tag-specific regexes (e.g. `<script>…</script>`), which
+ * are incomplete and bypassable (`<scr<script>ipt>`). Instead it decodes
+ * entities, then strips every `<…>` in a loop until the string is stable, and
+ * removes any residual angle bracket — so no markup (in particular `<script`)
+ * can survive. Product descriptions are plain text; no markup is intended.
  */
 function sanitizeHtml(html: string | null | undefined): string {
   if (!html) return ""
 
-  return html
-    // Remove script/style tags and their contents
-    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, "")
-    .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, "")
-    // Replace common block elements with newlines
-    .replace(/<\/?(p|div|br|h[1-6]|li|tr)\b[^>]*>/gi, "\n")
-    // Remove all remaining HTML tags
-    .replace(/<[^>]+>/g, "")
-    // Decode common HTML entities
-    .replace(/&amp;/g, "&")
+  // Decode entities first (&amp; LAST so "&amp;lt;" isn't double-unescaped into
+  // "<"), so any encoded tags become real tags the strip below removes.
+  let text = html
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">")
     .replace(/&quot;/g, '"')
     .replace(/&#039;/g, "'")
     .replace(/&nbsp;/g, " ")
-    // Collapse multiple newlines
-    .replace(/\n{3,}/g, "\n\n")
-    .trim()
+    .replace(/&amp;/g, "&")
+
+  // Strip all tags, looping until stable so nested/overlapping tags can't
+  // reconstruct markup, then drop any leftover angle bracket.
+  let prev: string
+  do {
+    prev = text
+    text = text.replace(/<[^>]*>/g, " ")
+  } while (text !== prev)
+  text = text.replace(/[<>]/g, " ")
+
+  return text.replace(/\s+/g, " ").trim()
 }
 
 function generateHandle(name: string): string {
@@ -108,9 +115,23 @@ export interface TransformedVariant {
 
 export class WooToMedusaTransformer {
   private currency: string
+  private sellerId: string
 
-  constructor(currency = "usd") {
+  constructor(currency = "usd", sellerId = "") {
     this.currency = currency.toLowerCase()
+    this.sellerId = sellerId
+  }
+
+  /**
+   * Fallback SKU for a Woo product/variation that has no SKU of its own.
+   * Namespaced by seller so two vendors importing different stores that happen
+   * to share a Woo product id don't collide on Medusa's unique variant SKU (and
+   * so inventory sync can't cross tenants).
+   */
+  private fallbackSku(wooProductId: number, variationId?: number): string {
+    const seller = this.sellerId ? `${this.sellerId}-` : ""
+    const suffix = variationId != null ? `-${variationId}` : ""
+    return `woo-${seller}${wooProductId}${suffix}`
   }
 
   /**
@@ -122,6 +143,22 @@ export class WooToMedusaTransformer {
     importAsDraft = true
   ): TransformedProduct {
     const status = importAsDraft ? "draft" : mapStatus(wooProduct.status)
+
+    // A "variable" product is only treated as multi-variant when we actually
+    // have its variations. If the variation fetch failed/returned nothing we
+    // import it as a single simple product (no options) so the create payload
+    // stays valid — options with no matching variant make Medusa reject it.
+    const usableVariations =
+      wooProduct.type === "variable" &&
+      wooVariations &&
+      wooVariations.length > 0
+        ? wooVariations
+        : undefined
+
+    const variants = this.transformVariants(wooProduct, usableVariations)
+    const options = usableVariations
+      ? this.buildOptions(wooProduct, variants)
+      : []
 
     return {
       title: wooProduct.name,
@@ -139,8 +176,8 @@ export class WooToMedusaTransformer {
       height: parseDimension(wooProduct.dimensions?.height),
       images: this.transformImages(wooProduct.images),
       tags: (wooProduct.tags || []).map((tag) => ({ value: tag.name })),
-      options: this.transformOptions(wooProduct),
-      variants: this.transformVariants(wooProduct, wooVariations),
+      options,
+      variants,
       metadata: {
         woo_product_id: String(wooProduct.id),
         woo_permalink: wooProduct.permalink || null,
@@ -159,17 +196,31 @@ export class WooToMedusaTransformer {
     return wooImages.map((img) => ({ url: img.src }))
   }
 
-  private transformOptions(
-    wooProduct: WooProduct
+  /**
+   * Build product options for a variable product, unioning the attribute's
+   * declared values with the values actually used by the transformed variants.
+   * This keeps the option/variant sets consistent even for Woo "Any" variations
+   * (whose option is an empty string, normalized here to "Any") so Medusa
+   * accepts the product.
+   */
+  private buildOptions(
+    wooProduct: WooProduct,
+    variants: TransformedVariant[]
   ): Array<{ title: string; values: string[] }> {
-    if (wooProduct.type !== "variable") return []
-
     return (wooProduct.attributes || [])
       .filter((attr) => attr.variation)
-      .map((attr) => ({
-        title: attr.name,
-        values: attr.options || [],
-      }))
+      .map((attr) => {
+        const values = new Set<string>()
+        for (const value of attr.options || []) {
+          values.add(value && value.trim() ? value : "Any")
+        }
+        for (const variant of variants) {
+          const used = variant.options[attr.name]
+          if (used) values.add(used)
+        }
+        if (values.size === 0) values.add("Any")
+        return { title: attr.name, values: Array.from(values) }
+      })
   }
 
   private transformVariants(
@@ -181,7 +232,7 @@ export class WooToMedusaTransformer {
       return [
         {
           title: "Default",
-          sku: wooProduct.sku || `woo-${wooProduct.id}`,
+          sku: wooProduct.sku || this.fallbackSku(wooProduct.id),
           manage_inventory: wooProduct.manage_stock,
           inventory_quantity: wooProduct.stock_quantity ?? 0,
           allow_backorder: wooProduct.backorders_allowed,
@@ -210,12 +261,15 @@ export class WooToMedusaTransformer {
       return wooVariations.map((variation) => {
         const optionMap: Record<string, string> = {}
         for (const attr of variation.attributes) {
-          optionMap[attr.name] = attr.option
+          // Woo "Any <attr>" variations carry an empty option; normalize so the
+          // value is present in the option list built by buildOptions().
+          optionMap[attr.name] =
+            attr.option && attr.option.trim() ? attr.option : "Any"
         }
 
         return {
           title: this.generateVariantTitle(variation.attributes),
-          sku: variation.sku || `woo-${wooProduct.id}-${variation.id}`,
+          sku: variation.sku || this.fallbackSku(wooProduct.id, variation.id),
           manage_inventory: variation.manage_stock ?? wooProduct.manage_stock,
           inventory_quantity: variation.stock_quantity ?? 0,
           allow_backorder: variation.backorders_allowed ?? wooProduct.backorders_allowed,
@@ -243,7 +297,7 @@ export class WooToMedusaTransformer {
     return [
       {
         title: "Default",
-        sku: wooProduct.sku || `woo-${wooProduct.id}`,
+        sku: wooProduct.sku || this.fallbackSku(wooProduct.id),
         manage_inventory: wooProduct.manage_stock,
         inventory_quantity: wooProduct.stock_quantity ?? 0,
         allow_backorder: wooProduct.backorders_allowed,

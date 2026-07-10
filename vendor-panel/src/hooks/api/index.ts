@@ -37,6 +37,7 @@ export * from "./workflow-executions"
 export * from "./requests"
 export * from "./stripe"
 export * from "./woocommerce"
+export * from "./odoo"
 export * from "./website"
 
 export * from "./printful"

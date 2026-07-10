@@ -25,7 +25,12 @@ export function ConnectEmbedPage() {
         subtitle="Embed your memberships and drops on your own site with the connect.js SDK."
       />
       <QueryState isLoading={isLoading} isError={isError}>
-        {data && (
+        {data && (() => {
+          const themedSnippet = data.snippet.replace(
+            'data-fbm-theme="warm"',
+            `data-fbm-theme="${theme}"`
+          )
+          return (
           <>
             <section className="panel-pad space-y-2">
               <div className="flex items-center justify-between">
@@ -33,13 +38,12 @@ export function ConnectEmbedPage() {
                 <span className="text-xs text-ghost">Key: {data.masked_key ?? "none yet"}</span>
               </div>
               <pre className="bg-soil border border-moss rounded-sm p-3 text-xs text-mist overflow-x-auto scroll-area whitespace-pre">
-                {data.snippet.replace('data-fbm-theme="warm"', `data-fbm-theme="${theme}"`)}
+                {themedSnippet}
               </pre>
               <div className="flex gap-2">
-                <button onClick={() => copy(data.snippet)} className="btn-primary text-sm">
+                <button onClick={() => copy(themedSnippet)} className="btn-primary text-sm">
                   {copied ? "Copied!" : "Copy snippet"}
                 </button>
-                <button className="btn-ghost text-sm">Regenerate key</button>
               </div>
             </section>
 
@@ -66,10 +70,12 @@ export function ConnectEmbedPage() {
                 <div className="heading text-sm text-cream-50 mb-2">What's embedded</div>
                 <div className="space-y-1.5 text-sm">
                   {[...data.embeddable.memberships, ...data.embeddable.products].map((o) => (
-                    <label key={o.id} className="flex items-center justify-between">
+                    <div key={o.id} className="flex items-center justify-between">
                       <span className="text-cream-100">{o.name}</span>
-                      <input type="checkbox" defaultChecked={o.embedded} />
-                    </label>
+                      <span className={o.embedded ? "text-amber-400 text-xs" : "text-ghost text-xs"}>
+                        {o.embedded ? "Embedded" : "Hidden"}
+                      </span>
+                    </div>
                   ))}
                 </div>
               </div>
@@ -85,7 +91,8 @@ export function ConnectEmbedPage() {
               </div>
             </section>
           </>
-        )}
+          )
+        })()}
       </QueryState>
     </div>
   )

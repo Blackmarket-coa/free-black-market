@@ -11,7 +11,7 @@ import {
   Text,
   toast,
 } from "@medusajs/ui"
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { useSearchParams } from "react-router-dom"
 import { useTranslation } from "react-i18next"
 import { FilePreview } from "../../../components/common/file-preview"
@@ -27,6 +27,13 @@ import {
   useDisconnectWooCommerce,
   useWooPreview,
   useWooImport,
+  useWooImportHistory,
+  useOdooConnection,
+  useConnectOdoo,
+  useDisconnectOdoo,
+  useOdooPreview,
+  useOdooImport,
+  useOdooImportHistory,
   usePrintfulCatalogPreview,
   usePrintfulImport,
 } from "../../../hooks/api"
@@ -35,7 +42,12 @@ import { getProductImportCsvTemplate } from "./helpers/import-template"
 import { ImportSummary } from "./components/import-summary"
 import { UploadImport } from "./components/upload-import"
 
-type ProductImportSource = "woocommerce" | "online_store" | "csv" | "printful"
+type ProductImportSource =
+  | "woocommerce"
+  | "odoo"
+  | "online_store"
+  | "csv"
+  | "printful"
 
 type ExternalImportCandidate = {
   id: string
@@ -102,6 +114,7 @@ const ONLINE_STORE_WRAPPING_QUOTES = /^[\s"'`“”‘’]+|[\s"'`“”‘’]+
 
 const SOURCE_OPTIONS: { label: string; value: ProductImportSource }[] = [
   { label: "WooCommerce", value: "woocommerce" },
+  { label: "Odoo", value: "odoo" },
   { label: "Online store", value: "online_store" },
   { label: "CSV upload", value: "csv" },
   { label: "Printful catalog", value: "printful" },
@@ -110,6 +123,8 @@ const SOURCE_OPTIONS: { label: string; value: ProductImportSource }[] = [
 const SOURCE_HELPERS: Record<ProductImportSource, string> = {
   woocommerce:
     "Connect your WooCommerce store with API credentials to import all products automatically.",
+  odoo:
+    "Connect your Odoo instance with an API key to import your product catalog.",
   online_store:
     "Paste product, collection, or shop links from any online store to build your import list.",
   csv: "Upload a CSV file and import many products at once.",
@@ -482,6 +497,8 @@ const ProductImportContent = () => {
         </div>
 
         {sourceType === "woocommerce" && <WooCommerceImportSection />}
+
+        {sourceType === "odoo" && <OdooImportSection />}
 
         {sourceType === "printful" && <PrintfulImportSection />}
 
@@ -931,9 +948,55 @@ const WooConnectedView = ({
     error: previewError,
   } = useWooPreview({ enabled: true })
 
-  const { mutateAsync: startImport, isPending: isImporting } = useWooImport()
+  const { mutateAsync: startImport, isPending: isStarting } = useWooImport()
   const { mutateAsync: disconnect, isPending: isDisconnecting } =
     useDisconnectWooCommerce()
+
+  const [activeImportId, setActiveImportId] = useState<string | null>(null)
+
+  // Poll import history while an import is active (the import now runs in the
+  // background and returns 202, so we watch the log until it settles).
+  const { imports } = useWooImportHistory({
+    refetchInterval: (query: any) => {
+      const list = query.state.data?.imports || []
+      const latest = list[0]
+      return latest &&
+        (latest.status === "pending" || latest.status === "in_progress")
+        ? 4000
+        : false
+    },
+  })
+
+  const latestImport = (imports || [])[0]
+  const isRunning =
+    !!latestImport &&
+    (latestImport.status === "pending" ||
+      latestImport.status === "in_progress")
+
+  // When the import we started settles, surface the final counts + a toast.
+  useEffect(() => {
+    if (!activeImportId || !latestImport) return
+    if (latestImport.id !== activeImportId) return
+    if (latestImport.status === "completed" || latestImport.status === "failed") {
+      setImportResult({
+        message:
+          latestImport.status === "completed"
+            ? "Import completed."
+            : "Import finished with errors.",
+        result: {
+          imported: latestImport.imported_count ?? 0,
+          failed: latestImport.failed_count ?? 0,
+          skipped: latestImport.skipped_count ?? 0,
+        },
+      })
+      if (latestImport.status === "completed") {
+        toast.success("Import completed.")
+      } else {
+        toast.error("Import finished with errors.")
+      }
+      setActiveImportId(null)
+    }
+  }, [activeImportId, latestImport])
 
   const handleImport = async () => {
     await startImport(
@@ -943,15 +1006,20 @@ const WooConnectedView = ({
       },
       {
         onSuccess: (data) => {
-          setImportResult(data)
-          toast.success(data.message || "Import completed.")
+          setImportResult(null)
+          if (data?.import_log_id) {
+            setActiveImportId(data.import_log_id)
+          }
+          toast.success(data.message || "Import started.")
         },
         onError: (err) => {
-          toast.error(err.message || "Import failed.")
+          toast.error(err.message || "Import failed to start.")
         },
       }
     )
   }
+
+  const isImporting = isStarting || isRunning
 
   const handleDisconnect = async () => {
     await disconnect(undefined, {
@@ -1107,13 +1175,338 @@ const WooConnectedView = ({
           size="small"
           onClick={handleImport}
           isLoading={isImporting}
-          disabled={!preview || preview.total_products === 0}
+          disabled={!preview || preview.total_products === 0 || isImporting}
         >
-          Import {preview?.total_products ?? 0} products
+          {isRunning
+            ? "Importing…"
+            : `Import ${preview?.total_products ?? 0} products`}
         </Button>
+        {isRunning && (
+          <Text size="xsmall" className="mt-2 text-ui-fg-subtle">
+            Import is running in the background. You can leave this page — track
+            progress here or under import history.
+          </Text>
+        )}
       </div>
 
       {/* Import result */}
+      {importResult?.result && (
+        <div className="mt-4 rounded-lg border border-ui-border-base p-4">
+          <Heading level="h3">Import results</Heading>
+          <div className="mt-2 grid grid-cols-3 gap-3">
+            <div>
+              <Text size="xsmall" className="text-ui-fg-subtle">
+                Imported
+              </Text>
+              <Text size="small" weight="plus">
+                {importResult.result.imported}
+              </Text>
+            </div>
+            <div>
+              <Text size="xsmall" className="text-ui-fg-subtle">
+                Failed
+              </Text>
+              <Text size="small" weight="plus">
+                {importResult.result.failed}
+              </Text>
+            </div>
+            <div>
+              <Text size="xsmall" className="text-ui-fg-subtle">
+                Skipped
+              </Text>
+              <Text size="small" weight="plus">
+                {importResult.result.skipped}
+              </Text>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  )
+}
+
+/**
+ * Odoo import: connect an Odoo instance and import its product catalog.
+ * External stores are data sources only — checkout/orders/inventory stay in FBM.
+ */
+const OdooImportSection = () => {
+  const { connection, isLoading: isLoadingConnection } = useOdooConnection()
+  const isConnected = !!connection
+
+  return (
+    <div className="mt-6">
+      {isLoadingConnection ? (
+        <div className="flex items-center justify-center py-8">
+          <Text size="small" className="text-ui-fg-subtle">
+            Checking Odoo connection...
+          </Text>
+        </div>
+      ) : isConnected ? (
+        <OdooConnectedView connection={connection} />
+      ) : (
+        <OdooConnectForm />
+      )}
+    </div>
+  )
+}
+
+const OdooConnectForm = () => {
+  const [url, setUrl] = useState("")
+  const [dbName, setDbName] = useState("")
+  const [username, setUsername] = useState("")
+  const [apiKey, setApiKey] = useState("")
+
+  const { mutateAsync: connect, isPending } = useConnectOdoo()
+
+  const handleConnect = async () => {
+    if (!url || !dbName || !username || !apiKey) {
+      toast.error("All fields are required.")
+      return
+    }
+    try {
+      new URL(url)
+    } catch {
+      toast.error("Enter a valid Odoo URL (e.g. https://mycompany.odoo.com).")
+      return
+    }
+
+    await connect(
+      {
+        url: url.replace(/\/+$/, ""),
+        db_name: dbName.trim(),
+        username: username.trim(),
+        api_key: apiKey.trim(),
+      },
+      {
+        onSuccess: (data) => {
+          toast.success(data.message || "Odoo store connected successfully.")
+        },
+        onError: (err) => {
+          toast.error(err.message || "Failed to connect Odoo store.")
+        },
+      }
+    )
+  }
+
+  return (
+    <>
+      <Heading level="h2">2) Connect your Odoo instance</Heading>
+      <Text size="small" className="mt-1 text-ui-fg-subtle">
+        Enter your Odoo URL, database, username (email), and an API key
+        (Preferences &rarr; Account Security &rarr; New API Key).
+      </Text>
+
+      <div className="mt-4 space-y-3">
+        <div>
+          <Label size="xsmall" weight="plus">
+            Odoo URL
+          </Label>
+          <Input
+            className="mt-1"
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+            placeholder="https://mycompany.odoo.com"
+          />
+        </div>
+        <div>
+          <Label size="xsmall" weight="plus">
+            Database
+          </Label>
+          <Input
+            className="mt-1"
+            value={dbName}
+            onChange={(e) => setDbName(e.target.value)}
+            placeholder="mycompany"
+          />
+        </div>
+        <div>
+          <Label size="xsmall" weight="plus">
+            Username (email)
+          </Label>
+          <Input
+            className="mt-1"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            placeholder="you@company.com"
+          />
+        </div>
+        <div>
+          <Label size="xsmall" weight="plus">
+            API Key
+          </Label>
+          <Input
+            className="mt-1"
+            type="password"
+            value={apiKey}
+            onChange={(e) => setApiKey(e.target.value)}
+            placeholder="Odoo API key"
+          />
+        </div>
+      </div>
+
+      <div className="mt-4">
+        <Button
+          type="button"
+          size="small"
+          onClick={handleConnect}
+          isLoading={isPending}
+        >
+          Connect store
+        </Button>
+      </div>
+    </>
+  )
+}
+
+const OdooConnectedView = ({
+  connection,
+}: {
+  connection: {
+    id: string
+    url: string
+    db_name: string
+    store_name?: string | null
+    currency?: string | null
+  }
+}) => {
+  const [importAsDraft, setImportAsDraft] = useState(false)
+  const [importResult, setImportResult] = useState<{
+    message: string
+    result?: { imported: number; failed: number; skipped: number }
+  } | null>(null)
+  const [activeImportId, setActiveImportId] = useState<string | null>(null)
+
+  const { preview, isLoading: isLoadingPreview } = useOdooPreview({ enabled: true })
+  const { mutateAsync: startImport, isPending: isStarting } = useOdooImport()
+  const { mutateAsync: disconnect, isPending: isDisconnecting } =
+    useDisconnectOdoo()
+
+  const { imports } = useOdooImportHistory({
+    refetchInterval: (query: any) => {
+      const list = query.state.data?.imports || []
+      const latest = list[0]
+      return latest &&
+        (latest.status === "pending" || latest.status === "in_progress")
+        ? 4000
+        : false
+    },
+  })
+
+  const latestImport = (imports || [])[0]
+  const isRunning =
+    !!latestImport &&
+    (latestImport.status === "pending" ||
+      latestImport.status === "in_progress")
+  const isImporting = isStarting || isRunning
+
+  useEffect(() => {
+    if (!activeImportId || !latestImport) return
+    if (latestImport.id !== activeImportId) return
+    if (latestImport.status === "completed" || latestImport.status === "failed") {
+      setImportResult({
+        message:
+          latestImport.status === "completed"
+            ? "Import completed."
+            : "Import finished with errors.",
+        result: {
+          imported: latestImport.imported_count ?? 0,
+          failed: latestImport.failed_count ?? 0,
+          skipped: latestImport.skipped_count ?? 0,
+        },
+      })
+      if (latestImport.status === "completed") {
+        toast.success("Import completed.")
+      } else {
+        toast.error("Import finished with errors.")
+      }
+      setActiveImportId(null)
+    }
+  }, [activeImportId, latestImport])
+
+  const handleImport = async () => {
+    await startImport(
+      { import_as_draft: importAsDraft },
+      {
+        onSuccess: (data) => {
+          setImportResult(null)
+          if (data?.import_log_id) setActiveImportId(data.import_log_id)
+          toast.success(data.message || "Import started.")
+        },
+        onError: (err) => {
+          toast.error(err.message || "Import failed to start.")
+        },
+      }
+    )
+  }
+
+  const handleDisconnect = async () => {
+    await disconnect(undefined, {
+      onSuccess: () => toast.info("Odoo store disconnected."),
+      onError: (err) => toast.error(err.message || "Failed to disconnect."),
+    })
+  }
+
+  return (
+    <>
+      <div className="flex items-center justify-between">
+        <div>
+          <Heading level="h2">2) Import from Odoo</Heading>
+          <Text size="small" className="mt-1 text-ui-fg-subtle">
+            Connected to {connection.store_name || connection.db_name} (
+            {connection.url}).
+          </Text>
+        </div>
+        <Button
+          type="button"
+          size="small"
+          variant="secondary"
+          onClick={handleDisconnect}
+          isLoading={isDisconnecting}
+        >
+          Disconnect
+        </Button>
+      </div>
+
+      <Text size="small" className="mt-2 text-ui-fg-subtle">
+        {isLoadingPreview
+          ? "Loading catalog…"
+          : `${preview?.total_products ?? 0} products available to import.`}
+      </Text>
+
+      <div className="mt-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <div>
+            <Text size="small" weight="plus">
+              Import as draft
+            </Text>
+            <Text size="xsmall" className="text-ui-fg-subtle">
+              Imported products start as drafts for review.
+            </Text>
+          </div>
+          <Switch checked={importAsDraft} onCheckedChange={setImportAsDraft} />
+        </div>
+      </div>
+
+      <div className="mt-4">
+        <Button
+          type="button"
+          size="small"
+          onClick={handleImport}
+          isLoading={isImporting}
+          disabled={!preview || preview.total_products === 0 || isImporting}
+        >
+          {isRunning
+            ? "Importing…"
+            : `Import ${preview?.total_products ?? 0} products`}
+        </Button>
+        {isRunning && (
+          <Text size="xsmall" className="mt-2 text-ui-fg-subtle">
+            Import is running in the background. You can leave this page — track
+            progress here or under import history.
+          </Text>
+        )}
+      </div>
+
       {importResult?.result && (
         <div className="mt-4 rounded-lg border border-ui-border-base p-4">
           <Heading level="h3">Import results</Heading>
