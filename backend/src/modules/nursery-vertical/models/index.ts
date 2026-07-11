@@ -10,3 +10,7 @@ export type {
   PropagationBatchStatus,
 } from "./propagation-batch"
 export { default as StratificationRecord } from "./stratification-record"
+export { default as MotherPlant } from "./mother-plant"
+export { default as DoaClaim } from "./doa-claim"
+export { DOA_CLAIM_STATUSES } from "./doa-claim"
+export type { DoaClaimStatus } from "./doa-claim"

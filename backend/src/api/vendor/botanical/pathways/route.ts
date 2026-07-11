@@ -3,27 +3,43 @@ import { BOTANICAL_MODULE } from "../../../../modules/botanical"
 import type BotanicalModuleService from "../../../../modules/botanical/service"
 import { getSellerId } from "../../quests/_helpers"
 
-/**
- * Shape returned for each active pathway. Adds the denormalized display counts
- * (`formula_count` / `active_run_count`) the portal's Pathways page cards read;
- * those live in separate modules not built here, so they default to 0.
- */
-function toPathwayView(p: Record<string, unknown>) {
-  return { ...p, formula_count: 0, active_run_count: 0 }
-}
+/** Statuses that count as "active" for the pathway-card run counter. */
+const ACTIVE_RUN_STATUSES = ["planned", "in_progress", "curing", "testing"]
 
 /**
  * GET /vendor/botanical/pathways
- * This maker's active production pathways. Returns `{ pathways }` to match the
- * botanical-portal `useActivePathways` hook contract.
+ * This maker's active production pathways, with the denormalized
+ * `formula_count` / `active_run_count` the Pathways page cards display.
+ * Returns `{ pathways }` to match the `useActivePathways` hook contract.
  */
 export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
   const makerId = getSellerId(req)
   if (!makerId) return res.status(401).json({ message: "Unauthorized" })
 
   const service = req.scope.resolve<BotanicalModuleService>(BOTANICAL_MODULE)
-  const pathways = await service.listActivePathwaysForMaker(makerId)
-  res.json({ pathways: pathways.map(toPathwayView) })
+  const [pathways, formulas, runs] = await Promise.all([
+    service.listActivePathwaysForMaker(makerId),
+    service.listFormulasForMaker(makerId),
+    service.listRunsForMaker(makerId),
+  ])
+
+  const formulaCounts = new Map<string, number>()
+  for (const f of formulas) {
+    formulaCounts.set(f.pathway_id, (formulaCounts.get(f.pathway_id) ?? 0) + 1)
+  }
+  const runCounts = new Map<string, number>()
+  for (const r of runs) {
+    if (!ACTIVE_RUN_STATUSES.includes(r.status)) continue
+    runCounts.set(r.pathway_id, (runCounts.get(r.pathway_id) ?? 0) + 1)
+  }
+
+  res.json({
+    pathways: pathways.map((p) => ({
+      ...p,
+      formula_count: formulaCounts.get(p.id) ?? 0,
+      active_run_count: runCounts.get(p.id) ?? 0,
+    })),
+  })
 }
 
 interface ActivateBody {
@@ -66,5 +82,6 @@ export const POST = async (
     counts_toward_cottage_food_limit: b.counts_toward_cottage_food_limit,
   })
 
-  res.status(201).json({ pathway: toPathwayView(pathway as Record<string, unknown>) })
+  // A just-activated pathway has no formulas or runs yet.
+  res.status(201).json({ pathway: { ...pathway, formula_count: 0, active_run_count: 0 } })
 }

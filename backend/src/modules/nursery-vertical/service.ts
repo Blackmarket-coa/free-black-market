@@ -3,6 +3,8 @@ import {
   NurseryProductAttribute,
   PropagationBatch,
   StratificationRecord,
+  MotherPlant,
+  DoaClaim,
   PROPAGATION_METHODS,
   type PropagationMethod,
 } from "./models"
@@ -39,7 +41,25 @@ class NurseryVerticalModuleService extends MedusaService({
   NurseryProductAttribute,
   PropagationBatch,
   StratificationRecord,
+  MotherPlant,
+  DoaClaim,
 }) {
+  /** A vendor's mother plants, alphabetical by species. */
+  async listMotherPlantsForSeller(sellerId: string) {
+    return this.listMotherPlants(
+      { seller_id: sellerId },
+      { order: { species_name: "ASC" } }
+    )
+  }
+
+  /** A vendor's DOA claims, newest first. */
+  async listDoaClaimsForSeller(sellerId: string) {
+    return this.listDoaClaims(
+      { seller_id: sellerId },
+      { order: { opened_at: "DESC" } }
+    )
+  }
+
   async getAttributeForProduct(productId: string) {
     const [attr] = await this.listNurseryProductAttributes({ product_id: productId })
     return attr ?? null

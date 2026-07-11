@@ -1,5 +1,13 @@
 import { MedusaService } from "@medusajs/framework/utils"
-import { Pathway } from "./models"
+import {
+  Pathway,
+  Formula,
+  ProductionRun,
+  RawMaterial,
+  FinishedGood,
+  PhTestLog,
+  GerminationLog,
+} from "./models"
 import {
   PATHWAY_TEMPLATES,
   getPathwayTemplate,
@@ -24,7 +32,61 @@ export interface ActivatePathwayInput {
  */
 class BotanicalModuleService extends MedusaService({
   Pathway,
+  Formula,
+  ProductionRun,
+  RawMaterial,
+  FinishedGood,
+  PhTestLog,
+  GerminationLog,
 }) {
+  /** A maker's formulas, optionally filtered to one pathway, newest first. */
+  async listFormulasForMaker(makerId: string, pathwayId?: string) {
+    return this.listFormulas(
+      { maker_id: makerId, ...(pathwayId ? { pathway_id: pathwayId } : {}) },
+      { order: { created_at: "DESC" } }
+    )
+  }
+
+  /** A maker's production runs, soonest planned date first. */
+  async listRunsForMaker(makerId: string) {
+    return this.listProductionRuns(
+      { maker_id: makerId },
+      { order: { planned_date: "ASC" } }
+    )
+  }
+
+  /** A maker's raw materials, alphabetical. */
+  async listMaterialsForMaker(makerId: string) {
+    return this.listRawMaterials(
+      { maker_id: makerId },
+      { order: { name: "ASC" } }
+    )
+  }
+
+  /** A maker's finished goods, freshest first. */
+  async listFinishedGoodsForMaker(makerId: string) {
+    return this.listFinishedGoods(
+      { maker_id: makerId },
+      { order: { manufacture_date: "DESC" } }
+    )
+  }
+
+  /** A maker's pH test logs, newest first. */
+  async listPhLogsForMaker(makerId: string) {
+    return this.listPhTestLogs(
+      { maker_id: makerId },
+      { order: { test_date: "DESC" } }
+    )
+  }
+
+  /** A maker's germination logs, newest first. */
+  async listGerminationLogsForMaker(makerId: string) {
+    return this.listGerminationLogs(
+      { maker_id: makerId },
+      { order: { test_date: "DESC" } }
+    )
+  }
+
   /** The built-in pathway template catalog (static reference data). */
   listTemplates(): PathwayTemplate[] {
     return PATHWAY_TEMPLATES
