@@ -238,3 +238,246 @@ export interface GovernanceProposal {
   status: "open" | "closed"
   outcome?: string
 }
+
+// ── Listings & Order Cycles ─────────────────────────────────────────────────
+
+export type ListingStatus = "active" | "paused" | "sold_out"
+
+export interface NurseryListing {
+  id: string
+  species_name: string
+  category: string // e.g. "Fruit & nut", "Herbs", "Natives"
+  pot_size: string
+  price_cents: number
+  stock: number
+  status: ListingStatus
+  orders_30d?: number
+}
+
+export type OrderCycleStatus = "upcoming" | "open" | "fulfilling" | "closed"
+
+export interface OrderCycle {
+  id: string
+  name: string
+  opens_at: string // ISO
+  closes_at: string // ISO
+  status: OrderCycleStatus
+  order_count: number
+  gross_cents: number
+}
+
+export interface DemandPoolSpecies {
+  id: string
+  species_name: string
+  requests: number
+  top_states: string[]
+  suggested_method: PropagationMethod
+  activated: boolean
+}
+
+export interface ListingsData {
+  listings: NurseryListing[]
+  order_cycles: OrderCycle[]
+  demand_pool: DemandPoolSpecies[]
+}
+
+// ── Analytics ───────────────────────────────────────────────────────────────
+
+export interface RevenuePoint {
+  month: string // "2026-05"
+  gross_cents: number
+  net_cents: number
+  fees_cents: number
+  units: number
+}
+
+export interface MethodSuccessRate {
+  method: PropagationMethod
+  batches: number
+  qty_started: number
+  qty_successful: number
+}
+
+export interface SpeciesPerformance {
+  species_name: string
+  units: number
+  revenue_cents: number
+  avg_price_cents: number
+  doa_count: number
+}
+
+export interface StateSales {
+  state: string // 2-letter
+  units: number
+}
+
+export interface AnalyticsSummary {
+  revenue_by_month: RevenuePoint[]
+  method_success: MethodSuccessRate[]
+  top_species: SpeciesPerformance[]
+  sales_by_state: StateSales[]
+  doa_rate_trend: { month: string; rate: number }[] // rate 0..1
+}
+
+// ── Wholesale (hub only) ────────────────────────────────────────────────────
+
+export interface WholesalePriceRow {
+  id: string
+  species_name: string
+  format: string // e.g. "72-cell plug tray"
+  unit_price_cents: number
+  min_order_qty: number
+  available_qty: number
+  lead_time_weeks: number
+}
+
+export type WholesaleRequestStatus = "new" | "quoted" | "accepted" | "declined"
+
+export interface WholesaleBuyerRequest {
+  id: string
+  buyer_name: string
+  org_type: string // e.g. "Restoration contractor", "Garden center"
+  species_name: string
+  qty: number
+  state: string
+  requested_at: string
+  status: WholesaleRequestStatus
+  notes?: string
+}
+
+export interface WholesaleData {
+  price_sheet: WholesalePriceRow[]
+  buyer_requests: WholesaleBuyerRequest[]
+}
+
+// ── Network (hub only) ──────────────────────────────────────────────────────
+
+export type NodeTransferStatus = "requested" | "in_transit" | "received"
+
+export interface NodeTransfer {
+  id: string
+  from_node: string
+  to_node: string
+  species_name: string
+  qty: number
+  status: NodeTransferStatus
+  updated_at: string
+}
+
+export type NodeApplicationStage = "applied" | "interview" | "trial_batch" | "approved"
+
+export interface NodeApplication {
+  id: string
+  applicant_name: string
+  state: string
+  stage: NodeApplicationStage
+  applied_at: string
+}
+
+export interface NetworkData {
+  totals: {
+    units_this_month: number
+    gross_cents: number
+    grower_pool_cents: number
+    hub_net_cents: number
+  }
+  nodes: NodeHealth[]
+  transfers: NodeTransfer[]
+  onboarding: NodeApplication[]
+}
+
+// ── Quests ──────────────────────────────────────────────────────────────────
+// These mirror the backend vendor-quest module responses exactly:
+//   GET  /vendor/quests             → { quests: QuestCatalogEntry[], count }
+//   GET  /vendor/quests/enrollments → { enrollments: QuestEnrollmentItem[], count }
+// (see backend/src/modules/vendor-quest/types.ts and service.ts toCatalogEntry)
+
+export type QuestRequirementTag =
+  | "platform" // 🟢 FBM generates it from real records
+  | "assisted" // 🟡 FBM drafts it from records + vendor input
+  | "vendor-supplied" // ⚪ vendor uploads it
+  | "outside-fbm" // ❌ lives outside FBM entirely
+
+export type QuestDomainField = "inventory" | "production" | "channels" | "documents"
+
+export interface QuestCatalogRequirement {
+  key: string
+  label: string
+  tag: QuestRequirementTag
+  needs: QuestDomainField[]
+  note?: string
+}
+
+export interface QuestCatalogStage {
+  key: string
+  label: string
+  order: number
+  description?: string
+}
+
+export interface QuestCatalogEntry {
+  key: string
+  category: string
+  title: string
+  outcome: string
+  type: "individual" | "collective"
+  gatekeeper: string
+  disclaimer: string
+  health_claims_guardrail: boolean
+  uses_fields: QuestDomainField[]
+  has_packet: boolean
+  requirements: QuestCatalogRequirement[]
+  stages: QuestCatalogStage[]
+}
+
+export type QuestEnrollmentStatus = "ACTIVE" | "DROPPED" | "COMPLETE"
+
+export interface QuestEnrollment {
+  id: string
+  seller_id: string
+  quest_key: string
+  status: QuestEnrollmentStatus
+  current_stage: number
+  collective_id: string | null
+  enrolled_at: string
+  dropped_at: string | null
+  completed_at: string | null
+}
+
+export type QuestRequirementStatus =
+  | "satisfied"
+  | "unsatisfied"
+  | "unavailable" // a needed domain field is absent for this vendor
+  | "checklist" // vendor-supplied / outside-fbm, never auto-satisfied
+
+export interface QuestEvaluatedRequirement {
+  key: string
+  label: string
+  tag: QuestRequirementTag
+  status: QuestRequirementStatus
+  note?: string
+}
+
+export interface QuestEvaluatedStage {
+  key: string
+  label: string
+  order: number
+  open: boolean
+  missing: string[]
+}
+
+export interface QuestEvaluation {
+  quest_key: string
+  stages: QuestEvaluatedStage[]
+  current_stage_index: number
+  current_stage_key: string | null
+  final_gate_open: boolean
+  packet_available: boolean
+  requirements: QuestEvaluatedRequirement[]
+}
+
+/** One row of GET /vendor/quests/enrollments — evaluation is null unless ACTIVE. */
+export interface QuestEnrollmentItem {
+  enrollment: QuestEnrollment
+  evaluation: QuestEvaluation | null
+}
