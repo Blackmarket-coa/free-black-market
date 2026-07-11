@@ -77,7 +77,9 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
   let activeListings = 0
   try {
     const query = req.scope.resolve(ContainerRegistrationKeys.QUERY) as {
-      graph: (a: Record<string, unknown>) => Promise<{ data: any[] }>
+      graph: (a: Record<string, unknown>) => Promise<{
+        data: { product?: { id?: string; status?: string } | null }[]
+      }>
     }
     const { data: sellerProducts } = await query.graph({
       entity: "seller_product",
@@ -85,7 +87,7 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
       filters: { seller_id: sellerId },
     })
     activeListings = (sellerProducts ?? []).filter(
-      (sp: any) => sp?.product?.status === "published"
+      (sp) => sp?.product?.status === "published"
     ).length
   } catch {
     activeListings = 0

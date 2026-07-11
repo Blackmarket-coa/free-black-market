@@ -59,7 +59,15 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
         listXpEvents(
           filters: Record<string, unknown>,
           config?: Record<string, unknown>
-        ): Promise<any[]>
+        ): Promise<
+          {
+            id: string
+            reason?: string | null
+            amount?: number | null
+            occurred_at?: string | Date | null
+            created_at?: string | Date | null
+          }[]
+        >
       }>(PROGRESSION_MODULE)
       const events = await progression.listXpEvents(
         { customer_id: customerId, role: Stance.PRODUCER },
@@ -69,7 +77,7 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
         id: e.id,
         type: String(e.reason ?? "").replace(/^grower:/, ""),
         karma: Number(e.amount ?? 0),
-        at: new Date(e.occurred_at ?? e.created_at).toISOString(),
+        at: new Date(e.occurred_at ?? e.created_at ?? 0).toISOString(),
         description: describeReason(String(e.reason ?? "")),
       }))
     }
