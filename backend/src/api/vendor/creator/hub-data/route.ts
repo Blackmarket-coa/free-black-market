@@ -6,6 +6,7 @@ import {
   listCreatorMembers,
   listCreatorCreditTransactions,
 } from "../../../../lib/creator-hub"
+import { getSellerQuestHighlights } from "../../../../shared/seller-quests"
 
 /**
  * GET /vendor/creator/hub-data
@@ -21,9 +22,10 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
 
   const hawala = req.scope.resolve<HawalaLedgerModuleService>(HAWALA_LEDGER_MODULE)
 
-  const [members, txns] = await Promise.all([
+  const [members, txns, questHighlights] = await Promise.all([
     listCreatorMembers(req.scope, sellerId),
     listCreatorCreditTransactions(hawala, sellerId, 200),
+    getSellerQuestHighlights(req.scope, sellerId),
   ])
 
   const startOfToday = new Date()
@@ -74,6 +76,6 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
     },
     urgent_actions,
     recent_activity: [],
-    quest_highlights: [],
+    quest_highlights: questHighlights,
   })
 }

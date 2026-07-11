@@ -1,21 +1,60 @@
 import type { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
+import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 import { NURSERY_VERTICAL_MODULE } from "../../../../modules/nursery-vertical"
 import type NurseryVerticalModuleService from "../../../../modules/nursery-vertical/service"
 import { getSellerId } from "../../quests/_helpers"
+import {
+  getSellerLedgerEntries,
+  purchaseRevenueCents,
+  startOfMonth,
+} from "../../../../shared/vendor-earnings"
+import {
+  getSellerOrders,
+  isPendingFulfillment,
+  type SellerOrder,
+} from "../../../../shared/seller-orders"
+import { getSellerQuestHighlights } from "../../../../shared/seller-quests"
 
 const IN_PROPAGATION_STATUSES = ["started", "germinating", "rooting", "growing_out"]
 
 const DAY_MS = 24 * 60 * 60 * 1000
+/** Standard fulfillment SLA used for ship-by until per-order SLAs exist. */
+const SHIP_BY_SLA_DAYS = 3
+
+/** Map a Medusa fulfillment_status onto the portal's order status vocabulary. */
+function toPortalOrderStatus(
+  status: string | null | undefined
+): "unfulfilled" | "packed" | "shipped" {
+  if (!status || status === "not_fulfilled" || status === "partially_fulfilled") {
+    return "unfulfilled"
+  }
+  if (["shipped", "partially_shipped", "delivered", "partially_delivered"].includes(status)) {
+    return "shipped"
+  }
+  return "packed" // fulfilled but not yet shipped
+}
+
+function toNurseryOrder(o: SellerOrder) {
+  const createdAt = new Date(o.created_at)
+  return {
+    id: o.id,
+    buyer_name: o.buyer_name,
+    lines: o.items.map((it) => ({ species_name: it.title, qty: it.quantity })),
+    destination_state: o.destination_state,
+    ship_by: new Date(createdAt.getTime() + SHIP_BY_SLA_DAYS * DAY_MS).toISOString(),
+    status: toPortalOrderStatus(o.fulfillment_status),
+    total_cents: o.seller_total_cents,
+    created_at: createdAt.toISOString(),
+  }
+}
 
 /**
  * GET /vendor/plant-nursery/dashboard-summary
- * The vendor dashboard "today's pulse". Aggregates real data this vertical
- * owns (propagation batches, stratification, DOA claims). Surfaces owned by
- * other systems — marketplace orders/listings/earnings (order + ledger side),
- * Blackout room previews, and quest highlights — are reported as zero/empty
- * rather than fabricated, matching the creator hub-data convention; the
- * portal renders those sections empty until the cross-module aggregations
- * are wired in.
+ * The vendor dashboard "today's pulse". Aggregates the systems that own each
+ * fact: propagation/stratification/DOA (this vertical), orders + listings
+ * (marketplace, best-effort), month earnings (hawala ledger), and quest
+ * progress (vendor-quest). Blackout room previews remain empty — the rooms
+ * live in the Blackout repo and are not fabricated here.
  */
 export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
   const sellerId = getSellerId(req)
@@ -24,11 +63,33 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
   const service = req.scope.resolve<NurseryVerticalModuleService>(
     NURSERY_VERTICAL_MODULE
   )
-  const [batches, stratification, doaClaims] = await Promise.all([
-    service.listBatchesForSeller(sellerId),
-    service.listStratificationForSeller(sellerId),
-    service.listDoaClaimsForSeller(sellerId),
-  ])
+  const [batches, stratification, doaClaims, orders, ledgerEntries, questHighlights] =
+    await Promise.all([
+      service.listBatchesForSeller(sellerId),
+      service.listStratificationForSeller(sellerId),
+      service.listDoaClaimsForSeller(sellerId),
+      getSellerOrders(req.scope, sellerId),
+      getSellerLedgerEntries(req.scope, sellerId),
+      getSellerQuestHighlights(req.scope, sellerId),
+    ])
+
+  // Published listings count (seller_product link → product status).
+  let activeListings = 0
+  try {
+    const query = req.scope.resolve(ContainerRegistrationKeys.QUERY) as {
+      graph: (a: Record<string, unknown>) => Promise<{ data: any[] }>
+    }
+    const { data: sellerProducts } = await query.graph({
+      entity: "seller_product",
+      fields: ["product.id", "product.status"],
+      filters: { seller_id: sellerId },
+    })
+    activeListings = (sellerProducts ?? []).filter(
+      (sp: any) => sp?.product?.status === "published"
+    ).length
+  } catch {
+    activeListings = 0
+  }
 
   const now = Date.now()
   const urgent_actions: {
@@ -60,6 +121,19 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
     })
   }
 
+  // Unshipped orders.
+  const pendingOrders = orders.filter((o) =>
+    isPendingFulfillment(o.fulfillment_status)
+  )
+  if (pendingOrders.length > 0) {
+    urgent_actions.push({
+      type: "orders",
+      message: `${pendingOrders.length} order${pendingOrders.length === 1 ? "" : "s"} awaiting fulfillment`,
+      count: pendingOrders.length,
+      link: "/orders",
+    })
+  }
+
   // Stratification cycles ending within 7 days → time to sow.
   const endingSoon = stratification.filter((s) => {
     const end = new Date(s.end_at).getTime()
@@ -84,18 +158,25 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
     IN_PROPAGATION_STATUSES.includes(b.status)
   )
 
+  const recentOrders = [...orders]
+    .sort(
+      (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    )
+    .slice(0, 5)
+    .map(toNurseryOrder)
+
   res.json({
     urgent_actions,
     todays_metrics: {
-      orders_pending: 0,
+      orders_pending: pendingOrders.length,
       units_in_propagation: inPropagation.reduce((s, b) => s + b.qty_started, 0),
-      active_listings: 0,
-      month_earnings_cents: 0,
+      active_listings: activeListings,
+      month_earnings_cents: purchaseRevenueCents(ledgerEntries, startOfMonth()),
     },
     propagation_batches: inPropagation.slice(0, 8),
-    recent_orders: [],
+    recent_orders: recentOrders,
     seasonal_alerts,
     blackout_preview: [],
-    quest_highlights: [],
+    quest_highlights: questHighlights,
   })
 }

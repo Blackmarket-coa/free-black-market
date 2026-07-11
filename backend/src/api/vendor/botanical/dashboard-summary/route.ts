@@ -2,30 +2,37 @@ import type { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { BOTANICAL_MODULE } from "../../../../modules/botanical"
 import type BotanicalModuleService from "../../../../modules/botanical/service"
 import { getSellerId } from "../../quests/_helpers"
+import {
+  getSellerLedgerEntries,
+  purchaseRevenueCents,
+  startOfMonth,
+} from "../../../../shared/vendor-earnings"
+import { getSellerQuestHighlights } from "../../../../shared/seller-quests"
 
 const ACTIVE_RUN_STATUSES = ["in_progress", "curing", "testing"]
 const QUEUE_STATUSES = ["planned", "in_progress", "curing", "testing", "quarantine"]
 
 /**
  * GET /vendor/botanical/dashboard-summary
- * The maker dashboard "today's pulse". Aggregates real data this module owns
- * (pathways, runs, formulas, materials, finished goods). Surfaces owned by
- * other systems — month earnings (order/ledger side) and quest highlights
- * (vendor-quest) — are reported as zero/empty rather than fabricated, matching
- * the creator hub-data convention.
+ * The maker dashboard "today's pulse". Aggregates the systems that own each
+ * fact: pathways/runs/formulas/materials/goods (this module), month earnings
+ * (hawala ledger), and quest progress (vendor-quest).
  */
 export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
   const makerId = getSellerId(req)
   if (!makerId) return res.status(401).json({ message: "Unauthorized" })
 
   const service = req.scope.resolve<BotanicalModuleService>(BOTANICAL_MODULE)
-  const [pathways, formulas, runs, materials, goods] = await Promise.all([
-    service.listActivePathwaysForMaker(makerId),
-    service.listFormulasForMaker(makerId),
-    service.listRunsForMaker(makerId),
-    service.listMaterialsForMaker(makerId),
-    service.listFinishedGoodsForMaker(makerId),
-  ])
+  const [pathways, formulas, runs, materials, goods, ledgerEntries, questHighlights] =
+    await Promise.all([
+      service.listActivePathwaysForMaker(makerId),
+      service.listFormulasForMaker(makerId),
+      service.listRunsForMaker(makerId),
+      service.listMaterialsForMaker(makerId),
+      service.listFinishedGoodsForMaker(makerId),
+      getSellerLedgerEntries(req.scope, makerId),
+      getSellerQuestHighlights(req.scope, makerId),
+    ])
 
   // Pathway cards carry denormalized counts.
   const formulaCounts = new Map<string, number>()
@@ -118,11 +125,11 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
         .filter((g) => g.status === "available")
         .reduce((s, g) => s + g.quantity_on_hand, 0),
       active_formulas: formulas.filter((f) => f.status === "approved").length,
-      month_earnings_cents: 0,
+      month_earnings_cents: purchaseRevenueCents(ledgerEntries, startOfMonth()),
     },
     production_queue: runs.filter((r) => QUEUE_STATUSES.includes(r.status)),
     inventory_alerts,
     bmc_sourced_pct,
-    quest_highlights: [],
+    quest_highlights: questHighlights,
   })
 }
