@@ -11,14 +11,23 @@
 // ============================================================================
 
 import type {
+  BlackoutMessage,
+  BotanicalOrder,
+  CollectiveSplitsData,
   ComplianceOverview,
   DashboardSummary,
   FinishedGood,
   Formula,
   GerminationLog,
+  GovernanceProposal,
+  MakersData,
+  NurseryNetworkData,
+  PayoutsData,
   PhTestLog,
   ProductionPathway,
   ProductionRun,
+  QuestCatalogEntry,
+  QuestEnrollmentItem,
   RawMaterial,
 } from "@/types"
 import { PATHWAY_TEMPLATES } from "@/lib/pathways"
@@ -721,3 +730,756 @@ export const MOCK_DASHBOARD: DashboardSummary = {
     { quest_title: "Versatile maker", current: 4, required: 3, karma_reward: 25 },
   ],
 }
+
+// ── Orders ──────────────────────────────────────────────────────────────────
+// Lines pin the exact finished-good batch so the per-order compliance check
+// (label approved, COA attached when required, expiry) is batch-traceable.
+
+export const MOCK_ORDERS: BotanicalOrder[] = [
+  {
+    id: "ord_2081",
+    buyer_name: "L. Moreau",
+    channel: "retail",
+    lines: [
+      {
+        finished_good_id: "fg_001",
+        sku: "TNC-ELD-1OZ",
+        product_name: "Elderberry Tincture — 1oz",
+        batch_number: "TNC-20260420-001",
+        qty: 2,
+        unit_price_cents: 1400,
+        label_approved: true,
+        coa_required: false,
+        coa_attached: false,
+        expiry_date: "2030-05-20",
+      },
+      {
+        finished_good_id: "fg_003",
+        sku: "SED-CAL-30",
+        product_name: "Calendula 'Resina' — 30 seeds",
+        batch_number: "SED-20260401-001",
+        qty: 3,
+        unit_price_cents: 400,
+        label_approved: true,
+        coa_required: false,
+        coa_attached: false,
+      },
+    ],
+    total_cents: 4000,
+    ship_by: "2026-06-29T00:00:00Z",
+    status: "unfulfilled",
+    blackout_notified: true,
+    created_at: "2026-06-26T15:10:00Z",
+  },
+  {
+    id: "ord_2079",
+    buyer_name: "Roots & Remedies Apothecary",
+    channel: "wholesale",
+    lines: [
+      {
+        finished_good_id: "fg_001",
+        sku: "TNC-ELD-1OZ",
+        product_name: "Elderberry Tincture — 1oz",
+        batch_number: "TNC-20260420-001",
+        qty: 24,
+        unit_price_cents: 760,
+        label_approved: true,
+        coa_required: true, // wholesale tincture — COA enforced
+        coa_attached: false, // ← blocks pick/pack until uploaded
+        expiry_date: "2030-05-20",
+      },
+    ],
+    total_cents: 18_240,
+    ship_by: "2026-06-30T00:00:00Z",
+    status: "unfulfilled",
+    blackout_notified: true,
+    created_at: "2026-06-25T20:44:00Z",
+  },
+  {
+    id: "ord_2075",
+    buyer_name: "D. Whitaker",
+    channel: "retail",
+    lines: [
+      {
+        finished_good_id: "fg_002",
+        sku: "INF-FC-8OZ",
+        product_name: "Fire Cider — 8oz",
+        batch_number: "INF-20260510-001",
+        qty: 2,
+        unit_price_cents: 1600,
+        label_approved: true,
+        coa_required: false,
+        coa_attached: false,
+        expiry_date: "2026-07-20", // < 30 days — flagged, still shippable
+      },
+    ],
+    total_cents: 3200,
+    ship_by: "2026-06-28T00:00:00Z",
+    status: "picking",
+    blackout_notified: true,
+    created_at: "2026-06-24T09:31:00Z",
+  },
+  {
+    id: "ord_2072",
+    buyer_name: "Fiber Guild of Asheville",
+    channel: "wholesale",
+    lines: [
+      {
+        finished_good_id: "fg_005",
+        sku: "DYE-IND-BDL",
+        product_name: "Dried Indigo Bundle — 2oz",
+        batch_number: "DYE-20260601-001",
+        qty: 6,
+        unit_price_cents: 700,
+        label_approved: false, // ← label review outstanding
+        coa_required: false, // craft supply — no COA framework
+        coa_attached: false,
+      },
+    ],
+    total_cents: 4200,
+    ship_by: "2026-07-02T00:00:00Z",
+    status: "unfulfilled",
+    blackout_notified: false,
+    created_at: "2026-06-26T18:02:00Z",
+  },
+  {
+    id: "ord_2064",
+    buyer_name: "K. Osei",
+    channel: "retail",
+    lines: [
+      {
+        finished_good_id: "fg_003",
+        sku: "SED-CAL-30",
+        product_name: "Calendula 'Resina' — 30 seeds",
+        batch_number: "SED-20260401-001",
+        qty: 5,
+        unit_price_cents: 400,
+        label_approved: true,
+        coa_required: false,
+        coa_attached: false,
+      },
+    ],
+    total_cents: 2000,
+    ship_by: "2026-06-24T00:00:00Z",
+    status: "shipped",
+    tracking_number: "9400 1108 8853 2201",
+    blackout_notified: true,
+    created_at: "2026-06-20T13:15:00Z",
+  },
+  {
+    id: "ord_2058",
+    buyer_name: "Herbal CSA Box (Order Cycle #12)",
+    channel: "retail",
+    lines: [
+      {
+        finished_good_id: "fg_002",
+        sku: "INF-FC-8OZ",
+        product_name: "Fire Cider — 8oz",
+        batch_number: "INF-20260510-001",
+        qty: 8,
+        unit_price_cents: 1600,
+        label_approved: true,
+        coa_required: false,
+        coa_attached: false,
+        expiry_date: "2026-07-20",
+      },
+      {
+        finished_good_id: "fg_001",
+        sku: "TNC-ELD-1OZ",
+        product_name: "Elderberry Tincture — 1oz",
+        batch_number: "TNC-20260420-001",
+        qty: 8,
+        unit_price_cents: 1400,
+        label_approved: true,
+        coa_required: false,
+        coa_attached: false,
+        expiry_date: "2030-05-20",
+      },
+    ],
+    total_cents: 24_000,
+    ship_by: "2026-06-22T00:00:00Z",
+    status: "shipped",
+    tracking_number: "9400 1108 8853 1984",
+    blackout_notified: true,
+    created_at: "2026-06-17T10:00:00Z",
+  },
+]
+
+// ── Payouts ─────────────────────────────────────────────────────────────────
+
+export const MOCK_PAYOUTS: PayoutsData = {
+  tier: "root",
+  karma_total: 235,
+  current_period: {
+    units_sold: 87,
+    gross_cents: 318_400,
+    split_pct: 76,
+    hub_cut_cents: 76_416,
+    net_cents: 241_984,
+    next_payment_date: "2026-07-05",
+  },
+  karma_events: [
+    { id: "ke_01", description: "Wholesale order fulfilled on time", karma: 8, date: "2026-06-24" },
+    { id: "ke_02", description: "BMC-sourced % crossed 35%", karma: 12, date: "2026-06-18" },
+    { id: "ke_03", description: "Order Cycle #12 completed", karma: 10, date: "2026-06-17" },
+    { id: "ke_04", description: "pH log streak — 8 weeks", karma: 5, date: "2026-06-12" },
+  ],
+  history: [
+    {
+      id: "po_2605",
+      month: "2026-05",
+      units_sold: 96,
+      gross_cents: 342_600,
+      split_pct: 76,
+      hub_cut_cents: 82_224,
+      net_cents: 260_376,
+      paid_at: "2026-06-05",
+      transfer_ref: "FBM-TX-88214",
+    },
+    {
+      id: "po_2604",
+      month: "2026-04",
+      units_sold: 71,
+      gross_cents: 251_900,
+      split_pct: 73,
+      hub_cut_cents: 68_013,
+      net_cents: 183_887,
+      paid_at: "2026-05-05",
+      transfer_ref: "FBM-TX-86970",
+    },
+    {
+      id: "po_2603",
+      month: "2026-03",
+      units_sold: 58,
+      gross_cents: 201_400,
+      split_pct: 73,
+      hub_cut_cents: 54_378,
+      net_cents: 147_022,
+      paid_at: "2026-04-05",
+      transfer_ref: "FBM-TX-85712",
+    },
+    {
+      id: "po_2602",
+      month: "2026-02",
+      units_sold: 42,
+      gross_cents: 149_800,
+      split_pct: 70,
+      hub_cut_cents: 44_940,
+      net_cents: 104_860,
+      paid_at: "2026-03-05",
+      transfer_ref: "FBM-TX-84403",
+    },
+  ],
+  pathway_breakdown: [
+    {
+      pathway_id: "pw_tnc",
+      pathway_name: "Tinctures & Extracts",
+      units: 38,
+      gross_cents: 148_400,
+      your_cut_cents: 112_784,
+    },
+    {
+      pathway_id: "pw_inf",
+      pathway_name: "Fire Cider & Honey",
+      units: 26,
+      gross_cents: 99_200,
+      your_cut_cents: 75_392,
+    },
+    {
+      pathway_id: "pw_seed",
+      pathway_name: "Heirloom Seed House",
+      units: 15,
+      gross_cents: 21_600,
+      your_cut_cents: 16_416,
+    },
+    {
+      pathway_id: "pw_dye",
+      pathway_name: "Indigo & Botanical Dye",
+      units: 8,
+      gross_cents: 49_200,
+      your_cut_cents: 37_392,
+    },
+  ],
+}
+
+// ── Quests ──────────────────────────────────────────────────────────────────
+// Mirrors the serialized shape of GET /vendor/quests (see
+// backend/src/modules/vendor-quest/service.ts → toCatalogEntry).
+
+export const MOCK_QUEST_CATALOG: QuestCatalogEntry[] = [
+  {
+    key: "wholesale-account",
+    category: "Sales & Channels",
+    title: "First Wholesale Account",
+    outcome: "Wholesale-ready line sheet + first B2B buyer relationship",
+    type: "individual",
+    gatekeeper: "Wholesale buyer",
+    disclaimer:
+      "FBM assembles evidence from your real records. The buyer decides — FBM does not guarantee an account.",
+    health_claims_guardrail: false,
+    uses_fields: ["inventory", "production", "documents"],
+    has_packet: true,
+    requirements: [
+      { key: "line_sheet", label: "Wholesale line sheet", tag: "assisted", needs: ["inventory"], note: "Drafted from wholesale-eligible finished goods." },
+      { key: "fulfillment_history", label: "Fulfillment history", tag: "platform", needs: [] },
+      { key: "coa_docs", label: "COAs for eligible batches", tag: "vendor-supplied", needs: ["documents"], note: "Upload to your vault; attached per batch." },
+      { key: "buyer_outreach", label: "Buyer outreach", tag: "outside-fbm", needs: [], note: "You contact the buyer; FBM provides the packet." },
+    ],
+    stages: [
+      { key: "listing", label: "Wholesale-eligible listing live", order: 1 },
+      { key: "packet", label: "Line sheet + COA packet ready", order: 2 },
+      { key: "first_order", label: "First wholesale order fulfilled", order: 3 },
+    ],
+  },
+  {
+    key: "compliance-tracker",
+    category: "Certification & Trust",
+    title: "Compliance / Certification Tracker",
+    outcome: "Certification-ready document set (gaps flagged)",
+    type: "individual",
+    gatekeeper: "Certifier / inspector",
+    disclaimer:
+      "FBM tracks documents and production records; the certifier performs the actual inspection.",
+    health_claims_guardrail: false,
+    uses_fields: ["documents", "production"],
+    has_packet: true,
+    requirements: [
+      { key: "doc_checklist", label: "Document completion checklist", tag: "assisted", needs: ["documents"], note: "Tracks which required docs are uploaded + verified." },
+      { key: "production_records", label: "Production records", tag: "platform", needs: ["production"], note: "From your production ledger when enabled." },
+      { key: "sourcing", label: "Sourcing", tag: "assisted", needs: [], note: "Assembled from records; you confirm." },
+      { key: "inspection_forms", label: "Inspection forms", tag: "outside-fbm", needs: [], note: "Filed with the certifier/inspector." },
+    ],
+    stages: [
+      { key: "started", label: "Tracking started", order: 1 },
+      { key: "documented", label: "Records documented", order: 2 },
+      { key: "cert_ready", label: "Certification-ready", order: 3 },
+    ],
+  },
+  {
+    key: "commons-contribution",
+    category: "Cooperative & Mission",
+    title: "Commons Contribution Goals",
+    outcome: "Recognition + XP for routing surplus to the Commons",
+    type: "individual",
+    gatekeeper: "BMC Commons",
+    disclaimer:
+      "Contributions settle through the existing hawala ledger; recognition reflects recorded contributions only.",
+    health_claims_guardrail: false,
+    uses_fields: [],
+    has_packet: false,
+    requirements: [
+      { key: "contribution_records", label: "Surplus / contribution records", tag: "platform", needs: [] },
+      { key: "ledger_rails", label: "Hawala-ledger rails", tag: "platform", needs: [], note: "Contributions settle through the existing ledger." },
+    ],
+    stages: [
+      { key: "contributing", label: "Contributing", order: 1 },
+      { key: "established", label: "Established contributor", order: 2 },
+    ],
+  },
+  {
+    key: "coop-formation",
+    category: "Cooperative & Mission",
+    title: "Co-op Formation Readiness",
+    outcome: "Combined member records assembled to form a cooperative",
+    type: "collective",
+    gatekeeper: "Incorporating attorney / state filing office",
+    disclaimer:
+      "FBM aggregates only consenting members' records; incorporation itself happens outside FBM.",
+    health_claims_guardrail: false,
+    uses_fields: ["documents"],
+    has_packet: true,
+    requirements: [
+      { key: "member_operating_records", label: "Member operating records", tag: "platform", needs: [] },
+      { key: "combined_financials", label: "Combined financials", tag: "assisted", needs: [] },
+      { key: "governance_bylaws", label: "Governance bylaws", tag: "vendor-supplied", needs: ["documents"] },
+      { key: "incorporation", label: "State incorporation", tag: "outside-fbm", needs: [] },
+    ],
+    stages: [
+      { key: "forming", label: "Forming", order: 1 },
+      { key: "documented", label: "Documented", order: 2 },
+      { key: "formation_ready", label: "Formation-ready", order: 3 },
+    ],
+  },
+]
+
+// Mirrors GET /vendor/quests/enrollments → { enrollments: [{ enrollment,
+// evaluation }], count }. Evaluation is present only for ACTIVE enrollments.
+export const MOCK_QUEST_ENROLLMENTS: QuestEnrollmentItem[] = [
+  {
+    enrollment: {
+      id: "qe_001",
+      quest_key: "wholesale-account",
+      status: "ACTIVE",
+      current_stage: 2,
+      collective_id: null,
+      enrolled_at: "2026-05-14T00:00:00Z",
+    },
+    evaluation: {
+      quest_key: "wholesale-account",
+      stages: [
+        { key: "listing", label: "Wholesale-eligible listing live", order: 1, open: true, missing: [] },
+        { key: "packet", label: "Line sheet + COA packet ready", order: 2, open: true, missing: [] },
+        {
+          key: "first_order",
+          label: "First wholesale order fulfilled",
+          order: 3,
+          open: false,
+          missing: ["COA attached for batch TNC-20260420-001", "Wholesale order shipped"],
+        },
+      ],
+      current_stage_index: 2,
+      current_stage_key: "first_order",
+      final_gate_open: false,
+      packet_available: true,
+      requirements: [
+        { key: "line_sheet", label: "Wholesale line sheet", tag: "assisted", status: "satisfied" },
+        { key: "fulfillment_history", label: "Fulfillment history", tag: "platform", status: "satisfied" },
+        { key: "coa_docs", label: "COAs for eligible batches", tag: "vendor-supplied", status: "checklist", note: "1 of 2 eligible batches has a COA." },
+        { key: "buyer_outreach", label: "Buyer outreach", tag: "outside-fbm", status: "checklist" },
+      ],
+    },
+  },
+  {
+    enrollment: {
+      id: "qe_002",
+      quest_key: "commons-contribution",
+      status: "ACTIVE",
+      current_stage: 1,
+      collective_id: null,
+      enrolled_at: "2026-04-02T00:00:00Z",
+    },
+    evaluation: {
+      quest_key: "commons-contribution",
+      stages: [
+        { key: "contributing", label: "Contributing", order: 1, open: true, missing: [] },
+        {
+          key: "established",
+          label: "Established contributor",
+          order: 2,
+          open: false,
+          missing: ["3 consecutive months of contributions (currently 2)"],
+        },
+      ],
+      current_stage_index: 1,
+      current_stage_key: "established",
+      final_gate_open: false,
+      packet_available: false,
+      requirements: [
+        { key: "contribution_records", label: "Surplus / contribution records", tag: "platform", status: "satisfied" },
+        { key: "ledger_rails", label: "Hawala-ledger rails", tag: "platform", status: "satisfied" },
+      ],
+    },
+  },
+]
+
+// ── Nursery network ─────────────────────────────────────────────────────────
+
+export const MOCK_NURSERY_NETWORK: NurseryNetworkData = {
+  nodes: [
+    {
+      id: "node_nc_mtn",
+      name: "Blue Ridge Botanicals",
+      region: "NC Mountains",
+      state: "NC",
+      tier: "canopy",
+      specialties: ["Elderberry", "Medicinal woodies", "Shade-grown herbs"],
+      fulfillment_reliability_pct: 98,
+      open_to_requests: true,
+      listings: [
+        { material: "Dried Elderberry", botanical_name: "Sambucus nigra", form: "dried", available_qty: 120, unit: "oz", price_cents_per_unit: 90 },
+        { material: "Elderflower", botanical_name: "Sambucus nigra", form: "dried", available_qty: 40, unit: "oz", price_cents_per_unit: 110 },
+      ],
+    },
+    {
+      id: "node_ga",
+      name: "Piedmont Roots Farm",
+      region: "GA Piedmont",
+      state: "GA",
+      tier: "root",
+      specialties: ["Ginger", "Turmeric", "Culinary roots"],
+      fulfillment_reliability_pct: 94,
+      open_to_requests: true,
+      listings: [
+        { material: "Fresh Ginger Root", botanical_name: "Zingiber officinale", form: "fresh_harvest", available_qty: 60, unit: "oz", price_cents_per_unit: 120 },
+        { material: "Fresh Turmeric", botanical_name: "Curcuma longa", form: "fresh_harvest", available_qty: 32, unit: "oz", price_cents_per_unit: 140 },
+      ],
+    },
+    {
+      id: "node_va",
+      name: "Shenandoah Dye Gardens",
+      region: "VA Valley",
+      state: "VA",
+      tier: "sprout",
+      specialties: ["Japanese indigo", "Dye flowers", "Fiber plants"],
+      fulfillment_reliability_pct: 91,
+      open_to_requests: true,
+      listings: [
+        { material: "Japanese Indigo (dried)", botanical_name: "Persicaria tinctoria", form: "dried", available_qty: 96, unit: "oz weight", price_cents_per_unit: 45 },
+        { material: "Marigold heads", botanical_name: "Tagetes erecta", form: "dried", available_qty: 50, unit: "oz", price_cents_per_unit: 38 },
+      ],
+    },
+    {
+      id: "node_fl",
+      name: "Suwannee Seed Collective",
+      region: "North FL",
+      state: "FL",
+      tier: "root",
+      specialties: ["Heirloom seed stock", "Calendula", "Southern-adapted varieties"],
+      fulfillment_reliability_pct: 96,
+      open_to_requests: false, // at capacity this season
+      listings: [
+        { material: "Calendula stock seed", botanical_name: "Calendula officinalis", form: "seed", available_qty: 5000, unit: "count", price_cents_per_unit: 2 },
+      ],
+    },
+  ],
+  requests: [
+    {
+      id: "mrq_014",
+      node_id: "node_ga",
+      node_name: "Piedmont Roots Farm",
+      material: "Fresh Ginger Root",
+      qty: 16,
+      unit: "oz",
+      status: "in_transit",
+      requested_at: "2026-06-23",
+      expected_at: "2026-06-30",
+    },
+    {
+      id: "mrq_013",
+      node_id: "node_nc_mtn",
+      node_name: "Blue Ridge Botanicals",
+      material: "Elderflower",
+      qty: 24,
+      unit: "oz",
+      status: "accepted",
+      requested_at: "2026-06-21",
+      expected_at: "2026-07-06",
+    },
+    {
+      id: "mrq_011",
+      node_id: "node_va",
+      node_name: "Shenandoah Dye Gardens",
+      material: "Japanese Indigo (dried)",
+      qty: 48,
+      unit: "oz weight",
+      status: "received",
+      requested_at: "2026-06-10",
+      expected_at: "2026-06-22",
+    },
+  ],
+}
+
+// ── Collective splits ───────────────────────────────────────────────────────
+
+export const MOCK_COLLECTIVE_SPLITS: CollectiveSplitsData = {
+  period: "2026-06",
+  split_rule:
+    "Contribution-weighted: each member's share of pooled net follows their share of finished units contributed this period, with a 10% floor for active members.",
+  pool_gross_cents: 812_500,
+  hub_cut_cents: 195_000,
+  pool_net_cents: 617_500,
+  settlement_date: "2026-07-05",
+  members: [
+    {
+      maker_id: "mk_ade",
+      maker_name: "Adaeze N.",
+      role: "founder",
+      contribution_units: 112,
+      contribution_batches: 4,
+      split_pct: 38,
+      period_earned_cents: 234_650,
+    },
+    {
+      maker_id: "mk_sol",
+      maker_name: "Soledad R.",
+      role: "member",
+      contribution_units: 86,
+      contribution_batches: 3,
+      split_pct: 29,
+      period_earned_cents: 179_075,
+    },
+    {
+      maker_id: "mk_jun",
+      maker_name: "June K.",
+      role: "member",
+      contribution_units: 68,
+      contribution_batches: 3,
+      split_pct: 23,
+      period_earned_cents: 142_025,
+    },
+    {
+      maker_id: "mk_tayo",
+      maker_name: "Tayo B.",
+      role: "apprentice",
+      contribution_units: 24,
+      contribution_batches: 1,
+      split_pct: 10,
+      period_earned_cents: 61_750,
+    },
+  ],
+}
+
+// ── Collective makers ───────────────────────────────────────────────────────
+
+export const MOCK_MAKERS: MakersData = {
+  makers: [
+    {
+      id: "mk_ade",
+      name: "Adaeze N.",
+      role: "founder",
+      tier: "canopy",
+      karma: 640,
+      joined_at: "2025-03-02",
+      active_pathway_names: ["Tinctures & Extracts", "Fire Cider & Honey"],
+      active_runs: 2,
+      units_this_period: 112,
+      contribution_band: "high",
+    },
+    {
+      id: "mk_sol",
+      name: "Soledad R.",
+      role: "member",
+      tier: "root",
+      karma: 310,
+      joined_at: "2025-06-18",
+      active_pathway_names: ["Indigo & Botanical Dye"],
+      active_runs: 1,
+      units_this_period: 86,
+      contribution_band: "steady",
+    },
+    {
+      id: "mk_jun",
+      name: "June K.",
+      role: "member",
+      tier: "root",
+      karma: 265,
+      joined_at: "2025-09-01",
+      active_pathway_names: ["Heirloom Seed House", "Tinctures & Extracts"],
+      active_runs: 1,
+      units_this_period: 68,
+      contribution_band: "steady",
+    },
+    {
+      id: "mk_tayo",
+      name: "Tayo B.",
+      role: "apprentice",
+      tier: "sprout",
+      karma: 85,
+      joined_at: "2026-02-10",
+      active_pathway_names: ["Fire Cider & Honey"],
+      active_runs: 0,
+      units_this_period: 24,
+      contribution_band: "ramping",
+    },
+  ],
+  invites: [
+    {
+      id: "inv_007",
+      email: "meadow.apothecary@proton.me",
+      invited_by: "Adaeze N.",
+      invited_at: "2026-06-20",
+      status: "pending",
+    },
+    {
+      id: "inv_005",
+      email: "wildcraft.jules@tutanota.com",
+      invited_by: "Soledad R.",
+      invited_at: "2026-05-12",
+      status: "expired",
+    },
+  ],
+}
+
+// ── Blackout (Matrix) feeds ─────────────────────────────────────────────────
+
+export const MOCK_BLACKOUT_MAKER_ROOM: BlackoutMessage[] = [
+  {
+    id: "bm_101",
+    type: "order",
+    text: "New wholesale order #2079 — Roots & Remedies Apothecary, 24× Elderberry Tincture. COA required before dispatch.",
+    timestamp: "2026-06-25T20:45:00Z",
+    order_id: "ord_2079",
+    link: "/orders",
+  },
+  {
+    id: "bm_100",
+    type: "compliance",
+    text: "Genovese Basil lot SED-BSL-2505 germination test is over 12 months old — retest before selling.",
+    timestamp: "2026-06-25T08:00:00Z",
+    link: "/compliance",
+  },
+  {
+    id: "bm_099",
+    type: "request",
+    text: "Piedmont Roots Farm accepted your ginger request (16 oz) — in transit, expected Jun 30.",
+    timestamp: "2026-06-24T16:22:00Z",
+    link: "/nursery",
+  },
+  {
+    id: "bm_098",
+    type: "low_stock",
+    text: "Ginger root is below its reorder threshold (6 of 8 oz).",
+    timestamp: "2026-06-24T07:30:00Z",
+    link: "/raw-materials",
+  },
+  {
+    id: "bm_097",
+    type: "payout",
+    text: "May payout settled: $2,603.76 (76% split) — ref FBM-TX-88214.",
+    timestamp: "2026-06-05T12:00:00Z",
+  },
+  {
+    id: "bm_096",
+    type: "text",
+    sender: "hub-ops",
+    text: "Reminder: July Order Cycle listings lock Friday. Flag any batches still curing.",
+    timestamp: "2026-06-23T14:05:00Z",
+  },
+]
+
+export const MOCK_BLACKOUT_NETWORK: BlackoutMessage[] = [
+  {
+    id: "bn_054",
+    type: "text",
+    sender: "network-all",
+    text: "Seasonal demand pool: apothecaries are requesting elderberry + fire cider bundles for fall. Makers with stock, list by Jul 15.",
+    timestamp: "2026-06-26T09:00:00Z",
+  },
+  {
+    id: "bn_053",
+    type: "text",
+    sender: "network-all",
+    text: "New grower node onboarded: Suwannee Seed Collective (North FL) — heirloom seed stock available to makers.",
+    timestamp: "2026-06-24T15:30:00Z",
+  },
+  {
+    id: "bn_052",
+    type: "text",
+    sender: "network-all",
+    text: "Blackout maintenance window Sunday 02:00–03:00 ET. Feeds will lag; orders are unaffected.",
+    timestamp: "2026-06-22T18:00:00Z",
+  },
+]
+
+export const MOCK_PROPOSALS: GovernanceProposal[] = [
+  {
+    id: "gp_21",
+    title: "Add a shared COA testing fund",
+    description:
+      "Pool 1% of hub cut into a fund covering third-party COA testing for Root+ makers' wholesale batches.",
+    options: ["For", "Against", "Abstain"],
+    deadline: "2026-07-10T00:00:00Z",
+    tally: { For: 41, Against: 9, Abstain: 4 },
+    status: "open",
+  },
+  {
+    id: "gp_20",
+    title: "Seasonal surcharge for cold-chain shipping",
+    description: "Allow makers to add a flat $4 summer cold-chain surcharge on perishable prepared foods.",
+    options: ["For", "Against"],
+    deadline: "2026-06-20T00:00:00Z",
+    tally: { For: 52, Against: 17 },
+    status: "closed",
+    outcome: "For",
+  },
+]
