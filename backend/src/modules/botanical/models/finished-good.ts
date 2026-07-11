@@ -21,7 +21,7 @@ const FinishedGood = model.define("botanical_finished_good", {
   maker_id: model.text(),
   formula_id: model.text(),
   pathway_id: model.text(),
-  output_category: model.enum(OUTPUT_CATEGORIES),
+  output_category: model.enum([...OUTPUT_CATEGORIES]),
 
   batch_number: model.text(),
   sku: model.text(),
@@ -37,7 +37,7 @@ const FinishedGood = model.define("botanical_finished_good", {
   germination_rate: model.float().nullable(),
   germination_test_date: model.dateTime().nullable(),
 
-  status: model.enum(FINISHED_GOOD_STATUSES).default("available"),
+  status: model.enum([...FINISHED_GOOD_STATUSES]).default("available"),
 
   is_wholesale_eligible: model.boolean().default(false),
   retail_price_cents: model.number().default(0),

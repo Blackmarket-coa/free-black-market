@@ -39,12 +39,12 @@ const RawMaterial = model.define("botanical_raw_material", {
   common_name: model.text(),
   botanical_name: model.text().nullable(),
 
-  category: model.enum(MATERIAL_CATEGORIES).default("plant_material"),
+  category: model.enum([...MATERIAL_CATEGORIES]).default("plant_material"),
 
   // The pathway this material is most used in (display hint only).
   pathway_id: model.text().nullable(),
 
-  source_default: model.enum(MATERIAL_SOURCES).default("external_supplier"),
+  source_default: model.enum([...MATERIAL_SOURCES]).default("external_supplier"),
 
   current_stock: model.float().default(0),
   stock_unit: model.text().default("oz"),

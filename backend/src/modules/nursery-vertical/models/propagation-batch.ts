@@ -50,8 +50,8 @@ const PropagationBatch = model.define("propagation_batch", {
   seller_id: model.text(),
 
   species_name: model.text(),
-  method: model.enum(PROPAGATION_METHODS),
-  status: model.enum(PROPAGATION_BATCH_STATUSES).default("started"),
+  method: model.enum([...PROPAGATION_METHODS]),
+  status: model.enum([...PROPAGATION_BATCH_STATUSES]).default("started"),
 
   // How many units were started vs. how many survived to a saleable state.
   qty_started: model.number(),

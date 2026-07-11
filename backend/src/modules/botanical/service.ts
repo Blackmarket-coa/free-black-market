@@ -141,7 +141,10 @@ class BotanicalModuleService extends MedusaService({
       batch_number_prefix: prefix || null,
       production_status_labels: template.production_status_labels ?? null,
       material_category_labels: template.material_category_labels ?? null,
-      yield_unit_options: template.yield_unit_options ?? null,
+      // json column: the generated create-type wants a Record, so the string[]
+      // needs the same cast harvest-batches uses for its jsonb arrays.
+      yield_unit_options: (template.yield_unit_options ??
+        null) as unknown as Record<string, unknown> | null,
     })
   }
 }

@@ -52,8 +52,8 @@ const Pathway = model.define("botanical_pathway", {
   // The maker's own name for this product line.
   name: model.text(),
 
-  output_category: model.enum(OUTPUT_CATEGORIES),
-  compliance_framework_id: model.enum(COMPLIANCE_FRAMEWORK_IDS),
+  output_category: model.enum([...OUTPUT_CATEGORIES]),
+  compliance_framework_id: model.enum([...COMPLIANCE_FRAMEWORK_IDS]),
 
   is_active: model.boolean().default(true),
 

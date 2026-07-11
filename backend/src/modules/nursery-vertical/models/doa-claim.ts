@@ -19,7 +19,7 @@ const DoaClaim = model.define("nursery_doa_claim", {
   buyer_reason: model.text(),
 
   opened_at: model.dateTime(),
-  status: model.enum(DOA_CLAIM_STATUSES).default("open"),
+  status: model.enum([...DOA_CLAIM_STATUSES]).default("open"),
   resolved_at: model.dateTime().nullable(),
 
   metadata: model.json().nullable(),

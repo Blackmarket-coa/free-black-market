@@ -37,7 +37,7 @@ const ProductionRun = model.define("botanical_production_run", {
   actual_yield_units: model.number().nullable(),
   yield_unit_type: model.text().default("unit"),
 
-  status: model.enum(RUN_STATUSES).default("planned"),
+  status: model.enum([...RUN_STATUSES]).default("planned"),
 
   total_cost_cents: model.number().default(0),
 

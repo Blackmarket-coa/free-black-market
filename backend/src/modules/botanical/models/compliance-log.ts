@@ -19,7 +19,7 @@ export const PhTestLog = model.define("botanical_ph_test_log", {
 
   test_date: model.dateTime(),
   ph_reading: model.float(),
-  method: model.enum(PH_TEST_METHODS).default("meter"),
+  method: model.enum([...PH_TEST_METHODS]).default("meter"),
   pass: model.boolean(),
   notes: model.text().nullable(),
 
@@ -49,7 +49,7 @@ export const GerminationLog = model.define("botanical_germination_log", {
   seeds_tested: model.number(),
   seeds_germinated: model.number(),
   germination_rate_pct: model.float(),
-  method: model.enum(GERMINATION_TEST_METHODS).default("paper_towel"),
+  method: model.enum([...GERMINATION_TEST_METHODS]).default("paper_towel"),
   alert: model.boolean().default(false),
 
   metadata: model.json().nullable(),

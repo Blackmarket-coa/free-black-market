@@ -19,7 +19,7 @@ const Formula = model.define("botanical_formula", {
   name: model.text(),
   description: model.text().nullable(),
   version: model.text().default("1.0.0"),
-  status: model.enum(FORMULA_STATUSES).default("draft"),
+  status: model.enum([...FORMULA_STATUSES]).default("draft"),
 
   // FormulaIngredient[] — see botanical-portal types.
   ingredients: model.json(),
