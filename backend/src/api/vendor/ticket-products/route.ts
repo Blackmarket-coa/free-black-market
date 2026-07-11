@@ -1,6 +1,7 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import type { VendorRequest } from "../types"
 import { createTicketProductWorkflow } from "../../../workflows/create-ticket-product"
+import { resolveSellerId } from "../../../shared/listing-type-guard"
 import { RowType } from "../../../modules/ticket-booking/models/venue-row"
 import { z } from "zod"
 
@@ -9,40 +10,42 @@ export async function GET(
   res: MedusaResponse
 ) {
   const query = req.scope.resolve("query")
-  const sellerId = (req as VendorRequest).auth_context?.actor_id
+  const actorId = (req as VendorRequest)._seller_id || (req as VendorRequest).auth_context?.actor_id
+  const sellerId = await resolveSellerId(req, actorId)
 
   if (!sellerId) {
     return res.status(401).json({ message: "Unauthorized" })
   }
 
   try {
-    // Try with seller_id filter first, fall back to no filter if column doesn't exist
-    let ticketProducts: unknown[] = []
-    let metadata: { count?: number; take?: number; skip?: number } | undefined = {}
-    
-    try {
-      const result = await query.graph({
-        entity: "ticket_product",
-        fields: ["id", "product_id", "venue_id", "dates", "venue.*"],
-        filters: {
-          seller_id: sellerId
-        } as Record<string, unknown>, // seller_id may not be in the generated types yet
+    // `ticket_product` has no `seller_id` column — ownership is expressed by
+    // the `seller_product` link created alongside the ticket's Medusa product
+    // (see create-ticket-product workflow). Scope by that link so a vendor
+    // only ever sees their own ticket products.
+    const { data: sellerProducts } = await query.graph({
+      entity: "seller_product",
+      fields: ["product_id"],
+      filters: { seller_id: sellerId },
+    })
+
+    const productIds = sellerProducts
+      .map((sp: { product_id?: string }) => sp.product_id)
+      .filter((id: string | undefined): id is string => Boolean(id))
+
+    if (productIds.length === 0) {
+      return res.json({
+        ticket_products: [],
+        count: 0,
+        limit: undefined,
+        offset: undefined,
       })
-      ticketProducts = result.data
-      metadata = result.metadata
-    } catch (filterError) {
-      // If seller_id column doesn't exist, fetch all (temporary)
-      if (filterError.message?.includes("seller_id")) {
-        const result = await query.graph({
-          entity: "ticket_product",
-          fields: ["id", "product_id", "venue_id", "dates", "venue.*"],
-        })
-        ticketProducts = result.data
-        metadata = result.metadata
-      } else {
-        throw filterError
-      }
     }
+
+    const { data: ticketProducts, metadata } = await query.graph({
+      entity: "ticket_product",
+      fields: ["id", "product_id", "venue_id", "dates", "venue.*"],
+      filters: { product_id: productIds },
+    })
 
     res.json({
       ticket_products: ticketProducts,
@@ -80,7 +83,8 @@ export async function POST(
   req: MedusaRequest<CreateTicketProductSchema>,
   res: MedusaResponse
 ) {
-  const sellerId = (req as VendorRequest).auth_context?.actor_id
+  const actorId = (req as VendorRequest)._seller_id || (req as VendorRequest).auth_context?.actor_id
+  const sellerId = await resolveSellerId(req, actorId)
 
   if (!sellerId) {
     return res.status(401).json({ message: "Unauthorized" })

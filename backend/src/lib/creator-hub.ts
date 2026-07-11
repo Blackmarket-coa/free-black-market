@@ -302,4 +302,80 @@ export async function listCreatorMembershipTiers(
   return [...groups.values()]
 }
 
+/** Interval → payments-per-month normalization for MRR math. */
+const MONTHLY_FACTOR: Record<string, number> = {
+  weekly: 52 / 12,
+  biweekly: 26 / 12,
+  monthly: 1,
+  quarterly: 1 / 3,
+  yearly: 1 / 12,
+}
+
+/**
+ * MRR movement over the trailing 7 days, in cents: monthly-normalized value of
+ * memberships that STARTED this week minus those CANCELED this week.
+ * Subscriptions carry no price of their own — each is priced off its variant's
+ * USD price (first price as fallback). Best-effort: 0 when nothing moved or
+ * pricing can't be resolved.
+ */
+export async function getCreatorMrrChangeThisWeekCents(
+  container: MedusaContainer,
+  sellerId: string
+): Promise<number> {
+  try {
+    const subscriptionService = container.resolve<SubscriptionModuleService>(
+      SUBSCRIPTION_MODULE
+    )
+    const subs = await subscriptionService.getSellerSubscriptions(sellerId)
+    if (!subs.length) return 0
+
+    const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000
+    const startedThisWeek = subs.filter(
+      (s) => s.subscription_date && new Date(s.subscription_date).getTime() >= weekAgo
+    )
+    const canceledThisWeek = subs.filter(
+      (s) => s.canceled_at && new Date(s.canceled_at).getTime() >= weekAgo
+    )
+    if (!startedThisWeek.length && !canceledThisWeek.length) return 0
+
+    const variantIds = [
+      ...new Set(
+        [...startedThisWeek, ...canceledThisWeek]
+          .map((s) => s.variant_id)
+          .filter((v): v is string => !!v)
+      ),
+    ]
+    const priceByVariant = new Map<string, number>()
+    if (variantIds.length) {
+      const query = container.resolve(ContainerRegistrationKeys.QUERY) as any
+      const { data: variants } = await query.graph({
+        entity: "product_variant",
+        fields: ["id", "prices.amount", "prices.currency_code"],
+        filters: { id: variantIds },
+      })
+      for (const v of variants ?? []) {
+        const prices = (v.prices ?? []) as { amount?: unknown; currency_code?: string }[]
+        const usd = prices.find((p) => p.currency_code === "usd") ?? prices[0]
+        if (usd) priceByVariant.set(v.id, num(usd.amount))
+      }
+    }
+
+    const monthlyCents = (s: {
+      variant_id?: string | null
+      interval?: unknown
+      quantity?: unknown
+    }): number => {
+      const price = s.variant_id ? (priceByVariant.get(s.variant_id) ?? 0) : 0
+      const factor = MONTHLY_FACTOR[String(s.interval)] ?? 1
+      return Math.round(price * num(s.quantity ?? 1) * factor)
+    }
+
+    const added = startedThisWeek.reduce((sum, s) => sum + monthlyCents(s), 0)
+    const lost = canceledThisWeek.reduce((sum, s) => sum + monthlyCents(s), 0)
+    return added - lost
+  } catch {
+    return 0
+  }
+}
+
 export const _internal = { ENTRY_TYPE_TO_TXN, SUB_STATUS_TO_MEMBER, num }

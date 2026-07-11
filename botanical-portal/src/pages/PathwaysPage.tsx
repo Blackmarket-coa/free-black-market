@@ -1,10 +1,11 @@
 import { useState } from "react"
+import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { useActivePathways } from "@/hooks/useActivePathways"
 import { usePathwayTemplates } from "@/hooks/usePathwayTemplates"
 import { PageHeader } from "@bmc/ui"
 import { QueryState } from "@bmc/ui"
 import { COMPLIANCE_FRAMEWORKS, iconForOutput } from "@/lib/pathways"
-import { classNames } from "@bmc/portal-kit"
+import { classNames, USE_MOCK_DATA, api } from "@bmc/portal-kit"
 import type { PathwayTemplate } from "@/types"
 
 // Onboarding surface: the maker shapes everything else here by activating one or
@@ -111,8 +112,8 @@ function Tag({ children }: { children: React.ReactNode }) {
   )
 }
 
-// Configure step. In the mock build this previews the template-derived defaults
-// (editable locally); wiring POST /vendor/botanical/pathways is a follow-up.
+// Configure step. Previews the template-derived defaults (editable locally),
+// then activates the pathway via POST /vendor/botanical/pathways.
 function ConfigurePanel({
   template,
   onClose,
@@ -125,6 +126,28 @@ function ConfigurePanel({
   const [prefix, setPrefix] = useState(template.batch_number_prefix ?? "")
   const [cure, setCure] = useState(template.default_cure_time_days ?? 0)
   const [cottage, setCottage] = useState(template.counts_toward_cottage_food_limit)
+  const queryClient = useQueryClient()
+
+  const activate = useMutation({
+    mutationFn: async () => {
+      const payload = {
+        template_id: template.id,
+        name,
+        batch_number_prefix: prefix,
+        default_cure_time_days: cure,
+        counts_toward_cottage_food_limit: cottage,
+      }
+      // In mock mode there is no backend to hit; resolve so the panel still
+      // closes cleanly. VITE_USE_MOCK_DATA=false wires this to the real route.
+      if (USE_MOCK_DATA) return payload
+      const { data } = await api.post("/vendor/botanical/pathways", payload)
+      return data
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["botanical", "pathways"] })
+      onClose()
+    },
+  })
 
   return (
     <section className="grid lg:grid-cols-2 gap-4">
@@ -181,8 +204,17 @@ function ConfigurePanel({
               <div className="text-xs text-mist">{template.shelf_life_note}</div>
             </Field>
           )}
-          <button className="btn-primary w-full mt-1" disabled>
-            Activate pathway (backend follow-up)
+          {activate.isError && (
+            <div className="text-xs text-red-400">
+              Could not activate pathway. Please try again.
+            </div>
+          )}
+          <button
+            className="btn-primary w-full mt-1"
+            onClick={() => activate.mutate()}
+            disabled={activate.isPending || !name.trim()}
+          >
+            {activate.isPending ? "Activating…" : "Activate pathway"}
           </button>
         </div>
       </div>

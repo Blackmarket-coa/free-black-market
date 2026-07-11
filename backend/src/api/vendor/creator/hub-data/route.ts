@@ -5,7 +5,9 @@ import type HawalaLedgerModuleService from "../../../../modules/hawala-ledger/se
 import {
   listCreatorMembers,
   listCreatorCreditTransactions,
+  getCreatorMrrChangeThisWeekCents,
 } from "../../../../lib/creator-hub"
+import { getSellerQuestHighlights } from "../../../../shared/seller-quests"
 
 /**
  * GET /vendor/creator/hub-data
@@ -21,9 +23,11 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
 
   const hawala = req.scope.resolve<HawalaLedgerModuleService>(HAWALA_LEDGER_MODULE)
 
-  const [members, txns] = await Promise.all([
+  const [members, txns, questHighlights, mrrChangeCents] = await Promise.all([
     listCreatorMembers(req.scope, sellerId),
     listCreatorCreditTransactions(hawala, sellerId, 200),
+    getSellerQuestHighlights(req.scope, sellerId),
+    getCreatorMrrChangeThisWeekCents(req.scope, sellerId),
   ])
 
   const startOfToday = new Date()
@@ -63,7 +67,7 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
     credits_earned_today,
     new_members_today,
     unread_dms: 0,
-    mrr_change_this_week_cents: 0,
+    mrr_change_this_week_cents: mrrChangeCents,
     active_boost: null,
     refrain_queue: { pending_review: 0, awaiting_delivery: 0, in_revision: 0 },
     space_health: {
@@ -74,6 +78,6 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
     },
     urgent_actions,
     recent_activity: [],
-    quest_highlights: [],
+    quest_highlights: questHighlights,
   })
 }

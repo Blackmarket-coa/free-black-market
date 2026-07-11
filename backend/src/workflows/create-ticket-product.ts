@@ -149,18 +149,16 @@ export const createTicketProductWorkflow = createWorkflow(
       input
     }, (data) => {
       return {
-        ticket_products: data.medusaProduct.map((product: any) => {
-          const ticketProduct: any = {
-            product_id: product.id,
-            venue_id: data.input.venue_id,
-            dates: data.input.dates
-          }
-          // Only include seller_id if provided
-          if (data.input.seller_id) {
-            ticketProduct.seller_id = data.input.seller_id
-          }
-          return ticketProduct
-        })
+        // Seller ownership is not a column on `ticket_product`; it is expressed
+        // by the `seller_product` remote link created below (step 10). Do not
+        // add `seller_id` here — the model would silently drop it, which is what
+        // previously made the vendor list endpoint fall back to fetching every
+        // seller's tickets.
+        ticket_products: data.medusaProduct.map((product: any) => ({
+          product_id: product.id,
+          venue_id: data.input.venue_id,
+          dates: data.input.dates,
+        }))
       }
     })
 

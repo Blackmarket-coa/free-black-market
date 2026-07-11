@@ -1,5 +1,7 @@
 import { useMemo, useState } from "react"
 import { addWeeks, format } from "date-fns"
+import { useMutation, useQueryClient } from "@tanstack/react-query"
+import { USE_MOCK_DATA, api } from "@bmc/portal-kit"
 import type { PropagationMethod } from "@/types"
 import { PROPAGATION_WINDOWS } from "@/lib/seasonal-windows"
 
@@ -22,22 +24,47 @@ export function NewBatchForm({ onClose }: { onClose: () => void }) {
   const [species, setSpecies] = useState("")
   const [method, setMethod] = useState<PropagationMethod>("cutting")
   const [qty, setQty] = useState(20)
+  const queryClient = useQueryClient()
 
-  const estReady = useMemo(() => {
+  const estReadyDate = useMemo(() => {
     const match = PROPAGATION_WINDOWS.find((w) =>
       species.toLowerCase().includes(w.species.toLowerCase())
     )
     const weeks = match?.weeks_to_saleable ?? 16
-    return format(addWeeks(new Date(), weeks), "MMM d, yyyy")
+    return addWeeks(new Date(), weeks)
   }, [species])
+  const estReady = format(estReadyDate, "MMM d, yyyy")
+
+  const createBatch = useMutation({
+    mutationFn: async () => {
+      const payload = {
+        species_name: species,
+        method,
+        qty_started: qty,
+        expected_ready_at: estReadyDate.toISOString(),
+      }
+      // In mock mode there is no backend to hit; resolve so the form still
+      // closes cleanly. VITE_USE_MOCK_DATA=false wires this to the real route.
+      if (USE_MOCK_DATA) return payload
+      const { data } = await api.post(
+        "/vendor/plant-nursery/propagation/batches",
+        payload
+      )
+      return data
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["propagation"] })
+      queryClient.invalidateQueries({ queryKey: ["inventory"] })
+      onClose()
+    },
+  })
 
   return (
     <form
       className="panel-pad space-y-3"
       onSubmit={(e) => {
         e.preventDefault()
-        // TODO: POST to /vendor/plant-nursery/inventory/batches
-        onClose()
+        createBatch.mutate()
       }}
     >
       <div className="grid sm:grid-cols-3 gap-3">
@@ -79,9 +106,18 @@ export function NewBatchForm({ onClose }: { onClose: () => void }) {
       <div className="text-xs text-mist">
         Estimated ready: <span className="text-forest-300">{estReady}</span>
       </div>
+      {createBatch.isError && (
+        <div className="text-xs text-red-400">
+          Could not create batch. Please try again.
+        </div>
+      )}
       <div className="flex gap-2">
-        <button type="submit" className="btn-primary text-sm">
-          Create batch
+        <button
+          type="submit"
+          className="btn-primary text-sm"
+          disabled={createBatch.isPending || !species.trim()}
+        >
+          {createBatch.isPending ? "Creating…" : "Create batch"}
         </button>
         <button type="button" className="btn-ghost text-sm" onClick={onClose}>
           Cancel
