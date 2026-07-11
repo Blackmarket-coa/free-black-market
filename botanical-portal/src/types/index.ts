@@ -7,6 +7,11 @@
 // are the source of truth the UI reads from.
 // ============================================================================
 
+// Canonical KARMA tier ladder lives in @bmc/portal-kit; import for local use
+// and re-export so `import type { TierKey } from "@/types"` sites resolve.
+import type { TierKey } from "@bmc/portal-kit"
+export type { TierKey }
+
 export type OperatorType = "maker" | "collective"
 
 // ── Pathway core ────────────────────────────────────────────────────────────
@@ -339,4 +344,307 @@ export interface ComplianceOverview {
   }
   ph_logs: PhTestLog[]
   germination_logs: GerminationLog[]
+}
+
+// ── Orders ──────────────────────────────────────────────────────────────────
+
+export type OrderChannel = "retail" | "wholesale"
+
+export type OrderFulfillmentStatus =
+  | "unfulfilled"
+  | "picking"
+  | "packed"
+  | "label_ready"
+  | "shipped"
+
+// One shipped line, pinned to the exact finished-good batch it pulls from so
+// the per-order compliance check (label, COA, expiry) is batch-traceable.
+export interface BotanicalOrderLine {
+  finished_good_id: string
+  sku: string
+  product_name: string
+  batch_number: string
+  qty: number
+  unit_price_cents: number
+  label_approved: boolean
+  coa_required: boolean
+  coa_attached: boolean
+  expiry_date?: string
+}
+
+export interface BotanicalOrder {
+  id: string
+  buyer_name: string
+  channel: OrderChannel
+  lines: BotanicalOrderLine[]
+  total_cents: number
+  ship_by: string // ISO
+  status: OrderFulfillmentStatus
+  tracking_number?: string | null
+  blackout_notified: boolean // dispatch alert posted to the maker's room
+  created_at: string
+}
+
+// ── Payouts ─────────────────────────────────────────────────────────────────
+
+export interface KarmaEvent {
+  id: string
+  description: string
+  karma: number
+  date: string
+}
+
+export interface PayoutRecord {
+  id: string
+  month: string // "2026-05"
+  units_sold: number
+  gross_cents: number
+  split_pct: number
+  hub_cut_cents: number
+  net_cents: number
+  paid_at?: string | null
+  transfer_ref?: string | null
+}
+
+export interface PayoutsData {
+  tier: TierKey
+  karma_total: number
+  current_period: {
+    units_sold: number
+    gross_cents: number
+    split_pct: number
+    hub_cut_cents: number
+    net_cents: number
+    next_payment_date: string
+  }
+  karma_events: KarmaEvent[]
+  history: PayoutRecord[]
+  // Current-period gross by pathway, for the hub-cut breakdown table.
+  pathway_breakdown: {
+    pathway_id: string
+    pathway_name: string
+    units: number
+    gross_cents: number
+    your_cut_cents: number
+  }[]
+}
+
+// ── Quests (mirrors backend/src/modules/vendor-quest serialized shapes) ─────
+
+export type QuestRequirementTag =
+  | "platform" // 🟢 FBM generates it from real records
+  | "assisted" // 🟡 FBM drafts it from records + vendor input
+  | "vendor-supplied" // ⚪ vendor uploads it
+  | "outside-fbm" // ❌ lives outside FBM entirely
+
+export interface QuestCatalogRequirement {
+  key: string
+  label: string
+  tag: QuestRequirementTag
+  needs: string[]
+  note?: string
+}
+
+export interface QuestCatalogStage {
+  key: string
+  label: string
+  order: number
+  description?: string
+}
+
+// One entry of GET /vendor/quests → { quests, count }.
+export interface QuestCatalogEntry {
+  key: string
+  category: string
+  title: string
+  outcome: string
+  type: "individual" | "collective"
+  gatekeeper: string
+  disclaimer: string
+  health_claims_guardrail: boolean
+  uses_fields: string[]
+  has_packet: boolean
+  requirements: QuestCatalogRequirement[]
+  stages: QuestCatalogStage[]
+}
+
+export type QuestRequirementStatus =
+  | "satisfied"
+  | "unsatisfied"
+  | "unavailable" // a needed domain field is absent
+  | "checklist" // vendor-supplied / outside-fbm, never auto-satisfied
+
+export interface EvaluatedQuestRequirement {
+  key: string
+  label: string
+  tag: QuestRequirementTag
+  status: QuestRequirementStatus
+  note?: string
+}
+
+export interface EvaluatedQuestStage {
+  key: string
+  label: string
+  order: number
+  open: boolean
+  missing: string[]
+}
+
+export interface QuestEvaluation {
+  quest_key: string
+  stages: EvaluatedQuestStage[]
+  current_stage_index: number
+  current_stage_key: string | null
+  final_gate_open: boolean
+  packet_available: boolean
+  requirements: EvaluatedQuestRequirement[]
+}
+
+export type QuestEnrollmentStatus = "ACTIVE" | "DROPPED" | "COMPLETE"
+
+export interface QuestEnrollment {
+  id: string
+  quest_key: string
+  status: QuestEnrollmentStatus
+  current_stage: number
+  collective_id: string | null
+  enrolled_at: string
+  completed_at?: string | null
+}
+
+// One item of GET /vendor/quests/enrollments → { enrollments, count }.
+// `evaluation` is null for non-ACTIVE enrollments (backend skips the substrate).
+export interface QuestEnrollmentItem {
+  enrollment: QuestEnrollment
+  evaluation: QuestEvaluation | null
+}
+
+// ── Nursery network (raw-material sourcing) ─────────────────────────────────
+
+export type NurseryMaterialForm = "live_plant" | "dried" | "fresh_harvest" | "seed"
+
+export interface NurseryNodeListing {
+  material: string
+  botanical_name?: string
+  form: NurseryMaterialForm
+  available_qty: number
+  unit: string
+  price_cents_per_unit: number
+}
+
+export interface NurseryNode {
+  id: string
+  name: string
+  region: string
+  state: string // 2-letter
+  tier: TierKey
+  specialties: string[]
+  fulfillment_reliability_pct: number
+  open_to_requests: boolean
+  listings: NurseryNodeListing[]
+}
+
+export type MaterialRequestStatus =
+  | "sent"
+  | "accepted"
+  | "in_transit"
+  | "received"
+  | "declined"
+
+export interface MaterialRequest {
+  id: string
+  node_id: string
+  node_name: string
+  material: string
+  qty: number
+  unit: string
+  status: MaterialRequestStatus
+  requested_at: string
+  expected_at?: string
+}
+
+export interface NurseryNetworkData {
+  nodes: NurseryNode[]
+  requests: MaterialRequest[]
+}
+
+// ── Collective (multi-maker operators only) ─────────────────────────────────
+
+export type CollectiveRole = "founder" | "member" | "apprentice"
+
+export interface CollectiveMemberSplit {
+  maker_id: string
+  maker_name: string
+  role: CollectiveRole
+  contribution_units: number // units of finished goods contributed this period
+  contribution_batches: number
+  split_pct: number // share of the pooled net
+  period_earned_cents: number
+}
+
+export interface CollectiveSplitsData {
+  period: string // "2026-06"
+  split_rule: string // plain-English description of the active rule
+  pool_gross_cents: number
+  hub_cut_cents: number
+  pool_net_cents: number
+  settlement_date: string
+  members: CollectiveMemberSplit[]
+}
+
+export interface CollectiveMaker {
+  id: string
+  name: string
+  role: CollectiveRole
+  tier: TierKey
+  karma: number
+  joined_at: string
+  active_pathway_names: string[]
+  active_runs: number
+  units_this_period: number
+  contribution_band: "high" | "steady" | "ramping" // self-relative, not a rank
+}
+
+export interface MakerInvite {
+  id: string
+  email: string
+  invited_by: string
+  invited_at: string
+  status: "pending" | "expired"
+}
+
+export interface MakersData {
+  makers: CollectiveMaker[]
+  invites: MakerInvite[]
+}
+
+// ── Blackout (Matrix) feed ──────────────────────────────────────────────────
+
+export type BlackoutMessageType =
+  | "order" // new order / dispatch alert
+  | "low_stock"
+  | "compliance"
+  | "payout"
+  | "request" // nursery-network material request updates
+  | "text"
+
+export interface BlackoutMessage {
+  id: string
+  type: BlackoutMessageType
+  text: string
+  sender?: string
+  timestamp: string // ISO
+  order_id?: string
+  link?: string
+}
+
+export interface GovernanceProposal {
+  id: string
+  title: string
+  description: string
+  options: string[]
+  deadline: string
+  tally: Record<string, number>
+  status: "open" | "closed"
+  outcome?: string
 }
