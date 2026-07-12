@@ -1,6 +1,7 @@
 export { default as ServiceProgram } from "./service-program"
 export { default as ServiceApplication } from "./service-application"
 export { default as ServiceContract } from "./service-contract"
+export { default as ServiceReview } from "./service-review"
 
 export {
   ServiceCategory,
