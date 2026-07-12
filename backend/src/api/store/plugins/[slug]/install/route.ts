@@ -7,6 +7,8 @@ import {
   buildPluginGrantInput,
   pluginFeatureKey,
 } from "../../../../../modules/plugin-registry/entitlement"
+import { isInstallable } from "../../../../../modules/plugin-registry/compat"
+import { PLATFORM_VERSION } from "../../../../../shared/platform-version"
 
 /**
  * POST /store/plugins/:slug/install
@@ -29,6 +31,26 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
   const plugin = await registry.getBySlug(slug)
   if (!plugin) {
     return res.status(404).json({ message: `Plugin '${slug}' not found` })
+  }
+
+  // Compatibility gate: block deprecated plugins and host-version mismatches
+  // before granting.
+  const compat = isInstallable(
+    {
+      status: (plugin as { status?: string | null }).status,
+      min_host_version: (plugin as { min_host_version?: string | null }).min_host_version,
+      max_host_version: (plugin as { max_host_version?: string | null }).max_host_version,
+    },
+    PLATFORM_VERSION
+  )
+  if (!compat.ok) {
+    return res.status(409).json({
+      installed: false,
+      slug,
+      code: compat.code,
+      message: compat.message,
+      host_version: PLATFORM_VERSION,
+    })
   }
 
   const featureKey = pluginFeatureKey(slug)

@@ -64,6 +64,7 @@ Verdicts are based on file/path evidence inside `backend/src`, `storefront/src`,
 | Plugin listing schema + versioning | Partial | Plugin/theme columns on `creator-listing`; no version compatibility lifecycle |
 | Plugin developer revenue split | Present | `payout-breakdown` supports `PLUGIN_DEVELOPER_FEE` |
 | Install / entitlement-verification API | Present | `POST /store/plugins/:slug/install` (idempotent `plugin:<slug>` grant + install-count bump) and `GET /store/plugins/:slug/entitlement` (verify), reusing the entitlement service |
+| Plugin version compatibility lifecycle | Present | Install is gated by `isInstallable` (`plugin-registry/compat.ts`): blocks `DEPRECATED` plugins and host-version mismatches against `PLATFORM_VERSION` using `min_host_version`/`max_host_version` bounds |
 | Plugin event/hook system | Missing | No extension point registry beyond Medusa subscribers (2A-tail, deferred) |
 
 ### 1.5 Group / Community Commerce
@@ -81,7 +82,8 @@ Verdicts are based on file/path evidence inside `backend/src`, `storefront/src`,
 |---|---|---|
 | Service listing / contract lifecycle | Present | `backend/src/modules/service-program/` (ServiceProgram, ServiceApplication, ServiceContract; PENDING→ACCEPTED→IN_PROGRESS→COMPLETED→DISPUTED) |
 | Reviews / ratings on services | Present | `ServiceReview` model on `service-program` (accepted-contract, client-authored, 1..5, one per contract); `POST /vendor/service-contracts/:id/reviews` + public `GET /store/service-sellers/:sellerId/reviews` |
-| Messaging hooks | Missing | No Blackout/RocketChat hook from `service-program` (deferred) |
+| Contract lifecycle transitions | Present | `POST /v1/seller/services/contracts/:id/{start,deliver,accept,dispute,cancel}` with a per-transition authorization guard (`contract-transitions.ts`); the `accept` transition is what makes a contract reviewable |
+| Messaging hooks | Present | Lifecycle transitions dispatch the per-seller `service.contract.{delivered,accepted,disputed}` webhooks to both parties; disputes also emit the Blackout `dispute.opened` bridge. Deeper Blackout/RocketChat room hooks remain out of scope |
 
 ### 1.7 Omnichannel
 
@@ -236,8 +238,8 @@ context. Dependencies on Phase 1 are noted.
 
 | Phase | Scope | Notes / dependencies |
 |---|---|---|
-| 2A | Plugin marketplace runtime — ✅ install/entitlement-verification API landed (`/store/plugins/:slug/{install,entitlement}`). Remaining (2A-tail): plugin event hooks; semver compatibility lifecycle | Schema is already in place |
-| 2B | Service marketplace reviews — ✅ review/rating model + endpoints landed on `service-program`. Remaining: Blackout/RocketChat messaging hook | Mirrored the existing product-review pattern |
+| 2A | Plugin marketplace runtime — ✅ install/entitlement-verification API + ✅ version-compatibility gate (`min/max_host_version` vs `PLATFORM_VERSION`, deprecated-block). Remaining (2A-tail): plugin event hooks | Schema is already in place |
+| 2B | Service marketplace reviews — ✅ review/rating model + endpoints + ✅ contract lifecycle transitions/messaging landed on `service-program`. Remaining: deeper Blackout/RocketChat room hooks | Mirrored the existing product-review + subcontract-dispute patterns |
 | 3A | Omnichannel `order_channel` first-class — add field on order, capture on POS/vending checkout, unified customer view that aggregates online + in-person + pickup orders | None |
 | 3B | POS + vending hardware — Stripe Terminal / Square integrations | Depends on 3A |
 | 4A | Creator / vendor / community dashboards — conversion, retention, cohort, campaign performance, subscription growth | Reads from Slice B `analytics_event` table |
