@@ -81,6 +81,10 @@ export function buildRenewalCartInput(subscription: RenewalSubscription) {
     metadata: {
       subscription_id: subscription.id,
       renewal: true,
+      // Explicit channel stamp (Phase 3A); the attribute-channel-on-placed
+      // subscriber would also infer `subscription` from subscription_id, but
+      // the stamp keeps one mechanism across all order-creation paths.
+      order_channel: "subscription",
     },
   }
 }

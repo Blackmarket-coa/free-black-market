@@ -35,7 +35,11 @@ describe("buildRenewalCartInput", () => {
     expect(input.sales_channel_id).toBe("sc_1")
     expect(input.email).toBe("member@example.com")
     expect(input.currency_code).toBe("usd")
-    expect(input.metadata).toEqual({ subscription_id: "sub_1", renewal: true })
+    expect(input.metadata).toEqual({
+      subscription_id: "sub_1",
+      renewal: true,
+      order_channel: "subscription",
+    })
   })
 
   it("strips address ids so fresh address rows are created", () => {
@@ -89,7 +93,11 @@ describe("buildRenewalCartInput", () => {
     expect(input.items).toEqual([])
     expect(input.region_id).toBeUndefined()
     expect(input.shipping_address).toBeUndefined()
-    expect(input.metadata).toEqual({ subscription_id: "sub_x", renewal: true })
+    expect(input.metadata).toEqual({
+      subscription_id: "sub_x",
+      renewal: true,
+      order_channel: "subscription",
+    })
   })
 })
 

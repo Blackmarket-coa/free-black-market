@@ -91,9 +91,9 @@ Verdicts are based on file/path evidence inside `backend/src`, `storefront/src`,
 |---|---|---|
 | Sales channel taxonomy | Partial | `backend/src/modules/agriculture/models/availability-window.ts` `SalesChannel` enum (DTC, B2B, CSA, WHOLESALE, FARMERS_MARKET) |
 | Fulfillment-mode breadth | Partial | `food-distribution` `FulfillmentType` (PICKUP, DELIVERY, DINE_IN, CURBSIDE, LOCKER, COMMUNITY_POINT) |
-| `order_channel` field on order | Missing | No first-class order-level channel attribution; channel inferred via product↔sales-channel link |
+| `order_channel` field on order | Present | `modules/order-channel` — one attribution row per order (online/pos/vending/pickup/subscription), written by the `attribute-channel-on-placed` subscriber. Clients declare a channel pre-completion via `POST /store/carts/:id/channel` (cart-metadata stamp, same mechanism as affiliate attribution); subscription renewals stamp `order_channel: subscription`; unstamped orders default to `online` |
 | POS / vending integrations | Partial | POS scaffolding in `vendor-panel/src/routes/pos/`; no vending hardware integration |
-| Unified cross-channel customer view | Missing | No customer surface aggregating in-person + online orders |
+| Unified cross-channel customer view | Present | `GET /store/customers/me/order-channels` — the customer's orders annotated with channel + a per-channel summary (counts, per-currency totals); pre-feature orders default to `online` |
 
 ### 1.8 Analytics
 
@@ -240,7 +240,7 @@ context. Dependencies on Phase 1 are noted.
 |---|---|---|
 | 2A | Plugin marketplace runtime — ✅ install/entitlement-verification API + ✅ version-compatibility gate (`min/max_host_version` vs `PLATFORM_VERSION`, deprecated-block). Remaining (2A-tail): plugin event hooks | Schema is already in place |
 | 2B | Service marketplace reviews — ✅ review/rating model + endpoints + ✅ contract lifecycle transitions/messaging landed on `service-program`. Remaining: deeper Blackout/RocketChat room hooks | Mirrored the existing product-review + subcontract-dispute patterns |
-| 3A | Omnichannel `order_channel` first-class — add field on order, capture on POS/vending checkout, unified customer view that aggregates online + in-person + pickup orders | None |
+| 3A | Omnichannel `order_channel` first-class — ✅ landed: `order-channel` module + `order.placed` subscriber + cart-stamp route + unified customer view. Remaining: POS checkout does not create orders today (`/vendor/pos/checkout` mints a hawala vendor-to-vendor payment, no cart/order), so a POS order flow must be built before POS orders carry the channel — the cart-stamp mechanism is ready for it | None |
 | 3B | POS + vending hardware — Stripe Terminal / Square integrations | Depends on 3A |
 | 4A | Creator / vendor / community dashboards — conversion, retention, cohort, campaign performance, subscription growth | Reads from Slice B `analytics_event` table |
 | 4B | Discoverability — trending creators, "for-you" feed, personalized recs | Reuse AI orchestrator service (`services/ai-orchestrator/`) |
