@@ -2,17 +2,20 @@ import type { MedusaContainer } from "@medusajs/framework/types"
 import { emitBlackoutEvent } from "./blackout-emit"
 
 /**
- * Ready-to-call emit helpers for §2/§3 event families whose *source lifecycle*
- * does not exist in FBM yet. The envelope/type surface is fully wired here, so
- * landing the upstream flow is a one-line call to the matching helper.
- *
- * Per the cutover decision ("wire real hooks, stub the rest"), these are NOT
- * invoked from any live code path today — each TODO marks where the real
- * trigger will plug in.
+ * Emit helpers for §2/§3 event families. Two are now invoked from live code:
+ *   - `emitReferralAttributed` — from `subscribers/attribute-order-on-placed`
+ *   - `emitLedgerUsdcConverted` — from `jobs/hawala-settlement`
+ * The remaining four still have no matching source lifecycle in FBM; each TODO
+ * records the concrete blocker so landing the upstream flow is a one-line call
+ * to the matching helper.
  */
 
-// TODO(wire): call from a payment-failed subscriber once FBM emits a
-// payment.failed / order.payment_failed event.
+// TODO(wire): no trigger exists. Customer purchase failures happen at
+// cart-completion before an order is created, so FBM emits no
+// `order.payment_failed` / `payment.failed` event to hang this off. (The Stripe
+// `payment_intent.payment_failed` webhook concerns ACH payout transactions, not
+// customer purchases; subscription renewal failures emit the distinct
+// `subscription.payment_failed`, which has no listing/purchase context.)
 export function emitPurchaseFailed(
   container: MedusaContainer,
   args: { userId: string; providerListingId: string; kind: string; fbmOrderId: string; sku?: string | null }
@@ -39,8 +42,9 @@ export function emitPurchaseChargebacked(
   )
 }
 
-// TODO(wire): call from the Stellar/USDC conversion path once a usdc-converted
-// ledger entry type exists (gated by ENABLE_STELLAR_SETTLEMENT).
+// WIRED: invoked from `jobs/hawala-settlement` after a settlement batch is
+// anchored to Stellar, once per settled vendor-order entry (see
+// `buildUsdcConvertedArgs`). Gated by ENABLE_STELLAR_SETTLEMENT via that job.
 export function emitLedgerUsdcConverted(
   container: MedusaContainer,
   args: { vendorId: string; orderId: string; amountMinorUnits: number; currency: string; ledgerTxId: string }
@@ -82,8 +86,9 @@ export function emitQuestRewardSettled(
   )
 }
 
-// TODO(wire): call from attribute-order-on-placed once a Blackout user id is
-// resolvable for the referrer.
+// WIRED: invoked from `subscribers/attribute-order-on-placed` after the
+// attribution is held, when the referrer's Blackout user id resolves (see
+// `buildReferralAttributedArgs`).
 export function emitReferralAttributed(
   container: MedusaContainer,
   args: { userId: string; grossCents: number; currency: string; fbmOrderId: string; referralId: string }

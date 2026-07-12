@@ -6,6 +6,9 @@ import CreatorAttributionService from "../modules/creator-attribution/service"
 import { CommissionStatus } from "../modules/creator-attribution/models"
 import { MARKETPLACE_WEBHOOKS_MODULE } from "../modules/marketplace-webhooks"
 import type MarketplaceWebhooksService from "../modules/marketplace-webhooks/service"
+import { resolveSellerBlackoutUserId } from "../lib/blackout-identity"
+import { emitReferralAttributed } from "../lib/blackout-stub-emitters"
+import { buildReferralAttributedArgs } from "../lib/blackout-wire-helpers"
 
 /**
  * Subscriber: attribute the order to a creator (if applicable) and emit
@@ -119,6 +122,29 @@ export default async function attributeOrderOnPlacedSubscriber({
       } catch (err) {
         log.error("[attribute-order-on-placed] webhook dispatch failed", err)
       }
+    }
+
+    // §3 Blackout `referral.attributed` — notify the referrer's Blackout
+    // identity that their link earned a commission. Requires a resolvable
+    // Blackout user id for the creator; SKIP rather than leak a non-Blackout
+    // identifier. Fire-and-forget (emit swallows its own errors).
+    try {
+      const referrerBlackoutUserId = await resolveSellerBlackoutUserId(
+        container,
+        attributionAfter.creator_seller_id
+      )
+      if (referrerBlackoutUserId) {
+        await emitReferralAttributed(
+          container,
+          buildReferralAttributedArgs({
+            userId: referrerBlackoutUserId,
+            orderId,
+            attribution: attributionAfter,
+          })
+        )
+      }
+    } catch (err) {
+      log.error("[attribute-order-on-placed] referral.attributed emit failed", err)
     }
   } catch (err) {
     // Never fail the order placement because attribution failed.
