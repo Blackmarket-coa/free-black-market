@@ -4,36 +4,75 @@ import {
   WorkflowResponse,
 } from "@medusajs/framework/workflows-sdk"
 import {
+  authorizePaymentSessionStep,
+  completeCartWorkflow,
+  createCartWorkflow,
+  createPaymentCollectionForCartWorkflow,
+  createPaymentSessionsWorkflow,
+  createRemoteLinkStep,
   emitEventStep,
   useQueryGraphStep,
 } from "@medusajs/medusa/core-flows"
+import { Modules } from "@medusajs/framework/utils"
 import { updateSubscriptionStep } from "../steps/update-subscription"
 import { grantSubscriptionEntitlementsStep } from "../steps/grant-subscription-entitlements"
+import { SUBSCRIPTION_MODULE } from "../../../modules/subscription"
+import {
+  buildRenewalCartInput,
+  buildRenewalPaymentContext,
+  buildRenewalPaymentSessionInput,
+  type RenewalSubscription,
+} from "../renew-helpers"
 
 type WorkflowInput = {
   subscription_id: string
 }
 
 /**
+ * Whether the renewal workflow mints a real order and captures payment
+ * off-session. Read once at registration so the compiled graph is fixed per
+ * process; the hourly job (`process-subscription-renewals`) gates on the same
+ * flag and only invokes this workflow in live mode. Ships dark: unset → the
+ * legacy date-advance + entitlement path.
+ */
+const RENEWAL_LIVE = process.env.FBM_SUBSCRIPTION_RENEWAL_LIVE === "1"
+
+const SUBSCRIPTION_FIELDS = [
+  "*",
+  "cart.*",
+  "cart.items.*",
+  "cart.items.variant.*",
+  "cart.shipping_address.*",
+  "cart.billing_address.*",
+  "cart.shipping_methods.*",
+  "customer.*",
+]
+
+/**
  * Renew Subscription Workflow
  *
- * Per-cycle renewal pipeline. Today it:
+ * Per-cycle renewal pipeline. In live mode (`FBM_SUBSCRIPTION_RENEWAL_LIVE=1`)
+ * it:
  *   1. Loads the subscription and its template cart
- *   2. Records a renewal on the subscription (advances last/next order date)
- *   3. Grants per-cycle entitlements via EntitlementGrantRule, tagged with
- *      `source=SUBSCRIPTION` and `source_subscription_id` for audit/dashboards
- *   4. Emits `subscription.renewal_processed` for downstream notifications
+ *   2. Clones the template cart into a fresh cart (createCartWorkflow) —
+ *      the original cart already became the initial order
+ *   3. Creates a payment collection + an off-session payment session against
+ *      the subscription's saved payment method, then authorizes it. With the
+ *      Stripe provider's automatic capture this settles the charge; explicit
+ *      settlement otherwise follows the standard order payment lifecycle.
+ *   4. Completes the cart into an order and links it to the subscription
+ *      (subscription↔order link, `isList` so each renewal appends)
+ *   5. Advances the subscription dates and grants per-cycle entitlements with
+ *      `source=SUBSCRIPTION` + `source_subscription_id` provenance, keyed by
+ *      the new order id
+ *   6. Emits `subscription.renewal_processed`
  *
- * The actual order-creation + off-session payment-capture path is a
- * deliberate seam left for a follow-up PR that has access to a real Stripe
- * environment. When wiring it in, replace the TODO block below with:
- *   - clone the linked cart (variants, addresses, shipping methods)
- *   - run completeCartWorkflow.runAsStep on the new cart_id
- *   - record the new order_id back on the subscription via the
- *     subscription-order link
- *   - on failure, throw — the job will catch and route to
- *     handleSubscriptionFailureWorkflow which records a dunning attempt and
- *     pauses on max retries.
+ * Any failure in steps 2–4 throws, so the calling job routes to
+ * `handleSubscriptionFailureWorkflow` (dunning + pause-on-max-retries) and the
+ * core-flow compensations roll back the partial cart/payment.
+ *
+ * In legacy mode (flag unset) the order/payment steps are skipped: dates are
+ * advanced and entitlements granted exactly as before.
  */
 export const renewSubscriptionWorkflowId = "renew-subscription-workflow"
 export const renewSubscriptionWorkflow = createWorkflow(
@@ -41,16 +80,7 @@ export const renewSubscriptionWorkflow = createWorkflow(
   (input: WorkflowInput) => {
     const { data: subscriptions } = useQueryGraphStep({
       entity: "subscription",
-      fields: [
-        "*",
-        "cart.*",
-        "cart.items.*",
-        "cart.items.variant.*",
-        "cart.shipping_address.*",
-        "cart.billing_address.*",
-        "cart.shipping_methods.*",
-        "customer.*",
-      ],
+      fields: SUBSCRIPTION_FIELDS,
       filters: {
         id: input.subscription_id,
       },
@@ -59,67 +89,123 @@ export const renewSubscriptionWorkflow = createWorkflow(
       },
     })
 
-    // Build the order-data shape so a future order-creation step can be
-    // dropped in here without changing this contract.
-    const orderData = transform({ subscriptions }, (data) => {
-      const subscription = data.subscriptions[0] as any
-      const cart = subscription.cart
+    if (RENEWAL_LIVE) {
+      // 1. Clone the template cart into a fresh cart for this cycle.
+      const cartInput = transform({ subscriptions }, (data) =>
+        buildRenewalCartInput(data.subscriptions[0] as RenewalSubscription)
+      )
+      const cart = createCartWorkflow.runAsStep({ input: cartInput })
 
-      return {
-        region_id: cart?.region_id,
-        customer_id: subscription.customer_id,
-        sales_channel_id: cart?.sales_channel_id,
-        email: cart?.email,
-        currency_code: cart?.currency_code,
-        shipping_address: cart?.shipping_address
-          ? { ...cart.shipping_address, id: undefined }
-          : undefined,
-        billing_address: cart?.billing_address
-          ? { ...cart.billing_address, id: undefined }
-          : undefined,
-        items: cart?.items?.map((item: any) => ({
-          variant_id: item.variant_id,
-          quantity: subscription.quantity || item.quantity,
-          unit_price: item.unit_price,
-          title: item.title,
-        })),
-        metadata: {
-          subscription_id: subscription.id,
-          renewal: true,
-          renewal_date: new Date().toISOString(),
+      // 2. Attach a payment collection to the new cart.
+      createPaymentCollectionForCartWorkflow.runAsStep({
+        input: { cart_id: cart.id },
+      })
+
+      const { data: cartsWithPc } = useQueryGraphStep({
+        entity: "cart",
+        fields: ["id", "payment_collection.id"],
+        filters: { id: cart.id },
+        options: { throwIfKeyNotFound: true },
+      }).config({ name: "renewal-cart-payment-collection" })
+
+      // 3. Create + authorize an off-session payment session against the
+      //    subscription's saved payment method.
+      const sessionInput = transform(
+        { cartsWithPc, subscriptions },
+        (data) =>
+          buildRenewalPaymentSessionInput({
+            payment_collection_id: (data.cartsWithPc[0] as any).payment_collection
+              ?.id,
+            subscription: data.subscriptions[0] as RenewalSubscription,
+          })
+      )
+      const paymentSession = createPaymentSessionsWorkflow.runAsStep({
+        input: sessionInput,
+      })
+
+      const authContext = transform({ subscriptions }, (data) =>
+        buildRenewalPaymentContext(data.subscriptions[0] as RenewalSubscription)
+      )
+      authorizePaymentSessionStep({
+        id: paymentSession.id,
+        context: authContext,
+      })
+
+      // 4. Complete the cart → order, then link it to the subscription.
+      const order = completeCartWorkflow.runAsStep({
+        input: { id: cart.id },
+      })
+
+      const linkDefs = transform({ order, input }, (data) => [
+        {
+          [SUBSCRIPTION_MODULE]: {
+            subscription_id: data.input.subscription_id,
+          },
+          [Modules.ORDER]: {
+            order_id: data.order.id,
+          },
         },
-      }
-    })
+      ])
+      createRemoteLinkStep(linkDefs)
 
-    // Surface the seed values for the entitlement step.
+      // 5. Advance dates + grant entitlements keyed by the new order.
+      const { subscription } = updateSubscriptionStep({
+        subscription_id: input.subscription_id,
+        action: "record_order",
+      })
+
+      const grantInputs = transform({ subscriptions, order }, (data) => {
+        const sub = data.subscriptions[0] as RenewalSubscription & {
+          product_id?: string | null
+          variant_id?: string | null
+        }
+        return {
+          subscription_id: sub.id,
+          customer_id: sub.customer_id ?? null,
+          product_id: sub.product_id ?? null,
+          variant_id: sub.variant_id ?? null,
+          order_id: data.order.id as string,
+        }
+      })
+      const entitlementResult = grantSubscriptionEntitlementsStep(grantInputs)
+
+      emitEventStep({
+        eventName: "subscription.renewal_processed",
+        data: {
+          subscription_id: input.subscription_id,
+          order_id: order.id,
+          granted_entitlements: entitlementResult.granted_count,
+        },
+      })
+
+      return new WorkflowResponse({
+        subscription,
+        renewal_prepared: true,
+        order_id: order.id,
+        granted_entitlements: entitlementResult.granted_count,
+      })
+    }
+
+    // Legacy path (flag unset): advance dates + grant entitlements, no order.
     const grantInputs = transform({ subscriptions }, (data) => {
-      const subscription = data.subscriptions[0] as any
+      const sub = data.subscriptions[0] as RenewalSubscription & {
+        product_id?: string | null
+        variant_id?: string | null
+      }
       return {
-        subscription_id: subscription.id,
-        customer_id: subscription.customer_id ?? null,
-        product_id: subscription.product_id ?? null,
-        variant_id: subscription.variant_id ?? null,
+        subscription_id: sub.id,
+        customer_id: sub.customer_id ?? null,
+        product_id: sub.product_id ?? null,
+        variant_id: sub.variant_id ?? null,
       }
     })
 
-    // TODO(creator-commerce/slice-A-followup): real order creation +
-    // off-session Stripe capture replaces the no-op below. Failure here
-    // must throw so the calling job can route to the failure workflow.
-
-    // Advance subscription dates idempotently — recordSubscriptionOrder
-    // bumps last_order_date and computes next_order_date.
     const { subscription } = updateSubscriptionStep({
       subscription_id: input.subscription_id,
       action: "record_order",
     })
 
-    // Grant per-cycle entitlements with subscription provenance.
-    const entitlementResult = grantSubscriptionEntitlementsStep({
-      subscription_id: grantInputs.subscription_id,
-      customer_id: grantInputs.customer_id,
-      product_id: grantInputs.product_id,
-      variant_id: grantInputs.variant_id,
-    })
+    const entitlementResult = grantSubscriptionEntitlementsStep(grantInputs)
 
     emitEventStep({
       eventName: "subscription.renewal_processed",
@@ -132,7 +218,6 @@ export const renewSubscriptionWorkflow = createWorkflow(
     return new WorkflowResponse({
       subscription,
       renewal_prepared: true,
-      order_data: orderData,
       granted_entitlements: entitlementResult.granted_count,
     })
   }
