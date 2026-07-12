@@ -54,7 +54,7 @@ Verdicts are based on file/path evidence inside `backend/src`, `storefront/src`,
 | Digital fulfillment + entitlement generation | Present | `backend/src/modules/digital-product/`, `backend/src/modules/entitlement/` (EntitlementKind, Source MANUAL/ORDER/SUBSCRIPTION), `grant-entitlements-on-order-placed.ts` subscriber |
 | Signed download URLs | Present | `backend/src/modules/minio-file/service.ts` |
 | Subscription model + recurring metadata | Present | `backend/src/modules/subscription/models/subscription.ts` (interval, period, next_order_date, stripe_subscription_id) |
-| Subscription billing loop (real recurring orders + payment capture + entitlements) | Partial | Hourly job + workflow stub exist but `renew-subscription.ts` returns `renewal_prepared: true` without creating an order — see Phase 1 Slice A |
+| Subscription billing loop (real recurring orders + payment capture + entitlements) | Present | Slice A landed — `renew-subscription.ts` clones the template cart, creates + authorizes an off-session payment session, completes the order, links it, and grants entitlements keyed by the new order id (gated by `FBM_SUBSCRIPTION_RENEWAL_LIVE`). Pure input-shaping in `renew-helpers.ts` (unit-tested); DB+Stripe path is CI-verified |
 | Access pass / gated content type | Present (via entitlement) | `EntitlementKind.access_pass` |
 
 ### 1.4 Plugin Marketplace
@@ -63,8 +63,8 @@ Verdicts are based on file/path evidence inside `backend/src`, `storefront/src`,
 |---|---|---|
 | Plugin listing schema + versioning | Partial | Plugin/theme columns on `creator-listing`; no version compatibility lifecycle |
 | Plugin developer revenue split | Present | `payout-breakdown` supports `PLUGIN_DEVELOPER_FEE` |
-| Install / entitlement-verification API | Missing | No public install endpoint; entitlement check exists for customers only |
-| Plugin event/hook system | Missing | No extension point registry beyond Medusa subscribers |
+| Install / entitlement-verification API | Present | `POST /store/plugins/:slug/install` (idempotent `plugin:<slug>` grant + install-count bump) and `GET /store/plugins/:slug/entitlement` (verify), reusing the entitlement service |
+| Plugin event/hook system | Missing | No extension point registry beyond Medusa subscribers (2A-tail, deferred) |
 
 ### 1.5 Group / Community Commerce
 
@@ -80,8 +80,8 @@ Verdicts are based on file/path evidence inside `backend/src`, `storefront/src`,
 | Capability | Verdict | Evidence |
 |---|---|---|
 | Service listing / contract lifecycle | Present | `backend/src/modules/service-program/` (ServiceProgram, ServiceApplication, ServiceContract; PENDING→ACCEPTED→IN_PROGRESS→COMPLETED→DISPUTED) |
-| Reviews / ratings on services | Missing | `VendorReputation` exists in `collective-campaign`; nothing on `service-program` |
-| Messaging hooks | Missing | No Blackout/RocketChat hook from `service-program` |
+| Reviews / ratings on services | Present | `ServiceReview` model on `service-program` (accepted-contract, client-authored, 1..5, one per contract); `POST /vendor/service-contracts/:id/reviews` + public `GET /store/service-sellers/:sellerId/reviews` |
+| Messaging hooks | Missing | No Blackout/RocketChat hook from `service-program` (deferred) |
 
 ### 1.7 Omnichannel
 
@@ -109,11 +109,20 @@ Verdicts are based on file/path evidence inside `backend/src`, `storefront/src`,
 
 Phase 1 ships on branch `claude/fbm-creator-commerce-wjh4Z` as four commits.
 
-### Slice A — Subscription billing loop + entitlements
+### Slice A — Subscription billing loop + entitlements ✅ LANDED
 
 **Why.** Subscriptions are foundational to creator commerce (Patreon, Whatnot
-weekly drops, CSA boxes). The model + hourly job + workflow stub exist but the
-renewal workflow does not create orders or capture payments today.
+weekly drops, CSA boxes). The model + hourly job + workflow stub existed but the
+renewal workflow did not create orders or capture payments.
+
+**Status.** Landed: `renew-subscription.ts` now composes
+createCart → payment-collection → off-session payment-session → authorize →
+completeCart → subscription↔order link → record-order → entitlement grant
+(keyed by the new order id), gated by `FBM_SUBSCRIPTION_RENEWAL_LIVE`. Legacy
+date-advance path preserved when the flag is unset. Pure input-shaping lives in
+`renew-helpers.ts` and is unit-tested; the DB+Stripe path is CI/live-env
+verified. Optional provider override: `FBM_SUBSCRIPTION_PAYMENT_PROVIDER_ID`
+(defaults to `pp_stripe_stripe`).
 
 **What.**
 - `backend/src/workflows/subscription/workflows/renew-subscription.ts` —
@@ -227,8 +236,8 @@ context. Dependencies on Phase 1 are noted.
 
 | Phase | Scope | Notes / dependencies |
 |---|---|---|
-| 2A | Plugin marketplace runtime — install/entitlement-verification API on `entitlement` + `marketplace-listing`; plugin event hooks; semver compatibility lifecycle | Schema is already in place |
-| 2B | Service marketplace messaging + reviews — Blackout/RocketChat hook from `service-program`, review/rating model on `ServiceContract` | Mirror the existing `@mercurjs/reviews` plugin pattern |
+| 2A | Plugin marketplace runtime — ✅ install/entitlement-verification API landed (`/store/plugins/:slug/{install,entitlement}`). Remaining (2A-tail): plugin event hooks; semver compatibility lifecycle | Schema is already in place |
+| 2B | Service marketplace reviews — ✅ review/rating model + endpoints landed on `service-program`. Remaining: Blackout/RocketChat messaging hook | Mirrored the existing product-review pattern |
 | 3A | Omnichannel `order_channel` first-class — add field on order, capture on POS/vending checkout, unified customer view that aggregates online + in-person + pickup orders | None |
 | 3B | POS + vending hardware — Stripe Terminal / Square integrations | Depends on 3A |
 | 4A | Creator / vendor / community dashboards — conversion, retention, cohort, campaign performance, subscription growth | Reads from Slice B `analytics_event` table |
@@ -242,6 +251,7 @@ context. Dependencies on Phase 1 are noted.
 | Flag | Slice | Default | Effect when unset |
 |---|---|---|---|
 | `FBM_SUBSCRIPTION_RENEWAL_LIVE` | A | unset | Workflow returns legacy `renewal_prepared: true` (no order created) |
+| `FBM_SUBSCRIPTION_PAYMENT_PROVIDER_ID` | A | `pp_stripe_stripe` | Payment provider used for off-session renewal charges |
 | `FBM_MULTILEVEL_REFERRALS` | B | unset | `attributeOrder` writes single L1 row exactly like today |
 | `FBM_REFERRAL_DEFAULT_SPLITS` | B | `{"L1":80,"L2":15,"L3":5}` | Used only when program lacks explicit splits |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | C | unset | Google provider not registered |

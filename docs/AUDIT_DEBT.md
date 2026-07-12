@@ -4,6 +4,20 @@ Deferred work captured from prior audits and direct repo inspection. **Items her
 
 Effort key: **S** ≤ 1 day · **M** 2–5 days · **L** > 1 week.
 
+## Deferred-workstreams pass (backend feature seams)
+
+Closed the four open backend feature seams tracked across the roadmaps
+(`docs/CREATOR_COMMERCE_ROADMAP.md`, `HANDOFF.md`, in-code TODO markers). Each
+new live path ships dark behind its env flag; DB/Stripe/OAuth paths are
+CI/live-env verified.
+
+| # | Item | Resolution | Location |
+|---|------|------------|----------|
+| ~~DW-1~~ | Subscription renewal order-creation no-op (Creator-Commerce Slice A) | **done** — renewal workflow mints the order + authorizes an off-session payment + links it + grants entitlements, gated by `FBM_SUBSCRIPTION_RENEWAL_LIVE`; pure shaping unit-tested | `backend/src/workflows/subscription/{renew-helpers.ts,workflows/renew-subscription.ts}` |
+| ~~DW-2~~ | Content-platform OAuth adapters throwing `pending impl` | **done** — TikTok/Instagram/YouTube/Twitch implement real OAuth + metrics via a shared `providers/http.ts`; mocked-fetch unit tests. `blackout.ts` stays stubbed (awaiting Blackout API spec) | `backend/src/modules/content-platform/providers/*` |
+| ~~DW-3~~ | Dark Blackout emitters (§2/§3) never invoked | **done (partial by design)** — `referral.attributed` (attribute-order-on-placed) + `ledger.usdc_converted` (hawala-settlement) wired; the other four stay stubbed with documented blockers (no order-failed/chargeback/quest/ambassador concept) | `backend/src/lib/blackout-wire-helpers.ts`, `subscribers/attribute-order-on-placed.ts`, `jobs/hawala-settlement.ts` |
+| ~~DW-4~~ | Creator-Commerce Phase 2A/2B | **done** — plugin install/entitlement-verification API (2A) + `service-program` reviews model/endpoints (2B). Deferred tails: plugin hook registry + semver, service messaging hook | `backend/src/api/store/plugins/**`, `backend/src/modules/{plugin-registry/entitlement.ts,service-program/**}` |
+
 ## ⚠️ Critical: money-path atomicity was silently disabled (FIXED 2026-06-20)
 
 **Severity: high (financial correctness).** Surfaced by the money-path concurrency
