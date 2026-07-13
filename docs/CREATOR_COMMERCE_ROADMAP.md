@@ -65,7 +65,7 @@ Verdicts are based on file/path evidence inside `backend/src`, `storefront/src`,
 | Plugin developer revenue split | Present | `payout-breakdown` supports `PLUGIN_DEVELOPER_FEE` |
 | Install / entitlement-verification API | Present | `POST /store/plugins/:slug/install` (idempotent `plugin:<slug>` grant + install-count bump) and `GET /store/plugins/:slug/entitlement` (verify), reusing the entitlement service |
 | Plugin version compatibility lifecycle | Present | Install is gated by `isInstallable` (`plugin-registry/compat.ts`): blocks `DEPRECATED` plugins and host-version mismatches against `PLATFORM_VERSION` using `min_host_version`/`max_host_version` bounds |
-| Plugin event/hook system | Missing | No extension point registry beyond Medusa subscribers (2A-tail, deferred) |
+| Plugin event/hook system | Present | Hook registry on the marketplace-webhooks machinery: authors register endpoints via `POST /v1/seller/plugins/:slug/hooks` (HMAC-signed, retried, drained like any webhook; stored under the synthetic `plugin:<slug>` channel); `plugin.installed`/`plugin.uninstalled` emitted from both install surfaces and the extensions diff. `plugin.deprecated` defined for a future deprecation flow |
 
 ### 1.5 Group / Community Commerce
 
@@ -92,7 +92,7 @@ Verdicts are based on file/path evidence inside `backend/src`, `storefront/src`,
 | Sales channel taxonomy | Partial | `backend/src/modules/agriculture/models/availability-window.ts` `SalesChannel` enum (DTC, B2B, CSA, WHOLESALE, FARMERS_MARKET) |
 | Fulfillment-mode breadth | Partial | `food-distribution` `FulfillmentType` (PICKUP, DELIVERY, DINE_IN, CURBSIDE, LOCKER, COMMUNITY_POINT) |
 | `order_channel` field on order | Present | `modules/order-channel` — one attribution row per order (online/pos/vending/pickup/subscription), written by the `attribute-channel-on-placed` subscriber. Clients declare a channel pre-completion via `POST /store/carts/:id/channel` (cart-metadata stamp, same mechanism as affiliate attribution); subscription renewals stamp `order_channel: subscription`; unstamped orders default to `online` |
-| POS / vending integrations | Partial | `POST /vendor/pos/orders` rings up an in-person sale as a real order (stamped `order_channel: pos`, emits `order.placed` so channel attribution / entitlements / Blackout events fire); `/vendor/pos/checkout` still handles vendor-to-vendor hawala payments. Remaining: vending hardware, POS inventory reservation (future POS module), vendor-panel POS UI for order ring-up |
+| POS / vending integrations | Partial | `POST /vendor/pos/orders` rings up an in-person sale as a real order (stamped `order_channel: pos`, emits `order.placed` so channel attribution / entitlements / Blackout events fire); `/vendor/pos/checkout` still handles vendor-to-vendor hawala payments. Vendor-panel ring-up UI shipped (catalog variant picker + ad-hoc lines + per-currency minor-unit conversion). Remaining: vending hardware, POS inventory reservation (future POS module) |
 | Unified cross-channel customer view | Present | `GET /store/customers/me/order-channels` — the customer's orders annotated with channel + a per-channel summary (counts, per-currency totals); pre-feature orders default to `online` |
 
 ### 1.8 Analytics
@@ -238,7 +238,7 @@ context. Dependencies on Phase 1 are noted.
 
 | Phase | Scope | Notes / dependencies |
 |---|---|---|
-| 2A | Plugin marketplace runtime — ✅ install/entitlement-verification API + ✅ version-compatibility gate (`min/max_host_version` vs `PLATFORM_VERSION`, deprecated-block). Remaining (2A-tail): plugin event hooks | Schema is already in place |
+| 2A | Plugin marketplace runtime — ✅ install/entitlement-verification API + ✅ version-compatibility gate (`min/max_host_version` vs `PLATFORM_VERSION`, deprecated-block). + ✅ event/hook registry (`/v1/seller/plugins/:slug/hooks` + `plugin.*` events) — 2A complete | Schema is already in place |
 | 2B | Service marketplace reviews — ✅ review/rating model + endpoints + ✅ contract lifecycle transitions/messaging landed on `service-program`. Remaining: deeper Blackout/RocketChat room hooks | Mirrored the existing product-review + subcontract-dispute patterns |
 | 3A | Omnichannel `order_channel` first-class — ✅ landed: `order-channel` module + `order.placed` subscriber + cart-stamp route + unified customer view + POS order flow (`POST /vendor/pos/orders` creates a real `pos`-stamped order and emits `order.placed`; mirrors the delivery flow's direct order creation). Remaining: POS inventory reservation + vendor-panel ring-up UI (future POS module) | None |
 | 3B | POS + vending hardware — Stripe Terminal / Square integrations | Depends on 3A |
