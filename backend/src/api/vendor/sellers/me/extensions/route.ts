@@ -47,10 +47,11 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
       fields: ["id", "enabled_extensions"],
       filters: { seller_id: sellerId },
     })
-    const previousExtensions = Array.isArray(
-      (metadataRecords?.[0] as { enabled_extensions?: unknown })?.enabled_extensions
-    )
-      ? ((metadataRecords![0] as { enabled_extensions: string[] }).enabled_extensions)
+    const previousRaw = (
+      metadataRecords?.[0] as { enabled_extensions?: unknown } | undefined
+    )?.enabled_extensions
+    const previousExtensions = Array.isArray(previousRaw)
+      ? (previousRaw as string[])
       : []
 
     if (metadataRecords && metadataRecords.length > 0) {
