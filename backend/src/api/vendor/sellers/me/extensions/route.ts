@@ -9,6 +9,14 @@ import {
   createSellerMetadataRecord,
   updateSellerMetadataRecord,
 } from "../../../../../modules/seller-extension/metadata-service"
+import {
+  buildPluginInstalledPayload,
+  buildPluginUninstalledPayload,
+  diffExtensions,
+  pluginHookChannelId,
+} from "../../../../../modules/plugin-registry/hooks"
+import { MARKETPLACE_WEBHOOKS_MODULE } from "../../../../../modules/marketplace-webhooks"
+import type MarketplaceWebhooksService from "../../../../../modules/marketplace-webhooks/service"
 
 /**
  * POST /vendor/sellers/me/extensions
@@ -36,9 +44,15 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
 
     const { data: metadataRecords } = await query.graph({
       entity: "seller_metadata",
-      fields: ["id"],
+      fields: ["id", "enabled_extensions"],
       filters: { seller_id: sellerId },
     })
+    const previousRaw = (
+      metadataRecords?.[0] as { enabled_extensions?: unknown } | undefined
+    )?.enabled_extensions
+    const previousExtensions = Array.isArray(previousRaw)
+      ? (previousRaw as string[])
+      : []
 
     if (metadataRecords && metadataRecords.length > 0) {
       const metadataId = (metadataRecords[0] as { id: string }).id
@@ -49,6 +63,41 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
       await createSellerMetadataRecord(sellerExtensionModule as SellerExtensionService, [
         { seller_id: sellerId, enabled_extensions: body.enabled_extensions ?? null },
       ])
+    }
+
+    // Plugin hook registry (§1.4): the set-whole-array update implies
+    // installs/uninstalls — notify each affected plugin's hook endpoints.
+    // Best-effort; never fails the extensions update.
+    try {
+      const { installed, uninstalled } = diffExtensions(
+        previousExtensions,
+        body.enabled_extensions ?? []
+      )
+      if (installed.length || uninstalled.length) {
+        const webhooks = req.scope.resolve<MarketplaceWebhooksService>(
+          MARKETPLACE_WEBHOOKS_MODULE
+        )
+        for (const slug of installed) {
+          await webhooks.dispatch(
+            "plugin.installed",
+            pluginHookChannelId(slug),
+            buildPluginInstalledPayload({
+              slug,
+              installer_type: "seller",
+              installer_seller_id: sellerId,
+            })
+          )
+        }
+        for (const slug of uninstalled) {
+          await webhooks.dispatch(
+            "plugin.uninstalled",
+            pluginHookChannelId(slug),
+            buildPluginUninstalledPayload({ slug, installer_seller_id: sellerId })
+          )
+        }
+      }
+    } catch (hookErr) {
+      log.error("[extensions] plugin hook dispatch failed", hookErr)
     }
 
     const seller = await fetchSellerProfile({

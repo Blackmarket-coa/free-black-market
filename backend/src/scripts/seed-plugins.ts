@@ -26,6 +26,8 @@ export default async function seedPlugins({ container }: ExecArgs) {
       category: p.category,
       description: p.description,
       version: p.version,
+      min_host_version: p.minHostVersion ?? null,
+      max_host_version: p.maxHostVersion ?? null,
       status: "PUBLISHED",
     }
     if (existing) {

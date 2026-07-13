@@ -54,7 +54,7 @@ Verdicts are based on file/path evidence inside `backend/src`, `storefront/src`,
 | Digital fulfillment + entitlement generation | Present | `backend/src/modules/digital-product/`, `backend/src/modules/entitlement/` (EntitlementKind, Source MANUAL/ORDER/SUBSCRIPTION), `grant-entitlements-on-order-placed.ts` subscriber |
 | Signed download URLs | Present | `backend/src/modules/minio-file/service.ts` |
 | Subscription model + recurring metadata | Present | `backend/src/modules/subscription/models/subscription.ts` (interval, period, next_order_date, stripe_subscription_id) |
-| Subscription billing loop (real recurring orders + payment capture + entitlements) | Partial | Hourly job + workflow stub exist but `renew-subscription.ts` returns `renewal_prepared: true` without creating an order — see Phase 1 Slice A |
+| Subscription billing loop (real recurring orders + payment capture + entitlements) | Present | Slice A landed — `renew-subscription.ts` clones the template cart, creates + authorizes an off-session payment session, completes the order, links it, and grants entitlements keyed by the new order id (gated by `FBM_SUBSCRIPTION_RENEWAL_LIVE`). Pure input-shaping in `renew-helpers.ts` (unit-tested); DB+Stripe path is CI-verified |
 | Access pass / gated content type | Present (via entitlement) | `EntitlementKind.access_pass` |
 
 ### 1.4 Plugin Marketplace
@@ -63,8 +63,9 @@ Verdicts are based on file/path evidence inside `backend/src`, `storefront/src`,
 |---|---|---|
 | Plugin listing schema + versioning | Partial | Plugin/theme columns on `creator-listing`; no version compatibility lifecycle |
 | Plugin developer revenue split | Present | `payout-breakdown` supports `PLUGIN_DEVELOPER_FEE` |
-| Install / entitlement-verification API | Missing | No public install endpoint; entitlement check exists for customers only |
-| Plugin event/hook system | Missing | No extension point registry beyond Medusa subscribers |
+| Install / entitlement-verification API | Present | `POST /store/plugins/:slug/install` (idempotent `plugin:<slug>` grant + install-count bump) and `GET /store/plugins/:slug/entitlement` (verify), reusing the entitlement service |
+| Plugin version compatibility lifecycle | Present | Install is gated by `isInstallable` (`plugin-registry/compat.ts`): blocks `DEPRECATED` plugins and host-version mismatches against `PLATFORM_VERSION` using `min_host_version`/`max_host_version` bounds |
+| Plugin event/hook system | Present | Hook registry on the marketplace-webhooks machinery: authors register endpoints via `POST /v1/seller/plugins/:slug/hooks` (HMAC-signed, retried, drained like any webhook; stored under the synthetic `plugin:<slug>` channel); `plugin.installed`/`plugin.uninstalled` emitted from both install surfaces and the extensions diff. `plugin.deprecated` defined for a future deprecation flow |
 
 ### 1.5 Group / Community Commerce
 
@@ -80,8 +81,9 @@ Verdicts are based on file/path evidence inside `backend/src`, `storefront/src`,
 | Capability | Verdict | Evidence |
 |---|---|---|
 | Service listing / contract lifecycle | Present | `backend/src/modules/service-program/` (ServiceProgram, ServiceApplication, ServiceContract; PENDING→ACCEPTED→IN_PROGRESS→COMPLETED→DISPUTED) |
-| Reviews / ratings on services | Missing | `VendorReputation` exists in `collective-campaign`; nothing on `service-program` |
-| Messaging hooks | Missing | No Blackout/RocketChat hook from `service-program` |
+| Reviews / ratings on services | Present | `ServiceReview` model on `service-program` (accepted-contract, client-authored, 1..5, one per contract); `POST /vendor/service-contracts/:id/reviews` + public `GET /store/service-sellers/:sellerId/reviews` |
+| Contract lifecycle transitions | Present | `POST /v1/seller/services/contracts/:id/{start,deliver,accept,dispute,cancel}` with a per-transition authorization guard (`contract-transitions.ts`); the `accept` transition is what makes a contract reviewable |
+| Messaging hooks | Present | Lifecycle transitions dispatch the per-seller `service.contract.{delivered,accepted,disputed}` webhooks to both parties; disputes also emit the Blackout `dispute.opened` bridge. Deeper Blackout/RocketChat room hooks remain out of scope |
 
 ### 1.7 Omnichannel
 
@@ -89,9 +91,9 @@ Verdicts are based on file/path evidence inside `backend/src`, `storefront/src`,
 |---|---|---|
 | Sales channel taxonomy | Partial | `backend/src/modules/agriculture/models/availability-window.ts` `SalesChannel` enum (DTC, B2B, CSA, WHOLESALE, FARMERS_MARKET) |
 | Fulfillment-mode breadth | Partial | `food-distribution` `FulfillmentType` (PICKUP, DELIVERY, DINE_IN, CURBSIDE, LOCKER, COMMUNITY_POINT) |
-| `order_channel` field on order | Missing | No first-class order-level channel attribution; channel inferred via product↔sales-channel link |
-| POS / vending integrations | Partial | POS scaffolding in `vendor-panel/src/routes/pos/`; no vending hardware integration |
-| Unified cross-channel customer view | Missing | No customer surface aggregating in-person + online orders |
+| `order_channel` field on order | Present | `modules/order-channel` — one attribution row per order (online/pos/vending/pickup/subscription), written by the `attribute-channel-on-placed` subscriber. Clients declare a channel pre-completion via `POST /store/carts/:id/channel` (cart-metadata stamp, same mechanism as affiliate attribution); subscription renewals stamp `order_channel: subscription`; unstamped orders default to `online` |
+| POS / vending integrations | Partial | `POST /vendor/pos/orders` rings up an in-person sale as a real order (stamped `order_channel: pos`, emits `order.placed` so channel attribution / entitlements / Blackout events fire); `/vendor/pos/checkout` still handles vendor-to-vendor hawala payments. Vendor-panel ring-up UI shipped (catalog variant picker + ad-hoc lines + per-currency minor-unit conversion). Remaining: vending hardware, POS inventory reservation (future POS module) |
+| Unified cross-channel customer view | Present | `GET /store/customers/me/order-channels` — the customer's orders annotated with channel + a per-channel summary (counts, per-currency totals); pre-feature orders default to `online` |
 
 ### 1.8 Analytics
 
@@ -109,11 +111,20 @@ Verdicts are based on file/path evidence inside `backend/src`, `storefront/src`,
 
 Phase 1 ships on branch `claude/fbm-creator-commerce-wjh4Z` as four commits.
 
-### Slice A — Subscription billing loop + entitlements
+### Slice A — Subscription billing loop + entitlements ✅ LANDED
 
 **Why.** Subscriptions are foundational to creator commerce (Patreon, Whatnot
-weekly drops, CSA boxes). The model + hourly job + workflow stub exist but the
-renewal workflow does not create orders or capture payments today.
+weekly drops, CSA boxes). The model + hourly job + workflow stub existed but the
+renewal workflow did not create orders or capture payments.
+
+**Status.** Landed: `renew-subscription.ts` now composes
+createCart → payment-collection → off-session payment-session → authorize →
+completeCart → subscription↔order link → record-order → entitlement grant
+(keyed by the new order id), gated by `FBM_SUBSCRIPTION_RENEWAL_LIVE`. Legacy
+date-advance path preserved when the flag is unset. Pure input-shaping lives in
+`renew-helpers.ts` and is unit-tested; the DB+Stripe path is CI/live-env
+verified. Optional provider override: `FBM_SUBSCRIPTION_PAYMENT_PROVIDER_ID`
+(defaults to `pp_stripe_stripe`).
 
 **What.**
 - `backend/src/workflows/subscription/workflows/renew-subscription.ts` —
@@ -227,9 +238,9 @@ context. Dependencies on Phase 1 are noted.
 
 | Phase | Scope | Notes / dependencies |
 |---|---|---|
-| 2A | Plugin marketplace runtime — install/entitlement-verification API on `entitlement` + `marketplace-listing`; plugin event hooks; semver compatibility lifecycle | Schema is already in place |
-| 2B | Service marketplace messaging + reviews — Blackout/RocketChat hook from `service-program`, review/rating model on `ServiceContract` | Mirror the existing `@mercurjs/reviews` plugin pattern |
-| 3A | Omnichannel `order_channel` first-class — add field on order, capture on POS/vending checkout, unified customer view that aggregates online + in-person + pickup orders | None |
+| 2A | Plugin marketplace runtime — ✅ install/entitlement-verification API + ✅ version-compatibility gate (`min/max_host_version` vs `PLATFORM_VERSION`, deprecated-block). + ✅ event/hook registry (`/v1/seller/plugins/:slug/hooks` + `plugin.*` events) — 2A complete | Schema is already in place |
+| 2B | Service marketplace reviews — ✅ review/rating model + endpoints + ✅ contract lifecycle transitions/messaging landed on `service-program`. Remaining: deeper Blackout/RocketChat room hooks | Mirrored the existing product-review + subcontract-dispute patterns |
+| 3A | Omnichannel `order_channel` first-class — ✅ landed: `order-channel` module + `order.placed` subscriber + cart-stamp route + unified customer view + POS order flow (`POST /vendor/pos/orders` creates a real `pos`-stamped order and emits `order.placed`; mirrors the delivery flow's direct order creation). Remaining: POS inventory reservation + vendor-panel ring-up UI (future POS module) | None |
 | 3B | POS + vending hardware — Stripe Terminal / Square integrations | Depends on 3A |
 | 4A | Creator / vendor / community dashboards — conversion, retention, cohort, campaign performance, subscription growth | Reads from Slice B `analytics_event` table |
 | 4B | Discoverability — trending creators, "for-you" feed, personalized recs | Reuse AI orchestrator service (`services/ai-orchestrator/`) |
@@ -242,6 +253,7 @@ context. Dependencies on Phase 1 are noted.
 | Flag | Slice | Default | Effect when unset |
 |---|---|---|---|
 | `FBM_SUBSCRIPTION_RENEWAL_LIVE` | A | unset | Workflow returns legacy `renewal_prepared: true` (no order created) |
+| `FBM_SUBSCRIPTION_PAYMENT_PROVIDER_ID` | A | `pp_stripe_stripe` | Payment provider used for off-session renewal charges |
 | `FBM_MULTILEVEL_REFERRALS` | B | unset | `attributeOrder` writes single L1 row exactly like today |
 | `FBM_REFERRAL_DEFAULT_SPLITS` | B | `{"L1":80,"L2":15,"L3":5}` | Used only when program lacks explicit splits |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | C | unset | Google provider not registered |

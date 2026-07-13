@@ -10,6 +10,9 @@ export type PluginSeed = {
   category: "MARKETPLACE_EXTENSION" | "ANALYTICS" | "AUTOMATION"
   description: string
   version: string
+  /** Inclusive host-version compatibility bounds; omit for "no bound". */
+  minHostVersion?: string
+  maxHostVersion?: string
 }
 
 export const PLUGIN_SEED: PluginSeed[] = [

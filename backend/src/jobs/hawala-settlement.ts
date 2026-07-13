@@ -11,6 +11,8 @@ import { selectSettlementRail } from "../modules/hawala-ledger/dual-rail-selecto
 import { getBridgeHealth } from "../modules/hawala-ledger/health"
 import { runQueueConsumer } from "../shared/queue-runtime"
 import { requeueWithBackoff } from "../shared/queue-requeue-adapter"
+import { emitLedgerUsdcConverted } from "../lib/blackout-stub-emitters"
+import { buildUsdcConvertedArgs } from "../lib/blackout-wire-helpers"
 
 /**
  * Scheduled job that creates settlement batches and anchors to Stellar
@@ -200,6 +202,52 @@ export default async function hawalaSettlementJob(container: MedusaContainer) {
             status: "SETTLED" as const,
             settled_at: new Date(),
           })
+        }
+
+        // §3 Blackout `ledger.usdc_converted` — for each settled entry that
+        // represents a vendor's per-order proceeds now anchored as USDC on
+        // Stellar, notify the vendor's Blackout identity. Non-vendor legs
+        // (platform/system/customer) and entries without order context are
+        // skipped by the arg-builder. Fire-and-forget: a webhook hiccup must
+        // never fail the settlement batch.
+        try {
+          const creditAccountIds = Array.from(
+            new Set(unsettledEntries.map((e) => e.credit_account_id).filter(Boolean))
+          )
+          const creditAccounts = creditAccountIds.length
+            ? await hawalaService.listLedgerAccounts({ id: creditAccountIds })
+            : []
+          const accountById = new Map<
+            string,
+            { id: string; owner_type?: string | null; owner_id?: string | null }
+          >(
+            creditAccounts.map(
+              (a: { id: string; owner_type?: string | null; owner_id?: string | null }) => [
+                a.id,
+                a,
+              ]
+            )
+          )
+          for (const entry of unsettledEntries) {
+            const emitArgs = buildUsdcConvertedArgs({
+              entry: {
+                id: entry.id,
+                order_id: entry.order_id,
+                amount: Number(entry.amount),
+                currency_code: entry.currency_code,
+              },
+              creditAccount: accountById.get(entry.credit_account_id),
+              ledgerTxId: stellarResult.txHash,
+            })
+            if (emitArgs) {
+              await emitLedgerUsdcConverted(container, emitArgs)
+            }
+          }
+        } catch (emitErr) {
+          log.error(
+            "[Hawala Settlement] ledger.usdc_converted emit failed",
+            emitErr instanceof Error ? emitErr.message : emitErr
+          )
         }
 
         log.info(`[Hawala Settlement] Batch #${batchNumber} anchored to Stellar:`)

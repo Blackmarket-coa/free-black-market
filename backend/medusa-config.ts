@@ -254,6 +254,8 @@ const discoveryModules = [
 const utilityModules = [
   { resolve: './src/modules/cms-blueprint' },
   { resolve: './src/modules/request' },
+  // First-class order-level channel attribution (roadmap Phase 3A).
+  { resolve: './src/modules/order-channel' },
 ]
 
 const printfulApiKey = process.env.PRINTFUL_API_KEY || process.env.PRINTFUL_API_TOKEN || process.env.PRINTFUL_TOKEN

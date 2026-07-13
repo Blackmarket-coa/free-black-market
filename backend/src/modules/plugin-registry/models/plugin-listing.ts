@@ -32,6 +32,9 @@ const PluginListing = model
     manifest_url: model.text().nullable(),
     icon_url: model.text().nullable(),
     version: model.text().default("1.0.0"),
+    /** Inclusive host-version compatibility range; null = no bound. */
+    min_host_version: model.text().nullable(),
+    max_host_version: model.text().nullable(),
     status: model
       .enum(Object.values(PluginStatus))
       .default(PluginStatus.PUBLISHED),
