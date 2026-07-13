@@ -8,7 +8,16 @@ import {
   pluginFeatureKey,
 } from "../../../../../modules/plugin-registry/entitlement"
 import { isInstallable } from "../../../../../modules/plugin-registry/compat"
+import {
+  buildPluginInstalledPayload,
+  pluginHookChannelId,
+} from "../../../../../modules/plugin-registry/hooks"
+import { MARKETPLACE_WEBHOOKS_MODULE } from "../../../../../modules/marketplace-webhooks"
+import type MarketplaceWebhooksService from "../../../../../modules/marketplace-webhooks/service"
 import { PLATFORM_VERSION } from "../../../../../shared/platform-version"
+import { createLogger } from "../../../../../shared/logger"
+
+const log = createLogger("api/store/plugins/install")
 
 /**
  * POST /store/plugins/:slug/install
@@ -69,6 +78,26 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     buildPluginGrantInput({ slug, customerId })
   )
   const updated = await registry.incrementInstallCount(slug)
+
+  // Plugin hook registry (§1.4): notify the plugin's registered hook
+  // endpoints. Privacy: customer installs never ship the customer id.
+  // Best-effort — a hook hiccup never fails the install.
+  try {
+    const webhooks = req.scope.resolve<MarketplaceWebhooksService>(
+      MARKETPLACE_WEBHOOKS_MODULE
+    )
+    await webhooks.dispatch(
+      "plugin.installed",
+      pluginHookChannelId(slug),
+      buildPluginInstalledPayload({
+        slug,
+        installer_type: "customer",
+        install_count: updated ? Number((updated as any).install_count) : null,
+      })
+    )
+  } catch (err) {
+    log.error("[plugins/install] plugin.installed hook dispatch failed", err)
+  }
 
   return res.status(201).json({
     installed: true,
