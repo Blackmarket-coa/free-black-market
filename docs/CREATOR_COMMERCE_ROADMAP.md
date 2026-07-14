@@ -99,10 +99,10 @@ Verdicts are based on file/path evidence inside `backend/src`, `storefront/src`,
 
 | Capability | Verdict | Evidence |
 |---|---|---|
-| Storefront event taxonomy | Missing | `storefront/src/lib/analytics/events.ts` only emits 11 marketing-page events; no `product_view` / `add_to_cart` / `purchase` / `click_affiliate` / `signup` / `subscribe` |
+| Storefront event taxonomy | Present | Canonical funnel taxonomy emitted + POSTed to `/store/analytics/events` (Slice B) |
 | Backend event ingest table | Missing | No `analytics_event` table — see Phase 1 Slice B |
 | Creator-side performance metrics | Partial | `creator-rewards/models/content-post.ts` + `engagement-snapshot.ts` track external content; no conversion/funnel dashboard |
-| Vendor analytics dashboard | Partial | `vendor-panel/src/routes/dashboard/` shows sales/orders charts; no retention/cohort/referral views |
+| Vendor analytics dashboard | Partial | Dashboard charts + the new Performance page (`/analytics`: product funnel, per-product conversion, creator performance/campaigns). Retention/cohort views still open |
 | Discoverability (trending / for-you) | Missing | Algolia search integrated but no recommendation/trending surfaces |
 
 ---
@@ -242,7 +242,7 @@ context. Dependencies on Phase 1 are noted.
 | 2B | Service marketplace reviews — ✅ review/rating model + endpoints + ✅ contract lifecycle transitions/messaging landed on `service-program`. Remaining: deeper Blackout/RocketChat room hooks | Mirrored the existing product-review + subcontract-dispute patterns |
 | 3A | Omnichannel `order_channel` first-class — ✅ landed: `order-channel` module + `order.placed` subscriber + cart-stamp route + unified customer view + POS order flow (`POST /vendor/pos/orders` creates a real `pos`-stamped order and emits `order.placed`; mirrors the delivery flow's direct order creation). Remaining: POS inventory reservation + vendor-panel ring-up UI (future POS module) | None |
 | 3B | POS + vending hardware — Stripe Terminal / Square integrations | Depends on 3A |
-| 4A | Creator / vendor / community dashboards — conversion, retention, cohort, campaign performance, subscription growth | Reads from Slice B `analytics_event` table |
+| 4A | Creator / vendor dashboards — ✅ first slice landed: `GET /vendor/analytics/{products,creator}` (conversion funnel from `analytics_event` + ground-truth orders; creator events + attributed commission + by-campaign) and the vendor-panel Performance page. Ingest now resolves `creator_handle`→seller id. Remaining: retention/cohort views, subscription-growth charts, community dashboards | Reads from Slice B `analytics_event` table |
 | 4B | Discoverability — trending creators, "for-you" feed, personalized recs | Reuse AI orchestrator service (`services/ai-orchestrator/`) |
 | 4C | Apple OAuth provider | Depends on Apple developer account |
 
