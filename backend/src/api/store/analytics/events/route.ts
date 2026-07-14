@@ -3,6 +3,8 @@ const log = createLogger("api/store/analytics/events")
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { CREATOR_ATTRIBUTION_MODULE } from "../../../../modules/creator-attribution"
 import type CreatorAttributionService from "../../../../modules/creator-attribution/service"
+import { SELLER_EXTENSION_MODULE } from "../../../../modules/seller-extension"
+import type SellerExtensionService from "../../../../modules/seller-extension/service"
 
 /**
  * Canonical funnel events. The storefront emits these via
@@ -96,12 +98,36 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
   const utm = (body.utm ?? {}) as Record<string, unknown>
   const ua = req.headers["user-agent"]
 
+  // Creator scoping (Phase 4A): browser ingestion knows the creator only by
+  // handle (enriched into the payload); resolve it to a seller id so creator
+  // dashboards can use the indexed creator_seller_id column. Best-effort —
+  // an unknown handle just leaves the field null.
+  let creatorSellerId = strOrNull(body.creator_seller_id)
+  if (!creatorSellerId) {
+    const payloadObj = (body.payload ?? {}) as Record<string, unknown>
+    const creatorHandle =
+      strOrNull(body.creator_handle) ?? strOrNull(payloadObj.creator_handle)
+    if (creatorHandle) {
+      try {
+        const sellerExt = req.scope.resolve<SellerExtensionService>(
+          SELLER_EXTENSION_MODULE
+        )
+        const [meta] = await sellerExt.listSellerMetadatas({
+          creator_handle: creatorHandle,
+        })
+        creatorSellerId = (meta?.seller_id as string | undefined) ?? null
+      } catch {
+        creatorSellerId = null
+      }
+    }
+  }
+
   try {
     await service.recordAnalyticsEvent({
       eventName,
       visitorToken: visitorRaw,
       customerId: strOrNull(body.customer_id),
-      creatorSellerId: strOrNull(body.creator_seller_id),
+      creatorSellerId,
       affiliateShortCode,
       affiliateLinkId: strOrNull(body.affiliate_link_id),
       orderId: strOrNull(body.order_id),

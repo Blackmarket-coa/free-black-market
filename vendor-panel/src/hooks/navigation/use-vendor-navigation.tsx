@@ -152,6 +152,12 @@ function getVendorNavigationConfig({
     },
     {
       icon: <ChartBar />,
+      label: "Performance",
+      to: "/analytics",
+      // Storefront conversion funnel + creator performance (Phase 4A).
+    },
+    {
+      icon: <ChartBar />,
       label: "Embed Analytics",
       to: "/embed-analytics",
       // Funnel + traffic for the connect.js embed across vendor sites.
