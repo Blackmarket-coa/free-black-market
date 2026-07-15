@@ -1,6 +1,7 @@
-# Contributing to MercurJS Marketplace
+# Contributing to Free Black Market (FBM)
 
-Thanks for helping improve MercurJS Marketplace.
+Thanks for helping improve Free Black Market, a cooperative multi-vendor
+commerce platform built on MedusaJS.
 
 ## Quick Start
 
@@ -11,11 +12,13 @@ Thanks for helping improve MercurJS Marketplace.
    ```
 3. Start the applications you need:
    ```bash
-   pnpm --filter backend dev
-   pnpm --filter admin-panel dev
-   pnpm --filter vendor-panel dev
-   pnpm --filter storefront dev
+   cd backend && pnpm dev
+   cd admin-panel && pnpm dev
+   cd vendor-panel && pnpm dev
+   cd storefront && pnpm dev
    ```
+   Vertical portals have root-level shortcuts, e.g. `pnpm nursery-portal:dev`
+   (see `README.md` for the full list).
 4. Create a feature branch:
    ```bash
    git checkout -b feat/short-description

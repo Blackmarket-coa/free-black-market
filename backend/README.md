@@ -1,3 +1,19 @@
+# FBM Backend
+
+The MedusaJS-based commerce API for [Free Black Market](../README.md) (FBM),
+a cooperative multi-vendor marketplace platform. This is where the
+marketplace core (products, orders, sellers, commissions) and the
+composition layer (playbooks, listing-types, the hawala-style internal
+ledger, Refrain/Threshold/Blackstar) live. See
+[`../docs/COMPOSITION_LAYER.md`](../docs/COMPOSITION_LAYER.md) and
+[`../docs/POSTURE_A_COMPLIANCE.md`](../docs/POSTURE_A_COMPLIANCE.md) for the
+architecture and compliance frame before touching money-moving code.
+
+FBM's backend builds on [Medusa](https://www.medusajs.com), an open-source
+commerce framework. The sections below cover Medusa's generic starter setup,
+followed by FBM-specific integration and module notes (health checks,
+Algolia, collective campaigns).
+
 <p align="center">
   <a href="https://www.medusajs.com">
   <picture>
