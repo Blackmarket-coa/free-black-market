@@ -5,6 +5,12 @@
 - Backend module implementations under `backend/src/modules/*`
 - Vendor dashboard extension and feature-flag wiring under `vendor-panel/src/*`
 
+> **Superseded module counts (2026-07-15).** This audit reviewed the 40
+> modules that existed on 2026-02-18. The module surface has since grown to
+> 79 directories; the "40/40" completeness figures below describe that
+> earlier snapshot only. For the current module inventory, see
+> `docs/MODULE_CATALOG.md`.
+
 ---
 
 ## Executive Summary

@@ -1,81 +1,34 @@
 # Custom Workflows
 
-A workflow is a series of queries and actions that complete a task.
+Medusa workflows composing multi-step, compensatable operations across
+modules. (Generic how-to:
+<https://docs.medusajs.com/learn/fundamentals/workflows>.)
 
-The workflow is created in a TypeScript or JavaScript file under the `src/workflows` directory.
+Inventory by area:
 
-> Learn more about workflows in [this documentation](https://docs.medusajs.com/learn/fundamentals/workflows).
+- **Vendor/seller lifecycle**: `assign-playbook`, `create-seller-metadata`,
+  `send-vendor-accepted-notification`, `send-customer-accepted-notification`,
+  `user/`
+- **Products & catalog**: `launch-product`, `launch-sponsorship`,
+  `product-feed/`, `sync-lot-inventory`
+- **Digital products**: `create-digital-product`,
+  `create-digital-product-order`, `fulfill-digital-order`,
+  `delete-product-digital-products`
+- **Ticketing & venues**: `create-ticket-product`, `create-venue`,
+  `complete-cart-with-tickets`, `verify-ticket-purchase`
+- **Rentals**: `rental/`
+- **Subscriptions**: `subscription/`
+- **Collective commerce**: `collective-purchase/` (demand pools),
+  `bargaining/`, `governance/` (proposals/votes)
+- **Farm & food**: `harvest/` (allocate/claim), `food-distribution/`
+  (delivery lifecycle), `restaurant/`
+- **Delivery**: `delivery/` (create/claim/handle/update by drivers)
+- **Volunteering**: `volunteer/` (log/verify hours)
+- **POS**: `pos/`
+- **Imports & integrations**: `woocommerce-import/`, `odoo-import/`,
+  `printful/`
+- **Shared plumbing**: `hooks/` (workflow hooks, e.g. cart credit
+  reservations), `steps/` (reusable steps)
 
-For example:
-
-```ts
-import {
-  createStep,
-  createWorkflow,
-  WorkflowResponse,
-  StepResponse,
-} from "@medusajs/framework/workflows-sdk"
-
-const step1 = createStep("step-1", async () => {
-  return new StepResponse(`Hello from step one!`)
-})
-
-type WorkflowInput = {
-  name: string
-}
-
-const step2 = createStep(
-  "step-2",
-  async ({ name }: WorkflowInput) => {
-    return new StepResponse(`Hello ${name} from step two!`)
-  }
-)
-
-type WorkflowOutput = {
-  message1: string
-  message2: string
-}
-
-const helloWorldWorkflow = createWorkflow(
-  "hello-world",
-  (input: WorkflowInput) => {
-    const greeting1 = step1()
-    const greeting2 = step2(input)
-    
-    return new WorkflowResponse({
-      message1: greeting1,
-      message2: greeting2
-    })
-  }
-)
-
-export default helloWorldWorkflow
-```
-
-## Execute Workflow
-
-You can execute the workflow from other resources, such as API routes, scheduled jobs, or subscribers.
-
-For example, to execute the workflow in an API route:
-
-```ts
-import type {
-  MedusaRequest,
-  MedusaResponse,
-} from "@medusajs/framework"
-import myWorkflow from "../../../workflows/hello-world"
-
-export async function GET(
-  req: MedusaRequest,
-  res: MedusaResponse
-) {
-  const { result } = await myWorkflow(req.scope)
-    .run({
-      input: {
-        name: req.query.name as string,
-      },
-    })
-
-  res.send(result)
-}
-```
+For module context behind each workflow, see
+[`docs/MODULE_CATALOG.md`](../../../docs/MODULE_CATALOG.md).
