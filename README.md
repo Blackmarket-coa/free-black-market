@@ -74,7 +74,7 @@ FBM is useful to you if you want to:
 - **Vertical portals** (`nursery-portal`, `wellness-portal`,
   `botanical-portal`, `creator-portal`): focused storefront experiences for
   specific vendor communities, built on the shared `@bmc/portal-kit` and
-  `@bmc/bmc-ui` packages.
+  `@bmc/ui` packages.
 - **AI orchestrator** (`services/ai-orchestrator`): a LangGraph supervisor
   agent with a vendor tool registry, used for AI-assisted vendor workflows.
 - **Operational tooling**: release-validation scripts, health checks,

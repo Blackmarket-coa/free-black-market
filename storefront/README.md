@@ -19,7 +19,7 @@ FBM's vertical-portal branding.
 For vertical-specific storefronts (plant nursery, wellness, botanical,
 creator), see `../nursery-portal`, `../wellness-portal`,
 `../botanical-portal`, and `../creator-portal` — they share this backend and
-the `@bmc/portal-kit` / `@bmc/bmc-ui` packages.
+the `@bmc/portal-kit` / `@bmc/ui` packages.
 
 ## Quickstart
 
