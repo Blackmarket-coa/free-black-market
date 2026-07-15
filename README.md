@@ -77,9 +77,25 @@ FBM is useful to you if you want to:
   `@bmc/ui` packages.
 - **AI orchestrator** (`services/ai-orchestrator`): a LangGraph supervisor
   agent with a vendor tool registry, used for AI-assisted vendor workflows.
+- **Commerce feature families** beyond the basics, each backed by one or
+  more backend modules: restaurant/commissary ordering, rentals, ticketed
+  events and venue booking, digital products, subscriptions and CSA-style
+  order cycles, POS sessions, wholesale/supplier forwarding, collective
+  crowdfunding campaigns, wishlists and reviews. See
+  [`docs/MODULE_CATALOG.md`](docs/MODULE_CATALOG.md) for the full inventory
+  of backend modules.
+- **Community & economy systems**: cooperative governance, XP/progression
+  with demurrage, vendor quests, buyer networks, group bargaining, demand
+  pools, impact metrics, volunteer and work verification.
+- **Integrations**: WooCommerce import + inventory sync, Odoo import,
+  Printful fulfillment, Stripe (payments/ACH payouts), Stellar (internal
+  ledger), Algolia search, Rocket.Chat messaging, Resend/SMTP email, MinIO
+  file storage, and the `connect.js` embed layer
+  ([`docs/integrations/fbm-connect.md`](docs/integrations/fbm-connect.md))
+  that powers standalone vendor sites and the vertical portals.
 - **Operational tooling**: release-validation scripts, health checks,
-  observability config, and a documented compliance posture for anything
-  that touches money.
+  observability config, runbooks, and a documented compliance posture for
+  anything that touches money.
 
 This platform is under active, iterative development — several
 capabilities described in `docs/` are partially shipped or gated behind

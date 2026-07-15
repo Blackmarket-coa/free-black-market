@@ -1,117 +1,25 @@
-# Custom Module
+# Custom Modules
 
-A module is a package of reusable functionalities. It can be integrated into your Medusa application without affecting the overall system. You can create a module as part of a plugin.
+FBM's backend logic lives in 79 custom Medusa modules in this directory —
+commerce verticals (restaurant, rental, ticketing, digital products,
+subscriptions), the cooperative-economy substrate (playbook, listing-type,
+hawala-ledger, asset-graph), creator commerce, community systems
+(governance, progression, quests), integrations (WooCommerce, Odoo,
+Printful, MinIO, Resend/SMTP), and platform infrastructure (tenancy,
+entitlements, webhooks, embed keys).
 
-> Learn more about modules in [this documentation](https://docs.medusajs.com/learn/fundamentals/modules).
+**The full inventory — one row per module with purpose, key routes/jobs, and
+doc links — is [`docs/MODULE_CATALOG.md`](../../../docs/MODULE_CATALOG.md).**
+Keep it updated when adding or materially changing a module.
 
-To create a module:
+Conventions:
 
-## 1. Create a Data Model
-
-A data model represents a table in the database. You create a data model in a TypeScript or JavaScript file under the `models` directory of a module.
-
-For example, create the file `src/modules/blog/models/post.ts` with the following content:
-
-```ts
-import { model } from "@medusajs/framework/utils"
-
-const Post = model.define("post", {
-  id: model.id().primaryKey(),
-  title: model.text(),
-})
-
-export default Post
-```
-
-## 2. Create a Service
-
-A module must define a service. A service is a TypeScript or JavaScript class holding methods related to a business logic or commerce functionality.
-
-For example, create the file `src/modules/blog/service.ts` with the following content:
-
-```ts
-import { MedusaService } from "@medusajs/framework/utils"
-import Post from "./models/post"
-
-class BlogModuleService extends MedusaService({
-  Post,
-}){
-}
-
-export default BlogModuleService
-```
-
-## 3. Export Module Definition
-
-A module must have an `index.ts` file in its root directory that exports its definition. The definition specifies the main service of the module.
-
-For example, create the file `src/modules/blog/index.ts` with the following content:
-
-```ts
-import BlogModuleService from "./service"
-import { Module } from "@medusajs/framework/utils"
-
-export const BLOG_MODULE = "blog"
-
-export default Module(BLOG_MODULE, {
-  service: BlogModuleService,
-})
-```
-
-## 4. Add Module to Medusa's Configurations
-
-To start using the module, add it to `medusa-config.ts`:
-
-```ts
-module.exports = defineConfig({
-  projectConfig: {
-    // ...
-  },
-  modules: [
-    {
-      resolve: "./src/modules/blog",
-    },
-  ],
-})
-```
-
-## 5. Generate and Run Migrations
-
-To generate migrations for your module, run the following command:
-
-```bash
-npx medusa db:generate blog
-```
-
-Then, to run migrations, run the following command:
-
-```bash
-npx medusa db:migrate
-```
-
-## Use Module
-
-You can use the module in customizations within the Medusa application, such as workflows and API routes.
-
-For example, to use the module in an API route:
-
-```ts
-import { MedusaRequest, MedusaResponse } from "@medusajs/framework"
-import BlogModuleService from "../../../modules/blog/service"
-import { BLOG_MODULE } from "../../../modules/blog"
-
-export async function GET(
-  req: MedusaRequest,
-  res: MedusaResponse
-): Promise<void> {
-  const blogModuleService: BlogModuleService = req.scope.resolve(
-    BLOG_MODULE
-  )
-
-  const posts = await blogModuleService.listPosts()
-
-  res.json({
-    posts
-  })
-}
-```
+- Every module has an `index.ts` exporting its definition and a `service.ts`
+  with its main service; data models live in `models/`, tests in
+  `__tests__/`.
+- Anything that moves money must honor the invariants in
+  [`docs/POSTURE_A_COMPLIANCE.md`](../../../docs/POSTURE_A_COMPLIANCE.md)
+  and route value movement through `hawala-ledger` rather than moving it
+  directly.
+- Generic how-to for writing a Medusa module:
+  <https://docs.medusajs.com/learn/fundamentals/modules>
