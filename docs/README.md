@@ -75,7 +75,14 @@ This index organizes project docs by purpose.
 
 ## Quickstart by Surface
 
-- Backend: `backend/README.md` (if present) and module/workflow code under `backend/src`.
-- Admin Panel: `admin-panel/` application sources.
-- Vendor Panel: `vendor-panel/` application sources.
-- Storefront: `storefront/` application sources.
+- Backend: `backend/README.md` and module/workflow code under `backend/src`.
+- Admin Panel: `admin-panel/README.md` and application sources.
+- Vendor Panel: `vendor-panel/README.md` and application sources.
+- Storefront: `storefront/README.md` and application sources.
+- Vertical portals (nursery, wellness, botanical, creator): `nursery-portal/`,
+  `wellness-portal/`, `botanical-portal/`, `creator-portal/` — share the
+  backend above plus the `packages/bmc-portal-kit` and `packages/bmc-ui`
+  workspace packages.
+- AI orchestrator: `services/ai-orchestrator/` — LangGraph supervisor agent
+  and vendor tool registry.
+- Repository overview and full layout: `README.md` (repo root).

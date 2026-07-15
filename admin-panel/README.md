@@ -1,86 +1,57 @@
-<div align="center">
-  <h1> Admin Panel
-    <br> 
-for <a href="https://github.com/mercurjs/mercur">Mercur</a> - Open Source Marketplace Platform  </h1>
-  <!-- Shields.io Badges -->
-  <a href="https://github.com/mercurjs/mercur/tree/main?tab=MIT-1-ov-file">
-    <img alt="License" src="https://img.shields.io/badge/license-MIT-blue.svg" />
-  </a>
-  <a href="#">
-    <img alt="PRs Welcome" src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg" />
-  </a>
-  <a href="https://mercurjs.com/contact">
-    <img alt="Support" src="https://img.shields.io/badge/support-contact%20author-blueviolet.svg" />
-  </a>
-</div>
+# Admin Panel
 
-## Admin Panel for Mercur
+The operator-facing dashboard for [Free Black Market](../README.md) (FBM), a
+cooperative multi-vendor commerce platform built on
+[MedusaJS](https://www.medusajs.com). This app started from the
+[Mercur](https://github.com/mercurjs/mercur) admin-panel starter and has been
+extended with FBM-specific marketplace, playbook/co-op, and compliance
+features.
 
-The Admin Panel is a pivotal component of the MercurJS ecosystem, designed to provide admin with an intuitive interface to oversee their marketplace activities.
+## What it does
 
-- Product Management: Add, edit, and organize products with ease.
-- Order Tracking: Monitor order statuses and manage fulfillment processes.
-- Store Customization: Update store details
-- Sellers: manage vendor accounts
-- Requests: accept or reject requests from vendors
-- Attributes: manage global product attributes in the store
-- Commissions: manage and inspect commissions
+- **Product management** — add, edit, and organize products across vendors.
+- **Order tracking** — monitor order status and fulfillment.
+- **Store customization** — update store-level details.
+- **Sellers** — manage vendor accounts and their assigned playbook.
+- **Requests** — accept or reject vendor onboarding requests.
+- **Attributes** — manage global product attributes.
+- **Commissions** — inspect and manage commission and patronage-refund data.
 
-# Part of Mercur
+## Quickstart
 
-<a href="https://github.com/mercurjs/mercur">Mercur</a> is an open source marketplace platform that allows you to create high-quality experiences for shoppers and vendors while having the most popular Open Source commerce platform MedusaJS as a foundation.
+From the repo root, install workspace dependencies once:
 
-Mercur is a platform to start, customize, manage, and scale your marketplace for every business model with a modern technology stack.
-
-![Mercur](https://cdn.prod.website-files.com/6790aeffc4b432ccaf1b56e5/67a1020f202572832c954ead_6b96703adfe74613f85133f83a19b1f0_Fleek%20Tilt%20-%20Readme.png)
-
-# Quickstart
-
-## Installation
-
-Clone the repository
-
-```js
-git clone https://github.com/mercurjs/admin-panel.git
+```bash
+pnpm install
 ```
 
-&nbsp;
+Then run this app:
 
-Go to directory
-
-```js
+```bash
 cd admin-panel
+cp .env.template .env.local   # fill in the values
+pnpm dev
 ```
 
-&nbsp;
+At minimum, set:
 
-Install dependencies
-
-```js
-npm install
 ```
-
-&nbsp;
-
-Make a .env.local file and copy the code below
-
-```js
 VITE_MEDUSA_BASE='/'
 VITE_MEDUSA_STOREFRONT_URL=http://localhost:3000
 VITE_MEDUSA_BACKEND_URL=http://localhost:9000
 ```
 
-&nbsp;
-
-Start storefront
-
-```js
-npm run dev
-```
-
-&nbsp;
+See `.env.template` for the full list of supported variables.
 
 ## Guides
 
-#### Rocket.Chat Setup
-Chat functionality requires a Rocket.Chat instance. Set `ROCKETCHAT_URL` environment variable in the backend to enable messaging.
+### Rocket.Chat setup
+
+Chat functionality requires a Rocket.Chat instance. Set the `ROCKETCHAT_URL`
+environment variable in the backend to enable messaging.
+
+## Related
+
+- Backend API: `../backend/README.md`
+- Vendor-facing counterpart: `../vendor-panel/README.md`
+- Repository overview: `../README.md`

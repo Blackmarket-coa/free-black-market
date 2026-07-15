@@ -1,6 +1,6 @@
 # Roadmap
 
-This roadmap provides directional planning for the MercurJS marketplace platform.
+This roadmap provides directional planning for the Free Black Market (FBM) cooperative marketplace platform.
 
 ## Near-term (0–3 months)
 
