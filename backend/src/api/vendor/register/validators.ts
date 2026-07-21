@@ -47,6 +47,9 @@ export const resourceKeyEnum = z.enum([
   "organization",
   "manufacturing",
   "marketing",
+  "goods",
+  "creativity",
+  "capital",
 ])
 
 /**

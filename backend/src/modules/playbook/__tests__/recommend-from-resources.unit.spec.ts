@@ -14,6 +14,9 @@ const ALL_RESOURCES: ResourceKey[] = [
   "organization",
   "manufacturing",
   "marketing",
+  "goods",
+  "creativity",
+  "capital",
 ]
 
 describe("recommendPlaybookFromResources", () => {
@@ -55,6 +58,26 @@ describe("recommendPlaybookFromResources", () => {
   it("audience + marketing → Creator (an audience to monetize)", () => {
     const r = recommendPlaybookFromResources(["audience", "marketing"])
     expect(r.playbook).toBe("creator")
+  })
+
+  it("goods → Stall (list what you already have)", () => {
+    const r = recommendPlaybookFromResources(["goods"])
+    expect(r.playbook).toBe("stall")
+  })
+
+  it("creativity → Creator", () => {
+    const r = recommendPlaybookFromResources(["creativity"])
+    expect(r.playbook).toBe("creator")
+  })
+
+  it("capital → Commons (multi-stakeholder co-op welcomes supporters)", () => {
+    const r = recommendPlaybookFromResources(["capital"])
+    expect(r.playbook).toBe("commons")
+  })
+
+  it("capital + land → Cycle (pre-season CSA capitalization)", () => {
+    const r = recommendPlaybookFromResources(["capital", "land"])
+    expect(r.playbook).toBe("cycle")
   })
 
   it("empty selection → Stall (the simplest default)", () => {
