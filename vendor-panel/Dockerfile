@@ -45,6 +45,12 @@ RUN corepack enable \
 # --- build stage -------------------------------------------------------------
 FROM pnpm AS build
 ENV NODE_ENV=production
+ARG VITE_MEDUSA_BACKEND_URL
+ARG VITE_MEDUSA_STOREFRONT_URL
+ARG VITE_MEDUSA_BASE=/
+ENV VITE_MEDUSA_BACKEND_URL=$VITE_MEDUSA_BACKEND_URL
+ENV VITE_MEDUSA_STOREFRONT_URL=$VITE_MEDUSA_STOREFRONT_URL
+ENV VITE_MEDUSA_BASE=$VITE_MEDUSA_BASE
 
 # `pnpm-workspace.yaml` carries the dependency overrides, which pnpm 11 no
 # longer reads from package.json. Omitting it here does not fail the build —
