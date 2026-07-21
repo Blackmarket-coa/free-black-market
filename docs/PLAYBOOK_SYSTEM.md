@@ -140,11 +140,12 @@ platform features (Refrain bounties, volunteer time-banking, Blackstar
 delivery, collective campaigns / demand pools, consignment and
 unique-inventory listings).
 
-The quiz is a multi-select across three themed steps; every option adds
-points to the playbooks it suits, the highest score wins, and ties resolve
-to the simpler playbook (same `SIMPLICITY_RANK` as the 3-question picker).
-The result is only a recommendation — the reveal step lets the user
-override and pick multiple roles.
+The quiz is a single multi-select screen — all thirteen options at once,
+pick any number (including none); every option adds points to the
+playbooks it suits, the highest score wins, and ties resolve to the
+simpler playbook (same `SIMPLICITY_RANK` as the 3-question picker). The
+result is only a recommendation — the reveal step lets the user override
+and pick multiple roles.
 
 The reveal step also surfaces **non-vendor pathway hints** matched to the
 selected resources (defined in
@@ -161,21 +162,21 @@ The implementation is mirrored in
 (plus the `resourceKeyEnum` in `backend/src/api/vendor/register/validators.ts`);
 all three must stay in sync with this table.
 
-| Resource            | Step   | Feature families it unlocks                          | Scores |
-|---------------------|--------|------------------------------------------------------|--------|
-| `land`              | assets | seasons, plots, harvests, gardens                    | cycle 3, harvest 3, grove 1 |
-| `equipment`         | assets | kitchen rentals, tool libraries, production runs     | kitchen 3, atelier 2, workshop 2 |
-| `transportation`    | assets | Blackstar delivery, local-delivery fulfillment       | hub 3, kitchen 1 |
-| `manufacturing`     | assets | production ledger, botanical pathways, wholesale     | atelier 3, workshop 2, stall 1 |
-| `goods`             | assets | unique-inventory + consignment listings, free stores | stall 3, grove 2, atelier 1, hub 1 |
-| `time`              | people | volunteer time-banking, work parties, bookable slots | service 3, harvest 2, grove 2 |
-| `organization`      | people | governance, memberships, multi-member payouts        | commons 3, workshop 2, grove 2, hub 1 |
-| `network`           | people | federation hubs, cooperatives, buyer networks        | hub 3, commons 2, grove 1, creator 1 |
-| `audience`          | people | creator programs, attribution links, memberships     | creator 3, stall 2, atelier 1 |
-| `materials_skills`  | skills | knowledge base, skill shares, service programs       | atelier 2, stall 2, service 2, workshop 1, creator 1 |
-| `creativity`        | skills | Refrain bounties, digital drops, creator rewards     | creator 3, atelier 2, stall 1, workshop 1 |
-| `marketing`         | skills | creator attribution, promo codes, embeds             | creator 2, stall 2, hub 2, atelier 1 |
-| `capital`           | skills | collective campaigns, demand pools, investment pools | commons 3, workshop 2, cycle 2, grove 1, atelier 1 |
+| Resource            | Feature families it unlocks                          | Scores |
+|---------------------|------------------------------------------------------|--------|
+| `land`              | seasons, plots, harvests, gardens                    | cycle 3, harvest 3, grove 1 |
+| `equipment`         | kitchen rentals, tool libraries, production runs     | kitchen 3, atelier 2, workshop 2 |
+| `transportation`    | Blackstar delivery, local-delivery fulfillment       | hub 3, kitchen 1 |
+| `manufacturing`     | production ledger, botanical pathways, wholesale     | atelier 3, workshop 2, stall 1 |
+| `goods`             | unique-inventory + consignment listings, free stores | stall 3, grove 2, atelier 1, hub 1 |
+| `time`              | volunteer time-banking, work parties, bookable slots | service 3, harvest 2, grove 2 |
+| `organization`      | governance, memberships, multi-member payouts        | commons 3, workshop 2, grove 2, hub 1 |
+| `network`           | federation hubs, cooperatives, buyer networks        | hub 3, commons 2, grove 1, creator 1 |
+| `audience`          | creator programs, attribution links, memberships     | creator 3, stall 2, atelier 1 |
+| `materials_skills`  | knowledge base, skill shares, service programs       | atelier 2, stall 2, service 2, workshop 1, creator 1 |
+| `creativity`        | Refrain bounties, digital drops, creator rewards     | creator 3, atelier 2, stall 1, workshop 1 |
+| `marketing`         | creator attribution, promo codes, embeds             | creator 2, stall 2, hub 2, atelier 1 |
+| `capital`           | collective campaigns, demand pools, investment pools | commons 3, workshop 2, cycle 2, grove 1, atelier 1 |
 
 ## Recipe configuration
 
