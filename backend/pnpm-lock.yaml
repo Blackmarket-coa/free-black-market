@@ -8,7 +8,7 @@ overrides:
   glob: '>=10.5.0'
   qs: '>=6.14.2'
   jws: '>=3.2.3'
-  axios: '>=1.15.2'
+  axios: '>=1.18.0'
   '@isaacs/brace-expansion': '>=5.0.1'
   '@remix-run/router': '>=1.23.2'
   fast-xml-parser: '>=5.3.6'
@@ -135,8 +135,8 @@ importers:
         specifier: ^8.0.1
         version: 8.0.1
       axios:
-        specifier: '>=1.15.2'
-        version: 1.16.0
+        specifier: '>=1.18.0'
+        version: 1.18.1
       bcryptjs:
         specifier: ^3.0.3
         version: 3.0.3
@@ -4772,6 +4772,10 @@ packages:
     engines: {node: '>=0.4.0'}
     hasBin: true
 
+  agent-base@6.0.2:
+    resolution: {integrity: sha512-RZNwNclF7+MS/8bDg70amg32dyeZGZxiDuQmZxKLAlQjr3jGyLx+4Kkk58UO7D2QdgFIQCovuSuZESne6RG6XQ==}
+    engines: {node: '>= 6.0.0'}
+
   ajv-draft-04@1.0.0:
     resolution: {integrity: sha512-mv00Te6nmYbRp5DCwclxtt7yV/joXJPGS7nM+97GdxvuttCOfgI3K4U25zboyeX0O+myI8ERluxQe5wljMmVIw==}
     peerDependencies:
@@ -4884,8 +4888,8 @@ packages:
   axios-retry@3.9.1:
     resolution: {integrity: sha512-8PJDLJv7qTTMMwdnbMvrLYuvB47M81wRtxQmEdV5w4rgbTXTt+vtPkXwajOfOdSyv/wZICJOC+/UhXH4aQ/R+w==}
 
-  axios@1.16.0:
-    resolution: {integrity: sha512-6hp5CwvTPlN2A31g5dxnwAX0orzM7pmCRDLnZSX772mv8WDqICwFjowHuPs04Mc8deIld1+ejhtaMn5vp6b+1w==}
+  axios@1.18.1:
+    resolution: {integrity: sha512-3nTvFlvpn9Zu/RkHUqtc7/+al4UpRW5az71ap5zccp6e8RAYEzhMTecX8Dz1wWDYrPpUoB1HAQEGEAEvUr7S9g==}
 
   babel-jest@29.7.0:
     resolution: {integrity: sha512-BrvGY3xZSwEcCzKvKsCi2GgHqDqsYkOP4/by5xCgIwGXQxIEh+8ew3gmrE1y7XRR6LHZIj6yLYnUi/mm2KXKBg==}
@@ -5972,10 +5976,6 @@ packages:
     resolution: {integrity: sha512-Bb33KbowVTIj5s7Ked1OsqHUeCpz//tPwR+E2zJgJKo9Z5XolZ9b6bdUgjmYlwnWhoOQKoTd1TYToZGn5mAYOg==}
     engines: {node: '>= 0.8'}
 
-  hasown@2.0.2:
-    resolution: {integrity: sha512-0hJU9SCPvmMzIBdZFqNPXWa6dqh7WdH0cII9y+CyS8rG3nL48Bclra9HmKhVVUHyPWNH5Y7xDwAB7bfgSjkUMQ==}
-    engines: {node: '>= 0.4'}
-
   hasown@2.0.4:
     resolution: {integrity: sha512-T2UbfbBEF32wiepXIsMlTW9+dDYC6wMh/t/vYA4tuOMKqWz/n3vr1NFSxQiyP+zk2mXsoMA/i/7qV6LKut1t1A==}
     engines: {node: '>= 0.4'}
@@ -6003,6 +6003,10 @@ packages:
   http-errors@2.0.1:
     resolution: {integrity: sha512-4FbRdAX+bSdmo4AUFuS0WNiPz8NgFt+r8ThgNWmlrjQjt1Q7ZR9+zTlce2859x4KSXrwIsaeTqDoKQmtP8pLmQ==}
     engines: {node: '>= 0.8'}
+
+  https-proxy-agent@5.0.1:
+    resolution: {integrity: sha512-dFcAjpTQFgoLMzC2VwU+C/CbS7uRL0lWmxDITmqm7C+7F0Odmj6s9l6alZc6AELXhrnggM2CeWSXHGOdX2YtwA==}
+    engines: {node: '>= 6'}
 
   human-signals@2.1.0:
     resolution: {integrity: sha512-B4FFZ6q/T2jhhksgkbEW3HBvWIfDW85snkQgawt07S7J5QXTk6BkNV+0yAeZrM5QpMAdYlocGoljn0sJ/WQkFw==}
@@ -11128,6 +11132,7 @@ snapshots:
       '@sendgrid/mail': 8.1.6
     transitivePeerDependencies:
       - debug
+      - supports-color
 
   '@medusajs/notification@2.14.2(@medusajs/framework@2.14.2(@medusajs/cli@2.14.2(@types/node@20.19.28))(@types/node@20.19.28)(ioredis@5.9.1)(vite@6.4.3(@types/node@20.19.28)(jiti@1.21.7)(lightningcss@1.32.0)(yaml@2.9.0))(zod@4.2.0))':
     dependencies:
@@ -11212,7 +11217,7 @@ snapshots:
   '@medusajs/telemetry@2.12.3':
     dependencies:
       '@babel/runtime': 7.28.6
-      axios: 1.16.0
+      axios: 1.18.1
       axios-retry: 3.9.1
       boxen: 5.1.2
       ci-info: 3.9.0
@@ -11222,11 +11227,12 @@ snapshots:
       uuid: 9.0.1
     transitivePeerDependencies:
       - debug
+      - supports-color
 
   '@medusajs/telemetry@2.14.2':
     dependencies:
       '@babel/runtime': 7.28.6
-      axios: 1.16.0
+      axios: 1.18.1
       axios-retry: 3.9.1
       boxen: 5.1.2
       ci-info: 3.9.0
@@ -11236,12 +11242,13 @@ snapshots:
       uuid: 9.0.1
     transitivePeerDependencies:
       - debug
+      - supports-color
 
   '@medusajs/test-utils@2.14.2(@medusajs/core-flows@2.14.2(@medusajs/framework@2.14.2(@medusajs/cli@2.14.2(@types/node@20.19.28))(@types/node@20.19.28)(ioredis@5.9.1)(vite@6.4.3(@types/node@20.19.28)(jiti@1.21.7)(lightningcss@1.32.0)(yaml@2.9.0))(zod@4.2.0)))(@medusajs/framework@2.14.2(@medusajs/cli@2.14.2(@types/node@20.19.28))(@types/node@20.19.28)(ioredis@5.9.1)(vite@6.4.3(@types/node@20.19.28)(jiti@1.21.7)(lightningcss@1.32.0)(yaml@2.9.0))(zod@4.2.0))(@medusajs/medusa@2.14.2)':
     dependencies:
       '@medusajs/framework': 2.14.2(@medusajs/cli@2.14.2(@types/node@20.19.28))(@types/node@20.19.28)(ioredis@5.9.1)(vite@6.4.3(@types/node@20.19.28)(jiti@1.21.7)(lightningcss@1.32.0)(yaml@2.9.0))(zod@4.2.0)
       '@types/express': 4.17.25
-      axios: 1.16.0
+      axios: 1.18.1
       express: 4.22.1
       get-port: 5.1.1
       ulid: 2.4.0
@@ -14326,9 +14333,10 @@ snapshots:
   '@sendgrid/client@8.1.6':
     dependencies:
       '@sendgrid/helpers': 8.0.0
-      axios: 1.16.0
+      axios: 1.18.1
     transitivePeerDependencies:
       - debug
+      - supports-color
 
   '@sendgrid/helpers@8.0.0':
     dependencies:
@@ -14340,6 +14348,7 @@ snapshots:
       '@sendgrid/helpers': 8.0.0
     transitivePeerDependencies:
       - debug
+      - supports-color
 
   '@sinclair/typebox@0.27.8': {}
 
@@ -14754,7 +14763,7 @@ snapshots:
   '@stellar/stellar-sdk@13.3.0':
     dependencies:
       '@stellar/stellar-base': 13.1.0
-      axios: 1.16.0
+      axios: 1.18.1
       bignumber.js: 9.3.1
       eventsource: 2.0.2
       feaxios: 0.0.23
@@ -14764,6 +14773,7 @@ snapshots:
     transitivePeerDependencies:
       - bare-url
       - debug
+      - supports-color
 
   '@swc/core-darwin-arm64@1.15.7':
     optional: true
@@ -15170,12 +15180,13 @@ snapshots:
 
   '@woocommerce/woocommerce-rest-api@1.0.2':
     dependencies:
-      axios: 1.16.0
+      axios: 1.18.1
       create-hmac: 1.1.7
       oauth-1.0a: 2.2.6
       url-parse: 1.5.10
     transitivePeerDependencies:
       - debug
+      - supports-color
 
   '@zxing/text-encoding@0.9.0':
     optional: true
@@ -15198,6 +15209,12 @@ snapshots:
       acorn: 8.15.0
 
   acorn@8.15.0: {}
+
+  agent-base@6.0.2:
+    dependencies:
+      debug: 4.4.3(supports-color@8.1.1)
+    transitivePeerDependencies:
+      - supports-color
 
   ajv-draft-04@1.0.0(ajv@8.13.0):
     optionalDependencies:
@@ -15314,13 +15331,15 @@ snapshots:
       '@babel/runtime': 7.28.6
       is-retry-allowed: 2.2.0
 
-  axios@1.16.0:
+  axios@1.18.1:
     dependencies:
       follow-redirects: 1.16.0
       form-data: 4.0.6
+      https-proxy-agent: 5.0.1
       proxy-from-env: 2.1.0
     transitivePeerDependencies:
       - debug
+      - supports-color
 
   babel-jest@29.7.0(@babel/core@7.28.6):
     dependencies:
@@ -16522,10 +16541,6 @@ snapshots:
       safe-buffer: 5.2.1
       to-buffer: 1.2.2
 
-  hasown@2.0.2:
-    dependencies:
-      function-bind: 1.1.2
-
   hasown@2.0.4:
     dependencies:
       function-bind: 1.1.2
@@ -16567,6 +16582,13 @@ snapshots:
       setprototypeof: 1.2.0
       statuses: 2.0.2
       toidentifier: 1.0.1
+
+  https-proxy-agent@5.0.1:
+    dependencies:
+      agent-base: 6.0.2
+      debug: 4.4.3(supports-color@8.1.1)
+    transitivePeerDependencies:
+      - supports-color
 
   human-signals@2.1.0: {}
 
@@ -16713,7 +16735,7 @@ snapshots:
 
   is-core-module@2.16.1:
     dependencies:
-      hasown: 2.0.2
+      hasown: 2.0.4
 
   is-docker@2.2.1: {}
 
@@ -16762,7 +16784,7 @@ snapshots:
       call-bound: 1.0.4
       gopd: 1.2.0
       has-tostringtag: 1.0.2
-      hasown: 2.0.2
+      hasown: 2.0.4
 
   is-relative@1.0.0:
     dependencies:
@@ -17485,12 +17507,13 @@ snapshots:
 
   medusajs-launch-utils@0.0.18:
     dependencies:
-      axios: 1.16.0
+      axios: 1.18.1
       dotenv: 10.0.0
       pg: 8.16.3
     transitivePeerDependencies:
       - debug
       - pg-native
+      - supports-color
 
   merge-descriptors@1.0.3: {}
 
