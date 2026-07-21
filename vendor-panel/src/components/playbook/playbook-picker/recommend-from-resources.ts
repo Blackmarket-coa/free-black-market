@@ -45,39 +45,25 @@ export type ResourceOption = {
 }
 
 /**
- * Resource options grouped into themed quiz steps. The quiz renders one
- * multi-select step per group; the user may pick any number (including
- * none) in each.
+ * Resource options for the quiz. A single multi-select screen — the user
+ * may pick any number of options (including none). Kept as a one-element
+ * group array so the quiz's per-group rendering keeps working.
  */
 export const RESOURCE_GROUPS: { key: string; title: string; subtitle: string; options: ResourceOption[] }[] = [
   {
-    key: "assets",
-    title: "What do you have to work with?",
-    subtitle: "Pick anything you can put to use — choose all that apply.",
+    key: "all",
+    title: "Pick anything you can put to use",
+    subtitle: "Assets, people, time, skills, funds — choose all that apply.",
     options: [
       { value: "land", label: "Land or space", description: "Land, plots, or growing / kitchen space", emoji: "🌍" },
       { value: "equipment", label: "Equipment & tools", description: "Machines, kitchen gear, or workshop tools", emoji: "🛠️" },
       { value: "transportation", label: "Transportation", description: "A vehicle for pickup, delivery, or hauling", emoji: "🚚" },
       { value: "manufacturing", label: "Manufacturing", description: "Capacity to make or produce goods", emoji: "🏭" },
       { value: "goods", label: "Goods ready to go", description: "Finished goods, surplus, or secondhand stock to sell or share", emoji: "📦" },
-    ],
-  },
-  {
-    key: "people",
-    title: "Who's behind it?",
-    subtitle: "The people and community you can draw on.",
-    options: [
       { value: "time", label: "Time & labor", description: "Hours to work, volunteer, or help out", emoji: "⏰" },
       { value: "organization", label: "An organization", description: "A co-op, nonprofit, or formal group", emoji: "🏛️" },
       { value: "network", label: "A network", description: "Connections to other vendors or growers", emoji: "🕸️" },
       { value: "audience", label: "An audience", description: "Followers or customers who already know you", emoji: "📣" },
-    ],
-  },
-  {
-    key: "skills",
-    title: "What can you offer?",
-    subtitle: "Know-how, creative work, funds, and ways to reach people.",
-    options: [
       { value: "materials_skills", label: "Materials & skills", description: "Seeds, supplies, or know-how to teach", emoji: "🌱" },
       { value: "creativity", label: "Creative work", description: "Art, music, writing, or media you make", emoji: "🎨" },
       { value: "marketing", label: "Marketing reach", description: "Channels or opportunities to promote", emoji: "📈" },

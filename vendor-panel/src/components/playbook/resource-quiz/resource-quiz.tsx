@@ -118,28 +118,36 @@ export function ResourceQuiz({
 
   return (
     <div className="flex flex-col items-center w-full max-w-2xl mx-auto p-6">
-      <div className="w-full mb-6">
-        <div className="flex items-center justify-between text-xs text-ui-fg-subtle">
-          <span>
-            Step {stepNumber} of {totalGroups}
-          </span>
-          {onCancel && (
-            <button
-              type="button"
-              onClick={onCancel}
-              className="text-ui-fg-subtle hover:text-ui-fg-base underline"
-            >
-              Cancel
-            </button>
+      {(totalGroups > 1 || onCancel) && (
+        <div className="w-full mb-6">
+          <div className="flex items-center justify-between text-xs text-ui-fg-subtle">
+            {totalGroups > 1 ? (
+              <span>
+                Step {stepNumber} of {totalGroups}
+              </span>
+            ) : (
+              <span />
+            )}
+            {onCancel && (
+              <button
+                type="button"
+                onClick={onCancel}
+                className="text-ui-fg-subtle hover:text-ui-fg-base underline"
+              >
+                Cancel
+              </button>
+            )}
+          </div>
+          {totalGroups > 1 && (
+            <div className="h-1.5 w-full rounded-full bg-ui-bg-base-pressed mt-2 overflow-hidden">
+              <div
+                className="h-full bg-ui-fg-interactive transition-all"
+                style={{ width: `${(stepNumber / totalGroups) * 100}%` }}
+              />
+            </div>
           )}
         </div>
-        <div className="h-1.5 w-full rounded-full bg-ui-bg-base-pressed mt-2 overflow-hidden">
-          <div
-            className="h-full bg-ui-fg-interactive transition-all"
-            style={{ width: `${(stepNumber / totalGroups) * 100}%` }}
-          />
-        </div>
-      </div>
+      )}
 
       <Heading level="h1" className="text-center mb-1">
         What do you have?
