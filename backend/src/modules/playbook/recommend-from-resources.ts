@@ -25,6 +25,9 @@ export type ResourceKey =
   | "organization"
   | "manufacturing"
   | "marketing"
+  | "goods"
+  | "creativity"
+  | "capital"
 
 export type ResourceRecommendation = {
   playbook: PlaybookId
@@ -43,6 +46,9 @@ const RESOURCE_SCORES: Record<ResourceKey, Partial<Record<PlaybookId, number>>> 
   organization: { commons: 3, workshop: 2, grove: 2, hub: 1 },
   manufacturing: { atelier: 3, workshop: 2, stall: 1 },
   marketing: { creator: 2, stall: 2, hub: 2, atelier: 1 },
+  goods: { stall: 3, grove: 2, atelier: 1, hub: 1 },
+  creativity: { creator: 3, atelier: 2, stall: 1, workshop: 1 },
+  capital: { commons: 3, workshop: 2, cycle: 2, grove: 1, atelier: 1 },
 }
 
 // Simpler-playbook tie-break order. Mirrors SIMPLICITY_RANK in recommend.ts.

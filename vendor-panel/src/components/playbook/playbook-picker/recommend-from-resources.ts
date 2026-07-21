@@ -33,6 +33,9 @@ export type ResourceKey =
   | "organization"
   | "manufacturing"
   | "marketing"
+  | "goods"
+  | "creativity"
+  | "capital"
 
 export type ResourceOption = {
   value: ResourceKey
@@ -56,6 +59,7 @@ export const RESOURCE_GROUPS: { key: string; title: string; subtitle: string; op
       { value: "equipment", label: "Equipment & tools", description: "Machines, kitchen gear, or workshop tools", emoji: "🛠️" },
       { value: "transportation", label: "Transportation", description: "A vehicle for pickup, delivery, or hauling", emoji: "🚚" },
       { value: "manufacturing", label: "Manufacturing", description: "Capacity to make or produce goods", emoji: "🏭" },
+      { value: "goods", label: "Goods ready to go", description: "Finished goods, surplus, or secondhand stock to sell or share", emoji: "📦" },
     ],
   },
   {
@@ -72,10 +76,12 @@ export const RESOURCE_GROUPS: { key: string; title: string; subtitle: string; op
   {
     key: "skills",
     title: "What can you offer?",
-    subtitle: "Know-how, materials, and ways to reach people.",
+    subtitle: "Know-how, creative work, funds, and ways to reach people.",
     options: [
       { value: "materials_skills", label: "Materials & skills", description: "Seeds, supplies, or know-how to teach", emoji: "🌱" },
+      { value: "creativity", label: "Creative work", description: "Art, music, writing, or media you make", emoji: "🎨" },
       { value: "marketing", label: "Marketing reach", description: "Channels or opportunities to promote", emoji: "📈" },
+      { value: "capital", label: "Funds to put to work", description: "Money to back campaigns, pools, or community projects", emoji: "💰" },
     ],
   },
 ]
@@ -98,6 +104,9 @@ const RESOURCE_SCORES: Record<ResourceKey, Partial<Record<PlaybookId, number>>> 
   organization: { commons: 3, workshop: 2, grove: 2, hub: 1 },
   manufacturing: { atelier: 3, workshop: 2, stall: 1 },
   marketing: { creator: 2, stall: 2, hub: 2, atelier: 1 },
+  goods: { stall: 3, grove: 2, atelier: 1, hub: 1 },
+  creativity: { creator: 3, atelier: 2, stall: 1, workshop: 1 },
+  capital: { commons: 3, workshop: 2, cycle: 2, grove: 1, atelier: 1 },
 }
 
 const rankSimplicity = (id: PlaybookId): number => {
