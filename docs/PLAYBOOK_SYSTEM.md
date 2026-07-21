@@ -146,6 +146,15 @@ to the simpler playbook (same `SIMPLICITY_RANK` as the 3-question picker).
 The result is only a recommendation — the reveal step lets the user
 override and pick multiple roles.
 
+The reveal step also surfaces **non-vendor pathway hints** matched to the
+selected resources (defined in
+`vendor-panel/src/components/playbook/playbook-picker/resource-pathways.ts`,
+presentational only): driving for Blackstar, volunteer time-banking,
+backing collective campaigns, Threshold mutual-aid giving, Refrain
+bounties, creator programs, knowledge-base contributions, community
+gardens, and buyer networks — so people whose resources don't point at
+running a storefront still see where they fit.
+
 The implementation is mirrored in
 `backend/src/modules/playbook/recommend-from-resources.ts` and
 `vendor-panel/src/components/playbook/playbook-picker/recommend-from-resources.ts`

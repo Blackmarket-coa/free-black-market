@@ -11,6 +11,7 @@ import {
   type ResourceKey,
 } from "../playbook-picker/recommend-from-resources"
 import type { Recommendation, PlaybookId } from "../playbook-picker/recommend"
+import { pathwaysForResources } from "../playbook-picker/resource-pathways"
 
 export type ResourceQuizResult = {
   /** Primary playbook — drives dashboard chrome, labels, commission. */
@@ -113,6 +114,7 @@ export function ResourceQuiz({
   }
 
   const group = RESOURCE_GROUPS[groupIndex]
+  const pathways = useMemo(() => pathwaysForResources(selected), [selected])
 
   return (
     <div className="flex flex-col items-center w-full max-w-2xl mx-auto p-6">
@@ -181,6 +183,36 @@ export function ResourceQuiz({
           >
             Add or change roles
           </button>
+
+          {pathways.length > 0 && (
+            <div className="w-full mt-2">
+              <Text size="small" className="text-ui-fg-subtle text-center mb-2">
+                Beyond selling — with what you have, you can also:
+              </Text>
+              <div className="flex flex-col gap-y-2">
+                {pathways.map((p) => (
+                  <div
+                    key={p.title}
+                    className="flex items-start gap-x-3 p-3 rounded-lg border border-ui-border-base bg-ui-bg-field"
+                  >
+                    <span aria-hidden="true">{p.emoji}</span>
+                    <div>
+                      <Text size="small" weight="plus">
+                        {p.title}
+                      </Text>
+                      <Text size="small" className="text-ui-fg-muted">
+                        {p.description}
+                      </Text>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <Text size="xsmall" className="text-ui-fg-muted text-center mt-2">
+                These don't require a storefront — you'll find them across the
+                platform once you're in.
+              </Text>
+            </div>
+          )}
         </div>
       )}
 
