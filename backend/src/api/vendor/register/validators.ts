@@ -68,10 +68,14 @@ export const createSellerRegistrationSchema = z.object({
   // Retained as a legacy read-cache; `playbook` below is the source of truth.
   vendor_type: vendorTypeEnum.optional(),
 
-  // Playbook selected via the resource quiz, plus what the quiz recommended
-  // and the resources the user reported. Applied as a playbook_assignment on
-  // approval. All optional for backward compatibility with older clients.
+  // Playbook selected via the resource quiz, plus the full role set (the
+  // quiz's override grid allows more than one), what the quiz recommended,
+  // and the resources the user reported. Applied as a playbook_assignment
+  // on approval; multi-role selections union each role's default feature
+  // keys into seller_metadata.enabled_extensions. All optional for backward
+  // compatibility with older clients.
   playbook: playbookIdEnum.optional(),
+  roles: z.array(playbookIdEnum).optional(),
   recommended_playbook: playbookIdEnum.optional(),
   resources: z.array(resourceKeyEnum).optional(),
 
