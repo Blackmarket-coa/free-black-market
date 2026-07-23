@@ -93,6 +93,7 @@ export const handleSellerRegistration = async (
         },
         vendor_type: body.vendor_type || "producer",
         playbook: body.playbook,
+        roles: body.roles,
         recommended_playbook: body.recommended_playbook,
         resources: body.resources,
       },
