@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="2000" height="2000" viewBox="0 0 2000 2000" role="img" aria-label="BMC logo">
+  <defs>
+    <!-- Dark forest green background color -->
+    <clipPath id="canvas-clip">
+      <rect width="100%" height="100%" rx="40" ry="40" />
+    </clipPath>
+
+    <!-- Gold gradient for metallic look -->
+    <linearGradient id="goldGrad" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0%" stop-color="#f7e2a3"/>
+      <stop offset="25%" stop-color="#ead07c"/>
+      <stop offset="55%" stop-color="#d4af37"/>
+      <stop offset="80%" stop-color="#b88f1f"/>
+      <stop offset="100%" stop-color="#f0d78a"/>
+    </linearGradient>
+
+    <!-- Subtle highlight -->
+    <linearGradient id="goldHighlight" x1="0" x2="0" y1="0" y2="1">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.25"/>
+      <stop offset="25%" stop-color="#ffffff" stop-opacity="0.10"/>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0.00"/>
+    </linearGradient>
+
+    <!-- Soft drop shadow -->
+    <filter id="softShadow" x="-50%" y="-50%" width="200%" height="200%">
+      <feDropShadow dx="0" dy="20" stdDeviation="30" flood-color="#000000" flood-opacity="0.45"/>
+    </filter>
+
+    <!-- Slight engraved texture (very subtle) -->
+    <filter id="grain">
+      <feTurbulence type="fractalNoise" baseFrequency="0.8" numOctaves="2" stitchTiles="stitch"/>
+      <feColorMatrix type="saturate" values="0"/>
+      <feBlend mode="overlay"/>
+      <feComponentTransfer>
+        <feFuncA type="table" tableValues="0 0.06"/>
+      </feComponentTransfer>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <g clip-path="url(#canvas-clip)">
+    <rect width="100%" height="100%" fill="#082f26"/>
+    <!-- Optional subtle paper/noise using semi-transparent overlay -->
+    <rect width="100%" height="100%" fill="#000000" opacity="0.02"/>
+  </g>
+
+  <!-- Main text -->
+  <g transform="translate(1000,1050)">
+    <!-- shadow shape by rendering the text in black slightly offset and blurred via filter -->
+    <text x="0" y="0" text-anchor="middle" dominant-baseline="middle"
+          font-family="Georgia, 'Times New Roman', serif" font-weight="700"
+          font-size="700" letter-spacing="12" fill="#000000" opacity="0.35" transform="translate(0,40)" filter="url(#softShadow)">
+      BMC
+    </text>
+
+    <!-- gold filled text -->
+    <text x="0" y="0" text-anchor="middle" dominant-baseline="middle"
+          font-family="Georgia, 'Times New Roman', serif" font-weight="700"
+          font-size="700" letter-spacing="12" fill="url(#goldGrad)">
+      BMC
+    </text>
+
+    <!-- highlight overlay to give metallic sheen -->
+    <text x="0" y="-70" text-anchor="middle" dominant-baseline="middle"
+          font-family="Georgia, 'Times New Roman', serif" font-weight="700"
+          font-size="700" letter-spacing="12" fill="url(#goldHighlight)" opacity="0.9">
+      BMC
+    </text>
+
+    <!-- Very subtle grain texture clipped to letters -->
+    <g mask="url(#text-mask)">
+      <!-- empty; mask defined below -->
+    </g>
+  </g>
+
+  <!-- Define mask for applying texture only to letters -->
+  <defs>
+    <mask id="text-mask">
+      <rect width="100%" height="100%" fill="black"/>
+      <text x="1000" y="1050" text-anchor="middle" dominant-baseline="middle"
+            font-family="Georgia, 'Times New Roman', serif" font-weight="700"
+            font-size="700" letter-spacing="12" fill="white">BMC</text>
+    </mask>
+  </defs>
+
+  <!-- Accessibility: title and description -->
+  <title>BMC logo — gold lettering on dark forest green background</title>
+  <desc>Stylized "BMC" letters in a gold gradient centered on a dark forest green background. Serif typeface for a classic, elegant look.</desc>
+</svg>
