@@ -273,11 +273,15 @@ advisories.** Highs are all fixed by a patch bump:
 | vendor-panel | 0 | 5 | + `qs` DoS |
 | portals (root) | 2 | 7 | `vite` `server.fs.deny` bypass; `postcss` path traversal |
 
-**Action:** bump `next → ≥ 15.5.21`, `postcss → ≥ 8.5.18`, `dompurify → ≥ 3.4.11`,
-`react-router[-dom]` and `vite`/`qs` to patched lines; re-run `pnpm audit`. These
-are non-breaking patch/minor bumps. (Separately, the repo already tracks
-suppressed build-toolchain CVEs in `.trivyignore` with `SD-*` justifications —
-those are triaged, not ignored.)
+**Action — partially done in this PR.** The gating (HIGH) bumps are applied here
+to clear the Trivy FS gate: `next → 15.5.21`, `postcss → ≥ 8.5.18`, and
+`brace-expansion → 5.0.8` (see the SD-22 row in `docs/AUDIT_DEBT.md`); the
+`concurrent-ruby` CVE on the stray `@stellar/js-xdr` Ruby `Gemfile.lock` is
+suppressed alongside the existing SD-16/18 rows. **Still open (moderate,
+non-gating):** `dompurify → ≥ 3.4.11`, `react-router[-dom]` and `vite`/`qs` to
+patched lines — tracked as P1. (Separately, the repo already tracks suppressed
+build-toolchain CVEs in `.trivyignore` with `SD-*` justifications — those are
+triaged, not ignored.)
 
 ---
 

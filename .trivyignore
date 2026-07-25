@@ -52,7 +52,11 @@ CVE-2026-33176
 # `@stellar/js-xdr@3.1.2` npm tarball as SD-16's activesupport finding. No Ruby
 # runtime in FBM, nothing to bump in our lockfiles. Suppressing until
 # @stellar/js-xdr drops the vendored Gemfile.lock upstream.
+# CVE-2026-54906 is a second concurrent-ruby advisory (ReadWriteLock
+# synchronization flaw) against the same unreachable vendored gem — same
+# rationale, same upstream fix path.
 CVE-2026-54904
+CVE-2026-54906
 
 # SD-15: vite <=6.4.2 `server.fs.deny` bypass via Windows alternate data
 # streams (GHSA-fx2h-pf6j-xcff). Reached transitively through the root
