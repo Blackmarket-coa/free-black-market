@@ -94,6 +94,27 @@ jobs:
             echo SFARGS_EOF
           } >> "$GITHUB_OUTPUT"
 
+      # The Vite panels (admin/vendor) inline VITE_* values into their static
+      # bundles at build time exactly like the storefront, so the backend URL
+      # and publishable key MUST be passed as build args here — a runtime
+      # env_file cannot change an already-built SPA. Without this the panels
+      # ship with an empty backend URL and are unreachable (login dead on
+      # arrival). Reuses the same backend URL / publishable key as the
+      # storefront (the panels talk to the same API); a superset is fine since
+      # each panel's build ignores VITE_* vars it doesn't read.
+      - name: Resolve panel build args
+        id: panelargs
+        if: matrix.app == 'admin-panel' || matrix.app == 'vendor-panel'
+        run: |
+          {
+            echo 'args<<PANELARGS_EOF'
+            echo "VITE_MEDUSA_BACKEND_URL=${{ vars.PANEL_MEDUSA_BACKEND_URL || vars.NEXT_PUBLIC_MEDUSA_BACKEND_URL || 'https://api.freeblackmarket.com' }}"
+            echo "VITE_PUBLISHABLE_API_KEY=${{ secrets.NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY }}"
+            echo "VITE_MEDUSA_STOREFRONT_URL=${{ vars.NEXT_PUBLIC_BASE_URL || 'https://freeblackmarket.com' }}"
+            echo "VITE_PUBLIC_BASE_URL=${{ vars.NEXT_PUBLIC_BASE_URL || 'https://freeblackmarket.com' }}"
+            echo PANELARGS_EOF
+          } >> "$GITHUB_OUTPUT"
+
       # docker/build-push-action with `provenance: true` produces a manifest
       # list that the local docker daemon's image store cannot import via
       # `load`. On PRs we don't push to the registry — we only verify the
@@ -108,7 +129,9 @@ jobs:
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          build-args: ${{ steps.sfargs.outputs.args }}
+          build-args: |
+            ${{ steps.sfargs.outputs.args }}
+            ${{ steps.panelargs.outputs.args }}
           cache-from: type=gha,scope=${{ matrix.app }}
           cache-to: type=gha,mode=max,scope=${{ matrix.app }}
           provenance: ${{ github.event_name != 'pull_request' }}

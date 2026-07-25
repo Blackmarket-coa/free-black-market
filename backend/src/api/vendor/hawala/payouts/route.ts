@@ -48,8 +48,16 @@ export const POST = async (req: MedusaRequest, res: MedusaResponse) => {
       bank_account_id?: string
     }
 
-    if (!amount || !payout_tier) {
+    if (!payout_tier) {
       return res.status(400).json({ error: "amount and payout_tier are required" })
+    }
+
+    // Amount must be a positive, finite number. The `!amount` shorthand
+    // previously used here treated only 0/NaN/undefined as invalid and let
+    // negative amounts through — a negative payout inverts the ledger transfer
+    // and drains the platform settlement account into the caller's earnings.
+    if (typeof amount !== "number" || !Number.isFinite(amount) || amount <= 0) {
+      return res.status(400).json({ error: "amount must be a positive number" })
     }
 
     const payoutRequest = await hawalaService.requestPayout({

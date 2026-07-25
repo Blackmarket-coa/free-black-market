@@ -476,8 +476,16 @@ const BANNED_SECRET_LITERALS = new Set<string>([
   'test',
   'secret',
   'password',
+  // docker-compose.yml dev fallback for MEDUSA_ADMIN_PASSWORD. It is 14 chars
+  // (passes the length gate) and lowercase, so without this entry a prod boot
+  // via `docker compose up` (where service-level `environment:` shadows the
+  // .env.production file) would start with a publicly-known admin password.
+  'localadmin1234',
 ])
-const BANNED_SECRET_PREFIXES = ['CHANGE_ME']
+// `local-dev-` covers the docker-compose.yml JWT_SECRET / COOKIE_SECRET /
+// REVALIDATE_SECRET dev fallbacks (all `local-dev-*-min-32-chars-*`), which
+// are >=32 chars and would otherwise satisfy the production secret checks.
+const BANNED_SECRET_PREFIXES = ['CHANGE_ME', 'local-dev-']
 const MIN_SECRET_LENGTH = 32
 
 const isBannedSecret = (value: string): boolean => {
