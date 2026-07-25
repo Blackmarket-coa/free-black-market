@@ -275,9 +275,12 @@ advisories.** Highs are all fixed by a patch bump:
 
 **Action — partially done in this PR.** The gating (HIGH) bumps are applied here
 to clear the Trivy FS gate: `next → 15.5.21`, `postcss → ≥ 8.5.18`, and
-`brace-expansion → 5.0.8` (see the SD-22 row in `docs/AUDIT_DEBT.md`); the
-`concurrent-ruby` CVE on the stray `@stellar/js-xdr` Ruby `Gemfile.lock` is
-suppressed alongside the existing SD-16/18 rows. **Still open (moderate,
+`brace-expansion`'s named-export line `→ 5.0.8` (see the SD-22 row in
+`docs/AUDIT_DEBT.md`). Two CVEs are suppressed because their only fix isn't
+applicable: `brace-expansion` `CVE-2026-14257` on the function-export line
+(fixed only in the API-incompatible 5.x, which breaks `minimatch@3`/ESLint —
+reached solely by dev/CI tooling), and the `concurrent-ruby` CVE on the stray
+`@stellar/js-xdr` Ruby `Gemfile.lock` (alongside the existing SD-16/18 rows). **Still open (moderate,
 non-gating):** `dompurify → ≥ 3.4.11`, `react-router[-dom]` and `vite`/`qs` to
 patched lines — tracked as P1. (Separately, the repo already tracks suppressed
 build-toolchain CVEs in `.trivyignore` with `SD-*` justifications — those are
