@@ -520,6 +520,20 @@ class HawalaLedgerModuleService extends MedusaService({
     // that don't pass it keep the old behavior.
     pgConnection?: any
   }) {
+    // Reject non-finite or negative amounts at the single money-movement
+    // chokepoint. A negative amount inverts the debit/credit deltas in
+    // updateBalancesAtomic (debit leg becomes a self-credit, credit leg drains
+    // the counterparty), which the `balance + delta >= 0` CAS cannot catch —
+    // so a caller that failed to validate could move value backwards. Zero is
+    // allowed (a no-op transfer cannot move value); only < 0 and NaN/Infinity
+    // are rejected here. Callers that require strictly-positive amounts (e.g.
+    // payouts, withdrawals) still validate that at their own layer.
+    if (!Number.isFinite(data.amount) || data.amount < 0) {
+      throw new Error(
+        `Invalid transfer amount: ${data.amount}. Amount must be a finite, non-negative number.`
+      )
+    }
+
     // Check idempotency
     if (data.idempotency_key) {
       const existing = await this.listLedgerEntries({
@@ -1601,6 +1615,17 @@ class HawalaLedgerModuleService extends MedusaService({
     const tierConfig = this.PAYOUT_TIERS[data.payout_tier]
     if (!tierConfig) {
       throw new Error("Invalid payout tier")
+    }
+
+    // Payout amounts must be strictly positive and finite. Without this a
+    // negative amount would pass the `available_balance < amount` check below
+    // (a positive balance is never < a negative number), then flow into
+    // createTransfer where it would credit the vendor's own earnings account
+    // and debit the platform SETTLEMENT account — a fund-drain vector. The
+    // chokepoint guard in createTransfer blocks the negative move as well;
+    // this is the caller-layer half of that defense.
+    if (!Number.isFinite(data.amount) || data.amount <= 0) {
+      throw new Error("Payout amount must be a positive number")
     }
 
     // Get vendor account

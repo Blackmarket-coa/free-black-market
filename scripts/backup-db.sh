@@ -114,41 +114,65 @@ log_info "Database: $DB_NAME on $DB_HOST:$DB_PORT"
 # Create backup directory
 mkdir -p "$BACKUP_DIR"
 
-# Backup filename
-BACKUP_FILE="${BACKUP_DIR}/${DB_NAME}_${TIMESTAMP}.sql"
+# Backup filename. We use pg_dump's custom format (-Fc), which is what the
+# restore runbook (docs/runbooks/BACKUP_RESTORE.md) feeds to `pg_restore`.
+# Custom format is a compressed binary archive, so the extension is .dump.
+BACKUP_FILE="${BACKUP_DIR}/${DB_NAME}_${TIMESTAMP}.dump"
+BACKUP_LOG="${BACKUP_FILE}.log"
 
 log_info "Starting backup to: $BACKUP_FILE"
 
-# Perform backup using pg_dump
+# Perform backup using pg_dump.
+#
+# IMPORTANT: --verbose writes progress to STDERR. It must NOT be merged into
+# the dump stream (a previous version used `> "$BACKUP_FILE" 2>&1`, which
+# interleaved pg_dump's log lines into the archive and corrupted every
+# backup). Send the archive to the file and diagnostics to a sidecar log.
 export PGPASSWORD="$DB_PASS"
-pg_dump \
+if ! pg_dump \
   --host="$DB_HOST" \
   --port="$DB_PORT" \
   --username="$DB_USER" \
   --dbname="$DB_NAME" \
-  --format=plain \
+  --format=custom \
   --no-owner \
   --no-acl \
   --verbose \
-  > "$BACKUP_FILE" 2>&1
+  --file="$BACKUP_FILE" \
+  2> "$BACKUP_LOG"; then
+  log_error "pg_dump failed. Diagnostics:"
+  tail -n 20 "$BACKUP_LOG" >&2 || true
+  rm -f "$BACKUP_FILE"
+  exit 1
+fi
 
-# Check if backup was successful
+# Check if backup was successful (custom-format archives are binary but never
+# empty on success).
 if [[ ! -s "$BACKUP_FILE" ]]; then
   log_error "Backup failed - output file is empty"
   rm -f "$BACKUP_FILE"
   exit 1
 fi
 
-BACKUP_SIZE=$(du -h "$BACKUP_FILE" | cut -f1)
-log_info "Backup completed: $BACKUP_SIZE"
+# Validate the archive is readable by pg_restore before we trust it. A dump
+# that pg_restore cannot list is not a backup.
+if ! pg_restore --list "$BACKUP_FILE" > /dev/null 2>> "$BACKUP_LOG"; then
+  log_error "Backup archive failed pg_restore --list validation (corrupt dump). Diagnostics:"
+  tail -n 20 "$BACKUP_LOG" >&2 || true
+  rm -f "$BACKUP_FILE"
+  exit 1
+fi
+rm -f "$BACKUP_LOG"
 
-# Compress if requested
+BACKUP_SIZE=$(du -h "$BACKUP_FILE" | cut -f1)
+log_info "Backup completed and validated: $BACKUP_SIZE"
+
+# Compress if requested. Custom-format dumps are ALREADY compressed, and a
+# gzipped archive cannot be fed straight to `pg_restore`, so gzip-ing here
+# would break the documented restore path. Treat --compress as a no-op and
+# say so rather than silently producing an unrestorable file.
 if [[ "$COMPRESS" == true ]]; then
-  log_info "Compressing backup..."
-  gzip "$BACKUP_FILE"
-  BACKUP_FILE="${BACKUP_FILE}.gz"
-  BACKUP_SIZE=$(du -h "$BACKUP_FILE" | cut -f1)
-  log_info "Compressed size: $BACKUP_SIZE"
+  log_warn "--compress ignored: custom-format (-Fc) dumps are already compressed; gzip would break pg_restore."
 fi
 
 # Upload to cloud storage if requested
@@ -165,10 +189,10 @@ fi
 
 # Clean up old backups
 log_info "Cleaning up backups older than $RETENTION_DAYS days..."
-find "$BACKUP_DIR" -name "${DB_NAME}_*.sql*" -type f -mtime +$RETENTION_DAYS -delete 2>/dev/null || true
+find "$BACKUP_DIR" -name "${DB_NAME}_*.dump*" -type f -mtime +$RETENTION_DAYS -delete 2>/dev/null || true
 
 # List current backups
-BACKUP_COUNT=$(find "$BACKUP_DIR" -name "${DB_NAME}_*.sql*" -type f | wc -l)
+BACKUP_COUNT=$(find "$BACKUP_DIR" -name "${DB_NAME}_*.dump*" -type f | wc -l)
 log_info "Current backup count: $BACKUP_COUNT"
 
 log_info "Backup complete: $(basename "$BACKUP_FILE")"

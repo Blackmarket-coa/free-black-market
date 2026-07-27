@@ -21,6 +21,9 @@ const BANNED_LITERALS = new Set([
   "test",
   "secret",
   "password",
+  // docker-compose.yml dev fallback for MEDUSA_ADMIN_PASSWORD (14 chars, would
+  // otherwise pass). Keep in sync with backend/medusa-config.ts.
+  "localadmin1234",
 ])
 
 const MIN_SECRET_LENGTH = 32
@@ -56,13 +59,13 @@ const CONDITIONAL_RULES = {
 
 const RULES = {
   backend: [
-    { key: "JWT_SECRET", required: true, minLength: MIN_SECRET_LENGTH, banPrefixes: ["CHANGE_ME"] },
-    { key: "COOKIE_SECRET", required: true, minLength: MIN_SECRET_LENGTH, banPrefixes: ["CHANGE_ME"] },
+    { key: "JWT_SECRET", required: true, minLength: MIN_SECRET_LENGTH, banPrefixes: ["CHANGE_ME", "local-dev-"] },
+    { key: "COOKIE_SECRET", required: true, minLength: MIN_SECRET_LENGTH, banPrefixes: ["CHANGE_ME", "local-dev-"] },
     { key: "DATABASE_URL", required: true, pattern: /^postgres(ql)?:\/\// },
     { key: "MEDUSA_ADMIN_PASSWORD", required: true, minLength: 12, banPrefixes: ["CHANGE_ME"] },
   ],
   storefront: [
-    { key: "REVALIDATE_SECRET", required: true, minLength: MIN_SECRET_LENGTH, banPrefixes: ["CHANGE_ME"] },
+    { key: "REVALIDATE_SECRET", required: true, minLength: MIN_SECRET_LENGTH, banPrefixes: ["CHANGE_ME", "local-dev-"] },
     { key: "NEXT_PUBLIC_STRIPE_KEY", required: true, pattern: /^pk_(live|test)_/ },
     { key: "NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY", required: true },
   ],

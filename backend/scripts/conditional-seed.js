@@ -135,9 +135,35 @@ async function checkDatabaseEmpty() {
 
 async function main() {
   const forceSeed = process.env.FORCE_SEED === 'true';
+  const isProduction = process.env.NODE_ENV === 'production';
+  const allowProductionSeed = process.env.ALLOW_PRODUCTION_SEED === 'true';
+
+  // Safety gate: never auto-seed a production database from the emptiness
+  // heuristic. `pnpm seed` (src/scripts/seed.ts) creates PUBLISHED demo
+  // products ("Organic Kale Bunch", "Community Herb Seed Kit", ...), so a
+  // production DB that merely has empty product_type / product_collection
+  // tables would otherwise get a demo catalog injected and shown to real
+  // customers. Seeding in production requires an explicit opt-in.
+  if (isProduction && !allowProductionSeed && !forceSeed) {
+    log(
+      'NODE_ENV=production: automatic seed is disabled to avoid injecting demo ' +
+        'products into a live database. To seed a fresh production database on ' +
+        'purpose, set ALLOW_PRODUCTION_SEED=true (or FORCE_SEED=true).',
+      'warn'
+    );
+    process.exit(0);
+  }
 
   if (forceSeed) {
     log('FORCE_SEED=true, running seed...');
+  } else if (isProduction) {
+    log('ALLOW_PRODUCTION_SEED=true, checking if seed is needed...');
+    const needsSeed = await checkDatabaseEmpty();
+
+    if (!needsSeed) {
+      log('Seed not needed, skipping', 'success');
+      process.exit(0);
+    }
   } else {
     log('Checking if seed is needed...');
     const needsSeed = await checkDatabaseEmpty();

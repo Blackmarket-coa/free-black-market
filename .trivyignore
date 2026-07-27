@@ -52,7 +52,11 @@ CVE-2026-33176
 # `@stellar/js-xdr@3.1.2` npm tarball as SD-16's activesupport finding. No Ruby
 # runtime in FBM, nothing to bump in our lockfiles. Suppressing until
 # @stellar/js-xdr drops the vendored Gemfile.lock upstream.
+# CVE-2026-54906 is a second concurrent-ruby advisory (ReadWriteLock
+# synchronization flaw) against the same unreachable vendored gem — same
+# rationale, same upstream fix path.
 CVE-2026-54904
+CVE-2026-54906
 
 # SD-15: vite <=6.4.2 `server.fs.deny` bypass via Windows alternate data
 # streams (GHSA-fx2h-pf6j-xcff). Reached transitively through the root
@@ -65,3 +69,21 @@ CVE-2026-54904
 # (CVE-2026-53571 is the CVE alias Trivy keys this npm advisory under.)
 CVE-2026-53571
 GHSA-fx2h-pf6j-xcff
+
+# SD-22: brace-expansion CVE-2026-14257 (HIGH, DoS via crafted brace patterns).
+# The fix exists ONLY in 5.0.8 — the `@isaacs/brace-expansion` rewrite that
+# changed the module export from `module.exports = expand` to a named export.
+# The 5.x line IS fixed here (`pnpm.overrides` `brace-expansion@5: ^5.0.8`), but
+# the function-export line has NO fixed release: the maintainer did not backport
+# past 1.1.16 (the 1.x tip) or 2.1.2 (the 2.x tip) — both are still flagged by
+# this advisory. That function-export line is REQUIRED by `minimatch@3.1.5`
+# (`var expand = require('brace-expansion')`), which is pinned by
+# `@eslint/config-array` (ESLint) and `test-exclude` (jest coverage). Forcing
+# those onto 5.0.8 throws `TypeError: expand is not a function` and breaks
+# `eslint`/coverage (verified on PR #754). These consumers glob the repo's own
+# files at lint/test/CI time — not a production request path over attacker
+# input. Suppressing CVE-2026-14257 for the unfixable function-export line
+# (SD-15-style: the only fix breaks tooling) until minimatch@3's consumers ship
+# a 5.x-compatible brace-expansion. Keep `brace-expansion@5: ^5.0.8` so the
+# named-export line stays genuinely patched.
+CVE-2026-14257
