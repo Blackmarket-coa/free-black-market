@@ -12,12 +12,19 @@
  * Refer to docs: https://docs.medusajs.com/learn/debugging-and-testing/instrumentation
  */
 import { registerOtel } from "@medusajs/medusa"
+import { initSentry } from "./src/shared/sentry"
 
 // Determine if OpenTelemetry should be enabled
 const isProduction = process.env.NODE_ENV === "production"
 const otelEnabled = process.env.OTEL_ENABLED === "true" || (isProduction && process.env.OTEL_ENABLED !== "false")
 
-export function register() {
+export async function register() {
+  // Initialize Sentry first so its process-level uncaughtException /
+  // unhandledRejection handlers are registered as early as possible. Self-guards
+  // on SENTRY_DSN (no-ops when unset) and is independent of OTEL — this is what
+  // activates the already-wired 5xx capture point in shared/error-sanitizer.ts.
+  await initSentry()
+
   if (!otelEnabled) {
     console.log("[OTEL] OpenTelemetry disabled. Set OTEL_ENABLED=true to enable.")
     return

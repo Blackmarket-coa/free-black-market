@@ -1,5 +1,6 @@
 import { z } from "zod"
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
+import { actingCustomerId } from "../../../../../shared/actor-scope"
 import { FOOD_DISTRIBUTION_MODULE } from "../../../../../modules/food-distribution"
 import type FoodDistributionService from "../../../../../modules/food-distribution/service"
 import { OperatingStatus } from "../../../../../modules/food-distribution/models/food-producer"
@@ -153,6 +154,14 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
   
   try {
     const data = createOrderSchema.parse(req.body)
+
+    // SEC: for a logged-in customer, bind the order to the authenticated actor
+    // so one customer cannot place an order under another customer's id. Guest
+    // orders (no acting customer) keep the body value so anonymous orders work.
+    const actingCustomer = actingCustomerId(req)
+    if (actingCustomer) {
+      data.customer_id = actingCustomer
+    }
     
     const foodDistribution = req.scope.resolve<FoodDistributionService>(FOOD_DISTRIBUTION_MODULE)
     

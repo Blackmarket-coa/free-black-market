@@ -1,4 +1,5 @@
-export { api, USE_MOCK_DATA, mockResolve } from "./api"
+export { api, USE_MOCK_DATA, mockResolve, LOGIN_URL } from "./api"
+export { AuthGate } from "./AuthGate"
 export { parseResponse, fetchResource } from "./seam"
 export type { FetchResourceOptions } from "./seam"
 export {

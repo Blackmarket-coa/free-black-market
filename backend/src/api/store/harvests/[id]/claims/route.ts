@@ -1,5 +1,6 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
+import { actingCustomerId } from "../../../../../shared/actor-scope"
 
 const HARVEST_MODULE = "harvestModuleService"
 
@@ -61,6 +62,25 @@ export async function POST(
     quantity_requested,
   } = req.body as Record<string, unknown>
 
+  // SEC: a customer may only claim a share for themselves. Bind customer_id to
+  // the authenticated actor; non-customer actors fall back to the body value.
+  const actingCustomer = actingCustomerId(req)
+  const effectiveCustomerId = (actingCustomer ?? customer_id) as string
+
+  // SEC: and a customer must not borrow another member's membership_id, so
+  // reject a membership that belongs to someone else.
+  if (actingCustomer && membership_id) {
+    const { data: [membership] } = await query.graph({
+      entity: "garden_membership",
+      fields: ["id", "customer_id"],
+      filters: { id: membership_id as string },
+    })
+    if (membership && membership.customer_id && membership.customer_id !== actingCustomer) {
+      res.status(403).json({ message: "That membership is not yours" })
+      return
+    }
+  }
+
   // Get the allocation
   const { data: [allocation] } = await query.graph({
     entity: "harvest_allocation",
@@ -88,7 +108,7 @@ export async function POST(
   const claim = await harvestService.createHarvestClaims({
     harvest_id: id,
     allocation_id,
-    customer_id,
+    customer_id: effectiveCustomerId,
     membership_id,
     quantity_claimed,
     value_claimed,

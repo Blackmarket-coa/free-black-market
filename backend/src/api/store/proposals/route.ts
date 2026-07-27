@@ -1,6 +1,7 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 import { z } from "zod"
+import { actingCustomerId } from "../../../shared/actor-scope"
 
 const GOVERNANCE_MODULE = "governanceModuleService"
 
@@ -105,13 +106,19 @@ export async function POST(
     attachment_urls,
   } = req.body as Record<string, unknown>
 
+  // SEC: bind the proposal's author to the authenticated customer so a
+  // logged-in customer cannot create a proposal as someone else. Non-customer
+  // actors (seller/driver) fall back to the body value.
+  const actingCustomer = actingCustomerId(req)
+  const effectiveProposedById = (actingCustomer ?? proposed_by_id) as string
+
   const proposal = await governanceService.createGardenProposals({
     garden_id,
     title,
     description,
     summary,
     proposal_type: (proposal_type as string) || "other",
-    proposed_by_id,
+    proposed_by_id: effectiveProposedById,
     voting_start: voting_start ? new Date(voting_start as string) : new Date(),
     voting_end: new Date(voting_end as string),
     quorum_required: (quorum_required as number) || 50,

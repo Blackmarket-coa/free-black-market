@@ -112,6 +112,12 @@ export async function initSentry(config: SentryConfig = {}): Promise<boolean> {
       tracesSampleRate: sampleRate,
       debug: config.debug ?? false,
 
+      // The backend runs Medusa's own OpenTelemetry setup (registerOtel in
+      // instrumentation.ts). Let @sentry/node NOT install its global OTEL
+      // provider, otherwise the two SDKs fight over the global tracer. Error
+      // capture via captureException is unaffected by this.
+      skipOpenTelemetrySetup: true,
+
       // Filter out noisy errors
       ignoreErrors: [
         // Network errors

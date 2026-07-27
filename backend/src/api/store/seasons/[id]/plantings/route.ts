@@ -1,5 +1,6 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
+import { actingCustomerId } from "../../../../../shared/actor-scope"
 
 const SEASON_MODULE = "seasonModuleService"
 
@@ -79,6 +80,12 @@ export async function POST(
     notes,
   } = req.body as Record<string, unknown>
 
+  // SEC: bind the planting's recorder to the authenticated customer so a
+  // logged-in customer cannot record a planting as someone else. Non-customer
+  // actors (seller/driver) fall back to the body value.
+  const actingCustomer = actingCustomerId(req)
+  const effectivePlantedById = (actingCustomer ?? planted_by_id) as string
+
   const planting = await seasonService.createGardenPlantings({
     season_id: id,
     garden_id: season?.garden_id,
@@ -86,7 +93,7 @@ export async function POST(
     crop_type,
     variety,
     category: category || "vegetable",
-    planted_by_id,
+    planted_by_id: effectivePlantedById,
     planted_date: planted_date ? new Date(planted_date as string) : new Date(),
     expected_harvest_date: expected_harvest_date ? new Date(expected_harvest_date as string) : null,
     quantity_planted,

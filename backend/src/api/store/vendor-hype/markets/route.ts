@@ -36,7 +36,15 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     VENDOR_HYPE_OPERATIONS_PREDICTION_MODULE
   )
 
-  const actorId = (req as any).auth_context?.actor_id || "system"
+  // The route now requires an authenticated account (see the community-write
+  // matchers in src/api/middlewares.ts). Fail closed rather than silently
+  // attributing an unauthenticated create to "system".
+  const actorId = (req as any).auth_context?.actor_id
+  if (!actorId) {
+    return res
+      .status(401)
+      .json({ message: "Authentication required", type: "unauthorized" })
+  }
   const body = createMarketSchema.parse(req.body)
 
   const market = await service.createPredictionMarket({

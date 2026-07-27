@@ -47,12 +47,16 @@
       "form-data": ">=4.0.6",
       "vite": "^7.3.5",
       "zod": "4.2.0",
+      "brace-expansion@5": "^5.0.8",
+      "fast-uri": "^3.1.4",
+      "serialize-javascript": ">=7.0.3",
       "sharp@^0.34.0": ">=0.35.0"
     }
   },
   "dependencies": {
     "@headlessui/react": "^2.2.1",
     "@hookform/resolvers": "^3.10.0",
+    "@sentry/nextjs": "^10.53.1",
     "@medusajs/icons": "^2.14.2",
     "@medusajs/js-sdk": "2.14.2",
     "@medusajs/types": "2.14.2",

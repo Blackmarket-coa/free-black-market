@@ -1,5 +1,6 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
+import { actingCustomerId } from "../../../shared/actor-scope"
 
 const VOLUNTEER_MODULE = "volunteerModuleService"
 
@@ -84,6 +85,12 @@ export async function POST(
     organizer_id,
   } = req.body as Record<string, unknown>
 
+  // SEC: bind the work party's organizer to the authenticated customer so a
+  // logged-in customer cannot create one under someone else's id. Non-customer
+  // actors (seller/driver) fall back to the body value.
+  const actingCustomer = actingCustomerId(req)
+  const effectiveOrganizerId = (actingCustomer ?? organizer_id) as string
+
   const workParty = await volunteerService.createWorkPartys({
     garden_id,
     title,
@@ -100,7 +107,7 @@ export async function POST(
     location_notes,
     requirements,
     provides,
-    organizer_id,
+    organizer_id: effectiveOrganizerId,
   })
 
   res.status(201).json({ work_party: workParty })
