@@ -3,6 +3,7 @@ import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { FOOD_DISTRIBUTION_MODULE } from "../../../modules/food-distribution"
 import type FoodDistributionService from "../../../modules/food-distribution/service"
 import { OperatingStatus } from "../../../modules/food-distribution/models/food-producer"
+import { hawalaAccountOwnershipError } from "../../../shared/actor-scope"
 
 // ===========================================
 // VALIDATION SCHEMAS
@@ -153,7 +154,21 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
   try {
     const data = createProducerSchema.parse(req.body)
-    
+
+    // SEC: a caller may only attach a hawala ledger account they own — without
+    // this an authenticated account could wire a producer's money to (or from)
+    // someone else's ledger account.
+    if (data.hawala_account_id) {
+      const ownershipError = await hawalaAccountOwnershipError(
+        req,
+        data.hawala_account_id
+      )
+      if (ownershipError) {
+        res.status(403).json({ message: ownershipError })
+        return
+      }
+    }
+
     const foodDistribution = req.scope.resolve<FoodDistributionService>(FOOD_DISTRIBUTION_MODULE)
     
     // Check for duplicate handle
