@@ -78,6 +78,7 @@
   "dependencies": {
     "@bmc/restaurant-marketplace": "file:./restaurant-marketplace",
     "@medusajs/admin-sdk": "2.14.2",
+    "@sentry/node": "^10.53.1",
     "@medusajs/cart": "2.14.2",
     "@medusajs/cli": "2.14.2",
     "@medusajs/core-flows": "2.14.2",

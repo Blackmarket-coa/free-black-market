@@ -3,24 +3,8 @@
  * These modules are dynamically imported and may not be installed
  */
 
-// @sentry/node is optional - used for error tracking
-declare module "@sentry/node" {
-  export function init(options: Record<string, unknown>): void
-  export function withScope<T>(callback: (scope: Scope) => T): T
-  export function captureException(error: unknown): string
-  export function captureMessage(message: string, level?: string): string
-  export function setUser(user: Record<string, unknown> | null): void
-  export function addBreadcrumb(breadcrumb: Record<string, unknown>): void
-  export function startInactiveSpan(options: Record<string, unknown>): { finish: () => void }
-  export function flush(timeout: number): Promise<boolean>
-
-  export interface Scope {
-    setTag(key: string, value: string): void
-    setExtra(key: string, value: unknown): void
-    setUser(user: Record<string, unknown>): void
-    setLevel(level: string): void
-  }
-}
+// @sentry/node now ships as a real dependency (see backend/package.json); its
+// bundled types are authoritative, so no ambient shim is declared here.
 
 declare module "jsonwebtoken" {
   export class TokenExpiredError extends Error {}
