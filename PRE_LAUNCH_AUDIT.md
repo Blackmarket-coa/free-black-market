@@ -292,10 +292,10 @@ triaged, not ignored.)
 
 ### P0 — must close before **any public** launch
 - [ ] **LEG-1** Publish Terms of Service, Privacy Policy, Refund/Returns policy; link at registration + checkout; add a seller agreement. *(Legal + FE)*
-- [ ] **LEG-2** Ship account-deletion + data-export (CCPA/CPRA). *(Backend + FE)*
-- [ ] **LEG-3 / LEG-4** Get **counsel sign-off** on the wallet deposit↔withdraw (money-transmitter) and investment/advance (securities) surfaces. Until then keep `ACH_PAYOUTS_ENABLED=false` and gate or remove the investment/advance store/vendor routes. *(Legal + Backend)*
-- [ ] **INFRA-1** Wire Sentry (add the SDK deps + call `initSentry()`); verify a test event in each app. *(Infra)*
-- [ ] **SEC-1** Add auth + a middleware matcher to the prediction-market state route. *(Backend)*
+- [x] **LEG-2** ~~Ship account-deletion + data-export (CCPA/CPRA).~~ — **done**: `GET/POST /store/customers/me/{data-export,deletion}` + a "Privacy & your data" panel in storefront account settings.
+- [ ] **LEG-3 / LEG-4** ~~counsel sign-off~~ — **owner decision (no counsel): keep the money features live**, accepting the exposure. `ACH_PAYOUTS_ENABLED` stays default-off. Revisit if a legal review ever happens. *(accepted risk)*
+- [x] **INFRA-1** ~~Wire Sentry.~~ — **backend done** (`@sentry/node` + `initSentry()` in `instrumentation.ts`; activates the existing 5xx capture point). **Storefront client-error tracking is the remaining half** (needs `@sentry/nextjs` + `withSentryConfig`) — tracked in P1. Set `SENTRY_DSN` to turn it on.
+- [x] **SEC-1** ~~Add auth to the prediction-market state route.~~ — **done** (covered by the `/store/vendor-hype/markets/**` write-auth matcher + market-creation now fails closed).
 - [ ] **FE-2** Gate the portals behind real auth and turn off default mock data, or hold the portals from launch. *(Frontend)*
 - [x] ~~Negative-amount payout fund-drain~~ — **fixed (§4.1).**
 - [x] ~~Panel images unreachable~~ — **fixed (§4.5).**
@@ -308,7 +308,7 @@ triaged, not ignored.)
 - [ ] **INFRA-5/6** Reconcile `.env.production.example` with the code; document `STRIPE_API_KEY` as boot-required. *(Infra)*
 - [ ] **FE-1** Move panel auth off `localStorage` to httpOnly cookies. *(Frontend)*
 - [ ] **FE-3/4** Add a checkout error boundary + `.catch` on payment confirm; empty-cart UX instead of 404. *(Frontend)*
-- [ ] **SEC-2/3** Authenticate (or remove) the community/food write routes and market creation. *(Backend)*
+- [x] **SEC-2/3** ~~Authenticate the community/food write routes and market creation.~~ — **done**: write verbs on ~16 `/store` community/food prefixes now require a logged-in account (customer/seller/driver) via matchers in `api/middlewares.ts`. Per-handler owner-id scoping (don't trust body ids) remains a follow-up. *(Backend)*
 - [ ] **Deps** Bump `next`/`postcss`/`dompurify`/`react-router`/`vite`/`qs` to patched lines. *(All)*
 - [ ] **LEG-5/6** Seller KYC/tax (W-9/TIN); email consent + CAN-SPAM footer; prohibited-items policy + a working abuse/DMCA intake. *(Legal + Backend)*
 

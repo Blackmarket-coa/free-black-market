@@ -255,6 +255,73 @@ export async function signout() {
 }
 
 /* ---------------------------------------------
+ * DATA RIGHTS (CCPA/CPRA)
+ * -------------------------------------------- */
+
+/**
+ * Right to know / portability: returns the authenticated customer's full data
+ * export (profile, addresses, orders) as a plain object the client can download.
+ */
+export async function exportCustomerData(): Promise<
+  { success: true; data: unknown } | { success: false; error: string }
+> {
+  const authHeaders = await getAuthHeaders()
+  if (!authHeaders) return { success: false, error: "Not authenticated" }
+
+  try {
+    const data = await medusaFetch<unknown>(`/store/customers/me/data-export`, {
+      method: "GET",
+      headers: authHeaders,
+      cache: "no-store",
+    })
+    return { success: true, data }
+  } catch (error) {
+    logger.error("exportCustomerData failed:", error)
+    return {
+      success: false,
+      error: "Could not generate your data export. Please try again.",
+    }
+  }
+}
+
+/**
+ * Right to delete: erases the authenticated customer's personal data on the
+ * backend, then clears the local session so the account is fully signed out.
+ * The caller redirects home on success.
+ */
+export async function deleteCustomerAccount(): Promise<
+  { success: true } | { success: false; error: string }
+> {
+  const authHeaders = await getAuthHeaders()
+  if (!authHeaders) return { success: false, error: "Not authenticated" }
+
+  try {
+    await medusaFetch<{ deleted: boolean }>(`/store/customers/me/deletion`, {
+      method: "POST",
+      headers: authHeaders,
+      cache: "no-store",
+    })
+  } catch (error) {
+    logger.error("deleteCustomerAccount failed:", error)
+    return {
+      success: false,
+      error: "Could not delete your account. Please contact support.",
+    }
+  }
+
+  // Clear the local session (mirrors signout()).
+  try {
+    await sdk.auth.logout()
+  } catch {}
+  await removeAuthToken()
+  await removeCartId()
+  revalidateTag(await getCacheTag("customers"))
+  revalidateTag(await getCacheTag("carts"))
+
+  return { success: true }
+}
+
+/* ---------------------------------------------
  * CART TRANSFER
  * -------------------------------------------- */
 export async function transferCart() {
