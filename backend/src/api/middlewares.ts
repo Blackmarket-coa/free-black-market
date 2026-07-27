@@ -577,8 +577,64 @@ async function securityHeadersMiddleware(
   next();
 }
 
+// ============================================================
+// SEC-2/3: community & food-network write lock-down.
+// These routes live under /store, where Medusa lets unauthenticated requests
+// through by default (it just leaves req.auth_context unset) — so without an
+// explicit matcher an anonymous caller can create/update/delete gardens,
+// producers, couriers, proposals, votes, harvests, deliveries, etc.
+//
+// Require ANY logged-in account (customer / seller / driver) on the WRITE
+// verbs only. Allowing all three real actor types — rather than just
+// "customer" — is deliberate: several of these resources are legitimately
+// managed by sellers (producers/kitchens) or drivers (couriers/deliveries),
+// so a customer-only gate would break those flows while a multi-actor gate
+// still blocks anonymous, which is the actual hole. The public GET catalog
+// (browsing gardens/producers/…) stays open. Handler-level hardening so an
+// authenticated account can't pass someone else's owner id in the body is a
+// tracked follow-up; this closes the anonymous-write hole.
+// ============================================================
+const COMMUNITY_WRITE_ACTORS = ["customer", "seller", "driver"]
+const COMMUNITY_WRITE_VERBS: ("POST" | "PUT" | "PATCH" | "DELETE")[] = [
+  "POST",
+  "PUT",
+  "PATCH",
+  "DELETE",
+]
+const COMMUNITY_WRITE_PREFIXES = [
+  "/store/gardens",
+  "/store/food-producers",
+  "/store/couriers",
+  "/store/kitchens",
+  "/store/proposals",
+  "/store/harvests",
+  "/store/seasons",
+  "/store/food-trades",
+  "/store/food-deliveries",
+  "/store/food-donations",
+  "/store/deliveries",
+  "/store/delivery-zones",
+  "/store/delivery-batches",
+  "/store/work-parties",
+  "/store/volunteer-logs",
+  "/store/vendor-hype/markets",
+]
+const communityWriteAuthMatchers = COMMUNITY_WRITE_PREFIXES.flatMap((prefix) => [
+  {
+    matcher: prefix,
+    method: COMMUNITY_WRITE_VERBS,
+    middlewares: [authenticate(COMMUNITY_WRITE_ACTORS, ["bearer", "session"])],
+  },
+  {
+    matcher: `${prefix}/**`,
+    method: COMMUNITY_WRITE_VERBS,
+    middlewares: [authenticate(COMMUNITY_WRITE_ACTORS, ["bearer", "session"])],
+  },
+])
+
 export default defineMiddlewares({
   routes: [
+    ...communityWriteAuthMatchers,
     // ============================================================
     // GLOBAL: Strip 'q' parameter from all admin routes
     // ============================================================
