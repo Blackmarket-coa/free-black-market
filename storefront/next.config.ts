@@ -153,4 +153,21 @@ const nextConfig: NextConfig = {
   },
 }
 
-module.exports = nextConfig
+// Wrap with Sentry so production client/server bundles ship source maps to
+// Sentry (readable, un-minified stack traces). Source-map UPLOAD only happens
+// when SENTRY_ORG / SENTRY_PROJECT / SENTRY_AUTH_TOKEN are present at build
+// time; without them the build still succeeds (maps just aren't uploaded), so
+// this is safe in every environment. Compatible with `output: "standalone"`.
+// eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
+const { withSentryConfig } = require("@sentry/nextjs")
+
+module.exports = withSentryConfig(nextConfig, {
+  silent: !process.env.CI,
+  org: process.env.SENTRY_ORG,
+  project: process.env.SENTRY_PROJECT,
+  authToken: process.env.SENTRY_AUTH_TOKEN,
+  // Tree-shake the Sentry SDK logger out of the client bundle.
+  disableLogger: true,
+  // Upload a wider set of client source maps for readable browser stack traces.
+  widenClientFileUpload: true,
+})
