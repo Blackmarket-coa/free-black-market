@@ -1,5 +1,6 @@
-// Sentry server-runtime initialiser. Loaded by instrumentation.ts (Node.js
-// runtime) when SENTRY_DSN is set. No-ops when the DSN is unset.
+// Sentry edge-runtime initialiser. Loaded by instrumentation.ts on the edge
+// runtime (Next middleware runs there) when SENTRY_DSN is set. No-ops when the
+// DSN is unset.
 import * as Sentry from "@sentry/nextjs"
 
 const dsn = process.env.SENTRY_DSN
