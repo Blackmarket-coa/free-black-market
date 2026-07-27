@@ -10,7 +10,7 @@ import { listCartShippingMethods } from "@/lib/data/fulfillment"
 import { listCartPaymentMethods } from "@/lib/data/payment"
 import { Metadata } from "next"
 import { getDonationSettings, listDonationBeneficiaries, listPublicStorefronts } from "@/lib/data/donations"
-import { notFound } from "next/navigation"
+import { CartEmpty } from "@/components/organisms"
 import { Suspense } from "react"
 import { CheckoutProgress } from "@/components/molecules/CheckoutProgress/CheckoutProgress"
 
@@ -127,8 +127,10 @@ export default async function CheckoutPage({}) {
 async function CheckoutPageContent({}) {
   const cart = await retrieveCart()
 
-  if (!cart) {
-    return notFound()
+  if (!cart || !cart.items?.length) {
+    // Missing, expired, or emptied cart — show the empty-cart state (as the
+    // /cart page does) instead of a hard 404 in the middle of checkout.
+    return <CartEmpty />
   }
 
   const shippingMethods = await listCartShippingMethods(cart.id, false)

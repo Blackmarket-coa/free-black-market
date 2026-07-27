@@ -150,6 +150,22 @@ const StripePaymentButton = ({
 
         return
       })
+      .catch((err) => {
+        // A rejected Stripe promise (network failure, malformed client_secret,
+        // an aborted 3DS challenge) must surface an error, not vanish.
+        setErrorMessage(
+          err instanceof Error
+            ? err.message
+            : "Payment could not be completed. Please try again."
+        )
+      })
+      .finally(() => {
+        // Reset the spinner on every non-success exit — reject, card decline,
+        // and unexpected/requires_action statuses all previously left the
+        // button stuck loading. The success path's onPaymentCompleted() also
+        // resets, so this is idempotent.
+        setSubmitting(false)
+      })
   }
 
   return (
