@@ -1,5 +1,6 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
+import { actingCustomerId } from "../../../../../shared/actor-scope"
 
 const VOLUNTEER_MODULE = "volunteerModuleService"
 
@@ -56,6 +57,25 @@ export async function POST(
 
   const { customer_id, membership_id, notes } = req.body as Record<string, unknown>
 
+  // SEC: a customer may only sign themselves up. Bind customer_id to the
+  // authenticated actor; non-customer actors fall back to the body value.
+  const actingCustomer = actingCustomerId(req)
+  const effectiveCustomerId = (actingCustomer ?? customer_id) as string
+
+  // SEC: and a customer must not borrow another member's membership_id, so
+  // reject a membership that belongs to someone else.
+  if (actingCustomer && membership_id) {
+    const { data: [membership] } = await query.graph({
+      entity: "garden_membership",
+      fields: ["id", "customer_id"],
+      filters: { id: membership_id as string },
+    })
+    if (membership && membership.customer_id && membership.customer_id !== actingCustomer) {
+      res.status(403).json({ message: "That membership is not yours" })
+      return
+    }
+  }
+
   // Check capacity
   const { data: [workParty] } = await query.graph({
     entity: "work_party",
@@ -83,7 +103,7 @@ export async function POST(
 
   const signup = await volunteerService.createWorkPartySignups({
     work_party_id: id,
-    customer_id,
+    customer_id: effectiveCustomerId,
     membership_id,
     status: "signed_up",
     signed_up_at: new Date(),

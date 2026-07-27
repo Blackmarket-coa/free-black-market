@@ -294,9 +294,9 @@ triaged, not ignored.)
 - [ ] **LEG-1** Publish Terms of Service, Privacy Policy, Refund/Returns policy; link at registration + checkout; add a seller agreement. *(Legal + FE)*
 - [x] **LEG-2** ~~Ship account-deletion + data-export (CCPA/CPRA).~~ — **done**: `GET/POST /store/customers/me/{data-export,deletion}` + a "Privacy & your data" panel in storefront account settings.
 - [ ] **LEG-3 / LEG-4** ~~counsel sign-off~~ — **owner decision (no counsel): keep the money features live**, accepting the exposure. `ACH_PAYOUTS_ENABLED` stays default-off. Revisit if a legal review ever happens. *(accepted risk)*
-- [x] **INFRA-1** ~~Wire Sentry.~~ — **backend done** (`@sentry/node` + `initSentry()` in `instrumentation.ts`; activates the existing 5xx capture point). **Storefront client-error tracking is the remaining half** (needs `@sentry/nextjs` + `withSentryConfig`) — tracked in P1. Set `SENTRY_DSN` to turn it on.
+- [x] **INFRA-1** ~~Wire Sentry.~~ — **done, both halves.** Backend: `@sentry/node` + `initSentry()` in `instrumentation.ts` (activates the existing 5xx capture point). Storefront: `@sentry/nextjs` with static server/edge/`instrumentation-client.ts` configs + `onRequestError` (fixes the previously orphaned client config). Set `SENTRY_DSN` / `NEXT_PUBLIC_SENTRY_DSN` to turn it on. (Source-map upload via `withSentryConfig` is a small follow-up.)
 - [x] **SEC-1** ~~Add auth to the prediction-market state route.~~ — **done** (covered by the `/store/vendor-hype/markets/**` write-auth matcher + market-creation now fails closed).
-- [ ] **FE-2** Gate the portals behind real auth and turn off default mock data, or hold the portals from launch. *(Frontend)*
+- [x] **FE-2** ~~Gate the portals behind real auth and turn off default mock data.~~ — **done**: shared `AuthGate` fails closed to the real login in production; mock data is now opt-in (off by default) in prod builds; the dead `/login` redirect now points at the FBM login surface. *(Frontend)*
 - [x] ~~Negative-amount payout fund-drain~~ — **fixed (§4.1).**
 - [x] ~~Panel images unreachable~~ — **fixed (§4.5).**
 - [x] ~~Corrupt DB backups~~ — **fixed (§4.2).**
@@ -307,8 +307,8 @@ triaged, not ignored.)
 - [ ] **INFRA-2/3/4** Production compose without embedded secrets; media vhost+cert; make migrate/seed failures fail the boot. *(Infra)*
 - [ ] **INFRA-5/6** Reconcile `.env.production.example` with the code; document `STRIPE_API_KEY` as boot-required. *(Infra)*
 - [ ] **FE-1** Move panel auth off `localStorage` to httpOnly cookies. *(Frontend)*
-- [ ] **FE-3/4** Add a checkout error boundary + `.catch` on payment confirm; empty-cart UX instead of 404. *(Frontend)*
-- [x] **SEC-2/3** ~~Authenticate the community/food write routes and market creation.~~ — **done**: write verbs on ~16 `/store` community/food prefixes now require a logged-in account (customer/seller/driver) via matchers in `api/middlewares.ts`. Per-handler owner-id scoping (don't trust body ids) remains a follow-up. *(Backend)*
+- [x] **FE-3/4** ~~Add a checkout error boundary + `.catch` on payment confirm; empty-cart UX instead of 404.~~ — **done**: `(checkout)/error.tsx`, `.catch`/`.finally` on the Stripe confirm chain, and `<CartEmpty />` for a missing/expired cart. *(Frontend)*
+- [x] **SEC-2/3** ~~Authenticate the community/food write routes and market creation.~~ — **done**: write verbs on ~16 `/store` community/food prefixes now require a logged-in account (customer/seller/driver) via matchers in `api/middlewares.ts`. **Per-handler owner-id scoping also done**: 10 handlers that trusted a body `customer_id`/`*_by_id` now bind it to the authenticated actor (`shared/actor-scope.ts`), and the vote/claim/signup/volunteer-log handlers reject a borrowed `membership_id`. Remaining: the CLASS-B entity-ownership checks (`hawala_account_id`/`producer_id`/`courier_id` → actor owns the entity). *(Backend)*
 - [ ] **Deps** Bump `next`/`postcss`/`dompurify`/`react-router`/`vite`/`qs` to patched lines. *(All)*
 - [ ] **LEG-5/6** Seller KYC/tax (W-9/TIN); email consent + CAN-SPAM footer; prohibited-items policy + a working abuse/DMCA intake. *(Legal + Backend)*
 

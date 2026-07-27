@@ -1,5 +1,6 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
+import { actingCustomerId } from "../../../../../shared/actor-scope"
 
 const GOVERNANCE_MODULE = "governanceModuleService"
 
@@ -85,6 +86,14 @@ export async function POST(
     comment_visibility,
   } = req.body as Record<string, unknown>
 
+  // SEC: a customer may only vote as themselves. Ignore any body customer_id
+  // for a logged-in customer and bind the vote to the authenticated actor —
+  // otherwise the "already voted" dedupe (keyed on customer_id) and the vote
+  // record could both be forged under another member's id. Non-customer actors
+  // (seller/driver) fall back to the body value.
+  const actingCustomer = actingCustomerId(req)
+  const effectiveCustomerId = (actingCustomer ?? customer_id) as string
+
   // Get proposal
   const { data: [proposal] } = await query.graph({
     entity: "garden_proposal",
@@ -111,7 +120,7 @@ export async function POST(
   const { data: existingVotes } = await query.graph({
     entity: "garden_vote",
     fields: ["id"],
-    filters: { proposal_id: id, customer_id: customer_id as string },
+    filters: { proposal_id: id, customer_id: effectiveCustomerId },
   })
 
   if (existingVotes.length > 0) {
@@ -122,9 +131,21 @@ export async function POST(
   // Get membership for voting power
   const { data: [membership] } = await query.graph({
     entity: "garden_membership",
-    fields: ["id", "voting_power", "volunteer_hours_balance", "investment_balance", "roles"],
+    fields: ["id", "customer_id", "voting_power", "volunteer_hours_balance", "investment_balance", "roles"],
     filters: { id: membership_id as string },
   })
+
+  // SEC: the membership supplies the voting power, so a customer must not be
+  // able to borrow another member's membership_id. Reject a mismatch.
+  if (
+    actingCustomer &&
+    membership &&
+    membership.customer_id &&
+    membership.customer_id !== actingCustomer
+  ) {
+    res.status(403).json({ message: "That membership is not yours" })
+    return
+  }
 
   // Get garden for governance model
   const { data: [garden] } = await query.graph({
@@ -149,7 +170,7 @@ export async function POST(
   const voteRecord = await governanceService.createGardenVotes({
     proposal_id: id,
     garden_id: proposal.garden_id,
-    customer_id,
+    customer_id: effectiveCustomerId,
     membership_id,
     vote,
     voting_power,

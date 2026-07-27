@@ -1,5 +1,6 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
+import { actingCustomerId } from "../../../shared/actor-scope"
 
 const HARVEST_MODULE = "harvestModuleService"
 
@@ -97,6 +98,12 @@ export async function POST(
     photos,
   } = req.body as Record<string, unknown>
 
+  // SEC: a customer may only record a harvest under their own id. Bind
+  // harvested_by_id to the authenticated actor; non-customer actors
+  // (seller/driver) fall back to the body value.
+  const actingCustomer = actingCustomerId(req)
+  const effectiveHarvestedById = (actingCustomer ?? harvested_by_id) as string
+
   // Calculate estimated value
   const estimated_value = estimateHarvestValue(
     quantity as number,
@@ -115,7 +122,7 @@ export async function POST(
     quality_grade: quality_grade || "standard",
     estimated_value,
     harvested_at: new Date(),
-    harvested_by_id,
+    harvested_by_id: effectiveHarvestedById,
     status: "collected",
     allocation_status: "pending",
     notes,

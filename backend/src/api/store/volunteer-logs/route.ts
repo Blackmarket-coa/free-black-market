@@ -1,5 +1,6 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
+import { actingCustomerId } from "../../../shared/actor-scope"
 
 const VOLUNTEER_MODULE = "volunteerModuleService"
 
@@ -75,13 +76,33 @@ export async function POST(
     plot_id,
   } = req.body as Record<string, unknown>
 
+  // SEC: a customer may only log hours for themselves. Bind customer_id to the
+  // authenticated actor; non-customer actors fall back to the body value.
+  const actingCustomer = actingCustomerId(req)
+  const effectiveCustomerId = (actingCustomer ?? customer_id) as string
+
+  // SEC: and a customer must not borrow another member's membership_id, so
+  // reject a membership that belongs to someone else.
+  if (actingCustomer && membership_id) {
+    const query = req.scope.resolve(ContainerRegistrationKeys.QUERY)
+    const { data: [membership] } = await query.graph({
+      entity: "garden_membership",
+      fields: ["id", "customer_id"],
+      filters: { id: membership_id as string },
+    })
+    if (membership && membership.customer_id && membership.customer_id !== actingCustomer) {
+      res.status(403).json({ message: "That membership is not yours" })
+      return
+    }
+  }
+
   // Calculate default credit rate
   const credit_rate = 15 // $15/hour default
   const credits_earned = calculateTimeCreditValue(hours as number, credit_rate)
 
   const log = await volunteerService.createVolunteerLogs({
     garden_id,
-    customer_id,
+    customer_id: effectiveCustomerId,
     membership_id,
     activity_type,
     description,

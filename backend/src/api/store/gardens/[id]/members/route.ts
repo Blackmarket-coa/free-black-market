@@ -1,5 +1,6 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
+import { actingCustomerId } from "../../../../../shared/actor-scope"
 
 const GARDEN_MODULE = "gardenModuleService"
 
@@ -59,9 +60,15 @@ export async function POST(
     initial_investment,
   } = req.body as Record<string, unknown>
 
+  // SEC: bind the new membership's owner to the authenticated customer so a
+  // logged-in customer cannot join a garden as someone else. Non-customer
+  // actors (seller/driver) fall back to the body value.
+  const actingCustomer = actingCustomerId(req)
+  const effectiveCustomerId = (actingCustomer ?? customer_id) as string
+
   const membership = await gardenService.createGardenMemberships({
     garden_id: id,
-    customer_id,
+    customer_id: effectiveCustomerId,
     membership_type: membership_type || "volunteer",
     status: "pending",
     roles: [],
