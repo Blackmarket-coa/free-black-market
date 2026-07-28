@@ -178,8 +178,17 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       return
     }
     
+    // Stamp the creating account as the owner so /store/food-producers/[id]
+    // writes (and producer-side order actions) can be authorized to it.
+    // Server-side creation (no auth context) leaves owner null (grandfathered).
+    const authContext = (req as any).auth_context as
+      | { actor_id?: string; actor_type?: string }
+      | undefined
+
     const producer = await foodDistribution.createFoodProducers({
       ...data,
+      owner_id: authContext?.actor_id ?? null,
+      owner_type: authContext?.actor_type ?? null,
       operating_status: OperatingStatus.ACCEPTING_ORDERS,
       verified: false,
     } as any)

@@ -102,11 +102,19 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       }
     }
     
+    // Stamp the creating account as the owner so /store/delivery-batches/[id]
+    // writes can be authorized to it. Server-side creation (no auth context)
+    // leaves owner null (grandfathered).
+    const authContext = (req as any).auth_context as
+      | { actor_id?: string; actor_type?: string }
+      | undefined
+
     const batch = await foodDistribution.createDeliveryBatch(
       data.delivery_ids,
       data.courier_id,
       data.is_community_run,
-      data.community_org_id
+      data.community_org_id,
+      { id: authContext?.actor_id ?? null, type: authContext?.actor_type ?? null }
     )
     
     // Get deliveries in batch

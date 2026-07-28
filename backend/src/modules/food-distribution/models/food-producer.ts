@@ -181,7 +181,15 @@ export const FoodProducer = model.define("food_producer", {
   
   // Hawala Integration
   hawala_account_id: model.text().nullable(), // Link to hawala ledger account
-  
+
+  // Ownership — the account (customer/seller) that created this producer.
+  // Authorizes update / deactivate + producer-side order actions on the
+  // /store/food-producers routes so one account can't manage another's
+  // producer. Nullable for producers created before ownership tracking
+  // (grandfathered — any authenticated actor may still manage those).
+  owner_id: model.text().nullable(),
+  owner_type: model.text().nullable(), // "customer" | "seller" | "driver"
+
   // Visibility
   public_profile: model.boolean().default(true),
   featured: model.boolean().default(false),

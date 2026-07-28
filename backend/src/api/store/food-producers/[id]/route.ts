@@ -3,6 +3,7 @@ import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { FOOD_DISTRIBUTION_MODULE } from "../../../../modules/food-distribution"
 import type FoodDistributionService from "../../../../modules/food-distribution/service"
 import { OperatingStatus } from "../../../../modules/food-distribution/models/food-producer"
+import { actorMayManage } from "../../../../shared/actor-scope"
 
 // ===========================================
 // VALIDATION SCHEMAS
@@ -117,7 +118,11 @@ export async function PUT(req: MedusaRequest, res: MedusaResponse) {
       res.status(404).json({ message: "Producer not found" })
       return
     }
-    
+    if (!actorMayManage(req, (existing as any).owner_id)) {
+      res.status(403).json({ message: "This producer is not yours to manage" })
+      return
+    }
+
     const producer = await foodDistribution.updateFoodProducers({
       id,
       ...data,
@@ -148,7 +153,11 @@ export async function DELETE(req: MedusaRequest, res: MedusaResponse) {
     res.status(404).json({ message: "Producer not found" })
     return
   }
-  
+  if (!actorMayManage(req, (existing as any).owner_id)) {
+    res.status(403).json({ message: "This producer is not yours to manage" })
+    return
+  }
+
   // Soft delete by deactivating
   await foodDistribution.updateFoodProducers({
     id,
