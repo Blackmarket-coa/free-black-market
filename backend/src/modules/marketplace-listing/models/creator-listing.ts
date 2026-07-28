@@ -97,6 +97,11 @@ const CreatorListing = model
     available_skus: model.json().nullable(), // string[]
     media_urls: model.json().nullable(), // string[]
     tags: model.json().nullable(), // string[]
+    // `features.*` entitlement keys this listing grants when purchased. For a
+    // subscription-tier listing this is the whole tier bundle; for an
+    // individual item it is usually one key (empty for pure artifact goods).
+    // Bridges the priced catalog to Blackout's `features.*` entitlement system.
+    feature_keys: model.json().nullable(), // string[]
 
     metadata: model.json().nullable(),
   })

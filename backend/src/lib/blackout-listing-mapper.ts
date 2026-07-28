@@ -25,6 +25,7 @@ export function toBlackoutListing(listing: any) {
     entitlementKind: listing.entitlement_kind ?? null,
     tags: Array.isArray(listing.tags) ? listing.tags : [],
     availableSkus: Array.isArray(listing.available_skus) ? listing.available_skus : [],
+    featureKeys: Array.isArray(listing.feature_keys) ? listing.feature_keys : [],
     slug: listing.slug ?? null,
     status: listing.status ?? null,
   }

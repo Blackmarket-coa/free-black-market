@@ -16,6 +16,7 @@ describe("toBlackoutListing", () => {
       available_skus: ["s1", "s2"],
       media_urls: ["https://cdn/x.png"],
       tags: ["cats"],
+      feature_keys: ["features.stickers.cats"],
     })
 
     expect(out).toMatchObject({
@@ -29,6 +30,7 @@ describe("toBlackoutListing", () => {
       availableSkus: ["s1", "s2"],
       mediaUrls: ["https://cdn/x.png"],
       tags: ["cats"],
+      featureKeys: ["features.stickers.cats"],
       slug: "cat-stickers",
       status: "published",
     })
@@ -46,5 +48,6 @@ describe("toBlackoutListing", () => {
     expect(out.priceCents).toBeNull()
     expect(out.availableSkus).toEqual([])
     expect(out.tags).toEqual([])
+    expect(out.featureKeys).toEqual([])
   })
 })
