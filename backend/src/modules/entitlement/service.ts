@@ -200,6 +200,32 @@ class EntitlementModuleService extends MedusaService({
       if (existing) return existing
     }
 
+    // Subscription-bundle idempotency: a tier grants N feature keys, and a
+    // renewal/webhook replay must not duplicate them. Key on
+    // (source_subscription_id, feature_key). A revoked row is reactivated in
+    // place rather than duplicated, so a resubscribe after a lapse is clean.
+    if (input.source_subscription_id) {
+      const [existing] = await this.listEntitlements({
+        source_subscription_id: input.source_subscription_id,
+        feature_key: input.feature_key,
+      })
+      if (existing) {
+        if (existing.status !== EntitlementStatus.ACTIVE) {
+          const [reactivated] = await this.updateEntitlements([
+            {
+              id: existing.id,
+              status: EntitlementStatus.ACTIVE,
+              revoked_at: null,
+              revoked_reason: null,
+              expires_at: input.expires_at ?? null,
+            },
+          ])
+          return reactivated
+        }
+        return existing
+      }
+    }
+
     const [created] = await this.createEntitlements([
       {
         customer_id: input.customer_id ?? null,
@@ -279,6 +305,65 @@ class EntitlementModuleService extends MedusaService({
       source_subscription_id: args.subscription_id,
       expires_at: args.expires_at ?? null,
     })
+  }
+
+  /**
+   * Grant a whole tier bundle: one entitlement per feature key, all sourced to
+   * the subscription. This is how a "package subscription grants access to a
+   * tier" — a single subscription fans out into the tier's full features.*
+   * set. Idempotent via the (source_subscription_id, feature_key) guard in
+   * `grant()`, so renewals and webhook replays converge instead of duplicating.
+   */
+  async grantBundleFromSubscription(args: {
+    subscription_id: string
+    customer_id?: string | null
+    customer_external_id?: string | null
+    feature_keys: string[]
+    kind?: EntitlementKind
+    expires_at?: Date | null
+  }): Promise<EntitlementType[]> {
+    const granted: EntitlementType[] = []
+    for (const feature_key of args.feature_keys) {
+      if (!feature_key) continue
+      const ent = await this.grant({
+        customer_id: args.customer_id,
+        customer_external_id: args.customer_external_id,
+        feature_key,
+        kind: args.kind,
+        source: EntitlementSource.SUBSCRIPTION,
+        source_subscription_id: args.subscription_id,
+        expires_at: args.expires_at ?? null,
+      })
+      granted.push(ent)
+    }
+    return granted
+  }
+
+  /**
+   * Revoke every entitlement sourced to a subscription — the lapse/cancel/
+   * refund counterpart to `grantBundleFromSubscription`. Returns the count
+   * revoked.
+   */
+  async revokeBySubscriptionId(
+    subscriptionId: string,
+    reason?: string
+  ): Promise<number> {
+    const ents = await this.listEntitlements({
+      source_subscription_id: subscriptionId,
+    })
+    const active = ents.filter(
+      (e: EntitlementType) => e.status === EntitlementStatus.ACTIVE
+    )
+    if (!active.length) return 0
+    await this.updateEntitlements(
+      active.map((e: EntitlementType) => ({
+        id: e.id,
+        status: EntitlementStatus.REVOKED,
+        revoked_at: new Date(),
+        revoked_reason: reason ?? null,
+      }))
+    )
+    return active.length
   }
 
   async revoke(id: string, reason?: string): Promise<EntitlementType> {
