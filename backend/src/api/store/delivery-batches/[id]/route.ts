@@ -2,6 +2,7 @@ import { z } from "zod"
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { FOOD_DISTRIBUTION_MODULE } from "../../../../modules/food-distribution"
 import type FoodDistributionService from "../../../../modules/food-distribution/service"
+import { actorMayManage } from "../../../../shared/actor-scope"
 
 // ===========================================
 // VALIDATION SCHEMAS
@@ -82,7 +83,11 @@ export async function PUT(req: MedusaRequest, res: MedusaResponse) {
       res.status(404).json({ message: "Batch not found" })
       return
     }
-    
+    if (!actorMayManage(req, (existing as any).owner_id)) {
+      res.status(403).json({ message: "This batch is not yours to manage" })
+      return
+    }
+
     // Update batch
     const updateData: Record<string, any> = { id }
     
@@ -149,7 +154,11 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       res.status(404).json({ message: "Batch not found" })
       return
     }
-    
+    if (!actorMayManage(req, (batch as any).owner_id)) {
+      res.status(403).json({ message: "This batch is not yours to manage" })
+      return
+    }
+
     if (batch.status !== "PLANNING") {
       res.status(400).json({ message: "Can only add deliveries to batches in PLANNING status" })
       return
@@ -212,7 +221,11 @@ export async function DELETE(req: MedusaRequest, res: MedusaResponse) {
     res.status(404).json({ message: "Batch not found" })
     return
   }
-  
+  if (!actorMayManage(req, (batch as any).owner_id)) {
+    res.status(403).json({ message: "This batch is not yours to manage" })
+    return
+  }
+
   if (batch.status === "IN_PROGRESS") {
     res.status(400).json({ message: "Cannot delete batch that is in progress" })
     return

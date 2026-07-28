@@ -3,6 +3,7 @@ import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { FOOD_DISTRIBUTION_MODULE } from "../../../../../../modules/food-distribution"
 import type FoodDistributionService from "../../../../../../modules/food-distribution/service"
 import { DeliveryStatus } from "../../../../../../modules/food-distribution/models/delivery"
+import { actorMayManage } from "../../../../../../shared/actor-scope"
 
 // ===========================================
 // VALIDATION SCHEMAS
@@ -94,7 +95,12 @@ export async function PUT(req: MedusaRequest, res: MedusaResponse) {
       res.status(404).json({ message: "Producer not found" })
       return
     }
-    
+    // Only the producer's owner may act on its orders (confirm / cancel / ready).
+    if (!actorMayManage(req, (producer as any).owner_id)) {
+      res.status(403).json({ message: "This producer is not yours to manage" })
+      return
+    }
+
     // Get order
     const order = await foodDistribution.retrieveFoodOrder(orderId)
     if (!order) {

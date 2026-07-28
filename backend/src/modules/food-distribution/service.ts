@@ -459,13 +459,14 @@ class FoodDistributionService extends MedusaService({
     deliveryIds: string[],
     courierId?: string,
     isCommunityRun?: boolean,
-    communityOrgId?: string
+    communityOrgId?: string,
+    owner?: { id?: string | null; type?: string | null }
   ) {
     const batchNumber = `BATCH-${Date.now().toString(36).toUpperCase()}`
-    
+
     // Batch status type-safe assignment
     const batchStatus: "PLANNING" | "ASSIGNED" = courierId ? "ASSIGNED" : "PLANNING"
-    
+
     const batch = await this.createDeliveryBatches({
       batch_number: batchNumber,
       courier_id: courierId,
@@ -473,6 +474,8 @@ class FoodDistributionService extends MedusaService({
       total_deliveries: deliveryIds.length,
       is_community_run: isCommunityRun || false,
       community_org_id: communityOrgId,
+      owner_id: owner?.id ?? null,
+      owner_type: owner?.type ?? null,
     } as any)
     
     // Update all deliveries

@@ -264,9 +264,17 @@ export const DeliveryBatch = model.define("food_delivery_batch", {
   // For food bank / mutual aid batch runs
   is_community_run: model.boolean().default(false),
   community_org_id: model.text().nullable(),
-  
+
   // Notes
   notes: model.text().nullable(),
+
+  // Ownership — the account (courier/seller/customer) that created this batch.
+  // Authorizes update / add-deliveries / cancel on /store/delivery-batches/[id]
+  // so one account can't mutate another's batch. Nullable for batches created
+  // before ownership tracking (grandfathered — any authenticated actor may
+  // still manage those).
+  owner_id: model.text().nullable(),
+  owner_type: model.text().nullable(), // "customer" | "seller" | "driver"
 })
 
 /**
