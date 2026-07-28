@@ -134,7 +134,14 @@ export const Courier = model.define("food_courier", {
   active: model.boolean().default(true),
   deactivated_at: model.dateTime().nullable(),
   deactivation_reason: model.text().nullable(),
-  
+
+  // Ownership — the authenticated account that created/manages this courier.
+  // Nullable so pre-migration couriers are grandfathered (any authenticated
+  // actor may still manage them); new couriers are stamped at creation and
+  // ownership-enforced on update/claim/deactivate.
+  owner_id: model.text().nullable(),
+  owner_type: model.text().nullable(), // "customer" | "seller" | "driver"
+
   // Metadata
   metadata: model.json().nullable(),
 })

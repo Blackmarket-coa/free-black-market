@@ -2,6 +2,7 @@ import { z } from "zod"
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { FOOD_DISTRIBUTION_MODULE } from "../../../../../modules/food-distribution"
 import type FoodDistributionService from "../../../../../modules/food-distribution/service"
+import { actorMayManage } from "../../../../../shared/actor-scope"
 
 // ===========================================
 // VALIDATION SCHEMAS
@@ -97,7 +98,11 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       res.status(404).json({ message: "Courier not found" })
       return
     }
-    
+    if (!actorMayManage(req, (courier as any).owner_id)) {
+      res.status(403).json({ message: "This courier is not yours to manage" })
+      return
+    }
+
     // Validate times
     const startTime = new Date(data.scheduled_start)
     const endTime = new Date(data.scheduled_end)

@@ -1,4 +1,8 @@
-import { actingCustomerId, hawalaAccountOwnershipError } from "../actor-scope"
+import {
+  actingCustomerId,
+  actorMayManage,
+  hawalaAccountOwnershipError,
+} from "../actor-scope"
 
 const req = (auth_context: unknown) => ({ auth_context }) as never
 
@@ -78,5 +82,28 @@ describe("hawalaAccountOwnershipError", () => {
       { owner_type: "CUSTOMER", owner_id: "cus_2" }
     )
     expect(await hawalaAccountOwnershipError(r, "acc_1")).toBeNull()
+  })
+})
+
+describe("actorMayManage", () => {
+  const withActor = (actor_id?: string) => ({ auth_context: { actor_id } }) as never
+
+  it("grandfathers rows with no recorded owner", () => {
+    expect(actorMayManage(withActor("drv_1"), null)).toBe(true)
+    expect(actorMayManage(withActor("drv_1"), undefined)).toBe(true)
+    expect(actorMayManage(withActor("drv_1"), "")).toBe(true)
+  })
+
+  it("allows the owner", () => {
+    expect(actorMayManage(withActor("drv_1"), "drv_1")).toBe(true)
+  })
+
+  it("rejects a non-owner", () => {
+    expect(actorMayManage(withActor("drv_2"), "drv_1")).toBe(false)
+  })
+
+  it("rejects when there is no authenticated actor but the row is owned", () => {
+    expect(actorMayManage({ auth_context: {} } as never, "drv_1")).toBe(false)
+    expect(actorMayManage({} as never, "drv_1")).toBe(false)
   })
 })

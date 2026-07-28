@@ -84,3 +84,22 @@ export async function hawalaAccountOwnershipError(
   }
   return null
 }
+
+/**
+ * Whether the authenticated actor may manage a resource stamped with `ownerId`.
+ * Grandfathers legacy rows that predate ownership tracking (no `ownerId`
+ * recorded → allowed, so existing data keeps working); rows that DO carry an
+ * owner are restricted to that owner's `actor_id`.
+ */
+export function actorMayManage(
+  req: MedusaRequest,
+  ownerId?: string | null
+): boolean {
+  if (!ownerId) {
+    return true // pre-ownership-tracking row — grandfathered
+  }
+  const ctx = (req as unknown as {
+    auth_context?: { actor_id?: string }
+  }).auth_context
+  return !!ctx?.actor_id && ctx.actor_id === ownerId
+}

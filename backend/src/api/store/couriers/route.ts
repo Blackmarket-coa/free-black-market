@@ -137,8 +137,17 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       return
     }
     
+    // Stamp the creating account as the owner so /store/couriers/[id] writes
+    // can be authorized to it. Server-side creation (no auth context) leaves
+    // owner null (grandfathered).
+    const authContext = (req as any).auth_context as
+      | { actor_id?: string; actor_type?: string }
+      | undefined
+
     const courier = await foodDistribution.createCouriers({
       ...data,
+      owner_id: authContext?.actor_id ?? null,
+      owner_type: authContext?.actor_type ?? null,
       status: CourierStatus.OFFLINE,
       active: true,
       verified: false,
