@@ -3,6 +3,7 @@ import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { FOOD_DISTRIBUTION_MODULE } from "../../../modules/food-distribution"
 import type FoodDistributionService from "../../../modules/food-distribution/service"
 import { CourierStatus } from "../../../modules/food-distribution/models/courier"
+import { hawalaAccountOwnershipError } from "../../../shared/actor-scope"
 
 // ===========================================
 // VALIDATION SCHEMAS
@@ -114,9 +115,21 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
   try {
     const data = createCourierSchema.parse(req.body)
-    
+
+    // SEC: a caller may only attach a hawala ledger account they own.
+    if (data.hawala_account_id) {
+      const ownershipError = await hawalaAccountOwnershipError(
+        req,
+        data.hawala_account_id
+      )
+      if (ownershipError) {
+        res.status(403).json({ message: ownershipError })
+        return
+      }
+    }
+
     const foodDistribution = req.scope.resolve<FoodDistributionService>(FOOD_DISTRIBUTION_MODULE)
-    
+
     // Check for duplicate email
     const existing = await foodDistribution.listCouriers({ email: data.email })
     if (existing.length > 0) {
@@ -124,8 +137,17 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       return
     }
     
+    // Stamp the creating account as the owner so /store/couriers/[id] writes
+    // can be authorized to it. Server-side creation (no auth context) leaves
+    // owner null (grandfathered).
+    const authContext = (req as any).auth_context as
+      | { actor_id?: string; actor_type?: string }
+      | undefined
+
     const courier = await foodDistribution.createCouriers({
       ...data,
+      owner_id: authContext?.actor_id ?? null,
+      owner_type: authContext?.actor_type ?? null,
       status: CourierStatus.OFFLINE,
       active: true,
       verified: false,

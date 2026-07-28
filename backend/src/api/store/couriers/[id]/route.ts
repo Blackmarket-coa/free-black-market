@@ -3,6 +3,7 @@ import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { FOOD_DISTRIBUTION_MODULE } from "../../../../modules/food-distribution"
 import type FoodDistributionService from "../../../../modules/food-distribution/service"
 import { CourierStatus } from "../../../../modules/food-distribution/models/courier"
+import { actorMayManage } from "../../../../shared/actor-scope"
 
 // ===========================================
 // VALIDATION SCHEMAS
@@ -103,7 +104,11 @@ export async function PUT(req: MedusaRequest, res: MedusaResponse) {
       res.status(404).json({ message: "Courier not found" })
       return
     }
-    
+    if (!actorMayManage(req, (existing as any).owner_id)) {
+      res.status(403).json({ message: "This courier is not yours to manage" })
+      return
+    }
+
     // Handle location update specially
     if (data.current_latitude && data.current_longitude) {
       await foodDistribution.updateCourierLocation(
@@ -145,6 +150,10 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     const courier = await foodDistribution.retrieveCourier(id)
     if (!courier) {
       res.status(404).json({ message: "Courier not found" })
+      return
+    }
+    if (!actorMayManage(req, (courier as any).owner_id)) {
+      res.status(403).json({ message: "This courier is not yours to manage" })
       return
     }
     if (courier.status !== "AVAILABLE") {
@@ -198,7 +207,11 @@ export async function DELETE(req: MedusaRequest, res: MedusaResponse) {
     res.status(404).json({ message: "Courier not found" })
     return
   }
-  
+  if (!actorMayManage(req, (existing as any).owner_id)) {
+    res.status(403).json({ message: "This courier is not yours to manage" })
+    return
+  }
+
   // Check no active deliveries
   const activeDeliveries = await foodDistribution.listFoodDeliveries({
     courier_id: id,
