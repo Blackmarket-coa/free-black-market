@@ -59,6 +59,10 @@ jobs:
           MEDUSA_ADMIN_PASSWORD: e2eadmin1234
           NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY: pk_e2e_publishable_placeholder
         run: |
+          # The tracked compose override attaches the backend to the external
+          # bmc-bridge network (cross-stack link on the production host); it
+          # must exist before compose will start the service.
+          docker network inspect bmc-bridge >/dev/null 2>&1 || docker network create --internal bmc-bridge
           docker compose up -d --build backend storefront admin-panel vendor-panel
           # Wait for healthy.
           for svc in backend storefront admin-panel vendor-panel; do
