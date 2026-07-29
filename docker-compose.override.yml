@@ -3,7 +3,22 @@ services:
     command: ["sh", "-c", "sleep 8 && pnpm start"]
     volumes:
       - ./backend/src:/app/src
+    # The base compose defines no networks:, so this list is the complete set —
+    # "default" must stay listed or the implicit free-black-market_default
+    # attachment (postgres/redis/minio) is lost. bmc-bridge is the dedicated
+    # cross-stack bridge shared with blackout-api; only the backend joins it,
+    # so the Blackout side never gains a route to postgres/redis/minio.
+    # One-time prerequisite (INTERNAL so it grants no internet egress):
+    #   docker network create --internal bmc-bridge
+    networks:
+      - default
+      - bmc-bridge
   storefront:
     environment:
       PORT: "3000"
       HOSTNAME: "0.0.0.0"
+
+networks:
+  bmc-bridge:
+    external: true
+    name: bmc-bridge
