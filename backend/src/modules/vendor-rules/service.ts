@@ -252,6 +252,59 @@ class VendorRulesService extends MedusaService({
   }
   
   /**
+   * Batch variant of getCustomerTier: resolve the customer's active tier for
+   * each seller with a single listVendorCustomerTiers query. Sellers where
+   * the customer has no active tier are absent from the returned map.
+   * Mirrors getCustomerTier's semantics (first matching active tier wins).
+   */
+  async getCustomerTiersForSellers(sellerIds: string[], customerId: string) {
+    const tiers = sellerIds.length
+      ? await this.listVendorCustomerTiers({
+          seller_id: sellerIds,
+          active: true,
+        })
+      : []
+
+    const bySeller = new Map<string, (typeof tiers)[number]>()
+    for (const tier of tiers) {
+      if (bySeller.has(tier.seller_id)) continue
+      const customerIdsRaw = tier.customer_ids as Record<string, unknown> | null
+      const customerIds: string[] = Array.isArray(customerIdsRaw)
+        ? (customerIdsRaw as unknown as string[])
+        : []
+      if (customerIds.includes(customerId)) {
+        bySeller.set(tier.seller_id, tier)
+      }
+    }
+    return bySeller
+  }
+
+  /**
+   * Read-only order minimums per seller. Unlike getOrCreateRules this never
+   * writes: sellers without a vendor_rules row fall back to the model
+   * defaults (no value minimum, single-item minimum).
+   */
+  async getOrderMinimumsForSellers(sellerIds: string[]) {
+    const bySeller = new Map<
+      string,
+      { min_order_value: number; min_order_items: number }
+    >()
+    for (const sellerId of sellerIds) {
+      bySeller.set(sellerId, { min_order_value: 0, min_order_items: 1 })
+    }
+    if (sellerIds.length === 0) return bySeller
+
+    const allRules = await this.listVendorRules({ seller_id: sellerIds })
+    for (const rules of allRules) {
+      bySeller.set(rules.seller_id, {
+        min_order_value: Number(rules.min_order_value) || 0,
+        min_order_items: Number(rules.min_order_items) || 1,
+      })
+    }
+    return bySeller
+  }
+
+  /**
    * Get or create the WHOLESALE tier for a seller, so approved buyers have a
    * tier to join. Defaults mirror the Plant Network wholesale terms (Net-30,
    * application-gated, order-minimum waived).
