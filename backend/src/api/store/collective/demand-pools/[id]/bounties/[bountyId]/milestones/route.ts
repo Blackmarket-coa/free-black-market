@@ -5,6 +5,11 @@ import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { DEMAND_POOL_MODULE } from "../../../../../../../../modules/demand-pool"
 import DemandPoolModuleService from "../../../../../../../../modules/demand-pool/service"
 import { getCollectiveHawalaService } from "../../../../../../../../services/collective-hawala"
+import { resolveBlackoutUserId } from "../../../../../../../../lib/blackout-identity"
+import {
+  buildQuestRewardSettledArgs,
+  emitQuestRewardSettled,
+} from "../../../../../../../../lib/blackout-stub-emitters"
 
 const completeMilestoneSchema = z.object({
   milestone_index: z.number().int().min(0),
@@ -49,6 +54,40 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       milestone_index: body.milestone_index,
       proof: body.proof,
     })
+
+    // §2 Blackout `quest.reward_settled` — the bounty milestone just settled
+    // from escrow to the assignee, so notify the assignee's Blackout identity.
+    // SKIP when no Blackout id is mapped rather than leak an FBM identifier.
+    // Fire-and-forget: an emit hiccup must never fail the payout response.
+    try {
+      const bounties = await demandPoolService.listDemandBounties({ id: bountyId })
+      const bounty = bounties[0]
+      if (bounty?.assignee_id) {
+        const assigneeId = bounty.assignee_id as string
+        const userId = await resolveBlackoutUserId(req.scope, {
+          customerId: bounty.assignee_type === "SELLER" ? null : assigneeId,
+          sellerId: bounty.assignee_type === "CUSTOMER" ? null : assigneeId,
+        })
+        const emitArgs = buildQuestRewardSettledArgs({
+          userId,
+          settlement: {
+            bountyId,
+            demandPostId: id,
+            milestoneIndex: body.milestone_index,
+            payoutAmount: result.payout_amount,
+            currencyCode: bounty.currency_code as string | null,
+          },
+        })
+        if (emitArgs) {
+          await emitQuestRewardSettled(req.scope, emitArgs)
+        }
+      }
+    } catch (emitErr) {
+      log.error(
+        `[POST /store/collective/demand-pools/${id}/bounties/${bountyId}/milestones] quest.reward_settled emit failed`,
+        emitErr
+      )
+    }
 
     res.json(result)
   } catch (error: any) {
