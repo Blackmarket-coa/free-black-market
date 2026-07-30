@@ -6,20 +6,30 @@ import {
 import { HAWALA_LEDGER_MODULE } from "../../../../../../../modules/hawala-ledger"
 import { CAMPAIGN_ESCROW_FLAG } from "../../../../../../../lib/campaign-escrow"
 
-const createRes = () => {
-  const res: any = { statusCode: 200, body: undefined }
+// src/api/admin/** sits inside the TS-3 de-`any`'d ratchet (eslint.config.mjs),
+// so the test doubles are typed with `unknown` + narrow local shapes instead of
+// the `any` mocks the un-ratcheted store-side specs use.
+type TestRes = {
+  statusCode: number
+  body: unknown
+  status: (code: number) => TestRes
+  json: (payload: unknown) => TestRes
+}
+
+const createRes = (): TestRes => {
+  const res = { statusCode: 200, body: undefined } as TestRes
   res.status = (code: number) => {
     res.statusCode = code
     return res
   }
-  res.json = (payload: any) => {
+  res.json = (payload: unknown) => {
     res.body = payload
     return res
   }
   return res
 }
 
-const makeScope = (map: Record<string, any>) => ({
+const makeScope = (map: Record<string, unknown>) => ({
   resolve: (key: string) => {
     if (key in map) {
       return map[key]
@@ -27,6 +37,10 @@ const makeScope = (map: Record<string, any>) => ({
     throw new Error(`unresolvable: ${key}`)
   },
 })
+
+type RouteArgs = Parameters<typeof POST>
+const invoke = (req: unknown, res: TestRes) =>
+  POST(req as RouteArgs[0], res as unknown as RouteArgs[1])
 
 describe("admin collective campaigns [id] resolve-escrow route", () => {
   afterEach(() => {
@@ -56,10 +70,10 @@ describe("admin collective campaigns [id] resolve-escrow route", () => {
 
   it("is dark when the flag is off: 404 and no service resolution", async () => {
     const resolve = jest.fn()
-    const req: any = { params: { id: "cc_1" }, body: {}, scope: { resolve } }
+    const req = { params: { id: "cc_1" }, body: {}, scope: { resolve } }
 
     const res = createRes()
-    await POST(req, res)
+    await invoke(req, res)
 
     expect(res.statusCode).toBe(404)
     expect(resolve).not.toHaveBeenCalled()
@@ -81,7 +95,7 @@ describe("admin collective campaigns [id] resolve-escrow route", () => {
       }),
     }
 
-    const req: any = {
+    const req = {
       params: { id: "cc_1" },
       body: { platform_fee_cents: 300 },
       scope: makeScope({
@@ -91,7 +105,7 @@ describe("admin collective campaigns [id] resolve-escrow route", () => {
     }
 
     const res = createRes()
-    await POST(req, res)
+    await invoke(req, res)
 
     expect(res.statusCode).toBe(200)
     expect(hawala.releaseCampaignEscrow).toHaveBeenCalledTimes(1)
@@ -135,7 +149,7 @@ describe("admin collective campaigns [id] resolve-escrow route", () => {
         .mockRejectedValue(new Error("Insufficient balance in account ESC-X")),
     }
 
-    const req: any = {
+    const req = {
       params: { id: "cc_1" },
       body: {},
       scope: makeScope({
@@ -145,10 +159,10 @@ describe("admin collective campaigns [id] resolve-escrow route", () => {
     }
 
     const res = createRes()
-    await POST(req, res)
+    await invoke(req, res)
 
     expect(res.statusCode).toBe(402)
-    expect(res.body.type).toBe("escrow_failed")
+    expect((res.body as { type?: string }).type).toBe("escrow_failed")
     expect(service.updateBackings).not.toHaveBeenCalled()
     expect(service.updateCampaigns).not.toHaveBeenCalled()
   })
@@ -164,7 +178,7 @@ describe("admin collective campaigns [id] resolve-escrow route", () => {
     }
     const hawala = { releaseCampaignEscrow: jest.fn() }
 
-    const req: any = {
+    const req = {
       params: { id: "cc_1" },
       body: {},
       scope: makeScope({
@@ -174,7 +188,7 @@ describe("admin collective campaigns [id] resolve-escrow route", () => {
     }
 
     const res = createRes()
-    await POST(req, res)
+    await invoke(req, res)
 
     expect(res.statusCode).toBe(400)
     expect(hawala.releaseCampaignEscrow).not.toHaveBeenCalled()
@@ -191,7 +205,7 @@ describe("admin collective campaigns [id] resolve-escrow route", () => {
     }
     const hawala = { releaseCampaignEscrow: jest.fn() }
 
-    const req: any = {
+    const req = {
       params: { id: "cc_1" },
       body: {},
       scope: makeScope({
@@ -201,7 +215,7 @@ describe("admin collective campaigns [id] resolve-escrow route", () => {
     }
 
     const res = createRes()
-    await POST(req, res)
+    await invoke(req, res)
 
     expect(res.statusCode).toBe(400)
     expect(hawala.releaseCampaignEscrow).not.toHaveBeenCalled()

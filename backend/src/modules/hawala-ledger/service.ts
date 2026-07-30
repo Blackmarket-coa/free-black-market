@@ -537,12 +537,12 @@ class HawalaLedgerModuleService extends MedusaService({
     backerCustomerId: string
     amountCents: number
     reason: string
-    currencyCode?: string
   }) {
     if (args.amountCents <= 0) {
       throw new Error("refundCampaignBackingEscrow amountCents must be > 0")
     }
-    const currency = args.currencyCode || "USD"
+    // No currency arg: a refund only routes between accounts that already
+    // exist (escrow-in created them), so their currency is already fixed.
     const escrows = await this.listLedgerAccounts({
       account_type: "ESCROW",
       owner_type: "SYSTEM",
