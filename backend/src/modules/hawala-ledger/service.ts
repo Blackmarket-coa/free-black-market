@@ -458,6 +458,196 @@ class HawalaLedgerModuleService extends MedusaService({
   }
 
   /**
+   * Get or create the per-campaign ESCROW account holding all-or-nothing
+   * crowdfunding backings for a collective campaign.
+   */
+  private async getOrCreateCampaignEscrow(campaignId: string, currency: string) {
+    const existing = await this.listLedgerAccounts({
+      account_type: "ESCROW",
+      owner_type: "SYSTEM",
+      owner_id: campaignId,
+    })
+    return (
+      existing[0] ??
+      (await this.createAccount({
+        account_type: "ESCROW",
+        owner_type: "SYSTEM",
+        owner_id: campaignId,
+        currency_code: currency,
+      }))
+    )
+  }
+
+  /**
+   * Escrow a crowdfunding backing: move funds from the backer's USER_WALLET
+   * into the campaign's ESCROW account. All-or-nothing: funds stay there
+   * until the campaign is released (funded) or refunded (failed).
+   */
+  async openCampaignBackingEscrow(args: {
+    campaignId: string
+    backingId: string
+    backerCustomerId: string
+    amountCents: number
+    currencyCode?: string
+  }) {
+    if (args.amountCents <= 0) {
+      throw new Error("openCampaignBackingEscrow amountCents must be > 0")
+    }
+    const currency = args.currencyCode || "USD"
+    // Backer funding source: the same CUSTOMER USER_WALLET resolution as the
+    // hawala-order-payment subscriber (get-or-create).
+    const wallets = await this.listLedgerAccounts({
+      account_type: "USER_WALLET",
+      owner_type: "CUSTOMER",
+      owner_id: args.backerCustomerId,
+    })
+    const backerWallet =
+      wallets[0] ??
+      (await this.createAccount({
+        account_type: "USER_WALLET",
+        owner_type: "CUSTOMER",
+        owner_id: args.backerCustomerId,
+        currency_code: currency,
+      }))
+    const escrowAccount = await this.getOrCreateCampaignEscrow(args.campaignId, currency)
+    return this.createTransfer({
+      debit_account_id: backerWallet.id,
+      credit_account_id: escrowAccount.id,
+      amount: args.amountCents / 100,
+      entry_type: "TRANSFER",
+      reference_type: "MANUAL",
+      reference_id: args.campaignId,
+      idempotency_key: `campaign-backing-${args.backingId}`,
+      description: `Escrow backing ${args.backingId} for campaign ${args.campaignId}`,
+      metadata: {
+        campaign_id: args.campaignId,
+        backing_id: args.backingId,
+        backer_customer_id: args.backerCustomerId,
+      },
+    })
+  }
+
+  /**
+   * Refund a single backing's escrow back to the backer's wallet when the
+   * campaign fails. Idempotent per backing via campaign-refund-<backingId>.
+   */
+  async refundCampaignBackingEscrow(args: {
+    campaignId: string
+    backingId: string
+    backerCustomerId: string
+    amountCents: number
+    reason: string
+    currencyCode?: string
+  }) {
+    if (args.amountCents <= 0) {
+      throw new Error("refundCampaignBackingEscrow amountCents must be > 0")
+    }
+    const currency = args.currencyCode || "USD"
+    const escrows = await this.listLedgerAccounts({
+      account_type: "ESCROW",
+      owner_type: "SYSTEM",
+      owner_id: args.campaignId,
+    })
+    if (escrows.length === 0) {
+      throw new Error(`No escrow account for campaign ${args.campaignId}`)
+    }
+    const wallets = await this.listLedgerAccounts({
+      account_type: "USER_WALLET",
+      owner_type: "CUSTOMER",
+      owner_id: args.backerCustomerId,
+    })
+    if (wallets.length === 0) {
+      throw new Error(`No wallet for backer ${args.backerCustomerId}`)
+    }
+    return this.createTransfer({
+      debit_account_id: escrows[0].id,
+      credit_account_id: wallets[0].id,
+      amount: args.amountCents / 100,
+      entry_type: "REFUND",
+      reference_type: "MANUAL",
+      reference_id: args.campaignId,
+      idempotency_key: `campaign-refund-${args.backingId}`,
+      description: `Refund campaign ${args.campaignId} backing ${args.backingId}: ${args.reason}`,
+      metadata: {
+        campaign_id: args.campaignId,
+        backing_id: args.backingId,
+        backer_customer_id: args.backerCustomerId,
+        reason: args.reason,
+      },
+    })
+  }
+
+  /**
+   * Release a funded campaign's escrow to the vendor. `amountCents` is the
+   * TOTAL escrowed amount; the optional platform fee is carved out of it, so
+   * the seller leg and fee leg always sum to `amountCents`.
+   */
+  async releaseCampaignEscrow(args: {
+    campaignId: string
+    vendorSellerId: string
+    amountCents: number
+    platformFeeCents?: number
+    currencyCode?: string
+  }) {
+    if (args.amountCents <= 0) {
+      throw new Error("releaseCampaignEscrow amountCents must be > 0")
+    }
+    const feeCents = args.platformFeeCents ?? 0
+    if (!Number.isInteger(feeCents) || feeCents < 0 || feeCents >= args.amountCents) {
+      throw new Error(
+        "releaseCampaignEscrow platformFeeCents must be an integer >= 0 and < amountCents"
+      )
+    }
+    const currency = args.currencyCode || "USD"
+    const escrows = await this.listLedgerAccounts({
+      account_type: "ESCROW",
+      owner_type: "SYSTEM",
+      owner_id: args.campaignId,
+    })
+    if (escrows.length === 0) {
+      throw new Error(`No escrow account for campaign ${args.campaignId}`)
+    }
+    const sellerAccount = await this.getOrCreateSellerEarnings(
+      args.vendorSellerId,
+      currency
+    )
+    const releaseEntry = await this.createTransfer({
+      debit_account_id: escrows[0].id,
+      credit_account_id: sellerAccount.id,
+      amount: (args.amountCents - feeCents) / 100,
+      entry_type: "TRANSFER",
+      reference_type: "MANUAL",
+      reference_id: args.campaignId,
+      idempotency_key: `campaign-release-${args.campaignId}`,
+      description: `Release campaign ${args.campaignId} escrow to vendor`,
+      metadata: {
+        campaign_id: args.campaignId,
+        vendor_seller_id: args.vendorSellerId,
+        platform_fee_cents: feeCents,
+      },
+    })
+    let feeEntry: typeof releaseEntry | null = null
+    if (feeCents > 0) {
+      const platformAccount = await this.getOrCreateSystemAccount("PLATFORM_FEE")
+      feeEntry = await this.createTransfer({
+        debit_account_id: escrows[0].id,
+        credit_account_id: platformAccount.id,
+        amount: feeCents / 100,
+        entry_type: "COMMISSION",
+        reference_type: "MANUAL",
+        reference_id: args.campaignId,
+        idempotency_key: `campaign-release-fee-${args.campaignId}`,
+        description: `Platform fee for campaign ${args.campaignId} escrow release`,
+        metadata: {
+          campaign_id: args.campaignId,
+          vendor_seller_id: args.vendorSellerId,
+        },
+      })
+    }
+    return { release_entry: releaseEntry, fee_entry: feeEntry }
+  }
+
+  /**
    * Reverse a previously paid creator commission (e.g. on refund). Creates a
    * new ledger entry that flows funds creator -> vendor.
    */

@@ -202,6 +202,10 @@ class CollectiveCampaignModuleService extends MedusaService({
   }
 
   async addBacking(input: {
+    // Optional pre-generated id: the escrow-aware backing route mints the id
+    // up front so the ledger idempotency key can reference it before the row
+    // exists (escrow-then-persist ordering).
+    id?: string
     campaign_id: string
     backer_id: string
     mode: BackingMode

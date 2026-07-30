@@ -5,6 +5,14 @@ import {
   COLLECTIVE_CAMPAIGN_MODULE,
 } from "../../../../../modules/collective-campaign"
 import CollectiveCampaignModuleService from "../../../../../modules/collective-campaign/service"
+import { HAWALA_LEDGER_MODULE } from "../../../../../modules/hawala-ledger"
+import type HawalaLedgerModuleService from "../../../../../modules/hawala-ledger/service"
+import { emitBlackoutEvent } from "../../../../../lib/blackout-emit"
+import {
+  BACKING_REFUND_ENTRY_KEY,
+  escrowedCentsForBacking,
+  isCampaignEscrowLive,
+} from "../../../../../lib/campaign-escrow"
 
 const patchSchema = z.object({
   action: z.enum(["activate", "transition", "release-maker-fee", "mark-failed"]),
@@ -74,6 +82,67 @@ export async function PATCH(req: MedusaRequest, res: MedusaResponse) {
       }
       const release = await service.releaseMakerFeeByMilestone(req.params.id, body.milestone)
       return res.json({ release })
+    }
+
+    // mark-failed: when escrow is live, refund every escrowed PLEDGED
+    // backing BEFORE flipping statuses. On any ledger failure nothing is
+    // flipped and the 402 lets the caller retry — the deterministic
+    // campaign-refund-<backingId> keys make re-runs safe.
+    if (isCampaignEscrowLive()) {
+      const hawala = req.scope.resolve<HawalaLedgerModuleService>(HAWALA_LEDGER_MODULE)
+      const pledged = await service.listBackings({
+        campaign_id: req.params.id,
+        status: "PLEDGED",
+      })
+
+      const refunds: { backing_id: string; entry_id: string; amount_cents: number }[] = []
+      try {
+        for (const backing of pledged) {
+          const amountCents = escrowedCentsForBacking(backing)
+          if (amountCents == null) {
+            // Backed while escrow was dark — no funds were moved, nothing to refund.
+            continue
+          }
+          const entry = await hawala.refundCampaignBackingEscrow({
+            campaignId: req.params.id,
+            backingId: backing.id,
+            backerCustomerId: backing.backer_id,
+            amountCents,
+            reason: "campaign failed",
+          })
+          refunds.push({ backing_id: backing.id, entry_id: entry.id, amount_cents: amountCents })
+          await service.updateBackings({
+            id: backing.id,
+            metadata: {
+              ...((backing.metadata as Record<string, unknown> | null) ?? {}),
+              [BACKING_REFUND_ENTRY_KEY]: entry.id,
+            },
+          })
+        }
+      } catch (escrowError) {
+        return res
+          .status(402)
+          .json({ error: `Escrow operation failed: ${getErrorMessage(escrowError)}` })
+      }
+
+      const result = await service.markCampaignFailed(req.params.id)
+
+      for (const refund of refunds) {
+        await emitBlackoutEvent(
+          req.scope,
+          "ledger.refund",
+          {
+            vendorId: campaign.vendor_id,
+            orderId: refund.backing_id,
+            amountMinorUnits: refund.amount_cents,
+            currency: "USD",
+            ledgerTxId: refund.entry_id,
+          },
+          { eventId: `ledger.refund:${refund.backing_id}` }
+        )
+      }
+
+      return res.json({ ...result, refund_ledger_entries: refunds })
     }
 
     const result = await service.markCampaignFailed(req.params.id)
