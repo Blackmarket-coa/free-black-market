@@ -71,19 +71,36 @@ export const BLACKOUT_SUBSCRIPTION_TIERS = ["signal", "signal_plus", "community"
 export type BlackoutSubscriptionTier = (typeof BLACKOUT_SUBSCRIPTION_TIERS)[number]
 
 /**
- * Map an FBM subscription onto a Blackout tier. FBM plans are not natively
- * named signal/signal_plus/community, so an explicit `metadata.blackout_tier`
- * wins; otherwise default to `signal`.
- *
- * TODO: replace the default with a real FBM-plan -> Blackout-tier table once
- * plan keys are finalized.
+ * Blackout's user-facing consumer-tier names → the FBM wire tiers above. The
+ * first-party Blackout catalog (`scripts/seed-blackout-catalog.ts`) and
+ * Blackout's own `@blackout/protocol` consumerTiers label tiers
+ * signal/coalition/sovereign, while the §3 wire vocabulary is
+ * signal/signal_plus/community. Keep in sync with `CONSUMER_TIER_DEFS[*].fbmTier`.
+ */
+const CONSUMER_TIER_ALIASES: Record<string, BlackoutSubscriptionTier> = {
+  signal: "signal",
+  coalition: "signal_plus",
+  sovereign: "community",
+  free: "signal",
+}
+
+/**
+ * Map a subscription's `metadata.blackout_tier` onto an FBM wire tier. Accepts
+ * either the wire vocabulary (signal/signal_plus/community) or Blackout's
+ * consumer names (signal/coalition/sovereign) — the first-party catalog labels
+ * listings with the latter, so without this alias step Coalition and Sovereign
+ * subscriptions both silently collapsed to `signal`. Unknown values default to
+ * `signal`, matching Blackout's own `fromFbmTier` fallback.
  */
 export function mapSubscriptionTier(metadata: unknown): BlackoutSubscriptionTier {
-  const t = (metadata as { blackout_tier?: unknown } | null | undefined)?.blackout_tier
-  if (typeof t === "string" && (BLACKOUT_SUBSCRIPTION_TIERS as readonly string[]).includes(t)) {
-    return t as BlackoutSubscriptionTier
+  const raw = (metadata as { blackout_tier?: unknown } | null | undefined)?.blackout_tier
+  if (typeof raw !== "string") {
+    return "signal"
   }
-  return "signal"
+  if ((BLACKOUT_SUBSCRIPTION_TIERS as readonly string[]).includes(raw)) {
+    return raw as BlackoutSubscriptionTier
+  }
+  return CONSUMER_TIER_ALIASES[raw] ?? "signal"
 }
 
 /**
