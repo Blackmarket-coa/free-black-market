@@ -15,6 +15,7 @@ import {
   shapePosItems,
   type PosOrderInput,
 } from "./pos-helpers"
+import { adjustPosInventoryStep } from "./adjust-pos-inventory"
 
 /**
  * Create a real order for an in-person POS sale (roadmap Phase 3A / §1.7).
@@ -26,9 +27,10 @@ import {
  * every placed-order subscriber fires: channel attribution, entitlement
  * grants (digital goods sold in person), and the Blackout order events.
  *
- * Known limitation (documented in the roadmap): direct creation does not
- * reserve/decrement inventory — POS inventory sync is part of the future POS
- * module (FEATURE_BUILD_PLAN Phase 1).
+ * Direct creation bypasses the cart flow's reservation machinery, so the
+ * workflow decrements stock itself via `adjustPosInventoryStep` (best-effort:
+ * the payment already happened at the counter, so inventory problems are
+ * logged, never fatal).
  */
 export const createPosOrderStep = createStep(
   "create-pos-order-step",
@@ -120,6 +122,9 @@ export const createPosOrderWorkflow = createWorkflow(
   createPosOrderWorkflowId,
   (input: PosOrderInput) => {
     const { order } = createPosOrderStep(input)
+
+    // Decrement stock for the catalog lines (compensated on later failure).
+    adjustPosInventoryStep(input)
 
     // Fire the placed-order pipeline: channel attribution reads the
     // metadata.order_channel stamp; entitlements + Blackout events follow.
