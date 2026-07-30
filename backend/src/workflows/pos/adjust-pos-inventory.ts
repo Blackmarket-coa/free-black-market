@@ -75,11 +75,11 @@ export const adjustPosInventoryStep = createStep(
     if (inventoryItemIds.length > 0) {
       const { data: inventoryItems } = await query.graph({
         entity: "inventory_item",
-        fields: ["id", "inventory_levels.location_id"],
+        fields: ["id", "location_levels.location_id"],
         filters: { id: inventoryItemIds },
       })
       for (const item of inventoryItems ?? []) {
-        const locationId = item?.inventory_levels?.[0]?.location_id
+        const locationId = item?.location_levels?.[0]?.location_id
         if (item?.id && locationId) {
           locationByItem.set(item.id, locationId)
         }
