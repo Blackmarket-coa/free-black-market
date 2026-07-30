@@ -11,6 +11,7 @@ import {
 
 import { PLAYBOOK_MODULE } from "../modules/playbook"
 import { LISTING_TYPE_MODULE } from "../modules/listing-type"
+import { LISTING_TYPE_CATALOG } from "../modules/listing-type/catalog"
 import type { PlaybookId, ListingTypeId } from "../modules/playbook"
 
 /**
@@ -127,10 +128,49 @@ export async function assertListingTypeAllowed(
 }
 
 /**
+ * Enforce the one-of-a-kind (`unique_inventory`) rule: such a listing is locked
+ * to a single unit (`docs/LISTING_TYPES.md`; catalog flag `unique_inventory`).
+ * Reject a product-create payload that stocks more than one of a managed variant.
+ *
+ * Deliberately defensive — it only fires when a variant *explicitly* declares
+ * `inventory_quantity > 1`, so it never false-rejects payloads that omit stock
+ * (those are governed by inventory-level enforcement) or products of other types.
+ * Pure (reads the static catalog), so it needs no container.
+ */
+export function assertUniqueInventoryConstraints(
+  listingTypeId: ListingTypeId,
+  productData?: Record<string, unknown> | null
+): void {
+  const definition = LISTING_TYPE_CATALOG[listingTypeId]
+  if (!definition?.unique_inventory) {
+    return
+  }
+
+  const variants = Array.isArray((productData as any)?.variants)
+    ? ((productData as any).variants as Array<Record<string, unknown>>)
+    : []
+
+  for (const variant of variants) {
+    // `manage_inventory` defaults to true in Medusa; only unmanaged variants opt out.
+    const managed = variant.manage_inventory !== false
+    const quantity = variant.inventory_quantity
+    if (managed && typeof quantity === "number" && quantity > 1) {
+      throw new MedusaError(
+        MedusaError.Types.INVALID_DATA,
+        `One-of-a-kind listings ("${definition.display_name}") are limited to a single ` +
+          `unit; a variant declared inventory_quantity=${quantity}. Set it to 1, or list ` +
+          `each item as its own listing.`
+      )
+    }
+  }
+}
+
+/**
  * Route middleware for the vendor product-create endpoints. Resolves the
  * authenticated seller (not the client-supplied `additional_data.seller_id`)
- * and rejects incompatible playbook × listing-type combinations before the
- * product workflow runs.
+ * and rejects incompatible playbook × listing-type combinations — and, for
+ * one-of-a-kind types, an over-one stock quantity — before the product workflow
+ * runs.
  */
 export async function enforceListingTypeAllowed(
   req: MedusaRequest,
@@ -141,12 +181,16 @@ export async function enforceListingTypeAllowed(
     const actorId =
       (req as any)._seller_id || (req as any).auth_context?.actor_id
     const sellerId = await resolveSellerId(req, actorId)
-    const { additional_data } = (req.body as any) ?? {}
+    const { additional_data, ...productData } = (req.body as any) ?? {}
 
     await assertListingTypeAllowed(req.scope, {
       sellerId,
       additionalData: additional_data,
     })
+
+    // Data-integrity rule, independent of the seller's playbook: enforced for
+    // every seller (including legacy sellers the playbook check skips).
+    assertUniqueInventoryConstraints(resolveListingTypeId(additional_data), productData)
 
     next()
   } catch (error) {
