@@ -20,6 +20,7 @@ import { SellerProps } from "@/types/seller"
 import { Wishlist } from "@/types/wishlist"
 import { HttpTypes } from "@medusajs/types"
 import { ListingTypeInfo } from "./ListingTypeInfo"
+import { TicketPurchase } from "@/components/organisms/TicketPurchase/TicketPurchase"
 
 export const ProductDetails = async ({
   product,
@@ -52,9 +53,10 @@ export const ProductDetails = async ({
       {/* Listing-type badge + type-appropriate buyer hint */}
       <ListingTypeInfo listingType={listingType} />
       {listingType.detailSlot === "event" && (
-        // Extension point: the ticket-purchase panel (built by a separate
-        // task) mounts into this slot for event listings.
-        <section data-listing-slot="event" />
+        // Buyer path for event listings: date -> seat -> add ticket to cart.
+        <section data-listing-slot="event">
+          <TicketPurchase product={product} locale={locale} />
+        </section>
       )}
       {/* FreeBlackMarket.com: Direct-to-producer messaging */}
       <div className="my-4">
