@@ -3,6 +3,7 @@ const log = createLogger("modules/hawala-ledger/service")
 import { MedusaService, ContainerRegistrationKeys } from "@medusajs/framework/utils"
 import { auditFinancialTransaction } from "./audit-logger"
 import { assertRailInvariants } from "./posture-a-guard"
+import { splitConsignmentCents } from "../../lib/consignment"
 import {
   LedgerAccount,
   LedgerEntry,
@@ -104,9 +105,14 @@ class HawalaLedgerModuleService extends MedusaService({
    * Get or create system accounts (platform fee, reserve, settlement)
    */
   async getOrCreateSystemAccount(accountType: string) {
+    // Must pin owner_id: "system" — per-subject escrows (subcontract, campaign)
+    // are also account_type ESCROW + owner_type SYSTEM but carry a subject id
+    // as owner_id. Without this filter the singleton lookup could return one of
+    // those and misroute an order payment/refund out of the wrong escrow.
     const existing = await this.listLedgerAccounts({
       account_type: accountType,
       owner_type: "SYSTEM",
+      owner_id: "system",
     })
 
     if (existing.length > 0) {
@@ -645,6 +651,120 @@ class HawalaLedgerModuleService extends MedusaService({
       })
     }
     return { release_entry: releaseEntry, fee_entry: feeEntry }
+  }
+
+  /**
+   * Consignment revenue split: fan an order's seller-side amount out of the
+   * system ESCROW into the consignor's and the selling vendor's
+   * SELLER_EARNINGS ("a vendor sells on behalf of a represented party;
+   * revenue split is atomic at order complete" — listing-type catalog
+   * `consignment`). Replaces the single escrow->seller leg of
+   * processOrderPayment on the FBM_CONSIGNMENT_SPLIT_LIVE subscriber path
+   * (see subscribers/hawala-order-payment.ts) — dark by default.
+   *
+   * `sellerAmountCents` is the post-platform-fee seller-side amount in
+   * integer cents. The consignor receives floor(sellerAmountCents *
+   * consignorBps / 10000) and the vendor keeps the remainder, so the legs
+   * always sum to exactly `sellerAmountCents` (no rounding drift; sub-cent
+   * benefit to the vendor). A zero-cent leg is skipped rather than written
+   * as a zero-amount transfer. Idempotent per order via
+   * `${idempotencyKey}-consignor` / `${idempotencyKey}-vendor`;
+   * createTransfer amounts are major units (cents / 100).
+   */
+  async processConsignmentSplit(args: {
+    orderId: string
+    sellerAmountCents: number
+    currencyCode?: string
+    vendorSellerId: string
+    consignorSellerId: string
+    consignorBps: number
+    idempotencyKey: string
+  }) {
+    if (!Number.isInteger(args.sellerAmountCents) || args.sellerAmountCents <= 0) {
+      throw new Error(
+        "processConsignmentSplit sellerAmountCents must be a positive integer"
+      )
+    }
+    if (args.consignorSellerId === args.vendorSellerId) {
+      throw new Error(
+        "processConsignmentSplit consignorSellerId must differ from vendorSellerId"
+      )
+    }
+    // Throws when consignorBps is not an integer in 0..10000.
+    const { consignor_cents, vendor_cents } = splitConsignmentCents(
+      args.sellerAmountCents,
+      args.consignorBps
+    )
+    if (
+      consignor_cents < 0 ||
+      vendor_cents < 0 ||
+      consignor_cents + vendor_cents !== args.sellerAmountCents
+    ) {
+      // Unreachable given the guards above; kept so the ledger can never fan
+      // out more (or less) than the seller-side amount.
+      throw new Error(
+        "processConsignmentSplit split does not sum to sellerAmountCents"
+      )
+    }
+    const currency = args.currencyCode || "USD"
+    const escrowAccount = await this.getOrCreateSystemAccount("ESCROW")
+    const sharedMetadata = {
+      order_id: args.orderId,
+      vendor_seller_id: args.vendorSellerId,
+      consignor_seller_id: args.consignorSellerId,
+      consignor_bps: args.consignorBps,
+      seller_amount_cents: args.sellerAmountCents,
+    }
+    const entries: any[] = []
+    if (consignor_cents > 0) {
+      const consignorAccount = await this.getOrCreateSellerEarnings(
+        args.consignorSellerId,
+        currency
+      )
+      entries.push(
+        await this.createTransfer({
+          debit_account_id: escrowAccount.id,
+          credit_account_id: consignorAccount.id,
+          amount: consignor_cents / 100,
+          entry_type: "TRANSFER",
+          reference_type: "ORDER",
+          reference_id: args.orderId,
+          order_id: args.orderId,
+          idempotency_key: `${args.idempotencyKey}-consignor`,
+          description: `Consignment split for order ${args.orderId}: consignor share`,
+          metadata: {
+            ...sharedMetadata,
+            split_leg: "consignor",
+            split_cents: consignor_cents,
+          },
+        })
+      )
+    }
+    if (vendor_cents > 0) {
+      const vendorAccount = await this.getOrCreateSellerEarnings(
+        args.vendorSellerId,
+        currency
+      )
+      entries.push(
+        await this.createTransfer({
+          debit_account_id: escrowAccount.id,
+          credit_account_id: vendorAccount.id,
+          amount: vendor_cents / 100,
+          entry_type: "TRANSFER",
+          reference_type: "ORDER",
+          reference_id: args.orderId,
+          order_id: args.orderId,
+          idempotency_key: `${args.idempotencyKey}-vendor`,
+          description: `Consignment split for order ${args.orderId}: vendor share`,
+          metadata: {
+            ...sharedMetadata,
+            split_leg: "vendor",
+            split_cents: vendor_cents,
+          },
+        })
+      )
+    }
+    return entries
   }
 
   /**
@@ -1272,8 +1392,12 @@ class HawalaLedgerModuleService extends MedusaService({
     const originalFee = feeEntry ? Number(feeEntry.amount) : 0
     const feeRefund = roundCents(originalFee * refundRatio)
 
-    // Seller entry (reversed last, as the balancing leg — see below)
-    const sellerEntry = originalEntries.find(e =>
+    // Seller-side legs: every TRANSFER out of escrow to a non-customer account.
+    // The plain path writes one (escrow -> seller); a consignment split writes
+    // two (escrow -> consignor, escrow -> vendor). All must be reversed, or the
+    // escrow -> customer leg overdraws escrow on the CAS. Reversed as the
+    // balancing legs below.
+    const sellerEntries = originalEntries.filter(e =>
       e.entry_type === "TRANSFER" && e.credit_account_id !== purchaseEntry.debit_account_id
     )
 
@@ -1324,22 +1448,42 @@ class HawalaLedgerModuleService extends MedusaService({
       refundEntries.push(invRefundEntry)
     }
 
-    // 3. Reverse seller earnings (Seller → Escrow). Seller is the balancing leg:
-    // seller + fee + investment reversed INTO escrow must equal the customer
-    // refund OUT of escrow, so escrow nets to exactly zero and cannot accrue
-    // sub-cent drift across the independently-rounded legs (B-money-8).
+    // 3. Reverse seller earnings (Seller → Escrow). The seller side is the
+    // balancing leg: seller + fee + investment reversed INTO escrow must equal
+    // the customer refund OUT of escrow, so escrow nets to exactly zero with no
+    // sub-cent drift across the independently-rounded legs (B-money-8). When the
+    // order was consignment-split there are two seller-side legs; split the
+    // seller refund across them pro-rata to their original amounts, with the
+    // last leg absorbing the remainder so the parts sum to sellerRefund exactly.
     const sellerRefund = roundCents(refundAmount - feeRefund - investmentRefundTotal)
-    if (sellerEntry && sellerRefund > 0) {
-      const sellerRefundEntry = await this.createTransfer({
-        debit_account_id: sellerEntry.credit_account_id, // Seller account
-        credit_account_id: escrowAccount.id,
-        amount: sellerRefund,
-        entry_type: "REFUND",
-        order_id: data.order_id,
-        description: `${description} - seller portion`,
-        idempotency_key: `${idempotencyKey}-seller`,
-      })
-      refundEntries.push(sellerRefundEntry)
+    if (sellerEntries.length > 0 && sellerRefund > 0) {
+      const sellerTotal = sellerEntries.reduce((sum, e) => sum + Number(e.amount), 0)
+      let allocated = 0
+      for (let i = 0; i < sellerEntries.length; i++) {
+        const leg = sellerEntries[i]
+        const isLast = i === sellerEntries.length - 1
+        const legRefund = isLast
+          ? roundCents(sellerRefund - allocated)
+          : roundCents((sellerRefund * Number(leg.amount)) / (sellerTotal || 1))
+        allocated += legRefund
+        if (legRefund <= 0) continue
+        // Preserve the single-leg key (`-seller`) so existing refunds stay
+        // idempotent; multi-leg refunds key off the split leg (consignor/vendor).
+        const legTag =
+          sellerEntries.length > 1
+            ? `-${(leg.metadata as { split_leg?: string } | null)?.split_leg ?? i}`
+            : ""
+        const sellerRefundEntry = await this.createTransfer({
+          debit_account_id: leg.credit_account_id, // Seller / consignor / vendor account
+          credit_account_id: escrowAccount.id,
+          amount: legRefund,
+          entry_type: "REFUND",
+          order_id: data.order_id,
+          description: `${description} - seller portion${legTag}`,
+          idempotency_key: `${idempotencyKey}-seller${legTag}`,
+        })
+        refundEntries.push(sellerRefundEntry)
+      }
     }
 
     // 4. Reverse customer payment (Escrow → Customer)
