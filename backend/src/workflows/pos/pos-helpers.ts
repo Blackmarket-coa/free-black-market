@@ -80,6 +80,94 @@ export function shapePosItems(items: PosOrderItemInput[]): PosValidationResult {
 }
 
 /**
+ * Per-variant inventory context resolved by the workflow (I/O side) and fed to
+ * the pure adjustment planner below.
+ */
+export type PosVariantInventoryContext = {
+  variant_id: string
+  manage_inventory: boolean
+  inventory_item_id?: string | null
+  location_id?: string | null
+}
+
+export type PosInventoryAdjustment = {
+  variant_id: string
+  inventory_item_id: string
+  location_id: string
+  /** Units sold (positive); the step applies this as a negative delta. */
+  quantity: number
+}
+
+export type PosInventorySkip = {
+  variant_id: string
+  reason:
+    | "unknown_variant"
+    | "not_managed"
+    | "no_inventory_item"
+    | "no_location_level"
+}
+
+export type PosInventoryPlan = {
+  adjustments: PosInventoryAdjustment[]
+  skipped: PosInventorySkip[]
+}
+
+/**
+ * Map shaped POS line items to the inventory decrements they imply. Pure —
+ * the workflow resolves each variant's inventory context (manage_inventory,
+ * linked inventory item, stock location) and this decides what to adjust.
+ *
+ * Ad-hoc items (no variant_id) never touch inventory. A variant rung up on
+ * multiple lines is aggregated into one adjustment. Variants that are
+ * unmanaged or missing an inventory item / location are reported as skips so
+ * the step can log them without failing the sale.
+ */
+export function planPosInventoryAdjustments(
+  items: Array<Pick<ShapedPosItem, "variant_id" | "quantity">>,
+  variants: PosVariantInventoryContext[]
+): PosInventoryPlan {
+  const contextByVariant = new Map(variants.map((v) => [v.variant_id, v]))
+
+  const quantityByVariant = new Map<string, number>()
+  for (const item of items) {
+    if (!item.variant_id) continue
+    quantityByVariant.set(
+      item.variant_id,
+      (quantityByVariant.get(item.variant_id) ?? 0) + item.quantity
+    )
+  }
+
+  const adjustments: PosInventoryAdjustment[] = []
+  const skipped: PosInventorySkip[] = []
+  for (const [variantId, quantity] of quantityByVariant) {
+    const context = contextByVariant.get(variantId)
+    if (!context) {
+      skipped.push({ variant_id: variantId, reason: "unknown_variant" })
+      continue
+    }
+    if (!context.manage_inventory) {
+      skipped.push({ variant_id: variantId, reason: "not_managed" })
+      continue
+    }
+    if (!context.inventory_item_id) {
+      skipped.push({ variant_id: variantId, reason: "no_inventory_item" })
+      continue
+    }
+    if (!context.location_id) {
+      skipped.push({ variant_id: variantId, reason: "no_location_level" })
+      continue
+    }
+    adjustments.push({
+      variant_id: variantId,
+      inventory_item_id: context.inventory_item_id,
+      location_id: context.location_id,
+      quantity,
+    })
+  }
+  return { adjustments, skipped }
+}
+
+/**
  * Order-level metadata for a POS sale. The `order_channel: "pos"` stamp is
  * what the `attribute-channel-on-placed` subscriber picks up; the pos_*
  * fields keep operator context for receipts / audits.

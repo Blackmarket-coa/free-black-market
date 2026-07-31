@@ -68,6 +68,9 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
     return {
       row_number: row.row_number,
       row_type: row.row_type,
+      // The storefront stamps this onto ticket line-item metadata;
+      // create-ticket-purchases requires metadata.venue_row_id.
+      venue_row_id: row.id,
       seats
     }
   })

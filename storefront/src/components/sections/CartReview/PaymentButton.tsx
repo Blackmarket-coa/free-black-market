@@ -2,7 +2,7 @@
 
 import ErrorMessage from "@/components/molecules/ErrorMessage/ErrorMessage"
 import { isManual, isStripe } from "../../../lib/constants"
-import { placeOrder } from "@/lib/data/cart"
+import { placeOrder, placeTicketOrder } from "@/lib/data/cart"
 import { HttpTypes } from "@medusajs/types"
 import { useElements, useStripe } from "@stripe/react-stripe-js"
 import React, { useEffect, useState } from "react"
@@ -13,6 +13,20 @@ import { toast } from "@/lib/helpers/toast"
 type PaymentButtonProps = {
   cart: HttpTypes.StoreCart
   "data-testid": string
+}
+
+// Ticket line items carry seat metadata (stamped by the ticket purchase
+// panel). A cart completes via the ticket-aware endpoint ONLY when it is
+// entirely tickets — a mixed cart routed through /complete-tickets would send
+// the non-ticket (and other-seller) items through the stock completion flow,
+// bypassing the marketplace split. Mixed carts are blocked at checkout.
+const cartTicketMode = (
+  cart?: HttpTypes.StoreCart | null
+): "none" | "all-tickets" | "mixed" => {
+  const items = cart?.items ?? []
+  const ticketCount = items.filter((item) => !!item.metadata?.show_date).length
+  if (ticketCount === 0) return "none"
+  return ticketCount === items.length ? "all-tickets" : "mixed"
 }
 
 const PaymentButton: React.FC<PaymentButtonProps> = ({
@@ -39,7 +53,11 @@ const PaymentButton: React.FC<PaymentButtonProps> = ({
       )
     case isManual(paymentSession?.provider_id):
       return (
-        <ManualTestPaymentButton notReady={notReady} data-testid={dataTestId} />
+        <ManualTestPaymentButton
+          notReady={notReady}
+          cart={cart}
+          data-testid={dataTestId}
+        />
       )
     default:
       return (
@@ -65,7 +83,15 @@ const StripePaymentButton = ({
 
   const onPaymentCompleted = async () => {
     try {
-      const res = await placeOrder()
+      const ticketMode = cartTicketMode(cart)
+      if (ticketMode === "mixed") {
+        setErrorMessage(
+          "Tickets must be checked out on their own. Please purchase the tickets in your cart separately from other items."
+        )
+        return
+      }
+      const res =
+        ticketMode === "all-tickets" ? await placeTicketOrder() : await placeOrder()
       if (!res.ok && res.error) {
         setErrorMessage(orderErrorFormatter(res.error))
       }
@@ -186,13 +212,27 @@ const StripePaymentButton = ({
   )
 }
 
-const ManualTestPaymentButton = ({ notReady }: { notReady: boolean }) => {
+const ManualTestPaymentButton = ({
+  notReady,
+  cart,
+}: {
+  notReady: boolean
+  cart: HttpTypes.StoreCart
+}) => {
   const [submitting, setSubmitting] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
 
   const onPaymentCompleted = async () => {
     try {
-      const res = await placeOrder()
+      const ticketMode = cartTicketMode(cart)
+      if (ticketMode === "mixed") {
+        setErrorMessage(
+          "Tickets must be checked out on their own. Please purchase the tickets in your cart separately from other items."
+        )
+        return
+      }
+      const res =
+        ticketMode === "all-tickets" ? await placeTicketOrder() : await placeOrder()
       if (!res.ok && res.error) {
         setErrorMessage(orderErrorFormatter(res.error))
       }

@@ -164,10 +164,19 @@ export async function addToCart({
   variantId,
   quantity,
   countryCode,
+  metadata,
 }: {
   variantId: string
   quantity: number
   countryCode: string
+  /**
+   * Optional line-item metadata (e.g. ticket seat selections:
+   * `{ venue_row_id, seat_number, show_date }`). When set, the item is always
+   * created as a NEW line item instead of merging quantity into an existing
+   * line item for the same variant — metadata distinguishes the units, and
+   * the backend's add-to-cart flow dedupes by (variant, metadata) itself.
+   */
+  metadata?: Record<string, unknown>
 }) {
   if (!variantId) {
     throw new Error("Missing variant ID when adding to cart")
@@ -185,7 +194,7 @@ export async function addToCart({
 
   const currentItem = cart.items?.find((item) => item.variant_id === variantId)
 
-  if (currentItem) {
+  if (currentItem && !metadata) {
     await sdk.store.cart
       .updateLineItem(
         cart.id,
@@ -206,6 +215,7 @@ export async function addToCart({
         {
           variant_id: variantId,
           quantity,
+          ...(metadata ? { metadata } : {}),
         },
         {},
         headers
@@ -502,6 +512,44 @@ export async function placeOrder(cartId?: string) {
     revalidatePath("/user/orders")
     removeCartId()
     redirect(`/order/${res?.data?.order_set.orders[0].id}/confirmed`)
+  }
+
+  return res
+}
+
+/**
+ * Places an order for a cart that contains ticket line items. Completion goes
+ * through the backend's `/store/carts/:id/complete-tickets` route (NOT the
+ * default `/complete`): it completes the cart AND validates seat selections +
+ * records ticket purchases atomically, responding `{ type: "order", order }`.
+ * @param cartId - optional - The ID of the cart to place an order for.
+ * @returns The completion response when no order was created (e.g. a seat
+ * validation failure), mirroring `placeOrder`.
+ */
+export async function placeTicketOrder(cartId?: string) {
+  const id = cartId || (await getCartId())
+
+  if (!id) {
+    throw new Error("No existing cart found when placing an order")
+  }
+
+  const headers = {
+    ...(await getAuthHeaders()),
+  }
+
+  const res = await fetchQuery(`/store/carts/${id}/complete-tickets`, {
+    method: "POST",
+    headers,
+  })
+
+  const cartCacheTag = await getCacheTag("carts")
+  revalidateTag(cartCacheTag)
+
+  if (res?.data?.order?.id) {
+    revalidatePath("/user/reviews")
+    revalidatePath("/user/orders")
+    removeCartId()
+    redirect(`/order/${res.data.order.id}/confirmed`)
   }
 
   return res

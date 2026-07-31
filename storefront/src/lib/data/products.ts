@@ -140,6 +140,33 @@ export const listProducts = async ({
 }
 
 /**
+ * Detail-path only: fetch the product's listing-type catalog id from the
+ * dedicated read endpoint (the store products API does not expose the
+ * listing-type link, and the list fetch's fields cannot be widened due to
+ * the ORM-bug workaround above). Returns null on any failure so the
+ * detail page can fall back to physical-product presentation.
+ */
+export const getProductListingType = async (
+  productId: string
+): Promise<string | null> => {
+  if (!productId) return null
+
+  try {
+    const { catalog_id } = await medusaFetch<{ catalog_id: string | null }>(
+      `/store/products/${productId}/listing-type`,
+      {
+        method: "GET",
+        next: { revalidate: 60 },
+        cache: "force-cache",
+      }
+    )
+    return catalog_id ?? null
+  } catch {
+    return null
+  }
+}
+
+/**
  * This will fetch 100 products to the Next.js cache and sort them based on the sortBy parameter.
  * It will then return the paginated products based on the page and limit parameters.
  */

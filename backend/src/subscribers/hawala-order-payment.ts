@@ -8,6 +8,11 @@ import PayoutBreakdownService from "../modules/payout-breakdown/service"
 import { CREATOR_ATTRIBUTION_MODULE } from "../modules/creator-attribution"
 import type CreatorAttributionService from "../modules/creator-attribution/service"
 import { emitBlackoutEvent } from "../lib/blackout-emit"
+import {
+  isConsignmentSplitLive,
+  resolveOrderConsignment,
+  type ConsignmentConfig,
+} from "../lib/consignment"
 
 /**
  * Convert cents (integer) to dollars (decimal)
@@ -165,17 +170,82 @@ export default async function hawalaOrderPaymentSubscriber({
     const producerId = (order as any).producer_id || null
     const autoInvestPercentage = (order as any).auto_invest_percentage || 0
 
-    // Process order payment through ledger
-    const entries = await hawalaService.processOrderPayment({
-      customer_account_id: customerWallets[0].id,
-      seller_account_id: sellerAccounts[0].id,
-      order_id: orderId,
-      total_amount: totalAmount,
-      platform_fee_amount: platformFeeAmount,
-      producer_id: producerId,
-      auto_invest_percentage: autoInvestPercentage,
-      idempotency_key: `order-payment-${orderId}`,
+    // Consignment revenue split (dark by default). When
+    // FBM_CONSIGNMENT_SPLIT_LIVE=1 and every line item sells the same
+    // consignment deal (listing-type `consignment` + consignor metadata, see
+    // lib/consignment.ts), the seller-side amount is fanned out
+    // escrow->consignor + escrow->vendor INSTEAD of the single
+    // escrow->seller leg. Flag unset (default): no extra reads, ledger flow
+    // identical to today.
+    let consignmentPlan: {
+      config: ConsignmentConfig
+      totalCents: number
+      platformFeeCents: number
+    } | null = null
+    if (isConsignmentSplitLive()) {
+      const config = await lookupOrderConsignment(container, order, sellerId)
+      if (config) {
+        // Integer cents for the whole fan-out so escrow nets to exactly
+        // zero (order.total is integer cents; the percentage fee can be
+        // fractional, so it is rounded to a whole cent on this path).
+        const totalCents = Math.round(Number(order.total))
+        const platformFeeCents = Math.min(
+          Math.max(Math.round(platformFeeAmount * 100), 0),
+          totalCents
+        )
+        if (producerId && autoInvestPercentage) {
+          // Auto-invest carves its leg out of the seller side inside
+          // processOrderPayment; combining it with the split is not
+          // supported yet.
+          log.warn(
+            `[Hawala] Order ${orderId} has auto-invest configured; skipping consignment split`
+          )
+        } else if (totalCents - platformFeeCents <= 0) {
+          log.warn(
+            `[Hawala] Order ${orderId} has no positive seller-side amount; skipping consignment split`
+          )
+        } else {
+          consignmentPlan = { config, totalCents, platformFeeCents }
+        }
+      }
+    }
+
+    // Idempotency across a flag flip: the `-purchase` leg is written first by
+    // BOTH the plain and split paths under the same key, but their seller-side
+    // keys differ (`-seller` vs `-consignor`/`-vendor`). If the order was
+    // already settled, skip re-settlement so a redelivery that crosses an
+    // FBM_CONSIGNMENT_SPLIT_LIVE change can't write the alternate seller legs
+    // and double-debit escrow.
+    const priorPurchase = await hawalaService.listLedgerEntries({
+      idempotency_key: `order-payment-${orderId}-purchase`,
     })
+    if (priorPurchase.length > 0) {
+      log.info(`[Hawala] Order ${orderId} already settled; skipping re-settlement`)
+      return
+    }
+
+    // Process order payment through ledger
+    const entries = consignmentPlan
+      ? await processConsignmentOrderPayment(hawalaService, {
+          customerAccountId: customerWallets[0].id,
+          orderId,
+          currencyCode: String(order.currency_code || "USD").toUpperCase(),
+          vendorSellerId: sellerId,
+          totalCents: consignmentPlan.totalCents,
+          platformFeeCents: consignmentPlan.platformFeeCents,
+          config: consignmentPlan.config,
+          idempotencyKey: `order-payment-${orderId}`,
+        })
+      : await hawalaService.processOrderPayment({
+          customer_account_id: customerWallets[0].id,
+          seller_account_id: sellerAccounts[0].id,
+          order_id: orderId,
+          total_amount: totalAmount,
+          platform_fee_amount: platformFeeAmount,
+          producer_id: producerId,
+          auto_invest_percentage: autoInvestPercentage,
+          idempotency_key: `order-payment-${orderId}`,
+        })
 
     log.info(`[Hawala] Order ${orderId} processed: ${entries.length} ledger entries created`)
 
@@ -199,6 +269,136 @@ export default async function hawalaOrderPaymentSubscriber({
     log.error(`[Hawala] Error processing order ${orderId}:`, error)
     // Don't throw - order completion should not fail due to ledger issues
   }
+}
+
+/**
+ * Resolve the order's consignment split config. Called only on the
+ * FBM_CONSIGNMENT_SPLIT_LIVE path. The retrieved order already carries
+ * items.product_id; the products' metadata + listing-type link are read via
+ * query.graph (same shape as the unique-inventory-sold subscriber). Any
+ * lookup failure returns null so money still moves through the plain seller
+ * leg exactly as today.
+ */
+async function lookupOrderConsignment(
+  container: { resolve: (key: string) => any },
+  order: { id: string; items?: Array<{ product_id?: string | null } | null> | null },
+  vendorSellerId: string
+): Promise<ConsignmentConfig | null> {
+  try {
+    const items = (order.items ?? []).filter(
+      (item): item is { product_id?: string | null } => !!item
+    )
+    const itemProductIds = items.map((item) => item.product_id)
+    const productIds = [
+      ...new Set(itemProductIds.filter((id): id is string => !!id)),
+    ]
+    let products: unknown[] = []
+    if (productIds.length > 0) {
+      const query = container.resolve("query")
+      const { data } = await query.graph({
+        entity: "product",
+        fields: ["id", "metadata", "listing_type.catalog_id"],
+        filters: { id: productIds },
+      })
+      products = data ?? []
+    }
+    const resolution = resolveOrderConsignment({
+      item_product_ids: itemProductIds,
+      products: products as any[],
+      vendor_seller_id: vendorSellerId,
+    })
+    if (!resolution.config && resolution.reason !== "no_consignment_products") {
+      log.warn(
+        `[Hawala] Order ${order.id} consignment split skipped: ${resolution.reason}`
+      )
+    }
+    // consignor_seller_id is vendor-editable product metadata. Verify it names a
+    // real seller before routing order revenue to it — otherwise
+    // getOrCreateSellerEarnings would mint earnings for an arbitrary id. On no
+    // match, fall back to the plain seller leg (no split).
+    if (resolution.config) {
+      const query = container.resolve("query")
+      const { data: sellers } = await query.graph({
+        entity: "seller",
+        fields: ["id"],
+        filters: { id: resolution.config.consignor_seller_id },
+      })
+      if (!sellers?.length) {
+        log.warn(
+          `[Hawala] Order ${order.id} consignment split skipped: unknown consignor ${resolution.config.consignor_seller_id}`
+        )
+        return null
+      }
+    }
+    return resolution.config
+  } catch (error) {
+    log.warn(
+      `[Hawala] Could not resolve consignment config for order ${order.id}; using plain seller leg:`,
+      error
+    )
+    return null
+  }
+}
+
+/**
+ * Consignment order fan-out (FBM_CONSIGNMENT_SPLIT_LIVE only). Legs 1-2
+ * mirror processOrderPayment exactly — same entry types and `-purchase` /
+ * `-fee` idempotency keys — so an event redelivery that crosses a flag flip
+ * can never double-move them; the seller-side amount then goes through
+ * processConsignmentSplit (`-consignor` / `-vendor` legs) instead of the
+ * single `-seller` leg. All inputs are integer cents; createTransfer takes
+ * major units (cents / 100).
+ */
+async function processConsignmentOrderPayment(
+  hawalaService: HawalaLedgerModuleService,
+  args: {
+    customerAccountId: string
+    orderId: string
+    currencyCode: string
+    vendorSellerId: string
+    totalCents: number
+    platformFeeCents: number
+    config: ConsignmentConfig
+    idempotencyKey: string
+  }
+) {
+  const escrowAccount = await hawalaService.getOrCreateSystemAccount("ESCROW")
+  const platformAccount = await hawalaService.getOrCreateSystemAccount(
+    "PLATFORM_FEE"
+  )
+
+  // 1. Customer pays full amount to escrow first
+  const purchaseEntry = await hawalaService.createTransfer({
+    debit_account_id: args.customerAccountId,
+    credit_account_id: escrowAccount.id,
+    amount: args.totalCents / 100,
+    entry_type: "PURCHASE",
+    order_id: args.orderId,
+    idempotency_key: `${args.idempotencyKey}-purchase`,
+  })
+
+  // 2. Platform fee from escrow to platform
+  const feeEntry = await hawalaService.createTransfer({
+    debit_account_id: escrowAccount.id,
+    credit_account_id: platformAccount.id,
+    amount: args.platformFeeCents / 100,
+    entry_type: "COMMISSION",
+    order_id: args.orderId,
+    idempotency_key: `${args.idempotencyKey}-fee`,
+  })
+
+  // 3. Seller-side amount split escrow->consignor + escrow->vendor
+  const splitEntries = await hawalaService.processConsignmentSplit({
+    orderId: args.orderId,
+    sellerAmountCents: args.totalCents - args.platformFeeCents,
+    currencyCode: args.currencyCode,
+    vendorSellerId: args.vendorSellerId,
+    consignorSellerId: args.config.consignor_seller_id,
+    consignorBps: args.config.consignor_bps,
+    idempotencyKey: args.idempotencyKey,
+  })
+
+  return [purchaseEntry, feeEntry, ...splitEntries]
 }
 
 export const config: SubscriberConfig = {
