@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react"
 import { Button, Container, Heading, Label, Text, toast } from "@medusajs/ui"
-import { backendUrl } from "@lib/client/client"
+import { sdk } from "@lib/client"
 
 interface Program {
   id: string
@@ -29,24 +29,6 @@ const formatCents = (cents: number | null | undefined, currency = "USD") =>
 const formatDate = (s: string | null) =>
   s ? new Date(s).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" }) : "—"
 
-async function adminFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  const url = `${backendUrl.replace(/\/$/, "")}${path}`
-  const res = await fetch(url, {
-    credentials: "include",
-    ...init,
-    headers: {
-      "Content-Type": "application/json",
-      ...(init?.headers || {}),
-    },
-  })
-  if (!res.ok) {
-    const body = await res.text().catch(() => "")
-    throw new Error(`${res.status}: ${body || res.statusText}`)
-  }
-  
-return (await res.json()) as T
-}
-
 export const CreatorProgramsAdminPage = () => {
   const [programs, setPrograms] = useState<Program[]>([])
   const [statusFilter, setStatusFilter] = useState<string>("")
@@ -55,10 +37,9 @@ export const CreatorProgramsAdminPage = () => {
   const reload = async () => {
     setLoading(true)
     try {
-      const qs = new URLSearchParams({ limit: "100" })
-      if (statusFilter) qs.set("status", statusFilter)
-      const { programs } = await adminFetch<{ programs: Program[] }>(
-        `/v1/admin/marketplace/programs?${qs.toString()}`
+      const { programs } = await sdk.client.fetch<{ programs: Program[] }>(
+        "/v1/admin/marketplace/programs",
+        { query: { limit: 100, status: statusFilter || undefined } }
       )
       setPrograms(programs)
     } catch (err) {
@@ -79,10 +60,10 @@ export const CreatorProgramsAdminPage = () => {
     const reason = window.prompt("Reason for force-closing:")
     if (!reason || reason.trim().length < 2) return
     try {
-      await adminFetch(`/v1/admin/marketplace/programs/${id}/force-close`, {
-        method: "POST",
-        body: JSON.stringify({ reason }),
-      })
+      await sdk.client.fetch(
+        `/v1/admin/marketplace/programs/${id}/force-close`,
+        { method: "POST", body: { reason } }
+      )
       toast.success("Program force-closed")
       await reload()
     } catch (err) {

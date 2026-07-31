@@ -8,7 +8,7 @@ import {
   Textarea,
   toast,
 } from "@medusajs/ui"
-import { backendUrl } from "@lib/client/client"
+import { sdk } from "@lib/client"
 
 interface CreatorRow {
   seller_id: string
@@ -44,24 +44,6 @@ const formatCents = (cents: number) =>
 const formatDate = (s: string | null) =>
   s ? new Date(s).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" }) : "—"
 
-async function adminFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  const url = `${backendUrl.replace(/\/$/, "")}${path}`
-  const res = await fetch(url, {
-    credentials: "include",
-    ...init,
-    headers: {
-      "Content-Type": "application/json",
-      ...(init?.headers || {}),
-    },
-  })
-  if (!res.ok) {
-    const body = await res.text().catch(() => "")
-    throw new Error(`${res.status}: ${body || res.statusText}`)
-  }
-  
-return (await res.json()) as T
-}
-
 export const CreatorsModerationPage = () => {
   const [tab, setTab] = useState<"creators" | "attributions">("creators")
   const [creators, setCreators] = useState<CreatorRow[]>([])
@@ -75,15 +57,14 @@ export const CreatorsModerationPage = () => {
   const reload = async () => {
     setLoading(true)
     try {
-      const cQs = new URLSearchParams({ limit: "100" })
-      const aQs = new URLSearchParams({ limit: "100" })
-      if (statusFilter) aQs.set("status", statusFilter)
       const [cRes, aRes] = await Promise.all([
-        adminFetch<{ creators: CreatorRow[] }>(
-          `/v1/admin/marketplace/creators?${cQs.toString()}`
+        sdk.client.fetch<{ creators: CreatorRow[] }>(
+          "/v1/admin/marketplace/creators",
+          { query: { limit: 100 } }
         ),
-        adminFetch<{ attributions: AttributionRow[] }>(
-          `/v1/admin/marketplace/attributions?${aQs.toString()}`
+        sdk.client.fetch<{ attributions: AttributionRow[] }>(
+          "/v1/admin/marketplace/attributions",
+          { query: { limit: 100, status: statusFilter || undefined } }
         ),
       ])
       setCreators(cRes.creators)
@@ -110,10 +91,10 @@ export const CreatorsModerationPage = () => {
 return
     }
     try {
-      await adminFetch(`/v1/admin/marketplace/attributions/${id}/disqualify`, {
-        method: "POST",
-        body: JSON.stringify({ reason }),
-      })
+      await sdk.client.fetch(
+        `/v1/admin/marketplace/attributions/${id}/disqualify`,
+        { method: "POST", body: { reason } }
+      )
       toast.success("Attribution disqualified")
       setReasonByAttribution((m) => {
         const next = { ...m }
