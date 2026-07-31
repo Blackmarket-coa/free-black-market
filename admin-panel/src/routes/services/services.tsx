@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react"
 import { Button, Container, Heading, Label, Text, Textarea, toast } from "@medusajs/ui"
-import { backendUrl } from "@lib/client/client"
+import { sdk } from "@lib/client"
 
 interface ServiceProgramRow {
   id: string
@@ -44,24 +44,6 @@ const formatCents = (cents: number | null | undefined, currency = "USD") =>
         Number(cents) / 100
       )
 
-async function adminFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  const url = `${backendUrl.replace(/\/$/, "")}${path}`
-  const res = await fetch(url, {
-    credentials: "include",
-    ...init,
-    headers: {
-      "Content-Type": "application/json",
-      ...(init?.headers || {}),
-    },
-  })
-  if (!res.ok) {
-    const body = await res.text().catch(() => "")
-    throw new Error(`${res.status}: ${body || res.statusText}`)
-  }
-  
-return (await res.json()) as T
-}
-
 export const ServicesAdminPage = () => {
   const [tab, setTab] = useState<"programs" | "subcontracts" | "proofs">("programs")
   const [programs, setPrograms] = useState<ServiceProgramRow[]>([])
@@ -76,19 +58,23 @@ export const ServicesAdminPage = () => {
   const reload = async () => {
     setLoading(true)
     try {
-      const subQs = new URLSearchParams({ limit: "100" })
-      if (statusFilter) subQs.set("status", statusFilter)
-      const proofQs = new URLSearchParams({ limit: "100" })
-      if (proofStatusFilter) proofQs.set("verification_status", proofStatusFilter)
       const [{ programs }, { subcontracts: subs }, { proofs: ps }] = await Promise.all([
-        adminFetch<{ programs: ServiceProgramRow[] }>(
-          `/v1/admin/marketplace/service-programs?limit=100`
+        sdk.client.fetch<{ programs: ServiceProgramRow[] }>(
+          "/v1/admin/marketplace/service-programs",
+          { query: { limit: 100 } }
         ),
-        adminFetch<{ subcontracts: SubcontractRow[] }>(
-          `/v1/admin/marketplace/subcontracts?${subQs.toString()}`
+        sdk.client.fetch<{ subcontracts: SubcontractRow[] }>(
+          "/v1/admin/marketplace/subcontracts",
+          { query: { limit: 100, status: statusFilter || undefined } }
         ),
-        adminFetch<{ proofs: ProofRow[] }>(
-          `/v1/admin/marketplace/proofs?${proofQs.toString()}`
+        sdk.client.fetch<{ proofs: ProofRow[] }>(
+          "/v1/admin/marketplace/proofs",
+          {
+            query: {
+              limit: 100,
+              verification_status: proofStatusFilter || undefined,
+            },
+          }
         ),
       ])
       setPrograms(programs)
@@ -120,9 +106,9 @@ export const ServicesAdminPage = () => {
       body.release_amount_cents = Number.isFinite(amt) ? amt : 0
     }
     try {
-      await adminFetch(`/v1/admin/marketplace/subcontracts/${id}/resolve`, {
+      await sdk.client.fetch(`/v1/admin/marketplace/subcontracts/${id}/resolve`, {
         method: "POST",
-        body: JSON.stringify(body),
+        body,
       })
       toast.success(`Subcontract ${decision}d`)
       await reload()
@@ -133,7 +119,7 @@ export const ServicesAdminPage = () => {
 
   const verifyProof = async (id: string) => {
     try {
-      await adminFetch(`/v1/admin/marketplace/proofs/${id}/verify`, {
+      await sdk.client.fetch(`/v1/admin/marketplace/proofs/${id}/verify`, {
         method: "POST",
       })
       toast.success("Proof manually verified")
@@ -151,9 +137,9 @@ export const ServicesAdminPage = () => {
 return
     }
     try {
-      await adminFetch(`/v1/admin/marketplace/proofs/${id}/reject`, {
+      await sdk.client.fetch(`/v1/admin/marketplace/proofs/${id}/reject`, {
         method: "POST",
-        body: JSON.stringify({ reason }),
+        body: { reason },
       })
       toast.success("Proof rejected")
       setRejectReasonById((m) => {

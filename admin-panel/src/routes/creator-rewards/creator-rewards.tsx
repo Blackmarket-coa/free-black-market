@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react"
 import { Button, Container, Heading, Label, Text, toast } from "@medusajs/ui"
-import { backendUrl } from "@lib/client/client"
+import { sdk } from "@lib/client"
 
 interface Pool {
   id: string
@@ -36,24 +36,6 @@ const formatCents = (cents: number, currency = "USD") =>
 const formatDate = (s: string | null) =>
   s ? new Date(s).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" }) : "—"
 
-async function adminFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  const url = `${backendUrl.replace(/\/$/, "")}${path}`
-  const res = await fetch(url, {
-    credentials: "include",
-    ...init,
-    headers: {
-      "Content-Type": "application/json",
-      ...(init?.headers || {}),
-    },
-  })
-  if (!res.ok) {
-    const body = await res.text().catch(() => "")
-    throw new Error(`${res.status}: ${body || res.statusText}`)
-  }
-  
-return (await res.json()) as T
-}
-
 export const CreatorRewardsPage = () => {
   const [pools, setPools] = useState<Pool[]>([])
   const [statusFilter, setStatusFilter] = useState<string>("")
@@ -63,10 +45,9 @@ export const CreatorRewardsPage = () => {
   const reload = async () => {
     setLoading(true)
     try {
-      const qs = new URLSearchParams({ limit: "100" })
-      if (statusFilter) qs.set("status", statusFilter)
-      const { pools } = await adminFetch<{ pools: Pool[] }>(
-        `/v1/admin/marketplace/reward-pools?${qs.toString()}`
+      const { pools } = await sdk.client.fetch<{ pools: Pool[] }>(
+        "/v1/admin/marketplace/reward-pools",
+        { query: { limit: 100, status: statusFilter || undefined } }
       )
       setPools(pools)
     } catch (err) {
@@ -85,9 +66,9 @@ export const CreatorRewardsPage = () => {
 
   const previewDistribution = async (id: string) => {
     try {
-      const result = await adminFetch<DistributionPreview & { dry_run: boolean }>(
-        `/v1/admin/marketplace/reward-pools/${id}/distribute?dry_run=1`,
-        { method: "POST" }
+      const result = await sdk.client.fetch<DistributionPreview & { dry_run: boolean }>(
+        `/v1/admin/marketplace/reward-pools/${id}/distribute`,
+        { method: "POST", query: { dry_run: 1 } }
       )
       setPreviewById((m) => ({ ...m, [id]: result }))
       toast.success(
@@ -107,7 +88,7 @@ export const CreatorRewardsPage = () => {
       return
     }
     try {
-      const result = await adminFetch<{
+      const result = await sdk.client.fetch<{
         distributed_count: number
         total_distributed_cents: number
       }>(`/v1/admin/marketplace/reward-pools/${id}/distribute`, {
