@@ -2,6 +2,7 @@ import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import {
   ContainerRegistrationKeys,
   Modules,
+  QueryContext,
   defaultCurrencies,
 } from "@medusajs/framework/utils"
 import {
@@ -40,11 +41,15 @@ import { CustomerTierType } from "../../../../../modules/vendor-rules/models/ven
  * 4. Otherwise each participating item's unit_price is overridden to the
  *    discounted price via `lib/wholesale-pricing.ts` (is_custom_price so
  *    Medusa's pricing flow respects the override).
- * 5. The original listed unit price is stashed on line-item metadata under
- *    the shared sliding-scale BASE_UNIT_PRICE_METADATA_KEY (tagged with its
- *    currency) on first apply, so re-applies — and interleaved sliding-scale
- *    applies — always derive from the original listed price rather than
- *    compounding.
+ * 5. The pricing base is the variant's authoritative calculated price,
+ *    batch-fetched in the cart's currency (and region, when set). Line-item
+ *    metadata is buyer-writable, so the stash under the shared sliding-scale
+ *    BASE_UNIT_PRICE_METADATA_KEY (tagged with its currency) is still
+ *    WRITTEN — for downstream accounting and interleaved sliding-scale
+ *    applies — but is never READ as a pricing input: a hostile client could
+ *    otherwise poison the base and have the reprice write an arbitrary
+ *    unit_price. Items whose variant has no calculated price fall back to
+ *    deriving the base from their current unit_price.
  *
  * No tier / no discount => 200 no-op with `{applied: false}`.
  *
@@ -71,9 +76,11 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       "id",
       "metadata",
       "currency_code",
+      "region_id",
       "customer_id",
       "items.id",
       "items.product_id",
+      "items.variant_id",
       "items.quantity",
       "items.unit_price",
       "items.is_custom_price",
@@ -116,6 +123,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
   const items = (cart.items ?? []) as Array<{
     id: string
     product_id: string | null
+    variant_id: string | null
     quantity: number | string
     unit_price: number | string
     is_custom_price?: boolean
@@ -125,6 +133,49 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
   const productIds = Array.from(
     new Set(items.map((i) => i.product_id).filter((p): p is string => !!p))
   )
+
+  // SECURITY (audit: repricing base poisoning): line-item metadata is
+  // buyer-writable, so it must never be trusted as the pricing base. Fetch the
+  // authoritative per-variant price in the cart's currency/region instead; the
+  // metadata stash is still written below for downstream accounting, but the
+  // read path is gone. Same fix as ../tier/route.ts.
+  const variantIds = Array.from(
+    new Set(items.map((i) => i.variant_id).filter((v): v is string => !!v))
+  )
+  const regionId = (cart as { region_id?: string | null }).region_id || null
+
+  // variantId -> authoritative unit price in MINOR units
+  const variantPriceMinor = new Map<string, number>()
+  if (variantIds.length > 0) {
+    const { data: variants } = await query.graph({
+      entity: "product_variant",
+      fields: ["id", "calculated_price.*"],
+      filters: { id: variantIds },
+      context: {
+        calculated_price: QueryContext({
+          currency_code: currencyCode,
+          ...(regionId ? { region_id: regionId } : {}),
+        }),
+      },
+    })
+    for (const variant of (variants ?? []) as Array<{
+      id: string
+      calculated_price?: {
+        calculated_amount?: number | string | null
+      } | null
+    }>) {
+      const rawAmount = variant?.calculated_price?.calculated_amount
+      const amount = typeof rawAmount === "string" ? Number(rawAmount) : rawAmount
+      if (
+        variant?.id &&
+        typeof amount === "number" &&
+        Number.isFinite(amount) &&
+        amount >= 0
+      ) {
+        variantPriceMinor.set(variant.id, toMinor(amount))
+      }
+    }
+  }
 
   // productId -> sellerId (brackets v2 would also need product metadata here)
   const productSeller = new Map<string, string>()
@@ -184,29 +235,27 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     const discountPercent = Math.max(0, Number(tier!.discount_percent) || 0)
 
     const itemMeta = (item.metadata ?? {}) as Record<string, unknown>
-    const stashed = itemMeta[BASE_UNIT_PRICE_METADATA_KEY]
-    const stashedCurrency = itemMeta[BASE_CURRENCY_METADATA_KEY]
     const currentUnitPrice =
       typeof item.unit_price === "string"
         ? Number(item.unit_price)
         : item.unit_price
 
-    // Same stash-validity rules as the tier route: a base captured in another
-    // currency must not be reused; legacy stashes with no currency tag are
-    // treated as current-currency for back-compat.
-    const stashCurrencyMatches =
-      typeof stashedCurrency !== "string" || stashedCurrency === currencyCode
-    const stashUsable =
-      typeof stashed === "number" &&
-      Number.isFinite(stashed) &&
-      stashed >= 0 &&
-      stashCurrencyMatches
-
-    const basePriceMinor = stashUsable
-      ? (stashed as number)
-      : Number.isFinite(currentUnitPrice)
-        ? toMinor(currentUnitPrice)
-        : NaN
+    // Trusted base: the variant's calculated price (already fetched in the
+    // cart's currency/region and converted to minor units). The metadata stash
+    // is buyer-writable and is deliberately NEVER read here — same rule as the
+    // tier route. When the variant has no calculated price (or the item has no
+    // variant), fall back to deriving the base from the current line price, as
+    // a first apply always did.
+    const authoritativeBaseMinor =
+      item.variant_id != null
+        ? variantPriceMinor.get(item.variant_id)
+        : undefined
+    const basePriceMinor =
+      authoritativeBaseMinor !== undefined
+        ? authoritativeBaseMinor
+        : Number.isFinite(currentUnitPrice)
+          ? toMinor(currentUnitPrice)
+          : NaN
 
     if (!Number.isFinite(basePriceMinor) || basePriceMinor < 0) continue
 

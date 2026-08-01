@@ -27,9 +27,15 @@ type Tier = {
   waive_order_minimum?: boolean
 }
 
+type Variant = {
+  id: string
+  calculated_price?: { calculated_amount?: number | string | null } | null
+}
+
 const makeScope = ({
   cart,
   products = [],
+  variants = [],
   tiersBySeller = new Map<string, Tier>(),
   minimumsBySeller = new Map<
     string,
@@ -38,6 +44,7 @@ const makeScope = ({
 }: {
   cart: Record<string, unknown> | null
   products?: Array<{ id: string; seller?: { id: string } | null }>
+  variants?: Variant[]
   tiersBySeller?: Map<string, Tier>
   minimumsBySeller?: Map<
     string,
@@ -71,6 +78,7 @@ const makeScope = ({
     graph: jest.fn(async ({ entity }: { entity: string }) => {
       if (entity === "cart") return { data: cart ? [cart] : [] }
       if (entity === "product") return { data: products }
+      if (entity === "product_variant") return { data: variants }
       throw new Error(`unexpected graph entity: ${entity}`)
     }),
   }
@@ -248,7 +256,7 @@ describe("store cart wholesale route", () => {
     ])
   })
 
-  it("re-POST is a no-op: derives from the stash and never compounds", async () => {
+  it("re-POST is a no-op: derives from the variant price and never compounds", async () => {
     const { scope, cartModule } = makeScope({
       cart: baseCart({
         metadata: { wholesale_applied: true },
@@ -256,8 +264,9 @@ describe("store cart wholesale route", () => {
           {
             id: "li_1",
             product_id: "prod_1",
+            variant_id: "var_1",
             quantity: 5,
-            unit_price: 5.5,
+            unit_price: 5.5, // already discounted from the listed 10
             is_custom_price: true,
             metadata: {
               [BASE_UNIT_PRICE_METADATA_KEY]: 1000,
@@ -268,6 +277,7 @@ describe("store cart wholesale route", () => {
         ],
       }),
       products: sellerProducts,
+      variants: [{ id: "var_1", calculated_price: { calculated_amount: 10 } }],
       tiersBySeller: new Map([["seller_1", wholesaleTier()]]),
     })
     const res = createRes()
@@ -408,7 +418,11 @@ describe("store cart wholesale route", () => {
     expect(updated.map((u) => u.id)).toEqual(["li_1"])
   })
 
-  it("ignores a stashed base from another currency and re-derives", async () => {
+  it("ignores a stashed base from another currency (the stash is never a pricing input)", async () => {
+    // Historically this guarded the currency-mismatch rule (B-money-7). Since
+    // the base-poisoning fix, the metadata stash is never read as a pricing
+    // base at all, so a foreign-currency stash is ignored trivially: with no
+    // variant price available the base re-derives from the current line price.
     const { scope, cartModule } = makeScope({
       cart: baseCart({
         items: [
@@ -433,6 +447,99 @@ describe("store cart wholesale route", () => {
 
     expect(res.statusCode).toBe(200)
     // base re-derived from the current usd price (1000), not the eur stash
+    expect(cartModule.updateLineItems).toHaveBeenCalledWith([
+      expect.objectContaining({
+        unit_price: 5.5,
+        metadata: expect.objectContaining({
+          [BASE_UNIT_PRICE_METADATA_KEY]: 1000,
+          [BASE_CURRENCY_METADATA_KEY]: "usd",
+        }),
+      }),
+    ])
+  })
+
+  it("derives the base from the variant's calculated price, never a poisoned stash", async () => {
+    // Regression (security audit: repricing base poisoning): line-item
+    // metadata is buyer-writable. A hostile client stashes an inflated
+    // "base" (and the current unit_price has drifted too); the written
+    // price must derive from the variant's authoritative price.
+    const { scope, cartModule, query } = makeScope({
+      cart: baseCart({
+        items: [
+          {
+            id: "li_1",
+            product_id: "prod_1",
+            variant_id: "var_1",
+            quantity: 5,
+            unit_price: 8, // drifted from the listed 10
+            is_custom_price: false,
+            metadata: {
+              [BASE_UNIT_PRICE_METADATA_KEY]: 999900, // hostile, same currency
+              [BASE_CURRENCY_METADATA_KEY]: "usd",
+            },
+          },
+        ],
+      }),
+      products: sellerProducts,
+      variants: [{ id: "var_1", calculated_price: { calculated_amount: 10 } }],
+      tiersBySeller: new Map([["seller_1", wholesaleTier()]]),
+    })
+    const res = createRes()
+    await POST({ params: { id: "cart_1" }, scope } as any, res)
+
+    expect(res.statusCode).toBe(200)
+    expect(res.body.applied).toBe(true)
+    // 1000 minor (variant price) - 45 % = 550 minor, NOT 999900 - 45 % and
+    // NOT 800 - 45 %; the stash is overwritten with the trusted base.
+    expect(cartModule.updateLineItems).toHaveBeenCalledWith([
+      {
+        id: "li_1",
+        unit_price: 5.5,
+        is_custom_price: true,
+        metadata: {
+          [BASE_UNIT_PRICE_METADATA_KEY]: 1000,
+          [BASE_CURRENCY_METADATA_KEY]: "usd",
+          [WHOLESALE_DISCOUNT_METADATA_KEY]: 45,
+        },
+      },
+    ])
+    // The authoritative price is fetched for the cart's variants in the
+    // cart's currency.
+    const variantCall = query.graph.mock.calls
+      .map((call) => call[0] as any)
+      .find((arg) => arg.entity === "product_variant")
+    expect(variantCall).toBeDefined()
+    expect(variantCall.filters).toEqual({ id: ["var_1"] })
+    expect(variantCall.context.calculated_price).toMatchObject({
+      currency_code: "usd",
+    })
+  })
+
+  it("falls back to the current unit_price base when the variant has no calculated price", async () => {
+    const { scope, cartModule } = makeScope({
+      cart: baseCart({
+        items: [
+          {
+            id: "li_1",
+            product_id: "prod_1",
+            variant_id: "var_1",
+            quantity: 5,
+            unit_price: 10,
+            is_custom_price: false,
+            // even in the fallback path a stashed "base" must stay dead
+            metadata: { [BASE_UNIT_PRICE_METADATA_KEY]: 999900 },
+          },
+        ],
+      }),
+      products: sellerProducts,
+      variants: [{ id: "var_1", calculated_price: null }],
+      tiersBySeller: new Map([["seller_1", wholesaleTier()]]),
+    })
+    const res = createRes()
+    await POST({ params: { id: "cart_1" }, scope } as any, res)
+
+    expect(res.statusCode).toBe(200)
+    // base = toMinor(10) = 1000, from the line's unit_price
     expect(cartModule.updateLineItems).toHaveBeenCalledWith([
       expect.objectContaining({
         unit_price: 5.5,
