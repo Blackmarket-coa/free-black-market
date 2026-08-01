@@ -1,4 +1,4 @@
-import { useMutation, useQuery } from "@tanstack/react-query"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { USE_MOCK_DATA, mockResolve, api } from "@bmc/portal-kit"
 import {
   MOCK_ANALYTICS,
@@ -14,6 +14,7 @@ import {
   MOCK_MEMBERSHIP_TIERS,
   MOCK_PAYOUTS,
   MOCK_PROPOSALS,
+  MOCK_QUESTS,
   MOCK_SPLITS,
   MOCK_XP_BALANCES,
 } from "@/lib/mock/data"
@@ -31,6 +32,7 @@ import type {
   MembershipTier,
   OverlayUrlResponse,
   PayoutsData,
+  QuestHighlight,
   SplitContract,
   XpBalance,
 } from "@/types"
@@ -123,11 +125,22 @@ export function useCreditTransactions() {
 export function useXpBalances() {
   return useQuery<XpBalance[]>({
     queryKey: ["creator", "xp-balances"],
-    queryFn: async () => {
-      if (USE_MOCK_DATA) return mockResolve(MOCK_XP_BALANCES)
-      const { data } = await api.get("/vendor/creator/xp-balances")
-      return data.balances
-    },
+    queryFn: () =>
+      liveFirst(async () => {
+        const { data } = await api.get("/vendor/creator/xp-balances")
+        return data.balances as XpBalance[]
+      }, MOCK_XP_BALANCES),
+  })
+}
+
+export function useQuests() {
+  return useQuery<QuestHighlight[]>({
+    queryKey: ["creator", "quests"],
+    queryFn: () =>
+      liveFirst(async () => {
+        const { data } = await api.get("/vendor/creator/quests")
+        return data.quests as QuestHighlight[]
+      }, MOCK_QUESTS),
   })
 }
 
@@ -284,6 +297,84 @@ export function useOverlayUrl() {
         }
         throw err
       }
+    },
+  })
+}
+
+// ─── Credit money-movement mutations (dark unless FBM_CREATOR_CREDITS_LIVE) ──
+
+export interface ConvertXpResult {
+  converted_xp: number
+  credits: number
+  balance: number
+}
+
+/**
+ * Convert spendable XP → Coalition Credits in whole 1,000 XP → 50₡ blocks →
+ * POST /vendor/creator/credits/convert-xp. Invalidates the credit + XP reads so
+ * the page reflects the new balances. Falls back to a simulated quote under mock.
+ */
+export function useConvertXp() {
+  const qc = useQueryClient()
+  return useMutation<ConvertXpResult, Error, { xp?: number }>({
+    mutationFn: async (vars) => {
+      try {
+        const { data } = await api.post("/vendor/creator/credits/convert-xp", vars ?? {})
+        return data
+      } catch (err) {
+        if (USE_MOCK_DATA) {
+          const blocks = Math.floor((vars?.xp ?? 1000) / 1000)
+          return mockResolve({
+            converted_xp: blocks * 1000,
+            credits: blocks * 50,
+            balance: (MOCK_CREDIT_BALANCE.available_credits ?? 0) + blocks * 50,
+          })
+        }
+        throw err
+      }
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["creator", "credit-balance"] })
+      qc.invalidateQueries({ queryKey: ["creator", "credit-transactions"] })
+      qc.invalidateQueries({ queryKey: ["creator", "xp-balances"] })
+    },
+  })
+}
+
+export interface WithdrawResult {
+  request_id: string
+  credits: number
+  status: string
+}
+
+/**
+ * Request a closed-loop credit redemption → POST
+ * /vendor/creator/credits/withdraw. Posture A: this is NOT a cash-out — it
+ * burns ₡ back to the issuer and queues the request for manual settlement.
+ * Falls back to a simulated pending request under mock.
+ */
+export function useWithdrawCredits() {
+  const qc = useQueryClient()
+  return useMutation<WithdrawResult, Error, { credits: number }>({
+    mutationFn: async (vars) => {
+      try {
+        const { data } = await api.post("/vendor/creator/credits/withdraw", vars)
+        return data
+      } catch (err) {
+        if (USE_MOCK_DATA) {
+          return mockResolve({
+            request_id: `cwr_demo_${Math.random().toString(36).slice(2, 10)}`,
+            credits: vars.credits,
+            status: "pending",
+          })
+        }
+        throw err
+      }
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["creator", "credit-balance"] })
+      qc.invalidateQueries({ queryKey: ["creator", "credit-transactions"] })
+      qc.invalidateQueries({ queryKey: ["creator", "xp-balances"] })
     },
   })
 }

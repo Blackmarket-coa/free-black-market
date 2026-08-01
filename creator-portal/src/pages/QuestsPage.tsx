@@ -2,13 +2,12 @@ import { PageHeader } from "@bmc/ui"
 import { QueryState } from "@bmc/ui"
 import { TierBadge } from "@bmc/ui"
 import { KarmaBar } from "@bmc/ui"
-import { usePayouts } from "@/hooks/useCreatorData"
-import { MOCK_QUESTS } from "@/lib/mock/data"
+import { usePayouts, useQuests } from "@/hooks/useCreatorData"
 import { classNames } from "@bmc/portal-kit"
 
 export function QuestsPage() {
   const { data: payouts, isLoading, isError } = usePayouts()
-  const quests = MOCK_QUESTS
+  const { data: quests = [] } = useQuests()
 
   return (
     <div className="space-y-5">

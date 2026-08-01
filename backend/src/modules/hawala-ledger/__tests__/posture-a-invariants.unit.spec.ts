@@ -96,6 +96,24 @@ describe("posture-a-guard: assertPurchaseContext (strict mode)", () => {
     ).not.toThrow()
   })
 
+  it("permits CREDIT_PAYOUT_MINT (creator XP → CCR conversion) without a purchase context", () => {
+    expect(() =>
+      assertPurchaseContext({ ...base, entry_type: "CREDIT_PAYOUT_MINT" }, "strict")
+    ).not.toThrow()
+  })
+
+  it("permits CREDIT_REFUND_BURN (closed-loop redemption request) without a purchase context", () => {
+    expect(() =>
+      assertPurchaseContext({ ...base, entry_type: "CREDIT_REFUND_BURN" }, "strict")
+    ).not.toThrow()
+  })
+
+  it("STILL REJECTS a plain CCR TRANSFER with no purchase context (mint/burn are the only new exemptions)", () => {
+    expect(() =>
+      assertPurchaseContext({ ...base, entry_type: "TRANSFER" }, "strict")
+    ).toThrow(ClosedLoopViolationError)
+  })
+
   it("ESCROW_FUND and ESCROW_RELEASE are recognized purchase reference types", () => {
     expect(PURCHASE_CONTEXT_REFERENCE_TYPES.has("ESCROW_FUND")).toBe(true)
     expect(PURCHASE_CONTEXT_REFERENCE_TYPES.has("ESCROW_RELEASE")).toBe(true)
@@ -153,5 +171,10 @@ describe("posture-a-guard: constants", () => {
   it("issuer entry set includes ISSUE and BURN", () => {
     expect(ISSUER_ENTRY_TYPES.has("ISSUE")).toBe(true)
     expect(ISSUER_ENTRY_TYPES.has("BURN")).toBe(true)
+  })
+
+  it("issuer entry set includes the creator-credit mint/burn types", () => {
+    expect(ISSUER_ENTRY_TYPES.has("CREDIT_PAYOUT_MINT")).toBe(true)
+    expect(ISSUER_ENTRY_TYPES.has("CREDIT_REFUND_BURN")).toBe(true)
   })
 })

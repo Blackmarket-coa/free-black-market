@@ -6,7 +6,7 @@ import {
   XpRedemption,
   XpAttestation,
 } from "./models"
-import { XpRedemptionStatus } from "./models/xp-redemption"
+import { XpRedemptionStatus, XpRewardKind } from "./models/xp-redemption"
 import { Stance, isStance } from "./stance"
 import { levelForXp, levelProgress, ROLE_XP_WEIGHTS } from "./leveling"
 import { unlockedFeatures, nextUnlock } from "./thresholds"
@@ -564,6 +564,63 @@ class ProgressionModuleService extends MedusaService({
     ])
 
     return { redemption, reward }
+  }
+
+  /**
+   * Debit an arbitrary amount of spendable XP and open a `pending` redemption
+   * row for a NON-catalog spend (e.g. the creator XP → Coalition Credits
+   * conversion, where the debit amount is a whole-block multiple, not a fixed
+   * reward price).
+   *
+   * Same split as `beginRedemption`: the caller performs the downstream effect
+   * (minting credits) and then calls `completeRedemption` — or
+   * `refundRedemption` if that effect fails — so XP is never spent without an
+   * audit row and is never lost on a downstream failure. The returned
+   * `redemption.id` is a stable handle the caller can use as an idempotency key.
+   *
+   * Only spendable XP is touched; lifetime `total_xp`, role tracks, levels, and
+   * titles are untouched (dual-balance, ADR-0003).
+   *
+   * @throws InsufficientXpError when the balance can't cover `xpAmount`.
+   */
+  async beginXpConversion(customerId: string, xpAmount: number) {
+    const cost = Math.floor(xpAmount)
+    if (!Number.isFinite(cost) || cost <= 0) {
+      throw new Error(`xpAmount must be a positive number (got ${xpAmount})`)
+    }
+
+    const sheet = await this.getOrCreateCharacterSheet(customerId)
+
+    // Same DB-level compare-and-swap as beginRedemption so concurrent debits
+    // can't double-spend the balance (TOCTOU lost update).
+    const debited = await this.atomicDebitSpendableXp(sheet.id, cost)
+    if (debited === false) {
+      throw new InsufficientXpError(cost, Number(sheet.spendable_xp ?? 0))
+    }
+    if (debited === null) {
+      // No pg connection reachable (unit tests without DI): fall back to the
+      // read-modify-write, still correct single-threaded.
+      const balance = Number(sheet.spendable_xp ?? 0)
+      if (balance < cost) {
+        throw new InsufficientXpError(cost, balance)
+      }
+      await this.updateCharacterSheets({ id: sheet.id, spendable_xp: balance - cost })
+    }
+
+    const [redemption] = await this.createXpRedemptions([
+      {
+        customer_id: customerId,
+        reward_key: "creator-credit-conversion",
+        reward_name: "XP → Coalition Credits",
+        reward_kind: XpRewardKind.ENTITLEMENT,
+        xp_cost: cost,
+        feature_key: null,
+        status: XpRedemptionStatus.PENDING,
+        metadata: { kind: "xp_credit_conversion" },
+      },
+    ])
+
+    return { redemption }
   }
 
   /** Mark a redemption fulfilled and record the granted entitlement. */

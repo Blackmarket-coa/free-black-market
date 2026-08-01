@@ -152,6 +152,37 @@ jobs:
         working-directory: vendor-panel
         run: pnpm build:preview
 
+  portals:
+    name: Portal Checks (creator/nursery/wellness/botanical)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # The portals live in the ROOT pnpm workspace, which pins
+      # packageManager pnpm@10.13.1 — corepack rejects a mismatched prepare,
+      # so this job intentionally does not use env.PNPM_VERSION.
+      - name: Setup pnpm via corepack
+        run: |
+          corepack enable
+          corepack prepare pnpm@10.13.1 --activate
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install workspace dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck portals
+        run: pnpm portals:typecheck
+
+      - name: Lint portals
+        run: pnpm portals:lint
+
   admin-panel:
     name: Admin Panel Checks
     runs-on: ubuntu-latest

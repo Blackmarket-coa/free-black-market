@@ -44,9 +44,9 @@ and `BLACKOUT_API_BASE` are set (`features.freeblackmarketEmit()`).
 | `creator.payout.completed` | wired | `api/v1/admin/marketplace/payouts` |
 | `listing.signed_bundle.published` | wired | `api/v1/seller/listings/[id]/publish` |
 | `creator.account.suspended` | wired | `api/v1/admin/marketplace/creators/[seller_id]/suspend` |
-| `referral.attributed` | stub | `lib/blackout-stub-emitters` |
-| `ambassador.commission_paid` | stub | `lib/blackout-stub-emitters` |
-| `quest.reward_settled` | stub | `lib/blackout-stub-emitters` |
+| `referral.attributed` | wired | `subscribers/attribute-order-on-placed` (after commission attribution) |
+| `ambassador.commission_paid` | stub | `lib/blackout-stub-emitters` (no ambassador payout flow yet) |
+| `quest.reward_settled` | wired | `api/store/collective/demand-pools/[id]/bounties/[bountyId]/milestones` (milestone payout) |
 | `order.created` | wired | `subscribers/emit-blackout-order-placed` |
 | `order.updated` | wired | `subscribers/emit-blackout-order-updated` (dispatched/delivered) |
 | `order.cancelled` | wired | `subscribers/emit-blackout-order-refund-cancel` |
@@ -54,7 +54,7 @@ and `BLACKOUT_API_BASE` are set (`features.freeblackmarketEmit()`).
 | `ledger.payment_received` | wired | `subscribers/hawala-order-payment` |
 | `ledger.escrow_released` | wired | `api/v1/admin/marketplace/subcontracts/[id]/resolve` |
 | `ledger.refund` | wired | `api/v1/admin/marketplace/subcontracts/[id]/resolve` |
-| `ledger.usdc_converted` | stub | `lib/blackout-stub-emitters` |
+| `ledger.usdc_converted` | wired | `jobs/hawala-settlement` (per settled vendor entry after Stellar anchor) |
 | `subscription.activated` / `lapsed` | wired | `jobs/process-subscription-renewals` |
 | `dispute.opened` | wired | `api/v1/seller/services/subcontracts/[id]/dispute` |
 | `dispute.resolved` | wired | `api/v1/admin/marketplace/subcontracts/[id]/resolve` |
