@@ -97,17 +97,41 @@ export default async function inventoryReconciliationJob(
     }
 
     // §3 inventory.low — emit when stocked falls at/below the threshold. The
-    // vendor for a SKU is resolved from item metadata when present; items
-    // without a resolvable seller are skipped (the seller-link join is the
-    // remaining one-line wire-up — see work order §3 notes).
+    // vendor for a SKU is resolved through the module link
+    // inventory_item ⇄ product_variant, then variant → product → seller;
+    // items without a resolvable seller are skipped.
     const threshold = Number(process.env.FBM_INVENTORY_LOW_THRESHOLD ?? 5);
-    let lowEmitted = 0;
+    const lowStockItems: Array<{ item: any; remaining: number }> = [];
     for (const item of (inventoryItems || []) as any[]) {
       const remaining = Number(item.stocked_quantity ?? 0) - Number(item.reserved_quantity ?? 0);
       if (!(remaining >= 0 && remaining <= threshold)) continue;
-      const vendorId =
-        (item.metadata?.seller_id as string | undefined) ??
-        (item.metadata?.vendor_id as string | undefined);
+      lowStockItems.push({ item, remaining });
+    }
+
+    // inventory_item_id -> seller_id, resolved in one batched link query.
+    const sellerByInventoryItem = new Map<string, string>();
+    if (lowStockItems.length > 0) {
+      const { data: variantLinks } = await query.graph({
+        entity: "product_variant_inventory_item",
+        fields: ["inventory_item_id", "variant.product.seller.id"],
+        filters: {
+          inventory_item_id: lowStockItems.map(({ item }) => item.id as string),
+        },
+      });
+      for (const link of (variantLinks || []) as any[]) {
+        const inventoryItemId = link?.inventory_item_id as string | undefined;
+        const sellerId = link?.variant?.product?.seller?.id as
+          | string
+          | undefined;
+        if (inventoryItemId && sellerId && !sellerByInventoryItem.has(inventoryItemId)) {
+          sellerByInventoryItem.set(inventoryItemId, sellerId);
+        }
+      }
+    }
+
+    let lowEmitted = 0;
+    for (const { item, remaining } of lowStockItems) {
+      const vendorId = sellerByInventoryItem.get(item.id);
       if (!vendorId || !item.sku) continue;
       await emitBlackoutEvent(
         container,
