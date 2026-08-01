@@ -42,6 +42,16 @@ export const LedgerEntry = model.define("hawala_ledger_entry", {
     "FEE",
     "CREATOR_COMMISSION",
     "CREATOR_REWARD",
+    // Issuer-controlled CCR mint/burn (Posture A closed loop). These are the
+    // platform-internal issuer operations recognized by ISSUER_ENTRY_TYPES in
+    // posture-a-guard.ts: CREDIT_PAYOUT_MINT issues credits (e.g. creator
+    // XP → CCR conversion), CREDIT_REFUND_BURN extinguishes them (closed-loop
+    // redemption request — never a cash-out). See docs/POSTURE_A_COMPLIANCE.md.
+    // No migration needed: the column is plain TEXT (see
+    // Migration20251229CreateHawalaLedger), matching how CREATOR_COMMISSION /
+    // CREATOR_REWARD were added enum-only.
+    "CREDIT_PAYOUT_MINT",
+    "CREDIT_REFUND_BURN",
   ]),
   
   // Status

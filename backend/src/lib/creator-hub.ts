@@ -54,6 +54,63 @@ export async function getCreatorCcrAccounts(
   return Array.isArray(accounts) ? accounts : []
 }
 
+/**
+ * Get or create the creator's CCR wallet. Mirrors the service's
+ * `getOrCreateCreatorEarnings` (CREATOR_EARNINGS / owner CREATOR) but pinned to
+ * the CCR rail; lookup deliberately reuses `getCreatorCcrAccounts` (owner +
+ * currency only) so a pre-existing CCR wallet of any account_type is reused
+ * rather than duplicated.
+ */
+export async function getOrCreateCreatorCcrAccount(
+  hawala: HawalaLedgerModuleService,
+  sellerId: string
+): Promise<LedgerAccount> {
+  const existing = await getCreatorCcrAccounts(hawala, sellerId)
+  if (existing.length > 0) {
+    return existing[0]
+  }
+  return (await (hawala as any).createAccount({
+    account_type: "CREATOR_EARNINGS",
+    owner_type: "CREATOR",
+    owner_id: sellerId,
+    currency_code: CCR,
+  })) as LedgerAccount
+}
+
+/**
+ * Get or create the platform's CCR issuer account — the RESERVE-typed system
+ * account denominated in CCR. It is the mint source for CREDIT_PAYOUT_MINT and
+ * the burn sink for CREDIT_REFUND_BURN (Posture A issuer operations, see
+ * docs/POSTURE_A_COMPLIANCE.md). Mirrors the service's
+ * `getOrCreateSystemAccount` including its owner_id pinning (`"system"`), but
+ * adds the currency filter that helper lacks so the USD reserve is never
+ * returned for CCR flows.
+ *
+ * NOTE: like every hawala debit account, the issuer must carry balance for a
+ * mint to clear (`createTransfer` refuses to overdraw). Seeding the CCR
+ * reserve is an ops step of turning FBM_CREATOR_CREDITS_LIVE on — an unfunded
+ * issuer makes conversions fail safely (XP is refunded by the route).
+ */
+export async function getOrCreateCcrIssuerAccount(
+  hawala: HawalaLedgerModuleService
+): Promise<LedgerAccount> {
+  const existing = (await (hawala as any).listLedgerAccounts({
+    account_type: "RESERVE",
+    owner_type: "SYSTEM",
+    owner_id: "system",
+    currency_code: CCR,
+  })) as LedgerAccount[]
+  if (Array.isArray(existing) && existing.length > 0) {
+    return existing[0]
+  }
+  return (await (hawala as any).createAccount({
+    account_type: "RESERVE",
+    owner_type: "SYSTEM",
+    owner_id: "system",
+    currency_code: CCR,
+  })) as LedgerAccount
+}
+
 export interface CreditBalance {
   available_credits: number
   pending_credits: number
@@ -149,6 +206,40 @@ export async function listCreatorCreditTransactions(
 
   rows.sort((a, b) => (a.created_at < b.created_at ? 1 : -1))
   return rows.slice(0, limit)
+}
+
+// ── Owner-customer resolution (XP subject) ──────────────────────────────────
+
+/** Minimal shape of the container QUERY service this module needs. */
+export type CreatorQueryLike = {
+  graph: (args: Record<string, unknown>) => Promise<{ data: unknown[] }>
+}
+
+/**
+ * Resolve the customer id that acts as a creator's XP subject: their seller's
+ * `owner` member (falling back to the first member). Progression is
+ * customer-scoped, so XP reads/debits for a creator go through this member.
+ * Mirrors the resolution in `api/vendor/quests/_helpers.ts` (makeAwardXp).
+ * Returns null when the seller has no resolvable member.
+ */
+export async function resolveCreatorOwnerCustomerId(
+  query: CreatorQueryLike,
+  sellerId: string
+): Promise<string | null> {
+  try {
+    const { data } = await query.graph({
+      entity: "seller",
+      fields: ["id", "members.id", "members.role"],
+      filters: { id: sellerId },
+    })
+    const first = data?.[0] as
+      | { members?: Array<{ id?: string; role?: string } | null> }
+      | undefined
+    const members = first?.members ?? []
+    return members.find((m) => m?.role === "owner")?.id ?? members[0]?.id ?? null
+  } catch {
+    return null
+  }
 }
 
 // ── Memberships / members ───────────────────────────────────────────────────
