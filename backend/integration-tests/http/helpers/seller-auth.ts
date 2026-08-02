@@ -5,6 +5,7 @@ import {
 } from "@medusajs/medusa/core-flows"
 import jwt from "jsonwebtoken"
 import { createSellerWorkflow } from "@mercurjs/b2c-core/workflows"
+import { invalidateSellerPlan } from "../../../src/shared/plan-entitlement-cache"
 
 /**
  * Test helper: bootstrap an authenticated, active seller for /vendor/* integration tests.
@@ -87,6 +88,17 @@ export interface CreateAuthenticatedSellerOptions {
   getContainer: () => any
   storeName?: string
   memberName?: string
+  /**
+   * Billing plan to provision the seller onto.
+   *
+   * Defaults to `internal`, the operator-assigned plan carrying every feature,
+   * so that specs exercising paid surfaces (quests, vault, POS, invoicing, the
+   * nursery vertical) behave as they did before `requirePlanFeature` existed.
+   *
+   * Pass an explicit code — `"free"` in particular — to assert the gate's
+   * denial path end to end.
+   */
+  planCode?: string
 }
 
 export async function createAuthenticatedSeller({
@@ -94,6 +106,7 @@ export async function createAuthenticatedSeller({
   getContainer,
   storeName,
   memberName = "Test Vendor",
+  planCode = "internal",
 }: CreateAuthenticatedSellerOptions): Promise<AuthenticatedSeller> {
   const container = getContainer()
   const authModule = container.resolve(Modules.AUTH)
@@ -181,6 +194,14 @@ export async function createAuthenticatedSeller({
     )
   }
 
+  // 4. Provision the seller's billing plan.
+  //
+  // `/vendor/*` routes behind `requirePlanFeature` resolve entitlements from
+  // this assignment. Without one the gate's `ensureAssignment` would drop the
+  // seller onto `free` and 402 every paid surface, so the fixture states the
+  // plan explicitly rather than relying on that fallback.
+  await assignSellerPlan(container, (seller as { id: string }).id, planCode)
+
   return {
     token,
     authIdentityId,
@@ -189,4 +210,39 @@ export async function createAuthenticatedSeller({
     email,
     password,
   }
+}
+
+/**
+ * Put a seller on a billing plan, idempotently.
+ *
+ * Writes the assignment row directly rather than going through
+ * `applyPlanTransition` — a fixture wants a deterministic end state, not the
+ * upgrade/downgrade semantics (deferred downgrades, idempotency keys) that the
+ * transition path deliberately applies.
+ */
+export async function assignSellerPlan(
+  container: any,
+  sellerId: string,
+  planCode: string
+): Promise<void> {
+  const plans = container.resolve("vendorPlan")
+  const now = new Date()
+
+  const [existing] = await plans.listVendorPlanAssignments({ seller_id: sellerId })
+  if (existing) {
+    await plans.updateVendorPlanAssignments({ id: existing.id, plan_code: planCode })
+  } else {
+    await plans.createVendorPlanAssignments({
+      seller_id: sellerId,
+      plan_code: planCode,
+      status: "active",
+      started_at: now,
+      activated_at: now,
+      assigned_by: "migration",
+    })
+  }
+
+  // The gate caches feature sets per seller for 30s; drop any snapshot so the
+  // next request reflects the plan this fixture just set.
+  invalidateSellerPlan(sellerId)
 }
