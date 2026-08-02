@@ -8,6 +8,7 @@ import {
 } from "@/components/atoms"
 import { Dropdown } from "@/components/molecules"
 import LocalizedClientLink from "@/components/molecules/LocalizedLink/LocalizedLink"
+import { VENDOR_PANEL_URL } from "@/const"
 import { ProfileIcon } from "@/icons"
 import { HttpTypes } from "@medusajs/types"
 import { useMatrixChat } from "@/providers/MatrixChatProvider"
@@ -89,6 +90,13 @@ export const UserDropdown = ({
           <div className="p-1">
             <NavigationItem href="/user">Login</NavigationItem>
             <NavigationItem href="/user/register">Register</NavigationItem>
+            <Divider />
+            <a
+              href={`${VENDOR_PANEL_URL}/login`}
+              className="label-md uppercase px-4 py-3 my-3 md:my-0 flex items-center justify-between"
+            >
+              Vendor login
+            </a>
           </div>
         )}
       </Dropdown>

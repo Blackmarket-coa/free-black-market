@@ -13,19 +13,28 @@ export const listCategories = async ({
 }: Partial<CategoriesProps> = {}) => {
   const limit = query?.limit || 100
 
-  const categories = await sdk.client
-    .fetch<{
-      product_categories: HttpTypes.StoreProductCategory[]
-    }>("/store/product-categories", {
-      query: {
-        fields: "handle, name, rank, parent_category_id",
-        limit,
-        ...query,
-      },
-      cache: "force-cache",
-      next: { revalidate: 3600 },
-    })
-    .then(({ product_categories }) => product_categories)
+  // Fail soft like listProductTypes/listSalesChannels: a transient category
+  // fetch failure must not take down every listing page that renders the
+  // sidebar (it sits inside a Promise.all on those pages).
+  let categories: HttpTypes.StoreProductCategory[]
+  try {
+    categories = await sdk.client
+      .fetch<{
+        product_categories: HttpTypes.StoreProductCategory[]
+      }>("/store/product-categories", {
+        query: {
+          fields: "handle, name, rank, parent_category_id",
+          limit,
+          ...query,
+        },
+        cache: "force-cache",
+        next: { revalidate: 3600 },
+      })
+      .then(({ product_categories }) => product_categories)
+  } catch (error) {
+    logger.error("Failed to fetch product categories:", error)
+    return { categories: [], parentCategories: [] }
+  }
 
   const parentCategories = categories.filter(({ name }) =>
     headingCategories.includes(name.toLowerCase())

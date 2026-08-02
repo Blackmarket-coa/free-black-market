@@ -439,6 +439,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         })
 
         for (const p of producers || []) {
+          if (!p.handle) continue
           vendors.push({
             id: p.id,
             seller_id: p.seller_id,
@@ -496,6 +497,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         })
 
         for (const k of kitchens || []) {
+          if (!k.slug) continue
           const coords = k.coordinates as any
           vendors.push({
             id: k.id,
@@ -553,6 +555,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         })
 
         for (const g of gardens || []) {
+          if (!g.slug) continue
           const coords = g.coordinates as { lat?: number; lng?: number } | null
           const galleryUrls = g.gallery_urls as string[] | null
           vendors.push({
@@ -638,6 +641,15 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 
             const seller = sellers?.[0]
             if (!seller) continue
+
+            if (!seller.handle) {
+              // A handle-less seller would produce a dead "/sellers/null"
+              // profile link in the directory — skip it and flag the data.
+              log.warn(
+                `Seller ${seller.id} (${seller.name}) has no handle; excluded from vendor directory`
+              )
+              continue
+            }
 
             vendors.push({
               // Use the seller id as the canonical vendor id for seller-backed vendor types.

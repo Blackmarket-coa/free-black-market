@@ -151,6 +151,13 @@ export const getSellerRegistrationStatus = async (
     // Resolve to actual seller ID (handles member ID to seller ID lookup)
     const sellerId = await resolveToSellerId(req, rawActorId)
 
+    // A token can carry a seller/member claim that no longer resolves to a
+    // seller row (deleted seller, duplicate registration, stale backfill).
+    // That must NOT dead-end the session: fall through to the auth-identity →
+    // request-history chain below, which can re-link the account or report an
+    // actionable status. Only when every path is exhausted do we return 404.
+    let staleSellerClaim: string | null = null
+
     if (sellerId) {
       const seller = await findSellerById(req, sellerId)
       if (seller) {
@@ -164,23 +171,28 @@ export const getSellerRegistrationStatus = async (
         }
       }
 
+      staleSellerClaim = sellerId
       log.warn(
-        "[GET /auth/seller/registration-status] Seller ID present in token but not found:",
+        "[GET /auth/seller/registration-status] Seller ID present in token but not found; trying identity-based resolution:",
         sellerId
       )
-      return {
-        statusCode: 404,
-        status: {
-          status: "error",
-          seller_id: sellerId,
-          seller: null,
-          store_status: null,
-          message: "Seller profile not found for this account. Please contact support.",
-        },
-      }
     }
 
+    const staleClaimResult = (): { status: RegistrationStatusResponse; statusCode: number } => ({
+      statusCode: 404,
+      status: {
+        status: "error",
+        seller_id: staleSellerClaim ?? undefined,
+        seller: null,
+        store_status: null,
+        message: "Seller profile not found for this account. Please contact support.",
+      },
+    })
+
     if (!authIdentityId) {
+      if (staleSellerClaim) {
+        return staleClaimResult()
+      }
       return {
         statusCode: 401,
         status: {
@@ -192,6 +204,9 @@ export const getSellerRegistrationStatus = async (
 
     const authIdentity = await getAuthIdentity(authModule, authIdentityId)
     if (!authIdentity) {
+      if (staleSellerClaim) {
+        return staleClaimResult()
+      }
       return {
         statusCode: 401,
         status: {
@@ -203,7 +218,10 @@ export const getSellerRegistrationStatus = async (
 
     const appMetadata = authIdentity.app_metadata as Record<string, unknown> | undefined
     if (appMetadata?.seller_id) {
-      const seller = await findSellerById(req, String(appMetadata.seller_id))
+      // The linked id may itself be a member id (Mercur links the member as
+      // the seller actor), so resolve it the same way as the token claim.
+      const linkedSellerId = await resolveToSellerId(req, String(appMetadata.seller_id))
+      const seller = linkedSellerId ? await findSellerById(req, linkedSellerId) : null
       if (!seller) {
         log.warn(
           "[GET /auth/seller/registration-status] Seller ID present in auth metadata but not found:",
@@ -213,7 +231,7 @@ export const getSellerRegistrationStatus = async (
         return {
           statusCode: 200,
           status: buildApprovedResponse({
-            sellerId: String(appMetadata.seller_id),
+            sellerId: linkedSellerId as string,
             seller,
             message: "Your seller account is approved. You can access the vendor dashboard.",
           }),
@@ -345,38 +363,83 @@ async function handleAcceptedRequest(
 ): Promise<{ status: RegistrationStatusResponse; statusCode: number }> {
   try {
     const requestData = latestRequest.data as Record<string, any>
-    const memberEmail = requestData?.member?.email
+    const requestEmail: string | undefined = requestData?.member?.email
 
-    if (memberEmail) {
-      const pgConnection = req.scope.resolve(ContainerRegistrationKeys.PG_CONNECTION)
+    const pgConnection = req.scope.resolve(ContainerRegistrationKeys.PG_CONNECTION)
+
+    const findMemberSellerIdByEmail = async (
+      email?: string | null
+    ): Promise<string | null> => {
+      if (!email) {
+        return null
+      }
       const memberResult = await pgConnection.raw(
         `
         SELECT seller_id
         FROM member
-        WHERE email = ?
+        WHERE LOWER(email) = LOWER(?)
         ORDER BY created_at DESC
         LIMIT 1
         `,
-        [memberEmail]
+        [email]
       )
-      const sellerId = memberResult.rows?.[0]?.seller_id
+      return memberResult.rows?.[0]?.seller_id ?? null
+    }
 
-      if (sellerId) {
-        const seller = await findSellerById(req, sellerId)
-        if (seller) {
+    // Load the identity once: provider email for the lookup fallback, and the
+    // current app_metadata so the re-link below doesn't clobber other keys.
+    let identity: { app_metadata?: Record<string, unknown>; provider_identities?: { entity_id?: string }[] } | null = null
+    try {
+      const identities = await authModule.listAuthIdentities(
+        { id: [authIdentityId] },
+        { relations: ["provider_identities"] }
+      )
+      identity = identities?.[0] ?? null
+    } catch (err: any) {
+      log.warn("[Accepted request] Could not load auth identity:", err?.message)
+    }
+
+    let sellerId = await findMemberSellerIdByEmail(requestEmail)
+
+    if (!sellerId) {
+      // The request-payload email can drift from the login email (case
+      // differences, admin edits). Try the identity's provider email too.
+      const providerEmail = identity?.provider_identities
+        ?.map((p) => p?.entity_id)
+        .find((e): e is string => typeof e === "string" && e.includes("@"))
+      if (
+        providerEmail &&
+        providerEmail.toLowerCase() !== requestEmail?.toLowerCase()
+      ) {
+        sellerId = await findMemberSellerIdByEmail(providerEmail)
+      }
+    }
+
+    if (sellerId) {
+      const seller = await findSellerById(req, sellerId)
+      if (seller) {
+        if (identity) {
           log.info("[Accepted request] Found seller, updating auth_identity")
           await authModule.updateAuthIdentities([
-            { id: authIdentityId, app_metadata: { seller_id: sellerId } },
+            {
+              id: authIdentityId,
+              // Merge, don't replace: the same identity can also be a
+              // customer (customer_id) or carry provider metadata.
+              app_metadata: {
+                ...(identity.app_metadata ?? {}),
+                seller_id: sellerId,
+              },
+            },
           ])
-          return {
-            statusCode: 200,
-            status: buildApprovedResponse({
-              sellerId,
-              seller,
-              requestId: latestRequest.id,
-              message: "Your seller account is approved. You can access the vendor dashboard.",
-            }),
-          }
+        }
+        return {
+          statusCode: 200,
+          status: buildApprovedResponse({
+            sellerId,
+            seller,
+            requestId: latestRequest.id,
+            message: "Your seller account is approved. You can access the vendor dashboard.",
+          }),
         }
       }
     }

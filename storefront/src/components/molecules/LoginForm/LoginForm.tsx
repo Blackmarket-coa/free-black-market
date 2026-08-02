@@ -15,6 +15,7 @@ import { useState } from "react"
 import { login } from "@/lib/data/customer"
 import { useRouter } from "next/navigation"
 import { Eye, EyeOff } from "lucide-react"
+import { VENDOR_PANEL_URL } from "@/const"
 
 export const LoginForm = () => {
   const methods = useForm<LoginFormData>({
@@ -34,6 +35,7 @@ export const LoginForm = () => {
 
 const Form = () => {
   const [error, setError] = useState("")
+  const [vendorUrl, setVendorUrl] = useState<string | null>(null)
   const [showPassword, setShowPassword] = useState(false)
   const {
     handleSubmit,
@@ -48,11 +50,15 @@ const Form = () => {
     formData.append("password", data.password)
 
     const res = await login(formData)
-    if (res) {
-      setError(res)
+    if (res?.error) {
+      setError(res.error)
+      setVendorUrl(
+        res.code === "vendor_account" ? res.vendorUrl || VENDOR_PANEL_URL : null
+      )
       return
     }
     setError("")
+    setVendorUrl(null)
     router.push("/user")
   }
 
@@ -99,6 +105,24 @@ const Form = () => {
             </LocalizedClientLink>
           </div>
           {error && <p className="label-md text-negative">{error}</p>}
+          {vendorUrl && (
+            <div className="rounded-sm border border-gray-200 bg-gray-50 p-4 space-y-3">
+              <p className="label-md">
+                Looking for your seller dashboard? Vendors have their own
+                login.
+              </p>
+              <a
+                href={`${vendorUrl}/login`}
+                className="block w-full rounded-md bg-green-700 hover:bg-green-600 text-white text-center font-bold uppercase label-md px-4 py-3 transition-colors"
+              >
+                Go to Vendor Portal login
+              </a>
+              <p className="label-sm text-secondary">
+                Want to shop here too? Create a separate shopper account with
+                the sign-up link below.
+              </p>
+            </div>
+          )}
           <Button className="w-full" disabled={isSubmitting}>
             Log in
           </Button>

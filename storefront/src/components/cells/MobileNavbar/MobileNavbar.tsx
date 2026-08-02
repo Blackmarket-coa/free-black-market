@@ -6,6 +6,7 @@ import {
   HeaderCategoryNavbar,
 } from '@/components/molecules';
 import { CloseIcon, HamburgerMenuIcon, SearchIcon, CollapseIcon } from '@/icons';
+import { VENDOR_PANEL_URL } from '@/const';
 import { useState } from 'react';
 import LocalizedClientLink from '@/components/molecules/LocalizedLink/LocalizedLink';
 import { useRouter } from 'next/navigation';
@@ -69,7 +70,7 @@ export const MobileNavbar = ({
 
           {/* Vendor CTA Banner */}
           <a
-            href={process.env.NEXT_PUBLIC_VENDOR_URL || "https://vendor.mercurjs.com"}
+            href={VENDOR_PANEL_URL}
             target="_blank"
             rel="noopener noreferrer"
             onClick={closeMenuHandler}

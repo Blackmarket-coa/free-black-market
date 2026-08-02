@@ -4,6 +4,7 @@ import { useState } from "react"
 import Image from "next/image"
 import Link from "next/link"
 import FeeBreakdown from "@/components/sections/FeeBreakdown"
+import { VENDOR_PANEL_URL } from "@/const"
 
 // Inline SVG icons
 const CheckCircleIcon = ({ className = "" }: { className?: string }) => (
@@ -48,7 +49,6 @@ const ChartBarIcon = ({ className = "" }: { className?: string }) => (
   </svg>
 )
 
-const VENDOR_PANEL_URL = process.env.NEXT_PUBLIC_VENDOR_PANEL_URL || process.env.NEXT_PUBLIC_VENDOR_URL || "https://vendor.mercurjs.com"
 
 
 const dashboardShots = [

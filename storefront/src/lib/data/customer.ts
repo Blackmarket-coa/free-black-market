@@ -2,6 +2,7 @@
 import { logger } from "@/lib/logger"
 
 import { medusaFetch, sdk } from "../config"
+import { VENDOR_PANEL_URL } from "@/const"
 import { HttpTypes } from "@medusajs/types"
 import { revalidateTag } from "next/cache"
 import { redirect } from "next/navigation"
@@ -198,7 +199,44 @@ export async function signup(formData: FormData) {
 /* ---------------------------------------------
  * LOGIN
  * -------------------------------------------- */
-export async function login(formData: FormData) {
+export type LoginResult =
+  | {
+      error: string
+      code?: "vendor_account"
+      vendorUrl?: string
+    }
+  | undefined
+
+/**
+ * Best-effort decode of a Medusa JWT payload (no signature verification —
+ * we only use it to explain a failed login, never to grant access).
+ */
+const decodeTokenPayload = (token: string): Record<string, unknown> | null => {
+  try {
+    const payload = token.split(".")[1]
+    if (!payload) return null
+    const normalized = payload.replace(/-/g, "+").replace(/_/g, "/")
+    const padded =
+      normalized + "=".repeat((4 - (normalized.length % 4)) % 4)
+    return JSON.parse(Buffer.from(padded, "base64").toString("utf8"))
+  } catch {
+    return null
+  }
+}
+
+const getErrorStatus = (error: unknown): number | undefined => {
+  const err = error as {
+    status?: number
+    statusCode?: number
+    response?: { status?: number }
+    cause?: { status?: number }
+  }
+  return (
+    err?.status || err?.statusCode || err?.response?.status || err?.cause?.status
+  )
+}
+
+export async function login(formData: FormData): Promise<LoginResult> {
   const email = String(formData.get("email") || "")
     .toLowerCase()
     .trim()
@@ -217,17 +255,66 @@ export async function login(formData: FormData) {
 
     if (!token || typeof token !== "string") {
       logger.error("[login] Invalid token response:", tokenResponse)
-      return "Login failed: Invalid authentication response"
+      return { error: "Login failed: Invalid authentication response" }
     }
 
     logger.info("[login] Token received, length:", token.length)
     await setAuthToken(token)
 
+    // The emailpass identity is shared across actor types, so a vendor-only
+    // account "logs in" here successfully without having a customer record.
+    // Verify the token maps to a real customer now — otherwise the account
+    // page 401s and silently bounces the user back to this login form.
+    try {
+      const authHeaders = await getAuthHeaders()
+      const { customer } = await medusaFetch<{
+        customer: HttpTypes.StoreCustomer
+      }>(`/store/customers/me`, {
+        method: "GET",
+        headers: authHeaders || {},
+        cache: "no-store",
+      })
+
+      if (!customer) {
+        await removeAuthToken()
+        return {
+          error:
+            "We couldn't find a shopper profile for this login. Please register a shopper account to start buying.",
+        }
+      }
+    } catch (probeError) {
+      if (getErrorStatus(probeError) === 401) {
+        await removeAuthToken()
+
+        const payload = decodeTokenPayload(token)
+        const appMetadata = (payload?.app_metadata ?? {}) as Record<
+          string,
+          unknown
+        >
+
+        if (appMetadata.seller_id) {
+          return {
+            error:
+              "This email is registered as a vendor account. Vendor accounts sign in at the Vendor Portal.",
+            code: "vendor_account",
+            vendorUrl: VENDOR_PANEL_URL,
+          }
+        }
+
+        return {
+          error:
+            "We couldn't find a shopper profile for this login. Please register a shopper account to start buying.",
+        }
+      }
+      // Transient failure: keep the session — the account page degrades
+      // gracefully and retries on its own.
+    }
+
     const customerCacheTag = await getCacheTag("customers")
     revalidateTag(customerCacheTag)
   } catch (error) {
     logger.error("Login error:", error)
-    return getErrorMessage(error)
+    return { error: getErrorMessage(error) }
   }
 
   try {

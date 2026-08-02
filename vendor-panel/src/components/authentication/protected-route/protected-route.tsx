@@ -4,7 +4,12 @@ import { useSellerSession } from "../../../hooks/api/users"
 import { SearchProvider } from "../../../providers/search-provider"
 import { SidebarProvider } from "../../../providers/sidebar-provider"
 import { MatrixProvider } from "../../../providers/matrix-provider"
-import { getAuthToken } from "../../../lib/client"
+import { clearAuthToken, getAuthToken } from "../../../lib/client"
+import {
+  SessionFetchError,
+  classifySessionError,
+} from "../../../lib/session-error"
+import { SessionErrorScreen } from "../session-error/session-error-screen"
 
 export const ProtectedRoute = () => {
   const location = useLocation()
@@ -13,7 +18,9 @@ export const ProtectedRoute = () => {
   const {
     session,
     isPending: isSessionPending,
+    isFetching: isSessionFetching,
     error,
+    refetch,
   } = useSellerSession({
     enabled: hasToken,
   })
@@ -42,11 +49,30 @@ export const ProtectedRoute = () => {
   const seller = session?.seller
 
   if (error && !registrationStatus) {
+    const sessionError = error as SessionFetchError
+
+    if (classifySessionError(sessionError) === "reauthenticate") {
+      // The token itself is bad (expired/invalid) — drop it so the next
+      // login starts clean instead of re-entering this loop with a stale
+      // token still in storage.
+      clearAuthToken()
+      return (
+        <Navigate
+          to={`/login?reason=${encodeURIComponent(error.message)}`}
+          state={{ from: location }}
+          replace
+        />
+      )
+    }
+
+    // 404/5xx/network: re-authenticating can't fix these — sending the user
+    // back to /login just produced a login loop. Show an actionable screen.
     return (
-      <Navigate
-        to={`/login?reason=${encodeURIComponent(error.message)}`}
-        state={{ from: location }}
-        replace
+      <SessionErrorScreen
+        message={sessionError.message}
+        status={sessionError.status}
+        onRetry={() => refetch()}
+        isRetrying={isSessionFetching}
       />
     )
   }
@@ -62,7 +88,8 @@ export const ProtectedRoute = () => {
         return <Navigate to="/pending-approval" replace />
 
       case "unauthenticated":
-        // Token is invalid or expired
+        // Token is invalid or expired — drop it so the next login is clean
+        clearAuthToken()
         return (
           <Navigate
             to="/login"
@@ -84,14 +111,15 @@ export const ProtectedRoute = () => {
     }
   }
 
-  // If we have an error or no seller after approval status, redirect to login
-  // This handles edge cases where approval succeeded but seller fetch fails
+  // Approval succeeded but the seller payload is missing — an edge case a
+  // fresh login can't fix, so surface the actionable error screen instead of
+  // bouncing to /login with the token still stored (that read as a loop).
   if (!seller) {
     return (
-      <Navigate
-        to={`/login${registrationStatus?.message ? `?reason=${registrationStatus.message}` : ""}`}
-        state={{ from: location }}
-        replace
+      <SessionErrorScreen
+        message={registrationStatus?.message}
+        onRetry={() => refetch()}
+        isRetrying={isSessionFetching}
       />
     )
   }
