@@ -1,4 +1,5 @@
 import { z } from "zod"
+import { VendorType } from "../seller-extension/models/seller-metadata"
 
 /**
  * Request Type Identifiers
@@ -24,17 +25,14 @@ export const REQUEST_TYPES = {
 export type RequestType = typeof REQUEST_TYPES[keyof typeof REQUEST_TYPES]
 
 /**
- * Vendor types available for sellers
- * Must match VendorType enum in seller-extension module
+ * Vendor types available for sellers.
+ *
+ * Derived from the `VendorType` enum rather than restated — the hand-written
+ * copy this replaces had drifted out of sync (missing `creator`).
  */
-const vendorTypeEnum = z.enum([
-  "producer",
-  "garden",
-  "kitchen",
-  "maker",
-  "restaurant",
-  "mutual_aid",
-])
+const vendorTypeEnum = z.enum(
+  Object.values(VendorType) as [string, ...string[]]
+)
 
 /**
  * Base Seller Request Payload Schema
@@ -50,7 +48,7 @@ export const sellerRequestPayloadSchema = z.object({
   seller: z.object({
     name: z.string().min(1, "Seller name is required"),
   }),
-  vendor_type: vendorTypeEnum.default("producer"),
+  vendor_type: vendorTypeEnum.default(VendorType.GENERAL),
 })
 
 /**
@@ -67,7 +65,7 @@ export const sellerCreationPayloadSchema = z.object({
   seller: z.object({
     name: z.string().min(1, "Seller name is required"),
   }),
-  vendor_type: vendorTypeEnum.default("producer"),
+  vendor_type: vendorTypeEnum.default(VendorType.GENERAL),
 })
 
 /**

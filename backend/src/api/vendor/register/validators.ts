@@ -1,17 +1,18 @@
 import { z } from "zod"
+import { VendorType } from "../../../modules/seller-extension/models/seller-metadata"
 
 /**
- * Vendor types available for sellers
- * Must match VendorType enum in seller-extension module
+ * Vendor types available for sellers.
+ *
+ * Derived from the `VendorType` enum rather than restated, because the
+ * hand-maintained copy this replaces had already drifted: it claimed to match
+ * `VendorType` but was missing `creator`, so registrations selecting that
+ * archetype were rejected at the API boundary even though both the TS enum and
+ * the Postgres enum accepted it.
  */
-export const vendorTypeEnum = z.enum([
-  "producer",
-  "garden",
-  "kitchen",
-  "maker",
-  "restaurant",
-  "mutual_aid",
-])
+export const vendorTypeEnum = z.enum(
+  Object.values(VendorType) as [string, ...string[]]
+)
 
 /**
  * Playbook ids — the canonical vendor classification that replaces

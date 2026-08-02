@@ -279,7 +279,7 @@ export class SellerApprovalService {
       log.error(`[SellerApproval] Request data was:`, JSON.stringify(request.data, null, 2))
       throw new Error(`Invalid request data: ${validationError.message}`)
     }
-    const vendorType = data.vendor_type || "producer"
+    const vendorType = data.vendor_type || VendorType.GENERAL
 
     log.info(`[SellerApproval] Processing approval for seller "${data.seller.name}" (email: ${maskEmail(data.member.email)})`)
 
@@ -435,7 +435,7 @@ export class SellerApprovalService {
 
       // Step 5: Create seller metadata with vendor_type
       try {
-        const vendorTypeEnum = VendorType[vendorType.toUpperCase() as keyof typeof VendorType] || VendorType.PRODUCER
+        const vendorTypeEnum = VendorType[vendorType.toUpperCase() as keyof typeof VendorType] || VendorType.GENERAL
 
         await createSellerMetadataWorkflow.run({
           container: this.container,

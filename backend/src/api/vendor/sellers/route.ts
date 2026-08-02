@@ -74,8 +74,8 @@ export const POST = async (
         seller: {
           name: body.name,
         },
-        // Store vendor_type selection (defaults to "producer" if not provided)
-        vendor_type: body.vendor_type || "producer",
+        // Store vendor_type selection (defaults to "general" if not provided)
+        vendor_type: body.vendor_type || "general",
       },
       submitter_id: authIdentity.id,
       reviewer_note: `Seller registration request for "${body.name}"`,

@@ -13,9 +13,20 @@ import { model } from "@medusajs/framework/utils"
  * - maker: Artisans, crafters, cottage food producers
  * - restaurant: Restaurants, ghost kitchens, food trucks
  * - mutual_aid: Mutual aid networks, community organizations
+ * - creator: Content creators monetizing an audience
+ * - general: Archetype-neutral business. The default when nothing more
+ *   specific is known — notably for vendors outside FBM's food-system
+ *   footprint. Deliberately named `general` and not `default`, because the
+ *   vendor-panel already uses `"default"` as its sentinel for "unrecognized
+ *   type"; colliding a real value with that sentinel is how a vendor silently
+ *   loses their whole feature set.
  *
- * IMPORTANT: These values MUST match the PostgreSQL enum `vendor_type_enum`.
- * See Migration20260114FixVendorTypeEnum for the canonical enum definition.
+ * IMPORTANT: These values MUST match the PostgreSQL enum `vendor_type_enum`
+ * (see Migration20260802AddGeneralVendorType for the most recent addition) AND
+ * the zod schemas in `api/vendor/register/validators.ts` and
+ * `modules/request/validators.ts`, which are separate hand-maintained copies.
+ * `modules/seller-extension/__tests__/vendor-type.unit.spec.ts` asserts they
+ * agree — nothing in the type system does.
  */
 export enum VendorType {
   PRODUCER = "producer",
@@ -25,6 +36,7 @@ export enum VendorType {
   RESTAURANT = "restaurant",
   MUTUAL_AID = "mutual_aid",
   CREATOR = "creator",
+  GENERAL = "general",
 }
 
 /**
@@ -107,7 +119,7 @@ const SellerMetadata = model.define("seller_metadata", {
   seller_id: model.text().unique(),
   
   // Vendor type classification
-  vendor_type: model.enum(Object.values(VendorType)).default(VendorType.PRODUCER),
+  vendor_type: model.enum(Object.values(VendorType)).default(VendorType.GENERAL),
   
   // Extended business information
   business_registration_number: model.text().nullable(),

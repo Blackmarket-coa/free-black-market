@@ -10,6 +10,8 @@ const vendorTypes = [
   { value: "maker", label: "Makers & Brands" },
   { value: "restaurant", label: "Food Businesses" },
   { value: "mutual_aid", label: "Community Organizations" },
+  { value: "creator", label: "Creators" },
+  { value: "general", label: "Businesses" },
 ]
 
 export const VendorTypeFilter = () => {

@@ -16,6 +16,8 @@ const VENDOR_TYPE_OPTIONS = [
   { value: "maker", label: "Makers & Brands" },
   { value: "restaurant", label: "Food Businesses" },
   { value: "mutual_aid", label: "Community Organizations" },
+  { value: "creator", label: "Creators" },
+  { value: "general", label: "Businesses" },
 ]
 
 const RADIUS_OPTIONS = [
@@ -33,6 +35,8 @@ const VENDOR_TYPE_COLORS: Record<string, { bg: string; text: string; border: str
   maker: { bg: "bg-purple-50", text: "text-purple-700", border: "border-purple-200" },
   restaurant: { bg: "bg-orange-50", text: "text-orange-700", border: "border-orange-200" },
   mutual_aid: { bg: "bg-blue-50", text: "text-blue-700", border: "border-blue-200" },
+  creator: { bg: "bg-pink-50", text: "text-pink-700", border: "border-pink-200" },
+  general: { bg: "bg-slate-50", text: "text-slate-700", border: "border-slate-200" },
 }
 
 const VENDOR_TYPE_ICONS: Record<string, string> = {
@@ -42,6 +46,8 @@ const VENDOR_TYPE_ICONS: Record<string, string> = {
   maker: "🎨",
   restaurant: "🍽️",
   mutual_aid: "🤝",
+  creator: "🎬",
+  general: "🏪",
 }
 
 interface Vendor {

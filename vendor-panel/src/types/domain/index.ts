@@ -17,6 +17,8 @@ export enum VendorType {
   MAKER = "maker",
   RESTAURANT = "restaurant",
   MUTUAL_AID = "mutual_aid",
+  CREATOR = "creator",
+  GENERAL = "general",
 }
 
 export const VendorTypeLabels: Record<VendorType, string> = {
@@ -26,6 +28,8 @@ export const VendorTypeLabels: Record<VendorType, string> = {
   [VendorType.MAKER]: "Makers & Brands",
   [VendorType.RESTAURANT]: "Food Businesses",
   [VendorType.MUTUAL_AID]: "Community Organizations",
+  [VendorType.CREATOR]: "Creators",
+  [VendorType.GENERAL]: "Businesses",
 }
 
 /**

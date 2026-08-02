@@ -64,7 +64,7 @@ export const POST = async (
 
   const sellerMetadata = await createSellerMetadataRecord(sellerExtensionService, {
     seller_id: body.seller_id,
-    vendor_type: body.vendor_type || VendorType.PRODUCER,
+    vendor_type: body.vendor_type || VendorType.GENERAL,
     business_registration_number: body.business_registration_number || null,
     tax_classification: body.tax_classification || null,
     farm_practices: body.farm_practices || null,

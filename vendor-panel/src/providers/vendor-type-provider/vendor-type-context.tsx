@@ -2,7 +2,12 @@ import { createContext, useContext, ReactNode, useMemo } from "react"
 import { useMe } from "../../hooks/api/users"
 
 /**
- * Vendor Types supported by the platform
+ * Vendor Types supported by the platform.
+ *
+ * Must stay in step with the backend `VendorType` enum
+ * (`modules/seller-extension/models/seller-metadata.ts`). Note `"default"` is
+ * NOT a backend value — it is this panel's sentinel for "unrecognized type",
+ * which is why the backend's neutral archetype is named `general`.
  */
 export type VendorType =
   | "producer"      // Farms, food producers
@@ -11,7 +16,29 @@ export type VendorType =
   | "maker"         // Artisans, crafters
   | "restaurant"    // Restaurants, ghost kitchens
   | "mutual_aid"    // Mutual aid networks
-  | "default"       // Fallback
+  | "creator"       // Creators monetizing an audience
+  | "general"       // Archetype-neutral business
+  | "default"       // Fallback (panel-only sentinel)
+
+/**
+ * Real backend archetypes, i.e. every `VendorType` except the local sentinel.
+ *
+ * The provider used to test incoming values against a hand-written string
+ * array, which silently mapped any archetype missing from it onto `"default"`
+ * — a vendor landing on the `default` feature set (products + inventory only)
+ * regardless of what they actually signed up as. Deriving the allowlist from
+ * this const means a new entry in the union above is enough.
+ */
+export const BACKEND_VENDOR_TYPES = [
+  "producer",
+  "garden",
+  "kitchen",
+  "maker",
+  "restaurant",
+  "mutual_aid",
+  "creator",
+  "general",
+] as const satisfies readonly Exclude<VendorType, "default">[]
 
 /**
  * Feature flags based on vendor type
@@ -180,6 +207,41 @@ export function getFeaturesByType(type: VendorType): VendorFeatures {
       hasFarm: false,
       hasShows: false,
     },
+    // Mirrors the backend `stall` playbook recipe, which is what
+    // `general` maps to server-side — products, inventory, support.
+    general: {
+      hasProducts: true,
+      hasInventory: true,
+      hasSeasons: false,
+      hasVolunteers: false,
+      hasMenu: false,
+      hasDeliveryZones: false,
+      hasDonations: false,
+      hasSubscriptions: false,
+      hasSupport: true,
+      hasHarvests: false,
+      hasPlots: false,
+      hasRequests: false,
+      hasFarm: false,
+      hasShows: false,
+    },
+    // Creators sell digital goods and services; no inventory or food surfaces.
+    creator: {
+      hasProducts: true,
+      hasInventory: false,
+      hasSeasons: false,
+      hasVolunteers: false,
+      hasMenu: false,
+      hasDeliveryZones: false,
+      hasDonations: false,
+      hasSubscriptions: true,
+      hasSupport: true,
+      hasHarvests: false,
+      hasPlots: false,
+      hasRequests: false,
+      hasFarm: false,
+      hasShows: false,
+    },
     default: {
       hasProducts: true,
       hasInventory: true,
@@ -198,7 +260,9 @@ export function getFeaturesByType(type: VendorType): VendorFeatures {
     },
   }
 
-  return featureMap[type]
+  // Fall back to the sentinel rather than returning `undefined` for a value
+  // that slipped past the allowlist — every consumer dereferences this.
+  return featureMap[type] ?? featureMap.default
 }
 
 /**
@@ -243,9 +307,11 @@ function getTypeLabels(type: VendorType): { label: string; plural: string } {
     maker: { label: "Maker & Brand", plural: "Makers & Brands" },
     restaurant: { label: "Food Business", plural: "Food Businesses" },
     mutual_aid: { label: "Community Organization", plural: "Community Organizations" },
+    creator: { label: "Creator", plural: "Creators" },
+    general: { label: "Business", plural: "Businesses" },
     default: { label: "Vendor", plural: "Vendors" },
   }
-  return labels[type]
+  return labels[type] ?? labels.default
 }
 
 /**
@@ -260,7 +326,7 @@ export function VendorTypeProvider({ children }: { children: ReactNode }) {
   // Get vendor type from seller or default
   const vendorType: VendorType = useMemo(() => {
     const type = seller?.vendor_type as VendorType
-    if (type && ["producer", "garden", "kitchen", "maker", "restaurant", "mutual_aid"].includes(type)) {
+    if (type && (BACKEND_VENDOR_TYPES as readonly string[]).includes(type)) {
       return type
     }
     return "default"

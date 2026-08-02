@@ -33,6 +33,8 @@ export function getDashboardTitle(type: VendorType): string {
     maker: "Maker Dashboard",
     restaurant: "Restaurant Dashboard",
     mutual_aid: "Community Dashboard",
+    creator: "Creator Dashboard",
+    general: "Business Dashboard",
     default: "Vendor Dashboard",
   }
   return titles[type] ?? titles.default
@@ -49,6 +51,8 @@ export function getWelcomeMessage(type: VendorType): string {
     maker: "Showcase your creations, manage orders, and grow your craft business.",
     restaurant: "Handle orders, manage your menu, and delight customers.",
     mutual_aid: "Coordinate resources, volunteers, and community support.",
+    creator: "Grow your audience, manage your offerings, and track your earnings.",
+    general: "Manage your products, orders, and customers.",
     default: "Manage your store, products, and orders.",
   }
   return messages[type] ?? messages.default
@@ -65,6 +69,8 @@ export function getPrimaryCTALabel(type: VendorType): string {
     maker: "Add Creation",
     restaurant: "Add Menu Item",
     mutual_aid: "Add Resource",
+    creator: "Offerings",
+    general: "Products",
     default: "Add Product",
   }
   return labels[type] ?? labels.default
@@ -81,6 +87,8 @@ export function getPrimaryCTARoute(type: VendorType): string {
     maker: "/products/create",
     restaurant: "/menu/items",
     mutual_aid: "/inventory/create",
+    creator: "/products/create",
+    general: "/products/create",
     default: "/products/create",
   }
   return routes[type] ?? routes.default
@@ -285,6 +293,26 @@ export function getBeginnerTips(type: VendorType): Array<{
       {
         title: "Build community",
         description: "Connect with local food entrepreneurs and organizations to grow your network.",
+      },
+    ],
+    creator: [
+      {
+        title: "Lead with your best work",
+        description: "Your top offering should be the first thing a visitor sees.",
+      },
+      {
+        title: "Recurring beats one-off",
+        description: "Subscriptions turn occasional buyers into steady income.",
+      },
+    ],
+    general: [
+      {
+        title: "Start with a few strong listings",
+        description: "A small, well-photographed catalog converts better than a large rough one.",
+      },
+      {
+        title: "Keep stock accurate",
+        description: "Nothing loses a repeat customer faster than overselling.",
       },
     ],
     default: [

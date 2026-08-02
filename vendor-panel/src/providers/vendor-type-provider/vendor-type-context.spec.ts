@@ -3,20 +3,40 @@ import { describe, expect, it } from "vitest"
 import {
   ALL_EXTENSION_OPTIONS,
   ALL_FEATURE_KEYS,
+  BACKEND_VENDOR_TYPES,
   getFeaturesByType,
   type VendorFeatures,
   type VendorType,
 } from "./vendor-type-context"
 
-const ALL_TYPES: VendorType[] = [
-  "producer",
-  "garden",
-  "kitchen",
-  "maker",
-  "restaurant",
-  "mutual_aid",
-  "default",
-]
+// Derived from the exported allowlist rather than restated. The hand-written
+// literal this replaces silently stopped covering any newly added archetype,
+// which defeated the point of the exhaustiveness test below.
+const ALL_TYPES: VendorType[] = [...BACKEND_VENDOR_TYPES, "default"]
+
+describe("vendor type coverage", () => {
+  it("includes the archetype-neutral `general` type", () => {
+    expect(BACKEND_VENDOR_TYPES).toContain("general")
+  })
+
+  it("includes `creator`", () => {
+    // `creator` existed backend-side long before the panel knew about it, so
+    // creator sellers silently resolved to the `default` feature set.
+    expect(BACKEND_VENDOR_TYPES).toContain("creator")
+  })
+
+  it("excludes the panel-only `default` sentinel", () => {
+    expect(BACKEND_VENDOR_TYPES as readonly string[]).not.toContain("default")
+  })
+
+  it("gives every backend archetype a distinct label", () => {
+    // A missing label entry used to fall through to `undefined`.
+    for (const type of BACKEND_VENDOR_TYPES) {
+      const features = getFeaturesByType(type)
+      expect(features, `${type} should have a feature map`).toBeDefined()
+    }
+  })
+})
 
 describe("getFeaturesByType", () => {
   it("returns a fully-populated feature map for every vendor type", () => {

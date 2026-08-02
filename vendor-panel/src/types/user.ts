@@ -7,6 +7,8 @@ export type VendorTypeValue =
   | "maker"
   | "restaurant"
   | "mutual_aid"
+  | "creator"
+  | "general"
 
 export interface Review {
   id: string

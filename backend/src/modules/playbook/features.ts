@@ -29,6 +29,12 @@ export const LEGACY_VENDOR_TYPE_TO_PLAYBOOK: Record<string, PlaybookId> = {
   maker: "stall",
   mutual_aid: "grove",
   creator: "creator",
+  // The archetype-neutral vendor maps to `stall` — the solo-seller recipe
+  // (products + inventory + support). Deliberately reuses an existing recipe
+  // rather than introducing a 12th playbook: the playbook set is asserted
+  // verbatim by storefront tests and seeded into the `playbook` table, so
+  // growing it is its own change.
+  general: "stall",
 }
 
 /** Playbook a legacy `vendor_type` maps to. Unknown types fall back to `stall`. */
