@@ -3,21 +3,41 @@ import { Migration } from "@mikro-orm/migrations"
 /**
  * Add the `general` archetype to `vendor_type_enum`.
  *
- * `general` is the archetype-neutral vendor type for businesses that do not
- * fit FBM's food-system-specific shapes (producer/garden/kitchen/…). It is the
- * default a vendor lands on when nothing more specific is known.
+ * `general` is the archetype-neutral vendor type for businesses that do not fit
+ * FBM's food-system-specific shapes (producer/garden/kitchen/…). It is the
+ * archetype a vendor lands on when nothing more specific is known.
  *
- * **This migration adds the label and nothing else, deliberately.** MikroORM
- * wraps every migration in a transaction (`Migration.isTransactional()` returns
- * true and nothing in this repo overrides it), and Postgres refuses to *use* an
- * enum label that was added in the still-open transaction:
+ * ---
+ *
+ * **This migration adds the label and nothing else. The Postgres column DEFAULT
+ * is deliberately NOT changed here, and cannot be.**
+ *
+ * Postgres refuses to *use* an enum label added in a still-open transaction:
  *
  *   ERROR: unsafe use of new value "general" of enum type vendor_type_enum
  *   HINT:  New enum values must be committed before they can be used.
  *
- * So setting the column DEFAULT to `general` has to happen in a separate,
- * later migration — see `Migration20260803SetGeneralVendorTypeDefault`. Putting
- * both in one migration rolls the whole thing back and applies neither.
+ * Medusa runs the whole migration batch inside one master transaction
+ * (`Migrator.js` wraps the run when `transactional && allOrNothing`), so
+ * `ALTER COLUMN … SET DEFAULT 'general'` fails whether it lives in this
+ * migration or a separate later one — both are the same transaction. Both
+ * arrangements were tried against the real `medusa db:migrate` runner and both
+ * fail with the error above.
+ *
+ * The obvious escape — `isTransactional() === false`, which `MigrationRunner.js`
+ * honours by running outside the master transaction — trades the error for its
+ * mirror image: on a fresh database the type itself was created by an earlier
+ * migration in the same uncommitted batch, so the statement then fails with
+ * `type "vendor_type_enum" does not exist`. That was also verified against the
+ * real runner.
+ *
+ * So the column default stays `'producer'` (set by
+ * `Migration20260114FixVendorTypeEnum`). That is harmless: the ORM applies the
+ * model-level default from `models/seller-metadata.ts` on every create, and all
+ * six application insert paths pass `vendor_type` explicitly, so the SQL-level
+ * DEFAULT is only reachable by a raw INSERT that omits the column — which
+ * nothing in this codebase does. If it ever needs to agree, it has to be a
+ * one-line migration shipped in a *later* deploy, once this label is committed.
  *
  * Note this does NOT copy the `DO $$ … EXCEPTION WHEN others THEN null $$`
  * wrapper used by `Migration20260601AddCreatorVendorType`. That wrapper
