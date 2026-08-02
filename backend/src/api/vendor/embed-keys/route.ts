@@ -4,6 +4,11 @@ import {
 } from "@medusajs/framework"
 import { createLogger } from "../../../shared/logger"
 import { requireSellerId } from "../../../shared"
+import {
+  getSellerPlanLimits,
+  respondPlanLimitReached,
+} from "../../../shared/seller-plan"
+import { hasRoomFor } from "../../../modules/vendor-plan/limits"
 import { EMBED_KEYS_MODULE } from "../../../modules/embed-keys"
 import type EmbedKeysService from "../../../modules/embed-keys/service"
 
@@ -70,6 +75,26 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
         : null
 
     const embedKeys = req.scope.resolve(EMBED_KEYS_MODULE) as EmbedKeysService
+
+    // Count only live keys. A revoked key is not consuming anything, and
+    // counting it would leave a vendor permanently unable to rotate once they
+    // hit the cap — the exact moment they most need a new key.
+    const existing = (await embedKeys.listVendorEmbedKeys({
+      seller_id: sellerId,
+    })) as unknown as { revoked_at: Date | null }[]
+    const live = existing.filter((k) => !k.revoked_at).length
+
+    const { plan_code, limits } = await getSellerPlanLimits(req, sellerId)
+    if (!hasRoomFor(live, limits.embed_keys)) {
+      return respondPlanLimitReached(res, {
+        limit_key: "embed_keys",
+        limit: limits.embed_keys,
+        current: live,
+        plan_code,
+        noun: "embed keys",
+      })
+    }
+
     const generated = await embedKeys.generateKey(sellerId, label)
 
     return res.status(201).json({

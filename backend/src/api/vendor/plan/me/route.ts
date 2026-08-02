@@ -4,6 +4,7 @@ import { createLogger } from "../../../../shared/logger"
 import { VENDOR_PLAN_MODULE } from "../../../../modules/vendor-plan"
 import type VendorPlanService from "../../../../modules/vendor-plan/service"
 import { VENDOR_PLAN_CATALOG } from "../../../../modules/vendor-plan/catalog"
+import { limitsForPlan } from "../../../../modules/vendor-plan/limits"
 import { ENTITLEMENT_MODULE } from "../../../../modules/entitlement"
 import type EntitlementModuleService from "../../../../modules/entitlement/service"
 
@@ -62,6 +63,10 @@ export async function GET(
         pending_effective_at: assignment.pending_effective_at ?? null,
       },
       feature_keys: [...featureKeys],
+      // The quantitative side of the plan. Without it a vendor only discovers a
+      // cap by hitting it — the panel can show "1 of 1 embed keys" instead.
+      // `null` in any field means unlimited.
+      limits: limitsForPlan(assignment.plan_code),
       // Only self-serve plans. Operator-assigned ones (`internal`) are not
       // something a vendor can select for themselves.
       available_plans: VENDOR_PLAN_CATALOG.filter(
@@ -76,6 +81,7 @@ export async function GET(
         trial_days: p.trial_days,
         display_order: p.display_order,
         feature_keys: p.feature_keys,
+        limits: limitsForPlan(p.code),
       })),
     })
   } catch (error: unknown) {

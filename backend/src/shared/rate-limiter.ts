@@ -5,8 +5,17 @@ import type {
 } from "@medusajs/framework/http"
 import { createClient, RedisClientType } from "redis"
 import { createLogger } from "./logger"
+import { getSellerPlanLimits } from "./seller-plan"
 
 const logger = createLogger("RateLimiter")
+
+/**
+ * Embed ceiling applied when no vendor can be resolved for the request, or when
+ * the plan lookup fails. Matches the free tier in
+ * `modules/vendor-plan/limits.ts` — the most restrictive real plan, so an
+ * unresolved request never buys a higher ceiling than a paying vendor's.
+ */
+const EMBED_FALLBACK_MAX = 60
 
 /**
  * Rate Limiter Store Interface
@@ -230,11 +239,29 @@ export function trustProxyMiddleware(
   next()
 }
 
+/**
+ * Maximum requests per window.
+ *
+ * A function is resolved per request, which is what makes a limit a billable
+ * meter rather than a module constant — see `embedKeyRateLimiter`. Resolvers
+ * must not throw; one that does falls back to `fallbackMax` rather than
+ * failing the request, because a rate limiter is the wrong place to turn a
+ * lookup blip into a 500.
+ */
+export type RateLimitMax =
+  | number
+  | ((req: MedusaRequest) => number | Promise<number>)
+
 export interface RateLimiterOptions {
   /** Time window in milliseconds */
   windowMs: number
   /** Maximum requests per window */
-  max: number
+  max: RateLimitMax
+  /**
+   * Limit applied when a `max` resolver throws. Required when `max` is a
+   * function; ignored otherwise.
+   */
+  fallbackMax?: number
   /** Key prefix for namespacing different rate limiters */
   keyPrefix?: string
   /** Custom key generator function */
@@ -256,6 +283,8 @@ export interface RateLimiterOptions {
  */
 export function createRateLimiter(options: RateLimiterOptions) {
   const { windowMs, max, keyPrefix = "default", keyGenerator } = options
+  const fallbackMax =
+    typeof max === "number" ? max : (options.fallbackMax ?? 60)
   const store = getStore()
 
   return async (
@@ -263,6 +292,21 @@ export function createRateLimiter(options: RateLimiterOptions) {
     res: MedusaResponse,
     next: MedusaNextFunction
   ) => {
+    let effectiveMax = fallbackMax
+    if (typeof max === "function") {
+      try {
+        const resolved = await max(req)
+        if (Number.isFinite(resolved) && resolved > 0) {
+          effectiveMax = resolved
+        }
+      } catch (error) {
+        logger.warn(
+          `Rate limit resolver for "${keyPrefix}" failed; applying fallback of ${fallbackMax}`,
+          error as Error
+        )
+      }
+    }
+
     const ip = keyGenerator ? keyGenerator(req) : clientIp(req)
 
     const key = `${keyPrefix}:${ip}`
@@ -272,11 +316,14 @@ export function createRateLimiter(options: RateLimiterOptions) {
     const now = Date.now()
 
     // Set rate limit headers
-    res.set("X-RateLimit-Limit", String(max))
-    res.set("X-RateLimit-Remaining", String(Math.max(0, max - record.count)))
+    res.set("X-RateLimit-Limit", String(effectiveMax))
+    res.set(
+      "X-RateLimit-Remaining",
+      String(Math.max(0, effectiveMax - record.count))
+    )
     res.set("X-RateLimit-Reset", String(Math.ceil(record.resetAt / 1000)))
 
-    if (record.count > max) {
+    if (record.count > effectiveMax) {
       const retryAfter = Math.ceil((record.resetAt - now) / 1000)
       res.set("Retry-After", String(retryAfter))
       
@@ -317,17 +364,29 @@ export const publicCatalogRateLimiter = createRateLimiter({
 })
 
 /**
- * Embed key rate limiter: 100 requests per minute per publishable key.
+ * Embed key rate limiter: per publishable key, **scaled by the vendor's plan**.
  *
  * Applied to key-authenticated embed endpoints (`/store/embed/*` and the
  * optional keyed path of `/store/vendors/:handle`). Keyed by the resolved
  * embed key id (set on the request by the embed-key middleware) so a single
  * misbehaving site is throttled independently of others, falling back to IP
  * when no key id is present.
+ *
+ * This is the one embed limiter that scales: it caps how much traffic a
+ * vendor's own site may drive through FBM, which is exactly the thing a vendor
+ * buys more of. `requireEmbedKey` runs before this middleware and sets
+ * `embed_seller_id`, so the plan is resolvable from the request; when it is
+ * absent (the keyless `/store/vendors/**` path) the free-tier ceiling applies.
  */
 export const embedKeyRateLimiter = createRateLimiter({
   windowMs: 60_000,
-  max: 100,
+  max: async (req) => {
+    const sellerId = (req as { embed_seller_id?: string }).embed_seller_id
+    if (!sellerId) return EMBED_FALLBACK_MAX
+    const { limits } = await getSellerPlanLimits(req, sellerId)
+    return limits.embed_requests_per_minute
+  },
+  fallbackMax: EMBED_FALLBACK_MAX,
   keyPrefix: "embed-key",
   keyGenerator: (req) => {
     const keyId = (req as any).embed_key_id
@@ -344,6 +403,11 @@ export const embedKeyRateLimiter = createRateLimiter({
  * site's HTML) and the Origin header is spoofable by a non-browser client, so
  * `connect_domains` is an advisory filter, not authentication. This caps abuse
  * from a single source regardless of which (public) key it presents.
+ *
+ * Deliberately NOT plan-scaled, unlike `embedKeyRateLimiter`. This bounds one
+ * client, not one vendor — a vendor's real visitors arrive from many IPs, so
+ * raising it with the plan would only widen what a single abuser can do while
+ * doing nothing for legitimate traffic.
  */
 export const embedIpRateLimiter = createRateLimiter({
   windowMs: 60_000,

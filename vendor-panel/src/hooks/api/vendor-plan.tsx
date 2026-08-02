@@ -28,6 +28,20 @@ export type VendorPlanSummary = {
   pending_effective_at: string | null
 }
 
+/**
+ * Quantitative plan allowances. `null` means unlimited — never 0, which is a
+ * real (and very restrictive) cap, so `?? Infinity` is the wrong reflex and
+ * falsiness must not be used to test for "no limit".
+ */
+export type VendorPlanLimits = {
+  embed_requests_per_minute: number
+  analytics_range_days: number
+  embed_keys: number | null
+  connect_domains: number | null
+  webhook_subscriptions: number | null
+  vault_documents: number | null
+}
+
 export type AvailablePlan = {
   code: string
   display_name: string
@@ -38,11 +52,13 @@ export type AvailablePlan = {
   trial_days: number
   display_order: number
   feature_keys: VendorPlanFeatureKey[]
+  limits: VendorPlanLimits
 }
 
 export type VendorPlanResponse = {
   plan: VendorPlanSummary
   feature_keys: VendorPlanFeatureKey[]
+  limits: VendorPlanLimits
   available_plans: AvailablePlan[]
 }
 
@@ -69,6 +85,7 @@ export const useVendorPlan = (
   return {
     plan: response?.plan,
     featureKeys: response?.feature_keys ?? [],
+    limits: response?.limits,
     availablePlans: response?.available_plans ?? [],
     ...rest,
   }
@@ -111,19 +128,31 @@ export const useChangeVendorPlan = (
 }
 
 /**
- * Read a plan-gate denial off a thrown fetchQuery error.
+ * Read a plan denial off a thrown fetchQuery error.
  *
- * `fetchQuery` throws an Error carrying `details.backendBody`, so a 402 from
- * `requirePlanFeature` can be turned into an upsell rather than a generic
- * failure toast. Returns null for anything that is not a plan denial —
- * including a 503 `plan_check_unavailable`, which is a transient backend
- * problem and must not be shown to the vendor as "upgrade to continue".
+ * `fetchQuery` throws an Error carrying `details.backendBody`, so a 402 from the
+ * backend can be turned into an upsell rather than a generic failure toast.
+ * Two kinds arrive on the same status and need different copy:
+ *
+ * - `plan_upgrade_required` — the surface is not in the plan at all
+ *   (`requirePlanFeature`). Carries `required_feature`.
+ * - `plan_limit_reached` — the surface is included but the allowance is spent
+ *   (`respondPlanLimitReached`). Carries `limit_key`, `limit` and `current`.
+ *
+ * Returns null for anything else — notably a 503 `plan_check_unavailable`,
+ * which is a transient backend problem and must not be shown to the vendor as
+ * "upgrade to continue".
  */
 export type PlanDenial = {
+  kind: "feature" | "limit"
   requiredFeature: string | null
   currentPlan: string | null
   upgradeUrl: string
   message: string
+  /** Present only when `kind` is "limit". */
+  limitKey: string | null
+  limit: number | null
+  current: number | null
 }
 
 export function parsePlanDenial(error: unknown): PlanDenial | null {
@@ -133,14 +162,24 @@ export function parsePlanDenial(error: unknown): PlanDenial | null {
   if (!details || details.status !== 402) return null
 
   const body = details.backendBody ?? {}
-  if (body.code !== "plan_upgrade_required") return null
+  const isFeature = body.code === "plan_upgrade_required"
+  const isLimit = body.code === "plan_limit_reached"
+  if (!isFeature && !isLimit) return null
 
   return {
+    kind: isLimit ? "limit" : "feature",
     requiredFeature: (body.required_feature as string) ?? null,
     currentPlan: (body.current_plan as string) ?? null,
     upgradeUrl: (body.upgrade_url as string) ?? "/settings/billing",
     message:
       (body.message as string) ??
-      "Your plan does not include this feature. Upgrade to enable it.",
+      (isLimit
+        ? "You have used everything your plan allows here. Upgrade to add more."
+        : "Your plan does not include this feature. Upgrade to enable it."),
+    limitKey: isLimit ? ((body.limit_key as string) ?? null) : null,
+    // `limit` is null for an unlimited allowance, so `?? null` is the right
+    // normalization — absent and unlimited both read as "no number to show".
+    limit: isLimit ? ((body.limit as number) ?? null) : null,
+    current: isLimit ? ((body.current as number) ?? null) : null,
   }
 }

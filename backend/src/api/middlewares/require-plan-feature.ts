@@ -8,11 +8,8 @@ import {
   getCachedPlanFeatures,
   setCachedPlanFeatures,
 } from "../../shared/plan-entitlement-cache"
-import { VENDOR_PLAN_MODULE } from "../../modules/vendor-plan"
-import type VendorPlanService from "../../modules/vendor-plan/service"
+import { loadSellerPlanSnapshot } from "../../shared/seller-plan"
 import type { VendorFeatureKey } from "../../modules/vendor-plan/catalog"
-import { ENTITLEMENT_MODULE } from "../../modules/entitlement"
-import type EntitlementModuleService from "../../modules/entitlement/service"
 
 const log = createLogger("api/middlewares/require-plan-feature")
 
@@ -97,7 +94,7 @@ export function requirePlanFeature(
 
     if (!snapshot) {
       try {
-        snapshot = await loadSellerFeatures(req, sellerId)
+        snapshot = await loadSellerPlanSnapshot(req, sellerId)
         setCachedPlanFeatures(sellerId, snapshot)
       } catch (err) {
         // Fail closed, but distinguishably. A 402 here would be a lie that
@@ -132,44 +129,4 @@ export function requirePlanFeature(
       upgrade_url: "/settings/billing",
     })
   }
-}
-
-/**
- * The feature keys a seller holds: their plan's keys UNION any directly held
- * seller entitlements.
- *
- * Reading the plan directly means plan features can never drift out of sync
- * with granted rows — there is no reconciliation job standing between "the
- * seller upgraded" and "the gate opens". Unioning entitlements on top is what
- * makes non-plan grants work: a comped feature, a promotional trial, or a
- * one-off operator grant opens the gate without inventing a bespoke plan.
- */
-async function loadSellerFeatures(
-  req: MedusaRequest,
-  sellerId: string
-): Promise<{ plan_code: string; feature_keys: ReadonlySet<string> }> {
-  const planService = req.scope.resolve<VendorPlanService>(VENDOR_PLAN_MODULE)
-
-  const assignment = await planService.ensureAssignment(sellerId)
-  const planKeys = await planService.getEntitledFeatureKeys(sellerId)
-
-  const keys = new Set<string>(planKeys)
-
-  // Entitlement grants are additive and must never fail the request on their
-  // own — a seller's plan features stand even if this read misbehaves.
-  try {
-    const entitlements = req.scope.resolve<EntitlementModuleService>(
-      ENTITLEMENT_MODULE
-    )
-    for (const key of await entitlements.listActiveFeatureKeysForSeller(sellerId)) {
-      keys.add(key)
-    }
-  } catch (err) {
-    log.warn(
-      `[plan-gate] seller entitlement read failed for ${sellerId}; using plan features only`,
-      err
-    )
-  }
-
-  return { plan_code: assignment.plan_code, feature_keys: keys }
 }

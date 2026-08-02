@@ -3,6 +3,7 @@ import { POST as CHANGE } from "../change/route"
 import { VENDOR_PLAN_MODULE } from "../../../../modules/vendor-plan"
 import { ENTITLEMENT_MODULE } from "../../../../modules/entitlement"
 import { featureKeysForPlan } from "../../../../modules/vendor-plan/catalog"
+import { limitsForPlan } from "../../../../modules/vendor-plan/limits"
 
 /**
  * Route-handler harness per `api/vendor/__tests__/invoices-route.unit.spec.ts`.
@@ -140,6 +141,15 @@ describe("GET /vendor/plan/me", () => {
     )
     expect(codes).toContain("free")
     expect(codes).not.toContain("internal")
+  })
+
+  it("reports the plan's quantitative limits", async () => {
+    // Without these the vendor only discovers a cap by hitting it.
+    const { req } = makeReq({}, { planCode: "pro" })
+    const res = createRes()
+    await GET(req as never, res as never)
+
+    expect(res.body.limits).toEqual(limitsForPlan("pro"))
   })
 
   it("reports each offered plan's features, for the upgrade screen", async () => {

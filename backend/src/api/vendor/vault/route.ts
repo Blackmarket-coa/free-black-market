@@ -3,6 +3,11 @@ import { DOCUMENT_VAULT_MODULE } from "../../../modules/document-vault"
 import type DocumentVaultModuleService from "../../../modules/document-vault/service"
 import { VaultDocumentType } from "../../../modules/document-vault/models/vault-document"
 import { getSellerId } from "../quests/_helpers"
+import {
+  getSellerPlanLimits,
+  respondPlanLimitReached,
+} from "../../../shared/seller-plan"
+import { hasRoomFor } from "../../../modules/vendor-plan/limits"
 
 /** GET /vendor/vault — a vendor's uploaded evidence documents (opt-in). */
 export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
@@ -37,6 +42,25 @@ export const POST = async (req: MedusaRequest<CreateDocBody>, res: MedusaRespons
   if (!b.label) return res.status(400).json({ message: "label is required" })
 
   const service = req.scope.resolve<DocumentVaultModuleService>(DOCUMENT_VAULT_MODULE)
+
+  // Document count, not bytes. The vault records a `file_id` from the File
+  // module and never sees a size, and the Minio provider has no seller context
+  // to charge bytes against — so a byte cap here would either trust a
+  // client-supplied number or be unenforceable. Counting documents is the
+  // honest meter today; byte-level metering belongs with the usage-to-invoice
+  // work, which is where size capture has to be plumbed anyway.
+  const existing = await service.listForSeller(sellerId)
+  const { plan_code, limits } = await getSellerPlanLimits(req, sellerId)
+  if (!hasRoomFor(existing.length, limits.vault_documents)) {
+    return respondPlanLimitReached(res, {
+      limit_key: "vault_documents",
+      limit: limits.vault_documents,
+      current: existing.length,
+      plan_code,
+      noun: "vault documents",
+    })
+  }
+
   const document = await service.createVaultDocuments({
     seller_id: sellerId,
     doc_type: (b.doc_type ?? "other") as VaultDocumentType,
