@@ -50,7 +50,7 @@ export const POST = async (req: MedusaRequest<CreateDocBody>, res: MedusaRespons
   // honest meter today; byte-level metering belongs with the usage-to-invoice
   // work, which is where size capture has to be plumbed anyway.
   const existing = await service.listForSeller(sellerId)
-  const { plan_code, limits } = await getSellerPlanLimits(req, sellerId)
+  const { plan_code, limits } = await getSellerPlanLimits(req.scope, sellerId)
   if (!hasRoomFor(existing.length, limits.vault_documents)) {
     return respondPlanLimitReached(res, {
       limit_key: "vault_documents",

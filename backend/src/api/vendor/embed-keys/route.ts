@@ -84,7 +84,7 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
     })) as unknown as { revoked_at: Date | null }[]
     const live = existing.filter((k) => !k.revoked_at).length
 
-    const { plan_code, limits } = await getSellerPlanLimits(req, sellerId)
+    const { plan_code, limits } = await getSellerPlanLimits(req.scope, sellerId)
     if (!hasRoomFor(live, limits.embed_keys)) {
       return respondPlanLimitReached(res, {
         limit_key: "embed_keys",

@@ -383,7 +383,7 @@ export const embedKeyRateLimiter = createRateLimiter({
   max: async (req) => {
     const sellerId = (req as { embed_seller_id?: string }).embed_seller_id
     if (!sellerId) return EMBED_FALLBACK_MAX
-    const { limits } = await getSellerPlanLimits(req, sellerId)
+    const { limits } = await getSellerPlanLimits(req.scope, sellerId)
     return limits.embed_requests_per_minute
   },
   fallbackMax: EMBED_FALLBACK_MAX,

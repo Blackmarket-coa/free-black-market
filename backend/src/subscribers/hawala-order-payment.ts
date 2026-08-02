@@ -8,6 +8,7 @@ import PayoutBreakdownService from "../modules/payout-breakdown/service"
 import { CREATOR_ATTRIBUTION_MODULE } from "../modules/creator-attribution"
 import type CreatorAttributionService from "../modules/creator-attribution/service"
 import { emitBlackoutEvent } from "../lib/blackout-emit"
+import { resolveSellerPlatformFee } from "../shared/platform-fee"
 import {
   isConsignmentSplitLive,
   resolveOrderConsignment,
@@ -122,7 +123,11 @@ export default async function hawalaOrderPaymentSubscriber({
     // breakdown disagreed for the same order. Tax/delivery/tip remain in the
     // seller leg pending a fuller multi-leg settlement.
     const feeBaseAmount = centsToDollars(Number(order.subtotal ?? order.total))
-    const platformFeePercent = await payoutService.getEffectivePlatformFee(sellerId)
+    // Via the shared helper, not the module service directly: the plan's rate
+    // sits between the per-seller override and the platform default, and only
+    // this composition point can read it across the module boundary.
+    const platformFee = await resolveSellerPlatformFee(container, sellerId)
+    const platformFeePercent = platformFee.percent
     const platformFeeAmount = feeBaseAmount * (platformFeePercent / 100)
 
     // Look up creator attribution (idempotent — created earlier by
@@ -155,6 +160,11 @@ export default async function hawalaOrderPaymentSubscriber({
         currencyCode: order.currency_code,
         creatorCommissionCents,
         creatorSellerId,
+        // The same plan rate the ledger leg above resolved through. Without it
+        // `calculateBreakdown` would re-resolve without the plan tier, and the
+        // stored customer-facing breakdown would disagree with the money that
+        // actually moved for this order.
+        planFeePercentBySeller: { [sellerId]: platformFee.plan_percent },
       })
       await payoutService.storeOrderBreakdown(
         orderId,

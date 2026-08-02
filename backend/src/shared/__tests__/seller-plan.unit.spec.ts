@@ -63,7 +63,7 @@ describe("getSellerPlanSnapshot", () => {
       entitlementKeys: ["vendor.pos"],
     })
 
-    const snapshot = await getSellerPlanSnapshot(req as never, "sel_1")
+    const snapshot = await getSellerPlanSnapshot(req.scope as never, "sel_1")
     expect(snapshot.plan_code).toBe("starter")
     expect([...snapshot.feature_keys].sort()).toEqual([
       "vendor.embed",
@@ -83,7 +83,7 @@ describe("getSellerPlanSnapshot", () => {
             throw new Error("entitlement module missing")
           })()
 
-    const snapshot = await getSellerPlanSnapshot(req as never, "sel_1")
+    const snapshot = await getSellerPlanSnapshot(req.scope as never, "sel_1")
     expect([...snapshot.feature_keys]).toEqual(["vendor.pos"])
   })
 
@@ -94,7 +94,7 @@ describe("getSellerPlanSnapshot", () => {
       feature_keys: new Set(["vendor.quests"]),
     })
 
-    const snapshot = await getSellerPlanSnapshot(req as never, "sel_cached")
+    const snapshot = await getSellerPlanSnapshot(req.scope as never, "sel_cached")
     expect(snapshot.plan_code).toBe("scale")
     expect(ensureAssignment).not.toHaveBeenCalled()
   })
@@ -103,7 +103,7 @@ describe("getSellerPlanSnapshot", () => {
 describe("getSellerPlanLimits", () => {
   it("returns the limits of the seller's plan", async () => {
     const { req } = makeReq({ planCode: "pro" })
-    const { plan_code, limits } = await getSellerPlanLimits(req as never, "sel_1")
+    const { plan_code, limits } = await getSellerPlanLimits(req.scope as never, "sel_1")
 
     expect(plan_code).toBe("pro")
     expect(limits).toEqual(limitsForPlan("pro"))
@@ -113,10 +113,10 @@ describe("getSellerPlanLimits", () => {
     const { req, ensureAssignment } = makeReq({ planCode: "free" })
 
     // First call populates the cache the gate would have populated.
-    await getSellerPlanSnapshot(req as never, "sel_1")
+    await getSellerPlanSnapshot(req.scope as never, "sel_1")
     expect(ensureAssignment).toHaveBeenCalledTimes(1)
 
-    const { plan_code } = await getSellerPlanLimits(req as never, "sel_1")
+    const { plan_code } = await getSellerPlanLimits(req.scope as never, "sel_1")
     expect(plan_code).toBe("free")
     expect(ensureAssignment).toHaveBeenCalledTimes(1)
   })
@@ -126,7 +126,7 @@ describe("getSellerPlanLimits", () => {
     // into a 500 on POST /vendor/embed-keys would be worse than briefly
     // applying the most restrictive real ceiling.
     const { req } = makeReq({ planThrows: true })
-    const { plan_code, limits } = await getSellerPlanLimits(req as never, "sel_1")
+    const { plan_code, limits } = await getSellerPlanLimits(req.scope as never, "sel_1")
 
     expect(plan_code).toBe("free")
     expect(limits).toEqual(limitsForPlan("free"))

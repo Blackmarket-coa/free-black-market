@@ -94,7 +94,7 @@ export function requirePlanFeature(
 
     if (!snapshot) {
       try {
-        snapshot = await loadSellerPlanSnapshot(req, sellerId)
+        snapshot = await loadSellerPlanSnapshot(req.scope, sellerId)
         setCachedPlanFeatures(sellerId, snapshot)
       } catch (err) {
         // Fail closed, but distinguishably. A 402 here would be a lie that

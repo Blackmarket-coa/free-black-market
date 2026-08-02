@@ -174,7 +174,7 @@ export async function POST(
       // Checked against the normalized list, not the submitted one: normalizing
       // deduplicates and drops junk, so validating the raw array would refuse a
       // save that ends up under the cap anyway.
-      const { plan_code, limits } = await getSellerPlanLimits(req, sellerId);
+      const { plan_code, limits } = await getSellerPlanLimits(req.scope, sellerId);
       if (!hasRoomFor(domains.length, limits.connect_domains, 0)) {
         return respondPlanLimitReached(res, {
           limit_key: "connect_domains",

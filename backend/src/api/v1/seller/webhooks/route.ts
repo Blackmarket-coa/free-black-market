@@ -82,10 +82,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     seller_id: sellerId,
     status: WebhookSubscriptionStatus.ACTIVE,
   })
-  const { plan_code, limits } = await getSellerPlanLimits(
-    req,
-    sellerId
-  )
+  const { plan_code, limits } = await getSellerPlanLimits(req.scope, sellerId)
   if (!hasRoomFor(active.length, limits.webhook_subscriptions)) {
     return respondPlanLimitReached(res, {
       limit_key: "webhook_subscriptions",

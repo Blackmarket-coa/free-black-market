@@ -1,4 +1,5 @@
-import type { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
+import type { MedusaResponse } from "@medusajs/framework/http"
+import type { MedusaContainer } from "@medusajs/framework/types"
 import { createLogger } from "./logger"
 import {
   getCachedPlanFeatures,
@@ -27,8 +28,10 @@ const log = createLogger("shared/seller-plan")
  * separate loaders would have meant two caches with two expiries, and a window
  * where the gate and the limit disagreed about which plan a seller was on.
  *
- * Imports the module files directly rather than the `shared` barrel to keep
- * this out of the cycle that barrel would otherwise create.
+ * Takes a `MedusaContainer` rather than a request — routes pass `req.scope`,
+ * while subscribers and jobs (which have no request) can use the same
+ * functions. Imports the module files directly rather than the `shared` barrel
+ * to keep this out of the cycle that barrel would otherwise create.
  */
 
 /**
@@ -42,10 +45,10 @@ const log = createLogger("shared/seller-plan")
  * one-off operator grant opens the gate without inventing a bespoke plan.
  */
 export async function loadSellerPlanSnapshot(
-  req: MedusaRequest,
+  container: MedusaContainer,
   sellerId: string
 ): Promise<PlanFeatureSnapshot> {
-  const planService = req.scope.resolve<VendorPlanService>(VENDOR_PLAN_MODULE)
+  const planService = container.resolve<VendorPlanService>(VENDOR_PLAN_MODULE)
 
   const assignment = await planService.ensureAssignment(sellerId)
   const planKeys = await planService.getEntitledFeatureKeys(sellerId)
@@ -56,7 +59,7 @@ export async function loadSellerPlanSnapshot(
   // own — a seller's plan features stand even if this read misbehaves.
   try {
     const entitlements =
-      req.scope.resolve<EntitlementModuleService>(ENTITLEMENT_MODULE)
+      container.resolve<EntitlementModuleService>(ENTITLEMENT_MODULE)
     for (const key of await entitlements.listActiveFeatureKeysForSeller(
       sellerId
     )) {
@@ -74,13 +77,13 @@ export async function loadSellerPlanSnapshot(
 
 /** Cached snapshot for a seller, loading and caching it on a miss. */
 export async function getSellerPlanSnapshot(
-  req: MedusaRequest,
+  container: MedusaContainer,
   sellerId: string
 ): Promise<PlanFeatureSnapshot> {
   const cached = getCachedPlanFeatures(sellerId)
   if (cached) return cached
 
-  const snapshot = await loadSellerPlanSnapshot(req, sellerId)
+  const snapshot = await loadSellerPlanSnapshot(container, sellerId)
   setCachedPlanFeatures(sellerId, snapshot)
   return snapshot
 }
@@ -100,11 +103,11 @@ export type ResolvedPlanLimits = {
  * plan service is surfaced as a 503; here it degrades to fail-closed numbers.
  */
 export async function getSellerPlanLimits(
-  req: MedusaRequest,
+  container: MedusaContainer,
   sellerId: string
 ): Promise<ResolvedPlanLimits> {
   try {
-    const snapshot = await getSellerPlanSnapshot(req, sellerId)
+    const snapshot = await getSellerPlanSnapshot(container, sellerId)
     return {
       plan_code: snapshot.plan_code,
       limits: limitsForPlan(snapshot.plan_code),

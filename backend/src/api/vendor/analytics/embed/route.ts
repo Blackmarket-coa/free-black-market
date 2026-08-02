@@ -31,7 +31,7 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
   const requested = Math.min(Math.max(Number(req.query.range) || 30, 1), 365)
 
   try {
-    const { plan_code, limits } = await getSellerPlanLimits(req, sellerId)
+    const { plan_code, limits } = await getSellerPlanLimits(req.scope, sellerId)
     const range = clampToLimit(requested, limits.analytics_range_days)
 
     const analytics = req.scope.resolve(

@@ -265,6 +265,18 @@ describe("hawala-order-payment subscriber consignment wiring", () => {
     }
     const payoutService = {
       getEffectivePlatformFee: jest.fn().mockResolvedValue(10),
+      // The subscriber resolves the fee through `shared/platform-fee.ts` now, so
+      // the plan tier sits between a seller's negotiated override and the
+      // platform default. That helper calls `getPlatformFeeDetail`, not
+      // `getEffectivePlatformFee` — both are stubbed at the same 10% so the
+      // existing fee-leg assertions still describe the same money.
+      getPlatformFeeDetail: jest.fn().mockResolvedValue({
+        percent: 10,
+        source: "platform_default",
+        override_expired: false,
+        override_reason: null,
+      }),
+      getSellerSettings: jest.fn().mockResolvedValue(null),
       calculateBreakdown: jest.fn().mockResolvedValue({}),
       storeOrderBreakdown: jest.fn().mockResolvedValue({}),
     }
