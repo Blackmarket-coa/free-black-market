@@ -11,6 +11,7 @@ import {
 import { MARKETPLACE_WEBHOOKS_MODULE } from "../../../../../../modules/marketplace-webhooks"
 import type MarketplaceWebhooksService from "../../../../../../modules/marketplace-webhooks/service"
 import { createLogger } from "../../../../../../shared/logger"
+import { materializeExtensionsForAppend } from "../../../../../../shared/extension-keys"
 
 const log = createLogger("api/v1/seller/plugins/install")
 
@@ -41,9 +42,10 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     SELLER_EXTENSION_MODULE
   )
   const [meta] = await sellerExt.listSellerMetadatas({ seller_id: sellerId })
-  const current = Array.isArray(meta?.enabled_extensions)
-    ? (meta!.enabled_extensions as string[])
-    : []
+  // A `null` column means "use my archetype defaults". Appending a slug to `[]`
+  // would persist a slug-only array, which the panel resolves as "every feature
+  // off" — so materialise the defaults first and append to those instead.
+  const current = materializeExtensionsForAppend(meta?.enabled_extensions, meta)
 
   if (current.includes(slug)) {
     return res.status(200).json({ installed: current, already: true })

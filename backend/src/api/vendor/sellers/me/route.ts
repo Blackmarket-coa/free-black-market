@@ -9,6 +9,13 @@ import {
   createSellerMetadataRecord,
   updateSellerMetadataRecord,
 } from "../../../../modules/seller-extension/metadata-service"
+import { VendorType } from "../../../../modules/seller-extension/models/seller-metadata"
+import { PLUGIN_REGISTRY_MODULE } from "../../../../modules/plugin-registry"
+import type PluginRegistryService from "../../../../modules/plugin-registry/service"
+import {
+  UI_FEATURE_KEYS,
+  findUnknownExtensionKeys,
+} from "../../../../shared/extension-keys"
 
 type SellerModuleLike = {
   updateSellers: (data: Array<Record<string, unknown>>) => Promise<unknown>
@@ -82,6 +89,58 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
       } else if (key === "media") {
         // Map media to photo
         sellerUpdate["photo"] = value
+      }
+    }
+
+    // This route writes `vendor_type` and `enabled_extensions` through a
+    // passthrough body schema, so both need validating here as well as on the
+    // dedicated extensions endpoint — otherwise the allowlist there is simply
+    // routed around. Validate before any write so a rejected payload leaves
+    // the seller row untouched.
+    if ("vendor_type" in metadataUpdate) {
+      const submitted = metadataUpdate.vendor_type
+      const allowed = Object.values(VendorType) as string[]
+      if (typeof submitted !== "string" || !allowed.includes(submitted)) {
+        return res.status(400).json({
+          type: "invalid_data",
+          message: `vendor_type must be one of: ${allowed.join(", ")}`,
+          allowed_vendor_types: allowed,
+        })
+      }
+    }
+
+    if ("enabled_extensions" in metadataUpdate) {
+      const { data: existingMeta } = await query.graph({
+        entity: "seller_metadata",
+        fields: ["enabled_extensions"],
+        filters: { seller_id: sellerId },
+      })
+      const heldRaw = (
+        existingMeta?.[0] as { enabled_extensions?: unknown } | undefined
+      )?.enabled_extensions
+
+      const unknownKeys = await findUnknownExtensionKeys(
+        metadataUpdate.enabled_extensions,
+        {
+          previouslyHeld: Array.isArray(heldRaw) ? (heldRaw as string[]) : [],
+          resolvePluginSlug: async (slug) => {
+            const registry = req.scope.resolve<PluginRegistryService>(
+              PLUGIN_REGISTRY_MODULE
+            )
+            return Boolean(await registry.getBySlug(slug))
+          },
+        }
+      )
+
+      if (unknownKeys.length) {
+        return res.status(400).json({
+          type: "invalid_data",
+          message:
+            `Unknown extension key(s): ${unknownKeys.join(", ")}. ` +
+            `Expected a dashboard feature key or an installable plugin slug.`,
+          unknown_keys: unknownKeys,
+          allowed_feature_keys: UI_FEATURE_KEYS,
+        })
       }
     }
 

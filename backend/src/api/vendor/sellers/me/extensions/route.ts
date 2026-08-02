@@ -17,6 +17,12 @@ import {
 } from "../../../../../modules/plugin-registry/hooks"
 import { MARKETPLACE_WEBHOOKS_MODULE } from "../../../../../modules/marketplace-webhooks"
 import type MarketplaceWebhooksService from "../../../../../modules/marketplace-webhooks/service"
+import { PLUGIN_REGISTRY_MODULE } from "../../../../../modules/plugin-registry"
+import type PluginRegistryService from "../../../../../modules/plugin-registry/service"
+import {
+  UI_FEATURE_KEYS,
+  findUnknownExtensionKeys,
+} from "../../../../../shared/extension-keys"
 
 /**
  * POST /vendor/sellers/me/extensions
@@ -53,6 +59,33 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
     const previousExtensions = Array.isArray(previousRaw)
       ? (previousRaw as string[])
       : []
+
+    // Allowlist the submitted keys. This column is a set-the-whole-array write,
+    // so without a check any seller can persist arbitrary strings — and once
+    // plan entitlements read alongside it, an unvalidated write is how someone
+    // types themselves a feature key. Permitted: the known dashboard feature
+    // keys, plugin slugs the seller already has (so a deprecated plugin never
+    // makes their array unsaveable), and slugs that resolve in the registry.
+    const unknownKeys = await findUnknownExtensionKeys(body.enabled_extensions, {
+      previouslyHeld: previousExtensions,
+      resolvePluginSlug: async (slug) => {
+        const registry = req.scope.resolve<PluginRegistryService>(
+          PLUGIN_REGISTRY_MODULE
+        )
+        return Boolean(await registry.getBySlug(slug))
+      },
+    })
+
+    if (unknownKeys.length) {
+      return res.status(400).json({
+        type: "invalid_data",
+        message:
+          `Unknown extension key(s): ${unknownKeys.join(", ")}. ` +
+          `Expected a dashboard feature key or an installable plugin slug.`,
+        unknown_keys: unknownKeys,
+        allowed_feature_keys: UI_FEATURE_KEYS,
+      })
+    }
 
     if (metadataRecords && metadataRecords.length > 0) {
       const metadataId = (metadataRecords[0] as { id: string }).id
