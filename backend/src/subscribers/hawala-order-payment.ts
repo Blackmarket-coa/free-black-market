@@ -9,6 +9,8 @@ import { CREATOR_ATTRIBUTION_MODULE } from "../modules/creator-attribution"
 import type CreatorAttributionService from "../modules/creator-attribution/service"
 import { emitBlackoutEvent } from "../lib/blackout-emit"
 import { resolveSellerPlatformFee } from "../shared/platform-fee"
+import { resolveSellerPluginPayees } from "../shared/plugin-payees"
+import { disbursePluginDeveloperShare } from "../shared/plugin-revenue-payout"
 import {
   isConsignmentSplitLive,
   resolveOrderConsignment,
@@ -153,6 +155,9 @@ export default async function hawalaOrderPaymentSubscriber({
 
     // Store the breakdown for this order (for transparency reporting)
     try {
+      const payoutConfig = await payoutService.getDefaultConfig()
+      const pluginSharePercent = Number(payoutConfig.plugin_developer_percent ?? 0)
+
       const breakdown = await payoutService.calculateBreakdown({
         subtotal: Number(order.subtotal || order.total),
         sellerId,
@@ -165,6 +170,17 @@ export default async function hawalaOrderPaymentSubscriber({
         // stored customer-facing breakdown would disagree with the money that
         // actually moved for this order.
         planFeePercentBySeller: { [sellerId]: platformFee.plan_percent },
+        // Plugin developer revenue share, carved out of the platform fee. The
+        // payees have to be resolved here because they span two modules the
+        // payout service cannot reach.
+        //
+        // Resolved only when the share is actually configured. It is 0 by
+        // default, and looking up installed plugins on every settlement to
+        // multiply them by zero would put an extra query on the money path for
+        // every deployment that never turns this on.
+        pluginsBySeller: pluginSharePercent > 0
+          ? { [sellerId]: await resolveSellerPluginPayees(container, sellerId) }
+          : undefined,
       })
       await payoutService.storeOrderBreakdown(
         orderId,
@@ -172,6 +188,17 @@ export default async function hawalaOrderPaymentSubscriber({
         breakdown,
         order.currency_code
       )
+
+      // Disburse after the breakdown is stored, so the record of what is owed
+      // survives even if the transfers themselves are deferred.
+      if (breakdown.pluginShareAllocations.length > 0) {
+        await disbursePluginDeveloperShare(container, {
+          orderId,
+          sellerId,
+          currencyCode: order.currency_code,
+          allocations: breakdown.pluginShareAllocations,
+        })
+      }
     } catch (breakdownError) {
       log.warn(`[Hawala] Could not store breakdown for order ${orderId}:`, breakdownError)
     }

@@ -11,6 +11,11 @@ import {
   type ResolvedPlatformFee,
   type SellerFeeOverride,
 } from "./fee-resolution"
+import {
+  computePluginRevenueShare,
+  type PluginPayee,
+  type PluginShareAllocation,
+} from "./plugin-revenue-share"
 
 /**
  * Default fee labels for customer display
@@ -100,6 +105,16 @@ export interface BreakdownInput {
    * the same order. Any caller that settles money must pass this.
    */
   planFeePercentBySeller?: Record<string, number | null>
+  /**
+   * Plugins installed by each seller, keyed by seller id, for the developer
+   * revenue share. Supplied by the caller — resolving them needs both
+   * `seller_metadata` and `plugin_listing`, neither of which this module owns.
+   * Build it with `shared/plugin-payees.ts`.
+   *
+   * Omitting it means no share is computed and the platform keeps its whole
+   * fee, which is the behaviour before this existed.
+   */
+  pluginsBySeller?: Record<string, PluginPayee[]>
 }
 
 class PayoutBreakdownService extends MedusaService({
@@ -237,6 +252,7 @@ class PayoutBreakdownService extends MedusaService({
       tax: number
       tip: number
       creatorCommission: number
+      pluginDeveloperShare: number
     }
     sellerBreakdown: Array<{
       sellerId: string
@@ -245,6 +261,11 @@ class PayoutBreakdownService extends MedusaService({
       fees: number
       net: number
     }>
+    /**
+     * Who to pay, and how much, out of the platform fee. The caller performs
+     * the transfers — this module computes, it does not move money.
+     */
+    pluginShareAllocations: (PluginShareAllocation & { sellerId: string })[]
   }> {
     const config = await this.getDefaultConfig()
     const items: BreakdownItem[] = []
@@ -260,6 +281,8 @@ class PayoutBreakdownService extends MedusaService({
     let totalToProducers = 0
     let totalPlatformFees = 0
     let totalCreatorCommission = 0
+    let totalPluginDeveloperShare = 0
+    const pluginShareAllocations: (PluginShareAllocation & { sellerId: string })[] = []
 
     // Handle multi-seller or single-seller
     const sellers = input.sellerBreakdown || [{
@@ -293,6 +316,21 @@ class PayoutBreakdownService extends MedusaService({
       creatorRemaining -= creatorForSeller
 
       const producerAmount = seller.subtotal - platformFee - communityFromSeller - creatorForSeller
+
+      // Carved out of the platform fee, after it is computed and after the
+      // producer's net is fixed — so a developer share can never change what
+      // the seller receives, only how the platform's cut is divided.
+      const pluginShare = computePluginRevenueShare({
+        platformFeeCents: platformFee,
+        pluginDeveloperPercent: config.plugin_developer_percent ?? 0,
+        sellerSubtotalCents: seller.subtotal,
+        plugins: input.pluginsBySeller?.[seller.sellerId] ?? [],
+        sellerId: seller.sellerId,
+      })
+      totalPluginDeveloperShare += pluginShare.total_cents
+      for (const allocation of pluginShare.allocations) {
+        pluginShareAllocations.push({ ...allocation, sellerId: seller.sellerId })
+      }
 
       totalToProducers += producerAmount
       totalPlatformFees += platformFee
@@ -355,6 +393,24 @@ class PayoutBreakdownService extends MedusaService({
       })
     }
     
+    // Plugin developer share. Shown as its own line even though it is funded
+    // out of the platform fee, because "3% platform fee, 1% of which goes to
+    // the developers of the tools this vendor uses" is a more honest statement
+    // of where the money went than a single undifferentiated platform line.
+    if (totalPluginDeveloperShare > 0) {
+      items.push({
+        type: FeeType.PLUGIN_DEVELOPER_FEE,
+        amount: totalPluginDeveloperShare,
+        percent: Math.round((totalPluginDeveloperShare / customerPaid) * 100),
+        label: DEFAULT_FEE_LABELS[FeeType.PLUGIN_DEVELOPER_FEE].label,
+        description: DEFAULT_FEE_LABELS[FeeType.PLUGIN_DEVELOPER_FEE].description,
+        recipient:
+          pluginShareAllocations.length === 1
+            ? pluginShareAllocations[0].slug
+            : `${pluginShareAllocations.length} developers`,
+      })
+    }
+
     // Delivery fee
     if (input.deliveryFee && input.deliveryFee > 0) {
       items.push({
@@ -424,8 +480,10 @@ class PayoutBreakdownService extends MedusaService({
         tax: input.tax || 0,
         tip: input.tip || 0,
         creatorCommission: totalCreatorCommission,
+        pluginDeveloperShare: totalPluginDeveloperShare,
       },
       sellerBreakdown: sellerTotals,
+      pluginShareAllocations,
     }
   }
   
