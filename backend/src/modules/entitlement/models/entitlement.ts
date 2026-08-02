@@ -42,6 +42,16 @@ const Entitlement = model
     customer_id: model.text().nullable(),
     customer_external_id: model.text().nullable(),
 
+    /**
+     * Seller-scoped grantee, for entitlements held by a vendor rather than a
+     * customer (notably billing-plan features).
+     *
+     * Deliberately a separate column instead of a synthetic value in
+     * `customer_external_id` — that field carries the Matrix mxid and is read
+     * as such by the Blackout integration.
+     */
+    seller_id: model.text().nullable(),
+
     product_id: model.text().nullable(),
     variant_id: model.text().nullable(),
 
@@ -73,6 +83,14 @@ const Entitlement = model
     {
       on: ["expires_at"],
       name: "IDX_entitlement_expires_at",
+    },
+    {
+      on: ["seller_id", "feature_key"],
+      name: "IDX_entitlement_seller_feature",
+    },
+    {
+      on: ["seller_id", "status"],
+      name: "IDX_entitlement_seller_status",
     },
     {
       on: ["source_order_id", "product_id"],
