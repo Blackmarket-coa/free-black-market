@@ -23,6 +23,7 @@ import {
   type AssignmentSnapshot,
   type PlanTransitionDecision,
 } from "./transitions"
+import { invalidateSellerPlan } from "../../shared/plan-entitlement-cache"
 
 export type VendorPlanType = InferTypeOf<typeof VendorPlan>
 export type VendorPlanAssignmentType = InferTypeOf<typeof VendorPlanAssignment>
@@ -303,6 +304,7 @@ class VendorPlanService extends MedusaService({
       to_plan_code: DEFAULT_PLAN_CODE,
       payload: { reason: reason ?? "canceled by request" },
     })
+    invalidateSellerPlan(seller_id)
     return updated
   }
 
@@ -411,6 +413,11 @@ class VendorPlanService extends MedusaService({
         ...(args.assigned_by ? { assigned_by: args.assigned_by } : {}),
       },
     ])
+
+    // Drop the gate's cached snapshot synchronously, so an upgrade takes
+    // effect on this instance immediately rather than after the cache TTL.
+    invalidateSellerPlan(args.assignment.seller_id)
+
     return updated
   }
 
