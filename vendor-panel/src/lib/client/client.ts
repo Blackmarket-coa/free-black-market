@@ -204,6 +204,12 @@ export const fetchQuery = async (
       backendCode: errorData.code || null,
       backendError: errorData.error || null,
       backendDetails: errorData.details || null,
+      // The whole parsed body. The named fields above cover the common
+      // envelope, but responses carry actionable fields beyond it — a 402 from
+      // the plan gate includes `required_feature`, `current_plan` and
+      // `upgrade_url`, which the upsell needs and which would otherwise be
+      // dropped here.
+      backendBody: contentType.includes("application/json") ? errorData : null,
       rawText: errorText || null,
       timestamp: new Date().toISOString(),
     }

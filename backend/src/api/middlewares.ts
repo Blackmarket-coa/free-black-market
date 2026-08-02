@@ -1063,6 +1063,13 @@ export default defineMiddlewares({
         requirePlanFeature("vendor.nursery"),
       ],
     },
+    // Plan self-service. Authenticated but deliberately NOT plan-gated: a
+    // vendor must always be able to see and change their own plan, especially
+    // when that plan is the reason something else is denied.
+    {
+      matcher: "/vendor/plan/*",
+      middlewares: [authenticate("seller", "bearer")],
+    },
     // Embeddable storefront keys. No runtime feature flag — connect.js is
     // always available as a platform capability; the plan decides who may
     // mint keys for it.
