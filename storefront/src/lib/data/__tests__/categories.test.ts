@@ -51,6 +51,14 @@ describe("listCategories", () => {
       })
     )
   })
+
+  it("fails soft to empty lists when the fetch throws", async () => {
+    fetchMock.mockRejectedValue(new Error("backend down"))
+    await expect(listCategories()).resolves.toEqual({
+      categories: [],
+      parentCategories: [],
+    })
+  })
 })
 
 describe("getCategoryByHandle", () => {

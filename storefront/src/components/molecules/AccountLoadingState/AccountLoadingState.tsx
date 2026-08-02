@@ -1,4 +1,5 @@
 import { UserNavigation } from "@/components/molecules"
+import { signout } from "@/lib/data/customer"
 
 type AccountLoadingStateProps = {
   title?: string
@@ -16,6 +17,11 @@ export const AccountLoadingState = ({
         <div className="md:col-span-3 space-y-4">
           <h1 className="heading-md uppercase">{title}</h1>
           <p className="text-secondary">{description}</p>
+          <form action={signout}>
+            <button type="submit" className="label-md underline">
+              Sign out and log in again
+            </button>
+          </form>
         </div>
       </div>
     </main>

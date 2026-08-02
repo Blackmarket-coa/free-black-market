@@ -1,5 +1,6 @@
 import { Metadata } from "next"
 import Link from "next/link"
+import { VENDOR_PANEL_URL } from "@/const"
 
 export const metadata: Metadata = {
   title: "Vendor Types & Features | Free Black Market",
@@ -25,7 +26,6 @@ const UserGroupIcon = ({ className = "" }: { className?: string }) => (
   </svg>
 )
 
-const VENDOR_PANEL_URL = process.env.NEXT_PUBLIC_VENDOR_PANEL_URL || process.env.NEXT_PUBLIC_VENDOR_URL || "https://vendor.mercurjs.com"
 
 export default function VendorTypesPage() {
   const vendorTypes = [

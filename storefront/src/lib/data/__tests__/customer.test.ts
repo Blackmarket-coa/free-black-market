@@ -201,31 +201,73 @@ describe("signup", () => {
 })
 
 describe("login", () => {
+  const makeToken = (payload: Record<string, unknown>) =>
+    `hdr.${Buffer.from(JSON.stringify(payload)).toString("base64url")}.sig`
+
   it("stores a string token", async () => {
     h.authLogin.mockResolvedValue("tok_str")
+    h.medusaFetch.mockResolvedValue({ customer: { id: "cus_1" } })
     await expect(login(fd({ email: "a@x.com", password: "pw" }))).resolves.toBeUndefined()
     expect(h.setAuthToken).toHaveBeenCalledWith("tok_str")
   })
 
   it("stores a token from an object response", async () => {
     h.authLogin.mockResolvedValue({ token: "tok_obj" })
+    h.medusaFetch.mockResolvedValue({ customer: { id: "cus_1" } })
     await login(fd({ email: "a@x.com", password: "pw" }))
     expect(h.setAuthToken).toHaveBeenCalledWith("tok_obj")
   })
 
-  it("returns an error string when the token is missing", async () => {
+  it("returns an error when the token is missing", async () => {
     h.authLogin.mockResolvedValue({ nope: true })
-    await expect(login(fd({ email: "a@x.com", password: "pw" }))).resolves.toBe(
-      "Login failed: Invalid authentication response"
-    )
+    await expect(login(fd({ email: "a@x.com", password: "pw" }))).resolves.toEqual({
+      error: "Login failed: Invalid authentication response",
+    })
     expect(h.setAuthToken).not.toHaveBeenCalled()
   })
 
   it("returns the error message when auth fails", async () => {
     h.authLogin.mockRejectedValue(new Error("bad creds"))
-    await expect(login(fd({ email: "a@x.com", password: "pw" }))).resolves.toBe(
-      "bad creds"
+    await expect(login(fd({ email: "a@x.com", password: "pw" }))).resolves.toEqual({
+      error: "bad creds",
+    })
+  })
+
+  it("points vendor-only identities at the vendor portal instead of looping", async () => {
+    // Shared emailpass identity: the password verifies, but the token has no
+    // customer actor — only a seller link in app_metadata.
+    h.authLogin.mockResolvedValue(
+      makeToken({ actor_id: "", app_metadata: { seller_id: "sel_1" } })
     )
+    h.medusaFetch.mockRejectedValue({ status: 401 })
+
+    const res = await login(fd({ email: "vendor@x.com", password: "pw" }))
+
+    expect(res).toMatchObject({ code: "vendor_account" })
+    expect(res?.vendorUrl).toBeTruthy()
+    expect(res?.error).toMatch(/vendor/i)
+    expect(h.removeAuthToken).toHaveBeenCalled()
+  })
+
+  it("returns a registration hint for identities with no customer or seller", async () => {
+    h.authLogin.mockResolvedValue(makeToken({ actor_id: "", app_metadata: {} }))
+    h.medusaFetch.mockRejectedValue({ status: 401 })
+
+    const res = await login(fd({ email: "ghost@x.com", password: "pw" }))
+
+    expect(res?.error).toMatch(/shopper/i)
+    expect(res?.code).toBeUndefined()
+    expect(h.removeAuthToken).toHaveBeenCalled()
+  })
+
+  it("keeps the session on a transient customers/me failure", async () => {
+    h.authLogin.mockResolvedValue("tok_str")
+    h.medusaFetch.mockRejectedValue({ status: 500 })
+
+    await expect(
+      login(fd({ email: "a@x.com", password: "pw" }))
+    ).resolves.toBeUndefined()
+    expect(h.removeAuthToken).not.toHaveBeenCalled()
   })
 })
 
