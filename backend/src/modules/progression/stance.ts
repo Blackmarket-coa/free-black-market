@@ -38,14 +38,14 @@ export function vendorTypeToStance(vendorType: VendorType | string): Stance {
       return Stance.CREATOR
     case VendorType.MUTUAL_AID:
       return Stance.COALITION
+    // `general` is listed explicitly alongside the rest rather than left to
+    // the default branch, so that adding an archetype is a deliberate decision
+    // here rather than a silent one.
     case VendorType.PRODUCER:
     case VendorType.GARDEN:
     case VendorType.KITCHEN:
     case VendorType.MAKER:
     case VendorType.RESTAURANT:
-    // A `general` vendor sells goods or services, so it earns on the producer
-    // track. Listed explicitly rather than left to the default so that adding
-    // an archetype is a deliberate decision here rather than a silent one.
     case VendorType.GENERAL:
       return Stance.PRODUCER
     default:
