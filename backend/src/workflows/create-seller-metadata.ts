@@ -46,7 +46,7 @@ const createSellerMetadataStep = createStep(
 
     const sellerMetadata = await createSellerMetadataRecord(sellerExtensionService, {
       seller_id: input.seller_id,
-      vendor_type: input.vendor_type || VendorType.PRODUCER,
+      vendor_type: input.vendor_type || VendorType.GENERAL,
       business_registration_number: input.business_registration_number || null,
       tax_classification: input.tax_classification || null,
       website_url: input.website_url || null,

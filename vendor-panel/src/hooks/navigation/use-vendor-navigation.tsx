@@ -28,6 +28,7 @@ import { useVendorType, VendorType, VendorFeatures } from "../../providers/vendo
 import { useMatrixChat } from "../../providers/matrix-provider"
 import { StripeIcon } from "../../assets/icons/Stripe"
 import { phase1ModuleFlags } from "../../lib/phase0-feature-flags"
+import { useVendorPlan } from "../api/vendor-plan"
 
 /**
  * Navigation Item Interface
@@ -41,6 +42,15 @@ export interface NavItemConfig {
   showFor?: (features: VendorFeatures, type: VendorType) => boolean
   // Override labels per vendor type
   labelByType?: Partial<Record<VendorType, string>>
+  /**
+   * Billing-plan feature key this surface requires.
+   *
+   * Kept declarative rather than folded into `showFor` because `showFor` is
+   * synchronous over vendor-type data, while plan entitlements arrive from
+   * `GET /vendor/plan/me`. This is presentation only — `requirePlanFeature`
+   * on the backend is the enforcement.
+   */
+  requiresPlanFeature?: string
 }
 
 
@@ -48,6 +58,7 @@ export interface NavChildItemConfig {
   label: string
   to: string
   showFor?: (features: VendorFeatures, type: VendorType) => boolean
+  requiresPlanFeature?: string
 }
 
 /**
@@ -65,12 +76,30 @@ function getVendorNavigationConfig({
   vendorType,
   features,
   unreadCount,
+  planFeatureKeys,
+  planLoaded = true,
 }: {
   t: (key: string) => string
   vendorType: VendorType
   features: VendorFeatures
   unreadCount: number
+  /** Feature keys the seller holds, from `GET /vendor/plan/me`. */
+  planFeatureKeys?: string[]
+  /** False while the plan request is still in flight. */
+  planLoaded?: boolean
 }) {
+  /**
+   * Presentation-only plan check.
+   *
+   * Optimistic while the plan is loading, and when the request failed: hiding a
+   * paid surface a vendor is entitled to on every page load is worse than
+   * briefly showing one they are not, which the backend 402s anyway.
+   */
+  const hasPlanFeature = (key?: string): boolean => {
+    if (!key) return true
+    if (!planLoaded) return true
+    return (planFeatureKeys ?? []).includes(key)
+  }
 
 
   /**
@@ -103,6 +132,7 @@ function getVendorNavigationConfig({
       icon: <Trophy />,
       label: "Quests",
       to: "/quests",
+      requiresPlanFeature: "vendor.quests",
       // Always visible — quests are opt-in leverage toward loans, grants,
       // wholesale accounts, and certifications from a vendor's real history.
       items: [
@@ -116,6 +146,7 @@ function getVendorNavigationConfig({
       icon: <Tag />,
       label: "Nursery",
       to: "/nursery/listings",
+      requiresPlanFeature: "vendor.nursery",
       // Product vertical: listing attributes, wholesale channels, profit/sqft.
       // Fully usable with no quest enrolled.
       showFor: (f) => f.hasProducts,
@@ -129,12 +160,14 @@ function getVendorNavigationConfig({
       icon: <DocumentText />,
       label: "Document Vault",
       to: "/vault",
+      requiresPlanFeature: "vendor.document_vault",
       // Opt-in evidence store; quests reference these documents.
     },
     {
       icon: <Buildings />,
       label: "Production Ledger",
       to: "/production",
+      requiresPlanFeature: "vendor.production_ledger",
       // Opt-in production records; feeds quests that need production data.
       showFor: (f) => f.hasProducts,
     },
@@ -453,6 +486,7 @@ function getVendorNavigationConfig({
       label: "POS",
       to: "/pos",
       showFor: () => phase1ModuleFlags.pos,
+      requiresPlanFeature: "vendor.pos",
     },
     {
       icon: <Tag />,
@@ -465,18 +499,21 @@ function getVendorNavigationConfig({
       label: "Pick / Pack",
       to: "/deliveries?view=pick-pack",
       showFor: () => phase1ModuleFlags.pickPack,
+      requiresPlanFeature: "vendor.pick_pack",
     },
     {
       icon: <ReceiptPercent />,
       label: "Invoicing",
       to: "/finances?view=invoicing",
       showFor: () => phase1ModuleFlags.invoicing,
+      requiresPlanFeature: "vendor.invoicing",
     },
     {
       icon: <ShoppingCart />,
       label: "Channel Sync",
       to: "/settings/extensions?view=channel-sync",
       showFor: () => phase1ModuleFlags.channelSync,
+      requiresPlanFeature: "vendor.channel_sync",
     },
     {
       icon: <StripeIcon />,
@@ -509,6 +546,7 @@ function getVendorNavigationConfig({
   function filterRoutes(routes: NavItemConfig[]): NavItemConfig[] {
     return routes
       .filter((route) => {
+        if (!hasPlanFeature(route.requiresPlanFeature)) return false
         // If no showFor function, always show
         if (!route.showFor) return true
         // Otherwise, check if should show
@@ -516,7 +554,11 @@ function getVendorNavigationConfig({
       })
       .map((route) => ({
         ...route,
-        items: route.items?.filter((item) => !item.showFor || item.showFor(features, vendorType)),
+        items: route.items?.filter(
+          (item) =>
+            hasPlanFeature(item.requiresPlanFeature) &&
+            (!item.showFor || item.showFor(features, vendorType))
+        ),
       }))
   }
 
@@ -543,12 +585,17 @@ export function useVendorNavigation() {
   const { t } = useTranslation()
   const { vendorType, features } = useVendorType()
   const { unreadCount } = useMatrixChat()
+  const { featureKeys, isPending, isError } = useVendorPlan()
 
   const { coreRoutes, extensionRoutes } = getVendorNavigationConfig({
     t,
     vendorType,
     features,
     unreadCount,
+    planFeatureKeys: featureKeys,
+    // Treat an errored plan request as "not loaded" so the nav stays
+    // optimistic rather than collapsing to the free tier on a transient blip.
+    planLoaded: !isPending && !isError,
   })
 
   return {
@@ -556,6 +603,7 @@ export function useVendorNavigation() {
     extensionRoutes,
     vendorType,
     features,
+    planFeatureKeys: featureKeys,
   }
 }
 
@@ -567,9 +615,25 @@ export function getVendorNavigationForTest(params: {
   features: VendorFeatures
   unreadCount?: number
   t?: (key: string) => string
+  planFeatureKeys?: string[]
+  planLoaded?: boolean
 }) {
-  const { vendorType, features, unreadCount = 0, t = (key) => key } = params
-  return getVendorNavigationConfig({ t, vendorType, features, unreadCount })
+  const {
+    vendorType,
+    features,
+    unreadCount = 0,
+    t = (key) => key,
+    planFeatureKeys,
+    planLoaded = true,
+  } = params
+  return getVendorNavigationConfig({
+    t,
+    vendorType,
+    features,
+    unreadCount,
+    planFeatureKeys,
+    planLoaded,
+  })
 }
 
 /**

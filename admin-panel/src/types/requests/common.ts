@@ -23,7 +23,7 @@ export type RequestType =
  * Vendor types available for sellers
  * Must match backend VendorType enum
  */
-export type VendorType = "producer" | "garden" | "kitchen" | "maker" | "restaurant" | "mutual_aid";
+export type VendorType = "producer" | "garden" | "kitchen" | "maker" | "restaurant" | "mutual_aid" | "creator" | "general";
 
 export type RequestDTO = {
   id: string;

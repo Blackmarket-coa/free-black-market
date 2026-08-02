@@ -16,6 +16,10 @@ import type PlaybookService from "../../../../modules/playbook/service"
 import type SellerExtensionService from "../../../../modules/seller-extension/service"
 import { SELLER_EXTENSION_MODULE } from "../../../../modules/seller-extension"
 import { updateSellerMetadataRecord } from "../../../../modules/seller-extension/metadata-service"
+import {
+  defaultFeatureKeysForPlaybook,
+  pluginSlugsFrom,
+} from "../../../../shared/extension-keys"
 
 type PostBody = {
   recipe_id?: string
@@ -225,6 +229,12 @@ export async function POST(
     // Keep the seller's feature override in sync with the chosen roles:
     // multi-role → union of all roles' default features; single role → clear
     // the override so the primary playbook's defaults apply. Non-blocking.
+    //
+    // Installed plugin slugs live in the same column and are NOT ours to
+    // discard, so they are carried across every branch. When a single role
+    // would otherwise clear the override to `null` but plugins are present,
+    // the playbook's defaults are materialised instead — `null` would drop the
+    // slugs, and a slug-only array would read as "every feature off".
     if (roles) {
       try {
         const sellerExtensionService = req.scope.resolve<SellerExtensionService>(SELLER_EXTENSION_MODULE)
@@ -232,9 +242,17 @@ export async function POST(
           seller_id: sellerId,
         })
         if (meta) {
+          const preserved = pluginSlugsFrom(meta.enabled_extensions)
+          const nextExtensions =
+            roles.length > 1
+              ? [...unionFeatureKeys(roles), ...preserved]
+              : preserved.length
+                ? [...defaultFeatureKeysForPlaybook(roles[0]), ...preserved]
+                : null
+
           await updateSellerMetadataRecord(sellerExtensionService, {
             id: meta.id,
-            enabled_extensions: roles.length > 1 ? unionFeatureKeys(roles) : null,
+            enabled_extensions: nextExtensions,
           })
         }
       } catch (syncError: unknown) {

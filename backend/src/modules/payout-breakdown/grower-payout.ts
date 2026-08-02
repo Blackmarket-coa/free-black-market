@@ -20,6 +20,7 @@
 
 import type { MedusaContainer } from "@medusajs/framework/types"
 import { HAWALA_LEDGER_MODULE } from "../hawala-ledger"
+import { resolveSellerPlatformFeePercent } from "../../shared/platform-fee"
 import type { GrowerNode } from "../../types/plant"
 import {
   loadOrderNodeContext,
@@ -105,10 +106,6 @@ type HawalaService = {
   }) => Promise<{ id: string; status?: string }>
 }
 
-type PayoutBreakdownService = {
-  getEffectivePlatformFee: (sellerId: string) => Promise<number>
-}
-
 export class GrowerPayoutService {
   private readonly container: MedusaContainer
   private feeCache = new Map<string, number>()
@@ -121,16 +118,19 @@ export class GrowerPayoutService {
     return this.container.resolve(HAWALA_LEDGER_MODULE) as unknown as HawalaService
   }
 
-  private get payout(): PayoutBreakdownService {
-    return this.container.resolve("payoutBreakdown") as unknown as PayoutBreakdownService
-  }
-
-  /** Fractional platform fee for a seller (e.g. 0.05), cached per run. */
+  /**
+   * Fractional platform fee for a seller (e.g. 0.05), cached per run.
+   *
+   * Goes through `resolveSellerPlatformFeePercent` so the seller's billing plan
+   * sits in the chain between their negotiated override and the platform
+   * default — calling the payout service directly would settle a grower payout
+   * at a different rate than the order that produced it.
+   */
   private async platformFeeFraction(sellerId: string): Promise<number> {
     if (this.feeCache.has(sellerId)) return this.feeCache.get(sellerId)!
     let fraction = PLATFORM_FEE
     try {
-      const pct = await this.payout.getEffectivePlatformFee(sellerId)
+      const pct = await resolveSellerPlatformFeePercent(this.container, sellerId)
       if (Number.isFinite(pct) && pct >= 0) fraction = pct / 100
     } catch {
       // fall back to default

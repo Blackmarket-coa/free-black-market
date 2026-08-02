@@ -1,17 +1,15 @@
 import { z } from "zod"
+import { VendorType } from "../../../modules/seller-extension/models/seller-metadata"
 
 /**
- * Vendor types available for sellers
- * Must match VendorType enum in seller-extension module
+ * Vendor types available for sellers.
+ *
+ * Derived from the `VendorType` enum rather than restated — the hand-written
+ * copy this replaces had drifted out of sync (missing `creator`).
  */
-export const vendorTypeEnum = z.enum([
-  "producer",
-  "garden",
-  "kitchen",
-  "maker",
-  "restaurant",
-  "mutual_aid",
-])
+export const vendorTypeEnum = z.enum(
+  Object.values(VendorType) as [string, ...string[]]
+)
 
 /**
  * Create Seller Request Schema

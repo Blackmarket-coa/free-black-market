@@ -12,6 +12,8 @@ const VENDOR_TYPE_COLORS: Record<string, { bg: string; text: string }> = {
   maker: { bg: "bg-purple-50", text: "text-purple-700" },
   restaurant: { bg: "bg-orange-50", text: "text-orange-700" },
   mutual_aid: { bg: "bg-blue-50", text: "text-blue-700" },
+  creator: { bg: "bg-pink-50", text: "text-pink-700" },
+  general: { bg: "bg-slate-50", text: "text-slate-700" },
 }
 
 interface Vendor {

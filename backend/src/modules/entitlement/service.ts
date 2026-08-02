@@ -161,6 +161,8 @@ export function parseResourceUrn(
 export type GrantInput = {
   customer_id?: string | null
   customer_external_id?: string | null
+  /** Seller-scoped grantee — see `Entitlement.seller_id`. */
+  seller_id?: string | null
   product_id?: string | null
   variant_id?: string | null
   feature_key: string
@@ -205,10 +207,15 @@ class EntitlementModuleService extends MedusaService({
     // (source_subscription_id, feature_key). A revoked row is reactivated in
     // place rather than duplicated, so a resubscribe after a lapse is clean.
     if (input.source_subscription_id) {
-      const [existing] = await this.listEntitlements({
+      // `seller_id` participates in the key. Without it the filter matches on
+      // (subscription, feature) alone, which is only safe while subscription
+      // ids are never shared between grantees — an assumption nothing enforces.
+      const subscriptionFilters: Record<string, unknown> = {
         source_subscription_id: input.source_subscription_id,
         feature_key: input.feature_key,
-      })
+      }
+      if (input.seller_id) subscriptionFilters.seller_id = input.seller_id
+      const [existing] = await this.listEntitlements(subscriptionFilters)
       if (existing) {
         if (existing.status !== EntitlementStatus.ACTIVE) {
           const [reactivated] = await this.updateEntitlements([
@@ -230,6 +237,7 @@ class EntitlementModuleService extends MedusaService({
       {
         customer_id: input.customer_id ?? null,
         customer_external_id: input.customer_external_id ?? null,
+        seller_id: input.seller_id ?? null,
         product_id: input.product_id ?? null,
         variant_id: input.variant_id ?? null,
         feature_key: input.feature_key,
@@ -292,6 +300,7 @@ class EntitlementModuleService extends MedusaService({
     subscription_id: string
     customer_id?: string | null
     customer_external_id?: string | null
+    seller_id?: string | null
     feature_key: string
     kind?: EntitlementKind
     expires_at?: Date | null
@@ -299,6 +308,7 @@ class EntitlementModuleService extends MedusaService({
     return this.grant({
       customer_id: args.customer_id,
       customer_external_id: args.customer_external_id,
+      seller_id: args.seller_id,
       feature_key: args.feature_key,
       kind: args.kind,
       source: EntitlementSource.SUBSCRIPTION,
@@ -318,6 +328,7 @@ class EntitlementModuleService extends MedusaService({
     subscription_id: string
     customer_id?: string | null
     customer_external_id?: string | null
+    seller_id?: string | null
     feature_keys: string[]
     kind?: EntitlementKind
     expires_at?: Date | null
@@ -328,6 +339,7 @@ class EntitlementModuleService extends MedusaService({
       const ent = await this.grant({
         customer_id: args.customer_id,
         customer_external_id: args.customer_external_id,
+        seller_id: args.seller_id,
         feature_key,
         kind: args.kind,
         source: EntitlementSource.SUBSCRIPTION,
@@ -430,6 +442,91 @@ class EntitlementModuleService extends MedusaService({
     }
     const items = await this.listEntitlements(filters)
     if (!options.activeOnly) return items
+    const now = Date.now()
+    return items.filter(
+      (e: EntitlementType) => !e.expires_at || new Date(e.expires_at).getTime() > now
+    )
+  }
+
+  /**
+   * Seller-scoped counterpart to `verify()`: does this vendor currently hold
+   * an active, non-expired entitlement for `feature_key`?
+   *
+   * Note this deliberately does NOT route through `evaluateAccess`. That
+   * method requires a Matrix mxid, answers one resource per call, and switches
+   * over a closed union of Blackout-domain resource kinds — none of which fits
+   * a flat, open set of plan feature keys.
+   */
+  async verifyForSeller(input: {
+    seller_id: string
+    feature_key: string
+  }): Promise<{ entitled: boolean; entitlements: EntitlementType[] }> {
+    if (!input.seller_id || !input.feature_key) {
+      return { entitled: false, entitlements: [] }
+    }
+
+    const matches = await this.listEntitlements({
+      seller_id: input.seller_id,
+      feature_key: input.feature_key,
+      status: EntitlementStatus.ACTIVE,
+    })
+    const live = this.filterUnexpired(matches)
+    return { entitled: live.length > 0, entitlements: live }
+  }
+
+  /**
+   * Every feature key a seller currently holds, as one read.
+   *
+   * This is the shape a per-request gate needs: it resolves the seller's whole
+   * entitlement set once so callers can cache it and answer subsequent checks
+   * by set membership, rather than issuing a query per feature.
+   */
+  async listActiveFeatureKeysForSeller(seller_id: string): Promise<string[]> {
+    if (!seller_id) return []
+
+    const matches = await this.listEntitlements({
+      seller_id,
+      status: EntitlementStatus.ACTIVE,
+    })
+    return [
+      ...new Set(this.filterUnexpired(matches).map((e) => e.feature_key)),
+    ]
+  }
+
+  /**
+   * Revoke a specific set of a seller's feature keys, leaving the rest intact.
+   *
+   * The plan-change counterpart to `grantBundleFromSubscription`: a downgrade
+   * revokes only the difference, never the whole set, so features the seller
+   * keeps are not briefly withdrawn and re-granted. Returns the count revoked.
+   */
+  async revokeSellerFeatureKeys(
+    seller_id: string,
+    feature_keys: string[],
+    reason?: string
+  ): Promise<number> {
+    if (!seller_id || !feature_keys?.length) return 0
+
+    const matches = await this.listEntitlements({
+      seller_id,
+      feature_key: { $in: feature_keys },
+      status: EntitlementStatus.ACTIVE,
+    } as Record<string, unknown>)
+    if (!matches.length) return 0
+
+    await this.updateEntitlements(
+      matches.map((e: EntitlementType) => ({
+        id: e.id,
+        status: EntitlementStatus.REVOKED,
+        revoked_at: new Date(),
+        revoked_reason: reason ?? null,
+      }))
+    )
+    return matches.length
+  }
+
+  /** Drop rows whose `expires_at` has already passed. */
+  private filterUnexpired(items: EntitlementType[]): EntitlementType[] {
     const now = Date.now()
     return items.filter(
       (e: EntitlementType) => !e.expires_at || new Date(e.expires_at).getTime() > now

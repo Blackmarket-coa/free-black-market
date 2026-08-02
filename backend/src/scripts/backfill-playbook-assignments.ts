@@ -2,7 +2,11 @@ import { ExecArgs } from "@medusajs/framework/types"
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 
 import { assignPlaybookWorkflow } from "../workflows/assign-playbook"
-import { PLAYBOOK_MODULE, type PlaybookId } from "../modules/playbook"
+import {
+  LEGACY_VENDOR_TYPE_TO_PLAYBOOK,
+  PLAYBOOK_MODULE,
+  type PlaybookId,
+} from "../modules/playbook"
 
 /**
  * Backfill `playbook_assignment` rows for legacy sellers still keyed on
@@ -30,14 +34,11 @@ import { PLAYBOOK_MODULE, type PlaybookId } from "../modules/playbook"
  *   PLAYBOOK_BACKFILL_DRY_RUN=1 pnpm medusa exec ./src/scripts/backfill-playbook-assignments.ts
  */
 
-const LEGACY_VENDOR_TYPE_MAP: Record<string, PlaybookId> = {
-  producer: "cycle",
-  garden: "harvest",
-  kitchen: "kitchen",
-  restaurant: "kitchen",
-  maker: "stall",
-  mutual_aid: "grove",
-}
+// Imported rather than restated. The local copy this replaces had drifted —
+// it was missing `creator`, so creator sellers were logged as unmapped and
+// skipped, silently receiving no playbook assignment.
+const LEGACY_VENDOR_TYPE_MAP: Record<string, PlaybookId> =
+  LEGACY_VENDOR_TYPE_TO_PLAYBOOK
 
 export default async function backfillPlaybookAssignments({ container }: ExecArgs) {
   const logger = container.resolve(ContainerRegistrationKeys.LOGGER)

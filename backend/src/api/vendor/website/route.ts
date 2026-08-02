@@ -8,6 +8,11 @@ import {
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils";
 import { requireSellerId } from "../../../shared";
 import {
+  getSellerPlanLimits,
+  respondPlanLimitReached,
+} from "../../../shared/seller-plan";
+import { hasRoomFor } from "../../../modules/vendor-plan/limits";
+import {
   createSellerMetadataRecord,
   updateSellerMetadataRecord,
 } from "../../../modules/seller-extension/metadata-service";
@@ -164,7 +169,23 @@ export async function POST(
     // Build a partial update from only the fields the caller actually sent.
     const updates: Record<string, unknown> = {};
     if ("connect_domains" in body) {
-      updates.connect_domains = normalizeDomains(body.connect_domains ?? []);
+      const domains = normalizeDomains(body.connect_domains ?? []);
+
+      // Checked against the normalized list, not the submitted one: normalizing
+      // deduplicates and drops junk, so validating the raw array would refuse a
+      // save that ends up under the cap anyway.
+      const { plan_code, limits } = await getSellerPlanLimits(req.scope, sellerId);
+      if (!hasRoomFor(domains.length, limits.connect_domains, 0)) {
+        return respondPlanLimitReached(res, {
+          limit_key: "connect_domains",
+          limit: limits.connect_domains,
+          current: domains.length,
+          plan_code,
+          noun: "connected domains",
+        });
+      }
+
+      updates.connect_domains = domains;
     }
     if ("embed_features" in body) {
       updates.embed_features = normalizeEmbedFeatures(body.embed_features);

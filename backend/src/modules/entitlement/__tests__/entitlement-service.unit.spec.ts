@@ -19,10 +19,20 @@ function makeService(): EntitlementModuleService {
     EntitlementModuleService.prototype
   ) as EntitlementModuleService
 
+  // Mirrors Medusa list semantics closely enough for these tests: a scalar
+  // filter is equality, an array is IN, and `{ $in: [...] }` is IN.
+  const matchesFilters = (e: any, filters: Record<string, any>) =>
+    Object.entries(filters).every(([k, v]) => {
+      if (v === undefined) return true
+      if (Array.isArray(v)) return v.includes(e[k])
+      if (v && typeof v === "object" && Array.isArray((v as any).$in)) {
+        return (v as any).$in.includes(e[k])
+      }
+      return e[k] === v
+    })
+
   ;(svc as any).listEntitlements = async (filters: Record<string, any> = {}) =>
-    rows.filter((e) =>
-      Object.entries(filters).every(([k, v]) => v === undefined || e[k] === v)
-    )
+    rows.filter((e) => matchesFilters(e, filters))
   ;(svc as any).createEntitlements = async (entries: any[]) => {
     const out = entries.map((e, i) => ({ id: `ent_${rows.length + i + 1}`, ...e }))
     rows.push(...out)
@@ -428,6 +438,199 @@ describe("EntitlementModuleService", () => {
     it("getCoalitionMemberships returns a stable empty list", async () => {
       const svc = makeService()
       expect(await svc.getCoalitionMemberships(MXID)).toEqual({ memberships: [] })
+    })
+  })
+})
+
+describe("seller-keyed grants", () => {
+  const SELLER_A = "sel_aaa"
+  const SELLER_B = "sel_bbb"
+  const ASSIGNMENT = "vpa_1"
+
+  it("grant() persists seller_id", async () => {
+    const svc = makeService()
+    const ent = await svc.grant({
+      seller_id: SELLER_A,
+      feature_key: "vendor.pos",
+      kind: EntitlementKind.SERVICE,
+      source: EntitlementSource.SUBSCRIPTION,
+    })
+    expect((ent as any).seller_id).toBe(SELLER_A)
+    expect((ent as any).customer_id).toBeNull()
+    expect((ent as any).customer_external_id).toBeNull()
+  })
+
+  it("scopes verifyForSeller to the owning seller", async () => {
+    const svc = makeService()
+    await svc.grant({ seller_id: SELLER_A, feature_key: "vendor.pos" })
+
+    expect((await svc.verifyForSeller({ seller_id: SELLER_A, feature_key: "vendor.pos" })).entitled).toBe(true)
+    // Seller B must not inherit seller A's plan features.
+    expect((await svc.verifyForSeller({ seller_id: SELLER_B, feature_key: "vendor.pos" })).entitled).toBe(false)
+  })
+
+  it("does not treat an expired grant as entitled", async () => {
+    const svc = makeService()
+    await svc.grant({
+      seller_id: SELLER_A,
+      feature_key: "vendor.pos",
+      expires_at: new Date(Date.now() - 1000),
+    })
+    expect((await svc.verifyForSeller({ seller_id: SELLER_A, feature_key: "vendor.pos" })).entitled).toBe(false)
+  })
+
+  it("returns false for missing arguments rather than throwing", async () => {
+    const svc = makeService()
+    expect((await svc.verifyForSeller({ seller_id: "", feature_key: "vendor.pos" })).entitled).toBe(false)
+    expect((await svc.verifyForSeller({ seller_id: SELLER_A, feature_key: "" })).entitled).toBe(false)
+  })
+
+  it("lists a seller's active feature keys, deduped and unexpired", async () => {
+    const svc = makeService()
+    await svc.grantBundleFromSubscription({
+      subscription_id: ASSIGNMENT,
+      seller_id: SELLER_A,
+      feature_keys: ["vendor.pos", "vendor.invoicing"],
+    })
+    await svc.grant({
+      seller_id: SELLER_A,
+      feature_key: "vendor.expired",
+      expires_at: new Date(Date.now() - 1000),
+    })
+    await svc.grant({ seller_id: SELLER_B, feature_key: "vendor.vault" })
+
+    const keys = await svc.listActiveFeatureKeysForSeller(SELLER_A)
+    expect(keys.sort()).toEqual(["vendor.invoicing", "vendor.pos"])
+  })
+
+  it("returns an empty list for a seller with no grants", async () => {
+    const svc = makeService()
+    expect(await svc.listActiveFeatureKeysForSeller(SELLER_A)).toEqual([])
+    expect(await svc.listActiveFeatureKeysForSeller("")).toEqual([])
+  })
+
+  it("is idempotent across bundle replays", async () => {
+    // Renewal crons and webhook replays re-issue the same bundle.
+    const svc = makeService()
+    const args = {
+      subscription_id: ASSIGNMENT,
+      seller_id: SELLER_A,
+      feature_keys: ["vendor.pos", "vendor.invoicing"],
+    }
+    await svc.grantBundleFromSubscription(args)
+    await svc.grantBundleFromSubscription(args)
+
+    expect((await svc.listActiveFeatureKeysForSeller(SELLER_A)).sort()).toEqual([
+      "vendor.invoicing",
+      "vendor.pos",
+    ])
+    expect(await svc.listEntitlements({ seller_id: SELLER_A })).toHaveLength(2)
+  })
+
+  it("keys subscription idempotency per seller", async () => {
+    // Two sellers on the same assignment id must not collapse into one row.
+    const svc = makeService()
+    await svc.grantBundleFromSubscription({
+      subscription_id: ASSIGNMENT,
+      seller_id: SELLER_A,
+      feature_keys: ["vendor.pos"],
+    })
+    await svc.grantBundleFromSubscription({
+      subscription_id: ASSIGNMENT,
+      seller_id: SELLER_B,
+      feature_keys: ["vendor.pos"],
+    })
+
+    expect((await svc.verifyForSeller({ seller_id: SELLER_A, feature_key: "vendor.pos" })).entitled).toBe(true)
+    expect((await svc.verifyForSeller({ seller_id: SELLER_B, feature_key: "vendor.pos" })).entitled).toBe(true)
+  })
+
+  it("revokes only the named keys", async () => {
+    const svc = makeService()
+    await svc.grantBundleFromSubscription({
+      subscription_id: ASSIGNMENT,
+      seller_id: SELLER_A,
+      feature_keys: ["vendor.pos", "vendor.invoicing", "vendor.vault"],
+    })
+
+    const revoked = await svc.revokeSellerFeatureKeys(
+      SELLER_A,
+      ["vendor.pos", "vendor.vault"],
+      "plan_change"
+    )
+    expect(revoked).toBe(2)
+    expect(await svc.listActiveFeatureKeysForSeller(SELLER_A)).toEqual(["vendor.invoicing"])
+  })
+
+  it("does not revoke another seller's identical key", async () => {
+    const svc = makeService()
+    await svc.grant({ seller_id: SELLER_A, feature_key: "vendor.pos" })
+    await svc.grant({ seller_id: SELLER_B, feature_key: "vendor.pos" })
+
+    await svc.revokeSellerFeatureKeys(SELLER_A, ["vendor.pos"])
+    expect((await svc.verifyForSeller({ seller_id: SELLER_B, feature_key: "vendor.pos" })).entitled).toBe(true)
+  })
+
+  it("reactivates a revoked grant in place on re-grant", async () => {
+    // Downgrade then upgrade back must converge without row churn.
+    const svc = makeService()
+    await svc.grantBundleFromSubscription({
+      subscription_id: ASSIGNMENT,
+      seller_id: SELLER_A,
+      feature_keys: ["vendor.pos"],
+    })
+    await svc.revokeSellerFeatureKeys(SELLER_A, ["vendor.pos"], "downgrade")
+    expect(await svc.listActiveFeatureKeysForSeller(SELLER_A)).toEqual([])
+
+    await svc.grantBundleFromSubscription({
+      subscription_id: ASSIGNMENT,
+      seller_id: SELLER_A,
+      feature_keys: ["vendor.pos"],
+    })
+    expect(await svc.listActiveFeatureKeysForSeller(SELLER_A)).toEqual(["vendor.pos"])
+    expect(await svc.listEntitlements({ seller_id: SELLER_A })).toHaveLength(1)
+  })
+
+  it("revoke is a no-op for an empty key list or unknown seller", async () => {
+    const svc = makeService()
+    await svc.grant({ seller_id: SELLER_A, feature_key: "vendor.pos" })
+    expect(await svc.revokeSellerFeatureKeys(SELLER_A, [])).toBe(0)
+    expect(await svc.revokeSellerFeatureKeys("", ["vendor.pos"])).toBe(0)
+    expect(await svc.revokeSellerFeatureKeys(SELLER_B, ["vendor.pos"])).toBe(0)
+    expect((await svc.verifyForSeller({ seller_id: SELLER_A, feature_key: "vendor.pos" })).entitled).toBe(true)
+  })
+
+  describe("Blackout non-regression", () => {
+    it("keeps seller-keyed rows out of the mxid lookup", async () => {
+      // `listGrantsByMxid` filters on customer_external_id, which IS the Matrix
+      // mxid. A seller grant must be invisible to it — this is the whole reason
+      // seller_id is a separate column rather than a synthetic external id.
+      const svc = makeService()
+      await svc.grant({ seller_id: SELLER_A, feature_key: "vendor.pos" })
+
+      expect(await svc.listGrantsByMxid("@someone:fbm.local")).toEqual([])
+      expect(await svc.listGrantsByMxid(SELLER_A)).toEqual([])
+    })
+
+    it("keeps seller-keyed rows out of customer lookups", async () => {
+      const svc = makeService()
+      await svc.grant({ seller_id: SELLER_A, feature_key: "vendor.pos" })
+
+      expect(await svc.listForCustomer(SELLER_A)).toEqual([])
+      expect(
+        (await svc.verify({ customer_id: SELLER_A, feature_key: "vendor.pos" })).entitled
+      ).toBe(false)
+    })
+
+    it("leaves customer grants unaffected by seller revocation", async () => {
+      const svc = makeService()
+      await svc.grant({ customer_id: "cus_1", feature_key: "vendor.pos" })
+      await svc.grant({ seller_id: SELLER_A, feature_key: "vendor.pos" })
+
+      await svc.revokeSellerFeatureKeys(SELLER_A, ["vendor.pos"])
+      expect(
+        (await svc.verify({ customer_id: "cus_1", feature_key: "vendor.pos" })).entitled
+      ).toBe(true)
     })
   })
 })

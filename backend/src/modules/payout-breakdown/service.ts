@@ -1,11 +1,16 @@
 import { MedusaService } from "@medusajs/framework/utils"
-import { 
-  PayoutConfig, 
-  SellerPayoutSettings, 
+import {
+  PayoutConfig,
+  SellerPayoutSettings,
   OrderPayoutBreakdown,
   FeeType,
   BreakdownItem,
 } from "./models"
+import {
+  resolvePlatformFee,
+  type ResolvedPlatformFee,
+  type SellerFeeOverride,
+} from "./fee-resolution"
 
 /**
  * Default fee labels for customer display
@@ -85,6 +90,16 @@ export interface BreakdownInput {
   creatorCommissionCents?: number
   creatorSellerId?: string
   creatorName?: string
+  /**
+   * Each seller's billing-plan fee rate, keyed by seller id. Supplied by the
+   * caller because this module cannot resolve `vendor-plan` itself; build it
+   * with `shared/platform-fee.ts`.
+   *
+   * Omitting it is not neutral — the breakdown then resolves fees without the
+   * plan tier, and the customer-facing breakdown disagrees with the ledger for
+   * the same order. Any caller that settles money must pass this.
+   */
+  planFeePercentBySeller?: Record<string, number | null>
 }
 
 class PayoutBreakdownService extends MedusaService({
@@ -124,32 +139,89 @@ class PayoutBreakdownService extends MedusaService({
   }
   
   /**
-   * Get effective platform fee for a seller
+   * The platform fee percentage that applies to a seller, with its provenance.
+   *
+   * `planPercent` is supplied by the caller rather than read here: this is a
+   * Medusa module service and cannot resolve `vendor-plan` across the module
+   * boundary. `shared/platform-fee.ts` is the composition point that reads the
+   * plan and calls through — callers holding a container should use that helper
+   * instead of calling this directly.
+   *
+   * Passing no `planPercent` yields the historical behaviour exactly:
+   * seller override, else platform default.
    */
-  async getEffectivePlatformFee(sellerId: string): Promise<number> {
+  async getPlatformFeeDetail(
+    sellerId: string,
+    planPercent: number | null = null
+  ): Promise<ResolvedPlatformFee> {
     const config = await this.getDefaultConfig()
+    // No settings row exists for most sellers; `getSellerSettings` returns null
+    // and `resolvePlatformFee` handles that as "no override".
     const sellerSettings = await this.getSellerSettings(sellerId)
-    
-    // Check for custom fee that's still valid.
-    // Guard on sellerSettings itself: when no settings row exists (the default
-    // for every seller today — createSellerPayoutSettings has no call site),
-    // getSellerSettings returns null and `null?.custom_platform_fee_percent !== null`
-    // is `undefined !== null` → true, which previously fell through to a
-    // non-null assertion and threw a TypeError swallowed by the order subscriber.
-    if (
-      sellerSettings &&
-      sellerSettings.custom_platform_fee_percent !== null &&
-      sellerSettings.custom_platform_fee_percent !== undefined
-    ) {
-      const expiresAt = sellerSettings.fee_reduction_expires_at
-      if (!expiresAt || new Date(expiresAt) > new Date()) {
-        return sellerSettings.custom_platform_fee_percent
-      }
-    }
-    
-    return config.platform_fee_percent
+
+    return resolvePlatformFee({
+      override: sellerSettings as SellerFeeOverride,
+      planPercent,
+      platformDefault: config.platform_fee_percent,
+    })
   }
-  
+
+  /**
+   * Get effective platform fee for a seller.
+   */
+  async getEffectivePlatformFee(
+    sellerId: string,
+    planPercent: number | null = null
+  ): Promise<number> {
+    const { percent } = await this.getPlatformFeeDetail(sellerId, planPercent)
+    return percent
+  }
+
+  /**
+   * Create or update a seller's payout settings.
+   *
+   * The writer `createSellerPayoutSettings` never had a call site, so
+   * `custom_platform_fee_percent` — which `getEffectivePlatformFee` has always
+   * read — could never be set by anything. Upserts on `seller_id` (unique), and
+   * only touches the fields provided, so setting an expiry does not silently
+   * clear a reason.
+   */
+  async upsertSellerSettings(
+    sellerId: string,
+    updates: {
+      custom_platform_fee_percent?: number | null
+      fee_reduction_reason?: string | null
+      fee_reduction_expires_at?: Date | null
+      additional_community_contribution?: number
+    }
+  ) {
+    const existing = await this.getSellerSettings(sellerId)
+
+    if (existing) {
+      await this.updateSellerPayoutSettings({ id: existing.id, ...updates })
+      return this.getSellerSettings(sellerId)
+    }
+
+    const created = await this.createSellerPayoutSettings({
+      seller_id: sellerId,
+      ...updates,
+    })
+    return Array.isArray(created) ? created[0] : created
+  }
+
+  /**
+   * Clear a seller's fee override, returning them to their plan's rate (or the
+   * platform default). Distinct from setting the percent to 0, which is a real
+   * "this seller pays nothing" concession.
+   */
+  async clearSellerFeeOverride(sellerId: string) {
+    return this.upsertSellerSettings(sellerId, {
+      custom_platform_fee_percent: null,
+      fee_reduction_reason: null,
+      fee_reduction_expires_at: null,
+    })
+  }
+
   /**
    * Calculate full payout breakdown for an order
    */
@@ -203,7 +275,10 @@ class PayoutBreakdownService extends MedusaService({
     let creatorRemaining = creatorCommissionTotal
 
     for (const seller of sellers) {
-      const platformFeePercent = await this.getEffectivePlatformFee(seller.sellerId)
+      const platformFeePercent = await this.getEffectivePlatformFee(
+        seller.sellerId,
+        input.planFeePercentBySeller?.[seller.sellerId] ?? null
+      )
       const platformFee = Math.round(seller.subtotal * (platformFeePercent / 100))
 
       // Check for additional community contribution from seller

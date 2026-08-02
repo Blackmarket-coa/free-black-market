@@ -34,6 +34,7 @@ import { CreateVenueSchema } from "./admin/venues/route";
 import { CreateTicketProductSchema } from "./admin/ticket-products/route";
 import { GetTicketProductSeatsSchema } from "./store/ticket-products/[id]/seats/route";
 import { requireFeatureFlagMiddleware } from "../shared/runtime-module-gates";
+import { requirePlanFeature } from "./middlewares/require-plan-feature";
 import { enforceListingTypeAllowed } from "../shared/listing-type-guard";
 import { enforceSameOriginForCookieAuth } from "../shared/csrf-guard";
 import { sanitizedErrorHandler } from "../shared/error-sanitizer";
@@ -967,6 +968,7 @@ export default defineMiddlewares({
       middlewares: [
         authenticate("seller", "bearer"),
         requireFeatureFlagMiddleware("POS_V1"),
+        requirePlanFeature("vendor.pos"),
       ],
     },
     {
@@ -980,11 +982,17 @@ export default defineMiddlewares({
     },
     {
       matcher: "/vendor/hawala/payments*",
-      middlewares: [requireFeatureFlagMiddleware("INVOICING_V1")],
+      middlewares: [
+        requireFeatureFlagMiddleware("INVOICING_V1"),
+        requirePlanFeature("vendor.invoicing"),
+      ],
     },
     {
       matcher: "/vendor/woocommerce/*",
-      middlewares: [requireFeatureFlagMiddleware("CHANNEL_SYNC_V1")],
+      middlewares: [
+        requireFeatureFlagMiddleware("CHANNEL_SYNC_V1"),
+        requirePlanFeature("vendor.channel_sync"),
+      ],
     },
     // Phase 0 contracts: executable JSON boundaries on route payloads
     {
@@ -992,6 +1000,7 @@ export default defineMiddlewares({
       method: "POST",
       middlewares: [
         requireFeatureFlagMiddleware("CHANNEL_SYNC_V1"),
+        requirePlanFeature("vendor.channel_sync"),
         validateAndTransformBody(PostInventorySyncEventBody),
       ],
     },
@@ -1008,6 +1017,7 @@ export default defineMiddlewares({
       method: "POST",
       middlewares: [
         requireFeatureFlagMiddleware("PICK_PACK_V1"),
+        requirePlanFeature("vendor.pick_pack"),
         validateAndTransformBody(PostPickPackBatchBody),
       ],
     },
@@ -1016,6 +1026,7 @@ export default defineMiddlewares({
       middlewares: [
         authenticate("seller", "bearer"),
         requireFeatureFlagMiddleware("INVOICING_V1"),
+        requirePlanFeature("vendor.invoicing"),
       ],
     },
     // Vendor Quest engine + its opt-in substrate/vertical modules. Each is
@@ -1025,6 +1036,7 @@ export default defineMiddlewares({
       middlewares: [
         authenticate("seller", "bearer"),
         requireFeatureFlagMiddleware("VENDOR_QUESTS_V1"),
+        requirePlanFeature("vendor.quests"),
       ],
     },
     {
@@ -1032,6 +1044,7 @@ export default defineMiddlewares({
       middlewares: [
         authenticate("seller", "bearer"),
         requireFeatureFlagMiddleware("PRODUCTION_LEDGER_V1"),
+        requirePlanFeature("vendor.production_ledger"),
       ],
     },
     {
@@ -1039,6 +1052,7 @@ export default defineMiddlewares({
       middlewares: [
         authenticate("seller", "bearer"),
         requireFeatureFlagMiddleware("DOCUMENT_VAULT_V1"),
+        requirePlanFeature("vendor.document_vault"),
       ],
     },
     {
@@ -1046,6 +1060,24 @@ export default defineMiddlewares({
       middlewares: [
         authenticate("seller", "bearer"),
         requireFeatureFlagMiddleware("NURSERY_VERTICAL_V1"),
+        requirePlanFeature("vendor.nursery"),
+      ],
+    },
+    // Plan self-service. Authenticated but deliberately NOT plan-gated: a
+    // vendor must always be able to see and change their own plan, especially
+    // when that plan is the reason something else is denied.
+    {
+      matcher: "/vendor/plan/*",
+      middlewares: [authenticate("seller", "bearer")],
+    },
+    // Embeddable storefront keys. No runtime feature flag — connect.js is
+    // always available as a platform capability; the plan decides who may
+    // mint keys for it.
+    {
+      matcher: "/vendor/embed-keys*",
+      middlewares: [
+        authenticate("seller", "bearer"),
+        requirePlanFeature("vendor.embed"),
       ],
     },
     // Driver routes - driver authentication

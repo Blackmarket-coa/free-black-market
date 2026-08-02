@@ -91,7 +91,7 @@ export const handleSellerRegistration = async (
         seller: {
           name: body.name,
         },
-        vendor_type: body.vendor_type || "producer",
+        vendor_type: body.vendor_type || "general",
         playbook: body.playbook,
         roles: body.roles,
         recommended_playbook: body.recommended_playbook,

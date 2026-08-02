@@ -3,7 +3,12 @@ import { z } from "zod"
 import type { SellerAuthRequest } from "../../../middlewares/seller-context-v1"
 import { MARKETPLACE_WEBHOOKS_MODULE } from "../../../../modules/marketplace-webhooks"
 import type MarketplaceWebhooksService from "../../../../modules/marketplace-webhooks/service"
-import { MARKETPLACE_WEBHOOK_EVENTS } from "../../../../modules/marketplace-webhooks/models/webhook-subscription"
+import { MARKETPLACE_WEBHOOK_EVENTS, WebhookSubscriptionStatus } from "../../../../modules/marketplace-webhooks/models/webhook-subscription"
+import {
+  getSellerPlanLimits,
+  respondPlanLimitReached,
+} from "../../../../shared/seller-plan"
+import { hasRoomFor } from "../../../../modules/vendor-plan/limits"
 
 const httpsUrl = z.string().url().refine((u) => /^https:\/\//.test(u), {
   message: "url must use https://",
@@ -67,6 +72,27 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
   const service = req.scope.resolve<MarketplaceWebhooksService>(
     MARKETPLACE_WEBHOOKS_MODULE
   )
+
+  // Endpoint count is the meter, not the event catalog. Every event in
+  // MARKETPLACE_WEBHOOK_EVENTS belongs to one domain family (creator programs,
+  // service contracts, subcontracts), so slicing it into tiers would be an
+  // arbitrary line through a single integration — and would break subscriptions
+  // that already reference the events it removed.
+  const active = await service.listWebhookSubscriptions({
+    seller_id: sellerId,
+    status: WebhookSubscriptionStatus.ACTIVE,
+  })
+  const { plan_code, limits } = await getSellerPlanLimits(req.scope, sellerId)
+  if (!hasRoomFor(active.length, limits.webhook_subscriptions)) {
+    return respondPlanLimitReached(res, {
+      limit_key: "webhook_subscriptions",
+      limit: limits.webhook_subscriptions,
+      current: active.length,
+      plan_code,
+      noun: "webhook endpoints",
+    })
+  }
+
   const created = await service.createSubscription({
     seller_id: sellerId,
     url: parsed.data.url,

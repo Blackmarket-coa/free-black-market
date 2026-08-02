@@ -5,7 +5,12 @@ import { Modules, ContainerRegistrationKeys } from "@medusajs/framework/utils"
 import { createSellerWorkflow } from "@mercurjs/b2c-core/workflows"
 import { createSellerMetadataWorkflow } from "../workflows/create-seller-metadata"
 import { assignPlaybookWorkflow } from "../workflows/assign-playbook"
-import { PLAYBOOK_IDS, unionFeatureKeys, type PlaybookId } from "../modules/playbook"
+import {
+  LEGACY_VENDOR_TYPE_TO_PLAYBOOK,
+  PLAYBOOK_IDS,
+  unionFeatureKeys,
+  type PlaybookId,
+} from "../modules/playbook"
 import { sendVendorAcceptedNotificationWorkflow } from "../workflows/send-vendor-accepted-notification"
 import { appendPath } from "./url"
 import { sendCustomerAcceptedNotificationWorkflow } from "../workflows/send-customer-accepted-notification"
@@ -71,20 +76,6 @@ interface SellerRequestData {
   recommended_playbook?: string
   /** Resources the user reported in the quiz. */
   resources?: string[]
-}
-
-/**
- * Fallback map from legacy vendor_type → playbook, used only when a
- * request predates the resource quiz (no `playbook` on the request).
- * Mirrors LEGACY_VENDOR_TYPE_MAP in playbook-provider/playbook-context.tsx.
- */
-const LEGACY_VENDOR_TYPE_TO_PLAYBOOK: Record<string, PlaybookId> = {
-  producer: "cycle",
-  garden: "harvest",
-  kitchen: "kitchen",
-  restaurant: "kitchen",
-  maker: "stall",
-  mutual_aid: "grove",
 }
 
 /**
@@ -288,7 +279,7 @@ export class SellerApprovalService {
       log.error(`[SellerApproval] Request data was:`, JSON.stringify(request.data, null, 2))
       throw new Error(`Invalid request data: ${validationError.message}`)
     }
-    const vendorType = data.vendor_type || "producer"
+    const vendorType = data.vendor_type || VendorType.GENERAL
 
     log.info(`[SellerApproval] Processing approval for seller "${data.seller.name}" (email: ${maskEmail(data.member.email)})`)
 
@@ -444,7 +435,7 @@ export class SellerApprovalService {
 
       // Step 5: Create seller metadata with vendor_type
       try {
-        const vendorTypeEnum = VendorType[vendorType.toUpperCase() as keyof typeof VendorType] || VendorType.PRODUCER
+        const vendorTypeEnum = VendorType[vendorType.toUpperCase() as keyof typeof VendorType] || VendorType.GENERAL
 
         await createSellerMetadataWorkflow.run({
           container: this.container,

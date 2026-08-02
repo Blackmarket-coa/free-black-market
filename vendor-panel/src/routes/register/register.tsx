@@ -51,6 +51,7 @@ function getNamePlaceholder(playbook: PlaybookId | null): string {
     harvest: "Garden name",
     hub: "Hub or network name",
     service: "Your name or practice",
+    creator: "Your creator or channel name",
   }
   return playbook ? placeholders[playbook] : "Business name"
 }
@@ -67,6 +68,7 @@ function getOptionalFieldsHint(playbook: PlaybookId | null): string {
     harvest: "Add your garden's website & social media",
     hub: "Add your hub's website & social media",
     service: "Add your website & social media",
+    creator: "Add your channels & social media",
   }
   return playbook ? hints[playbook] : "Add website & social links"
 }

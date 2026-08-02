@@ -114,6 +114,7 @@ const LEGACY_VENDOR_TYPE_MAP: Record<string, Playbook> = {
   maker: "stall",
   mutual_aid: "grove",
   creator: "creator",
+  general: "stall",
 }
 
 const VALID_PLAYBOOKS: Playbook[] = [

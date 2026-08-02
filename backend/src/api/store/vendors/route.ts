@@ -1,6 +1,28 @@
 import { createLogger } from "../../../shared/logger"
 const log = createLogger("api/store/vendors")
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
+import { VendorType } from "../../../modules/seller-extension/models/seller-metadata"
+
+/**
+ * Archetypes this endpoint fetches through their own dedicated entity query
+ * (the `producer`, `kitchen` and `garden` tables), earlier in the handler.
+ */
+export const DEDICATED_ENTITY_VENDOR_TYPES: string[] = [
+  "producer",
+  "kitchen",
+  "garden",
+]
+
+/**
+ * Every other archetype, which exists only as a `seller_metadata` row.
+ *
+ * Derived from `VendorType` so that adding an archetype makes it visible in
+ * the public directory automatically. The previous hardcoded list is why
+ * `creator` sellers never appeared here.
+ */
+export const METADATA_BACKED_VENDOR_TYPES: string[] = Object.values(
+  VendorType
+).filter((type) => !DEDICATED_ENTITY_VENDOR_TYPES.includes(type))
 
 /**
  * Haversine formula - calculate distance between two points in miles
@@ -586,25 +608,23 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       }
     }
 
-    // 4. Fetch other seller types (maker, restaurant, mutual_aid) via seller_metadata
-    if (
-      !vendor_type ||
-      ["maker", "restaurant", "mutual_aid"].includes(vendor_type)
-    ) {
+    // 4. Fetch every remaining seller type via seller_metadata.
+    //
+    // The set is DERIVED (all archetypes minus the three with dedicated entity
+    // queries above) rather than enumerated. It used to be the hardcoded list
+    // ["maker", "restaurant", "mutual_aid"], which meant any archetype added
+    // later was invisible in this endpoint on both paths — `?vendor_type=X`
+    // matched no branch and returned nothing, and the unfiltered "all vendors"
+    // listing enumerated only those three. `creator` has been missing from the
+    // public directory that way since it was introduced.
+    if (!vendor_type || METADATA_BACKED_VENDOR_TYPES.includes(vendor_type)) {
       try {
         const metadataFilters: Record<string, any> = {}
-        if (
-          vendor_type &&
-          ["maker", "restaurant", "mutual_aid"].includes(vendor_type)
-        ) {
+        if (vendor_type && METADATA_BACKED_VENDOR_TYPES.includes(vendor_type)) {
           metadataFilters.vendor_type = vendor_type
         } else if (!vendor_type) {
-          // Include only maker, restaurant, mutual_aid (others already fetched above)
-          metadataFilters.vendor_type = [
-            "maker",
-            "restaurant",
-            "mutual_aid",
-          ]
+          // Everything not already fetched by the branches above.
+          metadataFilters.vendor_type = METADATA_BACKED_VENDOR_TYPES
         }
         if (featured === "true") metadataFilters.featured = true
 
@@ -628,6 +648,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
           maker: "Maker & Brand",
           restaurant: "Food Business",
           mutual_aid: "Community Organization",
+          creator: "Creator",
+          general: "Business",
         }
 
         for (const meta of sellerMetadata || []) {

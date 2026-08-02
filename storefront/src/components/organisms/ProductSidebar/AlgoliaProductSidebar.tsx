@@ -80,6 +80,8 @@ const vendorTypeLabels: Record<string, string> = {
   maker: "Makers & Brands",
   restaurant: "Food Businesses",
   mutual_aid: "Community Organizations",
+  creator: "Creators",
+  general: "Businesses",
 }
 
 function CategoryFilter({ defaultOpen = true }: { defaultOpen?: boolean }) {
