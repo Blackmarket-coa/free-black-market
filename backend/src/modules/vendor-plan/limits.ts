@@ -35,6 +35,19 @@ export type VendorPlanLimits = {
   webhook_subscriptions: PlanLimit
   /** Documents in the vendor's document vault. */
   vault_documents: PlanLimit
+  /**
+   * Grower KARMA tier this plan floors the seller to, regardless of earned
+   * karma — the "bought" half of the earned-vs-bought progression duality
+   * (`modules/progression/grower-karma.ts`, `effectiveGrowerTier`). `null` means
+   * the plan makes no tier claim and the grower keeps whatever tier their
+   * activity earned. A floor only ever raises a tier, never lowers it: a grower
+   * who earned a higher tier keeps it even on a plan that floors lower.
+   *
+   * Typed as a plain string to keep this table import-free (it must not depend
+   * on the progression module); a drift test asserts every non-null value is a
+   * real `GrowerTierName`.
+   */
+  grower_tier_floor: string | null
 }
 
 /**
@@ -49,6 +62,8 @@ const FREE_LIMITS: VendorPlanLimits = {
   connect_domains: 1,
   webhook_subscriptions: 1,
   vault_documents: 5,
+  // Free growers earn their tier entirely through activity.
+  grower_tier_floor: null,
 }
 
 const PLAN_LIMITS: Record<string, VendorPlanLimits> = {
@@ -60,6 +75,8 @@ const PLAN_LIMITS: Record<string, VendorPlanLimits> = {
     connect_domains: 5,
     webhook_subscriptions: 3,
     vault_documents: 50,
+    // Storefront/vault plan, not a grower-progression plan: no tier claim.
+    grower_tier_floor: null,
   },
   pro: {
     embed_requests_per_minute: 300,
@@ -68,6 +85,7 @@ const PLAN_LIMITS: Record<string, VendorPlanLimits> = {
     connect_domains: 25,
     webhook_subscriptions: 10,
     vault_documents: 500,
+    grower_tier_floor: "Root",
   },
   scale: {
     embed_requests_per_minute: 1_000,
@@ -76,6 +94,7 @@ const PLAN_LIMITS: Record<string, VendorPlanLimits> = {
     connect_domains: 100,
     webhook_subscriptions: 50,
     vault_documents: 5_000,
+    grower_tier_floor: "Canopy",
   },
   internal: {
     embed_requests_per_minute: 1_000,
@@ -84,6 +103,9 @@ const PLAN_LIMITS: Record<string, VendorPlanLimits> = {
     connect_domains: null,
     webhook_subscriptions: null,
     vault_documents: null,
+    // Operator-assigned. Left earning like anyone so assigning it never
+    // silently shifts the grower/hub inter-node split for FBM's own vendors.
+    grower_tier_floor: null,
   },
 }
 

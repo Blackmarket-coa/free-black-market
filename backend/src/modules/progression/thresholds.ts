@@ -109,22 +109,43 @@ export function xpToGo(
   return Infinity
 }
 
-/** The featureKeys currently unlocked for a sheet (auto-lapsing). */
+/**
+ * The featureKeys currently unlocked for a sheet.
+ *
+ * A privilege unlocks when it is *either* earned (its XP threshold met) *or*
+ * bought (its `featureKey` present in `planGrantedKeys`) — the same
+ * earned-vs-bought duality the grower tier ladder uses. Earned privileges still
+ * auto-lapse when XP drops below the threshold; a plan-granted one holds for as
+ * long as the plan grants it. `planGrantedKeys` defaults to empty, so existing
+ * callers keep pure-XP behavior unchanged.
+ */
 export function unlockedFeatures(
   tracks: TrackSnapshot[],
-  totalXp: number
+  totalXp: number,
+  planGrantedKeys: readonly string[] = []
 ): string[] {
-  return THRESHOLD_PRIVILEGES.filter((t) => isMet(t, tracks, totalXp)).map(
-    (t) => t.featureKey
-  )
+  const granted = new Set(planGrantedKeys)
+  return THRESHOLD_PRIVILEGES.filter(
+    (t) => granted.has(t.featureKey) || isMet(t, tracks, totalXp)
+  ).map((t) => t.featureKey)
 }
 
-/** The closest not-yet-unlocked privilege, for "you're close" guidance. */
+/**
+ * The closest not-yet-unlocked privilege, for "you're close" guidance.
+ *
+ * A privilege the plan already grants is not "next to earn" — the seller has it
+ * — so plan-granted keys are excluded from the guidance the same way met ones
+ * are.
+ */
 export function nextUnlock(
   tracks: TrackSnapshot[],
-  totalXp: number
+  totalXp: number,
+  planGrantedKeys: readonly string[] = []
 ): (ThresholdPrivilege & { xpToGo: number }) | null {
-  const unmet = THRESHOLD_PRIVILEGES.filter((t) => !isMet(t, tracks, totalXp))
+  const granted = new Set(planGrantedKeys)
+  const unmet = THRESHOLD_PRIVILEGES.filter(
+    (t) => !granted.has(t.featureKey) && !isMet(t, tracks, totalXp)
+  )
     .map((t) => ({ ...t, xpToGo: xpToGo(t, tracks, totalXp) }))
     .filter((t) => Number.isFinite(t.xpToGo))
     .sort((a, b) => a.xpToGo - b.xpToGo)

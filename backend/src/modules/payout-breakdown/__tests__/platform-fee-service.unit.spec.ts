@@ -18,6 +18,7 @@ type SettingsRow = {
 
 const makeService = (opts: {
   defaultPercent?: number
+  pluginDeveloperPercent?: number
   settings?: SettingsRow[]
 }) => {
   // Read-only on the generated service type, so the harness holds a plain
@@ -31,7 +32,12 @@ const makeService = (opts: {
   const updated: Record<string, unknown>[] = []
 
   svc.listPayoutConfigs = (async () => [
-    { id: "pc_1", is_default: true, platform_fee_percent: opts.defaultPercent ?? 3 },
+    {
+      id: "pc_1",
+      is_default: true,
+      platform_fee_percent: opts.defaultPercent ?? 3,
+      plugin_developer_percent: opts.pluginDeveloperPercent ?? 0,
+    },
   ]) as never
 
   svc.listSellerPayoutSettings = (async (filters: { seller_id?: string }) =>
@@ -233,6 +239,66 @@ describe("calculateBreakdown", () => {
     })
 
     expect(result.totals.platformFees).toBe(300)
+  })
+
+  it("carves the plugin developer share out of the platform fee", async () => {
+    const { svc } = makeService({ defaultPercent: 3, pluginDeveloperPercent: 1 })
+    const result = await svc.calculateBreakdown({
+      subtotal: 10_000,
+      sellerId: "sel_1",
+      pluginsBySeller: {
+        sel_1: [{ slug: "analytics", author_seller_id: "sel_dev" }],
+      },
+    })
+
+    // The seller's net is byte-for-byte what it would be with no plugins
+    // installed — the share comes out of the platform's 300, not theirs.
+    expect(result.sellerBreakdown[0].net).toBe(9_700)
+    expect(result.totals.platformFees).toBe(300)
+    expect(result.totals.pluginDeveloperShare).toBe(100)
+    expect(result.pluginShareAllocations).toEqual([
+      {
+        slug: "analytics",
+        author_seller_id: "sel_dev",
+        amount_cents: 100,
+        sellerId: "sel_1",
+      },
+    ])
+  })
+
+  it("computes no share when none is configured", async () => {
+    const { svc } = makeService({ defaultPercent: 3 })
+    const result = await svc.calculateBreakdown({
+      subtotal: 10_000,
+      sellerId: "sel_1",
+      pluginsBySeller: {
+        sel_1: [{ slug: "analytics", author_seller_id: "sel_dev" }],
+      },
+    })
+
+    expect(result.totals.pluginDeveloperShare).toBe(0)
+    expect(result.pluginShareAllocations).toEqual([])
+  })
+
+  it("attributes each allocation to the seller whose order funded it", async () => {
+    const { svc } = makeService({ defaultPercent: 3, pluginDeveloperPercent: 1 })
+    const result = await svc.calculateBreakdown({
+      subtotal: 20_000,
+      sellerBreakdown: [
+        { sellerId: "sel_1", subtotal: 10_000 },
+        { sellerId: "sel_2", subtotal: 10_000 },
+      ],
+      pluginsBySeller: {
+        sel_1: [{ slug: "a", author_seller_id: "sel_dev_a" }],
+        sel_2: [{ slug: "b", author_seller_id: "sel_dev_b" }],
+      },
+    })
+
+    expect(result.pluginShareAllocations.map((a) => a.sellerId)).toEqual([
+      "sel_1",
+      "sel_2",
+    ])
+    expect(result.totals.pluginDeveloperShare).toBe(200)
   })
 
   it("applies each seller's own rate on a multi-seller order", async () => {

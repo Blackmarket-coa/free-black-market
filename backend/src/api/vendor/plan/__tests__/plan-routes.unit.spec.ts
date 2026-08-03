@@ -2,7 +2,12 @@ import { GET } from "../me/route"
 import { POST as CHANGE } from "../change/route"
 import { VENDOR_PLAN_MODULE } from "../../../../modules/vendor-plan"
 import { ENTITLEMENT_MODULE } from "../../../../modules/entitlement"
-import { featureKeysForPlan } from "../../../../modules/vendor-plan/catalog"
+import { VENDOR_BILLING_MODULE } from "../../../../modules/vendor-billing"
+import VendorBillingService from "../../../../modules/vendor-billing/service"
+import {
+  featureKeysForPlan,
+  getPlanDefinition,
+} from "../../../../modules/vendor-plan/catalog"
 import { limitsForPlan } from "../../../../modules/vendor-plan/limits"
 
 /**
@@ -77,6 +82,33 @@ const makeReq = (body: Record<string, unknown> = {}, opts: Opts = {}) => {
     }),
   }
 
+  // The REAL billing service over in-memory rows, so the route's charge goes
+  // through the real idempotency and normalization paths.
+  const billingCharges: Record<string, unknown>[] = []
+  const billingService = Object.create(
+    VendorBillingService.prototype
+  ) as Record<string, unknown>
+  billingService.listVendorCharges = (async (
+    where: Record<string, unknown> = {}
+  ) =>
+    billingCharges.filter((c) =>
+      Object.entries(where).every(([k, v]) => c[k] === v)
+    )) as never
+  billingService.createVendorCharges = (async (
+    data: Record<string, unknown>
+  ) => {
+    const row = { ...data, id: `vc_${billingCharges.length + 1}` }
+    billingCharges.push(row)
+    return row
+  }) as never
+  billingService.updateVendorCharges = (async (
+    data: Record<string, unknown>
+  ) => {
+    const row = billingCharges.find((c) => c.id === data.id)
+    if (row) Object.assign(row, data)
+    return row
+  }) as never
+
   return {
     req: {
       body,
@@ -85,11 +117,13 @@ const makeReq = (body: Record<string, unknown> = {}, opts: Opts = {}) => {
         resolve: (key: string) => {
           if (key === VENDOR_PLAN_MODULE) return planService
           if (key === ENTITLEMENT_MODULE) return entitlementService
+          if (key === VENDOR_BILLING_MODULE) return billingService
           return undefined
         },
       },
     },
     planService,
+    billingCharges,
   }
 }
 
@@ -152,6 +186,35 @@ describe("GET /vendor/plan/me", () => {
     expect(res.body.limits).toEqual(limitsForPlan("pro"))
   })
 
+  it("reports the plan's take rate", async () => {
+    // The lower commission is the reason to upgrade that is not a feature, so
+    // the upgrade screen has to be able to show it.
+    const { req } = makeReq({}, { planCode: "pro" })
+    const res = createRes()
+    await GET(req as never, res as never)
+
+    expect((res.body.plan as Record<string, unknown>).platform_fee_percent).toBe(
+      getPlanDefinition("pro")?.platform_fee_percent
+    )
+  })
+
+  it("quotes a take rate for every plan it offers", async () => {
+    const { req } = makeReq()
+    const res = createRes()
+    await GET(req as never, res as never)
+
+    const plans = res.body.available_plans as {
+      code: string
+      platform_fee_percent: number | null
+    }[]
+    for (const plan of plans) {
+      expect(plan.platform_fee_percent).toBe(
+        getPlanDefinition(plan.code)?.platform_fee_percent
+      )
+      expect(plan.platform_fee_percent).not.toBeNull()
+    }
+  })
+
   it("reports each offered plan's features, for the upgrade screen", async () => {
     const { req } = makeReq()
     const res = createRes()
@@ -197,6 +260,99 @@ describe("POST /vendor/plan/change", () => {
     expect(res.statusCode).toBe(200)
     expect(res.body.applied).toBe(true)
     expect(res.body.deferred).toBe(false)
+  })
+
+  it("records a prorated charge for an immediate paid upgrade", async () => {
+    // Access first, collection second: the plan applied, and the charge sits
+    // in the ledger. Billing is unconfigured in tests, so execution reports
+    // the charge still pending — recorded, not collected.
+    const periodStart = new Date("2026-08-01T00:00:00Z")
+    const periodEnd = new Date("2100-01-31T00:00:00Z")
+    const { req, billingCharges } = makeReq(
+      { plan_code: "pro" },
+      {
+        transitionResult: {
+          assignment: {
+            plan_code: "pro",
+            status: "active",
+            current_period_start: periodStart,
+            current_period_end: periodEnd,
+            pending_plan_code: null,
+            pending_effective_at: null,
+          },
+          decision: { kind: "immediate", change: "upgrade" },
+          replayed: false,
+        },
+      }
+    )
+    const res = createRes()
+    await CHANGE(req as never, res as never)
+
+    expect(res.statusCode).toBe(200)
+    expect(billingCharges).toHaveLength(1)
+    expect(billingCharges[0]).toMatchObject({
+      seller_id: "sel_1",
+      kind: "plan",
+      status: "pending",
+      idempotency_key: `plan:sel_1:pro:${periodEnd.toISOString()}`,
+    })
+    // Prorated to the remaining period, capped at the full price.
+    expect(billingCharges[0].amount).toBeLessThanOrEqual(9900)
+    expect(billingCharges[0].amount).toBeGreaterThan(0)
+    expect(res.body.charge_status).toBe("pending")
+  })
+
+  it("charges nothing for a deferred downgrade", async () => {
+    const { req, billingCharges } = makeReq(
+      { plan_code: "starter" },
+      {
+        transitionResult: {
+          assignment: {
+            plan_code: "pro",
+            status: "active",
+            current_period_end: null,
+            pending_plan_code: "starter",
+            pending_effective_at: new Date("2026-09-01"),
+          },
+          decision: { kind: "deferred", change: "downgrade" },
+          replayed: false,
+        },
+      }
+    )
+    await CHANGE(req as never, createRes() as never)
+    expect(billingCharges).toHaveLength(0)
+  })
+
+  it("does not re-charge a replayed transition", async () => {
+    // The transition idempotency already fired once; charging again on the
+    // replay would bill the same upgrade twice.
+    const { req, billingCharges } = makeReq(
+      { plan_code: "pro" },
+      {
+        transitionResult: {
+          assignment: { plan_code: "pro", status: "active" },
+          decision: { kind: "immediate", change: "upgrade" },
+          replayed: true,
+        },
+      }
+    )
+    await CHANGE(req as never, createRes() as never)
+    expect(billingCharges).toHaveLength(0)
+  })
+
+  it("still applies the plan when the charge write blows up", async () => {
+    // Collection must never gate access — an uncollected charge is exactly
+    // what the ledger exists to remember.
+    const { req, billingCharges } = makeReq({ plan_code: "pro" })
+    billingCharges.push = () => {
+      throw new Error("db down")
+    }
+    const res = createRes()
+    await CHANGE(req as never, res as never)
+
+    expect(res.statusCode).toBe(200)
+    expect(res.body.applied).toBe(true)
+    expect(res.body.charge_status).toBeNull()
   })
 
   it("reports a deferred downgrade rather than implying it applied", async () => {

@@ -1070,6 +1070,30 @@ export default defineMiddlewares({
       matcher: "/vendor/plan/*",
       middlewares: [authenticate("seller", "bearer")],
     },
+    // Promoted-listing status + purchase. Authenticated and not plan-gated:
+    // promotion is bought per-period, not included in a tier, so gating it on
+    // a plan feature would hide the price list from exactly the vendors most
+    // likely to buy it. The purchase route grants nothing until its charge is
+    // PAID, so no additional gate is needed in front of it.
+    {
+      matcher: "/vendor/promotion*",
+      middlewares: [authenticate("seller", "bearer")],
+    },
+    // Charge ledger + payment-method setup. Not plan-gated: a vendor must
+    // always be able to see and settle their balance — especially one whose
+    // access was reduced because of an unpaid balance.
+    {
+      matcher: "/vendor/billing*",
+      middlewares: [authenticate("seller", "bearer")],
+    },
+    // Stripe webhook for vendor charges. Signature-verified in the handler;
+    // the raw body must survive parsing or constructEvent verifies nothing.
+    {
+      matcher: "/webhooks/vendor-billing/stripe",
+      method: "POST",
+      bodyParser: { preserveRawBody: true },
+      middlewares: [standardRateLimiter],
+    },
     // Embeddable storefront keys. No runtime feature flag — connect.js is
     // always available as a platform capability; the plan decides who may
     // mint keys for it.

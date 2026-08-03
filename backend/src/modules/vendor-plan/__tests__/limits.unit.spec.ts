@@ -4,9 +4,14 @@ import {
   isUnlimited,
   limitsForPlan,
   plansWithLimits,
+  type PlanLimit,
   type VendorPlanLimits,
 } from "../limits"
 import { VENDOR_PLAN_CATALOG } from "../catalog"
+import {
+  asGrowerTierName,
+  growerTierIndex,
+} from "../../progression/grower-karma"
 
 const LIMIT_KEYS: (keyof VendorPlanLimits)[] = [
   "embed_requests_per_minute",
@@ -50,8 +55,10 @@ describe("plan limit table", () => {
       const lower = limitsForPlan(ladder[i - 1])
       const higher = limitsForPlan(ladder[i])
       for (const key of LIMIT_KEYS) {
-        const l = lower[key]
-        const h = higher[key]
+        // LIMIT_KEYS holds only the numeric ceilings; the non-numeric floor
+        // (grower_tier_floor) has its own monotonicity test below.
+        const l = lower[key] as PlanLimit
+        const h = higher[key] as PlanLimit
         if (isUnlimited(h)) continue
         expect(isUnlimited(l)).toBe(false)
         expect(h).toBeGreaterThanOrEqual(l as number)
@@ -74,6 +81,32 @@ describe("plan limit table", () => {
     expect(free.embed_keys).toBeGreaterThan(0)
     expect(free.connect_domains).toBeGreaterThan(0)
     expect(free.analytics_range_days).toBeGreaterThan(0)
+  })
+
+  it("only ever names a real grower tier as a plan floor", () => {
+    // Drift guard: the floor is stored as a bare string to keep the limit table
+    // import-free, so nothing but this test stops a typo'd tier from silently
+    // flooring nobody. A null floor is fine — it means "no tier claim".
+    for (const code of plansWithLimits()) {
+      const floor = limitsForPlan(code).grower_tier_floor
+      if (floor === null) continue
+      expect(asGrowerTierName(floor)).toBe(floor)
+    }
+  })
+
+  it("never lowers the grower tier floor as the ladder rises", () => {
+    // Buying a higher plan may skip a grower further up the ladder, never back
+    // down it. A null floor (no claim) is treated as the bottom of the ladder.
+    const ladder = ["free", "starter", "pro", "scale"]
+    const floorIndex = (code: string) => {
+      const floor = asGrowerTierName(limitsForPlan(code).grower_tier_floor)
+      return floor ? growerTierIndex(floor) : -1
+    }
+    for (let i = 1; i < ladder.length; i++) {
+      expect(floorIndex(ladder[i])).toBeGreaterThanOrEqual(
+        floorIndex(ladder[i - 1])
+      )
+    }
   })
 })
 

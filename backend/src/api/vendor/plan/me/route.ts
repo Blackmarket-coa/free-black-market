@@ -3,7 +3,10 @@ import { requireSellerId } from "../../../../shared"
 import { createLogger } from "../../../../shared/logger"
 import { VENDOR_PLAN_MODULE } from "../../../../modules/vendor-plan"
 import type VendorPlanService from "../../../../modules/vendor-plan/service"
-import { VENDOR_PLAN_CATALOG } from "../../../../modules/vendor-plan/catalog"
+import {
+  VENDOR_PLAN_CATALOG,
+  getPlanDefinition,
+} from "../../../../modules/vendor-plan/catalog"
 import { limitsForPlan } from "../../../../modules/vendor-plan/limits"
 import { ENTITLEMENT_MODULE } from "../../../../modules/entitlement"
 import type EntitlementModuleService from "../../../../modules/entitlement/service"
@@ -61,6 +64,12 @@ export async function GET(
         cancel_at_period_end: !!assignment.cancel_at_period_end,
         pending_plan_code: assignment.pending_plan_code ?? null,
         pending_effective_at: assignment.pending_effective_at ?? null,
+        // The plan's marketplace take rate. `null` means the plan expresses no
+        // opinion and the platform default applies. Deliberately NOT the rate
+        // actually charged — a seller with a negotiated override pays that
+        // instead, and resolving it here would need the payout module.
+        platform_fee_percent:
+          getPlanDefinition(assignment.plan_code)?.platform_fee_percent ?? null,
       },
       feature_keys: [...featureKeys],
       // The quantitative side of the plan. Without it a vendor only discovers a
@@ -82,6 +91,8 @@ export async function GET(
         display_order: p.display_order,
         feature_keys: p.feature_keys,
         limits: limitsForPlan(p.code),
+        // The reason to upgrade that is not a feature: a lower take rate.
+        platform_fee_percent: p.platform_fee_percent,
       })),
     })
   } catch (error: unknown) {

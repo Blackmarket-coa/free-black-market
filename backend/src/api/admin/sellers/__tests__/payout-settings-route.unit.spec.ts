@@ -3,6 +3,7 @@ import { PAYOUT_BREAKDOWN_MODULE } from "../../../../modules/payout-breakdown"
 import { VENDOR_PLAN_MODULE } from "../../../../modules/vendor-plan"
 import { ENTITLEMENT_MODULE } from "../../../../modules/entitlement"
 import { clearPlanFeatureCache } from "../../../../shared/plan-entitlement-cache"
+import { getPlanDefinition } from "../../../../modules/vendor-plan/catalog"
 
 const createRes = () => {
   const res: Record<string, unknown> = { statusCode: 200, body: undefined }
@@ -117,16 +118,31 @@ beforeEach(() => {
 describe("GET /admin/sellers/:id/payout-settings", () => {
   it("reports which source the effective rate came from", async () => {
     // The point of the endpoint: an operator setting a rate must see which of
-    // the three sources actually won.
+    // the three sources actually won. With no override, a seller on `free`
+    // resolves through the plan — the ladder pins `free` to the platform
+    // default, so the number is unchanged but the provenance is now the plan.
     const { req } = makeReq({})
     const res = createRes()
     await GET(req as never, res as never)
 
     expect(res.statusCode).toBe(200)
+    const effective = res.body.effective as Record<string, unknown>
+    expect(effective.source).toBe("plan")
+    expect(effective.percent).toBe(
+      getPlanDefinition("free")?.platform_fee_percent
+    )
+    expect(res.body.override).toBeNull()
+  })
+
+  it("falls through to the platform default for a plan with no rate", async () => {
+    // `internal` expresses no opinion, so the chain runs past it.
+    const { req } = makeReq({ planCode: "internal" })
+    const res = createRes()
+    await GET(req as never, res as never)
+
     expect((res.body.effective as Record<string, unknown>).source).toBe(
       "platform_default"
     )
-    expect(res.body.override).toBeNull()
   })
 
   it("shows an existing override alongside the plan", async () => {
