@@ -11,6 +11,8 @@ import { emitBlackoutEvent } from "../lib/blackout-emit"
 import { resolveSellerPlatformFee } from "../shared/platform-fee"
 import { resolveSellerPluginPayees } from "../shared/plugin-payees"
 import { disbursePluginDeveloperShare } from "../shared/plugin-revenue-payout"
+import { resolveSellerReferralPayee } from "../shared/referral-payees"
+import { disburseReferralShare } from "../shared/referral-revenue-payout"
 import {
   isConsignmentSplitLive,
   resolveOrderConsignment,
@@ -157,6 +159,7 @@ export default async function hawalaOrderPaymentSubscriber({
     try {
       const payoutConfig = await payoutService.getDefaultConfig()
       const pluginSharePercent = Number(payoutConfig.plugin_developer_percent ?? 0)
+      const referralSharePercent = Number(payoutConfig.referral_percent ?? 0)
 
       const breakdown = await payoutService.calculateBreakdown({
         subtotal: Number(order.subtotal || order.total),
@@ -181,6 +184,12 @@ export default async function hawalaOrderPaymentSubscriber({
         pluginsBySeller: pluginSharePercent > 0
           ? { [sellerId]: await resolveSellerPluginPayees(container, sellerId) }
           : undefined,
+        // Generic referral share, carved from what the plugin share left. Same
+        // configured-only guard: the attribution lookup is skipped entirely
+        // when referral_percent is 0, which is the default.
+        referralBySeller: referralSharePercent > 0
+          ? { [sellerId]: await resolveSellerReferralPayee(container, sellerId) }
+          : undefined,
       })
       await payoutService.storeOrderBreakdown(
         orderId,
@@ -197,6 +206,16 @@ export default async function hawalaOrderPaymentSubscriber({
           sellerId,
           currencyCode: order.currency_code,
           allocations: breakdown.pluginShareAllocations,
+        })
+      }
+
+      // Referral share disburses the same way and after the breakdown is
+      // stored. Single-seller settlement here, so at most one allocation.
+      if (breakdown.referralShareAllocations.length > 0) {
+        await disburseReferralShare(container, {
+          orderId,
+          currencyCode: order.currency_code,
+          allocation: breakdown.referralShareAllocations[0],
         })
       }
     } catch (breakdownError) {
