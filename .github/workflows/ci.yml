@@ -579,15 +579,32 @@ jobs:
       # Closes the LAUNCH_READINESS §2 money-path gate: proves the
       # atomic-by-default balance CAS + pool-total increments hold under real
       # concurrency (no overdraw, value conservation, exact pool totals).
-      # Scoped to the soak spec so the signal stays clean.
       #
       # Flipped to fail-fast in the production-readiness pass: this step now
       # blocks CI. The Postgres service below is the verification surface for
       # the atomic-by-default money paths under real concurrency. A regression
       # in the balance CAS or pool-total increments will fail the build here.
-      - name: Run hawala money-path concurrency soak
+      #
+      # Specs are listed explicitly rather than globbed: the point of this job
+      # is a clean, fast money-path signal, and a glob over
+      # `**/*.integration.spec.ts` would sweep in unrelated module specs that
+      # were never written to run here. Adding a concurrency guarantee means
+      # adding a line — deliberate, and visible in review.
+      #
+      # Every spec below asserts something a unit test structurally cannot: a
+      # database constraint or an atomic statement resolving under real
+      # contention. `milestone-cas` earned its place the hard way — the guard it
+      # covers was reviewed, correctly described by its own comment, and inert
+      # in production, because an uncast jsonb `->` parameter selected the text
+      # overload. Only executing it against Postgres revealed that, so these
+      # specs have to run in CI or the regression is unguarded.
+      - name: Run money-path concurrency soak
         working-directory: backend
-        run: pnpm test:integration:modules src/modules/hawala-ledger/__tests__/concurrency-soak.integration.spec.ts
+        run: |
+          pnpm test:integration:modules \
+            src/modules/hawala-ledger/__tests__/concurrency-soak.integration.spec.ts \
+            src/modules/hawala-ledger/__tests__/karma-dedup.integration.spec.ts \
+            src/modules/demand-pool/__tests__/milestone-cas.integration.spec.ts
         env:
           NODE_ENV: test
           # @medusajs/test-utils reads DB_HOST/DB_USERNAME/DB_PASSWORD/DB_PORT
