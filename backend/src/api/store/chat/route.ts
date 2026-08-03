@@ -2,7 +2,7 @@ import { createLogger } from "../../../shared/logger"
 const log = createLogger("api/store/chat")
 import { AuthenticatedMedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
-import { getMatrixService } from "../../../shared/matrix-service"
+import { getChatProvider } from "../../../shared/chat"
 
 /**
  * GET /store/chat
@@ -13,7 +13,7 @@ export async function GET(
   req: AuthenticatedMedusaRequest,
   res: MedusaResponse
 ) {
-  const matrixService = getMatrixService()
+  const matrixService = getChatProvider()
 
   if (!matrixService) {
     res.status(200).json({

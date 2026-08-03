@@ -1,6 +1,6 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { createLogger } from "../../../../../shared/logger"
-import { getMatrixService } from "../../../../../shared/matrix-service"
+import { getChatProvider } from "../../../../../shared/chat"
 import type { EmbedRequest } from "../../../../middlewares/embed-key"
 
 const log = createLogger("api/store/embed/chat/start")
@@ -75,7 +75,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       /* non-fatal */
     }
 
-    const matrix = getMatrixService()
+    const matrix = getChatProvider()
     const intro = `New website message from ${customer_name || "a visitor"} (${customer_email}):\n\n${message}`
 
     // ── Preferred: Matrix room ────────────────────────────────────────────
