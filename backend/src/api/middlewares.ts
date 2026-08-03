@@ -1079,6 +1079,13 @@ export default defineMiddlewares({
       matcher: "/vendor/promotion*",
       middlewares: [authenticate("seller", "bearer")],
     },
+    // Add-on pack catalog + purchase. Same posture as promotions for the same
+    // reasons: the price list stays visible to every plan, and the purchase
+    // route grants nothing until its charge is PAID.
+    {
+      matcher: "/vendor/addons*",
+      middlewares: [authenticate("seller", "bearer")],
+    },
     // Charge ledger + payment-method setup. Not plan-gated: a vendor must
     // always be able to see and settle their balance — especially one whose
     // access was reduced because of an unpaid balance.
