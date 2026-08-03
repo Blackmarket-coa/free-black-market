@@ -6,6 +6,7 @@ import { createLogger } from "../../../shared/logger"
 import { requireSellerId } from "../../../shared"
 import { getPromotionState } from "../../../shared/promoted-listing-service"
 import { PROMOTION_TIERS } from "../../../shared/promoted-listing"
+import { isVendorBillingConfigured } from "../../../shared/vendor-charge-execution"
 
 const log = createLogger("api/vendor/promotion")
 
@@ -14,13 +15,12 @@ const log = createLogger("api/vendor/promotion")
  *
  * The vendor's promoted-listing status and what they could buy.
  *
- * **Read-only on purpose.** A promotion is placement at the top of the public
- * directory, and there is no charge wired yet — `hawala-ledger/stripe-ach.ts`
- * has the machinery but nothing bills a vendor for anything today. A
- * self-serve `POST` here would hand out free permanent placement to anyone who
- * found the endpoint. Purchase lands with the billing work; until then the
- * operator route (`POST /admin/sellers/:id/promotion`) is the only writer, and
- * `purchasable: false` tells the panel to show the tiers without a buy button.
+ * **Still read-only.** The writer is `POST /vendor/promotion/purchase`, which
+ * records a charge and grants placement only once it is PAID — so this route
+ * never grants anything, and `purchasable` simply reports whether that
+ * checkout is live (`isVendorBillingConfigured`). When it is false the panel
+ * shows the tiers without a buy button and the operator route
+ * (`POST /admin/sellers/:id/promotion`) remains the only writer.
  */
 export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) {
   const sellerId = await requireSellerId(req, res)
@@ -35,12 +35,13 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
         expires_at: state.expires_at,
       },
       tiers: PROMOTION_TIERS,
-      // Flips to true when checkout exists. The panel should render the tiers
-      // either way — knowing what promotion costs is useful before it can be
-      // bought — but must not offer a button that would grant it for nothing.
-      purchasable: false,
-      contact_hint:
-        "Promoted placement is arranged with the marketplace team while self-serve checkout is being built.",
+      // The panel renders the tiers either way — knowing what promotion costs
+      // is useful before it can be bought — but only shows a buy button when
+      // checkout is actually live.
+      purchasable: isVendorBillingConfigured(),
+      contact_hint: isVendorBillingConfigured()
+        ? null
+        : "Promoted placement is arranged with the marketplace team while self-serve checkout is being enabled.",
     })
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Unknown error"

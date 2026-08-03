@@ -5,6 +5,13 @@ import { VENDOR_PLAN_MODULE } from "../../../../modules/vendor-plan"
 import type VendorPlanService from "../../../../modules/vendor-plan/service"
 import { getPlanDefinition } from "../../../../modules/vendor-plan/catalog"
 import { VendorPlanAssignedBy } from "../../../../modules/vendor-plan/models"
+import { VENDOR_BILLING_MODULE } from "../../../../modules/vendor-billing"
+import type VendorBillingService from "../../../../modules/vendor-billing/service"
+import {
+  VendorChargeKind,
+  proratedAmount,
+} from "../../../../modules/vendor-billing/charges"
+import { executeCharge } from "../../../../shared/vendor-charge-execution"
 
 const log = createLogger("api/vendor/plan/change")
 
@@ -75,7 +82,64 @@ export async function POST(
       })
     }
 
+    // Charge for an immediate upgrade to a paid plan. Recorded after the
+    // transition (access first, collection second — the reverse would gate an
+    // upgrade on Stripe uptime) and never allowed to fail the plan change:
+    // an uncollected charge sits in the vendor's balance, which is exactly
+    // what the ledger is for. Prorated to the remaining period so a
+    // mid-period upgrade never bills a full month for four days. Downgrades
+    // are deferred to period end and charge nothing here.
+    let charge_status: string | null = null
+    if (
+      result.decision.kind === "immediate" &&
+      !result.replayed &&
+      definition.price_amount > 0
+    ) {
+      try {
+        const billing = req.scope.resolve<VendorBillingService>(
+          VENDOR_BILLING_MODULE
+        )
+        const periodStart = result.assignment.current_period_start
+          ? new Date(result.assignment.current_period_start)
+          : new Date()
+        const periodEnd = result.assignment.current_period_end
+          ? new Date(result.assignment.current_period_end)
+          : null
+        const amount = periodEnd
+          ? proratedAmount({
+              fullAmount: definition.price_amount,
+              periodStart,
+              periodEnd,
+              from: new Date(),
+            })
+          : definition.price_amount
+
+        if (amount > 0) {
+          const { charge } = await billing.createCharge({
+            seller_id: sellerId,
+            kind: VendorChargeKind.PLAN,
+            amount,
+            currency_code: definition.currency_code,
+            description: `${definition.display_name} plan`,
+            // One charge per plan-period pair: retrying the same upgrade in
+            // the same period replays, a renewal next period gets a new key.
+            discriminator: `${planCode}:${periodEnd?.toISOString() ?? "initial"}`,
+            period_start: periodStart,
+            period_end: periodEnd,
+          })
+          const execution = await executeCharge(req.scope, charge.id)
+          charge_status = execution.status as string
+        }
+      } catch (chargeError) {
+        log.warn(
+          `[plan/change] charge failed for ${sellerId} -> ${planCode}; plan applied, balance outstanding`,
+          chargeError
+        )
+      }
+    }
+
     return res.json({
+      charge_status,
       plan: {
         code: result.assignment.plan_code,
         status: result.assignment.status,

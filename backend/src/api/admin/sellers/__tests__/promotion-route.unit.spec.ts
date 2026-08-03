@@ -146,16 +146,23 @@ describe("DELETE /admin/sellers/:id/promotion", () => {
 })
 
 describe("GET /vendor/promotion", () => {
-  it("shows the tiers but does not offer to sell them yet", async () => {
-    // There is no charge wired. A buy button here would hand out free
-    // permanent placement to anyone who found the endpoint.
-    const { req } = makeReq()
-    const res = createRes()
-    await VENDOR_GET(req as never, res as never)
+  it("shows the tiers without a buy button while billing is off", async () => {
+    // `purchasable` now reflects isVendorBillingConfigured(); pin the env off
+    // so this test says what it means regardless of the CI environment.
+    const saved = process.env.VENDOR_BILLING_ENABLED
+    delete process.env.VENDOR_BILLING_ENABLED
+    try {
+      const { req } = makeReq()
+      const res = createRes()
+      await VENDOR_GET(req as never, res as never)
 
-    expect(res.statusCode).toBe(200)
-    expect(res.body.purchasable).toBe(false)
-    expect((res.body.tiers as unknown[]).length).toBeGreaterThan(0)
+      expect(res.statusCode).toBe(200)
+      expect(res.body.purchasable).toBe(false)
+      expect((res.body.tiers as unknown[]).length).toBeGreaterThan(0)
+    } finally {
+      if (saved === undefined) delete process.env.VENDOR_BILLING_ENABLED
+      else process.env.VENDOR_BILLING_ENABLED = saved
+    }
   })
 
   it("reports a live promotion's expiry", async () => {
@@ -169,9 +176,10 @@ describe("GET /vendor/promotion", () => {
     expect((promo.expires_at as Date).getTime()).toBe(expires.getTime())
   })
 
-  it("exposes no writer", () => {
-    // The operator route is the only way to grant placement until billing
-    // exists. If this ever gains a POST, that decision has been reversed.
+  it("exposes no writer on the status route", () => {
+    // Self-serve purchase lives at /vendor/promotion/purchase and grants only
+    // once its charge is PAID. The status route itself must stay read-only —
+    // a POST here would be a grant with no charge in front of it.
     expect(Object.keys(vendorPromotionRoute)).toEqual(["GET"])
   })
 })
