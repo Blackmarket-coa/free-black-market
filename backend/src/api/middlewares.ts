@@ -1086,6 +1086,13 @@ export default defineMiddlewares({
       matcher: "/vendor/billing*",
       middlewares: [authenticate("seller", "bearer")],
     },
+    // Plan usage against allowances. Not plan-gated for the same reason as
+    // billing, and more so: the vendor closest to a ceiling is the one on the
+    // smallest plan, and gating this would hide the number from them.
+    {
+      matcher: "/vendor/usage",
+      middlewares: [authenticate("seller", "bearer")],
+    },
     // Stripe webhook for vendor charges. Signature-verified in the handler;
     // the raw body must survive parsing or constructEvent verifies nothing.
     {
