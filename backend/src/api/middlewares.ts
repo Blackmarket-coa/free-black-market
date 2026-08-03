@@ -1070,6 +1070,14 @@ export default defineMiddlewares({
       matcher: "/vendor/plan/*",
       middlewares: [authenticate("seller", "bearer")],
     },
+    // Promoted-listing status. Authenticated and not plan-gated: promotion is
+    // bought per-period, not included in a tier, so gating the read on a plan
+    // feature would hide the price list from exactly the vendors most likely to
+    // buy it. The route is read-only — the operator route is the only writer.
+    {
+      matcher: "/vendor/promotion",
+      middlewares: [authenticate("seller", "bearer")],
+    },
     // Embeddable storefront keys. No runtime feature flag — connect.js is
     // always available as a platform capability; the plan decides who may
     // mint keys for it.
