@@ -2,7 +2,10 @@ import { GET } from "../me/route"
 import { POST as CHANGE } from "../change/route"
 import { VENDOR_PLAN_MODULE } from "../../../../modules/vendor-plan"
 import { ENTITLEMENT_MODULE } from "../../../../modules/entitlement"
-import { featureKeysForPlan } from "../../../../modules/vendor-plan/catalog"
+import {
+  featureKeysForPlan,
+  getPlanDefinition,
+} from "../../../../modules/vendor-plan/catalog"
 import { limitsForPlan } from "../../../../modules/vendor-plan/limits"
 
 /**
@@ -150,6 +153,35 @@ describe("GET /vendor/plan/me", () => {
     await GET(req as never, res as never)
 
     expect(res.body.limits).toEqual(limitsForPlan("pro"))
+  })
+
+  it("reports the plan's take rate", async () => {
+    // The lower commission is the reason to upgrade that is not a feature, so
+    // the upgrade screen has to be able to show it.
+    const { req } = makeReq({}, { planCode: "pro" })
+    const res = createRes()
+    await GET(req as never, res as never)
+
+    expect((res.body.plan as Record<string, unknown>).platform_fee_percent).toBe(
+      getPlanDefinition("pro")?.platform_fee_percent
+    )
+  })
+
+  it("quotes a take rate for every plan it offers", async () => {
+    const { req } = makeReq()
+    const res = createRes()
+    await GET(req as never, res as never)
+
+    const plans = res.body.available_plans as {
+      code: string
+      platform_fee_percent: number | null
+    }[]
+    for (const plan of plans) {
+      expect(plan.platform_fee_percent).toBe(
+        getPlanDefinition(plan.code)?.platform_fee_percent
+      )
+      expect(plan.platform_fee_percent).not.toBeNull()
+    }
   })
 
   it("reports each offered plan's features, for the upgrade screen", async () => {

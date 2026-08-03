@@ -56,6 +56,12 @@ export type VendorPlanDefinition = {
    * consulted only as a fallback BELOW the per-seller override in
    * `seller_payout_settings.custom_platform_fee_percent`, so a negotiated rate
    * always wins over a plan rate and the two never become ambiguous.
+   *
+   * The ladder only ever discounts. `free` is pinned to the platform default,
+   * so introducing plans did not raise anyone's rate, and each paid tier is
+   * strictly cheaper than the one below it — a vendor's take rate can only fall
+   * as they move up, never rise. `PLATFORM_DEFAULT_FEE_PERCENT` and the drift
+   * test in `__tests__/catalog.unit.spec.ts` hold that invariant.
    */
   platform_fee_percent: number | null
   trial_days: number
@@ -82,7 +88,8 @@ export const VENDOR_PLAN_CATALOG: VendorPlanDefinition[] = [
     price_amount: 0,
     currency_code: "usd",
     interval: "none",
-    platform_fee_percent: null,
+    // Matches the platform default, so no existing vendor's rate changes.
+    platform_fee_percent: 3,
     trial_days: 0,
     is_active: true,
     is_public: true,
@@ -97,7 +104,7 @@ export const VENDOR_PLAN_CATALOG: VendorPlanDefinition[] = [
     price_amount: 2900,
     currency_code: "usd",
     interval: "month",
-    platform_fee_percent: null,
+    platform_fee_percent: 2.5,
     trial_days: 14,
     is_active: true,
     is_public: true,
@@ -112,7 +119,7 @@ export const VENDOR_PLAN_CATALOG: VendorPlanDefinition[] = [
     price_amount: 9900,
     currency_code: "usd",
     interval: "month",
-    platform_fee_percent: null,
+    platform_fee_percent: 2,
     trial_days: 14,
     is_active: true,
     is_public: true,
@@ -134,7 +141,7 @@ export const VENDOR_PLAN_CATALOG: VendorPlanDefinition[] = [
     price_amount: 24900,
     currency_code: "usd",
     interval: "month",
-    platform_fee_percent: null,
+    platform_fee_percent: 1.5,
     trial_days: 0,
     is_active: true,
     is_public: true,
@@ -149,6 +156,8 @@ export const VENDOR_PLAN_CATALOG: VendorPlanDefinition[] = [
     price_amount: 0,
     currency_code: "usd",
     interval: "none",
+    // No plan-level opinion: FBM's own vendors stay on the platform default
+    // rather than having their (internal, paper) fee silently zeroed.
     platform_fee_percent: null,
     trial_days: 0,
     is_active: true,
@@ -160,6 +169,17 @@ export const VENDOR_PLAN_CATALOG: VendorPlanDefinition[] = [
 
 /** The plan a seller falls back to when they have no assignment. */
 export const DEFAULT_PLAN_CODE = "free"
+
+/**
+ * The platform's take rate before plans existed — the seeded default of
+ * `payout_config.platform_fee_percent`.
+ *
+ * Kept here as the ceiling the ladder is asserted against: no plan may charge
+ * more than a seller was already paying, so shipping the ladder cannot raise
+ * anyone's rate. If the operator changes the `payout_config` row, this constant
+ * needs to move with it or the drift test is checking the wrong number.
+ */
+export const PLATFORM_DEFAULT_FEE_PERCENT = 3
 
 export function getPlanDefinition(
   code: string | null | undefined

@@ -26,6 +26,15 @@ export type VendorPlanSummary = {
   cancel_at_period_end: boolean
   pending_plan_code: string | null
   pending_effective_at: string | null
+  /**
+   * The plan's marketplace take rate, as a percentage. `null` means the plan
+   * expresses no opinion and the platform default applies.
+   *
+   * Not necessarily what this seller is actually charged: a negotiated
+   * per-seller override wins over the plan rate, and only the backend payout
+   * module can resolve that. Display it as the plan's rate, not as "your rate".
+   */
+  platform_fee_percent: number | null
 }
 
 /**
@@ -53,6 +62,8 @@ export type AvailablePlan = {
   display_order: number
   feature_keys: VendorPlanFeatureKey[]
   limits: VendorPlanLimits
+  /** The reason to upgrade that is not a feature: a lower take rate. */
+  platform_fee_percent: number | null
 }
 
 export type VendorPlanResponse = {
