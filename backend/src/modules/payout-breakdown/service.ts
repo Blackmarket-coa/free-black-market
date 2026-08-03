@@ -16,6 +16,10 @@ import {
   type PluginPayee,
   type PluginShareAllocation,
 } from "./plugin-revenue-share"
+import {
+  computeReferralRevenueShare,
+  type ReferralShareAllocation,
+} from "./referral-revenue-share"
 
 /**
  * Default fee labels for customer display
@@ -115,6 +119,17 @@ export interface BreakdownInput {
    * fee, which is the behaviour before this existed.
    */
   pluginsBySeller?: Record<string, PluginPayee[]>
+  /**
+   * The seller who referred each seller onto the platform, keyed by seller id,
+   * for the generic referral share. Supplied by the caller — the attribution
+   * lives in `modules/referral`, which this module cannot resolve. Build it
+   * with `shared/referral-payees.ts`.
+   *
+   * Funded out of the platform fee AFTER the plugin share, so it never promises
+   * money the platform did not keep. Omitting it (or a null entry) means no
+   * referral share for that seller — the behaviour before this existed.
+   */
+  referralBySeller?: Record<string, { referrer_seller_id: string } | null>
 }
 
 class PayoutBreakdownService extends MedusaService({
@@ -253,6 +268,7 @@ class PayoutBreakdownService extends MedusaService({
       tip: number
       creatorCommission: number
       pluginDeveloperShare: number
+      referralShare: number
     }
     sellerBreakdown: Array<{
       sellerId: string
@@ -266,6 +282,7 @@ class PayoutBreakdownService extends MedusaService({
      * the transfers — this module computes, it does not move money.
      */
     pluginShareAllocations: (PluginShareAllocation & { sellerId: string })[]
+    referralShareAllocations: (ReferralShareAllocation & { sellerId: string })[]
   }> {
     const config = await this.getDefaultConfig()
     const items: BreakdownItem[] = []
@@ -283,6 +300,8 @@ class PayoutBreakdownService extends MedusaService({
     let totalCreatorCommission = 0
     let totalPluginDeveloperShare = 0
     const pluginShareAllocations: (PluginShareAllocation & { sellerId: string })[] = []
+    let totalReferralShare = 0
+    const referralShareAllocations: (ReferralShareAllocation & { sellerId: string })[] = []
 
     // Handle multi-seller or single-seller
     const sellers = input.sellerBreakdown || [{
@@ -330,6 +349,26 @@ class PayoutBreakdownService extends MedusaService({
       totalPluginDeveloperShare += pluginShare.total_cents
       for (const allocation of pluginShare.allocations) {
         pluginShareAllocations.push({ ...allocation, sellerId: seller.sellerId })
+      }
+
+      // Referral share, funded from what the plugin share LEFT of the platform
+      // fee — so the two carve-outs can never together exceed the fee the
+      // platform actually kept. Producer net is already fixed above and is
+      // untouched by either share.
+      const referralShare = computeReferralRevenueShare({
+        availablePlatformFeeCents: pluginShare.platform_retained_cents,
+        referralPercent: config.referral_percent ?? 0,
+        sellerSubtotalCents: seller.subtotal,
+        referrerSellerId:
+          input.referralBySeller?.[seller.sellerId]?.referrer_seller_id ?? null,
+        sellerId: seller.sellerId,
+      })
+      if (referralShare.allocation) {
+        totalReferralShare += referralShare.amount_cents
+        referralShareAllocations.push({
+          ...referralShare.allocation,
+          sellerId: seller.sellerId,
+        })
       }
 
       totalToProducers += producerAmount
@@ -411,6 +450,23 @@ class PayoutBreakdownService extends MedusaService({
       })
     }
 
+    // Referral share. Its own line for the same reason as the plugin line: it
+    // is funded from the platform fee, and naming it is more honest than
+    // folding it into an undifferentiated platform cut.
+    if (totalReferralShare > 0) {
+      items.push({
+        type: FeeType.REFERRAL_FEE,
+        amount: totalReferralShare,
+        percent: Math.round((totalReferralShare / customerPaid) * 100),
+        label: DEFAULT_FEE_LABELS[FeeType.REFERRAL_FEE].label,
+        description: DEFAULT_FEE_LABELS[FeeType.REFERRAL_FEE].description,
+        recipient:
+          referralShareAllocations.length === 1
+            ? "Referrer"
+            : `${referralShareAllocations.length} referrers`,
+      })
+    }
+
     // Delivery fee
     if (input.deliveryFee && input.deliveryFee > 0) {
       items.push({
@@ -481,9 +537,11 @@ class PayoutBreakdownService extends MedusaService({
         tip: input.tip || 0,
         creatorCommission: totalCreatorCommission,
         pluginDeveloperShare: totalPluginDeveloperShare,
+        referralShare: totalReferralShare,
       },
       sellerBreakdown: sellerTotals,
       pluginShareAllocations,
+      referralShareAllocations,
     }
   }
   
