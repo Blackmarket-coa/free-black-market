@@ -69,6 +69,15 @@ export type StripeLike = {
       limit?: number
     }) => Promise<{ data: { id: string }[] }>
   }
+  customers: {
+    create: (params: Record<string, unknown>) => Promise<{ id: string }>
+  }
+  setupIntents: {
+    create: (params: Record<string, unknown>) => Promise<{
+      id: string
+      client_secret: string | null
+    }>
+  }
 }
 
 function buildStripe(): StripeLike {
@@ -253,6 +262,63 @@ export async function fulfillPaidCharge(
   })
 
   return { fulfilled: true, replayed: false }
+}
+
+export type SetupIntentResult =
+  | { available: false; reason: "billing_not_configured" }
+  | { available: true; client_secret: string | null; stripe_customer_id: string }
+
+/**
+ * Start saving a payment method for a vendor.
+ *
+ * Creates (once) and persists the vendor's Stripe customer on their plan
+ * assignment, then opens a SetupIntent whose `client_secret` the panel
+ * confirms with Stripe.js — card details never touch this backend. `usage:
+ * "off_session"` because everything that will ever charge this method is
+ * machine-initiated (renewal cron, purchase already authorized in the panel).
+ *
+ * The customer id is written back BEFORE the SetupIntent is created: if the
+ * intent fails, the customer is reused on retry rather than leaking a new
+ * Stripe customer per attempt.
+ */
+export async function createBillingSetupIntent(
+  container: MedusaContainer,
+  sellerId: string,
+  deps: { stripe?: StripeLike } = {}
+): Promise<SetupIntentResult> {
+  if (!isVendorBillingConfigured() && !deps.stripe) {
+    return { available: false, reason: "billing_not_configured" }
+  }
+
+  const stripe = deps.stripe ?? buildStripe()
+  const plans = container.resolve<VendorPlanService>(VENDOR_PLAN_MODULE)
+  const assignment = (await plans.ensureAssignment(sellerId)) as {
+    id: string
+    stripe_customer_id?: string | null
+  }
+
+  let customerId = assignment.stripe_customer_id ?? null
+  if (!customerId) {
+    const customer = await stripe.customers.create({
+      metadata: { seller_id: sellerId },
+    })
+    customerId = customer.id
+    await plans.updateVendorPlanAssignments([
+      { id: assignment.id, stripe_customer_id: customerId },
+    ])
+  }
+
+  const intent = await stripe.setupIntents.create({
+    customer: customerId,
+    usage: "off_session",
+    metadata: { seller_id: sellerId },
+  })
+
+  return {
+    available: true,
+    client_secret: intent.client_secret,
+    stripe_customer_id: customerId,
+  }
 }
 
 /**

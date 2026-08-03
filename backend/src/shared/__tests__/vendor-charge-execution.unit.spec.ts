@@ -1,5 +1,6 @@
 import {
   applyVendorChargeEvent,
+  createBillingSetupIntent,
   executeCharge,
   fulfillPaidCharge,
 } from "../vendor-charge-execution"
@@ -61,16 +62,26 @@ const makeWorld = (opts: {
 
   const billing = realBilling(charges)
 
+  const assignment: Record<string, unknown> = {
+    id: "vpa_1",
+    plan_code: "free",
+    stripe_customer_id:
+      opts.stripeCustomerId === undefined ? "cus_1" : opts.stripeCustomerId,
+  }
+  const updateVendorPlanAssignments = jest.fn(
+    async (updates: Record<string, unknown>[]) => {
+      for (const u of [updates].flat()) Object.assign(assignment, u)
+      return [assignment]
+    }
+  )
+
   const container = {
     resolve: (key: string) => {
       if (key === VENDOR_BILLING_MODULE) return billing
       if (key === VENDOR_PLAN_MODULE) {
         return {
-          ensureAssignment: async () => ({
-            plan_code: "free",
-            stripe_customer_id:
-              opts.stripeCustomerId === undefined ? "cus_1" : opts.stripeCustomerId,
-          }),
+          ensureAssignment: async () => assignment,
+          updateVendorPlanAssignments,
         }
       }
       if (key === ENTITLEMENT_MODULE) {
@@ -103,7 +114,15 @@ const makeWorld = (opts: {
     },
   }
 
-  return { container, charges, metadata, entitlements, grant }
+  return {
+    container,
+    charges,
+    metadata,
+    entitlements,
+    grant,
+    assignment,
+    updateVendorPlanAssignments,
+  }
 }
 
 const promotionCharge = (over: Partial<Row> = {}): Row => ({
@@ -126,8 +145,22 @@ const fakeStripe = (opts: {
 } = {}) => {
   const created: Record<string, unknown>[] = []
   const keys: string[] = []
+  const customersCreated: Record<string, unknown>[] = []
   return {
+    customersCreated,
     stripe: {
+      customers: {
+        create: jest.fn(async (params: Record<string, unknown>) => {
+          customersCreated.push(params)
+          return { id: `cus_new_${customersCreated.length}` }
+        }),
+      },
+      setupIntents: {
+        create: jest.fn(async () => ({
+          id: "seti_1",
+          client_secret: "seti_1_secret",
+        })),
+      },
       paymentIntents: {
         create: jest.fn(
           async (params: Record<string, unknown>, o: { idempotencyKey: string }) => {
@@ -404,5 +437,54 @@ describe("fulfillPaidCharge", () => {
     const result = await fulfillPaidCharge(world.container as never, "vc_1")
     expect(result.fulfilled).toBe(true)
     expect(world.grant).not.toHaveBeenCalled()
+  })
+})
+
+describe("createBillingSetupIntent", () => {
+  it("is unavailable when billing is not configured", async () => {
+    const world = makeWorld()
+    const result = await createBillingSetupIntent(world.container as never, "sel_1")
+    expect(result).toEqual({
+      available: false,
+      reason: "billing_not_configured",
+    })
+  })
+
+  it("creates and persists the Stripe customer exactly once", async () => {
+    const world = makeWorld({ stripeCustomerId: null })
+    const fake = fakeStripe()
+
+    const first = await createBillingSetupIntent(world.container as never, "sel_1", {
+      stripe: fake.stripe,
+    })
+    expect(first).toEqual({
+      available: true,
+      client_secret: "seti_1_secret",
+      stripe_customer_id: "cus_new_1",
+    })
+    // Written back BEFORE the SetupIntent, so a failed intent retries against
+    // the same customer instead of leaking one per attempt.
+    expect(world.updateVendorPlanAssignments).toHaveBeenCalledWith([
+      { id: "vpa_1", stripe_customer_id: "cus_new_1" },
+    ])
+
+    const second = await createBillingSetupIntent(world.container as never, "sel_1", {
+      stripe: fake.stripe,
+    })
+    expect(second.available && second.stripe_customer_id).toBe("cus_new_1")
+    expect(fake.customersCreated).toHaveLength(1)
+  })
+
+  it("reuses an existing Stripe customer untouched", async () => {
+    const world = makeWorld({ stripeCustomerId: "cus_existing" })
+    const fake = fakeStripe()
+
+    const result = await createBillingSetupIntent(world.container as never, "sel_1", {
+      stripe: fake.stripe,
+    })
+
+    expect(result.available && result.stripe_customer_id).toBe("cus_existing")
+    expect(fake.customersCreated).toHaveLength(0)
+    expect(world.updateVendorPlanAssignments).not.toHaveBeenCalled()
   })
 })
