@@ -14,6 +14,7 @@ import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 import { PROGRESSION_MODULE } from "./index"
 import type ProgressionModuleService from "./service"
 import { Stance } from "./stance"
+import { getSellerPlanLimits } from "../../shared/seller-plan"
 
 export type GrowerKarmaEventType =
   | "units_sold"
@@ -58,6 +59,47 @@ export function growerTierForXp(xp: number): GrowerTierName {
     if (xp >= GROWER_TIERS[name].min) tier = name
   }
   return tier
+}
+
+/** Position of a tier in the ladder (0 = Seedling). `-1` for an unknown name. */
+export function growerTierIndex(tier: GrowerTierName): number {
+  return TIER_ORDER.indexOf(tier)
+}
+
+/** Coerce an arbitrary string to a `GrowerTierName`, or `null` if it isn't one. */
+export function asGrowerTierName(
+  value: string | null | undefined
+): GrowerTierName | null {
+  if (value && (TIER_ORDER as readonly string[]).includes(value)) {
+    return value as GrowerTierName
+  }
+  return null
+}
+
+/**
+ * A grower's effective tier: the higher of what their KARMA earned and what
+ * their billing plan floors them to.
+ *
+ * This is the earned-vs-bought duality at the center of Phase 3. A plan floor
+ * can only ever RAISE a grower's tier — buying a plan skips them ahead — never
+ * lower it, so a grower who earned Canopy through activity keeps Canopy even on
+ * the free plan. `floored_by_plan` records which half won, so a surface can say
+ * "included with your plan" instead of implying the tier was earned.
+ *
+ * An absent or unrecognized `planFloor` makes no tier claim: the grower's tier
+ * is exactly what their karma earned. Pure — no I/O — so the rule can be
+ * asserted directly, mirroring `growerTierForXp`.
+ */
+export function effectiveGrowerTier(
+  xp: number,
+  planFloor: string | null | undefined
+): { tier: GrowerTierName; floored_by_plan: boolean } {
+  const earned = growerTierForXp(xp)
+  const floor = asGrowerTierName(planFloor)
+  if (floor && growerTierIndex(floor) > growerTierIndex(earned)) {
+    return { tier: floor, floored_by_plan: true }
+  }
+  return { tier: earned, floored_by_plan: false }
 }
 
 export interface EmitGrowerKarmaInput {
@@ -127,13 +169,25 @@ export class GrowerKarmaService {
     return true
   }
 
-  /** Current grower tier + progress, derived from PRODUCER-track XP. */
+  /**
+   * Current grower tier + progress.
+   *
+   * The tier is the higher of what PRODUCER-track KARMA earned and what the
+   * seller's billing plan floors them to (`effectiveGrowerTier`) — a Pro/Scale
+   * seller starts partway up the ladder, while a free seller who has earned a
+   * higher tier through activity keeps it. `tier_floored_by_plan` says which
+   * half won. The plan read never fails the request: `getSellerPlanLimits`
+   * degrades to the free tier (which floors nothing) on error, so a plan-service
+   * blip leaves the grower on their earned tier rather than 500-ing a payout
+   * page.
+   */
   async getGrowerTier(sellerId: string): Promise<{
     current_karma: number
     tier: GrowerTierName
     next_tier: GrowerTierName | null
     karma_to_next: number | null
     current_split_pct: number
+    tier_floored_by_plan: boolean
   }> {
     const customerId = await this.resolveGrowerCustomerId(sellerId)
     let producerXp = 0
@@ -142,9 +196,17 @@ export class GrowerKarmaService {
       producerXp = summary.tracks.find((t) => t.role === Stance.PRODUCER)?.xp ?? 0
     }
 
-    const tier = growerTierForXp(producerXp)
+    const { limits } = await getSellerPlanLimits(this.container, sellerId)
+    const { tier, floored_by_plan } = effectiveGrowerTier(
+      producerXp,
+      limits.grower_tier_floor
+    )
+
     const idx = TIER_ORDER.indexOf(tier)
     const nextTier = idx < TIER_ORDER.length - 1 ? TIER_ORDER[idx + 1] : null
+    // Karma still needed to earn PAST the current (possibly plan-floored) tier.
+    // When a plan floored them above their earned karma this is the distance to
+    // the next rung on their own steam — honest about what activity still buys.
     const karmaToNext = nextTier ? GROWER_TIERS[nextTier].min - producerXp : null
 
     return {
@@ -153,6 +215,7 @@ export class GrowerKarmaService {
       next_tier: nextTier,
       karma_to_next: karmaToNext,
       current_split_pct: GROWER_TIERS[tier].split_pct,
+      tier_floored_by_plan: floored_by_plan,
     }
   }
 }

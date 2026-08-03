@@ -53,6 +53,25 @@ describe("unlockedFeatures", () => {
     expect(unlockedFeatures(tracks({}), 2000)).toContain("member.market-day-queue")
     expect(unlockedFeatures(tracks({}), 1999)).not.toContain("member.market-day-queue")
   })
+
+  it("unlocks a plan-granted privilege even with no XP earned toward it", () => {
+    // Bought half of the duality: the plan grants the key outright.
+    const unlocked = unlockedFeatures(tracks({}), 0, [
+      "producer.reduced-commission",
+    ])
+    expect(unlocked).toContain("producer.reduced-commission")
+  })
+
+  it("keeps an earned privilege that the plan does not grant", () => {
+    const unlocked = unlockedFeatures(
+      tracks({ [Stance.PRODUCER]: { level: 3, xp: xpForLevel(3) } }),
+      0,
+      ["member.market-day-queue"]
+    )
+    // Earned one and bought a different one — both present.
+    expect(unlocked).toContain("producer.featured-listing")
+    expect(unlocked).toContain("member.market-day-queue")
+  })
 })
 
 describe("nextUnlock", () => {
@@ -70,6 +89,16 @@ describe("nextUnlock", () => {
       [Stance.COALITION]: { level: 5, xp: xpForLevel(5) },
     })
     expect(nextUnlock(everything, 5000)).toBeNull()
+  })
+
+  it("does not point at a privilege the plan already grants", () => {
+    // From zero, the nearest earnable is the lifetime queue at 1900 XP; but if
+    // the plan grants it, guidance skips to the next actually-unearned one.
+    const withoutPlan = nextUnlock(tracks({}), 1900)
+    expect(withoutPlan?.featureKey).toBe("member.market-day-queue")
+
+    const withPlan = nextUnlock(tracks({}), 1900, ["member.market-day-queue"])
+    expect(withPlan?.featureKey).not.toBe("member.market-day-queue")
   })
 })
 
