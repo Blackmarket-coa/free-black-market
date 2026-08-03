@@ -461,6 +461,7 @@ describe("createBillingSetupIntent", () => {
       available: true,
       client_secret: "seti_1_secret",
       stripe_customer_id: "cus_new_1",
+      publishable_key: null,
     })
     // Written back BEFORE the SetupIntent, so a failed intent retries against
     // the same customer instead of leaking one per attempt.

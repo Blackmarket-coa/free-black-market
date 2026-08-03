@@ -40,6 +40,7 @@ export async function POST(
     return res.json({
       client_secret: result.client_secret,
       stripe_customer_id: result.stripe_customer_id,
+      publishable_key: result.publishable_key,
     })
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Unknown error"

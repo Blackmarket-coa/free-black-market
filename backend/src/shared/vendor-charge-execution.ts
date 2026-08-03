@@ -266,7 +266,24 @@ export async function fulfillPaidCharge(
 
 export type SetupIntentResult =
   | { available: false; reason: "billing_not_configured" }
-  | { available: true; client_secret: string | null; stripe_customer_id: string }
+  | {
+      available: true
+      client_secret: string | null
+      stripe_customer_id: string
+      /**
+       * The Stripe publishable key the card form initializes Stripe.js with.
+       * Public by design — it identifies the account, authorizes nothing — so
+       * returning it here saves the panel a separate env var and keeps the
+       * whole card flow driven by one backend call. Null when unset, which the
+       * panel treats as "card capture unavailable".
+       */
+      publishable_key: string | null
+    }
+
+/** The Stripe publishable key, or null when unconfigured. */
+export function vendorBillingPublishableKey(): string | null {
+  return process.env.STRIPE_PUBLISHABLE_KEY || null
+}
 
 /**
  * Start saving a payment method for a vendor.
@@ -318,6 +335,7 @@ export async function createBillingSetupIntent(
     available: true,
     client_secret: intent.client_secret,
     stripe_customer_id: customerId,
+    publishable_key: vendorBillingPublishableKey(),
   }
 }
 
