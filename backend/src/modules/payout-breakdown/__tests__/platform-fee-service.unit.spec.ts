@@ -19,6 +19,7 @@ type SettingsRow = {
 const makeService = (opts: {
   defaultPercent?: number
   pluginDeveloperPercent?: number
+  referralPercent?: number
   settings?: SettingsRow[]
 }) => {
   // Read-only on the generated service type, so the harness holds a plain
@@ -37,6 +38,7 @@ const makeService = (opts: {
       is_default: true,
       platform_fee_percent: opts.defaultPercent ?? 3,
       plugin_developer_percent: opts.pluginDeveloperPercent ?? 0,
+      referral_percent: opts.referralPercent ?? 0,
     },
   ]) as never
 
@@ -315,5 +317,101 @@ describe("calculateBreakdown", () => {
     expect(result.sellerBreakdown[0].fees).toBe(600)
     expect(result.sellerBreakdown[1].fees).toBe(200)
     expect(result.totals.platformFees).toBe(800)
+  })
+
+  it("carves the referral share out of the platform fee, not the seller's net", async () => {
+    const { svc } = makeService({ defaultPercent: 3, referralPercent: 1 })
+    const result = await svc.calculateBreakdown({
+      subtotal: 10_000,
+      sellerId: "sel_referred",
+      referralBySeller: { sel_referred: { referrer_seller_id: "sel_referrer" } },
+    })
+
+    // Seller net unchanged; the 100-cent share comes out of the platform's 300.
+    expect(result.sellerBreakdown[0].net).toBe(9_700)
+    expect(result.totals.platformFees).toBe(300)
+    expect(result.totals.referralShare).toBe(100)
+    expect(result.referralShareAllocations).toEqual([
+      {
+        referrer_seller_id: "sel_referrer",
+        referred_seller_id: "sel_referred",
+        amount_cents: 100,
+        sellerId: "sel_referred",
+      },
+    ])
+  })
+
+  it("computes no referral share when none is configured", async () => {
+    const { svc } = makeService({ defaultPercent: 3 })
+    const result = await svc.calculateBreakdown({
+      subtotal: 10_000,
+      sellerId: "sel_referred",
+      referralBySeller: { sel_referred: { referrer_seller_id: "sel_referrer" } },
+    })
+    expect(result.totals.referralShare).toBe(0)
+    expect(result.referralShareAllocations).toEqual([])
+  })
+
+  it("funds plugin and referral shares from the ONE platform fee without overspending it", async () => {
+    // Both carve from the same 300-cent fee. Plugin (1%) takes 100 first;
+    // referral (1%) takes 100 from the 200 that remain; platform keeps 100.
+    // The seller's net is untouched by either.
+    const { svc } = makeService({
+      defaultPercent: 3,
+      pluginDeveloperPercent: 1,
+      referralPercent: 1,
+    })
+    const result = await svc.calculateBreakdown({
+      subtotal: 10_000,
+      sellerId: "sel_referred",
+      pluginsBySeller: {
+        sel_referred: [{ slug: "analytics", author_seller_id: "sel_dev" }],
+      },
+      referralBySeller: { sel_referred: { referrer_seller_id: "sel_referrer" } },
+    })
+
+    expect(result.sellerBreakdown[0].net).toBe(9_700)
+    expect(result.totals.platformFees).toBe(300)
+    expect(result.totals.pluginDeveloperShare).toBe(100)
+    expect(result.totals.referralShare).toBe(100)
+    // Plugin + referral never exceed the fee: 100 + 100 ≤ 300.
+    expect(
+      result.totals.pluginDeveloperShare + result.totals.referralShare
+    ).toBeLessThanOrEqual(result.totals.platformFees)
+  })
+
+  it("caps the referral share at what the plugin share left, never the whole fee", async () => {
+    // Plugin takes 2% = 200 of the 300 fee; referral wants 2% = 200 but only
+    // 100 remains, so it is capped to 100 rather than promising uncollected money.
+    const { svc } = makeService({
+      defaultPercent: 3,
+      pluginDeveloperPercent: 2,
+      referralPercent: 2,
+    })
+    const result = await svc.calculateBreakdown({
+      subtotal: 10_000,
+      sellerId: "sel_referred",
+      pluginsBySeller: {
+        sel_referred: [{ slug: "analytics", author_seller_id: "sel_dev" }],
+      },
+      referralBySeller: { sel_referred: { referrer_seller_id: "sel_referrer" } },
+    })
+
+    expect(result.totals.pluginDeveloperShare).toBe(200)
+    expect(result.totals.referralShare).toBe(100)
+    expect(
+      result.totals.pluginDeveloperShare + result.totals.referralShare
+    ).toBe(result.totals.platformFees)
+  })
+
+  it("never pays a referral share to the selling seller (self-referral)", async () => {
+    const { svc } = makeService({ defaultPercent: 3, referralPercent: 1 })
+    const result = await svc.calculateBreakdown({
+      subtotal: 10_000,
+      sellerId: "sel_referred",
+      referralBySeller: { sel_referred: { referrer_seller_id: "sel_referred" } },
+    })
+    expect(result.totals.referralShare).toBe(0)
+    expect(result.referralShareAllocations).toEqual([])
   })
 })

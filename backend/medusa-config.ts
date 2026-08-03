@@ -205,6 +205,7 @@ const marketplaceModules = [
   { resolve: './src/modules/nursery-vertical' },
   { resolve: './src/modules/botanical' },
   { resolve: './src/modules/payout-breakdown' },
+  { resolve: './src/modules/referral' },
   { resolve: './src/modules/asset-graph' },
   { resolve: './src/modules/harvest-batches' },
   { resolve: './src/modules/vendor-rules' },
