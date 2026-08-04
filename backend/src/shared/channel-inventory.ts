@@ -51,12 +51,17 @@ export async function loadSellerVariantContexts(
     const contexts: ChannelVariantContext[] = []
 
     for (const row of data ?? []) {
+      // Via `unknown`: `query.graph` rows are typed against generated link
+      // types, and those are not structurally comparable to the narrow shape
+      // read here. `medusa build` typechecks with those generated types even
+      // though a plain `tsc -p tsconfig.json` does not, so a direct cast
+      // compiles locally and fails the real build.
       const variants =
-        (row as { product?: { variants?: Record<string, never>[] } }).product
+        (row as unknown as { product?: { variants?: unknown[] } }).product
           ?.variants ?? []
 
       for (const raw of variants) {
-        const variant = raw as unknown as {
+        const variant = raw as {
           id?: string
           sku?: string | null
           manage_inventory?: boolean
