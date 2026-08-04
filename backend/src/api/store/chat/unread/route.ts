@@ -2,7 +2,7 @@ import { createLogger } from "../../../../shared/logger"
 const log = createLogger("api/store/chat/unread")
 import { AuthenticatedMedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
-import { getMatrixService } from "../../../../shared/matrix-service"
+import { getChatProvider } from "../../../../shared/chat"
 
 /**
  * GET /store/chat/unread
@@ -14,7 +14,7 @@ export async function GET(
   req: AuthenticatedMedusaRequest,
   res: MedusaResponse
 ) {
-  const matrixService = getMatrixService()
+  const matrixService = getChatProvider()
   const customerId = req.auth_context?.actor_id
 
   if (!matrixService || !customerId) {
