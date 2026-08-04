@@ -175,6 +175,10 @@ const commerceModules = [
   { resolve: './src/modules/wishlist' },
   { resolve: './src/modules/woocommerce-import' },
   { resolve: './src/modules/odoo-import' },
+  // Outbound sales channels — listing/inventory push and order ingestion.
+  // Sits beside the two import modules deliberately: same per-seller
+  // connection shape, opposite direction.
+  { resolve: './src/modules/channel-connector' },
   // connect.js commerce embed network
   { resolve: './src/modules/embed-keys' },
   { resolve: './src/modules/booking' },
