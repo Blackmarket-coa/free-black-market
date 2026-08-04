@@ -94,6 +94,29 @@ export const VENDOR_ADDON_CATALOG: VendorAddonDefinition[] = [
     display_order: 2,
   },
   {
+    /**
+     * The Buyer Center as a purchasable pack.
+     *
+     * Priced well above the vertical packs because it is a different kind of
+     * product: it only pays off for a seller with a multi-vendor supply side
+     * to organise, and it is the same capability the aligned-org tenancy tier
+     * grants an operator wholesale. Offered per-vendor as well so a large
+     * independent seller is not forced into an organization contract to reach
+     * it — the alternative was a gated route with no way to buy in, which is
+     * exactly what the coverage audit flags as unreachable.
+     */
+    code: "buyer_center_pack",
+    display_name: "Buyer Center",
+    description:
+      "Demand pools, buyer networks and group bargaining for organising purchasing across many suppliers.",
+    price_amount: 14900,
+    currency_code: "usd",
+    duration_days: 30,
+    feature_keys: ["vendor.buyer_network"],
+    is_active: true,
+    display_order: 4,
+  },
+  {
     code: "embed_pack",
     display_name: "Embedded Storefront",
     description:
