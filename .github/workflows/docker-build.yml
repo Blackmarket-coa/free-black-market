@@ -223,14 +223,63 @@ jobs:
         run: |
           repo="${IMAGE_REF%:*}"; repo="${repo#ghcr.io/}"
           tag="${IMAGE_REF##*:}"
-          token="$(printf '%s:%s' "$GHCR_USER" "$GHCR_TOKEN" | base64 -w0)"
+
+          # ghcr does not accept HTTP Basic on `/v2/`. It answers every such
+          # request with the standard Docker registry challenge —
+          #   www-authenticate: Bearer realm="https://ghcr.io/token",service="ghcr.io",
+          #                     scope="repository:<repo>:pull"
+          # — so the credentials have to be exchanged at that realm for a
+          # short-lived Bearer token first. Sending Basic straight to the
+          # manifest endpoint is not a weaker form of auth, it is no auth: the
+          # header is ignored and the challenge comes back unchanged.
+          #
+          # This step spent its whole life doing exactly that. Every attempt on
+          # every image returned 401, the loop always exhausted its full
+          # 5+10+15+20+25s backoff, and the "still not servable" line printed on
+          # every run — on images that were in fact servable, which trivy then
+          # pulled without trouble a second later. So it cost ~75s per scan
+          # (~5 min per push to main across the matrix) while proving nothing,
+          # and a genuinely missing manifest would have looked identical.
+          #
+          # Verified against the real registry: with the Bearer token an existing
+          # tag returns 200 and a nonexistent one returns 404 — the distinction
+          # this step is supposed to be making and never could.
+          realm="https://ghcr.io/token?service=ghcr.io&scope=repository:${repo}:pull"
+          creds="$(printf '%s:%s' "$GHCR_USER" "$GHCR_TOKEN" | base64 -w0)"
+
+          # Authenticated first, anonymous second, and both are needed.
+          #
+          # These packages are public today, so the anonymous exchange alone
+          # would work — but it would stop working the moment one is made
+          # private, silently, by turning this back into the no-op it just was.
+          # The authenticated exchange is the one that keeps working then.
+          #
+          # Conversely ghcr does not treat a rejected Basic header as "no
+          # credentials" and fall through to anonymous; it refuses outright. So
+          # a credential problem has to be caught here rather than assumed away,
+          # or the private-package fix would mask the public-package path.
+          bearer="$(curl -sS -H "Authorization: Basic ${creds}" "$realm" \
+            | sed -n 's/.*"token":"\([^"]*\)".*/\1/p' || true)"
+          if [ -z "$bearer" ]; then
+            echo "authenticated ghcr token exchange failed; trying anonymously"
+            bearer="$(curl -sS "$realm" \
+              | sed -n 's/.*"token":"\([^"]*\)".*/\1/p' || true)"
+          fi
+          if [ -z "$bearer" ]; then
+            # Deliberately not a failure. This step is insurance; trivy is the
+            # gate. Failing here would turn a token hiccup into a red build on
+            # an image that scans perfectly well.
+            echo "could not obtain a ghcr pull token; leaving the check to trivy"
+            exit 0
+          fi
+
           for attempt in 1 2 3 4 5; do
             # `|| true` matters: the step runs under `bash -e`, where a failed
             # curl inside a command substitution aborts the whole step. A DNS
             # blip would then hard-fail the build rather than being retried —
             # the same shape of accident this job is here to stop repeating.
             code="$(curl -sS -o /dev/null -w '%{http_code}' \
-              -H "Authorization: Basic ${token}" \
+              -H "Authorization: Bearer ${bearer}" \
               -H 'Accept: application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.oci.image.manifest.v1+json' \
               "https://ghcr.io/v2/${repo}/manifests/${tag}" || true)"
             if [ "$code" = "200" ]; then
