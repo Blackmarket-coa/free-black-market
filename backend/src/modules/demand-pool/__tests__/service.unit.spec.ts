@@ -100,6 +100,8 @@ describe("DemandPoolModuleService", () => {
           Object.assign(bounty, input)
           return bounty
         }),
+        // No SQL connection — exercises the read-modify-write fallback.
+        resolvePgConnection: () => undefined,
       }
 
       await DemandPoolModuleService.prototype.claimBounty.call(
@@ -133,6 +135,7 @@ describe("DemandPoolModuleService", () => {
             : []
         ),
         updateDemandBounties,
+        resolvePgConnection: () => undefined,
       }
 
       await expect(
@@ -149,6 +152,56 @@ describe("DemandPoolModuleService", () => {
         expect.objectContaining({ demand_post_id: "dp_attacker" })
       )
       expect(updateDemandBounties).not.toHaveBeenCalled()
+    })
+
+    it("decides the race with an assignee_id IS NULL predicate", async () => {
+      const raw = jest.fn(async () => ({ rows: [{ id: "b_1" }] }))
+      const ctx: any = {
+        listDemandBounties: jest.fn(async () => [
+          { id: "b_1", assignee_id: null, status: BountyStatus.ACTIVE },
+        ]),
+        updateDemandBounties: jest.fn(),
+        resolvePgConnection: () => ({ raw }),
+      }
+
+      await DemandPoolModuleService.prototype.claimBounty.call(
+        ctx,
+        "b_1",
+        "user_1",
+        "CUSTOMER",
+        "dp_1"
+      )
+
+      const [sql, bindings] = raw.mock.calls[0] as unknown as [string, unknown[]]
+      expect(sql).toContain("assignee_id IS NULL")
+      expect(sql).toContain("demand_post_id = ?")
+      expect(bindings).toEqual(["user_1", "CUSTOMER", "b_1", "dp_1"])
+      // The racy read-modify-write path must not be used when SQL is available.
+      expect(ctx.updateDemandBounties).not.toHaveBeenCalled()
+    })
+
+    it("loses the race gracefully when another claimant got there first", async () => {
+      // Row existed at read time, but the guarded UPDATE matched nothing.
+      const raw = jest.fn(async () => ({ rows: [] }))
+      const ctx: any = {
+        listDemandBounties: jest.fn(async () => [
+          { id: "b_1", assignee_id: null, status: BountyStatus.ACTIVE },
+        ]),
+        updateDemandBounties: jest.fn(),
+        resolvePgConnection: () => ({ raw }),
+      }
+
+      await expect(
+        DemandPoolModuleService.prototype.claimBounty.call(
+          ctx,
+          "b_1",
+          "loser",
+          "CUSTOMER",
+          "dp_1"
+        )
+      ).rejects.toThrow("Bounty already claimed")
+
+      expect(ctx.updateDemandBounties).not.toHaveBeenCalled()
     })
   })
 

@@ -493,9 +493,9 @@ class DemandPoolModuleService extends MedusaService({
   /**
    * First-come claim of an unassigned bounty. Throws if already claimed.
    *
-   * This is a read-check-write claim; a DB-atomic
-   * `UPDATE ... SET assignee_id = :actor WHERE assignee_id IS NULL`
-   * is the hardening follow-up to fully close the race window.
+   * The claim is decided by a DB-atomic
+   * `UPDATE ... SET assignee_id = :actor WHERE assignee_id IS NULL`, so
+   * concurrent claimants cannot both win.
    */
   async claimBounty(
     bountyId: string,
@@ -518,6 +518,36 @@ class DemandPoolModuleService extends MedusaService({
       throw new Error("Bounty already claimed")
     }
 
+    // Atomic first-come claim. The read above only reports what was true a
+    // moment ago, so the `assignee_id IS NULL` predicate is what actually
+    // decides the race: two simultaneous claimants both pass the read, but
+    // exactly one updates a row. Without it, the later writer silently
+    // overwrote the earlier claimant and the bounty paid out to the wrong
+    // person.
+    const pg = this.resolvePgConnection()
+    if (pg) {
+      const result = await pg.raw(
+        `UPDATE demand_bounty
+            SET assignee_id = ?,
+                assignee_type = ?::bounty_assignee_type_enum,
+                updated_at = NOW()
+          WHERE id = ?
+            AND demand_post_id = ?
+            AND deleted_at IS NULL
+            AND assignee_id IS NULL
+        RETURNING id`,
+        [actorId, actorType, bountyId, demandPostId]
+      )
+      if (!result?.rows?.[0]) {
+        // The row existed a moment ago, so this is a lost race rather than a
+        // missing bounty.
+        throw new Error("Bounty already claimed")
+      }
+      const [updated] = await this.listDemandBounties({ id: bountyId })
+      return updated
+    }
+
+    // Fallback (no reachable pg connection, e.g. unit tests without DI).
     await this.updateDemandBounties({
       id: bountyId,
       assignee_id: actorId,

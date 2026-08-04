@@ -926,12 +926,20 @@ class HawalaLedgerModuleService extends MedusaService({
             await this.updateBalancesAtomic(trx, data.credit_account_id, data.amount)
           })
         } else {
-          await this.updateBalancesAtomic(pgConnection, data.debit_account_id, -data.amount)
-          await this.updateBalancesAtomic(pgConnection, data.credit_account_id, data.amount)
+          await this.applyBalancePairWithCompensation(
+            (delta) =>
+              this.updateBalancesAtomic(pgConnection, data.debit_account_id, delta),
+            (delta) =>
+              this.updateBalancesAtomic(pgConnection, data.credit_account_id, delta),
+            data
+          )
         }
       } else {
-        await this.updateBalances(data.debit_account_id, -data.amount)
-        await this.updateBalances(data.credit_account_id, data.amount)
+        await this.applyBalancePairWithCompensation(
+          (delta) => this.updateBalances(data.debit_account_id, delta),
+          (delta) => this.updateBalances(data.credit_account_id, delta),
+          data
+        )
       }
     } catch (balanceError) {
       // Balances did not move (or were rolled back). Mark the entry FAILED so no
@@ -1077,14 +1085,63 @@ class HawalaLedgerModuleService extends MedusaService({
   /**
    * Atomically apply a balance delta using a single conditional UPDATE.
    *
-   * This is a true DB-level compare-and-swap: the `balance + ? >= 0`
-   * predicate in the WHERE clause guarantees we never overdraw and never
-   * lose a concurrent write (no read-modify-write TOCTOU window). If no
-   * row is updated (`rowCount === 0`) the account is missing, deleted, or
-   * has insufficient balance for a debit, so we throw.
+   * This is a true DB-level compare-and-swap: the `balance + ? >= 0` and
+   * `available_balance + ? >= 0` predicates in the WHERE clause guarantee we
+   * never overdraw and never lose a concurrent write (no read-modify-write
+   * TOCTOU window). If no row is updated (`rowCount === 0`) the account is
+   * missing, deleted, or has insufficient balance for a debit, so we throw.
+   *
+   * Both columns are guarded, not just `balance`. They move in lockstep today,
+   * so the second predicate is currently equivalent — but `available_balance`
+   * is modelled as `balance - pending`, and the caller's own pre-check at
+   * `createTransfer` reads `available_balance`. Guarding only `balance` would
+   * mean that the moment anything starts reserving funds, the CAS would happily
+   * spend a reservation that the pre-check had just rejected.
    *
    * Uses the same `?` positional raw-SQL style as getMemberBalanceByMxid.
    */
+  /**
+   * Move a debit and its matching credit when no DB transaction is available.
+   *
+   * Both fallback paths issue two independent statements, so a credit failure
+   * after a successful debit left money debited and never credited — a
+   * one-sided move the database cannot roll back for us. This reverses the
+   * debit explicitly.
+   *
+   * If the reversal itself fails there is nothing more we can do inline, so it
+   * is logged at error with both account ids and the amount. That is exactly
+   * the drift the `hawala-balance-reconciler` job looks for; the alternative
+   * (swallowing it) would leave the imbalance invisible.
+   *
+   * The transactional path above is still strongly preferred — this only runs
+   * when the pg connection cannot open a transaction, or when none resolves at
+   * all (unit tests, misconfiguration).
+   */
+  private async applyBalancePairWithCompensation(
+    applyDebit: (delta: number) => Promise<void>,
+    applyCredit: (delta: number) => Promise<void>,
+    data: { debit_account_id: string; credit_account_id: string; amount: number }
+  ): Promise<void> {
+    await applyDebit(-data.amount)
+
+    try {
+      await applyCredit(data.amount)
+    } catch (creditError) {
+      try {
+        await applyDebit(data.amount)
+      } catch (reversalError) {
+        log.error(
+          `[Hawala] One-sided balance move: debited ${data.amount} from ` +
+            `${data.debit_account_id} but could not credit ` +
+            `${data.credit_account_id}, and reversing the debit also failed. ` +
+            `Manual reconciliation required.`,
+          reversalError
+        )
+      }
+      throw creditError
+    }
+  }
+
   private async updateBalancesAtomic(
     pgConnection: any,
     accountId: string,
@@ -1097,8 +1154,9 @@ class HawalaLedgerModuleService extends MedusaService({
              updated_at = NOW()
        WHERE id = ?
          AND deleted_at IS NULL
-         AND balance + ? >= 0`,
-      [delta, delta, accountId, delta]
+         AND balance + ? >= 0
+         AND available_balance + ? >= 0`,
+      [delta, delta, accountId, delta, delta]
     )
 
     // knex/pg raw returns rowCount on the result object (or nested rowCount).

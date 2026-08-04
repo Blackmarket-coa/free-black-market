@@ -1,5 +1,8 @@
 import { createHash } from "crypto"
 import { cache } from "./cache"
+import { createLogger } from "./logger"
+
+const log = createLogger("shared/idempotency-store")
 
 type IdempotencyRecord = {
   key: string
@@ -53,20 +56,32 @@ export async function checkAndStoreIdempotency(params: {
 
   const cached = await cache.set(key, record, ttlSeconds)
   if (!cached) {
+    // The shared store is unreachable, so we fall back to a per-process Map.
+    // That is a real guard for a single instance and NO guard at all across a
+    // multi-instance deploy: a replay routed to another instance sees an empty
+    // map and passes. Surfaced as `degraded` rather than silently pretending
+    // the check held, so callers can decide (mirroring the `degraded` flag
+    // convention used for Matrix outages).
+    log.warn(
+      `[idempotency] shared store unavailable for scope "${scope}"; falling back to per-process memory. Replays across instances will not be caught.`
+    )
+
     const fallback = inMemoryFallback.get(key)
     if (fallback) {
       if (fallback.fingerprint !== fingerprint) {
         return {
           duplicate: true as const,
           conflict: true as const,
+          degraded: true as const,
           message: "idempotency_key already used with a different payload fingerprint",
         }
       }
 
-      return { duplicate: true as const, conflict: false as const }
+      return { duplicate: true as const, conflict: false as const, degraded: true as const }
     }
 
     inMemoryFallback.set(key, record)
+    return { duplicate: false as const, degraded: true as const }
   }
 
   return { duplicate: false as const }

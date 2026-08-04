@@ -110,19 +110,38 @@ transitional safety net for callers predating the header, not the intended route
 collapses a fast retry while leaving a deliberate identical repeat in a later bucket free
 to proceed. `storefront/src/lib/hooks/useHawalaWallet.ts` now sends the header.
 
-### 2.3 Still open — documented, deliberately not fixed
+### 2.3 Balance-path hardening
 
-These were scoped out of this change and remain follow-ups. **They are inside Phase 0's
-subject matter**; treat them as gating for anything that depends on exact balances.
+The remaining Phase 0 items, closed after the two above.
 
-- `updateBalancesAtomic` (`modules/hawala-ledger/service.ts`) guards on `balance`, not
-  `available_balance` — an account with funds reserved can still be drained.
-- The no-transaction fallback in `createTransfer` runs two un-transacted statements, so a
-  credit failure after a successful debit leaves a one-sided move.
-- Legacy `updateBalances` retains the H1 TOCTOU verbatim as a fallback.
-- `claimBounty` is still read-check-write racy (first-come claim).
-- `shared/idempotency-store.ts`'s in-memory fallback is per-process, so it is not a real
-  guard in a multi-instance deploy.
+- **`updateBalancesAtomic` now guards `available_balance` as well as `balance`.** The two
+  move in lockstep today, so the added predicate is currently equivalent — but
+  `available_balance` is modelled as `balance - pending` and `createTransfer`'s own
+  pre-check reads it. Guarding only `balance` meant that the moment anything began
+  reserving funds, the CAS would spend a reservation the pre-check had just rejected.
+- **One-sided moves are compensated.** Both fallback paths issue two independent
+  statements, so a credit failure after a successful debit left money debited and never
+  credited, with no transaction to roll it back. `applyBalancePairWithCompensation` now
+  reverses the debit; if the reversal also fails, the imbalance is logged at error with
+  both account ids for `hawala-balance-reconciler` to catch, rather than swallowed.
+- **`claimBounty` is decided by a DB-atomic
+  `UPDATE … SET assignee_id = ? WHERE assignee_id IS NULL`.** The prior read-check-write
+  let two simultaneous claimants both pass the read, with the later writer silently
+  overwriting the earlier claimant — so the bounty paid out to the wrong person.
+- **`shared/idempotency-store.ts` reports `degraded: true`** when the shared store is
+  unreachable and it falls back to a per-process Map. That fallback is a real guard for one
+  instance and none at all across a multi-instance deploy; it now says so instead of
+  silently implying the check held. A genuinely shared store is an infrastructure decision,
+  not a code one — this makes the gap observable.
+
+The legacy read-modify-write `updateBalances` still carries H1's TOCTOU, and is retained
+deliberately as the last-resort path when no pg connection resolves at all (unit tests,
+misconfiguration). It is now wrapped in compensation, but it is not a CAS. Treat any
+deployment that actually reaches it as misconfigured.
+
+**Not provable by unit tests:** true concurrent-write behaviour of the CAS predicates and
+the atomic claim needs a live Postgres. `concurrency-soak.integration.spec.ts` is the
+harness for it; that job runs in CI (`test-soak`), not locally.
 
 ---
 
