@@ -36,6 +36,21 @@ export type VendorPlanLimits = {
   /** Documents in the vendor's document vault. */
   vault_documents: PlanLimit
   /**
+   * Total bytes of vault documents a seller may store.
+   *
+   * Deliberately a second, independent cap alongside `vault_documents`, because
+   * the two bound different costs. A document count bounds how much *work* the
+   * vault represents — rows, verification, quest references. Bytes bound what it
+   * actually costs to keep. Five 2 GB videos and five 40 KB PDFs are the same
+   * number of documents and are not the same product.
+   *
+   * Only bytes we measured ourselves count toward this: a document whose size
+   * could not be determined contributes nothing rather than a number the client
+   * supplied. See `shared/file-size.ts` on why that trade is the right way
+   * round.
+   */
+  vault_storage_bytes: PlanLimit
+  /**
    * Embed API requests included per calendar month.
    *
    * The metered allowance, and deliberately distinct from
@@ -75,6 +90,9 @@ const FREE_LIMITS: VendorPlanLimits = {
   connect_domains: 1,
   webhook_subscriptions: 1,
   vault_documents: 5,
+  // 100 MB. Enough for a handful of scanned licences and certificates,
+  // which is what the free tier's five documents are for.
+  vault_storage_bytes: 100 * 1024 * 1024,
   // Enough to run a small embedded storefront without ever seeing a bill;
   // past it the free tier meters like any other.
   included_embed_requests: 50_000,
@@ -91,6 +109,7 @@ const PLAN_LIMITS: Record<string, VendorPlanLimits> = {
     connect_domains: 5,
     webhook_subscriptions: 3,
     vault_documents: 50,
+    vault_storage_bytes: 1024 * 1024 * 1024,
     included_embed_requests: 250_000,
     // Storefront/vault plan, not a grower-progression plan: no tier claim.
     grower_tier_floor: null,
@@ -102,6 +121,7 @@ const PLAN_LIMITS: Record<string, VendorPlanLimits> = {
     connect_domains: 25,
     webhook_subscriptions: 10,
     vault_documents: 500,
+    vault_storage_bytes: 10 * 1024 * 1024 * 1024,
     included_embed_requests: 1_000_000,
     grower_tier_floor: "Root",
   },
@@ -112,6 +132,7 @@ const PLAN_LIMITS: Record<string, VendorPlanLimits> = {
     connect_domains: 100,
     webhook_subscriptions: 50,
     vault_documents: 5_000,
+    vault_storage_bytes: 50 * 1024 * 1024 * 1024,
     included_embed_requests: 5_000_000,
     grower_tier_floor: "Canopy",
   },
@@ -122,6 +143,7 @@ const PLAN_LIMITS: Record<string, VendorPlanLimits> = {
     connect_domains: null,
     webhook_subscriptions: null,
     vault_documents: null,
+    vault_storage_bytes: null,
     // Operator plan: unlimited volume, so overage is never billable.
     included_embed_requests: null,
     // Operator-assigned. Left earning like anyone so assigning it never

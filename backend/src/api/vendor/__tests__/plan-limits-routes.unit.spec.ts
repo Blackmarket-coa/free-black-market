@@ -17,6 +17,21 @@ jest.mock("../../../shared", () => ({
   requireSellerId: jest.fn(async () => "sel_1"),
 }))
 
+/**
+ * The size measurement is a network call against the object store. Mocked here
+ * because these tests are about the cap arithmetic, not about the probe —
+ * `shared/__tests__/file-size.unit.spec.ts` covers the probe itself, including
+ * the case this variable models with `null`: a file we could not measure.
+ */
+let mockMeasuredBytes: number | null = null
+jest.mock("../../../shared/file-size", () => {
+  const actual = jest.requireActual("../../../shared/file-size")
+  return {
+    ...actual,
+    measureFileBytes: jest.fn(async () => mockMeasuredBytes),
+  }
+})
+
 const createRes = () => {
   const res: Record<string, unknown> = { statusCode: 200, body: undefined }
   res.status = (code: number) => {
@@ -39,12 +54,18 @@ type Deps = {
   planCode?: string
   embedKeys?: { revoked_at: Date | null }[]
   vaultDocs?: unknown[]
+  /** Bytes the seller already holds. */
+  vaultBytes?: number
+  /** Bytes the incoming file measures. `null` mimics an unmeasurable upload. */
+  measuredBytes?: number | null
 }
 
 const makeReq = (
   deps: Deps = {},
   extra: Record<string, unknown> = {}
 ) => {
+  mockMeasuredBytes = deps.measuredBytes ?? null
+
   const generateKey = jest.fn(async () => ({
     id: "vek_1",
     key: "pk_live_abc",
@@ -90,6 +111,7 @@ const makeReq = (
           case DOCUMENT_VAULT_MODULE:
             return {
               listForSeller: async () => deps.vaultDocs ?? [],
+              storageBytesForSeller: async () => deps.vaultBytes ?? 0,
               createVaultDocuments,
             }
           default:
@@ -238,6 +260,8 @@ describe("POST /vendor/vault", () => {
       {
         planCode: "internal",
         vaultDocs: Array.from({ length: 10_000 }, (_, i) => ({ id: `vd_${i}` })),
+        vaultBytes: 500 * 1024 * 1024 * 1024,
+        measuredBytes: 5 * 1024 * 1024 * 1024,
       },
       authed
     )
@@ -246,5 +270,106 @@ describe("POST /vendor/vault", () => {
 
     expect(res.statusCode).toBe(201)
     expect(createVaultDocuments).toHaveBeenCalled()
+  })
+
+  it("records the measured size on the document", async () => {
+    const { req, createVaultDocuments } = makeReq(
+      { planCode: "free", vaultDocs: [], measuredBytes: 4_096 },
+      authed
+    )
+    const res = createRes()
+    await CREATE_VAULT_DOC(req as never, res as never)
+
+    expect(res.statusCode).toBe(201)
+    expect(createVaultDocuments).toHaveBeenCalledWith(
+      expect.objectContaining({ bytes_stored: 4_096 })
+    )
+  })
+
+  it("refuses with a 402 when the file would exceed the storage quota", async () => {
+    // Well under the 5-document cap — this is the case a count-only cap missed
+    // entirely: one enormous file rather than many small ones.
+    const free = limitsForPlan("free").vault_storage_bytes as number
+    const { req, createVaultDocuments } = makeReq(
+      {
+        planCode: "free",
+        vaultDocs: [{ id: "vd_0" }],
+        vaultBytes: free - 1_000,
+        measuredBytes: 50 * 1024 * 1024,
+      },
+      authed
+    )
+    const res = createRes()
+    await CREATE_VAULT_DOC(req as never, res as never)
+
+    expect(res.statusCode).toBe(402)
+    expect(res.body.limit_key).toBe("vault_storage_bytes")
+    // The raw figures stay machine-readable; only the message is humanised.
+    expect(res.body.limit).toBe(free)
+    expect(res.body.message).toContain("100.0 MB")
+    expect(createVaultDocuments).not.toHaveBeenCalled()
+  })
+
+  it("admits a file that exactly fills the remaining quota", async () => {
+    const free = limitsForPlan("free").vault_storage_bytes as number
+    const { req, createVaultDocuments } = makeReq(
+      {
+        planCode: "free",
+        vaultDocs: [{ id: "vd_0" }],
+        vaultBytes: free - 1_000,
+        measuredBytes: 1_000,
+      },
+      authed
+    )
+    const res = createRes()
+    await CREATE_VAULT_DOC(req as never, res as never)
+
+    expect(res.statusCode).toBe(201)
+    expect(createVaultDocuments).toHaveBeenCalled()
+  })
+
+  it("stores an unmeasurable file rather than failing the upload", async () => {
+    // Metering must never become an availability problem on somebody's
+    // document. The row is written with an unknown size, contributing nothing
+    // to the quota — understating rather than guessing upward.
+    const free = limitsForPlan("free").vault_storage_bytes as number
+    const { req, createVaultDocuments } = makeReq(
+      {
+        planCode: "free",
+        vaultDocs: [{ id: "vd_0" }],
+        vaultBytes: free,
+        measuredBytes: null,
+      },
+      authed
+    )
+    const res = createRes()
+    await CREATE_VAULT_DOC(req as never, res as never)
+
+    expect(res.statusCode).toBe(201)
+    expect(createVaultDocuments).toHaveBeenCalledWith(
+      expect.objectContaining({ bytes_stored: null })
+    )
+  })
+
+  it("checks the document count before the storage quota", async () => {
+    // Both are breached; the count denial is the cheaper and more actionable
+    // message, and it must not be shadowed by the byte one.
+    const { req } = makeReq(
+      {
+        planCode: "free",
+        vaultDocs: Array.from(
+          { length: limitsForPlan("free").vault_documents as number },
+          (_, i) => ({ id: `vd_${i}` })
+        ),
+        vaultBytes: limitsForPlan("free").vault_storage_bytes as number,
+        measuredBytes: 1_000,
+      },
+      authed
+    )
+    const res = createRes()
+    await CREATE_VAULT_DOC(req as never, res as never)
+
+    expect(res.statusCode).toBe(402)
+    expect(res.body.limit_key).toBe("vault_documents")
   })
 })

@@ -47,6 +47,20 @@ const VaultDocument = model.define("vault_document", {
   // record that a document is expected/pending before the file is uploaded.
   file_id: model.text().nullable(),
 
+  /**
+   * Size of the referenced file, measured server-side at registration.
+   *
+   * Nullable and meaning **unknown**, never zero: the file module carries no
+   * size, so this comes from a HEAD against the object store
+   * (`shared/file-size.ts`), and that can fail. A placeholder row with no
+   * `file_id` has nothing to measure. Only known sizes count toward the plan's
+   * storage cap — see the note on `vault_storage_bytes`.
+   *
+   * BIGINT in the migration: a single upload can exceed INTEGER's ~2.1 GB
+   * ceiling on its own, and the Scale tier's quota is 50 GB.
+   */
+  bytes_stored: model.number().nullable(),
+
   // Optional lifecycle dates (e.g. an insurance certificate's coverage window).
   issued_at: model.dateTime().nullable(),
   expires_at: model.dateTime().nullable(),

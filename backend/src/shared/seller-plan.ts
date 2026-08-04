@@ -156,6 +156,16 @@ export type PlanLimitDenial = {
   plan_code: string
   /** Human-readable noun, e.g. "embed keys". Interpolated into the message. */
   noun: string
+  /**
+   * Pre-formatted allowance for the message, when the raw number would not
+   * mean anything to the reader.
+   *
+   * "Your free plan allows 104857600 vault storage bytes" is technically the
+   * truth and practically useless; "allows 100.0 MB of vault storage" is the
+   * same fact in a form a vendor can act on. The machine-readable `limit` and
+   * `current` fields stay raw either way, so the panel is unaffected.
+   */
+  display_limit?: string
 }
 
 /**
@@ -173,7 +183,9 @@ export function respondPlanLimitReached(
   return res.status(402).json({
     type: "plan_limit_reached",
     code: "plan_limit_reached",
-    message: `Your ${denial.plan_code} plan allows ${denial.limit} ${denial.noun}. Upgrade to add more.`,
+    message: `Your ${denial.plan_code} plan allows ${
+      denial.display_limit ?? denial.limit
+    } ${denial.noun}. Upgrade to add more.`,
     limit_key: denial.limit_key,
     limit: denial.limit,
     current: denial.current,

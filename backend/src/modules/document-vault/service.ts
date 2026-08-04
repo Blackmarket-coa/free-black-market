@@ -17,6 +17,29 @@ class DocumentVaultModuleService extends MedusaService({
   }
 
   /**
+   * Total known bytes a seller has stored.
+   *
+   * Sums only documents whose size was actually measured. A document with an
+   * unknown size contributes **zero**, which understates the true figure — and
+   * that is the correct direction to be wrong in. Guessing a size upward would
+   * push a seller over a quota on the strength of a number nobody measured;
+   * understating means the cap is occasionally more generous than intended,
+   * which costs storage rather than costing a vendor an upload they paid for.
+   */
+  async storageBytesForSeller(sellerId: string): Promise<number> {
+    const documents = (await this.listVaultDocuments({
+      seller_id: sellerId,
+    })) as unknown as { bytes_stored: number | string | null }[]
+
+    return documents.reduce((total, doc) => {
+      // BIGINT comes back as a string from some drivers — coerce rather than
+      // concatenating it onto the running total.
+      const bytes = Number(doc.bytes_stored ?? 0)
+      return Number.isFinite(bytes) && bytes > 0 ? total + bytes : total
+    }, 0)
+  }
+
+  /**
    * Mark a document verified. Verification reflects a real human/admin check —
    * callers must have performed one. We stamp `verified_at` for the audit trail.
    */

@@ -56,19 +56,27 @@ async function countEmbedKeys(
   }
 }
 
-/** Vault documents. Mirrors `api/vendor/vault/route.ts` POST. */
-async function countVaultDocuments(
+/**
+ * Vault documents and the bytes they occupy. Mirrors `api/vendor/vault/route.ts`
+ * POST, which enforces both caps.
+ *
+ * Both come from one read because the enforcement point takes them from the
+ * same list — splitting them would be two round trips that could disagree with
+ * each other about the same moment.
+ */
+async function countVault(
   container: MedusaContainer,
   sellerId: string
-): Promise<number | undefined> {
+): Promise<{ documents: number; bytes: number } | undefined> {
   try {
     const service = container.resolve<DocumentVaultModuleService>(
       DOCUMENT_VAULT_MODULE
     )
     const docs = await service.listForSeller(sellerId)
-    return docs.length
+    const bytes = await service.storageBytesForSeller(sellerId)
+    return { documents: docs.length, bytes }
   } catch (err) {
-    log.warn(`[usage] vault document count failed for ${sellerId}`, err)
+    log.warn(`[usage] vault count failed for ${sellerId}`, err)
     return undefined
   }
 }
@@ -136,17 +144,20 @@ export async function collectSellerUsage(
 ): Promise<SellerUsageReport> {
   const { plan_code, limits } = await getSellerPlanLimits(container, sellerId)
 
-  const [embed_keys, vault_documents, webhook_subscriptions, connect_domains] =
+  const [embed_keys, vault, webhook_subscriptions, connect_domains] =
     await Promise.all([
       countEmbedKeys(container, sellerId),
-      countVaultDocuments(container, sellerId),
+      countVault(container, sellerId),
       countWebhookSubscriptions(container, sellerId),
       countConnectDomains(container, sellerId),
     ])
 
   const counts: Partial<Record<CountableLimitKey, number>> = {}
   if (embed_keys !== undefined) counts.embed_keys = embed_keys
-  if (vault_documents !== undefined) counts.vault_documents = vault_documents
+  if (vault !== undefined) {
+    counts.vault_documents = vault.documents
+    counts.vault_storage_bytes = vault.bytes
+  }
   if (webhook_subscriptions !== undefined) {
     counts.webhook_subscriptions = webhook_subscriptions
   }

@@ -78,6 +78,7 @@ describe("buildUsageReport", () => {
       connect_domains: 0,
       webhook_subscriptions: 0,
       vault_documents: 0,
+      vault_storage_bytes: 0,
     })
     expect(report.plan_code).toBe("free")
     expect(report.resources.map((r) => r.key).sort()).toEqual(
@@ -86,6 +87,22 @@ describe("buildUsageReport", () => {
     expect(
       report.resources.find((r) => r.key === "embed_keys")?.label
     ).toBe("Embed keys")
+  })
+
+  it("marks only the byte-denominated resources for size formatting", () => {
+    // A byte quota is consumed exactly like a count — the flag exists purely so
+    // the panel renders "1.2 GB of 10.0 GB" rather than ten digits nobody can
+    // reconcile against their own files.
+    const report = buildUsageReport("free", limits, {
+      embed_keys: 1,
+      vault_storage_bytes: 1024,
+    })
+    expect(
+      report.resources.find((r) => r.key === "vault_storage_bytes")?.is_bytes
+    ).toBe(true)
+    expect(report.resources.find((r) => r.key === "embed_keys")?.is_bytes).toBe(
+      false
+    )
   })
 
   it("omits a resource whose count could not be determined", () => {

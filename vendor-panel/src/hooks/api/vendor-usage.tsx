@@ -11,6 +11,8 @@ export type UsageLevel = "ok" | "approaching" | "at_limit"
 export type ResourceUsage = {
   key: string
   label: string
+  /** Render the numbers as sizes rather than as a count. */
+  is_bytes?: boolean
   current: number
   /** null means unlimited. */
   limit: number | null
@@ -72,12 +74,36 @@ export type UsageDisplay = {
   hint: string | null
 }
 
-export function describeUsage(resource: ResourceUsage): UsageDisplay {
-  if (resource.unlimited) {
-    return { amount: `${resource.current}`, tone: "grey", hint: null }
+/**
+ * Bytes as something a person can read. Mirrors the backend's `formatBytes`,
+ * because a quota conversation happens in gigabytes and nobody reconciles
+ * a ten-digit number against their own files.
+ */
+function formatBytes(bytes: number): string {
+  const units = ["B", "KB", "MB", "GB", "TB"]
+  let value = Math.max(0, bytes)
+  let unit = 0
+
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024
+    unit++
   }
 
-  const amount = `${resource.current} of ${resource.limit}`
+  return unit === 0
+    ? `${Math.round(value)} B`
+    : `${value.toFixed(1)} ${units[unit]}`
+}
+
+export function describeUsage(resource: ResourceUsage): UsageDisplay {
+  // A byte quota is consumed exactly like a document quota — only the unit
+  // differs, so this formats and otherwise takes the identical path.
+  const fmt = (n: number) => (resource.is_bytes ? formatBytes(n) : `${n}`)
+
+  if (resource.unlimited) {
+    return { amount: fmt(resource.current), tone: "grey", hint: null }
+  }
+
+  const amount = `${fmt(resource.current)} of ${fmt(resource.limit ?? 0)}`
 
   if (resource.level === "at_limit") {
     return {
@@ -90,8 +116,9 @@ export function describeUsage(resource: ResourceUsage): UsageDisplay {
     return {
       amount,
       tone: "orange",
-      hint:
-        resource.remaining === 1
+      hint: resource.is_bytes
+        ? `${fmt(resource.remaining ?? 0)} left on your plan.`
+        : resource.remaining === 1
           ? "1 left on your plan."
           : `${resource.remaining} left on your plan.`,
     }
