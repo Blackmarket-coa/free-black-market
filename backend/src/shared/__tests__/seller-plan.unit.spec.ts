@@ -9,7 +9,9 @@ import {
 } from "../plan-entitlement-cache"
 import { VENDOR_PLAN_MODULE } from "../../modules/vendor-plan"
 import { ENTITLEMENT_MODULE } from "../../modules/entitlement"
+import { TENANCY_MODULE } from "../../modules/tenancy"
 import { limitsForPlan } from "../../modules/vendor-plan/limits"
+import { vendorFeatureKeysForTier, type TierFlag } from "../../modules/tenancy/gates"
 
 /**
  * The gate and the limit checks read the same snapshot through the same cache.
@@ -22,6 +24,9 @@ type Opts = {
   planKeys?: string[]
   entitlementKeys?: string[]
   planThrows?: boolean
+  /** The tier the seller's organization holds. Defaults to no organization. */
+  tier?: TierFlag
+  tenancyThrows?: boolean
 }
 
 const makeReq = (opts: Opts = {}) => {
@@ -33,6 +38,10 @@ const makeReq = (opts: Opts = {}) => {
   const listActiveFeatureKeysForSeller = jest.fn(
     async () => opts.entitlementKeys ?? []
   )
+  const resolveSellerTier = jest.fn(async () => {
+    if (opts.tenancyThrows) throw new Error("tenancy service down")
+    return opts.tier ?? "tier0_public"
+  })
 
   const req = {
     scope: {
@@ -43,12 +52,21 @@ const makeReq = (opts: Opts = {}) => {
         if (key === ENTITLEMENT_MODULE) {
           return { listActiveFeatureKeysForSeller }
         }
+        if (key === TENANCY_MODULE) {
+          return { resolveSellerTier }
+        }
         return undefined
       },
     },
   }
 
-  return { req, ensureAssignment, getEntitledFeatureKeys, listActiveFeatureKeysForSeller }
+  return {
+    req,
+    ensureAssignment,
+    getEntitledFeatureKeys,
+    listActiveFeatureKeysForSeller,
+    resolveSellerTier,
+  }
 }
 
 beforeEach(() => {
@@ -164,5 +182,80 @@ describe("respondPlanLimitReached", () => {
     expect(body.current).toBe(1)
     expect(body.current_plan).toBe("free")
     expect(body.upgrade_url).toBe("/settings/billing")
+  })
+})
+
+/**
+ * The enterprise floor. An organization's tenancy tier grants plan features to
+ * the sellers under it, because the org bought the contract at the org level.
+ */
+describe("the tenancy tier floor", () => {
+  it("grants nothing to a seller with no organization", async () => {
+    // The ordinary FBM vendor. `tier0_public` must be an entirely no-op path,
+    // or introducing tenancy would quietly hand out the paid catalog.
+    const { req } = makeReq({ planCode: "free", planKeys: [] })
+    const snapshot = await getSellerPlanSnapshot(req.scope as never, "sel_1")
+    expect([...snapshot.feature_keys]).toEqual([])
+  })
+
+  it("floors a seller inside a verified organization", async () => {
+    const { req } = makeReq({
+      planCode: "free",
+      planKeys: [],
+      tier: "tier1_verified",
+    })
+    const snapshot = await getSellerPlanSnapshot(req.scope as never, "sel_1")
+    expect([...snapshot.feature_keys].sort()).toEqual(
+      [...vendorFeatureKeysForTier("tier1_verified")].sort()
+    )
+  })
+
+  it("only raises — a paid plan keeps everything it includes", async () => {
+    // The load-bearing case. A Pro seller inside a tier1 organization must not
+    // be reduced to tier1's grant; a floor that could lower an entitlement
+    // would strip a feature somebody is paying for.
+    const { req } = makeReq({
+      planCode: "pro",
+      planKeys: ["vendor.pos", "vendor.invoicing"],
+      tier: "tier1_verified",
+    })
+    const snapshot = await getSellerPlanSnapshot(req.scope as never, "sel_1")
+    expect(snapshot.feature_keys.has("vendor.pos")).toBe(true)
+    expect(snapshot.feature_keys.has("vendor.invoicing")).toBe(true)
+    expect(snapshot.feature_keys.has("vendor.embed")).toBe(true)
+    expect(snapshot.plan_code).toBe("pro")
+  })
+
+  it("keeps the plan's own features when the tenancy read fails", async () => {
+    // Same posture as the entitlement read: additive, and never able to cost a
+    // seller the plan they are paying for.
+    const { req } = makeReq({
+      planCode: "pro",
+      planKeys: ["vendor.pos"],
+      tenancyThrows: true,
+    })
+    const snapshot = await getSellerPlanSnapshot(req.scope as never, "sel_1")
+    expect([...snapshot.feature_keys]).toEqual(["vendor.pos"])
+  })
+
+  it("does not change which plan the seller is billed on", async () => {
+    // The floor grants access, not a plan. Billing must still read `free`, or
+    // the panel would show a plan the vendor never bought.
+    const { req } = makeReq({
+      planCode: "free",
+      planKeys: [],
+      tier: "tier2_aligned_org",
+    })
+    const snapshot = await getSellerPlanSnapshot(req.scope as never, "sel_1")
+    expect(snapshot.plan_code).toBe("free")
+    expect(snapshot.feature_keys.size).toBeGreaterThan(0)
+  })
+
+  it("reads the tier once per snapshot, not once per gate check", async () => {
+    const { req, resolveSellerTier } = makeReq({ tier: "tier1_verified" })
+    await getSellerPlanSnapshot(req.scope as never, "sel_1")
+    await getSellerPlanSnapshot(req.scope as never, "sel_1")
+    // Second call is served from the shared 30s cache alongside plan features.
+    expect(resolveSellerTier).toHaveBeenCalledTimes(1)
   })
 })

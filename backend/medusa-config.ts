@@ -194,6 +194,7 @@ const financialModules = [
   { resolve: './src/modules/donation' },
   { resolve: './src/modules/vendor-plan' },
   { resolve: './src/modules/vendor-billing' },
+  { resolve: './src/modules/vendor-usage' },
 ]
 
 // FreeBlackMarket.com feature modules

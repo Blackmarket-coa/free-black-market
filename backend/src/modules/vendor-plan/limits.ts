@@ -36,6 +36,19 @@ export type VendorPlanLimits = {
   /** Documents in the vendor's document vault. */
   vault_documents: PlanLimit
   /**
+   * Embed API requests included per calendar month.
+   *
+   * The metered allowance, and deliberately distinct from
+   * `embed_requests_per_minute` above: that one is a burst ceiling protecting
+   * infrastructure and stays hard, this one is monthly volume that bills as
+   * overage past the included figure (`vendor-plan/overage.ts`). A vendor can
+   * buy more volume; they cannot buy a higher instantaneous rate, because what
+   * the rate bounds is load rather than value.
+   *
+   * `null` means unlimited and is never billable.
+   */
+  included_embed_requests: PlanLimit
+  /**
    * Grower KARMA tier this plan floors the seller to, regardless of earned
    * karma — the "bought" half of the earned-vs-bought progression duality
    * (`modules/progression/grower-karma.ts`, `effectiveGrowerTier`). `null` means
@@ -62,6 +75,9 @@ const FREE_LIMITS: VendorPlanLimits = {
   connect_domains: 1,
   webhook_subscriptions: 1,
   vault_documents: 5,
+  // Enough to run a small embedded storefront without ever seeing a bill;
+  // past it the free tier meters like any other.
+  included_embed_requests: 50_000,
   // Free growers earn their tier entirely through activity.
   grower_tier_floor: null,
 }
@@ -75,6 +91,7 @@ const PLAN_LIMITS: Record<string, VendorPlanLimits> = {
     connect_domains: 5,
     webhook_subscriptions: 3,
     vault_documents: 50,
+    included_embed_requests: 250_000,
     // Storefront/vault plan, not a grower-progression plan: no tier claim.
     grower_tier_floor: null,
   },
@@ -85,6 +102,7 @@ const PLAN_LIMITS: Record<string, VendorPlanLimits> = {
     connect_domains: 25,
     webhook_subscriptions: 10,
     vault_documents: 500,
+    included_embed_requests: 1_000_000,
     grower_tier_floor: "Root",
   },
   scale: {
@@ -94,6 +112,7 @@ const PLAN_LIMITS: Record<string, VendorPlanLimits> = {
     connect_domains: 100,
     webhook_subscriptions: 50,
     vault_documents: 5_000,
+    included_embed_requests: 5_000_000,
     grower_tier_floor: "Canopy",
   },
   internal: {
@@ -103,6 +122,8 @@ const PLAN_LIMITS: Record<string, VendorPlanLimits> = {
     connect_domains: null,
     webhook_subscriptions: null,
     vault_documents: null,
+    // Operator plan: unlimited volume, so overage is never billable.
+    included_embed_requests: null,
     // Operator-assigned. Left earning like anyone so assigning it never
     // silently shifts the grower/hub inter-node split for FBM's own vendors.
     grower_tier_floor: null,

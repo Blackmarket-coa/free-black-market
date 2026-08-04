@@ -38,7 +38,7 @@ import { requirePlanFeature } from "./middlewares/require-plan-feature";
 import { enforceListingTypeAllowed } from "../shared/listing-type-guard";
 import { enforceSameOriginForCookieAuth } from "../shared/csrf-guard";
 import { sanitizedErrorHandler } from "../shared/error-sanitizer";
-import { requireStorefrontContext } from "./middlewares/tenancy-context";
+import { attachStorefrontContext, requireStorefrontContext } from "./middlewares/tenancy-context";
 import {
   embedCorsMiddleware,
   requireEmbedKey,
@@ -1110,6 +1110,15 @@ export default defineMiddlewares({
     {
       matcher: "/vendor/usage",
       middlewares: [authenticate("seller", "bearer")],
+    },
+    // What this seller's organization grants them, when they are inside one.
+    // `attachStorefrontContext` rather than `requireStorefrontContext`: the
+    // required form 400s without the two context headers, which the vendor
+    // panel does not send. Not plan-gated, same reasoning as usage — it
+    // describes the seller's own commercial position.
+    {
+      matcher: "/vendor/tenancy/context",
+      middlewares: [authenticate("seller", "bearer"), attachStorefrontContext()],
     },
     // Stripe webhook for vendor charges. Signature-verified in the handler;
     // the raw body must survive parsing or constructEvent verifies nothing.
