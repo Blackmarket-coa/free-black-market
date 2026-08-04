@@ -16,6 +16,9 @@ permissions:
   contents: read
   packages: write
   id-token: write
+  # For the image scan's SARIF upload. It scans what the build job just pushed,
+  # so it lives here rather than in security.yml — see the `trivy-image` job.
+  security-events: write
 
 jobs:
   build:
@@ -143,3 +146,136 @@ jobs:
           echo '```' >> "$GITHUB_STEP_SUMMARY"
           echo "${{ steps.meta.outputs.tags }}" >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+  trivy-image:
+    name: Trivy Image Scan
+    runs-on: ubuntu-latest
+    # The whole point of moving this job out of `security.yml`. There it carried
+    # a literal `needs: []` — the shape of a dependency that could not be
+    # written, because `needs` cannot reach across workflows. Both workflows
+    # trigger on push to main and start within seconds of each other, so the
+    # scan raced the build: on 2026-08-04 it fired 30s after the push and got
+    # `MANIFEST_UNKNOWN: manifest unknown` for a tag docker-build was still
+    # building. Here the ordering is a fact, not a hope.
+    needs: build
+    # Only for pushes that actually publish. PR builds run with `push: false`
+    # (see the build step), so there is no image in the registry to scan and the
+    # job would fail on absence rather than on findings.
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release/'))
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - app: backend
+            image: free-black-market-backend
+          - app: storefront
+            image: free-black-market-storefront
+          - app: admin-panel
+            image: free-black-market-admin-panel
+          - app: vendor-panel
+            image: free-black-market-vendor-panel
+    steps:
+      # This job scans a registry image, not the working tree, so it carried no
+      # checkout for most of its life. It needs one purely because `trivyignores`
+      # below names a file in the repository: trivy resolves that path on the
+      # runner's disk, and without a checkout it exits 1 with "cannot find
+      # ignorefile" before scanning anything — the gate reporting failure without
+      # ever having looked at an image.
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: .trivyignore.image
+          sparse-checkout-cone-mode: false
+
+      # The `build` job publishes `sha-<7-char>` tags via docker/metadata-action
+      # (`type=sha,prefix=sha-,format=short`). `${{ github.sha }}` is the full
+      # 40-char SHA — using it raw looks up a tag that was never published.
+      - name: Compute image reference
+        id: image_ref
+        # The owner is lowercased because an OCI reference's repository path
+        # must be lowercase, while `github.repository_owner` preserves the
+        # organisation's own casing ("Blackmarket-coa"). Interpolating it raw
+        # produced `could not parse reference` on all four matrix jobs on every
+        # push to main — the scan never ran at all, so this gate spent that whole
+        # period reporting failure rather than security findings.
+        #
+        # Lowercase is also what actually got pushed: the build job above runs
+        # this same name through docker/metadata-action, which normalises it. So
+        # this is not a new convention, it is the one the registry already uses.
+        run: |
+          owner="$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')"
+          echo "value=ghcr.io/${owner}/${{ matrix.image }}:sha-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      # `needs: build` guarantees the push returned; this covers the gap between
+      # the registry accepting a manifest and serving it. Deliberately short and
+      # bounded — it is insurance against propagation lag, not a substitute for
+      # the ordering above, and a long poll here would hide a genuinely missing
+      # image behind a timeout.
+      - name: Wait for the manifest to be servable
+        # Values arrive as env rather than `${{ }}` inside the script: a secret
+        # interpolated into a command line ends up in the process table and in
+        # `set -x` output, and an actor name is attacker-influenced text being
+        # pasted into a shell.
+        env:
+          IMAGE_REF: ${{ steps.image_ref.outputs.value }}
+          GHCR_USER: ${{ github.actor }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          repo="${IMAGE_REF%:*}"; repo="${repo#ghcr.io/}"
+          tag="${IMAGE_REF##*:}"
+          token="$(printf '%s:%s' "$GHCR_USER" "$GHCR_TOKEN" | base64 -w0)"
+          for attempt in 1 2 3 4 5; do
+            # `|| true` matters: the step runs under `bash -e`, where a failed
+            # curl inside a command substitution aborts the whole step. A DNS
+            # blip would then hard-fail the build rather than being retried —
+            # the same shape of accident this job is here to stop repeating.
+            code="$(curl -sS -o /dev/null -w '%{http_code}' \
+              -H "Authorization: Basic ${token}" \
+              -H 'Accept: application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.oci.image.manifest.v1+json' \
+              "https://ghcr.io/v2/${repo}/manifests/${tag}" || true)"
+            if [ "$code" = "200" ]; then
+              echo "manifest for ${tag} is servable"
+              exit 0
+            fi
+            echo "attempt ${attempt}: ghcr returned ${code} for ${repo}:${tag}, retrying"
+            sleep $(( attempt * 5 ))
+          done
+          # Not a hard failure: let trivy be the one to report it, so the log
+          # shows the scanner's own error rather than a curl status code.
+          echo "manifest still not servable; continuing so trivy reports it"
+
+      - name: Trivy image scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ steps.image_ref.outputs.value }}
+          severity: 'HIGH,CRITICAL'
+          ignore-unfixed: true
+          exit-code: '1'
+          # This gate previously passed no ignore file at all, so nothing could
+          # be triaged for it. `.trivyignore.image` is deliberately a separate
+          # list from the filesystem scan's: findings vendored inside a
+          # third-party binary we ship are not the same as findings in our own
+          # lockfile, and sharing one file would mean suppressing an image-only
+          # CVE also switched off the filesystem gate's regression detection for
+          # it — which is exactly the case for CVE-2026-69152, fixed in our
+          # lockfile by #773 but unreachable inside pnpm's bundle.
+          trivyignores: '.trivyignore.image'
+          # Without this, trivy-action overrides `severity` to include all
+          # severities when `format: sarif`, so the `exit-code: 1` gate
+          # trips on LOW/MEDIUM findings too — defeating the stated
+          # "HIGH/CRITICAL only" gate above. Mirrors the trivy-fs fix
+          # landed in commit 42de0b6 (SD-15 audit closed the same gap here).
+          limit-severities-for-sarif: true
+          format: 'sarif'
+          output: 'trivy-${{ matrix.app }}.sarif'
+
+      - name: Upload SARIF
+        # `always()` alone tried to upload a file the scan never produced when
+        # it failed before writing one, adding a second, louder error
+        # ("Path does not exist") on top of the real cause. Guarding on the
+        # file keeps the actual failure the only thing in the log.
+        if: always() && hashFiles(format('trivy-{0}.sarif', matrix.app)) != ''
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-${{ matrix.app }}.sarif
+          category: trivy-image-${{ matrix.app }}
