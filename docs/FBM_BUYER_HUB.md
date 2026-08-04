@@ -172,12 +172,32 @@ Generic non-FBM buyer archetype with sensible defaults (**not built**). Two-surf
 delivery: hosted hub plus embeddable widget following connect.js.
 
 **Phase 2 — reputation unification.** Trust earned as a bounty filler, mutual aid helper,
-or group-buy organizer must be one score, not three. *Partially delivered:* the buyer side
-previously awarded **no XP at all** while nine other `source_module`s did. Bounty milestone
-settlement now emits `bounty.milestone_settled`, and `subscribers/progression-bounty-settled.ts`
-records it against the shared character sheet — COALITION XP, or CREATOR for
-creator-facing objectives, with `source_id` scoped per milestone so a replay cannot
-double-count. Group-buy organizing and mutual-aid help still need their own emitters.
+or group-buy organizer must be one score, not three. The buyer side previously awarded **no
+XP at all** while nine other `source_module`s did. Two of the three modes now emit, both
+onto the same character sheet:
+
+| Mode | Event | Subscriber | Award |
+|---|---|---|---|
+| Bounty fill | `bounty.milestone_settled` | `progression-bounty-settled.ts` | COALITION, or CREATOR for creator-facing objectives; 1 XP per unit settled |
+| Group buy | `demand_pool.fulfilled` | `progression-demand-pool-fulfilled.ts` | COALITION to the organizer, CONSUMER to each committed participant |
+
+Two design choices worth recording:
+
+- **Group-buy XP fires on fulfillment, not on join.** Joining is free and reversible —
+  there is a withdraw endpoint — so join-time XP would be farmable by joining and leaving
+  repeatedly. Fulfillment is operator-confirmed, so it reflects cooperation that actually
+  happened.
+- **Group-buy awards are flat, not proportional to order value.** The signal is "did you
+  follow through", not "how much did you spend" — proportional awards would let a large
+  pool simply out-earn a small one, which is the opposite of a cooperative trust score.
+
+`source_id` is scoped per milestone, and per pool-and-role, so a redelivered event cannot
+double-count — matching the partial unique index on `(source_module, source_id)` from H6.
+Sellers are skipped throughout; they progress through the Quest Engine.
+
+**Still missing: mutual-aid help.** It has no emitter because it has no module — `request`
+is a generic RFQ model, not a mutual aid system. That emitter is Phase 5 work, not a gap in
+Phase 2.
 
 **Phase 3 — buy orders and bounties.** Largely present: storefront pages exist at
 `(main)/collective/demand-pools/{,new,[id]}`, and the escrow-backed bounty flow lives in
