@@ -1,4 +1,6 @@
 import { mapFaireOrder, mapProductToFaire } from "../mapping"
+import { pace } from "../../../shared/channel-pacer"
+import { parseRetryAfter } from "../throttle"
 import {
   ChannelApiError,
   type ChannelAdapter,
@@ -66,6 +68,12 @@ export class FaireChannelAdapter implements ChannelAdapter {
       url.searchParams.set(k, v)
     }
 
+    // Every request to this channel goes through the pacer, including the ones
+    // in tight per-SKU loops. Placed here rather than at the loop so a new
+    // operation added later cannot forget it — the transport is the only path
+    // out of this adapter, so the only path out is the one that waits.
+    await pace(this.id)
+
     let response: Response
     try {
       response = await fetch(url.toString(), {
@@ -93,7 +101,12 @@ export class FaireChannelAdapter implements ChannelAdapter {
         `Faire returned ${response.status} for ${init.method} ${path}`,
         response.status,
         this.id,
-        body.slice(0, 2_000)
+        body.slice(0, 2_000),
+        // Read here or lost: the response does not leave this method, so a
+        // `Retry-After` not captured now is indistinguishable downstream from
+        // one that was never sent — and the caller would substitute its own
+        // guess for a wait the channel explicitly asked for.
+        parseRetryAfter(response.headers.get("retry-after"), new Date())
       )
     }
 

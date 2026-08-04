@@ -6,6 +6,7 @@ import type ChannelConnectorService from "../modules/channel-connector/service"
 import type { ConnectionRow } from "../modules/channel-connector/service"
 import { getChannelAdapter } from "../modules/channel-connector/adapters"
 import { ChannelApiError } from "../modules/channel-connector/types"
+import { classifyFailure } from "../modules/channel-connector/throttle"
 
 const log = createLogger("jobs/channel-listing-sync")
 
@@ -16,6 +17,8 @@ export type ChannelSyncResult = {
   created: number
   failed: number
   skipped: number
+  /** Connections skipped because they are standing down. Phase 12. */
+  throttled: number
 }
 
 /**
@@ -51,8 +54,9 @@ export type ChannelSyncResult = {
  */
 export async function processChannelListingSync(
   container: MedusaContainer,
-  options: { sellerId?: string } = {}
+  options: { sellerId?: string; now?: Date } = {}
 ): Promise<ChannelSyncResult> {
+  const now = options.now ?? new Date()
   const result: ChannelSyncResult = {
     connections: 0,
     pushed: 0,
@@ -60,6 +64,7 @@ export async function processChannelListingSync(
     created: 0,
     failed: 0,
     skipped: 0,
+    throttled: 0,
   }
 
   const service = container.resolve<ChannelConnectorService>(
@@ -72,6 +77,14 @@ export async function processChannelListingSync(
 
   for (const connection of connections) {
     if (!connection.enabled) continue
+
+    // Phase 12. Checked before the catalogue is loaded: a standing-down
+    // connection should cost nothing, and `loadSellerChannelProducts` is the
+    // expensive part of this loop.
+    if (!service.mayAttempt(connection, now)) {
+      result.throttled++
+      continue
+    }
 
     const adapter = getChannelAdapter(connection.channel_id)
     // A connection naming a channel this build no longer ships is a real state
@@ -89,6 +102,7 @@ export async function processChannelListingSync(
     const credentials = service.toCredentials(connection)
     const errors: { product_id: string; reason: string }[] = [...skipped]
     let aborted: string | null = null
+    let pushedAny = false
 
     for (const product of products) {
       try {
@@ -115,18 +129,39 @@ export async function processChannelListingSync(
         }
 
         result.pushed++
+        pushedAny = true
         if (push.created) result.created++
         else result.updated++
       } catch (err) {
         const message =
           err instanceof Error ? err.message : "Unknown channel error"
 
-        if (err instanceof ChannelApiError && err.retryable) {
-          // Worth another attempt, and likely to affect every remaining
-          // product too — stop this seller and let the next pass retry rather
-          // than hammering a channel that is rate-limiting or down.
-          aborted = message
-          break
+        if (err instanceof ChannelApiError) {
+          // Only failures that say something about the *connection*. A 422 is a
+          // fact about one product, already recorded against that listing by
+          // `recordListingError` below — writing it here too would overwrite the
+          // connection's error with a per-product one and cost a database round
+          // trip for every bad SKU in the catalogue.
+          if (classifyFailure(err.status, err.retryAfterSeconds) !== "rejected") {
+            await service
+              .recordFailure({
+                row: connection,
+                status: err.status,
+                retryAfterSeconds: err.retryAfterSeconds,
+                message,
+                now,
+              })
+              .catch(() => undefined)
+          }
+
+          if (err.retryable) {
+            // Worth another attempt, and likely to affect every remaining
+            // product too — stop this seller and let the stored backoff decide
+            // when to come back, rather than hammering a channel that is
+            // rate-limiting or down.
+            aborted = message
+            break
+          }
         }
 
         result.failed++
@@ -154,11 +189,20 @@ export async function processChannelListingSync(
       },
       error: aborted,
     })
+
+    // Only when the channel accepted something. A run that aborted on a
+    // retryable error has just set a backoff, and clearing it here would undo
+    // it before the next tick ever read it.
+    if (!aborted && pushedAny) {
+      await service.recordSuccess(connection.id, now).catch(() => undefined)
+    }
   }
 
-  if (result.pushed || result.failed || result.skipped) {
+  if (result.pushed || result.failed || result.skipped || result.throttled) {
     log.info(
-      `[channel-sync] ${result.connections} connections: ${result.created} created, ${result.updated} updated, ${result.failed} failed, ${result.skipped} skipped`
+      `[channel-sync] ${result.connections} connections: ${result.created} created, ` +
+        `${result.updated} updated, ${result.failed} failed, ${result.skipped} skipped, ` +
+        `${result.throttled} standing down`
     )
   }
 
@@ -172,8 +216,8 @@ export default async function channelListingSync(container: MedusaContainer) {
 export const config = {
   name: "channel-listing-sync",
   // Hourly. Frequent enough that a price or stock change reaches buyers the
-  // same day, infrequent enough to stay well inside any channel's rate limits
-  // — per-channel throttling is Phase 12's problem, and until it exists the
-  // schedule is the throttle.
+  // same day. It is no longer the only limit: Phase 12 added per-request
+  // spacing inside a run (`shared/channel-pacer.ts`) and a durable per-
+  // connection backoff that can outlast this interval.
   schedule: "0 * * * *",
 }

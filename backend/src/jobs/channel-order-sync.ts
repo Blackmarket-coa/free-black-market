@@ -8,7 +8,10 @@ import { CHANNEL_CONNECTOR_MODULE } from "../modules/channel-connector/module-ke
 import type ChannelConnectorService from "../modules/channel-connector/service"
 import type { ConnectionRow } from "../modules/channel-connector/service"
 import { getChannelAdapter } from "../modules/channel-connector/adapters"
-import type { ChannelOrder } from "../modules/channel-connector/types"
+import {
+  ChannelApiError,
+  type ChannelOrder,
+} from "../modules/channel-connector/types"
 import {
   decideIngestion,
   nextOrderCursor,
@@ -28,6 +31,8 @@ export type OrderSyncResult = {
   skipped: number
   unmatched_lines: number
   failed: number
+  /** Connections skipped because they are standing down. Phase 12. */
+  throttled: number
 }
 
 /**
@@ -69,6 +74,7 @@ export async function processChannelOrderSync(
     skipped: 0,
     unmatched_lines: 0,
     failed: 0,
+    throttled: 0,
   }
 
   const service = container.resolve<ChannelConnectorService>(
@@ -81,6 +87,19 @@ export async function processChannelOrderSync(
 
   for (const connection of connections) {
     if (!connection.enabled) continue
+
+    // Phase 12. A standing-down connection is skipped whole. Note what this
+    // costs when it fires: orders are the time-critical direction, so a backoff
+    // here widens the oversell window from one cron interval to the length of
+    // the backoff. That is the right trade anyway — a channel that is rate-
+    // limiting us is not going to hand over those orders faster for being asked
+    // more often, and being suspended loses them entirely — but it is a real
+    // cost, and it is why `needs_reauth` is surfaced to the vendor rather than
+    // simply retried.
+    if (!service.mayAttempt(connection, now)) {
+      result.throttled++
+      continue
+    }
 
     const adapter = getChannelAdapter(connection.channel_id)
     if (!adapter?.supports("pull_orders") || !adapter.pullOrders) continue
@@ -99,9 +118,29 @@ export async function processChannelOrderSync(
       result.failed++
       // The cursor is deliberately left where it was: a failed poll must not
       // advance past orders it never saw.
-      await service.recordSync({ id: connection.id, error: message })
+      if (err instanceof ChannelApiError) {
+        await service.recordFailure({
+          row: connection,
+          status: err.status,
+          retryAfterSeconds: err.retryAfterSeconds,
+          message,
+          now,
+        })
+      } else {
+        // Not a channel answer at all — a bug on our side, or the adapter
+        // throwing before it reached the network. Recorded so the connection
+        // still reads as stalled, but without a stand-down: pausing a channel
+        // because of our own defect would hide it behind an apparent outage.
+        await service.recordSync({ id: connection.id, error: message })
+      }
       continue
     }
+
+    // The channel answered. Clearing here rather than at the end of the loop is
+    // deliberate: a reachable channel with credentials that work has earned the
+    // reset, and whether FBM then managed to ingest its orders is our problem,
+    // not a reason to keep standing down from theirs.
+    await service.recordSuccess(connection.id, now).catch(() => undefined)
 
     result.fetched += orders.length
     if (!orders.length) {
@@ -203,11 +242,12 @@ export async function processChannelOrderSync(
     }
   }
 
-  if (result.fetched || result.failed) {
+  if (result.fetched || result.failed || result.throttled) {
     log.info(
       `[channel-orders] ${result.connections} connections: fetched ${result.fetched}, ` +
         `ingested ${result.ingested}, replayed ${result.replayed}, skipped ${result.skipped}, ` +
-        `unmatched lines ${result.unmatched_lines}, failed ${result.failed}`
+        `unmatched lines ${result.unmatched_lines}, failed ${result.failed}, ` +
+        `${result.throttled} standing down`
     )
   }
 

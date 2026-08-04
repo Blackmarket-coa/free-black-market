@@ -56,6 +56,14 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
           last_synced_at: connection?.last_synced_at ?? null,
           orders_synced_through: connection?.orders_synced_through ?? null,
           last_error: connection?.last_error ?? null,
+          // Phase 12. A connection that is enabled but standing down looks
+          // identical to a healthy idle one from the outside, and a vendor
+          // watching orders not arrive deserves better than silence. The two
+          // fields say different things and the panel should too: `throttled_
+          // until` is "we are waiting, this resolves itself", `needs_reauth` is
+          // "nothing will happen until you paste a new token".
+          throttled_until: connection?.throttled_until ?? null,
+          needs_reauth: connection?.needs_reauth ?? false,
         }
       }),
     })

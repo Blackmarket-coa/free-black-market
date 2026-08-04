@@ -2,6 +2,15 @@ import { MedusaService } from "@medusajs/framework/utils"
 import { ChannelConnection, ChannelListing, ChannelOrderRecord } from "./models"
 import type { ChannelOrder } from "./types"
 import type { ChannelCredentials } from "./types"
+import { channelCredentialCipher } from "./lib/credentials"
+import {
+  clearedThrottle,
+  decideThrottle,
+  ratePolicyFor,
+  shouldAttemptNow,
+  type ThrottleDecision,
+  type ThrottleState,
+} from "./throttle"
 
 export type ConnectionRow = {
   id: string
@@ -14,6 +23,9 @@ export type ConnectionRow = {
   orders_synced_through: Date | null
   last_synced_at: Date | null
   last_error: string | null
+  throttled_until: Date | null
+  consecutive_failures: number
+  needs_reauth: boolean
 }
 
 /**
@@ -85,13 +97,19 @@ class ChannelConnectorService extends MedusaService({
         {
           id: existing.id,
           api_base_url: input.api_base_url,
-          access_token: input.access_token,
+          access_token: channelCredentialCipher.encrypt(input.access_token),
           options: input.options ?? null,
           enabled: true,
           // Re-entering credentials clears the stall, but never the cursor —
           // resetting `orders_synced_through` would re-import the vendor's
           // order history.
           last_error: null,
+          // A new token is the one event that can actually resolve a `needs_
+          // reauth` stall, so the backoff is lifted here rather than being
+          // waited out. Leaving it in place would mean a vendor who fixed the
+          // problem still sat idle for the remainder of a twelve-hour stand-down
+          // with no way to tell that they had already succeeded.
+          ...clearedThrottle(),
         } as never,
       ])
       return updated as unknown as ConnectionRow
@@ -102,7 +120,7 @@ class ChannelConnectorService extends MedusaService({
         seller_id: input.seller_id,
         channel_id: input.channel_id,
         api_base_url: input.api_base_url,
-        access_token: input.access_token,
+        access_token: channelCredentialCipher.encrypt(input.access_token),
         options: input.options ?? null,
         enabled: true,
       } as never,
@@ -110,13 +128,91 @@ class ChannelConnectorService extends MedusaService({
     return created as unknown as ConnectionRow
   }
 
-  /** Credentials in the shape the adapters take. */
+  /**
+   * Credentials in the shape the adapters take.
+   *
+   * The single decryption point. Every caller reaches an adapter through here,
+   * so nothing else needs to know the column is encrypted — and nothing else
+   * can accidentally hand a ciphertext to a channel as a bearer token, which is
+   * the failure mode of decrypting at each call site instead.
+   */
   toCredentials(row: ConnectionRow): ChannelCredentials {
     return {
       api_base_url: row.api_base_url,
-      access_token: row.access_token,
+      access_token: channelCredentialCipher.decrypt(row.access_token),
       options: row.options ?? undefined,
     }
+  }
+
+  /** The throttle fields, in the shape the pure decision functions take. */
+  throttleState(row: ConnectionRow): ThrottleState {
+    return {
+      throttled_until: row.throttled_until ?? null,
+      consecutive_failures: row.consecutive_failures ?? 0,
+      needs_reauth: Boolean(row.needs_reauth),
+    }
+  }
+
+  /** Whether a sync job may call this channel right now. */
+  mayAttempt(row: ConnectionRow, now: Date): boolean {
+    return shouldAttemptNow(this.throttleState(row), now)
+  }
+
+  /**
+   * Record a failed channel call and stand down for as long as it warrants.
+   *
+   * Takes the raw status rather than a pre-computed delay so the policy stays
+   * in one place — a caller that decided its own backoff would be a second,
+   * divergent rate policy, and the two would disagree exactly when it mattered.
+   */
+  async recordFailure(input: {
+    row: ConnectionRow
+    status: number
+    retryAfterSeconds?: number | null
+    message?: string
+    now?: Date
+  }): Promise<ThrottleDecision> {
+    const now = input.now ?? new Date()
+    const decision = decideThrottle({
+      current: this.throttleState(input.row),
+      status: input.status,
+      retryAfterSeconds: input.retryAfterSeconds,
+      message: input.message,
+      policy: ratePolicyFor(input.row.channel_id),
+      now,
+      // Real randomness here, a fixed value in tests. Without it, every
+      // connection to a channel that just recovered retries in the same
+      // instant, which is the retry storm that keeps it down.
+      jitter: Math.random(),
+    })
+
+    await this.updateChannelConnections({
+      id: input.row.id,
+      throttled_until: decision.throttled_until,
+      consecutive_failures: decision.consecutive_failures,
+      needs_reauth: decision.needs_reauth,
+      last_error: decision.reason.slice(0, 1_000),
+      last_synced_at: now,
+    } as never)
+
+    return decision
+  }
+
+  /**
+   * Record that the channel answered normally.
+   *
+   * Resets the failure count and lifts any stand-down. Called on success even
+   * when the run did no useful work — an empty order poll is still proof the
+   * channel is reachable and the credentials are live, and holding a backoff
+   * open through it would penalise a quiet vendor for being quiet.
+   */
+  async recordSuccess(id: string, now: Date = new Date()): Promise<void> {
+    await this.updateChannelConnections({
+      id,
+      ...clearedThrottle(),
+      last_synced_at: now,
+      last_error: null,
+    } as never)
   }
 
   /**
