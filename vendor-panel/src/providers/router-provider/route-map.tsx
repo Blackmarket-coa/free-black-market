@@ -1610,6 +1610,14 @@ export const RouteMap: RouteObject[] = [
             },
           },
           {
+            path: "channels",
+            errorElement: <ErrorBoundary />,
+            lazy: () => import("../../routes/settings/channels"),
+            handle: {
+              breadcrumb: () => "Sales channels",
+            },
+          },
+          {
             path: "store",
             errorElement: <ErrorBoundary />,
             lazy: () => import("../../routes/store/store-detail"),
