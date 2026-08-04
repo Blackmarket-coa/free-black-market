@@ -18,6 +18,10 @@ export enum FeeType {
   CREATOR_COMMISSION = "CREATOR_COMMISSION", // Affiliate share to a creator
   PLUGIN_DEVELOPER_FEE = "PLUGIN_DEVELOPER_FEE", // Share to plugin/theme/emoji-pack developer
   REFERRAL_FEE = "REFERRAL_FEE",           // Generic referral share (distinct from creator commission)
+  // An external marketplace's own cut (Faire/Etsy/Amazon), taken before money
+  // ever reaches FBM. Distinct from PLATFORM_FEE, which is ours: confusing the
+  // two would either double-count our commission or hide theirs.
+  CHANNEL_FEE = "CHANNEL_FEE",
 }
 
 /**
