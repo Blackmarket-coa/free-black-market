@@ -18,7 +18,7 @@ export type VendorChargeStatus =
 
 export type VendorCharge = {
   id: string
-  kind: "plan" | "promotion" | "usage" | "manual"
+  kind: "plan" | "promotion" | "addon" | "usage" | "manual"
   status: VendorChargeStatus
   amount: number
   currency_code: string

@@ -27,6 +27,7 @@ export const VENDOR_FEATURE_KEYS = [
   "vendor.nursery",
   "vendor.pick_pack",
   "vendor.embed",
+  "vendor.buyer_network",
 ] as const
 
 export type VendorFeatureKey = (typeof VENDOR_FEATURE_KEYS)[number]

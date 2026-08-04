@@ -4,8 +4,8 @@
 # Build artefact is a static bundle served by nginx-alpine.
 # ----------------------------------------------------------------------------
 
-ARG NODE_VERSION=20-bookworm-slim
-ARG NGINX_VERSION=1.27-alpine
+ARG NODE_VERSION=22-bookworm-slim
+ARG NGINX_VERSION=1.31-alpine
 
 # --- build stage -------------------------------------------------------------
 FROM node:${NODE_VERSION} AS build
@@ -14,8 +14,29 @@ ENV NODE_ENV=production
 
 RUN corepack enable
 
-COPY package.json pnpm-lock.yaml ./
-RUN pnpm install --frozen-lockfile --prod=false
+# `pnpm-workspace.yaml` carries the dependency overrides, which pnpm 11 no
+# longer reads from package.json. Omitting it here does not fail the build —
+# it silently resolves the unpinned versions, which is how a CVE fix gets
+# undone inside an image while every gate stays green.
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+# `--trust-lockfile` skips pnpm 11's per-entry supply-chain verification, which
+# contacts the registry once for every lockfile entry. Backend has ~1750, and
+# four images build in parallel, so this step rate-limited npm and failed the
+# build outright:
+#
+#   x Lockfile failed supply-chain policy check (1752 entries in 2m 34.3s)
+#   [ERR_PNPM_FETCH_429] GET .../@medusajs%2Fmodules-sdk: Too Many Requests
+#
+# An image build is the wrong place to verify anyway: it consumes a lockfile
+# that is already committed and reviewed. `security.yml`'s install is the
+# designated verifier and deliberately omits this flag.
+# pnpm 11 re-verifies node_modules against the lockfile before running any
+# script, by spawning its own pnpm — which does not inherit the
+# `--trust-lockfile` on the install above, so it would re-run the full
+# supply-chain pass (one registry request per lockfile entry) on every
+# `pnpm run` in this build.
+ENV pnpm_config_verify_deps_before_run=false
+RUN pnpm install --frozen-lockfile --prod=false --trust-lockfile
 
 COPY . .
 

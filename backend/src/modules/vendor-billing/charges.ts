@@ -17,6 +17,8 @@ export enum VendorChargeKind {
   PLAN = "plan",
   /** A promoted-listing purchase. */
   PROMOTION = "promotion",
+  /** A feature add-on pack purchase (`vendor-plan/addons.ts`). */
+  ADDON = "addon",
   /** Metered overage aggregated from the Phase 1 counters. */
   USAGE = "usage",
   /** Anything an operator raises by hand. */

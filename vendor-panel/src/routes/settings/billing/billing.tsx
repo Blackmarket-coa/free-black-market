@@ -7,6 +7,15 @@ import {
   type VendorCharge,
   type VendorChargeStatus,
 } from "../../../hooks/api/vendor-billing"
+import {
+  describeUsage,
+  useVendorUsage,
+  type ResourceUsage,
+} from "../../../hooks/api/vendor-usage"
+import {
+  describeTenancyGrant,
+  useVendorTenancy,
+} from "../../../hooks/api/vendor-tenancy"
 import { SingleColumnPageSkeleton } from "../../../components/common/skeleton"
 import { PaymentMethodForm } from "./payment-method-form"
 
@@ -53,8 +62,36 @@ const ChargeRow = ({ charge }: { charge: VendorCharge }) => (
   </div>
 )
 
+const UsageRow = ({ resource }: { resource: ResourceUsage }) => {
+  const display = describeUsage(resource)
+
+  return (
+    <div className="flex items-center justify-between border-b border-ui-border-base py-3 last:border-b-0">
+      <div className="flex flex-col">
+        <Text size="small">{resource.label}</Text>
+        {display.hint ? (
+          <Text
+            size="xsmall"
+            className={
+              display.tone === "red" ? "text-ui-fg-error" : "text-ui-fg-subtle"
+            }
+          >
+            {display.hint}
+          </Text>
+        ) : null}
+      </div>
+      <Badge size="2xsmall" color={display.tone}>
+        {display.amount}
+      </Badge>
+    </div>
+  )
+}
+
 export const BillingSettings = () => {
   const { plan, isPending: planPending } = useVendorPlan()
+  const { resources: usage, allowances } = useVendorUsage()
+  const { tier, grantedFeatureKeys } = useVendorTenancy()
+  const orgGrant = describeTenancyGrant(tier, grantedFeatureKeys)
   const {
     outstanding,
     charges,
@@ -97,6 +134,15 @@ export const BillingSettings = () => {
               {plan?.status ?? "active"}
             </Text>
           </div>
+          {/* Why this seller may hold features their plan does not list. Left
+              unexplained, an organization-granted feature reads as a bug. */}
+          {orgGrant ? (
+            <div className="col-span-2">
+              <Text size="xsmall" className="text-ui-fg-subtle">
+                {orgGrant}
+              </Text>
+            </div>
+          ) : null}
           {plan?.pending_plan_code ? (
             <div className="col-span-2">
               <Text size="xsmall" className="text-ui-fg-subtle">
@@ -109,6 +155,35 @@ export const BillingSettings = () => {
           ) : null}
         </div>
       </Container>
+
+      {/* Usage against plan allowances. Rendered only once it has loaded —
+          this is supplementary to billing, so it must not hold up the page or
+          leave an empty shell if the usage read is slow or degraded. */}
+      {usage.length > 0 || allowances.length > 0 ? (
+        <Container className="flex flex-col gap-y-2">
+          <Heading level="h2">Usage</Heading>
+          {usage.length > 0 ? (
+            <div className="flex flex-col">
+              {usage.map((resource) => (
+                <UsageRow key={resource.key} resource={resource} />
+              ))}
+            </div>
+          ) : null}
+          {allowances.length > 0 ? (
+            <div className="flex flex-wrap gap-x-4 gap-y-1 pt-1">
+              {allowances.map((allowance) => (
+                <Text
+                  key={allowance.key}
+                  size="xsmall"
+                  className="text-ui-fg-subtle"
+                >
+                  {allowance.label}: {allowance.limit}
+                </Text>
+              ))}
+            </div>
+          ) : null}
+        </Container>
+      ) : null}
 
       {/* Payment method + balance */}
       <Container className="flex flex-col gap-y-4">

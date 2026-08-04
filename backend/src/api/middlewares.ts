@@ -38,7 +38,7 @@ import { requirePlanFeature } from "./middlewares/require-plan-feature";
 import { enforceListingTypeAllowed } from "../shared/listing-type-guard";
 import { enforceSameOriginForCookieAuth } from "../shared/csrf-guard";
 import { sanitizedErrorHandler } from "../shared/error-sanitizer";
-import { requireStorefrontContext } from "./middlewares/tenancy-context";
+import { attachStorefrontContext, requireStorefrontContext } from "./middlewares/tenancy-context";
 import {
   embedCorsMiddleware,
   requireEmbedKey,
@@ -994,6 +994,33 @@ export default defineMiddlewares({
         requirePlanFeature("vendor.channel_sync"),
       ],
     },
+    // The Buyer Center: demand pools, buyer networks, group bargaining.
+    // Scoped to `/vendor/collective/*` only — the `/store/collective/*` routes
+    // are the buyer-facing side and must stay open (gating them would hide
+    // pools from the very people they exist to gather), and `/admin/collective`
+    // is operator-internal. Two vendor routes are affected, both of which
+    // organise purchasing across many suppliers and neither of which a lone
+    // seller can use meaningfully.
+    {
+      matcher: "/vendor/collective*",
+      // Plan gate only, deliberately no feature flag. A flag defaults to off
+      // and answers 404 — which would make a working feature vanish for
+      // everyone until an env var was set. That is an outage, not packaging.
+      // A 402 says "this costs money" and carries an upgrade path, which is
+      // what selling it actually requires.
+      middlewares: [requirePlanFeature("vendor.buyer_network")],
+    },
+    // Outbound sales channels. Same flag and same plan key as the inbound
+    // sync above — connecting a channel is one capability regardless of which
+    // way the products travel, and splitting it would mean selling a vendor
+    // "sync" that only worked in one direction.
+    {
+      matcher: "/vendor/channels*",
+      middlewares: [
+        requireFeatureFlagMiddleware("CHANNEL_SYNC_V1"),
+        requirePlanFeature("vendor.channel_sync"),
+      ],
+    },
     // Phase 0 contracts: executable JSON boundaries on route payloads
     {
       matcher: "/vendor/inventory-sync/events",
@@ -1079,12 +1106,35 @@ export default defineMiddlewares({
       matcher: "/vendor/promotion*",
       middlewares: [authenticate("seller", "bearer")],
     },
+    // Add-on pack catalog + purchase. Same posture as promotions for the same
+    // reasons: the price list stays visible to every plan, and the purchase
+    // route grants nothing until its charge is PAID.
+    {
+      matcher: "/vendor/addons*",
+      middlewares: [authenticate("seller", "bearer")],
+    },
     // Charge ledger + payment-method setup. Not plan-gated: a vendor must
     // always be able to see and settle their balance — especially one whose
     // access was reduced because of an unpaid balance.
     {
       matcher: "/vendor/billing*",
       middlewares: [authenticate("seller", "bearer")],
+    },
+    // Plan usage against allowances. Not plan-gated for the same reason as
+    // billing, and more so: the vendor closest to a ceiling is the one on the
+    // smallest plan, and gating this would hide the number from them.
+    {
+      matcher: "/vendor/usage",
+      middlewares: [authenticate("seller", "bearer")],
+    },
+    // What this seller's organization grants them, when they are inside one.
+    // `attachStorefrontContext` rather than `requireStorefrontContext`: the
+    // required form 400s without the two context headers, which the vendor
+    // panel does not send. Not plan-gated, same reasoning as usage — it
+    // describes the seller's own commercial position.
+    {
+      matcher: "/vendor/tenancy/context",
+      middlewares: [authenticate("seller", "bearer"), attachStorefrontContext()],
     },
     // Stripe webhook for vendor charges. Signature-verified in the handler;
     // the raw body must survive parsing or constructEvent verifies nothing.

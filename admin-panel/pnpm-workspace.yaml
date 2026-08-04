@@ -1,0 +1,29 @@
+# Dependency overrides.
+#
+# These live here rather than in package.json's `pnpm.overrides` because
+# pnpm 11 stopped reading that field. Nearly every entry pins a CVE fix, so
+# a silently-dropped override reintroduces the vulnerability while leaving
+# every gate green — Trivy reads the lockfile, and the lockfile would just
+# say the old version was always intended.
+#
+# Two things keep that from happening again:
+#   - `scripts/check-override-coverage.mjs` asserts every override below
+#     actually binds in the resolved lockfile.
+#   - installs must NOT pass `--ignore-workspace`. That flag makes pnpm
+#     ignore this file entirely, with no warning at all. This directory is
+#     its own workspace root precisely so the flag is unnecessary.
+overrides:
+  "glob": ">=10.5.0"
+  "qs": ">=6.14.2"
+  "lodash": ">=4.18.0"
+  "picomatch": ">=4.0.4"
+  "postcss": ">=8.5.10"
+  "@remix-run/router": ">=1.23.2"
+  "zod": "4.2.0"
+
+# pnpm 11 makes an unadjudicated build script a hard error, so each is a
+# decision. See backend/pnpm-workspace.yaml for the full rationale.
+allowBuilds:
+  esbuild: true                 # fetches its platform binary
+  protobufjs: true              # generates its runtime bundle
+  "@medusajs/telemetry": false  # phone-home on install; nothing needs it

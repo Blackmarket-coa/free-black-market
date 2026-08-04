@@ -15,7 +15,8 @@ import { sendVendorAcceptedNotificationWorkflow } from "../workflows/send-vendor
 import { appendPath } from "./url"
 import { sendCustomerAcceptedNotificationWorkflow } from "../workflows/send-customer-accepted-notification"
 import { VendorType } from "../modules/seller-extension/models/seller-metadata"
-import { getMatrixService, GOVERNANCE_POWER_LEVEL } from "./matrix-service"
+import { GOVERNANCE_POWER_LEVEL } from "./matrix-service"
+import { getChatProvider } from "./chat"
 import { REQUEST_MODULE } from "../modules/request"
 import RequestModuleService from "../modules/request/service"
 import { RequestStatus } from "../modules/request/models"
@@ -482,7 +483,7 @@ export class SellerApprovalService {
 
       // Step 6: Provision Matrix (Blackout) user + vendor room (non-blocking)
       let matrixCreated = false
-      const matrixService = getMatrixService()
+      const matrixService = getChatProvider()
       if (matrixService) {
         try {
           const localpartSource = seller.handle || data.member.email.split("@")[0]

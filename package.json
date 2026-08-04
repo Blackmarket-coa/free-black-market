@@ -1,18 +1,5 @@
 {
-  "packageManager": "pnpm@10.13.1",
-  "pnpm": {
-    "overrides": {
-      "lodash": ">=4.18.0",
-      "picomatch": ">=4.0.4",
-      "qs": ">=6.14.2",
-      "postcss": ">=8.5.18",
-      "@mikro-orm/core": "6.6.14",
-      "@mikro-orm/cli": "6.6.14",
-      "@mikro-orm/knex": "6.6.14",
-      "@mikro-orm/migrations": "6.6.14",
-      "@mikro-orm/postgresql": "6.6.14"
-    }
-  },
+  "packageManager": "pnpm@11.20.0",
   "dependencies": {
     "@medusajs/js-sdk": "^2.13.1",
     "@medusajs/types": "^2.13.1",
