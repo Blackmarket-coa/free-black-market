@@ -107,6 +107,22 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # Runs before the scan, because it checks a precondition the scan's result
+      # depends on. Most CVEs that do NOT appear in `.trivyignore` are absent
+      # because an override fixed them — so if the overrides stop binding, Trivy
+      # reads a lockfile that genuinely contains the old versions and reports
+      # them as intended. A clean scan and a silently unpinned tree look
+      # identical from here; this is what tells them apart.
+      #
+      # Not hypothetical: pnpm 11 moves `overrides` out of package.json and
+      # ignores the new location entirely when `--ignore-workspace` is passed —
+      # which every install below does — with no warning at all. See SD-24.
+      #
+      # Needs no dependencies (plain Node over the lockfiles), so it runs first
+      # and costs nothing.
+      - name: Check dependency overrides still bind
+        run: node scripts/check-override-coverage.mjs
+
       # SD-1..SD-5 (mikro-orm/lodash/picomatch/axios/next) landed 2026-05-13
       # and `.trivyignore` is now empty (header only). Trivy is a hard gate;
       # any new HIGH/CRITICAL finding fails CI and must be triaged into

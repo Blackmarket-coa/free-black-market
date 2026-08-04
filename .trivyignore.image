@@ -12,9 +12,11 @@
 # filesystem scan if it ever regresses — while the copy vendored inside pnpm's
 # binary is beyond our reach.
 #
-# Every entry here needs an `SD-*` rationale, same rule as the other file.
+# Every entry here needs an `SD-*` row in docs/AUDIT_DEBT.md, same rule as the
+# other file. The entry below was labelled `SD-23` by #781, colliding with an
+# unrelated resolved row, and had no AUDIT_DEBT row at all; both are fixed now.
 
-# SD-23: three HIGH findings vendored INSIDE the pnpm distribution that ships in
+# SD-24: three HIGH findings vendored INSIDE the pnpm distribution that ships in
 # the backend runtime image. They live in corepack's cached pnpm tree, so
 # `pnpm.overrides` cannot reach them and neither can a lockfile change.
 #
@@ -31,13 +33,26 @@
 #   CVE-2026-69192  ip-address 10.2.0      fixed in 10.3.1
 #   CVE-2026-55697  pnpm 10.34.5           fixed in 11.5.3
 #
-# pnpm 11 is a package-manager major: it moves the `packageManager` pin for
-# every workspace, CI and local dev, and needs its own lockfile-compatibility
-# pass. Tracked as a separate workstream rather than smuggled into a CVE fix.
+# pnpm 11 clears all three — verified against both corepack caches, the same
+# tree this scan reads: 11.20.0 vendors 23 packages against 10.34.5's 80, and
+# neither brace-expansion nor ip-address is among them.
 #
-# CVE-2026-14257 also applies to this vendored copy and is already suppressed
-# in `.trivyignore` under SD-22 for the same unfixable function-export line;
-# repeated here because the two files do not share entries.
+# It is blocked on Node, not on pnpm. pnpm 11 requires Node >= 22.13 and this
+# repo pins Node 20 in CI and in all four Dockerfiles; #787 attempted the bump
+# and every job failed with `ERR_UNKNOWN_BUILTIN_MODULE: node:sqlite`. So the
+# real prerequisite is a Node 20 -> 22 upgrade of four production runtimes,
+# which is its own change rather than a rider on a CVE fix.
+#
+# SD-24 in docs/AUDIT_DEBT.md carries the full migration plan, including the
+# part that makes it dangerous: pnpm 11 silently ignores `pnpm-workspace.yaml`
+# overrides when `--ignore-workspace` is passed, which would unpin 84 CVE fixes
+# without a single warning. `scripts/check-override-coverage.mjs` now guards
+# that and runs before the Trivy filesystem scan.
+#
+# SD-22: CVE-2026-14257 is a separate finding in OUR OWN tree rather than
+# pnpm's bundle, already suppressed in `.trivyignore` for the same unfixable
+# function-export line; repeated here because the two files do not share
+# entries. It is unaffected by the pnpm upgrade above.
 CVE-2026-14257
 CVE-2026-69152
 CVE-2026-69192
