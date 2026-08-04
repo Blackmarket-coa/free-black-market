@@ -1,10 +1,3 @@
-packages:
-  - "packages/*"
-  - "nursery-portal"
-  - "wellness-portal"
-  - "botanical-portal"
-  - "creator-portal"
-
 # Dependency overrides.
 #
 # These live here rather than in package.json's `pnpm.overrides` because
@@ -20,17 +13,17 @@ packages:
 #     ignore this file entirely, with no warning at all. This directory is
 #     its own workspace root precisely so the flag is unnecessary.
 overrides:
+  "glob": ">=10.5.0"
+  "qs": ">=6.14.2"
   "lodash": ">=4.18.0"
   "picomatch": ">=4.0.4"
-  "qs": ">=6.14.2"
-  "postcss": ">=8.5.18"
-  "@mikro-orm/core": "6.6.14"
-  "@mikro-orm/cli": "6.6.14"
-  "@mikro-orm/knex": "6.6.14"
-  "@mikro-orm/migrations": "6.6.14"
-  "@mikro-orm/postgresql": "6.6.14"
+  "postcss": ">=8.5.10"
+  "@remix-run/router": ">=1.23.2"
+  "zod": "4.2.0"
 
 # pnpm 11 makes an unadjudicated build script a hard error, so each is a
 # decision. See backend/pnpm-workspace.yaml for the full rationale.
 allowBuilds:
-  esbuild: true  # fetches its platform binary
+  esbuild: true                 # fetches its platform binary
+  protobufjs: true              # generates its runtime bundle
+  "@medusajs/telemetry": false  # phone-home on install; nothing needs it

@@ -7,38 +7,43 @@
 # in the shared file would switch off the regression detection the filesystem
 # gate exists to provide.
 #
-# CVE-2026-69152 below is the sharp edge that makes the split necessary: it was
-# genuinely FIXED in our lockfile (#773), so it must keep failing the
-# filesystem scan if it ever regresses — while the copy vendored inside pnpm's
-# binary is beyond our reach.
-#
-# Every entry here needs an `SD-*` rationale, same rule as the other file.
+# Every entry here needs an `SD-*` row in docs/AUDIT_DEBT.md, same rule as the
+# other file.
 
-# SD-23: three HIGH findings vendored INSIDE the pnpm distribution that ships in
-# the backend runtime image. They live in corepack's cached pnpm tree, so
-# `pnpm.overrides` cannot reach them and neither can a lockfile change.
+# ---------------------------------------------------------------------------
+# RESOLVED — kept as a note, not a suppression.
 #
-# pnpm is required at runtime: `scripts/railway-start.js` boots the server with
-# `pnpm exec medusa start` and runs migrations with
-# `pnpm exec medusa db:migrate --execute-safe-links`. It therefore cannot be
-# removed the way npm was — npm IS removed from both node runtime images, and
-# that is what cleared most of the image findings.
-#
-# pnpm was bumped 10.13.1 -> 10.34.5 here, taking the backend image from 51
-# HIGH/CRITICAL to 4. The remaining three need pnpm 11.x:
+# This file previously suppressed three HIGH findings vendored inside the pnpm
+# distribution that ships in the backend runtime image:
 #
 #   CVE-2026-69152  brace-expansion 2.1.2  fixed in 2.1.4
 #   CVE-2026-69192  ip-address 10.2.0      fixed in 10.3.1
 #   CVE-2026-55697  pnpm 10.34.5           fixed in 11.5.3
 #
-# pnpm 11 is a package-manager major: it moves the `packageManager` pin for
-# every workspace, CI and local dev, and needs its own lockfile-compatibility
-# pass. Tracked as a separate workstream rather than smuggled into a CVE fix.
+# All three are cleared by the pnpm 10.34.5 -> 11.20.0 upgrade, and the fix is
+# stronger than a version bump: pnpm 11 vendors 23 packages where 10.34.5
+# vendored 80, and `brace-expansion` and `ip-address` are not among them at all.
+# Verified directly against both corepack caches — the same tree the image scan
+# reads — rather than inferred from release notes:
 #
-# CVE-2026-14257 also applies to this vendored copy and is already suppressed
-# in `.trivyignore` under SD-22 for the same unfixable function-export line;
-# repeated here because the two files do not share entries.
+#   pnpm 10.34.5: brace-expansion dirs=1  ip-address dirs=1  vendored pkgs=80
+#   pnpm 11.20.0: brace-expansion dirs=0  ip-address dirs=0  vendored pkgs=23
+#
+# Recorded as SD-24 in docs/AUDIT_DEBT.md. That row also records two process
+# failures in the entry this replaces, both introduced by #781: it was labelled
+# `SD-23`, colliding with an unrelated and already-resolved SD-23, and it never
+# got an AUDIT_DEBT row at all — so a live suppression carried no traceable
+# rationale, which is exactly what the `SD-*` rule exists to prevent.
+# ---------------------------------------------------------------------------
+
+# SD-22: brace-expansion CVE-2026-14257 (HIGH, DoS via crafted brace patterns).
+#
+# Unrelated to the pnpm findings above, and NOT cleared by the pnpm upgrade:
+# this copy comes from **our own** dependency tree, not from pnpm's bundle. The
+# fix exists only in 5.0.8, whose `@isaacs` rewrite changed the module export
+# from `module.exports = expand` to a named export; the maintainer did not
+# backport to the function-export line, which `minimatch@3.1.5` requires and
+# which ESLint and jest coverage pin. Forcing those onto 5.0.8 throws
+# `TypeError: expand is not a function`. Full rationale in `.trivyignore` under
+# SD-22 — repeated here because the two files do not share entries.
 CVE-2026-14257
-CVE-2026-69152
-CVE-2026-69192
-CVE-2026-55697

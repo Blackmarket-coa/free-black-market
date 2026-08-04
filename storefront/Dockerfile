@@ -13,7 +13,11 @@ WORKDIR /app
 
 RUN corepack enable
 
-COPY package.json pnpm-lock.yaml ./
+# `pnpm-workspace.yaml` carries the dependency overrides, which pnpm 11 no
+# longer reads from package.json. Omitting it here does not fail the build —
+# it silently resolves the unpinned versions, which is how a CVE fix gets
+# undone inside an image while every gate stays green.
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 RUN pnpm install --frozen-lockfile --prod=false
 
 # --- build stage -------------------------------------------------------------

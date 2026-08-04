@@ -14,7 +14,11 @@ WORKDIR /app
 
 RUN corepack enable
 
-COPY package.json pnpm-lock.yaml ./
+# `pnpm-workspace.yaml` carries the dependency overrides, which pnpm 11 no
+# longer reads from package.json. Omitting it here does not fail the build —
+# it silently resolves the unpinned versions, which is how a CVE fix gets
+# undone inside an image while every gate stays green.
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY restaurant-marketplace ./restaurant-marketplace
 RUN pnpm install --frozen-lockfile --prod=false
 
@@ -40,7 +44,7 @@ ENV PORT=9000
 # `corepack prepare` caches pnpm in the image so `pnpm start` does NOT download
 # it from the npm registry on every container boot (which was DNS-flaky and
 # forced a `sleep` workaround in production).
-RUN corepack enable && corepack prepare pnpm@10.34.5 --activate \
+RUN corepack enable && corepack prepare pnpm@11.20.0 --activate \
     && groupadd -g 10001 medusa \
     && useradd -u 10001 -g medusa -s /usr/sbin/nologin -m medusa \
     && apt-get update && apt-get install -y --no-install-recommends wget tini ca-certificates \
@@ -65,7 +69,7 @@ COPY --from=build --chown=medusa:medusa /app/.medusa ./.medusa
 COPY --from=build --chown=medusa:medusa /app/src ./src
 COPY --from=build --chown=medusa:medusa /app/node_modules ./node_modules
 COPY --from=build --chown=medusa:medusa /app/restaurant-marketplace ./restaurant-marketplace
-COPY --from=build --chown=medusa:medusa /app/package.json /app/pnpm-lock.yaml ./
+COPY --from=build --chown=medusa:medusa /app/package.json /app/pnpm-lock.yaml /app/pnpm-workspace.yaml ./
 COPY --from=build --chown=medusa:medusa /app/scripts ./scripts
 COPY --from=build --chown=medusa:medusa /app/medusa-config.ts ./medusa-config.ts
 COPY --from=build --chown=medusa:medusa /app/instrumentation.ts ./instrumentation.ts
