@@ -1,18 +1,7 @@
 {
   "name": "@medusajs/dashboard",
   "version": "2.14.2",
-  "packageManager": "pnpm@10.34.5",
-  "pnpm": {
-    "overrides": {
-      "glob": ">=10.5.0",
-      "qs": ">=6.14.2",
-      "lodash": ">=4.18.0",
-      "picomatch": ">=4.0.4",
-      "postcss": ">=8.5.10",
-      "@remix-run/router": ">=1.23.2",
-      "zod": "4.2.0"
-    }
-  },
+  "packageManager": "pnpm@11.20.0",
   "scripts": {
     "generate:static": "node ./scripts/generate-currencies.js && prettier --write ./src/lib/currencies.ts",
     "dev": "vite",

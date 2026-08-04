@@ -5,7 +5,7 @@
 # minimal node_modules subset Next collected during build.
 # ----------------------------------------------------------------------------
 
-ARG NODE_VERSION=20-bookworm-slim
+ARG NODE_VERSION=22-bookworm-slim
 
 # --- deps stage --------------------------------------------------------------
 FROM node:${NODE_VERSION} AS deps
@@ -13,8 +13,23 @@ WORKDIR /app
 
 RUN corepack enable
 
-COPY package.json pnpm-lock.yaml ./
-RUN pnpm install --frozen-lockfile --prod=false
+# `pnpm-workspace.yaml` carries the dependency overrides, which pnpm 11 no
+# longer reads from package.json. Omitting it here does not fail the build —
+# it silently resolves the unpinned versions, which is how a CVE fix gets
+# undone inside an image while every gate stays green.
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+# `--trust-lockfile` skips pnpm 11's per-entry supply-chain verification, which
+# contacts the registry once for every lockfile entry. Backend has ~1750, and
+# four images build in parallel, so this step rate-limited npm and failed the
+# build outright:
+#
+#   x Lockfile failed supply-chain policy check (1752 entries in 2m 34.3s)
+#   [ERR_PNPM_FETCH_429] GET .../@medusajs%2Fmodules-sdk: Too Many Requests
+#
+# An image build is the wrong place to verify anyway: it consumes a lockfile
+# that is already committed and reviewed. `security.yml`'s install is the
+# designated verifier and deliberately omits this flag.
+RUN pnpm install --frozen-lockfile --prod=false --trust-lockfile
 
 # --- build stage -------------------------------------------------------------
 FROM node:${NODE_VERSION} AS build

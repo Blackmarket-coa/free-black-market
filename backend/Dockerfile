@@ -6,7 +6,7 @@
 # resolves cleanly.
 # ----------------------------------------------------------------------------
 
-ARG NODE_VERSION=20-bookworm-slim
+ARG NODE_VERSION=22-bookworm-slim
 
 # --- deps stage --------------------------------------------------------------
 FROM node:${NODE_VERSION} AS deps
@@ -14,9 +14,24 @@ WORKDIR /app
 
 RUN corepack enable
 
-COPY package.json pnpm-lock.yaml ./
+# `pnpm-workspace.yaml` carries the dependency overrides, which pnpm 11 no
+# longer reads from package.json. Omitting it here does not fail the build —
+# it silently resolves the unpinned versions, which is how a CVE fix gets
+# undone inside an image while every gate stays green.
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY restaurant-marketplace ./restaurant-marketplace
-RUN pnpm install --frozen-lockfile --prod=false
+# `--trust-lockfile` skips pnpm 11's per-entry supply-chain verification, which
+# contacts the registry once for every lockfile entry. Backend has ~1750, and
+# four images build in parallel, so this step rate-limited npm and failed the
+# build outright:
+#
+#   x Lockfile failed supply-chain policy check (1752 entries in 2m 34.3s)
+#   [ERR_PNPM_FETCH_429] GET .../@medusajs%2Fmodules-sdk: Too Many Requests
+#
+# An image build is the wrong place to verify anyway: it consumes a lockfile
+# that is already committed and reviewed. `security.yml`'s install is the
+# designated verifier and deliberately omits this flag.
+RUN pnpm install --frozen-lockfile --prod=false --trust-lockfile
 
 # --- build stage -------------------------------------------------------------
 FROM node:${NODE_VERSION} AS build
@@ -29,18 +44,30 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY --from=deps /app/restaurant-marketplace ./restaurant-marketplace
 COPY . .
 
+# ENV does not cross stages, and `pnpm build` below is a script — so without
+# this the deps check runs here even though the deps stage already set it.
+# This is what failed the Docker backend build with ERR_PNPM_FETCH_429.
+ENV pnpm_config_verify_deps_before_run=false
+
 RUN rm -rf .medusa && pnpm build
 
 # --- runtime stage -----------------------------------------------------------
 FROM node:${NODE_VERSION} AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
+# Set in the RUNTIME stage too, not just the build, because the entrypoint is
+# `pnpm start` — a script. Without this, pnpm 11 would contact the registry once
+# per lockfile entry on EVERY CONTAINER BOOT. That is the same class of problem
+# the `corepack prepare` above exists to prevent: this image already learned
+# once that boot-time registry access is DNS-flaky in production and forced a
+# `sleep` workaround.
+ENV pnpm_config_verify_deps_before_run=false
 ENV PORT=9000
 
 # `corepack prepare` caches pnpm in the image so `pnpm start` does NOT download
 # it from the npm registry on every container boot (which was DNS-flaky and
 # forced a `sleep` workaround in production).
-RUN corepack enable && corepack prepare pnpm@10.34.5 --activate \
+RUN corepack enable && corepack prepare pnpm@11.20.0 --activate \
     && groupadd -g 10001 medusa \
     && useradd -u 10001 -g medusa -s /usr/sbin/nologin -m medusa \
     && apt-get update && apt-get install -y --no-install-recommends wget tini ca-certificates \
@@ -65,7 +92,7 @@ COPY --from=build --chown=medusa:medusa /app/.medusa ./.medusa
 COPY --from=build --chown=medusa:medusa /app/src ./src
 COPY --from=build --chown=medusa:medusa /app/node_modules ./node_modules
 COPY --from=build --chown=medusa:medusa /app/restaurant-marketplace ./restaurant-marketplace
-COPY --from=build --chown=medusa:medusa /app/package.json /app/pnpm-lock.yaml ./
+COPY --from=build --chown=medusa:medusa /app/package.json /app/pnpm-lock.yaml /app/pnpm-workspace.yaml ./
 COPY --from=build --chown=medusa:medusa /app/scripts ./scripts
 COPY --from=build --chown=medusa:medusa /app/medusa-config.ts ./medusa-config.ts
 COPY --from=build --chown=medusa:medusa /app/instrumentation.ts ./instrumentation.ts
