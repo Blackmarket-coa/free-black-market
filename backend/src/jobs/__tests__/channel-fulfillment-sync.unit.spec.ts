@@ -1,6 +1,7 @@
 import { processChannelFulfillmentSync } from "../channel-fulfillment-sync"
 import { CHANNEL_CONNECTOR_MODULE } from "../../modules/channel-connector/module-key"
 import { ChannelApiError } from "../../modules/channel-connector/types"
+import { shouldAttemptNow } from "../../modules/channel-connector/throttle"
 
 /**
  * Reporting shipments outward. A report that is silently dropped looks
@@ -46,6 +47,16 @@ const makeContainer = (opts: {
   const recordFulfillmentError = jest.fn(
     async (_id: string, _m: string) => undefined
   )
+  const recordFailure = jest.fn(
+    async (_input: {
+      row: { id: string; channel_id: string }
+      status: number
+      retryAfterSeconds?: number | null
+      message?: string
+      now?: Date
+    }) => undefined
+  )
+  const recordSuccess = jest.fn(async (_id: string, _now?: Date) => undefined)
   const service = {
     listChannelConnections: async () =>
       opts.connections ?? [
@@ -62,6 +73,12 @@ const makeContainer = (opts: {
       api_base_url: "https://faire.test",
       access_token: "tok",
     }),
+    // The real gate rather than a constant, so a stub cannot quietly disagree
+    // with what the service actually does.
+    mayAttempt: (row: { throttled_until?: Date | null }, now: Date) =>
+      shouldAttemptNow({ throttled_until: row.throttled_until ?? null }, now),
+    recordFailure,
+    recordSuccess,
     listUnreportedFulfillments: async () => opts.pending ?? [],
     markFulfillmentReported,
     recordFulfillmentError,
@@ -73,6 +90,8 @@ const makeContainer = (opts: {
     },
     markFulfillmentReported,
     recordFulfillmentError,
+    recordFailure,
+    recordSuccess,
   }
 }
 
@@ -194,5 +213,112 @@ describe("processChannelFulfillmentSync", () => {
     const { container } = makeContainer({ pending: [] })
     const result = await processChannelFulfillmentSync(container as never)
     expect(result).toMatchObject({ connections: 0, pending: 0, reported: 0 })
+  })
+
+  describe("standing down (Phase 12)", () => {
+    const now = new Date("2026-08-04T12:00:00.000Z")
+
+    it("does not touch a connection that is still backing off", async () => {
+      // The point of storing the deadline. Breaking out of the inner loop was
+      // never enough on its own: this job runs every ten minutes, so without
+      // this check the next tick walked straight back into the same wall.
+      const { container } = makeContainer({
+        connections: [
+          {
+            id: "cc_1",
+            seller_id: "sel_1",
+            channel_id: "faire",
+            enabled: true,
+            throttled_until: new Date("2026-08-04T12:30:00.000Z"),
+          },
+        ],
+        pending: [shipment("a")],
+      })
+
+      const result = await processChannelFulfillmentSync(container as never, {
+        now,
+      })
+
+      expect(result.throttled).toBe(1)
+      expect(result.connections).toBe(0)
+      expect(mockPush).not.toHaveBeenCalled()
+    })
+
+    it("comes back the moment the deadline has passed", async () => {
+      mockPush.mockResolvedValue(undefined)
+      const { container } = makeContainer({
+        connections: [
+          {
+            id: "cc_1",
+            seller_id: "sel_1",
+            channel_id: "faire",
+            enabled: true,
+            throttled_until: new Date("2026-08-04T11:59:00.000Z"),
+          },
+        ],
+        pending: [shipment("a")],
+      })
+
+      const result = await processChannelFulfillmentSync(container as never, {
+        now,
+      })
+
+      expect(result.throttled).toBe(0)
+      expect(result.reported).toBe(1)
+    })
+
+    it("passes the channel's own Retry-After through to the backoff", async () => {
+      // Not re-derived from the status code. A wait the channel named is the
+      // one number here we did not invent, and dropping it means substituting a
+      // guess for an instruction.
+      mockPush.mockRejectedValue(
+        new ChannelApiError("slow down", 429, "faire", undefined, 900)
+      )
+      const { container, recordFailure } = makeContainer({
+        pending: [shipment("a")],
+      })
+
+      await processChannelFulfillmentSync(container as never, { now })
+
+      expect(recordFailure).toHaveBeenCalledWith(
+        expect.objectContaining({ status: 429, retryAfterSeconds: 900 })
+      )
+    })
+
+    it("keeps a rejection off the connection record entirely", async () => {
+      // 422 is a fact about one shipment, and `recordFulfillmentError` already
+      // stores it against that row. Writing it at connection level too would
+      // overwrite the connection's real error with a per-item one, and cost a
+      // database round trip for every bad shipment in the queue.
+      mockPush.mockRejectedValue(new ChannelApiError("bad order", 422, "faire"))
+      const { container, recordFailure, recordSuccess, recordFulfillmentError } =
+        makeContainer({ pending: [shipment("a")] })
+
+      await processChannelFulfillmentSync(container as never, { now })
+
+      expect(recordFailure).not.toHaveBeenCalled()
+      expect(recordFulfillmentError).toHaveBeenCalledWith(
+        "a",
+        expect.stringContaining("bad order")
+      )
+      expect(recordSuccess).not.toHaveBeenCalled()
+    })
+
+    it("clears the stand-down only when something actually reported", async () => {
+      mockPush.mockResolvedValue(undefined)
+      const ok = makeContainer({ pending: [shipment("a")] })
+      await processChannelFulfillmentSync(ok.container as never, { now })
+      expect(ok.recordSuccess).toHaveBeenCalledWith("cc_1", now)
+
+      // A run where every shipment failed has just set a backoff. Clearing it
+      // here would erase it before the next tick ever read it.
+      jest.clearAllMocks()
+      mockPush.mockRejectedValue(
+        new ChannelApiError("down", 503, "faire")
+      )
+      const bad = makeContainer({ pending: [shipment("a")] })
+      await processChannelFulfillmentSync(bad.container as never, { now })
+      expect(bad.recordSuccess).not.toHaveBeenCalled()
+    })
   })
 })

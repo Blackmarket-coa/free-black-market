@@ -5,6 +5,7 @@ import type ChannelConnectorService from "../modules/channel-connector/service"
 import type { ConnectionRow } from "../modules/channel-connector/service"
 import { getChannelAdapter } from "../modules/channel-connector/adapters"
 import { ChannelApiError } from "../modules/channel-connector/types"
+import { classifyFailure } from "../modules/channel-connector/throttle"
 
 const log = createLogger("jobs/channel-fulfillment-sync")
 
@@ -13,6 +14,8 @@ export type FulfillmentSyncResult = {
   pending: number
   reported: number
   failed: number
+  /** Connections skipped because they are standing down. Phase 12. */
+  throttled: number
 }
 
 /**
@@ -36,15 +39,23 @@ export type FulfillmentSyncResult = {
  * A rejection is recorded and skipped; only a retryable failure is left for the
  * next pass. A 422 on a malformed shipment will fail identically forever, and
  * retrying it every ten minutes would bury the reports that could still succeed.
+ *
+ * **Phase 12:** a connection standing down is skipped entirely. Breaking out of
+ * the inner loop on a retryable error was never enough on its own — the next
+ * tick, ten minutes later, walked straight back into the same wall. The stored
+ * `throttled_until` is what makes the pause outlive this run.
  */
 export async function processChannelFulfillmentSync(
-  container: MedusaContainer
+  container: MedusaContainer,
+  options: { now?: Date } = {}
 ): Promise<FulfillmentSyncResult> {
+  const now = options.now ?? new Date()
   const result: FulfillmentSyncResult = {
     connections: 0,
     pending: 0,
     reported: 0,
     failed: 0,
+    throttled: 0,
   }
 
   const service = container.resolve<ChannelConnectorService>(
@@ -57,6 +68,14 @@ export async function processChannelFulfillmentSync(
 
   for (const connection of connections) {
     if (!connection.enabled) continue
+
+    // Checked before the work list is even read: a connection asked to wait
+    // should cost the channel nothing at all, and a query here is free but the
+    // request it would lead to is not.
+    if (!service.mayAttempt(connection, now)) {
+      result.throttled++
+      continue
+    }
 
     const adapter = getChannelAdapter(connection.channel_id)
     if (!adapter?.supports("push_fulfillment") || !adapter.pushFulfillment) {
@@ -75,6 +94,7 @@ export async function processChannelFulfillmentSync(
     result.pending += pending.length
 
     const credentials = service.toCredentials(connection)
+    let reportedAny = false
 
     for (const shipment of pending) {
       try {
@@ -89,6 +109,7 @@ export async function processChannelFulfillmentSync(
         )
         await service.markFulfillmentReported(shipment.id)
         result.reported++
+        reportedAny = true
       } catch (err) {
         const message =
           err instanceof Error ? err.message : "Unknown channel error"
@@ -97,20 +118,47 @@ export async function processChannelFulfillmentSync(
           .recordFulfillmentError(shipment.id, message)
           .catch(() => undefined)
 
-        if (err instanceof ChannelApiError && err.retryable) {
-          // Rate limited or the channel is down — the rest of this
-          // connection's queue will hit the same wall, so stop and let the
-          // next pass retry rather than burning through it.
-          break
+        if (err instanceof ChannelApiError) {
+          // Only failures that say something about the *connection*. A 422 is a
+          // fact about one shipment, already recorded against that row by
+          // `recordFulfillmentError` above — writing it here too would overwrite
+          // the connection's error with a per-item one and cost a database
+          // round trip per bad shipment.
+          if (classifyFailure(err.status, err.retryAfterSeconds) !== "rejected") {
+            await service
+              .recordFailure({
+                row: connection,
+                status: err.status,
+                retryAfterSeconds: err.retryAfterSeconds,
+                message,
+                now,
+              })
+              .catch(() => undefined)
+          }
+
+          if (err.retryable) {
+            // Rate limited or the channel is down — the rest of this
+            // connection's queue will hit the same wall, so stop and let the
+            // stored backoff decide when to come back.
+            break
+          }
         }
       }
     }
+
+    // Only on a call that actually worked. Clearing the stand-down after a run
+    // where every shipment failed would erase the backoff just set, and the
+    // next tick would walk straight back into the wall.
+    if (reportedAny) {
+      await service.recordSuccess(connection.id, now).catch(() => undefined)
+    }
   }
 
-  if (result.pending) {
+  if (result.pending || result.throttled) {
     log.info(
       `[channel-fulfillment] ${result.connections} connections: ` +
-        `${result.reported}/${result.pending} shipments reported, ${result.failed} failed`
+        `${result.reported}/${result.pending} shipments reported, ` +
+        `${result.failed} failed, ${result.throttled} standing down`
     )
   }
 

@@ -1,5 +1,6 @@
 import { processChannelListingSync } from "../channel-listing-sync"
 import { CHANNEL_CONNECTOR_MODULE } from "../../modules/channel-connector/module-key"
+import { shouldAttemptNow } from "../../modules/channel-connector/throttle"
 import { ChannelApiError } from "../../modules/channel-connector/types"
 import { reduceToChannelProduct } from "../../shared/channel-products"
 
@@ -45,8 +46,24 @@ const makeContainer = (opts: {
   })
   const recordListingError = jest.fn(async () => undefined)
   const recordSync = jest.fn(async () => undefined)
+  const recordFailure = jest.fn(
+    async (_input: {
+      row: { id: string; channel_id: string }
+      status: number
+      retryAfterSeconds?: number | null
+      message?: string
+      now?: Date
+    }) => undefined
+  )
+  const recordSuccess = jest.fn(async (_id: string, _now?: Date) => undefined)
 
   const service = {
+    // The real gate rather than a constant, so a stub cannot quietly disagree
+    // with what the service actually does.
+    mayAttempt: (row: { throttled_until?: Date | null }, now: Date) =>
+      shouldAttemptNow({ throttled_until: row.throttled_until ?? null }, now),
+    recordFailure,
+    recordSuccess,
     listChannelConnections: async () =>
       opts.connections ?? [
         {
@@ -78,6 +95,8 @@ const makeContainer = (opts: {
     recordListing,
     recordListingError,
     recordSync,
+    recordFailure,
+    recordSuccess,
   }
 }
 
@@ -155,6 +174,113 @@ describe("processChannelListingSync", () => {
       "p2",
       expect.stringContaining("bad sku")
     )
+  })
+
+  describe("standing down (Phase 12)", () => {
+    const now = new Date("2026-08-04T12:00:00.000Z")
+
+    it("does not even load the catalogue for a connection backing off", async () => {
+      // Checked before `loadSellerChannelProducts`, which is the expensive part
+      // of this loop. A connection asked to wait should cost nothing.
+      const { container } = makeContainer({
+        connections: [
+          {
+            id: "cc_1",
+            seller_id: "sel_1",
+            channel_id: "faire",
+            api_base_url: "https://faire.test",
+            access_token: "tok",
+            options: null,
+            enabled: true,
+            throttled_until: new Date("2026-08-04T12:30:00.000Z"),
+          },
+        ],
+      })
+
+      const result = await processChannelListingSync(container as never, { now })
+
+      expect(result.throttled).toBe(1)
+      expect(result.connections).toBe(0)
+      expect(mockProducts).not.toHaveBeenCalled()
+      expect(mockAdapterPush).not.toHaveBeenCalled()
+    })
+
+    it("passes the channel's own Retry-After through to the backoff", async () => {
+      mockProducts.mockResolvedValue({
+        products: [product("p1", "S1")],
+        skipped: [],
+      })
+      mockAdapterPush.mockRejectedValue(
+        new ChannelApiError("slow down", 429, "faire", undefined, 600)
+      )
+
+      const { container, recordFailure } = makeContainer({})
+      await processChannelListingSync(container as never, { now })
+
+      expect(recordFailure).toHaveBeenCalledWith(
+        expect.objectContaining({ status: 429, retryAfterSeconds: 600 })
+      )
+    })
+
+    it("does not clear the stand-down on a run that aborted", async () => {
+      // The abort has just set a backoff. Clearing it here would erase it
+      // before the next tick ever read it.
+      mockProducts.mockResolvedValue({
+        products: [product("p1", "S1"), product("p2", "S2")],
+        skipped: [],
+      })
+      mockAdapterPush
+        .mockResolvedValueOnce({ external_id: "f1", created: true })
+        .mockRejectedValueOnce(new ChannelApiError("down", 503, "faire"))
+
+      const { container, recordSuccess } = makeContainer({})
+      await processChannelListingSync(container as never, { now })
+
+      expect(recordSuccess).not.toHaveBeenCalled()
+    })
+
+    it("clears it on a clean run", async () => {
+      mockProducts.mockResolvedValue({
+        products: [product("p1", "S1")],
+        skipped: [],
+      })
+      mockAdapterPush.mockResolvedValue({ external_id: "f1", created: true })
+
+      const { container, recordSuccess } = makeContainer({})
+      await processChannelListingSync(container as never, { now })
+
+      expect(recordSuccess).toHaveBeenCalledWith("cc_1", now)
+    })
+
+    it("keeps running past a rejection without pausing the connection", async () => {
+      // A 422 is one bad product. It is recorded so a wholly broken connection
+      // stays visible, but pausing here would stop the products that are fine.
+      mockProducts.mockResolvedValue({
+        products: [product("p1", "S1"), product("p2", "S2")],
+        skipped: [],
+      })
+      mockAdapterPush
+        .mockRejectedValueOnce(new ChannelApiError("bad sku", 422, "faire"))
+        .mockResolvedValueOnce({ external_id: "f2", created: true })
+
+      const { container, recordFailure, recordListingError, recordSuccess } =
+        makeContainer({})
+      const result = await processChannelListingSync(container as never, { now })
+
+      expect(result).toMatchObject({ failed: 1, pushed: 1 })
+      // Recorded against the product, not against the connection: otherwise a
+      // catalogue with twenty bad SKUs would overwrite the connection's error
+      // twenty times and cost a write for each.
+      expect(recordFailure).not.toHaveBeenCalled()
+      expect(recordListingError).toHaveBeenCalledWith(
+        "sel_1",
+        "faire",
+        "p1",
+        expect.stringContaining("bad sku")
+      )
+      // Something did push, so the connection is demonstrably healthy.
+      expect(recordSuccess).toHaveBeenCalled()
+    })
   })
 
   it("stops the seller's run on a retryable failure instead of hammering", async () => {

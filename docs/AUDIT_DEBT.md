@@ -148,7 +148,6 @@ All five rows below were resolved together on 2026-05-13 via the production-read
 
 `scripts/check-override-coverage.mjs` (#787) guards exactly this and runs before the Trivy filesystem scan. Verified semantically neutral: only `backend/pnpm-lock.yaml` changed, **1761 packages before and 1761 after with zero version-level changes** — the diff is entirely pnpm 11's peer-resolution key encoding — and lockfiles stayed at `lockfileVersion: '9.0'`. Also corrects the `SD-23` label collision and missing AUDIT_DEBT row that #781 left behind. | `.github/workflows/{ci,security}.yml`, all 4 `Dockerfile`s, `package.json` + `pnpm-workspace.yaml` x 5 roots, `backend/pnpm-lock.yaml`, `.trivyignore.image` | CVE-2026-69152, CVE-2026-69192, CVE-2026-55697 | 0 HIGH | — | — | done |
 
-
 ## Security hardening (production-readiness pass 2026-06-20)
 
 Closes the gaps from the security review. All landed on branch

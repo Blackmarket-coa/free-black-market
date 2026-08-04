@@ -27,6 +27,16 @@ export type VendorChannel = {
   last_synced_at: string | null
   orders_synced_through: string | null
   last_error: string | null
+  /**
+   * Set while the connection is standing down after the channel refused us.
+   * Resolves on its own; nothing for the vendor to do but wait.
+   */
+  throttled_until: string | null
+  /**
+   * The channel rejected the credentials. Does *not* resolve on its own — this
+   * is the one state where the vendor has to act.
+   */
+  needs_reauth: boolean
 }
 
 export type VendorChannelsResponse = {
@@ -125,8 +135,17 @@ export type ChannelStatus = {
  * the vendor believes their stock and orders are flowing when they are not.
  * Paused is distinguished from errored for the same reason — one they chose,
  * the other happened to them.
+ *
+ * Phase 12 adds two states that would otherwise both render as "Needs
+ * attention", and the difference between them is the whole point: one asks the
+ * vendor to do something and one asks them to wait. Collapsing them means
+ * either a vendor re-pastes a working token to fix a rate limit, or ignores a
+ * dead token believing it will clear itself.
  */
-export function describeChannelStatus(channel: VendorChannel): ChannelStatus {
+export function describeChannelStatus(
+  channel: VendorChannel,
+  now: Date = new Date()
+): ChannelStatus {
   if (!channel.available) {
     return {
       label: "Unavailable",
@@ -136,6 +155,25 @@ export function describeChannelStatus(channel: VendorChannel): ChannelStatus {
   }
   if (!channel.connected) {
     return { label: "Not connected", tone: "grey", hint: null }
+  }
+  // Ahead of `last_error`, which is set alongside it and would otherwise render
+  // the backoff's own message as an unqualified failure.
+  if (channel.needs_reauth) {
+    return {
+      label: "Reconnect needed",
+      tone: "red",
+      hint: "This channel rejected your access token. Enter a new one to resume syncing.",
+    }
+  }
+  const standDownEnds = channel.throttled_until
+    ? new Date(channel.throttled_until)
+    : null
+  if (standDownEnds && standDownEnds.getTime() > now.getTime()) {
+    return {
+      label: "Rate limited",
+      tone: "orange",
+      hint: `${channel.display_name} asked us to slow down. Syncing resumes ${standDownEnds.toLocaleString()}.`,
+    }
   }
   if (channel.last_error) {
     return {
