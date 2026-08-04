@@ -208,14 +208,27 @@ jobs:
       # trivy-action look up a tag that was never published and fail with
       # image-not-found on every push to main. Compute the short SHA here
       # so the image-ref matches what docker-build actually pushed.
-      - name: Compute short SHA
-        id: short_sha
-        run: echo "value=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+      - name: Compute image reference
+        id: image_ref
+        # The owner is lowercased because an OCI reference's repository path
+        # must be lowercase, while `github.repository_owner` preserves the
+        # organisation's own casing ("Blackmarket-coa"). Interpolating it raw
+        # produced `could not parse reference` on all four matrix jobs on every
+        # push to main — the scan never ran at all, so this gate has been
+        # reporting failure rather than security findings.
+        #
+        # Lowercase is also what actually got pushed: docker-build.yml builds
+        # this same ref through docker/metadata-action, which normalises the
+        # image name. So this is not a new convention, it is the one the
+        # registry already uses.
+        run: |
+          owner="$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')"
+          echo "value=ghcr.io/${owner}/${{ matrix.image }}:sha-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
 
       - name: Trivy image scan
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}:sha-${{ steps.short_sha.outputs.value }}
+          image-ref: ${{ steps.image_ref.outputs.value }}
           severity: 'HIGH,CRITICAL'
           ignore-unfixed: true
           exit-code: '1'
@@ -229,7 +242,11 @@ jobs:
           output: 'trivy-${{ matrix.app }}.sarif'
 
       - name: Upload SARIF
-        if: always()
+        # `always()` alone tried to upload a file the scan never produced when
+        # it failed before writing one, adding a second, louder error
+        # ("Path does not exist") on top of the real cause. Guarding on the
+        # file keeps the actual failure the only thing in the log.
+        if: always() && hashFiles(format('trivy-{0}.sarif', matrix.app)) != ''
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: trivy-${{ matrix.app }}.sarif
