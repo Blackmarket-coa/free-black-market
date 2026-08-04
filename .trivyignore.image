@@ -1,0 +1,44 @@
+# Trivy ignore list — CONTAINER IMAGE scan only.
+#
+# Deliberately separate from `.trivyignore`, which governs the filesystem scan
+# of this repository's own dependency tree. The two scan different things and
+# must not share suppressions: a CVE that is unfixable inside a vendored
+# third-party binary is not the same as one in our lockfile, and suppressing it
+# in the shared file would switch off the regression detection the filesystem
+# gate exists to provide.
+#
+# CVE-2026-69152 below is the sharp edge that makes the split necessary: it was
+# genuinely FIXED in our lockfile (#773), so it must keep failing the
+# filesystem scan if it ever regresses — while the copy vendored inside pnpm's
+# binary is beyond our reach.
+#
+# Every entry here needs an `SD-*` rationale, same rule as the other file.
+
+# SD-23: three HIGH findings vendored INSIDE the pnpm distribution that ships in
+# the backend runtime image. They live in corepack's cached pnpm tree, so
+# `pnpm.overrides` cannot reach them and neither can a lockfile change.
+#
+# pnpm is required at runtime: `scripts/railway-start.js` boots the server with
+# `pnpm exec medusa start` and runs migrations with
+# `pnpm exec medusa db:migrate --execute-safe-links`. It therefore cannot be
+# removed the way npm was — npm IS removed from both node runtime images, and
+# that is what cleared most of the image findings.
+#
+# pnpm was bumped 10.13.1 -> 10.34.5 here, taking the backend image from 51
+# HIGH/CRITICAL to 4. The remaining three need pnpm 11.x:
+#
+#   CVE-2026-69152  brace-expansion 2.1.2  fixed in 2.1.4
+#   CVE-2026-69192  ip-address 10.2.0      fixed in 10.3.1
+#   CVE-2026-55697  pnpm 10.34.5           fixed in 11.5.3
+#
+# pnpm 11 is a package-manager major: it moves the `packageManager` pin for
+# every workspace, CI and local dev, and needs its own lockfile-compatibility
+# pass. Tracked as a separate workstream rather than smuggled into a CVE fix.
+#
+# CVE-2026-14257 also applies to this vendored copy and is already suppressed
+# in `.trivyignore` under SD-22 for the same unfixable function-export line;
+# repeated here because the two files do not share entries.
+CVE-2026-14257
+CVE-2026-69152
+CVE-2026-69192
+CVE-2026-55697

@@ -40,11 +40,22 @@ ENV PORT=9000
 # `corepack prepare` caches pnpm in the image so `pnpm start` does NOT download
 # it from the npm registry on every container boot (which was DNS-flaky and
 # forced a `sleep` workaround in production).
-RUN corepack enable && corepack prepare pnpm@10.13.1 --activate \
+RUN corepack enable && corepack prepare pnpm@10.34.5 --activate \
     && groupadd -g 10001 medusa \
     && useradd -u 10001 -g medusa -s /usr/sbin/nologin -m medusa \
     && apt-get update && apt-get install -y --no-install-recommends wget tini ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
+    # Apply Debian security updates on top of whatever the base tag shipped
+    # with. The node image is rebuilt on its own cadence, so a fixed package
+    # can sit in bookworm-security for days before the tag picks it up; this
+    # closes that window at our build time instead of waiting.
+    && apt-get upgrade -y \
+    && rm -rf /var/lib/apt/lists/* \
+    # npm is not used at runtime — the entrypoint is pnpm, installed above via
+    # corepack — but its bundled dependency tree is what a container scan sees,
+    # and it carries the bulk of this image's HIGH/CRITICAL findings. Removing
+    # an unused package manager is a smaller change than trying to patch
+    # somebody else's vendored tree.
+    && rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
 
 # Bring in the built app, dependency tree, and runtime scripts.
 # `src/` is required at runtime: medusa-config.ts resolves ~67 custom modules
