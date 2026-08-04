@@ -37,8 +37,12 @@ const log = createLogger("shared/credential-cipher")
  * `decrypt` passes through anything without the prefix, and the value is
  * upgraded the next time it is written. That tolerance is a transitional
  * affordance, not a permanent one — it is what makes the deploy non-breaking,
- * and it is the reason `isEncrypted` is exported so an operator script can
- * measure how much plaintext is left.
+ * and it is equally what makes it easy to forget, because a connection nobody
+ * edits stays readable indefinitely.
+ *
+ * `isEncrypted` is exported for exactly that reason:
+ * `scripts/reencrypt-channel-credentials.ts` uses it to report how much
+ * plaintext is left and, with `--apply`, to finish the job.
  */
 
 const ALGORITHM = "aes-256-gcm"
