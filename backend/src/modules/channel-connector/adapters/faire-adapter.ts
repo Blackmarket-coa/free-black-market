@@ -4,6 +4,7 @@ import {
   type ChannelAdapter,
   type ChannelCapability,
   type ChannelCredentials,
+  type ChannelFulfillment,
   type ChannelInventoryUpdate,
   type ChannelOrder,
   type ChannelProduct,
@@ -36,6 +37,7 @@ const ENDPOINTS = {
   productBySku: (sku: string) => `/products/by-sku/${encodeURIComponent(sku)}`,
   inventory: "/inventories",
   orders: "/orders",
+  shipments: (orderId: string) => `/orders/${encodeURIComponent(orderId)}/shipments`,
 } as const
 
 const REQUEST_TIMEOUT_MS = 15_000
@@ -46,6 +48,7 @@ export class FaireChannelAdapter implements ChannelAdapter {
     "push_listing",
     "push_inventory",
     "pull_orders",
+    "push_fulfillment",
   ]
 
   supports(capability: ChannelCapability): boolean {
@@ -195,6 +198,39 @@ export class FaireChannelAdapter implements ChannelAdapter {
     return (body?.orders ?? [])
       .map((raw) => mapFaireOrder(raw as Record<string, never>))
       .filter((order): order is ChannelOrder => order !== null)
+  }
+
+  /**
+   * Report a shipment back to the channel.
+   *
+   * Worth doing rather than skipping: a marketplace that never sees tracking
+   * treats the order as unfulfilled, and Amazon and Etsy both penalise the
+   * seller account for it. Faire is gentler, but a buyer with no tracking
+   * still opens a ticket the vendor has to answer.
+   *
+   * Errors propagate. Unlike the inventory push there is no partial success to
+   * salvage — one shipment either reached the channel or did not, and the
+   * caller needs to know which so it can retry a transport failure and stop on
+   * a rejection.
+   */
+  async pushFulfillment(
+    fulfillment: ChannelFulfillment,
+    credentials: ChannelCredentials
+  ): Promise<void> {
+    await this.request(
+      credentials,
+      ENDPOINTS.shipments(fulfillment.external_order_id),
+      {
+        method: "POST",
+        body: {
+          // A missing carrier is sent as null rather than an invented default:
+          // guessing puts a wrong courier in front of the buyer.
+          carrier: fulfillment.carrier ?? null,
+          tracking_code: fulfillment.tracking_number ?? null,
+          ship_date: fulfillment.shipped_at.toISOString(),
+        },
+      }
+    )
   }
 }
 

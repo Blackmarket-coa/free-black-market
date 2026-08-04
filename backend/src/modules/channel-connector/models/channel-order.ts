@@ -48,9 +48,25 @@ const ChannelOrderRecord = model
     /** What the decrement actually did, including anything it could not match. */
     inventory_report: model.json().nullable(),
 
-    /** Reported back to the channel; several penalise not doing so. */
+    /**
+     * When the vendor marked this shipped in FBM. Local truth, recorded
+     * immediately so a channel being unreachable never blocks a vendor from
+     * saying they posted the parcel.
+     */
     fulfilled_at: model.dateTime().nullable(),
     tracking_number: model.text().nullable(),
+    carrier: model.text().nullable(),
+    /**
+     * When the channel accepted that report — the resumable half.
+     *
+     * Separate from `fulfilled_at` for the same reason `inventory_applied` is
+     * separate from the order row: recording locally and reporting outward
+     * cannot be one atomic act, and Amazon and Etsy penalise a shipment that
+     * is never reported. Null with `fulfilled_at` set is the job's work list.
+     */
+    fulfillment_reported_at: model.dateTime().nullable(),
+    /** Why the last report attempt failed, so the panel can show it. */
+    fulfillment_error: model.text().nullable(),
 
     raw: model.json().nullable(),
   })

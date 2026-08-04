@@ -24,6 +24,16 @@ export type ConnectionRow = {
  * mapping — the part the roadmap calls the hard problem — be tested without a
  * database or a network.
  */
+export type UnreportedFulfillment = {
+  id: string
+  seller_id: string
+  channel_id: string
+  external_id: string
+  fulfilled_at: Date | null
+  carrier: string | null
+  tracking_number: string | null
+}
+
 export type StoredChannelOrder = {
   id: string
   external_id: string
@@ -251,6 +261,60 @@ class ChannelConnectorService extends MedusaService({
       { seller_id },
       { order: { placed_at: "DESC" }, take: 100 }
     )
+  }
+
+  /**
+   * Record that a vendor shipped a channel order.
+   *
+   * Local truth only — reporting outward is a separate, resumable step. A
+   * channel being unreachable must never stop a vendor from recording that
+   * they posted the parcel, and `fulfillment_reported_at` is what lets the job
+   * finish the job later without losing the shipment.
+   */
+  async markFulfilled(input: {
+    id: string
+    carrier?: string | null
+    tracking_number?: string | null
+    shipped_at?: Date
+  }): Promise<void> {
+    await this.updateChannelOrderRecords({
+      id: input.id,
+      fulfilled_at: input.shipped_at ?? new Date(),
+      carrier: input.carrier ?? null,
+      tracking_number: input.tracking_number ?? null,
+      fulfillment_reported_at: null,
+      fulfillment_error: null,
+    } as never)
+  }
+
+  /** Shipments recorded locally but not yet accepted by the channel. */
+  async listUnreportedFulfillments(
+    channel_id?: string
+  ): Promise<UnreportedFulfillment[]> {
+    const rows = (await this.listChannelOrderRecords({
+      ...(channel_id ? { channel_id } : {}),
+      fulfillment_reported_at: null,
+    })) as unknown as UnreportedFulfillment[]
+    // `fulfilled_at IS NOT NULL` is the other half of the predicate; filtered
+    // here because the generated list API has no "is not null" operator.
+    return (rows ?? []).filter((r) => Boolean(r.fulfilled_at))
+  }
+
+  /** The channel accepted the shipment report. */
+  async markFulfillmentReported(id: string): Promise<void> {
+    await this.updateChannelOrderRecords({
+      id,
+      fulfillment_reported_at: new Date(),
+      fulfillment_error: null,
+    } as never)
+  }
+
+  /** It did not — kept so the panel can explain a stuck shipment. */
+  async recordFulfillmentError(id: string, message: string): Promise<void> {
+    await this.updateChannelOrderRecords({
+      id,
+      fulfillment_error: message.slice(0, 1_000),
+    } as never)
   }
 
   /** Stamp the outcome of a sync run on the connection. */

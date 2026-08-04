@@ -41,10 +41,14 @@ export const CHANNEL_CATALOG: ChannelDefinition[] = [
     display_name: "Faire",
     description:
       "Wholesale marketplace. Lists your products to retail buyers and pulls their orders back into FBM.",
-    // No `push_fulfillment` yet — see the note in `adapters/faire-adapter.ts`.
-    // Declaring a capability the adapter does not implement is the one thing
-    // this table must never do: the UI reads it as a promise.
-    capabilities: ["push_listing", "push_inventory", "pull_orders"],
+    // Must stay exactly equal to the adapter's own declaration — a drift test
+    // holds them equal, because this table is what the UI reads as a promise.
+    capabilities: [
+      "push_listing",
+      "push_inventory",
+      "pull_orders",
+      "push_fulfillment",
+    ],
     api_base_url: "https://www.faire.com/external-api/v2",
     credential_hint:
       "Create an access token in your Faire brand portal under Integrations.",

@@ -31,6 +31,9 @@ export class Migration20260813CreateChannelOrder extends Migration {
         "inventory_report" JSONB NULL,
         "fulfilled_at" TIMESTAMPTZ NULL,
         "tracking_number" TEXT NULL,
+        "carrier" TEXT NULL,
+        "fulfillment_reported_at" TIMESTAMPTZ NULL,
+        "fulfillment_error" TEXT NULL,
         "raw" JSONB NULL,
         "created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         "updated_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -53,6 +56,16 @@ export class Migration20260813CreateChannelOrder extends Migration {
       CREATE INDEX IF NOT EXISTS "IDX_channel_order_unapplied"
         ON "channel_order" ("seller_id", "channel_id")
         WHERE "inventory_applied" = FALSE AND "deleted_at" IS NULL;
+    `)
+    // The fulfilment-report work list: shipped locally, not yet accepted by
+    // the channel. Amazon and Etsy penalise unreported shipments, so this
+    // needs to be cheap to find.
+    this.addSql(`
+      CREATE INDEX IF NOT EXISTS "IDX_channel_order_unreported_fulfillment"
+        ON "channel_order" ("channel_id", "fulfilled_at")
+        WHERE "fulfilled_at" IS NOT NULL
+          AND "fulfillment_reported_at" IS NULL
+          AND "deleted_at" IS NULL;
     `)
     this.addSql(`
       CREATE INDEX IF NOT EXISTS "IDX_channel_order_placed_at"
