@@ -1,6 +1,6 @@
 import type { MedusaContainer } from "@medusajs/framework/types"
 import { createLogger } from "./logger"
-import { VENDOR_USAGE_MODULE } from "../modules/vendor-usage"
+import { VENDOR_USAGE_MODULE } from "../modules/vendor-usage/module-key"
 import type VendorUsageService from "../modules/vendor-usage/service"
 import { usagePeriodFor } from "../modules/vendor-plan/overage"
 

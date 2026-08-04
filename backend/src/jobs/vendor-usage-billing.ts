@@ -1,6 +1,6 @@
 import { MedusaContainer } from "@medusajs/framework/types"
 import { createLogger } from "../shared/logger"
-import { VENDOR_USAGE_MODULE } from "../modules/vendor-usage"
+import { VENDOR_USAGE_MODULE } from "../modules/vendor-usage/module-key"
 import type VendorUsageService from "../modules/vendor-usage/service"
 import { VENDOR_BILLING_MODULE } from "../modules/vendor-billing"
 import type VendorBillingService from "../modules/vendor-billing/service"
