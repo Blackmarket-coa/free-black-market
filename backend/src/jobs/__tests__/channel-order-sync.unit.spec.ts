@@ -1,5 +1,6 @@
 import { processChannelOrderSync } from "../channel-order-sync"
 import { CHANNEL_CONNECTOR_MODULE } from "../../modules/channel-connector/module-key"
+import { shouldAttemptNow } from "../../modules/channel-connector/throttle"
 import { ChannelApiError } from "../../modules/channel-connector/types"
 
 /**
@@ -41,7 +42,12 @@ const order = (externalId: string, sku = "A", quantity = 2) => ({
   raw: {},
 })
 
-const makeContainer = (opts: { stored?: Record<string, { id: string; inventory_applied: boolean }> } = {}) => {
+const makeContainer = (
+  opts: {
+    stored?: Record<string, { id: string; inventory_applied: boolean }>
+    connections?: Record<string, unknown>[]
+  } = {}
+) => {
   const stored = { ...(opts.stored ?? {}) }
   const recordOrder = jest.fn(async (input: { order: { external_id: string } }) => {
     const row = { id: `co_${input.order.external_id}`, inventory_applied: false }
@@ -54,18 +60,35 @@ const makeContainer = (opts: { stored?: Record<string, { id: string; inventory_a
   })
   const recordSync = jest.fn(async (_input: Record<string, unknown>) => undefined)
 
+  const recordFailure = jest.fn(
+    async (_input: {
+      row: { id: string; channel_id: string }
+      status: number
+      retryAfterSeconds?: number | null
+      message?: string
+      now?: Date
+    }) => undefined
+  )
+  const recordSuccess = jest.fn(async (_id: string, _now?: Date) => undefined)
   const service = {
-    listChannelConnections: async () => [
-      {
-        id: "cc_1",
-        seller_id: "sel_1",
-        channel_id: "faire",
-        api_base_url: "https://faire.test",
-        access_token: "tok",
-        enabled: true,
-        orders_synced_through: new Date("2026-08-01T00:00:00Z"),
-      },
-    ],
+    // The real gate rather than a constant, so a stub cannot quietly disagree
+    // with what the service actually does.
+    mayAttempt: (row: { throttled_until?: Date | null }, now: Date) =>
+      shouldAttemptNow({ throttled_until: row.throttled_until ?? null }, now),
+    recordFailure,
+    recordSuccess,
+    listChannelConnections: async () =>
+      opts.connections ?? [
+        {
+          id: "cc_1",
+          seller_id: "sel_1",
+          channel_id: "faire",
+          api_base_url: "https://faire.test",
+          access_token: "tok",
+          enabled: true,
+          orders_synced_through: new Date("2026-08-01T00:00:00Z"),
+        },
+      ],
     toCredentials: () => ({ api_base_url: "https://faire.test", access_token: "tok" }),
     findOrder: async (_c: string, externalId: string) => stored[externalId] ?? null,
     recordOrder,
@@ -80,6 +103,8 @@ const makeContainer = (opts: { stored?: Record<string, { id: string; inventory_a
     recordOrder,
     markInventoryApplied,
     recordSync,
+    recordFailure,
+    recordSuccess,
     stored,
   }
 }
@@ -189,18 +214,42 @@ describe("processChannelOrderSync", () => {
   })
 
   it("leaves the cursor alone when the poll itself fails", async () => {
-    // Advancing past orders we never saw would lose them permanently.
+    // Advancing past orders we never saw would lose them permanently. Since
+    // Phase 12 a channel answer goes through `recordFailure` — which writes the
+    // error and a backoff, and touches no cursor field at all.
     mockPullOrders.mockRejectedValue(
       new ChannelApiError("rate limited", 429, "faire")
     )
-    const { container, recordSync } = makeContainer()
+    const { container, recordSync, recordFailure } = makeContainer()
 
     const result = await processChannelOrderSync(container as never)
 
     expect(result.failed).toBe(1)
+    expect(recordFailure).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: 429,
+        message: expect.stringContaining("rate limited"),
+      })
+    )
+    // Nothing wrote a cursor: the poll saw no orders to advance past.
+    for (const [call] of recordSync.mock.calls) {
+      expect((call as Record<string, unknown>).orders_synced_through).toBeUndefined()
+    }
+  })
+
+  it("records a non-channel error without standing the connection down", async () => {
+    // A bug on our side, or an adapter throwing before it reached the network.
+    // Pausing a channel because of our own defect would hide it behind what
+    // looks like an outage on theirs.
+    mockPullOrders.mockRejectedValue(new Error("undefined is not a function"))
+    const { container, recordSync, recordFailure } = makeContainer()
+
+    const result = await processChannelOrderSync(container as never)
+
+    expect(result.failed).toBe(1)
+    expect(recordFailure).not.toHaveBeenCalled()
     const call = recordSync.mock.calls.at(-1)?.[0] as Record<string, unknown>
-    expect(call.orders_synced_through).toBeUndefined()
-    expect(call.error).toContain("rate limited")
+    expect(call.error).toContain("undefined is not a function")
   })
 
   it("does not advance past an order that failed to ingest", async () => {
@@ -261,5 +310,57 @@ describe("processChannelOrderSync", () => {
     expect(recordSync).toHaveBeenCalledWith(
       expect.objectContaining({ error: null })
     )
+  })
+
+  describe("standing down (Phase 12)", () => {
+    const now = new Date("2026-08-04T12:00:00.000Z")
+
+    it("does not poll a connection that is still backing off", async () => {
+      const { container } = makeContainer({
+        connections: [
+          {
+            id: "cc_1",
+            seller_id: "sel_1",
+            channel_id: "faire",
+            api_base_url: "https://faire.test",
+            access_token: "tok",
+            enabled: true,
+            orders_synced_through: null,
+            throttled_until: new Date("2026-08-04T12:30:00.000Z"),
+          },
+        ],
+      })
+
+      const result = await processChannelOrderSync(container as never, { now })
+
+      expect(result.throttled).toBe(1)
+      expect(result.connections).toBe(0)
+      expect(mockPullOrders).not.toHaveBeenCalled()
+    })
+
+    it("passes the channel's own Retry-After through to the backoff", async () => {
+      mockPullOrders.mockRejectedValue(
+        new ChannelApiError("slow down", 429, "faire", undefined, 1_800)
+      )
+      const { container, recordFailure } = makeContainer()
+
+      await processChannelOrderSync(container as never, { now })
+
+      expect(recordFailure).toHaveBeenCalledWith(
+        expect.objectContaining({ status: 429, retryAfterSeconds: 1_800 })
+      )
+    })
+
+    it("clears the stand-down as soon as the channel answers", async () => {
+      // An empty poll still proves the channel is reachable and the credentials
+      // are live. Holding a backoff open through it would penalise a quiet
+      // vendor for being quiet.
+      mockPullOrders.mockResolvedValue([])
+      const { container, recordSuccess } = makeContainer()
+
+      await processChannelOrderSync(container as never, { now })
+
+      expect(recordSuccess).toHaveBeenCalledWith("cc_1", now)
+    })
   })
 })

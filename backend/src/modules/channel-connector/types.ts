@@ -172,7 +172,18 @@ export class ChannelApiError extends Error {
     message: string,
     readonly status: number,
     readonly channelId: string,
-    readonly body?: string
+    readonly body?: string,
+    /**
+     * Seconds the channel asked us to wait, parsed from `Retry-After`.
+     *
+     * Carried on the error rather than left in the response because this is the
+     * only place the header can survive: the response object does not escape the
+     * adapter, and by the time a job decides how long to back off, an unrecorded
+     * header is indistinguishable from one that was never sent. Losing it means
+     * silently substituting our own guess for a duration the channel named,
+     * which is how a throttle becomes a suspension.
+     */
+    readonly retryAfterSeconds?: number | null
   ) {
     super(message)
     this.name = "ChannelApiError"
