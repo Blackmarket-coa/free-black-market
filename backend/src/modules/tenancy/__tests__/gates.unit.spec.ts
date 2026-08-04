@@ -123,3 +123,28 @@ describe("highestTier", () => {
     expect(highestTier([null, "tier1_verified", "nonsense"])).toBe("tier1_verified")
   })
 })
+
+/**
+ * Phase 8 packaging: the Buyer Center is an operator capability, and it has to
+ * be reachable by every route a vendor could plausibly hold it through.
+ */
+describe("the Buyer Center is sellable, not just gated", () => {
+  it("is an aligned-org tier gate", () => {
+    // It only pays off with a multi-vendor supply side, which is what an
+    // aligned organization has and a lone seller does not.
+    expect(TENANCY_GATES.buyer_center).toBe("tier2_aligned_org")
+    expect(gatesGrantedByTier("tier1_verified")).not.toContain("buyer_center")
+    expect(gatesGrantedByTier("tier2_aligned_org")).toContain("buyer_center")
+  })
+
+  it("floors the matching plan feature for an aligned org's sellers", () => {
+    // Otherwise an operator would buy the tier and their vendors would still
+    // hit a paywall on the thing the tier is for.
+    expect(vendorFeatureKeysForTier("tier2_aligned_org")).toContain(
+      "vendor.buyer_network"
+    )
+    expect(vendorFeatureKeysForTier("tier1_verified")).not.toContain(
+      "vendor.buyer_network"
+    )
+  })
+})

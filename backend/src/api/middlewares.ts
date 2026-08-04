@@ -994,6 +994,22 @@ export default defineMiddlewares({
         requirePlanFeature("vendor.channel_sync"),
       ],
     },
+    // The Buyer Center: demand pools, buyer networks, group bargaining.
+    // Scoped to `/vendor/collective/*` only — the `/store/collective/*` routes
+    // are the buyer-facing side and must stay open (gating them would hide
+    // pools from the very people they exist to gather), and `/admin/collective`
+    // is operator-internal. Two vendor routes are affected, both of which
+    // organise purchasing across many suppliers and neither of which a lone
+    // seller can use meaningfully.
+    {
+      matcher: "/vendor/collective*",
+      // Plan gate only, deliberately no feature flag. A flag defaults to off
+      // and answers 404 — which would make a working feature vanish for
+      // everyone until an env var was set. That is an outage, not packaging.
+      // A 402 says "this costs money" and carries an upgrade path, which is
+      // what selling it actually requires.
+      middlewares: [requirePlanFeature("vendor.buyer_network")],
+    },
     // Outbound sales channels. Same flag and same plan key as the inbound
     // sync above — connecting a channel is one capability regardless of which
     // way the products travel, and splitting it would mean selling a vendor

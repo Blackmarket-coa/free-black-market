@@ -77,6 +77,13 @@ export const TENANCY_GATES = {
   /** The four-role RBAC matrix — only meaningful once a real org runs the store. */
   role_delegation: "tier2_aligned_org",
   /**
+   * The buyer-network / demand-pool / bargaining cluster. Operator-grade by
+   * construction: it assumes a multi-vendor supply side that a solo seller
+   * does not have, which is why it is tiered at the aligned-org level rather
+   * than sold as a vendor add-on.
+   */
+  buyer_center: "tier2_aligned_org",
+  /**
    * Batch ledger settlement rather than split-at-processor. The
    * `nonprofit_marketplace` starter template already selects
    * `settlement_mode: "ledger_batch"` and is the only tier2 template.
@@ -138,6 +145,10 @@ const TIER_VENDOR_FEATURES: Record<TierFlag, readonly VendorFeatureKey[]> = {
     "vendor.invoicing",
     "vendor.channel_sync",
     "vendor.quests",
+    // The Buyer Center is the reason an operator buys this tier: it only pays
+    // off with a multi-vendor supply side, which is exactly what an aligned
+    // organization has and a lone vendor does not.
+    "vendor.buyer_network",
   ],
 }
 
