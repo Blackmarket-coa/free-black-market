@@ -9,7 +9,7 @@
  */
 import type { MedusaContainer } from "@medusajs/framework/types"
 import { createLogger } from "../../shared/logger"
-import { getMatrixService } from "../../shared/matrix-service"
+import { getChatProvider } from "../../shared/chat"
 import { BOOKING_MODULE } from "../booking"
 import type BookingService from "../booking/service"
 import { WELLNESS_MODULE } from "./index"
@@ -85,7 +85,7 @@ export class WellnessAutomationService {
     const wantMatrix = (params.channel ?? "matrix") === "matrix"
     if (wantMatrix) {
       try {
-        const matrix = getMatrixService()
+        const matrix = getChatProvider()
         if (matrix) {
           const recipientMxid =
             params.recipient_mxid ||
