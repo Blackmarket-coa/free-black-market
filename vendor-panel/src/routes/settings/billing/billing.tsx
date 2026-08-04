@@ -12,6 +12,10 @@ import {
   useVendorUsage,
   type ResourceUsage,
 } from "../../../hooks/api/vendor-usage"
+import {
+  describeTenancyGrant,
+  useVendorTenancy,
+} from "../../../hooks/api/vendor-tenancy"
 import { SingleColumnPageSkeleton } from "../../../components/common/skeleton"
 import { PaymentMethodForm } from "./payment-method-form"
 
@@ -86,6 +90,8 @@ const UsageRow = ({ resource }: { resource: ResourceUsage }) => {
 export const BillingSettings = () => {
   const { plan, isPending: planPending } = useVendorPlan()
   const { resources: usage, allowances } = useVendorUsage()
+  const { tier, grantedFeatureKeys } = useVendorTenancy()
+  const orgGrant = describeTenancyGrant(tier, grantedFeatureKeys)
   const {
     outstanding,
     charges,
@@ -128,6 +134,15 @@ export const BillingSettings = () => {
               {plan?.status ?? "active"}
             </Text>
           </div>
+          {/* Why this seller may hold features their plan does not list. Left
+              unexplained, an organization-granted feature reads as a bug. */}
+          {orgGrant ? (
+            <div className="col-span-2">
+              <Text size="xsmall" className="text-ui-fg-subtle">
+                {orgGrant}
+              </Text>
+            </div>
+          ) : null}
           {plan?.pending_plan_code ? (
             <div className="col-span-2">
               <Text size="xsmall" className="text-ui-fg-subtle">

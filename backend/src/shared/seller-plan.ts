@@ -15,6 +15,9 @@ import {
   type PlanLimit,
   type VendorPlanLimits,
 } from "../modules/vendor-plan/limits"
+import { TENANCY_MODULE } from "../modules/tenancy"
+import type TenancyModuleService from "../modules/tenancy/service"
+import { vendorFeatureKeysForTier } from "../modules/tenancy/gates"
 
 const log = createLogger("shared/seller-plan")
 
@@ -36,13 +39,24 @@ const log = createLogger("shared/seller-plan")
 
 /**
  * The feature keys a seller holds: their plan's keys UNION any directly held
- * seller entitlements.
+ * seller entitlements UNION the floor their organization's tenancy tier grants.
  *
  * Reading the plan directly means plan features can never drift out of sync
  * with granted rows — there is no reconciliation job standing between "the
  * seller upgraded" and "the gate opens". Unioning entitlements on top is what
  * makes non-plan grants work: a comped feature, a promotional trial, or a
  * one-off operator grant opens the gate without inventing a bespoke plan.
+ *
+ * The tenancy floor is the enterprise/white-label half. An organization that
+ * bought a verified or aligned-org contract has paid for its sellers' tooling
+ * at the org level, so its tier grants those features to every seller under it.
+ * **Union, never intersection** — a seller paying for Pro inside a tier1
+ * organization keeps everything Pro includes; a floor that could lower an
+ * entitlement would silently strip a feature somebody is paying for.
+ *
+ * Both additions degrade to nothing on failure. A seller's own plan features
+ * are the load-bearing part and must stand even when the other two reads
+ * misbehave.
  */
 export async function loadSellerPlanSnapshot(
   container: MedusaContainer,
@@ -68,6 +82,23 @@ export async function loadSellerPlanSnapshot(
   } catch (err) {
     log.warn(
       `[plan] seller entitlement read failed for ${sellerId}; using plan features only`,
+      err
+    )
+  }
+
+  // Same posture as entitlements: additive, and a failure here must never cost
+  // a seller the plan they are paying for. Sellers with no tenancy membership —
+  // every ordinary FBM vendor — resolve to `tier0_public`, which grants
+  // nothing, so this is a no-op for them beyond one indexed lookup.
+  try {
+    const tenancy = container.resolve<TenancyModuleService>(TENANCY_MODULE)
+    const tier = await tenancy.resolveSellerTier(sellerId)
+    for (const key of vendorFeatureKeysForTier(tier)) {
+      keys.add(key)
+    }
+  } catch (err) {
+    log.warn(
+      `[plan] tenancy tier read failed for ${sellerId}; no organization floor applied`,
       err
     )
   }

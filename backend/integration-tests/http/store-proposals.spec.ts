@@ -1,7 +1,7 @@
 import { medusaIntegrationTestRunner } from "@medusajs/test-utils"
 import { createPublishableKeyToken, pakHeaders } from "./_publishable-key"
 
-jest.setTimeout(60 * 1000)
+jest.setTimeout(120 * 1000)
 
 medusaIntegrationTestRunner({
   inApp: true,

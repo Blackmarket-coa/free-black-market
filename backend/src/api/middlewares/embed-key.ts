@@ -7,6 +7,7 @@ import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 import cors from "cors"
 import { createLogger } from "../../shared/logger"
 import { extractEmbedKey, originAllowed } from "../../shared/embed-auth"
+import { meterEmbedRequest } from "../../shared/usage-metering"
 import { EMBED_KEYS_MODULE } from "../../modules/embed-keys"
 import type EmbedKeysService from "../../modules/embed-keys/service"
 
@@ -120,6 +121,16 @@ export async function requireEmbedKey(
     r.embed_key_id = ctx.key_id
     r.embed_origin =
       (req.headers.origin as string | undefined) ?? null
+
+    // Meter the request for monthly overage billing. Counted here — after the
+    // key resolves, before the handler runs — so what is billed is
+    // authenticated traffic, and a handler that later errors still counts: the
+    // vendor's site did drive the call, and only counting successes would let a
+    // misbehaving integration hammer the platform for free.
+    //
+    // Fire-and-forget by design; see `shared/usage-metering.ts`.
+    meterEmbedRequest(req.scope, ctx.seller_id)
+
     return next()
   } catch (err) {
     log.error("requireEmbedKey failed", err)
