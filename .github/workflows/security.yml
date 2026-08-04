@@ -202,6 +202,18 @@ jobs:
           - app: vendor-panel
             image: free-black-market-vendor-panel
     steps:
+      # This job scans a registry image, not the working tree, so it carried no
+      # checkout for most of its life. It needs one now purely because
+      # `trivyignores` below names a file in the repository: trivy resolves that
+      # path on the runner's disk, and without a checkout it exits 1 with
+      # "cannot find ignorefile" before scanning anything — the gate reports
+      # failure without ever having looked at the image.
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: .trivyignore.image
+          sparse-checkout-cone-mode: false
+
       # docker-build.yml publishes images with `sha-<7-char>` tags (via
       # docker/metadata-action `type=sha,prefix=sha-,format=short`).
       # `${{ github.sha }}` is the full 40-char SHA — using it raw makes
