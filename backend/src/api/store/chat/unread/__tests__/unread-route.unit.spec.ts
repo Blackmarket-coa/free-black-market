@@ -1,8 +1,8 @@
 import { GET } from "../route"
-import { getMatrixService } from "../../../../../shared/matrix-service"
+import { getChatProvider } from "../../../../../shared/chat"
 
-jest.mock("../../../../../shared/matrix-service", () => ({
-  getMatrixService: jest.fn(),
+jest.mock("../../../../../shared/chat", () => ({
+  getChatProvider: jest.fn(),
 }))
 
 const createRes = () => {
@@ -35,7 +35,7 @@ describe("GET /store/chat/unread degraded handling", () => {
   })
 
   it("returns degraded:true when the matrix call throws", async () => {
-    ;(getMatrixService as jest.Mock).mockReturnValue({
+    ;(getChatProvider as jest.Mock).mockReturnValue({
       buildMxid: (lp: string) => `@${lp}:server`,
       getUnreadCount: jest.fn(async () => {
         throw new Error("synapse down")
@@ -50,7 +50,7 @@ describe("GET /store/chat/unread degraded handling", () => {
   })
 
   it("returns a clean count with no degraded flag on success", async () => {
-    ;(getMatrixService as jest.Mock).mockReturnValue({
+    ;(getChatProvider as jest.Mock).mockReturnValue({
       buildMxid: (lp: string) => `@${lp}:server`,
       getUnreadCount: jest.fn(async () => 3),
     })
@@ -63,7 +63,7 @@ describe("GET /store/chat/unread degraded handling", () => {
   })
 
   it("returns legitimate zero without degraded flag when matrix is unconfigured", async () => {
-    ;(getMatrixService as jest.Mock).mockReturnValue(null)
+    ;(getChatProvider as jest.Mock).mockReturnValue(null)
 
     const res = createRes()
     await GET(makeReq() as any, res as any)

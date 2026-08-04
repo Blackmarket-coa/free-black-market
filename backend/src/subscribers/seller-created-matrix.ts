@@ -2,10 +2,8 @@ import { createLogger } from "../shared/logger"
 const log = createLogger("subscribers/seller-created-matrix")
 import { SubscriberArgs, SubscriberConfig } from "@medusajs/framework"
 import { SELLER_MODULE } from "@mercurjs/b2c-core/modules/seller"
-import {
-  getMatrixService,
-  GOVERNANCE_POWER_LEVEL,
-} from "../shared/matrix-service"
+import { GOVERNANCE_POWER_LEVEL } from "../shared/matrix-service"
+import { getChatProvider } from "../shared/chat"
 
 type SellerModuleLike = {
   retrieveSeller: (
@@ -38,7 +36,7 @@ export default async function sellerCreatedMatrixHandler({
   log.info(`[sellerCreated Matrix] Processing seller ${sellerId}`)
 
   try {
-    const matrixService = getMatrixService()
+    const matrixService = getChatProvider()
 
     if (!matrixService) {
       log.info("[sellerCreated Matrix] Matrix not configured, skipping")
