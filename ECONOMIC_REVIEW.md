@@ -155,7 +155,7 @@ investment-pool `total_raised`/`total_investors` increment via `Number(x) + 1` r
 | B4 | Bounty/dividend idempotency + reference_type | Fixed |
 | H1 | Atomic balance update path | Fixed (atomic path + hardened fallback) |
 | B2 | Authorized, paying milestone route | Fixed |
-| B5 | Milestone completion concurrency guard | Fixed (app-level guard; DB CAS = follow-up) |
+| B5 | Milestone completion concurrency guard | Fixed (DB-level CAS; proven under contention) |
 | B6 | Refund bounty escrow on cancel/expire | Fixed |
 | B7 | Deadline-expiry job | Fixed |
 | H4 | Reward-pool funding authorization | Fixed |
@@ -180,3 +180,26 @@ investment-pool `total_raised`/`total_investors` increment via `Number(x) + 1` r
 **Integration-level follow-ups** (cannot be proven by unit tests): true concurrent-write behavior
 of H1's atomic UPDATE and the H6 unique constraint require a live Postgres harness; tracked as
 follow-ups rather than claimed under unit coverage.
+
+**Update — these follow-ups are now closed**, each by a live-Postgres spec that runs the real
+statement against the real constraint:
+
+| Follow-up | Harness | Proves |
+|---|---|---|
+| H1 atomic UPDATE | `hawala-ledger/__tests__/concurrency-soak.integration.spec.ts` | no overdraft, value conservation, exact pool totals under contention |
+| B5 milestone CAS | `demand-pool/__tests__/milestone-cas.integration.spec.ts` | one winner per index, no cross-index clobber, payouts sum to the bounty exactly |
+| H6 karma dedup | `hawala-ledger/__tests__/karma-dedup.integration.spec.ts` | concurrent duplicates collapse to one row; null `source_id` still repeats; soft delete releases the key |
+
+Closing B5's follow-up **found a live defect the unit tests could not have caught**. The CAS guard
+read `milestones -> ? ->> 'completed'`, and the driver binds that parameter as text. `->` is
+overloaded — integer indexes a jsonb array, text looks up an object key — so the uncast parameter
+selected the text overload, an object-key lookup against an array, which is always `NULL`.
+`COALESCE(NULL, false) = false` is then always true, so **the guard passed for every caller** and the
+same milestone could be completed repeatedly, each pass adding its payout to `amount_paid_out`
+again. The escrow debit was still protected by B4's deterministic key, so money did not move twice,
+but the bounty's own accounting claimed it had. Fixed by casting the index (`?::int`); the
+regression is held by the first two cases in the milestone spec.
+
+This is the concrete argument for the harness: the guard had been reviewed, described correctly in
+its own comment, and was inert in production. Only executing it against Postgres under real
+contention showed that.

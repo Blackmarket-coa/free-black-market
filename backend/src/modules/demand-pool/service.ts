@@ -386,6 +386,15 @@ class DemandPoolModuleService extends MedusaService({
     // index a no-op (rowCount 0). demand_bounty stores amount_paid_out as a
     // plain NUMERIC with no `raw_` sibling, so the raw-SQL increment is read
     // back correctly by the ORM.
+    //
+    // `?::int` in the guard is load-bearing, not decoration. `->` is overloaded:
+    // with an INTEGER it indexes into a jsonb array, with TEXT it looks up an
+    // object key. The driver binds this parameter as text, so an uncast `?`
+    // selected the text overload — an object-key lookup against an array, which
+    // is always NULL. `COALESCE(NULL, false) = false` is then always true, and
+    // the guard silently passed for every caller: the same milestone could be
+    // completed repeatedly, each pass adding its payout again. Proven, and now
+    // held, by `__tests__/milestone-cas.integration.spec.ts`.
     const pg = this.resolvePgConnection()
     if (pg) {
       const result = await pg.raw(
@@ -398,7 +407,7 @@ class DemandPoolModuleService extends MedusaService({
           WHERE id = ?
             AND deleted_at IS NULL
             AND status IN ('ACTIVE', 'MILESTONE_PARTIAL')
-            AND COALESCE((milestones -> ? ->> 'completed')::boolean, false) = false
+            AND COALESCE((milestones -> ?::int ->> 'completed')::boolean, false) = false
         RETURNING milestones_completed, amount_paid_out, status`,
         [milestoneIndex, payoutAmount, totalMilestones, bountyId, milestoneIndex]
       )
