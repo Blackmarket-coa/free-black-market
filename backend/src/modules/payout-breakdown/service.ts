@@ -73,6 +73,14 @@ const DEFAULT_FEE_LABELS: Record<FeeType, { label: string; description: string }
     label: "Referral",
     description: "Generic referral share for non-affiliate-program referrals",
   },
+  [FeeType.CHANNEL_FEE]: {
+    label: "Sales channel fee",
+    // Named for the vendor, not for us: they need to know a marketplace took
+    // this, not that some abstract fee applied. Kept separate from the
+    // platform fee so a breakdown never implies we took both.
+    description:
+      "Commission taken by an external sales channel before payout reaches FBM",
+  },
 }
 
 /**
