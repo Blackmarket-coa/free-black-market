@@ -438,6 +438,59 @@ describe("fulfillPaidCharge", () => {
     expect(result.fulfilled).toBe(true)
     expect(world.grant).not.toHaveBeenCalled()
   })
+
+  it("grants an add-on pack's feature keys when its charge is paid", async () => {
+    const world = makeWorld({
+      charges: [
+        promotionCharge({
+          kind: VendorChargeKind.ADDON,
+          status: VendorChargeStatus.PAID,
+          description: "Add-on — Grower Tools (30 days)",
+          metadata: { addon_code: "grower_pack" },
+        }),
+      ],
+    })
+
+    const result = await fulfillPaidCharge(world.container as never, "vc_1")
+
+    expect(result.fulfilled).toBe(true)
+    // One access-pass entitlement per key in the pack, each carrying an expiry
+    // so the features lapse on their own when the window closes.
+    const keys = world.grant.mock.calls
+      .map((c) => (c[0] as Record<string, unknown>).feature_key)
+      .sort()
+    expect(keys).toEqual(["vendor.nursery", "vendor.production_ledger"])
+    for (const call of world.grant.mock.calls) {
+      const input = call[0] as Record<string, unknown>
+      expect(input.seller_id).toBe("sel_1")
+      expect(input.expires_at).toBeInstanceOf(Date)
+      expect((input.metadata as Record<string, unknown>).addon).toBe(
+        "grower_pack"
+      )
+    }
+  })
+
+  it("delivers an add-on exactly once across webhook replays", async () => {
+    // Add-on fulfilment EXTENDS the pack's window — double delivery would hand
+    // out double time, same hazard as promotions. The fulfilled_at stamp is
+    // what prevents it.
+    const world = makeWorld({
+      charges: [
+        promotionCharge({
+          kind: VendorChargeKind.ADDON,
+          status: VendorChargeStatus.PAID,
+          metadata: { addon_code: "quest_pack" },
+        }),
+      ],
+    })
+
+    const first = await fulfillPaidCharge(world.container as never, "vc_1")
+    const second = await fulfillPaidCharge(world.container as never, "vc_1")
+
+    expect(first.fulfilled).toBe(true)
+    expect(second).toEqual({ fulfilled: false, replayed: true })
+    expect(world.grant).toHaveBeenCalledTimes(1)
+  })
 })
 
 describe("createBillingSetupIntent", () => {
