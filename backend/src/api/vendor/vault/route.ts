@@ -8,6 +8,7 @@ import {
   respondPlanLimitReached,
 } from "../../../shared/seller-plan"
 import { hasRoomFor } from "../../../modules/vendor-plan/limits"
+import { formatBytes, measureFileBytes } from "../../../shared/file-size"
 
 /** GET /vendor/vault — a vendor's uploaded evidence documents (opt-in). */
 export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
@@ -43,12 +44,10 @@ export const POST = async (req: MedusaRequest<CreateDocBody>, res: MedusaRespons
 
   const service = req.scope.resolve<DocumentVaultModuleService>(DOCUMENT_VAULT_MODULE)
 
-  // Document count, not bytes. The vault records a `file_id` from the File
-  // module and never sees a size, and the Minio provider has no seller context
-  // to charge bytes against — so a byte cap here would either trust a
-  // client-supplied number or be unenforceable. Counting documents is the
-  // honest meter today; byte-level metering belongs with the usage-to-invoice
-  // work, which is where size capture has to be plumbed anyway.
+  // Two independent caps, because they bound different costs: the document
+  // count bounds how much work the vault represents, bytes bound what it costs
+  // to keep. Five 2 GB videos and five 40 KB PDFs are the same number of
+  // documents and are not the same product.
   const existing = await service.listForSeller(sellerId)
   const { plan_code, limits } = await getSellerPlanLimits(req.scope, sellerId)
   if (!hasRoomFor(existing.length, limits.vault_documents)) {
@@ -61,11 +60,33 @@ export const POST = async (req: MedusaRequest<CreateDocBody>, res: MedusaRespons
     })
   }
 
+  // Measured server-side against the object store, never taken from the
+  // request — a cap enforced against a number the client sends is not a cap.
+  // `null` means we could not measure it, which is treated as "unknown", not
+  // "empty": the document is still stored and simply contributes nothing to
+  // the quota. Failing an upload because the object store was briefly slow
+  // would turn metering into an availability problem on somebody's document.
+  const bytes = await measureFileBytes(req.scope, b.file_id)
+  if (bytes !== null) {
+    const usedBytes = await service.storageBytesForSeller(sellerId)
+    if (!hasRoomFor(usedBytes, limits.vault_storage_bytes, bytes)) {
+      return respondPlanLimitReached(res, {
+        limit_key: "vault_storage_bytes",
+        limit: limits.vault_storage_bytes,
+        current: usedBytes,
+        plan_code,
+        noun: "of vault storage",
+        display_limit: formatBytes((limits.vault_storage_bytes ?? 0) as number),
+      })
+    }
+  }
+
   const document = await service.createVaultDocuments({
     seller_id: sellerId,
     doc_type: (b.doc_type ?? "other") as VaultDocumentType,
     label: b.label,
     file_id: b.file_id ?? null,
+    bytes_stored: bytes,
     issued_at: b.issued_at ? new Date(b.issued_at) : null,
     expires_at: b.expires_at ? new Date(b.expires_at) : null,
     verified: false,

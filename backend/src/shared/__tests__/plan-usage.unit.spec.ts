@@ -18,6 +18,7 @@ const makeContainer = (
     planCode?: string
     embedKeys?: { revoked_at: Date | null }[]
     vaultDocs?: unknown[]
+    vaultBytes?: number
     webhooks?: unknown[]
     domains?: unknown
     broken?: string[]
@@ -46,7 +47,10 @@ const makeContainer = (
         }
       }
       if (key === DOCUMENT_VAULT_MODULE) {
-        return { listForSeller: async () => opts.vaultDocs ?? [] }
+        return {
+          listForSeller: async () => opts.vaultDocs ?? [],
+          storageBytesForSeller: async () => opts.vaultBytes ?? 0,
+        }
       }
       if (key === MARKETPLACE_WEBHOOKS_MODULE) {
         return { listWebhookSubscriptions: async () => opts.webhooks ?? [] }
@@ -77,6 +81,7 @@ describe("collectSellerUsage", () => {
         planCode: "free",
         embedKeys: [{ revoked_at: null }],
         vaultDocs: [{}, {}],
+        vaultBytes: 20 * 1024 * 1024,
         webhooks: [{}],
         domains: ["shop.example.com"],
       }),
@@ -94,6 +99,14 @@ describe("collectSellerUsage", () => {
     expect(resources.get("vault_documents")).toMatchObject({
       current: 2,
       limit: 5,
+    })
+    // Free allows 100 MB; both vault caps come from the same read, so they
+    // cannot disagree about the same moment.
+    expect(resources.get("vault_storage_bytes")).toMatchObject({
+      current: 20 * 1024 * 1024,
+      limit: 100 * 1024 * 1024,
+      is_bytes: true,
+      level: "ok",
     })
     expect(report.any_at_limit).toBe(true)
   })

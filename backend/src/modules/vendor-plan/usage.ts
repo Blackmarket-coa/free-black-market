@@ -91,6 +91,7 @@ export const COUNTABLE_LIMIT_KEYS = [
   "connect_domains",
   "webhook_subscriptions",
   "vault_documents",
+  "vault_storage_bytes",
 ] as const
 
 export type CountableLimitKey = (typeof COUNTABLE_LIMIT_KEYS)[number]
@@ -101,6 +102,23 @@ export const COUNTABLE_LIMIT_LABELS: Record<CountableLimitKey, string> = {
   connect_domains: "Connected domains",
   webhook_subscriptions: "Webhook endpoints",
   vault_documents: "Vault documents",
+  vault_storage_bytes: "Vault storage",
+}
+
+/**
+ * Resources whose numbers are byte counts rather than item counts.
+ *
+ * Reported so the panel can render "1.2 GB of 10.0 GB" instead of the raw
+ * figures. The arithmetic is identical — a byte quota is consumed exactly like
+ * a document quota — so the only difference is the unit, and pretending
+ * otherwise would mean a second parallel code path for no gain.
+ */
+export const BYTE_LIMIT_KEYS: readonly CountableLimitKey[] = [
+  "vault_storage_bytes",
+] as const
+
+export function isByteLimitKey(key: string): boolean {
+  return (BYTE_LIMIT_KEYS as readonly string[]).includes(key)
 }
 
 /**
@@ -126,7 +144,12 @@ export const ALLOWANCE_LIMIT_LABELS: Record<AllowanceLimitKey, string> = {
 
 export type SellerUsageReport = {
   plan_code: string
-  resources: (ResourceUsage & { key: CountableLimitKey; label: string })[]
+  resources: (ResourceUsage & {
+    key: CountableLimitKey
+    label: string
+    /** Render the numbers as sizes rather than as a count. */
+    is_bytes: boolean
+  })[]
   allowances: { key: AllowanceLimitKey; label: string; limit: number }[]
   /** True when any countable resource is at its ceiling. */
   any_at_limit: boolean
@@ -153,6 +176,7 @@ export function buildUsageReport(
   ).map((key) => ({
     key,
     label: COUNTABLE_LIMIT_LABELS[key],
+    is_bytes: isByteLimitKey(key),
     ...resourceUsage(counts[key] as number, limits[key]),
   }))
 

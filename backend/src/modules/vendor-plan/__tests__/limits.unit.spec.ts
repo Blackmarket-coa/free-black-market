@@ -20,6 +20,7 @@ const LIMIT_KEYS: (keyof VendorPlanLimits)[] = [
   "connect_domains",
   "webhook_subscriptions",
   "vault_documents",
+  "vault_storage_bytes",
 ]
 
 describe("plan limit table", () => {
@@ -72,6 +73,16 @@ describe("plan limit table", () => {
     expect(internal.connect_domains).toBeNull()
     expect(internal.webhook_subscriptions).toBeNull()
     expect(internal.vault_documents).toBeNull()
+    expect(internal.vault_storage_bytes).toBeNull()
+  })
+
+  it("gives every paid tier room for real files, not just paperwork", () => {
+    // A storage quota below a single ordinary upload would make the cap fire
+    // on the vendor's first real document rather than on abuse.
+    for (const code of ["free", "starter", "pro", "scale"]) {
+      const bytes = limitsForPlan(code).vault_storage_bytes as number
+      expect(bytes).toBeGreaterThanOrEqual(100 * 1024 * 1024)
+    }
   })
 
   it("keeps the free tier usable rather than zeroed", () => {
