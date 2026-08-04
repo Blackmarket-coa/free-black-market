@@ -994,6 +994,17 @@ export default defineMiddlewares({
         requirePlanFeature("vendor.channel_sync"),
       ],
     },
+    // Outbound sales channels. Same flag and same plan key as the inbound
+    // sync above — connecting a channel is one capability regardless of which
+    // way the products travel, and splitting it would mean selling a vendor
+    // "sync" that only worked in one direction.
+    {
+      matcher: "/vendor/channels*",
+      middlewares: [
+        requireFeatureFlagMiddleware("CHANNEL_SYNC_V1"),
+        requirePlanFeature("vendor.channel_sync"),
+      ],
+    },
     // Phase 0 contracts: executable JSON boundaries on route payloads
     {
       matcher: "/vendor/inventory-sync/events",
