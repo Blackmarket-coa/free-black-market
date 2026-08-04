@@ -232,6 +232,15 @@ jobs:
           severity: 'HIGH,CRITICAL'
           ignore-unfixed: true
           exit-code: '1'
+          # This gate previously passed no ignore file at all, so nothing could
+          # be triaged for it. `.trivyignore.image` is deliberately a separate
+          # list from the filesystem scan's: findings vendored inside a
+          # third-party binary we ship are not the same as findings in our own
+          # lockfile, and sharing one file would mean suppressing an image-only
+          # CVE also switched off the filesystem gate's regression detection for
+          # it — which is exactly the case for CVE-2026-69152, fixed in our
+          # lockfile by #773 but unreachable inside pnpm's bundle.
+          trivyignores: '.trivyignore.image'
           # Without this, trivy-action overrides `severity` to include all
           # severities when `format: sarif`, so the `exit-code: 1` gate
           # trips on LOW/MEDIUM findings too — defeating the stated

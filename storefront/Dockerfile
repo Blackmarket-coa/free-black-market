@@ -69,7 +69,14 @@ ENV HOSTNAME=0.0.0.0
 
 RUN groupadd -g 10001 storefront && useradd -u 10001 -g storefront -s /usr/sbin/nologin -m storefront \
     && apt-get update && apt-get install -y --no-install-recommends wget tini ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
+    # Debian security updates on top of the base tag — see the same note in
+    # backend/Dockerfile on why this is applied at our build time.
+    && apt-get upgrade -y \
+    && rm -rf /var/lib/apt/lists/* \
+    # This image runs `node server.js` (Next.js standalone) and never invokes a
+    # package manager, so npm is dead weight — but its bundled dependency tree
+    # is most of what a container scan flags here.
+    && rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
 
 COPY --from=build --chown=storefront:storefront /app/.next/standalone ./
 COPY --from=build --chown=storefront:storefront /app/.next/static ./.next/static
