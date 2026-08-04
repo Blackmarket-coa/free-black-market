@@ -50,6 +50,20 @@ jobs:
           cache: 'pnpm'
           cache-dependency-path: backend/pnpm-lock.yaml
 
+      # The one install in CI that does NOT pass `--trust-lockfile`, on purpose.
+      #
+      # pnpm 11 verifies every lockfile entry against `minimumReleaseAge` /
+      # `trustPolicy` by contacting the registry, which is far too expensive to
+      # repeat in all 14 of ci.yml's installs — that burst rate-limited npm and
+      # failed the build (see the note at the top of ci.yml). So this job is the
+      # designated verifier: once per PR, and again on this workflow's nightly
+      # schedule, which is the run that catches a version flagged *after* it was
+      # merged.
+      #
+      # If this step starts failing with ERR_PNPM_FETCH_429 rather than a real
+      # policy violation, that is registry rate-limiting and not a finding —
+      # but do not "fix" it by adding the flag here, because then nothing
+      # verifies the lockfile at all.
       - name: Install backend dependencies
         working-directory: backend
         run: pnpm install --frozen-lockfile

@@ -18,6 +18,29 @@ env:
   NODE_VERSION: '22'
   PNPM_VERSION: '11.20.0'
 
+# Every install below passes `--trust-lockfile`, and that is a deliberate
+# security trade rather than a convenience.
+#
+# pnpm 11 added a supply-chain verification pass that re-applies
+# `minimumReleaseAge` / `trustPolicy` to *each lockfile entry*, contacting the
+# registry for all of them. Backend's lockfile has ~1750 entries and this
+# workflow runs 14 installs across 12 jobs, so a single CI run made roughly
+# 25,000 registry requests in one burst and npm answered with HTTP 429:
+#
+#   ✗ Lockfile failed supply-chain policy check (1752 entries in 2m 27.9s)
+#   [ERR_PNPM_FETCH_429] GET .../@medusajs%2Ftypes: Too Many Requests - 429
+#
+# The control is not switched off, it is moved somewhere it can work. The
+# install in `security.yml` deliberately does NOT pass the flag, so exactly one
+# job per PR — and again on that workflow's nightly schedule, which is what
+# catches a version flagged *after* it was merged — performs the real
+# verification. Fourteen jobs re-verifying the same committed lockfile is not
+# fourteen times the assurance; it is one check and thirteen rate-limit risks.
+#
+# Neither `minimumReleaseAge` nor `trustPolicy` is configured in this repo
+# today, so the pass currently enforces nothing beyond pnpm's defaults. If
+# either is ever set, the security.yml install is where it takes effect.
+
 jobs:
   lint:
     name: Lint & Type Check
@@ -44,11 +67,11 @@ jobs:
 
       - name: Install backend dependencies
         working-directory: backend
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile --trust-lockfile
 
       - name: Install storefront dependencies
         working-directory: storefront
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile --trust-lockfile
 
       - name: Check vendor/module completeness
         run: pnpm check:vendor-completeness
@@ -99,11 +122,11 @@ jobs:
 
       - name: Install admin panel dependencies
         working-directory: admin-panel
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile --trust-lockfile
 
       - name: Install vendor panel dependencies
         working-directory: vendor-panel
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile --trust-lockfile
 
       - name: Validate admin panel translation contracts
         working-directory: admin-panel
@@ -134,7 +157,7 @@ jobs:
 
       - name: Install vendor-panel dependencies
         working-directory: vendor-panel
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile --trust-lockfile
 
       - name: Lint vendor panel
         working-directory: vendor-panel
@@ -175,7 +198,7 @@ jobs:
           cache-dependency-path: pnpm-lock.yaml
 
       - name: Install workspace dependencies
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile --trust-lockfile
 
       - name: Typecheck portals
         run: pnpm portals:typecheck
@@ -204,7 +227,7 @@ jobs:
 
       - name: Install admin-panel dependencies
         working-directory: admin-panel
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile --trust-lockfile
 
       - name: Lint admin panel
         working-directory: admin-panel
@@ -241,7 +264,7 @@ jobs:
 
       - name: Install storefront dependencies
         working-directory: storefront
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile --trust-lockfile
 
       - name: Run storefront tests
         working-directory: storefront
@@ -268,7 +291,7 @@ jobs:
 
       - name: Install dependencies
         working-directory: backend
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile --trust-lockfile
 
       - name: Run unit tests
         working-directory: backend
@@ -307,7 +330,7 @@ jobs:
 
       - name: Install dependencies
         working-directory: backend
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile --trust-lockfile
 
       - name: Build backend
         working-directory: backend
@@ -341,11 +364,11 @@ jobs:
 
       - name: Install backend dependencies
         working-directory: backend
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile --trust-lockfile
 
       - name: Install storefront dependencies
         working-directory: storefront
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile --trust-lockfile
 
       - name: Prepare audit artifact directory
         run: mkdir -p audit-reports
@@ -465,7 +488,7 @@ jobs:
 
       - name: Install dependencies
         working-directory: backend
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile --trust-lockfile
 
       # TI-1 closed 2026-05-13 (hawala-ledger + payout-breakdown migration
       # order). Briefly flipped to fail-fast on 2026-05-17 (PR #677) — the
@@ -574,7 +597,7 @@ jobs:
 
       - name: Install dependencies
         working-directory: backend
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile --trust-lockfile
 
       # Closes the LAUNCH_READINESS §2 money-path gate: proves the
       # atomic-by-default balance CAS + pool-total increments hold under real
