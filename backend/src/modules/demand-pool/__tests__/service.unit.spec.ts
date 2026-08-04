@@ -274,3 +274,100 @@ describe("DemandPoolModuleService", () => {
     })
   })
 })
+
+describe("getUnfulfilledDemandLeads", () => {
+  const expiredPost = (overrides: any = {}) => ({
+    id: "dp_expired",
+    status: "EXPIRED",
+    category: "grain",
+    delivery_region: "midwest",
+    committed_quantity: 40,
+    target_quantity: 100,
+    total_bounty_amount: 250,
+    updated_at: "2026-08-01T00:00:00.000Z",
+    ...overrides,
+  })
+
+  const ctxWith = (posts: any[], proposals: any[] = []) => ({
+    listDemandPosts: jest.fn(async () => posts),
+    listSupplierProposals: jest.fn(async () => proposals),
+  })
+
+  it("queries only EXPIRED public posts", async () => {
+    const ctx: any = ctxWith([expiredPost()])
+
+    await DemandPoolModuleService.prototype.getUnfulfilledDemandLeads.call(
+      ctx,
+      "sel_1"
+    )
+
+    const [filters] = ctx.listDemandPosts.mock.calls[0]
+    // A CANCELLED pool was withdrawn by its creator and says nothing about
+    // whether the market could have been served, so it must not appear.
+    expect(filters.status).toBe("EXPIRED")
+    expect(filters.visibility).toBe("PUBLIC")
+  })
+
+  it("summarises how much demand went unserved", async () => {
+    const ctx: any = ctxWith([expiredPost()])
+
+    const leads =
+      await DemandPoolModuleService.prototype.getUnfulfilledDemandLeads.call(
+        ctx,
+        "sel_1"
+      )
+
+    expect(leads).toHaveLength(1)
+    expect(leads[0].unmet_demand).toEqual({
+      committed_quantity: 40,
+      target_quantity: 100,
+      bounty_amount: 250,
+      expired_at: "2026-08-01T00:00:00.000Z",
+    })
+  })
+
+  it("does not pitch back a pool the supplier already proposed to", async () => {
+    const ctx: any = ctxWith(
+      [expiredPost(), expiredPost({ id: "dp_other" })],
+      [{ demand_post_id: "dp_expired", supplier_id: "sel_1" }]
+    )
+
+    const leads =
+      await DemandPoolModuleService.prototype.getUnfulfilledDemandLeads.call(
+        ctx,
+        "sel_1"
+      )
+
+    expect(leads.map((l: any) => l.id)).toEqual(["dp_other"])
+  })
+
+  it("filters out leads below the requested committed quantity", async () => {
+    const ctx: any = ctxWith([
+      expiredPost({ id: "dp_small", committed_quantity: 5 }),
+      expiredPost({ id: "dp_big", committed_quantity: 500 }),
+    ])
+
+    const leads =
+      await DemandPoolModuleService.prototype.getUnfulfilledDemandLeads.call(
+        ctx,
+        "sel_1",
+        { min_committed_quantity: 100 }
+      )
+
+    expect(leads.map((l: any) => l.id)).toEqual(["dp_big"])
+  })
+
+  it("passes category and region through to the query", async () => {
+    const ctx: any = ctxWith([])
+
+    await DemandPoolModuleService.prototype.getUnfulfilledDemandLeads.call(
+      ctx,
+      "sel_1",
+      { category: "grain", delivery_region: "midwest" }
+    )
+
+    const [filters] = ctx.listDemandPosts.mock.calls[0]
+    expect(filters.category).toBe("grain")
+    expect(filters.delivery_region).toBe("midwest")
+  })
+})

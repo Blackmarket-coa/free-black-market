@@ -199,10 +199,28 @@ Sellers are skipped throughout; they progress through the Quest Engine.
 is a generic RFQ model, not a mutual aid system. That emitter is Phase 5 work, not a gap in
 Phase 2.
 
-**Phase 3 — buy orders and bounties.** Largely present: storefront pages exist at
-`(main)/collective/demand-pools/{,new,[id]}`, and the escrow-backed bounty flow lives in
-`demand-pool` + `services/collective-hawala.ts`. Remaining: the vendor-acquisition hook
-that turns an unfulfilled bounty into a qualified lead rather than a dead end.
+**Phase 3 — buy orders and bounties.** Largely present before this work: storefront pages
+at `(main)/collective/demand-pools/{,new,[id]}`, and the escrow-backed bounty flow in
+`demand-pool` + `services/collective-hawala.ts`.
+
+*The vendor-acquisition hook is now closed.* Previously, expiry was a dead end in the
+literal sense: `getSupplierOpportunities` only lists OPEN/THRESHOLD_MET pools, so the
+moment a pool expired it dropped out of every supplier view and the demand signal was lost
+entirely. Two additions:
+
+- `demand-pool-expiry` emits `demand_pool.expired_unfulfilled` carrying the demand signal
+  (category, region, committed vs target quantity, bounty amount). The emitter is injected
+  into `expireOverduePools` rather than resolved inside it, so that helper stays
+  container-free and unit-testable, and a failed emit cannot turn a completed
+  refund-and-expire into a reported failure.
+- `getUnfulfilledDemandLeads` + `GET /vendor/collective/demand-leads` surface that demand
+  to prospective suppliers, filtered by category and region, ranked by attractiveness, and
+  excluding pools the supplier already proposed to.
+
+Kept deliberately separate from `/vendor/collective/demand-pools`: those are live pools a
+supplier can still bid on, these are historical and cannot be bid on. Merging them would
+fill an actionable feed with dead rows. EXPIRED only — a CANCELLED pool was withdrawn by
+its creator and says nothing about whether the market could have been served.
 
 **Phase 4 — group buying and order cycles.** Threshold unlock on `demand-pool`; wire
 `order-cycle` as the recurring-relationship alternative to one-off group buys. Surplus and

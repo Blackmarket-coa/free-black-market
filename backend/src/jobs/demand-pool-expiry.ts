@@ -1,6 +1,8 @@
 import { createLogger } from "../shared/logger"
 const log = createLogger("jobs/demand-pool-expiry")
 import { MedusaContainer } from "@medusajs/framework/types"
+import type { IEventBusModuleService } from "@medusajs/framework/types"
+import { Modules } from "@medusajs/framework/utils"
 import { DEMAND_POOL_MODULE } from "../modules/demand-pool"
 import { DemandPostStatus } from "../modules/demand-pool/models/demand-post"
 import {
@@ -22,10 +24,26 @@ import type DemandPoolModuleService from "../modules/demand-pool/service"
  * The core loop is extracted into the pure, container-free helper
  * `expireOverduePools` so it can be unit-tested with fake services.
  */
+export type UnfulfilledDemandSignal = {
+  demand_post_id: string
+  category: string | null
+  delivery_region: string | null
+  committed_quantity: number
+  target_quantity: number
+  bounty_amount: number
+}
+
 export async function expireOverduePools(
   demandPoolService: DemandPoolModuleService,
   collectiveHawala: CollectiveHawalaService,
-  now: Date
+  now: Date,
+  /**
+   * Announce each expired pool as unmet demand. Optional and injected rather
+   * than resolved from a container so this helper stays container-free and
+   * unit-testable. A failing emit must never abort the sweep — the refund and
+   * the status transition are the job's real work.
+   */
+  onUnfulfilled?: (signal: UnfulfilledDemandSignal) => Promise<void>
 ): Promise<
   Array<{
     demand_post_id: string
@@ -58,6 +76,27 @@ export async function expireOverduePools(
         DemandPostStatus.EXPIRED
       )
       results.push({ demand_post_id: post.id, status: "expired" })
+
+      // A pool nobody could supply is the clearest evidence of an unserved
+      // market, so it is announced rather than left to go quiet. Isolated:
+      // the pool is already expired and refunded by this point, and an emit
+      // failure must not turn a successful expiry into a reported failure.
+      if (onUnfulfilled) {
+        try {
+          await onUnfulfilled({
+            demand_post_id: post.id,
+            category: (post.category as string | null) ?? null,
+            delivery_region: (post.delivery_region as string | null) ?? null,
+            committed_quantity: Number(post.committed_quantity ?? 0),
+            target_quantity: Number(post.target_quantity ?? 0),
+            bounty_amount: Number(post.total_bounty_amount ?? 0),
+          })
+        } catch (emitErr: any) {
+          log.error(
+            `[demand-pool-expiry] unfulfilled-demand emit failed for ${post.id}: ${emitErr?.message}`
+          )
+        }
+      }
     } catch (error: any) {
       results.push({
         demand_post_id: post.id,
@@ -79,10 +118,15 @@ export default async function demandPoolExpiryJob(
 
   log.info("[demand-pool-expiry] Starting overdue-pool sweep")
 
+  const eventBus = container.resolve<IEventBusModuleService>(Modules.EVENT_BUS)
+
   const results = await expireOverduePools(
     demandPoolService,
     collectiveHawala,
-    new Date()
+    new Date(),
+    async (signal) => {
+      await eventBus.emit({ name: "demand_pool.expired_unfulfilled", data: signal })
+    }
   )
 
   const expired = results.filter((r) => r.status === "expired").length

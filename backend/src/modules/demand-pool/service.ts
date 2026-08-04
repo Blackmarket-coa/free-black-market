@@ -944,6 +944,84 @@ class DemandPoolModuleService extends MedusaService({
     })
   }
 
+  /**
+   * Demand that went unmet — surfaced to prospective suppliers as leads.
+   *
+   * `getSupplierOpportunities` only shows OPEN/THRESHOLD_MET pools, so the
+   * moment a pool expires it drops out of every supplier view and the demand
+   * signal is lost. That is the dead end this closes: a pool nobody could
+   * supply is the single clearest evidence of an unserved market, and it is
+   * exactly the demand worth routing to a vendor who could serve it next time.
+   *
+   * Distinct from `getSupplierOpportunities` on purpose. Those are live pools a
+   * supplier can still bid on; these are historical, and cannot be bid on at
+   * all. Conflating them would put un-actionable rows in a list whose entire
+   * purpose is "things you can act on".
+   */
+  async getUnfulfilledDemandLeads(
+    supplierId: string,
+    filters?: {
+      category?: string
+      delivery_region?: string
+      /** Only leads whose committed demand reached at least this size. */
+      min_committed_quantity?: number
+      limit?: number
+      offset?: number
+    }
+  ) {
+    const queryFilters: Record<string, unknown> = {
+      // EXPIRED only. A CANCELLED pool was withdrawn by its creator, which says
+      // nothing about whether the market could have been served.
+      status: DemandPostStatus.EXPIRED,
+      visibility: DemandPostVisibility.PUBLIC,
+    }
+
+    if (filters?.category) {
+      queryFilters.category = filters.category
+    }
+    if (filters?.delivery_region) {
+      queryFilters.delivery_region = filters.delivery_region
+    }
+
+    const posts = await this.listDemandPosts(queryFilters, {
+      order: { attractiveness_score: "DESC" },
+      take: filters?.limit || 20,
+      skip: filters?.offset || 0,
+    })
+
+    // A supplier who already engaged with a pool does not need it pitched back
+    // to them as a fresh lead.
+    const existingProposals = await this.listSupplierProposals({
+      supplier_id: supplierId,
+    })
+    const proposedPostIds = new Set(
+      existingProposals.map((p) => p.demand_post_id)
+    )
+
+    return posts
+      .filter((post) => {
+        if (proposedPostIds.has(post.id)) return false
+        if (
+          filters?.min_committed_quantity &&
+          Number(post.committed_quantity) < filters.min_committed_quantity
+        ) {
+          return false
+        }
+        return true
+      })
+      .map((post) => ({
+        ...post,
+        // How much real demand went unserved: buyers who committed, and money
+        // that was actually escrowed behind the ask.
+        unmet_demand: {
+          committed_quantity: Number(post.committed_quantity),
+          target_quantity: Number(post.target_quantity),
+          bounty_amount: Number(post.total_bounty_amount),
+          expired_at: post.updated_at,
+        },
+      }))
+  }
+
   // ──────────────────────────────────────────────────────────────────────────
   // Smart Matching
   // ──────────────────────────────────────────────────────────────────────────
