@@ -2,7 +2,7 @@ import { createLogger } from "../shared/logger"
 const log = createLogger("subscribers/customer-created-matrix")
 import { SubscriberArgs, SubscriberConfig } from "@medusajs/framework"
 import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils"
-import { getMatrixService } from "../shared/matrix-service"
+import { getChatProvider } from "../shared/chat"
 
 /**
  * Subscriber: Customer Created - Matrix (Blackout) Integration
@@ -24,7 +24,7 @@ export default async function customerCreatedMatrixHandler({
   log.info(`[customerCreated Matrix] Processing customer ${customerId}`)
 
   try {
-    const matrixService = getMatrixService()
+    const matrixService = getChatProvider()
 
     if (!matrixService) {
       log.info("[customerCreated Matrix] Matrix not configured, skipping")

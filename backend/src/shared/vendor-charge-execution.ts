@@ -12,6 +12,7 @@ import {
 import { VENDOR_PLAN_MODULE } from "../modules/vendor-plan"
 import type VendorPlanService from "../modules/vendor-plan/service"
 import { grantPromotion } from "./promoted-listing-service"
+import { grantAddon } from "./vendor-addons"
 
 const log = createLogger("shared/vendor-charge-execution")
 
@@ -252,6 +253,18 @@ export async function fulfillPaidCharge(
     await grantPromotion(container, {
       sellerId: charge.seller_id,
       tierCode: tier,
+      reason: `purchase: charge ${charge.id}`,
+    })
+  }
+
+  if (charge.kind === VendorChargeKind.ADDON) {
+    const code = (charge.metadata?.addon_code as string) ?? ""
+    // Same exactly-once guard as promotions: fulfilment extends the pack's
+    // window, so double delivery from a webhook replay would hand out double
+    // time. The `fulfilled_at` stamp above this switch is what prevents it.
+    await grantAddon(container, {
+      sellerId: charge.seller_id,
+      code,
       reason: `purchase: charge ${charge.id}`,
     })
   }
