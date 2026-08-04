@@ -1,5 +1,6 @@
 import { MedusaService } from "@medusajs/framework/utils"
-import { ChannelConnection, ChannelListing } from "./models"
+import { ChannelConnection, ChannelListing, ChannelOrderRecord } from "./models"
+import type { ChannelOrder } from "./types"
 import type { ChannelCredentials } from "./types"
 
 export type ConnectionRow = {
@@ -23,9 +24,16 @@ export type ConnectionRow = {
  * mapping — the part the roadmap calls the hard problem — be tested without a
  * database or a network.
  */
+export type StoredChannelOrder = {
+  id: string
+  external_id: string
+  inventory_applied: boolean
+}
+
 class ChannelConnectorService extends MedusaService({
   ChannelConnection,
   ChannelListing,
+  ChannelOrderRecord,
 }) {
   /** A seller's connections, live ones only. */
   async listForSeller(seller_id: string): Promise<ConnectionRow[]> {
@@ -176,6 +184,73 @@ class ChannelConnectorService extends MedusaService({
       id: existing.id,
       last_error: message.slice(0, 1_000),
     } as never)
+  }
+
+  /** An already-ingested order, or null. Keyed the way the index is. */
+  async findOrder(
+    channel_id: string,
+    external_id: string
+  ): Promise<StoredChannelOrder | null> {
+    const rows = (await this.listChannelOrderRecords({
+      channel_id,
+      external_id,
+    })) as unknown as StoredChannelOrder[]
+    return rows?.[0] ?? null
+  }
+
+  /**
+   * Record an order with its stock effect **not yet applied**.
+   *
+   * Deliberately two steps rather than one: see `decideIngestion` on why
+   * recording and decrementing cannot safely be collapsed, and why the flag is
+   * what makes a crash between them recoverable in the right direction.
+   */
+  async recordOrder(input: {
+    seller_id: string
+    channel_id: string
+    order: ChannelOrder
+  }): Promise<StoredChannelOrder> {
+    const [created] = await this.createChannelOrderRecords([
+      {
+        seller_id: input.seller_id,
+        channel_id: input.channel_id,
+        external_id: input.order.external_id,
+        placed_at: input.order.placed_at,
+        currency_code: input.order.currency_code,
+        total_amount: Math.max(0, Math.round(input.order.total_amount)),
+        channel_fee_amount:
+          input.order.channel_fee_amount === null
+            ? null
+            : Math.max(0, Math.round(input.order.channel_fee_amount)),
+        buyer_name: input.order.buyer_name,
+        buyer_email: input.order.buyer_email,
+        shipping_address: input.order.shipping_address,
+        items: input.order.items,
+        inventory_applied: false,
+        raw: input.order.raw,
+      } as never,
+    ])
+    return created as unknown as StoredChannelOrder
+  }
+
+  /** Stamp an order's stock effect as applied, with what it actually did. */
+  async markInventoryApplied(
+    id: string,
+    report: Record<string, unknown>
+  ): Promise<void> {
+    await this.updateChannelOrderRecords({
+      id,
+      inventory_applied: true,
+      inventory_report: report,
+    } as never)
+  }
+
+  /** A seller's ingested channel orders, newest first. */
+  async listOrdersForSeller(seller_id: string): Promise<unknown[]> {
+    return this.listChannelOrderRecords(
+      { seller_id },
+      { order: { placed_at: "DESC" }, take: 100 }
+    )
   }
 
   /** Stamp the outcome of a sync run on the connection. */
