@@ -1,4 +1,10 @@
 import { isUnlimited, type PlanLimit, type VendorPlanLimits } from "./limits"
+import {
+  computeOverage,
+  EMBED_REQUEST_BLOCK,
+  EMBED_REQUEST_BLOCK_CENTS,
+  type UsageMetric,
+} from "./overage"
 
 /**
  * How much of a plan's allowance a seller has consumed.
@@ -124,12 +130,142 @@ export const ALLOWANCE_LIMIT_LABELS: Record<AllowanceLimitKey, string> = {
   analytics_range_days: "Analytics history (days)",
 }
 
+/**
+ * Where a seller stands against a *metered* allowance.
+ *
+ * Separate from `UsageLevel` on purpose. A capped resource has an `at_limit`
+ * state because the cap is where things stop; a meter has no such point — going
+ * past the included volume is a normal, permitted outcome that costs money
+ * rather than failing. Calling that `at_limit` would tell a vendor their embeds
+ * are about to break when what actually happens is a line on next month's bill.
+ */
+export type MeteredLevel = "ok" | "approaching" | "over"
+
+/** Which plan allowance covers each metered metric. */
+export const METERED_LIMIT_KEYS: Record<UsageMetric, keyof VendorPlanLimits> = {
+  embed_requests: "included_embed_requests",
+}
+
+/** Vendor-facing names, same as the countable labels. */
+export const METERED_METRIC_LABELS: Record<UsageMetric, string> = {
+  embed_requests: "Embed API requests",
+}
+
+export type MeteredUsage = {
+  metric: UsageMetric
+  label: string
+  /** Requests recorded so far in the open period. */
+  recorded: number
+  /** What the plan covers per period. `null` is unlimited — never billable. */
+  included: PlanLimit
+  unlimited: boolean
+  /**
+   * Share of the included volume consumed, rounded.
+   *
+   * **Not clamped to 100.** For a cap, above-100% would be a bug; for a meter it
+   * is the number the vendor most needs — "163%" is what makes the projected
+   * charge legible. `null` when unlimited, and also when the plan includes zero:
+   * every request is billable there, and a percentage of nothing would be a
+   * fabricated figure rather than a large one.
+   */
+  percent_used: number | null
+  level: MeteredLevel
+  /** Consumption beyond the allowance, before block rounding. */
+  excess: number
+  blocks: number
+  /**
+   * Cents this period would cost if it closed right now.
+   *
+   * Explicitly a projection: the meter is still open, and the close job bills
+   * the *previous* month. Labelling it as settled would be the one lie this
+   * screen must not tell — the mirror of the omit-rather-than-report-zero rule
+   * on the countable side.
+   */
+  projected_amount_cents: number
+  /** The pricing in force, so the panel can explain the projection. */
+  block_size: number
+  cents_per_block: number
+  /** The open period, ISO, half-open `[start, end)`. */
+  period_start: string
+  period_end: string
+}
+
+/** One meter's raw reading, as gathered by the caller. */
+export type MeterReading = {
+  metric: UsageMetric
+  recorded: number
+  period_start: string
+  period_end: string
+}
+
+/**
+ * Turn a raw meter reading into what the vendor should see.
+ *
+ * The cost comes from `computeOverage` — **the same function the close job
+ * bills with** — rather than a display-side re-derivation. That is the point of
+ * routing through it: the projection a vendor reads is produced by the code
+ * that charges them, so the two cannot drift into disagreement. The countable
+ * side takes the same posture by mirroring each count against its enforcement
+ * point; this is that rule applied to money.
+ */
+export function meteredUsage(
+  reading: MeterReading,
+  included: PlanLimit,
+  pricing?: { blockSize?: number; centsPerBlock?: number }
+): MeteredUsage {
+  const overage = computeOverage({
+    recorded: reading.recorded,
+    included,
+    blockSize: pricing?.blockSize,
+    centsPerBlock: pricing?.centsPerBlock,
+  })
+
+  const unlimited = isUnlimited(included)
+  const allowance = unlimited ? null : Math.max(0, included as number)
+
+  const percent_used =
+    allowance === null || allowance === 0
+      ? null
+      : Math.round((overage.recorded / allowance) * 100)
+
+  const level: MeteredLevel = unlimited
+    ? "ok"
+    : overage.excess > 0
+      ? "over"
+      : allowance !== null &&
+          allowance > 0 &&
+          overage.recorded >= allowance * APPROACHING_RATIO
+        ? "approaching"
+        : "ok"
+
+  return {
+    metric: reading.metric,
+    label: METERED_METRIC_LABELS[reading.metric],
+    recorded: overage.recorded,
+    included,
+    unlimited,
+    percent_used,
+    level,
+    excess: overage.excess,
+    blocks: overage.blocks,
+    projected_amount_cents: overage.amount_cents,
+    block_size: pricing?.blockSize ?? EMBED_REQUEST_BLOCK,
+    cents_per_block: pricing?.centsPerBlock ?? EMBED_REQUEST_BLOCK_CENTS,
+    period_start: reading.period_start,
+    period_end: reading.period_end,
+  }
+}
+
 export type SellerUsageReport = {
   plan_code: string
   resources: (ResourceUsage & { key: CountableLimitKey; label: string })[]
   allowances: { key: AllowanceLimitKey; label: string; limit: number }[]
+  /** Metered consumption for the open period, with its projected cost. */
+  metered: MeteredUsage[]
   /** True when any countable resource is at its ceiling. */
   any_at_limit: boolean
+  /** Total cents the open period would cost if it closed now. */
+  projected_overage_cents: number
 }
 
 /**
@@ -142,11 +278,17 @@ export type SellerUsageReport = {
  * failed count is not evidence of no usage, and "0 of 1 used" would tell a
  * vendor they have headroom they may not have — the one lie this screen must
  * not tell. Absence is honest; the panel simply shows one fewer row.
+ *
+ * Meters follow the same rule, with one difference the caller has to respect:
+ * a meter with *no stored row* genuinely has zero usage — the row is only
+ * written on the first request — so that case is a real reading of `0`, while
+ * a read that *failed* must be left out of `meters` entirely.
  */
 export function buildUsageReport(
   planCode: string,
   limits: VendorPlanLimits,
-  counts: Partial<Record<CountableLimitKey, number>>
+  counts: Partial<Record<CountableLimitKey, number>>,
+  meters: readonly MeterReading[] = []
 ): SellerUsageReport {
   const resources = COUNTABLE_LIMIT_KEYS.filter(
     (key) => typeof counts[key] === "number"
@@ -156,6 +298,10 @@ export function buildUsageReport(
     ...resourceUsage(counts[key] as number, limits[key]),
   }))
 
+  const metered = meters.map((reading) =>
+    meteredUsage(reading, limits[METERED_LIMIT_KEYS[reading.metric]] as PlanLimit)
+  )
+
   return {
     plan_code: planCode,
     resources,
@@ -164,6 +310,11 @@ export function buildUsageReport(
       label: ALLOWANCE_LIMIT_LABELS[key],
       limit: limits[key],
     })),
+    metered,
     any_at_limit: resources.some((r) => r.level === "at_limit"),
+    projected_overage_cents: metered.reduce(
+      (sum, m) => sum + m.projected_amount_cents,
+      0
+    ),
   }
 }
