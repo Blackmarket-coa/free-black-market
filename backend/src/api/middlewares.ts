@@ -1079,11 +1079,25 @@ export default defineMiddlewares({
       matcher: "/vendor/promotion*",
       middlewares: [authenticate("seller", "bearer")],
     },
+    // Add-on pack catalog + purchase. Same posture as promotions for the same
+    // reasons: the price list stays visible to every plan, and the purchase
+    // route grants nothing until its charge is PAID.
+    {
+      matcher: "/vendor/addons*",
+      middlewares: [authenticate("seller", "bearer")],
+    },
     // Charge ledger + payment-method setup. Not plan-gated: a vendor must
     // always be able to see and settle their balance — especially one whose
     // access was reduced because of an unpaid balance.
     {
       matcher: "/vendor/billing*",
+      middlewares: [authenticate("seller", "bearer")],
+    },
+    // Plan usage against allowances. Not plan-gated for the same reason as
+    // billing, and more so: the vendor closest to a ceiling is the one on the
+    // smallest plan, and gating this would hide the number from them.
+    {
+      matcher: "/vendor/usage",
       middlewares: [authenticate("seller", "bearer")],
     },
     // Stripe webhook for vendor charges. Signature-verified in the handler;

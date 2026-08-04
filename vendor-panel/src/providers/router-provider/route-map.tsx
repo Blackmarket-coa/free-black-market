@@ -1602,6 +1602,14 @@ export const RouteMap: RouteObject[] = [
             },
           },
           {
+            path: "addons",
+            errorElement: <ErrorBoundary />,
+            lazy: () => import("../../routes/settings/addons"),
+            handle: {
+              breadcrumb: () => "Add-ons",
+            },
+          },
+          {
             path: "store",
             errorElement: <ErrorBoundary />,
             lazy: () => import("../../routes/store/store-detail"),
