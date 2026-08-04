@@ -5,8 +5,12 @@ import { getSellerPlanLimits } from "./seller-plan"
 import {
   buildUsageReport,
   type CountableLimitKey,
+  type MeterReading,
   type SellerUsageReport,
 } from "../modules/vendor-plan/usage"
+import { usagePeriodFor } from "../modules/vendor-plan/overage"
+import { VENDOR_USAGE_MODULE } from "../modules/vendor-usage/module-key"
+import type VendorUsageService from "../modules/vendor-usage/service"
 import { EMBED_KEYS_MODULE } from "../modules/embed-keys"
 import type EmbedKeysService from "../modules/embed-keys/service"
 import { DOCUMENT_VAULT_MODULE } from "../modules/document-vault"
@@ -120,6 +124,42 @@ async function countConnectDomains(
 }
 
 /**
+ * Embed requests recorded in the open period.
+ *
+ * The distinction that matters here, and the reason this returns `undefined`
+ * rather than `0` on failure: **no stored row means zero requests** — the row
+ * is created on the first metered request — whereas a failed read means we do
+ * not know. Collapsing the two would show a vendor "0 requests this month"
+ * during a database blip, right next to a projected charge of $0, which is the
+ * most confidently wrong thing this screen could say. A missing reading is
+ * simply omitted and the panel shows one fewer row.
+ */
+async function readEmbedRequestMeter(
+  container: MedusaContainer,
+  sellerId: string,
+  now: Date
+): Promise<MeterReading | undefined> {
+  const period = usagePeriodFor(now)
+  try {
+    const service = container.resolve<VendorUsageService>(VENDOR_USAGE_MODULE)
+    const record = await service.getPeriodUsage(
+      sellerId,
+      "embed_requests",
+      period.start
+    )
+    return {
+      metric: "embed_requests",
+      recorded: record ? Number(record.quantity) : 0,
+      period_start: period.start.toISOString(),
+      period_end: period.end.toISOString(),
+    }
+  } catch (err) {
+    log.warn(`[usage] embed request meter read failed for ${sellerId}`, err)
+    return undefined
+  }
+}
+
+/**
  * Where a seller stands against every plan allowance.
  *
  * The counts run concurrently — they touch four unrelated modules and one
@@ -132,17 +172,24 @@ async function countConnectDomains(
  */
 export async function collectSellerUsage(
   container: MedusaContainer,
-  sellerId: string
+  sellerId: string,
+  now: Date = new Date()
 ): Promise<SellerUsageReport> {
   const { plan_code, limits } = await getSellerPlanLimits(container, sellerId)
 
-  const [embed_keys, vault_documents, webhook_subscriptions, connect_domains] =
-    await Promise.all([
-      countEmbedKeys(container, sellerId),
-      countVaultDocuments(container, sellerId),
-      countWebhookSubscriptions(container, sellerId),
-      countConnectDomains(container, sellerId),
-    ])
+  const [
+    embed_keys,
+    vault_documents,
+    webhook_subscriptions,
+    connect_domains,
+    embedRequests,
+  ] = await Promise.all([
+    countEmbedKeys(container, sellerId),
+    countVaultDocuments(container, sellerId),
+    countWebhookSubscriptions(container, sellerId),
+    countConnectDomains(container, sellerId),
+    readEmbedRequestMeter(container, sellerId, now),
+  ])
 
   const counts: Partial<Record<CountableLimitKey, number>> = {}
   if (embed_keys !== undefined) counts.embed_keys = embed_keys
@@ -152,5 +199,7 @@ export async function collectSellerUsage(
   }
   if (connect_domains !== undefined) counts.connect_domains = connect_domains
 
-  return buildUsageReport(plan_code, limits, counts)
+  const meters: MeterReading[] = embedRequests ? [embedRequests] : []
+
+  return buildUsageReport(plan_code, limits, counts, meters)
 }

@@ -8,8 +8,11 @@ import {
   type VendorChargeStatus,
 } from "../../../hooks/api/vendor-billing"
 import {
+  describeMeteredUsage,
+  describeProjectedOverage,
   describeUsage,
   useVendorUsage,
+  type MeteredUsage,
   type ResourceUsage,
 } from "../../../hooks/api/vendor-usage"
 import { SingleColumnPageSkeleton } from "../../../components/common/skeleton"
@@ -83,9 +86,45 @@ const UsageRow = ({ resource }: { resource: ResourceUsage }) => {
   )
 }
 
+/**
+ * A metered row. Shares the countable row's shape so the Usage section reads as
+ * one list, but carries the projected cost rather than an upgrade prompt — see
+ * `describeMeteredUsage` on why the two must not say the same thing.
+ */
+const MeteredRow = ({ usage }: { usage: MeteredUsage }) => {
+  const display = describeMeteredUsage(usage)
+
+  return (
+    <div className="flex items-center justify-between border-b border-ui-border-base py-3 last:border-b-0">
+      <div className="flex flex-col">
+        <Text size="small">{usage.label}</Text>
+        {display.hint ? (
+          <Text
+            size="xsmall"
+            className={
+              display.tone === "red" ? "text-ui-fg-error" : "text-ui-fg-subtle"
+            }
+          >
+            {display.hint}
+          </Text>
+        ) : null}
+      </div>
+      <Badge size="2xsmall" color={display.tone}>
+        {display.amount}
+      </Badge>
+    </div>
+  )
+}
+
 export const BillingSettings = () => {
   const { plan, isPending: planPending } = useVendorPlan()
-  const { resources: usage, allowances } = useVendorUsage()
+  const {
+    resources: usage,
+    allowances,
+    metered,
+    projectedOverageCents,
+  } = useVendorUsage()
+  const projected = describeProjectedOverage(projectedOverageCents)
   const {
     outstanding,
     charges,
@@ -144,15 +183,23 @@ export const BillingSettings = () => {
       {/* Usage against plan allowances. Rendered only once it has loaded —
           this is supplementary to billing, so it must not hold up the page or
           leave an empty shell if the usage read is slow or degraded. */}
-      {usage.length > 0 || allowances.length > 0 ? (
+      {usage.length > 0 || metered.length > 0 || allowances.length > 0 ? (
         <Container className="flex flex-col gap-y-2">
           <Heading level="h2">Usage</Heading>
-          {usage.length > 0 ? (
+          {usage.length > 0 || metered.length > 0 ? (
             <div className="flex flex-col">
               {usage.map((resource) => (
                 <UsageRow key={resource.key} resource={resource} />
               ))}
+              {metered.map((m) => (
+                <MeteredRow key={m.metric} usage={m} />
+              ))}
             </div>
+          ) : null}
+          {projected ? (
+            <Text size="xsmall" className="text-ui-fg-subtle pt-1">
+              {projected}
+            </Text>
           ) : null}
           {allowances.length > 0 ? (
             <div className="flex flex-wrap gap-x-4 gap-y-1 pt-1">
