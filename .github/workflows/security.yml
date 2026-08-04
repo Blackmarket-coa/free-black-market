@@ -184,91 +184,12 @@ jobs:
           output-file: sbom-${{ matrix.app }}.cdx.json
           artifact-name: sbom-${{ matrix.app }}
 
-  trivy-image:
-    name: Trivy Image Scan
-    runs-on: ubuntu-latest
-    needs: []
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release/'))
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - app: backend
-            image: free-black-market-backend
-          - app: storefront
-            image: free-black-market-storefront
-          - app: admin-panel
-            image: free-black-market-admin-panel
-          - app: vendor-panel
-            image: free-black-market-vendor-panel
-    steps:
-      # This job scans a registry image, not the working tree, so it carried no
-      # checkout for most of its life. It needs one now purely because
-      # `trivyignores` below names a file in the repository: trivy resolves that
-      # path on the runner's disk, and without a checkout it exits 1 with
-      # "cannot find ignorefile" before scanning anything — the gate reports
-      # failure without ever having looked at the image.
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          sparse-checkout: .trivyignore.image
-          sparse-checkout-cone-mode: false
-
-      # docker-build.yml publishes images with `sha-<7-char>` tags (via
-      # docker/metadata-action `type=sha,prefix=sha-,format=short`).
-      # `${{ github.sha }}` is the full 40-char SHA — using it raw makes
-      # trivy-action look up a tag that was never published and fail with
-      # image-not-found on every push to main. Compute the short SHA here
-      # so the image-ref matches what docker-build actually pushed.
-      - name: Compute image reference
-        id: image_ref
-        # The owner is lowercased because an OCI reference's repository path
-        # must be lowercase, while `github.repository_owner` preserves the
-        # organisation's own casing ("Blackmarket-coa"). Interpolating it raw
-        # produced `could not parse reference` on all four matrix jobs on every
-        # push to main — the scan never ran at all, so this gate has been
-        # reporting failure rather than security findings.
-        #
-        # Lowercase is also what actually got pushed: docker-build.yml builds
-        # this same ref through docker/metadata-action, which normalises the
-        # image name. So this is not a new convention, it is the one the
-        # registry already uses.
-        run: |
-          owner="$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')"
-          echo "value=ghcr.io/${owner}/${{ matrix.image }}:sha-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
-
-      - name: Trivy image scan
-        uses: aquasecurity/trivy-action@master
-        with:
-          image-ref: ${{ steps.image_ref.outputs.value }}
-          severity: 'HIGH,CRITICAL'
-          ignore-unfixed: true
-          exit-code: '1'
-          # This gate previously passed no ignore file at all, so nothing could
-          # be triaged for it. `.trivyignore.image` is deliberately a separate
-          # list from the filesystem scan's: findings vendored inside a
-          # third-party binary we ship are not the same as findings in our own
-          # lockfile, and sharing one file would mean suppressing an image-only
-          # CVE also switched off the filesystem gate's regression detection for
-          # it — which is exactly the case for CVE-2026-69152, fixed in our
-          # lockfile by #773 but unreachable inside pnpm's bundle.
-          trivyignores: '.trivyignore.image'
-          # Without this, trivy-action overrides `severity` to include all
-          # severities when `format: sarif`, so the `exit-code: 1` gate
-          # trips on LOW/MEDIUM findings too — defeating the stated
-          # "HIGH/CRITICAL only" gate above. Mirrors the trivy-fs fix
-          # landed in commit 42de0b6 (SD-15 audit closed the same gap here).
-          limit-severities-for-sarif: true
-          format: 'sarif'
-          output: 'trivy-${{ matrix.app }}.sarif'
-
-      - name: Upload SARIF
-        # `always()` alone tried to upload a file the scan never produced when
-        # it failed before writing one, adding a second, louder error
-        # ("Path does not exist") on top of the real cause. Guarding on the
-        # file keeps the actual failure the only thing in the log.
-        if: always() && hashFiles(format('trivy-{0}.sarif', matrix.app)) != ''
-        uses: github/codeql-action/upload-sarif@v3
-        with:
-          sarif_file: trivy-${{ matrix.app }}.sarif
-          category: trivy-image-${{ matrix.app }}
+# The container image scan used to live here, as a `trivy-image` job carrying a
+# literal `needs: []`. That empty `needs` was the shape of a dependency nobody
+# could express: the images it scans are produced by `docker-build.yml`, and
+# `needs` cannot reach across workflows. Both workflows trigger on push to main
+# and start together, so the scan raced the build and lost — MANIFEST_UNKNOWN on
+# a tag that had not been pushed yet.
+#
+# It now lives in `docker-build.yml` as a job that genuinely `needs: build`,
+# where the ordering is a fact rather than a hope. See that file.
