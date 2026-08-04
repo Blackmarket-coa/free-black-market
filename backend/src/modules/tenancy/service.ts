@@ -8,14 +8,29 @@ import {
   Storefront,
 } from "./models"
 
-export type TenancyRole = "org_owner" | "storefront_admin" | "catalog_manager" | "finance_viewer"
-export type TierFlag = "tier0_public" | "tier1_verified" | "tier2_aligned_org"
+import {
+  featureGatesForTier,
+  gatesGrantedByTier,
+  hasMinimumTier,
+  highestTier,
+  vendorFeatureKeysForTier,
+  type TierFlag,
+} from "./gates"
 
-const tierRank: Record<TierFlag, number> = {
-  tier0_public: 0,
-  tier1_verified: 1,
-  tier2_aligned_org: 2,
-}
+export type TenancyRole = "org_owner" | "storefront_admin" | "catalog_manager" | "finance_viewer"
+
+// Re-exported so the existing importers (`api/middlewares/tenancy-context.ts`
+// and the admin donation routes) keep their import path. The tier vocabulary
+// and the gate table now live in `gates.ts`, which is pure and testable
+// without a container.
+export type { TierFlag }
+export {
+  TENANCY_GATES,
+  TENANCY_GATE_KEYS,
+  gatesGrantedByTier,
+  vendorFeatureKeysForTier,
+  type TenancyGate,
+} from "./gates"
 
 class TenancyModuleService extends MedusaService({
   Organization,
@@ -50,7 +65,28 @@ class TenancyModuleService extends MedusaService({
   }
 
   hasMinimumTier(actual: TierFlag, required: TierFlag) {
-    return tierRank[actual] >= tierRank[required]
+    return hasMinimumTier(actual, required)
+  }
+
+  /**
+   * The tier a seller inherits from the organizations they sell under.
+   *
+   * `tier0_public` — which entitles nothing — for a seller with no tenancy
+   * membership, which is every ordinary FBM vendor. Highest wins across
+   * multiple memberships; see `highestTier` on why the maximum rather than the
+   * minimum is the only choice consistent with a floor.
+   */
+  async resolveSellerTier(seller_id: string): Promise<TierFlag> {
+    if (!seller_id) return "tier0_public"
+
+    const memberships = await this.listMemberships({ seller_id })
+    if (!memberships.length) return "tier0_public"
+
+    const storefronts = await this.listStorefronts({
+      id: memberships.map((m) => m.storefront_id).filter(Boolean),
+    })
+
+    return highestTier(storefronts.map((s) => s.tier as string))
   }
 
   canAccessRole(role: TenancyRole, required: TenancyRole[]) {
@@ -65,11 +101,57 @@ class TenancyModuleService extends MedusaService({
   }
 
   featureGatesForTier(tier: TierFlag) {
-    return {
-      donation_routing: this.hasMinimumTier(tier, "tier1_verified"),
-      advanced_automation: this.hasMinimumTier(tier, "tier2_aligned_org"),
-    }
+    return featureGatesForTier(tier)
   }
+  /**
+   * Find-or-create a membership.
+   *
+   * Idempotent on `(user_id, storefront_id)` so provisioning can be re-run —
+   * a template POST that half-succeeded, an operator repeating a step — without
+   * accumulating duplicate rows that would then make `resolveContext`'s
+   * "first membership wins" arbitrary.
+   */
+  async ensureMembership(input: {
+    user_id: string
+    organization_id: string
+    storefront_id: string
+    role: TenancyRole
+    seller_id?: string | null
+  }) {
+    const existing = await this.listMemberships({
+      user_id: input.user_id,
+      storefront_id: input.storefront_id,
+    })
+    if (existing.length) return existing[0]
+
+    const [created] = await this.createMemberships([
+      {
+        user_id: input.user_id,
+        organization_id: input.organization_id,
+        storefront_id: input.storefront_id,
+        role: input.role,
+        seller_id: input.seller_id ?? null,
+      } as any,
+    ])
+    return created
+  }
+
+  /**
+   * The starter templates, each carrying what its tier actually grants.
+   *
+   * The gates are derived from the tier rather than listed alongside it, so an
+   * operator choosing between templates sees the real capability set and the
+   * two cannot drift — a hand-maintained second list is exactly how a template
+   * ends up promising something its tier does not grant.
+   */
+  starterTemplatesWithGates() {
+    return this.starterTemplates().map((template) => ({
+      ...template,
+      gates: gatesGrantedByTier(template.tier),
+      granted_feature_keys: vendorFeatureKeysForTier(template.tier),
+    }))
+  }
+
   starterTemplates() {
     return [
       {
