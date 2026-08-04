@@ -922,8 +922,20 @@ class HawalaLedgerModuleService extends MedusaService({
       if (pgConnection) {
         if (typeof pgConnection.transaction === "function") {
           await pgConnection.transaction(async (trx: any) => {
-            await this.updateBalancesAtomic(trx, data.debit_account_id, -data.amount)
-            await this.updateBalancesAtomic(trx, data.credit_account_id, data.amount)
+            // Lock the two rows in a deterministic global order (by account
+            // id), NOT in debit-then-credit order. Two transfers moving funds
+            // in opposite directions between the same pair would otherwise
+            // take the locks as A→B and B→A and deadlock, and Postgres kills
+            // one of them. Ordering by id means every transaction touching a
+            // given pair takes those locks in the same sequence, so the cycle
+            // cannot form.
+            //
+            // Safe to reorder: both statements are in one transaction, so an
+            // insufficient-balance failure on either leg still rolls the whole
+            // thing back. Which leg runs first changes nothing observable.
+            for (const leg of this.orderLegsForLocking(data)) {
+              await this.updateBalancesAtomic(trx, leg.accountId, leg.delta)
+            }
           })
         } else {
           await this.applyBalancePairWithCompensation(
@@ -1100,6 +1112,24 @@ class HawalaLedgerModuleService extends MedusaService({
    *
    * Uses the same `?` positional raw-SQL style as getMemberBalanceByMxid.
    */
+  /**
+   * Order a transfer's two balance legs by account id, so every transaction
+   * that touches a given pair of accounts acquires their row locks in the same
+   * sequence. This is what prevents AB-BA deadlocks between transfers running
+   * in opposite directions across the same pair.
+   */
+  private orderLegsForLocking(data: {
+    debit_account_id: string
+    credit_account_id: string
+    amount: number
+  }): Array<{ accountId: string; delta: number }> {
+    const legs = [
+      { accountId: data.debit_account_id, delta: -data.amount },
+      { accountId: data.credit_account_id, delta: data.amount },
+    ]
+    return legs.sort((a, b) => a.accountId.localeCompare(b.accountId))
+  }
+
   /**
    * Move a debit and its matching credit when no DB transaction is available.
    *

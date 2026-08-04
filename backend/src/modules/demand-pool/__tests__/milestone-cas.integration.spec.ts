@@ -55,7 +55,7 @@ moduleIntegrationTestRunner<DemandPoolModuleService>({
     async function seedBounty(
       milestones: { description: string; percentage: number; condition: string }[],
       amount = 1000
-    ): Promise<string> {
+    ): Promise<{ bountyId: string; postId: string }> {
       const [post] = await (service as any).createDemandPosts([
         {
           creator_id: `creator-${Math.random().toString(36).slice(2)}`,
@@ -74,7 +74,9 @@ moduleIntegrationTestRunner<DemandPoolModuleService>({
         milestones,
       })
 
-      return (bounty as any).id
+      // The post id is returned alongside the bounty because completion is
+      // pool-scoped: the caller must prove which pool it is acting on.
+      return { bountyId: (bounty as any).id as string, postId: post.id as string }
     }
 
     // Read straight from Postgres: the completion runs as a raw atomic UPDATE,
@@ -152,14 +154,14 @@ moduleIntegrationTestRunner<DemandPoolModuleService>({
 
     describe("demand-pool milestone completion (atomic CAS under contention)", () => {
       it("completes a milestone exactly once under concurrent identical calls", async () => {
-        const bountyId = await seedBounty(HALVES, 1000)
+        const { bountyId, postId } = await seedBounty(HALVES, 1000)
 
         // Ten simultaneous attempts at the SAME index. Exactly one may win;
         // the rest must be rejected by the WHERE predicate, not by luck of
         // scheduling.
         const attempts = await Promise.allSettled(
           Array.from({ length: 10 }, () =>
-            service.completeBountyMilestone(bountyId, 0)
+            service.completeBountyMilestone(bountyId, 0, postId)
           )
         )
 
@@ -188,11 +190,11 @@ moduleIntegrationTestRunner<DemandPoolModuleService>({
         // The other half of the B5 fix: `jsonb_set` on a single index rather
         // than writing the whole array back. Two whole-array writes would race
         // and one would silently lose its sibling's flag.
-        const bountyId = await seedBounty(HALVES, 1000)
+        const { bountyId, postId } = await seedBounty(HALVES, 1000)
 
         const results = await Promise.allSettled([
-          service.completeBountyMilestone(bountyId, 0),
-          service.completeBountyMilestone(bountyId, 1),
+          service.completeBountyMilestone(bountyId, 0, postId),
+          service.completeBountyMilestone(bountyId, 1, postId),
         ])
 
         expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(2)
@@ -215,12 +217,12 @@ moduleIntegrationTestRunner<DemandPoolModuleService>({
           percentage: 25,
           condition: "on stage",
         }))
-        const bountyId = await seedBounty(quarters, 800)
+        const { bountyId, postId } = await seedBounty(quarters, 800)
 
         // Every index attempted three times, all at once.
         const calls = quarters.flatMap((_, index) =>
           Array.from({ length: 3 }, () =>
-            service.completeBountyMilestone(bountyId, index)
+            service.completeBountyMilestone(bountyId, index, postId)
           )
         )
         const settled = await Promise.allSettled(calls)
@@ -237,20 +239,41 @@ moduleIntegrationTestRunner<DemandPoolModuleService>({
       it("refuses to complete a milestone once the bounty has left a payable status", async () => {
         // The status predicate is part of the same WHERE clause; a bounty that
         // finished (or was cancelled) mid-flight must stop accepting payouts.
-        const bountyId = await seedBounty(HALVES, 1000)
-        await service.completeBountyMilestone(bountyId, 0)
-        await service.completeBountyMilestone(bountyId, 1)
+        const { bountyId, postId } = await seedBounty(HALVES, 1000)
+        await service.completeBountyMilestone(bountyId, 0, postId)
+        await service.completeBountyMilestone(bountyId, 1, postId)
 
         const after = await readBounty(bountyId)
         expect(after.status).toBe("COMPLETED")
 
         await expect(
-          service.completeBountyMilestone(bountyId, 0)
+          service.completeBountyMilestone(bountyId, 0, postId)
         ).rejects.toThrow()
 
         const unchanged = await readBounty(bountyId)
         expect(unchanged.amount_paid_out).toBe(1000)
         expect(unchanged.milestones_completed).toBe(2)
+      })
+
+      it("refuses a bounty that belongs to a different pool, and mutates nothing", async () => {
+        // Pool scoping is enforced inside the UPDATE's WHERE clause, not just
+        // at the route, so it holds against any caller. Proving it here rather
+        // than only in a unit test matters because the predicate is SQL: a
+        // mocked repository would never evaluate it.
+        const victim = await seedBounty(HALVES, 1000)
+        const attacker = await seedBounty(HALVES, 1000)
+
+        await expect(
+          service.completeBountyMilestone(victim.bountyId, 0, attacker.postId)
+        ).rejects.toThrow(/not found/i)
+
+        // The committed UPDATE is irreversible, so "rejected" is only half the
+        // claim — the victim's counters must be untouched.
+        const after = await readBounty(victim.bountyId)
+        expect(after.milestones_completed).toBe(0)
+        expect(after.amount_paid_out).toBe(0)
+        expect(after.status).toBe("ACTIVE")
+        expect(after.milestones[0].completed ?? false).toBe(false)
       })
     })
   },

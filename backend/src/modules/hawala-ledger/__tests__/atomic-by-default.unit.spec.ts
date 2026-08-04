@@ -292,3 +292,87 @@ describe("createTransfer — balance guards and one-sided-move compensation", ()
     ).rejects.toThrow("legacy credit failed")
   })
 })
+
+describe("createTransfer — deterministic lock ordering", () => {
+  /**
+   * A pg mock that supports transactions, so createTransfer takes the
+   * transactional branch where row locks are held across both statements.
+   * That is the only path that can deadlock, and the only one lock ordering
+   * applies to.
+   */
+  function makeTxPg(): { raw: jest.Mock; transaction: jest.Mock; calls: RawCall[] } {
+    const calls: RawCall[] = []
+    const raw = jest.fn(async (sql: string, bindings: any[]) => {
+      calls.push({ sql, bindings })
+      return { rowCount: 1 }
+    })
+    const trx = { raw }
+    const transaction = jest.fn(async (cb: (t: unknown) => Promise<void>) => cb(trx))
+    return { raw, transaction, calls }
+  }
+
+  it("locks the two accounts in account-id order, not debit-then-credit", async () => {
+    const pg = makeTxPg()
+    const svc = buildTransferService(pg as any)
+
+    await svc.createTransfer({
+      debit_account_id: "acc-debit",
+      credit_account_id: "acc-credit",
+      amount: 100,
+      entry_type: "TRANSFER",
+    })
+
+    // "acc-credit" < "acc-debit", so the credit leg is locked first here even
+    // though it is the credit. Two transfers in opposite directions across the
+    // same pair therefore take the locks in the same sequence and cannot form
+    // the AB-BA cycle Postgres kills with "deadlock detected".
+    expect(pg.calls).toHaveLength(2)
+    expect(pg.calls[0].bindings[2]).toBe("acc-credit")
+    expect(pg.calls[0].bindings[0]).toBe(100)
+    expect(pg.calls[1].bindings[2]).toBe("acc-debit")
+    expect(pg.calls[1].bindings[0]).toBe(-100)
+  })
+
+  it("orders the same pair identically regardless of transfer direction", async () => {
+    const forward = makeTxPg()
+    await buildTransferService(forward as any).createTransfer({
+      debit_account_id: "acc-debit",
+      credit_account_id: "acc-credit",
+      amount: 25,
+      entry_type: "TRANSFER",
+    })
+
+    const reverse = makeTxPg()
+    await buildTransferService(reverse as any).createTransfer({
+      debit_account_id: "acc-credit",
+      credit_account_id: "acc-debit",
+      amount: 25,
+      entry_type: "TRANSFER",
+    })
+
+    // This is the property that actually prevents the deadlock: the lock
+    // sequence is a function of the account pair, not of the direction. These
+    // two transfers are exactly the A→B / B→A pair the soak fires
+    // concurrently.
+    const order = (p: { calls: RawCall[] }) => p.calls.map((c) => c.bindings[2])
+    expect(order(forward)).toEqual(["acc-credit", "acc-debit"])
+    expect(order(reverse)).toEqual(["acc-credit", "acc-debit"])
+  })
+
+  it("still runs both legs inside a single transaction", async () => {
+    const pg = makeTxPg()
+    const svc = buildTransferService(pg as any)
+
+    await svc.createTransfer({
+      debit_account_id: "acc-debit",
+      credit_account_id: "acc-credit",
+      amount: 100,
+      entry_type: "TRANSFER",
+    })
+
+    // Ordering must not have cost us atomicity — a failure on either leg has
+    // to roll back the other.
+    expect(pg.transaction).toHaveBeenCalledTimes(1)
+    expect(svc.updateBalances).not.toHaveBeenCalled()
+  })
+})
