@@ -8,6 +8,7 @@ import {
   isAchPayoutConfigured,
 } from "../../../../modules/hawala-ledger/stripe-ach"
 import { requireCustomerId } from "../../../../shared"
+import { resolveRequestIdempotencyKey } from "../../../../shared/request-idempotency"
 
 /**
  * POST /store/hawala/withdraw
@@ -91,7 +92,22 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
     // No fee on withdrawals (or you could add one)
     const fee = 0
     const netAmount = amount - fee
-    const idempotencyKey = `withdraw-${customerId}-${Date.now()}`
+    // Stable across retries: this key is handed to the Stripe payout below
+    // before the ledger debit is recorded, so a fresh key per attempt meant a
+    // retried request pushed a second real payout.
+    const { key: idempotencyKey, source: idempotencySource } =
+      resolveRequestIdempotencyKey({
+        scope: "withdraw",
+        actorId: customerId,
+        headers: req.headers,
+        body: req.body,
+        payload: { bank_account_id, amount },
+      })
+    if (idempotencySource === "derived") {
+      log.warn(
+        "[POST /store/hawala/withdraw] no Idempotency-Key sent; derived one from the payload. Clients should send the header."
+      )
+    }
 
     // Record the intent up front so a failed/returned payout is auditable.
     const achTransaction = await hawalaService.createAchTransactions({

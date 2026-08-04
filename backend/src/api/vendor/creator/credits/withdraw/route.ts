@@ -1,6 +1,6 @@
-import { randomUUID } from "crypto"
 import { AuthenticatedMedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { requireSellerId } from "../../../../../shared/auth-helpers"
+import { resolveRequestIdempotencyKey } from "../../../../../shared/request-idempotency"
 import { HAWALA_LEDGER_MODULE } from "../../../../../modules/hawala-ledger"
 import type HawalaLedgerModuleService from "../../../../../modules/hawala-ledger/service"
 import { isCreatorCreditsLive } from "../../../../../lib/creator-credits"
@@ -36,10 +36,20 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
   const creatorAccount = await getOrCreateCreatorCcrAccount(hawala, sellerId)
   const issuer = await getOrCreateCcrIssuerAccount(hawala)
 
-  // One request id per redemption request; the idempotency key is a stable
-  // function of it (not Date.now/random) so a retried request replays the same
-  // ledger entry rather than burning twice.
-  const requestId = `cwr_${randomUUID()}`
+  // The idempotency key is a stable function of the request, so a retry
+  // replays the same ledger entry rather than burning twice. The request id is
+  // derived from it rather than being a fresh UUID — otherwise the key moved on
+  // every attempt and the comment's promise did not hold.
+  const { key: idempotencyKey } = resolveRequestIdempotencyKey({
+    scope: "credit-withdraw",
+    actorId: sellerId,
+    headers: req.headers,
+    body: req.body,
+    payload: { credits: amount },
+  })
+  // Surfaced to the caller, and derived from the key's digest so a retry
+  // reports the same request id rather than inventing a new one.
+  const requestId = `cwr_${idempotencyKey.slice(-32)}`
 
   try {
     await hawala.createTransfer({
@@ -47,7 +57,7 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
       credit_account_id: issuer.id,
       amount,
       entry_type: "CREDIT_REFUND_BURN",
-      idempotency_key: `credit-withdraw-${requestId}`,
+      idempotency_key: idempotencyKey,
       reference_type: "MANUAL",
       description: "Credit withdrawal request",
       metadata: {

@@ -5,6 +5,7 @@ import { HAWALA_LEDGER_MODULE } from "../../../../modules/hawala-ledger"
 import HawalaLedgerModuleService from "../../../../modules/hawala-ledger/service"
 import { createStripeAchService } from "../../../../modules/hawala-ledger/stripe-ach"
 import { requireCustomerId } from "../../../../shared"
+import { resolveRequestIdempotencyKey } from "../../../../shared/request-idempotency"
 
 /**
  * POST /store/hawala/deposit
@@ -66,8 +67,23 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
       undefined
     const userAgent = (req.headers["user-agent"] as string | undefined) || undefined
 
-    // Create ACH deposit
-    const idempotencyKey = `deposit-${customerId}-${Date.now()}`
+    // Create ACH deposit.
+    // The key reaches Stripe below, before anything is written to the ledger,
+    // so it has to be stable across retries — a fresh key per attempt meant a
+    // retried request pulled from the customer's bank a second time.
+    const { key: idempotencyKey, source: idempotencySource } =
+      resolveRequestIdempotencyKey({
+        scope: "deposit",
+        actorId: customerId,
+        headers: req.headers,
+        body: req.body,
+        payload: { bank_account_id, amount },
+      })
+    if (idempotencySource === "derived") {
+      log.warn(
+        "[POST /store/hawala/deposit] no Idempotency-Key sent; derived one from the payload. Clients should send the header."
+      )
+    }
     const depositResult = await achService.createAchDeposit({
       stripeCustomerId: bankAccount.stripe_customer_id,
       paymentMethodId: bankAccount.stripe_payment_method_id,

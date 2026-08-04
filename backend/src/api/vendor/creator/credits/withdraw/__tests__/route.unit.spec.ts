@@ -94,10 +94,14 @@ describe("vendor creator credits withdraw route", () => {
     expect(arg.metadata).toEqual(
       expect.objectContaining({ redemption_request: true, status: "pending_settlement" })
     )
-    // Idempotency key is a stable function of the generated request id.
+    // The idempotency key is a deterministic function of the request, and the
+    // request id is derived from it — so a retry replays the same ledger entry
+    // and reports the same id, rather than burning a second time. The key
+    // previously wrapped a fresh UUID, which made every attempt distinct.
     const body = res.body as { request_id: string; credits: number; status: string }
-    expect(arg.idempotency_key).toBe(`credit-withdraw-${body.request_id}`)
-    expect(body.request_id).toMatch(/^cwr_/)
+    expect(arg.idempotency_key).toMatch(/^credit-withdraw-sel_1-[0-9a-f]{32}$/)
+    expect(body.request_id).toBe(`cwr_${arg.idempotency_key.slice(-32)}`)
+    expect(body.request_id).toMatch(/^cwr_[0-9a-f]{32}$/)
     expect(body.credits).toBe(100)
     expect(body.status).toBe("pending")
     expect(res.statusCode).toBe(200)

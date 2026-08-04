@@ -1346,8 +1346,16 @@ class HawalaLedgerModuleService extends MedusaService({
     reason?: string
     idempotency_key?: string
   }) {
-    const idempotencyKey = data.idempotency_key || `refund-${data.order_id}-${Date.now()}`
-    
+    // Deterministic by (order, amount). The previous `Date.now()` fallback
+    // defeated the duplicate check immediately below it — a timestamped key
+    // can never match a stored one, so every retry re-refunded. Callers that
+    // legitimately issue several identical partial refunds for one order must
+    // pass an explicit `idempotency_key`.
+    const idempotencyKey =
+      data.idempotency_key ||
+      `refund-${data.order_id}-${data.refund_amount ?? "full"}`
+
+
     // Check for existing refund with same idempotency key
     const existingRefunds = await this.listLedgerEntries({
       idempotency_key: `${idempotencyKey}-customer`,
