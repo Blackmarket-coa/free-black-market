@@ -347,9 +347,18 @@ class DemandPoolModuleService extends MedusaService({
 
   async completeBountyMilestone(
     bountyId: string,
-    milestoneIndex: number
+    milestoneIndex: number,
+    demandPostId: string
   ) {
-    const bounties = await this.listDemandBounties({ id: bountyId })
+    // The `:id` pool segment on the route is an authorization boundary, so the
+    // bounty lookup is scoped to it here rather than only at the caller. A
+    // bounty belonging to a different pool must be indistinguishable from one
+    // that does not exist — otherwise a caller authorized on pool A can drive
+    // a completion against a bounty in pool B.
+    const bounties = await this.listDemandBounties({
+      id: bountyId,
+      demand_post_id: demandPostId,
+    })
     if (bounties.length === 0) {
       throw new Error("Bounty not found")
     }
@@ -396,11 +405,19 @@ class DemandPoolModuleService extends MedusaService({
                 status = (CASE WHEN milestones_completed + 1 >= ? THEN 'COMPLETED' ELSE 'MILESTONE_PARTIAL' END)::bounty_status_enum,
                 updated_at = NOW()
           WHERE id = ?
+            AND demand_post_id = ?
             AND deleted_at IS NULL
             AND status IN ('ACTIVE', 'MILESTONE_PARTIAL')
             AND COALESCE((milestones -> ? ->> 'completed')::boolean, false) = false
         RETURNING milestones_completed, amount_paid_out, status`,
-        [milestoneIndex, payoutAmount, totalMilestones, bountyId, milestoneIndex]
+        [
+          milestoneIndex,
+          payoutAmount,
+          totalMilestones,
+          bountyId,
+          demandPostId,
+          milestoneIndex,
+        ]
       )
       const row = result?.rows?.[0]
       if (!row) {
@@ -421,7 +438,10 @@ class DemandPoolModuleService extends MedusaService({
 
     // Fallback (no reachable pg connection, e.g. unit tests without DI):
     // re-read and do a best-effort read-modify-write off the freshest state.
-    const fresh = await this.listDemandBounties({ id: bountyId })
+    const fresh = await this.listDemandBounties({
+      id: bountyId,
+      demand_post_id: demandPostId,
+    })
     if (fresh.length === 0) {
       throw new Error("Bounty not found")
     }
@@ -480,9 +500,15 @@ class DemandPoolModuleService extends MedusaService({
   async claimBounty(
     bountyId: string,
     actorId: string,
-    actorType: "CUSTOMER" | "SELLER" | "ORGANIZER"
+    actorType: "CUSTOMER" | "SELLER" | "ORGANIZER",
+    demandPostId: string
   ) {
-    const bounties = await this.listDemandBounties({ id: bountyId })
+    // Pool-scoped for the same reason as `completeBountyMilestone`: the route's
+    // `:id` segment must actually constrain which bounty is reachable.
+    const bounties = await this.listDemandBounties({
+      id: bountyId,
+      demand_post_id: demandPostId,
+    })
     if (bounties.length === 0) {
       throw new Error("Bounty not found")
     }

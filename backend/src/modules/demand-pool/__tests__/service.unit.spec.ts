@@ -106,7 +106,8 @@ describe("DemandPoolModuleService", () => {
         ctx,
         "b_1",
         "user_1",
-        "CUSTOMER"
+        "CUSTOMER",
+        "dp_1"
       )
       expect(bounty.assignee_id).toBe("user_1")
 
@@ -115,9 +116,108 @@ describe("DemandPoolModuleService", () => {
           ctx,
           "b_1",
           "user_2",
-          "CUSTOMER"
+          "CUSTOMER",
+          "dp_1"
         )
       ).rejects.toThrow("Bounty already claimed")
+    })
+
+    it("scopes the lookup to the pool so a bounty from another pool is unreachable", async () => {
+      const updateDemandBounties = jest.fn()
+      // Honour the filter, the way the ORM does — a mismatched
+      // demand_post_id must yield no rows.
+      const ctx: any = {
+        listDemandBounties: jest.fn(async (filter: any) =>
+          filter.demand_post_id === "dp_owner"
+            ? [{ id: "b_victim", assignee_id: null, status: BountyStatus.ACTIVE }]
+            : []
+        ),
+        updateDemandBounties,
+      }
+
+      await expect(
+        DemandPoolModuleService.prototype.claimBounty.call(
+          ctx,
+          "b_victim",
+          "attacker",
+          "CUSTOMER",
+          "dp_attacker"
+        )
+      ).rejects.toThrow("Bounty not found")
+
+      expect(ctx.listDemandBounties).toHaveBeenCalledWith(
+        expect.objectContaining({ demand_post_id: "dp_attacker" })
+      )
+      expect(updateDemandBounties).not.toHaveBeenCalled()
+    })
+  })
+
+  describe("completeBountyMilestone pool scoping", () => {
+    it("refuses a bounty belonging to a different pool and mutates nothing", async () => {
+      const raw = jest.fn()
+      const updateDemandBounties = jest.fn()
+      const ctx: any = {
+        listDemandBounties: jest.fn(async (filter: any) =>
+          filter.demand_post_id === "dp_owner"
+            ? [
+                {
+                  id: "b_victim",
+                  amount: 100,
+                  amount_paid_out: 0,
+                  milestones_completed: 0,
+                  status: BountyStatus.ACTIVE,
+                  milestones: [{ description: "m0", percentage: 100, condition: "x" }],
+                },
+              ]
+            : []
+        ),
+        updateDemandBounties,
+        resolvePgConnection: () => ({ raw }),
+      }
+
+      await expect(
+        DemandPoolModuleService.prototype.completeBountyMilestone.call(
+          ctx,
+          "b_victim",
+          0,
+          "dp_attacker"
+        )
+      ).rejects.toThrow("Bounty not found")
+
+      // The completion UPDATE is committed and irreversible, so it must never
+      // be reached for a cross-pool bounty.
+      expect(raw).not.toHaveBeenCalled()
+      expect(updateDemandBounties).not.toHaveBeenCalled()
+    })
+
+    it("constrains the atomic completion UPDATE by demand_post_id", async () => {
+      const raw = jest.fn(async () => ({
+        rows: [{ milestones_completed: 1, amount_paid_out: 100, status: "COMPLETED" }],
+      }))
+      const ctx: any = {
+        listDemandBounties: jest.fn(async () => [
+          {
+            id: "b_1",
+            amount: 100,
+            amount_paid_out: 0,
+            milestones_completed: 0,
+            status: BountyStatus.ACTIVE,
+            milestones: [{ description: "m0", percentage: 100, condition: "x" }],
+          },
+        ]),
+        resolvePgConnection: () => ({ raw }),
+      }
+
+      await DemandPoolModuleService.prototype.completeBountyMilestone.call(
+        ctx,
+        "b_1",
+        0,
+        "dp_1"
+      )
+
+      const [sql, bindings] = raw.mock.calls[0] as unknown as [string, unknown[]]
+      expect(sql).toContain("demand_post_id = ?")
+      expect(bindings).toContain("dp_1")
     })
   })
 })
