@@ -4,7 +4,7 @@
 # Build artefact is a static bundle served by nginx-alpine.
 # ----------------------------------------------------------------------------
 
-ARG NODE_VERSION=20-bookworm-slim
+ARG NODE_VERSION=22-bookworm-slim
 ARG NGINX_VERSION=1.31-alpine
 
 # --- build stage -------------------------------------------------------------

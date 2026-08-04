@@ -5,7 +5,7 @@
 # minimal node_modules subset Next collected during build.
 # ----------------------------------------------------------------------------
 
-ARG NODE_VERSION=20-bookworm-slim
+ARG NODE_VERSION=22-bookworm-slim
 
 # --- deps stage --------------------------------------------------------------
 FROM node:${NODE_VERSION} AS deps
