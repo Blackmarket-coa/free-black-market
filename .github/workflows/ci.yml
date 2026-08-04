@@ -17,6 +17,12 @@ concurrency:
 env:
   NODE_VERSION: '22'
   PNPM_VERSION: '11.20.0'
+  # pnpm 11 re-verifies node_modules against the lockfile before running any
+  # script, by spawning its own pnpm — which does NOT inherit the
+  # `--trust-lockfile` on the install steps, so it re-ran the whole
+  # supply-chain pass and 429'd every job that runs a script. Install has
+  # just completed in each of these jobs; there is nothing stale to catch.
+  pnpm_config_verify_deps_before_run: 'false'
 
 # Every install below passes `--trust-lockfile`, and that is a deliberate
 # security trade rather than a convenience.
@@ -182,13 +188,14 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # The portals live in the ROOT pnpm workspace, which pins
-      # packageManager pnpm@10.13.1 — corepack rejects a mismatched prepare,
-      # so this job intentionally does not use env.PNPM_VERSION.
+      # The portals live in the ROOT pnpm workspace. This used to pin
+      # pnpm@10.13.1 by hand, because the root `packageManager` said so and
+      # corepack rejects a mismatched prepare. The root is on env.PNPM_VERSION
+      # now, so the hand-pin would be the mismatch it was written to avoid.
       - name: Setup pnpm via corepack
         run: |
           corepack enable
-          corepack prepare pnpm@10.13.1 --activate
+          corepack prepare pnpm@${{ env.PNPM_VERSION }} --activate
 
       - name: Setup Node.js
         uses: actions/setup-node@v4

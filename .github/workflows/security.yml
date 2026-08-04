@@ -17,6 +17,12 @@ concurrency:
 env:
   NODE_VERSION: '22'
   PNPM_VERSION: '11.20.0'
+  # pnpm 11 re-verifies node_modules against the lockfile before running any
+  # script, by spawning its own pnpm — which does NOT inherit the
+  # `--trust-lockfile` on the install steps, so it re-ran the whole
+  # supply-chain pass and 429'd every job that runs a script. Install has
+  # just completed in each of these jobs; there is nothing stale to catch.
+  pnpm_config_verify_deps_before_run: 'false'
 
 permissions:
   contents: read
@@ -50,29 +56,65 @@ jobs:
           cache: 'pnpm'
           cache-dependency-path: backend/pnpm-lock.yaml
 
-      # The one install in CI that does NOT pass `--trust-lockfile`, on purpose.
-      #
-      # pnpm 11 verifies every lockfile entry against `minimumReleaseAge` /
-      # `trustPolicy` by contacting the registry, which is far too expensive to
-      # repeat in all 14 of ci.yml's installs — that burst rate-limited npm and
-      # failed the build (see the note at the top of ci.yml). So this job is the
-      # designated verifier: once per PR, and again on this workflow's nightly
-      # schedule, which is the run that catches a version flagged *after* it was
-      # merged.
-      #
-      # If this step starts failing with ERR_PNPM_FETCH_429 rather than a real
-      # policy violation, that is registry rate-limiting and not a finding —
-      # but do not "fix" it by adding the flag here, because then nothing
-      # verifies the lockfile at all.
+      # Trusts the lockfile like every other install. The real supply-chain
+      # verification lives in the `lockfile-supply-chain` job below, which runs
+      # on the schedule rather than on the PR — see the reasoning there.
       - name: Install backend dependencies
         working-directory: backend
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile --trust-lockfile
 
       - name: Run Posture A invariants
         working-directory: backend
         run: pnpm test:posture-a
         env:
           NODE_ENV: test
+
+  lockfile-supply-chain:
+    name: Lockfile Supply-Chain Verification
+    runs-on: ubuntu-latest
+    # Scheduled runs only, and that is the point rather than a concession.
+    #
+    # pnpm 11 verifies every lockfile entry against `minimumReleaseAge` /
+    # `trustPolicy` by contacting the registry — ~1750 requests for backend
+    # alone. Attempted once per PR, it competes with the ~20 other jobs pulling
+    # the same packages and npm answers 429:
+    #
+    #   ✗ Lockfile failed supply-chain policy check (1752 entries in 2m 29.9s)
+    #   [ERR_PNPM_FETCH_429] GET .../@medusajs%2Fjs-sdk: Too Many Requests
+    #
+    # Running it alone on the nightly schedule is also where its value actually
+    # is. On a PR the lockfile is a diff a human is reviewing; what this check
+    # uniquely catches is a version flagged *after* it was merged, which is a
+    # question about time passing, not about the pull request. So it runs when
+    # nothing else is competing, against the current state of the registry.
+    #
+    # If this fails with ERR_PNPM_FETCH_429 rather than a policy violation, that
+    # is rate-limiting, not a finding — but do not "fix" it by adding
+    # `--trust-lockfile` here, because then nothing verifies the lockfile at all.
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    strategy:
+      fail-fast: false
+      matrix:
+        project: [backend, storefront, admin-panel, vendor-panel]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm via corepack
+        run: |
+          corepack enable
+          corepack prepare pnpm@${{ env.PNPM_VERSION }} --activate
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      # Deliberately no `--trust-lockfile`: this step exists to run the check
+      # every other install skips.
+      - name: Verify ${{ matrix.project }} lockfile against supply-chain policy
+        working-directory: ${{ matrix.project }}
+        run: pnpm install --frozen-lockfile
 
   gitleaks:
     name: Secret Scan (gitleaks)

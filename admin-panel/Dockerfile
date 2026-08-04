@@ -30,6 +30,12 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 # An image build is the wrong place to verify anyway: it consumes a lockfile
 # that is already committed and reviewed. `security.yml`'s install is the
 # designated verifier and deliberately omits this flag.
+# pnpm 11 re-verifies node_modules against the lockfile before running any
+# script, by spawning its own pnpm — which does not inherit the
+# `--trust-lockfile` on the install above, so it would re-run the full
+# supply-chain pass (one registry request per lockfile entry) on every
+# `pnpm run` in this build.
+ENV pnpm_config_verify_deps_before_run=false
 RUN pnpm install --frozen-lockfile --prod=false --trust-lockfile
 
 COPY . .

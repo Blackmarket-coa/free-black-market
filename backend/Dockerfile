@@ -44,12 +44,24 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY --from=deps /app/restaurant-marketplace ./restaurant-marketplace
 COPY . .
 
+# ENV does not cross stages, and `pnpm build` below is a script — so without
+# this the deps check runs here even though the deps stage already set it.
+# This is what failed the Docker backend build with ERR_PNPM_FETCH_429.
+ENV pnpm_config_verify_deps_before_run=false
+
 RUN rm -rf .medusa && pnpm build
 
 # --- runtime stage -----------------------------------------------------------
 FROM node:${NODE_VERSION} AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
+# Set in the RUNTIME stage too, not just the build, because the entrypoint is
+# `pnpm start` — a script. Without this, pnpm 11 would contact the registry once
+# per lockfile entry on EVERY CONTAINER BOOT. That is the same class of problem
+# the `corepack prepare` above exists to prevent: this image already learned
+# once that boot-time registry access is DNS-flaky in production and forced a
+# `sleep` workaround.
+ENV pnpm_config_verify_deps_before_run=false
 ENV PORT=9000
 
 # `corepack prepare` caches pnpm in the image so `pnpm start` does NOT download
