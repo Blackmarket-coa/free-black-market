@@ -192,7 +192,28 @@ progress bar, the empty and failure states, and — most importantly — that bu
 pool titles are escaped before reaching `innerHTML`, since that is the only untrusted
 string on the surface.
 
-Still not built: the generic non-FBM buyer archetype with sensible defaults.
+*The generic non-FBM buyer archetype is now in place*, as
+`modules/demand-pool/buyer-archetype.ts`. It mirrors `product-archetype` — a behavioural
+category supplying defaults, with anything stated explicitly winning over them — and
+follows `vendor-plan/catalog.ts` in keeping code as the source of truth.
+
+Codes: `GENERAL`, `HOUSEHOLD`, `BUYING_CLUB`, `ORGANIZATION`, `MUTUAL_AID`. Each supplies a
+deadline window, `deadline_type`, `visibility`, a `min_quantity` threshold ratio, and a
+unit of measure. `min_quantity` is consequently now optional on `POST
+/store/collective/demand-pools` — posting a want should not require a number the buyer has
+no basis to pick.
+
+`GENERAL` is the point of the set and the fallback for anything unrecognised: posting a
+want must work with no cooperative, no buyer network, no vertical, and no other
+FBM-specific concept, or the hub cannot be used outside FBM — which is the premise of it
+being a standalone product. Every other archetype is an opt-in refinement, never a
+prerequisite.
+
+Deliberately **not persisted**. These are creation-time defaults, not state on the post: a
+stored archetype would drift from the values it produced the moment the catalog changed,
+and nothing reads it afterwards. A per-buyer stored assignment (à la
+`product_archetype_assignment`) is the natural follow-up if archetypes ever need
+overriding per account.
 
 **Phase 2 — reputation unification.** Trust earned as a bounty filler, mutual aid helper,
 or group-buy organizer must be one score, not three. The buyer side previously awarded **no

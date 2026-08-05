@@ -4,6 +4,7 @@ import { z } from "zod"
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { DEMAND_POOL_MODULE } from "../../../../modules/demand-pool"
 import DemandPoolModuleService from "../../../../modules/demand-pool/service"
+import { BUYER_ARCHETYPE_CODES } from "../../../../modules/demand-pool/buyer-archetype"
 
 const getErrorMessage = (error: unknown) => {
   if (error instanceof Error) {
@@ -23,8 +24,10 @@ const createDemandPostSchema = z.object({
   category: z.string().optional(),
   specs: z.record(z.string(), z.unknown()).optional(),
   target_quantity: z.number().int().positive(),
-  min_quantity: z.number().int().positive(),
+  // Optional: derived from the buyer archetype's threshold ratio when absent.
+  min_quantity: z.number().int().positive().optional(),
   unit_of_measure: z.string().optional(),
+  buyer_archetype: z.enum(BUYER_ARCHETYPE_CODES).optional(),
   target_price: z.number().positive().optional(),
   currency_code: z.string().default("USD"),
   delivery_region: z.string().optional(),
@@ -98,6 +101,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       specs: body.specs,
       target_quantity: body.target_quantity,
       min_quantity: body.min_quantity,
+      buyer_archetype: body.buyer_archetype,
       unit_of_measure: body.unit_of_measure,
       target_price: body.target_price,
       currency_code: body.currency_code,

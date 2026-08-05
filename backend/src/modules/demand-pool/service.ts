@@ -10,6 +10,7 @@ import { DemandPostStatus, DemandPostVisibility } from "./models/demand-post"
 import { ParticipantStatus } from "./models/demand-participant"
 import { BountyObjective, BountyStatus, BountyVisibility } from "./models/demand-bounty"
 import { ProposalStatus } from "./models/supplier-proposal"
+import { applyBuyerArchetypeDefaults } from "./buyer-archetype"
 
 class DemandPoolModuleService extends MedusaService({
   DemandPost,
@@ -65,8 +66,15 @@ class DemandPoolModuleService extends MedusaService({
     category?: string
     specs?: Record<string, unknown>
     target_quantity: number
-    min_quantity: number
+    /**
+     * Optional: derived from the buyer archetype's threshold ratio when
+     * absent, so posting a want does not demand a number the buyer has no
+     * basis to pick.
+     */
+    min_quantity?: number
     unit_of_measure?: string
+    /** Behavioural category supplying defaults; falls back to GENERAL. */
+    buyer_archetype?: string
     target_price?: number
     currency_code?: string
     delivery_region?: string
@@ -83,16 +91,24 @@ class DemandPoolModuleService extends MedusaService({
     product_id?: string
     metadata?: Record<string, unknown>
   }) {
-    if (input.min_quantity > input.target_quantity) {
+    // Archetype defaults fill only what the caller omitted; anything stated
+    // explicitly is left untouched.
+    const resolved = applyBuyerArchetypeDefaults(input)
+
+    if (resolved.min_quantity > resolved.target_quantity) {
       throw new Error("Minimum quantity cannot exceed target quantity")
     }
 
+    // `buyer_archetype` is a creation-time input, not a column — strip it so it
+    // cannot reach the ORM as an unknown field.
+    const { buyer_archetype: _archetype, ...persistable } = resolved
+
     const [post] = await this.createDemandPosts([
       {
-        ...input,
+        ...persistable,
         creator_type: (input.creator_type || "CUSTOMER") as "CUSTOMER" | "SELLER",
-        deadline_type: (input.deadline_type || "SOFT") as "HARD" | "SOFT",
-        visibility: (input.visibility || DemandPostVisibility.PUBLIC) as DemandPostVisibility,
+        deadline_type: resolved.deadline_type as "HARD" | "SOFT",
+        visibility: resolved.visibility as DemandPostVisibility,
         delivery_address: (input.delivery_address || null) as Record<string, unknown> | null,
         specs: (input.specs || null) as Record<string, unknown> | null,
         status: DemandPostStatus.DRAFT,
