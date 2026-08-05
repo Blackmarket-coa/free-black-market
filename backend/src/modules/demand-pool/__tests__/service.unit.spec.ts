@@ -371,3 +371,94 @@ describe("getUnfulfilledDemandLeads", () => {
     expect(filters.delivery_region).toBe("midwest")
   })
 })
+
+describe("setSurplusDisposition", () => {
+  const makeCtx = (participant: any) => ({
+    listDemandParticipants: jest.fn(async (filter: any) =>
+      filter?.id || filter?.customer_id === "cus_1" ? [participant] : []
+    ),
+    updateDemandParticipants: jest.fn(async (input: any) => {
+      Object.assign(participant, input)
+      return participant
+    }),
+  })
+
+  it("records an explicit opt-in", async () => {
+    const participant: any = {
+      id: "part_1",
+      customer_id: "cus_1",
+      status: "ESCROWED",
+      surplus_disposition: "REFUND",
+    }
+    const ctx: any = makeCtx(participant)
+
+    await DemandPoolModuleService.prototype.setSurplusDisposition.call(
+      ctx,
+      "dp_1",
+      "cus_1",
+      "DONATE"
+    )
+
+    expect(participant.surplus_disposition).toBe("DONATE")
+  })
+
+  it("is reversible while the escrow is still held", async () => {
+    const participant: any = {
+      id: "part_1",
+      customer_id: "cus_1",
+      status: "ESCROWED",
+      surplus_disposition: "DONATE",
+    }
+    const ctx: any = makeCtx(participant)
+
+    // Opting in must not be a one-way door — the guardrail requires the choice
+    // stay reversible right up until the money moves.
+    await DemandPoolModuleService.prototype.setSurplusDisposition.call(
+      ctx,
+      "dp_1",
+      "cus_1",
+      "REFUND"
+    )
+
+    expect(participant.surplus_disposition).toBe("REFUND")
+  })
+
+  it("refuses to change once the escrow has been released", async () => {
+    const participant: any = {
+      id: "part_1",
+      customer_id: "cus_1",
+      status: "REFUNDED",
+      surplus_disposition: "REFUND",
+    }
+    const ctx: any = makeCtx(participant)
+
+    // The money is already gone; pretending the choice still matters would be
+    // a lie rather than a courtesy.
+    await expect(
+      DemandPoolModuleService.prototype.setSurplusDisposition.call(
+        ctx,
+        "dp_1",
+        "cus_1",
+        "DONATE"
+      )
+    ).rejects.toThrow(/already been released/i)
+
+    expect(ctx.updateDemandParticipants).not.toHaveBeenCalled()
+  })
+
+  it("rejects a non-participant", async () => {
+    const ctx: any = {
+      listDemandParticipants: jest.fn(async () => []),
+      updateDemandParticipants: jest.fn(),
+    }
+
+    await expect(
+      DemandPoolModuleService.prototype.setSurplusDisposition.call(
+        ctx,
+        "dp_1",
+        "stranger",
+        "DONATE"
+      )
+    ).rejects.toThrow(/not a participant/i)
+  })
+})

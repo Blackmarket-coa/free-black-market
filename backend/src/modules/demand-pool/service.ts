@@ -221,6 +221,48 @@ class DemandPoolModuleService extends MedusaService({
     return participant
   }
 
+  /**
+   * Record what a participant wants done with their pledge if the pool does
+   * not complete.
+   *
+   * The only writer of `surplus_disposition`. Nothing else may set it — a
+   * redirect to mutual aid has to be the participant's own explicit act, not
+   * something a pool creator, an archetype, or a prior choice can arrange on
+   * their behalf.
+   *
+   * Reversible right up until the escrow moves. Once released the money is
+   * gone, so REFUNDED is where the choice becomes final; letting someone
+   * "change their mind" after that would be a lie, not a courtesy.
+   */
+  async setSurplusDisposition(
+    demandPostId: string,
+    customerId: string,
+    disposition: "REFUND" | "DONATE"
+  ) {
+    const participants = await this.listDemandParticipants({
+      demand_post_id: demandPostId,
+      customer_id: customerId,
+    })
+    if (participants.length === 0) {
+      throw new Error("Not a participant in this demand pool")
+    }
+
+    const participant = participants[0]
+    if (participant.status === ParticipantStatus.REFUNDED) {
+      throw new Error(
+        "Escrow has already been released; the disposition can no longer be changed"
+      )
+    }
+
+    await this.updateDemandParticipants({
+      id: participant.id,
+      surplus_disposition: disposition,
+    })
+
+    const [updated] = await this.listDemandParticipants({ id: participant.id })
+    return updated
+  }
+
   async withdrawFromPool(demandPostId: string, customerId: string) {
     const participants = await this.listDemandParticipants({
       demand_post_id: demandPostId,

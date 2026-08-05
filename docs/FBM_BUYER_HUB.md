@@ -266,9 +266,39 @@ supplier can still bid on, these are historical and cannot be bid on. Merging th
 fill an actionable feed with dead rows. EXPIRED only — a CANCELLED pool was withdrawn by
 its creator and says nothing about whether the market could have been served.
 
-**Phase 4 — group buying and order cycles.** Threshold unlock on `demand-pool`; wire
-`order-cycle` as the recurring-relationship alternative to one-off group buys. Surplus and
-overshoot handling — see the guardrail in §5.
+**Phase 4 — group buying and order cycles.** Threshold unlock already exists on
+`demand-pool` (`min_quantity` / `committed_quantity`, auto-transition to `THRESHOLD_MET` in
+`joinDemandPool`), and buyer archetypes now supply the ratio. Wiring `order-cycle` as the
+recurring-relationship alternative is still to do.
+
+*Surplus disposition is built.* A participant can choose what happens to their pledge if
+the pool does not complete: a plain refund, or a redirect to mutual aid. The guardrail
+(§5) constrains the implementation rather than just the UI:
+
+- `REFUND` is the column default and what every existing row holds. Nothing infers
+  `DONATE` — not an archetype, not a pool setting, not a previous choice on another pool.
+- The only writer is `setSurplusDisposition`, reached through
+  `PUT /store/collective/demand-pools/:id/surplus-disposition`, which the participant calls
+  for themselves. There is deliberately no creator or admin equivalent: an endpoint someone
+  else could call on a buyer's behalf would defeat "opt-in" however the UI was written.
+- Reversible until the escrow actually moves; rejected once the participant is `REFUNDED`,
+  because the money is gone and pretending otherwise would be a lie rather than a courtesy.
+
+**The money-moving half is dark**, behind `FBM_SURPLUS_REDIRECT_LIVE`, following the
+`creator-credits.ts` / `campaign-escrow.ts` pattern. Two reasons, both real:
+
+1. Under Posture A, donations route through a 501(c)(3) fiscal sponsor and FBM does not
+   hold the donor-recipient relationship (`modules/donation/models/donation-settings.ts`,
+   `docs/POSTURE_A_COMPLIANCE.md`). Paying redirected pledges into a platform account —
+   the obvious shortcut — is the exact arrangement that posture exists to avoid.
+2. §5 requires legal/compliance sign-off before real-money mutual aid routing in any
+   jurisdiction with money-transmission licensing.
+
+So the flag alone cannot switch it on: `FBM_MUTUAL_AID_ACCOUNT_ID` must also name a
+destination, and `requireMutualAidAccountId()` throws rather than falling back to anything
+if it is unset. With the flag off, a `DONATE` intent is recorded and reported back to the
+caller, but the escrow still returns to the buyer — the safe direction to fail in, and the
+API response says so plainly rather than implying the donation happened.
 
 **Phase 5 — mutual aid.** Request/offer matching, reusing Coalition's heatmap/scroll design
 rather than building parallel UI. Inbound aggregation from Mutual Aid Hub and
