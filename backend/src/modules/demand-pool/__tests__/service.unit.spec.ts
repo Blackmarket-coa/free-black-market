@@ -100,13 +100,16 @@ describe("DemandPoolModuleService", () => {
           Object.assign(bounty, input)
           return bounty
         }),
+        // No SQL connection — exercises the read-modify-write fallback.
+        resolvePgConnection: () => undefined,
       }
 
       await DemandPoolModuleService.prototype.claimBounty.call(
         ctx,
         "b_1",
         "user_1",
-        "CUSTOMER"
+        "CUSTOMER",
+        "dp_1"
       )
       expect(bounty.assignee_id).toBe("user_1")
 
@@ -115,9 +118,256 @@ describe("DemandPoolModuleService", () => {
           ctx,
           "b_1",
           "user_2",
-          "CUSTOMER"
+          "CUSTOMER",
+          "dp_1"
         )
       ).rejects.toThrow("Bounty already claimed")
     })
+
+    it("scopes the lookup to the pool so a bounty from another pool is unreachable", async () => {
+      const updateDemandBounties = jest.fn()
+      // Honour the filter, the way the ORM does — a mismatched
+      // demand_post_id must yield no rows.
+      const ctx: any = {
+        listDemandBounties: jest.fn(async (filter: any) =>
+          filter.demand_post_id === "dp_owner"
+            ? [{ id: "b_victim", assignee_id: null, status: BountyStatus.ACTIVE }]
+            : []
+        ),
+        updateDemandBounties,
+        resolvePgConnection: () => undefined,
+      }
+
+      await expect(
+        DemandPoolModuleService.prototype.claimBounty.call(
+          ctx,
+          "b_victim",
+          "attacker",
+          "CUSTOMER",
+          "dp_attacker"
+        )
+      ).rejects.toThrow("Bounty not found")
+
+      expect(ctx.listDemandBounties).toHaveBeenCalledWith(
+        expect.objectContaining({ demand_post_id: "dp_attacker" })
+      )
+      expect(updateDemandBounties).not.toHaveBeenCalled()
+    })
+
+    it("decides the race with an assignee_id IS NULL predicate", async () => {
+      const raw = jest.fn(async () => ({ rows: [{ id: "b_1" }] }))
+      const ctx: any = {
+        listDemandBounties: jest.fn(async () => [
+          { id: "b_1", assignee_id: null, status: BountyStatus.ACTIVE },
+        ]),
+        updateDemandBounties: jest.fn(),
+        resolvePgConnection: () => ({ raw }),
+      }
+
+      await DemandPoolModuleService.prototype.claimBounty.call(
+        ctx,
+        "b_1",
+        "user_1",
+        "CUSTOMER",
+        "dp_1"
+      )
+
+      const [sql, bindings] = raw.mock.calls[0] as unknown as [string, unknown[]]
+      expect(sql).toContain("assignee_id IS NULL")
+      expect(sql).toContain("demand_post_id = ?")
+      expect(bindings).toEqual(["user_1", "CUSTOMER", "b_1", "dp_1"])
+      // The racy read-modify-write path must not be used when SQL is available.
+      expect(ctx.updateDemandBounties).not.toHaveBeenCalled()
+    })
+
+    it("loses the race gracefully when another claimant got there first", async () => {
+      // Row existed at read time, but the guarded UPDATE matched nothing.
+      const raw = jest.fn(async () => ({ rows: [] }))
+      const ctx: any = {
+        listDemandBounties: jest.fn(async () => [
+          { id: "b_1", assignee_id: null, status: BountyStatus.ACTIVE },
+        ]),
+        updateDemandBounties: jest.fn(),
+        resolvePgConnection: () => ({ raw }),
+      }
+
+      await expect(
+        DemandPoolModuleService.prototype.claimBounty.call(
+          ctx,
+          "b_1",
+          "loser",
+          "CUSTOMER",
+          "dp_1"
+        )
+      ).rejects.toThrow("Bounty already claimed")
+
+      expect(ctx.updateDemandBounties).not.toHaveBeenCalled()
+    })
+  })
+
+  describe("completeBountyMilestone pool scoping", () => {
+    it("refuses a bounty belonging to a different pool and mutates nothing", async () => {
+      const raw = jest.fn()
+      const updateDemandBounties = jest.fn()
+      const ctx: any = {
+        listDemandBounties: jest.fn(async (filter: any) =>
+          filter.demand_post_id === "dp_owner"
+            ? [
+                {
+                  id: "b_victim",
+                  amount: 100,
+                  amount_paid_out: 0,
+                  milestones_completed: 0,
+                  status: BountyStatus.ACTIVE,
+                  milestones: [{ description: "m0", percentage: 100, condition: "x" }],
+                },
+              ]
+            : []
+        ),
+        updateDemandBounties,
+        resolvePgConnection: () => ({ raw }),
+      }
+
+      await expect(
+        DemandPoolModuleService.prototype.completeBountyMilestone.call(
+          ctx,
+          "b_victim",
+          0,
+          "dp_attacker"
+        )
+      ).rejects.toThrow("Bounty not found")
+
+      // The completion UPDATE is committed and irreversible, so it must never
+      // be reached for a cross-pool bounty.
+      expect(raw).not.toHaveBeenCalled()
+      expect(updateDemandBounties).not.toHaveBeenCalled()
+    })
+
+    it("constrains the atomic completion UPDATE by demand_post_id", async () => {
+      const raw = jest.fn(async () => ({
+        rows: [{ milestones_completed: 1, amount_paid_out: 100, status: "COMPLETED" }],
+      }))
+      const ctx: any = {
+        listDemandBounties: jest.fn(async () => [
+          {
+            id: "b_1",
+            amount: 100,
+            amount_paid_out: 0,
+            milestones_completed: 0,
+            status: BountyStatus.ACTIVE,
+            milestones: [{ description: "m0", percentage: 100, condition: "x" }],
+          },
+        ]),
+        resolvePgConnection: () => ({ raw }),
+      }
+
+      await DemandPoolModuleService.prototype.completeBountyMilestone.call(
+        ctx,
+        "b_1",
+        0,
+        "dp_1"
+      )
+
+      const [sql, bindings] = raw.mock.calls[0] as unknown as [string, unknown[]]
+      expect(sql).toContain("demand_post_id = ?")
+      expect(bindings).toContain("dp_1")
+    })
+  })
+})
+
+describe("getUnfulfilledDemandLeads", () => {
+  const expiredPost = (overrides: any = {}) => ({
+    id: "dp_expired",
+    status: "EXPIRED",
+    category: "grain",
+    delivery_region: "midwest",
+    committed_quantity: 40,
+    target_quantity: 100,
+    total_bounty_amount: 250,
+    updated_at: "2026-08-01T00:00:00.000Z",
+    ...overrides,
+  })
+
+  const ctxWith = (posts: any[], proposals: any[] = []) => ({
+    listDemandPosts: jest.fn(async () => posts),
+    listSupplierProposals: jest.fn(async () => proposals),
+  })
+
+  it("queries only EXPIRED public posts", async () => {
+    const ctx: any = ctxWith([expiredPost()])
+
+    await DemandPoolModuleService.prototype.getUnfulfilledDemandLeads.call(
+      ctx,
+      "sel_1"
+    )
+
+    const [filters] = ctx.listDemandPosts.mock.calls[0]
+    // A CANCELLED pool was withdrawn by its creator and says nothing about
+    // whether the market could have been served, so it must not appear.
+    expect(filters.status).toBe("EXPIRED")
+    expect(filters.visibility).toBe("PUBLIC")
+  })
+
+  it("summarises how much demand went unserved", async () => {
+    const ctx: any = ctxWith([expiredPost()])
+
+    const leads =
+      await DemandPoolModuleService.prototype.getUnfulfilledDemandLeads.call(
+        ctx,
+        "sel_1"
+      )
+
+    expect(leads).toHaveLength(1)
+    expect(leads[0].unmet_demand).toEqual({
+      committed_quantity: 40,
+      target_quantity: 100,
+      bounty_amount: 250,
+      expired_at: "2026-08-01T00:00:00.000Z",
+    })
+  })
+
+  it("does not pitch back a pool the supplier already proposed to", async () => {
+    const ctx: any = ctxWith(
+      [expiredPost(), expiredPost({ id: "dp_other" })],
+      [{ demand_post_id: "dp_expired", supplier_id: "sel_1" }]
+    )
+
+    const leads =
+      await DemandPoolModuleService.prototype.getUnfulfilledDemandLeads.call(
+        ctx,
+        "sel_1"
+      )
+
+    expect(leads.map((l: any) => l.id)).toEqual(["dp_other"])
+  })
+
+  it("filters out leads below the requested committed quantity", async () => {
+    const ctx: any = ctxWith([
+      expiredPost({ id: "dp_small", committed_quantity: 5 }),
+      expiredPost({ id: "dp_big", committed_quantity: 500 }),
+    ])
+
+    const leads =
+      await DemandPoolModuleService.prototype.getUnfulfilledDemandLeads.call(
+        ctx,
+        "sel_1",
+        { min_committed_quantity: 100 }
+      )
+
+    expect(leads.map((l: any) => l.id)).toEqual(["dp_big"])
+  })
+
+  it("passes category and region through to the query", async () => {
+    const ctx: any = ctxWith([])
+
+    await DemandPoolModuleService.prototype.getUnfulfilledDemandLeads.call(
+      ctx,
+      "sel_1",
+      { category: "grain", delivery_region: "midwest" }
+    )
+
+    const [filters] = ctx.listDemandPosts.mock.calls[0]
+    expect(filters.category).toBe("grain")
+    expect(filters.delivery_region).toBe("midwest")
   })
 })

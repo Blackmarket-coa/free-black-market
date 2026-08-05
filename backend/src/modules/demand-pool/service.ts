@@ -10,6 +10,7 @@ import { DemandPostStatus, DemandPostVisibility } from "./models/demand-post"
 import { ParticipantStatus } from "./models/demand-participant"
 import { BountyObjective, BountyStatus, BountyVisibility } from "./models/demand-bounty"
 import { ProposalStatus } from "./models/supplier-proposal"
+import { applyBuyerArchetypeDefaults } from "./buyer-archetype"
 
 class DemandPoolModuleService extends MedusaService({
   DemandPost,
@@ -65,8 +66,15 @@ class DemandPoolModuleService extends MedusaService({
     category?: string
     specs?: Record<string, unknown>
     target_quantity: number
-    min_quantity: number
+    /**
+     * Optional: derived from the buyer archetype's threshold ratio when
+     * absent, so posting a want does not demand a number the buyer has no
+     * basis to pick.
+     */
+    min_quantity?: number
     unit_of_measure?: string
+    /** Behavioural category supplying defaults; falls back to GENERAL. */
+    buyer_archetype?: string
     target_price?: number
     currency_code?: string
     delivery_region?: string
@@ -83,16 +91,24 @@ class DemandPoolModuleService extends MedusaService({
     product_id?: string
     metadata?: Record<string, unknown>
   }) {
-    if (input.min_quantity > input.target_quantity) {
+    // Archetype defaults fill only what the caller omitted; anything stated
+    // explicitly is left untouched.
+    const resolved = applyBuyerArchetypeDefaults(input)
+
+    if (resolved.min_quantity > resolved.target_quantity) {
       throw new Error("Minimum quantity cannot exceed target quantity")
     }
 
+    // `buyer_archetype` is a creation-time input, not a column — strip it so it
+    // cannot reach the ORM as an unknown field.
+    const { buyer_archetype: _archetype, ...persistable } = resolved
+
     const [post] = await this.createDemandPosts([
       {
-        ...input,
+        ...persistable,
         creator_type: (input.creator_type || "CUSTOMER") as "CUSTOMER" | "SELLER",
-        deadline_type: (input.deadline_type || "SOFT") as "HARD" | "SOFT",
-        visibility: (input.visibility || DemandPostVisibility.PUBLIC) as DemandPostVisibility,
+        deadline_type: resolved.deadline_type as "HARD" | "SOFT",
+        visibility: resolved.visibility as DemandPostVisibility,
         delivery_address: (input.delivery_address || null) as Record<string, unknown> | null,
         specs: (input.specs || null) as Record<string, unknown> | null,
         status: DemandPostStatus.DRAFT,
@@ -347,9 +363,18 @@ class DemandPoolModuleService extends MedusaService({
 
   async completeBountyMilestone(
     bountyId: string,
-    milestoneIndex: number
+    milestoneIndex: number,
+    demandPostId: string
   ) {
-    const bounties = await this.listDemandBounties({ id: bountyId })
+    // The `:id` pool segment on the route is an authorization boundary, so the
+    // bounty lookup is scoped to it here rather than only at the caller. A
+    // bounty belonging to a different pool must be indistinguishable from one
+    // that does not exist — otherwise a caller authorized on pool A can drive
+    // a completion against a bounty in pool B.
+    const bounties = await this.listDemandBounties({
+      id: bountyId,
+      demand_post_id: demandPostId,
+    })
     if (bounties.length === 0) {
       throw new Error("Bounty not found")
     }
@@ -405,11 +430,19 @@ class DemandPoolModuleService extends MedusaService({
                 status = (CASE WHEN milestones_completed + 1 >= ? THEN 'COMPLETED' ELSE 'MILESTONE_PARTIAL' END)::bounty_status_enum,
                 updated_at = NOW()
           WHERE id = ?
+            AND demand_post_id = ?
             AND deleted_at IS NULL
             AND status IN ('ACTIVE', 'MILESTONE_PARTIAL')
             AND COALESCE((milestones -> ?::int ->> 'completed')::boolean, false) = false
         RETURNING milestones_completed, amount_paid_out, status`,
-        [milestoneIndex, payoutAmount, totalMilestones, bountyId, milestoneIndex]
+        [
+          milestoneIndex,
+          payoutAmount,
+          totalMilestones,
+          bountyId,
+          demandPostId,
+          milestoneIndex,
+        ]
       )
       const row = result?.rows?.[0]
       if (!row) {
@@ -430,7 +463,10 @@ class DemandPoolModuleService extends MedusaService({
 
     // Fallback (no reachable pg connection, e.g. unit tests without DI):
     // re-read and do a best-effort read-modify-write off the freshest state.
-    const fresh = await this.listDemandBounties({ id: bountyId })
+    const fresh = await this.listDemandBounties({
+      id: bountyId,
+      demand_post_id: demandPostId,
+    })
     if (fresh.length === 0) {
       throw new Error("Bounty not found")
     }
@@ -482,16 +518,22 @@ class DemandPoolModuleService extends MedusaService({
   /**
    * First-come claim of an unassigned bounty. Throws if already claimed.
    *
-   * This is a read-check-write claim; a DB-atomic
-   * `UPDATE ... SET assignee_id = :actor WHERE assignee_id IS NULL`
-   * is the hardening follow-up to fully close the race window.
+   * The claim is decided by a DB-atomic
+   * `UPDATE ... SET assignee_id = :actor WHERE assignee_id IS NULL`, so
+   * concurrent claimants cannot both win.
    */
   async claimBounty(
     bountyId: string,
     actorId: string,
-    actorType: "CUSTOMER" | "SELLER" | "ORGANIZER"
+    actorType: "CUSTOMER" | "SELLER" | "ORGANIZER",
+    demandPostId: string
   ) {
-    const bounties = await this.listDemandBounties({ id: bountyId })
+    // Pool-scoped for the same reason as `completeBountyMilestone`: the route's
+    // `:id` segment must actually constrain which bounty is reachable.
+    const bounties = await this.listDemandBounties({
+      id: bountyId,
+      demand_post_id: demandPostId,
+    })
     if (bounties.length === 0) {
       throw new Error("Bounty not found")
     }
@@ -501,6 +543,36 @@ class DemandPoolModuleService extends MedusaService({
       throw new Error("Bounty already claimed")
     }
 
+    // Atomic first-come claim. The read above only reports what was true a
+    // moment ago, so the `assignee_id IS NULL` predicate is what actually
+    // decides the race: two simultaneous claimants both pass the read, but
+    // exactly one updates a row. Without it, the later writer silently
+    // overwrote the earlier claimant and the bounty paid out to the wrong
+    // person.
+    const pg = this.resolvePgConnection()
+    if (pg) {
+      const result = await pg.raw(
+        `UPDATE demand_bounty
+            SET assignee_id = ?,
+                assignee_type = ?::bounty_assignee_type_enum,
+                updated_at = NOW()
+          WHERE id = ?
+            AND demand_post_id = ?
+            AND deleted_at IS NULL
+            AND assignee_id IS NULL
+        RETURNING id`,
+        [actorId, actorType, bountyId, demandPostId]
+      )
+      if (!result?.rows?.[0]) {
+        // The row existed a moment ago, so this is a lost race rather than a
+        // missing bounty.
+        throw new Error("Bounty already claimed")
+      }
+      const [updated] = await this.listDemandBounties({ id: bountyId })
+      return updated
+    }
+
+    // Fallback (no reachable pg connection, e.g. unit tests without DI).
     await this.updateDemandBounties({
       id: bountyId,
       assignee_id: actorId,
@@ -886,6 +958,84 @@ class DemandPoolModuleService extends MedusaService({
         return false
       return true
     })
+  }
+
+  /**
+   * Demand that went unmet — surfaced to prospective suppliers as leads.
+   *
+   * `getSupplierOpportunities` only shows OPEN/THRESHOLD_MET pools, so the
+   * moment a pool expires it drops out of every supplier view and the demand
+   * signal is lost. That is the dead end this closes: a pool nobody could
+   * supply is the single clearest evidence of an unserved market, and it is
+   * exactly the demand worth routing to a vendor who could serve it next time.
+   *
+   * Distinct from `getSupplierOpportunities` on purpose. Those are live pools a
+   * supplier can still bid on; these are historical, and cannot be bid on at
+   * all. Conflating them would put un-actionable rows in a list whose entire
+   * purpose is "things you can act on".
+   */
+  async getUnfulfilledDemandLeads(
+    supplierId: string,
+    filters?: {
+      category?: string
+      delivery_region?: string
+      /** Only leads whose committed demand reached at least this size. */
+      min_committed_quantity?: number
+      limit?: number
+      offset?: number
+    }
+  ) {
+    const queryFilters: Record<string, unknown> = {
+      // EXPIRED only. A CANCELLED pool was withdrawn by its creator, which says
+      // nothing about whether the market could have been served.
+      status: DemandPostStatus.EXPIRED,
+      visibility: DemandPostVisibility.PUBLIC,
+    }
+
+    if (filters?.category) {
+      queryFilters.category = filters.category
+    }
+    if (filters?.delivery_region) {
+      queryFilters.delivery_region = filters.delivery_region
+    }
+
+    const posts = await this.listDemandPosts(queryFilters, {
+      order: { attractiveness_score: "DESC" },
+      take: filters?.limit || 20,
+      skip: filters?.offset || 0,
+    })
+
+    // A supplier who already engaged with a pool does not need it pitched back
+    // to them as a fresh lead.
+    const existingProposals = await this.listSupplierProposals({
+      supplier_id: supplierId,
+    })
+    const proposedPostIds = new Set(
+      existingProposals.map((p) => p.demand_post_id)
+    )
+
+    return posts
+      .filter((post) => {
+        if (proposedPostIds.has(post.id)) return false
+        if (
+          filters?.min_committed_quantity &&
+          Number(post.committed_quantity) < filters.min_committed_quantity
+        ) {
+          return false
+        }
+        return true
+      })
+      .map((post) => ({
+        ...post,
+        // How much real demand went unserved: buyers who committed, and money
+        // that was actually escrowed behind the ask.
+        unmet_demand: {
+          committed_quantity: Number(post.committed_quantity),
+          target_quantity: Number(post.target_quantity),
+          bounty_amount: Number(post.total_bounty_amount),
+          expired_at: post.updated_at,
+        },
+      }))
   }
 
   // ──────────────────────────────────────────────────────────────────────────

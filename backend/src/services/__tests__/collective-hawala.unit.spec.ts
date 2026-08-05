@@ -45,10 +45,17 @@ function makeFakeDemandPool(overrides: Partial<any> = {}) {
     listDemandPosts: jest.fn(async () => [post]),
     updateDemandPosts: jest.fn(async () => post),
     listDemandBounties: jest.fn(async (filter: any) => {
+      // Honour demand_post_id the way the ORM does, so pool-scoping is
+      // actually exercised. Fixtures that omit it match any pool.
+      const match = (b: any) =>
+        filter?.demand_post_id === undefined ||
+        b.demand_post_id === undefined ||
+        b.demand_post_id === filter.demand_post_id
       if (filter?.id) {
-        return bounties[filter.id] ? [bounties[filter.id]] : []
+        const found = bounties[filter.id]
+        return found && match(found) ? [found] : []
       }
-      return Object.values(bounties)
+      return Object.values(bounties).filter(match)
     }),
     updateDemandBounties: jest.fn(async (input: any) => {
       Object.assign(bounties[input.id], input)
@@ -162,5 +169,140 @@ describe("CollectiveHawalaService", () => {
 
     expect(entry).toBeNull()
     expect(hawala.createTransfer).not.toHaveBeenCalled()
+  })
+})
+
+/**
+ * The milestone completion is a committed, irreversible UPDATE that cannot
+ * share a transaction with the ledger transfer. So every precondition for the
+ * payout has to be checked BEFORE it runs. If it were checked after, a failing
+ * payout would leave the bounty marked complete with an inflated
+ * `amount_paid_out` and no money moved — which also strands the escrowed
+ * remainder, because `refundBountyEscrow` only returns
+ * `amount - amount_paid_out`.
+ */
+describe("completeAndPayMilestone preconditions", () => {
+  const payableBounty = (overrides: any = {}) => ({
+    id: "b_victim",
+    demand_post_id: "dp_owner",
+    contributor_id: "user_1",
+    assignee_id: "worker_1",
+    assignee_type: "CUSTOMER",
+    amount: 100,
+    amount_paid_out: 0,
+    currency_code: "USD",
+    milestones: [{ description: "m0", percentage: 100, condition: "x" }],
+    ...overrides,
+  })
+
+  it("refuses a bounty from another pool without touching the completion", async () => {
+    const hawala = makeFakeHawala()
+    const demandPool = makeFakeDemandPool({
+      post: { id: "dp_attacker", escrow_account_id: "escrow_attacker" },
+      bounties: { b_victim: payableBounty() },
+    })
+    const svc = new CollectiveHawalaService(hawala as any, demandPool as any)
+
+    await expect(
+      svc.completeAndPayMilestone({
+        demand_post_id: "dp_attacker",
+        bounty_id: "b_victim",
+        milestone_index: 0,
+      })
+    ).rejects.toThrow("Bounty not found")
+
+    expect(demandPool.completeBountyMilestone).not.toHaveBeenCalled()
+    expect(hawala.createTransfer).not.toHaveBeenCalled()
+  })
+
+  it("does not complete the milestone when the pool has no escrow account", async () => {
+    const hawala = makeFakeHawala()
+    const demandPool = makeFakeDemandPool({
+      post: { id: "dp_owner", escrow_account_id: null },
+      bounties: { b_victim: payableBounty() },
+    })
+    const svc = new CollectiveHawalaService(hawala as any, demandPool as any)
+
+    await expect(
+      svc.completeAndPayMilestone({
+        demand_post_id: "dp_owner",
+        bounty_id: "b_victim",
+        milestone_index: 0,
+      })
+    ).rejects.toThrow("Escrow account not found")
+
+    expect(demandPool.completeBountyMilestone).not.toHaveBeenCalled()
+  })
+
+  it("does not complete the milestone when the bounty has no assignee", async () => {
+    const hawala = makeFakeHawala()
+    const demandPool = makeFakeDemandPool({
+      post: { id: "dp_owner", escrow_account_id: "escrow_1" },
+      bounties: { b_victim: payableBounty({ assignee_id: null }) },
+    })
+    const svc = new CollectiveHawalaService(hawala as any, demandPool as any)
+
+    await expect(
+      svc.completeAndPayMilestone({
+        demand_post_id: "dp_owner",
+        bounty_id: "b_victim",
+        milestone_index: 0,
+      })
+    ).rejects.toThrow("Bounty has no assignee to pay")
+
+    expect(demandPool.completeBountyMilestone).not.toHaveBeenCalled()
+  })
+
+  it("does not complete the milestone when the assignee has no ledger account", async () => {
+    const hawala = makeFakeHawala()
+    hawala.listLedgerAccounts = jest.fn(
+      async (_filter: any) => [] as { id: string }[]
+    )
+    const demandPool = makeFakeDemandPool({
+      post: { id: "dp_owner", escrow_account_id: "escrow_1" },
+      bounties: { b_victim: payableBounty() },
+    })
+    const svc = new CollectiveHawalaService(hawala as any, demandPool as any)
+
+    await expect(
+      svc.completeAndPayMilestone({
+        demand_post_id: "dp_owner",
+        bounty_id: "b_victim",
+        milestone_index: 0,
+      })
+    ).rejects.toThrow("Assignee account not found")
+
+    expect(demandPool.completeBountyMilestone).not.toHaveBeenCalled()
+  })
+
+  it("completes and pays, scoping the completion to the owning pool", async () => {
+    const hawala = makeFakeHawala()
+    const demandPool = makeFakeDemandPool({
+      post: { id: "dp_owner", escrow_account_id: "escrow_1" },
+      bounties: { b_victim: payableBounty() },
+    })
+    demandPool.completeBountyMilestone = jest.fn(async () => ({
+      bounty_id: "b_victim",
+      milestone_index: 0,
+      payout_amount: 100,
+      total_paid_out: 100,
+      new_status: "COMPLETED",
+      all_completed: true,
+    }))
+    const svc = new CollectiveHawalaService(hawala as any, demandPool as any)
+
+    const result = await svc.completeAndPayMilestone({
+      demand_post_id: "dp_owner",
+      bounty_id: "b_victim",
+      milestone_index: 0,
+    })
+
+    expect(demandPool.completeBountyMilestone).toHaveBeenCalledWith(
+      "b_victim",
+      0,
+      "dp_owner"
+    )
+    expect(result.ledger_entry_id).toBeDefined()
+    expect(hawala.transfers).toHaveLength(1)
   })
 })

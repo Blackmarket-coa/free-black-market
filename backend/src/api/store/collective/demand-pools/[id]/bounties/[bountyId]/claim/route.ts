@@ -21,7 +21,8 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     const bounty = await demandPoolService.claimBounty(
       bountyId,
       actorId,
-      "CUSTOMER"
+      "CUSTOMER",
+      id
     )
 
     res.status(200).json({ bounty })

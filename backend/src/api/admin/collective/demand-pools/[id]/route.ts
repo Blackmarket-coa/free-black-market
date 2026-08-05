@@ -4,6 +4,9 @@ import { AuthenticatedMedusaRequest, MedusaResponse } from "@medusajs/framework/
 import { DEMAND_POOL_MODULE } from "../../../../../modules/demand-pool"
 import DemandPoolModuleService from "../../../../../modules/demand-pool/service"
 import { getCollectiveHawalaService } from "../../../../../services/collective-hawala"
+import { Modules } from "@medusajs/framework/utils"
+import type { IEventBusModuleService } from "@medusajs/framework/types"
+import { ParticipantStatus } from "../../../../../modules/demand-pool/models/demand-participant"
 
 // GET /admin/collective/demand-pools/:id
 export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) {
@@ -78,6 +81,39 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
 
     if (action === "mark_fulfilled") {
       const updated = await demandPoolService.transitionDemandStatus(id, "FULFILLED")
+
+      // Cross-mode reputation: a completed group buy credits the organizer and
+      // everyone who stayed committed. Emitted here rather than on join because
+      // joining is free and reversible (there is a withdraw endpoint), so
+      // join-time XP would be farmable by joining and leaving repeatedly.
+      // Fulfillment is operator-confirmed, so it reflects cooperation that
+      // actually happened. Best-effort: an event-bus hiccup must not fail the
+      // transition.
+      try {
+        const participants = await demandPoolService.listDemandParticipants({
+          demand_post_id: id,
+          status: ParticipantStatus.COMMITTED,
+        })
+        const eventBus = req.scope.resolve<IEventBusModuleService>(
+          Modules.EVENT_BUS
+        )
+        await eventBus.emit({
+          name: "demand_pool.fulfilled",
+          data: {
+            demand_post_id: id,
+            organizer_id: (updated as { creator_id?: string })?.creator_id ?? null,
+            organizer_type:
+              (updated as { creator_type?: string })?.creator_type ?? null,
+            participant_ids: participants.map((p) => p.customer_id as string),
+          },
+        })
+      } catch (emitErr) {
+        log.error(
+          `[POST /admin/collective/demand-pools/${id}] demand_pool.fulfilled emit failed`,
+          emitErr
+        )
+      }
+
       return res.json({ demand_pool: updated, message: "Demand pool marked as fulfilled" })
     }
 

@@ -2,8 +2,8 @@ import { createLogger } from "../../../../../../shared/logger"
 import type { VendorRequest } from "../../../../types"
 const log = createLogger("api/vendor/hawala/pools/[id]/withdraw")
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
-import { randomUUID } from "crypto"
 import { HAWALA_LEDGER_MODULE } from "../../../../../../modules/hawala-ledger"
+import { resolveRequestIdempotencyKey } from "../../../../../../shared/request-idempotency"
 import HawalaLedgerModuleService from "../../../../../../modules/hawala-ledger/service"
 import { withdrawPoolSchema, validateInput } from "../../../../../hawala-validation"
 
@@ -61,7 +61,16 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       earningsAccounts = [account]
     }
 
-    // Transfer from pool to earnings - use UUID for idempotency
+    // Transfer from pool to earnings. Deterministic per request: a UUID here
+    // meant every retry minted a new key, so the ledger's uniqueness check
+    // never matched and the withdrawal ran again.
+    const { key: idempotencyKey } = resolveRequestIdempotencyKey({
+      scope: "pool-withdraw",
+      actorId: sellerId,
+      headers: req.headers,
+      body: req.body,
+      payload: { pool_id: id, amount },
+    })
     const entry = await hawalaService.createTransfer({
       debit_account_id: pool.ledger_account_id,
       credit_account_id: earningsAccounts[0].id,
@@ -69,7 +78,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       entry_type: "WITHDRAWAL",
       description: description || "Pool withdrawal to earnings",
       investment_pool_id: id,
-      idempotency_key: `pool-withdraw-${id}-${randomUUID()}`,
+      idempotency_key: idempotencyKey,
     })
 
     res.json({

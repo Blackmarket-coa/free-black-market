@@ -23,6 +23,19 @@ export default defineMiddlewares({
       middlewares: [authenticate("customer", ["bearer", "session"])],
     },
     {
+      // Money-moving: releases bounty escrow to the assignee. Declared here
+      // rather than relying on the handler's `auth_context` read, which only
+      // works because Medusa happens to populate it for /store by default.
+      matcher: "/store/collective/demand-pools/:id/bounties/*/milestones",
+      method: "POST",
+      middlewares: [authenticate("customer", ["bearer", "session"])],
+    },
+    {
+      matcher: "/store/collective/demand-pools/:id/bounties/*/claim",
+      method: "POST",
+      middlewares: [authenticate("customer", ["bearer", "session"])],
+    },
+    {
       matcher: "/store/collective/demand-pools/:id/proposals/*/vote",
       method: "POST",
       middlewares: [authenticate("customer", ["bearer", "session"])],

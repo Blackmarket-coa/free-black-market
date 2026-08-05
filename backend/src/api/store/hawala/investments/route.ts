@@ -1,6 +1,7 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { HAWALA_LEDGER_MODULE } from "../../../../modules/hawala-ledger"
 import HawalaLedgerModuleService from "../../../../modules/hawala-ledger/service"
+import { resolveRequestIdempotencyKey } from "../../../../shared/request-idempotency"
 
 /**
  * GET /store/hawala/investments
@@ -123,7 +124,13 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       customer_id: customerId,
       amount,
       source: "DIRECT",
-      idempotency_key: `invest-${customerId}-${pool_id}-${Date.now()}`,
+      idempotency_key: resolveRequestIdempotencyKey({
+        scope: "invest",
+        actorId: customerId,
+        headers: req.headers,
+        body: req.body,
+        payload: { pool_id, amount },
+      }).key,
     })
 
     res.status(201).json({ investment })

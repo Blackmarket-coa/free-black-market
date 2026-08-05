@@ -3,6 +3,7 @@ const log = createLogger("api/admin/hawala/transfers")
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { HAWALA_LEDGER_MODULE } from "../../../../modules/hawala-ledger"
 import HawalaLedgerModuleService from "../../../../modules/hawala-ledger/service"
+import { resolveRequestIdempotencyKey } from "../../../../shared/request-idempotency"
 
 /**
  * GET /admin/hawala/transfers
@@ -93,7 +94,25 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       description,
       reference_type,
       reference_id,
-      idempotency_key: idempotency_key || `manual-${Date.now()}`,
+      // An explicit key always wins. Without one, derive a deterministic key
+      // from the operator and the transfer itself — `Date.now()` made every
+      // retry of a manual transfer a second, distinct movement.
+      idempotency_key:
+        idempotency_key ||
+        resolveRequestIdempotencyKey({
+          scope: "manual",
+          actorId:
+            (req as unknown as { auth_context?: { actor_id?: string } })
+              .auth_context?.actor_id || "admin",
+          headers: req.headers,
+          payload: {
+            debit_account_id,
+            credit_account_id,
+            amount,
+            entry_type,
+            reference_id,
+          },
+        }).key,
       metadata,
     })
 

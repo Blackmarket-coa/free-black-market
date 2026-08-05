@@ -2,6 +2,8 @@ import { createLogger } from "../../../../../../../../shared/logger"
 const log = createLogger("api/store/collective/demand-pools/[id]/bounties/[bountyId]/milestones")
 import { z } from "zod"
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
+import { Modules } from "@medusajs/framework/utils"
+import type { IEventBusModuleService } from "@medusajs/framework/types"
 import { DEMAND_POOL_MODULE } from "../../../../../../../../modules/demand-pool"
 import DemandPoolModuleService from "../../../../../../../../modules/demand-pool/service"
 import { getCollectiveHawalaService } from "../../../../../../../../services/collective-hawala"
@@ -60,10 +62,37 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     // SKIP when no Blackout id is mapped rather than leak an FBM identifier.
     // Fire-and-forget: an emit hiccup must never fail the payout response.
     try {
-      const bounties = await demandPoolService.listDemandBounties({ id: bountyId })
+      const bounties = await demandPoolService.listDemandBounties({
+        id: bountyId,
+        demand_post_id: id,
+      })
       const bounty = bounties[0]
       if (bounty?.assignee_id) {
         const assigneeId = bounty.assignee_id as string
+
+        // Cross-mode reputation: the fill lands on the assignee's single trust
+        // profile via the shared progression system, not a buyer-hub-only
+        // score. Best-effort — an event-bus hiccup must not fail the payout.
+        try {
+          const eventBus = req.scope.resolve<IEventBusModuleService>(
+            Modules.EVENT_BUS
+          )
+          await eventBus.emit({
+            name: "bounty.milestone_settled",
+            data: {
+              bounty_id: bountyId,
+              demand_post_id: id,
+              milestone_index: body.milestone_index,
+              assignee_id: assigneeId,
+              assignee_type: bounty.assignee_type ?? null,
+              objective: bounty.objective ?? null,
+              payout_amount: result.payout_amount,
+            },
+          })
+        } catch {
+          /* event emission is best-effort */
+        }
+
         const userId = await resolveBlackoutUserId(req.scope, {
           customerId: bounty.assignee_type === "SELLER" ? null : assigneeId,
           sellerId: bounty.assignee_type === "CUSTOMER" ? null : assigneeId,

@@ -197,3 +197,182 @@ describe("investment-pool totals — atomic increments", () => {
     expect(svc.updateInvestmentPools).not.toHaveBeenCalled()
   })
 })
+
+describe("createTransfer — balance guards and one-sided-move compensation", () => {
+  it("guards available_balance as well as balance in the CAS", async () => {
+    const pg = makePg()
+    const svc = buildTransferService(pg)
+
+    await svc.createTransfer({
+      debit_account_id: "acc-debit",
+      credit_account_id: "acc-credit",
+      amount: 100,
+      entry_type: "TRANSFER",
+    })
+
+    // Guarding only `balance` would let a debit spend funds that
+    // createTransfer's own available_balance pre-check had just rejected.
+    expect(pg.calls[0].sql).toContain("balance + ? >= 0")
+    expect(pg.calls[0].sql).toContain("available_balance + ? >= 0")
+    expect(pg.calls[0].bindings).toEqual([-100, -100, "acc-debit", -100, -100])
+  })
+
+  it("reverses the debit when the credit fails on the non-transactional path", async () => {
+    // A pg connection with no .transaction — two independent statements, so
+    // nothing rolls this back for us.
+    const calls: RawCall[] = []
+    const raw = jest.fn(async (sql: string, bindings: any[]) => {
+      calls.push({ sql, bindings })
+      // Debit succeeds, credit fails, reversal succeeds.
+      if (bindings[0] === 100 && calls.length === 2) {
+        throw new Error("credit leg exploded")
+      }
+      return { rowCount: 1 }
+    })
+    const svc = buildTransferService({ raw })
+
+    await expect(
+      svc.createTransfer({
+        debit_account_id: "acc-debit",
+        credit_account_id: "acc-credit",
+        amount: 100,
+        entry_type: "TRANSFER",
+      })
+    ).rejects.toThrow("credit leg exploded")
+
+    // debit(-100) → credit(+100) throws → compensating debit(+100).
+    expect(calls).toHaveLength(3)
+    expect(calls[0].bindings[0]).toBe(-100)
+    expect(calls[1].bindings[0]).toBe(100)
+    expect(calls[2].bindings[0]).toBe(100)
+    expect(calls[2].bindings[2]).toBe("acc-debit")
+
+    // And the entry is not left looking COMPLETED.
+    expect(svc.updateLedgerEntries).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "FAILED" })
+    )
+  })
+
+  it("reverses the debit when the credit fails on the legacy fallback path", async () => {
+    const svc = buildTransferService(undefined)
+    const seen: number[] = []
+    svc.updateBalances = jest.fn(async (accountId: string, delta: number) => {
+      seen.push(delta)
+      if (accountId === "acc-credit") throw new Error("legacy credit failed")
+    })
+
+    await expect(
+      svc.createTransfer({
+        debit_account_id: "acc-debit",
+        credit_account_id: "acc-credit",
+        amount: 100,
+        entry_type: "TRANSFER",
+      })
+    ).rejects.toThrow("legacy credit failed")
+
+    expect(seen).toEqual([-100, 100, 100])
+  })
+
+  it("surfaces the credit error even when the reversal also fails", async () => {
+    const svc = buildTransferService(undefined)
+    svc.updateBalances = jest.fn(async (accountId: string, delta: number) => {
+      if (accountId === "acc-credit") throw new Error("legacy credit failed")
+      if (delta > 0) throw new Error("reversal failed too")
+    })
+
+    // The original cause is what the caller needs to see; the unrecoverable
+    // imbalance is logged for the reconciler rather than masking it.
+    await expect(
+      svc.createTransfer({
+        debit_account_id: "acc-debit",
+        credit_account_id: "acc-credit",
+        amount: 100,
+        entry_type: "TRANSFER",
+      })
+    ).rejects.toThrow("legacy credit failed")
+  })
+})
+
+describe("createTransfer — deterministic lock ordering", () => {
+  /**
+   * A pg mock that supports transactions, so createTransfer takes the
+   * transactional branch where row locks are held across both statements.
+   * That is the only path that can deadlock, and the only one lock ordering
+   * applies to.
+   */
+  function makeTxPg(): { raw: jest.Mock; transaction: jest.Mock; calls: RawCall[] } {
+    const calls: RawCall[] = []
+    const raw = jest.fn(async (sql: string, bindings: any[]) => {
+      calls.push({ sql, bindings })
+      return { rowCount: 1 }
+    })
+    const trx = { raw }
+    const transaction = jest.fn(async (cb: (t: unknown) => Promise<void>) => cb(trx))
+    return { raw, transaction, calls }
+  }
+
+  it("locks the two accounts in account-id order, not debit-then-credit", async () => {
+    const pg = makeTxPg()
+    const svc = buildTransferService(pg as any)
+
+    await svc.createTransfer({
+      debit_account_id: "acc-debit",
+      credit_account_id: "acc-credit",
+      amount: 100,
+      entry_type: "TRANSFER",
+    })
+
+    // "acc-credit" < "acc-debit", so the credit leg is locked first here even
+    // though it is the credit. Two transfers in opposite directions across the
+    // same pair therefore take the locks in the same sequence and cannot form
+    // the AB-BA cycle Postgres kills with "deadlock detected".
+    expect(pg.calls).toHaveLength(2)
+    expect(pg.calls[0].bindings[2]).toBe("acc-credit")
+    expect(pg.calls[0].bindings[0]).toBe(100)
+    expect(pg.calls[1].bindings[2]).toBe("acc-debit")
+    expect(pg.calls[1].bindings[0]).toBe(-100)
+  })
+
+  it("orders the same pair identically regardless of transfer direction", async () => {
+    const forward = makeTxPg()
+    await buildTransferService(forward as any).createTransfer({
+      debit_account_id: "acc-debit",
+      credit_account_id: "acc-credit",
+      amount: 25,
+      entry_type: "TRANSFER",
+    })
+
+    const reverse = makeTxPg()
+    await buildTransferService(reverse as any).createTransfer({
+      debit_account_id: "acc-credit",
+      credit_account_id: "acc-debit",
+      amount: 25,
+      entry_type: "TRANSFER",
+    })
+
+    // This is the property that actually prevents the deadlock: the lock
+    // sequence is a function of the account pair, not of the direction. These
+    // two transfers are exactly the A→B / B→A pair the soak fires
+    // concurrently.
+    const order = (p: { calls: RawCall[] }) => p.calls.map((c) => c.bindings[2])
+    expect(order(forward)).toEqual(["acc-credit", "acc-debit"])
+    expect(order(reverse)).toEqual(["acc-credit", "acc-debit"])
+  })
+
+  it("still runs both legs inside a single transaction", async () => {
+    const pg = makeTxPg()
+    const svc = buildTransferService(pg as any)
+
+    await svc.createTransfer({
+      debit_account_id: "acc-debit",
+      credit_account_id: "acc-credit",
+      amount: 100,
+      entry_type: "TRANSFER",
+    })
+
+    // Ordering must not have cost us atomicity — a failure on either leg has
+    // to roll back the other.
+    expect(pg.transaction).toHaveBeenCalledTimes(1)
+    expect(svc.updateBalances).not.toHaveBeenCalled()
+  })
+})

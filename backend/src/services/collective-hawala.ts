@@ -240,14 +240,20 @@ export class CollectiveHawalaService {
   /**
    * Pay out a bounty milestone to the assignee.
    */
-  async payBountyMilestone(input: {
+  /**
+   * Resolve both legs of a milestone payout without moving any money.
+   *
+   * Split out of `payBountyMilestone` so `completeAndPayMilestone` can prove
+   * the transfer is possible *before* it commits the milestone completion.
+   * The demand-pool module and the ledger service resolve separate
+   * connections, so the completion and the transfer cannot share a
+   * transaction — checking first is what keeps a failed payout from leaving a
+   * committed completion behind.
+   */
+  private async resolveMilestonePayoutAccounts(input: {
     demand_post_id: string
-    bounty_id: string
-    milestone_index: number
     assignee_id: string
-    amount: number
-    milestone_description: string
-  }) {
+  }): Promise<{ escrowAccountId: string; assigneeAccountId: string }> {
     const posts = await this.demandPoolService.listDemandPosts({
       id: input.demand_post_id,
     })
@@ -277,9 +283,32 @@ export class CollectiveHawalaService {
       throw new Error("Assignee account not found")
     }
 
+    return {
+      escrowAccountId,
+      assigneeAccountId: assigneeAccounts[0].id,
+    }
+  }
+
+  async payBountyMilestone(input: {
+    demand_post_id: string
+    bounty_id: string
+    milestone_index: number
+    assignee_id: string
+    amount: number
+    milestone_description: string
+    /** Pre-resolved accounts from a preflight check, to avoid re-resolving. */
+    accounts?: { escrowAccountId: string; assigneeAccountId: string }
+  }) {
+    const { escrowAccountId, assigneeAccountId } =
+      input.accounts ??
+      (await this.resolveMilestonePayoutAccounts({
+        demand_post_id: input.demand_post_id,
+        assignee_id: input.assignee_id,
+      }))
+
     const entry = await this.hawalaService.createTransfer({
       debit_account_id: escrowAccountId,
-      credit_account_id: assigneeAccounts[0].id,
+      credit_account_id: assigneeAccountId,
       amount: input.amount,
       entry_type: "TRANSFER",
       description: `Bounty payout: ${input.milestone_description}`,
@@ -307,13 +336,17 @@ export class CollectiveHawalaService {
     milestone_index: number
     proof?: { url?: string; note?: string }
   }) {
-    const completion = await this.demandPoolService.completeBountyMilestone(
-      input.bounty_id,
-      input.milestone_index
-    )
-
+    // Preflight, in this order deliberately. The completion is a committed
+    // atomic UPDATE that no later failure can roll back, so every precondition
+    // for the payout is verified before it runs: the bounty must belong to
+    // THIS pool, it must have an assignee, and both ledger legs must resolve.
+    // Verifying afterwards would leave a failed payout as a bounty marked
+    // complete with an inflated `amount_paid_out` and no money moved — which
+    // also strands the escrowed remainder, since `refundBountyEscrow` only
+    // returns `amount - amount_paid_out`.
     const bounties = await this.demandPoolService.listDemandBounties({
       id: input.bounty_id,
+      demand_post_id: input.demand_post_id,
     })
     if (bounties.length === 0) {
       throw new Error("Bounty not found")
@@ -323,6 +356,17 @@ export class CollectiveHawalaService {
     if (!bounty.assignee_id) {
       throw new Error("Bounty has no assignee to pay")
     }
+
+    const accounts = await this.resolveMilestonePayoutAccounts({
+      demand_post_id: input.demand_post_id,
+      assignee_id: bounty.assignee_id as string,
+    })
+
+    const completion = await this.demandPoolService.completeBountyMilestone(
+      input.bounty_id,
+      input.milestone_index,
+      input.demand_post_id
+    )
 
     const milestones = (bounty.milestones || []) as Array<{
       description: string
@@ -341,6 +385,7 @@ export class CollectiveHawalaService {
       assignee_id: bounty.assignee_id as string,
       amount: completion.payout_amount,
       milestone_description: milestoneDescription,
+      accounts,
     })
 
     if (input.proof) {

@@ -75,6 +75,30 @@ export interface InvestmentPool {
 
 const API_BASE = process.env.NEXT_PUBLIC_MEDUSA_BACKEND_URL || "http://localhost:9000"
 
+/**
+ * One idempotency key per user-initiated money movement.
+ *
+ * The backend derives a fallback key when this header is absent, but an
+ * explicit client key is what makes the retry boundary exact: a transport-level
+ * retry of the same request replays the original operation instead of starting
+ * a second one. Generated per action, never per render.
+ *
+ * Uses `crypto` rather than `Math.random`, matching connect.js's convention.
+ */
+function newIdempotencyKey(): string {
+  if (typeof crypto !== "undefined") {
+    if (typeof crypto.randomUUID === "function") {
+      return crypto.randomUUID()
+    }
+    if (typeof crypto.getRandomValues === "function") {
+      const bytes = crypto.getRandomValues(new Uint8Array(16))
+      return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("")
+    }
+  }
+  // Last resort: the server still derives a deterministic key from the payload.
+  return ""
+}
+
 async function fetchWithAuth(url: string, options: RequestInit = {}) {
   const headers = {
     "Content-Type": "application/json",
@@ -218,6 +242,7 @@ export function useDeposit() {
       setError(null)
       const data = await fetchWithAuth("/store/hawala/deposit", {
         method: "POST",
+        headers: { "Idempotency-Key": newIdempotencyKey() },
         body: JSON.stringify({ bank_account_id: bankAccountId, amount }),
       })
       return data
@@ -242,6 +267,7 @@ export function useWithdraw() {
       setError(null)
       const data = await fetchWithAuth("/store/hawala/withdraw", {
         method: "POST",
+        headers: { "Idempotency-Key": newIdempotencyKey() },
         body: JSON.stringify({ bank_account_id: bankAccountId, amount }),
       })
       return data
@@ -287,6 +313,7 @@ export function useInvestments() {
   const invest = useCallback(async (poolId: string, amount: number) => {
     const data = await fetchWithAuth("/store/hawala/investments", {
       method: "POST",
+      headers: { "Idempotency-Key": newIdempotencyKey() },
       body: JSON.stringify({ pool_id: poolId, amount }),
     })
     await fetchInvestments()
