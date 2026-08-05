@@ -13,9 +13,15 @@
  *        <div data-fbm="chat"></div>
  *        <button data-fbm-buy="prod_123">Buy</button>
  *
+ *      Buyer hub — open demand pools people are trying to fill. Demand-side, so
+ *      it needs no vendor configured and renders on any site:
+ *        <div data-fbm="demand-pools"
+ *             data-fbm-category="grain" data-fbm-region="midwest"></div>
+ *
  *   2. Widgets — render styled UI into a container you choose:
  *        FBM.renderProducts('#shop', { limit: 6 })
  *        FBM.renderBooking('#book', { product: 'prod_123' })
+ *        FBM.renderDemandPools('#hub', { category: 'grain', limit: 6 })
  *
  *   3. Raw API — get enriched data, build your own UI:
  *        const products = await FBM.getProducts()
@@ -255,6 +261,87 @@
     });
   }
 
+  // ---------------------------------------------------------------------------
+  // Buyer hub — open demand pools
+  //
+  // Unlike every other surface here, this one is NOT vendor-scoped. Demand is
+  // posted by buyers, not sellers, so there is no handle to hang it off and no
+  // vendor capability to gate it on. A site can embed the buyer hub without
+  // configuring a vendor at all.
+  // ---------------------------------------------------------------------------
+  function demandPoolUrl(id) {
+    return (
+      stripSlash(storefrontBase()) +
+      "/" +
+      config.region +
+      "/collective/demand-pools/" +
+      encodeURIComponent(id)
+    );
+  }
+
+  function getDemandPools(opts) {
+    opts = opts || {};
+    var params = ["limit=" + (parseInt(opts.limit, 10) || 12)];
+    if (opts.category) params.push("category=" + encodeURIComponent(opts.category));
+    if (opts.region) params.push("delivery_region=" + encodeURIComponent(opts.region));
+    if (opts.minBounty) params.push("min_bounty=" + encodeURIComponent(opts.minBounty));
+    if (opts.sort) params.push("sort_by=" + encodeURIComponent(opts.sort));
+
+    var url = config.api + "/store/collective/demand-pools?" + params.join("&");
+    return fetch(url, { headers: authHeaders(), credentials: "omit" })
+      .then(function (res) {
+        if (!res.ok) throw new Error("FBM: demand pools request failed (" + res.status + ")");
+        return res.json();
+      })
+      .then(function (data) {
+        return ((data && data.demand_pools) || []).map(function (p) {
+          p._url = demandPoolUrl(p.id);
+          return p;
+        });
+      });
+  }
+
+  function demandPoolCard(p) {
+    var committed = Number(p.committed_quantity || 0);
+    var target = Number(p.target_quantity || 0);
+    // Guard the divide: a pool with no target would render NaN%.
+    var pct = target > 0 ? Math.min(100, Math.round((committed / target) * 100)) : 0;
+    var unit = p.unit_of_measure || "units";
+
+    var meta = [p.category, p.delivery_region].filter(Boolean).join(" · ");
+    var bounty = Number(p.total_bounty_amount || 0);
+
+    return (
+      '<a class="fbm-card" href="' + escapeHtml(p._url) + '" target="_blank" rel="noopener">' +
+      '<div class="fbm-card__body">' +
+      '<p class="fbm-card__title">' + escapeHtml(p.title || "Untitled request") + "</p>" +
+      (meta ? '<p class="fbm-card__meta">' + escapeHtml(meta) + "</p>" : "") +
+      '<div class="fbm-pool__bar"><span style="width:' + pct + '%"></span></div>' +
+      '<p class="fbm-card__meta">' +
+      escapeHtml(committed + " of " + target + " " + unit + " committed") +
+      "</p>" +
+      (bounty > 0
+        ? '<p class="fbm-card__price">' + escapeHtml(formatPrice(bounty)) + " bounty</p>"
+        : "") +
+      // Deliberately "Join" rather than anything implying the goods are
+      // secured — a demand pool is a best-effort pledge, not a guaranteed order.
+      '<span class="fbm-cta">Join this request</span>' +
+      "</div></a>"
+    );
+  }
+
+  function renderDemandPools(target, opts) {
+    var node = resolveEl(target);
+    if (!node) return Promise.resolve();
+    opts = opts || {};
+    return renderInto(
+      node,
+      getDemandPools(opts),
+      demandPoolCard,
+      "No open requests right now."
+    );
+  }
+
   function getReviews(handle, opts) {
     var a = normalize(handle, opts);
     var url =
@@ -471,6 +558,8 @@
       ".fbm-card__meta{font-size:13px;color:var(--fbm-muted);margin:0}" +
       ".fbm-card__price{font-weight:600;font-size:14px;margin:2px 0 0}" +
       ".fbm-cta,.fbm-btn{margin-top:auto;display:inline-block;padding:8px 12px;border-radius:8px;background:var(--fbm-accent);color:var(--fbm-accent-fg);font-size:13px;font-weight:600;text-align:center;text-decoration:none;border:0;cursor:pointer}" +
+      ".fbm-pool__bar{height:6px;border-radius:3px;background:var(--fbm-border);overflow:hidden;margin:6px 0}" +
+      ".fbm-pool__bar>span{display:block;height:100%;background:var(--fbm-accent)}" +
       ".fbm-btn[disabled]{opacity:.5;cursor:default}" +
       ".fbm-vendor{display:flex;align-items:center;gap:14px;padding:8px 0}" +
       ".fbm-vendor__avatar{width:56px;height:56px;border-radius:50%;object-fit:cover;background:#f0f0f0}" +
@@ -987,7 +1076,18 @@
     else if (kind === "vendor") renderVendor(node, opts);
     else if (kind === "booking") renderBooking(node, opts);
     else if (kind === "chat") renderChat(node, opts);
+    else if (kind === "demand-pools") renderDemandPools(node, opts);
   }
+
+  /**
+   * Surfaces that do not belong to a vendor.
+   *
+   * Every other kind resolves through `getData(handle)`, which rejects without
+   * a configured vendor. The buyer hub is demand-side, so requiring a vendor
+   * handle would make it un-embeddable on any site that is not a storefront —
+   * which is most of the sites that would want it.
+   */
+  var VENDORLESS_KINDS = { "demand-pools": true };
 
   // ---------------------------------------------------------------------------
   // Zero-JS auto-mount: scan for [data-fbm] elements and render them
@@ -1005,7 +1105,19 @@
         currency: node.getAttribute("data-fbm-currency") || undefined,
         product: node.getAttribute("data-fbm-product") || undefined,
         label: node.getAttribute("data-fbm-label") || undefined,
+        category: node.getAttribute("data-fbm-category") || undefined,
+        region: node.getAttribute("data-fbm-region") || undefined,
+        minBounty: node.getAttribute("data-fbm-min-bounty") || undefined,
+        sort: node.getAttribute("data-fbm-sort") || undefined,
       };
+
+      // A vendorless surface has no capability to look up, and probing for one
+      // would fail outright on a page with no vendor configured.
+      if (VENDORLESS_KINDS[kind]) {
+        renderKind(kind, node, opts);
+        return;
+      }
+
       var capKey = CAP_FOR_KIND[kind];
       getCapabilities(opts.handle).then(function (caps) {
         // Vendor turned this surface off — render nothing.
@@ -1048,6 +1160,7 @@
     getServices: getServices,
     getEvents: getEvents,
     getReviews: getReviews,
+    getDemandPools: getDemandPools,
     getBookingSlots: getBookingSlots,
     createBooking: createBooking,
     startChat: startChat,
@@ -1062,6 +1175,7 @@
     renderServices: renderServices,
     renderEvents: renderEvents,
     renderReviews: renderReviews,
+    renderDemandPools: renderDemandPools,
     renderVendor: renderVendor,
     renderBooking: renderBooking,
     renderChat: renderChat,

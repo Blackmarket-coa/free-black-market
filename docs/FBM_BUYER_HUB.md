@@ -168,8 +168,31 @@ harness for it; that job runs in CI (`test-soak`), not locally.
 **Phase 0 — remediation.** See §2. Gate, not a sequential step.
 
 **Phase 1 — foundational plumbing.** Shared identity/entitlement backbone (§3 — exists).
-Generic non-FBM buyer archetype with sensible defaults (**not built**). Two-surface
-delivery: hosted hub plus embeddable widget following connect.js.
+
+*Two-surface delivery is now in place.* The hosted surface already existed at
+`(main)/collective/demand-pools/{,new,[id]}`; the embeddable one is a new
+`data-fbm="demand-pools"` kind in `storefront/public/connect.js`, added as a kind rather
+than a parallel script so it inherits the existing config, theming, styles and analytics.
+
+One structural difference worth recording: **this is the first vendorless surface.** Every
+other kind resolves through `getData(handle)` → `GET /store/vendors/:handle` and rejects
+without a configured vendor. Demand is posted by buyers, so requiring `data-fbm-vendor`
+would make the buyer hub un-embeddable on any site that is not already a storefront —
+which is most of the sites that would want it. It therefore reads the public
+`GET /store/collective/demand-pools` (which already existed, filtered to PUBLIC +
+OPEN/THRESHOLD_MET), and `autoMount` skips the capability probe for kinds in
+`VENDORLESS_KINDS`. It has no `CAP_FOR_KIND` entry because there is no vendor whose
+capability could gate it.
+
+connect.js had no test coverage at all — it ships from `public/`, outside vitest's `src/**`
+include. `storefront/src/lib/__tests__/connect-demand-pools.spec.ts` evaluates the asset in
+a `vm` with a minimal DOM stub rather than restructuring a shipped file to make it
+importable. It pins the query construction, the divide-by-zero and overshoot cases in the
+progress bar, the empty and failure states, and — most importantly — that buyer-supplied
+pool titles are escaped before reaching `innerHTML`, since that is the only untrusted
+string on the surface.
+
+Still not built: the generic non-FBM buyer archetype with sensible defaults.
 
 **Phase 2 — reputation unification.** Trust earned as a bounty filler, mutual aid helper,
 or group-buy organizer must be one score, not three. The buyer side previously awarded **no

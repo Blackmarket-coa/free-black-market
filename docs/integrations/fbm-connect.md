@@ -179,11 +179,31 @@ The element renders itself and stays in sync with the catalog:
 <div data-fbm="booking" data-fbm-product="prod_…"></div>
 <div data-fbm="chat"></div>
 
+<!-- buyer hub: open demand pools people are trying to fill -->
+<div data-fbm="demand-pools"
+     data-fbm-category="grain"
+     data-fbm-region="midwest"
+     data-fbm-limit="6"></div>
+
 <!-- inline buy button -->
 <button data-fbm-buy data-fbm-product="prod_…">Buy now</button>
 ```
 
 `booking`, `chat`, and analytics require a publishable key (`data-fbm-key`).
+
+**`demand-pools` is the one vendorless surface.** Every other kind resolves through
+`GET /store/vendors/:handle` and needs `data-fbm-vendor`. Demand is posted by buyers, not
+sellers, so the buyer hub reads the public `GET /store/collective/demand-pools` instead and
+renders on any page — including one with no vendor configured at all. It has no entry in
+`CAP_FOR_KIND` for the same reason: there is no vendor whose capability could gate it.
+
+Filters map straight onto that endpoint: `data-fbm-category`, `data-fbm-region`,
+`data-fbm-min-bounty`, `data-fbm-sort` (`attractiveness` | `deadline` | `quantity` |
+`bounty`). Only PUBLIC pools in an OPEN or THRESHOLD_MET state are ever returned.
+
+Copy note: the card's call to action is "Join this request". A demand pool is a best-effort
+pledge backed by escrow, not a guaranteed order, so this surface must never use language
+implying the goods are reserved or secured.
 
 ### Layer 2 — Widgets (styled UI into your container)
 
@@ -193,6 +213,7 @@ FBM.renderDigital("#downloads")
 FBM.renderServices("#services")
 FBM.renderEvents("#events", { limit: 3 })
 FBM.renderReviews("#reviews")
+FBM.renderDemandPools("#hub", { category: "grain", limit: 6 })
 FBM.renderVendor("#profile")
 FBM.renderBooking("#book", { product: "prod_…" })   // alias: FBM.openBooking
 FBM.renderChat("#chat")                               // alias: FBM.openChat
