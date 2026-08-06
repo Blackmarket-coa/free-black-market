@@ -239,9 +239,10 @@ Two design choices worth recording:
 double-count — matching the partial unique index on `(source_module, source_id)` from H6.
 Sellers are skipped throughout; they progress through the Quest Engine.
 
-**Still missing: mutual-aid help.** It has no emitter because it has no module — `request`
-is a generic RFQ model, not a mutual aid system. That emitter is Phase 5 work, not a gap in
-Phase 2.
+**All three modes now emit**, since Phase 5 landed the `mutual-aid` module:
+`mutual_aid.fulfilled` → `progression-mutual-aid-fulfilled.ts` → COALITION XP, the same
+track as the other two. "Reputation carries across modes" is now literally true rather than
+aspirational.
 
 **Phase 3 — buy orders and bounties.** Largely present before this work: storefront pages
 at `(main)/collective/demand-pools/{,new,[id]}`, and the escrow-backed bounty flow in
@@ -317,10 +318,45 @@ if it is unset. With the flag off, a `DONATE` intent is recorded and reported ba
 caller, but the escrow still returns to the buyer — the safe direction to fail in, and the
 API response says so plainly rather than implying the donation happened.
 
-**Phase 5 — mutual aid.** Request/offer matching, reusing Coalition's heatmap/scroll design
-rather than building parallel UI. Inbound aggregation from Mutual Aid Hub and
-rubyforgood/mutual-aid solves the per-city cold-start problem — **only under an actual
-data-sharing agreement** (§5).
+**Phase 5 — mutual aid.** The native half is built; the inbound half is blocked, and that
+split is deliberate.
+
+*Built:* a `mutual-aid` module with requests and offers, geographic matching, and
+`/store/mutual-aid/*` routes. Confirming fulfilment emits `mutual_aid.fulfilled`, and
+`subscribers/progression-mutual-aid-fulfilled.ts` awards COALITION XP — **which completes
+Phase 2**. All three modes (bounty fill, group buy, mutual aid) now land on one character
+sheet, which until now described two.
+
+Three constraints shaped it:
+
+- **Location is split.** `latitude`/`longitude` are precise enough to route a delivery and
+  describe where a person in need actually is. `locality` is a coarse label, and it is the
+  only thing public listings show. `lib/aid-location.ts` does the narrowing, and it is
+  **whitelist-only** — a projection that deleted known-bad fields would start leaking the
+  day someone added a column. Distances are reported as bands, never exact figures:
+  enough exact distances from known points and a household can be trilaterated.
+- **Only the requester confirms fulfilment.** A helper marking their own good deed
+  complete is the self-attestation that makes a reputation score worthless, and this feeds
+  XP directly.
+- **Matching is a guarded first-come claim** (`status = 'OPEN'` predicate). Someone waiting
+  on aid who is told twice that help is coming, and then receives none, is worse off than
+  someone never matched at all.
+
+XP is flat — not scaled by urgency or quantity. Paying more for `URGENT` would create a
+reason to overstate urgency on a board read by people in need, and paying by size would
+rank a large donation above showing up.
+
+*Not built, and not buildable here:* inbound aggregation from Mutual Aid Hub and
+rubyforgood/mutual-aid. §5 requires an actual consent and data-sharing agreement, so this
+is a conversation to have, not code to write. It is also the piece that solves the per-city
+cold-start problem, so the native board above will feel empty until either that agreement
+exists or a community seeds it directly.
+
+*Also worth flagging:* the brief says to reuse "Coalition's mutual-aid heatmap/scroll
+design work already done for Blackout." **No MapLibre, heatmap, or map UI of any kind
+exists in this repository** — like `fbm-vendor-hub-creation-prompt.md`, that work lives
+somewhere this repo cannot see. The module exposes coarse localities and distance bands,
+which is what a heatmap would need; the map itself remains unbuilt.
 
 **Phase 6 — barter as a fulfillment path.** Greenfield: no barter module exists.
 
