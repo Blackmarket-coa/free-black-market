@@ -10,6 +10,10 @@ import type DemandPoolModuleService from "../modules/demand-pool/service"
 import { ParticipantStatus } from "../modules/demand-pool/models/demand-participant"
 import { DemandPostStatus } from "../modules/demand-pool/models/demand-post"
 import { BountyStatus } from "../modules/demand-pool/models/demand-bounty"
+import {
+  requireMutualAidAccountId,
+  shouldRouteToMutualAid,
+} from "../lib/surplus-redirect"
 
 /**
  * Platform's cut of a creator sponsorship, in percent. Unlike order platform
@@ -152,16 +156,42 @@ export class CollectiveHawalaService {
 
     const amount = Number(participant.escrow_amount)
 
-    // Refund from escrow to customer
+    // Where this pledge goes. The participant's recorded choice is only
+    // actioned when the mutual-aid rail is actually open — with the flag unset
+    // a DONATE intent is kept but the money still returns to the buyer, which
+    // is the safe direction to fail in.
+    const routeToMutualAid = shouldRouteToMutualAid(
+      participant.surplus_disposition as string | null
+    )
+
+    // Throws when the rail is open but no destination is configured, rather
+    // than falling back to a platform-held account.
+    const destinationId = routeToMutualAid
+      ? requireMutualAidAccountId()
+      : customerAccounts[0].id
+
+    // Distinct idempotency keys per destination. One escrow must never be able
+    // to produce both a refund and a redirect, and a shared key would make the
+    // second call silently replay the first instead of rejecting it.
+    const idempotencyKey = routeToMutualAid
+      ? `demand-donate-${input.participant_id}`
+      : `demand-release-${input.participant_id}`
+
     const entry = await this.hawalaService.createTransfer({
       debit_account_id: escrowAccountId,
-      credit_account_id: customerAccounts[0].id,
+      credit_account_id: destinationId,
       amount,
-      entry_type: "REFUND",
-      description: `Escrow release for demand pool ${input.demand_post_id}`,
+      // TRANSFER, not a new DONATION type: entry types are validated against
+      // rails by posture-a-guard, and inventing one here would sit outside
+      // that guard's vocabulary. The intent is carried in the description and
+      // the distinct idempotency key.
+      entry_type: routeToMutualAid ? "TRANSFER" : "REFUND",
+      description: routeToMutualAid
+        ? `Surplus redirected to mutual aid for demand pool ${input.demand_post_id}`
+        : `Escrow release for demand pool ${input.demand_post_id}`,
       reference_type: "ORDER",
       reference_id: input.demand_post_id,
-      idempotency_key: `demand-release-${input.participant_id}`,
+      idempotency_key: idempotencyKey,
     })
 
     // Update participant

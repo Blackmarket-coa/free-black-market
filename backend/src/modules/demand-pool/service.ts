@@ -221,6 +221,91 @@ class DemandPoolModuleService extends MedusaService({
     return participant
   }
 
+  /**
+   * Hand a group buy over to a standing order cycle.
+   *
+   * A group buy dissolves once it completes, so recurring demand re-forms from
+   * nothing every time: buyers re-post, re-commit, and re-find a supplier for
+   * something that was always going to repeat. Linking the pool to an order
+   * cycle turns that into a durable relationship — the coordinator's repeating
+   * ordering window — which is the point of having both concepts.
+   *
+   * Only the supplier the buyers actually selected may do this. Letting any
+   * seller attach a cycle would let them capture a buyer group they had no
+   * part in winning, which is the opposite of what the pool's proposal vote
+   * decided.
+   */
+  async linkOrderCycle(
+    demandPostId: string,
+    orderCycleId: string,
+    sellerId: string
+  ) {
+    const posts = await this.listDemandPosts({ id: demandPostId })
+    if (posts.length === 0) {
+      throw new Error("Demand post not found")
+    }
+
+    const post = posts[0]
+    if (!post.selected_supplier_id) {
+      throw new Error(
+        "This demand pool has no selected supplier yet, so it cannot become a standing cycle"
+      )
+    }
+    if (post.selected_supplier_id !== sellerId) {
+      throw new Error("Only the selected supplier can link an order cycle")
+    }
+
+    await this.updateDemandPosts({
+      id: demandPostId,
+      order_cycle_id: orderCycleId,
+    })
+
+    const [updated] = await this.listDemandPosts({ id: demandPostId })
+    return updated
+  }
+
+  /**
+   * Record what a participant wants done with their pledge if the pool does
+   * not complete.
+   *
+   * The only writer of `surplus_disposition`. Nothing else may set it — a
+   * redirect to mutual aid has to be the participant's own explicit act, not
+   * something a pool creator, an archetype, or a prior choice can arrange on
+   * their behalf.
+   *
+   * Reversible right up until the escrow moves. Once released the money is
+   * gone, so REFUNDED is where the choice becomes final; letting someone
+   * "change their mind" after that would be a lie, not a courtesy.
+   */
+  async setSurplusDisposition(
+    demandPostId: string,
+    customerId: string,
+    disposition: "REFUND" | "DONATE"
+  ) {
+    const participants = await this.listDemandParticipants({
+      demand_post_id: demandPostId,
+      customer_id: customerId,
+    })
+    if (participants.length === 0) {
+      throw new Error("Not a participant in this demand pool")
+    }
+
+    const participant = participants[0]
+    if (participant.status === ParticipantStatus.REFUNDED) {
+      throw new Error(
+        "Escrow has already been released; the disposition can no longer be changed"
+      )
+    }
+
+    await this.updateDemandParticipants({
+      id: participant.id,
+      surplus_disposition: disposition,
+    })
+
+    const [updated] = await this.listDemandParticipants({ id: participant.id })
+    return updated
+  }
+
   async withdrawFromPool(demandPostId: string, customerId: string) {
     const participants = await this.listDemandParticipants({
       demand_post_id: demandPostId,

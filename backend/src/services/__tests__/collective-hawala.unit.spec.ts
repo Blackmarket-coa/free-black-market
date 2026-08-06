@@ -306,3 +306,98 @@ describe("completeAndPayMilestone preconditions", () => {
     expect(hawala.transfers).toHaveLength(1)
   })
 })
+
+/**
+ * Surplus redirect at the point the escrow actually moves.
+ *
+ * The guardrail is that redirecting is explicit, opt-in and reversible until
+ * finalization — so the default path must stay a plain refund, and a recorded
+ * DONATE intent must not move money while the compliance rail is closed.
+ */
+describe("releaseParticipantEscrow — surplus disposition", () => {
+  const FLAG = "FBM_SURPLUS_REDIRECT_LIVE"
+  const ACCOUNT = "FBM_MUTUAL_AID_ACCOUNT_ID"
+  const priorFlag = process.env[FLAG]
+  const priorAccount = process.env[ACCOUNT]
+
+  afterEach(() => {
+    if (priorFlag === undefined) delete process.env[FLAG]
+    else process.env[FLAG] = priorFlag
+    if (priorAccount === undefined) delete process.env[ACCOUNT]
+    else process.env[ACCOUNT] = priorAccount
+  })
+
+  const build = (surplus_disposition: string) => {
+    const hawala = makeFakeHawala()
+    const participant = {
+      id: "part_1",
+      demand_post_id: "dp_1",
+      customer_id: "cus_1",
+      escrow_amount: 100,
+      escrow_locked: true,
+      surplus_disposition,
+    }
+    const demandPool: any = makeFakeDemandPool()
+    demandPool.listDemandParticipants = jest.fn(async () => [participant])
+    demandPool.updateDemandParticipants = jest.fn(async () => participant)
+    const svc = new CollectiveHawalaService(hawala as any, demandPool as any)
+    return { hawala, svc }
+  }
+
+  const release = (svc: any) =>
+    svc.releaseParticipantEscrow({
+      demand_post_id: "dp_1",
+      participant_id: "part_1",
+      customer_id: "cus_1",
+    })
+
+  it("refunds to the buyer by default", async () => {
+    const { hawala, svc } = build("REFUND")
+    process.env[FLAG] = "1"
+    process.env[ACCOUNT] = "acc_mutual_aid"
+
+    await release(svc)
+
+    const call = hawala.createTransfer.mock.calls[0][0]
+    expect(call.entry_type).toBe("REFUND")
+    expect(call.credit_account_id).toBe("acct_cus_1")
+    expect(call.idempotency_key).toBe("demand-release-part_1")
+  })
+
+  it("still refunds a DONATE intent while the rail is closed", async () => {
+    const { hawala, svc } = build("DONATE")
+    delete process.env[FLAG]
+    process.env[ACCOUNT] = "acc_mutual_aid"
+
+    await release(svc)
+
+    // Intent recorded, money still returned — the safe direction to fail in.
+    const call = hawala.createTransfer.mock.calls[0][0]
+    expect(call.entry_type).toBe("REFUND")
+    expect(call.credit_account_id).toBe("acct_cus_1")
+  })
+
+  it("routes to the configured account once opted in and open", async () => {
+    const { hawala, svc } = build("DONATE")
+    process.env[FLAG] = "1"
+    process.env[ACCOUNT] = "acc_mutual_aid"
+
+    await release(svc)
+
+    const call = hawala.createTransfer.mock.calls[0][0]
+    expect(call.credit_account_id).toBe("acc_mutual_aid")
+    // A distinct key: one escrow must never yield both a refund and a redirect.
+    expect(call.idempotency_key).toBe("demand-donate-part_1")
+    expect(call.description).toMatch(/mutual aid/i)
+  })
+
+  it("refuses to move money when the rail is open but unconfigured", async () => {
+    const { hawala, svc } = build("DONATE")
+    process.env[FLAG] = "1"
+    delete process.env[ACCOUNT]
+
+    await expect(release(svc)).rejects.toThrow(/FBM_MUTUAL_AID_ACCOUNT_ID/)
+    // Nothing moved — better a loud failure than a quiet misroute.
+    expect(hawala.createTransfer).not.toHaveBeenCalled()
+  })
+})
