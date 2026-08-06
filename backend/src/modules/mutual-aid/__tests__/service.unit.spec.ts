@@ -1,3 +1,4 @@
+import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 import MutualAidModuleService from "../service"
 
 const proto = MutualAidModuleService.prototype as any
@@ -193,5 +194,65 @@ describe("MutualAidModuleService", () => {
         proto.findOffersForRequest.call(ctx, "missing")
       ).rejects.toThrow(/not found/i)
     })
+  })
+})
+
+/**
+ * The resolver itself, exercised rather than stubbed.
+ *
+ * Every other test in this file replaces `resolvePgConnection`, which is
+ * exactly how the original version shipped broken: it read
+ * `__container__["pgConnection"]` by bracket access, which an awilix container
+ * does not answer, so it returned undefined in production and `matchRequest`
+ * silently took the non-atomic fallback. Green unit tests said nothing about
+ * it. These call the real method.
+ */
+describe("resolvePgConnection", () => {
+  const call = (container: unknown) =>
+    proto.resolvePgConnection.call({ __container__: container })
+
+  it("resolves through container.resolve, the way awilix actually exposes it", () => {
+    const conn = { raw: jest.fn() }
+    const container = { resolve: jest.fn(() => conn) }
+
+    expect(call(container)).toBe(conn)
+    // The key must be the framework constant, not a hardcoded guess. It is
+    // "__pg_connection__" — the original code guessed "pgConnection", which
+    // never matches, so the resolver always returned undefined.
+    expect(container.resolve).toHaveBeenCalledWith(
+      ContainerRegistrationKeys.PG_CONNECTION
+    )
+  })
+
+  it("falls back to property access when resolve is absent", () => {
+    const conn = { raw: jest.fn() }
+
+    expect(
+      call({ [ContainerRegistrationKeys.PG_CONNECTION]: conn })
+    ).toBe(conn)
+  })
+
+  it("derives knex from the entity manager when neither is available", () => {
+    const knex = { raw: jest.fn() }
+    const container = {
+      manager: { getConnection: () => ({ getKnex: () => knex }) },
+    }
+
+    expect(call(container)).toBe(knex)
+  })
+
+  it("returns undefined when nothing is reachable, so the fallback can run", () => {
+    expect(call(undefined)).toBeUndefined()
+    expect(call({})).toBeUndefined()
+  })
+
+  it("survives a container whose resolve throws", () => {
+    const container = {
+      resolve: () => {
+        throw new Error("AwilixResolutionError")
+      },
+    }
+
+    expect(call(container)).toBeUndefined()
   })
 })

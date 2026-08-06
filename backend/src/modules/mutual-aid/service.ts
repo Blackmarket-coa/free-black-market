@@ -1,4 +1,4 @@
-import { MedusaService } from "@medusajs/framework/utils"
+import { MedusaService, ContainerRegistrationKeys } from "@medusajs/framework/utils"
 import MutualAidRequest, { AidRequestStatus } from "./models/mutual-aid-request"
 import MutualAidOffer, { AidOfferStatus } from "./models/mutual-aid-offer"
 import { isWithinReach, distanceKm } from "../../lib/aid-location"
@@ -172,20 +172,41 @@ class MutualAidModuleService extends MedusaService({
   }
 
   /**
-   * Resolve a raw pg connection, mirroring the guarded helper in demand-pool.
-   * Returns undefined when none is registered so callers can fall back.
+   * Resolve a raw pg connection, matching `demand-pool`'s helper exactly.
+   *
+   * The shape matters more than it looks. An awilix container exposes its
+   * registrations through `resolve()` (or the cradle proxy), not through plain
+   * property access, and the key is `ContainerRegistrationKeys.PG_CONNECTION`
+   * rather than a hardcoded string. Getting either wrong returns undefined
+   * rather than throwing — so `matchRequest` would quietly fall back to the
+   * non-atomic read-modify-write path and the `status = 'OPEN'` race guard
+   * would never actually run, in production, with unit tests still green
+   * because they stub this method.
+   *
+   * Returns undefined only when nothing is genuinely reachable, which is the
+   * case the fallback exists for.
    */
-  private resolvePgConnection(): { raw: (sql: string, bindings?: unknown[]) => Promise<any> } | undefined {
+  private resolvePgConnection():
+    | { raw: (sql: string, bindings?: any[]) => Promise<any> }
+    | undefined {
+    const container = (this as any).__container__
     try {
-      const container = (this as unknown as { __container__?: Record<string, unknown> })
-        .__container__
-      const conn = container?.["pgConnection"] as
-        | { raw: (sql: string, bindings?: unknown[]) => Promise<any> }
-        | undefined
-      return typeof conn?.raw === "function" ? conn : undefined
+      const pg =
+        container?.resolve?.(ContainerRegistrationKeys.PG_CONNECTION) ??
+        container?.[ContainerRegistrationKeys.PG_CONNECTION]
+      if (pg?.raw) return pg
     } catch {
-      return undefined
+      // fall through
     }
+    try {
+      const em =
+        (this as any).baseRepository_?.getActiveManager?.() ?? container?.manager
+      const knex = em?.getConnection?.()?.getKnex?.()
+      if (knex?.raw) return knex
+    } catch {
+      // no reachable connection
+    }
+    return undefined
   }
 }
 
