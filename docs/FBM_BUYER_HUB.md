@@ -358,7 +358,40 @@ exists in this repository** — like `fbm-vendor-hub-creation-prompt.md`, that w
 somewhere this repo cannot see. The module exposes coarse localities and distance bands,
 which is what a heatmap would need; the map itself remains unbuilt.
 
-**Phase 6 — barter as a fulfillment path.** Greenfield: no barter module exists.
+**Phase 6 — barter as a fulfillment path.** *Built.* The brief lists `barter-search` as an
+existing module to "wire up"; it does not exist, so this is new — a `barter` module with
+`BarterProposal`, plus `/store/collective/demand-pools/:id/barter` to offer a trade and
+`.../barter/:proposalId/accept` for the pool creator to take one.
+
+The mechanic none of the four competitor categories offer: a demand pool exists because
+people want a thing, and whether that want is met with money or a swap is a settlement
+detail. Hard-coding "money" as the only route is what makes every competitor cash-only.
+
+Design notes:
+
+- **`offering` and `wanting` are free text.** Barter is exactly where a taxonomy fails —
+  the point is that someone can offer three hours of plumbing for a chest freezer, and no
+  category tree survives that. Matching is human; the model records the agreement rather
+  than classifying it.
+- **Settlement is a zero-value ledger entry.** A barter is a real event the Phase 7 trail
+  should show, but no money moved, and booking a notional value would corrupt the
+  arithmetic that trail invites people to check. `createTransfer` accepts `0` (it rejects
+  only negative and non-finite amounts), so the entry records the event at zero.
+- **It is not on the GIFT rail, despite GIFT being the natural home** ("non-settling,
+  recorded as zero-value flow for audit"). A rail is a property of the *accounts* and
+  `createTransfer` takes no currency code, so the entry sits on the parties' wallets and
+  carries `intended_rail: "GIFT"` in metadata rather than claiming a rail it is not on.
+  GIFT-denominated accounts would close that gap.
+- **The audit entry is best-effort.** The trade is agreed either way; failing an acceptance
+  because a zero-value audit row did not write would be the wrong trade-off.
+- Acceptance is authorized in the route, since it spans two modules — only the pool's
+  creator may accept a trade fulfilling their pool, and `barter` deliberately knows nothing
+  about demand pools. It is guarded on `status = 'PROPOSED'` so two accepters cannot both
+  believe they struck the deal.
+
+*Not built:* the TrashNothing and hOurworld adapters the brief mentions. Those are
+third-party integrations and fall under the same consent constraint as Phase 5's inbound
+half — an agreement, not a scraper.
 
 **Phase 7 — ledger-backed trust.** *Built*, and only now legitimate to build: §2.3's
 balance-path work had to land first, because advertising a verifiable ledger on top of a

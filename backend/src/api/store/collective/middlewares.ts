@@ -45,6 +45,17 @@ export default defineMiddlewares({
       middlewares: [authenticate("customer", ["bearer", "session"])],
     },
     {
+      // Offering a trade and accepting one both attach to a person.
+      matcher: "/store/collective/demand-pools/:id/barter",
+      method: "POST",
+      middlewares: [authenticate("customer", ["bearer", "session"])],
+    },
+    {
+      matcher: "/store/collective/demand-pools/:id/barter/*/accept",
+      method: "POST",
+      middlewares: [authenticate("customer", ["bearer", "session"])],
+    },
+    {
       // Decides where a buyer's own escrowed pledge goes — must be the
       // authenticated participant, never an anonymous or third-party caller.
       matcher: "/store/collective/demand-pools/:id/surplus-disposition",
