@@ -247,6 +247,7 @@ const collectiveModules = [
   { resolve: './src/modules/bargaining' },
   { resolve: './src/modules/buyer-network' },
   { resolve: './src/modules/collective-campaign' },
+  { resolve: './src/modules/mutual-aid' },
 ]
 
 // Phase 2 discovery layer: Opportunity Engine (§5) + Economic Intelligence
