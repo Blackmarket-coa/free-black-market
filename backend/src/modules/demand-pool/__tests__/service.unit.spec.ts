@@ -462,3 +462,74 @@ describe("setSurplusDisposition", () => {
     ).rejects.toThrow(/not a participant/i)
   })
 })
+
+describe("linkOrderCycle", () => {
+  const makeCtx = (post: any) => ({
+    listDemandPosts: jest.fn(async () => (post ? [post] : [])),
+    updateDemandPosts: jest.fn(async (input: any) => {
+      Object.assign(post, input)
+      return post
+    }),
+  })
+
+  it("links the cycle for the selected supplier", async () => {
+    const post: any = { id: "dp_1", selected_supplier_id: "sel_winner" }
+    const ctx: any = makeCtx(post)
+
+    await DemandPoolModuleService.prototype.linkOrderCycle.call(
+      ctx,
+      "dp_1",
+      "oc_1",
+      "sel_winner"
+    )
+
+    expect(post.order_cycle_id).toBe("oc_1")
+  })
+
+  it("refuses a seller who did not win the pool", async () => {
+    const post: any = { id: "dp_1", selected_supplier_id: "sel_winner" }
+    const ctx: any = makeCtx(post)
+
+    // Otherwise any seller could capture a buyer group they had no part in
+    // winning, overriding what the pool's proposal vote decided.
+    await expect(
+      DemandPoolModuleService.prototype.linkOrderCycle.call(
+        ctx,
+        "dp_1",
+        "oc_1",
+        "sel_interloper"
+      )
+    ).rejects.toThrow(/only the selected supplier/i)
+
+    expect(ctx.updateDemandPosts).not.toHaveBeenCalled()
+  })
+
+  it("refuses a pool that has not selected a supplier yet", async () => {
+    const post: any = { id: "dp_1", selected_supplier_id: null }
+    const ctx: any = makeCtx(post)
+
+    await expect(
+      DemandPoolModuleService.prototype.linkOrderCycle.call(
+        ctx,
+        "dp_1",
+        "oc_1",
+        "sel_1"
+      )
+    ).rejects.toThrow(/no selected supplier/i)
+
+    expect(ctx.updateDemandPosts).not.toHaveBeenCalled()
+  })
+
+  it("404s an unknown pool", async () => {
+    const ctx: any = makeCtx(null)
+
+    await expect(
+      DemandPoolModuleService.prototype.linkOrderCycle.call(
+        ctx,
+        "dp_missing",
+        "oc_1",
+        "sel_1"
+      )
+    ).rejects.toThrow(/not found/i)
+  })
+})

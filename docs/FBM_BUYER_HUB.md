@@ -268,8 +268,25 @@ its creator and says nothing about whether the market could have been served.
 
 **Phase 4 — group buying and order cycles.** Threshold unlock already exists on
 `demand-pool` (`min_quantity` / `committed_quantity`, auto-transition to `THRESHOLD_MET` in
-`joinDemandPool`), and buyer archetypes now supply the ratio. Wiring `order-cycle` as the
-recurring-relationship alternative is still to do.
+`joinDemandPool`), and buyer archetypes now supply the ratio.
+
+*`order-cycle` is now wired as the recurring alternative.* A group buy dissolves once it
+completes, so recurring demand re-forms from nothing every time — buyers re-post,
+re-commit, and re-find a supplier for something that was always going to repeat. An order
+cycle is the durable version of that relationship: a coordinator's repeating ordering
+window. `demand_post.order_cycle_id` is the join, set through
+`POST /vendor/collective/demand-pools/:id/order-cycle`.
+
+Two ownership checks, because two different things could be captured:
+
+- **The demand pool** — only its `selected_supplier_id` may hand it over. Any seller being
+  able to attach a cycle would let them capture a buyer group they had no part in winning,
+  overriding what the pool's proposal vote decided.
+- **The order cycle** — only its `coordinator_seller_id` may attach it, or a seller could
+  point someone else's buyers at a window they do not run.
+
+The cross-module check lives in the route rather than in either service: `demand-pool` and
+`order-cycle` stay independent of one another, and the route is where they compose.
 
 *Surplus disposition is built.* A participant can choose what happens to their pledge if
 the pool does not complete: a plain refund, or a redirect to mutual aid. The guardrail

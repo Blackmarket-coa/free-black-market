@@ -77,6 +77,13 @@ const DemandPost = model.define("demand_post", {
   recurring_rule: model.text().nullable(),
   is_template: model.boolean().default(false),
 
+  /**
+   * Standing order cycle now serving this demand, if the selected supplier
+   * turned the one-off group buy into a recurring relationship. Nullable: a
+   * pool without one behaves exactly as it always has.
+   */
+  order_cycle_id: model.text().nullable(),
+
   // Ecosystem growth-loop linkage
   // A coalition (cooperative) this need/marketing bounty belongs to. Nullable
   // preserves the standalone demand-post behavior.
