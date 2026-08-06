@@ -324,9 +324,34 @@ data-sharing agreement** (§5).
 
 **Phase 6 — barter as a fulfillment path.** Greenfield: no barter module exists.
 
-**Phase 7 — ledger-backed trust.** Surface the Stellar/USDC settlement trail for pooled
-funds. Depends on §2.3 being closed first — do not advertise a "verifiable" ledger built
-on a balance path with known atomicity gaps.
+**Phase 7 — ledger-backed trust.** *Built*, and only now legitimate to build: §2.3's
+balance-path work had to land first, because advertising a verifiable ledger on top of a
+non-atomic balance operation would have been the exact overclaim this feature exists to
+avoid.
+
+`GET /store/collective/demand-pools/:id/ledger` returns the money trail for a pool's
+escrow — every entry in and out, whether each has settled into a Stellar batch, and the
+on-chain anchor (`stellar_tx_hash`, `stellar_ledger_sequence`, `merkle_root`) when it has.
+Nothing new had to be built in the ledger for this: `settlement_batch` already carried the
+anchor fields and `ledger_entry.settlement_batch_id` already pointed at them.
+
+Three decisions worth recording, all in `lib/pool-ledger-trail.ts`:
+
+- **It projects a view, it does not serialize the row.** A ledger entry names both accounts
+  and, through `debit_balance_after` / `credit_balance_after`, the running balance of a
+  private wallet. Account ids, balances-after and idempotency keys are dropped. What the
+  pool did with its money is collective; what any one member holds is not.
+- **Verification status is honest per entry.** `ANCHORED` requires a Stellar tx hash;
+  a batch that exists but has not landed is `SETTLED_PENDING_ANCHOR`; everything else is
+  `UNSETTLED`. Presenting an unsettled entry as verified would recreate the "trust us"
+  position the feature is meant to replace, so the summary counts the three separately.
+- **It is public.** A trail only the pool's own members can read is not much of a trust
+  mechanism — the claim is that an *outsider* can check where pooled money went. Non-PUBLIC
+  pools are excluded, since publishing one would leak the existence and size of a
+  NETWORK_ONLY or INVITE_ONLY buy to anyone who guessed an id.
+
+Totals are signed by direction relative to the escrow account, so `net` should equal the
+escrow balance — that subtraction is the check a reader is meant to be able to redo.
 
 **Phase 8 — inbound connectors.** Pull buy requests and mutual aid needs in from external
 communities where permitted.
