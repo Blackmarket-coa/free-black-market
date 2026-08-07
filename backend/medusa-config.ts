@@ -239,6 +239,7 @@ const communityModules = [
   { resolve: './src/modules/season' },
   { resolve: './src/modules/volunteer' },
   { resolve: './src/modules/food-distribution' },
+  { resolve: './src/modules/cottage-food' },
 ]
 
 // Collective purchasing & bargaining modules

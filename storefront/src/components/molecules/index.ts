@@ -40,6 +40,10 @@ import { ContactSellerButton } from "./ContactSellerButton/ContactSellerButton"
 import { CheckoutProgress } from "./CheckoutProgress/CheckoutProgress"
 import { MobileStickyAddToCart } from "./MobileStickyAddToCart/MobileStickyAddToCart"
 import { MobileLauncher } from "./MobileLauncher/MobileLauncher"
+import {
+  HomeKitchenDisclosure,
+  AllergenChips,
+} from "./HomeKitchenDisclosure/HomeKitchenDisclosure"
 
 // FreeBlackMarket.com Conversion Copy
 export * from "./ConversionCopy"
@@ -92,4 +96,6 @@ export {
   CheckoutProgress,
   MobileStickyAddToCart,
   MobileLauncher,
+  HomeKitchenDisclosure,
+  AllergenChips,
 }

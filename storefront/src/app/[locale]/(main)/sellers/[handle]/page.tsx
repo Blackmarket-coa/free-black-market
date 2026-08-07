@@ -1,7 +1,9 @@
 import { SellerTabs } from "@/components/organisms"
 import { SellerPageHeader } from "@/components/sections"
 import { Breadcrumbs } from "@/components/atoms"
+import { HomeKitchenDisclosure } from "@/components/molecules"
 import { retrieveCustomer } from "@/lib/data/customer"
+import { getHomeKitchenDisclosure } from "@/lib/data/cottage-food"
 import { getRegion } from "@/lib/data/regions"
 import { getSellerByHandle } from "@/lib/data/seller"
 import { SellerProps } from "@/types/seller"
@@ -41,6 +43,10 @@ export default async function SellerPage({
 
   const user = await retrieveCustomer()
 
+  // Null for any seller who isn't a home producer, or who hasn't opted into
+  // publishing a disclosure — the component renders nothing in that case.
+  const homeKitchen = await getHomeKitchenDisclosure(handle)
+
   const currency_code = (await getRegion(locale))?.currency_code || "usd"
 
   const tab = "products"
@@ -61,6 +67,7 @@ export default async function SellerPage({
         <Breadcrumbs items={breadcrumbsItems} />
       </div>
       <SellerPageHeader header seller={seller} user={user} />
+      <HomeKitchenDisclosure data={homeKitchen} className="mt-4" />
       <SellerTabs
         tab={tab}
         seller_id={seller.id}

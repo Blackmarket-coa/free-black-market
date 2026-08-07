@@ -92,10 +92,16 @@ export default function SellPage() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [accountCreated, setAccountCreated] = useState(false)
 
+  // "Cottage food / home kitchen" is the signal that routes a seller into the
+  // cottage-food onboarding step. The other entries describe *what* is sold;
+  // this one describes *where it's made*, which is what changes the permits,
+  // labels, and limits that apply — a person selling prepared meals from a
+  // licensed commissary and one cooking at home have very different paperwork.
   const saleCategories = [
     "Fresh produce",
     "Baked goods",
     "Prepared meals",
+    "Cottage food / home kitchen",
     "Pantry staples",
     "Value-added foods",
     "Community programs",
