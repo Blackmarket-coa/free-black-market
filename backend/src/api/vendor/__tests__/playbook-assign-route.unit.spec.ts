@@ -133,7 +133,13 @@ describe("POST /vendor/playbook/assign", () => {
     )
 
     expect(res.statusCode).toBe(200)
-    expect(res.body).toEqual({ playbook_assignment: row })
+    // `transition` is null on a first assignment (no `from` to record) and
+    // `preflight` is null because no switch is happening.
+    expect(res.body).toEqual({
+      playbook_assignment: row,
+      transition: null,
+      preflight: null,
+    })
     expect(mockWorkflowRun).toHaveBeenCalledWith({
       input: {
         seller_id: "sel_123",
@@ -145,6 +151,8 @@ describe("POST /vendor/playbook/assign", () => {
         },
         recommended_recipe_id: "stall",
         migrated_from: null,
+        reason: null,
+        stranded_listing_count: 0,
       },
     })
   })
@@ -240,6 +248,8 @@ describe("POST /vendor/playbook/assign", () => {
         answers: undefined,
         recommended_recipe_id: undefined,
         migrated_from: null,
+        reason: null,
+        stranded_listing_count: 0,
       },
     })
   })

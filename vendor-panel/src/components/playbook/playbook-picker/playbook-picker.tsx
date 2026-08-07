@@ -13,8 +13,56 @@ import {
   type SizeAnswer,
 } from "./recommend"
 import type { Playbook } from "../../../providers/playbook-provider"
+import { usePlaybookProgressions } from "../../../hooks/api/playbook"
 
 type PickerStep = "size" | "governance" | "offering" | "reveal" | "override"
+
+/**
+ * A one-line note on the reveal step about where this playbook commonly leads.
+ *
+ * Deliberately small and deliberately worded: it names the shapes people move
+ * into later, and says plainly that staying put is normal. The risk with
+ * showing a ladder during onboarding is implying the first rung is the lesser
+ * choice — Stall is not a starter tier, it is a permanent, complete answer.
+ *
+ * Renders nothing at all when there is nothing to say (a terminal playbook, or
+ * a failed fetch). An empty strip beats a spinner in a decision flow.
+ */
+const WhereThisCanLead = ({
+  playbook,
+}: {
+  playbook: Exclude<Playbook, "default">
+}) => {
+  const { data } = usePlaybookProgressions({ from: playbook })
+
+  const names = useMemo(() => {
+    const seen = new Set<string>()
+    for (const edge of data?.progressions ?? []) {
+      seen.add(edge.to_display_name)
+    }
+    return Array.from(seen)
+  }, [data])
+
+  if (!names.length) {
+    return null
+  }
+
+  return (
+    <div className="w-full rounded-lg border border-ui-border-base bg-ui-bg-subtle p-4">
+      <Text size="xsmall" weight="plus" className="text-ui-fg-subtle">
+        Where people go from here
+      </Text>
+      <Text size="xsmall" className="text-ui-fg-subtle mt-1">
+        Some vendors later move into {names.join(", ")} — usually when what they
+        can make, or how many of them there are, outgrows the setup they started
+        with. You can change playbook any time from settings.
+      </Text>
+      <Text size="xsmall" className="text-ui-fg-muted mt-1">
+        Plenty never do, and that's not a smaller way to use FBM.
+      </Text>
+    </div>
+  )
+}
 
 type PlaybookPickerResult = {
   recipe_id: Exclude<Playbook, "default">
@@ -184,6 +232,8 @@ export function PlaybookPicker({ initial, onComplete, onCancel }: PlaybookPicker
               {recommendation.reason}
             </Text>
           </div>
+
+          <WhereThisCanLead playbook={recommendation.playbook} />
 
           <button
             type="button"

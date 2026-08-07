@@ -61,6 +61,10 @@ const makeHarness = (storedExtensions: unknown) => {
   const playbookService = {
     listPlaybooks: async () => [],
     retrievePlaybook: async () => ({ id: "stall" }),
+    // The route reads the current assignment to decide whether a switch is
+    // happening (and so whether to run the listing preflight). No existing
+    // assignment here — these cases exercise a first assignment.
+    listPlaybookAssignments: async () => [],
   }
 
   const makeReq = (body: Record<string, unknown>) => ({

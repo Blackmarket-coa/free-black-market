@@ -28,6 +28,31 @@ const UserGroupIcon = ({ className = "" }: { className?: string }) => (
 
 
 export default function VendorTypesPage() {
+  /**
+   * Where each playbook commonly leads — the vendor-progression graph, keyed by
+   * display name.
+   *
+   * Source of truth is `backend/src/modules/playbook/progressions.ts`; this is
+   * a copy because the rest of this page is hand-written marketing copy rather
+   * than fetched data. `progressions.unit.spec.ts` reads this file and fails if
+   * the two diverge, so it cannot drift silently.
+   *
+   * Hub is absent on purpose: it is the terminal rung of every ladder, so it
+   * leads nowhere further. See `docs/VENDOR_PROGRESSIONS.md`.
+   */
+  const leadsTo: Record<string, string[]> = {
+    Stall: ["Kitchen", "Atelier", "Creator", "Service"],
+    Atelier: ["Workshop", "Commons"],
+    Grove: ["Commons", "Hub"],
+    Workshop: ["Commons", "Hub"],
+    Commons: ["Hub"],
+    Cycle: ["Kitchen", "Hub"],
+    Kitchen: ["Hub"],
+    Harvest: ["Stall", "Cycle", "Grove", "Workshop"],
+    Service: ["Workshop", "Atelier", "Grove"],
+    Creator: ["Stall", "Atelier"],
+  }
+
   const vendorTypes = [
     {
       type: "Stall",
@@ -547,6 +572,18 @@ export default function VendorTypesPage() {
                         ))}
                       </div>
                     </div>
+
+                    {(leadsTo[vendor.type] ?? []).length > 0 ? (
+                      <p className="text-sm text-gray-600 mb-6">
+                        <span className="font-semibold text-gray-900">
+                          Commonly leads to:
+                        </span>{" "}
+                        {(leadsTo[vendor.type] ?? []).join(", ")} — vendors often
+                        move on when what they can make, or how many of them
+                        there are, outgrows the setup they started with. Plenty
+                        never do.
+                      </p>
+                    ) : null}
 
                     <Link
                       href={vendor.link}
