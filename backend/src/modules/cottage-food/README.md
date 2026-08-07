@@ -84,7 +84,8 @@ Weeks start Sunday, the convention US food permits use for "meals per week".
 - `GET` `/vendor/cottage-food/compliance` — the snapshot behind every meter
 - `GET`/`POST` `/vendor/cottage-food/sales` — ledger + off-platform entry
 - `GET`/`POST` `/vendor/cottage-food/labels`, `GET`/`PATCH`/`DELETE` `/labels/[id]`
-- `GET`/`POST` `/vendor/cottage-food/onboarding` — setup status + checklist
+- `GET`/`POST` `/vendor/cottage-food/onboarding` — setup status + checklist,
+  and the endpoint the onboarding wizard's home-kitchen step posts to
 - `GET` `/store/cottage-food/producers/[handle]/disclosure` — buyer-facing;
   returns nothing unless the seller opted in, and withholds the street address
   (usually a home address) unless they explicitly published it
@@ -99,3 +100,20 @@ their own line items.
 The botanical compliance center
 (`/vendor/botanical/compliance/overview`) reads its cottage-food figures from
 this module.
+
+## Registration
+
+A seller ticks "I make it in my home kitchen" under Physical goods in step 1
+of the launch wizard
+(`vendor-panel/src/components/onboarding/launch-wizard.tsx`). That inserts a
+`cottage_food` step before Publish, collecting operation type, jurisdiction,
+permit number, and the label disclosure sentence — all skippable, since
+someone without their permit in hand should still be able to finish
+onboarding.
+
+**The existence of a profile is the home-kitchen flag.** There's no extra
+column on onboarding state, and the wizard stays correct for a seller who set
+things up from the dashboard instead. `cottage_food` is a conditional branch:
+sellers who don't tick the box go step_3 → step_4 exactly as before and never
+see it, so `wizardFunnel()` counts for that step should be read against the
+home-kitchen cohort rather than total signups.
