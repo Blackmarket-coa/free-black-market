@@ -1497,6 +1497,40 @@ export const RouteMap: RouteObject[] = [
               },
             ],
           },
+          {
+            path: "/cottage-food",
+            errorElement: <ErrorBoundary />,
+            handle: {
+              breadcrumb: () => "Cottage food",
+            },
+            children: [
+              {
+                path: "",
+                lazy: () => import("../../routes/cottage-food"),
+              },
+              {
+                path: "profile",
+                lazy: () => import("../../routes/cottage-food/profile"),
+                handle: {
+                  breadcrumb: () => "Profile",
+                },
+              },
+              {
+                path: "sales",
+                lazy: () => import("../../routes/cottage-food/sales"),
+                handle: {
+                  breadcrumb: () => "Sales log",
+                },
+              },
+              {
+                path: "labels",
+                lazy: () => import("../../routes/cottage-food/labels"),
+                handle: {
+                  breadcrumb: () => "Labels",
+                },
+              },
+            ],
+          },
           ...RouteExtensions,
         ],
       },

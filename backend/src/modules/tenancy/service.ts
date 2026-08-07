@@ -253,6 +253,10 @@ class TenancyModuleService extends MedusaService({
 
   /**
    * A10 funnel: counts of onboarding states grouped by wizard_step.
+   *
+   * `cottage_food` is an optional branch only home-kitchen sellers pass
+   * through, so it is never comparable to the other steps as a share of total
+   * signups — read it against that cohort, not the whole funnel.
    */
   async wizardFunnel(): Promise<Record<OnboardingWizardStep, number>> {
     const all = await this.listOnboardingStates({})
@@ -261,6 +265,7 @@ class TenancyModuleService extends MedusaService({
       [OnboardingWizardStep.STEP_1]: 0,
       [OnboardingWizardStep.STEP_2]: 0,
       [OnboardingWizardStep.STEP_3]: 0,
+      [OnboardingWizardStep.COTTAGE_FOOD]: 0,
       [OnboardingWizardStep.STEP_4]: 0,
       [OnboardingWizardStep.PUBLISHED]: 0,
     }
