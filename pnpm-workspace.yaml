@@ -24,6 +24,10 @@ overrides:
   "picomatch": ">=4.0.4"
   "qs": ">=6.14.2"
   "postcss": ">=8.5.18"
+  # CVE-2026-67213: infinite loop in nanoid's customAlphabet. Fixed in the
+  # 3.x line at 3.3.17. Caret-bounded on purpose: a bare ">=3.3.17" lets pnpm
+  # resolve to nanoid 6, which is ESM-only and breaks every CommonJS require.
+  "nanoid@3": "^3.3.17"
   "@mikro-orm/core": "6.6.14"
   "@mikro-orm/cli": "6.6.14"
   "@mikro-orm/knex": "6.6.14"
