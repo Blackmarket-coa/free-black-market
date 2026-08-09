@@ -20,6 +20,8 @@ import {
   defaultFeatureKeysForPlaybook,
   pluginSlugsFrom,
 } from "../../../../shared/extension-keys"
+import { preflightPlaybookSwitch } from "../../../../shared/playbook-preflight"
+import type { PlaybookPreflight } from "../../../../shared/playbook-preflight"
 
 type PostBody = {
   recipe_id?: string
@@ -30,7 +32,15 @@ type PostBody = {
   roles?: string[]
   /** Resources reported in the quiz. */
   resources?: string[]
+  /**
+   * Optional free text for why the vendor is changing playbooks. Recorded on
+   * the transition; never required, and never inferred when absent.
+   */
+  reason?: string
 }
+
+/** Cap on the stored `reason` so a stray paste can't bloat the history table. */
+const MAX_REASON_LENGTH = 2000
 
 const RESOURCE_KEYS = new Set([
   "land",
@@ -202,7 +212,44 @@ export async function POST(
     resources = body.resources
   }
 
+  let reason: string | undefined
+  if (body.reason !== undefined && body.reason !== null) {
+    if (typeof body.reason !== "string") {
+      return res.status(400).json({
+        type: "invalid_data",
+        message: "reason must be a string",
+      })
+    }
+    const trimmed = body.reason.trim()
+    reason = trimmed.length ? trimmed.slice(0, MAX_REASON_LENGTH) : undefined
+  }
+
   try {
+    // Record what the vendor was shown about listings that won't fit the target
+    // playbook. Advisory only — a non-empty result never blocks the switch, and
+    // existing products keep working either way (enforcement is on write).
+    //
+    // Wholly best-effort: refusing to change someone's playbook because we
+    // couldn't count their listings would be absurd, so any failure here
+    // degrades to "not checked" and the assignment proceeds.
+    let preflight: PlaybookPreflight | null = null
+    try {
+      const playbookService = req.scope.resolve<PlaybookService>(PLAYBOOK_MODULE)
+      const [current] = await playbookService.listPlaybookAssignments({
+        seller_id: sellerId,
+      })
+      if (current && current.recipe_id !== body.recipe_id) {
+        preflight = await preflightPlaybookSwitch(req.scope, {
+          sellerId,
+          to: body.recipe_id,
+        })
+      }
+    } catch (preflightError: unknown) {
+      const message =
+        preflightError instanceof Error ? preflightError.message : "unknown"
+      log.warn(`[POST /vendor/playbook/assign] preflight skipped: ${message}`)
+    }
+
     const input: AssignPlaybookInput = {
       seller_id: sellerId,
       recipe_id: body.recipe_id,
@@ -213,6 +260,13 @@ export async function POST(
       // `migrated_from` is server-controlled (set by backfill script);
       // ignore any client-supplied value here.
       migrated_from: null,
+      reason: reason ?? null,
+      // Only meaningful when the check actually ran; an unchecked preflight
+      // stores 0 but the response says `checked: false` so nobody reads the
+      // zero as reassurance.
+      stranded_listing_count: preflight?.checked
+        ? preflight.stranded_listing_count
+        : 0,
     }
 
     // Persist the role set + resources on the assignment (no schema change —
@@ -261,7 +315,12 @@ export async function POST(
       }
     }
 
-    return res.json({ playbook_assignment: result.playbook_assignment })
+    return res.json({
+      playbook_assignment: result.playbook_assignment,
+      /** Null on a first assignment or when the recipe did not change. */
+      transition: (result as { transition?: unknown }).transition ?? null,
+      preflight,
+    })
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Unknown error"
     log.error("[POST /vendor/playbook/assign] Error:", message)

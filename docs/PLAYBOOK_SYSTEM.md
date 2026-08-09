@@ -261,6 +261,32 @@ The migration does **not** touch the Postgres enum on `seller_metadata.vendor_ty
 That column becomes a denormalized read cache populated by a subscriber on
 playbook-assignment events.
 
+## Progressions between playbooks
+
+Playbooks are not only a flat set of options — several are rungs on the same
+ladder. A home cook selling under a cottage-food permit rents time in a shared
+commissary to get past their annual cap, and eventually holds the lease on their
+own kitchen: same person, three playbooks, in order.
+
+`backend/src/modules/playbook/progressions.ts` declares 23 such edges across
+four engines (`facility`, `governance`, `land`, `audience`), each edge marked
+`replace` (the social form changed) or `add_role` (still what you were, plus
+something). `hub` is the only terminal playbook — aggregating other vendors is
+the last move on every ladder.
+
+The `governance` engine is this document read backwards: `member_model`
+(`solo → flat → sociocratic → multi_stakeholder → federation`), the Q1 size
+buckets, and `SIMPLICITY_RANK` already encode the order, and the tie-break rule
+above uses it to pick a *default* rather than to describe a *path*.
+
+Progressions are described, never prescribed — no uninvited prompt, no ranking,
+no badge, and every edge shows what a move would cost as well as what it gains.
+Switching never invalidates an existing product; allowed-listing-types is
+enforced on write, not retroactively.
+
+See `docs/VENDOR_PROGRESSIONS.md` for the full edge table, the surfaces, and the
+non-coercion constraints.
+
 ## Future playbooks
 
 A future v3 may add a further playbook, **Lattice** — a representation-and-

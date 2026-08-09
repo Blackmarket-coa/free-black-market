@@ -60,6 +60,10 @@ const useSettingRoutes = (): INavItem[] => {
         label: "Sales channels",
         to: "/settings/channels",
       },
+      {
+        label: "Playbook",
+        to: "/settings/playbook",
+      },
     ],
     [t]
   )

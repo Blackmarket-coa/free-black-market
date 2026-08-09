@@ -1652,6 +1652,14 @@ export const RouteMap: RouteObject[] = [
             },
           },
           {
+            path: "playbook",
+            errorElement: <ErrorBoundary />,
+            lazy: () => import("../../routes/settings/playbook"),
+            handle: {
+              breadcrumb: () => "Playbook",
+            },
+          },
+          {
             path: "store",
             errorElement: <ErrorBoundary />,
             lazy: () => import("../../routes/store/store-detail"),
