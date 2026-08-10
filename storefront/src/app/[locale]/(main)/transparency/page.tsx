@@ -53,6 +53,47 @@ const NEVER_CHARGED = [
   },
 ]
 
+/**
+ * Pricing commitments. Each states something the code actually enforces —
+ * see `docs/ADDON_COMMITMENTS.md`, which cites the tests behind them.
+ *
+ * Notably absent: a "purchased for life" promise. Add-ons are deliberately
+ * fixed windows rather than lifetime licences, and promising otherwise is how
+ * the lifetime-deal market got where it is.
+ */
+const COMMITMENTS = [
+  {
+    title: "The rate never creeps upward",
+    detail:
+      "Every paid plan charges less than the free tier, never more, and a test asserts the ladder falls as plans get pricier — so upgrading can't quietly raise your take rate. The free tier sits exactly where it always has.",
+  },
+  {
+    title: "Add-ons are windows, not subscriptions",
+    detail:
+      "One purchase buys a fixed number of days. There's no renewal job and nothing charges you again unless you choose to. Buying while a window is open extends it rather than starting a second — you never pay twice for the same days.",
+  },
+  {
+    title: "Nothing you've paid for gets revoked",
+    detail:
+      "Access runs to the end of its window. We won't shorten one, retire a pack out from under an open window, or reprice a purchase already made. If a pack stops being sold, existing windows run out normally.",
+  },
+  {
+    title: "Verification can't be bought",
+    detail:
+      "No plan and no add-on grants or accelerates a verification level or a badge. Paying us more does not make you look more trustworthy to a buyer.",
+  },
+  {
+    title: "Paid tooling never gates the basics",
+    detail:
+      "Selling, listing, getting paid, and your privacy commitments are never behind a plan. Add-ons buy tooling, not permission to trade.",
+  },
+  {
+    title: "Leaving costs nothing",
+    detail:
+      "Export your catalogue and your customer list whenever you want. No exit fee, no notice period, no cooling-off.",
+  },
+]
+
 /** What the fee funds. Vendors are entitled to know what they are buying. */
 const WHAT_THE_FEE_PAYS_FOR = [
   "Hosting, payments infrastructure, and the Stripe Connect payout rail",
@@ -224,6 +265,24 @@ export default async function TransparencyPage() {
               </li>
             ))}
           </ul>
+        </div>
+      </section>
+
+      {/* The promises, not just the prices. */}
+      <section className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 pb-12">
+        <h2 className="text-2xl md:text-3xl font-semibold mb-2">
+          What we commit to
+        </h2>
+        <p className="text-gray-600 mb-6 max-w-3xl">
+          A rate card is only half of it. These are the promises attached to it.
+        </p>
+        <div className="grid gap-4 md:grid-cols-2">
+          {COMMITMENTS.map((item) => (
+            <div key={item.title} className="rounded-xl border p-5">
+              <p className="font-semibold mb-1">{item.title}</p>
+              <p className="text-sm text-gray-600">{item.detail}</p>
+            </div>
+          ))}
         </div>
       </section>
 

@@ -28,6 +28,10 @@ This index organizes project docs by purpose. Start with the repo-root
 - `docs/POSTURE_A_COMPLIANCE.md` — FinCEN payment-facilitator frame; the
   lines that cannot be crossed under v1. Required reading before touching
   money-moving code.
+- `docs/ADDON_COMMITMENTS.md` — what is promised about paid add-ons and the
+  commission, why there is no "purchased for life" charter (the code sells
+  fixed windows, not lifetime licences), and what a lifetime SKU would need
+  before it could ship
 - `docs/FISCAL_SPONSOR_DECISION.md` — fiscal sponsor evaluation and the open
   items before donation disbursement goes live
 - `docs/runbooks/STELLAR_USDC_BRIDGE.md` — Stellar/USDC treasury operations
