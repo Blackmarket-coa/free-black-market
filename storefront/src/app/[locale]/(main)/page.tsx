@@ -287,6 +287,10 @@ export default async function Home({
             <div><span className="font-semibold">Subscriptions & CSA:</span> recurring orders and share management.</div>
             <div><span className="font-semibold">Events & Programs:</span> tickets, rentals, and mission-driven initiatives.</div>
           </div>
+          <div className="mt-5 rounded-xl border border-green-300 bg-white/70 p-4">
+            <p className="font-semibold text-green-900 mb-1">And something no other marketplace does</p>
+            <p className="text-sm text-green-900/80">Selling here builds a documented operating record. Readiness quests turn it into a packet a loan officer, grant committee, or wholesale buyer will accept — FSA farm loans, grants, wholesale accounts, even forming a co-op. <Link href="/quests" className="underline font-medium">See the thirteen quests</Link>.</p>
+          </div>
           <div className="mt-5 flex flex-wrap gap-3">
             <Link href="/what-you-sell" className="rounded-lg bg-green-700 px-4 py-2 text-white text-sm font-medium hover:bg-green-800">See selling models</Link>
             <Link href="/feature-matrix" className="rounded-lg border border-green-300 px-4 py-2 text-green-800 text-sm font-medium hover:bg-green-100">Compare capabilities</Link>
