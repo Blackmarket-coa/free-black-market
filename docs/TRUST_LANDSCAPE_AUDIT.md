@@ -149,9 +149,22 @@ quarterly job `jobs/patronage-refund.ts` (settlement itself deferred).
 Storefront governance UI: none. A grep for `proposals` in `storefront/src` returns only
 demand-pool barter proposals and prose.
 
+**A scoping correction found while building this out, and the most important part of §5:**
+every model in `modules/governance` is keyed by `garden_id` — proposals, votes, delegations,
+comments, roles. Governance is implemented at the **project** level, not the platform level.
+There is no coalition-wide proposal or ballot, and the module cannot express one.
+`cooperative.governance_model` is free text a co-op publishes about itself; nothing enforces
+it.
+
+So the homepage's "Community Governed" badge and `/why-we-exist`'s claim that "Coalitions
+steer platform-level decisions through petitions and proposals" were not merely
+unsurfaced — the second describes a mechanism that does not exist at any layer. Both were
+corrected, and `/governance` now leads with that limit rather than the flattering half.
+
 Separately, `docs/GOVERNANCE.md` documents **repo maintainer** governance — core/area
 maintainers, PR approval, release gating. It is not member governance, and nothing in the
-repo documents member governance. That is a genuine doc gap the analysis did not name.
+repo documented member governance. That is a genuine doc gap the analysis did not name, now
+filled by `docs/MEMBER_GOVERNANCE.md`.
 
 **Action:** a `/governance` page exposing the real mechanics, plus
 `docs/MEMBER_GOVERNANCE.md` cross-linked with the maintainer doc.
@@ -341,10 +354,35 @@ recorded here so it is not mistaken for an oversight.
 
 ---
 
-## What we are doing about it
+## What we did about it
 
-Staged. Stage 0 comes before everything the analysis recommended, because publishing trust
+All four stages shipped. Summary of the surfaces and mechanisms added:
+
+| Area | Now exists |
+|---|---|
+| Fees | `/transparency` with the calculator, plan ladder, a reverse "target profit" solver, and published commitments; `GET /store/fee-schedule` reads the billing catalog so copy cannot drift from what is charged |
+| Verification | `/verification` criteria page; badges rendered on seller pages and vendor cards; `GET /store/sellers/:handle/trust`; `GET /store/verification-criteria`; and the admin write path the system shipped without — decide a check, grant/suspend/revoke a badge |
+| Buyer protection | `/buyer-protection` policy; an `order_claim` type covering never-arrived, not-as-described, damaged and missing items; `GET/POST /store/order-claims` with ownership checks and a 30-day window; a claim form on every order |
+| Governance | `/governance` and `docs/MEMBER_GOVERNANCE.md`, both stating that governance is project-level and that platform rules are not put to a member ballot |
+| KARMA | portal ladder aligned to the ladder that actually pays, with a parity test; `/karma` publishing thresholds, splits, earning rules, and which plans skip you up |
+| Vendor story | `GET /store/sellers/:handle/story`; "Meet the maker" on general seller pages |
+| Quests | `/quests` publishing all thirteen with their gatekeepers, stages, and the plan gate stated in full |
+| Add-ons | `docs/ADDON_COMMITMENTS.md` and a "What we commit to" section on `/transparency` |
+
+Nine unbacked claims were corrected along the way — the escrow promise in three
+places, the import promise on `/sell`, "Every creator is verified" on the
+homepage, "Verified producer" on every product page, the platform-petitions
+claim on `/why-we-exist`, the "Community Governed" badge, and the KARMA split.
+
+**Still open:** the licence question (Finding D) and whether 60 → 72% is the
+right KARMA ladder (Finding A). Both are decisions rather than defects.
+
+## The staged plan as executed
+
+Stage 0 came before everything the analysis recommended, because publishing trust
 artifacts on top of unbacked claims is the failure mode the analysis itself warns about.
+Stage 1c (the admin write path) came before 1b (showing badges) for the same reason:
+displaying a badge nobody could grant would have been theatre.
 
 **Stage 0 — retire the claims the code does not back.** Rewrite the buyer-protection copy
 (Finding B) to describe what actually protects a buyer today; correct the import copy

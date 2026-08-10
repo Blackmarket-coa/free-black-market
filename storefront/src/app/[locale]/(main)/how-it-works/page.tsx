@@ -676,9 +676,9 @@ export default function HowItWorksPage() {
                 bounties, where money is committed before anything ships. A standard order is paid
                 out to the provider on the normal Stripe schedule, so escrow is not what protects
                 you there — the return and claim process is.{" "}
-                <a href="/buyer-protection" className="text-green-700 underline">
+                <Link href="/buyer-protection" className="text-green-700 underline">
                   Read the buyer protection policy
-                </a>
+                </Link>
                 .
               </p>
             </div>
