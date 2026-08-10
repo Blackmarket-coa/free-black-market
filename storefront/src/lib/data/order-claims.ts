@@ -2,19 +2,11 @@
 
 import { medusaFetch } from "../config"
 import { logger } from "../logger"
+import type { OrderClaimReason } from "../constants/order-claims"
 
-/**
- * How long after an order a claim can be filed. Mirrors `CLAIM_WINDOW_DAYS`
- * in `backend/src/api/store/order-claims/route.ts` — the backend enforces it,
- * this copy is for stating it on the policy page before a buyer tries.
- */
-export const CLAIM_WINDOW_DAYS = 30
-
-export type OrderClaimReason =
-  | "not_received"
-  | "not_as_described"
-  | "damaged"
-  | "missing_items"
+// `CLAIM_WINDOW_DAYS` and `CLAIM_REASON_LABELS` live in
+// `lib/constants/order-claims.ts`: a `"use server"` module may export only
+// async functions, so a constant here fails `next build`.
 
 export type OrderClaim = {
   id: string
@@ -28,13 +20,6 @@ export type OrderClaim = {
     evidence_urls?: string[]
     contacted_seller?: boolean
   }
-}
-
-export const CLAIM_REASON_LABELS: Record<OrderClaimReason, string> = {
-  not_received: "It never arrived",
-  not_as_described: "It isn't what was described",
-  damaged: "It arrived damaged",
-  missing_items: "Part of the order is missing",
 }
 
 export async function listOrderClaims(): Promise<OrderClaim[]> {

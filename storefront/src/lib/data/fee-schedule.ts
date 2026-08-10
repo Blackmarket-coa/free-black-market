@@ -2,6 +2,9 @@
 
 import { medusaFetch } from "../config"
 import { logger } from "../logger"
+// Lives in a plain module: a `"use server"` file may export only async
+// functions, so a constant here fails `next build`.
+import { FALLBACK_DEFAULT_FEE_PERCENT } from "../constants/fees"
 
 export type FeeSchedulePlan = {
   code: string
@@ -19,19 +22,6 @@ export type FeeSchedule = {
   default_fee_percent: number
   plans: FeeSchedulePlan[]
 }
-
-/**
- * The rate quoted if the backend is unreachable. Matches
- * `PLATFORM_DEFAULT_FEE_PERCENT` in `backend/src/modules/vendor-plan/catalog.ts`
- * and is asserted against the live route by
- * `src/lib/__tests__/fee-schedule.spec.ts`.
- *
- * A fallback is the right call here rather than hiding the number: the flat fee
- * is the platform's central promise, and a page that renders "we take —%"
- * during a backend blip is worse than one that renders the rate we have charged
- * since launch.
- */
-export const FALLBACK_DEFAULT_FEE_PERCENT = 3
 
 /**
  * Fetch the published commission schedule from `/store/fee-schedule`.

@@ -8,9 +8,9 @@ import { Button } from "@/components/atoms"
 import {
   CLAIM_REASON_LABELS,
   CLAIM_WINDOW_DAYS,
-  fileOrderClaim,
   type OrderClaimReason,
-} from "@/lib/data/order-claims"
+} from "@/lib/constants/order-claims"
+import { fileOrderClaim } from "@/lib/data/order-claims"
 
 const REASONS = Object.keys(CLAIM_REASON_LABELS) as OrderClaimReason[]
 

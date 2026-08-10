@@ -1,7 +1,7 @@
 import type { Metadata } from "next"
 import Link from "next/link"
 
-import { CLAIM_WINDOW_DAYS } from "@/lib/data/order-claims"
+import { CLAIM_WINDOW_DAYS } from "@/lib/constants/order-claims"
 
 export const metadata: Metadata = {
   title: "Buyer Protection | Free Black Market",
