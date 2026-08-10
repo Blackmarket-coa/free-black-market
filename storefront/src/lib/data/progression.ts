@@ -219,3 +219,36 @@ export const redeemXpReward = async (
     }
   }
 }
+
+// ── Public KARMA ladder ──────────────────────────────────────────────────────
+
+export type KarmaTier = {
+  name: string
+  karma_required: number
+  split_pct: number
+  unlocks: string
+  karma_to_next: number | null
+}
+
+export type KarmaLadder = {
+  tiers: KarmaTier[]
+  earning: Array<{ event: string; karma: number; description: string }>
+  plan_floors: Array<{
+    code: string
+    display_name: string
+    grower_tier_floor: string | null
+  }>
+}
+
+/**
+ * The published KARMA ladder. Backs the public `/karma` page.
+ *
+ * Throws on failure rather than degrading: the page is nothing but this data,
+ * and a ladder rendered with no tiers would be worse than an error boundary.
+ */
+export async function getKarmaLadder(): Promise<KarmaLadder> {
+  return medusaFetch<KarmaLadder>("/store/karma-ladder", {
+    method: "GET",
+    next: { revalidate: 3600 },
+  })
+}
