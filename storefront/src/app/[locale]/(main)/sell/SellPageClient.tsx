@@ -5,6 +5,7 @@ import Image from "next/image"
 import Link from "next/link"
 import FeeBreakdown from "@/components/sections/FeeBreakdown"
 import { VENDOR_PANEL_URL } from "@/const"
+import { GITHUB_REPO_URL } from "@/lib/constants/links"
 
 // Inline SVG icons
 const CheckCircleIcon = ({ className = "" }: { className?: string }) => (
@@ -107,15 +108,17 @@ export default function SellPage() {
     "Community programs",
   ]
 
+  // Only list what the vendor panel can actually import today. The backends are
+  // `modules/woocommerce-import`, `modules/odoo-import`, the Printful
+  // fulfilment integration, and `api/vendor/onboarding/import-csv`. Marketplace
+  // sync (`modules/channel-connector`) currently ships one channel, Faire.
   const importChannels = [
-    "Amazon",
-    "Faire",
-    "Etsy",
-    "Shopify",
-    "TikTok Shop",
+    "WooCommerce",
+    "Odoo",
+    "Printful",
     "CSV",
-    "Manual",
-    "Website URL",
+    "Faire",
+    "Manual entry",
   ]
 
   const toggleCategory = (category: string) => {
@@ -274,7 +277,7 @@ export default function SellPage() {
             <div className="bg-white/10 border border-white/20 rounded-xl p-5 mb-8 max-w-2xl">
               <p className="text-green-100 text-sm uppercase tracking-wide font-semibold mb-2">Import-first onboarding</p>
               <p className="text-lg font-semibold mb-2">Already selling somewhere else? Bring your store in 5 minutes.</p>
-              <p className="text-green-200 text-sm">Import from Etsy, Shopify, TikTok Shop, your website, or a CSV and preview before you publish.</p>
+              <p className="text-green-200 text-sm">Import from WooCommerce, Odoo, Printful, Faire, or a CSV and preview before you publish. Etsy, Shopify, Amazon and TikTok Shop are not connected yet — for those, export a CSV and import that.</p>
             </div>
             
             {/* Trust Indicators */}
@@ -295,7 +298,7 @@ export default function SellPage() {
 
             <div className="flex flex-wrap gap-3 mb-8">
               <Link href="/feature-matrix" className="rounded-lg bg-white text-green-900 px-4 py-2 text-sm font-semibold">View feature matrix</Link>
-              <Link href="https://github.com" target="_blank" rel="noopener noreferrer" className="rounded-lg border border-white/40 text-white px-4 py-2 text-sm font-semibold">Open source transparency</Link>
+              <Link href={GITHUB_REPO_URL} target="_blank" rel="noopener noreferrer" className="rounded-lg border border-white/40 text-white px-4 py-2 text-sm font-semibold">Open source transparency</Link>
             </div>
             
             {/* Progressive Signup */}
@@ -355,20 +358,20 @@ export default function SellPage() {
                   <p className="text-green-100 mt-1">Your account is live. Pick where to import from now and publish later.</p>
                 </div>
 
-                <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-2">
+                <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-2">
                   {importChannels.map((channel) => (
-                    <button
+                    <a
                       key={channel}
-                      type="button"
+                      href={`${VENDOR_PANEL_URL}/products/import`}
                       className="bg-white/10 hover:bg-white/20 border border-white/20 rounded-md px-3 py-2 text-sm text-left"
                     >
                       Import from {channel}
-                    </button>
+                    </a>
                   ))}
                 </div>
 
                 <div className="rounded-md bg-white/5 px-4 py-3">
-                  <p className="text-sm text-green-100">Import progress: 3/4 products previewed · Nothing is published until you confirm.</p>
+                  <p className="text-sm text-green-100">Nothing is published until you confirm — every import previews first.</p>
                 </div>
 
                 <div>

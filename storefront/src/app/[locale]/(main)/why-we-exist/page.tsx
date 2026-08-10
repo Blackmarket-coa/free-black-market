@@ -1,6 +1,8 @@
 import type { Metadata } from "next"
 import Link from "next/link"
 
+import { GITHUB_REPO_URL } from "@/lib/constants/links"
+
 export const metadata: Metadata = {
   title: "Why We Exist | Free Black Market",
   description: "Learn why Free Black Market takes 3%, how community governance works, and the market problems this infrastructure solves.",
@@ -70,7 +72,7 @@ export default function WhyWeExistPage() {
           <p className="font-medium text-green-900">Ready to participate?</p>
           <div className="flex flex-wrap gap-3">
             <Link href="/sell" className="px-4 py-2 rounded-lg bg-green-700 text-white text-sm font-medium" data-event="why_we_exist_cta_clicked">Join as a vendor</Link>
-            <Link href="https://github.com" target="_blank" rel="noopener noreferrer" className="px-4 py-2 rounded-lg border border-green-300 text-green-900 text-sm font-medium">Contribute on GitHub</Link>
+            <Link href={GITHUB_REPO_URL} target="_blank" rel="noopener noreferrer" className="px-4 py-2 rounded-lg border border-green-300 text-green-900 text-sm font-medium">Contribute on GitHub</Link>
           </div>
         </div>
       </section>

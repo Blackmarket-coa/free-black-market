@@ -299,8 +299,11 @@ WooCommerce, Odoo, Printful and CSV (`modules/woocommerce-import/`, `modules/odo
 (`vendor-panel/src/routes/products/product-import/product-import.tsx:115`) offers no Etsy,
 Shopify or Amazon option.
 
-Those checkboxes feed `modules/sell-signup` lead capture, so they have a legitimate purpose
-— but the sentence around them reads as a shipped capability.
+Those `importChannels` entries render as "Import from Amazon" buttons with **no click
+handler at all**, next to a hardcoded "Import progress: 3/4 products previewed" line. The
+`sell_signup` model captures `selling` (categories) only — it never stores a channel
+choice. So this is not lead capture with optimistic labelling; it is a mockup rendered as
+if it were live onboarding.
 
 ### D. "Open Source. Community Governed." with no licence
 

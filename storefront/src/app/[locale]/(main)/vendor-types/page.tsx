@@ -428,7 +428,8 @@ export default function VendorTypesPage() {
       icon: "🔒",
       items: [
         { name: "Secure Checkout", description: "Industry-standard payment security" },
-        { name: "Buyer Protection", description: "Payment held until delivery confirmed" },
+        { name: "Return Requests", description: "Buyers can open a return or refund request from any order" },
+        { name: "Escrowed Commitments", description: "Funds held in escrow on collective buys, campaigns, and bounties" },
         { name: "Multiple Payment Methods", description: "Credit cards, digital wallets, and more" },
         { name: "Digital Wallet", description: "Track purchases, investments, and credits" },
         { name: "Easy Refunds", description: "Simple process when things don't work out" },

@@ -1,3 +1,5 @@
+import { GITHUB_REPO_URL } from '@/lib/constants/links'
+
 const links = {
   customerServices: [
     { label: 'Shop by Category', path: '/categories' },
@@ -23,7 +25,7 @@ const links = {
     { label: 'Invest', path: '/invest' },
   ],
   connect: [
-    { label: 'GitHub Transparency', path: 'https://github.com' },
+    { label: 'GitHub Transparency', path: GITHUB_REPO_URL },
     { label: 'TikTok', path: 'https://www.tiktok.com/@blackmarketcoa' },
     { label: 'Instagram', path: 'https://www.instagram.com/blackmarket_coalition' },
   ],

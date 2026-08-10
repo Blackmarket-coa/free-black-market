@@ -19,6 +19,7 @@ import { headers } from "next/headers"
 import Script from "next/script"
 import { Suspense } from "react"
 import { listRegions } from "@/lib/data/regions"
+import { GITHUB_REPO_URL } from "@/lib/constants/links"
 import { toHreflang } from "@/lib/helpers/hreflang"
 
 const vendorTypeCards = [
@@ -363,7 +364,7 @@ export default async function Home({
           <h2 className="text-2xl font-semibold mb-2">Open Source. Community Governed.</h2>
           <p className="text-gray-700 mb-4">Improved onboarding system. Built on scalable open-source infrastructure with public transparency.</p>
           <div className="flex flex-wrap gap-3">
-            <Link href="https://github.com" target="_blank" rel="noopener noreferrer" className="rounded-lg bg-slate-900 px-4 py-2 text-white text-sm" data-event="github_transparency_link_clicked">View GitHub transparency</Link>
+            <Link href={GITHUB_REPO_URL} target="_blank" rel="noopener noreferrer" className="rounded-lg bg-slate-900 px-4 py-2 text-white text-sm" data-event="github_transparency_link_clicked">View GitHub transparency</Link>
             <Link href="/why-we-exist" className="rounded-lg border border-slate-300 px-4 py-2 text-sm">Why we exist</Link>
           </div>
         </div>
