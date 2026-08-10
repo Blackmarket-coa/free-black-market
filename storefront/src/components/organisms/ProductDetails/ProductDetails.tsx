@@ -10,6 +10,7 @@ import {
 
 import { DirectFromProducerMessage, ProductTrustBanner } from "@/components/molecules"
 import { retrieveCustomer } from "@/lib/data/customer"
+import { getSellerTrust } from "@/lib/data/verification"
 import { getUserWishlists } from "@/lib/data/wishlist"
 import {
   selectListingTypePresentation,
@@ -41,6 +42,13 @@ export const ProductDetails = async ({
     const response = await getUserWishlists()
     wishlist = response.wishlists
   }
+
+  // The seller's verification level and badges, for the seller block below.
+  // Null when they have no handle, no record, or the lookup fails — the block
+  // then renders as it did before badges existed.
+  const sellerTrust = product?.seller?.handle
+    ? await getSellerTrust(product.seller.handle)
+    : null
 
   return (
     <div>
@@ -74,7 +82,7 @@ export const ProductDetails = async ({
       <FarmStory productId={product.id} />
       {/* Shipping chrome only applies to listing types that ship */}
       {listingType.showShipping && <ProductDetailsShipping />}
-      <ProductDetailsSeller seller={product?.seller} />
+      <ProductDetailsSeller seller={product?.seller} trust={sellerTrust} />
       <ProductDetailsFooter
         tags={product?.tags || []}
         posted={product?.created_at}

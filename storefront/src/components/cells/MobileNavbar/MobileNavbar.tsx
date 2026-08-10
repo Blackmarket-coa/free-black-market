@@ -13,6 +13,24 @@ import { useRouter } from 'next/navigation';
 import { CmsType, CmsCategory } from '@/lib/data/cms-taxonomy';
 import { cn } from '@/lib/utils';
 
+/**
+ * The pages that answer "can I trust this place?" — what we charge, what
+ * verification actually checks, what happens when an order goes wrong, who
+ * decides platform matters, and how the vendor progression works.
+ *
+ * These previously existed only in the footer. That is a reasonable home for
+ * policy pages, but it makes them findable only by someone who already went
+ * looking, which is the opposite of what a trust signal is for.
+ */
+const TRUST_LINKS = [
+  { href: '/transparency', icon: '💸', label: 'What We Charge' },
+  { href: '/verification', icon: '✅', label: 'How Verification Works' },
+  { href: '/buyer-protection', icon: '🛟', label: 'Buyer Protection' },
+  { href: '/governance', icon: '🗳️', label: 'How Governance Works' },
+  { href: '/karma', icon: '🌱', label: 'The KARMA Ladder' },
+  { href: '/quests', icon: '🧭', label: 'Readiness Quests' },
+]
+
 export const MobileNavbar = ({
   childrenCategories,
   parentCategories,
@@ -186,6 +204,29 @@ export const MobileNavbar = ({
               >
                 <span className="text-lg">✨</span> Learn About Joining
               </LocalizedClientLink>
+            </div>
+          </div>
+
+          {/*
+            Grouped rather than appended to Quick Links above: these answer
+            "can I trust this place?" rather than "where do I shop?", and six
+            more entries on the end of a twelve-item list would bury them.
+          */}
+          <div className='border rounded-lg mb-4 p-4'>
+            <p className='text-xs uppercase tracking-wide text-secondary mb-3'>
+              Trust &amp; transparency
+            </p>
+            <div className='flex flex-col gap-3'>
+              {TRUST_LINKS.map((link) => (
+                <LocalizedClientLink
+                  key={link.href}
+                  href={link.href}
+                  onClick={closeMenuHandler}
+                  className="font-medium text-primary hover:text-green-700 flex items-center gap-2"
+                >
+                  <span className="text-lg">{link.icon}</span> {link.label}
+                </LocalizedClientLink>
+              ))}
             </div>
           </div>
 
