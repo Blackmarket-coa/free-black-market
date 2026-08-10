@@ -2,6 +2,8 @@ import { createLogger } from "../../../shared/logger"
 const log = createLogger("api/store/vendors")
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { VendorType } from "../../../modules/seller-extension/models/seller-metadata"
+import { VENDOR_VERIFICATION_MODULE } from "../../../modules/vendor-verification"
+import type VendorVerificationService from "../../../modules/vendor-verification/service"
 
 /**
  * Archetypes this endpoint fetches through their own dedicated entity query
@@ -761,8 +763,23 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       parsedOffset + parsedLimit
     )
 
+    // Attach the real verification level to the page being returned.
+    //
+    // Every branch above sets a `verified` boolean — from `seller_metadata` in
+    // some cases, hardcoded `false` in others — which is a second, weaker
+    // source of truth than the five-level `vendor_verification` record. A card
+    // reading "Verified" off a metadata flag can disagree with what the seller
+    // page shows, so the level is resolved here and takes precedence.
+    //
+    // Enriched after pagination, in one query for the whole page, so this costs
+    // a single extra read rather than one per vendor in the unpaginated set.
+    const withVerification = await attachVerificationLevels(
+      req,
+      paginatedVendors
+    )
+
     res.json({
-      vendors: paginatedVendors,
+      vendors: withVerification,
       count: filteredVendors.length,
       limit: parsedLimit,
       offset: parsedOffset,
@@ -772,5 +789,60 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       message: "Failed to fetch vendors",
       error: error.message,
     })
+  }
+}
+
+/**
+ * Resolve each vendor's verification level from `vendor_verification`.
+ *
+ * Vendors keyed by `seller_id` where present, falling back to `id` — the
+ * archetype branches above build rows from different entities, and only some
+ * of them carry an explicit seller id.
+ *
+ * Failure is non-fatal: the listing is the point of the endpoint, and a
+ * verification read that errors should downgrade the badge, not 500 the page.
+ */
+async function attachVerificationLevels(
+  req: MedusaRequest,
+  vendors: Array<Record<string, any>>
+): Promise<Array<Record<string, any>>> {
+  if (vendors.length === 0) return vendors
+
+  try {
+    const service = req.scope.resolve<VendorVerificationService>(
+      VENDOR_VERIFICATION_MODULE
+    )
+
+    const sellerIds = Array.from(
+      new Set(
+        vendors
+          .map((v) => v.seller_id || v.id)
+          .filter((id): id is string => typeof id === "string")
+      )
+    )
+
+    const records = await service.listVendorVerifications({
+      seller_id: sellerIds,
+    })
+
+    const levelBySeller = new Map(
+      records.map((record) => [record.seller_id, record.level])
+    )
+
+    return vendors.map((vendor) => {
+      const level = levelBySeller.get(vendor.seller_id || vendor.id)
+      if (!level) return vendor
+      return {
+        ...vendor,
+        verification_level: level,
+        // Only the reviewed levels count as verified to a buyer.
+        // SELF_REPORTED means the seller told us, not that we checked.
+        verified: ["VERIFIED", "AUDITED", "CERTIFIED"].includes(level),
+      }
+    })
+  } catch (err) {
+    log.warn("Could not attach verification levels:", err)
+
+return vendors
   }
 }

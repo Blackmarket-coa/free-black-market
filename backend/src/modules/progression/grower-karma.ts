@@ -34,6 +34,26 @@ export const GROWER_KARMA_DELTAS: Record<GrowerKarmaEventType, number> = {
   seasonal_deadline_met: 20,
 }
 
+/**
+ * The KARMA ladder — **the source of truth for what growers are actually paid.**
+ *
+ * `split_pct` is the grower's share of a node sale. `effectiveGrowerTier` reads
+ * this table, and `modules/payout-breakdown/grower-payout.ts` posts the result
+ * as a real `COMMISSION` transfer. A number changed here changes money.
+ *
+ * The 60 → 72% ladder is deliberate and confirmed, not a placeholder. It was
+ * briefly ambiguous: `packages/bmc-portal-kit/src/tiers.ts` carried a second,
+ * higher ladder (Ancestor at 1000 KARMA / 85%) whose header wrongly asserted the
+ * two agreed. `KarmaBar` renders that ladder, so growers on the nursery portal
+ * were shown a threshold they would not be promoted at and a split nobody would
+ * pay. The portal now mirrors this table.
+ *
+ * **Changing the ladder:** edit here first, then mirror into
+ * `packages/bmc-portal-kit/src/tiers.ts` (percentages there, fractions here) —
+ * `tiers.parity.spec.ts` parses this table and fails if they diverge. Note that
+ * a raise applies to every future payout immediately, and that the public
+ * `/karma` page and `GET /store/karma-ladder` publish these numbers.
+ */
 export const GROWER_TIERS = {
   Seedling: { min: 0, split_pct: 0.6 },
   Sprout: { min: 50, split_pct: 0.62 },

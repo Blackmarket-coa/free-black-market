@@ -19,6 +19,7 @@ import { headers } from "next/headers"
 import Script from "next/script"
 import { Suspense } from "react"
 import { listRegions } from "@/lib/data/regions"
+import { GITHUB_REPO_URL } from "@/lib/constants/links"
 import { toHreflang } from "@/lib/helpers/hreflang"
 
 const vendorTypeCards = [
@@ -193,7 +194,7 @@ export default async function Home({
         variant="mission"
         image="/images/hero/Image.jpg"
         heading="Buy direct from real people. Sell on your own terms. Build community wealth."
-        paragraph="Free Black Market is community-owned commerce for goods, services, local food and CSA, creators, and mutual aid. Shoppers buy directly from verified makers — no middlemen, no markups. Vendors launch fast and keep 97% of every sale, with a flat 3% coalition fee and no listing, monthly, or processing fees passed to you."
+        paragraph="Free Black Market is community-owned commerce for goods, services, local food and CSA, creators, and mutual aid. Shoppers buy directly from makers whose identity and practices we verify — no middlemen, no markups. Vendors launch fast and keep 97% of every sale, with a flat 3% coalition fee and no listing, monthly, or processing fees passed to you."
         buttons={[
           {
             label: "Explore the Marketplace",
@@ -286,6 +287,10 @@ export default async function Home({
             <div><span className="font-semibold">Subscriptions & CSA:</span> recurring orders and share management.</div>
             <div><span className="font-semibold">Events & Programs:</span> tickets, rentals, and mission-driven initiatives.</div>
           </div>
+          <div className="mt-5 rounded-xl border border-green-300 bg-white/70 p-4">
+            <p className="font-semibold text-green-900 mb-1">And something no other marketplace does</p>
+            <p className="text-sm text-green-900/80">Selling here builds a documented operating record. Readiness quests turn it into a packet a loan officer, grant committee, or wholesale buyer will accept — FSA farm loans, grants, wholesale accounts, even forming a co-op. <Link href="/quests" className="underline font-medium">See the thirteen quests</Link>.</p>
+          </div>
           <div className="mt-5 flex flex-wrap gap-3">
             <Link href="/what-you-sell" className="rounded-lg bg-green-700 px-4 py-2 text-white text-sm font-medium hover:bg-green-800">See selling models</Link>
             <Link href="/feature-matrix" className="rounded-lg border border-green-300 px-4 py-2 text-green-800 text-sm font-medium hover:bg-green-100">Compare capabilities</Link>
@@ -328,7 +333,10 @@ export default async function Home({
             <summary className="cursor-pointer font-medium text-gray-900">How this compares to typical channels</summary>
             <p className="text-sm text-gray-700 mt-2">Etsy, Shopify, Amazon, and delivery apps stack listing fees, monthly subscriptions, ad spend, and fulfillment charges — often 15–30% all-in. Our model stays simple: one transparent 3% coalition fee. Settle through our internal ledger (Coalition Credits) to move value between members with no card processing cost — an internal payment processor is coming soon.</p>
           </details>
-          <Link href="/sell" className="text-green-700 font-medium underline">See this in the vendor onboarding guide</Link>
+          <div className="flex flex-wrap gap-4">
+            <Link href="/transparency" className="text-green-700 font-medium underline">See the full fee breakdown and comparison</Link>
+            <Link href="/sell" className="text-green-700 font-medium underline">See this in the vendor onboarding guide</Link>
+          </div>
         </div>
       </section>
 
@@ -360,10 +368,11 @@ export default async function Home({
 
       <section className="px-4 lg:px-8 w-full">
         <div className="rounded-2xl border border-slate-300 bg-slate-50 p-6 md:p-8">
-          <h2 className="text-2xl font-semibold mb-2">Open Source. Community Governed.</h2>
-          <p className="text-gray-700 mb-4">Improved onboarding system. Built on scalable open-source infrastructure with public transparency.</p>
+          <h2 className="text-2xl font-semibold mb-2">Public code. Community governed where it counts.</h2>
+          <p className="text-gray-700 mb-4">Every line of the platform is readable — how commission is calculated, how verification is granted, how surplus is shared. Gardens and community projects run real votes on their own decisions. Platform-level rules are not put to a member ballot today, and we say so on the governance page rather than letting a badge imply otherwise.</p>
           <div className="flex flex-wrap gap-3">
-            <Link href="https://github.com" target="_blank" rel="noopener noreferrer" className="rounded-lg bg-slate-900 px-4 py-2 text-white text-sm" data-event="github_transparency_link_clicked">View GitHub transparency</Link>
+            <Link href={GITHUB_REPO_URL} target="_blank" rel="noopener noreferrer" className="rounded-lg bg-slate-900 px-4 py-2 text-white text-sm" data-event="github_transparency_link_clicked">View GitHub transparency</Link>
+            <Link href="/governance" className="rounded-lg border border-slate-300 px-4 py-2 text-sm">How governance works</Link>
             <Link href="/why-we-exist" className="rounded-lg border border-slate-300 px-4 py-2 text-sm">Why we exist</Link>
           </div>
         </div>

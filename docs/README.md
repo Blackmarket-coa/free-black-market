@@ -28,6 +28,10 @@ This index organizes project docs by purpose. Start with the repo-root
 - `docs/POSTURE_A_COMPLIANCE.md` — FinCEN payment-facilitator frame; the
   lines that cannot be crossed under v1. Required reading before touching
   money-moving code.
+- `docs/ADDON_COMMITMENTS.md` — what is promised about paid add-ons and the
+  commission, why there is no "purchased for life" charter (the code sells
+  fixed windows, not lifetime licences), and what a lifetime SKU would need
+  before it could ship
 - `docs/FISCAL_SPONSOR_DECISION.md` — fiscal sponsor evaluation and the open
   items before donation disbursement goes live
 - `docs/runbooks/STELLAR_USDC_BRIDGE.md` — Stellar/USDC treasury operations
@@ -144,6 +148,9 @@ Start with the whitepaper; the rest are phase-specific deep dives.
 
 ## Surface Audits
 
+- `docs/TRUST_LANDSCAPE_AUDIT.md` — the 2026 marketplace-trust competitive
+  analysis checked claim-by-claim against the codebase, plus the staged plan
+  for the gaps it found (and the three it missed)
 - `docs/ADMIN_PRODUCTS_DISPLAY_REVIEW.md`
 - `docs/VENDOR_PANEL_PRODUCTS_DISPLAY_REVIEW.md`
 - `docs/STOREFRONT_PRODUCTS_DISPLAY_REVIEW.md`
@@ -160,7 +167,11 @@ Start with the whitepaper; the rest are phase-specific deep dives.
 
 ## Governance & Process
 
-- `docs/GOVERNANCE.md`
+- `docs/GOVERNANCE.md` — maintainer governance (roles, decision process, PR
+  and release gating)
+- `docs/MEMBER_GOVERNANCE.md` — how members decide things: garden/project
+  proposals and voting, cooperative self-declaration, patronage, and an
+  explicit account of what platform-level governance does *not* do yet
 - `docs/MAINTAINER_TRIAGE_SOP.md`
 - `docs/PROJECT_OPERATING_SYSTEM.md` — project board, cadence, KPIs
 - `CONTRIBUTING.md` (repo root)

@@ -163,8 +163,8 @@ export const MOCK_PAYOUTS: PayoutsData = {
   current_period: {
     units_sold: 86,
     gross_cents: 412000,
-    split_pct: 73,
-    net_cents: 300760,
+    split_pct: 62,
+    net_cents: 255440,
     next_payment_date: "2026-07-05",
   },
   tier: "sprout",
@@ -176,17 +176,17 @@ export const MOCK_PAYOUTS: PayoutsData = {
     { id: "ke_4", type: "hub_request_filled", karma: 8, at: "2026-06-08T00:00:00Z", description: "Filled Hub elderberry cutting request." },
   ],
   history: [
-    { id: "p_05", month: "2026-05", units_sold: 78, gross_cents: 366000, split_pct: 73, net_cents: 267180, paid_at: "2026-06-05", transfer_ref: "ach_5f2a" },
-    { id: "p_04", month: "2026-04", units_sold: 64, gross_cents: 298000, split_pct: 70, net_cents: 208600, paid_at: "2026-05-05", transfer_ref: "ach_4b18" },
-    { id: "p_03", month: "2026-03", units_sold: 51, gross_cents: 233000, split_pct: 70, net_cents: 163100, paid_at: "2026-04-05", transfer_ref: "ach_3c77" },
+    { id: "p_05", month: "2026-05", units_sold: 78, gross_cents: 366000, split_pct: 62, net_cents: 226920, paid_at: "2026-06-05", transfer_ref: "ach_5f2a" },
+    { id: "p_04", month: "2026-04", units_sold: 64, gross_cents: 298000, split_pct: 60, net_cents: 178800, paid_at: "2026-05-05", transfer_ref: "ach_4b18" },
+    { id: "p_03", month: "2026-03", units_sold: 51, gross_cents: 233000, split_pct: 60, net_cents: 139800, paid_at: "2026-04-05", transfer_ref: "ach_3c77" },
   ],
   split_breakdown: [
-    { product_name: "Pineapple guava 1gal", units: 28, gross_cents: 154000, your_cut_cents: 112420 },
-    { product_name: "Rosemary 4in", units: 40, gross_cents: 96000, your_cut_cents: 70080 },
-    { product_name: "Banana 2gal", units: 12, gross_cents: 88000, your_cut_cents: 64240 },
-    { product_name: "Mulberry 1gal", units: 6, gross_cents: 74000, your_cut_cents: 54020 },
+    { product_name: "Pineapple guava 1gal", units: 28, gross_cents: 154000, your_cut_cents: 95480 },
+    { product_name: "Rosemary 4in", units: 40, gross_cents: 96000, your_cut_cents: 59520 },
+    { product_name: "Banana 2gal", units: 12, gross_cents: 88000, your_cut_cents: 54560 },
+    { product_name: "Mulberry 1gal", units: 6, gross_cents: 74000, your_cut_cents: 45880 },
   ],
-  earnings_ytd_cents: 939640,
+  earnings_ytd_cents: 800960,
   w9_required: true,
 }
 
@@ -294,12 +294,12 @@ export const MOCK_LISTINGS: ListingsData = {
 
 export const MOCK_ANALYTICS: AnalyticsSummary = {
   revenue_by_month: [
-    { month: "2026-01", gross_cents: 118000, net_cents: 82600, fees_cents: 35400, units: 26 },
-    { month: "2026-02", gross_cents: 146000, net_cents: 102200, fees_cents: 43800, units: 31 },
-    { month: "2026-03", gross_cents: 233000, net_cents: 163100, fees_cents: 69900, units: 51 },
-    { month: "2026-04", gross_cents: 298000, net_cents: 208600, fees_cents: 89400, units: 64 },
-    { month: "2026-05", gross_cents: 366000, net_cents: 267180, fees_cents: 98820, units: 78 },
-    { month: "2026-06", gross_cents: 412000, net_cents: 300760, fees_cents: 111240, units: 86 },
+    { month: "2026-01", gross_cents: 118000, net_cents: 70800, fees_cents: 47200, units: 26 },
+    { month: "2026-02", gross_cents: 146000, net_cents: 87600, fees_cents: 58400, units: 31 },
+    { month: "2026-03", gross_cents: 233000, net_cents: 139800, fees_cents: 93200, units: 51 },
+    { month: "2026-04", gross_cents: 298000, net_cents: 178800, fees_cents: 119200, units: 64 },
+    { month: "2026-05", gross_cents: 366000, net_cents: 226920, fees_cents: 139080, units: 78 },
+    { month: "2026-06", gross_cents: 412000, net_cents: 255440, fees_cents: 156560, units: 86 },
   ],
   method_success: [
     { method: "cutting", batches: 9, qty_started: 340, qty_successful: 261 },

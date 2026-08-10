@@ -84,7 +84,7 @@ export default function HowItWorksPage() {
     {
       number: "3",
       title: "Purchase with Confidence",
-      description: "Secure checkout with buyer protection. Your payment is held until delivery is confirmed.",
+      description: "Secure Stripe checkout, an itemised receipt, and a return request you can open from any order page if something arrives wrong or never arrives.",
     },
     {
       number: "4",
@@ -666,9 +666,20 @@ export default function HowItWorksPage() {
                 What if something goes wrong with my order?
               </h3>
               <p className="text-gray-600">
-                We have buyer protection. If your order doesn&apos;t arrive or isn&apos;t as described,
-                we&apos;ll step in to make it right. Payments are held until delivery is confirmed,
-                protecting both buyers and honest providers.
+                Message the provider first — most problems are a shipping delay or a mix-up, and
+                they can fix it fastest. If that doesn&apos;t resolve it, open a return request from
+                the order page and we&apos;ll review it. You also keep your card issuer&apos;s
+                dispute rights on every purchase.
+              </p>
+              <p className="text-gray-600 mt-2">
+                Funds are held in escrow on collective buys, crowdfunding campaigns and creator
+                bounties, where money is committed before anything ships. A standard order is paid
+                out to the provider on the normal Stripe schedule, so escrow is not what protects
+                you there — the return and claim process is.{" "}
+                <Link href="/buyer-protection" className="text-green-700 underline">
+                  Read the buyer protection policy
+                </Link>
+                .
               </p>
             </div>
 

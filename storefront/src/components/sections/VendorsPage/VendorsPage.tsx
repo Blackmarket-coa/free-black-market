@@ -8,6 +8,19 @@ import { useSearchParams } from "next/navigation"
 import useUpdateSearchParams from "@/hooks/useUpdateSearchParams"
 import { LocationIcon, SearchIcon, ForwardIcon, LeafIcon } from "@/icons"
 
+/**
+ * Card labels per verification level.
+ *
+ * SELF_REPORTED and UNVERIFIED are deliberately absent: the backend only marks
+ * the reviewed levels as verified, and a chip reading "Self-reported" would
+ * present an unchecked claim as a credential.
+ */
+const VERIFICATION_CHIP_LABELS: Record<string, string> = {
+  VERIFIED: "Verified",
+  AUDITED: "Audited",
+  CERTIFIED: "Certified",
+}
+
 const VENDOR_TYPE_OPTIONS = [
   { value: "", label: "All Vendors" },
   { value: "producer", label: "Growers & Producers" },
@@ -72,6 +85,8 @@ interface Vendor {
   certifications?: any[]
   featured?: boolean
   verified?: boolean
+  /** Level granted by review. See `/verification` for what each one means. */
+  verification_level?: string
   distance?: number | null
   profile_url: string
   year_established?: number
@@ -409,9 +424,14 @@ function VendorCard({
               Featured
             </span>
           )}
-          {vendor.verified && (
+          {/*
+            Labelled with the level the reviewer actually granted, not a bare
+            "Verified", so a card cannot claim more than the seller page shows.
+            Falls back to the boolean for vendors with no verification record.
+          */}
+          {(vendor.verification_level || vendor.verified) && (
             <span className="bg-green-600 text-white text-xs font-medium px-2 py-0.5 rounded">
-              Verified
+              {VERIFICATION_CHIP_LABELS[vendor.verification_level ?? ""] ?? "Verified"}
             </span>
           )}
         </div>

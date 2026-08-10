@@ -1,6 +1,7 @@
 import LocalizedClientLink from "@/components/molecules/LocalizedLink/LocalizedLink"
 import { BugReportButton } from "@/components/molecules/BugReportButton/BugReportButton"
 import footerLinks from "@/data/footerLinks"
+import { GITHUB_REPO_URL } from "@/lib/constants/links"
 
 // Client component for copyright year to prevent hydration mismatch
 function CopyrightYear() {
@@ -86,7 +87,7 @@ export function Footer() {
         <p className="font-semibold mb-1">Open Source. Community Governed.</p>
         <p className="mb-2">Improved onboarding system with transparent public roadmap and code.</p>
         <a
-          href="https://github.com"
+          href={GITHUB_REPO_URL}
           target="_blank"
           rel="noopener noreferrer"
           className="underline hover:text-action"

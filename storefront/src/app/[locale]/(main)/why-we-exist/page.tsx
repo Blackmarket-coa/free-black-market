@@ -1,6 +1,8 @@
 import type { Metadata } from "next"
 import Link from "next/link"
 
+import { GITHUB_REPO_URL } from "@/lib/constants/links"
+
 export const metadata: Metadata = {
   title: "Why We Exist | Free Black Market",
   description: "Learn why Free Black Market takes 3%, how community governance works, and the market problems this infrastructure solves.",
@@ -21,10 +23,12 @@ export default function WhyWeExistPage() {
         <article className="rounded-2xl border p-6">
           <h2 className="text-xl font-semibold mb-2">Why 3%</h2>
           <p className="text-sm text-gray-700">A flat coalition fee keeps costs understandable. Vendors keep 97% of each sale — no listing, monthly, or payment processing fees passed to them. Settle through our internal ledger (Coalition Credits) and an internal payment processor, coming soon, to keep even more value inside the community.</p>
+          <Link href="/transparency" className="text-sm text-green-700 font-medium underline mt-3 inline-block">See the full fee breakdown</Link>
         </article>
         <article className="rounded-2xl border p-6">
           <h2 className="text-xl font-semibold mb-2">Why community governance</h2>
-          <p className="text-sm text-gray-700">Platform rules should be accountable to the people using the system. Coalitions steer platform-level decisions through petitions and proposals — and because the code is open source, any community that disagrees with the direction has the ultimate exit right: fork it and run it themselves.</p>
+          <p className="text-sm text-gray-700">Platform rules should be accountable to the people using the system. Gardens and community projects already run real votes on their own decisions — proposals, quorum, one-member-one-vote by default. Platform-level rules are not yet put to a member ballot; what holds us accountable there is that the code is public, so any community that disagrees with the direction can run it themselves.</p>
+          <Link href="/governance" className="text-sm text-green-700 font-medium underline mt-3 inline-block">How governance works</Link>
         </article>
         <article className="rounded-2xl border p-6">
           <h2 className="text-xl font-semibold mb-2">What problem we solve</h2>
@@ -70,7 +74,7 @@ export default function WhyWeExistPage() {
           <p className="font-medium text-green-900">Ready to participate?</p>
           <div className="flex flex-wrap gap-3">
             <Link href="/sell" className="px-4 py-2 rounded-lg bg-green-700 text-white text-sm font-medium" data-event="why_we_exist_cta_clicked">Join as a vendor</Link>
-            <Link href="https://github.com" target="_blank" rel="noopener noreferrer" className="px-4 py-2 rounded-lg border border-green-300 text-green-900 text-sm font-medium">Contribute on GitHub</Link>
+            <Link href={GITHUB_REPO_URL} target="_blank" rel="noopener noreferrer" className="px-4 py-2 rounded-lg border border-green-300 text-green-900 text-sm font-medium">Contribute on GitHub</Link>
           </div>
         </div>
       </section>

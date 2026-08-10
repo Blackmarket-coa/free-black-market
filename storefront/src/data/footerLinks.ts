@@ -1,3 +1,5 @@
+import { GITHUB_REPO_URL } from '@/lib/constants/links'
+
 const links = {
   customerServices: [
     { label: 'Shop by Category', path: '/categories' },
@@ -8,10 +10,16 @@ const links = {
     { label: 'Feature Matrix', path: '/feature-matrix' },
     { label: 'Community Donations', path: '/donations' },
     { label: 'Returns', path: '/user/returns' },
+    { label: 'Buyer Protection', path: '/buyer-protection' },
   ],
   about: [
     { label: 'About Us', path: 'https://www.blackmarketcoa.com' },
     { label: 'How It Works', path: '/how-it-works' },
+    { label: 'Fee Transparency', path: '/transparency' },
+    { label: 'How Verification Works', path: '/verification' },
+    { label: 'The KARMA Ladder', path: '/karma' },
+    { label: 'How Governance Works', path: '/governance' },
+    { label: 'Readiness Quests', path: '/quests' },
     { label: 'Vendor Types & Features', path: '/vendor-types' },
     { label: 'What Are You Selling?', path: '/what-you-sell' },
     { label: 'Feature Matrix', path: '/feature-matrix' },
@@ -23,7 +31,7 @@ const links = {
     { label: 'Invest', path: '/invest' },
   ],
   connect: [
-    { label: 'GitHub Transparency', path: 'https://github.com' },
+    { label: 'GitHub Transparency', path: GITHUB_REPO_URL },
     { label: 'TikTok', path: 'https://www.tiktok.com/@blackmarketcoa' },
     { label: 'Instagram', path: 'https://www.instagram.com/blackmarket_coalition' },
   ],

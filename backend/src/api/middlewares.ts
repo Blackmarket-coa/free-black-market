@@ -677,6 +677,17 @@ export default defineMiddlewares({
       ],
     },
     {
+      // The published commission schedule. Read-only, no seller-specific data,
+      // and deliberately as open as the catalog: the whole point of the page it
+      // backs is that anyone can check our take rate without an account.
+      matcher: "/store/fee-schedule",
+      middlewares: [
+        trustProxyMiddleware,
+        publicStoreCorsMiddleware,
+        publicCatalogRateLimiter,
+      ],
+    },
+    {
       // Keyless fallback stays public + IP rate-limited. When a connect.js
       // publishable key IS present, optionalEmbedKey validates it and enforces
       // the vendor's connect_domains origin allow-list (401/403 on failure).
@@ -712,6 +723,12 @@ export default defineMiddlewares({
       // Verified-purchase reviews — require a logged-in customer.
       matcher: "/store/reviews",
       method: "POST",
+      middlewares: [authenticate("customer", ["bearer", "session"])],
+    },
+    {
+      // Order claims are read and written against a customer's own orders, so
+      // the actor must be resolved before the handler checks order ownership.
+      matcher: "/store/order-claims",
       middlewares: [authenticate("customer", ["bearer", "session"])],
     },
     // ============================================================
