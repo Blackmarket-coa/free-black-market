@@ -299,9 +299,11 @@ follower, so the guard lives on that side and runs under `pnpm portals:test`. Th
 The nursery-portal fixtures were recomputed at the real rates so the mocks stop teaching
 unreachable numbers.
 
-**Still open, deliberately:** whether 60 → 72% is the right ladder. Aligning display to
-payment is a bug fix; raising the split is a revenue decision and belongs to the backend
-ladder, not to the portal.
+**Confirmed:** 60 → 72% is the intended ladder — Seedling 60, Sprout 62, Root 65, Canopy 68,
+Ancestor 72, with Ancestor at 1500 KARMA. So the portal was simply wrong rather than ahead of
+a pending decision, and nothing further is owed to growers who saw the higher figure. Both
+files now carry that in their comments, so the next person to read them finds a settled
+number rather than an invitation to change it.
 
 ### B. Live copy promises buyer protection the checkout does not implement
 
@@ -374,8 +376,9 @@ places, the import promise on `/sell`, "Every creator is verified" on the
 homepage, "Verified producer" on every product page, the platform-petitions
 claim on `/why-we-exist`, the "Community Governed" badge, and the KARMA split.
 
-**Still open:** the licence question (Finding D) and whether 60 → 72% is the
-right KARMA ladder (Finding A). Both are decisions rather than defects.
+**Still open:** the licence question (Finding D) — a decision rather than a defect. The
+KARMA ladder (Finding A) has since been confirmed at 60 → 72%, which is where the code
+already sits.
 
 ## The staged plan as executed
 
@@ -401,8 +404,9 @@ on vendor cards, seller pages and product pages; the missing admin verification 
 catalog with the plan gate stated; add-on commitment charter matching the 30-day-window
 design.
 
-Open decisions carried into Stage 2: the correct KARMA numbers (Finding A) and the
-licensing question (Finding D).
+Open decisions carried into Stage 2 were the correct KARMA numbers (Finding A) and the
+licensing question (Finding D). The ladder has since been confirmed at 60 → 72%; licensing
+remains open.
 
 ---
 

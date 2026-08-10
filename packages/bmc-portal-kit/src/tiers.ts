@@ -18,9 +18,9 @@
 // `tiers.parity.spec.ts` now reads the backend ladder and fails on divergence.
 // Change the backend first, then mirror it here.
 //
-// OPEN PRODUCT QUESTION: whether 60 → 72% is the right ladder at all is
-// undecided. These values match what is paid today; raising them is a revenue
-// decision, not a bug fix, and should be made on the backend side.
+// The 60 → 72% ladder is confirmed, not provisional — these are the intended
+// rates, and they match what is paid. Changing them is a revenue decision: make
+// it in `grower-karma.ts` first, then mirror here.
 //
 // `unlocks` is display copy; the ladder fields (key/name/icon/karma_required/
 // split_pct/color) are the contract. If a portal ever needs its own `unlocks`
