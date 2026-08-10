@@ -34,8 +34,14 @@ paths = [
   '''.*/test/.*\.(spec|test)\.(ts|tsx|js)$''',
   '''.*\.(spec|test)\.(ts|tsx|js)$''',
   # CI workflows reference deterministic placeholder pub keys for the
-  # compose-stack e2e + perf jobs (pk_e2e_publishable_placeholder etc.).
-  '''.*/\.github/workflows/.*\.ya?ml$''',
+  # compose-stack e2e + perf jobs (pk_e2e_publishable_placeholder etc.), plus
+  # `test-*` / `ci-*` JWT and cookie secrets for the integration-test jobs.
+  #
+  # The `(^|.*/)` prefix is load-bearing. A bare `.*/` requires a slash before
+  # `.github`, so it matches `sub/.github/workflows/x.yml` but never
+  # `.github/workflows/ci.yml` — which is the only place these files actually
+  # live. This allowlist silently did nothing until that was fixed.
+  '''(^|.*/)\.github/workflows/.*\.ya?ml$''',
 ]
 
 regexes = [
