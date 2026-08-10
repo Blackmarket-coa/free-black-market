@@ -144,6 +144,9 @@ Start with the whitepaper; the rest are phase-specific deep dives.
 
 ## Surface Audits
 
+- `docs/TRUST_LANDSCAPE_AUDIT.md` — the 2026 marketplace-trust competitive
+  analysis checked claim-by-claim against the codebase, plus the staged plan
+  for the gaps it found (and the three it missed)
 - `docs/ADMIN_PRODUCTS_DISPLAY_REVIEW.md`
 - `docs/VENDOR_PANEL_PRODUCTS_DISPLAY_REVIEW.md`
 - `docs/STOREFRONT_PRODUCTS_DISPLAY_REVIEW.md`
@@ -160,7 +163,9 @@ Start with the whitepaper; the rest are phase-specific deep dives.
 
 ## Governance & Process
 
-- `docs/GOVERNANCE.md`
+- `docs/GOVERNANCE.md` — maintainer governance (roles, decision process, PR
+  and release gating). Member/cooperative governance is a separate concern and
+  is not yet documented; see `docs/TRUST_LANDSCAPE_AUDIT.md` §5.
 - `docs/MAINTAINER_TRIAGE_SOP.md`
 - `docs/PROJECT_OPERATING_SYSTEM.md` — project board, cadence, KPIs
 - `CONTRIBUTING.md` (repo root)
