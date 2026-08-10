@@ -23,6 +23,7 @@ export default function WhyWeExistPage() {
         <article className="rounded-2xl border p-6">
           <h2 className="text-xl font-semibold mb-2">Why 3%</h2>
           <p className="text-sm text-gray-700">A flat coalition fee keeps costs understandable. Vendors keep 97% of each sale — no listing, monthly, or payment processing fees passed to them. Settle through our internal ledger (Coalition Credits) and an internal payment processor, coming soon, to keep even more value inside the community.</p>
+          <Link href="/transparency" className="text-sm text-green-700 font-medium underline mt-3 inline-block">See the full fee breakdown</Link>
         </article>
         <article className="rounded-2xl border p-6">
           <h2 className="text-xl font-semibold mb-2">Why community governance</h2>

@@ -677,6 +677,17 @@ export default defineMiddlewares({
       ],
     },
     {
+      // The published commission schedule. Read-only, no seller-specific data,
+      // and deliberately as open as the catalog: the whole point of the page it
+      // backs is that anyone can check our take rate without an account.
+      matcher: "/store/fee-schedule",
+      middlewares: [
+        trustProxyMiddleware,
+        publicStoreCorsMiddleware,
+        publicCatalogRateLimiter,
+      ],
+    },
+    {
       // Keyless fallback stays public + IP rate-limited. When a connect.js
       // publishable key IS present, optionalEmbedKey validates it and enforces
       // the vendor's connect_domains origin allow-list (401/403 on failure).

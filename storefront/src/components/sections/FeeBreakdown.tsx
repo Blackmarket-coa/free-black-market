@@ -21,25 +21,16 @@ type Platform = {
   verdict: string
 }
 
-const platforms: Platform[] = [
-  {
-    name: "BMC",
-    color: "#2D8B4E",
-    icon: "🌿",
-    calcFees: (price) => {
-      const commission = price * 0.03
-      return { commission, processing: 0, ads: 0, fulfillment: 0, listing: 0, other: 0, total: commission }
-    },
-    breakdown: [
-      "3% marketplace commission",
-      "No payment processing fees passed to you",
-      "No listing fees",
-      "No mandatory ads",
-      "No monthly subscription",
-      "Internal ledger settlement (Coalition Credits) — internal processor coming soon",
-    ],
-    verdict: "COOPERATIVE",
-  },
+/**
+ * Competitor fee models. These are published rate cards, not live API reads —
+ * they are as accurate as the last time someone checked them, which is why the
+ * page that renders this component dates them.
+ *
+ * Our own row is the exception and is built separately by `buildPlatforms()`
+ * from the rate the backend actually charges, so the one number we are
+ * accountable for cannot drift from the billing catalog.
+ */
+const competitorPlatforms: Platform[] = [
   {
     name: "Shopify",
     color: "#96BF48",
@@ -158,23 +149,114 @@ const platforms: Platform[] = [
   },
 ]
 
-export default function FeeBreakdown() {
+/**
+ * Build the platform list with our own row driven by `feePercent` — the rate
+ * served by `/store/fee-schedule`, which reads the same catalog that charges
+ * vendors. Callers that cannot reach the backend pass the documented fallback.
+ */
+export function buildPlatforms(feePercent: number): Platform[] {
+  const rate = feePercent / 100
+  return [
+    {
+      name: "BMC",
+      color: "#2D8B4E",
+      icon: "🌿",
+      calcFees: (price) => {
+        const commission = price * rate
+        return { commission, processing: 0, ads: 0, fulfillment: 0, listing: 0, other: 0, total: commission }
+      },
+      breakdown: [
+        `${feePercent}% marketplace commission`,
+        "No payment processing fees passed to you",
+        "No listing fees",
+        "No mandatory ads",
+        "No monthly subscription",
+        "Internal ledger settlement (Coalition Credits) — internal processor coming soon",
+      ],
+      verdict: "COOPERATIVE",
+    },
+    ...competitorPlatforms,
+  ]
+}
+
+/**
+ * Invert a fee model: what must a vendor list an item at to take home `target`?
+ *
+ * Solved by bisection rather than algebraically because the models are not all
+ * linear — Amazon's FBA fee steps at $50, Faire adds a flat new-customer fee —
+ * and a closed form per platform would be six chances to get the arithmetic
+ * wrong. 60 iterations over a $0–$100k bracket converges far below a cent.
+ *
+ * Returns null when no price in the bracket clears the target, which happens
+ * for a platform whose fees grow at least as fast as the price.
+ */
+export function priceForTargetTakeHome(
+  platform: Platform,
+  target: number
+): number | null {
+  let low = 0
+  let high = 100_000
+
+  const takeHome = (price: number) => price - platform.calcFees(price).total
+
+  if (takeHome(high) < target) return null
+
+  for (let i = 0; i < 60; i++) {
+    const mid = (low + high) / 2
+    if (takeHome(mid) < target) {
+      low = mid
+    } else {
+      high = mid
+    }
+  }
+  return high
+}
+
+type FeeBreakdownProps = {
+  /**
+   * Platform commission as a percentage. Defaults to 3 so existing call sites
+   * keep working, but pages should pass the value from `getFeeSchedule()`.
+   */
+  feePercent?: number
+}
+
+export default function FeeBreakdown({ feePercent = 3 }: FeeBreakdownProps) {
+  const [mode, setMode] = useState<"forward" | "target">("forward")
   const [salePrice, setSalePrice] = useState(50)
+  const [targetTakeHome, setTargetTakeHome] = useState(50)
   const [selectedPlatform, setSelectedPlatform] = useState<string | null>(null)
+
+  const platforms = buildPlatforms(feePercent)
 
   const results = platforms
     .map((platform) => {
-      const fees = platform.calcFees(salePrice)
-      const youKeep = salePrice - fees.total
-      const effectiveRate = (fees.total / salePrice) * 100
-      return { ...platform, fees, youKeep, effectiveRate }
+      // In target mode each platform is priced at whatever it takes to clear
+      // the same take-home, so the comparison is "what must I charge?" rather
+      // than "what am I left with?".
+      const price =
+        mode === "target"
+          ? priceForTargetTakeHome(platform, targetTakeHome)
+          : salePrice
+
+      if (price === null) {
+        return { ...platform, fees: null, price: null, youKeep: null, effectiveRate: null }
+      }
+
+      const fees = platform.calcFees(price)
+      return {
+        ...platform,
+        fees,
+        price,
+        youKeep: price - fees.total,
+        effectiveRate: price > 0 ? (fees.total / price) * 100 : 0,
+      }
     })
-    .sort((a, b) => a.fees.total - b.fees.total)
+    .sort((a, b) => (a.fees?.total ?? Infinity) - (b.fees?.total ?? Infinity))
 
   const bmcResult = results.find((result) => result.name === "BMC")
-  const maxFees = Math.max(...results.map((result) => result.fees.total))
+  const maxFees = Math.max(...results.map((result) => result.fees?.total ?? 0))
 
-  if (!bmcResult) {
+  if (!bmcResult || !bmcResult.fees) {
     return null
   }
 
@@ -187,20 +269,96 @@ export default function FeeBreakdown() {
           <p style={{ color: "#888", fontSize: 15, margin: 0 }}>Fee breakdown on a single sale across 7 platforms</p>
         </div>
 
+        <div style={{ display: "flex", gap: 8, marginBottom: 16, justifyContent: "center" }}>
+          {(
+            [
+              { key: "forward", label: "I charge this…" },
+              { key: "target", label: "I want to keep this…" },
+            ] as const
+          ).map((option) => (
+            <button
+              key={option.key}
+              type="button"
+              onClick={() => setMode(option.key)}
+              style={{
+                background: mode === option.key ? "#2D8B4E" : "#151515",
+                color: mode === option.key ? "#fff" : "#888",
+                border: `1px solid ${mode === option.key ? "#2D8B4E" : "#222"}`,
+                borderRadius: 999,
+                padding: "8px 18px",
+                fontSize: 13,
+                fontWeight: 700,
+                cursor: "pointer",
+              }}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+
         <div style={{ background: "#151515", borderRadius: 16, padding: "20px 24px", marginBottom: 24, border: "1px solid #222" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-            <span style={{ color: "#888", fontSize: 13, fontWeight: 600 }}>SALE PRICE</span>
-            <span style={{ fontSize: 36, fontWeight: 800, color: "#fff" }}>${salePrice}</span>
+            <span style={{ color: "#888", fontSize: 13, fontWeight: 600 }}>
+              {mode === "forward" ? "SALE PRICE" : "TAKE-HOME PER SALE"}
+            </span>
+            <span style={{ fontSize: 36, fontWeight: 800, color: "#fff" }}>
+              ${mode === "forward" ? salePrice : targetTakeHome}
+            </span>
           </div>
-          <input type="range" min={10} max={200} value={salePrice} onChange={(e) => setSalePrice(Number(e.target.value))} style={{ width: "100%", accentColor: "#2D8B4E", height: 6, cursor: "pointer" }} />
+          {mode === "forward" ? (
+            <input
+              type="range"
+              min={10}
+              max={200}
+              value={salePrice}
+              aria-label="Sale price"
+              onChange={(e) => setSalePrice(Number(e.target.value))}
+              style={{ width: "100%", accentColor: "#2D8B4E", height: 6, cursor: "pointer" }}
+            />
+          ) : (
+            <input
+              type="range"
+              min={10}
+              max={200}
+              value={targetTakeHome}
+              aria-label="Target take-home per sale"
+              onChange={(e) => setTargetTakeHome(Number(e.target.value))}
+              style={{ width: "100%", accentColor: "#2D8B4E", height: 6, cursor: "pointer" }}
+            />
+          )}
+          <p style={{ color: "#666", fontSize: 12, margin: "10px 0 0" }}>
+            {mode === "forward"
+              ? "What each platform takes out of that price, and what reaches you."
+              : "What you would have to list the item at on each platform to end up with that much."}
+          </p>
         </div>
 
         <div style={{ display: "grid", gap: 12 }}>
           {results.map((result) => {
             const isBmc = result.name === "BMC"
-            const savings = result.name !== "BMC" ? result.fees.total - bmcResult.fees.total : 0
-            const barWidth = maxFees > 0 ? (result.fees.total / maxFees) * 100 : 0
             const isSelected = selectedPlatform === result.name
+
+            if (!result.fees || result.price === null) {
+              return (
+                <div
+                  key={result.name}
+                  style={{ background: "#151515", borderRadius: 14, padding: "16px 20px", border: "1px solid #222" }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <span style={{ fontSize: 24 }}>{result.icon}</span>
+                    <div>
+                      <div style={{ fontWeight: 700, fontSize: 16, color: "#fff" }}>{result.name}</div>
+                      <div style={{ fontSize: 12, color: "#FF4444" }}>
+                        No listed price reaches this take-home on this platform.
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )
+            }
+
+            const savings = isBmc ? 0 : result.fees.total - bmcResult.fees!.total
+            const barWidth = maxFees > 0 ? (result.fees.total / maxFees) * 100 : 0
 
             return (
               <div
@@ -234,7 +392,10 @@ export default function FeeBreakdown() {
 
                 <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12 }}>
                   <span style={{ color: "#888" }}>
-                    You keep: <span style={{ color: isBmc ? "#2D8B4E" : "#fff", fontWeight: 700 }}>${result.youKeep.toFixed(2)}</span>
+                    {mode === "forward" ? "You keep: " : "List it at: "}
+                    <span style={{ color: isBmc ? "#2D8B4E" : "#fff", fontWeight: 700 }}>
+                      ${(mode === "forward" ? result.youKeep! : result.price).toFixed(2)}
+                    </span>
                   </span>
                   {!isBmc && savings > 0 && <span style={{ color: "#FF4444", fontWeight: 600 }}>−${savings.toFixed(2)} vs BMC</span>}
                 </div>

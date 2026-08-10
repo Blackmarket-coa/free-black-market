@@ -1,6 +1,1 @@
-export { 
-  PriceTransparencyWidget, 
-  WhereYourMoneyGoes, 
-  PriceComparison,
-  default 
-} from "./PriceTransparency"
+export { WhereYourMoneyGoes } from "./PriceTransparency"

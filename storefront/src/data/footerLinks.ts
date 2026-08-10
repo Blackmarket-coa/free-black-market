@@ -14,6 +14,7 @@ const links = {
   about: [
     { label: 'About Us', path: 'https://www.blackmarketcoa.com' },
     { label: 'How It Works', path: '/how-it-works' },
+    { label: 'Fee Transparency', path: '/transparency' },
     { label: 'Vendor Types & Features', path: '/vendor-types' },
     { label: 'What Are You Selling?', path: '/what-you-sell' },
     { label: 'Feature Matrix', path: '/feature-matrix' },

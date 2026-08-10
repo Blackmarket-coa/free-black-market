@@ -329,7 +329,10 @@ export default async function Home({
             <summary className="cursor-pointer font-medium text-gray-900">How this compares to typical channels</summary>
             <p className="text-sm text-gray-700 mt-2">Etsy, Shopify, Amazon, and delivery apps stack listing fees, monthly subscriptions, ad spend, and fulfillment charges — often 15–30% all-in. Our model stays simple: one transparent 3% coalition fee. Settle through our internal ledger (Coalition Credits) to move value between members with no card processing cost — an internal payment processor is coming soon.</p>
           </details>
-          <Link href="/sell" className="text-green-700 font-medium underline">See this in the vendor onboarding guide</Link>
+          <div className="flex flex-wrap gap-4">
+            <Link href="/transparency" className="text-green-700 font-medium underline">See the full fee breakdown and comparison</Link>
+            <Link href="/sell" className="text-green-700 font-medium underline">See this in the vendor onboarding guide</Link>
+          </div>
         </div>
       </section>
 
