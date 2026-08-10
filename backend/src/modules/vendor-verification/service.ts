@@ -397,6 +397,54 @@ class VendorVerificationService extends MedusaService({
   }
   
   /**
+   * Suspend or revoke a granted badge (admin action).
+   *
+   * The counterpart to `grantBadge`. Without it a badge could be granted but
+   * never withdrawn, which would make the whole system unsafe to display:
+   * a certification that lapses, or one granted on documentation that later
+   * turns out to be false, has to be removable.
+   *
+   * SUSPENDED is the reversible state (`grantBadge` reactivates it); REVOKED is
+   * the permanent one. Both stop the badge appearing to buyers, because
+   * `getActiveBadges` filters on ACTIVE.
+   */
+  async setBadgeStatus(
+    badgeId: string,
+    status: BadgeStatus.ACTIVE | BadgeStatus.SUSPENDED | BadgeStatus.REVOKED,
+    actor: { changed_by: string; reason?: string }
+  ) {
+    const badge = await this.retrieveVendorBadge(badgeId)
+
+    const updated = await this.updateVendorBadges({
+      id: badgeId,
+      status,
+      granted_by: actor.changed_by,
+      granted_at: status === BadgeStatus.ACTIVE ? new Date() : badge.granted_at,
+      metadata: {
+        ...((badge.metadata as Record<string, unknown>) ?? {}),
+        last_status_change: {
+          from: badge.status,
+          to: status,
+          by: actor.changed_by,
+          reason: actor.reason ?? null,
+          at: new Date().toISOString(),
+        },
+      },
+    })
+
+    emitMetric("vendor.verification.badge_status_changed", {
+      badge_id: badgeId,
+      seller_id: badge.seller_id,
+      badge_type: badge.badge_type,
+      from: badge.status,
+      to: status,
+      changed_by: actor.changed_by,
+    })
+
+    return updated
+  }
+
+  /**
    * Get all active badges for a seller
    */
   async getActiveBadges(sellerId: string) {
