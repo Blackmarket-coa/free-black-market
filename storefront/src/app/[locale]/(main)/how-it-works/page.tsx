@@ -675,7 +675,11 @@ export default function HowItWorksPage() {
                 Funds are held in escrow on collective buys, crowdfunding campaigns and creator
                 bounties, where money is committed before anything ships. A standard order is paid
                 out to the provider on the normal Stripe schedule, so escrow is not what protects
-                you there — the return and dispute process is.
+                you there — the return and claim process is.{" "}
+                <a href="/buyer-protection" className="text-green-700 underline">
+                  Read the buyer protection policy
+                </a>
+                .
               </p>
             </div>
 

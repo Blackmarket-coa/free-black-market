@@ -725,6 +725,12 @@ export default defineMiddlewares({
       method: "POST",
       middlewares: [authenticate("customer", ["bearer", "session"])],
     },
+    {
+      // Order claims are read and written against a customer's own orders, so
+      // the actor must be resolved before the handler checks order ownership.
+      matcher: "/store/order-claims",
+      middlewares: [authenticate("customer", ["bearer", "session"])],
+    },
     // ============================================================
     // CSRF: reject forged cross-site, cookie-authenticated writes
     // ============================================================

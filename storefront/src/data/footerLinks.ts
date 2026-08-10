@@ -10,6 +10,7 @@ const links = {
     { label: 'Feature Matrix', path: '/feature-matrix' },
     { label: 'Community Donations', path: '/donations' },
     { label: 'Returns', path: '/user/returns' },
+    { label: 'Buyer Protection', path: '/buyer-protection' },
   ],
   about: [
     { label: 'About Us', path: 'https://www.blackmarketcoa.com' },

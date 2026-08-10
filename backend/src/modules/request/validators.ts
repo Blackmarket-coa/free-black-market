@@ -20,7 +20,29 @@ export const REQUEST_TYPES = {
   PRODUCT_CHANGE: "product_change",
   REVIEW_REMOVAL: "review_removal",
   RETURN_REQUEST: "return_request",
+  /**
+   * A buyer reporting that an order never arrived, arrived damaged, or was not
+   * what was described.
+   *
+   * Distinct from RETURN_REQUEST, which routes through Medusa's returns flow
+   * and presupposes the item is in the buyer's hands. An item that never
+   * arrived cannot be returned, so the platform previously had no path for the
+   * most common buyer complaint at all — while three public pages promised
+   * "we'll step in to make it right".
+   */
+  ORDER_CLAIM: "order_claim",
 } as const
+
+/** What a buyer can claim went wrong. */
+export const ORDER_CLAIM_REASONS = {
+  NOT_RECEIVED: "not_received",
+  NOT_AS_DESCRIBED: "not_as_described",
+  DAMAGED: "damaged",
+  MISSING_ITEMS: "missing_items",
+} as const
+
+export type OrderClaimReason =
+  (typeof ORDER_CLAIM_REASONS)[keyof typeof ORDER_CLAIM_REASONS]
 
 export type RequestType = typeof REQUEST_TYPES[keyof typeof REQUEST_TYPES]
 
@@ -100,6 +122,29 @@ export const quoteRequestPayloadSchema = z.object({
 })
 
 /**
+ * Order Claim Payload Schema
+ *
+ * `contacted_seller` is recorded rather than enforced. Most problems are a
+ * shipping delay the seller can resolve faster than we can, and the published
+ * policy asks buyers to try that first — but a buyer who has been ignored for a
+ * week must not be blocked from escalating by a checkbox.
+ */
+export const orderClaimPayloadSchema = z.object({
+  type: z.literal(REQUEST_TYPES.ORDER_CLAIM),
+  order_id: z.string().min(1, "Order ID is required"),
+  reason: z.enum(
+    Object.values(ORDER_CLAIM_REASONS) as [OrderClaimReason, ...OrderClaimReason[]]
+  ),
+  description: z
+    .string()
+    .min(20, "Tell us what happened in a sentence or two")
+    .max(4000),
+  /** Photos or delivery evidence the buyer has already uploaded. */
+  evidence_urls: z.array(z.string().url()).max(10).default([]),
+  contacted_seller: z.boolean().default(false),
+})
+
+/**
  * Union of all request payload schemas
  * Uses discriminated union for type-safe validation based on "type" field
  */
@@ -108,6 +153,7 @@ export const requestPayloadSchema = z.discriminatedUnion("type", [
   sellerCreationPayloadSchema,
   customOrderPayloadSchema,
   quoteRequestPayloadSchema,
+  orderClaimPayloadSchema,
 ])
 
 /**
@@ -117,6 +163,7 @@ export type SellerRequestPayload = z.infer<typeof sellerRequestPayloadSchema>
 export type SellerCreationPayload = z.infer<typeof sellerCreationPayloadSchema>
 export type CustomOrderPayload = z.infer<typeof customOrderPayloadSchema>
 export type QuoteRequestPayload = z.infer<typeof quoteRequestPayloadSchema>
+export type OrderClaimPayload = z.infer<typeof orderClaimPayloadSchema>
 export type RequestPayload = z.infer<typeof requestPayloadSchema>
 
 /**
@@ -177,6 +224,18 @@ export function getRequestTypeName(type: string): string {
     [REQUEST_TYPES.PRODUCT_CHANGE]: "Product Change",
     [REQUEST_TYPES.REVIEW_REMOVAL]: "Review Removal",
     [REQUEST_TYPES.RETURN_REQUEST]: "Return Request",
+    [REQUEST_TYPES.ORDER_CLAIM]: "Order Problem",
   }
   return names[type] || type
+}
+
+/** Human-readable label for what a buyer says went wrong. */
+export function getOrderClaimReasonName(reason: string): string {
+  const names: Record<string, string> = {
+    [ORDER_CLAIM_REASONS.NOT_RECEIVED]: "Never arrived",
+    [ORDER_CLAIM_REASONS.NOT_AS_DESCRIBED]: "Not as described",
+    [ORDER_CLAIM_REASONS.DAMAGED]: "Arrived damaged",
+    [ORDER_CLAIM_REASONS.MISSING_ITEMS]: "Items missing",
+  }
+  return names[reason] || reason
 }

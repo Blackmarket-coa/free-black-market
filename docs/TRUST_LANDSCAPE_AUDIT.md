@@ -102,9 +102,17 @@ machine exists (`hawala-ledger/escrow-state-machine.ts`: funded → dispute → 
 resolve/recover, with an arbitrator role). Service-contract dispute routes exist.
 
 But there is no buyer-facing dispute or claim flow for ordinary marketplace orders, and no
-buyer-protection policy page. The guarantee exists only as **unused copy**:
-`molecules/ConversionCopy/ConversionCopy.tsx` defines `PaymentProtectionBadge` and
-`DisputeResolutionMessage` ("Our Protection Guarantee") — imported by nothing.
+buyer-protection policy page. The guarantee existed only as **unrendered copy**:
+`molecules/ConversionCopy/ConversionCopy.tsx` defined `PaymentProtectionBadge`,
+`CheckoutTrustMessage` and `DisputeResolutionMessage` ("Our Protection Guarantee"), none of
+them imported anywhere — all three asserting that producers are "paid only after you
+confirm delivery".
+
+Note that only those exports were unused; the module as a whole is live
+(`ValueProposition` is on the homepage, `ProductTrustBanner` on every product page). Two
+further unbacked claims were in the *rendered* half: "Every creator is verified", and a
+product banner asserting "Verified producer" on behalf of every seller regardless of their
+actual level.
 
 **Action:** publish a policy page and add real claim types to the existing returns flow.
 See also [Findings the analysis missed](#findings-the-analysis-missed) — this is not merely

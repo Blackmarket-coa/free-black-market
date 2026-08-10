@@ -69,7 +69,8 @@ export const ValueProposition = ({ className }: ValuePropositionProps) => (
       </div>
       <h3 className="font-semibold text-lg mb-2">Verified Sources</h3>
       <p className="text-gray-600">
-        Every creator is verified. See exactly where your products come from and who made them.
+        Sellers can have their identity, location and practices checked by our team — and
+        every profile shows exactly what was verified, not just a tick.
       </p>
     </div>
     <div className="text-center md:text-left">
@@ -107,10 +108,17 @@ export const DirectFromProducerMessage = ({
   </div>
 )
 
+/**
+ * Rendered on every product page, so it must not assert anything about the
+ * particular seller. It previously read "Verified producer" unconditionally —
+ * a per-seller claim made on behalf of sellers who may hold no verification at
+ * all. The seller's actual level is shown on their profile, from
+ * `vendor_verification`; this banner speaks only to what is true platform-wide.
+ */
 export const ProductTrustBanner = () => (
   <div className="flex items-center gap-2 text-sm text-gray-600">
     <ShieldCheckIcon className="w-4 h-4 text-green-600" />
-    <span>Verified producer. Transparent pricing. Direct connection.</span>
+    <span>Transparent pricing. Direct from the seller. Buyer protection on every order.</span>
   </div>
 )
 
@@ -137,35 +145,6 @@ export const ProducerPriceExplanation = ({
 // ============================================
 // Checkout Copy
 // ============================================
-
-interface CheckoutTrustMessageProps {
-  className?: string
-}
-
-export const CheckoutTrustMessage = ({ className }: CheckoutTrustMessageProps) => (
-  <div className={`bg-blue-50 border border-blue-200 rounded-lg p-4 ${className}`}>
-    <div className="flex items-start gap-3">
-      <ShieldCheckIcon className="w-5 h-5 text-blue-600 mt-0.5" />
-      <div>
-        <p className="text-blue-800 font-medium">
-          Your payment goes to the producer after delivery.
-        </p>
-        <p className="text-blue-700 text-sm mt-1">
-          If something goes wrong, we step in. That&apos;s our guarantee.
-        </p>
-      </div>
-    </div>
-  </div>
-)
-
-export const PaymentProtectionBadge = () => (
-  <div className="flex items-center gap-2 text-sm">
-    <ShieldCheckIcon className="w-4 h-4 text-green-600" />
-    <span className="text-gray-600">
-      <span className="font-medium">Protected payment.</span> Producer gets paid after you confirm delivery.
-    </span>
-  </div>
-)
 
 interface OrderSummaryImpactProps {
   producerEarnings: string
@@ -206,7 +185,7 @@ export const OrderConfirmationMessage = ({
       Thank you for supporting independent creators!
     </p>
     <p className="text-green-700">
-      {amount} will go directly to {producerName || "your creator"} once delivery is confirmed.
+      {amount} of this order goes directly to {producerName || "your creator"}.
     </p>
     <p className="text-sm text-green-600 mt-4">
       You&apos;re part of a movement that pays creators fairly and cuts out the middlemen.
@@ -242,17 +221,6 @@ export const CartImpactSummary = ({
 // ============================================
 // Trust & Safety Copy
 // ============================================
-
-export const DisputeResolutionMessage = () => (
-  <div className="text-sm text-gray-600">
-    <p className="font-medium mb-1">Our Protection Guarantee:</p>
-    <ul className="list-disc list-inside space-y-1 text-gray-500">
-      <li>If your order doesn&apos;t arrive, you get a full refund</li>
-      <li>If it&apos;s not as described, we make it right</li>
-      <li>Producers are paid only after you confirm delivery</li>
-    </ul>
-  </div>
-)
 
 interface VerifiedProducerBadgeProps {
   verificationLevel?: "verified" | "trusted" | "certified"
@@ -374,12 +342,9 @@ const conversionCopy = {
   DirectFromProducerMessage,
   ProductTrustBanner,
   ProducerPriceExplanation,
-  CheckoutTrustMessage,
-  PaymentProtectionBadge,
   OrderSummaryImpact,
   OrderConfirmationMessage,
   CartImpactSummary,
-  DisputeResolutionMessage,
   VerifiedProducerBadge,
   ShopLocalCTA,
   BecomeProducerCTA,

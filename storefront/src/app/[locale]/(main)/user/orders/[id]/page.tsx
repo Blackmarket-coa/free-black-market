@@ -61,6 +61,23 @@ export default async function UserPage({
             </p>
           </div>
           <OrderDetailsSection orderSet={orderSet} />
+          {/*
+            The escalation path. A return presupposes the item arrived, so an
+            order that never showed up needs somewhere else to go.
+          */}
+          <div className="mt-8 border rounded-sm p-4 flex flex-wrap items-center justify-between gap-3">
+            <p className="label-md text-secondary">
+              Something wrong with this order?{" "}
+              <LocalizedClientLink href="/buyer-protection" className="underline">
+                See what&apos;s covered
+              </LocalizedClientLink>
+            </p>
+            <LocalizedClientLink href={`/user/orders/${id}/claim`}>
+              <Button variant="tonal" className="label-md uppercase">
+                Report a problem
+              </Button>
+            </LocalizedClientLink>
+          </div>
         </div>
       </div>
     </main>
