@@ -33,15 +33,13 @@ paths = [
   '''.*/__tests__/.*\.(spec|test)\.(ts|tsx|js)$''',
   '''.*/test/.*\.(spec|test)\.(ts|tsx|js)$''',
   '''.*\.(spec|test)\.(ts|tsx|js)$''',
-  # CI workflows reference deterministic placeholder pub keys for the
-  # compose-stack e2e + perf jobs (pk_e2e_publishable_placeholder etc.), plus
-  # `test-*` / `ci-*` JWT and cookie secrets for the integration-test jobs.
-  #
-  # The `(^|.*/)` prefix is load-bearing. A bare `.*/` requires a slash before
-  # `.github`, so it matches `sub/.github/workflows/x.yml` but never
-  # `.github/workflows/ci.yml` — which is the only place these files actually
-  # live. This allowlist silently did nothing until that was fixed.
-  '''(^|.*/)\.github/workflows/.*\.ya?ml$''',
+  # NOTE: there is deliberately no `.github/workflows/**` entry here. One used
+  # to exist, written as `.*/\.github/workflows/.*\.ya?ml$`, and it never
+  # matched anything: the `.*/` requires a slash before `.github`, while these
+  # files live at `.github/workflows/ci.yml` with no leading directory. Rather
+  # than repair it, the CI fixtures it was meant to cover are allowlisted by
+  # value below, so a genuinely leaked credential pasted into a workflow is
+  # still reported.
 ]
 
 regexes = [
@@ -54,6 +52,18 @@ regexes = [
   '''pk_test_replace_with_real_stripe_publishable_key''',
   # CI / e2e / perf-job placeholders
   '''pk_(e2e|perf|local|test)_[a-z0-9_]+''',
+  # Integration-test JWT / cookie secrets in .github/workflows/*.yml. These
+  # are non-secret by construction: they exist because medusa-config.ts
+  # requires 32+ chars, and `scripts/assert-env.mjs` rejects the banned
+  # placeholder set in production, so CI needs a long string that is
+  # obviously not a credential. The value says as much in words.
+  #
+  # Matched by value rather than by allowlisting the whole workflow path:
+  # a real token pasted into a workflow must still be reported, and a new
+  # fixture that does not follow this naming should trip the gate so
+  # someone has to look at it.
+  '''(test|ci)-(jwt|cookie)-secret-at-least-32-[a-z0-9-]+''',
+  '''ci_test_postgres_fixture_only_not_a_secret''',
   # Resend documented placeholders
   '''re_[a-z]+_your[_a-z0-9]+''',
   # Stellar key documentation example
