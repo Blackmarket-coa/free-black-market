@@ -271,12 +271,24 @@ The header comment in `tiers.ts` asserts that *"the backend `progression` module
 same plant-themed ladder"* — an invariant that is not enforced and does not currently
 hold.
 
-Publishing a public tier ladder on top of this would publish a split percentage that
-contradicts what vendors are actually paid. **Resolve the drift before Stage 2.** The repo
-already has the right pattern for this: `backend/src/modules/playbook/__tests__/progressions.unit.spec.ts`
-fails when its doc table and its code diverge.
+This was not merely latent. `packages/bmc-ui/src/KarmaBar.tsx` renders
+`"{remaining} to {next.name} ({next.split_pct}% split)"` from the portal ladder, on the
+nursery portal's Payouts page — so a Canopy grower was told **"500 to Ancestor (85%
+split)"** while `payout-breakdown/grower-payout.ts` would promote them at 1500 KARMA and
+post a COMMISSION transfer at 72%. Wrong threshold and wrong rate, in the vendor's favour,
+on a page about their earnings.
 
-**This needs a product decision** — which numbers are correct — because it changes payouts.
+**Resolved:** the portal ladder now mirrors the backend (60 → 72%, Ancestor at 1500), so no
+surface promises a split that will not be paid. `packages/bmc-portal-kit/src/tiers.parity.spec.ts`
+parses `GROWER_TIERS` out of the backend source and fails on divergence — the portal is the
+follower, so the guard lives on that side and runs under `pnpm portals:test`. The
+`tiers.ts` header, which asserted the two already agreed, now says which file wins and why.
+The nursery-portal fixtures were recomputed at the real rates so the mocks stop teaching
+unreachable numbers.
+
+**Still open, deliberately:** whether 60 → 72% is the right ladder. Aligning display to
+payment is a bug fix; raising the split is a revenue decision and belongs to the backend
+ladder, not to the portal.
 
 ### B. Live copy promises buyer protection the checkout does not implement
 

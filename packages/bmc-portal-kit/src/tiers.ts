@@ -1,6 +1,26 @@
-// Canonical KARMA tier ladder + TierKey, shared across the FBM portal family
-// (nursery, wellness, botanical, creator). The backend `progression` module
-// seeds the same plant-themed ladder. Split % rises with tier.
+// KARMA tier ladder + TierKey, shared across the FBM portal family (nursery,
+// wellness, botanical, creator). Split % rises with tier.
+//
+// THIS FILE FOLLOWS THE BACKEND. `GROWER_TIERS` in
+// `backend/src/modules/progression/grower-karma.ts` is the source of truth:
+// it feeds `effectiveGrowerTier`, which sets the split that
+// `modules/payout-breakdown/grower-payout.ts` posts as a real COMMISSION
+// transfer. Numbers here are display only, so when the two disagree it is this
+// file that is wrong — and a grower is being shown a split nobody will pay.
+//
+// That is not hypothetical. Until this was corrected, the header of this file
+// claimed the backend "seeds the same plant-themed ladder" while listing
+// Ancestor at 1000 KARMA / 85%, against the backend's 1500 / 72%. `KarmaBar`
+// renders `"{remaining} to {next.name} ({next.split_pct}% split)"`, so a
+// Canopy grower on the nursery portal's Payouts page was told "500 to Ancestor
+// (85% split)" — wrong threshold, wrong rate, on a page about their earnings.
+//
+// `tiers.parity.spec.ts` now reads the backend ladder and fails on divergence.
+// Change the backend first, then mirror it here.
+//
+// OPEN PRODUCT QUESTION: whether 60 → 72% is the right ladder at all is
+// undecided. These values match what is paid today; raising them is a revenue
+// decision, not a bug fix, and should be made on the backend side.
 //
 // `unlocks` is display copy; the ladder fields (key/name/icon/karma_required/
 // split_pct/color) are the contract. If a portal ever needs its own `unlocks`
@@ -24,7 +44,7 @@ export const TIERS: Tier[] = [
     name: "Seedling",
     icon: "🌱",
     karma_required: 0,
-    split_pct: 70,
+    split_pct: 60,
     color: "#7EC850",
     unlocks: "Listing on FBM, node room access",
   },
@@ -33,7 +53,7 @@ export const TIERS: Tier[] = [
     name: "Sprout",
     icon: "🌿",
     karma_required: 50,
-    split_pct: 73,
+    split_pct: 62,
     color: "#48bb78",
     unlocks: "Order Cycles, demand pool activation",
   },
@@ -42,7 +62,7 @@ export const TIERS: Tier[] = [
     name: "Root",
     icon: "🪴",
     karma_required: 200,
-    split_pct: 76,
+    split_pct: 65,
     color: "#34a362",
     unlocks: "Governance voting, wholesale listings",
   },
@@ -51,7 +71,7 @@ export const TIERS: Tier[] = [
     name: "Canopy",
     icon: "🌳",
     karma_required: 500,
-    split_pct: 80,
+    split_pct: 68,
     color: "#268751",
     unlocks: "Inter-node transfers, restoration contracts",
   },
@@ -59,8 +79,8 @@ export const TIERS: Tier[] = [
     key: "ancestor",
     name: "Ancestor",
     icon: "🌲",
-    karma_required: 1000,
-    split_pct: 85,
+    karma_required: 1500,
+    split_pct: 72,
     color: "#164429",
     unlocks: "Hub co-governance, node mentorship",
   },
