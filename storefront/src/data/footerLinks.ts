@@ -18,6 +18,7 @@ const links = {
     { label: 'Fee Transparency', path: '/transparency' },
     { label: 'How Verification Works', path: '/verification' },
     { label: 'The KARMA Ladder', path: '/karma' },
+    { label: 'How Governance Works', path: '/governance' },
     { label: 'Vendor Types & Features', path: '/vendor-types' },
     { label: 'What Are You Selling?', path: '/what-you-sell' },
     { label: 'Feature Matrix', path: '/feature-matrix' },

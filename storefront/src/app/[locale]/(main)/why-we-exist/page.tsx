@@ -27,7 +27,8 @@ export default function WhyWeExistPage() {
         </article>
         <article className="rounded-2xl border p-6">
           <h2 className="text-xl font-semibold mb-2">Why community governance</h2>
-          <p className="text-sm text-gray-700">Platform rules should be accountable to the people using the system. Coalitions steer platform-level decisions through petitions and proposals — and because the code is open source, any community that disagrees with the direction has the ultimate exit right: fork it and run it themselves.</p>
+          <p className="text-sm text-gray-700">Platform rules should be accountable to the people using the system. Gardens and community projects already run real votes on their own decisions — proposals, quorum, one-member-one-vote by default. Platform-level rules are not yet put to a member ballot; what holds us accountable there is that the code is public, so any community that disagrees with the direction can run it themselves.</p>
+          <Link href="/governance" className="text-sm text-green-700 font-medium underline mt-3 inline-block">How governance works</Link>
         </article>
         <article className="rounded-2xl border p-6">
           <h2 className="text-xl font-semibold mb-2">What problem we solve</h2>

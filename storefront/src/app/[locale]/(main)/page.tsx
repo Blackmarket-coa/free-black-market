@@ -364,10 +364,11 @@ export default async function Home({
 
       <section className="px-4 lg:px-8 w-full">
         <div className="rounded-2xl border border-slate-300 bg-slate-50 p-6 md:p-8">
-          <h2 className="text-2xl font-semibold mb-2">Open Source. Community Governed.</h2>
-          <p className="text-gray-700 mb-4">Improved onboarding system. Built on scalable open-source infrastructure with public transparency.</p>
+          <h2 className="text-2xl font-semibold mb-2">Public code. Community governed where it counts.</h2>
+          <p className="text-gray-700 mb-4">Every line of the platform is readable — how commission is calculated, how verification is granted, how surplus is shared. Gardens and community projects run real votes on their own decisions. Platform-level rules are not put to a member ballot today, and we say so on the governance page rather than letting a badge imply otherwise.</p>
           <div className="flex flex-wrap gap-3">
             <Link href={GITHUB_REPO_URL} target="_blank" rel="noopener noreferrer" className="rounded-lg bg-slate-900 px-4 py-2 text-white text-sm" data-event="github_transparency_link_clicked">View GitHub transparency</Link>
+            <Link href="/governance" className="rounded-lg border border-slate-300 px-4 py-2 text-sm">How governance works</Link>
             <Link href="/why-we-exist" className="rounded-lg border border-slate-300 px-4 py-2 text-sm">Why we exist</Link>
           </div>
         </div>

@@ -164,8 +164,10 @@ Start with the whitepaper; the rest are phase-specific deep dives.
 ## Governance & Process
 
 - `docs/GOVERNANCE.md` — maintainer governance (roles, decision process, PR
-  and release gating). Member/cooperative governance is a separate concern and
-  is not yet documented; see `docs/TRUST_LANDSCAPE_AUDIT.md` §5.
+  and release gating)
+- `docs/MEMBER_GOVERNANCE.md` — how members decide things: garden/project
+  proposals and voting, cooperative self-declaration, patronage, and an
+  explicit account of what platform-level governance does *not* do yet
 - `docs/MAINTAINER_TRIAGE_SOP.md`
 - `docs/PROJECT_OPERATING_SYSTEM.md` — project board, cadence, KPIs
 - `CONTRIBUTING.md` (repo root)
