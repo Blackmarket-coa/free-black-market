@@ -64,6 +64,37 @@ export async function getSellerTrust(
   }
 }
 
+export type SellerStory = {
+  bio: string | null
+  niches: string[]
+  practices: string[]
+  certifications: string[]
+  region: string | null
+  cuisines: string[]
+  website_url: string | null
+}
+
+/**
+ * A seller's own account of themselves — the "meet the vendor" narrative.
+ *
+ * Null on failure, like `getSellerTrust`: a missing story should quietly leave
+ * the section off the page rather than break the seller's storefront.
+ */
+export async function getSellerStory(
+  handle: string
+): Promise<SellerStory | null> {
+  try {
+    const res = await medusaFetch<{ story: SellerStory }>(
+      `/store/sellers/${encodeURIComponent(handle)}/story`,
+      { method: "GET", next: { revalidate: 300 } }
+    )
+    return res.story ?? null
+  } catch (error) {
+    logger.error(`[getSellerStory] failed for ${handle}:`, error)
+    return null
+  }
+}
+
 /**
  * The published badge and level criteria. Backs `/verification`.
  *

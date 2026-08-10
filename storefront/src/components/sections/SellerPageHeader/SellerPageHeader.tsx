@@ -8,13 +8,14 @@ import Link from "next/link"
 import { useState, useEffect } from "react"
 
 import { TrustIndicators } from "@/components/molecules/TrustIndicators/TrustIndicators"
-import type { SellerTrust } from "@/lib/data/verification"
+import type { SellerStory, SellerTrust } from "@/lib/data/verification"
 
 export const SellerPageHeader = ({
   header = false,
   seller,
   user,
   trust = null,
+  story = null,
 }: {
   header?: boolean
   seller: any
@@ -25,6 +26,11 @@ export const SellerPageHeader = ({
    * rendered, which is the behaviour this page had before badges existed.
    */
   trust?: SellerTrust | null
+  /**
+   * The seller's own account of themselves. Null when they haven't written one
+   * — the section is omitted rather than rendered empty.
+   */
+  story?: SellerStory | null
 }) => {
   // State to store sanitized description
   const [sanitizedDescription, setSanitizedDescription] = useState(seller.description || "")
@@ -49,6 +55,52 @@ export const SellerPageHeader = ({
         }}
         className="label-md my-5"
       />
+      {story && hasStoryContent(story) && (
+        <div className="my-5 border-t pt-4">
+          <h2 className="heading-xs uppercase mb-2">Meet the maker</h2>
+          {story.bio && (
+            <p className="label-md whitespace-pre-line">{story.bio}</p>
+          )}
+          {story.region && (
+            <p className="label-md text-secondary mt-2">Based in {story.region}</p>
+          )}
+          {[
+            { label: "Practices", values: story.practices },
+            { label: "Certifications", values: story.certifications },
+            { label: "Focus", values: story.niches },
+            { label: "Cuisine", values: story.cuisines },
+          ]
+            .filter((group) => group.values.length > 0)
+            .map((group) => (
+              <div key={group.label} className="mt-3">
+                <p className="label-sm text-secondary uppercase mb-1">
+                  {group.label}
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  {group.values.map((value) => (
+                    <span
+                      key={value}
+                      className="label-sm border rounded-full px-2.5 py-0.5"
+                    >
+                      {value}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ))}
+          {/*
+            The seller's own claims, not ours. Certifications listed here are
+            self-declared; the verified ones carry a badge in the trust strip
+            below, which is a different assertion with a reviewer behind it.
+          */}
+          {story.certifications.length > 0 && (
+            <p className="label-sm text-secondary mt-3">
+              Listed by the seller. Certifications we have confirmed appear as
+              badges below.
+            </p>
+          )}
+        </div>
+      )}
       {trust && (
         <div className="my-5 border-t pt-4">
           <TrustIndicators
@@ -74,5 +126,17 @@ export const SellerPageHeader = ({
       <SellerScheduling seller={seller} />
       <SellerFooter seller={seller} />
     </div>
+  )
+}
+
+/** Whether a seller has written anything worth giving a section to. */
+function hasStoryContent(story: SellerStory): boolean {
+  return Boolean(
+    story.bio ||
+      story.region ||
+      story.practices.length ||
+      story.certifications.length ||
+      story.niches.length ||
+      story.cuisines.length
   )
 }

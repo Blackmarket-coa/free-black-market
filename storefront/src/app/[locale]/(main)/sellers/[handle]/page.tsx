@@ -6,7 +6,7 @@ import { retrieveCustomer } from "@/lib/data/customer"
 import { getHomeKitchenDisclosure } from "@/lib/data/cottage-food"
 import { getRegion } from "@/lib/data/regions"
 import { getSellerByHandle } from "@/lib/data/seller"
-import { getSellerTrust } from "@/lib/data/verification"
+import { getSellerStory, getSellerTrust } from "@/lib/data/verification"
 import { SellerProps } from "@/types/seller"
 import type { Metadata } from "next"
 import { notFound } from "next/navigation"
@@ -44,13 +44,17 @@ export default async function SellerPage({
 
   const user = await retrieveCustomer()
 
-  // Null for any seller who isn't a home producer, or who hasn't opted into
-  // publishing a disclosure — the component renders nothing in that case.
-  const homeKitchen = await getHomeKitchenDisclosure(handle)
-
-  // Verification level and badges. Null on lookup failure, in which case the
-  // header renders without the trust strip rather than failing the page.
-  const trust = await getSellerTrust(handle)
+  // Three independent lookups, so they run together rather than stacking three
+  // round-trips onto the render. Each resolves to null on failure or absence:
+  //
+  //   homeKitchen — null unless this is a home producer publishing a disclosure
+  //   trust       — verification level and badges; header omits the strip
+  //   story       — the seller's own account of themselves; section omitted
+  const [homeKitchen, trust, story] = await Promise.all([
+    getHomeKitchenDisclosure(handle),
+    getSellerTrust(handle),
+    getSellerStory(handle),
+  ])
 
   const currency_code = (await getRegion(locale))?.currency_code || "usd"
 
@@ -71,7 +75,7 @@ export default async function SellerPage({
       <div className="hidden md:block mb-4 mt-2">
         <Breadcrumbs items={breadcrumbsItems} />
       </div>
-      <SellerPageHeader header seller={seller} user={user} trust={trust} />
+      <SellerPageHeader header seller={seller} user={user} trust={trust} story={story} />
       <HomeKitchenDisclosure data={homeKitchen} className="mt-4" />
       <SellerTabs
         tab={tab}
