@@ -194,7 +194,7 @@ export default async function Home({
         variant="mission"
         image="/images/hero/Image.jpg"
         heading="Buy direct from real people. Sell on your own terms. Build community wealth."
-        paragraph="Free Black Market is community-owned commerce for goods, services, local food and CSA, creators, and mutual aid. Shoppers buy directly from verified makers — no middlemen, no markups. Vendors launch fast and keep 97% of every sale, with a flat 3% coalition fee and no listing, monthly, or processing fees passed to you."
+        paragraph="Free Black Market is community-owned commerce for goods, services, local food and CSA, creators, and mutual aid. Shoppers buy directly from makers whose identity and practices we verify — no middlemen, no markups. Vendors launch fast and keep 97% of every sale, with a flat 3% coalition fee and no listing, monthly, or processing fees passed to you."
         buttons={[
           {
             label: "Explore the Marketplace",

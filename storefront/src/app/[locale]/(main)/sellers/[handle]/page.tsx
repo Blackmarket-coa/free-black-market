@@ -6,6 +6,7 @@ import { retrieveCustomer } from "@/lib/data/customer"
 import { getHomeKitchenDisclosure } from "@/lib/data/cottage-food"
 import { getRegion } from "@/lib/data/regions"
 import { getSellerByHandle } from "@/lib/data/seller"
+import { getSellerTrust } from "@/lib/data/verification"
 import { SellerProps } from "@/types/seller"
 import type { Metadata } from "next"
 import { notFound } from "next/navigation"
@@ -47,6 +48,10 @@ export default async function SellerPage({
   // publishing a disclosure — the component renders nothing in that case.
   const homeKitchen = await getHomeKitchenDisclosure(handle)
 
+  // Verification level and badges. Null on lookup failure, in which case the
+  // header renders without the trust strip rather than failing the page.
+  const trust = await getSellerTrust(handle)
+
   const currency_code = (await getRegion(locale))?.currency_code || "usd"
 
   const tab = "products"
@@ -66,7 +71,7 @@ export default async function SellerPage({
       <div className="hidden md:block mb-4 mt-2">
         <Breadcrumbs items={breadcrumbsItems} />
       </div>
-      <SellerPageHeader header seller={seller} user={user} />
+      <SellerPageHeader header seller={seller} user={user} trust={trust} />
       <HomeKitchenDisclosure data={homeKitchen} className="mt-4" />
       <SellerTabs
         tab={tab}
