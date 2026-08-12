@@ -1,5 +1,11 @@
-# Copy to docker-compose.override.yml (gitignored) for dev-time bind mounts.
-# Compose merges this file automatically.
+# Copy to docker-compose.override.yml for dev-time bind mounts.
+#
+#   cp docker-compose.override.yml.example docker-compose.override.yml
+#
+# Compose merges docker-compose.override.yml automatically, which is why it is
+# gitignored rather than tracked: a committed copy silently rewrites every
+# developer's stack, and for a while one did (INFRA-8 in PRE_LAUNCH_AUDIT.md).
+# Keep local changes in your own copy; only this .example is version-controlled.
 
 services:
   backend:
@@ -30,3 +36,31 @@ services:
     command: ["sh", "-c", "corepack enable && pnpm install && pnpm dev"]
     ports:
       - "5174:5174"
+
+# ---------------------------------------------------------------------------
+# Optional: the cross-stack bridge to blackout-api.
+#
+# Uncomment this block only if you are running the Blackout stack alongside FBM
+# and need east-west traffic between them. It requires a one-time prerequisite:
+#
+#   docker network create --internal bmc-bridge
+#
+# Without that network, Compose refuses to start. --internal is load-bearing:
+# it grants the bridge no internet egress, which the Blackout runbook asserts
+# as an acceptance check (infra/single-server-baseline/RUNBOOK.md §19).
+#
+# "default" must stay in the list. The base compose declares no networks:, so
+# this list becomes the complete set, and dropping "default" would sever the
+# implicit attachment to postgres/redis/minio. Only the backend joins the
+# bridge, so the Blackout side never gains a route to those services.
+#
+# services:
+#   backend:
+#     networks:
+#       - default
+#       - bmc-bridge
+#
+# networks:
+#   bmc-bridge:
+#     external: true
+#     name: bmc-bridge
