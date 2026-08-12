@@ -36,7 +36,6 @@ interface LinkedProduct {
   available_from: string
   available_until: string | null
   is_active: boolean
-  order_count: number
   product?: {
     id: string
     title: string
@@ -281,7 +280,6 @@ export const LotProductLinking = ({ lotId, suggestedPrice, unit }: LotProductLin
                 <Table.HeaderCell>Price</Table.HeaderCell>
                 <Table.HeaderCell>Channel</Table.HeaderCell>
                 <Table.HeaderCell>Status</Table.HeaderCell>
-                <Table.HeaderCell>Orders</Table.HeaderCell>
                 <Table.HeaderCell></Table.HeaderCell>
               </Table.Row>
             </Table.Header>
@@ -327,9 +325,6 @@ export const LotProductLinking = ({ lotId, suggestedPrice, unit }: LotProductLin
                     ) : (
                       <Badge color="grey" size="small">Inactive</Badge>
                     )}
-                  </Table.Cell>
-                  <Table.Cell>
-                    <Text>{lp.order_count}</Text>
                   </Table.Cell>
                   <Table.Cell>
                     <Button

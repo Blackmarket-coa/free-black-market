@@ -1,6 +1,8 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { SELLER_EXTENSION_MODULE } from "../../../../../modules/seller-extension"
 import type SellerExtensionService from "../../../../../modules/seller-extension/service"
+import { REVIEWS_MODULE } from "../../../../../modules/reviews"
+import type ReviewsService from "../../../../../modules/reviews/service"
 
 /**
  * GET /v1/admin/marketplace/creators
@@ -25,6 +27,13 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     order: { created_at: "DESC" },
   })
 
+  // `seller_metadata.rating` / `.review_count` are declared but never written.
+  // One batched aggregate for the whole page — see `getSellerAggregates`.
+  const reviews = req.scope.resolve<ReviewsService>(REVIEWS_MODULE)
+  const ratings = await reviews.getSellerAggregates(
+    creators.map((c) => String(c.seller_id))
+  )
+
   return res.status(200).json({
     creators: creators.map((c) => ({
       seller_id: c.seller_id,
@@ -34,8 +43,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       total_followers: Number(c.creator_total_followers ?? 0),
       verified: !!c.verified,
       featured: !!c.featured,
-      rating: c.rating,
-      review_count: Number(c.review_count ?? 0),
+      rating: ratings.get(String(c.seller_id))?.average ?? null,
+      review_count: ratings.get(String(c.seller_id))?.count ?? 0,
       created_at: c.created_at,
     })),
     limit,

@@ -63,7 +63,21 @@ export const LedgerEntry = model.define("hawala_ledger_entry", {
     "REVERSED",
   ]).default("PENDING"),
   
-  // Reference to external entities
+  // Reference to external entities.
+  //
+  // This list must stay a superset of `PURCHASE_CONTEXT_REFERENCE_TYPES` and
+  // `TIMEBANK_REFERENCE_TYPES` in posture-a-guard.ts, and of every literal real
+  // callers post. Those vocabularies had drifted apart: the guard blessed
+  // CART / REFUND / PAYOUT / ESCROW_FUND / ESCROW_RELEASE / SUBSCRIPTION_RENEWAL
+  // while this enum said they could not exist, and live call sites posted five
+  // more it had never heard of — DEMAND_BOUNTY (services/collective-hawala.ts),
+  // PAYOUT_REQUEST / VENDOR_ADVANCE / VENDOR_PAYMENT (service.ts) and COMMISSION
+  // (jobs/patronage-refund.ts). `reference-type-parity.unit.spec.ts` now fails
+  // the build if they diverge again.
+  //
+  // No migration needed to add a value: the column is plain TEXT (see
+  // Migration20251229CreateHawalaLedger), the same enum-only path
+  // CREATOR_COMMISSION and CREDIT_PAYOUT_MINT took above.
   reference_type: model.enum([
     "ORDER",
     "PAYMENT",
@@ -75,6 +89,28 @@ export const LedgerEntry = model.define("hawala_ledger_entry", {
     "CREATOR_ATTRIBUTION",
     "CREATOR_REWARD_POOL",
     "SPONSORSHIP",
+    // Bounty escrow, milestone payout and escrow refund
+    // (services/collective-hawala.ts).
+    "DEMAND_BOUNTY",
+    // Purchase contexts the Posture A guard already recognized.
+    "CART",
+    "REFUND",
+    "PAYOUT",
+    "ESCROW_FUND",
+    "ESCROW_RELEASE",
+    "SUBSCRIPTION_RENEWAL",
+    // Posted by live call sites that predate this reconciliation.
+    "PAYOUT_REQUEST",
+    "VENDOR_ADVANCE",
+    "VENDOR_PAYMENT",
+    "COMMISSION",
+    // Time-bank (HRS) rail. The guard requires every HRS entry to cite one of
+    // these, so any real hours transfer writes one — see
+    // TIMEBANK_REFERENCE_TYPES in posture-a-guard.ts.
+    "TIMEBANK_LOAN",
+    "TIMEBANK_RETURN",
+    "TIMEBANK_REDISTRIBUTION",
+    "TIMEBANK_OPEN_BALANCE",
   ]).nullable(),
   reference_id: model.text().nullable(),
   

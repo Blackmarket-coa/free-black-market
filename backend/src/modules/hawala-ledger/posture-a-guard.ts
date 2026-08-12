@@ -58,6 +58,11 @@ export const PURCHASE_CONTEXT_REFERENCE_TYPES: ReadonlySet<string> =
     "ESCROW_RELEASE",
     "CREATOR_ATTRIBUTION",
     "SUBSCRIPTION_RENEWAL",
+    // A bounty is payment for delivered work — the same goods-or-services
+    // category as ORDER. Escrow funding, milestone payout and escrow refund
+    // all post it (services/collective-hawala.ts). Reviewed against
+    // docs/POSTURE_A_COMPLIANCE.md § "DEMAND_BOUNTY as a purchase context".
+    "DEMAND_BOUNTY",
   ])
 
 /**

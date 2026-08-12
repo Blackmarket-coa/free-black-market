@@ -1,6 +1,8 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { SELLER_EXTENSION_MODULE } from "../../../../../modules/seller-extension"
 import type SellerExtensionService from "../../../../../modules/seller-extension/service"
+import { REVIEWS_MODULE } from "../../../../../modules/reviews"
+import type ReviewsService from "../../../../../modules/reviews/service"
 
 /**
  * Public creator profile endpoint.
@@ -37,6 +39,12 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 
   const m = matches[0]
 
+  // `seller_metadata.rating` / `.review_count` are declared but never written,
+  // so reading them here published "0 reviews" for every creator. The reviews
+  // module is the source of truth.
+  const reviews = req.scope.resolve<ReviewsService>(REVIEWS_MODULE)
+  const ratingSummary = await reviews.getSellerAggregate(String(m.seller_id))
+
   return res.status(200).json({
     creator: {
       seller_id: m.seller_id,
@@ -48,8 +56,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       social_links: m.social_links ?? null,
       verified: !!m.verified,
       featured: !!m.featured,
-      rating: m.rating ?? null,
-      review_count: Number(m.review_count ?? 0),
+      rating: ratingSummary.average,
+      review_count: ratingSummary.count,
     },
   })
 }

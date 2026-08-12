@@ -3,6 +3,8 @@ const log = createLogger("api/store/vendors/handle");
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http";
 import { BOOKING_MODULE } from "../../../../modules/booking";
 import type BookingService from "../../../../modules/booking/service";
+import { REVIEWS_MODULE } from "../../../../modules/reviews";
+import type ReviewsService from "../../../../modules/reviews/service";
 import { resolveEmbedFeatures } from "../../../../shared/website-config";
 
 /**
@@ -150,6 +152,26 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     const chatEnabled =
       Boolean(meta?.mxid || meta?.blackout_user_id) && features.chat;
 
+    // Rating and review count come from the reviews module, not from the
+    // `seller_metadata.rating` / `.review_count` columns. Those columns are
+    // declared and defaulted to 0 but never written by anything (C3), so this
+    // endpoint — the public contract connect.js is built on — published "0
+    // reviews" for every vendor no matter how many they had. The aggregate is
+    // the same one `/store/vendors/:handle/reviews` already reports, so the two
+    // endpoints can no longer disagree.
+    let ratingSummary: { average: number | null; count: number } | null = null;
+    if (wantVendor && features.vendor) {
+      try {
+        const reviews = req.scope.resolve(REVIEWS_MODULE) as ReviewsService;
+        ratingSummary = await reviews.getSellerAggregate(seller.id);
+      } catch (err) {
+        // Reviews are a nice-to-have on this endpoint; a failure here must not
+        // take down the whole vendor payload. Fall through to the stale
+        // metadata columns rather than 500.
+        log.warn(`review aggregate lookup failed for ${seller.id}`, err);
+      }
+    }
+
     const vendor = wantVendor && features.vendor
       ? {
           id: seller.id,
@@ -160,8 +182,10 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
           vendor_type: meta?.vendor_type ?? null,
           verified: !!meta?.verified,
           featured: !!meta?.featured,
-          rating: meta?.rating ?? null,
-          review_count: meta?.review_count ?? 0,
+          rating: ratingSummary ? ratingSummary.average : meta?.rating ?? null,
+          review_count: ratingSummary
+            ? ratingSummary.count
+            : Number(meta?.review_count ?? 0),
           website_url: meta?.website_url ?? null,
           social_links: meta?.social_links ?? null,
           url: `${storefront}/${DEFAULT_REGION}/sellers/${seller.handle}`,
