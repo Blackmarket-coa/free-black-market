@@ -1,6 +1,9 @@
 import { QUEUE_TOPICS } from "./queue-topics"
 import { validatePhase0Contract } from "./phase0-contracts"
 import { checkAndStoreIdempotency } from "./idempotency-store"
+import { createLogger } from "./logger"
+
+const log = createLogger("shared/queue-runtime")
 
 export type QueueTopicKey = keyof typeof QUEUE_TOPICS
 
@@ -90,21 +93,43 @@ export async function runQueueConsumer<T>(params: {
     payload,
   })
 
+  // `checkAndStoreIdempotency` degrades to a per-process Map when the shared
+  // store is unreachable. That is a real guard for one instance and no guard at
+  // all across a multi-instance deploy — a replay routed elsewhere sees an
+  // empty map and runs the handler again. The store reports it; until now
+  // nothing here acted on it, so the exposure was invisible to operators and
+  // untestable by callers.
+  //
+  // The run is not aborted: refusing to process would convert a cache outage
+  // into a queue outage. It is surfaced instead, on every return path, so a
+  // consumer can decide and an alert can fire.
+  const degraded = idemCheck.degraded === true
+  if (degraded) {
+    log.warn(
+      `[queue] "${topicKey}" processed without cross-instance replay protection: ` +
+        "the shared idempotency store was unreachable and the check fell back " +
+        "to per-process memory. Duplicate deliveries routed to another instance " +
+        "will not be caught.",
+      { topic: topicKey, idempotency_key: idempotencyKey ?? null }
+    )
+  }
+
   if (idemCheck.duplicate && !idemCheck.conflict) {
-    return { status: "duplicate" as const, retries: attempt }
+    return { status: "duplicate" as const, retries: attempt, degraded }
   }
 
   if (idemCheck.duplicate && idemCheck.conflict) {
     return {
       status: "idempotency_conflict" as const,
       retries: attempt,
+      degraded,
       error: idemCheck.message,
     }
   }
 
   try {
     await handler(payload)
-    return { status: "processed" as const, retries: attempt }
+    return { status: "processed" as const, retries: attempt, degraded }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     const nextAttempt = attempt + 1
@@ -125,7 +150,12 @@ export async function runQueueConsumer<T>(params: {
         },
       })
 
-      return { status: "dlq" as const, retries: nextAttempt, error: message }
+      return {
+        status: "dlq" as const,
+        retries: nextAttempt,
+        degraded,
+        error: message,
+      }
     }
 
     const retryEnvelope = buildQueueEnvelope(topicKey, payload, nextAttempt, idempotencyKey)
@@ -134,6 +164,7 @@ export async function runQueueConsumer<T>(params: {
     return {
       status: "retry" as const,
       retries: nextAttempt,
+      degraded,
       nextRetryAt: new Date(Date.now() + contract.policy.backoffSeconds * 1000).toISOString(),
       error: message,
     }
