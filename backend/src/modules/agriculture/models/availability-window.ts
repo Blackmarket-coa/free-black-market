@@ -92,10 +92,15 @@ const AvailabilityWindow = model.define("availability_window", {
   paused_at: model.dateTime().nullable(), // Temporarily paused
   pause_reason: model.text().nullable(),
   
-  // Analytics
-  view_count: model.number().default(0),
-  order_count: model.number().default(0),
-  
+  // No analytics counters here. `view_count` and `order_count` were declared
+  // and defaulted to 0, but nothing ever incremented them and nothing ever read
+  // them (C2) — a field that always reads zero is worse than an absent one,
+  // because it looks like data. Removed from the model; the columns remain in
+  // the table (see Migration20251228CreateAgriculture) and can be dropped
+  // whenever the next agriculture migration runs. If window-level analytics are
+  // wanted later, derive them from orders rather than reviving a counter that
+  // nothing maintains.
+
   // Metadata
   metadata: model.json().nullable(),
 })

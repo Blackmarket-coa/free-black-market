@@ -146,6 +146,18 @@ const SellerMetadata = model.define("seller_metadata", {
   // General extended fields
   featured: model.boolean().default(false),
   verified: model.boolean().default(false),
+  // DEPRECATED — do not read these, and do not start writing them.
+  //
+  // Nothing has ever incremented either field, so both always read null/0. They
+  // were nonetheless published by three endpoints, including the public
+  // `/store/vendors/:handle` contract that connect.js is built on, which meant
+  // every vendor and creator advertised "0 reviews" regardless of how many they
+  // had (C3). Those endpoints now read the `reviews` module instead —
+  // `getSellerAggregate` for one seller, `getSellerAggregates` for a page.
+  //
+  // Kept as columns only because they exist in the table
+  // (Migration20251228CreateSellerMetadata, Migration20260107CleanupAndRecreate)
+  // and old rows may carry stale values; drop them in a later migration.
   rating: model.float().nullable(),
   review_count: model.number().default(0),
   
