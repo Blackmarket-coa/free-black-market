@@ -125,6 +125,42 @@ These three rules are enforced architecturally:
 - Audit log emits `auditFinancialTransaction` for every state change; logs
   are immutable and retained.
 
+#### `DEMAND_BOUNTY` as a purchase context
+
+`PURCHASE_CONTEXT_REFERENCE_TYPES` in `posture-a-guard.ts` carries a standing
+instruction that any addition be reviewed against this document. This records
+the review for `DEMAND_BOUNTY`.
+
+**Decision:** `DEMAND_BOUNTY` is a valid goods-or-services purchase context.
+
+**Rationale.** A demand-pool bounty is payment for delivered work: a
+contributor escrows funds against a specified deliverable, an assignee claims
+it, and the escrow releases per completed milestone. That is the same
+transaction category as `ORDER` — value moves against work performed, not
+between members as a free-standing balance transfer. The three call sites in
+`services/collective-hawala.ts` (escrow funding, milestone payout, escrow
+refund) are each tied to a recorded bounty record.
+
+**Why this is not an expansion of the CCR surface.** `bounty` is already an
+accepted `EscrowAgreement.subject_type` under Posture A, enforced by a DB CHECK
+constraint (see above). Bounty escrow was therefore always inside the posture;
+what was missing was the `reference_type` vocabulary to express it. Adding it
+aligns the guard with a boundary this document had already drawn.
+
+**What it does not authorize.** Bounties remain closed-loop: CCR stays
+`cash_convertible: false` in `rails.ts`, and a bounty cannot be used to move
+Credits without an associated bounty record. Bounty payouts confer no
+redemption right.
+
+**Defect this closed.** `DEMAND_BOUNTY` was absent from both this set and the
+`LedgerEntry.reference_type` enum while being posted at three money-moving call
+sites. Because `createTransfer` derives currency from the debit account, every
+bounty path threw `ClosedLoopViolationError` on a CCR-denominated wallet in
+strict mode — latent only because CCR wallets were not yet in production use.
+`modules/hawala-ledger/__tests__/reference-type-parity.unit.spec.ts` now fails
+the build if the guard's vocabulary, the model enum, and the caller literals
+drift apart again.
+
 ### `playbook`
 
 - Each playbook recipe declares `allow_credits_payout: bool` (defaults true
