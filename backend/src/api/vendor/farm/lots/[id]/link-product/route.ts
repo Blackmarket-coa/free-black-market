@@ -218,7 +218,6 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         "available_from",
         "available_until",
         "is_active",
-        "order_count",
       ],
       filters: {
         lot_id: lotId,

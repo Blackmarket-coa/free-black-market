@@ -106,8 +106,6 @@ export async function POST(
       featured: featured || false,
       sort_order: 0,
       is_active: is_active !== false,
-      view_count: 0,
-      order_count: 0,
     })
 
     res.status(201).json({ availability_window: availabilityWindow })
@@ -180,8 +178,6 @@ export async function GET(
         "is_active",
         "paused_at",
         "pause_reason",
-        "view_count",
-        "order_count",
         "created_at",
         "updated_at",
       ],

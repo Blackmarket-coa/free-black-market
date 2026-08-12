@@ -447,8 +447,6 @@ export interface AvailabilityWindowDTO {
   is_active: boolean
   paused_at?: string | null
   pause_reason?: string | null
-  view_count: number
-  order_count: number
   metadata?: Record<string, unknown> | null
   created_at: string
   updated_at: string
