@@ -3,6 +3,7 @@ const log = createLogger("modules/hawala-ledger/service")
 import { MedusaService, ContainerRegistrationKeys } from "@medusajs/framework/utils"
 import { auditFinancialTransaction } from "./audit-logger"
 import { assertRailInvariants } from "./posture-a-guard"
+import { splitAdvanceRepayment } from "./advance-repayment-split"
 import { splitConsignmentCents } from "../../lib/consignment"
 import {
   LedgerAccount,
@@ -2390,10 +2391,33 @@ class HawalaLedgerModuleService extends MedusaService({
     const newBalance = outstandingBalance - repaymentAmount
     const newTotalRepaid = Number(advance.total_repaid) + repaymentAmount
 
+    // Split the payment between principal and fee. A factor-rate advance owes
+    // principal * fee_rate, so each payment retires both components pro-rata.
+    // See `advance-repayment-split.ts` for why, and for why the closing
+    // payment is trued up rather than computed.
+    const priorRepayments = await this.listAdvanceRepayments({
+      advance_id: advance.id,
+    })
+    const priorPrincipalRepaid = priorRepayments.reduce(
+      (sum, r) => sum + Number(r.principal_amount ?? 0),
+      0
+    )
+
+    const split = splitAdvanceRepayment({
+      repayment_amount: repaymentAmount,
+      fee_rate: Number(advance.fee_rate),
+      principal_amount: Number(advance.principal_amount),
+      prior_principal_repaid: priorPrincipalRepaid,
+      is_final: newBalance <= 0,
+    })
+
     await this.updateVendorAdvances({
       id: advance.id,
       outstanding_balance: newBalance,
       total_repaid: newTotalRepaid,
+      // Fee revenue was previously never recorded on the advance at all.
+      total_fee_charged:
+        Number(advance.total_fee_charged ?? 0) + split.fee_amount,
       status: newBalance <= 0 ? ("REPAID" as const) : ("ACTIVE" as const),
       actual_end_date: newBalance <= 0 ? new Date() : undefined,
     })
@@ -2403,7 +2427,8 @@ class HawalaLedgerModuleService extends MedusaService({
       advance_id: advance.id,
       ledger_entry_id: entry.id,
       order_id: data.order_id,
-      principal_amount: repaymentAmount, // Simplified - in reality split principal/fee
+      principal_amount: split.principal_amount,
+      fee_amount: split.fee_amount,
       total_amount: repaymentAmount,
       outstanding_balance_after: newBalance,
       repayment_type: "AUTO_DEDUCT" as const,
