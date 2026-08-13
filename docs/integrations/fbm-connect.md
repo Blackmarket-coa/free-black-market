@@ -11,7 +11,10 @@ panel under **My Website**:
   FBM-hosted site pointed at the vendor's catalog. The launched site is simply
   **Mode 1 pre-configured** — see [`templates/fbm-site-template`](../../templates/fbm-site-template).
 
-The SDK is versioned; this doc tracks **connect.js v2**.
+The SDK is versioned; this doc tracks **connect.js v2**. Releases are frozen
+at immutable URLs (`/v2.0.0/connect.js`) with published SRI hashes — see
+[the changelog](./fbm-connect-changelog.md) for versions and hashes, and
+§2 for which URL to embed.
 
 Everything is built on one public, website-agnostic contract: the **FBM Store
 API**, plus a small set of key-authenticated write/runtime endpoints for
@@ -137,12 +140,22 @@ performs on the visitor's behalf:
 
 ## 2. The Connect SDK (`connect.js`)
 
-Served from `https://freeblackmarket.com/connect.js`. No dependencies, no build
-step. Configure it entirely from the script tag:
+No dependencies, no build step. Two URLs serve it:
+
+- **Pinned (embed this one):** `https://freeblackmarket.com/v2.0.0/connect.js` —
+  frozen forever, cached immutably, and safe to pair with `integrity`. Your
+  embed never changes behavior until you choose to move versions.
+- **Mutable:** `https://freeblackmarket.com/connect.js` — always the latest
+  release. Convenient for experiments; do not pair with `integrity` (the hash
+  breaks on every release) and do not build a production integration on it.
+
+Configure it entirely from the script tag:
 
 ```html
 <script
-  src="https://freeblackmarket.com/connect.js"
+  src="https://freeblackmarket.com/v2.0.0/connect.js"
+  integrity="sha384-g3F0Snh1ELm17qaHBIZPty9TgC1ukcwyugsITFUhc+5JK1u1IP7kVcTyp4Jj1Drv"
+  crossorigin="anonymous"
   data-fbm-vendor="shaktiinnergy"
   data-fbm-api="https://api.freeblackmarket.com"
   data-fbm-key="pk_live_…"
