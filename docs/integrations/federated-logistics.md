@@ -55,6 +55,10 @@ Request headers:
   `HMAC_SHA256(secret, "{X-FBM-Timestamp}.{raw_request_body}")`.
   The signature covers the exact serialized envelope, so no field —
   including `event_type` and `correlation_id` — is tamperable.
+- `X-FBM-Key-ID` — optional in contract v1: names the per-partner machine
+  credential that signed the request (§4a). When present, the receiver
+  verifies with that credential's secret; an unknown or revoked key id
+  answers exactly like a bad signature.
 - `X-Correlation-ID` — optional; propagated for tracing (§8).
 
 Receiver rules, both sides:
@@ -100,6 +104,28 @@ The FBM outbound channel silently no-ops (emits nothing, queues nothing)
 unless both `BLACKSTAR_WEBHOOK_SECRET` and `BLACKSTAR_API_BASE` are set.
 The legacy `FBM_BLACKSTAR_API_KEY` static key is retired; drop it.
 
+### 4a. Per-partner machine credentials
+
+The global secrets above are the migration path, not the destination. Each
+side can issue per-partner credentials and verify by `X-FBM-Key-ID`:
+
+- **Blackstar issues FBM's credential** with
+  `php artisan fbm:credential issue --label="FBM production"` (stored in its
+  `node_credentials` table); FBM announces the issued key id via
+  `BLACKSTAR_EMIT_KEY_ID`.
+- **FBM issues Blackstar's credential** with
+  `pnpm medusa exec ./src/scripts/blackstar-bridge-credential.ts issue
+  "Blackstar production"` (stored encrypted under `BRIDGE_CREDENTIAL_KEY`);
+  Blackstar announces its key id via `FBM_OUTBOUND_KEY_ID`.
+
+Secrets print exactly once at issue time and are encrypted at rest — there
+is no read-back path; re-issue instead. Rotation is overlap-based on both
+sides: `rotate` issues a new credential while the old one keeps verifying
+until explicitly revoked, so senders switch on their own schedule with no
+flag day. Once every sender carries a key id, flip the receiver's require
+flag (`FBM_REQUIRE_KEY_ID` on Blackstar, `BLACKSTAR_REQUIRE_KEY_ID` on FBM)
+— the global secret for that direction is then never consulted again.
+
 ## 5. Envelopes
 
 FBM → Blackstar. `event_id` is **required** and globally unique; Blackstar
@@ -115,12 +141,13 @@ effects:
 }
 ```
 
-Blackstar → FBM. `event_id` is **not sent** in contract v1 (open item,
-§9); the FBM receiver reads it opportunistically if present and relies on
-idempotent-by-construction handling instead (§7):
+Blackstar → FBM. `event_id` is the outbound event record's uuid — stable
+across retries (retries re-sign with a fresh timestamp but keep the same
+id), so receivers can deduplicate at the receipt level:
 
 ```json
 {
+  "event_id": "uuid (outbound event id, stable across retries)",
   "event_type": "shipment.claimed",
   "correlation_id": "ord_123",
   "payload": {
@@ -196,7 +223,7 @@ Both directions are **at-least-once**. Consumers must tolerate duplicates.
   replayed events return 202 with no side effects.
 - **FBM inbound** — idempotent by construction: applying the same event
   twice rewrites the same state. There is no receipt table on this side
-  until outbound `event_id` lands (§9).
+  yet; the last-processed `event_id` is kept in shipment metadata (§9).
 
 ## 8. Correlation and ordering
 
@@ -213,16 +240,18 @@ consumers reconciling shipment state should treat `delivered` and
 
 ## 9. Open contract items
 
-1. **`created_by_user_id`** — Blackstar's inbound processor expects a
-   listing creator identity that FBM cannot supply (FBM has no Blackstar
-   user). Resolution owner: Blackstar — a service-account default for
-   federated listings. Until then, listing creation from
-   `delivery.option.selected` depends on Blackstar-side handling.
-2. **Outbound `event_id`** — absent from the Blackstar → FBM envelope.
-   Adding it makes receipt-level dedupe symmetric; the FBM receiver
-   already reads it opportunistically, so this is additive.
+1. ~~**`created_by_user_id`**~~ — **closed.** Blackstar defaults the
+   listing creator to its `FBM_SYSTEM_USER_ID` service account (fail-closed
+   with an actionable dead-letter when unset); FBM still omits the field by
+   contract.
+2. ~~**Outbound `event_id`**~~ — **closed.** The Blackstar → FBM envelope
+   now carries the outbound record's uuid, stable across retries (§5).
 3. **Sequencing** — a monotonic per-shipment sequence number would close
    the ordering caveat in §8.
+4. **FBM-side receipt table** — with outbound `event_id` in place, FBM can
+   add receipt-level dedupe symmetric to Blackstar's
+   `fbm_inbound_event_receipts`; today FBM relies on idempotent-by-
+   construction handling plus the metadata stamp (§7).
 
 ## 10. Verifying an integration
 
