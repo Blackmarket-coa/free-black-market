@@ -93,6 +93,22 @@ const nextConfig: NextConfig = {
           },
         ],
       },
+      // Frozen SDK releases (/v2.0.0/connect.js, …): the pinnable channel the
+      // vendor snippet embeds with SRI. A release directory is never edited
+      // after it ships — connect-sri.unit.spec.ts (backend) enforces that the
+      // mutable /connect.js, the frozen copy of its declared version, and the
+      // published integrity hash all agree — so true immutable caching is safe.
+      {
+        source: "/:version(v\\d+\\.\\d+\\.\\d+)/connect.js",
+        headers: [
+          { key: "Access-Control-Allow-Origin", value: "*" },
+          { key: "X-Content-Type-Options", value: "nosniff" },
+          {
+            key: "Cache-Control",
+            value: "public, max-age=31536000, immutable",
+          },
+        ],
+      },
     ]
   },
   async redirects() {
