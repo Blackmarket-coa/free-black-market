@@ -5,6 +5,7 @@ import {
   STATUS_FOR_BLACKSTAR_EVENT,
   verifyBlackstarSignature,
 } from "../../../../../modules/blackstar-fulfillment/verify-blackstar-signature"
+import { resolveBlackstarVerificationSecret } from "../../../../../modules/blackstar-fulfillment/resolve-verification-secret"
 
 type BlackstarEnvelope = {
   event_id?: string
@@ -56,15 +57,41 @@ export async function POST(req: MedusaRequest<BlackstarEnvelope>, res: MedusaRes
     return Array.isArray(v) ? v[0] : v
   }
 
+  const service = req.scope.resolve<BlackstarFulfillmentModuleService>(
+    BLACKSTAR_FULFILLMENT_MODULE
+  )
+
+  // Per-partner machine credentials: X-FBM-Key-ID selects the verifying
+  // secret; the global BLACKSTAR_OUTBOUND_SECRET remains only as a migration
+  // path while BLACKSTAR_REQUIRE_KEY_ID != 1.
+  const resolution = await resolveBlackstarVerificationSecret({
+    keyIdHeader: header("x-fbm-key-id"),
+    lookup: (keyId) => service.findActiveBridgeSecret(keyId),
+    globalSecret: process.env.BLACKSTAR_OUTBOUND_SECRET,
+    requireKeyId: process.env.BLACKSTAR_REQUIRE_KEY_ID === "1",
+  })
+  if (!resolution.ok) {
+    return res.status(resolution.status).json({ message: resolution.message })
+  }
+
   const verdict = verifyBlackstarSignature({
     rawBody,
     timestampHeader: header("x-fbm-timestamp"),
     signatureHeader: header("x-fbm-signature"),
-    secret: process.env.BLACKSTAR_OUTBOUND_SECRET,
+    secret: resolution.secret,
     toleranceSeconds: Number(process.env.BLACKSTAR_SIGNATURE_TOLERANCE_SECONDS) || undefined,
   })
   if (!verdict.ok) {
     return res.status(verdict.status).json({ message: verdict.message })
+  }
+
+  if (resolution.credentialId) {
+    // Best-effort usage stamp — a bookkeeping failure must not fail the event.
+    try {
+      await service.touchBridgeCredential(resolution.credentialId)
+    } catch {
+      // ignored
+    }
   }
 
   const body = (req.body ?? {}) as BlackstarEnvelope
@@ -84,10 +111,6 @@ export async function POST(req: MedusaRequest<BlackstarEnvelope>, res: MedusaRes
   if (!payload.source_order_ref) {
     return res.status(400).json({ message: "payload.source_order_ref is required" })
   }
-
-  const service = req.scope.resolve<BlackstarFulfillmentModuleService>(
-    BLACKSTAR_FULFILLMENT_MODULE
-  )
 
   const shipment = await service.recordOrUpdateShipment({
     order_id: payload.source_order_ref,
