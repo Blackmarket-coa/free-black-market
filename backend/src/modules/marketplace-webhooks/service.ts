@@ -270,15 +270,24 @@ class MarketplaceWebhooksService extends MedusaService({
     let responseBody: string | null = null
     let succeeded = false
 
+    const headers: Record<string, string> = {
+      "content-type": "application/json",
+      "X-FBM-Timestamp": timestamp,
+      "X-FBM-Signature": signature,
+      "X-Correlation-ID": correlationId,
+    }
+    // Per-partner machine credential announcement: the key id Blackstar issued
+    // this deployment (its `fbm:credential issue` output). Optional until
+    // Blackstar's FBM_REQUIRE_KEY_ID retires its global secret.
+    const emitKeyId = process.env.BLACKSTAR_EMIT_KEY_ID
+    if (emitKeyId) {
+      headers["X-FBM-Key-ID"] = emitKeyId
+    }
+
     try {
       const res = await fetch(url, {
         method: "POST",
-        headers: {
-          "content-type": "application/json",
-          "X-FBM-Timestamp": timestamp,
-          "X-FBM-Signature": signature,
-          "X-Correlation-ID": correlationId,
-        },
+        headers,
         body: rawBody,
       })
       responseCode = res.status
