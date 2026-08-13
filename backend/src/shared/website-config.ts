@@ -70,10 +70,28 @@ export function storefrontBase(): string {
   );
 }
 
+/**
+ * The current connect.js release. Changing connect.js requires bumping the
+ * version literal inside it, snapshotting `public/v<version>/connect.js`, and
+ * updating these two constants — connect-sri.unit.spec.ts fails the build on
+ * any drift between the four. The SRI hash only makes sense on the frozen URL:
+ * pinning it to the mutable /connect.js would break every embed on the next
+ * edit.
+ */
+export const CONNECT_VERSION = "2.0.0";
+export const CONNECT_SRI =
+  "sha384-g3F0Snh1ELm17qaHBIZPty9TgC1ukcwyugsITFUhc+5JK1u1IP7kVcTyp4Jj1Drv";
+
+/** The pinned, immutable SDK URL the snippet embeds. */
+export function sdkUrl(): string {
+  return `${storefrontBase()}/v${CONNECT_VERSION}/connect.js`;
+}
+
 /** The exact, ready-to-paste Connect snippet for a vendor handle. */
 export function buildSnippet(handle: string): string {
   return [
-    `<script src="${storefrontBase()}/connect.js"`,
+    `<script src="${sdkUrl()}"`,
+    `        integrity="${CONNECT_SRI}" crossorigin="anonymous"`,
     `        data-fbm-vendor="${handle}"`,
     `        data-fbm-api="${apiBase()}" async></script>`,
   ].join("\n");
@@ -92,7 +110,8 @@ export function serializeWebsite(handle: string, meta: WebsiteMeta | null) {
     launch_available: isLaunchConfigured(),
     api_base: apiBase(),
     storefront_url: storefrontBase(),
-    sdk_url: `${storefrontBase()}/connect.js`,
+    sdk_url: sdkUrl(),
+    sdk_version: CONNECT_VERSION,
     snippet: buildSnippet(handle),
   };
 }
