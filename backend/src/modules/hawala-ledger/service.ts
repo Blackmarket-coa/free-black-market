@@ -865,6 +865,18 @@ class HawalaLedgerModuleService extends MedusaService({
       throw new Error("Invalid account ID")
     }
 
+    // Both legs must be on the same rail. The entry's rail is derived from
+    // the debit account, so without this check a CCR-debit → USD-credit
+    // transfer would pass the CCR guard and inflate a USD balance —
+    // closed-loop value escaping into a cash-convertible account. Rejected
+    // before any entry is written or balance moves.
+    if (debitAccount.currency_code !== creditAccount.currency_code) {
+      throw new Error(
+        `Cross-rail transfer rejected: debit account is ${debitAccount.currency_code}, ` +
+          `credit account is ${creditAccount.currency_code}. Both legs must share a rail.`
+      )
+    }
+
     // Per-rail invariant guard. CCR keeps its Posture A purchase-context
     // check; HRS gets the time-bank reference check; KARMA is rejected
     // here (use karma_event); USD/USDC/GIFT are passthrough; unknown
