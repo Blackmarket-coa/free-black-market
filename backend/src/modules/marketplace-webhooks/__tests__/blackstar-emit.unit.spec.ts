@@ -121,7 +121,28 @@ describe("MarketplaceWebhooksService — Blackstar channel", () => {
       .digest("hex")
     expect(headers["X-FBM-Signature"]).toBe(expected)
 
+    // No credential announced unless BLACKSTAR_EMIT_KEY_ID is configured.
+    expect(headers["X-FBM-Key-ID"]).toBeUndefined()
+
     expect(rows[0].status).toBe("succeeded")
+  })
+
+  it("announces the issued key id on X-FBM-Key-ID when configured", async () => {
+    process.env.BLACKSTAR_EMIT_KEY_ID = "bsk_issued_by_blackstar_1"
+
+    const { svc, rows } = makeService()
+    await svc.emitBlackstar("order.created", { source_order_ref: "ord_k" }, { eventId: "evt_k" })
+
+    const captured: { init?: any } = {}
+    jest.spyOn(global, "fetch" as any).mockImplementation(async (_url: any, init: any) => {
+      captured.init = init
+      return { ok: true, status: 202, text: async () => "{}" } as any
+    })
+
+    await svc.attemptDelivery(rows[0].id)
+    expect((captured.init.headers as Record<string, string>)["X-FBM-Key-ID"]).toBe(
+      "bsk_issued_by_blackstar_1"
+    )
   })
 
   it("schedules a retry on delivery failure instead of dying on attempt one", async () => {
