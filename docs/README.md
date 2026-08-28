@@ -74,6 +74,10 @@ This index organizes project docs by purpose. Start with the repo-root
 
 ## Planning & Strategy
 
+- `docs/REPO_CONSOLIDATION_REVIEW.md` — canonical 2026-08-28 seven-repo
+  consolidation review: audit verdicts, decisions (ledger, identity,
+  logistics, registry, reputation, geospatial), Blnk harvest list, and
+  the ordered roadmap; supersedes conflicting orderings elsewhere
 - `FEATURE_BUILD_PLAN.md` (repo root)
 - `ROADMAP.md` (repo root)
 - `docs/CREATOR_COMMERCE_ROADMAP.md`
