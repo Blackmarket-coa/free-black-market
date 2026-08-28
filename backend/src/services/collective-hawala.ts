@@ -36,9 +36,9 @@ export class CollectiveHawalaService {
     this.demandPoolService = demandPoolService
   }
 
-  // ──────────────────────────────────────────────────────────────────────────
+  // ──────────────────────────────────────────────────────────────────────
   // Escrow for Demand Pool Participants
-  // ──────────────────────────────────────────────────────────────────────────
+  // ──────────────────────────────────────────────────────────────────────
 
   /**
    * Lock funds in escrow when a buyer commits to a demand pool.
@@ -214,9 +214,9 @@ export class CollectiveHawalaService {
     return entry
   }
 
-  // ──────────────────────────────────────────────────────────────────────────
+  // ────────────────────────────────────────────────────────────────────
   // Bounty Escrow & Payouts
-  // ──────────────────────────────────────────────────────────────────────────
+  // ────────────────────────────────────────────────────────────────────
 
   /**
    * Escrow bounty funds when a buyer creates a demand bounty.
@@ -548,9 +548,9 @@ export class CollectiveHawalaService {
     return results
   }
 
-  // ──────────────────────────────────────────────────────────────────────────
+  // ────────────────────────────────────────────────────────────────────
   // Creator Sponsorship Escrow & Payout
-  // ──────────────────────────────────────────────────────────────────────────
+  // ────────────────────────────────────────────────────────────────────
 
   /**
    * Lock a producer's sponsorship budget in escrow when they sponsor a creator.
@@ -661,9 +661,9 @@ export class CollectiveHawalaService {
     }
   }
 
-  // ──────────────────────────────────────────────────────────────────────────
+  // ────────────────────────────────────────────────────────────────────
   // Group Payment Processing
-  // ──────────────────────────────────────────────────────────────────────────
+  // ────────────────────────────────────────────────────────────────────
 
   /**
    * Process the final group purchase when deal is approved.
@@ -686,6 +686,18 @@ export class CollectiveHawalaService {
     const escrowAccountId = post.escrow_account_id as string
     if (!escrowAccountId) {
       throw new Error("Escrow account not set")
+    }
+
+    // Residuals below are computed from the final unit price, so its absence
+    // is caught here, before any money moves, rather than after the drain has
+    // already run. `selectSupplier` writes final_unit_price and
+    // final_total_price together; a pool carrying a total but no unit price
+    // is corrupt data, not a case to work around.
+    const finalUnitPrice = Number(post.final_unit_price)
+    if (!post.final_unit_price || !Number.isFinite(finalUnitPrice)) {
+      throw new Error(
+        "final_unit_price not set; cannot compute participant residuals"
+      )
     }
 
     // Get supplier earnings account
@@ -734,6 +746,123 @@ export class CollectiveHawalaService {
     })
     entries.push(supplierEntry)
 
+    // Return each participant's escrow residual — whatever they escrowed
+    // beyond `quantity_committed × final_unit_price`. Participants escrow a
+    // free-form amount while the drain above moves exactly the final total,
+    // so without this leg the difference stays in the pool's escrow account
+    // with no path back out (docs/SAVINGS_ROUTING_SPEC.md §1–2, Tier 0).
+    //
+    // Strictly per-participant: the same escrow account also holds bounty
+    // escrows, so sweeping the remaining balance would take bounty money. A
+    // shortfall (under-escrow) is clamped to zero here — pool solvency is
+    // enforced by the ledger's overdraft refusal, not by this leg.
+    const participants = await this.demandPoolService.listDemandParticipants({
+      demand_post_id: input.demand_post_id,
+    })
+    const escrowedParticipants = participants.filter(
+      (p: any) => p.escrow_locked && Number(p.escrow_amount) > 0
+    )
+
+    const residuals: Array<{
+      participant_id: string
+      customer_id: string
+      amount: number
+      destination: "USER_WALLET" | "MUTUAL_AID"
+      entry_id: string | null
+    }> = []
+    let remainingEscrowTotal = Number(post.total_escrowed)
+
+    for (const participant of escrowedParticipants) {
+      const escrowAmount = Number(participant.escrow_amount)
+      const owed = roundCents(
+        Number(participant.quantity_committed) * finalUnitPrice
+      )
+      const residual = roundCents(Math.max(0, escrowAmount - owed))
+
+      let entryId: string | null = null
+      let destination: "USER_WALLET" | "MUTUAL_AID" = "USER_WALLET"
+
+      if (residual > 0) {
+        const routeToMutualAid = shouldRouteToMutualAid(
+          participant.surplus_disposition as string | null
+        )
+
+        let destinationId: string
+        if (routeToMutualAid) {
+          destination = "MUTUAL_AID"
+          destinationId = requireMutualAidAccountId()
+        } else {
+          const wallets = await this.hawalaService.listLedgerAccounts({
+            owner_type: "CUSTOMER",
+            owner_id: participant.customer_id,
+            account_type: "USER_WALLET",
+          })
+          if (wallets.length === 0) {
+            throw new Error(
+              `Customer wallet not found for participant ${participant.id}`
+            )
+          }
+          destinationId = wallets[0].id
+        }
+
+        // ONE key regardless of destination — deliberately unlike the
+        // destination-distinct keys in releaseParticipantEscrow. This runs
+        // inside a multi-participant completion loop: if a crash-and-retry
+        // straddled a disposition change, distinct keys would move the same
+        // residual twice (once per destination), paying this participant out
+        // of a pool balance that still owes everyone else. The disposition
+        // is final once the first attempt routes the money; the dedupe in
+        // createTransfer is what enforces that.
+        const entry = await this.hawalaService.createTransfer({
+          debit_account_id: escrowAccountId,
+          credit_account_id: destinationId,
+          amount: residual,
+          entry_type: routeToMutualAid ? "TRANSFER" : "REFUND",
+          description: routeToMutualAid
+            ? `Escrow residual redirected to mutual aid for demand pool ${input.demand_post_id}`
+            : `Escrow residual return for demand pool ${input.demand_post_id}`,
+          reference_type: "ORDER",
+          reference_id: input.demand_post_id,
+          idempotency_key: `demand-residual-${participant.id}`,
+        })
+        entryId = entry.id
+      }
+
+      // Same bookkeeping as releaseParticipantEscrow, except the terminal
+      // status: these participants completed their purchase, so they land on
+      // CONFIRMED, not REFUNDED. Zeroing escrow_amount is also what makes a
+      // retry of this method skip already-processed participants.
+      await this.demandPoolService.updateDemandParticipants({
+        id: participant.id,
+        escrow_amount: 0,
+        escrow_locked: false,
+        status: ParticipantStatus.CONFIRMED,
+      })
+
+      // Same decrement convention as releaseParticipantEscrow: the pool's
+      // total_escrowed tracks participant escrow still held, and this
+      // participant's full amount has now been dispersed (drain legs plus
+      // residual). Written per participant, not once after the loop, so a
+      // mid-loop crash leaves the counter consistent with the participants
+      // actually processed — a retry skips them and must not re-deduct.
+      remainingEscrowTotal = Math.max(
+        0,
+        roundCents(remainingEscrowTotal - escrowAmount)
+      )
+      await this.demandPoolService.updateDemandPosts({
+        id: input.demand_post_id,
+        total_escrowed: remainingEscrowTotal,
+      })
+
+      residuals.push({
+        participant_id: participant.id,
+        customer_id: participant.customer_id as string,
+        amount: residual,
+        destination,
+        entry_id: entryId,
+      })
+    }
+
     // Update demand post status
     await this.demandPoolService.updateDemandPosts({
       id: input.demand_post_id,
@@ -744,12 +873,16 @@ export class CollectiveHawalaService {
       entries,
       platform_fee: platformFee,
       supplier_amount: supplierAmount,
+      residuals,
+      residual_total: roundCents(
+        residuals.reduce((sum, r) => sum + r.amount, 0)
+      ),
     }
   }
 
-  // ──────────────────────────────────────────────────────────────────────────
+  // ────────────────────────────────────────────────────────────────────
   // Savings Dashboard
-  // ──────────────────────────────────────────────────────────────────────────
+  // ────────────────────────────────────────────────────────────────────
 
   /**
    * Calculate savings for a completed group buy compared to list price.
@@ -794,9 +927,9 @@ export class CollectiveHawalaService {
     }
   }
 
-  // ──────────────────────────────────────────────────────────────────────────
+  // ────────────────────────────────────────────────────────────────────
   // Helpers
-  // ──────────────────────────────────────────────────────────────────────────
+  // ────────────────────────────────────────────────────────────────────
 
   private async getOrCreateDemandEscrow(demandPostId: string) {
     // Check if demand post already has an escrow account
