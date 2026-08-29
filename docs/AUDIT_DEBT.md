@@ -18,6 +18,24 @@ CI/live-env verified.
 | ~~DW-3~~ | Dark Blackout emitters (§2/§3) never invoked | **done (partial by design)** — `referral.attributed` (attribute-order-on-placed) + `ledger.usdc_converted` (hawala-settlement) wired; the other four stay stubbed with documented blockers (no order-failed/chargeback/quest/ambassador concept) | `backend/src/lib/blackout-wire-helpers.ts`, `subscribers/attribute-order-on-placed.ts`, `jobs/hawala-settlement.ts` |
 | ~~DW-4~~ | Creator-Commerce Phase 2A/2B | **done** — plugin install/entitlement-verification API (2A) + `service-program` reviews model/endpoints (2B). Deferred tails: plugin hook registry + semver, service messaging hook | `backend/src/api/store/plugins/**`, `backend/src/modules/{plugin-registry/entitlement.ts,service-program/**}` |
 
+## W1b — Blackout billing consolidation (2026-08-29)
+
+Closed in the W1b pass (see `docs/contracts/blackout-integration.md` §"Blackout
+checkout"): the checkout-session stub is now a real stateful purchase path
+(idempotency row + shadow product + cart/payment/subscription), entitlement
+Bug A (expiry never extended on renew), Gap C (`payment_method_id` never
+persisted), Gap D (renewal ledger legs untyped — now
+`reference_type=SUBSCRIPTION_RENEWAL`), Gap E (cancel/expire never revoked
+subscription grants), and Ambiguity B (`customer_external_id` carried the
+OAuth sub — now mxid-only).
+
+| # | Item | Status | Location |
+|---|------|--------|----------|
+| W1B-1 | No HTTP integration spec for `/v1/integrations/blackout/**` (checkout happy-path against Postgres) — unit specs cover session idempotency, tier mapping, grant extension, and the emitters; the app-boot + migration surface is exercised by the Integration Tests CI job | **deferred (S)** | `integration-tests/http/` |
+| W1B-2 | Off-session renewal depends on the first checkout attaching a reusable Stripe payment method (`setup_future_usage` passed through the payment session `data`); must be verified in the Stripe dashboard during go-live acceptance — no live key exists pre-launch to verify sooner | **go-live acceptance step** | `backend/src/api/v1/integrations/blackout/commerce/checkout/sessions/[token]/page/route.ts` |
+| W1B-3 | Gift subscriptions stay local-only on Blackout (`comped` override); a paid gift rail would hold stored value and violate Posture-A no-balance-holding — revisit only as an immediate-grant purchase | **deferred by design** | blackout `services/subscriptionGifts.ts` |
+| W1B-4 | Prorated refunds: refund of a subscription order cancels the sub + revokes the bundle (minimal handling); pro-rata credit is out of scope | **deferred (M)** | `backend/src/subscribers/revoke-entitlements-on-refund.ts` |
+
 ## ⚠️ Critical: money-path atomicity was silently disabled (FIXED 2026-06-20)
 
 **Severity: high (financial correctness).** Surfaced by the money-path concurrency

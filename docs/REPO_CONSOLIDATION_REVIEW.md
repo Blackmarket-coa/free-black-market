@@ -196,6 +196,18 @@ Ordered workstreams; each is independently shippable.
   entitlements (the seam exists and is path-pinned by tests); decide
   channel points (FBM closed-loop rail vs. declared non-monetary local
   state) and migrate accordingly; land harvest items 1–4 above.
+  - *W1a landed (2026-08-29)*: Blnk harvest — external reconciliation,
+    balance monitors, lineage, point-in-time balances in `hawala-ledger`.
+  - *W1b landed FBM-side (2026-08-29)*: real Blackout checkout (stateful
+    idempotent sessions → shadow product → cart/payment → order +
+    subscription + tier grants), entitlement/renewal fixes (extend-on-renew,
+    revoke-on-cancel/expire, mxid normalization, `SUBSCRIPTION_RENEWAL`
+    ledger reference), `subscription.payment_failed` bridge event, Canopy
+    plan placeholder listings, `listGrants` read. Operator decision recorded:
+    **channel points are declared non-monetary** (engagement state in
+    Blackout — never purchasable, never convertible to CCR/USD; zero
+    migration). Blackout-side retirement of the direct Stripe rail is the
+    companion change (see blackout `docs/contracts/fbm-billing-consumer.md`).
 - **W2 — Identity (MAS)**: enable the Synapse OIDC/MAS surface in
   staging; write the single Medusa OIDC auth provider for FBM; define
   the migration path for Blackout's bespoke accounts (account-number ↔

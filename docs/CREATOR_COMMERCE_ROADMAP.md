@@ -253,7 +253,8 @@ context. Dependencies on Phase 1 are noted.
 | Flag | Slice | Default | Effect when unset |
 |---|---|---|---|
 | `FBM_SUBSCRIPTION_RENEWAL_LIVE` | A | unset | Workflow returns legacy `renewal_prepared: true` (no order created) |
-| `FBM_SUBSCRIPTION_PAYMENT_PROVIDER_ID` | A | `pp_stripe_stripe` | Payment provider used for off-session renewal charges |
+| `FBM_SUBSCRIPTION_PAYMENT_PROVIDER_ID` | A | `pp_stripe_stripe` | Payment provider used for the Blackout checkout + off-session renewal charges (`pp_system_default` for dev) |
+| `STRIPE_PUBLISHABLE_KEY` | W1b | unset | Blackout checkout page renders a plain confirm button instead of Stripe Elements (fine only for non-Stripe providers) |
 | `FBM_MULTILEVEL_REFERRALS` | B | unset | `attributeOrder` writes single L1 row exactly like today |
 | `FBM_REFERRAL_DEFAULT_SPLITS` | B | `{"L1":80,"L2":15,"L3":5}` | Used only when program lacks explicit splits |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | C | unset | Google provider not registered |
