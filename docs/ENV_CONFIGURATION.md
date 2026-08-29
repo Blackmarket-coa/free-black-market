@@ -32,6 +32,9 @@ integration hooks.
 | `FBM_ENTITLEMENT_DEFAULT_DURATION_DAYS` | (perpetual) | optional | Default lifetime for entitlements granted without an explicit duration. |
 | `FBM_ONBOARDING_FOLLOWUP_DELAY_MS` | `172800000` (48h) | optional | Delay used by the Sprint A → C 48h follow-up subscriber. |
 | `PUBLIC_STOREFRONT_URL` | — | optional | Used by the launch wizard's share screen for storefront URL building. Never hardcoded in code. |
+| `MARKETPLACE_SIGNING_PRIVATE_KEY_PEM` | — | extension signing on (paired with KEY_ID, validated both ways) | Ed25519 private key PEM (`openssl genpkey -algorithm ed25519`) that signs published extension bundles (W3, `docs/contracts/extension-manifest.md`). Unset ⇒ publish 500s `signing_failed` (draft-reverting) and both key endpoints 503. |
+| `MARKETPLACE_SIGNING_KEY_ID` | — | extension signing on | Stable key identifier (e.g. `fbm-2026-q3`) surfaced in envelopes, `/v1/marketplace/signing-keys`, and `/.well-known/freeblackmarket-publishing-keys.json`. |
+| `FBM_PLATFORM_VERSION` | `1.0.0` | optional | Host platform version the plugin install compat gate checks `min/max_host_version` bounds against (`plugin-registry/compat.ts`). |
 
 ## In-app bug reporter
 

@@ -28,6 +28,7 @@ import {
   vendorRegistrationRateLimiter,
 } from "../shared/rate-limiter";
 import { preventPasswordReuseMiddleware } from "./middlewares/password-history";
+import { servePublishingKeys } from "./middlewares/publishing-keys";
 import { ensureSellerContext } from "./vendor/_middlewares";
 import { requireSellerContextV1 } from "./middlewares/seller-context-v1";
 import { CreateVenueSchema } from "./admin/venues/route";
@@ -772,6 +773,16 @@ export default defineMiddlewares({
           });
         },
       ],
+    },
+    // Literal-path alias for the Ed25519 publishing keyset the Blackout
+    // client pins (W3). A `.well-known` route DIRECTORY is dropped by tsc at
+    // `medusa build` (dot-dirs are excluded from the `**/*` include glob), so
+    // the dotted path is served here as a terminating middleware; the real
+    // route lives at /well-known/freeblackmarket-publishing-keys.json.
+    {
+      matcher: "/.well-known/freeblackmarket-publishing-keys.json",
+      method: "GET",
+      middlewares: [servePublishingKeys],
     },
     // Ensure all vendor routes (including nested plugin routes) are guarded
     {

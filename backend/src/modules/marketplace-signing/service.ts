@@ -6,6 +6,7 @@ import {
   sign as cryptoSign,
 } from "crypto"
 import { emitMetric } from "../../lib/instrumentation"
+import type { BlackoutSignatureEnvelope } from "./verify"
 
 export interface PluginManifestLike {
   id: string
@@ -128,6 +129,50 @@ class PluginSigningService {
     } catch (err) {
       emitMetric("marketplace.signing.failure", {
         kind: "plugin_bundle",
+        plugin_id: args.manifest.id ?? "unknown",
+      })
+      throw err
+    }
+  }
+
+  /**
+   * Sign the Blackout-format DISTRIBUTION envelope (W3): the shape the
+   * Blackout client's `pluginSignature.ts` verifies — Ed25519 over
+   * `${manifestSha256}:${sha256}` — stored on `plugin_version` and served to
+   * installers. Same keypair as `sign()`; different signed payload, so both
+   * envelopes are minted at publish time (translation is impossible later).
+   * The manifest MUST be JSON-clean (no undefined-valued keys) — see
+   * verify.ts's canonicalization note.
+   */
+  signBlackoutEnvelope(args: {
+    manifest: PluginManifestLike
+    /** Hex SHA-256 of the bundle bytes (manifest_plugin: the declarative payload hash). */
+    bundleSha256: string
+    issuedAt?: Date
+  }): BlackoutSignatureEnvelope {
+    try {
+      const { keyId, key } = this.getPrivateKey()
+      const issuedAt = (args.issuedAt ?? new Date()).toISOString()
+      const manifestSha256 = sha256(canonicalJson(args.manifest))
+      const payload = `${manifestSha256}:${args.bundleSha256}`
+      const signature = cryptoSign(null, Buffer.from(payload, "utf8"), key).toString("base64")
+
+      emitMetric("marketplace.signing.success", {
+        kind: "plugin_bundle_v2",
+        plugin_id: args.manifest.id,
+        plugin_version: args.manifest.version,
+      })
+
+      return {
+        keyId,
+        signature,
+        manifestSha256,
+        sha256: args.bundleSha256,
+        issuedAt,
+      }
+    } catch (err) {
+      emitMetric("marketplace.signing.failure", {
+        kind: "plugin_bundle_v2",
         plugin_id: args.manifest.id ?? "unknown",
       })
       throw err

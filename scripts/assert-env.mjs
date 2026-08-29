@@ -63,6 +63,21 @@ const CONDITIONAL_RULES = {
         { key: "MAS_OIDC_CLIENT_SECRET", required: true, minLength: MIN_SECRET_LENGTH, banPrefixes: ["CHANGE_ME"] },
       ],
     },
+    {
+      // Extension bundle signing (W3, docs/contracts/extension-manifest.md) —
+      // an opt-in PAIR: half a pair in production is a misconfiguration, so
+      // each side requires the other.
+      when: { key: "MARKETPLACE_SIGNING_PRIVATE_KEY_PEM", present: true },
+      rules: [
+        { key: "MARKETPLACE_SIGNING_KEY_ID", required: true, banPrefixes: ["CHANGE_ME"] },
+      ],
+    },
+    {
+      when: { key: "MARKETPLACE_SIGNING_KEY_ID", present: true },
+      rules: [
+        { key: "MARKETPLACE_SIGNING_PRIVATE_KEY_PEM", required: true, minLength: 64, banPrefixes: ["CHANGE_ME"] },
+      ],
+    },
   ],
 }
 
