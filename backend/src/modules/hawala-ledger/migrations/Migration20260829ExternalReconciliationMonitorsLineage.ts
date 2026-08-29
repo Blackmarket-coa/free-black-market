@@ -203,6 +203,14 @@ export class Migration20260829ExternalReconciliationMonitorsLineage extends Migr
     `)
 
     // Match-key indexes for external reconciliation joins.
+    //
+    // The SettlementBatch MODEL uses `stellar_tx_hash`, but the original
+    // DDL (Migration20251229CreateHawalaLedger) created the column as
+    // `stellar_transaction_hash`, so migration-built databases (fresh
+    // installs, integration-test DBs) don't have the model's column at
+    // all. Add it before indexing it; the legacy `stellar_transaction_hash`
+    // column is left untouched where it exists.
+    this.addSql(`ALTER TABLE "hawala_settlement_batch" ADD COLUMN IF NOT EXISTS "stellar_tx_hash" TEXT NULL;`)
     this.addSql(`CREATE INDEX IF NOT EXISTS "idx_settlement_batch_stellar_tx" ON "hawala_settlement_batch" ("stellar_tx_hash") WHERE "stellar_tx_hash" IS NOT NULL AND "deleted_at" IS NULL;`)
     this.addSql(`CREATE INDEX IF NOT EXISTS "idx_ach_transaction_stripe_payout" ON "hawala_ach_transaction" ("stripe_payout_id") WHERE "stripe_payout_id" IS NOT NULL AND "deleted_at" IS NULL;`)
   }
