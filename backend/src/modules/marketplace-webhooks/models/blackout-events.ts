@@ -33,6 +33,9 @@ export const BLACKOUT_BRIDGE_EVENTS = [
   "ledger.usdc_converted",
   "subscription.activated",
   "subscription.lapsed",
+  // W1b: renewal charge failed (dunning). Blackout surfaces it to the member
+  // and treats it as advisory — access lapses only via subscription.lapsed.
+  "subscription.payment_failed",
   "dispute.opened",
   "dispute.resolved",
   // §4 companion: emitted on any access/role/membership change so Blackout can
