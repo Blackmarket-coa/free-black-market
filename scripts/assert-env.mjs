@@ -54,6 +54,15 @@ const CONDITIONAL_RULES = {
         { key: "MATRIX_ADMIN_TOKEN", required: true, banPrefixes: ["CHANGE_ME"] },
       ],
     },
+    {
+      // Matrix OIDC login via MAS (W2, docs/contracts/mas-identity-consumer.md)
+      // — validated only when the issuer is set.
+      when: { key: "MAS_OIDC_ISSUER", present: true },
+      rules: [
+        { key: "MAS_OIDC_CLIENT_ID", required: true, banPrefixes: ["CHANGE_ME"] },
+        { key: "MAS_OIDC_CLIENT_SECRET", required: true, minLength: MIN_SECRET_LENGTH, banPrefixes: ["CHANGE_ME"] },
+      ],
+    },
   ],
 }
 

@@ -51,6 +51,29 @@ GitHub repository for each submission.
 When neither App credentials nor a PAT are set, the routes return 503
 and the UI hides itself via `GET /store/bug-report/config`.
 
+## Auth providers
+
+Gating lives in `backend/src/lib/build-auth-module.ts`: with none of these
+set, Medusa's framework default (emailpass-only) applies. Google serves the
+**seller** actor (Creator Commerce Slice C); MAS serves the **customer**
+actor against the Blackout-hosted Matrix Authentication Service — the
+ecosystem's one IdP (W2; contract:
+`docs/contracts/mas-identity-consumer.md`). Seller OIDC is deferred — it
+would bypass vendor registration/approval.
+
+| Variable | Default | Required when | Description |
+| --- | --- | --- | --- |
+| `BACKEND_URL` | — | OAuth callbacks not set explicitly | Public base URL of this API; derives the default OAuth callback URLs. |
+| `GOOGLE_CLIENT_ID` | — | Google login on | Google OAuth client id. |
+| `GOOGLE_CLIENT_SECRET` | — | Google login on | Google OAuth client secret. |
+| `GOOGLE_CALLBACK_URL` | `${BACKEND_URL}/auth/seller/google/callback` | optional | Override for the Google redirect URI. |
+| `MAS_OIDC_ISSUER` | — | MAS login on | MAS public issuer URL (blackout deploy `MAS_ISSUER`). Setting it activates the conditional production rules in `scripts/assert-env.mjs`. |
+| `MAS_OIDC_CLIENT_ID` | — | MAS login on | Client id registered as `MAS_FBM_CLIENT_ID` in the blackout deploy's MAS client registry. |
+| `MAS_OIDC_CLIENT_SECRET` | — | MAS login on (validated min-32 in production) | Client secret for the same registration. |
+| `MAS_OIDC_CALLBACK_URL` | `${BACKEND_URL}/auth/customer/mas/callback` | optional | Must EXACTLY match the redirect URI registered with MAS. |
+| `MAS_OIDC_SCOPES` | `openid profile` | optional | Space-separated scopes; `profile` carries `preferred_username` (the Matrix localpart). |
+| `MATRIX_SERVER_NAME` | — | mxid assembly | Reused from the Matrix block above to build `@localpart:server` in the auth identity's `user_metadata.mxid`. |
+
 ## Existing variables (reference)
 
 The above is layered on top of the existing template:

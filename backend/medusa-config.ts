@@ -1,4 +1,5 @@
 import { defineConfig, loadEnv } from '@medusajs/framework/utils'
+import { buildAuthModule } from './src/lib/build-auth-module'
 
 // Load environment variables
 loadEnv(process.env.NODE_ENV || 'development', process.cwd())
@@ -283,46 +284,11 @@ const optionalModules = [
 
 // Auth providers
 //
-// Slice C of the Creator Commerce roadmap. We only declare an explicit
-// auth module when at least one social provider is configured via env;
-// otherwise Medusa's framework default (emailpass-only) keeps applying so
-// existing seller logins are unaffected.
-//
-// When env vars are present we declare emailpass alongside the social
-// provider(s) so the seller registration flow keeps working.
-const buildAuthModule = () => {
-  const googleEnabled = !!process.env.GOOGLE_CLIENT_ID && !!process.env.GOOGLE_CLIENT_SECRET
-  // TikTok / Discord are deferred to a follow-up PR — see
-  // docs/CREATOR_COMMERCE_ROADMAP.md Phase 2 for the scope.
-  if (!googleEnabled) return null
-
-  const callbackBase = (process.env.BACKEND_URL || '').replace(/\/$/, '')
-
-  return {
-    resolve: '@medusajs/medusa/auth',
-    options: {
-      providers: [
-        {
-          resolve: '@medusajs/medusa/auth-emailpass',
-          id: 'emailpass',
-        },
-        ...(googleEnabled
-          ? [{
-              resolve: '@medusajs/medusa/auth-google',
-              id: 'google',
-              options: {
-                clientID: process.env.GOOGLE_CLIENT_ID,
-                clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-                callbackURL:
-                  process.env.GOOGLE_CALLBACK_URL ||
-                  (callbackBase ? `${callbackBase}/auth/seller/google/callback` : undefined),
-              },
-            }]
-          : []),
-      ],
-    },
-  }
-}
+// Gating + provider wiring live in src/lib/build-auth-module.ts (pure, so the
+// env combinations are unit-testable). Google = Creator Commerce Slice C
+// (seller actor); mas = the Blackout-hosted MAS IdP (W2, customer actor —
+// docs/contracts/mas-identity-consumer.md). With neither configured this stays
+// null and Medusa's framework default (emailpass-only) keeps applying.
 const authModule = buildAuthModule()
 
 // Payment providers
