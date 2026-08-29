@@ -3,6 +3,10 @@ import { z } from "zod"
 import type { SellerAuthRequest } from "../../../middlewares/seller-context-v1"
 import { MARKETPLACE_LISTING_MODULE } from "../../../../modules/marketplace-listing"
 import type MarketplaceListingService from "../../../../modules/marketplace-listing/service"
+import {
+  isExtensionListing,
+  validateExtensionManifest,
+} from "../../../../modules/plugin-registry/manifest"
 
 const slugRegex = /^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$/
 const semverRegex = /^\d+\.\d+\.\d+(?:-[a-z0-9.-]+)?$/i
@@ -26,6 +30,8 @@ const CreateListingSchema = z.object({
   assets: z.array(AssetSchema).max(64).nullish(),
   version: z.string().regex(semverRegex),
   embed_origins: z.array(httpsUrl).max(16).nullish(),
+  /** Registry namespace claim for extension listings (W3, defaults to `slug` at publish). */
+  plugin_slug: z.string().regex(slugRegex).nullish(),
 })
 
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
@@ -41,6 +47,19 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       type: "invalid_request",
       errors: parsed.error.flatten(),
     })
+  }
+
+  // Extension listings (W3): authoring-time manifest validation. Free-form
+  // manifests without the extension markers stay accepted unchanged.
+  if (isExtensionListing(parsed.data)) {
+    const validation = validateExtensionManifest(parsed.data.manifest)
+    if (!validation.ok) {
+      return res.status(400).json({
+        message: "Invalid extension manifest",
+        type: "invalid_extension_manifest",
+        errors: validation.errors,
+      })
+    }
   }
 
   const service = req.scope.resolve<MarketplaceListingService>(
@@ -73,6 +92,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     assets: parsed.data.assets ?? null,
     version: parsed.data.version,
     embed_origins: parsed.data.embed_origins ?? null,
+    plugin_slug: parsed.data.plugin_slug ?? null,
   })
 
   return res.status(201).json({ listing })
