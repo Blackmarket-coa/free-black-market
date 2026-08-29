@@ -99,6 +99,17 @@ export default async function hawalaOrderPaymentSubscriber({
     // Get seller ID (from marketplace context or default)
     const sellerId = (order as any).seller_id || "default-seller"
 
+    // Renewal orders carry the subscription stamp from the cloned template
+    // cart (renew-helpers.buildRenewalCartInput). Used below to type the
+    // ledger reference.
+    const orderMetadata = ((order as any).metadata ?? {}) as Record<string, unknown>
+    const renewalSubscriptionId =
+      orderMetadata.renewal === true &&
+      typeof orderMetadata.subscription_id === "string" &&
+      orderMetadata.subscription_id.length > 0
+        ? (orderMetadata.subscription_id as string)
+        : null
+
     // Get or create seller earnings account
     let sellerAccounts = await hawalaService.listLedgerAccounts({
       account_type: "SELLER_EARNINGS",
@@ -301,6 +312,17 @@ export default async function hawalaOrderPaymentSubscriber({
           producer_id: producerId,
           auto_invest_percentage: autoInvestPercentage,
           idempotency_key: `order-payment-${orderId}`,
+          // Subscription renewals get an explicit ledger reference
+          // (ECONOMIC_REVIEW H3): the renewal cart stamps
+          // metadata.subscription_id + renewal=true, and this is the ONE
+          // money write for that order — typed here rather than posted as a
+          // second entry, which would double-move the funds.
+          ...(renewalSubscriptionId
+            ? {
+                reference_type: "SUBSCRIPTION_RENEWAL",
+                reference_id: renewalSubscriptionId,
+              }
+            : {}),
         })
 
     log.info(`[Hawala] Order ${orderId} processed: ${entries.length} ledger entries created`)

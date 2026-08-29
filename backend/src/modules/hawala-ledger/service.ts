@@ -1405,6 +1405,16 @@ class HawalaLedgerModuleService extends MedusaService({
     producer_id?: string
     auto_invest_percentage?: number
     idempotency_key: string
+    /**
+     * Optional reference stamped on the customer→escrow leg. The renewal
+     * path passes reference_type "SUBSCRIPTION_RENEWAL" + the subscription id
+     * so recurring revenue is explicitly typed in the ledger instead of
+     * riding the generic purchase context (ECONOMIC_REVIEW H3). The
+     * reference type is already blessed by the Posture-A guard and the
+     * ledger-entry enum — no vocabulary change.
+     */
+    reference_type?: string
+    reference_id?: string
   }) {
     const entries: any[] = []
 
@@ -1429,6 +1439,8 @@ class HawalaLedgerModuleService extends MedusaService({
       credit_account_id: escrowAccount.id,
       amount: data.total_amount,
       entry_type: "PURCHASE",
+      reference_type: data.reference_type,
+      reference_id: data.reference_id,
       order_id: data.order_id,
       idempotency_key: `${data.idempotency_key}-purchase`,
       correlation_id: data.idempotency_key,

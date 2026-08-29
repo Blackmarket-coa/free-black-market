@@ -229,6 +229,28 @@ class EntitlementModuleService extends MedusaService({
           ])
           return reactivated
         }
+        // Renewal of an ACTIVE row: roll `expires_at` forward (never backward
+        // — a replayed older grant must not shorten the window) and refresh
+        // the order provenance. A perpetual row (expires_at null) stays
+        // perpetual. Previously the row was returned untouched, so a renewed
+        // subscription's entitlements silently expired at the END of the
+        // FIRST cycle.
+        if (input.expires_at && existing.expires_at) {
+          const next = new Date(input.expires_at)
+          const current = new Date(existing.expires_at)
+          if (next.getTime() > current.getTime()) {
+            const [extended] = await this.updateEntitlements([
+              {
+                id: existing.id,
+                expires_at: next,
+                ...(input.source_order_id
+                  ? { source_order_id: input.source_order_id }
+                  : {}),
+              },
+            ])
+            return extended
+          }
+        }
         return existing
       }
     }
