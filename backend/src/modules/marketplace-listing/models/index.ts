@@ -11,3 +11,6 @@ export {
   CreatorPayoutProvider,
   CreatorPayoutStatus,
 } from "./creator-payout-account"
+
+export { default as BlackoutCheckoutSession } from "./blackout-checkout-session"
+export { BlackoutCheckoutSessionStatus } from "./blackout-checkout-session"
