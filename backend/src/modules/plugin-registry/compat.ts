@@ -20,8 +20,13 @@ export function parseSemver(input: string | null | undefined): Semver | null {
   return { major: Number(m[1]), minor: Number(m[2]), patch: Number(m[3]) }
 }
 
-/** -1 | 0 | 1 comparing a vs b, or null if either is unparseable. */
-export function compareSemver(
+/**
+ * -1 | 0 | 1 comparing only the numeric core of a vs b, or null if either is
+ * unparseable. Prerelease/build suffixes are ignored HERE — use
+ * `compareSemverPrecedence` (below) for full SemVer §11 ordering. Kept as the
+ * core comparator so `compareSemverPrecedence` can delegate to it.
+ */
+function compareSemverCore(
   a: string | null | undefined,
   b: string | null | undefined
 ): -1 | 0 | 1 | null {
@@ -36,6 +41,22 @@ export function compareSemver(
     }
   }
   return 0
+}
+
+/**
+ * -1 | 0 | 1 comparing a vs b, or null if either is unparseable. Since W3
+ * this is prerelease-aware (full SemVer §11): `1.0.0-rc.1` sorts BELOW
+ * `1.0.0`, where it previously compared equal. Runtime consequence for the
+ * install gate: a prerelease FBM_PLATFORM_VERSION no longer satisfies an
+ * exact release bound — stricter and SemVer-correct. Fail-open bound
+ * semantics in `isInstallable` are unchanged (unparseable still → null →
+ * "no bound").
+ */
+export function compareSemver(
+  a: string | null | undefined,
+  b: string | null | undefined
+): -1 | 0 | 1 | null {
+  return compareSemverPrecedence(a, b)
 }
 
 export type PluginCompat = {
@@ -129,7 +150,7 @@ export function compareSemverPrecedence(
   a: string | null | undefined,
   b: string | null | undefined
 ): -1 | 0 | 1 | null {
-  const core = compareSemver(a, b)
+  const core = compareSemverCore(a, b)
   if (core === null || core !== 0) {
     return core
   }

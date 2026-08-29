@@ -49,14 +49,35 @@ export function buildPluginInstalledPayload(args: {
   }
 }
 
+/**
+ * Payload for `plugin.uninstalled`. Same privacy posture as installs: seller
+ * uninstalls identify the seller; customer uninstalls (W3) carry only the
+ * installer type — customer ids are never shipped to third-party endpoints.
+ * `installer_type` defaults to "seller" so pre-W3 call sites are unchanged.
+ */
 export function buildPluginUninstalledPayload(args: {
   slug: string
-  installer_seller_id: string
+  installer_type?: "seller" | "customer"
+  installer_seller_id?: string | null
+}): Record<string, unknown> {
+  const installerType = args.installer_type ?? "seller"
+  return {
+    plugin_slug: args.slug,
+    installer_type: installerType,
+    ...(installerType === "seller" && args.installer_seller_id
+      ? { installer_seller_id: args.installer_seller_id }
+      : {}),
+  }
+}
+
+/** Payload for `plugin.deprecated` (W3: the author deprecate route emits it). */
+export function buildPluginDeprecatedPayload(args: {
+  slug: string
+  reason?: string | null
 }): Record<string, unknown> {
   return {
     plugin_slug: args.slug,
-    installer_type: "seller",
-    installer_seller_id: args.installer_seller_id,
+    ...(args.reason ? { reason: args.reason } : {}),
   }
 }
 
