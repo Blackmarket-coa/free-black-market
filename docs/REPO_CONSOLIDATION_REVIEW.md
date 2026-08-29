@@ -62,8 +62,10 @@ Two findings frame everything else:
 - The §4 "Extension Registry vs. FBM catalog" question is effectively
   answered in code: `plugin-registry`, `marketplace-signing` (Ed25519
   signed bundles), `digital-product` delivery, and entitlements all
-  exist. The remaining gap is a hook registry + semver handling
-  (`docs/AUDIT_DEBT.md`).
+  exist. ~~The remaining gap is a hook registry + semver handling~~
+  *(both had already shipped; W3 closed what was actually missing — the
+  shared manifest, the publish bridge + `plugin_version` history, and
+  signature verification — `docs/contracts/extension-manifest.md`)*.
 - `connect.js` exists (`storefront/public/connect.js`, ~1,200 lines,
   publishable keys hashed at rest). It is unshipped only as a versioned
   artifact.
@@ -153,7 +155,7 @@ Two findings frame everything else:
 | D3 | **Federation**: protocol by extraction. BMC Connect = FBM `/v1` + connect.js + webhooks + signing today; UCP mirror kept as the future front-door reference; no protocol build until a second marketplace exists. |
 | D4 | **Identity**: Matrix OIDC/MAS becomes the ecosystem IdP (the surface already exists in the Synapse fork). FBM integrates via one Medusa OIDC auth provider. Blackout's bespoke JWT account system retires behind it. Blackmask is re-scoped to persona/credential manager + trust signals. |
 | D5 | **Geospatial**: Blackout is the single spatial home (maplibre + PostGIS + martin + geocoder proxy). FBM's haversine/ZIP3 code is retired when it can consume Blackout's spatial API. No new geospatial service repo. |
-| D6 | **Extension registry**: inside FBM's catalog. Close the hook-registry + semver gap in `plugin-registry`; Forge publishes into it. No standalone registry service. |
+| D6 | **Extension registry**: inside FBM's catalog. ~~Close the hook-registry + semver gap~~ *(closed — the real W3 work was the shared manifest, publish bridge, `plugin_version` history, and verification)*; Forge publishes into it via `POST /v1/seller/listings` → `/publish`. No standalone registry service. |
 | D7 | **Reputation**: one write path — `karma_event` (append-only, signed, source-attributed, transfer-prohibited) becomes the canonical reputation event log; vendor trust, Coliseum standing, node trust, and publisher tiers become derived per-context projections. FBM's duplicate reviews implementations get deduped as part of this. |
 | D8 | **Hygiene**: executed on this branch where safe (blackmask `third_party/`, Blackstar duplicate console, FBM restaurant-marketplace version skew); queued where riskier (Blackout's three client shells, FBM's four portals and vendored panel forks). |
 
@@ -229,6 +231,23 @@ Ordered workstreams; each is independently shippable.
   in `plugin-registry`; define the shared extension manifest; ship one
   extension end-to-end (build in Forge → sign → publish → install under
   entitlements) — the "Featured Vendor Widget" path.
+  - *W3 FBM side landed (dark, 2026-08-29).* The premise was partly
+    stale — the hook registry and host-compat gate had already shipped;
+    what actually landed: the shared extension manifest (canonical:
+    `docs/contracts/extension-manifest.md`, adopting Blackout's
+    `PluginManifest` with an `fbm.*` bounds block), signature
+    verification + the Blackout-format distribution envelope + the
+    `/.well-known/freeblackmarket-publishing-keys.json` keyset,
+    `plugin_version` immutable history + prerelease-aware semver, the
+    seller publish bridge (`plugin_slug` intake → validate → sign →
+    catalog upsert + version row), registry surface closure
+    (detail/manifest routes, uninstall on both surfaces, seller-scoped
+    `plugin:<slug>` entitlements, author deprecation), and the
+    `featured-vendor-widget` first-party seed (`manifest_plugin`, home
+    card → featured vendors, backed by `vendor.promoted_listing`).
+    Forge's build → publish flow and Blackout's real-provider signed
+    bundles are the companion changes; deferrals in
+    `docs/AUDIT_DEBT.md` §W3.
 - **W4 — Reputation consolidation**: karma_event as the canonical log;
   re-point vendor-verification, Coliseum, and any future publisher
   tiers to derived projections; dedupe FBM's two reviews modules.

@@ -16,7 +16,7 @@ CI/live-env verified.
 | ~~DW-1~~ | Subscription renewal order-creation no-op (Creator-Commerce Slice A) | **done** — renewal workflow mints the order + authorizes an off-session payment + links it + grants entitlements, gated by `FBM_SUBSCRIPTION_RENEWAL_LIVE`; pure shaping unit-tested | `backend/src/workflows/subscription/{renew-helpers.ts,workflows/renew-subscription.ts}` |
 | ~~DW-2~~ | Content-platform OAuth adapters throwing `pending impl` | **done** — TikTok/Instagram/YouTube/Twitch implement real OAuth + metrics via a shared `providers/http.ts`; mocked-fetch unit tests. `blackout.ts` stays stubbed (awaiting Blackout API spec) | `backend/src/modules/content-platform/providers/*` |
 | ~~DW-3~~ | Dark Blackout emitters (§2/§3) never invoked | **done (partial by design)** — `referral.attributed` (attribute-order-on-placed) + `ledger.usdc_converted` (hawala-settlement) wired; the other four stay stubbed with documented blockers (no order-failed/chargeback/quest/ambassador concept) | `backend/src/lib/blackout-wire-helpers.ts`, `subscribers/attribute-order-on-placed.ts`, `jobs/hawala-settlement.ts` |
-| ~~DW-4~~ | Creator-Commerce Phase 2A/2B | **done** — plugin install/entitlement-verification API (2A) + `service-program` reviews model/endpoints (2B). Deferred tails: plugin hook registry + semver, service messaging hook | `backend/src/api/store/plugins/**`, `backend/src/modules/{plugin-registry/entitlement.ts,service-program/**}` |
+| ~~DW-4~~ | Creator-Commerce Phase 2A/2B | **done** — plugin install/entitlement-verification API (2A) + `service-program` reviews model/endpoints (2B). ~~Deferred tails: plugin hook registry + semver~~ (both landed: hooks via `/v1/seller/plugins/:slug/hooks` + `plugin.*` events; the host-compat gate via `plugin-registry/compat.ts` — and W3 finished versioning with `plugin_version` history + prerelease-aware precedence). Remaining tail: service messaging hook | `backend/src/api/store/plugins/**`, `backend/src/modules/{plugin-registry/entitlement.ts,service-program/**}` |
 
 ## W1b — Blackout billing consolidation (2026-08-29)
 
@@ -49,6 +49,24 @@ customer-created subscriber. Deliberate deferrals:
 | W2-2 | Embedded-chat `mintLoginToken` under MSC3861 — admin-impersonation login is expected to break when Synapse delegates auth to MAS; verify on the staging Mode-B flip and design the OIDC-native handoff if so | **operator verification item** | `backend/src/shared/matrix-service.ts` |
 | W2-3 | `seller_metadata.mxid` backfill from OIDC identities (vendors who later link a MAS login) — customer metadata only for now | **deferred (S)** | `backend/src/subscribers/customer-created-matrix.ts` |
 | W2-4 | Blackout client `/auth/callback` landing page (the SDK + `AuthDelegatedLoginPage` are wired; the callback page has no reachable backend until the operator's staging flip) | **deferred until Mode B staging** | blackout `apps/blackout-client` |
+
+## W3 — Registry + Forge MVP (2026-08-29)
+
+Landed dark in the W3 pass (see `docs/contracts/extension-manifest.md`): the
+shared extension manifest + validators, the seller publish bridge into the
+plugin registry, `plugin_version` history, signature verification + the
+publishing-keys endpoints, registry surface closure (detail/manifest routes,
+uninstall on both surfaces, seller-scoped plugin entitlements, deprecation),
+and the Featured Vendor Widget first-party seed. Deliberate deferrals:
+
+| # | Item | Status | Location |
+|---|------|--------|----------|
+| W3-1 | The §5 commerce-API publish path (`/v1/integrations/blackout/commerce/seller/listings/[id]/publish`) can flip an extension listing to PUBLISHED with no signature and no registry row — reject extension-marked listings there or port the bridge | **deferred (S)** | `backend/src/api/v1/integrations/blackout/commerce/seller/listings/[id]/publish/route.ts` |
+| W3-2 | Signing-key rotation: the publishing-keys document is single-key (derived from the private key); retired-keys support needs an additional env + doc append | **deferred (S)** | `backend/src/modules/marketplace-signing/verify.ts` |
+| W3-3 | `creator_listing.compatible_with` stays dead — superseded by the manifest `fbm.*` block; consider dropping the column | **deferred (S)** | `backend/src/modules/marketplace-listing/models/creator-listing.ts` |
+| W3-4 | Seller-scoped `plugin:<slug>` entitlement grant is best-effort; `seller_metadata.enabled_extensions` stays authoritative — hardening to authoritative needs a backfill + failure semantics | **deferred (M)** | `backend/src/api/v1/seller/plugins/[slug]/install/route.ts` |
+| W3-5 | Integration-http spec for the publish → catalog → install loop against Postgres (unit/route harnesses cover the logic; mirrors W1B-1's posture) | **deferred (S)** | `integration-tests/http/` |
+| W3-6 | Cross-repo counterparts: Blackout featured-vendors view (homepageCard.to target) + pinned-key flip to the well-known keyset; Forge publish flow consumes the new seller surface | **other repos** | blackout `apps/blackout-client`, Forge |
 
 ## ⚠️ Critical: money-path atomicity was silently disabled (FIXED 2026-06-20)
 

@@ -61,11 +61,11 @@ Verdicts are based on file/path evidence inside `backend/src`, `storefront/src`,
 
 | Capability | Verdict | Evidence |
 |---|---|---|
-| Plugin listing schema + versioning | Partial | Plugin/theme columns on `creator-listing`; no version compatibility lifecycle |
+| Plugin listing schema + versioning | Present | Plugin/theme columns on `creator-listing` are live since W3 (`plugin_slug`/`plugin_version` written by the publish bridge); versioning lifecycle = `plugin_version` immutable history + prerelease-aware precedence (`plugin-registry/versions.ts`, `compat.ts`) |
 | Plugin developer revenue split | Present | `payout-breakdown` supports `PLUGIN_DEVELOPER_FEE` |
 | Install / entitlement-verification API | Present | `POST /store/plugins/:slug/install` (idempotent `plugin:<slug>` grant + install-count bump) and `GET /store/plugins/:slug/entitlement` (verify), reusing the entitlement service |
 | Plugin version compatibility lifecycle | Present | Install is gated by `isInstallable` (`plugin-registry/compat.ts`): blocks `DEPRECATED` plugins and host-version mismatches against `PLATFORM_VERSION` using `min_host_version`/`max_host_version` bounds |
-| Plugin event/hook system | Present | Hook registry on the marketplace-webhooks machinery: authors register endpoints via `POST /v1/seller/plugins/:slug/hooks` (HMAC-signed, retried, drained like any webhook; stored under the synthetic `plugin:<slug>` channel); `plugin.installed`/`plugin.uninstalled` emitted from both install surfaces and the extensions diff. `plugin.deprecated` defined for a future deprecation flow |
+| Plugin event/hook system | Present | Hook registry on the marketplace-webhooks machinery: authors register endpoints via `POST /v1/seller/plugins/:slug/hooks` (HMAC-signed, retried, drained like any webhook; stored under the synthetic `plugin:<slug>` channel); `plugin.installed`/`plugin.uninstalled` emitted from both install surfaces and the extensions diff. `plugin.deprecated` emitted by the author deprecation route (`POST /v1/seller/plugins/:slug/deprecate`, W3) |
 
 ### 1.5 Group / Community Commerce
 
