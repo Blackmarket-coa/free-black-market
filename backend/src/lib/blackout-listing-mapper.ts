@@ -28,5 +28,10 @@ export function toBlackoutListing(listing: any) {
     featureKeys: Array.isArray(listing.feature_keys) ? listing.feature_keys : [],
     slug: listing.slug ?? null,
     status: listing.status ?? null,
+    // Plugin-registry identity (W3): set once an extension listing publishes
+    // through the registry bridge. Blackout's provider resolves signed bundles
+    // via `GET /store/plugins/{pluginSlug}`; null for non-extension listings.
+    pluginSlug: listing.plugin_slug ?? null,
+    pluginVersion: listing.plugin_version ?? null,
   }
 }

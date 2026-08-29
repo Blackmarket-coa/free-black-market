@@ -127,7 +127,11 @@ and public `/v1/checkout/**` routes are untouched:
 `Listing` fields (camelCase) are backed by Blackout catalog columns added to
 `creator_listing` (`category`, `price_cents`, `currency`, `entitlement_kind`,
 `available_skus`, `media_urls`, `tags`, and — W1b — `product_id`, `variant_id`,
-`interval`, `period_days`).
+`interval`, `period_days`). W3 adds `pluginSlug`/`pluginVersion` (both nullable):
+the plugin-registry identity the publish bridge stamps on extension listings.
+Blackout's provider uses `pluginSlug` to resolve signed bundles via the public
+`GET /store/plugins/{slug}` detail route (see
+[extension-manifest.md](./extension-manifest.md)).
 
 ## Blackout checkout (W1b — the retired-Stripe-rail replacement)
 

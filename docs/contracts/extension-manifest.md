@@ -108,6 +108,13 @@ Env (opt-in pair, both-or-neither enforced in production by
 
 ## Discovery + install (consumer side)
 
+"Public" below means no user auth — but Medusa requires the storefront
+**publishable key** (`x-publishable-api-key`, public by design) on every
+`/store/*` request, so external consumers (Blackout's provider via
+`FREEBLACKMARKET_PUBLISHABLE_KEY`, Forge via `~/.forge/fbm.json
+publishable_key`) must send it. The `/.well-known` key document is outside
+`/store` and needs nothing.
+
 - `GET /store/plugins` — public list (unchanged).
 - `GET /store/plugins/:slug` — detail: catalog fields + `installable`
   (compat gate vs `FBM_PLATFORM_VERSION`) + `latest_version {version,

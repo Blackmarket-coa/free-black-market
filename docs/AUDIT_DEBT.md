@@ -66,7 +66,7 @@ and the Featured Vendor Widget first-party seed. Deliberate deferrals:
 | W3-3 | `creator_listing.compatible_with` stays dead — superseded by the manifest `fbm.*` block; consider dropping the column | **deferred (S)** | `backend/src/modules/marketplace-listing/models/creator-listing.ts` |
 | W3-4 | Seller-scoped `plugin:<slug>` entitlement grant is best-effort; `seller_metadata.enabled_extensions` stays authoritative — hardening to authoritative needs a backfill + failure semantics | **deferred (M)** | `backend/src/api/v1/seller/plugins/[slug]/install/route.ts` |
 | W3-5 | Integration-http spec for the publish → catalog → install loop against Postgres (unit/route harnesses cover the logic; mirrors W1B-1's posture) | **deferred (S)** | `integration-tests/http/` |
-| W3-6 | Cross-repo counterparts: Blackout featured-vendors view (homepageCard.to target) + pinned-key flip to the well-known keyset; Forge publish flow consumes the new seller surface | **other repos** | blackout `apps/blackout-client`, Forge |
+| W3-6 | Cross-repo counterparts — mostly landed same-window: Forge's publish flow consumes the seller surface (Forge W3 G-commits) and Blackout's provider consumes the registry read side (blackout W3 B1). Still open: Blackout featured-vendors client view (homepageCard.to target) + the client's pinned-key flip to the well-known keyset (operator/release item) | **other repos** | blackout `apps/blackout-client` |
 
 ## ⚠️ Critical: money-path atomicity was silently disabled (FIXED 2026-06-20)
 
