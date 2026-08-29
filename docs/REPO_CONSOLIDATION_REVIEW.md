@@ -212,6 +212,19 @@ Ordered workstreams; each is independently shippable.
   staging; write the single Medusa OIDC auth provider for FBM; define
   the migration path for Blackout's bespoke accounts (account-number ↔
   MXID mapping already exists); keep Blackmask out of the IdP role.
+  - *W2 landed (dark, 2026-08-29).* Blackout: MSC2965 well-known + MAS
+    client registry in the deploy templates; native
+    `/v1/auth/oidc/begin|continue` + `/v1/auth/sign-out` filled behind
+    `BLACKOUT_OIDC_*`; canonical contract + migration path in
+    `blackout/docs/contracts/mas-identity.md` (syn2mas moves password
+    hashes, so account-number login → exchange survives the flip
+    byte-identically; Blackmask verified zero-reference). FBM: `mas`
+    auth provider (PKCE + nonce, jose-verified id_token, customer actor
+    only) behind `MAS_OIDC_*`; OIDC-provided mxid takes precedence over
+    email-derived (`mxid_source`); consumer mirror in
+    `docs/contracts/mas-identity-consumer.md`. Staging enablement +
+    Mode-B flip remain operator-side; deferrals in `docs/AUDIT_DEBT.md`
+    §W2.
 - **W3 — Registry + Forge MVP**: close the hook-registry + semver gap
   in `plugin-registry`; define the shared extension manifest; ship one
   extension end-to-end (build in Forge → sign → publish → install under

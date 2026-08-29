@@ -36,6 +36,20 @@ OAuth sub — now mxid-only).
 | W1B-3 | Gift subscriptions stay local-only on Blackout (`comped` override); a paid gift rail would hold stored value and violate Posture-A no-balance-holding — revisit only as an immediate-grant purchase | **deferred by design** | blackout `services/subscriptionGifts.ts` |
 | W1B-4 | Prorated refunds: refund of a subscription order cancels the sub + revokes the bundle (minimal handling); pro-rata credit is out of scope | **deferred (M)** | `backend/src/subscribers/revoke-entitlements-on-refund.ts` |
 
+## W2 — Identity / MAS (2026-08-29)
+
+Landed dark in the W2 pass (see `docs/contracts/mas-identity-consumer.md` and
+the canonical `blackout/docs/contracts/mas-identity.md`): the `mas` Medusa
+auth provider, `MAS_OIDC_*` gating, and OIDC-mxid precedence in the
+customer-created subscriber. Deliberate deferrals:
+
+| # | Item | Status | Location |
+|---|------|--------|----------|
+| W2-1 | Seller OIDC actor (`/auth/seller/mas`) — would bypass vendor registration/approval; sellers keep emailpass/Google until an OIDC-initiated onboarding design exists | **deferred by design** | `backend/src/lib/build-auth-module.ts` |
+| W2-2 | Embedded-chat `mintLoginToken` under MSC3861 — admin-impersonation login is expected to break when Synapse delegates auth to MAS; verify on the staging Mode-B flip and design the OIDC-native handoff if so | **operator verification item** | `backend/src/shared/matrix-service.ts` |
+| W2-3 | `seller_metadata.mxid` backfill from OIDC identities (vendors who later link a MAS login) — customer metadata only for now | **deferred (S)** | `backend/src/subscribers/customer-created-matrix.ts` |
+| W2-4 | Blackout client `/auth/callback` landing page (the SDK + `AuthDelegatedLoginPage` are wired; the callback page has no reachable backend until the operator's staging flip) | **deferred until Mode B staging** | blackout `apps/blackout-client` |
+
 ## ⚠️ Critical: money-path atomicity was silently disabled (FIXED 2026-06-20)
 
 **Severity: high (financial correctness).** Surfaced by the money-path concurrency
