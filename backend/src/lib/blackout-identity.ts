@@ -14,6 +14,11 @@ import type { MedusaContainer } from "@medusajs/framework/types"
  *
  * `vendorMxid` (for §3 bridge events) is resolved separately from
  * `seller_metadata.mxid`.
+ *
+ * W2 note: `customer.metadata.mxid` now also carries `mxid_source`
+ * ("oidc" = reported by the MAS IdP via the `mas` auth provider,
+ * "derived" = legacy email-local-part provisioning). Precedence rules live
+ * in `lib/oidc-mxid.ts`; consumers of `metadata.mxid` need no change.
  */
 
 type PgConnection = {
