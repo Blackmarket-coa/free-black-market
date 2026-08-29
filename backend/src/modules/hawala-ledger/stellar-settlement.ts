@@ -363,11 +363,85 @@ export class StellarSettlementService {
   async getUsdcBalance(): Promise<number> {
     const account = await this.server.loadAccount(this.keypair.publicKey())
     const usdcBalance = account.balances.find(
-      b => b.asset_type === "credit_alphanum4" && 
-           b.asset_code === "USDC" && 
+      b => b.asset_type === "credit_alphanum4" &&
+           b.asset_code === "USDC" &&
            b.asset_issuer === this.usdcAsset.getIssuer()
     )
     return usdcBalance ? parseFloat(usdcBalance.balance) : 0
+  }
+
+  /**
+   * List payments on the signer account as external-reconciliation
+   * records — the "Stellar ledger extract" side of external
+   * reconciliation. Pages forward with Horizon's paging_token; pass the
+   * token persisted in `hawala_ingest_cursor` and store `next_cursor`
+   * back. Amounts are converted to signed integer cents (positive when
+   * the signer account received funds, negative when it sent them).
+   */
+  async listAccountPayments(options?: { cursor?: string; limit?: number }): Promise<{
+    records: Array<{
+      external_id: string
+      source: "STELLAR_PAYMENT"
+      amount_cents: number
+      currency_code: string
+      reference: string | null
+      description: string | null
+      occurred_at: Date
+      raw: Record<string, any>
+    }>
+    next_cursor: string | null
+  }> {
+    const publicKey = this.keypair.publicKey()
+    let builder = this.server
+      .payments()
+      .forAccount(publicKey)
+      .order("asc")
+      .limit(Math.min(options?.limit ?? 100, 200))
+      .join("transactions")
+    if (options?.cursor) {
+      builder = builder.cursor(options.cursor)
+    }
+    const page = await builder.call()
+
+    const records: Array<{
+      external_id: string
+      source: "STELLAR_PAYMENT"
+      amount_cents: number
+      currency_code: string
+      reference: string | null
+      description: string | null
+      occurred_at: Date
+      raw: Record<string, any>
+    }> = []
+    let lastToken: string | null = null
+
+    for (const op of page.records as any[]) {
+      lastToken = op.paging_token ?? lastToken
+      if (op.type !== "payment") continue
+      const outbound = op.from === publicKey
+      const cents = Math.round(parseFloat(op.amount) * 100) * (outbound ? -1 : 1)
+      const assetCode = op.asset_type === "native" ? "XLM" : (op.asset_code ?? "UNKNOWN")
+      // The 28-byte tx memo is a weak key (truncated batch JSON); the
+      // transaction hash is the strong one and lands in `reference`.
+      records.push({
+        external_id: op.id,
+        source: "STELLAR_PAYMENT",
+        amount_cents: cents,
+        currency_code: assetCode,
+        reference: op.transaction_hash ?? null,
+        description: op.transaction?.memo ?? null,
+        occurred_at: new Date(op.created_at),
+        raw: {
+          id: op.id,
+          transaction_hash: op.transaction_hash,
+          from: op.from,
+          to: op.to,
+          asset_code: assetCode,
+        },
+      })
+    }
+
+    return { records, next_cursor: lastToken }
   }
 }
 

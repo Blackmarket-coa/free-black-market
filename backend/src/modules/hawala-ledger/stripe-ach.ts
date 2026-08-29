@@ -397,6 +397,95 @@ export class StripeAchService {
     await this.stripe.paymentMethods.detach(data.paymentMethodId)
     return { deleted: true }
   }
+
+  /**
+   * List payouts as external-reconciliation records. Pages forward with
+   * Stripe's cursor (`starting_after`); pass the cursor persisted in
+   * `hawala_ingest_cursor` and store `next_cursor` back. Amounts are the
+   * signed integer cents Stripe reports.
+   */
+  async listPayoutsForReconciliation(options?: {
+    startingAfter?: string
+    limit?: number
+  }): Promise<{
+    records: Array<{
+      external_id: string
+      source: "STRIPE_PAYOUT"
+      amount_cents: number
+      currency_code: string
+      reference: string | null
+      description: string | null
+      occurred_at: Date
+      raw: Record<string, any>
+    }>
+    next_cursor: string | null
+    has_more: boolean
+  }> {
+    const payouts = await this.stripe.payouts.list({
+      limit: Math.min(options?.limit ?? 100, 100),
+      ...(options?.startingAfter ? { starting_after: options.startingAfter } : {}),
+    })
+    const records = payouts.data.map((payout) => ({
+      external_id: payout.id,
+      source: "STRIPE_PAYOUT" as const,
+      amount_cents: payout.amount,
+      currency_code: payout.currency.toUpperCase(),
+      reference: payout.statement_descriptor ?? payout.id,
+      description: payout.description ?? null,
+      occurred_at: new Date((payout.arrival_date || payout.created) * 1000),
+      raw: { id: payout.id, status: payout.status, created: payout.created },
+    }))
+    const last = payouts.data[payouts.data.length - 1]
+    return {
+      records,
+      next_cursor: payouts.has_more && last ? last.id : null,
+      has_more: payouts.has_more,
+    }
+  }
+
+  /**
+   * List balance transactions (charges, refunds, fees, payouts as Stripe
+   * itemizes them) as external-reconciliation records — the closest thing
+   * Stripe has to a bank statement.
+   */
+  async listBalanceTransactionsForReconciliation(options?: {
+    startingAfter?: string
+    limit?: number
+  }): Promise<{
+    records: Array<{
+      external_id: string
+      source: "STRIPE_BALANCE_TXN"
+      amount_cents: number
+      currency_code: string
+      reference: string | null
+      description: string | null
+      occurred_at: Date
+      raw: Record<string, any>
+    }>
+    next_cursor: string | null
+    has_more: boolean
+  }> {
+    const txns = await this.stripe.balanceTransactions.list({
+      limit: Math.min(options?.limit ?? 100, 100),
+      ...(options?.startingAfter ? { starting_after: options.startingAfter } : {}),
+    })
+    const records = txns.data.map((txn) => ({
+      external_id: txn.id,
+      source: "STRIPE_BALANCE_TXN" as const,
+      amount_cents: txn.amount,
+      currency_code: txn.currency.toUpperCase(),
+      reference: typeof txn.source === "string" ? txn.source : (txn.source?.id ?? null),
+      description: txn.description ?? txn.type,
+      occurred_at: new Date(txn.created * 1000),
+      raw: { id: txn.id, type: txn.type, status: txn.status, fee: txn.fee, net: txn.net },
+    }))
+    const last = txns.data[txns.data.length - 1]
+    return {
+      records,
+      next_cursor: txns.has_more && last ? last.id : null,
+      has_more: txns.has_more,
+    }
+  }
 }
 
 /**

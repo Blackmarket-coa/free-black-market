@@ -16,7 +16,9 @@ Medusa scheduled jobs for FBM. Each file exports a handler plus a cron
 | `demand-pool-expiry.ts` | hourly | Expire lapsed demand pools |
 | `donation-batch-disbursement.ts` | Mondays 03:00 | Disburse accrued donations via the fiscal sponsor (see `docs/POSTURE_A_COMPLIANCE.md`) |
 | `drain-webhook-deliveries.ts` | every minute | Deliver queued marketplace webhook events |
-| `hawala-balance-reconciler.ts` | every 6 h | Reconcile ledger balances against Stellar on-chain state |
+| `hawala-balance-reconciler.ts` | every 6 h | Internal integrity sweep: recompute cached account balances from the entry log and warn on drift (read-only, never auto-corrects) |
+| `hawala-external-reconciliation.ts` | daily 01:30 | Pull Stripe payouts/balance transactions and Stellar payments, then match them against ledger entries with the active matching rules (read-only over money: writes match/ingest records only) |
+| `hawala-monitor-sweep.ts` | every 15 min | Backstop evaluation of balance monitors (edge-triggered; primary path runs after each transfer) |
 | `hawala-settlement.ts` | daily 00:00 | Settle pending ledger entries out to payout rails |
 | `inventory-reconciliation.ts` | daily 03:00 | Reconcile inventory levels across sync sources |
 | `order-cycle-status-update.ts` | every 5 min | Advance order-cycle (CSA) lifecycle states |

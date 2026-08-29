@@ -6,6 +6,21 @@ import { assertRailInvariants } from "./posture-a-guard"
 import { splitAdvanceRepayment } from "./advance-repayment-split"
 import { splitConsignmentCents } from "../../lib/consignment"
 import {
+  reconcileRecords,
+  deriveCandidateBounds,
+  validateCriteria,
+  type EntryCandidate,
+  type ExternalRecordInput,
+  type MatchingRuleInput,
+} from "./external-reconciliation"
+import {
+  conditionMet,
+  dollarsToCents,
+  isMonitorField,
+  monitorTransition,
+  normalizeOperator,
+} from "./monitor-evaluator"
+import {
   LedgerAccount,
   LedgerEntry,
   SettlementBatch,
@@ -26,6 +41,13 @@ import {
   EscrowAgreement,
   PatronageAllocation,
   KarmaEvent,
+  ExternalRecord,
+  MatchingRule,
+  ReconciliationRun,
+  ReconciliationMatch,
+  IngestCursor,
+  BalanceMonitor,
+  MonitorBreach,
 } from "./models"
 
 class HawalaLedgerModuleService extends MedusaService({
@@ -49,6 +71,13 @@ class HawalaLedgerModuleService extends MedusaService({
   EscrowAgreement,
   PatronageAllocation,
   KarmaEvent,
+  ExternalRecord,
+  MatchingRule,
+  ReconciliationRun,
+  ReconciliationMatch,
+  IngestCursor,
+  BalanceMonitor,
+  MonitorBreach,
 }) {
   // ==================== ACCOUNT MANAGEMENT ====================
 
@@ -732,6 +761,7 @@ class HawalaLedgerModuleService extends MedusaService({
           reference_id: args.orderId,
           order_id: args.orderId,
           idempotency_key: `${args.idempotencyKey}-consignor`,
+          correlation_id: args.idempotencyKey,
           description: `Consignment split for order ${args.orderId}: consignor share`,
           metadata: {
             ...sharedMetadata,
@@ -756,6 +786,7 @@ class HawalaLedgerModuleService extends MedusaService({
           reference_id: args.orderId,
           order_id: args.orderId,
           idempotency_key: `${args.idempotencyKey}-vendor`,
+          correlation_id: args.idempotencyKey,
           description: `Consignment split for order ${args.orderId}: vendor share`,
           metadata: {
             ...sharedMetadata,
@@ -798,6 +829,7 @@ class HawalaLedgerModuleService extends MedusaService({
       reference_id: args.attributionId,
       order_id: args.orderId,
       idempotency_key: `creator-commission-reversal-${args.attributionId}`,
+      correlation_id: `creator-commission-${args.attributionId}`,
       description: `Reversed creator commission for order ${args.orderId}: ${args.reason}`,
       metadata: {
         attribution_id: args.attributionId,
@@ -824,6 +856,11 @@ class HawalaLedgerModuleService extends MedusaService({
     order_id?: string
     investment_pool_id?: string
     idempotency_key?: string
+    // Lineage: entries fanned out from one economic action share a
+    // correlation_id; parent_entry_id points at the entry a derived leg
+    // (fee, split) hangs off. See getOrderLineage/getEntryLineage.
+    correlation_id?: string
+    parent_entry_id?: string
     metadata?: Record<string, any>
     // Optional pg connection. When supplied, balance mutations use the
     // atomic CAS UPDATE (updateBalancesAtomic) instead of the legacy
@@ -917,6 +954,8 @@ class HawalaLedgerModuleService extends MedusaService({
       order_id: data.order_id,
       investment_pool_id: data.investment_pool_id,
       idempotency_key: data.idempotency_key,
+      correlation_id: data.correlation_id,
+      parent_entry_id: data.parent_entry_id,
       metadata: data.metadata,
     })
 
@@ -1008,6 +1047,19 @@ class HawalaLedgerModuleService extends MedusaService({
         description: data.description,
       }
     )
+
+    // Balance monitors: evaluate the two touched accounts now that money
+    // has moved. Fire-and-forget — monitoring must never fail, block, or
+    // slow a transfer; the scheduled sweep is the backstop for anything
+    // missed here.
+    void this.evaluateMonitorsForAccounts([
+      data.debit_account_id,
+      data.credit_account_id,
+    ]).catch((err: any) => {
+      log.warn(
+        `balance-monitor evaluation failed after transfer ${entry.id}: ${err?.message ?? err}`
+      )
+    })
 
     return entry
   }
@@ -1379,6 +1431,7 @@ class HawalaLedgerModuleService extends MedusaService({
       entry_type: "PURCHASE",
       order_id: data.order_id,
       idempotency_key: `${data.idempotency_key}-purchase`,
+      correlation_id: data.idempotency_key,
     })
     entries.push(purchaseEntry)
 
@@ -1390,6 +1443,8 @@ class HawalaLedgerModuleService extends MedusaService({
       entry_type: "COMMISSION",
       order_id: data.order_id,
       idempotency_key: `${data.idempotency_key}-fee`,
+      correlation_id: data.idempotency_key,
+      parent_entry_id: purchaseEntry?.id,
     })
     entries.push(feeEntry)
 
@@ -1401,6 +1456,8 @@ class HawalaLedgerModuleService extends MedusaService({
       entry_type: "TRANSFER",
       order_id: data.order_id,
       idempotency_key: `${data.idempotency_key}-seller`,
+      correlation_id: data.idempotency_key,
+      parent_entry_id: purchaseEntry?.id,
     })
     entries.push(sellerEntry)
 
@@ -1416,6 +1473,8 @@ class HawalaLedgerModuleService extends MedusaService({
           order_id: data.order_id,
           investment_pool_id: producerPool.id,
           idempotency_key: `${data.idempotency_key}-invest`,
+          correlation_id: data.idempotency_key,
+          parent_entry_id: purchaseEntry?.id,
         })
         entries.push(investEntry)
       }
@@ -2136,8 +2195,12 @@ class HawalaLedgerModuleService extends MedusaService({
 
     const settlementAccount = await this.getOrCreateSystemAccount("SETTLEMENT")
 
-    // Main transfer (vendor → settlement)
-    await this.createTransfer({
+    // Main transfer (vendor → settlement). The idempotency keys are new
+    // (the legs previously carried none, so a retried request could move
+    // money twice and payout legs had no lineage handle); they double as
+    // the correlation handle external reconciliation joins Stripe payout
+    // records back through.
+    const payoutNetEntry = await this.createTransfer({
       debit_account_id: account.id,
       credit_account_id: settlementAccount.id,
       amount: netAmount,
@@ -2145,6 +2208,8 @@ class HawalaLedgerModuleService extends MedusaService({
       description: `${tierConfig.name} payout`,
       reference_type: "PAYOUT_REQUEST",
       reference_id: payoutRequest.id,
+      idempotency_key: `payout-${payoutRequest.id}-net`,
+      correlation_id: `payout-${payoutRequest.id}`,
     })
 
     // Fee transfer (if applicable)
@@ -2157,6 +2222,9 @@ class HawalaLedgerModuleService extends MedusaService({
         description: `${tierConfig.name} payout fee`,
         reference_type: "PAYOUT_REQUEST",
         reference_id: payoutRequest.id,
+        idempotency_key: `payout-${payoutRequest.id}-fee`,
+        correlation_id: `payout-${payoutRequest.id}`,
+        parent_entry_id: payoutNetEntry?.id,
       })
     }
 
@@ -2937,6 +3005,541 @@ class HawalaLedgerModuleService extends MedusaService({
     }
 
     return { mxid, available, pending, currency, last_settlement_at, sources }
+  }
+
+  // ==================== EXTERNAL RECONCILIATION ====================
+  //
+  // Matching external money records (Stripe payouts/charges, bank
+  // statement lines, Stellar payments) against ledger entries. Distinct
+  // from reconciler.ts, which checks the internal cache-vs-entries
+  // invariant. Engine semantics live in external-reconciliation.ts.
+
+  /**
+   * Idempotently ingest a batch of external records. Re-ingesting the
+   * same (upload_id, external_id) pair is a counted no-op — enforced by
+   * the partial unique index — so statement re-uploads and overlapping
+   * ingest-job windows are safe.
+   */
+  async ingestExternalRecords(
+    records: Array<{
+      external_id: string
+      source: string
+      amount_cents: number
+      currency_code?: string
+      reference?: string | null
+      description?: string | null
+      occurred_at: string | Date
+      raw?: Record<string, any> | null
+    }>,
+    uploadId?: string
+  ) {
+    const upload_id =
+      uploadId ?? `upload-${new Date().toISOString().slice(0, 10)}-${Date.now()}`
+    let ingested = 0
+    let skipped_duplicates = 0
+    const errors: Array<{ external_id: string; error: string }> = []
+
+    for (const record of records) {
+      if (!record.external_id || !Number.isInteger(record.amount_cents)) {
+        errors.push({
+          external_id: record.external_id ?? "(missing)",
+          error: "external_id and integer amount_cents are required",
+        })
+        continue
+      }
+      const occurredAt = new Date(record.occurred_at)
+      if (Number.isNaN(occurredAt.getTime())) {
+        errors.push({ external_id: record.external_id, error: "invalid occurred_at" })
+        continue
+      }
+      try {
+        const existing = await this.listExternalRecords({
+          upload_id,
+          external_id: record.external_id,
+        })
+        if (existing.length > 0) {
+          skipped_duplicates++
+          continue
+        }
+        await this.createExternalRecords({
+          upload_id,
+          external_id: record.external_id,
+          source: record.source as any,
+          amount_cents: record.amount_cents,
+          currency_code: record.currency_code ?? "USD",
+          reference: record.reference ?? null,
+          description: record.description ?? null,
+          occurred_at: occurredAt,
+          raw: record.raw ?? null,
+          status: "UNMATCHED" as const,
+        })
+        ingested++
+      } catch (err: any) {
+        // The partial unique index backstops the pre-check race: a
+        // concurrent duplicate insert lands here and is counted, not fatal.
+        if (String(err?.message ?? err).toLowerCase().includes("duplicate")) {
+          skipped_duplicates++
+        } else {
+          errors.push({ external_id: record.external_id, error: String(err?.message ?? err) })
+        }
+      }
+    }
+
+    return { upload_id, ingested, skipped_duplicates, errors }
+  }
+
+  /**
+   * Run reconciliation over one upload batch. Sequential by design (at
+   * this scale a loop with an indexed candidate query per record is
+   * simpler and fast enough). Dry runs compute and report counts but
+   * persist no matches and flip no record statuses.
+   */
+  async runExternalReconciliation(options: {
+    upload_id: string
+    rule_ids?: string[]
+    dry_run?: boolean
+  }) {
+    const pgConnection = this.resolvePgConnection()
+    if (!pgConnection) {
+      throw new Error(
+        "External reconciliation requires a database connection (none resolvable from the module container)"
+      )
+    }
+
+    const dryRun = options.dry_run ?? false
+    const run = await this.createReconciliationRuns({
+      upload_id: options.upload_id,
+      status: "IN_PROGRESS" as const,
+      is_dry_run: dryRun,
+      // JSONB column; the generated type only admits objects, but a JSON
+      // array is the natural shape for an ordered rule list.
+      rule_ids: (options.rule_ids ?? null) as any,
+      started_at: new Date(),
+    })
+
+    try {
+      const ruleRows = options.rule_ids?.length
+        ? await this.listMatchingRules({ id: options.rule_ids })
+        : await this.listMatchingRules({ is_active: true })
+      if (ruleRows.length === 0) {
+        throw new Error("No matching rules to apply (create one or pass rule_ids)")
+      }
+      const rules: MatchingRuleInput[] = ruleRows.map((r: any) => ({
+        id: r.id,
+        criteria: validateCriteria(r.criteria),
+      }))
+
+      const externalRows = await this.listExternalRecords(
+        { upload_id: options.upload_id, status: "UNMATCHED" },
+        { take: 10000 }
+      )
+      const externals: ExternalRecordInput[] = externalRows.map((r: any) => ({
+        id: r.id,
+        external_id: r.external_id,
+        amount_cents: Number(r.amount_cents),
+        currency_code: r.currency_code,
+        reference: r.reference ?? null,
+        occurred_at: r.occurred_at,
+      }))
+
+      // Prefetch candidates per record via the rule-derived SQL bounds,
+      // then let the pure engine do exact evaluation and claiming.
+      const candidateCache = new Map<string, EntryCandidate[]>()
+      for (const external of externals) {
+        const bounds = deriveCandidateBounds(rules, external)
+        const conditions: string[] = [
+          `"deleted_at" IS NULL`,
+          `"status" IN ('COMPLETED', 'SETTLED')`,
+        ]
+        const bindings: any[] = []
+        if (bounds.min_cents !== null && bounds.max_cents !== null) {
+          conditions.push(`ROUND("amount" * 100) BETWEEN ? AND ?`)
+          bindings.push(bounds.min_cents, bounds.max_cents)
+        }
+        if (bounds.date_from !== null && bounds.date_to !== null) {
+          conditions.push(`"created_at" >= ? AND "created_at" <= ?`)
+          bindings.push(bounds.date_from.toISOString(), bounds.date_to.toISOString())
+        }
+        const result = await pgConnection.raw(
+          `SELECT "id", "amount", "currency_code", "reference_id", "idempotency_key", "correlation_id", "created_at"
+           FROM "hawala_ledger_entry"
+           WHERE ${conditions.join(" AND ")}
+           ORDER BY "created_at" ASC
+           LIMIT 200`,
+          bindings
+        )
+        const rows: any[] = result?.rows ?? (Array.isArray(result) ? result : [])
+        candidateCache.set(
+          external.id,
+          rows.map((row) => ({
+            id: row.id,
+            amount_cents: dollarsToCents(row.amount),
+            currency_code: row.currency_code,
+            reference_id: row.reference_id ?? null,
+            idempotency_key: row.idempotency_key ?? null,
+            correlation_id: row.correlation_id ?? null,
+            created_at: row.created_at,
+          }))
+        )
+      }
+
+      const outcome = reconcileRecords(externals, rules, (ext) => candidateCache.get(ext.id) ?? [])
+
+      if (!dryRun) {
+        for (const match of outcome.matches) {
+          await this.createReconciliationMatches({
+            run_id: run.id,
+            external_record_id: match.external_record_id,
+            ledger_entry_id: match.ledger_entry_id,
+            matched_by_rule_id: match.matched_by_rule_id,
+            amount_delta_cents: match.amount_delta_cents,
+          })
+          await this.updateExternalRecords({
+            id: match.external_record_id,
+            status: "MATCHED" as const,
+          })
+        }
+      }
+
+      await this.updateReconciliationRuns({
+        id: run.id,
+        status: "COMPLETED" as const,
+        matched_count: outcome.matches.length,
+        unmatched_count: outcome.unmatched_external_ids.length,
+        completed_at: new Date(),
+      })
+
+      return {
+        run_id: run.id,
+        is_dry_run: dryRun,
+        matched_count: outcome.matches.length,
+        unmatched_count: outcome.unmatched_external_ids.length,
+        matches: outcome.matches,
+        unmatched_external_ids: outcome.unmatched_external_ids,
+      }
+    } catch (err: any) {
+      await this.updateReconciliationRuns({
+        id: run.id,
+        status: "FAILED" as const,
+        error_message: String(err?.message ?? err),
+        completed_at: new Date(),
+      }).catch(() => undefined)
+      throw err
+    }
+  }
+
+  // ==================== BALANCE MONITORS ====================
+
+  /**
+   * Create a monitor with normalized operator and validated field.
+   * Thresholds are integer cents; zero is a valid threshold.
+   */
+  async createBalanceMonitor(data: {
+    account_id: string
+    field?: string
+    operator: string
+    threshold_cents: number
+    severity?: "low" | "medium" | "high" | "critical"
+    description?: string
+    metadata?: Record<string, any>
+  }) {
+    const field = data.field ?? "balance"
+    if (!isMonitorField(field)) {
+      throw new Error(
+        `Unknown monitor field ${JSON.stringify(field)} (expected balance, available_balance or pending_balance)`
+      )
+    }
+    if (!Number.isInteger(data.threshold_cents)) {
+      throw new Error("threshold_cents must be an integer (cents)")
+    }
+    // Validates the account exists before storing a monitor on it.
+    await this.retrieveLedgerAccount(data.account_id)
+    return this.createBalanceMonitors({
+      account_id: data.account_id,
+      field: field as any,
+      operator: normalizeOperator(data.operator),
+      threshold_cents: data.threshold_cents,
+      severity: data.severity ?? ("high" as const),
+      description: data.description ?? null,
+      metadata: data.metadata ?? null,
+    })
+  }
+
+  /**
+   * Evaluate all active monitors on the given accounts. Edge-triggered:
+   * a breach row + observability incident is emitted only on the
+   * false→true transition; clears reset the stored state silently (with
+   * a metric). Per-monitor failures are logged and never thrown — this
+   * runs fire-and-forget after transfers and from the sweep job.
+   */
+  async evaluateMonitorsForAccounts(
+    accountIds: string[],
+    options?: {
+      /** Test seam / custom sink. Defaults to the module event bus when resolvable. */
+      emit?: (eventName: string, data: Record<string, any>) => Promise<void> | void
+      now?: Date
+    }
+  ) {
+    const now = options?.now ?? new Date()
+    const emit = options?.emit ?? this.resolveEventEmitter()
+    const summary = { evaluated: 0, breaches: 0, cleared: 0 }
+    if (accountIds.length === 0) return summary
+
+    const monitors = await this.listBalanceMonitors({
+      account_id: accountIds,
+      is_active: true,
+    })
+
+    for (const monitor of monitors as any[]) {
+      try {
+        const account = await this.retrieveLedgerAccount(monitor.account_id)
+        const observedCents = dollarsToCents(
+          Number((account as any)[monitor.field] ?? 0)
+        )
+        const met = conditionMet(
+          observedCents,
+          normalizeOperator(monitor.operator),
+          Number(monitor.threshold_cents)
+        )
+        const transition = monitorTransition(Boolean(monitor.was_breached), met)
+        summary.evaluated++
+
+        await this.updateBalanceMonitors({
+          id: monitor.id,
+          was_breached: met,
+          last_evaluated_at: now,
+          ...(transition === "breach" ? { last_breached_at: now } : {}),
+        })
+
+        if (transition === "breach") {
+          summary.breaches++
+          const incident_key = `hawala-monitor-${monitor.id}`
+          await this.createMonitorBreaches({
+            monitor_id: monitor.id,
+            account_id: monitor.account_id,
+            observed_cents: observedCents,
+            threshold_cents: Number(monitor.threshold_cents),
+            operator: monitor.operator,
+            field: monitor.field,
+            incident_key,
+            occurred_at: now,
+          })
+          if (emit) {
+            await emit("observability.incident.triggered", {
+              provider: "hawala-ledger",
+              severity: monitor.severity ?? "high",
+              service: "hawala-ledger",
+              incident_key,
+              details: {
+                monitor_id: monitor.id,
+                account_id: monitor.account_id,
+                field: monitor.field,
+                operator: monitor.operator,
+                threshold_cents: Number(monitor.threshold_cents),
+                observed_cents: observedCents,
+                description: monitor.description ?? null,
+                occurred_at: now.toISOString(),
+              },
+            })
+            await emit("observability.metric.recorded", {
+              name: "hawala.balance_monitor.breach",
+              value: observedCents,
+              labels: { monitor_id: monitor.id, account_id: monitor.account_id },
+            })
+          }
+        } else if (transition === "clear") {
+          summary.cleared++
+          if (emit) {
+            await emit("observability.metric.recorded", {
+              name: "hawala.balance_monitor.clear",
+              value: observedCents,
+              labels: { monitor_id: monitor.id, account_id: monitor.account_id },
+            })
+          }
+        }
+      } catch (err: any) {
+        log.warn(
+          `balance monitor ${monitor?.id ?? "?"} evaluation failed: ${err?.message ?? err}`
+        )
+      }
+    }
+
+    return summary
+  }
+
+  /**
+   * Resolve the Medusa event bus as an emit callback, or undefined when
+   * unreachable (unit tests, degraded container). Alerts still persist as
+   * breach rows either way; only the push notification is skipped.
+   */
+  private resolveEventEmitter():
+    | ((eventName: string, data: Record<string, any>) => Promise<void>)
+    | undefined {
+    const container = (this as any).__container__
+    try {
+      const eventBus =
+        container?.resolve?.("event_bus") ?? container?.["event_bus"]
+      if (eventBus?.emit) {
+        return async (name, data) => {
+          await eventBus.emit({ name, data })
+        }
+      }
+    } catch {
+      // fall through — no event bus in this context
+    }
+    return undefined
+  }
+
+  // ==================== LINEAGE & POINT-IN-TIME ====================
+
+  /**
+   * All ledger entries belonging to one order's economic action, grouped
+   * by correlation, plus the sibling records that point back at them.
+   * Pure auto-CRUD reads — no raw SQL — so it works in every context.
+   */
+  async getOrderLineage(orderId: string) {
+    const direct = await this.listLedgerEntries({ order_id: orderId })
+    const correlationIds = [
+      ...new Set(
+        (direct as any[])
+          .map((e) => e.correlation_id)
+          .filter((c): c is string => typeof c === "string" && c.length > 0)
+      ),
+    ]
+    const correlated = correlationIds.length
+      ? await this.listLedgerEntries({ correlation_id: correlationIds })
+      : []
+
+    const byId = new Map<string, any>()
+    for (const entry of [...(direct as any[]), ...(correlated as any[])]) {
+      byId.set(entry.id, entry)
+    }
+    const entries = [...byId.values()].sort(
+      (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+    )
+    const entryIds = entries.map((e) => e.id)
+
+    const [achTransactions, payoutRequests, vendorPayments] = await Promise.all([
+      entryIds.length ? this.listAchTransactions({ ledger_entry_id: entryIds }) : [],
+      entryIds.length ? this.listPayoutRequests({ ledger_entry_id: entryIds }) : [],
+      entryIds.length ? this.listVendorPayments({ ledger_entry_id: entryIds }) : [],
+    ])
+
+    const groups: Record<string, string[]> = {}
+    for (const entry of entries) {
+      const key = entry.correlation_id ?? "(uncorrelated)"
+      ;(groups[key] ??= []).push(entry.id)
+    }
+
+    return {
+      order_id: orderId,
+      entries,
+      groups,
+      ach_transactions: achTransactions,
+      payout_requests: payoutRequests,
+      vendor_payments: vendorPayments,
+      settlement_batch_ids: [
+        ...new Set(entries.map((e) => e.settlement_batch_id).filter(Boolean)),
+      ],
+    }
+  }
+
+  /**
+   * The family of one entry: its correlation group when it has one, its
+   * order lineage when it only has an order, otherwise the immediate
+   * parent/children by parent_entry_id.
+   */
+  async getEntryLineage(entryId: string) {
+    const entry: any = await this.retrieveLedgerEntry(entryId)
+
+    if (entry.correlation_id) {
+      const family = await this.listLedgerEntries({
+        correlation_id: entry.correlation_id,
+      })
+      return {
+        entry_id: entryId,
+        correlation_id: entry.correlation_id,
+        entries: (family as any[]).sort(
+          (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+        ),
+      }
+    }
+
+    if (entry.order_id) {
+      const lineage = await this.getOrderLineage(entry.order_id)
+      return { entry_id: entryId, correlation_id: null, ...lineage }
+    }
+
+    const children = await this.listLedgerEntries({ parent_entry_id: entryId })
+    const parent = entry.parent_entry_id
+      ? await this.retrieveLedgerEntry(entry.parent_entry_id).catch(() => null)
+      : null
+    return {
+      entry_id: entryId,
+      correlation_id: null,
+      entries: [
+        ...(parent ? [parent] : []),
+        entry,
+        ...(children as any[]),
+      ],
+    }
+  }
+
+  /**
+   * The account's balance as of a timestamp, replayed from the entry
+   * log — no snapshot table needed at current scale (one indexed SUM per
+   * side; the (account, created_at) indexes already exist). Status set
+   * matches reconciler.ts: COMPLETED, SETTLED and REVERSED all moved the
+   * cached balance (a reversal posts its own offsetting COMPLETED row).
+   * Returns dollars (the ledger's native NUMERIC unit) plus a drift
+   * cross-check against the cached balance when `at` is now-or-later.
+   */
+  async getBalanceAt(accountId: string, at: Date | string) {
+    const asOf = at instanceof Date ? at : new Date(at)
+    if (Number.isNaN(asOf.getTime())) {
+      throw new Error(
+        `Invalid timestamp ${JSON.stringify(at)} — use ISO 8601 (e.g. 2026-08-01T00:00:00Z)`
+      )
+    }
+    const pgConnection = this.resolvePgConnection()
+    if (!pgConnection) {
+      throw new Error(
+        "getBalanceAt requires a database connection (none resolvable from the module container)"
+      )
+    }
+
+    const result = await pgConnection.raw(
+      `SELECT
+         COALESCE(SUM(CASE WHEN "credit_account_id" = ? THEN "amount" ELSE 0 END), 0) AS credits,
+         COALESCE(SUM(CASE WHEN "debit_account_id" = ? THEN "amount" ELSE 0 END), 0) AS debits,
+         COUNT(*) AS entries_considered
+       FROM "hawala_ledger_entry"
+       WHERE ("debit_account_id" = ? OR "credit_account_id" = ?)
+         AND "created_at" <= ?
+         AND "status" IN ('COMPLETED', 'SETTLED', 'REVERSED')
+         AND "deleted_at" IS NULL`,
+      [accountId, accountId, accountId, accountId, asOf.toISOString()]
+    )
+    const row = (result?.rows ?? result)?.[0] ?? {}
+    const credits = Number(row.credits ?? 0)
+    const debits = Number(row.debits ?? 0)
+    const balance = credits - debits
+
+    let drift_vs_cached: number | null = null
+    if (asOf.getTime() >= Date.now() - 1000) {
+      const account: any = await this.retrieveLedgerAccount(accountId)
+      drift_vs_cached = Number(account.balance) - balance
+    }
+
+    return {
+      account_id: accountId,
+      as_of: asOf.toISOString(),
+      balance,
+      credits,
+      debits,
+      entries_considered: Number(row.entries_considered ?? 0),
+      drift_vs_cached,
+    }
   }
 }
 

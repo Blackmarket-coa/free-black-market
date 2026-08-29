@@ -129,7 +129,18 @@ export const LedgerEntry = model.define("hawala_ledger_entry", {
   
   // Idempotency key to prevent duplicate entries
   idempotency_key: model.text().unique().nullable(),
-  
+
+  // Lineage: entries created by one economic action (an order split, a
+  // payout's net+fee pair, a consignment split) share a correlation_id —
+  // the shared idempotency-key prefix that fan-out sites already use,
+  // made explicit and indexed. parent_entry_id points at the entry this
+  // one derives from (e.g. a fee leg pointing at the purchase leg) when
+  // a strict parent exists. Both are backfilled from the historical
+  // idempotency-key suffix convention in
+  // Migration20260829ExternalReconciliationMonitorsLineage.
+  correlation_id: model.text().nullable(),
+  parent_entry_id: model.text().nullable(),
+
   // Metadata
   metadata: model.json().nullable(),
   
@@ -168,5 +179,10 @@ export const LedgerEntry = model.define("hawala_ledger_entry", {
     {
       on: ["investment_pool_id"],
       name: "idx_ledger_entry_pool",
+    },
+    // Index for lineage queries (getOrderLineage / getEntryLineage)
+    {
+      on: ["correlation_id"],
+      name: "idx_ledger_entry_correlation",
     },
   ])

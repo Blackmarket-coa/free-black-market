@@ -169,3 +169,45 @@ Complete Stripe Financial Connections flow or micro-deposit verification.
 
 ### Settlement batch failed
 Check Stellar network status and ensure account has XLM for fees (~0.00001 XLM per transaction).
+
+## External reconciliation, monitors, lineage, point-in-time (2026-08)
+
+Four capabilities harvested from the Blnk Finance reference design
+(`docs/REPO_CONSOLIDATION_REVIEW.md` §5), implemented natively:
+
+- **External reconciliation** (`external-reconciliation.ts`) — match
+  Stripe payouts/balance transactions, Stellar payments, and bank
+  statement lines against ledger entries. Typed matching rules
+  (amount tolerance in cents/bps, exact/normalized reference, date
+  window, currency), AND-within-rule / OR-across-rules, dry runs, and
+  per-match rule attribution + cents delta. Ingest is idempotent per
+  `(upload_id, external_id)`; one entry matches at most once per run;
+  matched + unmatched always equals the input count. Distinct from
+  `reconciler.ts`, which checks the internal cache-vs-entries invariant.
+  Surfaces: `/admin/hawala/reconciliation/*`; nightly pull + match via
+  the `hawala-external-reconciliation` job (cursors in
+  `hawala_ingest_cursor`).
+- **Balance monitors** (`monitor-evaluator.ts`) — edge-triggered
+  threshold alerts on account balances (integer cents; `=` normalized to
+  `==`; zero thresholds valid). Evaluated fire-and-forget after every
+  `createTransfer` plus a 15-minute sweep backstop
+  (`hawala-monitor-sweep`). Breaches persist to
+  `hawala_monitor_breach` and page through the existing
+  `observability.incident.triggered` sink (no-op when unconfigured).
+- **Lineage** — entries fanned out from one economic action share a
+  `correlation_id` (backfilled from the historical idempotency-key
+  suffix convention) with optional `parent_entry_id`.
+  `getOrderLineage`/`getEntryLineage` stitch entries, ACH transactions,
+  payout requests and vendor payments end to end. Payout legs now carry
+  idempotency keys (`payout-<id>-net|-fee`) — previously they had none,
+  which was both a duplicate-payout risk and a lineage gap.
+- **Point-in-time balances** (`getBalanceAt`) — pure replay over the
+  entry log (status COMPLETED/SETTLED/REVERSED, matching
+  `reconciler.ts`), with a drift cross-check against the cached balance
+  when queried at "now". No snapshot table at current scale — the
+  `(account, created_at)` indexes keep the replay to milliseconds.
+
+Deliberately deferred (revisit when scale or need demands): balance
+snapshots + immutability trigger (the upgrade path when replay p99
+grows), Levenshtein/fuzzy reference matching, provisional matches
+against PENDING escrow legs, and per-monitor webhook routing.
