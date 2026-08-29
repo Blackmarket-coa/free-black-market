@@ -22,6 +22,13 @@ import {
   EscrowAgreement,
   PatronageAllocation,
   KarmaEvent,
+  ExternalRecord,
+  MatchingRule,
+  ReconciliationRun,
+  ReconciliationMatch,
+  IngestCursor,
+  BalanceMonitor,
+  MonitorBreach,
 } from "../models"
 
 /**
@@ -73,6 +80,13 @@ moduleIntegrationTestRunner<HawalaLedgerModuleService>({
     EscrowAgreement,
     PatronageAllocation,
     KarmaEvent,
+    ExternalRecord,
+    MatchingRule,
+    ReconciliationRun,
+    ReconciliationMatch,
+    IngestCursor,
+    BalanceMonitor,
+    MonitorBreach,
   ],
   testSuite: ({ service }) => {
     /**

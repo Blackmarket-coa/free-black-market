@@ -87,7 +87,13 @@ export const AchTransaction = model.define("hawala_ach_transaction", {
   stripe_payment_intent_id: model.text().nullable(),
   stripe_charge_id: model.text().nullable(),
   stripe_transfer_id: model.text().nullable(), // For withdrawals
-  
+  // The column has existed in the DDL since Migration20251229CreateHawalaLedger
+  // but was missing from this model, so the payout.paid / payout.failed webhook
+  // filters (api/webhooks/hawala/stripe/route.ts) could never match a row and
+  // outbound payout ids went unpersisted. It is also the primary join key for
+  // external reconciliation against Stripe payout records.
+  stripe_payout_id: model.text().nullable(),
+
   // Status
   status: model.enum([
     "PENDING",
