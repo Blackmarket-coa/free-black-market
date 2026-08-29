@@ -31,9 +31,12 @@ const TIER_TABLE: Array<{
 
 /** Canopy plan codes ↔ first-party draft listings (billing only; feature
  *  gating for Canopy stays Blackout-side, so wire tier is the default). */
+// Blackout's `CANOPY_PRODUCTS` planCodes, verbatim — the delegation resolves
+// plan -> listing by this exact string (CANOPY_FBM_LISTING_IDS + the
+// metadata.canopyPlanCode echo), so the vocabularies must never drift.
 const CANOPY_PLAN_CODES = [
-  "sprout_monthly",
-  "sprout_annual",
+  "canopy_sprout_monthly",
+  "canopy_sprout_annual",
   "canopy_pro_monthly",
   "canopy_pro_annual",
 ] as const

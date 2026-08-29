@@ -9,6 +9,8 @@ import {
 import {
   mapEntitlementKindToBlackout,
   BLACKOUT_DEAD_DROP_KINDS,
+  BLACKOUT_PURCHASE_KINDS,
+  type BlackoutPurchaseKind,
 } from "../modules/marketplace-webhooks/models/blackout-events"
 import { MARKETPLACE_LISTING_MODULE } from "../modules/marketplace-listing"
 
@@ -130,7 +132,14 @@ export default async function emitBlackoutOrderPlaced({
 
       for (const it of items) {
         const itemKind = (it.metadata?.entitlement_kind ?? null) as string | null
-        const kind = mapEntitlementKindToBlackout(itemKind)
+        // Catalog listings stamp §2 purchase kinds directly (subscription_tier,
+        // privacy_tool, ...) — pass those through verbatim; only internal
+        // EntitlementKind values need the mapping.
+        const kind =
+          itemKind &&
+          (BLACKOUT_PURCHASE_KINDS as readonly string[]).includes(itemKind)
+            ? (itemKind as BlackoutPurchaseKind)
+            : mapEntitlementKindToBlackout(itemKind)
         const digitalDelivery = BLACKOUT_DEAD_DROP_KINDS.includes(kind)
         const itemListingId =
           (it.metadata?.creator_listing_id as string | undefined) ?? null

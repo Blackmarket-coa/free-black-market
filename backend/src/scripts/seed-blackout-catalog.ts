@@ -233,7 +233,7 @@ export const CANDIDATES: CandidateListing[] = [
     feature_keys: [],
     tags: ["subscription", "canopy", "sprout"],
     status: CreatorListingStatus.DRAFT,
-    extra_metadata: { canopy_plan_code: "sprout_monthly", canopy_plan: "sprout" },
+    extra_metadata: { canopy_plan_code: "canopy_sprout_monthly", canopy_plan: "sprout" },
   },
   {
     slug: "canopy-sprout-annual",
@@ -247,7 +247,7 @@ export const CANDIDATES: CandidateListing[] = [
     feature_keys: [],
     tags: ["subscription", "canopy", "sprout"],
     status: CreatorListingStatus.DRAFT,
-    extra_metadata: { canopy_plan_code: "sprout_annual", canopy_plan: "sprout" },
+    extra_metadata: { canopy_plan_code: "canopy_sprout_annual", canopy_plan: "sprout" },
   },
   {
     slug: "canopy-pro-monthly",

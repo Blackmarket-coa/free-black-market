@@ -265,7 +265,17 @@ async function materialize(
           {
             variant_id,
             quantity: 1,
-            metadata: { creator_listing_id: listing.id },
+            // listing_id/entitlement_kind drive the purchase.succeeded emit:
+            // providerListingId must be the catalog id Blackout knows, and the
+            // kind decides dead-drop behavior (a subscription_tier must never
+            // read as a deliverable vault item).
+            metadata: {
+              creator_listing_id: listing.id,
+              listing_id: listing.id,
+              ...(listing.entitlement_kind
+                ? { entitlement_kind: listing.entitlement_kind }
+                : {}),
+            },
           },
         ],
         metadata: cartMetadata,
