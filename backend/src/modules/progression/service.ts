@@ -237,12 +237,14 @@ class ProgressionModuleService extends MedusaService({
       /* module absent — leave snapshot as-is */
     }
 
-    // Karma events → karma sum.
+    // Karma events → karma sum. The log keys on `member_id` (W4 fix: this
+    // previously filtered on a nonexistent `owner_id`, so the swallowed
+    // query error left `karma` permanently 0).
     try {
       const { data } = await query.graph({
         entity: "karma_event",
         fields: ["delta"],
-        filters: { owner_id: customerId },
+        filters: { member_id: customerId },
       })
       if (Array.isArray(data)) {
         patch.karma = data.reduce((sum, e) => sum + Number(e.delta ?? 0), 0)

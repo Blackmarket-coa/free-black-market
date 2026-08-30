@@ -6,7 +6,7 @@
  * fake hawala + asset-graph services to verify:
  *
  *   - Each rail's correct write path: CCR/USDC/USD/HRS → createTransfer,
- *     KARMA → createKarmaEvents, GIFT → metadata-only mark.
+ *     KARMA → recordKarmaEvent (the W4 canonical write path), GIFT → metadata-only mark.
  *
  *   - Idempotency: re-running on the same record short-circuits.
  *     `createTransfer` uses `settlement-${id}` as its idempotency key;
@@ -81,18 +81,15 @@ const buildFakeHawala = (
       transfers.push(entry)
       return entry
     }),
-    listKarmaEvents: jest.fn(async (filter: any) => {
-      calls.push({ method: "listKarmaEvents", args: filter })
-      return karmaEvents.filter(
-        (e) =>
-          filter.source_id === undefined || e.source_id === filter.source_id
-      )
-    }),
-    createKarmaEvents: jest.fn(async (data: any) => {
-      calls.push({ method: "createKarmaEvents", args: data })
+    // W4: the canonical write path — idempotent per source pair, like the
+    // real recordKarmaEvent.
+    recordKarmaEvent: jest.fn(async (input: any) => {
+      calls.push({ method: "recordKarmaEvent", args: input })
+      const existing = karmaEvents.find((e) => e.source_id === input.source_id)
+      if (existing) return { event: existing, created: false }
       const event = { id: `ke_${karmaEvents.length + 1}` }
-      karmaEvents.push({ id: event.id, source_id: data.source_id })
-      return event
+      karmaEvents.push({ id: event.id, source_id: input.source_id })
+      return { event, created: true }
     }),
   } as any
 }
@@ -362,8 +359,8 @@ describe("reconcileSettlementRecord — KARMA", () => {
     expect(result.status).toBe("settled_karma")
     if (result.status !== "settled_karma") return
 
-    expect(hawala.createKarmaEvents).toHaveBeenCalledTimes(1)
-    const args = (hawala.createKarmaEvents as jest.Mock).mock.calls[0][0]
+    expect(hawala.recordKarmaEvent).toHaveBeenCalledTimes(1)
+    const args = (hawala.recordKarmaEvent as jest.Mock).mock.calls[0][0]
     expect(args.member_id).toBe("mem_fixer")
     expect(args.delta).toBe(1)
     expect(args.reason).toBe("repair-completed")
@@ -400,7 +397,7 @@ describe("reconcileSettlementRecord — KARMA", () => {
     )
   })
 
-  it("idempotency: skips event creation when one with the same source_id already exists", async () => {
+  it("idempotency: reuses the existing event when one with the same source_id already exists", async () => {
     const hawala = buildFakeHawala({
       existingKarmaEvents: [{ id: "ke_existing", source_id: "sr_karma" }],
     })
@@ -415,8 +412,30 @@ describe("reconcileSettlementRecord — KARMA", () => {
     )
     expect(result.status).toBe("settled_karma")
     if (result.status !== "settled_karma") return
+    // The canonical write path owns idempotency now: it is called, and it
+    // resolves to the pre-existing event without creating a second row.
     expect(result.karma_event_id).toBe("ke_existing")
-    expect(hawala.createKarmaEvents).not.toHaveBeenCalled()
+    const outcome = await (hawala.recordKarmaEvent as jest.Mock).mock
+      .results[0].value
+    expect(outcome.created).toBe(false)
+  })
+
+  it("maps a write-path rejection (unregistered source, bad reason) to a failed record", async () => {
+    const hawala = buildFakeHawala()
+    ;(hawala.recordKarmaEvent as jest.Mock).mockRejectedValueOnce(
+      new Error("[hawala-ledger] invalid karma event: reason must be a lowercase slug")
+    )
+    const assetGraph = buildFakeAssetGraph({
+      records: [karmaRecord({ id: "sr_karma_bad" })],
+    })
+    const result = await reconcileSettlementRecord(
+      karmaRecord({ id: "sr_karma_bad" }),
+      hawala,
+      assetGraph
+    )
+    expect(result.status).toBe("failed")
+    if (result.status !== "failed") return
+    expect(result.error).toMatch(/invalid karma event/)
   })
 
   it("fails cleanly when karma_reason is missing from metadata", async () => {
@@ -461,7 +480,7 @@ describe("reconcileSettlementRecord — GIFT (audit-only)", () => {
     )
     expect(result.status).toBe("settled_gift")
     expect(hawala.createTransfer).not.toHaveBeenCalled()
-    expect(hawala.createKarmaEvents).not.toHaveBeenCalled()
+    expect(hawala.recordKarmaEvent).not.toHaveBeenCalled()
     expect(hawala.listLedgerAccounts).not.toHaveBeenCalled()
   })
 

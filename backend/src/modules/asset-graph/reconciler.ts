@@ -15,7 +15,7 @@
  *                        the record's metadata. Stamps
  *                        `ledger_entry_id`.
  *
- *   KARMA              → hawala-ledger `createKarmaEvents` (no double-
+ *   KARMA              → hawala-ledger `recordKarmaEvent` (no double-
  *                        entry; karma is unilateral). The settlement
  *                        record's `metadata.karma_event_id` carries
  *                        the produced event id.
@@ -32,10 +32,10 @@
  *     reconciliation of the same record returns the existing entry
  *     instead of double-writing.
  *
- *   - Karma events have no built-in idempotency key. The reconciler
- *     checks for an existing `karma_event` with
+ *   - Karma idempotency is owned by the canonical write path (W4):
+ *     `recordKarmaEvent` re-reads by
  *     `source_module: "asset_graph", source_id: settlement_record_id`
- *     and skips if one exists.
+ *     and the partial unique index backstops the race.
  *
  *   - GIFT records are detected by the presence of
  *     `metadata.reconciled_at` and skipped on re-run.
@@ -101,19 +101,19 @@ export type ReconcilerHawalaSurface = {
     idempotency_key?: string
     metadata?: Record<string, unknown>
   }) => Promise<{ id: string }>
-  listKarmaEvents: (filter: {
-    source_module?: string
-    source_id?: string
-  }) => Promise<Array<{ id: string }>>
-  createKarmaEvents: (data: {
+  /**
+   * The canonical karma write path (W4): validated against the source
+   * registry, idempotent per (source_module, source_id), attested at write.
+   */
+  recordKarmaEvent: (input: {
     member_id: string
     delta: number
     reason: string
     source_module?: string | null
     source_id?: string | null
-    occurred_at: Date
+    occurred_at?: Date | string
     metadata?: Record<string, unknown> | null
-  }) => Promise<{ id: string }>
+  }) => Promise<{ event: { id: string }; created: boolean }>
 }
 
 /** Asset-graph surface the reconciler depends on. */
@@ -202,25 +202,22 @@ export const reconcileSettlementRecord = async (
     }
 
     if (code === "KARMA") {
-      // Idempotency: skip if an event with this source_id already exists.
-      const existing = await hawala.listKarmaEvents({
-        source_module: "asset_graph",
-        source_id: record.id,
-      })
-      let event: { id: string }
-      if (existing.length > 0) {
-        event = existing[0]
-      } else {
-        const reason = (meta as { karma_reason?: string }).karma_reason
-        if (!reason) {
-          return {
-            status: "failed",
-            record_id: record.id,
-            error:
-              "KARMA settlement missing karma_reason in metadata; cannot reconcile.",
-          }
+      const reason = (meta as { karma_reason?: string }).karma_reason
+      if (!reason) {
+        return {
+          status: "failed",
+          record_id: record.id,
+          error:
+            "KARMA settlement missing karma_reason in metadata; cannot reconcile.",
         }
-        event = await hawala.createKarmaEvents({
+      }
+      // The canonical write path (W4) owns idempotency (source-pair
+      // pre-read + the partial unique index under the race) and stamps the
+      // attestation; validation failures map to a failed record, same as
+      // the missing-reason guard above.
+      let event: { id: string }
+      try {
+        const recorded = await hawala.recordKarmaEvent({
           member_id: record.to_member_id,
           delta: record.amount_minor,
           reason,
@@ -232,6 +229,13 @@ export const reconcileSettlementRecord = async (
             project_instance_id: record.project_instance_id,
           },
         })
+        event = recorded.event
+      } catch (error) {
+        return {
+          status: "failed",
+          record_id: record.id,
+          error: error instanceof Error ? error.message : String(error),
+        }
       }
 
       await assetGraph.updateSettlementRecords({

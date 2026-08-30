@@ -3,6 +3,12 @@ const log = createLogger("modules/hawala-ledger/service")
 import { MedusaService, ContainerRegistrationKeys } from "@medusajs/framework/utils"
 import { auditFinancialTransaction } from "./audit-logger"
 import { assertRailInvariants } from "./posture-a-guard"
+import {
+  buildKarmaAttestation,
+  isKarmaUniqueViolation,
+  validateKarmaEventInput,
+  type KarmaEventInput,
+} from "./karma"
 import { splitAdvanceRepayment } from "./advance-repayment-split"
 import { splitConsignmentCents } from "../../lib/consignment"
 import {
@@ -3017,6 +3023,90 @@ class HawalaLedgerModuleService extends MedusaService({
     }
 
     return { mxid, available, pending, currency, last_settlement_at, sources }
+  }
+
+  // ==================== KARMA EVENT LOG (W4) ====================
+  //
+  // The canonical reputation write path (decision D7). All system writers
+  // go through recordKarmaEvent — validated against the source registry in
+  // karma.ts, idempotent per (source_module, source_id) with the partial
+  // unique index as the concurrency backstop, and stamped with a
+  // tamper-evidence attestation (signed when the marketplace signing key
+  // is configured). The generated create/update/delete methods remain for
+  // framework plumbing but are not the write path; nothing should call
+  // them for karma directly.
+
+  /**
+   * Record one karma event. Returns the (possibly pre-existing) event and
+   * whether this call created it. Throws on validation failure — writers
+   * are expected to pass registered sources and well-formed reasons.
+   */
+  async recordKarmaEvent(
+    input: KarmaEventInput
+  ): Promise<{ event: { id: string }; created: boolean }> {
+    const issues = validateKarmaEventInput(input)
+    if (issues.length > 0) {
+      throw new Error(
+        `[hawala-ledger] invalid karma event: ${issues.join("; ")}`
+      )
+    }
+
+    const sourceModule = input.source_module ?? null
+    const sourceId = input.source_id ?? null
+
+    if (sourceModule && sourceId) {
+      const existing = await this.listKarmaEvents({
+        source_module: sourceModule,
+        source_id: sourceId,
+      })
+      if (existing.length > 0) {
+        return { event: existing[0], created: false }
+      }
+    }
+
+    const occurredAt = input.occurred_at
+      ? new Date(input.occurred_at)
+      : new Date()
+    const attestation = buildKarmaAttestation(input, occurredAt.toISOString())
+
+    try {
+      const event = await this.createKarmaEvents({
+        member_id: input.member_id,
+        delta: input.delta,
+        reason: input.reason,
+        source_module: sourceModule,
+        source_id: sourceId,
+        occurred_at: occurredAt,
+        metadata: input.metadata ?? null,
+        attestation: attestation as unknown as Record<string, unknown>,
+      })
+      return { event, created: true }
+    } catch (error) {
+      // Concurrency race on the partial unique index: another writer won.
+      if (isKarmaUniqueViolation(error) && sourceModule && sourceId) {
+        const existing = await this.listKarmaEvents({
+          source_module: sourceModule,
+          source_id: sourceId,
+        })
+        if (existing.length > 0) {
+          return { event: existing[0], created: false }
+        }
+      }
+      throw error
+    }
+  }
+
+  /**
+   * A member's karma at now: the signed sum of their event log. Kept as a
+   * simple fold — projections that need point-in-time or per-reason views
+   * read the log themselves.
+   */
+  async sumKarmaForMember(memberId: string): Promise<number> {
+    const events = (await this.listKarmaEvents(
+      { member_id: memberId },
+      { select: ["delta"], take: null as unknown as number }
+    )) as Array<{ delta: number }>
+    return events.reduce((sum, e) => sum + Number(e.delta ?? 0), 0)
   }
 
   // ==================== EXTERNAL RECONCILIATION ====================
