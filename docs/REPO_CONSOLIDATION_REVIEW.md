@@ -67,8 +67,16 @@ Two findings frame everything else:
   shared manifest, the publish bridge + `plugin_version` history, and
   signature verification — `docs/contracts/extension-manifest.md`)*.
 - `connect.js` exists (`storefront/public/connect.js`, ~1,200 lines,
-  publishable keys hashed at rest). It is unshipped only as a versioned
-  artifact.
+  publishable keys hashed at rest). ~~It is unshipped only as a versioned
+  artifact.~~ *(Stale at the time of writing — v2.0.0 had already shipped
+  as a frozen, SRI-pinned release on 2026-08-13 via PRs #801–#803, two
+  weeks before this review: `public/v2.0.0/connect.js` + `CONNECT_VERSION`
+  / `CONNECT_SRI` in `shared/website-config.ts`, immutable cache headers,
+  a changelog with a release procedure, and the CI parity spec
+  `connect-sri.unit.spec.ts`. W6 closed what actually remained: the
+  first-party site template now embeds the pinned URL + integrity hash,
+  the parity spec holds the template in lockstep with future bumps, and
+  the embed-key middleware gates got direct unit specs.)*
 - Known internal redundancies to work down: commission/payout logic
   spread across five owners; three quest/XP systems; ~~two reviews
   implementations~~ *(consolidated in W4 — one model, subject-typed)*;
@@ -286,6 +294,18 @@ Ordered workstreams; each is independently shippable.
 - **W6 — Federation**: version connect.js as a shippable artifact;
   maintain the BMC↔UCP mapping in The-Connect; revisit protocol work
   when a second marketplace is real.
+  *(Landed 2026-08-30 — mostly by discovering the first half had
+  already shipped: connect.js v2.0.0 went out frozen + SRI-pinned on
+  2026-08-13 (PRs #801–#803), so the artifact leg reduced to closing
+  the real gaps — the Launch site template now embeds the pinned URL +
+  integrity (enforced by `connect-sri.unit.spec.ts` so a version bump
+  can never leave it behind) and `requireEmbedKey`/`optionalEmbedKey`
+  gained direct middleware specs. The mapping leg is new work: The
+  Connect now carries `docs/documentation/ucp-and-bmc-connect.md`, the
+  BMC Connect ↔ UCP concept mapping per D3, wired into its mkdocs nav
+  + llmstxt index; its CONSOLIDATION.md seed table folded in, including
+  the correction that UCP does spec an order-scoped webhook. Protocol
+  build remains gated on a second real marketplace — unchanged.)*
 - **Ops track (parallel, not consolidation)**: BO-1 megolm/key-backup
   defect; the legal/compliance launch gates (§8).
 

@@ -84,12 +84,25 @@ Fleetbase fork" — are wrong, in opposite directions.
   module), an origin allow-list, per-key + per-IP rate limits, and metering
   for billing. The code is honest that origin checks are advisory and the
   per-IP cap is the real backstop.
-- **The gap is release engineering, not capability.** `version: "2.0.0"` is
+- ~~**The gap is release engineering, not capability.** `version: "2.0.0"` is
   an object literal nothing reads. There is no versioned URL (`/connect.js`
   only, cached with up to a 24h stale-while-revalidate window), no SRI in the
   generated snippet, no publishable package (the parent `b2c-storefront` is
   `private`), and tests cover one widget of eleven. No external sibling
-  should build on a mutable 47 KB URL — and that is the *only* blocker.
+  should build on a mutable 47 KB URL — and that is the *only* blocker.~~
+  *(Stale when written: the release engineering had already shipped on
+  2026-08-13, PRs #801–#803 — the immutable `/v2.0.0/connect.js` URL
+  (1-year `immutable` caching), `CONNECT_VERSION`/`CONNECT_SRI` constants
+  feeding an SRI + `crossorigin` snippet generator, a changelog with an
+  enforced release procedure, widget specs exercising every renderer in a
+  `vm` harness, and the `connect-sri.unit.spec.ts` parity gate binding the
+  version literal, the frozen bytes, the hash, and the snippet. W6 added
+  the last mile: the Launch site template is pinned to the versioned URL +
+  integrity and held there by the same spec. The one deliberate omission
+  is an npm package — rejected, not pending: `window.FBM` is the contract,
+  the storefront has no bundler step for it, and a second artifact would
+  be a permanent sync liability with no user the pinned script tag doesn't
+  already serve.)*
 
 ### Blackstar: a hollow fork wrapping a real, unproven federation API
 
@@ -166,7 +179,7 @@ Fleetbase fork" — are wrong, in opposite directions.
 | Component | Roadmap said | Verified reality |
 | --- | --- | --- |
 | Blackstar | "Forked, live; hard design problem solved" | Hollow fork; real greenfield federation API that has never run; no deploy evidence; stale since March |
-| connect.js | "Scoped, not shipped" | Built, documented, authenticated; unshipped only as a *versioned artifact* |
+| connect.js | "Scoped, not shipped" | Built, documented, authenticated; ~~unshipped only as a *versioned artifact*~~ *(shipped versioned 2026-08-13: frozen `/v2.0.0/` + SRI + changelog + CI parity spec; W6 pinned the first-party template)* |
 | Vendor portal | "Node and Routes tabs exist" | Neither exists; nav app is a driver app |
 | Buyer Center | "Escrow/idempotency defects — hard gate" | Closed before Move 1; guarded by blocking CI soak (PR #800) |
 | TigerBeetle | "Sourced, not integrated" | Nonexistent; deferred by decision (PR #800) |
@@ -193,11 +206,16 @@ today fails at least solo-dev capacity and bus-factor, which defers it.
 
 **Move 2 becomes three bounded workstreams, in order:**
 
-1. **connect.js release engineering** (the smallest, highest-certainty item).
+1. ~~**connect.js release engineering** (the smallest, highest-certainty item).
    Serve an immutable versioned URL (`/v2.0.0/connect.js`) alongside the
    mutable one; add SRI + `crossorigin` to the snippet generator; add a
    changelog; widen widget test coverage. Optionally publish `@fbm/connect`.
-   This is the roadmap's "ship connect.js," and it is one packaging step.
+   This is the roadmap's "ship connect.js," and it is one packaging step.~~
+   *(Done — and had been since 2026-08-13 (PRs #801–#803), before this
+   document was written; only the template pin and middleware specs were
+   genuinely left, and W6 landed both. `@fbm/connect` on npm is rejected
+   rather than optional-pending — see the annotation in §"connect.js"
+   above.)*
 2. **Collapse the Blackstar seam to one protocol.** Adopt Blackstar's
    documented HMAC contract (it is the real bridge): implement FBM's emitting
    side for the three inbound events and an FBM receiver for Blackstar's five
