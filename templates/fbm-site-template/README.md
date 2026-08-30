@@ -32,7 +32,9 @@ The whole storefront is driven by one script tag and a few HTML attributes:
 <div data-fbm="events"></div>
 
 <script
-  src="https://freeblackmarket.com/connect.js"
+  src="https://freeblackmarket.com/v2.0.0/connect.js"
+  integrity="sha384-g3F0Snh1ELm17qaHBIZPty9TgC1ukcwyugsITFUhc+5JK1u1IP7kVcTyp4Jj1Drv"
+  crossorigin="anonymous"
   data-fbm-handle="your-handle"
   data-fbm-api="https://api.freeblackmarket.com"
   async
@@ -40,7 +42,10 @@ The whole storefront is driven by one script tag and a few HTML attributes:
 ```
 
 That's the same SDK any vendor can drop on their own existing site — see the
-[FBM Connect guide](https://freeblackmarket.com) for the full API.
+[FBM Connect guide](https://freeblackmarket.com) for the full API. The script
+URL pins a frozen, immutable release and the `integrity` hash verifies its
+bytes; the mutable `https://freeblackmarket.com/connect.js` exists for quick
+experiments only.
 
 ## One-time setup (FBM operators)
 

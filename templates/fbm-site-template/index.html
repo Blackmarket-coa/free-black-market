@@ -53,9 +53,16 @@
     <!--
       FBM Connect SDK. `data-fbm-handle` is the only required setting.
       `data-fbm-api` points at the FBM Store API.
+
+      The URL is pinned to a frozen release with an integrity hash — never
+      point a production site at the mutable /connect.js. New SDK releases
+      ship a new /vN.N.N/ directory; connect-sri.unit.spec.ts keeps this
+      pin in lockstep with each release.
     -->
     <script
-      src="https://freeblackmarket.com/connect.js"
+      src="https://freeblackmarket.com/v2.0.0/connect.js"
+      integrity="sha384-g3F0Snh1ELm17qaHBIZPty9TgC1ukcwyugsITFUhc+5JK1u1IP7kVcTyp4Jj1Drv"
+      crossorigin="anonymous"
       data-fbm-handle="__VENDOR_HANDLE__"
       data-fbm-api="https://api.freeblackmarket.com"
       async
