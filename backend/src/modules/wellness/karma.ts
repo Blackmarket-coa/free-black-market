@@ -54,7 +54,13 @@ export interface EmitWellnessKarmaInput {
   event_type: WellnessKarmaEventType
   /** Multiplier for per-unit events. Default 1. */
   units?: number
-  /** Stable id so the karma_event partial-unique dedup prevents double counts. */
+  /**
+   * Stable id carried into the xp_event source pair. Note: xp_event's
+   * source index is NON-unique — hard dedup happens one level down, when
+   * the W4 karma mirror records the row into the canonical karma_event
+   * log (whose partial unique index rejects duplicates). Writers should
+   * still keep this id stable so mirrored rows collapse correctly.
+   */
   reference_id: string
   metadata?: Record<string, unknown>
 }
