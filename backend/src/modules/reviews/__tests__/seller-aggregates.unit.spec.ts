@@ -87,3 +87,38 @@ describe("ReviewsService.getSellerAggregates", () => {
     expect(result.size).toBe(0)
   })
 })
+
+describe("subject scoping after the W4 reviews absorption", () => {
+  it("marketplace aggregates filter to product+seller subjects, so absorbed service reviews never blend in", async () => {
+    const { svc, listProductReviews } = serviceWith([])
+    await svc.getSellerAggregate("sel_a")
+    await svc.getSellerAggregates(["sel_a"])
+    for (const call of listProductReviews.mock.calls as unknown as Array<
+      [Record<string, unknown>]
+    >) {
+      expect(call[0].subject_type).toEqual(["product", "seller"])
+    }
+  })
+
+  it("getServiceSellerAggregate keeps the service-program contract: 2dp rounding and a 0 empty state", async () => {
+    const { svc, listProductReviews } = serviceWith([
+      { seller_id: "sel_srv", rating: 5 },
+      { seller_id: "sel_srv", rating: 4 },
+      { seller_id: "sel_srv", rating: 4 },
+    ])
+    // 13/3 = 4.3333… → 4.33 at two decimals (marketplace rounding would say 4.3).
+    await expect(svc.getServiceSellerAggregate("sel_srv")).resolves.toEqual({
+      average: 4.33,
+      count: 3,
+    })
+    expect(
+      (listProductReviews.mock.calls[0] as unknown as [Record<string, unknown>])[0]
+        .subject_type
+    ).toBe("service_contract")
+
+    const empty = serviceWith([])
+    await expect(
+      empty.svc.getServiceSellerAggregate("sel_none")
+    ).resolves.toEqual({ average: 0, count: 0 })
+  })
+})

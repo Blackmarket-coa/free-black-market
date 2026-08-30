@@ -12,10 +12,6 @@ import ServiceContract, {
   ServiceContractStatus,
 } from "./models/service-contract"
 import ServiceReview from "./models/service-review"
-import {
-  averageRating,
-  validateReviewSubmission,
-} from "./review-rules"
 
 export interface CreateServiceProgramInput {
   vendorId: string
@@ -330,81 +326,12 @@ class ServiceProgramService extends MedusaService({
     })
   }
 
-  /**
-   * Create a review for an accepted service contract. The author must be the
-   * contract's client (`vendor_id`); rating is 1..5. One review per
-   * (contract, reviewer) — a repeat submission updates the existing row.
-   */
-  async createContractReview(args: {
-    contractId: string
-    reviewerId: string
-    rating: number
-    comment?: string | null
-  }): Promise<any> {
-    const [contract] = await this.listServiceContracts({ id: args.contractId })
-
-    const validation = validateReviewSubmission({
-      contract: contract
-        ? {
-            id: contract.id,
-            status: contract.status,
-            vendor_id: contract.vendor_id,
-            service_seller_id: contract.service_seller_id,
-            program_id: contract.program_id,
-          }
-        : null,
-      reviewerId: args.reviewerId,
-      rating: args.rating,
-    })
-    if (!validation.ok) {
-      const err = new Error(validation.message) as Error & { code?: string }
-      err.code = validation.code
-      throw err
-    }
-
-    const [existing] = await this.listServiceReviews({
-      contract_id: args.contractId,
-      reviewer_id: args.reviewerId,
-    })
-    if (existing) {
-      const [updated] = await (this as any).updateServiceReviews([
-        {
-          id: existing.id,
-          rating: args.rating,
-          comment: args.comment ?? null,
-        },
-      ])
-      return updated
-    }
-
-    const [created] = await (this as any).createServiceReviews([
-      {
-        contract_id: args.contractId,
-        program_id: contract.program_id,
-        service_seller_id: contract.service_seller_id,
-        reviewer_id: args.reviewerId,
-        rating: args.rating,
-        comment: args.comment ?? null,
-      },
-    ])
-    return created
-  }
-
-  async listReviewsForSeller(serviceSellerId: string): Promise<any[]> {
-    return this.listServiceReviews(
-      { service_seller_id: serviceSellerId },
-      { order: { created_at: "DESC" } }
-    )
-  }
-
-  async getSellerRatingSummary(
-    serviceSellerId: string
-  ): Promise<{ count: number; average: number }> {
-    const reviews = await this.listServiceReviews({
-      service_seller_id: serviceSellerId,
-    })
-    return { count: reviews.length, average: averageRating(reviews) }
-  }
+  // Service reviews were absorbed into the consolidated `reviews` module in
+  // W4 (subject_type: service_contract; rows copied by
+  // Migration20260830ReviewsAbsorption). The `ServiceReview` model stays
+  // registered so the historical table survives, but it is read-only by
+  // convention — eligibility lives in `review-rules.ts` (consumed by the
+  // vendor route) and writes go through the reviews module.
 }
 
 export default ServiceProgramService
