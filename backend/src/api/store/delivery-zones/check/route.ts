@@ -8,35 +8,9 @@ import type FoodDistributionService from "../../../../modules/food-distribution/
 // ===========================================
 
 import { deliveryZoneCheckRequestSchema } from "../../../delivery-zones/contracts"
+import { distanceMiles } from "../../../../lib/geo-distance"
 
-// ===========================================
-// Haversine distance calculation
-// ===========================================
-
-function calculateDistance(
-  lat1: number,
-  lng1: number,
-  lat2: number,
-  lng2: number
-): number {
-  const R = 3959 // Earth's radius in miles
-  const dLat = toRad(lat2 - lat1)
-  const dLng = toRad(lng2 - lng1)
-  
-  const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos(toRad(lat1)) *
-      Math.cos(toRad(lat2)) *
-      Math.sin(dLng / 2) *
-      Math.sin(dLng / 2)
-  
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
-  return R * c
-}
-
-function toRad(deg: number): number {
-  return deg * (Math.PI / 180)
-}
+// Distance math consolidated into lib/geo-distance (W5).
 
 // ===========================================
 // Point-in-polygon check (ray casting algorithm)
@@ -81,7 +55,7 @@ function isWithinZone(
   maxRadius: number = 50 // Default max radius in miles
 ): { inZone: boolean; distance: number } {
   // Calculate distance from zone center
-  const distance = calculateDistance(
+  const distance = distanceMiles(
     customerLat,
     customerLng,
     zone.center_latitude,

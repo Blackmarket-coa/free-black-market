@@ -1,4 +1,5 @@
 import { createLogger } from "../../../shared/logger"
+import { distanceMiles } from "../../../lib/geo-distance"
 const log = createLogger("api/store/vendors")
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { VendorType } from "../../../modules/seller-extension/models/seller-metadata"
@@ -26,27 +27,7 @@ export const METADATA_BACKED_VENDOR_TYPES: string[] = Object.values(
   VendorType
 ).filter((type) => !DEDICATED_ENTITY_VENDOR_TYPES.includes(type))
 
-/**
- * Haversine formula - calculate distance between two points in miles
- */
-function haversineDistance(
-  lat1: number,
-  lon1: number,
-  lat2: number,
-  lon2: number
-): number {
-  const R = 3959 // Earth's radius in miles
-  const dLat = ((lat2 - lat1) * Math.PI) / 180
-  const dLon = ((lon2 - lon1) * Math.PI) / 180
-  const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos((lat1 * Math.PI) / 180) *
-      Math.cos((lat2 * Math.PI) / 180) *
-      Math.sin(dLon / 2) *
-      Math.sin(dLon / 2)
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
-  return R * c
-}
+// Distance math consolidated into lib/geo-distance (W5).
 
 /**
  * Approximate US zip code prefix (first 3 digits) to lat/lng center.
@@ -732,7 +713,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
           const vLat = v.location?.latitude
           const vLng = v.location?.longitude
           if (vLat != null && vLng != null) {
-            const distance = haversineDistance(userLat, userLng, vLat, vLng)
+            const distance = distanceMiles(userLat, userLng, vLat, vLng)
             return { ...v, distance: Math.round(distance * 10) / 10 }
           }
           return { ...v, distance: null }
