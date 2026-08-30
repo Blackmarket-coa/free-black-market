@@ -2,9 +2,13 @@ import { createLogger } from "../../../../shared/logger"
 const log = createLogger("api/store/collective/demand-pools")
 import { z } from "zod"
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
+import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 import { DEMAND_POOL_MODULE } from "../../../../modules/demand-pool"
 import DemandPoolModuleService from "../../../../modules/demand-pool/service"
 import { BUYER_ARCHETYPE_CODES } from "../../../../modules/demand-pool/buyer-archetype"
+import { BUYER_NETWORK_MODULE } from "../../../../modules/buyer-network"
+import type BuyerNetworkModuleService from "../../../../modules/buyer-network/service"
+import { NetworkMemberStatus } from "../../../../modules/buyer-network/models/network-member"
 
 const getErrorMessage = (error: unknown) => {
   if (error instanceof Error) {
@@ -39,6 +43,11 @@ const createDemandPostSchema = z.object({
   visibility: z.enum(["PUBLIC", "NETWORK_ONLY", "INVITE_ONLY"]).optional(),
   parent_demand_id: z.string().optional(),
   recurring_rule: z.string().optional(),
+  // Attach the post to a buyer network the creator belongs to. This is what
+  // populates the demand-post <-> buyer-network module link — without it the
+  // link (and everything downstream, like network savings recording) has no
+  // rows.
+  buyer_network_id: z.string().optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),
 })
 
@@ -92,6 +101,25 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       DEMAND_POOL_MODULE
     )
 
+    // Validate network membership BEFORE creating anything: attaching a post
+    // to a network credits that network's stats when the pool completes, so
+    // only an active member of the network may do it — and failing here
+    // leaves nothing half-created.
+    if (body.buyer_network_id) {
+      const buyerNetworkService =
+        req.scope.resolve<BuyerNetworkModuleService>(BUYER_NETWORK_MODULE)
+      const membership = await buyerNetworkService.listNetworkMembers({
+        network_id: body.buyer_network_id,
+        customer_id: customerId,
+        status: NetworkMemberStatus.ACTIVE,
+      })
+      if (membership.length === 0) {
+        return res.status(400).json({
+          error: "Not an active member of the specified buyer network",
+        })
+      }
+    }
+
     const post = await demandPoolService.createDemandPost({
       creator_id: customerId,
       creator_type: "CUSTOMER",
@@ -120,6 +148,36 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       recurring_rule: body.recurring_rule,
       metadata: body.metadata,
     })
+
+    // Populate the demand-post <-> buyer-network module link. Membership was
+    // validated above, so a failure here is infrastructure, not policy — and
+    // the post already exists. Surfacing it as an error would invite a retry
+    // that creates a duplicate post, so report the partial outcome instead.
+    if (body.buyer_network_id) {
+      try {
+        const remoteLink = req.scope.resolve(
+          ContainerRegistrationKeys.REMOTE_LINK
+        )
+        await remoteLink.create({
+          [BUYER_NETWORK_MODULE]: { buyer_network_id: body.buyer_network_id },
+          [DEMAND_POOL_MODULE]: { demand_post_id: post.id },
+        })
+      } catch (linkError: unknown) {
+        const message = getErrorMessage(linkError)
+        log.error(
+          `[POST /store/collective/demand-pools] Post ${post.id} created but network link to ${body.buyer_network_id} failed:`,
+          message
+        )
+        return res.status(201).json({
+          demand_post: post,
+          buyer_network_id: null,
+          network_link_failed: true,
+        })
+      }
+      return res
+        .status(201)
+        .json({ demand_post: post, buyer_network_id: body.buyer_network_id })
+    }
 
     res.status(201).json({ demand_post: post })
   } catch (error: unknown) {

@@ -213,6 +213,19 @@ class BuyerNetworkModuleService extends MedusaService({
   // Reward & Reputation
   // ──────────────────────────────────────────────────────────────────────────
 
+  /**
+   * Record one member's participation in a completed group buy: bump their
+   * participation counters and add their realized savings to both their own
+   * running total and the network's.
+   *
+   * Called once per participant per pool. The network's completed_group_buys
+   * counter deliberately does NOT move here — a pool with N participants is
+   * one completed group buy, not N, so that counter lives in
+   * `recordCompletedGroupBuy`, called once per pool.
+   *
+   * Not idempotent: the caller owns replay protection (the savings
+   * subscriber marks each participant it has recorded).
+   */
   async recordGroupBuyParticipation(
     networkId: string,
     customerId: string,
@@ -242,10 +255,20 @@ class BuyerNetworkModuleService extends MedusaService({
       const network = networks[0]
       await this.updateBuyerNetworks({
         id: networkId,
-        completed_group_buys: Number(network.completed_group_buys) + 1,
         total_savings: Number(network.total_savings) + savingsAmount,
       })
     }
+  }
+
+  /** Count one completed group buy on the network — once per pool, never per participant. */
+  async recordCompletedGroupBuy(networkId: string) {
+    const networks = await this.listBuyerNetworks({ id: networkId })
+    if (networks.length === 0) return
+
+    await this.updateBuyerNetworks({
+      id: networkId,
+      completed_group_buys: Number(networks[0].completed_group_buys) + 1,
+    })
   }
 
   // ──────────────────────────────────────────────────────────────────────────
