@@ -156,7 +156,7 @@ Two findings frame everything else:
 | D4 | **Identity**: Matrix OIDC/MAS becomes the ecosystem IdP (the surface already exists in the Synapse fork). FBM integrates via one Medusa OIDC auth provider. Blackout's bespoke JWT account system retires behind it. Blackmask is re-scoped to persona/credential manager + trust signals. |
 | D5 | **Geospatial**: Blackout is the single spatial home (maplibre + PostGIS + martin + geocoder proxy). FBM's haversine/ZIP3 code is retired when it can consume Blackout's spatial API. No new geospatial service repo. |
 | D6 | **Extension registry**: inside FBM's catalog. ~~Close the hook-registry + semver gap~~ *(closed — the real W3 work was the shared manifest, publish bridge, `plugin_version` history, and verification)*; Forge publishes into it via `POST /v1/seller/listings` → `/publish`. No standalone registry service. |
-| D7 | **Reputation**: one write path — `karma_event` (append-only, signed, source-attributed, transfer-prohibited) becomes the canonical reputation event log; vendor trust, Coliseum standing, node trust, and publisher tiers become derived per-context projections. FBM's duplicate reviews implementations get deduped as part of this. |
+| D7 | **Reputation**: one write path — `karma_event` (append-only, signed, source-attributed, transfer-prohibited) becomes the canonical reputation event log; vendor trust, Coliseum standing, node trust, and publisher tiers become derived per-context projections. FBM's duplicate reviews implementations get deduped as part of this. *(W4 clarification, landed 2026-08-30: FBM's `karma_event` is the canonical economic-reputation log — the write path, source registry, attestation, and first producers shipped; blackout's `reputation_events` is the governance-context log, hardened to the same adjectives rather than renamed — the "karma has no implementation" assertion in its data export is deliberate and stays true. Vendor trust flows FBM→blackout only; node trust rides the Blackstar freeze; publisher tiers stay future.)* |
 | D8 | **Hygiene**: executed on this branch where safe (blackmask `third_party/`, Blackstar duplicate console, FBM restaurant-marketplace version skew); queued where riskier (Blackout's three client shells, FBM's four portals and vendored panel forks). |
 
 ## 5. Blnk harvest list (D1's "improve hawala-ledger" workstream)
@@ -251,6 +251,16 @@ Ordered workstreams; each is independently shippable.
 - **W4 — Reputation consolidation**: karma_event as the canonical log;
   re-point vendor-verification, Coliseum, and any future publisher
   tiers to derived projections; dedupe FBM's two reviews modules.
+  *(Landed dark 2026-08-30: `recordKarmaEvent` write path + registry +
+  attestation; xp_event mirrored row-for-row into the canonical log;
+  reviews consolidated onto one model — service reviews absorbed, the
+  storefront's write dialect accepted, its broken POST fixed; five-star
+  reviews and verification checks/badges are the first producers;
+  character-sheet karma projection bug fixed. Blackout hardens its
+  per-context `reputation_events` (W4 B1) instead of adopting the karma
+  name — see the D7 clarification. Deferrals in
+  `docs/AUDIT_DEBT.md` §W4 — the vendor-panel/admin reviews screens
+  still ride `@mercurjs/reviews` until re-pointed.)*
 - **W5 — Geospatial service**: expose Blackout's spatial API for FBM
   consumption; retire the ZIP3 table + haversine helpers; absorb or
   archive the standalone `coalition-app` repo (outside this session's

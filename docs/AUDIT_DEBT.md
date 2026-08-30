@@ -68,6 +68,25 @@ and the Featured Vendor Widget first-party seed. Deliberate deferrals:
 | W3-5 | Integration-http spec for the publish → catalog → install loop against Postgres (unit/route harnesses cover the logic; mirrors W1B-1's posture) | **deferred (S)** | `integration-tests/http/` |
 | W3-6 | Cross-repo counterparts — mostly landed same-window: Forge's publish flow consumes the seller surface (Forge W3 G-commits) and Blackout's provider consumes the registry read side (blackout W3 B1). Still open: Blackout featured-vendors client view (homepageCard.to target) + the client's pinned-key flip to the well-known keyset (operator/release item) | **other repos** | blackout `apps/blackout-client` |
 
+## W4 — Reputation consolidation (2026-08-30)
+
+Landed dark in the W4 pass (decision D7): `recordKarmaEvent` as the canonical
+reputation write path (source registry + attestation + idempotency; the
+asset-graph reconciler converted), the xp_event→karma_event mirror job, the
+reviews dedupe (`subject_type` on one model; service reviews absorbed; both
+POST dialects accepted; GET added), the first producers (five-star reviews,
+verification checks/badges), and the character-sheet karma projection fix
+(`owner_id`→`member_id` — karma had never reached a sheet). Deferrals:
+
+| # | Item | Status | Location |
+|---|------|--------|----------|
+| W4-1 | `@mercurjs/reviews` retirement: the plugin still owns the vendor-panel reviews screens (`/vendor/sellers/me/reviews` + reply/report) and `/admin/reviews`; the storefront's order `*reviews` relation also rides its order-review link, so FBM-written reviews don't mark an order as reviewed (customers see a 409 on the duplicate instead). Re-point the panels, then drop the plugin from `medusa-config.ts` — after checking the `review` table for rows worth migrating | **deferred (L)** | `backend/medusa-config.ts` plugins block; `vendor-panel/src/routes/reviews/` |
+| W4-2 | karma_event append-only is service convention, not schema enforcement: the MedusaService-generated update/delete methods still exist and there is no DB trigger/revoked grant | **deferred (S)** | `backend/src/modules/hawala-ledger/karma.ts` |
+| W4-3 | xp_event stays a separate table (the mirror is one-way); a full merge — xp reads served off karma_event projections — plus a created-at cursor for the sweep when the XP log grows hot | **deferred (M)** | `backend/src/modules/progression/karma-mirror.ts` |
+| W4-4 | Karma attestations sign under the single marketplace key (rides W3-2's rotation debt); pre-W4 rows carry null attestations — a backfill would hash-stamp them without signatures | **deferred (S)** | `backend/src/modules/hawala-ledger/karma.ts` |
+| W4-5 | A five-star review that is later edited down does not revoke its karma grant (append-only log; a compensating negative event needs an edit-path hook) | **deferred (S)** | `backend/src/lib/karma-grants.ts` |
+| W4-6 | Cross-repo counterparts: blackout hardens its per-context `reputation_events` log (actor/source attribution, insert-only persistence, standing endpoint off the attention metric — blackout W4 B1); Blackstar's `NodeTrustScore` stays frozen with the repo (its CONSOLIDATION.md records the projection direction); blackmask posture signals as karma inputs remain future work | **other repos** | blackout `packages/api`; Blackstar; blackmask |
+
 ## ⚠️ Critical: money-path atomicity was silently disabled (FIXED 2026-06-20)
 
 **Severity: high (financial correctness).** Surfaced by the money-path concurrency
