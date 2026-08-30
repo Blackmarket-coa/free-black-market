@@ -87,6 +87,26 @@ verification checks/badges), and the character-sheet karma projection fix
 | W4-5 | A five-star review that is later edited down does not revoke its karma grant (append-only log; a compensating negative event needs an edit-path hook) | **deferred (S)** | `backend/src/lib/karma-grants.ts` |
 | W4-6 | Cross-repo counterparts: blackout hardens its per-context `reputation_events` log (actor/source attribution, insert-only persistence, standing endpoint off the attention metric — blackout W4 B1); Blackstar's `NodeTrustScore` stays frozen with the repo (its CONSOLIDATION.md records the projection direction); blackmask posture signals as karma inputs remain future work | **other repos** | blackout `packages/api`; Blackstar; blackmask |
 
+## W5 — Geospatial service (2026-08-30)
+
+Landed dark in the W5 pass (decision D5 — Blackout is the spatial home; see
+`docs/contracts/blackout-spatial-consumer.md`): six duplicated haversines
+consolidated into `lib/geo-distance.ts`; the two divergent ZIP3 tables
+(backend ~900 entries vs storefront ~180 — checkout could fail to geocode a
+ZIP the vendors page resolved) collapsed into `lib/zip3.ts` behind the new
+`GET /store/geocode`; and the `blackout-spatial` consumer wired remote-first
+behind `FBM_BLACKOUT_SPATIAL` with the ZIP3 fallback always available.
+Deferrals:
+
+| # | Item | Status | Location |
+|---|------|--------|----------|
+| W5-1 | Nearby-within-radius as a remote call needs Blackout to hold/mirror FBM's vendor coordinates (per-row remote calls on the debounced public search path are non-viable; a single candidate-set call requires the data). Data-ownership decision, then a Blackout endpoint + consumer | **deferred (L)** | `backend/src/api/store/vendors/route.ts`, blackout `/v1/spatial` |
+| W5-2 | Delivery-zone containment stays local (checkout path — a remote dependency there needs a circuit breaker + the zone geometries mirrored); the ray-cast + bbox approximation in the zone routes is the weakest spatial code in the repo | **deferred (M)** | `backend/src/api/store/delivery-zones/**`, `backend/src/api/vendor/delivery-zones/conflict-utils.ts` |
+| W5-3 | `lib/aid-location.ts` distance work stays local BY DESIGN — mutual-aid coordinates never leave the server (privacy contract, `docs/FBM_BUYER_HUB.md`). Recorded as a permanent scope exclusion, not debt to burn down | **excluded** | `backend/src/lib/aid-location.ts` |
+| W5-4 | Metadata-backed vendors carry `location: {}` so the distance filter silently drops every non-producer/kitchen/garden archetype when a location filter is active; fixing it makes them newly appear in filtered results (visible product change — decide + announce) | **deferred (M)** | `backend/src/api/store/vendors/route.ts` |
+| W5-5 | `vendor-rules.max_delivery_distance` is a dead stub ("Would calculate distance here") — implementing needs a geocoded delivery address, a natural follow-on once `blackout-spatial` is live | **deferred (S)** | `backend/src/modules/vendor-rules/service.ts` |
+| W5-6 | Cross-repo counterparts: Blackout's deployed PostGIS + martin remain UNFED by its product (its OSS-plan WS4 owns the seam); the standalone `coalition-app` repo absorb/archive is an operator action | **other repos / operator** | blackout `infra/single-server-baseline`, `coalition-app` |
+
 ## ⚠️ Critical: money-path atomicity was silently disabled (FIXED 2026-06-20)
 
 **Severity: high (financial correctness).** Surfaced by the money-path concurrency

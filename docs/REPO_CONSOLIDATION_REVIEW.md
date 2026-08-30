@@ -70,9 +70,13 @@ Two findings frame everything else:
   publishable keys hashed at rest). It is unshipped only as a versioned
   artifact.
 - Known internal redundancies to work down: commission/payout logic
-  spread across five owners; three quest/XP systems; two reviews
-  implementations; four near-identical vertical portals; the two
-  vendored panel forks (~48% of repo source).
+  spread across five owners; three quest/XP systems; ~~two reviews
+  implementations~~ *(consolidated in W4 — one model, subject-typed)*;
+  four near-identical vertical portals; the two
+  vendored panel forks (~48% of repo source). *(Found and fixed in W5:
+  six duplicated haversine functions and two divergent ZIP3 tables —
+  geo redundancy this list originally missed; now `lib/geo-distance` +
+  `lib/zip3`.)*
 - Federation remains vocabulary, not code: no partner-node model, no
   network-operator actor. That is consistent with the gate-the-operation
   posture, not a defect to fix now.
@@ -265,6 +269,20 @@ Ordered workstreams; each is independently shippable.
   consumption; retire the ZIP3 table + haversine helpers; absorb or
   archive the standalone `coalition-app` repo (outside this session's
   scope — needs operator action).
+  *(Landed dark 2026-08-30: Blackout's `/v1/spatial/*` service surface
+  (token-authed geocode, per-token rate buckets, 503 until tokens are
+  minted) + FBM's `blackout-spatial` consumer behind
+  `FBM_BLACKOUT_SPATIAL` with the ZIP3 fallback always available —
+  `docs/contracts/blackout-spatial-consumer.md`. The retirement leg:
+  six duplicated haversines → one `lib/geo-distance`; two divergent
+  ZIP3 tables → one `lib/zip3` behind `GET /store/geocode` (this fixed
+  a real bug: checkout could fail to geocode a ZIP the vendors page
+  resolved). Deliberately kept local: pairwise distance (no data
+  dependency) and mutual-aid distances (privacy boundary). Deferred
+  with reasons in `docs/AUDIT_DEBT.md` §W5: remote nearby/zone
+  containment await a vendor-coordinate data-ownership decision;
+  Blackout's deployed PostGIS+martin remain unfed by its product;
+  coalition-app stays an operator action.)*
 - **W6 — Federation**: version connect.js as a shippable artifact;
   maintain the BMC↔UCP mapping in The-Connect; revisit protocol work
   when a second marketplace is real.
