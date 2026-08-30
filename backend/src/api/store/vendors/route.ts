@@ -1,6 +1,7 @@
 import { createLogger } from "../../../shared/logger"
 import { distanceMiles } from "../../../lib/geo-distance"
 import { zipToCoords } from "../../../lib/zip3"
+import { geocodePostalCode } from "../../../lib/blackout-spatial"
 const log = createLogger("api/store/vendors")
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { VendorType } from "../../../modules/seller-extension/models/seller-metadata"
@@ -73,10 +74,19 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
   let userLng = lng ? parseFloat(lng) : NaN
 
   if (isNaN(userLat) && isNaN(userLng) && zip) {
-    const coords = zipToCoords(String(zip))
-    if (coords) {
-      userLat = coords.lat
-      userLng = coords.lng
+    // Remote-first via Blackout's spatial surface (W5, dark behind
+    // FBM_BLACKOUT_SPATIAL; fail-soft null), ZIP3 prefix table as the
+    // always-available fallback.
+    const remote = await geocodePostalCode(String(zip))
+    if (remote) {
+      userLat = remote.latitude
+      userLng = remote.longitude
+    } else {
+      const coords = zipToCoords(String(zip))
+      if (coords) {
+        userLat = coords.lat
+        userLng = coords.lng
+      }
     }
   }
 

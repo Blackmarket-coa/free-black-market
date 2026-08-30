@@ -40,6 +40,15 @@ const CONDITIONAL_RULES = {
       ],
     },
     {
+      // Blackout spatial consumer (W5) — enabling the flag requires the
+      // service token and the base URL it authenticates against.
+      when: { key: "FBM_BLACKOUT_SPATIAL", equals: "1" },
+      rules: [
+        { key: "BLACKOUT_API_BASE", required: true, banPrefixes: ["CHANGE_ME"] },
+        { key: "BLACKOUT_SPATIAL_TOKEN", required: true, minLength: MIN_SECRET_LENGTH, banPrefixes: ["CHANGE_ME"] },
+      ],
+    },
+    {
       when: { key: "FBM_BLACKSTAR_INTEGRATION", equals: "1" },
       rules: [
         { key: "FBM_BLACKSTAR_API_KEY", required: true, minLength: MIN_SECRET_LENGTH, banPrefixes: ["CHANGE_ME"] },
