@@ -101,3 +101,41 @@ describe("diffExtensions", () => {
     expect(diffExtensions(["a", "b"], ["b", "a"])).toEqual({ installed: [], uninstalled: [] })
   })
 })
+
+// --- W3 additions: widened uninstall payload + deprecated payload ----------
+
+import {
+  buildPluginDeprecatedPayload,
+  buildPluginUninstalledPayload as buildUninstalledW3,
+} from "../hooks"
+
+describe("buildPluginUninstalledPayload (W3 widening)", () => {
+  it("keeps the pre-W3 seller shape by default", () => {
+    expect(buildUninstalledW3({ slug: "s", installer_seller_id: "sel_1" })).toEqual({
+      plugin_slug: "s",
+      installer_type: "seller",
+      installer_seller_id: "sel_1",
+    })
+  })
+
+  it("customer uninstalls carry only the installer type (privacy invariant)", () => {
+    expect(buildUninstalledW3({ slug: "s", installer_type: "customer" })).toEqual({
+      plugin_slug: "s",
+      installer_type: "customer",
+    })
+    // Even a mistakenly supplied seller id is dropped for customer shape.
+    expect(
+      buildUninstalledW3({ slug: "s", installer_type: "customer", installer_seller_id: "sel_1" })
+    ).toEqual({ plugin_slug: "s", installer_type: "customer" })
+  })
+})
+
+describe("buildPluginDeprecatedPayload", () => {
+  it("carries the slug and an optional reason", () => {
+    expect(buildPluginDeprecatedPayload({ slug: "s" })).toEqual({ plugin_slug: "s" })
+    expect(buildPluginDeprecatedPayload({ slug: "s", reason: "eol" })).toEqual({
+      plugin_slug: "s",
+      reason: "eol",
+    })
+  })
+})

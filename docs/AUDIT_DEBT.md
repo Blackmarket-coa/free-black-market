@@ -16,7 +16,96 @@ CI/live-env verified.
 | ~~DW-1~~ | Subscription renewal order-creation no-op (Creator-Commerce Slice A) | **done** — renewal workflow mints the order + authorizes an off-session payment + links it + grants entitlements, gated by `FBM_SUBSCRIPTION_RENEWAL_LIVE`; pure shaping unit-tested | `backend/src/workflows/subscription/{renew-helpers.ts,workflows/renew-subscription.ts}` |
 | ~~DW-2~~ | Content-platform OAuth adapters throwing `pending impl` | **done** — TikTok/Instagram/YouTube/Twitch implement real OAuth + metrics via a shared `providers/http.ts`; mocked-fetch unit tests. `blackout.ts` stays stubbed (awaiting Blackout API spec) | `backend/src/modules/content-platform/providers/*` |
 | ~~DW-3~~ | Dark Blackout emitters (§2/§3) never invoked | **done (partial by design)** — `referral.attributed` (attribute-order-on-placed) + `ledger.usdc_converted` (hawala-settlement) wired; the other four stay stubbed with documented blockers (no order-failed/chargeback/quest/ambassador concept) | `backend/src/lib/blackout-wire-helpers.ts`, `subscribers/attribute-order-on-placed.ts`, `jobs/hawala-settlement.ts` |
-| ~~DW-4~~ | Creator-Commerce Phase 2A/2B | **done** — plugin install/entitlement-verification API (2A) + `service-program` reviews model/endpoints (2B). Deferred tails: plugin hook registry + semver, service messaging hook | `backend/src/api/store/plugins/**`, `backend/src/modules/{plugin-registry/entitlement.ts,service-program/**}` |
+| ~~DW-4~~ | Creator-Commerce Phase 2A/2B | **done** — plugin install/entitlement-verification API (2A) + `service-program` reviews model/endpoints (2B). ~~Deferred tails: plugin hook registry + semver~~ (both landed: hooks via `/v1/seller/plugins/:slug/hooks` + `plugin.*` events; the host-compat gate via `plugin-registry/compat.ts` — and W3 finished versioning with `plugin_version` history + prerelease-aware precedence). Remaining tail: service messaging hook | `backend/src/api/store/plugins/**`, `backend/src/modules/{plugin-registry/entitlement.ts,service-program/**}` |
+
+## W1b — Blackout billing consolidation (2026-08-29)
+
+Closed in the W1b pass (see `docs/contracts/blackout-integration.md` §"Blackout
+checkout"): the checkout-session stub is now a real stateful purchase path
+(idempotency row + shadow product + cart/payment/subscription), entitlement
+Bug A (expiry never extended on renew), Gap C (`payment_method_id` never
+persisted), Gap D (renewal ledger legs untyped — now
+`reference_type=SUBSCRIPTION_RENEWAL`), Gap E (cancel/expire never revoked
+subscription grants), and Ambiguity B (`customer_external_id` carried the
+OAuth sub — now mxid-only).
+
+| # | Item | Status | Location |
+|---|------|--------|----------|
+| W1B-1 | No HTTP integration spec for `/v1/integrations/blackout/**` (checkout happy-path against Postgres) — unit specs cover session idempotency, tier mapping, grant extension, and the emitters; the app-boot + migration surface is exercised by the Integration Tests CI job | **deferred (S)** | `integration-tests/http/` |
+| W1B-2 | Off-session renewal depends on the first checkout attaching a reusable Stripe payment method (`setup_future_usage` passed through the payment session `data`); must be verified in the Stripe dashboard during go-live acceptance — no live key exists pre-launch to verify sooner | **go-live acceptance step** | `backend/src/api/v1/integrations/blackout/commerce/checkout/sessions/[token]/page/route.ts` |
+| W1B-3 | Gift subscriptions stay local-only on Blackout (`comped` override); a paid gift rail would hold stored value and violate Posture-A no-balance-holding — revisit only as an immediate-grant purchase | **deferred by design** | blackout `services/subscriptionGifts.ts` |
+| W1B-4 | Prorated refunds: refund of a subscription order cancels the sub + revokes the bundle (minimal handling); pro-rata credit is out of scope | **deferred (M)** | `backend/src/subscribers/revoke-entitlements-on-refund.ts` |
+
+## W2 — Identity / MAS (2026-08-29)
+
+Landed dark in the W2 pass (see `docs/contracts/mas-identity-consumer.md` and
+the canonical `blackout/docs/contracts/mas-identity.md`): the `mas` Medusa
+auth provider, `MAS_OIDC_*` gating, and OIDC-mxid precedence in the
+customer-created subscriber. Deliberate deferrals:
+
+| # | Item | Status | Location |
+|---|------|--------|----------|
+| W2-1 | Seller OIDC actor (`/auth/seller/mas`) — would bypass vendor registration/approval; sellers keep emailpass/Google until an OIDC-initiated onboarding design exists | **deferred by design** | `backend/src/lib/build-auth-module.ts` |
+| W2-2 | Embedded-chat `mintLoginToken` under MSC3861 — admin-impersonation login is expected to break when Synapse delegates auth to MAS; verify on the staging Mode-B flip and design the OIDC-native handoff if so | **operator verification item** | `backend/src/shared/matrix-service.ts` |
+| W2-3 | `seller_metadata.mxid` backfill from OIDC identities (vendors who later link a MAS login) — customer metadata only for now | **deferred (S)** | `backend/src/subscribers/customer-created-matrix.ts` |
+| W2-4 | Blackout client `/auth/callback` landing page (the SDK + `AuthDelegatedLoginPage` are wired; the callback page has no reachable backend until the operator's staging flip) | **deferred until Mode B staging** | blackout `apps/blackout-client` |
+
+## W3 — Registry + Forge MVP (2026-08-29)
+
+Landed dark in the W3 pass (see `docs/contracts/extension-manifest.md`): the
+shared extension manifest + validators, the seller publish bridge into the
+plugin registry, `plugin_version` history, signature verification + the
+publishing-keys endpoints, registry surface closure (detail/manifest routes,
+uninstall on both surfaces, seller-scoped plugin entitlements, deprecation),
+and the Featured Vendor Widget first-party seed. Deliberate deferrals:
+
+| # | Item | Status | Location |
+|---|------|--------|----------|
+| W3-1 | The §5 commerce-API publish path (`/v1/integrations/blackout/commerce/seller/listings/[id]/publish`) can flip an extension listing to PUBLISHED with no signature and no registry row — reject extension-marked listings there or port the bridge | **deferred (S)** | `backend/src/api/v1/integrations/blackout/commerce/seller/listings/[id]/publish/route.ts` |
+| W3-2 | Signing-key rotation: the publishing-keys document is single-key (derived from the private key); retired-keys support needs an additional env + doc append | **deferred (S)** | `backend/src/modules/marketplace-signing/verify.ts` |
+| W3-3 | `creator_listing.compatible_with` stays dead — superseded by the manifest `fbm.*` block; consider dropping the column | **deferred (S)** | `backend/src/modules/marketplace-listing/models/creator-listing.ts` |
+| W3-4 | Seller-scoped `plugin:<slug>` entitlement grant is best-effort; `seller_metadata.enabled_extensions` stays authoritative — hardening to authoritative needs a backfill + failure semantics | **deferred (M)** | `backend/src/api/v1/seller/plugins/[slug]/install/route.ts` |
+| W3-5 | Integration-http spec for the publish → catalog → install loop against Postgres (unit/route harnesses cover the logic; mirrors W1B-1's posture) | **deferred (S)** | `integration-tests/http/` |
+| W3-6 | Cross-repo counterparts — mostly landed same-window: Forge's publish flow consumes the seller surface (Forge W3 G-commits) and Blackout's provider consumes the registry read side (blackout W3 B1). Still open: Blackout featured-vendors client view (homepageCard.to target) + the client's pinned-key flip to the well-known keyset (operator/release item) | **other repos** | blackout `apps/blackout-client` |
+
+## W4 — Reputation consolidation (2026-08-30)
+
+Landed dark in the W4 pass (decision D7): `recordKarmaEvent` as the canonical
+reputation write path (source registry + attestation + idempotency; the
+asset-graph reconciler converted), the xp_event→karma_event mirror job, the
+reviews dedupe (`subject_type` on one model; service reviews absorbed; both
+POST dialects accepted; GET added), the first producers (five-star reviews,
+verification checks/badges), and the character-sheet karma projection fix
+(`owner_id`→`member_id` — karma had never reached a sheet). Deferrals:
+
+| # | Item | Status | Location |
+|---|------|--------|----------|
+| W4-1 | `@mercurjs/reviews` retirement: the plugin still owns the vendor-panel reviews screens (`/vendor/sellers/me/reviews` + reply/report) and `/admin/reviews`; the storefront's order `*reviews` relation also rides its order-review link, so FBM-written reviews don't mark an order as reviewed (customers see a 409 on the duplicate instead). Re-point the panels, then drop the plugin from `medusa-config.ts` — after checking the `review` table for rows worth migrating | **deferred (L)** | `backend/medusa-config.ts` plugins block; `vendor-panel/src/routes/reviews/` |
+| W4-2 | karma_event append-only is service convention, not schema enforcement: the MedusaService-generated update/delete methods still exist and there is no DB trigger/revoked grant | **deferred (S)** | `backend/src/modules/hawala-ledger/karma.ts` |
+| W4-3 | xp_event stays a separate table (the mirror is one-way); a full merge — xp reads served off karma_event projections — plus a created-at cursor for the sweep when the XP log grows hot | **deferred (M)** | `backend/src/modules/progression/karma-mirror.ts` |
+| W4-4 | Karma attestations sign under the single marketplace key (rides W3-2's rotation debt); pre-W4 rows carry null attestations — a backfill would hash-stamp them without signatures | **deferred (S)** | `backend/src/modules/hawala-ledger/karma.ts` |
+| W4-5 | A five-star review that is later edited down does not revoke its karma grant (append-only log; a compensating negative event needs an edit-path hook) | **deferred (S)** | `backend/src/lib/karma-grants.ts` |
+| W4-6 | Cross-repo counterparts: blackout hardens its per-context `reputation_events` log (actor/source attribution, insert-only persistence, standing endpoint off the attention metric — blackout W4 B1); Blackstar's `NodeTrustScore` stays frozen with the repo (its CONSOLIDATION.md records the projection direction); blackmask posture signals as karma inputs remain future work | **other repos** | blackout `packages/api`; Blackstar; blackmask |
+
+## W5 — Geospatial service (2026-08-30)
+
+Landed dark in the W5 pass (decision D5 — Blackout is the spatial home; see
+`docs/contracts/blackout-spatial-consumer.md`): six duplicated haversines
+consolidated into `lib/geo-distance.ts`; the two divergent ZIP3 tables
+(backend ~900 entries vs storefront ~180 — checkout could fail to geocode a
+ZIP the vendors page resolved) collapsed into `lib/zip3.ts` behind the new
+`GET /store/geocode`; and the `blackout-spatial` consumer wired remote-first
+behind `FBM_BLACKOUT_SPATIAL` with the ZIP3 fallback always available.
+Deferrals:
+
+| # | Item | Status | Location |
+|---|------|--------|----------|
+| W5-1 | Nearby-within-radius as a remote call needs Blackout to hold/mirror FBM's vendor coordinates (per-row remote calls on the debounced public search path are non-viable; a single candidate-set call requires the data). Data-ownership decision, then a Blackout endpoint + consumer | **deferred (L)** | `backend/src/api/store/vendors/route.ts`, blackout `/v1/spatial` |
+| W5-2 | Delivery-zone containment stays local (checkout path — a remote dependency there needs a circuit breaker + the zone geometries mirrored); the ray-cast + bbox approximation in the zone routes is the weakest spatial code in the repo | **deferred (M)** | `backend/src/api/store/delivery-zones/**`, `backend/src/api/vendor/delivery-zones/conflict-utils.ts` |
+| W5-3 | `lib/aid-location.ts` distance work stays local BY DESIGN — mutual-aid coordinates never leave the server (privacy contract, `docs/FBM_BUYER_HUB.md`). Recorded as a permanent scope exclusion, not debt to burn down | **excluded** | `backend/src/lib/aid-location.ts` |
+| W5-4 | Metadata-backed vendors carry `location: {}` so the distance filter silently drops every non-producer/kitchen/garden archetype when a location filter is active; fixing it makes them newly appear in filtered results (visible product change — decide + announce) | **deferred (M)** | `backend/src/api/store/vendors/route.ts` |
+| W5-5 | `vendor-rules.max_delivery_distance` is a dead stub ("Would calculate distance here") — implementing needs a geocoded delivery address, a natural follow-on once `blackout-spatial` is live | **deferred (S)** | `backend/src/modules/vendor-rules/service.ts` |
+| W5-6 | Cross-repo counterparts: Blackout's deployed PostGIS + martin remain UNFED by its product (its OSS-plan WS4 owns the seam); the standalone `coalition-app` repo absorb/archive is an operator action | **other repos / operator** | blackout `infra/single-server-baseline`, `coalition-app` |
 
 ## ⚠️ Critical: money-path atomicity was silently disabled (FIXED 2026-06-20)
 

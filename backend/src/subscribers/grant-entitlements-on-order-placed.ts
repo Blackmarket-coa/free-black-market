@@ -3,6 +3,7 @@ const log = createLogger("subscribers/grant-entitlements-on-order-placed")
 import { SubscriberArgs, type SubscriberConfig } from "@medusajs/medusa"
 import { ENTITLEMENT_MODULE } from "../modules/entitlement"
 import type EntitlementModuleService from "../modules/entitlement/service"
+import { resolveCustomerMxid } from "../lib/blackout-identity"
 
 /**
  * Grant entitlements declared by EntitlementGrantRule for each line item in
@@ -43,10 +44,14 @@ export default async function grantEntitlementsOnOrderPlaced({
     }))
 
     const md = (order.metadata || {}) as Record<string, unknown>
-    const externalId =
-      typeof md.fbm_external_customer_id === "string"
-        ? (md.fbm_external_customer_id as string)
-        : null
+    // `customer_external_id` is documented as the Matrix mxid (Ambiguity B).
+    // Source it from the order's mxid stamp or the customer's stored mxid —
+    // never from `fbm_external_customer_id`, which carries the Blackout OAuth
+    // sub and previously leaked into this column.
+    let externalId = typeof md.mxid === "string" && md.mxid ? md.mxid : null
+    if (!externalId && order.customer_id) {
+      externalId = await resolveCustomerMxid(container, order.customer_id)
+    }
     const sourceSubscriptionId =
       typeof md.subscription_id === "string"
         ? (md.subscription_id as string)

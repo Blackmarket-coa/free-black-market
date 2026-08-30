@@ -4,10 +4,12 @@ import CreatorPayoutAccount, {
   CreatorPayoutProvider,
   CreatorPayoutStatus,
 } from "./models/creator-payout-account"
+import BlackoutCheckoutSession from "./models/blackout-checkout-session"
 
 class MarketplaceListingService extends MedusaService({
   CreatorListing,
   CreatorPayoutAccount,
+  BlackoutCheckoutSession,
 }) {
   /**
    * Mark a listing as `signing` before invoking the signing service.

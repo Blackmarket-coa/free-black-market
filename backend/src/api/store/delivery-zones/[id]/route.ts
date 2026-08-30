@@ -1,4 +1,5 @@
 import { z } from "zod"
+import { distanceMiles } from "../../../../lib/geo-distance"
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { FOOD_DISTRIBUTION_MODULE } from "../../../../modules/food-distribution"
 import type FoodDistributionService from "../../../../modules/food-distribution/service"
@@ -160,17 +161,12 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     // Calculate delivery fee if inside
     let deliveryFee: number | null = null
     if (inside) {
-      // Calculate distance from center
-      const R = 3959 // Earth radius in miles
-      const dLat = (data.latitude - zone.center_latitude) * Math.PI / 180
-      const dLon = (data.longitude - zone.center_longitude) * Math.PI / 180
-      const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-                Math.cos(zone.center_latitude * Math.PI / 180) * 
-                Math.cos(data.latitude * Math.PI / 180) *
-                Math.sin(dLon/2) * Math.sin(dLon/2)
-      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a))
-      const distance = R * c
-      
+      const distance = distanceMiles(
+        zone.center_latitude,
+        zone.center_longitude,
+        data.latitude,
+        data.longitude
+      )
       deliveryFee = await foodDistribution.calculateDeliveryFee(id, distance)
     }
     

@@ -138,10 +138,14 @@ investment-pool `total_raised`/`total_investors` increment via `Number(x) + 1` r
   `seller_metadata.review_count` are declared but never written (the review feature does not exist
   yet). *Recommendation:* wire `view_count` at the window GET; treat `review_count` as
   forward-looking until a review module lands — documented, not silently shipped.
-- **H3 — Subscription renewal.** `SUBSCRIPTION_RENEWAL` is an allowed ledger reference type, but
+- **H3 — Subscription renewal.** ~~`SUBSCRIPTION_RENEWAL` is an allowed ledger reference type, but
   `renew-subscription.ts` returns `renewal_prepared: true` without creating an order and is gated
   behind `FBM_SUBSCRIPTION_RENEWAL_LIVE`. Full renewal→order is a feature build, not a bug;
-  documented as roadmap.
+  documented as roadmap.~~ **Closed (W1b, 2026-08-29):** the live renewal path mints a real
+  order, and `hawala-order-payment` now stamps that order's customer→escrow leg with
+  `reference_type=SUBSCRIPTION_RENEWAL` / `reference_id=<subscription id>` (renewal detected via
+  the cloned template cart's `metadata.subscription_id` + `renewal=true`). One money write per
+  order — the type rides the existing settlement legs rather than posting a second entry.
 - **H8 — Advance repayment** records the whole repayment as principal (`// Simplified` at
   `service.ts:~1698`). *Recommendation:* pro-rata principal/fee split once the advance fee model is
   finalized; documented until then.
@@ -174,7 +178,7 @@ investment-pool `total_raised`/`total_investors` increment via `Number(x) + 1` r
 | B3 | Bounty proof-of-work capture | Minimal (metadata); full review flow = roadmap |
 | C2 | Agriculture view/order counters | Documented (wire view_count) |
 | C3 | Seller review_count | Documented (no review module yet) |
-| H3 | Subscription renewal → order | Documented (feature-flagged stub) |
+| H3 | Subscription renewal → order | **Closed (W1b)** — renewal orders carry `SUBSCRIPTION_RENEWAL` ledger reference |
 | H8 | Advance principal/fee split | Documented (pending fee model) |
 
 **Integration-level follow-ups** (cannot be proven by unit tests): true concurrent-write behavior

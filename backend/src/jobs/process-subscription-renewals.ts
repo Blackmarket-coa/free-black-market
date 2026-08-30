@@ -7,6 +7,33 @@ import { SubscriptionStatus } from "../modules/subscription/types"
 import { renewSubscriptionWorkflow } from "../workflows/subscription/workflows/renew-subscription"
 import { handleSubscriptionFailureWorkflow } from "../workflows/subscription/workflows/handle-subscription-failure"
 import { emitSubscriptionState } from "../lib/blackout-subscription"
+import { ENTITLEMENT_MODULE } from "../modules/entitlement"
+import type EntitlementModuleService from "../modules/entitlement/service"
+
+/**
+ * Gap E companion for the expire paths: an expired subscription must drop its
+ * features.* grants so the entitlement read side agrees with the `expire`
+ * webhook. Best-effort — a revocation failure must not abort the sweep.
+ */
+async function revokeEntitlementsForExpired(
+  container: MedusaContainer,
+  subscriptionId: string
+) {
+  try {
+    const entitlementService = container.resolve<EntitlementModuleService>(
+      ENTITLEMENT_MODULE
+    )
+    await entitlementService.revokeBySubscriptionId(
+      subscriptionId,
+      "subscription_expired"
+    )
+  } catch (error) {
+    log.error(
+      `[Subscription Job] Failed to revoke entitlements for expired subscription ${subscriptionId}:`,
+      error
+    )
+  }
+}
 
 /**
  * Subscription Renewal Job
@@ -36,6 +63,16 @@ export default async function processSubscriptionRenewals(
     `[Subscription Job] Starting subscription renewal check (live_mode=${liveMode})...`
   )
 
+  // Paying-but-unlinked visibility (W1b): every state emit that skipped
+  // because the customer has no linked Blackout account is counted and
+  // surfaced, mirroring blackout-resync's `skipped_no_blackout_account` —
+  // otherwise members who pay through FBM but never linked go silently
+  // unprovisioned on the Blackout side.
+  let skippedNoBlackoutAccount = 0
+  const trackSkip = (emittedEventId: string | null) => {
+    if (emittedEventId === null) skippedNoBlackoutAccount++
+  }
+
   try {
     const dueSubscriptions = await subscriptionService.getDueSubscriptions()
 
@@ -57,7 +94,8 @@ export default async function processSubscriptionRenewals(
             `[Subscription Job] Expiring subscription ${subscription.id}`
           )
           await subscriptionService.expireSubscription(subscription.id)
-          await emitSubscriptionState(container, subscription, "expire")
+          await revokeEntitlementsForExpired(container, subscription.id)
+          trackSkip(await emitSubscriptionState(container, subscription, "expire"))
           continue
         }
 
@@ -77,7 +115,7 @@ export default async function processSubscriptionRenewals(
 
         // Successful renewal — clear any prior dunning state.
         await subscriptionService.clearDunningAttempts(subscription.id)
-        await emitSubscriptionState(container, subscription, "renew")
+        trackSkip(await emitSubscriptionState(container, subscription, "renew"))
 
         log.info(
           `[Subscription Job] Renewed subscription ${subscription.id}`
@@ -130,10 +168,16 @@ export default async function processSubscriptionRenewals(
       )
       await subscriptionService.expireSubscription(expiredIds)
       for (const s of allSubscriptions.filter((x) => expiredIds.includes(x.id))) {
-        await emitSubscriptionState(container, s, "expire")
+        await revokeEntitlementsForExpired(container, s.id)
+        trackSkip(await emitSubscriptionState(container, s, "expire"))
       }
     }
 
+    if (skippedNoBlackoutAccount > 0) {
+      log.warn(
+        `[Subscription Job] skipped_no_blackout_account=${skippedNoBlackoutAccount} — paying members with no linked Blackout account were not synced`
+      )
+    }
     log.info("[Subscription Job] Completed subscription renewal check")
   } catch (error) {
     log.error(

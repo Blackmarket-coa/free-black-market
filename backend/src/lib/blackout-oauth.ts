@@ -49,8 +49,11 @@ export function verifyBlackoutCredentials(clientId: string, clientSecret: string
   const expectedId = process.env.BLACKOUT_CLIENT_ID
   const expectedSecret = process.env.BLACKOUT_CLIENT_SECRET
   if (!expectedId || !expectedSecret) return false
-  // constant-time-ish compare: compare both to dodge timing attacks where it matters
-  return clientId === expectedId && clientSecret === expectedSecret
+  // Constant-time compare on both values; evaluate both (no short-circuit)
+  // so a wrong client_id doesn't return measurably faster.
+  const idOk = safeEqual(clientId, expectedId)
+  const secretOk = safeEqual(clientSecret, expectedSecret)
+  return idOk && secretOk
 }
 
 export function verifyBlackoutToken(token: string): BlackoutTokenClaims | null {

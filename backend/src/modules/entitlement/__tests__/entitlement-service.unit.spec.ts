@@ -634,3 +634,84 @@ describe("seller-keyed grants", () => {
     })
   })
 })
+
+describe("grant() extend-on-renew (Bug A, W1b)", () => {
+  const baseGrant = {
+    customer_id: "cus_1",
+    feature_key: "features.persona.rotation",
+    source: EntitlementSource.SUBSCRIPTION,
+    source_subscription_id: "sub_1",
+  }
+
+  it("rolls expires_at forward when an ACTIVE subscription row is re-granted", async () => {
+    const svc = makeService()
+    const cycle1 = new Date("2026-09-01T00:00:00.000Z")
+    const cycle2 = new Date("2026-10-01T00:00:00.000Z")
+
+    const first = await svc.grant({ ...baseGrant, expires_at: cycle1 })
+    const renewed = await svc.grant({
+      ...baseGrant,
+      expires_at: cycle2,
+      source_order_id: "order_2",
+    })
+
+    expect(renewed.id).toBe(first.id) // same row, not a duplicate
+    expect(new Date(renewed.expires_at as unknown as string).toISOString()).toBe(
+      cycle2.toISOString()
+    )
+    expect(renewed.source_order_id).toBe("order_2")
+    expect(renewed.status).toBe(EntitlementStatus.ACTIVE)
+  })
+
+  it("never shortens the window on a replayed older grant", async () => {
+    const svc = makeService()
+    const cycle2 = new Date("2026-10-01T00:00:00.000Z")
+    const cycle1 = new Date("2026-09-01T00:00:00.000Z")
+
+    await svc.grant({ ...baseGrant, expires_at: cycle2 })
+    const replayed = await svc.grant({ ...baseGrant, expires_at: cycle1 })
+
+    expect(new Date(replayed.expires_at as unknown as string).toISOString()).toBe(
+      cycle2.toISOString()
+    )
+  })
+
+  it("keeps a perpetual row perpetual", async () => {
+    const svc = makeService()
+    await svc.grant({ ...baseGrant, expires_at: null })
+    const renewed = await svc.grant({
+      ...baseGrant,
+      expires_at: new Date("2026-10-01T00:00:00.000Z"),
+    })
+    expect(renewed.expires_at).toBeNull()
+  })
+
+  it("grantBundleFromSubscription extends every key of the tier on renew", async () => {
+    const svc = makeService()
+    const cycle1 = new Date("2026-09-01T00:00:00.000Z")
+    const cycle2 = new Date("2026-10-01T00:00:00.000Z")
+    const keys = ["features.a", "features.b"]
+
+    const firstCycle = await svc.grantBundleFromSubscription({
+      subscription_id: "sub_9",
+      customer_id: "cus_9",
+      feature_keys: keys,
+      expires_at: cycle1,
+    })
+    const secondCycle = await svc.grantBundleFromSubscription({
+      subscription_id: "sub_9",
+      customer_id: "cus_9",
+      feature_keys: keys,
+      expires_at: cycle2,
+    })
+
+    expect(secondCycle.map((e) => e.id).sort()).toEqual(
+      firstCycle.map((e) => e.id).sort()
+    )
+    for (const ent of secondCycle) {
+      expect(new Date(ent.expires_at as unknown as string).toISOString()).toBe(
+        cycle2.toISOString()
+      )
+    }
+  })
+})

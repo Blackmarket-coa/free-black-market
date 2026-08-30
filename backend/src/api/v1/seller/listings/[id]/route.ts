@@ -4,6 +4,12 @@ import type { SellerAuthRequest } from "../../../../middlewares/seller-context-v
 import { MARKETPLACE_LISTING_MODULE } from "../../../../../modules/marketplace-listing"
 import type MarketplaceListingService from "../../../../../modules/marketplace-listing/service"
 import { CreatorListingStatus } from "../../../../../modules/marketplace-listing/models/creator-listing"
+import {
+  isExtensionListing,
+  validateExtensionManifest,
+} from "../../../../../modules/plugin-registry/manifest"
+
+const slugRegex = /^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$/
 
 const semverRegex = /^\d+\.\d+\.\d+(?:-[a-z0-9.-]+)?$/i
 const httpsUrl = z.string().url().refine((u) => /^https:\/\//.test(u), {
@@ -30,6 +36,9 @@ const PatchSchema = z
       .optional(),
     version: z.string().regex(semverRegex).optional(),
     embed_origins: z.array(httpsUrl).max(16).nullable().optional(),
+    // Registry namespace claim for extension listings (W3). The schema is
+    // .strict(), so the key must be declared here or Forge draft edits 400.
+    plugin_slug: z.string().regex(slugRegex).nullable().optional(),
   })
   .strict()
 
@@ -87,6 +96,27 @@ export async function PATCH(req: MedusaRequest, res: MedusaResponse) {
       type: "invalid_request",
       errors: parsed.error.flatten(),
     })
+  }
+
+  // Extension listings (W3): validate the manifest the RESULTING listing
+  // would carry (patched manifest, or existing one when only plugin_slug
+  // changes). Free-form listings without the markers stay untouched.
+  const resulting = {
+    plugin_slug:
+      parsed.data.plugin_slug !== undefined
+        ? parsed.data.plugin_slug
+        : (listing as { plugin_slug?: string | null }).plugin_slug,
+    manifest: parsed.data.manifest ?? (listing.manifest as unknown),
+  }
+  if (isExtensionListing(resulting)) {
+    const validation = validateExtensionManifest(resulting.manifest)
+    if (!validation.ok) {
+      return res.status(400).json({
+        message: "Invalid extension manifest",
+        type: "invalid_extension_manifest",
+        errors: validation.errors,
+      })
+    }
   }
 
   const service = req.scope.resolve<MarketplaceListingService>(

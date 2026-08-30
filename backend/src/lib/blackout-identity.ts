@@ -1,4 +1,4 @@
-import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
+import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils"
 import type { MedusaContainer } from "@medusajs/framework/types"
 
 /**
@@ -14,6 +14,11 @@ import type { MedusaContainer } from "@medusajs/framework/types"
  *
  * `vendorMxid` (for §3 bridge events) is resolved separately from
  * `seller_metadata.mxid`.
+ *
+ * W2 note: `customer.metadata.mxid` now also carries `mxid_source`
+ * ("oidc" = reported by the MAS IdP via the `mas` auth provider,
+ * "derived" = legacy email-local-part provisioning). Precedence rules live
+ * in `lib/oidc-mxid.ts`; consumers of `metadata.mxid` need no change.
  */
 
 type PgConnection = {
@@ -138,6 +143,93 @@ export async function resolveSellerMxid(
   } catch {
     return null
   }
+}
+
+/**
+ * Find — or create — the Medusa customer backing a Blackout user (W1b).
+ *
+ * A Blackout-native member who never registered on FBM still needs to own a
+ * cart, an order, a subscription, and a saved payment method, so the billing
+ * path cannot 404 on "no customer". Resolution order: stored
+ * `metadata.blackout_user_id`, then `metadata.mxid`, then create a customer
+ * carrying both keys. A created customer gets a deterministic placeholder
+ * email (`blackout+<sub>@users.blackout.invalid`, flagged
+ * `metadata.synthetic_email`) so nothing routes real mail to it; a later
+ * account link can overwrite it with a real address.
+ */
+export async function resolveOrCreateCustomerForBlackoutUser(
+  container: MedusaContainer,
+  args: { blackoutUserId: string; mxid?: string | null }
+): Promise<{ customerId: string; created: boolean } | null> {
+  const conn = pg(container)
+  if (!conn) return null
+
+  const findBy = async (key: string, value: string): Promise<string | null> => {
+    try {
+      const res = await conn.raw(
+        `SELECT id FROM customer WHERE metadata->>'${key}' = ? AND deleted_at IS NULL LIMIT 1`,
+        [value]
+      )
+      return firstString(res?.rows, "id")
+    } catch {
+      return null
+    }
+  }
+
+  const patchMetadata = async (customerId: string): Promise<void> => {
+    const patch: Record<string, string> = { blackout_user_id: args.blackoutUserId }
+    if (args.mxid) patch.mxid = args.mxid
+    try {
+      await conn.raw(
+        `UPDATE customer
+           SET metadata = COALESCE(metadata, '{}'::jsonb) || ?::jsonb,
+               updated_at = now()
+         WHERE id = ? AND deleted_at IS NULL`,
+        [JSON.stringify(patch), customerId]
+      )
+    } catch {
+      // metadata patch is best-effort; the customer itself is the requirement
+    }
+  }
+
+  const existingById = await findBy("blackout_user_id", args.blackoutUserId)
+  if (existingById) {
+    if (args.mxid) await patchMetadata(existingById)
+    return { customerId: existingById, created: false }
+  }
+
+  if (args.mxid) {
+    const existingByMxid = await findBy("mxid", args.mxid)
+    if (existingByMxid) {
+      await patchMetadata(existingByMxid)
+      return { customerId: existingByMxid, created: false }
+    }
+  }
+
+  try {
+    const customerService = container.resolve(Modules.CUSTOMER) as unknown as {
+      createCustomers: (
+        d: Record<string, unknown>
+      ) => Promise<{ id: string } | Array<{ id: string }>>
+    }
+    const created = await customerService.createCustomers({
+      email: `blackout+${sanitizeForEmail(args.blackoutUserId)}@users.blackout.invalid`,
+      metadata: {
+        blackout_user_id: args.blackoutUserId,
+        ...(args.mxid ? { mxid: args.mxid } : {}),
+        synthetic_email: true,
+      },
+    })
+    const customerId = Array.isArray(created) ? created[0]?.id : created.id
+    return customerId ? { customerId, created: true } : null
+  } catch {
+    return null
+  }
+}
+
+function sanitizeForEmail(value: string): string {
+  const cleaned = value.toLowerCase().replace(/[^a-z0-9._-]/g, "-")
+  return cleaned.slice(0, 64) || "user"
 }
 
 /** Resolve a customer's Matrix MXID from `customer.metadata.mxid`. */

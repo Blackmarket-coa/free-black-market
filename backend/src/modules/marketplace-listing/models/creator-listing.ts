@@ -103,6 +103,20 @@ const CreatorListing = model
     // Bridges the priced catalog to Blackout's `features.*` entitlement system.
     feature_keys: model.json().nullable(), // string[]
 
+    // === Checkout bridge (W1b) ===
+    // A priced listing can only enter a Medusa cart through a product
+    // variant, so the Blackout checkout lazily materializes a shadow
+    // product per listing (lib/blackout-listing-product.ts) and persists
+    // the ids here. Nullable: artifact-only listings never get one.
+    product_id: model.text().nullable(),
+    variant_id: model.text().nullable(),
+    // Recurrence shape for category:"subscription" listings —
+    // `category` alone is display taxonomy. `interval` matches the
+    // subscription module's SubscriptionInterval vocabulary; period_days
+    // drives the entitlement window (expires_at = next_order_date).
+    interval: model.text().nullable(),
+    period_days: model.number().nullable(),
+
     metadata: model.json().nullable(),
   })
   .indexes([

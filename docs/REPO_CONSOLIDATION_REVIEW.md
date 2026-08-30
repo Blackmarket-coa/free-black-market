@@ -62,15 +62,21 @@ Two findings frame everything else:
 - The §4 "Extension Registry vs. FBM catalog" question is effectively
   answered in code: `plugin-registry`, `marketplace-signing` (Ed25519
   signed bundles), `digital-product` delivery, and entitlements all
-  exist. The remaining gap is a hook registry + semver handling
-  (`docs/AUDIT_DEBT.md`).
+  exist. ~~The remaining gap is a hook registry + semver handling~~
+  *(both had already shipped; W3 closed what was actually missing — the
+  shared manifest, the publish bridge + `plugin_version` history, and
+  signature verification — `docs/contracts/extension-manifest.md`)*.
 - `connect.js` exists (`storefront/public/connect.js`, ~1,200 lines,
   publishable keys hashed at rest). It is unshipped only as a versioned
   artifact.
 - Known internal redundancies to work down: commission/payout logic
-  spread across five owners; three quest/XP systems; two reviews
-  implementations; four near-identical vertical portals; the two
-  vendored panel forks (~48% of repo source).
+  spread across five owners; three quest/XP systems; ~~two reviews
+  implementations~~ *(consolidated in W4 — one model, subject-typed)*;
+  four near-identical vertical portals; the two
+  vendored panel forks (~48% of repo source). *(Found and fixed in W5:
+  six duplicated haversine functions and two divergent ZIP3 tables —
+  geo redundancy this list originally missed; now `lib/geo-distance` +
+  `lib/zip3`.)*
 - Federation remains vocabulary, not code: no partner-node model, no
   network-operator actor. That is consistent with the gate-the-operation
   posture, not a defect to fix now.
@@ -153,8 +159,8 @@ Two findings frame everything else:
 | D3 | **Federation**: protocol by extraction. BMC Connect = FBM `/v1` + connect.js + webhooks + signing today; UCP mirror kept as the future front-door reference; no protocol build until a second marketplace exists. |
 | D4 | **Identity**: Matrix OIDC/MAS becomes the ecosystem IdP (the surface already exists in the Synapse fork). FBM integrates via one Medusa OIDC auth provider. Blackout's bespoke JWT account system retires behind it. Blackmask is re-scoped to persona/credential manager + trust signals. |
 | D5 | **Geospatial**: Blackout is the single spatial home (maplibre + PostGIS + martin + geocoder proxy). FBM's haversine/ZIP3 code is retired when it can consume Blackout's spatial API. No new geospatial service repo. |
-| D6 | **Extension registry**: inside FBM's catalog. Close the hook-registry + semver gap in `plugin-registry`; Forge publishes into it. No standalone registry service. |
-| D7 | **Reputation**: one write path — `karma_event` (append-only, signed, source-attributed, transfer-prohibited) becomes the canonical reputation event log; vendor trust, Coliseum standing, node trust, and publisher tiers become derived per-context projections. FBM's duplicate reviews implementations get deduped as part of this. |
+| D6 | **Extension registry**: inside FBM's catalog. ~~Close the hook-registry + semver gap~~ *(closed — the real W3 work was the shared manifest, publish bridge, `plugin_version` history, and verification)*; Forge publishes into it via `POST /v1/seller/listings` → `/publish`. No standalone registry service. |
+| D7 | **Reputation**: one write path — `karma_event` (append-only, signed, source-attributed, transfer-prohibited) becomes the canonical reputation event log; vendor trust, Coliseum standing, node trust, and publisher tiers become derived per-context projections. FBM's duplicate reviews implementations get deduped as part of this. *(W4 clarification, landed 2026-08-30: FBM's `karma_event` is the canonical economic-reputation log — the write path, source registry, attestation, and first producers shipped; blackout's `reputation_events` is the governance-context log, hardened to the same adjectives rather than renamed — the "karma has no implementation" assertion in its data export is deliberate and stays true. Vendor trust flows FBM→blackout only; node trust rides the Blackstar freeze; publisher tiers stay future.)* |
 | D8 | **Hygiene**: executed on this branch where safe (blackmask `third_party/`, Blackstar duplicate console, FBM restaurant-marketplace version skew); queued where riskier (Blackout's three client shells, FBM's four portals and vendored panel forks). |
 
 ## 5. Blnk harvest list (D1's "improve hawala-ledger" workstream)
@@ -196,21 +202,87 @@ Ordered workstreams; each is independently shippable.
   entitlements (the seam exists and is path-pinned by tests); decide
   channel points (FBM closed-loop rail vs. declared non-monetary local
   state) and migrate accordingly; land harvest items 1–4 above.
+  - *W1a landed (2026-08-29)*: Blnk harvest — external reconciliation,
+    balance monitors, lineage, point-in-time balances in `hawala-ledger`.
+  - *W1b landed FBM-side (2026-08-29)*: real Blackout checkout (stateful
+    idempotent sessions → shadow product → cart/payment → order +
+    subscription + tier grants), entitlement/renewal fixes (extend-on-renew,
+    revoke-on-cancel/expire, mxid normalization, `SUBSCRIPTION_RENEWAL`
+    ledger reference), `subscription.payment_failed` bridge event, Canopy
+    plan placeholder listings, `listGrants` read. Operator decision recorded:
+    **channel points are declared non-monetary** (engagement state in
+    Blackout — never purchasable, never convertible to CCR/USD; zero
+    migration). Blackout-side retirement of the direct Stripe rail is the
+    companion change (see blackout `docs/contracts/fbm-billing-consumer.md`).
 - **W2 — Identity (MAS)**: enable the Synapse OIDC/MAS surface in
   staging; write the single Medusa OIDC auth provider for FBM; define
   the migration path for Blackout's bespoke accounts (account-number ↔
   MXID mapping already exists); keep Blackmask out of the IdP role.
+  - *W2 landed (dark, 2026-08-29).* Blackout: MSC2965 well-known + MAS
+    client registry in the deploy templates; native
+    `/v1/auth/oidc/begin|continue` + `/v1/auth/sign-out` filled behind
+    `BLACKOUT_OIDC_*`; canonical contract + migration path in
+    `blackout/docs/contracts/mas-identity.md` (syn2mas moves password
+    hashes, so account-number login → exchange survives the flip
+    byte-identically; Blackmask verified zero-reference). FBM: `mas`
+    auth provider (PKCE + nonce, jose-verified id_token, customer actor
+    only) behind `MAS_OIDC_*`; OIDC-provided mxid takes precedence over
+    email-derived (`mxid_source`); consumer mirror in
+    `docs/contracts/mas-identity-consumer.md`. Staging enablement +
+    Mode-B flip remain operator-side; deferrals in `docs/AUDIT_DEBT.md`
+    §W2.
 - **W3 — Registry + Forge MVP**: close the hook-registry + semver gap
   in `plugin-registry`; define the shared extension manifest; ship one
   extension end-to-end (build in Forge → sign → publish → install under
   entitlements) — the "Featured Vendor Widget" path.
+  - *W3 FBM side landed (dark, 2026-08-29).* The premise was partly
+    stale — the hook registry and host-compat gate had already shipped;
+    what actually landed: the shared extension manifest (canonical:
+    `docs/contracts/extension-manifest.md`, adopting Blackout's
+    `PluginManifest` with an `fbm.*` bounds block), signature
+    verification + the Blackout-format distribution envelope + the
+    `/.well-known/freeblackmarket-publishing-keys.json` keyset,
+    `plugin_version` immutable history + prerelease-aware semver, the
+    seller publish bridge (`plugin_slug` intake → validate → sign →
+    catalog upsert + version row), registry surface closure
+    (detail/manifest routes, uninstall on both surfaces, seller-scoped
+    `plugin:<slug>` entitlements, author deprecation), and the
+    `featured-vendor-widget` first-party seed (`manifest_plugin`, home
+    card → featured vendors, backed by `vendor.promoted_listing`).
+    Forge's build → publish flow and Blackout's real-provider signed
+    bundles are the companion changes; deferrals in
+    `docs/AUDIT_DEBT.md` §W3.
 - **W4 — Reputation consolidation**: karma_event as the canonical log;
   re-point vendor-verification, Coliseum, and any future publisher
   tiers to derived projections; dedupe FBM's two reviews modules.
+  *(Landed dark 2026-08-30: `recordKarmaEvent` write path + registry +
+  attestation; xp_event mirrored row-for-row into the canonical log;
+  reviews consolidated onto one model — service reviews absorbed, the
+  storefront's write dialect accepted, its broken POST fixed; five-star
+  reviews and verification checks/badges are the first producers;
+  character-sheet karma projection bug fixed. Blackout hardens its
+  per-context `reputation_events` (W4 B1) instead of adopting the karma
+  name — see the D7 clarification. Deferrals in
+  `docs/AUDIT_DEBT.md` §W4 — the vendor-panel/admin reviews screens
+  still ride `@mercurjs/reviews` until re-pointed.)*
 - **W5 — Geospatial service**: expose Blackout's spatial API for FBM
   consumption; retire the ZIP3 table + haversine helpers; absorb or
   archive the standalone `coalition-app` repo (outside this session's
   scope — needs operator action).
+  *(Landed dark 2026-08-30: Blackout's `/v1/spatial/*` service surface
+  (token-authed geocode, per-token rate buckets, 503 until tokens are
+  minted) + FBM's `blackout-spatial` consumer behind
+  `FBM_BLACKOUT_SPATIAL` with the ZIP3 fallback always available —
+  `docs/contracts/blackout-spatial-consumer.md`. The retirement leg:
+  six duplicated haversines → one `lib/geo-distance`; two divergent
+  ZIP3 tables → one `lib/zip3` behind `GET /store/geocode` (this fixed
+  a real bug: checkout could fail to geocode a ZIP the vendors page
+  resolved). Deliberately kept local: pairwise distance (no data
+  dependency) and mutual-aid distances (privacy boundary). Deferred
+  with reasons in `docs/AUDIT_DEBT.md` §W5: remote nearby/zone
+  containment await a vendor-coordinate data-ownership decision;
+  Blackout's deployed PostGIS+martin remain unfed by its product;
+  coalition-app stays an operator action.)*
 - **W6 — Federation**: version connect.js as a shippable artifact;
   maintain the BMC↔UCP mapping in The-Connect; revisit protocol work
   when a second marketplace is real.

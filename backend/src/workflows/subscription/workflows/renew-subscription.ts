@@ -148,25 +148,41 @@ export const renewSubscriptionWorkflow = createWorkflow(
       ])
       createRemoteLinkStep(linkDefs)
 
-      // 5. Advance dates + grant entitlements keyed by the new order.
+      // 5. Advance dates + grant entitlements keyed by the new order. The
+      //    grant carries the rolled-forward `next_order_date` and the Blackout
+      //    listing id (when present) so tier feature bundles extend each
+      //    cycle instead of expiring after the first one.
       const { subscription } = updateSubscriptionStep({
         subscription_id: input.subscription_id,
         action: "record_order",
       })
 
-      const grantInputs = transform({ subscriptions, order }, (data) => {
-        const sub = data.subscriptions[0] as RenewalSubscription & {
-          product_id?: string | null
-          variant_id?: string | null
+      const grantInputs = transform(
+        { subscriptions, order, subscription },
+        (data) => {
+          const sub = data.subscriptions[0] as RenewalSubscription & {
+            product_id?: string | null
+            variant_id?: string | null
+            seller_id?: string | null
+            metadata?: Record<string, unknown> | null
+          }
+          const updated = data.subscription as {
+            next_order_date?: Date | string | null
+          }
+          const creatorListingId = sub.metadata?.["creator_listing_id"]
+          return {
+            subscription_id: sub.id,
+            customer_id: sub.customer_id ?? null,
+            product_id: sub.product_id ?? null,
+            variant_id: sub.variant_id ?? null,
+            order_id: data.order.id as string,
+            creator_listing_id:
+              typeof creatorListingId === "string" ? creatorListingId : null,
+            seller_id: sub.seller_id ?? null,
+            expires_at: updated.next_order_date ?? null,
+          }
         }
-        return {
-          subscription_id: sub.id,
-          customer_id: sub.customer_id ?? null,
-          product_id: sub.product_id ?? null,
-          variant_id: sub.variant_id ?? null,
-          order_id: data.order.id as string,
-        }
-      })
+      )
       const entitlementResult = grantSubscriptionEntitlementsStep(grantInputs)
 
       emitEventStep({
@@ -187,22 +203,32 @@ export const renewSubscriptionWorkflow = createWorkflow(
     }
 
     // Legacy path (flag unset): advance dates + grant entitlements, no order.
-    const grantInputs = transform({ subscriptions }, (data) => {
+    const { subscription } = updateSubscriptionStep({
+      subscription_id: input.subscription_id,
+      action: "record_order",
+    })
+
+    const grantInputs = transform({ subscriptions, subscription }, (data) => {
       const sub = data.subscriptions[0] as RenewalSubscription & {
         product_id?: string | null
         variant_id?: string | null
+        seller_id?: string | null
+        metadata?: Record<string, unknown> | null
       }
+      const updated = data.subscription as {
+        next_order_date?: Date | string | null
+      }
+      const creatorListingId = sub.metadata?.["creator_listing_id"]
       return {
         subscription_id: sub.id,
         customer_id: sub.customer_id ?? null,
         product_id: sub.product_id ?? null,
         variant_id: sub.variant_id ?? null,
+        creator_listing_id:
+          typeof creatorListingId === "string" ? creatorListingId : null,
+        seller_id: sub.seller_id ?? null,
+        expires_at: updated.next_order_date ?? null,
       }
-    })
-
-    const { subscription } = updateSubscriptionStep({
-      subscription_id: input.subscription_id,
-      action: "record_order",
     })
 
     const entitlementResult = grantSubscriptionEntitlementsStep(grantInputs)

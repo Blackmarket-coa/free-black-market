@@ -1,14 +1,14 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { z } from "zod"
 import type { SellerAuthRequest } from "../../../../../middlewares/seller-context-v1"
-import { PLUGIN_REGISTRY_MODULE } from "../../../../../../modules/plugin-registry"
-import type PluginRegistryService from "../../../../../../modules/plugin-registry/service"
 import {
   PLUGIN_EVENTS,
   pluginHookChannelId,
 } from "../../../../../../modules/plugin-registry/hooks"
 import { MARKETPLACE_WEBHOOKS_MODULE } from "../../../../../../modules/marketplace-webhooks"
 import type MarketplaceWebhooksService from "../../../../../../modules/marketplace-webhooks/service"
+// Author enforcement is shared with the deprecate route (W3).
+import { resolveAuthorPlugin } from "../../author-guard"
 
 const httpsUrl = z.string().url().refine((u) => /^https:\/\//.test(u), {
   message: "url must use https://",
@@ -22,33 +22,6 @@ const CreateSchema = z.object({
 function redact(secret: string): string {
   if (!secret) return ""
   return `${secret.slice(0, 12)}...${secret.slice(-4)}`
-}
-
-/**
- * Resolve the plugin and enforce that the caller is its author. First-party
- * plugins (`author_seller_id` null) have no seller owner and are not
- * hook-registrable through this route.
- */
-async function resolveAuthorPlugin(
-  req: MedusaRequest,
-  res: MedusaResponse,
-  sellerId: string
-): Promise<{ slug: string } | null> {
-  const slug = String(req.params.slug)
-  const registry = req.scope.resolve<PluginRegistryService>(PLUGIN_REGISTRY_MODULE)
-  const plugin = await registry.getBySlug(slug)
-  if (!plugin) {
-    res.status(404).json({ message: `Plugin "${slug}" not found`, type: "not_found" })
-    return null
-  }
-  if (!plugin.author_seller_id || plugin.author_seller_id !== sellerId) {
-    res.status(403).json({
-      message: "Only the plugin's author can manage its hooks",
-      type: "forbidden",
-    })
-    return null
-  }
-  return { slug }
 }
 
 /**

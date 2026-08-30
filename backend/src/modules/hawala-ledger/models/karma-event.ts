@@ -70,6 +70,14 @@ const KarmaEvent = model.define("karma_event", {
   occurred_at: model.dateTime(),
 
   metadata: model.json().nullable(),
+
+  /**
+   * W4 tamper-evidence: `{ version, payload_sha256, signed_at, key_id?,
+   * signature? }` — hash of the identifying fields always; Ed25519 signature
+   * under the marketplace signing key when configured. Null on legacy rows.
+   * Built by `karma.ts#buildKarmaAttestation` via `recordKarmaEvent`.
+   */
+  attestation: model.json().nullable(),
 }).indexes([
   { on: ["member_id"], name: "IDX_karma_event_member_id" },
   { on: ["reason"], name: "IDX_karma_event_reason" },

@@ -1,18 +1,36 @@
 import { MedusaService } from "@medusajs/framework/utils"
-import ProductReview, { ReviewStatus } from "./models/product-review"
+import ProductReview, {
+  ReviewStatus,
+  ReviewSubjectType,
+} from "./models/product-review"
 
 export type SellerRatingAggregate = {
   average: number | null
   count: number
 }
 
+/**
+ * Marketplace-facing subjects: what buyers say about a seller's products and
+ * about the seller. Service-contract reviews (vendor↔vendor, absorbed from
+ * service-program in W4) aggregate separately — see
+ * `getServiceSellerAggregate` — so the two rating scales never blend.
+ */
+const MARKETPLACE_SUBJECTS = [
+  ReviewSubjectType.PRODUCT,
+  ReviewSubjectType.SELLER,
+]
+
 class ReviewsService extends MedusaService({
   ProductReview,
 }) {
-  /** Average rating + count of published reviews for a seller. */
+  /** Average rating + count of published marketplace reviews for a seller. */
   async getSellerAggregate(seller_id: string): Promise<SellerRatingAggregate> {
     const rows = await this.listProductReviews(
-      { seller_id, status: ReviewStatus.PUBLISHED },
+      {
+        seller_id,
+        status: ReviewStatus.PUBLISHED,
+        subject_type: MARKETPLACE_SUBJECTS,
+      },
       { select: ["rating"], take: 100_000 }
     )
     const count = rows.length
@@ -20,6 +38,28 @@ class ReviewsService extends MedusaService({
     const sum = rows.reduce((acc, r) => acc + (Number(r.rating) || 0), 0)
     // Round to one decimal place.
     return { average: Math.round((sum / count) * 10) / 10, count }
+  }
+
+  /**
+   * Average rating + count for a SERVICE PROVIDER (service-contract
+   * reviews). Keeps the service-program contract's 2-decimal rounding and
+   * `average: 0` empty-state so the re-pointed route stays byte-compatible.
+   */
+  async getServiceSellerAggregate(
+    service_seller_id: string
+  ): Promise<{ average: number; count: number }> {
+    const rows = await this.listProductReviews(
+      {
+        seller_id: service_seller_id,
+        status: ReviewStatus.PUBLISHED,
+        subject_type: ReviewSubjectType.SERVICE_CONTRACT,
+      },
+      { select: ["rating"], take: 100_000 }
+    )
+    const count = rows.length
+    if (!count) return { average: 0, count: 0 }
+    const sum = rows.reduce((acc, r) => acc + (Number(r.rating) || 0), 0)
+    return { average: Math.round((sum / count) * 100) / 100, count }
   }
 
   /**
@@ -44,7 +84,11 @@ class ReviewsService extends MedusaService({
     if (!unique.length) return result
 
     const rows = await this.listProductReviews(
-      { seller_id: unique, status: ReviewStatus.PUBLISHED },
+      {
+        seller_id: unique,
+        status: ReviewStatus.PUBLISHED,
+        subject_type: MARKETPLACE_SUBJECTS,
+      },
       { select: ["seller_id", "rating"], take: 100_000 }
     )
 

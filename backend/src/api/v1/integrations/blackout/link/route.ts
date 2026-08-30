@@ -6,6 +6,7 @@ import {
   isBlackoutIntegrationEnabled,
   verifyEntitlementsServiceToken,
 } from "../../../../../lib/blackout-oauth"
+import { resolveOrCreateCustomerForBlackoutUser } from "../../../../../lib/blackout-identity"
 
 /**
  * Account-link capture (Workstream B).
@@ -101,6 +102,23 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     linked.seller = targetSellerId
   }
 
+  // Create-on-miss (W1b): a Blackout-native member with no FBM account yet
+  // still needs a customer to own carts/orders/subscriptions, so a link call
+  // that matches nothing provisions one (metadata-keyed, synthetic email)
+  // instead of 404ing. Sellers are never auto-created — vendor onboarding is
+  // an explicit flow.
+  let createdCustomer = false
+  if (!linked.customer && !linked.seller && !sellerId) {
+    const resolved = await resolveOrCreateCustomerForBlackoutUser(req.scope, {
+      blackoutUserId,
+      mxid,
+    })
+    if (resolved) {
+      linked.customer = resolved.customerId
+      createdCustomer = resolved.created
+    }
+  }
+
   if (!linked.customer && !linked.seller) {
     return res.status(404).json({
       code: "not_found",
@@ -108,5 +126,5 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     })
   }
 
-  return res.json({ ok: true, blackoutUserId, linked })
+  return res.json({ ok: true, blackoutUserId, linked, created: createdCustomer })
 }

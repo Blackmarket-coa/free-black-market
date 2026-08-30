@@ -32,6 +32,17 @@ interface CandidateListing {
   tags: string[]
   /** For subscription tiers: the consumer tier this listing grants. */
   tier?: "signal" | "coalition" | "sovereign"
+  /** Recurrence shape (W1b checkout bridge); subscription category only. */
+  interval?: "weekly" | "biweekly" | "monthly" | "quarterly" | "yearly"
+  period_days?: number
+  /**
+   * Publication state. Defaults to PUBLISHED. The Canopy plan placeholders
+   * ship DRAFT with price 0 — publishing them WITH real prices is an operator
+   * go-live step (docs/MONETIZATION_GO_LIVE.md), not a seed side effect.
+   */
+  status?: CreatorListingStatus
+  /** Extra metadata merged over the tier stamp (e.g. canopy_plan_code). */
+  extra_metadata?: Record<string, unknown>
 }
 
 /**
@@ -40,7 +51,7 @@ interface CandidateListing {
  * the per-family tier tables in `@blackout/protocol`; the tier bundles list the
  * headline advanced features each rung unlocks.
  */
-const CANDIDATES: CandidateListing[] = [
+export const CANDIDATES: CandidateListing[] = [
   // ---- Individual privacy tools ----
   {
     slug: "burner-pro",
@@ -154,6 +165,8 @@ const CANDIDATES: CandidateListing[] = [
     price_cents: 500,
     entitlement_kind: "subscription_tier",
     tier: "signal",
+    interval: "monthly",
+    period_days: 30,
     feature_keys: [
       "features.hardening.torTransport",
       "features.hardening.decoyTraffic",
@@ -172,6 +185,8 @@ const CANDIDATES: CandidateListing[] = [
     price_cents: 1500,
     entitlement_kind: "subscription_tier",
     tier: "coalition",
+    interval: "monthly",
+    period_days: 30,
     feature_keys: [
       "features.hardening.torTransport",
       "features.persona.compartments",
@@ -188,12 +203,79 @@ const CANDIDATES: CandidateListing[] = [
     price_cents: 3000,
     entitlement_kind: "subscription_tier",
     tier: "sovereign",
+    interval: "monthly",
+    period_days: 30,
     feature_keys: [
       "features.transparency.auditExport",
       "features.mesh.topology",
       "features.activedefense.canary",
     ],
     tags: ["subscription", "tier", "sovereign"],
+  },
+
+  // ---- Canopy platform plans (W1b placeholders — DRAFT, price 0) ----
+  // Canopy pricing never existed anywhere (the Stripe Prices were never
+  // created), so these are deliberately unpriced and unpublished: the
+  // delegation path from Blackout resolves plan → listing by
+  // metadata.canopy_plan_code, and go-live means an operator sets real
+  // price_cents and publishes (see docs/MONETIZATION_GO_LIVE.md). Feature
+  // gating for Canopy stays on Blackout's side (routes/entitlements.ts);
+  // these listings carry no feature_keys.
+  {
+    slug: "canopy-sprout-monthly",
+    title: "Canopy Sprout (Monthly)",
+    description: "Canopy platform plan: Sprout, billed monthly.",
+    category: "subscription",
+    price_cents: 0,
+    entitlement_kind: "subscription_tier",
+    interval: "monthly",
+    period_days: 30,
+    feature_keys: [],
+    tags: ["subscription", "canopy", "sprout"],
+    status: CreatorListingStatus.DRAFT,
+    extra_metadata: { canopy_plan_code: "canopy_sprout_monthly", canopy_plan: "sprout" },
+  },
+  {
+    slug: "canopy-sprout-annual",
+    title: "Canopy Sprout (Annual)",
+    description: "Canopy platform plan: Sprout, billed yearly.",
+    category: "subscription",
+    price_cents: 0,
+    entitlement_kind: "subscription_tier",
+    interval: "yearly",
+    period_days: 365,
+    feature_keys: [],
+    tags: ["subscription", "canopy", "sprout"],
+    status: CreatorListingStatus.DRAFT,
+    extra_metadata: { canopy_plan_code: "canopy_sprout_annual", canopy_plan: "sprout" },
+  },
+  {
+    slug: "canopy-pro-monthly",
+    title: "Canopy Pro (Monthly)",
+    description: "Canopy platform plan: Canopy Pro, billed monthly.",
+    category: "subscription",
+    price_cents: 0,
+    entitlement_kind: "subscription_tier",
+    interval: "monthly",
+    period_days: 30,
+    feature_keys: [],
+    tags: ["subscription", "canopy", "canopy_pro"],
+    status: CreatorListingStatus.DRAFT,
+    extra_metadata: { canopy_plan_code: "canopy_pro_monthly", canopy_plan: "canopy_pro" },
+  },
+  {
+    slug: "canopy-pro-annual",
+    title: "Canopy Pro (Annual)",
+    description: "Canopy platform plan: Canopy Pro, billed yearly.",
+    category: "subscription",
+    price_cents: 0,
+    entitlement_kind: "subscription_tier",
+    interval: "yearly",
+    period_days: 365,
+    feature_keys: [],
+    tags: ["subscription", "canopy", "canopy_pro"],
+    status: CreatorListingStatus.DRAFT,
+    extra_metadata: { canopy_plan_code: "canopy_pro_annual", canopy_plan: "canopy_pro" },
   },
 ]
 
@@ -205,6 +287,10 @@ export default async function seedBlackoutCatalog({ container }: ExecArgs) {
 
   let upserted = 0
   for (const item of CANDIDATES) {
+    const metadata: Record<string, unknown> = {
+      ...(item.tier ? { tier: item.tier, blackout_tier: item.tier } : {}),
+      ...(item.extra_metadata ?? {}),
+    }
     const payload = {
       seller_id: SELLER_ID,
       slug: item.slug,
@@ -212,7 +298,7 @@ export default async function seedBlackoutCatalog({ container }: ExecArgs) {
       description: item.description,
       manifest: {},
       version: "1.0.0",
-      status: CreatorListingStatus.PUBLISHED,
+      status: item.status ?? CreatorListingStatus.PUBLISHED,
       signed_at: new Date(),
       category: item.category,
       price_cents: item.price_cents,
@@ -221,7 +307,9 @@ export default async function seedBlackoutCatalog({ container }: ExecArgs) {
       feature_keys: item.feature_keys,
       media_urls: [],
       tags: item.tags,
-      metadata: item.tier ? { tier: item.tier, blackout_tier: item.tier } : null,
+      interval: item.interval ?? null,
+      period_days: item.period_days ?? null,
+      metadata: Object.keys(metadata).length > 0 ? metadata : null,
     }
 
     const [existing] = await service.listCreatorListings({

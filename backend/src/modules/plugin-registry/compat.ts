@@ -20,8 +20,13 @@ export function parseSemver(input: string | null | undefined): Semver | null {
   return { major: Number(m[1]), minor: Number(m[2]), patch: Number(m[3]) }
 }
 
-/** -1 | 0 | 1 comparing a vs b, or null if either is unparseable. */
-export function compareSemver(
+/**
+ * -1 | 0 | 1 comparing only the numeric core of a vs b, or null if either is
+ * unparseable. Prerelease/build suffixes are ignored HERE — use
+ * `compareSemverPrecedence` (below) for full SemVer §11 ordering. Kept as the
+ * core comparator so `compareSemverPrecedence` can delegate to it.
+ */
+function compareSemverCore(
   a: string | null | undefined,
   b: string | null | undefined
 ): -1 | 0 | 1 | null {
@@ -36,6 +41,22 @@ export function compareSemver(
     }
   }
   return 0
+}
+
+/**
+ * -1 | 0 | 1 comparing a vs b, or null if either is unparseable. Since W3
+ * this is prerelease-aware (full SemVer §11): `1.0.0-rc.1` sorts BELOW
+ * `1.0.0`, where it previously compared equal. Runtime consequence for the
+ * install gate: a prerelease FBM_PLATFORM_VERSION no longer satisfies an
+ * exact release bound — stricter and SemVer-correct. Fail-open bound
+ * semantics in `isInstallable` are unchanged (unparseable still → null →
+ * "no bound").
+ */
+export function compareSemver(
+  a: string | null | undefined,
+  b: string | null | undefined
+): -1 | 0 | 1 | null {
+  return compareSemverPrecedence(a, b)
 }
 
 export type PluginCompat = {
@@ -88,4 +109,81 @@ export function isInstallable(
   }
 
   return { ok: true }
+}
+
+/** Strict shape check for registry writes (same rule the listings routes use). */
+const SEMVER_WRITE_RE = /^v?\d+\.\d+\.\d+(?:-[a-z0-9.-]+)?(?:\+[a-z0-9.-]+)?$/i
+
+export function isValidSemverString(input: string | null | undefined): boolean {
+  return typeof input === "string" && SEMVER_WRITE_RE.test(input.trim())
+}
+
+/**
+ * Split off the prerelease identifiers (`1.2.3-rc.1` → ["rc","1"]). Build
+ * metadata (`+build`) is ignored per SemVer §10. Returns null identifiers for
+ * a release version. Internal shape — `parseSemver`'s return type is frozen
+ * (exact-equality assertions pin it), so prerelease data lives here instead.
+ */
+function splitPrerelease(input: string): string[] | null {
+  const cleaned = input.trim().replace(/^v/i, "").split("+")[0]
+  const dash = cleaned.indexOf("-")
+  if (dash === -1) {
+    return null
+  }
+  const identifiers = cleaned.slice(dash + 1)
+  if (!identifiers) {
+    return null
+  }
+  return identifiers.split(".")
+}
+
+const NUMERIC_RE = /^\d+$/
+
+/**
+ * Full SemVer §11 precedence: numeric core, then release > prerelease, then
+ * prerelease identifiers compared left-to-right (numeric < alphanumeric,
+ * numerics numerically, alphanumerics lexically, more identifiers wins a
+ * shared prefix). Same fail-null contract as `compareSemver` — either side
+ * unparseable → null, so fail-open call sites keep their semantics.
+ */
+export function compareSemverPrecedence(
+  a: string | null | undefined,
+  b: string | null | undefined
+): -1 | 0 | 1 | null {
+  const core = compareSemverCore(a, b)
+  if (core === null || core !== 0) {
+    return core
+  }
+  const preA = splitPrerelease(a as string)
+  const preB = splitPrerelease(b as string)
+  if (!preA && !preB) {
+    return 0
+  }
+  if (!preA) {
+    return 1 // release > any prerelease
+  }
+  if (!preB) {
+    return -1
+  }
+  const len = Math.min(preA.length, preB.length)
+  for (let i = 0; i < len; i += 1) {
+    const idA = preA[i]
+    const idB = preB[i]
+    if (idA === idB) {
+      continue
+    }
+    const numA = NUMERIC_RE.test(idA)
+    const numB = NUMERIC_RE.test(idB)
+    if (numA && numB) {
+      return Number(idA) < Number(idB) ? -1 : 1
+    }
+    if (numA !== numB) {
+      return numA ? -1 : 1 // numeric identifiers sort below alphanumeric
+    }
+    return idA < idB ? -1 : 1
+  }
+  if (preA.length === preB.length) {
+    return 0
+  }
+  return preA.length < preB.length ? -1 : 1
 }

@@ -94,6 +94,11 @@ UI and no admin write route**. The badge system as shipped cannot be operated.
 `BADGE_CONFIG`, and build the missing admin write path first — displaying a badge nobody can
 grant would be theatre.
 
+*(Update — the admin write path exists now: `/admin/vendor-verification/checks/:checkId`
+decides a check and `/admin/vendor-verification/:id/badges` grants badges. W4 (2026-08-30)
+made both reputation producers: a passed check and a granted badge land on the canonical
+`karma_event` log, with `trust_score`/level staying the derived projection — decision D7.)*
+
 ### 3. Buyer protection — **Confirmed**
 
 Returns exist and are Medusa-backed (`(main)/user/returns`, `user/orders/[id]/return`,

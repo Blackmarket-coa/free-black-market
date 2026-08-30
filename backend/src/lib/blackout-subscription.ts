@@ -88,10 +88,62 @@ export async function emitSubscriptionState(
       userId,
       tier,
       subscriptionId: subscription.id,
+      // Wall-clock ordering hint: webhook retry/backoff can deliver an older
+      // event after a newer one (no per-subject sequence), so consumers apply
+      // last-write-wins on occurredAt.
+      occurredAt: new Date().toISOString(),
       ...(state === "activated" && subscription.expiration_date
         ? { expiresAt: new Date(subscription.expiration_date as string).toISOString() }
         : {}),
     },
     { eventId: `subscription.${state}:${subscription.id}:${transition}` }
+  )
+}
+
+/**
+ * Emit `subscription.payment_failed` (W1b): a renewal charge failed and the
+ * dunning loop recorded the attempt. Advisory for Blackout — member-facing
+ * notice and audit trail; access lapses only through `subscription.lapsed`
+ * (pause-on-max-retries or expiry).
+ *
+ * Per-attempt eventIds: each dunning attempt is a distinct member-visible
+ * fact, so attempts do not dedupe against each other — but a redelivery of
+ * the same attempt does.
+ */
+export async function emitSubscriptionPaymentFailed(
+  container: MedusaContainer,
+  subscription: EmittableSubscription,
+  failure: {
+    attempts?: number | null
+    paused?: boolean | null
+    nextRetryAt?: string | Date | null
+    error?: string | null
+  }
+): Promise<string | null> {
+  const userId = await resolveBlackoutUserId(container, {
+    customerId: subscription.customer_id ?? null,
+  })
+  if (!userId) return null
+
+  const tier = mapSubscriptionTier(subscription.metadata)
+  const attempts = failure.attempts ?? 1
+
+  return emitBlackoutEvent(
+    container,
+    "subscription.payment_failed",
+    {
+      userId,
+      tier,
+      subscriptionId: subscription.id,
+      occurredAt: new Date().toISOString(),
+      attempt: attempts,
+      willRetry: !failure.paused,
+      ...(failure.nextRetryAt
+        ? { nextRetryAt: new Date(failure.nextRetryAt).toISOString() }
+        : {}),
+    },
+    {
+      eventId: `subscription.payment_failed:${subscription.id}:${attempts}`,
+    }
   )
 }

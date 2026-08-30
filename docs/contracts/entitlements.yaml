@@ -44,6 +44,8 @@ tags:
     description: Coalition memberships and coalition-scoped entitlements.
   - name: summary
     description: Combined economic standing + governance roles + coalition memberships.
+  - name: grants
+    description: Raw entitlement grant rows (provenance + expiry) for an MXID.
 
 paths:
   /entitlements/access/{mxid}:
@@ -176,6 +178,45 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '503': { $ref: '#/components/responses/ServiceDisabled' }
 
+  /entitlements/grants/{mxid}:
+    get:
+      tags: [grants]
+      operationId: listGrants
+      summary: Raw entitlement grant rows for an MXID (W1b).
+      description: |
+        The full grant list with provenance and expiry — what Blackout's
+        settings surfaces and resync tooling read, complementing the boolean
+        `checkAccess`. Rows are keyed by `customer_external_id` = mxid.
+      parameters:
+        - $ref: '#/components/parameters/MxidPath'
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [active, pending, expired, revoked]
+        - name: featureKey
+          in: query
+          required: false
+          schema: { type: string }
+      responses:
+        '200':
+          description: Grant rows.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [mxid, grants, count]
+                properties:
+                  mxid: { $ref: '#/components/schemas/Mxid' }
+                  count: { type: integer }
+                  grants:
+                    type: array
+                    items: { $ref: '#/components/schemas/Grant' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '503': { $ref: '#/components/responses/ServiceDisabled' }
+
   /entitlements/summary/{mxid}:
     get:
       tags: [summary]
@@ -236,6 +277,28 @@ components:
       type: string
       pattern: '^@[A-Za-z0-9._=/-]+:[A-Za-z0-9.-]+$'
       example: '@alice:theblackout.app'
+
+    Grant:
+      type: object
+      required: [id, featureKey, kind, status, source]
+      properties:
+        id: { type: string }
+        featureKey: { type: string, example: 'features.persona.rotation' }
+        kind:
+          type: string
+          enum: [digital, access_pass, plugin, theme, emoji_pack, service, other]
+        status:
+          type: string
+          enum: [active, pending, expired, revoked]
+        source:
+          type: string
+          enum: [order, subscription, manual, external]
+        sourceOrderId: { type: string, nullable: true }
+        sourceSubscriptionId: { type: string, nullable: true }
+        grantedAt: { type: string, format: date-time, nullable: true }
+        expiresAt: { type: string, format: date-time, nullable: true }
+        revokedAt: { type: string, format: date-time, nullable: true }
+        revokedReason: { type: string, nullable: true }
 
     AccessAction:
       type: string

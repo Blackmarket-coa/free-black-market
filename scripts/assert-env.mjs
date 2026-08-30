@@ -40,6 +40,15 @@ const CONDITIONAL_RULES = {
       ],
     },
     {
+      // Blackout spatial consumer (W5) — enabling the flag requires the
+      // service token and the base URL it authenticates against.
+      when: { key: "FBM_BLACKOUT_SPATIAL", equals: "1" },
+      rules: [
+        { key: "BLACKOUT_API_BASE", required: true, banPrefixes: ["CHANGE_ME"] },
+        { key: "BLACKOUT_SPATIAL_TOKEN", required: true, minLength: MIN_SECRET_LENGTH, banPrefixes: ["CHANGE_ME"] },
+      ],
+    },
+    {
       when: { key: "FBM_BLACKSTAR_INTEGRATION", equals: "1" },
       rules: [
         { key: "FBM_BLACKSTAR_API_KEY", required: true, minLength: MIN_SECRET_LENGTH, banPrefixes: ["CHANGE_ME"] },
@@ -52,6 +61,30 @@ const CONDITIONAL_RULES = {
       rules: [
         { key: "MATRIX_SERVER_NAME", required: true, banPrefixes: ["CHANGE_ME"] },
         { key: "MATRIX_ADMIN_TOKEN", required: true, banPrefixes: ["CHANGE_ME"] },
+      ],
+    },
+    {
+      // Matrix OIDC login via MAS (W2, docs/contracts/mas-identity-consumer.md)
+      // — validated only when the issuer is set.
+      when: { key: "MAS_OIDC_ISSUER", present: true },
+      rules: [
+        { key: "MAS_OIDC_CLIENT_ID", required: true, banPrefixes: ["CHANGE_ME"] },
+        { key: "MAS_OIDC_CLIENT_SECRET", required: true, minLength: MIN_SECRET_LENGTH, banPrefixes: ["CHANGE_ME"] },
+      ],
+    },
+    {
+      // Extension bundle signing (W3, docs/contracts/extension-manifest.md) —
+      // an opt-in PAIR: half a pair in production is a misconfiguration, so
+      // each side requires the other.
+      when: { key: "MARKETPLACE_SIGNING_PRIVATE_KEY_PEM", present: true },
+      rules: [
+        { key: "MARKETPLACE_SIGNING_KEY_ID", required: true, banPrefixes: ["CHANGE_ME"] },
+      ],
+    },
+    {
+      when: { key: "MARKETPLACE_SIGNING_KEY_ID", present: true },
+      rules: [
+        { key: "MARKETPLACE_SIGNING_PRIVATE_KEY_PEM", required: true, minLength: 64, banPrefixes: ["CHANGE_ME"] },
       ],
     },
   ],
