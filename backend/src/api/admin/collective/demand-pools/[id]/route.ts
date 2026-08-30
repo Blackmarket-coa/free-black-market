@@ -90,9 +90,19 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
       // actually happened. Best-effort: an event-bus hiccup must not fail the
       // transition.
       try {
+        // Everyone who followed through belongs in the event: COMMITTED
+        // (pledged, no escrow flow), ESCROWED (paid, pre-completion data),
+        // and CONFIRMED (paid, completion processed). Filtering to COMMITTED
+        // alone excluded exactly the participants who actually paid —
+        // escrow moves a participant off COMMITTED at escrow time.
+        // WITHDRAWN/REFUNDED stay excluded: they left the pool.
         const participants = await demandPoolService.listDemandParticipants({
           demand_post_id: id,
-          status: ParticipantStatus.COMMITTED,
+          status: [
+            ParticipantStatus.COMMITTED,
+            ParticipantStatus.ESCROWED,
+            ParticipantStatus.CONFIRMED,
+          ],
         })
         const eventBus = req.scope.resolve<IEventBusModuleService>(
           Modules.EVENT_BUS
