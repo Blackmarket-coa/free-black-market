@@ -10,6 +10,7 @@ import { POST as createContractReview } from "../route"
 import { GET as listSellerReviews } from "../../../../../store/service-sellers/[sellerId]/reviews/route"
 import { REVIEWS_MODULE } from "../../../../../../modules/reviews"
 import { SERVICE_PROGRAM_MODULE } from "../../../../../../modules/service-program"
+import { HAWALA_LEDGER_MODULE } from "../../../../../../modules/hawala-ledger"
 
 const createRes = () => {
   const res: Record<string, unknown> = { statusCode: 200, body: undefined }
@@ -71,6 +72,9 @@ const makeReq = (
     })),
     getServiceSellerAggregate: jest.fn(async () => ({ average: 4.33, count: 3 })),
   }
+  const hawala = {
+    recordKarmaEvent: jest.fn(async () => ({ event: { id: "ke_1" }, created: true })),
+  }
   const req = {
     _seller_id: "sel_client",
     auth_context: { actor_id: "sel_client" },
@@ -80,17 +84,18 @@ const makeReq = (
       resolve: (key: string) => {
         if (key === SERVICE_PROGRAM_MODULE) return serviceProgram
         if (key === REVIEWS_MODULE) return reviewsService
+        if (key === HAWALA_LEDGER_MODULE) return hawala
         throw new Error(`unexpected resolve: ${key}`)
       },
     },
     ...over,
   }
-  return { req: req as any, reviewsService }
+  return { req: req as any, reviewsService, hawala }
 }
 
 describe("POST /vendor/service-contracts/:id/reviews", () => {
   it("stores an accepted-contract review in the consolidated module, shaped like the old row", async () => {
-    const { req, reviewsService } = makeReq({})
+    const { req, reviewsService, hawala } = makeReq({})
     const res = createRes()
     await createContractReview(req, res as any)
     expect(res.statusCode).toBe(201)
@@ -105,6 +110,14 @@ describe("POST /vendor/service-contracts/:id/reviews", () => {
       comment: "Excellent work",
       rating: 5,
     })
+    // W4: the five-star first submission credits the provider's karma.
+    expect(hawala.recordKarmaEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        member_id: "sel_provider",
+        reason: "review:five_star",
+        source_module: "reviews",
+      })
+    )
   })
 
   it("updates in place on a repeat submission", async () => {
@@ -133,6 +146,17 @@ describe("POST /vendor/service-contracts/:id/reviews", () => {
       rating: 5,
       body: "Excellent work",
     })
+  })
+
+  it("grants no karma on the update path (rating flips must not re-award)", async () => {
+    const { req, hawala } = makeReq(
+      {},
+      { existing: [{ id: "rev_prior", rating: 3 }] }
+    )
+    const res = createRes()
+    await createContractReview(req, res as any)
+    expect(res.statusCode).toBe(201)
+    expect(hawala.recordKarmaEvent).not.toHaveBeenCalled()
   })
 
   it("keeps the review-rules gate: a pending contract is not reviewable (409)", async () => {

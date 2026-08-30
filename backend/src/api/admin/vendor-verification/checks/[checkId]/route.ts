@@ -4,6 +4,7 @@ import { z } from "zod"
 import { VENDOR_VERIFICATION_MODULE } from "../../../../../modules/vendor-verification"
 import type VendorVerificationService from "../../../../../modules/vendor-verification/service"
 import { CheckStatus } from "../../../../../modules/vendor-verification/models"
+import { grantKarmaBestEffort } from "../../../../../lib/karma-grants"
 
 const Schema = z.object({
   status: z.enum([CheckStatus.PASSED, CheckStatus.FAILED, CheckStatus.WAIVED]),
@@ -70,9 +71,27 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
 
   // Return the recomputed record so the panel can show the new level without
   // a second round trip — the decision's whole point is what it moved.
+  const checkRow = Array.isArray(check) ? check[0] : check
   const verification = await service.retrieveVendorVerification(
-    (Array.isArray(check) ? check[0] : check).vendor_verification_id
+    checkRow.vendor_verification_id
   )
+
+  // Reputation: a passed check lands on the canonical karma log (W4) —
+  // trust_score itself stays the derived projection recomputed above.
+  if (parsed.data.status === CheckStatus.PASSED && verification?.seller_id) {
+    const contribution = Math.max(
+      1,
+      Math.round(Number(checkRow.score_contribution ?? 0)) || 1
+    )
+    await grantKarmaBestEffort(req.scope, {
+      member_id: String(verification.seller_id),
+      delta: contribution,
+      reason: "verification:check_passed",
+      source_module: "vendor_verification",
+      source_id: String(checkRow.id),
+      metadata: { check_type: checkRow.check_type ?? null },
+    })
+  }
 
   res.json({ check, verification })
 }

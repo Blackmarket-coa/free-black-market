@@ -11,6 +11,7 @@
 
 import { GET as listReviews, POST as createReview } from "../route"
 import { REVIEWS_MODULE } from "../../../../modules/reviews"
+import { HAWALA_LEDGER_MODULE } from "../../../../modules/hawala-ledger"
 
 const createRes = () => {
   const res: Record<string, unknown> = { statusCode: 200, body: undefined }
@@ -95,6 +96,10 @@ const makeReq = (
     updateSellerMetadata: jest.fn(async (input: unknown) => input),
   }
 
+  const hawala = {
+    recordKarmaEvent: jest.fn(async () => ({ event: { id: "ke_1" }, created: true })),
+  }
+
   const req = {
     auth_context: { actor_id: "cus_1", actor_type: "customer" },
     body,
@@ -103,16 +108,17 @@ const makeReq = (
         if (key === REVIEWS_MODULE) return reviewsService
         if (key === "query") return query
         if (key === "sellerExtension") return sellerExtension
+        if (key === HAWALA_LEDGER_MODULE) return hawala
         throw new Error(`unexpected resolve: ${key}`)
       },
     },
   }
-  return { req: req as any, reviewsService, created }
+  return { req: req as any, reviewsService, created, hawala }
 }
 
 describe("POST /store/reviews — dual dialect", () => {
   it("keeps the FBM product shape working byte-for-byte", async () => {
-    const { req, reviewsService } = makeReq({
+    const { req, reviewsService, hawala } = makeReq({
       order_id: "order_1",
       product_id: "prod_1",
       rating: 5,
@@ -127,6 +133,29 @@ describe("POST /store/reviews — dual dialect", () => {
     expect(args.product_id).toBe("prod_1")
     expect(args.seller_id).toBe("sel_1")
     expect(res.body.review.author).toBe("Jordan R.")
+
+    // W4: a five-star review credits the seller on the canonical karma log.
+    expect(hawala.recordKarmaEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        member_id: "sel_1",
+        delta: 15,
+        reason: "review:five_star",
+        source_module: "reviews",
+        source_id: "rev_new",
+      })
+    )
+  })
+
+  it("grants no karma below five stars", async () => {
+    const { req, hawala } = makeReq({
+      order_id: "order_1",
+      product_id: "prod_1",
+      rating: 4,
+    })
+    const res = createRes()
+    await createReview(req, res as any)
+    expect(res.statusCode).toBe(201)
+    expect(hawala.recordKarmaEvent).not.toHaveBeenCalled()
   })
 
   it("accepts the storefront's seller-reference dialect and stores a seller-subject review", async () => {

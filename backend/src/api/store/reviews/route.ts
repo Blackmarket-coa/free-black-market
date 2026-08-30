@@ -5,6 +5,7 @@ import type ReviewsService from "../../../modules/reviews/service"
 import { ReviewSubjectType } from "../../../modules/reviews/models/product-review"
 import { updateSellerMetadataRecord } from "../../../modules/seller-extension/metadata-service"
 import type SellerExtensionService from "../../../modules/seller-extension/service"
+import { grantKarmaBestEffort, KARMA_DELTAS } from "../../../lib/karma-grants"
 
 const log = createLogger("api/store/reviews")
 
@@ -266,6 +267,19 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
 
     // 4) Recompute the seller's denormalized rating/review_count.
     await recomputeSellerRating(req, reviews, sellerId)
+
+    // 5) Reputation: a five-star verified review credits the seller on the
+    // canonical karma log (W4 — the delta that existed as dead config).
+    if (parsed.rating === 5) {
+      await grantKarmaBestEffort(req.scope, {
+        member_id: sellerId,
+        delta: KARMA_DELTAS.five_star_review,
+        reason: "review:five_star",
+        source_module: "reviews",
+        source_id: created.id,
+        metadata: { subject_type: parsed.subject, order_id: parsed.order_id },
+      })
+    }
 
     return res.status(201).json({
       review: {

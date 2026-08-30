@@ -5,6 +5,10 @@ import { VENDOR_VERIFICATION_MODULE } from "../../../../../modules/vendor-verifi
 import type VendorVerificationService from "../../../../../modules/vendor-verification/service"
 import { BADGE_CONFIG } from "../../../../../modules/vendor-verification/service"
 import { BadgeType } from "../../../../../modules/vendor-verification/models"
+import {
+  grantKarmaBestEffort,
+  KARMA_DELTAS,
+} from "../../../../../lib/karma-grants"
 
 const GrantSchema = z.object({
   badge_type: z.nativeEnum(BadgeType),
@@ -113,6 +117,18 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     ...rest,
     granted_by: grantedBy,
     expires_at: expires_at ? new Date(expires_at) : undefined,
+  })
+
+  // Reputation: a granted badge lands on the canonical karma log (W4);
+  // the badge row itself stays the projection the storefront reads.
+  const badgeRow = Array.isArray(badge) ? badge[0] : badge
+  await grantKarmaBestEffort(req.scope, {
+    member_id: String(sellerId),
+    delta: KARMA_DELTAS.verification_badge,
+    reason: "verification:badge_granted",
+    source_module: "vendor_verification",
+    source_id: String(badgeRow.id),
+    metadata: { badge_type },
   })
 
   res.status(201).json({ badge })

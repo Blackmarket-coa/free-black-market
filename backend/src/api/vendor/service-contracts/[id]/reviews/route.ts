@@ -6,6 +6,10 @@ import { validateReviewSubmission } from "../../../../../modules/service-program
 import { REVIEWS_MODULE } from "../../../../../modules/reviews"
 import type ReviewsService from "../../../../../modules/reviews/service"
 import { ReviewSubjectType } from "../../../../../modules/reviews/models/product-review"
+import {
+  grantKarmaBestEffort,
+  KARMA_DELTAS,
+} from "../../../../../lib/karma-grants"
 
 const ERROR_STATUS: Record<string, number> = {
   not_found: 404,
@@ -120,6 +124,20 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       body: comment,
       is_verified: true,
     })
+
+    // Reputation: a five-star contract review credits the provider on the
+    // canonical karma log (first submission only — the source pair dedups).
+    if (rating === 5) {
+      await grantKarmaBestEffort(req.scope, {
+        member_id: contract.service_seller_id,
+        delta: KARMA_DELTAS.five_star_review,
+        reason: "review:five_star",
+        source_module: "reviews",
+        source_id: created.id,
+        metadata: { subject_type: "service_contract", contract_id: contract.id },
+      })
+    }
+
     return res.status(201).json({
       review: toServiceReviewShape(created as Parameters<typeof toServiceReviewShape>[0]),
     })
