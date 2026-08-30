@@ -55,21 +55,31 @@ export class Migration20260830ReviewsAbsorption extends Migration {
        WHERE "contract_id" IS NOT NULL AND "deleted_at" IS NULL;`
     )
 
-    // Backfill from the service-program implementation (its migration
-    // predates this one, so the table exists). Original ids preserved —
-    // re-running is a no-op.
+    // Backfill from the service-program implementation. Guarded on the
+    // table's existence because Medusa orders migrations PER MODULE, not by
+    // global timestamp — on a fresh database this module can migrate before
+    // service-program, and then `service_review` does not exist yet. That
+    // world has nothing to copy anyway (both tables empty); on an existing
+    // deployment both tables are present and the backfill runs. Original ids
+    // preserved — re-running is a no-op.
     this.addSql(
-      `INSERT INTO "embed_product_review"
-         ("id", "subject_type", "seller_id", "contract_id", "program_id",
-          "reviewer_seller_id", "rating", "body", "is_verified", "status",
-          "metadata", "created_at", "updated_at")
-       SELECT
-         sr."id", 'service_contract', sr."service_seller_id", sr."contract_id",
-         sr."program_id", sr."reviewer_id", sr."rating", sr."comment", true,
-         'published', sr."metadata", sr."created_at", sr."updated_at"
-       FROM "service_review" sr
-       WHERE sr."deleted_at" IS NULL
-       ON CONFLICT ("id") DO NOTHING;`
+      `DO $backfill$
+       BEGIN
+         IF to_regclass('"service_review"') IS NOT NULL THEN
+           INSERT INTO "embed_product_review"
+             ("id", "subject_type", "seller_id", "contract_id", "program_id",
+              "reviewer_seller_id", "rating", "body", "is_verified", "status",
+              "metadata", "created_at", "updated_at")
+           SELECT
+             sr."id", 'service_contract', sr."service_seller_id", sr."contract_id",
+             sr."program_id", sr."reviewer_id", sr."rating", sr."comment", true,
+             'published', sr."metadata", sr."created_at", sr."updated_at"
+           FROM "service_review" sr
+           WHERE sr."deleted_at" IS NULL
+           ON CONFLICT ("id") DO NOTHING;
+         END IF;
+       END
+       $backfill$;`
     )
   }
 
