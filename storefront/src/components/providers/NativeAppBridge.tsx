@@ -4,11 +4,16 @@ import { useEffect } from "react"
 import { useRouter } from "next/navigation"
 import {
   getCapacitorBridge,
+  getNativePlatform,
   isNativeApp,
   type CapacitorAppListenerHandle,
 } from "@/lib/native/native-app-context"
 import { deepLinkToPath } from "@/lib/native/deep-links"
-import { registerNativePushNotifications } from "@/lib/native/push-notifications"
+import {
+  PUSH_TOKEN_EVENT,
+  registerNativePushNotifications,
+} from "@/lib/native/push-notifications"
+import { registerNativePushToken } from "@/lib/data/native-push"
 
 /**
  * Client-side bridge to the FBM Capacitor shell (mobile/). Mounted once
@@ -19,7 +24,9 @@ import { registerNativePushNotifications } from "@/lib/native/push-notifications
  *   path via the Next router.
  * - Kicks off push registration when NEXT_PUBLIC_NATIVE_PUSH=true —
  *   tokens surface as `fbm:push-token` CustomEvents
- *   (lib/native/push-notifications.ts).
+ *   (lib/native/push-notifications.ts) and are forwarded to the backend
+ *   registry (`/store/native/push-tokens`) via a server action so the
+ *   customer's auth cookie attaches the device to their account.
  */
 export const NativeAppBridge = () => {
   const router = useRouter()
@@ -44,12 +51,21 @@ export const NativeAppBridge = () => {
     }
     void attach()
 
+    const onPushToken = (event: Event) => {
+      const token = (event as CustomEvent<{ token?: string }>).detail?.token
+      const platform = getNativePlatform()
+      if (!token || !platform) return
+      void registerNativePushToken({ token, platform })
+    }
+
     if (process.env.NEXT_PUBLIC_NATIVE_PUSH === "true") {
+      window.addEventListener(PUSH_TOKEN_EVENT, onPushToken)
       void registerNativePushNotifications()
     }
 
     return () => {
       cancelled = true
+      window.removeEventListener(PUSH_TOKEN_EVENT, onPushToken)
       if (listenerHandle) void listenerHandle.remove()
     }
   }, [router])
