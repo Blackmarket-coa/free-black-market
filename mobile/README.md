@@ -76,25 +76,39 @@ degrades to opening checkout without cart transfer when unset).
 
 ## Push notifications
 
+End-to-end path: shell → storefront → backend registry → FCM.
+
 - **Android**: drop `google-services.json` into `android/app/` (gitignored)
   and apply the Firebase Gradle plugin per the Capacitor docs.
 - **iOS**: enable the Push Notifications capability in Xcode and upload the
-  APNs key to FCM/your push provider. `Info.plist` already declares
-  `remote-notification` background mode; `AppDelegate.swift` already
-  forwards the APNs token to the plugin.
-- Registration is driven from the storefront (`NativeAppBridge`), which
-  requests permission and emits the token as an `fbm:push-token` event —
-  wire the token to the backend from there.
+  APNs key to Firebase. `Info.plist` already declares `remote-notification`
+  background mode; `AppDelegate.swift` already forwards the APNs token to
+  the plugin.
+- **Storefront** (`NEXT_PUBLIC_NATIVE_PUSH=true`): `NativeAppBridge`
+  requests permission, registers, and forwards the token to the backend
+  device registry (`POST /store/native/push-tokens`) with the customer's
+  auth cookie so the device attaches to their account.
+- **Backend** (`backend/src/modules/native-push`): stores tokens, sends via
+  FCM HTTP v1 (`FCM_SERVICE_ACCOUNT_JSON`, fail-closed when unset), and
+  disables tokens FCM reports dead. Reference consumer: the
+  `order.placed` → "Order confirmed" subscriber; call
+  `nativePush.sendToCustomer(...)` from any other subscriber to add more.
 
 ## Deep links
 
 `fbm://` opens the app on both platforms (scheme registered in
 `AndroidManifest.xml` / `Info.plist`); `NativeAppBridge` routes
 `fbm://open?path=/us/products/x` (or any `fbm://` URL with a path) to the
-matching storefront route. For `https://freeblackmarket.com` App
-Links/Universal Links, serve `/.well-known/assetlinks.json` and
-`apple-app-site-association`, then add the `autoVerify` intent filter and
-Associated Domains capability.
+matching storefront route.
+
+For `https://freeblackmarket.com` links: the storefront already serves
+env-gated `/.well-known/assetlinks.json` (set
+`NATIVE_ANDROID_CERT_SHA256` to the release-cert fingerprint) and
+`/.well-known/apple-app-site-association` (set `NATIVE_APPLE_APP_ID` to
+`TEAMID.co.bmc.freeblackmarket`), and the Android manifest already carries
+the `autoVerify` intent filter — it stays inert until the assetlinks
+statement goes live. iOS additionally needs the Associated Domains
+capability (`applinks:freeblackmarket.com`) in Xcode.
 
 ## iOS on Linux/CI
 

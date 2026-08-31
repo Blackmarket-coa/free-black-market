@@ -1,6 +1,5 @@
-<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8" ?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-
     <application
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
@@ -8,7 +7,6 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/AppTheme">
-
         <activity
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode|navigation"
             android:name=".MainActivity"
@@ -16,16 +14,12 @@
             android:theme="@style/AppTheme.NoActionBarLaunch"
             android:launchMode="singleTask"
             android:exported="true">
-
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
-            <!-- Deep links: fbm:// URIs (routed by NativeAppBridge in the storefront).
-                 For https App Links, add an autoVerify filter for
-                 freeblackmarket.com once /.well-known/assetlinks.json is served
-                 (see mobile/README.md). -->
+            <!-- Deep links: fbm:// URIs (routed by NativeAppBridge in the storefront). -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
@@ -33,6 +27,17 @@
                 <data android:scheme="fbm" />
             </intent-filter>
 
+            <!-- App Links: inert until the storefront serves
+                 /.well-known/assetlinks.json (env-gated route; set
+                 NATIVE_ANDROID_CERT_SHA256) — Android only routes https
+                 links here after verifying that statement. -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="freeblackmarket.com" />
+                <data android:scheme="https" android:host="www.freeblackmarket.com" />
+            </intent-filter>
         </activity>
 
         <provider
@@ -40,9 +45,7 @@
             android:authorities="${applicationId}.fileprovider"
             android:exported="false"
             android:grantUriPermissions="true">
-            <meta-data
-                android:name="android.support.FILE_PROVIDER_PATHS"
-                android:resource="@xml/file_paths"></meta-data>
+            <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/file_paths" />
         </provider>
     </application>
 
