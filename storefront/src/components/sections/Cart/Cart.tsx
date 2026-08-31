@@ -1,5 +1,5 @@
 import { Button } from "@/components/atoms"
-import { CartEmpty, CartItems, CartSummary } from "@/components/organisms"
+import { BuyOnWebButton, CartEmpty, CartItems, CartSummary } from "@/components/organisms"
 import LocalizedClientLink from "@/components/molecules/LocalizedLink/LocalizedLink"
 import { retrieveCart } from "@/lib/data/cart"
 import CartPromotionCode from "../CartReview/CartPromotionCode"
@@ -36,6 +36,9 @@ export const Cart = async () => {
               Go to checkout
             </Button>
           </LocalizedClientLink>
+          {/* Native shell only (hidden on web and on iOS outside the US
+              storefront): hands the cart to the external browser. */}
+          <BuyOnWebButton />
         </div>
       </div>
     </>

@@ -15,6 +15,7 @@ import { SellerFooter } from "./SellerFooter/SellerFooter"
 import { SellerTabs } from "./SellerTabs/SellerTabs"
 import { CartSummary } from "./CartSummary/CartSummary"
 import { CartItems } from "./CartItems/CartItems"
+import { BuyOnWebButton } from "./BuyOnWebButton/BuyOnWebButton"
 import { WishlistTabs } from "./WishlistTabs/WishlistTabs"
 import { HomeProductsCarousel } from "./HomeProductsCarousel/HomeProductsCarousel"
 import { ProductGallery } from "./ProductGallery/ProductGallery"
@@ -52,4 +53,5 @@ export {
   ReviewsToWrite,
   ReviewsWritten,
   CartEmpty,
+  BuyOnWebButton,
 }
