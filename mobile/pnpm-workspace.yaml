@@ -1,0 +1,10 @@
+# This directory is its own pnpm workspace root, same as storefront/ — the
+# Capacitor shell's dependency tree (native platform packages, plugin
+# versions) is release-engineered independently of the repo-root workspace,
+# and being a root means installs never need --ignore-workspace (which would
+# silently drop any overrides declared here).
+#
+# No overrides yet: everything below dependencies/ is @capacitor/* first-party
+# packages. Add CVE pins here (not package.json) if that changes — see
+# storefront/pnpm-workspace.yaml for the rationale and the coverage check.
+packages: []
