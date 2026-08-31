@@ -107,6 +107,24 @@ Deferrals:
 | W5-5 | `vendor-rules.max_delivery_distance` is a dead stub ("Would calculate distance here") — implementing needs a geocoded delivery address, a natural follow-on once `blackout-spatial` is live | **deferred (S)** | `backend/src/modules/vendor-rules/service.ts` |
 | W5-6 | Cross-repo counterparts: Blackout's deployed PostGIS + martin remain UNFED by its product (its OSS-plan WS4 owns the seam); the standalone `coalition-app` repo absorb/archive is an operator action | **other repos / operator** | blackout `infra/single-server-baseline`, `coalition-app` |
 
+## W6 — Federation (2026-08-30)
+
+The W6 pass found the roadmap's "version connect.js as a shippable artifact"
+had already shipped 2026-08-13 (frozen `/v2.0.0/connect.js` + SRI + changelog
++ the `connect-sri.unit.spec.ts` parity gate — PRs #801–#803); W6 closed the
+residue (Launch-template pin now spec-enforced; embed-key middleware specs)
+and added the BMC↔UCP mapping page in The-Connect
+(`docs/documentation/ucp-and-bmc-connect.md` there). What remains is small
+and mostly decisions, not debt:
+
+| # | Item | Status | Location |
+|---|------|--------|----------|
+| W6-1 | `@fbm/connect` npm package: REJECTED, not pending — `window.FBM` is the contract, the storefront has no bundler step for the SDK, and a second published artifact would be a permanent sync liability the parity spec would have to police, with no reachable user the pinned `<script>` tag doesn't serve. Revisit only if a partner materially cannot use a script tag | **decision** | `storefront/public/connect.js`, `backend/src/shared/website-config.ts` |
+| W6-2 | Storefront middleware trap: SDK URLs survive the i18n country-redirect only because they contain a literal dot (`pathname.includes(".")` early-return). Any future extensionless alias (`/sdk/latest`) 307s every embed to `/us/…` unless the matcher is amended in the same change | **guidance** | `storefront/src/middleware.ts` (matcher + early-return) |
+| W6-3 | The SRI parity spec reads `storefront/public/` and `templates/` from `backend/` via `path.resolve(__dirname, "../../../..")` — silently unrunnable under a sparse/split checkout of `backend/` alone | **accepted (monorepo)** | `backend/src/shared/__tests__/connect-sri.unit.spec.ts` |
+| W6-4 | Mutable `/connect.js` still serves with up to a 24h stale-while-revalidate window — a bad mutable release has no rollback lever for embedders who ignore the docs and pin nothing; all first-party surfaces are now pinned, which is the mitigation | **accepted** | `storefront/next.config.ts` (headers) |
+| W6-5 | The-Connect fork cannot run its own docs CI end-to-end in this container (`ucp-schema` install blocked at crates.io; no `gh-pages` branch for mike) — local gate is `DOCS_MODE=root mkdocs build --strict`; the fork's `docs.yml` may fail at its cargo-install step on fork infra, not on content | **other repo / infra** | The-Connect `.github/workflows/docs.yml`, `scripts/build_local.sh` |
+
 ## ⚠️ Critical: money-path atomicity was silently disabled (FIXED 2026-06-20)
 
 **Severity: high (financial correctness).** Surfaced by the money-path concurrency

@@ -58,4 +58,18 @@ describe("connect.js release parity", () => {
     expect(snippet).toContain('crossorigin="anonymous"')
     expect(snippet).toContain('data-fbm-vendor="test-vendor"')
   })
+
+  it("keeps the first-party site template pinned to the released version", () => {
+    // The Launch template is the reference implementation every provisioned
+    // vendor site starts from — it must never regress to the mutable URL,
+    // and a release bump must carry it along.
+    const templateDir = path.join(repoRoot, "templates/fbm-site-template")
+    for (const file of ["index.html", "README.md"]) {
+      const contents = readFileSync(path.join(templateDir, file), "utf8")
+      expect(contents).toContain(`/v${CONNECT_VERSION}/connect.js`)
+      expect(contents).toContain(`integrity="${CONNECT_SRI}"`)
+      expect(contents).toContain('crossorigin="anonymous"')
+      expect(contents).not.toMatch(/src="[^"]*(?<!\/v[^"]{1,20})\/connect\.js"/)
+    }
+  })
 })
