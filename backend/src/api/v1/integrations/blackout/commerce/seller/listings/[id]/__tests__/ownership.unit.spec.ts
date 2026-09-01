@@ -8,6 +8,10 @@ import { CreatorListingStatus } from "../../../../../../../../../modules/marketp
  * about which seller is acting. Both routes previously resolved the listing by
  * id alone, which let any key holder publish, un-suspend or hard-delete any
  * seller's listing. These tests pin the owner assertion.
+ *
+ * `src/api/v1/integrations/**` is on the TS-3 enforcement ratchet, so this
+ * file stays free of `any` — route arguments are narrowed with `as never`
+ * rather than widened.
  */
 
 jest.mock("../../../../../../../../../lib/blackout-commerce-auth", () => ({
@@ -20,37 +24,42 @@ jest.mock("../../../../../../../../../lib/blackout-identity", () => ({
   ),
 }))
 
+type Listing = Record<string, unknown>
+
 type TestRes = {
   statusCode: number
-  body: any
+  body: Record<string, unknown>
   status: (code: number) => TestRes
   json: (payload: unknown) => TestRes
 }
 
 const createRes = (): TestRes => {
-  const res = { statusCode: 200, body: undefined } as TestRes
-  res.status = (code: number) => {
-    res.statusCode = code
-    return res
-  }
-  res.json = (payload: unknown) => {
-    res.body = payload
-    return res
+  const res: TestRes = {
+    statusCode: 200,
+    body: {},
+    status: (code: number) => {
+      res.statusCode = code
+      return res
+    },
+    json: (payload: unknown) => {
+      res.body = (payload ?? {}) as Record<string, unknown>
+      return res
+    },
   }
   return res
 }
 
-function makeService(listings: Array<Record<string, unknown>>) {
+function makeService(listings: Listing[]) {
   return {
     listings,
     listCreatorListings: jest.fn(async (filters: { id?: string }) =>
       listings.filter((l) => !filters.id || l.id === filters.id)
     ),
-    updateCreatorListings: jest.fn(async (updates: Array<Record<string, unknown>>) =>
+    updateCreatorListings: jest.fn(async (updates: Listing[]) =>
       updates.map((u) => {
-        const row = listings.find((l) => l.id === u.id)!
-        Object.assign(row, u)
-        return row
+        const row = listings.find((l) => l.id === u.id)
+        if (row) Object.assign(row, u)
+        return row ?? u
       })
     ),
     deleteCreatorListings: jest.fn(async (id: string) => {
@@ -60,27 +69,32 @@ function makeService(listings: Array<Record<string, unknown>>) {
   }
 }
 
-const ownedListing = () => ({
+const ownedListing = (): Listing => ({
   id: "clist_1",
   slug: "sparkle-sprite",
   seller_id: "sel_owner",
   status: CreatorListingStatus.DRAFT,
 })
 
-const makeReq = (service: unknown, opts: { body?: unknown; query?: unknown }) =>
-  ({
-    params: { id: "clist_1" },
-    body: opts.body,
-    query: opts.query ?? {},
-    scope: { resolve: () => service },
-  }) as any
+const makeReq = (
+  service: ReturnType<typeof makeService>,
+  opts: { body?: unknown; query?: unknown }
+) => ({
+  params: { id: "clist_1" },
+  body: opts.body,
+  query: opts.query ?? {},
+  scope: { resolve: () => service },
+})
 
 describe("commerce publish route — owner assertion", () => {
   it("rejects a publish for a listing owned by another seller", async () => {
     const service = makeService([ownedListing()])
     const res = createRes()
 
-    await publishRoute(makeReq(service, { body: { sellerUserId: "bo_attacker" } }), res as any)
+    await publishRoute(
+      makeReq(service, { body: { sellerUserId: "bo_attacker" } }) as never,
+      res as never
+    )
 
     expect(res.statusCode).toBe(403)
     expect(res.body.code).toBe("forbidden")
@@ -92,7 +106,7 @@ describe("commerce publish route — owner assertion", () => {
     const service = makeService([ownedListing()])
     const res = createRes()
 
-    await publishRoute(makeReq(service, { body: {} }), res as any)
+    await publishRoute(makeReq(service, { body: {} }) as never, res as never)
 
     expect(res.statusCode).toBe(400)
     expect(service.updateCreatorListings).not.toHaveBeenCalled()
@@ -102,18 +116,24 @@ describe("commerce publish route — owner assertion", () => {
     const service = makeService([ownedListing()])
     const res = createRes()
 
-    await publishRoute(makeReq(service, { body: { sellerUserId: "bo_owner" } }), res as any)
+    await publishRoute(
+      makeReq(service, { body: { sellerUserId: "bo_owner" } }) as never,
+      res as never
+    )
 
     expect(res.statusCode).toBe(200)
     expect(res.body.status).toBe(CreatorListingStatus.PUBLISHED)
   })
 
   it("refuses to publish a SUSPENDED listing, so publish cannot undo enforcement", async () => {
-    const suspended = { ...ownedListing(), status: CreatorListingStatus.SUSPENDED }
+    const suspended: Listing = { ...ownedListing(), status: CreatorListingStatus.SUSPENDED }
     const service = makeService([suspended])
     const res = createRes()
 
-    await publishRoute(makeReq(service, { body: { sellerUserId: "bo_owner" } }), res as any)
+    await publishRoute(
+      makeReq(service, { body: { sellerUserId: "bo_owner" } }) as never,
+      res as never
+    )
 
     expect(res.statusCode).toBe(409)
     expect(res.body.code).toBe("listing_suspended")
@@ -126,7 +146,10 @@ describe("commerce delete route — owner assertion", () => {
     const service = makeService([ownedListing()])
     const res = createRes()
 
-    await deleteRoute(makeReq(service, { query: { sellerUserId: "bo_attacker" } }), res as any)
+    await deleteRoute(
+      makeReq(service, { query: { sellerUserId: "bo_attacker" } }) as never,
+      res as never
+    )
 
     expect(res.statusCode).toBe(403)
     expect(service.deleteCreatorListings).not.toHaveBeenCalled()
@@ -137,7 +160,7 @@ describe("commerce delete route — owner assertion", () => {
     const service = makeService([ownedListing()])
     const res = createRes()
 
-    await deleteRoute(makeReq(service, {}), res as any)
+    await deleteRoute(makeReq(service, {}) as never, res as never)
 
     expect(res.statusCode).toBe(400)
     expect(service.listings).toHaveLength(1)
@@ -147,7 +170,10 @@ describe("commerce delete route — owner assertion", () => {
     const service = makeService([ownedListing()])
     const res = createRes()
 
-    await deleteRoute(makeReq(service, { query: { sellerUserId: "bo_owner" } }), res as any)
+    await deleteRoute(
+      makeReq(service, { query: { sellerUserId: "bo_owner" } }) as never,
+      res as never
+    )
 
     expect(res.statusCode).toBe(200)
     expect(res.body).toEqual({ ok: true })

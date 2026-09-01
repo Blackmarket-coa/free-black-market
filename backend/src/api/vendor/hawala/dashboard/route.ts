@@ -1,5 +1,4 @@
 import { createLogger } from "../../../../shared/logger"
-import type { VendorRequest } from "../../types"
 const log = createLogger("api/vendor/hawala/dashboard")
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { HAWALA_LEDGER_MODULE } from "../../../../modules/hawala-ledger"

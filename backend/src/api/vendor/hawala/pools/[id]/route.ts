@@ -1,5 +1,4 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
-import type { VendorRequest } from "../../../types"
 import { HAWALA_LEDGER_MODULE } from "../../../../../modules/hawala-ledger"
 import HawalaLedgerModuleService from "../../../../../modules/hawala-ledger/service"
 import { resolveVendorSellerId } from "../../seller-context"
