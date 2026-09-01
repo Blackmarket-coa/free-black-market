@@ -4,6 +4,7 @@ import "./globals.css"
 import { Toaster } from "@medusajs/ui"
 import Head from "next/head"
 import { retrieveCart } from "@/lib/data/cart"
+import { NativeAppBridge } from "@/components/providers"
 import { Providers } from "./providers"
 
 const exo2 = Exo_2({
@@ -112,6 +113,8 @@ export default async function RootLayout({
         className={`${exo2.variable} ${urbanist.variable} ${urbanist.className} antialiased bg-primary text-secondary relative solarpunk-atmosphere`}
       >
         <Providers cart={cart}>{children}</Providers>
+        {/* Capacitor shell integration (deep links, push) — no-op on the web */}
+        <NativeAppBridge />
         <Toaster position="top-right" />
       </body>
     </html>

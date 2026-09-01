@@ -187,6 +187,8 @@ const commerceModules = [
   { resolve: './src/modules/embed-analytics' },
   // Wellness practitioner portal (sessions, classes, memberships, CRM)
   { resolve: './src/modules/wellness' },
+  // Device push tokens + FCM delivery for the Capacitor shell (mobile/)
+  { resolve: './src/modules/native-push' },
 ]
 
 // Financial/ledger modules

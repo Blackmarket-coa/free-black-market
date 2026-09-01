@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Free Black Market</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        font-family: system-ui, -apple-system, sans-serif;
+        background: #0d0d0d;
+        color: #f5f5f5;
+        text-align: center;
+        padding: 24px;
+        box-sizing: border-box;
+      }
+      p {
+        color: #9ca3af;
+        max-width: 32ch;
+      }
+    </style>
+  </head>
+  <body>
+    <!--
+      The shell normally loads the deployed storefront via server.url
+      (capacitor.config.ts) and never shows this page. It only renders if
+      the shell is built without a reachable server URL.
+    -->
+    <main>
+      <h1>Free Black Market</h1>
+      <p>Couldn’t reach the marketplace. Check your connection and reopen the app.</p>
+    </main>
+  </body>
+</html>

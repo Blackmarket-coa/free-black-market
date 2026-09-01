@@ -1,0 +1,32 @@
+node_modules
+
+# Capacitor copies www/ + config into the native projects on every
+# `cap sync` — generated output, regenerated before each build (not source).
+android/app/src/main/assets/public
+android/app/src/main/assets/capacitor.config.json
+android/app/src/main/assets/capacitor.plugins.json
+ios/App/App/public
+ios/App/App/capacitor.config.json
+ios/App/App/config.xml
+
+# Android — generated build output (the Gradle project source IS committed)
+android/.gradle
+android/.idea
+android/build
+android/app/build
+android/captures
+android/local.properties
+
+# Android — secrets (never commit)
+android/keystore.properties
+android/app/google-services.json
+*.jks
+*.keystore
+
+# iOS — generated build output (project source is committed)
+ios/App/Pods
+ios/App/build
+ios/App/DerivedData
+
+# iOS — secrets (never commit)
+ios/App/App/GoogleService-Info.plist

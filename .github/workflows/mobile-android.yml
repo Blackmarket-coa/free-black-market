@@ -1,0 +1,85 @@
+name: Mobile Android Build
+
+# Proves the Capacitor shell (mobile/) still assembles: cap sync + a debug
+# APK on every change to the shell. Release builds stay manual — they need
+# the signing keystore and google-services.json, neither of which lives in
+# CI.
+
+on:
+  push:
+    branches: [main, develop, 'release/**']
+    paths:
+      - 'mobile/**'
+      - '.github/workflows/mobile-android.yml'
+  pull_request:
+    branches: [main, develop, 'release/**']
+    paths:
+      - 'mobile/**'
+      - '.github/workflows/mobile-android.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: mobile-android-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: '22'
+  PNPM_VERSION: '11.20.0'
+  # See ci.yml for why scripts skip the pnpm 11 re-verification pass.
+  pnpm_config_verify_deps_before_run: 'false'
+
+jobs:
+  build-debug-apk:
+    name: Assemble debug APK
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm via corepack
+        run: |
+          corepack enable
+          corepack prepare pnpm@${{ env.PNPM_VERSION }} --activate
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+          cache-dependency-path: mobile/pnpm-lock.yaml
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          # Matches JavaVersion.VERSION_21 in the Capacitor-generated
+          # android project.
+          java-version: '21'
+
+      - name: Setup Gradle cache
+        uses: gradle/actions/setup-gradle@v4
+
+      # `--trust-lockfile` per the rationale documented in ci.yml: the real
+      # supply-chain verification runs once per PR in security.yml.
+      - name: Install shell dependencies
+        working-directory: mobile
+        run: pnpm install --frozen-lockfile --trust-lockfile
+
+      - name: Capacitor config typecheck
+        working-directory: mobile
+        run: pnpm exec tsc --noEmit
+
+      - name: Sync web assets + plugins into the Android project
+        working-directory: mobile
+        run: pnpm exec cap sync android
+
+      - name: Assemble debug APK
+        working-directory: mobile/android
+        run: ./gradlew assembleDebug --no-daemon
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: fbm-debug-apk
+          path: mobile/android/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 14

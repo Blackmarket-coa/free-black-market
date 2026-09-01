@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Free Black Market</string>
+    <string name="title_activity_main">Free Black Market</string>
+    <string name="package_name">co.bmc.freeblackmarket</string>
+    <string name="custom_url_scheme">co.bmc.freeblackmarket</string>
+</resources>
