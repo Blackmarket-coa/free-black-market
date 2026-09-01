@@ -576,6 +576,15 @@ class PayoutBreakdownService extends MedusaService({
       total_tax: breakdown.totals.tax,
       total_tip: breakdown.totals.tip,
       total_creator_commission: breakdown.totals.creatorCommission ?? 0,
+      // Both totals are computed by calculateBreakdown and were dropped here,
+      // leaving columns that have existed since
+      // Migration20260506200AddPluginAndReferralSplits with no writer at all —
+      // so there was no durable record of what a plugin developer or referrer
+      // was owed on an order, and nothing to reconcile a deferred share
+      // against. (`referrer_levels` stays unwritten: the per-level split lives
+      // in creator-attribution and is not part of this breakdown.)
+      total_to_plugin_developers: breakdown.totals.pluginDeveloperShare ?? 0,
+      total_to_referrers: breakdown.totals.referralShare ?? 0,
       seller_breakdown: breakdown.sellerBreakdown as unknown as Record<string, unknown>,
     })
   }

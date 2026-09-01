@@ -166,6 +166,16 @@ export default async function hawalaOrderPaymentSubscriber({
       log.warn(`[Hawala] Could not look up creator attribution for order ${orderId}:`, attributionError)
     }
 
+    // Captured here and disbursed AFTER the settlement leg below, which is
+    // what actually funds the PLATFORM_FEE account these shares are carved
+    // from. Disbursing inside the breakdown block ran BEFORE that leg, so on a
+    // cold PLATFORM_FEE account every share hit the disbursers' balance guard
+    // and deferred — and nothing retries a deferred share, so payees were only
+    // ever paid out of residue left by earlier orders.
+    let settledBreakdown:
+      | Awaited<ReturnType<typeof payoutService.calculateBreakdown>>
+      | null = null
+
     // Store the breakdown for this order (for transparency reporting)
     try {
       const payoutConfig = await payoutService.getDefaultConfig()
@@ -209,26 +219,9 @@ export default async function hawalaOrderPaymentSubscriber({
         order.currency_code
       )
 
-      // Disburse after the breakdown is stored, so the record of what is owed
-      // survives even if the transfers themselves are deferred.
-      if (breakdown.pluginShareAllocations.length > 0) {
-        await disbursePluginDeveloperShare(container, {
-          orderId,
-          sellerId,
-          currencyCode: order.currency_code,
-          allocations: breakdown.pluginShareAllocations,
-        })
-      }
-
-      // Referral share disburses the same way and after the breakdown is
-      // stored. Single-seller settlement here, so at most one allocation.
-      if (breakdown.referralShareAllocations.length > 0) {
-        await disburseReferralShare(container, {
-          orderId,
-          currencyCode: order.currency_code,
-          allocation: breakdown.referralShareAllocations[0],
-        })
-      }
+      // The record of what is owed is now stored; the transfers themselves
+      // wait for settlement.
+      settledBreakdown = breakdown
     } catch (breakdownError) {
       log.warn(`[Hawala] Could not store breakdown for order ${orderId}:`, breakdownError)
     }
@@ -326,6 +319,30 @@ export default async function hawalaOrderPaymentSubscriber({
         })
 
     log.info(`[Hawala] Order ${orderId} processed: ${entries.length} ledger entries created`)
+
+    // Platform-fee carve-outs, now that the settlement leg above has credited
+    // PLATFORM_FEE. Both disbursers are idempotent and defer rather than
+    // overdraw, so a failure here leaves the stored breakdown as the record of
+    // what is still owed.
+    if (settledBreakdown) {
+      if (settledBreakdown.pluginShareAllocations.length > 0) {
+        await disbursePluginDeveloperShare(container, {
+          orderId,
+          sellerId,
+          currencyCode: order.currency_code,
+          allocations: settledBreakdown.pluginShareAllocations,
+        })
+      }
+
+      // Single-seller settlement here, so at most one referral allocation.
+      if (settledBreakdown.referralShareAllocations.length > 0) {
+        await disburseReferralShare(container, {
+          orderId,
+          currencyCode: order.currency_code,
+          allocation: settledBreakdown.referralShareAllocations[0],
+        })
+      }
+    }
 
     // §3 bridge: post to the vendor's private ledger room. order.total is in
     // CENTS already, which is exactly the minor-units the contract wants.
