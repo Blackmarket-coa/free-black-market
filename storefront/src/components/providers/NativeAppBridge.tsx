@@ -1,16 +1,22 @@
 "use client"
 
 import { useEffect } from "react"
-import { useRouter } from "next/navigation"
+import { usePathname, useRouter } from "next/navigation"
 import {
   getCapacitorBridge,
   getNativePlatform,
   isNativeApp,
   type CapacitorAppListenerHandle,
 } from "@/lib/native/native-app-context"
-import { deepLinkToPath } from "@/lib/native/deep-links"
 import {
+  deepLinkToPath,
+  sanitizeRedirectPath,
+  withLocalePrefix,
+} from "@/lib/native/deep-links"
+import {
+  PUSH_ACTION_EVENT,
   PUSH_TOKEN_EVENT,
+  pushNotificationPath,
   registerNativePushNotifications,
 } from "@/lib/native/push-notifications"
 import { registerNativePushToken } from "@/lib/data/native-push"
@@ -30,6 +36,7 @@ import { registerNativePushToken } from "@/lib/data/native-push"
  */
 export const NativeAppBridge = () => {
   const router = useRouter()
+  const pathname = usePathname()
 
   useEffect(() => {
     if (!isNativeApp()) return
@@ -44,7 +51,7 @@ export const NativeAppBridge = () => {
         url?: string
       }) => {
         const path = deepLinkToPath(payload?.url)
-        if (path) router.push(path)
+        if (path) router.push(withLocalePrefix(path, pathname))
       }) as (payload: never) => void)
       if (cancelled) void handle.remove()
       else listenerHandle = handle
@@ -58,17 +65,30 @@ export const NativeAppBridge = () => {
       void registerNativePushToken({ token, platform })
     }
 
+    // Tapping a notification must open what it is about. The backend
+    // subscribers put a same-origin path in the FCM data payload
+    // (`/user/orders` for buyers, `/vendor/orders/<id>` for sellers);
+    // without this the app just resumes on whatever was last on screen.
+    const onPushAction = (event: Event) => {
+      const path = pushNotificationPath((event as CustomEvent).detail)
+      if (!path) return
+      const safe = sanitizeRedirectPath(path, "")
+      if (safe) router.push(withLocalePrefix(safe, pathname))
+    }
+
     if (process.env.NEXT_PUBLIC_NATIVE_PUSH === "true") {
       window.addEventListener(PUSH_TOKEN_EVENT, onPushToken)
+      window.addEventListener(PUSH_ACTION_EVENT, onPushAction)
       void registerNativePushNotifications()
     }
 
     return () => {
       cancelled = true
       window.removeEventListener(PUSH_TOKEN_EVENT, onPushToken)
+      window.removeEventListener(PUSH_ACTION_EVENT, onPushAction)
       if (listenerHandle) void listenerHandle.remove()
     }
-  }, [router])
+  }, [router, pathname])
 
   return null
 }

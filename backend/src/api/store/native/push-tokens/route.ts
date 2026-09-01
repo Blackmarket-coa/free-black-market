@@ -14,10 +14,16 @@ import type NativePushModuleService from "../../../../modules/native-push/servic
  * attaches the device to that customer. Anonymous registrations are kept
  * (token-only) and attach on the next authenticated refresh.
  *
- * DELETE unregisters a token (logout / permission revoked). Possession of
- * the token is the credential: FCM tokens are unguessable, and the worst
- * a spoofed delete can do is silence pushes to a device that will
- * re-register on next launch.
+ * DELETE detaches the CUSTOMER from a token (logout / permission
+ * revoked). Possession of the token is the credential: FCM tokens are
+ * unguessable, and the worst a spoofed delete can do is silence buyer
+ * pushes to a device that will re-register on next launch.
+ *
+ * It deliberately does not delete the row. The same device may also be
+ * attached to a seller for vendor order notifications, and this endpoint
+ * is unauthenticated — retiring the row here would let anyone holding a
+ * token permanently silence that vendor. The row is retired only when no
+ * seller is attached either (see `detachCustomer`).
  */
 
 const registerSchema = z.object({
@@ -79,7 +85,7 @@ export async function DELETE(req: MedusaRequest, res: MedusaResponse) {
   )
 
   try {
-    const removed = await nativePush.unregisterToken(parsed.data.token)
+    const removed = await nativePush.detachCustomer(parsed.data.token)
     return res.status(200).json({ ok: true, removed })
   } catch (error) {
     log.error("failed to unregister push token", error)

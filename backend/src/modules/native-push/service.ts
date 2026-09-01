@@ -6,6 +6,7 @@ export type RegisterTokenInput = {
   token: string
   platform: "ios" | "android"
   customer_id?: string | null
+  seller_id?: string | null
 }
 
 /**
@@ -36,9 +37,13 @@ class NativePushModuleService extends MedusaService({
   /**
    * Register (or refresh) a device token. Unique on `token`: an existing
    * row is updated in place — re-registration re-enables a token FCM had
-   * reported dead and attaches the customer when the call is
-   * authenticated. A later anonymous re-registration keeps the existing
-   * customer attachment (logout is `unregisterToken`, not detachment).
+   * reported dead and attaches the caller when the call is authenticated.
+   *
+   * Attachments are preserved, never cleared, when a later registration
+   * arrives without them: the shopper app registers anonymously on launch
+   * and the vendor surface registers a seller separately, so each call
+   * only ever adds the identity it knows about. Detaching is
+   * `unregisterToken` (sign-out), not an anonymous re-registration.
    */
   async registerToken(input: RegisterTokenInput) {
     const now = new Date()
@@ -52,6 +57,7 @@ class NativePushModuleService extends MedusaService({
         id: existing.id,
         platform: input.platform,
         customer_id: input.customer_id ?? existing.customer_id ?? null,
+        seller_id: input.seller_id ?? existing.seller_id ?? null,
         last_registered_at: now,
         disabled_at: null,
       })
@@ -61,15 +67,79 @@ class NativePushModuleService extends MedusaService({
       token: input.token,
       platform: input.platform,
       customer_id: input.customer_id ?? null,
+      seller_id: input.seller_id ?? null,
       last_registered_at: now,
       disabled_at: null,
     })
   }
 
-  /** Remove a token (device logout / permission revoked). Idempotent. */
-  async unregisterToken(token: string): Promise<boolean> {
+  /**
+   * Detach a seller from a device without unregistering it — the vendor
+   * signs out of the seller surface but the shopper session (and buyer
+   * pushes) on the same phone continue.
+   *
+   * Scoped to the calling seller: possession of a token must not let one
+   * seller silence another seller's device. Returns false when the token
+   * is unknown or belongs to a different seller, which the route reports
+   * indistinguishably so it cannot be used to probe for tokens.
+   */
+  async detachSeller(token: string, seller_id: string): Promise<boolean> {
+    const [existing] = await this.listDevicePushTokens({ token }, { take: 1 })
+    if (!existing || existing.seller_id !== seller_id) return false
+    await this.updateDevicePushTokens({ id: existing.id, seller_id: null })
+    return true
+  }
+
+  /**
+   * Detach every device registered to a seller.
+   *
+   * Sign-out cannot depend on the client knowing its own FCM token: the
+   * registration event fires once at launch and may not have arrived, so a
+   * token-scoped detach silently no-ops and leaves the phone subscribed to
+   * that vendor's order pushes after they sign out. Scoped to the
+   * authenticated seller, so it can only ever clear the caller's own rows.
+   */
+  async detachAllForSeller(seller_id: string): Promise<number> {
+    const PAGE = 200
+    let detached = 0
+    // Paged rather than one bounded read: a partial detach is the very
+    // failure this exists to prevent, so keep going until nothing is left
+    // attached. Each page nulls the rows it read, so the next read returns
+    // the following page; the iteration cap is a guard against a driver
+    // that somehow keeps returning the same rows, not an expected limit.
+    for (let page = 0; page < 25; page++) {
+      const rows = await this.listDevicePushTokens(
+        { seller_id },
+        { select: ["id"], take: PAGE }
+      )
+      if (rows.length === 0) break
+      await this.updateDevicePushTokens(
+        rows.map((row) => ({ id: row.id, seller_id: null }))
+      )
+      detached += rows.length
+      if (rows.length < PAGE) break
+    }
+    return detached
+  }
+
+  /**
+   * Detach a customer from a device (shopper sign-out).
+   *
+   * Deliberately NOT a delete: the same row may carry a seller
+   * attachment, and the store-side endpoint that calls this is
+   * unauthenticated. Soft-deleting the row there would let anyone holding
+   * a device token permanently silence that vendor's order
+   * notifications. The row is only retired once nothing is attached to it.
+   */
+  async detachCustomer(token: string): Promise<boolean> {
     const [existing] = await this.listDevicePushTokens({ token }, { take: 1 })
     if (!existing) return false
+
+    if (existing.seller_id) {
+      await this.updateDevicePushTokens({ id: existing.id, customer_id: null })
+      return true
+    }
+
     await this.softDeleteDevicePushTokens([existing.id])
     return true
   }
@@ -78,6 +148,15 @@ class NativePushModuleService extends MedusaService({
   async listActiveTokensForCustomer(customer_id: string): Promise<string[]> {
     const rows = await this.listDevicePushTokens(
       { customer_id, disabled_at: null },
+      { select: ["token"], take: 200 }
+    )
+    return rows.map((row) => row.token)
+  }
+
+  /** Active (non-disabled) tokens registered to a seller. */
+  async listActiveTokensForSeller(seller_id: string): Promise<string[]> {
+    const rows = await this.listDevicePushTokens(
+      { seller_id, disabled_at: null },
       { select: ["token"], take: 200 }
     )
     return rows.map((row) => row.token)
@@ -111,6 +190,27 @@ class NativePushModuleService extends MedusaService({
       return { configured: false, sent: [], invalid: [], failed: [] }
     }
     const tokens = await this.listActiveTokensForCustomer(customer_id)
+    const summary = await fcm.sendToTokens(tokens, notification)
+    if (summary.invalid.length > 0) {
+      await this.disableTokens(summary.invalid)
+    }
+    return summary
+  }
+
+  /**
+   * Deliver a notification to every active device a seller has registered
+   * through the in-app vendor surface. Same fail-closed and
+   * dead-token-disabling semantics as `sendToCustomer`.
+   */
+  async sendToSeller(
+    seller_id: string,
+    notification: FcmNotification
+  ): Promise<FcmSendSummary> {
+    const fcm = this.getFcm()
+    if (!fcm.isConfigured()) {
+      return { configured: false, sent: [], invalid: [], failed: [] }
+    }
+    const tokens = await this.listActiveTokensForSeller(seller_id)
     const summary = await fcm.sendToTokens(tokens, notification)
     if (summary.invalid.length > 0) {
       await this.disableTokens(summary.invalid)

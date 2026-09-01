@@ -3,21 +3,41 @@ const log = createLogger("subscribers/native-push-order-placed")
 import { SubscriberArgs, type SubscriberConfig } from "@medusajs/medusa"
 import { NATIVE_PUSH_MODULE } from "../modules/native-push"
 import type NativePushModuleService from "../modules/native-push/service"
+import { itemCount, pushToOrderSeller } from "../shared/native-push-seller"
 
 /**
- * Subscriber: push an order confirmation to the buyer's registered
- * devices (FBM Capacitor shell).
+ * Subscriber: push an order confirmation to the buyer, and a "new order"
+ * alert to the seller, on the FBM Capacitor shell.
  *
- * Reference implementation for native-push delivery — the same
- * `sendToCustomer` call works from any subscriber (shipment created,
- * order-cycle reminders, …). Every exit is soft: no customer on the
- * order, no registered devices, or FCM unconfigured
- * (FCM_SERVICE_ACCOUNT_JSON unset) all no-op without failing the event.
+ * MercurJS splits a multi-seller cart so `order.placed` already fires once
+ * per seller-order — so the seller push here is naturally scoped to the
+ * seller who actually received the order, with no fan-out of its own.
+ *
+ * Every exit is soft: no customer on the order, no linked seller, no
+ * registered devices, or FCM unconfigured (FCM_SERVICE_ACCOUNT_JSON unset)
+ * all no-op without failing the event.
  */
 export default async function nativePushOrderPlacedSubscriber({
   event: { data },
   container,
 }: SubscriberArgs<{ id: string }>) {
+  // Seller leg first and independently: a buyer-side miss (guest checkout,
+  // no devices) must not stop the vendor from being told they have work.
+  await pushToOrderSeller(container, data.id, (order) => {
+    const units = itemCount(order)
+    return {
+      title: "New order",
+      body: `Order #${order.display_id ?? order.id}${
+        units > 0 ? ` · ${units} item${units === 1 ? "" : "s"}` : ""
+      } is ready to fulfill.`,
+      data: {
+        type: "order.placed.seller",
+        order_id: String(order.id),
+        path: `/vendor/orders/${order.id}`,
+      },
+    }
+  })
+
   let nativePush: NativePushModuleService
   try {
     nativePush = container.resolve<NativePushModuleService>(NATIVE_PUSH_MODULE)

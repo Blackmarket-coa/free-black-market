@@ -4,7 +4,11 @@ import {
   mintHandoffToken,
   verifyHandoffToken,
 } from "@/lib/native/checkout-handoff"
-import { deepLinkToPath, sanitizeRedirectPath } from "@/lib/native/deep-links"
+import {
+  deepLinkToPath,
+  sanitizeRedirectPath,
+  withLocalePrefix,
+} from "@/lib/native/deep-links"
 
 const SECRET = "test-secret"
 
@@ -89,5 +93,42 @@ describe("deepLinkToPath", () => {
     expect(deepLinkToPath("not a url")).toBeNull()
     expect(deepLinkToPath(null)).toBeNull()
     expect(deepLinkToPath(undefined)).toBeNull()
+  })
+})
+
+describe("withLocalePrefix", () => {
+  it("prefixes a locale-less push path with the locale in view", () => {
+    // The real failure this prevents: push payloads carry no locale, and
+    // when the locale middleware fail-softs (region map unavailable),
+    // "/vendor/orders/x" resolves [locale] to "vendor" and 404s.
+    expect(withLocalePrefix("/vendor/orders/order_1", "/us/cart")).toBe(
+      "/us/vendor/orders/order_1"
+    )
+    expect(withLocalePrefix("/user/orders", "/pl/products/basil")).toBe(
+      "/pl/user/orders"
+    )
+  })
+
+  it("leaves a path that already carries a locale alone", () => {
+    expect(withLocalePrefix("/us/vendor/orders/x", "/us/cart")).toBe(
+      "/us/vendor/orders/x"
+    )
+    // Even a different locale than the one in view — the link meant it.
+    expect(withLocalePrefix("/pl/products/x", "/us/cart")).toBe("/pl/products/x")
+  })
+
+  it("leaves the path alone when no locale can be determined", () => {
+    expect(withLocalePrefix("/vendor/orders/x", "/")).toBe("/vendor/orders/x")
+    expect(withLocalePrefix("/vendor/orders/x", null)).toBe("/vendor/orders/x")
+    expect(withLocalePrefix("/vendor/orders/x", "/vendor/orders/y")).toBe(
+      "/vendor/orders/x"
+    )
+  })
+
+  it("ignores anything that is not an absolute path", () => {
+    expect(withLocalePrefix("https://evil.example", "/us/cart")).toBe(
+      "https://evil.example"
+    )
+    expect(withLocalePrefix("", "/us/cart")).toBe("")
   })
 })

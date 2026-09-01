@@ -23,6 +23,34 @@ const dispatch = (name: string, detail: unknown) => {
 }
 
 /**
+ * Last FCM token this session saw. The registration event fires once, at
+ * launch — long before a vendor signs into the seller surface — so the
+ * token has to be remembered for the seller registration to use later.
+ */
+let lastPushToken: string | null = null
+
+export function getLastPushToken(): string | null {
+  return lastPushToken
+}
+
+/**
+ * Path a tapped notification should open, read from the FCM `data` payload
+ * that the backend subscribers set. Exported for testing; callers should
+ * still sanitize it before navigating.
+ */
+export function pushNotificationPath(payload: unknown): string | null {
+  const data = (
+    payload as {
+      notification?: { data?: Record<string, unknown> }
+      data?: Record<string, unknown>
+    }
+  )?.notification?.data ??
+    (payload as { data?: Record<string, unknown> })?.data
+  const path = data?.path
+  return typeof path === "string" && path.length > 0 ? path : null
+}
+
+/**
  * Returns true when registration was kicked off (token arrives via the
  * `fbm:push-token` event); false on web, denied permission, or a missing
  * plugin. Safe to call multiple times.
@@ -37,6 +65,7 @@ export async function registerNativePushNotifications(): Promise<boolean> {
   try {
     // Listeners first so the registration event can't race the register call.
     await push.addListener("registration", ((payload: { value?: string }) => {
+      lastPushToken = payload?.value ?? null
       dispatch(PUSH_TOKEN_EVENT, { token: payload?.value })
     }) as (payload: never) => void)
     await push.addListener("registrationError", ((payload: unknown) => {
