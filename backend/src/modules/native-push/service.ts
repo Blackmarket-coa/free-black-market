@@ -76,19 +76,70 @@ class NativePushModuleService extends MedusaService({
   /**
    * Detach a seller from a device without unregistering it — the vendor
    * signs out of the seller surface but the shopper session (and buyer
-   * pushes) on the same phone continue. Idempotent.
+   * pushes) on the same phone continue.
+   *
+   * Scoped to the calling seller: possession of a token must not let one
+   * seller silence another seller's device. Returns false when the token
+   * is unknown or belongs to a different seller, which the route reports
+   * indistinguishably so it cannot be used to probe for tokens.
    */
-  async detachSeller(token: string): Promise<boolean> {
+  async detachSeller(token: string, seller_id: string): Promise<boolean> {
     const [existing] = await this.listDevicePushTokens({ token }, { take: 1 })
-    if (!existing) return false
+    if (!existing || existing.seller_id !== seller_id) return false
     await this.updateDevicePushTokens({ id: existing.id, seller_id: null })
     return true
   }
 
-  /** Remove a token (device logout / permission revoked). Idempotent. */
-  async unregisterToken(token: string): Promise<boolean> {
+  /**
+   * Detach every device registered to a seller.
+   *
+   * Sign-out cannot depend on the client knowing its own FCM token: the
+   * registration event fires once at launch and may not have arrived, so a
+   * token-scoped detach silently no-ops and leaves the phone subscribed to
+   * that vendor's order pushes after they sign out. Scoped to the
+   * authenticated seller, so it can only ever clear the caller's own rows.
+   */
+  async detachAllForSeller(seller_id: string): Promise<number> {
+    const PAGE = 200
+    let detached = 0
+    // Paged rather than one bounded read: a partial detach is the very
+    // failure this exists to prevent, so keep going until nothing is left
+    // attached. Each page nulls the rows it read, so the next read returns
+    // the following page; the iteration cap is a guard against a driver
+    // that somehow keeps returning the same rows, not an expected limit.
+    for (let page = 0; page < 25; page++) {
+      const rows = await this.listDevicePushTokens(
+        { seller_id },
+        { select: ["id"], take: PAGE }
+      )
+      if (rows.length === 0) break
+      await this.updateDevicePushTokens(
+        rows.map((row) => ({ id: row.id, seller_id: null }))
+      )
+      detached += rows.length
+      if (rows.length < PAGE) break
+    }
+    return detached
+  }
+
+  /**
+   * Detach a customer from a device (shopper sign-out).
+   *
+   * Deliberately NOT a delete: the same row may carry a seller
+   * attachment, and the store-side endpoint that calls this is
+   * unauthenticated. Soft-deleting the row there would let anyone holding
+   * a device token permanently silence that vendor's order
+   * notifications. The row is only retired once nothing is attached to it.
+   */
+  async detachCustomer(token: string): Promise<boolean> {
     const [existing] = await this.listDevicePushTokens({ token }, { take: 1 })
     if (!existing) return false
+
+    if (existing.seller_id) {
+      await this.updateDevicePushTokens({ id: existing.id, customer_id: null })
+      return true
+    }
+
     await this.softDeleteDevicePushTokens([existing.id])
     return true
   }

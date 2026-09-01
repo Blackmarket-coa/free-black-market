@@ -42,6 +42,11 @@ const LIST_FIELDS = [
   "shipping_address.last_name",
   "shipping_address.city",
   "shipping_address.province",
+  // MercurJS computes fulfillment_status from fulfillment timestamps AND
+  // items.detail.raw_fulfilled_quantity. `items.*` (which the workflow
+  // re-adds) expands the line item's own columns but NOT the detail
+  // relation, so without this the partially-fulfilled cases collapse.
+  "items.detail.*",
 ].join(",")
 
 const DETAIL_FIELDS = [
@@ -70,6 +75,10 @@ const DETAIL_FIELDS = [
   "fulfillments.canceled_at",
   "fulfillments.items.line_item_id",
   "fulfillments.items.quantity",
+  "items.title",
+  "items.thumbnail",
+  "items.quantity",
+  "items.detail.*",
 ].join(",")
 
 export type VendorOrderSummary = {
@@ -112,14 +121,38 @@ export type VendorOrderDetail = VendorOrderSummary & {
 export type VendorActionResult = { ok: true } | { ok: false; error: string }
 
 /**
+ * Reads are discriminated rather than returning a bare array. An empty
+ * array and a failed request are completely different things to a vendor:
+ * one means "you are done", the other means "we could not ask". Collapsing
+ * them renders a reassuring "No orders yet" over a timeout, which is how a
+ * vendor with orders due today concludes there is nothing to ship.
+ */
+export type VendorOrdersResult =
+  | { ok: true; orders: VendorOrderSummary[] }
+  | { ok: false; error: string }
+
+export type VendorOrderResult =
+  | { ok: true; order: VendorOrderDetail }
+  | { ok: false; reason: "not_found" | "unavailable" }
+
+/**
  * The vendor's order inbox. Open work first, oldest first — the order
  * that has been waiting longest is the one most likely to be late.
+ *
+ * On the window size: `fulfillment_status` is computed per row AFTER the
+ * query (it is not a column, so it cannot be filtered or sorted on by the
+ * backend). That means open orders can only be found by fetching a page
+ * and inspecting it here — and a small page ordered by newest-first would
+ * hide exactly the oldest open orders this list is meant to surface. So
+ * we pull a deliberately generous window and sort it locally. A vendor
+ * with more than this many orders may have older open work beyond the
+ * window; the full dashboard remains the exhaustive view.
  */
 export async function listVendorOrders(
-  limit = 30
-): Promise<VendorOrderSummary[]> {
+  limit = 200
+): Promise<VendorOrdersResult> {
   const headers = await getSellerAuthHeaders()
-  if (!headers) return []
+  if (!headers) return { ok: false, error: "Your vendor session expired." }
 
   try {
     const res = await medusaFetch<{ orders?: VendorOrderSummary[] }>(
@@ -136,18 +169,21 @@ export async function listVendorOrders(
         headers,
       }
     )
-    return sortForVendorInbox(res?.orders ?? [])
+    return { ok: true, orders: sortForVendorInbox(res?.orders ?? []) }
   } catch (error) {
     logger.error("[vendor-orders] list failed", error)
-    return []
+    return {
+      ok: false,
+      error: "Couldn't load your orders. Check your connection and try again.",
+    }
   }
 }
 
 export async function retrieveVendorOrder(
   orderId: string
-): Promise<VendorOrderDetail | null> {
+): Promise<VendorOrderResult> {
   const headers = await getSellerAuthHeaders()
-  if (!headers) return null
+  if (!headers) return { ok: false, reason: "unavailable" }
 
   try {
     const res = await medusaFetch<{ order?: VendorOrderDetail }>(
@@ -159,10 +195,14 @@ export async function retrieveVendorOrder(
         headers,
       }
     )
-    return res?.order ?? null
+    return res?.order
+      ? { ok: true, order: res.order }
+      : { ok: false, reason: "not_found" }
   } catch (error) {
     logger.error("[vendor-orders] retrieve failed", error)
-    return null
+    // A failed request is NOT "this order does not exist" — telling a vendor
+    // to go pack an order they are looking at is worse than saying nothing.
+    return { ok: false, reason: "unavailable" }
   }
 }
 
@@ -187,13 +227,23 @@ export async function markVendorOrderShipped(input: {
     return { ok: false, error: "Enter a tracking number." }
   }
 
-  const order = await retrieveVendorOrder(input.orderId)
-  const fulfillment = actionableFulfillment(order?.fulfillments)
+  const lookup = await retrieveVendorOrder(input.orderId)
+  if (!lookup.ok) {
+    return {
+      ok: false,
+      error:
+        lookup.reason === "unavailable"
+          ? "Couldn't reach the store. Your tracking number is still here — try again."
+          : "That order is no longer available on this account.",
+    }
+  }
+
+  const fulfillment = actionableFulfillment(lookup.order.fulfillments, "ship")
   if (!fulfillment) {
     return {
       ok: false,
       error:
-        "This order has nothing packed to ship yet. Pack it in the vendor dashboard first.",
+        "Nothing on this order is packed and waiting to ship. Pack it in the vendor dashboard first.",
     }
   }
 
@@ -224,7 +274,7 @@ export async function markVendorOrderShipped(input: {
         headers,
       }
     )
-    revalidatePath("/[locale]/(vendor)/vendor/orders", "page")
+    revalidatePath("/[locale]/vendor/orders", "page")
     return { ok: true }
   } catch (error) {
     logger.error("[vendor-orders] mark shipped failed", error)
@@ -239,10 +289,23 @@ export async function markVendorOrderDelivered(input: {
   const headers = await getSellerAuthHeaders()
   if (!headers) return { ok: false, error: "Your vendor session expired." }
 
-  const order = await retrieveVendorOrder(input.orderId)
-  const fulfillment = actionableFulfillment(order?.fulfillments)
+  const lookup = await retrieveVendorOrder(input.orderId)
+  if (!lookup.ok) {
+    return {
+      ok: false,
+      error:
+        lookup.reason === "unavailable"
+          ? "Couldn't reach the store. Try again in a moment."
+          : "That order is no longer available on this account.",
+    }
+  }
+
+  const fulfillment = actionableFulfillment(lookup.order.fulfillments, "deliver")
   if (!fulfillment) {
-    return { ok: false, error: "This order has no open fulfillment." }
+    return {
+      ok: false,
+      error: "Nothing on this order has shipped yet, so there is nothing to confirm.",
+    }
   }
 
   try {
@@ -255,7 +318,7 @@ export async function markVendorOrderDelivered(input: {
         headers,
       }
     )
-    revalidatePath("/[locale]/(vendor)/vendor/orders", "page")
+    revalidatePath("/[locale]/vendor/orders", "page")
     return { ok: true }
   } catch (error) {
     logger.error("[vendor-orders] mark delivered failed", error)

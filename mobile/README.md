@@ -113,6 +113,10 @@ That is a boundary, not a backlog: those flows need desktop-grade input
 or carry refund/payout side effects that do not belong behind a one-tap
 button on a phone.
 
+**Sign-out.** The vendor surface has its own sign-out (it detaches this
+device from seller pushes as it clears the cookie), independent of the
+shopper session on the same phone.
+
 **Auth.** Sellers are a different Medusa actor type from shoppers, and
 the storefront's shopper login deliberately bounces seller accounts
 (they have no shopper profile). So the vendor surface adds a *parallel,
@@ -122,8 +126,10 @@ device. Every seller call is made from a Next.js server action, never the
 browser, for two reasons: the MercurJS plugin fronts `/vendor/*` with a
 CORS allowlist that excludes the storefront origin, and a seller bearer
 authorizes payout-capable endpoints, so it must never sit in page JS on a
-remotely-loaded WebView page. Tokens are refreshed on read (Medusa issues
-them with a 1-day life and nothing else renews them).
+remotely-loaded WebView page. Tokens are refreshed from a client-invoked
+server action (Medusa issues them with a 1-day life and nothing else
+renews them; cookies are sealed during a Server Component render, so the
+refresh cannot happen where the session is read).
 
 **Strategic note.** `docs/AGGRESSIVE_OPERATIONS_GUIDE.md` §2.8 makes
 Blackout the canonical coalition mobile app and the full vendor panel the

@@ -19,13 +19,20 @@ describe("vendorOrderStage", () => {
       ["shipped", "in_transit"],
       ["partially_delivered", "in_transit"],
       ["delivered", "closed"],
-      ["canceled", "closed"],
+      // A voided fulfillment leaves the order unfulfilled and still owed.
+      ["canceled", "awaiting_fulfillment"],
     ]
     for (const [status, stage] of cases) {
       expect(vendorOrderStage({ id: "o", fulfillment_status: status })).toBe(
         stage
       )
     }
+  })
+
+  it("keeps an order whose fulfillments were all voided as outstanding work", () => {
+    const order = { id: "o", status: "pending", fulfillment_status: "canceled" }
+    expect(vendorOrderStage(order)).toBe("awaiting_fulfillment")
+    expect(needsVendorAction(order)).toBe(true)
   })
 
   it("lets a cancelled or completed ORDER close it regardless of fulfillment", () => {
@@ -104,28 +111,45 @@ describe("sortForVendorInbox", () => {
 })
 
 describe("actionableFulfillment", () => {
-  it("returns the newest open fulfillment", () => {
+  it("ships the newest packed-but-unshipped fulfillment", () => {
     expect(
-      actionableFulfillment([
-        { id: "f1", delivered_at: "2026-01-01" },
-        { id: "f2" },
-        { id: "f3" },
-      ])?.id
+      actionableFulfillment(
+        [{ id: "f1", delivered_at: "2026-01-01" }, { id: "f2" }, { id: "f3" }],
+        "ship"
+      )?.id
     ).toBe("f3")
   })
 
-  it("skips cancelled and delivered ones", () => {
+  it("never re-ships an already-shipped fulfillment", () => {
+    // The bug this guards: shipped_at set but delivered_at null still reads
+    // as "open", so a second shipment was posted and the backend rejected it.
     expect(
-      actionableFulfillment([
-        { id: "f1", canceled_at: "2026-01-01" },
-        { id: "f2", delivered_at: "2026-01-02" },
-      ])
+      actionableFulfillment([{ id: "f1", shipped_at: "2026-01-02" }], "ship")
     ).toBeNull()
   })
 
+  it("delivers only a fulfillment that has actually shipped", () => {
+    expect(
+      actionableFulfillment(
+        [{ id: "f1" }, { id: "f2", shipped_at: "2026-01-02" }],
+        "deliver"
+      )?.id
+    ).toBe("f2")
+    expect(actionableFulfillment([{ id: "f1" }], "deliver")).toBeNull()
+  })
+
+  it("skips cancelled and delivered ones for both intents", () => {
+    const fulfillments = [
+      { id: "f1", canceled_at: "2026-01-01" },
+      { id: "f2", delivered_at: "2026-01-02" },
+    ]
+    expect(actionableFulfillment(fulfillments, "ship")).toBeNull()
+    expect(actionableFulfillment(fulfillments, "deliver")).toBeNull()
+  })
+
   it("handles absent input", () => {
-    expect(actionableFulfillment(null)).toBeNull()
-    expect(actionableFulfillment([])).toBeNull()
+    expect(actionableFulfillment(null, "ship")).toBeNull()
+    expect(actionableFulfillment([], "deliver")).toBeNull()
   })
 })
 

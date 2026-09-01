@@ -166,7 +166,12 @@ describe("GET /vendor/promotion", () => {
   })
 
   it("reports a live promotion's expiry", async () => {
-    const expires = new Date("2026-09-01T00:00:00Z")
+    // Relative to now, deliberately: the assertion below is that a
+    // promotion whose expiry is still in the FUTURE reads as active, and
+    // the route compares expires_at against the live clock. A hardcoded
+    // instant silently turned into a past date on 2026-09-01 and flipped
+    // the result, failing every build repo-wide.
+    const expires = new Date(Date.now() + 24 * 60 * 60 * 1000)
     const { req } = makeReq({ hasPromotion: true, expiresAt: expires })
     const res = createRes()
     await VENDOR_GET(req as never, res as never)
