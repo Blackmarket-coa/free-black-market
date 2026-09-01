@@ -157,6 +157,11 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
       id: achTransaction.id,
       status: "PROCESSING" as const,
       stripe_transfer_id: payout.payoutId,
+      // The payout.paid / payout.failed webhook joins on `stripe_payout_id`.
+      // Writing only `stripe_transfer_id` meant it could never match a row, so
+      // a failed payout never triggered its compensating refund and the
+      // customer stayed debited against money that had bounced.
+      stripe_payout_id: payout.payoutId,
       expected_settlement_date: payout.arrivalDate,
     })
 

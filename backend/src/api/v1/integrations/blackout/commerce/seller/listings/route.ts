@@ -59,7 +59,10 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
 
   const service = req.scope.resolve<MarketplaceListingService>(MARKETPLACE_LISTING_MODULE)
 
-  const existing = await service.listCreatorListings({ seller_id: sellerId, slug: d.slug })
+  // Archived listings release their slug — see Migration20260901ArchivedSlugReuse.
+  const existing = (
+    await service.listCreatorListings({ seller_id: sellerId, slug: d.slug })
+  ).filter((l) => l.status !== CreatorListingStatus.ARCHIVED)
   if (existing.length > 0) {
     return res.status(409).json({ code: "duplicate_slug", message: "A listing with that slug already exists" })
   }
