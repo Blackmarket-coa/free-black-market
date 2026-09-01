@@ -24,6 +24,33 @@ otherwise.
 | The split machinery just needs a third payee | `tips` migration 003 pins `CHECK (fee_cents + net_cents = gross_cents)`. A third payee is **impossible without a migration**, and `storeOrderBreakdown` never persists the plugin/referral totals it already computes |
 | Categories like `emoji-sticker` mean the catalog is ready | No route creates a listing that is **both signed and priced** — the two create paths are disjoint. One takes manifest/assets and no price; the other takes price and hardcodes `manifest: {}`, `version: "0.0.0"` |
 
+## Fixed on this branch
+
+Seven of the defects below have been fixed, with tests. Each was live and none
+was specific to the gift economy.
+
+| Defect | Fix |
+| --- | --- |
+| Any holder of the shared API key could publish, un-suspend or hard-delete **any** seller's listing | Both commerce routes require an owner assertion and 403 on mismatch; publish additionally 409s on a SUSPENDED listing. Blackout forwards the owner it already verified; the stub enforces it too |
+| Vendor money routes read the middleware-rewritten `mem_*` id, so payouts threw and earnings minted a second empty `$0` account | One `resolveVendorSellerId` helper across 17 call sites; the rate-limit bucket keeps the raw actor id deliberately |
+| `payout.paid` / `payout.failed` could never match a row, so a failed payout never triggered its compensating refund | Withdraw route persists `stripe_payout_id`; webhook matches PENDING or PROCESSING and skips terminal rows so a retry cannot double-refund |
+| A creator could publish a slug once and never ship a second version | Archiving now releases the slug (`Migration20260901ArchivedSlugReuse`); both create routes ignore archived rows |
+| Carve-outs were disbursed **before** the settlement that funds them, so on a cold platform-fee account every share deferred and nothing retries | Disbursement moved after `processOrderPayment`; the breakdown is still stored first, so what is owed survives either way |
+| `total_to_plugin_developers` / `total_to_referrers` had no writer, so nothing recorded what a payee was owed | Both persisted in `storeOrderBreakdown` |
+| A test pinned a "live" promotion expiry to `2026-09-01`, coming due as a CI failure on that date | Made relative to now |
+
+Still open below, and deliberately not rushed: the fractional-vs-rounded fee,
+refund reversal for fee-funded shares, self-dealing detection, and the whole
+payout link. Notes on each:
+
+- **Self-dealing (payee == buyer)** is not the one-line id comparison it looks
+  like. Payees are `sel_*` and buyers are `cus_*`, so the ids cannot collide;
+  the real control is linking customer and seller identity and comparing
+  *that*. A shallow id check would look like protection and provide none.
+- **The payout link** is a project, not a fix. Nothing in it is safe to do
+  piecemeal, and `ACH_PAYOUTS_ENABLED` is an open legal decision that has
+  already been declined once.
+
 ## Defects that exist today, independent of this feature
 
 These are live. They are not gift problems; the gift feature would simply be the first
