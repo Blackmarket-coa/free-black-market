@@ -1,5 +1,6 @@
 import LocalizedClientLink from "@/components/molecules/LocalizedLink/LocalizedLink"
 import Image from "next/image"
+import { VendorSessionKeeper } from "@/components/providers/VendorSessionKeeper"
 
 /**
  * Thin chrome for the in-app vendor surface.
@@ -18,6 +19,7 @@ export default async function VendorLayout({
 }>) {
   return (
     <>
+      <VendorSessionKeeper />
       <header className="border-b">
         <div className="flex items-center justify-between w-full py-3 px-4 lg:px-8">
           <LocalizedClientLink href="/vendor/orders" className="font-bold">

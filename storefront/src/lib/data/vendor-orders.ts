@@ -42,6 +42,11 @@ const LIST_FIELDS = [
   "shipping_address.last_name",
   "shipping_address.city",
   "shipping_address.province",
+  // MercurJS computes fulfillment_status from fulfillment timestamps AND
+  // items.detail.raw_fulfilled_quantity. `items.*` (which the workflow
+  // re-adds) expands the line item's own columns but NOT the detail
+  // relation, so without this the partially-fulfilled cases collapse.
+  "items.detail.*",
 ].join(",")
 
 const DETAIL_FIELDS = [
@@ -70,6 +75,10 @@ const DETAIL_FIELDS = [
   "fulfillments.canceled_at",
   "fulfillments.items.line_item_id",
   "fulfillments.items.quantity",
+  "items.title",
+  "items.thumbnail",
+  "items.quantity",
+  "items.detail.*",
 ].join(",")
 
 export type VendorOrderSummary = {
@@ -114,9 +123,18 @@ export type VendorActionResult = { ok: true } | { ok: false; error: string }
 /**
  * The vendor's order inbox. Open work first, oldest first — the order
  * that has been waiting longest is the one most likely to be late.
+ *
+ * On the window size: `fulfillment_status` is computed per row AFTER the
+ * query (it is not a column, so it cannot be filtered or sorted on by the
+ * backend). That means open orders can only be found by fetching a page
+ * and inspecting it here — and a small page ordered by newest-first would
+ * hide exactly the oldest open orders this list is meant to surface. So
+ * we pull a deliberately generous window and sort it locally. A vendor
+ * with more than this many orders may have older open work beyond the
+ * window; the full dashboard remains the exhaustive view.
  */
 export async function listVendorOrders(
-  limit = 30
+  limit = 200
 ): Promise<VendorOrderSummary[]> {
   const headers = await getSellerAuthHeaders()
   if (!headers) return []
@@ -188,12 +206,12 @@ export async function markVendorOrderShipped(input: {
   }
 
   const order = await retrieveVendorOrder(input.orderId)
-  const fulfillment = actionableFulfillment(order?.fulfillments)
+  const fulfillment = actionableFulfillment(order?.fulfillments, "ship")
   if (!fulfillment) {
     return {
       ok: false,
       error:
-        "This order has nothing packed to ship yet. Pack it in the vendor dashboard first.",
+        "Nothing on this order is packed and waiting to ship. Pack it in the vendor dashboard first.",
     }
   }
 
@@ -224,7 +242,7 @@ export async function markVendorOrderShipped(input: {
         headers,
       }
     )
-    revalidatePath("/[locale]/(vendor)/vendor/orders", "page")
+    revalidatePath("/[locale]/vendor/orders", "page")
     return { ok: true }
   } catch (error) {
     logger.error("[vendor-orders] mark shipped failed", error)
@@ -240,9 +258,12 @@ export async function markVendorOrderDelivered(input: {
   if (!headers) return { ok: false, error: "Your vendor session expired." }
 
   const order = await retrieveVendorOrder(input.orderId)
-  const fulfillment = actionableFulfillment(order?.fulfillments)
+  const fulfillment = actionableFulfillment(order?.fulfillments, "deliver")
   if (!fulfillment) {
-    return { ok: false, error: "This order has no open fulfillment." }
+    return {
+      ok: false,
+      error: "Nothing on this order has shipped yet, so there is nothing to confirm.",
+    }
   }
 
   try {
@@ -255,7 +276,7 @@ export async function markVendorOrderDelivered(input: {
         headers,
       }
     )
-    revalidatePath("/[locale]/(vendor)/vendor/orders", "page")
+    revalidatePath("/[locale]/vendor/orders", "page")
     return { ok: true }
   } catch (error) {
     logger.error("[vendor-orders] mark delivered failed", error)

@@ -2,6 +2,7 @@ import type { Metadata } from "next"
 import { VendorSignIn } from "@/components/sections/VendorSignIn/VendorSignIn"
 import { VendorOrderList } from "@/components/sections/VendorOrderList/VendorOrderList"
 import { VendorPushRegistrar } from "@/components/providers/VendorPushRegistrar"
+import { VendorSessionControls } from "@/components/sections/VendorSessionControls/VendorSessionControls"
 import { retrieveSellerSession } from "@/lib/data/vendor-auth"
 import { listVendorOrders } from "@/lib/data/vendor-orders"
 
@@ -27,6 +28,7 @@ export default async function VendorOrdersPage() {
   return (
     <div className="flex flex-col gap-4">
       <VendorPushRegistrar />
+      <VendorSessionControls email={session.email} />
       <h1 className="heading-md">Orders</h1>
       <VendorOrderList orders={orders} />
     </div>

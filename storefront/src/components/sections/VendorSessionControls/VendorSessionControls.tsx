@@ -1,0 +1,45 @@
+"use client"
+
+import { useTransition } from "react"
+import { useRouter } from "next/navigation"
+import { sellerLogout } from "@/lib/data/vendor-auth"
+import { getLastPushToken } from "@/lib/native/push-notifications"
+
+/**
+ * Vendor sign-out.
+ *
+ * Passes this device's push token so the seller is detached from it as
+ * part of signing out — otherwise a signed-out phone would keep buzzing
+ * with another account's order notifications. The shopper session on the
+ * same device is untouched.
+ */
+export const VendorSessionControls = ({ email }: { email?: string | null }) => {
+  const router = useRouter()
+  const [pending, startTransition] = useTransition()
+
+  const signOut = () => {
+    startTransition(async () => {
+      await sellerLogout(getLastPushToken() ?? undefined)
+      router.refresh()
+    })
+  }
+
+  return (
+    <div className="flex items-center justify-between gap-3">
+      {email ? (
+        <span className="label-md text-secondary truncate">{email}</span>
+      ) : (
+        <span />
+      )}
+      <button
+        type="button"
+        onClick={signOut}
+        disabled={pending}
+        className="label-md underline text-secondary whitespace-nowrap disabled:opacity-50"
+        data-testid="vendor-sign-out"
+      >
+        {pending ? "Signing out…" : "Sign out"}
+      </button>
+    </div>
+  )
+}

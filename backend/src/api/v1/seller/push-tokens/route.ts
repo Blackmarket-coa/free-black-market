@@ -91,7 +91,7 @@ export async function DELETE(req: MedusaRequest, res: MedusaResponse) {
   )
 
   try {
-    const detached = await nativePush.detachSeller(parsed.data.token)
+    const detached = await nativePush.detachSeller(parsed.data.token, sellerId)
     return res.status(200).json({ ok: true, detached })
   } catch (error) {
     log.error("failed to detach seller push token", error)

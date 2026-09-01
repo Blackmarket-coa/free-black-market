@@ -117,12 +117,26 @@ export async function sellerLogout(pushToken?: string): Promise<void> {
 }
 
 /**
- * Keep an active vendor signed in. Medusa seller tokens last a day and
- * nothing renews them, so without this a vendor who taps an order push on
- * day two lands on a login screen.
+ * Keep an active vendor signed in.
+ *
+ * Medusa seller tokens last a day and nothing renews them, so without
+ * this a vendor who taps an order push on day two lands on a login form.
+ *
+ * IMPORTANT: this writes a cookie, so it must only ever run in a context
+ * Next.js allows that in — a server action invoked from the client, or a
+ * route handler. Cookies are sealed during a Server Component render;
+ * calling this from a page render would throw. `retrieveSellerSession`
+ * below is therefore strictly read-only, and `VendorSessionKeeper`
+ * invokes this from the client.
  */
-async function refreshSellerTokenIfNeeded(token: string): Promise<string> {
-  if (!shouldRefreshToken(token, Date.now())) return token
+export async function refreshSellerSession(): Promise<{ refreshed: boolean }> {
+  const token = await getSellerToken()
+  if (!token) return { refreshed: false }
+  if (isTokenExpired(token, Date.now())) {
+    await removeSellerAuthToken()
+    return { refreshed: false }
+  }
+  if (!shouldRefreshToken(token, Date.now())) return { refreshed: false }
 
   try {
     const result = await medusaFetch<string | { token?: string }>(
@@ -136,34 +150,34 @@ async function refreshSellerTokenIfNeeded(token: string): Promise<string> {
     const refreshed = typeof result === "string" ? result : result?.token
     if (refreshed) {
       await setSellerAuthToken(refreshed)
-      return refreshed
+      return { refreshed: true }
     }
   } catch (error) {
-    // A failed refresh is not a sign-out: the current token is still
-    // valid until its own expiry.
+    // A failed refresh is not a sign-out: the current token stays valid
+    // until its own expiry.
     logger.warn("[vendor-auth] seller token refresh failed", error)
   }
-  return token
+  return { refreshed: false }
 }
 
 /**
- * Current seller session, or null when signed out / expired. Refreshes
- * the token opportunistically on read.
+ * Current seller session, or null when signed out / expired.
+ *
+ * READ-ONLY by construction — it is called from Server Component renders,
+ * where `cookies().set()` throws. An expired cookie is simply reported as
+ * "no session" and left for `refreshSellerSession` (or the next sign-in)
+ * to clear; it cannot authorize anything either way, and its own maxAge
+ * matches the token lifetime.
  */
 export async function retrieveSellerSession(): Promise<SellerSession | null> {
   const token = await getSellerToken()
   if (!token) return null
+  if (isTokenExpired(token, Date.now())) return null
 
-  if (isTokenExpired(token, Date.now())) {
-    await removeSellerAuthToken()
-    return null
-  }
-
-  const live = await refreshSellerTokenIfNeeded(token)
-  const claims = readSellerClaims(live)
+  const claims = readSellerClaims(token)
   if (!claims?.seller_id) return null
 
-  const payload = decodeJwtPayload(live)
+  const payload = decodeJwtPayload(token)
   const email = payload && typeof payload.email === "string" ? payload.email : null
 
   return { seller_id: claims.seller_id, email }

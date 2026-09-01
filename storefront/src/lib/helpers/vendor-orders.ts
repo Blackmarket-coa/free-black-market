@@ -126,14 +126,33 @@ export type VendorFulfillmentLike = {
   items?: Array<{ line_item_id?: string | null; quantity?: number | null }> | null
 }
 
+export type FulfillmentIntent = "ship" | "deliver"
+
+/**
+ * The fulfillment a phone action should target.
+ *
+ * Intent matters: a fulfillment that has already shipped is still "open"
+ * in the sense that it is neither cancelled nor delivered, but posting a
+ * second shipment against it is rejected by the backend. So shipping
+ * looks for a packed-but-not-yet-shipped fulfillment, and delivering
+ * looks for one that HAS shipped. Returns null when nothing matches,
+ * which the caller turns into an explanatory message rather than a
+ * failed request.
+ */
 export function actionableFulfillment(
-  fulfillments: VendorFulfillmentLike[] | null | undefined
+  fulfillments: VendorFulfillmentLike[] | null | undefined,
+  intent: FulfillmentIntent
 ): VendorFulfillmentLike | null {
-  const open = (fulfillments ?? []).filter(
+  const live = (fulfillments ?? []).filter(
     (f) => !f.canceled_at && !f.delivered_at
   )
-  if (open.length === 0) return null
-  return open[open.length - 1]
+  const matching =
+    intent === "ship"
+      ? live.filter((f) => !f.shipped_at)
+      : live.filter((f) => Boolean(f.shipped_at))
+
+  if (matching.length === 0) return null
+  return matching[matching.length - 1]
 }
 
 /**

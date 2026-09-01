@@ -76,19 +76,38 @@ class NativePushModuleService extends MedusaService({
   /**
    * Detach a seller from a device without unregistering it — the vendor
    * signs out of the seller surface but the shopper session (and buyer
-   * pushes) on the same phone continue. Idempotent.
+   * pushes) on the same phone continue.
+   *
+   * Scoped to the calling seller: possession of a token must not let one
+   * seller silence another seller's device. Returns false when the token
+   * is unknown or belongs to a different seller, which the route reports
+   * indistinguishably so it cannot be used to probe for tokens.
    */
-  async detachSeller(token: string): Promise<boolean> {
+  async detachSeller(token: string, seller_id: string): Promise<boolean> {
     const [existing] = await this.listDevicePushTokens({ token }, { take: 1 })
-    if (!existing) return false
+    if (!existing || existing.seller_id !== seller_id) return false
     await this.updateDevicePushTokens({ id: existing.id, seller_id: null })
     return true
   }
 
-  /** Remove a token (device logout / permission revoked). Idempotent. */
-  async unregisterToken(token: string): Promise<boolean> {
+  /**
+   * Detach a customer from a device (shopper sign-out).
+   *
+   * Deliberately NOT a delete: the same row may carry a seller
+   * attachment, and the store-side endpoint that calls this is
+   * unauthenticated. Soft-deleting the row there would let anyone holding
+   * a device token permanently silence that vendor's order
+   * notifications. The row is only retired once nothing is attached to it.
+   */
+  async detachCustomer(token: string): Promise<boolean> {
     const [existing] = await this.listDevicePushTokens({ token }, { take: 1 })
     if (!existing) return false
+
+    if (existing.seller_id) {
+      await this.updateDevicePushTokens({ id: existing.id, customer_id: null })
+      return true
+    }
+
     await this.softDeleteDevicePushTokens([existing.id])
     return true
   }
