@@ -120,6 +120,27 @@ describe("store hawala withdraw route", () => {
     expect(res.body.payout_id).toBe("po_1")
   })
 
+  it("persists the payout id in the column the payout webhook joins on", async () => {
+    enablePayouts()
+    const service = makeService()
+    const createAchPayout = jest
+      .fn()
+      .mockResolvedValue({ payoutId: "po_1", status: "pending", arrivalDate: new Date(0) })
+    ;(createStripeAchService as jest.Mock).mockReturnValue({ createAchPayout })
+
+    const res = createRes()
+    await POST(makeReq(service) as any, res as any)
+
+    // `payout.paid` / `payout.failed` filter on `stripe_payout_id`. Writing only
+    // `stripe_transfer_id` meant the webhook could never match a row, so a failed
+    // payout never triggered its compensating refund and the customer stayed
+    // debited against money that had bounced.
+    expect(res.statusCode).toBe(201)
+    expect(service.updateAchTransactions).toHaveBeenCalledWith(
+      expect.objectContaining({ stripe_payout_id: "po_1", status: "PROCESSING" })
+    )
+  })
+
   it("returns 400 and debits nothing when the bank account has no payout destination", async () => {
     enablePayouts()
     const service = makeService({

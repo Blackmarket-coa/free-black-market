@@ -3,6 +3,7 @@ import { z } from "zod"
 import type { SellerAuthRequest } from "../../../middlewares/seller-context-v1"
 import { MARKETPLACE_LISTING_MODULE } from "../../../../modules/marketplace-listing"
 import type MarketplaceListingService from "../../../../modules/marketplace-listing/service"
+import { CreatorListingStatus } from "../../../../modules/marketplace-listing/models/creator-listing"
 import {
   isExtensionListing,
   validateExtensionManifest,
@@ -66,10 +67,15 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     MARKETPLACE_LISTING_MODULE
   )
 
-  const existing = await service.listCreatorListings({
-    seller_id: sellerId,
-    slug: parsed.data.slug,
-  })
+  // An ARCHIVED listing releases its slug (see
+  // Migration20260901ArchivedSlugReuse) — otherwise a creator who published
+  // once could never ship a second version under the same name.
+  const existing = (
+    await service.listCreatorListings({
+      seller_id: sellerId,
+      slug: parsed.data.slug,
+    })
+  ).filter((l) => l.status !== CreatorListingStatus.ARCHIVED)
   if (existing.length > 0) {
     return res.status(409).json({
       message: "A listing with that slug already exists for this seller",

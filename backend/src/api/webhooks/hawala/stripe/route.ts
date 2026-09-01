@@ -97,12 +97,14 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
           // Update ACH transaction
           const transactions = await hawalaService.listAchTransactions({
             stripe_payout_id: payout.id,
-            status: "PENDING",
           })
+          const open = transactions.filter(
+            (t) => t.status === "PENDING" || t.status === "PROCESSING"
+          )
 
-          if (transactions.length > 0) {
+          if (open.length > 0) {
             const updateData = {
-              id: transactions[0].id,
+              id: open[0].id,
               status: "SUCCEEDED" as const,
               actual_settlement_date: new Date(),
             }
@@ -117,11 +119,13 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
 
         const transactions = await hawalaService.listAchTransactions({
           stripe_payout_id: payout.id,
-          status: "PENDING",
         })
+        const open = transactions.filter(
+          (t) => t.status === "PENDING" || t.status === "PROCESSING"
+        )
 
-        if (transactions.length > 0) {
-          const txn = transactions[0]
+        if (open.length > 0) {
+          const txn = open[0]
 
           // Refund the ledger debit
           const reserveAccount = await hawalaService.getOrCreateSystemAccount("RESERVE")
