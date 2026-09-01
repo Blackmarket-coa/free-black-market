@@ -2,6 +2,7 @@ import { completeCartWorkflow } from "@medusajs/medusa/core-flows"
 
 import { validateSlidingScaleTier } from "./validate-sliding-scale-tier"
 import { validateRentalOnCompleteCart } from "../rental/hooks/validate-rental"
+import { validateCcrReservation } from "./validate-ccr-reservation"
 
 /**
  * Single `completeCartWorkflow.hooks.validate` handler.
@@ -16,4 +17,5 @@ import { validateRentalOnCompleteCart } from "../rental/hooks/validate-rental"
 completeCartWorkflow.hooks.validate(async (args, context) => {
   await validateSlidingScaleTier(args as any, context as any)
   await validateRentalOnCompleteCart(args as any, context as any)
+  await validateCcrReservation(args as any, context as any)
 })

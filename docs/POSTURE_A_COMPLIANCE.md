@@ -59,16 +59,32 @@ preferences.
    purchase. There is no Credits "wallet" abstraction that holds value
    independent of commerce flow.
 
-These three rules are enforced architecturally:
+One of these three rules is enforced architecturally today. The other two
+enforcements described here were **never built**, and this section claimed them
+for long enough that both `docs/CCR_HRS_IGNITION.md` §3 and
+`docs/GIFT_ECONOMY_REUSE_MAP.md` had to rediscover it independently. What is
+actually true:
 
-- `HawalaLedgerModuleService` private method `assertPurchaseContext(entry, ctx)`
-  is called from every public CCR-touching method. Without a valid
-  purchase context (cart_id, order_id, payout_id, or refund_id linked to a
-  goods/services transaction), the call throws.
-- `backend/src/api/hawala-validation.ts` middleware rejects API calls that
-  do not carry a purchase-context header for CCR endpoints.
-- Workflow hooks reserve credits at cart-create and release at cart-complete
-  or cart-abandon; orphan reservations are reaped nightly.
+- **Built.** `assertPurchaseContext` in `posture-a-guard.ts` is reached from
+  `createTransfer` via `assertRailInvariants`, so it covers every CCR movement
+  the service can make — the service layer is the enforcement point, deliberately,
+  because workflow hooks can be bypassed (`posture-a-guard.ts:19-21`).
+- **Not built — no purchase-context middleware.** `backend/src/api/hawala-validation.ts`
+  is a schema library, not middleware; there is no `x-purchase-context` header
+  anywhere in the repo, and its `createTransferSchema` is dead code the admin
+  route never imports.
+- **Not built — no cart reservation, release, or reaper.** `workflows/hooks/`
+  contains three hooks and none touches credits; nothing in the repo writes a
+  ledger entry with `reference_type: "CART"`, even though the guard blesses
+  `CART` as a purchase context precisely so that a reservation could clear it.
+
+The practical consequence, and the reason this correction matters beyond
+tidiness: **Coalition Credits can be minted and burned but not spent.** The only
+CCR mint and burn sites are the two creator-credits routes. Until a spend path
+exists, crediting anyone in CCR creates exactly the balance-holding-value-
+independent-of-commerce-flow that rule 3 above forbids. `docs/CCR_HRS_IGNITION.md`
+§5 orders the work; a spend path is downstream of two policy answers only the
+operator can give (who holds CCR wallets, and what governs issuance volume).
 
 ### Vendor payouts
 
