@@ -1,14 +1,18 @@
 "use client"
 
 import { useEffect } from "react"
-import { useRouter } from "next/navigation"
+import { usePathname, useRouter } from "next/navigation"
 import {
   getCapacitorBridge,
   getNativePlatform,
   isNativeApp,
   type CapacitorAppListenerHandle,
 } from "@/lib/native/native-app-context"
-import { deepLinkToPath, sanitizeRedirectPath } from "@/lib/native/deep-links"
+import {
+  deepLinkToPath,
+  sanitizeRedirectPath,
+  withLocalePrefix,
+} from "@/lib/native/deep-links"
 import {
   PUSH_ACTION_EVENT,
   PUSH_TOKEN_EVENT,
@@ -32,6 +36,7 @@ import { registerNativePushToken } from "@/lib/data/native-push"
  */
 export const NativeAppBridge = () => {
   const router = useRouter()
+  const pathname = usePathname()
 
   useEffect(() => {
     if (!isNativeApp()) return
@@ -46,7 +51,7 @@ export const NativeAppBridge = () => {
         url?: string
       }) => {
         const path = deepLinkToPath(payload?.url)
-        if (path) router.push(path)
+        if (path) router.push(withLocalePrefix(path, pathname))
       }) as (payload: never) => void)
       if (cancelled) void handle.remove()
       else listenerHandle = handle
@@ -68,7 +73,7 @@ export const NativeAppBridge = () => {
       const path = pushNotificationPath((event as CustomEvent).detail)
       if (!path) return
       const safe = sanitizeRedirectPath(path, "")
-      if (safe) router.push(safe)
+      if (safe) router.push(withLocalePrefix(safe, pathname))
     }
 
     if (process.env.NEXT_PUBLIC_NATIVE_PUSH === "true") {
@@ -83,7 +88,7 @@ export const NativeAppBridge = () => {
       window.removeEventListener(PUSH_ACTION_EVENT, onPushAction)
       if (listenerHandle) void listenerHandle.remove()
     }
-  }, [router])
+  }, [router, pathname])
 
   return null
 }

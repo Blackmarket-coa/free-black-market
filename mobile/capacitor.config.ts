@@ -25,9 +25,16 @@ const config: CapacitorConfig = {
     url: serverUrl,
     androidScheme: 'https',
     iosScheme: 'https',
-    // Keep in-webview navigation on FBM properties; anything else (vendor
-    // sites, Stripe redirect hosts, …) opens in the system browser.
-    allowNavigation: ['freeblackmarket.com', '*.freeblackmarket.com'],
+    // Keep in-webview navigation to the STOREFRONT only. Everything else —
+    // vendor sites, Stripe redirect hosts, and notably the vendor panel at
+    // vendor.freeblackmarket.com — opens in the system browser.
+    //
+    // A `*.freeblackmarket.com` wildcard would swallow the vendor panel,
+    // loading a desktop-only admin SPA inside a phone WebView with no
+    // browser chrome to escape it. Vendors get the in-app surface at
+    // /vendor/orders instead, which links out to the full dashboard
+    // deliberately (and that link then opens externally, as it should).
+    allowNavigation: ['freeblackmarket.com', 'www.freeblackmarket.com'],
   },
   // Lets the storefront (and its middleware/edge code) recognise shell
   // traffic server-side, where window.Capacitor doesn't exist yet — see
