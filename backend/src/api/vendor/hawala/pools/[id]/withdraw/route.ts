@@ -6,6 +6,7 @@ import { HAWALA_LEDGER_MODULE } from "../../../../../../modules/hawala-ledger"
 import { resolveRequestIdempotencyKey } from "../../../../../../shared/request-idempotency"
 import HawalaLedgerModuleService from "../../../../../../modules/hawala-ledger/service"
 import { withdrawPoolSchema, validateInput } from "../../../../../hawala-validation"
+import { resolveVendorSellerId } from "../../../seller-context"
 
 /**
  * POST /vendor/hawala/pools/:id/withdraw
@@ -15,7 +16,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
   const hawalaService = req.scope.resolve<HawalaLedgerModuleService>(HAWALA_LEDGER_MODULE)
   const { id } = req.params
 
-  const sellerId = (req as VendorRequest).auth_context?.actor_id
+  const sellerId = await resolveVendorSellerId(req)
   if (!sellerId) {
     return res.status(401).json({ error: "Authentication required" })
   }

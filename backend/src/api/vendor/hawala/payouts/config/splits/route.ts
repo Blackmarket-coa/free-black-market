@@ -4,6 +4,7 @@ const log = createLogger("api/vendor/hawala/payouts/config/splits")
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { HAWALA_LEDGER_MODULE } from "../../../../../../modules/hawala-ledger"
 import HawalaLedgerModuleService from "../../../../../../modules/hawala-ledger/service"
+import { resolveVendorSellerId } from "../../../seller-context"
 
 /**
  * POST /vendor/hawala/payouts/config/splits
@@ -14,7 +15,7 @@ export const POST = async (req: MedusaRequest, res: MedusaResponse) => {
     const hawalaService = req.scope.resolve<HawalaLedgerModuleService>(HAWALA_LEDGER_MODULE)
     
     // Get vendor ID from auth context
-    const vendorId = (req as VendorRequest).auth_context?.actor_id
+    const vendorId = await resolveVendorSellerId(req)
     if (!vendorId) {
       return res.status(401).json({ error: "Unauthorized" })
     }
@@ -76,7 +77,7 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
     const hawalaService = req.scope.resolve<HawalaLedgerModuleService>(HAWALA_LEDGER_MODULE)
     
     // Get vendor ID from auth context
-    const vendorId = (req as VendorRequest).auth_context?.actor_id
+    const vendorId = await resolveVendorSellerId(req)
     if (!vendorId) {
       return res.status(401).json({ error: "Unauthorized" })
     }

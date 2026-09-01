@@ -2,6 +2,7 @@ import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import type { VendorRequest } from "../../types"
 import { HAWALA_LEDGER_MODULE } from "../../../../modules/hawala-ledger"
 import HawalaLedgerModuleService from "../../../../modules/hawala-ledger/service"
+import { resolveVendorSellerId } from "../seller-context"
 
 /**
  * GET /vendor/hawala/earnings
@@ -13,7 +14,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
   const hawalaService = req.scope.resolve<HawalaLedgerModuleService>(HAWALA_LEDGER_MODULE)
 
   // Get vendor/seller ID from auth context
-  const sellerId = (req as VendorRequest).auth_context?.actor_id
+  const sellerId = await resolveVendorSellerId(req)
   if (!sellerId) {
     return res.status(401).json({ error: "Authentication required" })
   }
