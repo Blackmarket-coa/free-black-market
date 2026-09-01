@@ -80,10 +80,11 @@ End-to-end path: shell → storefront → backend registry → FCM.
 
 - **Android**: drop `google-services.json` into `android/app/` (gitignored)
   and apply the Firebase Gradle plugin per the Capacitor docs.
-- **iOS**: enable the Push Notifications capability in Xcode and upload the
-  APNs key to Firebase. `Info.plist` already declares `remote-notification`
-  background mode; `AppDelegate.swift` already forwards the APNs token to
-  the plugin.
+- **iOS**: upload the APNs key to Firebase and enable Push Notifications on
+  the App ID (see **Signing and capabilities**). The app side is already in
+  place: `App.entitlements` declares `aps-environment`, `Info.plist` declares
+  the `remote-notification` background mode, and `AppDelegate.swift` forwards
+  the APNs token to the plugin.
 - **Storefront** (`NEXT_PUBLIC_NATIVE_PUSH=true`): `NativeAppBridge`
   requests permission, registers, and forwards the token to the backend
   device registry (`POST /store/native/push-tokens`) with the customer's
@@ -151,8 +152,69 @@ env-gated `/.well-known/assetlinks.json` (set
 `/.well-known/apple-app-site-association` (set `NATIVE_APPLE_APP_ID` to
 `TEAMID.co.bmc.freeblackmarket`), and the Android manifest already carries
 the `autoVerify` intent filter — it stays inert until the assetlinks
-statement goes live. iOS additionally needs the Associated Domains
-capability (`applinks:freeblackmarket.com`) in Xcode.
+statement goes live. On iOS the Associated Domains entitlement is declared
+in `ios/App/App/App.entitlements`; it still has to be enabled on the App ID
+in the developer portal (see **Signing and capabilities** below).
+
+## Signing and capabilities
+
+### iOS capabilities (must be enabled on the App ID)
+
+`ios/App/App/App.entitlements` is committed and wired into both build
+configurations, declaring:
+
+| Entitlement | Value |
+| --- | --- |
+| `aps-environment` | `$(APS_ENVIRONMENT)` — `development` in Debug, `production` in Release, so a debug build talks to the APNs sandbox and an archive talks to production without editing the file |
+| `com.apple.developer.associated-domains` | `applinks:freeblackmarket.com`, `applinks:www.freeblackmarket.com` |
+
+Both capabilities must also be enabled for `co.bmc.freeblackmarket` in the
+Apple Developer portal (Certificates, Identifiers & Profiles → the App ID →
+**Push Notifications** and **Associated Domains**). If they are not, signing
+fails with a provisioning-profile error that does not name the entitlement —
+that error almost always means this step was skipped.
+
+The entitlements file has no `PBXFileReference`, so it will not appear in
+Xcode's navigator until Xcode adds one (it does this automatically the first
+time someone opens the Signing & Capabilities tab). The build reads it from
+the `CODE_SIGN_ENTITLEMENTS` build setting either way.
+
+### Android release signing
+
+Signing is opt-in and activates only when `android/keystore.properties`
+exists, so `assembleRelease` still succeeds unsigned locally and in PR CI:
+
+```bash
+cp android/keystore.properties.example android/keystore.properties
+# fill in storeFile / storePassword / keyAlias / keyPassword
+pnpm build:android          # cap sync android && gradlew assembleRelease
+```
+
+`keystore.properties`, `*.jks` and `*.keystore` are gitignored. In CI, write
+the file from secrets immediately before the release build and delete it
+after; never bake it into an image. Rotation policy, key inventory and the
+release evidence package live in Blackout's shared runbook,
+`docs/operations/runbooks/mobile_release_hardening_checklist.md`.
+
+The `Mobile Android Build` workflow assembles **both** a debug and an
+unsigned release APK on every PR, so a broken signing block is caught there
+rather than at release time.
+
+### Versioning
+
+Android `versionCode` and iOS `CFBundleVersion` must increase monotonically
+for every store upload, and the marketing version must match across both
+projects. Set them together:
+
+```bash
+pnpm version:set 1.1.0 2          # version, build number
+pnpm version:set 1.1.0 2 --allow-same-build   # only if that build never shipped
+```
+
+The script refuses a malformed version, a non-increasing build number, and a
+project file whose shape it no longer recognises (which is how a Capacitor
+regeneration would be caught). `pnpm test` asserts the two platforms have not
+drifted apart; CI runs it on every PR.
 
 ## iOS on Linux/CI
 

@@ -69,6 +69,13 @@ jobs:
         working-directory: mobile
         run: pnpm exec tsc --noEmit
 
+      # Guards the version tooling and, with it, that both native projects
+      # still agree on version/build — drift between them ships a TestFlight
+      # build and a Play build that claim different versions from one commit.
+      - name: Mobile shell unit tests
+        working-directory: mobile
+        run: pnpm test
+
       - name: Sync web assets + plugins into the Android project
         working-directory: mobile
         run: pnpm exec cap sync android
@@ -76,6 +83,14 @@ jobs:
       - name: Assemble debug APK
         working-directory: mobile/android
         run: ./gradlew assembleDebug --no-daemon
+
+      # Proves the release path stays buildable: the signing block in
+      # app/build.gradle is conditional on android/keystore.properties, which
+      # does not exist here (no secrets on PRs). A parse error or an
+      # unconditional signingConfig would fail this step, not a release cut.
+      - name: Assemble unsigned release APK
+        working-directory: mobile/android
+        run: ./gradlew assembleRelease --no-daemon
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v4

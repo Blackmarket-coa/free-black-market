@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	  aps-environment is substituted from the APS_ENVIRONMENT build setting
+	  (Debug: development, Release: production) so a debug build talks to the
+	  APNs sandbox and an archive talks to production, without editing this
+	  file per build. Entitlements go through the build-setting preprocessor,
+	  which is the same mechanism $(AppIdentifierPrefix) relies on.
+	-->
+	<key>aps-environment</key>
+	<string>$(APS_ENVIRONMENT)</string>
+
+	<!--
+	  Universal links. Inert until the storefront actually serves
+	  /.well-known/apple-app-site-association, which is env-gated behind
+	  NATIVE_APPLE_APP_ID (TEAMID.co.bmc.freeblackmarket) — until then iOS
+	  simply fails verification and the link opens in Safari. Same fail-soft
+	  posture as the Android autoVerify intent filter.
+	-->
+	<key>com.apple.developer.associated-domains</key>
+	<array>
+		<string>applinks:freeblackmarket.com</string>
+		<string>applinks:www.freeblackmarket.com</string>
+	</array>
+</dict>
+</plist>
