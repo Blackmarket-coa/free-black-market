@@ -233,6 +233,35 @@ function sanitizeForEmail(value: string): string {
 }
 
 /** Resolve a customer's Matrix MXID from `customer.metadata.mxid`. */
+/**
+ * Resolve a seller from an mxid.
+ *
+ * Deliberately keyed on `mxid` rather than `blackout_user_id`, which the
+ * sibling `resolveSellerIdByBlackoutUserId` uses. `seller_metadata.mxid`
+ * carries a partial-unique index; `blackout_user_id` is only indexed, so two
+ * seller rows can share it. Joining an anti-self-dealing check on the
+ * non-unique column would hand an attacker a split-identity bypass: register a
+ * second seller with the same Blackout account and the comparison stops
+ * matching.
+ */
+export async function resolveSellerIdByMxid(
+  container: MedusaContainer,
+  mxid: string
+): Promise<string | null> {
+  const conn = pg(container)
+  if (!conn) return null
+  try {
+    const res = await conn.raw(
+      `SELECT seller_id FROM seller_metadata
+         WHERE mxid = ? AND deleted_at IS NULL LIMIT 1`,
+      [mxid]
+    )
+    return firstString(res?.rows, "seller_id")
+  } catch {
+    return null
+  }
+}
+
 export async function resolveCustomerMxid(
   container: MedusaContainer,
   customerId: string

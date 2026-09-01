@@ -6,6 +6,10 @@ import { ReviewSubjectType } from "../../../modules/reviews/models/product-revie
 import { updateSellerMetadataRecord } from "../../../modules/seller-extension/metadata-service"
 import type SellerExtensionService from "../../../modules/seller-extension/service"
 import { grantKarmaBestEffort, KARMA_DELTAS } from "../../../lib/karma-grants"
+import {
+  resolveCustomerMxid,
+  resolveSellerIdByMxid,
+} from "../../../lib/blackout-identity"
 
 const log = createLogger("api/store/reviews")
 
@@ -214,6 +218,30 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
         })
       }
       sellerId = parsed.seller_ref
+    }
+
+    // 2b) A seller may not review themselves.
+    //
+    // Every other check here is about whether the purchase happened, not about
+    // who is reviewing whom, so a seller could buy their own product through a
+    // second customer account and five-star it — which also mints karma
+    // (+15 via lib/karma-grants.ts) and feeds the denormalized seller rating
+    // recomputed below. Resolution goes through `seller_metadata.mxid`, the
+    // identity column with a partial-unique index; `blackout_user_id` is only
+    // indexed, so a check keyed there is bypassable with a second seller row
+    // against the same Blackout account.
+    //
+    // A reviewer with no resolvable seller identity is an ordinary buyer and
+    // passes: this rejects self-review, not anonymity.
+    const reviewerMxid = await resolveCustomerMxid(req.scope, customerId)
+    if (reviewerMxid) {
+      const reviewerSellerId = await resolveSellerIdByMxid(req.scope, reviewerMxid)
+      if (reviewerSellerId && reviewerSellerId === sellerId) {
+        return res.status(403).json({
+          message: "You cannot review your own listing",
+          type: "not_allowed",
+        })
+      }
     }
 
     // 3) Privacy-safe display name from the customer record.

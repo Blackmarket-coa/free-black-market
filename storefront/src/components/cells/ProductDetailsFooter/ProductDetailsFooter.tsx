@@ -8,9 +8,11 @@ import { HttpTypes } from '@medusajs/types';
 export const ProductDetailsFooter = ({
   tags = [],
   posted,
+  productId,
 }: {
   tags?: HttpTypes.StoreProductTag[];
   posted: HttpTypes.StoreProduct['created_at'];
+  productId: string;
 }) => {
   return (
     <>
@@ -18,7 +20,7 @@ export const ProductDetailsFooter = ({
         <ProductTags tags={tags} />
         <div className='flex justify-between items-center mt-4'>
           <ProductPostedDate posted={posted} />
-          <ProductReportButton />
+          <ProductReportButton productId={productId} />
         </div>
       </div>
     </>

@@ -70,6 +70,13 @@ export interface RecordClickInput {
 export interface AttributeOrderInput {
   orderId: string
   customerId?: string | null
+  /**
+   * The seller the buying customer belongs to, when they are themselves a
+   * seller. Resolved by the caller (which has a container) via mxid, because
+   * `customerId` and `creatorSellerId` live in different namespaces and can
+   * never be compared directly — see the self-purchase guard below.
+   */
+  buyerSellerId?: string | null
   visitorToken?: string | null
   shortCode?: string | null
   appliedPromoCodes?: string[] | null
@@ -339,8 +346,23 @@ class CreatorAttributionService extends MedusaService({
 
     if (!chosen) return null
 
-    if (input.customerId && input.customerId === chosen.creatorSellerId) {
-      // self-purchase guard
+    // Self-purchase guard.
+    //
+    // This compared `input.customerId` (a `cus_*` id) against
+    // `chosen.creatorSellerId` (a `sel_*` id) and so could never return true:
+    // it read as a control to every reviewer and was none. A creator could
+    // attribute their own purchase to themselves and earn the commission.
+    //
+    // The comparison now runs on `buyerSellerId`, which the caller resolves
+    // through `seller_metadata.mxid` — the identity column carrying a
+    // partial-unique index. `blackout_user_id` is only indexed, so two seller
+    // rows can share it and a check keyed there would be bypassable by
+    // registering a second seller against the same Blackout account.
+    //
+    // A buyer with no resolvable seller identity is not a self-purchase, so
+    // attribution proceeds: this guard exists to catch a creator buying
+    // through their own link, not to gate anonymous buyers.
+    if (input.buyerSellerId && input.buyerSellerId === chosen.creatorSellerId) {
       return null
     }
 

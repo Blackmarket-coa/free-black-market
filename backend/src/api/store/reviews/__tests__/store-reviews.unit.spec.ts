@@ -13,6 +13,21 @@ import { GET as listReviews, POST as createReview } from "../route"
 import { REVIEWS_MODULE } from "../../../../modules/reviews"
 import { HAWALA_LEDGER_MODULE } from "../../../../modules/hawala-ledger"
 
+/**
+ * Identity resolution for the self-review guard. Default: the reviewer is an
+ * ordinary buyer with no seller identity, which is the pass-through case every
+ * pre-existing test in this file relies on.
+ */
+jest.mock("../../../../lib/blackout-identity", () => ({
+  resolveCustomerMxid: jest.fn(async () => null),
+  resolveSellerIdByMxid: jest.fn(async () => null),
+}))
+
+import {
+  resolveCustomerMxid,
+  resolveSellerIdByMxid,
+} from "../../../../lib/blackout-identity"
+
 const createRes = () => {
   const res: Record<string, unknown> = { statusCode: 200, body: undefined }
   res.status = (code: number) => {
@@ -264,5 +279,51 @@ describe("GET /store/reviews", () => {
       customer_note: "Fast shipping",
       seller: { id: "sel_1", name: "Seller One", photo: "p.png" },
     })
+  })
+})
+
+describe("self-review guard", () => {
+  afterEach(() => {
+    ;(resolveCustomerMxid as jest.Mock).mockResolvedValue(null)
+    ;(resolveSellerIdByMxid as jest.Mock).mockResolvedValue(null)
+  })
+
+  it("refuses a review when the reviewer resolves to the reviewed seller", async () => {
+    // Every other check on this route asks whether the purchase happened, not
+    // who is reviewing whom, so a seller could buy their own product through a
+    // second customer account and five-star it -- minting karma and lifting
+    // their own denormalized rating.
+    ;(resolveCustomerMxid as jest.Mock).mockResolvedValue("@seller:example.org")
+    ;(resolveSellerIdByMxid as jest.Mock).mockResolvedValue("sel_1")
+
+    const { req } = makeReq({ order_id: "order_1", product_id: "prod_1", rating: 5 })
+    const res = createRes()
+
+    await createReview(req as never, res as never)
+
+    expect(res.statusCode).toBe(403)
+    expect(res.body.type).toBe("not_allowed")
+  })
+
+  it("allows a review of a different seller's product", async () => {
+    ;(resolveCustomerMxid as jest.Mock).mockResolvedValue("@other:example.org")
+    ;(resolveSellerIdByMxid as jest.Mock).mockResolvedValue("sel_2")
+
+    const { req } = makeReq({ order_id: "order_1", product_id: "prod_1", rating: 5 })
+    const res = createRes()
+
+    await createReview(req as never, res as never)
+
+    expect(res.statusCode).not.toBe(403)
+  })
+
+  it("allows an ordinary buyer with no seller identity", async () => {
+    // The guard rejects self-review, not anonymity.
+    const { req } = makeReq({ order_id: "order_1", product_id: "prod_1", rating: 4 })
+    const res = createRes()
+
+    await createReview(req as never, res as never)
+
+    expect(res.statusCode).not.toBe(403)
   })
 })
