@@ -66,6 +66,20 @@ operator sets, which the 3%-of-a-dollar problem never could.
   returns nothing outside an asset-graph manifest description.
 - The storefront's `lib/data/coalition-credits.ts` exposes `getCoalitionCreditsWallet`
   and `listCoalitionCreditsTransactions` — reads only. There is no apply-at-checkout.
+- No route, workflow or panel anywhere in `backend/`, `storefront/` or `vendor-panel/`
+  references applying credits to a cart under any spelling.
+
+Two independent confirmations, either of which stands alone:
+
+- **`CART` is an allowed purchase context with zero writers.**
+  `posture-a-guard.ts`'s `PURCHASE_CONTEXT_REFERENCE_TYPES` includes `CART` precisely so
+  that a cart-time credit reservation would clear the closed-loop guard. Nothing in the
+  codebase ever writes a ledger entry with `reference_type: "CART"`. The permission was
+  granted for a mechanism that was never built.
+- **The only CCR mint and burn sites are the two creator-credits routes.**
+  `convert-xp` mints (`CREDIT_PAYOUT_MINT`), `withdraw` burns (`CREDIT_REFUND_BURN`), and
+  nothing else touches either entry type. The entire CCR lifecycle today is
+  XP → credits → manual settlement.
 
 So CCR today can be **minted and burned, but not spent**. The consequences:
 
