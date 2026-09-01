@@ -52,6 +52,16 @@ export const LedgerEntry = model.define("hawala_ledger_entry", {
     // CREATOR_REWARD were added enum-only.
     "CREDIT_PAYOUT_MINT",
     "CREDIT_REFUND_BURN",
+    // The generic issuer pair. `ISSUER_ENTRY_TYPES` in posture-a-guard.ts has
+    // blessed ISSUE/BURN since it was written, but the model never declared
+    // them, so the guard permitted an entry type the model said could not
+    // exist — the same drift `reference-type-parity.unit.spec.ts` exists to
+    // catch, on the other enum. Declaring them does not create a caller:
+    // nothing posts ISSUE or BURN yet, and funding the CCR issuer remains the
+    // ops step `docs/CCR_HRS_IGNITION.md` calls chain link 1. This closes the
+    // vocabulary gap so that work is a script, not a schema change.
+    "ISSUE",
+    "BURN",
   ]),
   
   // Status
