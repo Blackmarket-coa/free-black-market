@@ -24,10 +24,13 @@ otherwise.
 | The split machinery just needs a third payee | `tips` migration 003 pins `CHECK (fee_cents + net_cents = gross_cents)`. A third payee is **impossible without a migration**, and `storeOrderBreakdown` never persists the plugin/referral totals it already computes |
 | Categories like `emoji-sticker` mean the catalog is ready | No route creates a listing that is **both signed and priced** — the two create paths are disjoint. One takes manifest/assets and no price; the other takes price and hardcodes `manifest: {}`, `version: "0.0.0"` |
 
-## Fixed on this branch
+## Fixed and merged (#814)
 
-Seven of the defects below have been fixed, with tests. Each was live and none
-was specific to the gift economy.
+Seven of the defects below are fixed, with tests, and merged to `main` in
+`Blackmarket-coa/free-black-market#814` (paired with `blackout#885`). Each was
+live and none was specific to the gift economy. They are marked where they
+appear in the survey below; the survey is kept whole because the reasoning that
+found them is what would find the next one.
 
 | Defect | Fix |
 | --- | --- |
@@ -51,14 +54,16 @@ payout link. Notes on each:
   piecemeal, and `ACH_PAYOUTS_ENABLED` is an open legal decision that has
   already been declined once.
 
-## Defects that exist today, independent of this feature
+## The defect survey, with current status
 
-These are live. They are not gift problems; the gift feature would simply be the first
-thing to stand on them.
+None of these are gift problems; the gift feature would simply be the first thing to
+stand on them. Items marked **[FIXED #814]** have landed on `main` — they are left in
+place because the survey is also a record of how they were found. Everything unmarked
+is still live.
 
 ### Security
 
-- **Ownership bypass on publish.** `POST /v1/integrations/blackout/commerce/seller/listings/[id]/publish`
+- **[FIXED #814]** **Ownership bypass on publish.** `POST /v1/integrations/blackout/commerce/seller/listings/[id]/publish`
   resolves the listing **by id alone, with no seller scope** (`publish/route.ts:16`), then
   sets `PUBLISHED` with `signed_at=now` — no signing, no manifest validation, no
   `SUSPENDED` check. Anyone holding the shared `FREEBLACKMARKET_API_KEY` can publish or
@@ -75,7 +80,7 @@ thing to stand on them.
 
 ### Money
 
-- **Disbursement runs before the settlement that funds it.** In
+- **[FIXED #814]** **Disbursement runs before the settlement that funds it.** In
   `subscribers/hawala-order-payment.ts` the plugin and referral shares are paid at
   :214-231, but `processOrderPayment` — which writes the ESCROW→PLATFORM_FEE leg — is
   not called until :295-326. On a cold `PLATFORM_FEE` account every share defers, and
@@ -127,12 +132,12 @@ be paid at all.
   that field holds a `pm_*` Financial Connections payment method attached to a
   *customer*. `payouts.create` pays the platform's own external account and does not
   accept a customer payment method. The flag is not the only thing in the way.
-- **The `payout.paid` / `payout.failed` webhook can never fire** — it filters on
+- **[FIXED #814]** **The `payout.paid` / `payout.failed` webhook can never fire** — it filters on
   `stripe_payout_id` + status `PENDING`, while the withdraw route writes
   `stripe_transfer_id` + status `PROCESSING`. Two independent misses, so a failed payout
   never triggers its compensating refund and a customer stays debited against money that
   bounced.
-- **The vendor payout route is broken by an identity mismatch.** Earnings accrue under
+- **[FIXED #814]** **The vendor payout route is broken by an identity mismatch.** Earnings accrue under
   `sel_*`; `api/vendor/hawala/payouts/route.ts` reads `auth_context.actor_id`, which the
   vendor middleware deliberately rewrites to `mem_*`. `requestPayout` throws "Vendor
   account not found" — and the sibling earnings route has the same bug but **creates**
@@ -204,7 +209,7 @@ with no enforcement. A per-listing-type fee floor is the smallest honest fix.
 
 ## Blockers specific to a designer's working life
 
-- **A seller can publish a slug exactly once and can never ship v2.** PATCH 409s on a
+- **[FIXED #814]** **A seller can publish a slug exactly once and can never ship v2.** PATCH 409s on a
   published listing telling you to bump the version and create a new draft; POST 409s
   `duplicate_slug` because the existence check has no status filter; DELETE only archives
   and does not free the slug. Designers iterate on sprites constantly — this is
@@ -239,15 +244,19 @@ member cannot reach, and a split that a DB constraint forbids.
 
 A defensible order:
 
-1. **Make one person payable.** Connect account creation, the `account.updated` webhook,
-   the `sel_*`/`mem_*` identity fix, a vendor bank-account route, and either a
-   `PayoutRequest` executor or destination charges. Nothing else matters until a
-   creator can withdraw one dollar.
-2. **Fix the money defects above** — disbursement ordering, the swallowed insufficient-
-   balance throw, fractional-vs-rounded fee, refund reversal for fee-funded shares.
-   These are wrong today for plugin and referral payees already.
-3. **Close the publish bypass and the upload gap**, and decide the moderation model.
-   These are prerequisites for any user-generated catalog, gift or not.
+1. **Make one person payable.** The `sel_*`/`mem_*` identity fix landed in #814; what
+   remains is Connect account creation, the `account.updated` webhook, a vendor
+   bank-account route, and either a `PayoutRequest` executor or destination charges.
+   Nothing else matters until a creator can withdraw one dollar, and #814 did not
+   change that — it fixed which account the money is looked up under, not whether it
+   can leave.
+2. **Fix the money defects above.** Disbursement ordering landed in #814. Still open:
+   the swallowed insufficient-balance throw, fractional-vs-rounded fee, and refund
+   reversal for fee-funded shares. These are wrong today for plugin and referral
+   payees already.
+3. **Close the upload gap and decide the moderation model.** The publish bypass landed
+   in #814; both remaining items are prerequisites for any user-generated catalog,
+   gift or not.
 4. **Then** a member-publishable, priced, signed listing type, and only then the third
    payee and the dynamic gift catalog.
 
@@ -258,7 +267,13 @@ argument for doing them first.
 
 Findings come from a parallel four-agent read of the chain (create/publish, send,
 split, payout) with every assertion cited to file and line. The adversarial stress pass,
-the economic model panel, and the trust/abuse read did not complete — the session hit its
-usage limit — so this document is **grounding without the refutation pass**. Treat the
-defect list as high-confidence (each was read directly) and the sequencing as a proposal
-that has not yet been argued against.
+the economic model panel, and the trust/abuse read did not complete on the first run —
+the session hit its usage limit — so this document is **grounding without the refutation
+pass**. Treat the defect list as high-confidence (each item was read directly in the
+source) and the sequencing as a proposal that has not yet been argued against.
+
+Those three passes are being re-run; when they land, the economic model for the
+designer's share, the wash-gifting controls, and the moderation model are the sections
+that should change. Until then, do not treat the economics section as settled — it
+states the constraint (a 3% fee on a 100c gift leaves 3c to split) without yet
+proposing the resolution.
