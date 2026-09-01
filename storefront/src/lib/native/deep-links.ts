@@ -57,3 +57,33 @@ export function deepLinkToPath(url: string | null | undefined): string | null {
   if (!sanitized || sanitized === "/open") return null
   return `${sanitized}${parsed.search}`
 }
+
+/**
+ * Prefix a same-origin path with the locale the app is currently on.
+ *
+ * Push payloads and deep links carry locale-less paths (`/vendor/orders/x`)
+ * because the backend emitting them has no idea which storefront locale the
+ * device is browsing. The locale middleware normally 307s those to
+ * `/us/vendor/orders/x` — but it fail-softs when the region map can't be
+ * loaded, and then `/vendor/orders/x` resolves `[locale]` to "vendor" and
+ * 404s. That turns a degraded backend into a broken notification tap, so we
+ * prefix client-side instead of relying on the redirect.
+ *
+ * A path that already carries a locale is left alone. Locales here are the
+ * two-letter country codes the region map produces ("us", "pl"), which no
+ * top-level route collides with.
+ */
+export function withLocalePrefix(
+  path: string,
+  currentPathname: string | null | undefined
+): string {
+  if (!path.startsWith("/")) return path
+
+  const firstSegment = path.split("/")[1] ?? ""
+  if (/^[a-z]{2}$/i.test(firstSegment)) return path
+
+  const currentLocale = (currentPathname ?? "").split("/")[1] ?? ""
+  if (!/^[a-z]{2}$/i.test(currentLocale)) return path
+
+  return `/${currentLocale}${path}`
+}
