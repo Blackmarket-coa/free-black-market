@@ -111,11 +111,20 @@ const Form = () => {
                 Looking for your seller dashboard? Vendors have their own
                 login.
               </p>
-              <a
-                href={`${vendorUrl}/login`}
+              {/* Primary action is the in-app surface: it works inside the
+                  mobile shell, where the absolute panel link opens an
+                  external browser on a desktop-only dashboard. */}
+              <LocalizedClientLink
+                href="/vendor/orders"
                 className="block w-full rounded-md bg-green-700 hover:bg-green-600 text-white text-center font-bold uppercase label-md px-4 py-3 transition-colors"
               >
-                Go to Vendor Portal login
+                Sign in to vendor orders
+              </LocalizedClientLink>
+              <a
+                href={`${vendorUrl}/login`}
+                className="block w-full text-center underline label-md"
+              >
+                Open the full vendor dashboard
               </a>
               <p className="label-sm text-secondary">
                 Want to shop here too? Create a separate shopper account with
