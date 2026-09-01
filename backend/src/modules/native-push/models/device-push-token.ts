@@ -30,6 +30,11 @@ const DevicePushToken = model.define("device_push_token", {
   // Medusa customer this device belongs to, when known.
   customer_id: model.text().nullable(),
 
+  // Seller this device belongs to, when the device has signed into the
+  // in-app vendor surface. Independent of customer_id: one row can carry
+  // both, because a vendor is a person with one phone who also shops.
+  seller_id: model.text().nullable(),
+
   // Last time the shell (re-)registered this token.
   last_registered_at: model.dateTime().nullable(),
 

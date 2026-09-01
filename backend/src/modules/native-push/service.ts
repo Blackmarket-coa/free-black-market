@@ -6,6 +6,7 @@ export type RegisterTokenInput = {
   token: string
   platform: "ios" | "android"
   customer_id?: string | null
+  seller_id?: string | null
 }
 
 /**
@@ -36,9 +37,13 @@ class NativePushModuleService extends MedusaService({
   /**
    * Register (or refresh) a device token. Unique on `token`: an existing
    * row is updated in place — re-registration re-enables a token FCM had
-   * reported dead and attaches the customer when the call is
-   * authenticated. A later anonymous re-registration keeps the existing
-   * customer attachment (logout is `unregisterToken`, not detachment).
+   * reported dead and attaches the caller when the call is authenticated.
+   *
+   * Attachments are preserved, never cleared, when a later registration
+   * arrives without them: the shopper app registers anonymously on launch
+   * and the vendor surface registers a seller separately, so each call
+   * only ever adds the identity it knows about. Detaching is
+   * `unregisterToken` (sign-out), not an anonymous re-registration.
    */
   async registerToken(input: RegisterTokenInput) {
     const now = new Date()
@@ -52,6 +57,7 @@ class NativePushModuleService extends MedusaService({
         id: existing.id,
         platform: input.platform,
         customer_id: input.customer_id ?? existing.customer_id ?? null,
+        seller_id: input.seller_id ?? existing.seller_id ?? null,
         last_registered_at: now,
         disabled_at: null,
       })
@@ -61,9 +67,22 @@ class NativePushModuleService extends MedusaService({
       token: input.token,
       platform: input.platform,
       customer_id: input.customer_id ?? null,
+      seller_id: input.seller_id ?? null,
       last_registered_at: now,
       disabled_at: null,
     })
+  }
+
+  /**
+   * Detach a seller from a device without unregistering it — the vendor
+   * signs out of the seller surface but the shopper session (and buyer
+   * pushes) on the same phone continue. Idempotent.
+   */
+  async detachSeller(token: string): Promise<boolean> {
+    const [existing] = await this.listDevicePushTokens({ token }, { take: 1 })
+    if (!existing) return false
+    await this.updateDevicePushTokens({ id: existing.id, seller_id: null })
+    return true
   }
 
   /** Remove a token (device logout / permission revoked). Idempotent. */
@@ -78,6 +97,15 @@ class NativePushModuleService extends MedusaService({
   async listActiveTokensForCustomer(customer_id: string): Promise<string[]> {
     const rows = await this.listDevicePushTokens(
       { customer_id, disabled_at: null },
+      { select: ["token"], take: 200 }
+    )
+    return rows.map((row) => row.token)
+  }
+
+  /** Active (non-disabled) tokens registered to a seller. */
+  async listActiveTokensForSeller(seller_id: string): Promise<string[]> {
+    const rows = await this.listDevicePushTokens(
+      { seller_id, disabled_at: null },
       { select: ["token"], take: 200 }
     )
     return rows.map((row) => row.token)
@@ -111,6 +139,27 @@ class NativePushModuleService extends MedusaService({
       return { configured: false, sent: [], invalid: [], failed: [] }
     }
     const tokens = await this.listActiveTokensForCustomer(customer_id)
+    const summary = await fcm.sendToTokens(tokens, notification)
+    if (summary.invalid.length > 0) {
+      await this.disableTokens(summary.invalid)
+    }
+    return summary
+  }
+
+  /**
+   * Deliver a notification to every active device a seller has registered
+   * through the in-app vendor surface. Same fail-closed and
+   * dead-token-disabling semantics as `sendToCustomer`.
+   */
+  async sendToSeller(
+    seller_id: string,
+    notification: FcmNotification
+  ): Promise<FcmSendSummary> {
+    const fcm = this.getFcm()
+    if (!fcm.isConfigured()) {
+      return { configured: false, sent: [], invalid: [], failed: [] }
+    }
+    const tokens = await this.listActiveTokensForSeller(seller_id)
     const summary = await fcm.sendToTokens(tokens, notification)
     if (summary.invalid.length > 0) {
       await this.disableTokens(summary.invalid)
