@@ -91,11 +91,15 @@ export const UserDropdown = ({
             <NavigationItem href="/user">Login</NavigationItem>
             <NavigationItem href="/user/register">Register</NavigationItem>
             <Divider />
+            {/* In-app vendor surface first: inside the mobile shell the
+                absolute panel link below ejects the vendor into an
+                external browser running a desktop-only SPA. */}
+            <NavigationItem href="/vendor/orders">Vendor orders</NavigationItem>
             <a
               href={`${VENDOR_PANEL_URL}/login`}
               className="label-md uppercase px-4 py-3 my-3 md:my-0 flex items-center justify-between"
             >
-              Vendor login
+              Vendor dashboard
             </a>
           </div>
         )}

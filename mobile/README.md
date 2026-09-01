@@ -94,6 +94,44 @@ End-to-end path: shell → storefront → backend registry → FCM.
   `order.placed` → "Order confirmed" subscriber; call
   `nativePush.sendToCustomer(...)` from any other subscriber to add more.
 
+## Vendor surface (in-app)
+
+A vendor who installs the app gets a small, deliberately incomplete
+seller surface at `/vendor/orders` — an order inbox plus the two
+fulfillment actions that are genuinely phone-shaped:
+
+| Stage | Phone action |
+| --- | --- |
+| Needs packing | none — links to the full dashboard (packing needs a stock location and per-line quantities backed by inventory reservations) |
+| Ready to ship | enter a tracking number → mark shipped |
+| In transit | mark delivered |
+| Complete | none |
+
+Everything else — products, payouts, returns, order changes, POS,
+anything that moves money — stays in the full vendor panel on desktop.
+That is a boundary, not a backlog: those flows need desktop-grade input
+or carry refund/payout side effects that do not belong behind a one-tap
+button on a phone.
+
+**Auth.** Sellers are a different Medusa actor type from shoppers, and
+the storefront's shopper login deliberately bounces seller accounts
+(they have no shopper profile). So the vendor surface adds a *parallel,
+opt-in* sign-in that stores a seller JWT in its own httpOnly cookie
+(`_fbm_seller_jwt`), separate from the shopper `_medusa_jwt` on the same
+device. Every seller call is made from a Next.js server action, never the
+browser, for two reasons: the MercurJS plugin fronts `/vendor/*` with a
+CORS allowlist that excludes the storefront origin, and a seller bearer
+authorizes payout-capable endpoints, so it must never sit in page JS on a
+remotely-loaded WebView page. Tokens are refreshed on read (Medusa issues
+them with a 1-day life and nothing else renews them).
+
+**Strategic note.** `docs/AGGRESSIVE_OPERATIONS_GUIDE.md` §2.8 makes
+Blackout the canonical coalition mobile app and the full vendor panel the
+canonical seller tool. This surface does not change either claim — it is
+an additive convenience on the FBM standalone channel, scoped to the two
+things a vendor cannot do from a desk: find out an order arrived, and
+move it along while away from the shop.
+
 ## Deep links
 
 `fbm://` opens the app on both platforms (scheme registered in

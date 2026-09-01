@@ -64,6 +64,58 @@ export const removeAuthToken = async () => {
   });
 };
 
+/**
+ * Seller session for the in-app vendor surface.
+ *
+ * Deliberately a SEPARATE cookie from `_medusa_jwt`: the same WebView can
+ * hold a shopper session and a seller session at once (a vendor is also a
+ * person who shops), and the two tokens authorize very different things.
+ * httpOnly is non-negotiable here — a seller bearer reaches payout-capable
+ * vendor endpoints, so it must never be readable from page JS on a
+ * remotely-loaded WebView page. Every seller call goes out from a server
+ * action instead.
+ */
+const SELLER_JWT_COOKIE = '_fbm_seller_jwt';
+
+export const getSellerAuthHeaders = async (): Promise<
+  { Authorization: string } | null
+> => {
+  const cookies = await nextCookies();
+  const token = cookies.get(SELLER_JWT_COOKIE)?.value;
+
+  if (!token) {
+    return null;
+  }
+
+  return { Authorization: `Bearer ${token}` };
+};
+
+/** Raw seller token, for the refresh path that must inspect expiry. */
+export const getSellerToken = async (): Promise<string | undefined> => {
+  const cookies = await nextCookies();
+  return cookies.get(SELLER_JWT_COOKIE)?.value;
+};
+
+export const setSellerAuthToken = async (token: string) => {
+  const cookies = await nextCookies();
+  cookies.set(SELLER_JWT_COOKIE, token, {
+    // Medusa issues seller JWTs with a 1-day lifetime; the cookie matches
+    // so a stale cookie never outlives the token it carries.
+    maxAge: 60 * 60 * 24,
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: process.env.NODE_ENV === 'production',
+    path: '/',
+  });
+};
+
+export const removeSellerAuthToken = async () => {
+  const cookies = await nextCookies();
+  cookies.set(SELLER_JWT_COOKIE, '', {
+    maxAge: -1,
+  });
+};
+
 export const getCartId = async () => {
   const cookies = await nextCookies();
   return cookies.get('_medusa_cart_id')?.value;
