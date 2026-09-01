@@ -30,8 +30,11 @@ const registerSchema = z.object({
   platform: z.enum(["ios", "android"]),
 })
 
+// Token is optional: the client may not have one yet (FCM registration
+// fires once at launch), and sign-out must still detach this seller's
+// devices. Omitting it detaches all of them, scoped to the caller.
 const unregisterSchema = z.object({
-  token: z.string().min(16).max(4096),
+  token: z.string().min(16).max(4096).optional(),
 })
 
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
@@ -81,9 +84,11 @@ export async function DELETE(req: MedusaRequest, res: MedusaResponse) {
       .json({ message: "Unauthorized", type: "unauthorized" })
   }
 
-  const parsed = unregisterSchema.safeParse(req.body)
+  const parsed = unregisterSchema.safeParse(req.body ?? {})
   if (!parsed.success) {
-    return res.status(400).json({ message: "token is required" })
+    return res
+      .status(400)
+      .json({ message: "token, when supplied, must be a valid device token" })
   }
 
   const nativePush = req.scope.resolve<NativePushModuleService>(
@@ -91,7 +96,9 @@ export async function DELETE(req: MedusaRequest, res: MedusaResponse) {
   )
 
   try {
-    const detached = await nativePush.detachSeller(parsed.data.token, sellerId)
+    const detached = parsed.data.token
+      ? await nativePush.detachSeller(parsed.data.token, sellerId)
+      : (await nativePush.detachAllForSeller(sellerId)) > 0
     return res.status(200).json({ ok: true, detached })
   } catch (error) {
     log.error("failed to detach seller push token", error)

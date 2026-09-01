@@ -13,24 +13,21 @@ import { getLastPushToken } from "@/lib/native/push-notifications"
  * with another account's order notifications. The shopper session on the
  * same device is untouched.
  */
-export const VendorSessionControls = ({ email }: { email?: string | null }) => {
+export const VendorSessionControls = () => {
   const router = useRouter()
   const [pending, startTransition] = useTransition()
 
   const signOut = () => {
     startTransition(async () => {
+      // Token when we have it; the server detaches every device for this
+      // seller when we don't, so sign-out is never silently partial.
       await sellerLogout(getLastPushToken() ?? undefined)
       router.refresh()
     })
   }
 
   return (
-    <div className="flex items-center justify-between gap-3">
-      {email ? (
-        <span className="label-md text-secondary truncate">{email}</span>
-      ) : (
-        <span />
-      )}
+    <div className="flex items-center justify-end gap-3">
       <button
         type="button"
         onClick={signOut}

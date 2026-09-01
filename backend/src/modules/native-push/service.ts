@@ -91,6 +91,38 @@ class NativePushModuleService extends MedusaService({
   }
 
   /**
+   * Detach every device registered to a seller.
+   *
+   * Sign-out cannot depend on the client knowing its own FCM token: the
+   * registration event fires once at launch and may not have arrived, so a
+   * token-scoped detach silently no-ops and leaves the phone subscribed to
+   * that vendor's order pushes after they sign out. Scoped to the
+   * authenticated seller, so it can only ever clear the caller's own rows.
+   */
+  async detachAllForSeller(seller_id: string): Promise<number> {
+    const PAGE = 200
+    let detached = 0
+    // Paged rather than one bounded read: a partial detach is the very
+    // failure this exists to prevent, so keep going until nothing is left
+    // attached. Each page nulls the rows it read, so the next read returns
+    // the following page; the iteration cap is a guard against a driver
+    // that somehow keeps returning the same rows, not an expected limit.
+    for (let page = 0; page < 25; page++) {
+      const rows = await this.listDevicePushTokens(
+        { seller_id },
+        { select: ["id"], take: PAGE }
+      )
+      if (rows.length === 0) break
+      await this.updateDevicePushTokens(
+        rows.map((row) => ({ id: row.id, seller_id: null }))
+      )
+      detached += rows.length
+      if (rows.length < PAGE) break
+    }
+    return detached
+  }
+
+  /**
    * Detach a customer from a device (shopper sign-out).
    *
    * Deliberately NOT a delete: the same row may carry a seller

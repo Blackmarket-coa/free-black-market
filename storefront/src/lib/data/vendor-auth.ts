@@ -10,7 +10,6 @@ import {
   setSellerAuthToken,
 } from "./cookies"
 import {
-  decodeJwtPayload,
   isTokenExpired,
   readSellerClaims,
   shouldRefreshToken,
@@ -34,8 +33,7 @@ import {
  */
 
 export type SellerSession = {
-  seller_id: string | null
-  email: string | null
+  seller_id: string
 }
 
 export type SellerLoginResult =
@@ -95,21 +93,24 @@ export async function sellerLogin(input: {
  * cookie. The shopper session on the same device is untouched.
  */
 export async function sellerLogout(pushToken?: string): Promise<void> {
-  if (pushToken) {
-    try {
-      const headers = await getSellerAuthHeaders()
-      if (headers) {
-        await medusaFetch("/v1/seller/push-tokens", {
-          method: "DELETE",
-          body: { token: pushToken },
-          cache: "no-store",
-          headers,
-        })
-      }
-    } catch (error) {
-      // Best-effort: never block sign-out on the push detach.
-      logger.warn("[vendor-auth] push detach on logout failed", error)
+  // Always call the detach, with the token when we have one and without it
+  // otherwise. The FCM registration event fires once at launch and may not
+  // have arrived, so gating this on a client-held token left signed-out
+  // phones still receiving that vendor's order pushes. Omitting the token
+  // detaches every device for the authenticated seller.
+  try {
+    const headers = await getSellerAuthHeaders()
+    if (headers) {
+      await medusaFetch("/v1/seller/push-tokens", {
+        method: "DELETE",
+        body: pushToken ? { token: pushToken } : {},
+        cache: "no-store",
+        headers,
+      })
     }
+  } catch (error) {
+    // Best-effort: never block sign-out on the push detach.
+    logger.warn("[vendor-auth] push detach on logout failed", error)
   }
 
   await removeSellerAuthToken()
@@ -177,10 +178,7 @@ export async function retrieveSellerSession(): Promise<SellerSession | null> {
   const claims = readSellerClaims(token)
   if (!claims?.seller_id) return null
 
-  const payload = decodeJwtPayload(token)
-  const email = payload && typeof payload.email === "string" ? payload.email : null
-
-  return { seller_id: claims.seller_id, email }
+  return { seller_id: claims.seller_id }
 }
 
 /**

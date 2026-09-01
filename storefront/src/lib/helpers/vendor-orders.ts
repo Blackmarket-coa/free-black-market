@@ -43,7 +43,14 @@ const STAGE_BY_FULFILLMENT_STATUS: Record<string, VendorOrderStage> = {
   shipped: "in_transit",
   partially_delivered: "in_transit",
   delivered: "closed",
-  canceled: "closed",
+  // NOT "closed". MercurJS reports "canceled" when EVERY fulfillment on the
+  // order carries canceled_at — which is exactly an order that was packed,
+  // had its fulfillment voided (a mis-printed label, say), and is now
+  // unfulfilled again with the buyer still owed the goods. Calling that
+  // complete hid it from the inbox count and left the detail page with no
+  // action at all. A genuinely dead order is caught one level up by the
+  // order-level status check below.
+  canceled: "awaiting_fulfillment",
 }
 
 /**

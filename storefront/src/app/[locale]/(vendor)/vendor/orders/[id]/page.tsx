@@ -26,14 +26,20 @@ export default async function VendorOrderDetailPage({
   }
 
   const { id } = await params
-  const order = await retrieveVendorOrder(id)
+  const lookup = await retrieveVendorOrder(id)
 
-  if (!order) {
+  if (!lookup.ok) {
     return (
-      <div className="flex flex-col gap-4">
-        <p className="label-lg">Order not found</p>
+      <div className="flex flex-col gap-4" role="alert">
+        <p className="label-lg">
+          {lookup.reason === "unavailable"
+            ? "Couldn't load this order"
+            : "Order not found"}
+        </p>
         <p className="label-md text-secondary">
-          It may belong to another vendor account, or it may have been removed.
+          {lookup.reason === "unavailable"
+            ? "We couldn't reach the store. Check your connection and try again."
+            : "It may belong to another vendor account, or it may have been removed."}
         </p>
         <LocalizedClientLink href="/vendor/orders" className="underline label-md">
           Back to orders
@@ -41,6 +47,8 @@ export default async function VendorOrderDetailPage({
       </div>
     )
   }
+
+  const order = lookup.order
 
   const stage = vendorOrderStage(order)
   const address = order.shipping_address

@@ -121,6 +121,21 @@ export type VendorOrderDetail = VendorOrderSummary & {
 export type VendorActionResult = { ok: true } | { ok: false; error: string }
 
 /**
+ * Reads are discriminated rather than returning a bare array. An empty
+ * array and a failed request are completely different things to a vendor:
+ * one means "you are done", the other means "we could not ask". Collapsing
+ * them renders a reassuring "No orders yet" over a timeout, which is how a
+ * vendor with orders due today concludes there is nothing to ship.
+ */
+export type VendorOrdersResult =
+  | { ok: true; orders: VendorOrderSummary[] }
+  | { ok: false; error: string }
+
+export type VendorOrderResult =
+  | { ok: true; order: VendorOrderDetail }
+  | { ok: false; reason: "not_found" | "unavailable" }
+
+/**
  * The vendor's order inbox. Open work first, oldest first — the order
  * that has been waiting longest is the one most likely to be late.
  *
@@ -135,9 +150,9 @@ export type VendorActionResult = { ok: true } | { ok: false; error: string }
  */
 export async function listVendorOrders(
   limit = 200
-): Promise<VendorOrderSummary[]> {
+): Promise<VendorOrdersResult> {
   const headers = await getSellerAuthHeaders()
-  if (!headers) return []
+  if (!headers) return { ok: false, error: "Your vendor session expired." }
 
   try {
     const res = await medusaFetch<{ orders?: VendorOrderSummary[] }>(
@@ -154,18 +169,21 @@ export async function listVendorOrders(
         headers,
       }
     )
-    return sortForVendorInbox(res?.orders ?? [])
+    return { ok: true, orders: sortForVendorInbox(res?.orders ?? []) }
   } catch (error) {
     logger.error("[vendor-orders] list failed", error)
-    return []
+    return {
+      ok: false,
+      error: "Couldn't load your orders. Check your connection and try again.",
+    }
   }
 }
 
 export async function retrieveVendorOrder(
   orderId: string
-): Promise<VendorOrderDetail | null> {
+): Promise<VendorOrderResult> {
   const headers = await getSellerAuthHeaders()
-  if (!headers) return null
+  if (!headers) return { ok: false, reason: "unavailable" }
 
   try {
     const res = await medusaFetch<{ order?: VendorOrderDetail }>(
@@ -177,10 +195,14 @@ export async function retrieveVendorOrder(
         headers,
       }
     )
-    return res?.order ?? null
+    return res?.order
+      ? { ok: true, order: res.order }
+      : { ok: false, reason: "not_found" }
   } catch (error) {
     logger.error("[vendor-orders] retrieve failed", error)
-    return null
+    // A failed request is NOT "this order does not exist" — telling a vendor
+    // to go pack an order they are looking at is worse than saying nothing.
+    return { ok: false, reason: "unavailable" }
   }
 }
 
@@ -205,8 +227,18 @@ export async function markVendorOrderShipped(input: {
     return { ok: false, error: "Enter a tracking number." }
   }
 
-  const order = await retrieveVendorOrder(input.orderId)
-  const fulfillment = actionableFulfillment(order?.fulfillments, "ship")
+  const lookup = await retrieveVendorOrder(input.orderId)
+  if (!lookup.ok) {
+    return {
+      ok: false,
+      error:
+        lookup.reason === "unavailable"
+          ? "Couldn't reach the store. Your tracking number is still here — try again."
+          : "That order is no longer available on this account.",
+    }
+  }
+
+  const fulfillment = actionableFulfillment(lookup.order.fulfillments, "ship")
   if (!fulfillment) {
     return {
       ok: false,
@@ -257,8 +289,18 @@ export async function markVendorOrderDelivered(input: {
   const headers = await getSellerAuthHeaders()
   if (!headers) return { ok: false, error: "Your vendor session expired." }
 
-  const order = await retrieveVendorOrder(input.orderId)
-  const fulfillment = actionableFulfillment(order?.fulfillments, "deliver")
+  const lookup = await retrieveVendorOrder(input.orderId)
+  if (!lookup.ok) {
+    return {
+      ok: false,
+      error:
+        lookup.reason === "unavailable"
+          ? "Couldn't reach the store. Try again in a moment."
+          : "That order is no longer available on this account.",
+    }
+  }
+
+  const fulfillment = actionableFulfillment(lookup.order.fulfillments, "deliver")
   if (!fulfillment) {
     return {
       ok: false,

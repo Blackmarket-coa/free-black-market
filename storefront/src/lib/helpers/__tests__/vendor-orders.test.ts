@@ -19,13 +19,20 @@ describe("vendorOrderStage", () => {
       ["shipped", "in_transit"],
       ["partially_delivered", "in_transit"],
       ["delivered", "closed"],
-      ["canceled", "closed"],
+      // A voided fulfillment leaves the order unfulfilled and still owed.
+      ["canceled", "awaiting_fulfillment"],
     ]
     for (const [status, stage] of cases) {
       expect(vendorOrderStage({ id: "o", fulfillment_status: status })).toBe(
         stage
       )
     }
+  })
+
+  it("keeps an order whose fulfillments were all voided as outstanding work", () => {
+    const order = { id: "o", status: "pending", fulfillment_status: "canceled" }
+    expect(vendorOrderStage(order)).toBe("awaiting_fulfillment")
+    expect(needsVendorAction(order)).toBe(true)
   })
 
   it("lets a cancelled or completed ORDER close it regardless of fulfillment", () => {
