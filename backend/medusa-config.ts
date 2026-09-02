@@ -198,6 +198,7 @@ const financialModules = [
   { resolve: './src/modules/vendor-plan' },
   { resolve: './src/modules/vendor-billing' },
   { resolve: './src/modules/accounts-receivable' },
+  { resolve: './src/modules/quote' },
   { resolve: './src/modules/vendor-usage' },
 ]
 
