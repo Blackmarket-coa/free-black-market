@@ -9,6 +9,16 @@ import {
   type ChannelRevenueInput,
   type CrossChannelRevenue,
 } from "../modules/payout-breakdown/channel-revenue"
+import { reportableFeeCents } from "../modules/payout-breakdown/commission-scope"
+import { PAYOUT_BREAKDOWN_MODULE } from "../modules/payout-breakdown"
+import type PayoutBreakdownService from "../modules/payout-breakdown/service"
+
+/**
+ * The commission rate to report on FBM's own line when the seller's effective
+ * rate cannot be read. The platform default, and what `payout_config` ships
+ * with — see `docs/ADDON_COMMITMENTS.md` §3 on why it does not creep upward.
+ */
+const DEFAULT_PLATFORM_FEE_PERCENT = 3
 
 const log = createLogger("shared/cross-channel-revenue")
 
@@ -45,22 +55,42 @@ const FBM_CURRENCY_FALLBACK = "usd"
 async function loadFbmSales(
   container: MedusaContainer,
   sellerId: string,
-  since: Date
+  since: Date,
+  platformFeePercent: number
 ): Promise<ChannelRevenueInput[]> {
   try {
     const orders = await getSellerOrders(container, sellerId)
 
     return orders
       .filter((o) => new Date(o.created_at) >= since)
-      .map((o) => ({
-        channel: FBM_CHANNEL,
-        gross_amount: Math.round(o.seller_total_cents ?? 0),
-        // FBM's own commission is not stamped per order, so it is reported as
-        // unknown rather than zero — claiming we took nothing would be the
-        // same lie as claiming a channel took nothing.
-        fee_amount: null,
-        currency_code: FBM_CURRENCY_FALLBACK,
-      }))
+      .map((o) => {
+        const gross = Math.round(o.seller_total_cents ?? 0)
+        return {
+          channel: FBM_CHANNEL,
+          gross_amount: gross,
+          /**
+           * FBM's commission is computed here rather than left unknown.
+           *
+           * These are native sales — they went through FBM checkout — so the
+           * fee is the seller's effective platform rate (3% by default) and
+           * FBM is the one who knows it. Reporting `null` used to make every
+           * FBM line count as an unreported fee, which meant the one take
+           * rate a vendor could always have been told was the only one the
+           * screen refused to state, and `has_unreported_fees` was true even
+           * for a vendor who sells nowhere else.
+           *
+           * Externally captured sales keep reporting whatever the channel
+           * itself reported, and `null` when it reported nothing — see
+           * `reportableFeeCents`.
+           */
+          fee_amount: reportableFeeCents({
+            origin: { kind: "native", channel: FBM_CHANNEL },
+            grossCents: gross,
+            platformFeePercent,
+          }),
+          currency_code: FBM_CURRENCY_FALLBACK,
+        }
+      })
   } catch (err) {
     // A failed FBM read yields no FBM line rather than an empty report: the
     // channel figures are still true on their own, and a partial answer beats
@@ -118,8 +148,10 @@ export async function collectCrossChannelRevenue(
   sellerId: string,
   options: { since: Date; currencyCode?: string }
 ): Promise<CrossChannelRevenue> {
+  const platformFeePercent = await loadPlatformFeePercent(container, sellerId)
+
   const [fbm, channels] = await Promise.all([
-    loadFbmSales(container, sellerId, options.since),
+    loadFbmSales(container, sellerId, options.since, platformFeePercent),
     loadChannelSales(container, sellerId, options.since),
   ])
 
@@ -132,6 +164,32 @@ export async function collectCrossChannelRevenue(
     options.currencyCode ?? dominantCurrency(rows) ?? "usd"
 
   return rollUpChannelRevenue(rows, currency)
+}
+
+/**
+ * The seller's effective commission rate, for reporting FBM's own line.
+ *
+ * Degrades to the platform default rather than throwing, on the same reasoning
+ * as the two order reads above: a revenue screen that 500s tells the vendor
+ * less than one that reports the standard rate. A seller on a genuine
+ * concession sees their real rate whenever the read succeeds.
+ */
+async function loadPlatformFeePercent(
+  container: MedusaContainer,
+  sellerId: string
+): Promise<number> {
+  try {
+    const service = container.resolve<PayoutBreakdownService>(
+      PAYOUT_BREAKDOWN_MODULE
+    )
+    const percent = await service.getEffectivePlatformFee(sellerId)
+    return Number.isFinite(percent) && percent >= 0
+      ? percent
+      : DEFAULT_PLATFORM_FEE_PERCENT
+  } catch (err) {
+    log.warn(`[revenue] platform fee read failed for ${sellerId}`, err)
+    return DEFAULT_PLATFORM_FEE_PERCENT
+  }
 }
 
 /** The currency the most orders are denominated in. */

@@ -77,6 +77,32 @@ The platform fee is a separate promise from add-ons, and the more important one.
 The rate is published at `/transparency`, read live from that same catalog via
 `GET /store/fee-schedule` — so the page cannot quote a number we do not charge.
 
+### 3a. The commission is for native sales
+
+FBM charges its platform fee on sales it actually processed — anything that
+went through FBM checkout, whichever surface the buyer arrived from: the
+storefront, a `connect.js` embed on the vendor's own site, in-person POS,
+vending, click-and-collect pickup, or a subscription renewal.
+
+It charges nothing on a sale captured somewhere else and merely recorded here.
+An order ingested from Faire, Etsy or Amazon was captured, paid and priced by
+that marketplace, which already took its own cut before the money reached the
+vendor (`FeeType.CHANNEL_FEE`). FBM ran no checkout, carried no payment risk
+and held no funds for it. Charging on top would bill for work FBM did not do
+and leave the vendor paying two commissions on one sale.
+
+The architecture already made this true — channel orders are stored as
+`channel_order` rows and never converted into Medusa orders, so they never
+reach the payout path. `modules/payout-breakdown/commission-scope.ts` states
+it as a rule instead, and **throws** rather than returning zero if a caller
+ever asks for commission on a non-native sale, so a future change that does
+convert channel orders cannot quietly start billing them.
+
+Vendors can see both rates side by side at `GET /vendor/revenue/channels`:
+FBM's own line now reports its fee at the seller's effective rate rather than
+as unknown, so the one take rate we could always state is no longer the only
+one the screen withheld.
+
 ### 4. Add-ons never gate what should not be gated
 
 Feature keys behind an add-on are tooling. They do not gate:
