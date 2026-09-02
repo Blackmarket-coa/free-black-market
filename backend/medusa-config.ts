@@ -197,6 +197,7 @@ const financialModules = [
   { resolve: './src/modules/donation' },
   { resolve: './src/modules/vendor-plan' },
   { resolve: './src/modules/vendor-billing' },
+  { resolve: './src/modules/accounts-receivable' },
   { resolve: './src/modules/vendor-usage' },
 ]
 

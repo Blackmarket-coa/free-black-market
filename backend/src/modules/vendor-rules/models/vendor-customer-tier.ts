@@ -45,6 +45,16 @@ const VendorCustomerTier = model.define("vendor_customer_tier", {
   
   // Extended payment terms (days)
   payment_terms_days: model.number().default(0),
+
+  /**
+   * Credit ceiling in cents, or null for "this vendor does not run limits".
+   *
+   * NULL and 0 are different promises and both are real: null enforces no
+   * ceiling, 0 says this buyer may not carry a balance at all. Read by
+   * `accounts-receivable`'s `resolveCreditLimitCents`; terms without a
+   * ceiling is an unbounded promise.
+   */
+  credit_limit_cents: model.number().nullable(),
   
   // Free delivery threshold (cents, 0 = no free delivery)
   free_delivery_threshold: model.number().default(0),
