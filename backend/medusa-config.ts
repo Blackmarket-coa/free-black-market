@@ -189,6 +189,8 @@ const commerceModules = [
   { resolve: './src/modules/wellness' },
   // Device push tokens + FCM delivery for the Capacitor shell (mobile/)
   { resolve: './src/modules/native-push' },
+  // RFQ → priced quote → cart at the quoted prices.
+  { resolve: './src/modules/quote' },
 ]
 
 // Financial/ledger modules
@@ -197,8 +199,10 @@ const financialModules = [
   { resolve: './src/modules/donation' },
   { resolve: './src/modules/vendor-plan' },
   { resolve: './src/modules/vendor-billing' },
+  // Net terms: a vendor's invoices to their buyers, and the AR behind them.
   { resolve: './src/modules/accounts-receivable' },
-  { resolve: './src/modules/quote' },
+  // Buyer-facing arbitration entry for ordinary orders.
+  { resolve: './src/modules/order-dispute' },
   { resolve: './src/modules/vendor-usage' },
 ]
 
