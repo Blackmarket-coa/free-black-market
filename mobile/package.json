@@ -5,6 +5,8 @@
   "description": "FBM mobile app - Capacitor shell around the Next.js storefront",
   "packageManager": "pnpm@11.20.0",
   "scripts": {
+    "test": "node --test \"test/*.test.mjs\"",
+    "version:set": "node scripts/set-version.mjs",
     "sync": "cap sync",
     "sync:android": "cap sync android",
     "sync:ios": "cap sync ios",
