@@ -86,6 +86,7 @@ export const ProductDetails = async ({
       <ProductDetailsFooter
         tags={product?.tags || []}
         posted={product?.created_at}
+        productId={product.id}
       />
     </div>
   )

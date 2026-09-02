@@ -9,6 +9,10 @@ import type MarketplaceWebhooksService from "../modules/marketplace-webhooks/ser
 import { resolveSellerBlackoutUserId } from "../lib/blackout-identity"
 import { emitReferralAttributed } from "../lib/blackout-stub-emitters"
 import { buildReferralAttributedArgs } from "../lib/blackout-wire-helpers"
+import {
+  resolveCustomerMxid,
+  resolveSellerIdByMxid,
+} from "../lib/blackout-identity"
 
 /**
  * Subscriber: attribute the order to a creator (if applicable) and emit
@@ -71,9 +75,22 @@ export default async function attributeOrderOnPlacedSubscriber({
       return
     }
 
+    // Resolve whether the buyer is themselves a seller, so the service's
+    // self-purchase guard has two comparable ids. It previously compared a
+    // `cus_*` against a `sel_*` and could never fire. Resolution goes through
+    // mxid because that is the identity column with a partial-unique index.
+    let buyerSellerId: string | null = null
+    if (order.customer_id) {
+      const buyerMxid = await resolveCustomerMxid(container, order.customer_id)
+      if (buyerMxid) {
+        buyerSellerId = await resolveSellerIdByMxid(container, buyerMxid)
+      }
+    }
+
     const attribution = await attributionService.attributeOrder({
       orderId,
       customerId: order.customer_id ?? null,
+      buyerSellerId,
       visitorToken: visitorToken ?? null,
       shortCode,
       appliedPromoCodes,
