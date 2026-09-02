@@ -1,6 +1,6 @@
 # Commerce Roadmap — B2B and community pivot
 
-Status: **consolidated and code-verified, 2026-09-02.**
+Status: **consolidated and code-verified, 2026-09-02. Tier 1 shipped.**
 
 This document reconciles the current consolidated commerce direction (the
 offering inventory plus the B2B/community pivot backlog) against what is
@@ -62,6 +62,25 @@ halves has been added to that document.
 
 ---
 
+### 1a. The commission rule, as of 2026-09-02
+
+**Commission is for native sales.** FBM's 3% applies to any sale that went
+through FBM checkout — storefront, `connect.js` embed, POS, vending, pickup,
+subscription renewal. It does not apply to an order captured by an external
+marketplace and ingested here: that marketplace priced it, took its own cut
+(`FeeType.CHANNEL_FEE`), and FBM ran no checkout for it.
+
+This was already true structurally — `channel_order` rows are never converted
+into Medusa orders, so they never reach the payout path — and is now stated in
+`modules/payout-breakdown/commission-scope.ts`, which throws rather than
+returning zero if a caller asks for commission on a non-native sale. Recorded
+in `docs/ADDON_COMMITMENTS.md` §3a.
+
+The flat 3% is unchanged and unchanged-able upward (§3 of the same document);
+all eleven playbook recipes set `commission_rate: 0.03`.
+
+---
+
 ## 2. What the pivot already stands on
 
 For planning, the B2B and community substrate that exists today:
@@ -93,34 +112,44 @@ For planning, the B2B and community substrate that exists today:
 These are what survived the audit. Everything else in the pivot backlog is a
 wiring, configuration, or consolidation task against §2.
 
-### 3.1 Priced quote object (RFQ → quote → order)
+### 3.1 Priced quote object (RFQ → quote → order) — **CLOSED 2026-09-02**
 
-`request` captures an ask and `bargaining` prices a group proposal, but there
-is no line-item quote against an ordinary vendor listing: no priced lines, no
-validity window, no accept-to-cart conversion. This is the missing hop
-between the demand-side cluster and checkout, and it is what makes the other
-B2B mechanics reachable.
+Shipped as `modules/quote` (`071d368`). A quote carries priced lines against
+real variants with a `list_unit_price` snapshot, a `valid_until`, and a
+draft/sent/accepted/declined/withdrawn/expired lifecycle. Acceptance builds a
+real cart and overrides each line's `unit_price` with `is_custom_price`,
+following `api/store/carts/[id]/wholesale`, so checkout, payouts, the 3% on
+native sales and AR all behave normally afterwards. `request_id` links a quote
+back to the RFQ it answers rather than adding a second approval model.
 
-Shape: a quote with lines referencing variants, a `valid_until`, a status
-lifecycle mirroring `request`'s, and an accept path that materialises a cart.
-Reuse `request` for intake rather than adding a second approval model.
+Surfaces: `/vendor/quotes` (+`/[id]`), `/store/quotes` (+`/[id]`,
+`/[id]/accept`), job `quote-expiry`.
 
-### 3.2 Net-terms enforcement (accounts receivable)
+### 3.2 Net-terms enforcement (accounts receivable) — **CLOSED 2026-09-02**
 
-`payment_terms_days` is stored and never read. Closing this means: deriving
-`due_at` on invoice issue from the buyer's tier, AR aging, an overdue state
-beyond the current four, credit-limit checks at order placement, and dunning.
-The invoice record should move off seller metadata onto a real model — the
-current `/vendor/invoices` shape will not carry AR.
+Shipped as `modules/accounts-receivable` (`502d336`). `payment_terms_days` is
+now read at issue, copied onto the invoice, and turned into a real `due_at`
+that aging and dunning key off. Invoices moved off the
+`seller_metadata.invoices_v1` blob onto `ar_invoice` + `ar_invoice_payment`
+(idempotent, backfilled by `scripts/backfill-ar-invoices.ts`, blob left in
+place). `overdue` and `partially_paid` are derived rather than stored; a
+credit ceiling was added to `vendor_customer_tier` (`credit_limit_cents`,
+nullable — no-limit and no-credit are different promises).
 
-This is the highest-value gap: net terms are the thing B2B buyers actually
-ask for, and today the platform promises them in a tier and enforces nothing.
+Surfaces: `/vendor/invoices` (+`/[id]`, `/[id]/payments`, `/aging`), job
+`ar-dunning-sweep`.
 
-### 3.3 Buyer-facing dispute entry for ordinary orders
+### 3.3 Buyer-facing dispute entry for ordinary orders — **CLOSED 2026-09-02**
 
-The escrow arbitration machine and its transitions exist and are tested; only
-service contracts and subcontracts can reach them. Ordinary orders need an
-entry point and an admin arbitration queue. No new state machine.
+Shipped as `modules/order-dispute` (`cbe99e6`). A buyer can raise a claim
+against an ordinary order within a 60-day window; the vendor can answer; an
+admin works a queue and decides. No new arbitration engine — it records the
+decision and names the escrow transition it implies, returning null for the
+ordinary un-escrowed order rather than fabricating one. One live dispute per
+order; only an admin resolves.
+
+Surfaces: `/store/orders/[id]/dispute`, `/vendor/disputes` (+`/[id]`),
+`/admin/disputes` (+`/[id]`).
 
 ### 3.4 `rental` module depth
 
@@ -178,13 +207,24 @@ non-self-fulfilling vendors actually exist. No design work yet.
 Ordered by dependency and by how much each unblocks. Each tier is
 independently shippable.
 
-**Tier 1 — make B2B transactable (do first).**
-1. **Priced quote object** (§3.1). Everything B2B routes through it.
-2. **Net-terms enforcement** (§3.2). The sharpest gap and the loudest
-   promise currently unbacked by code.
-3. **Buyer-facing dispute entry** (§3.3). Order values rise with 1 and 2;
-   this is the control that should rise with them, and the machine is
-   already built.
+**Tier 1 — make B2B transactable. ✅ DONE 2026-09-02.**
+1. ~~**Priced quote object**~~ (§3.1) — `modules/quote`, `071d368`.
+2. ~~**Net-terms enforcement**~~ (§3.2) — `modules/accounts-receivable`,
+   `502d336`.
+3. ~~**Buyer-facing dispute entry**~~ (§3.3) — `modules/order-dispute`,
+   `cbe99e6`.
+
+Alongside them, the commission rule was made explicit rather than
+structural: **commission is for native sales** — anything through FBM
+checkout, nothing on an order another marketplace captured and already took
+its cut from (`commission-scope.ts`, `f573f53`). That was already true by
+construction, since channel orders never become Medusa orders; it is now a
+rule that throws instead of an accident that holds. The same change fixed a
+real defect — FBM's own line on `/vendor/revenue/channels` reported its fee as
+*unknown*, so the one take rate we could always state was the only one the
+screen withheld.
+
+**Tier 2 is now the front of the queue.**
 
 **Tier 2 — make B2B credible.**
 4. **B2B document types and expiry** on `document-vault` — certificates of
