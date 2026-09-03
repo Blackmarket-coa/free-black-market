@@ -175,14 +175,38 @@ nullable — no-limit and no-credit are different promises).
 Surfaces: `/vendor/invoices` (+`/[id]`, `/[id]/payments`, `/aging`), job
 `ar-dunning-sweep`.
 
-### 3.3 Buyer-facing dispute entry for ordinary orders — **CLOSED 2026-09-02**
+### 3.3 Buyer-facing dispute entry for ordinary orders — **CLOSED 2026-09-02, premise corrected 2026-09-03**
 
-Shipped as `modules/order-dispute` (`cbe99e6`). A buyer can raise a claim
-against an ordinary order within a 60-day window; the vendor can answer; an
-admin works a queue and decides. No new arbitration engine — it records the
-decision and names the escrow transition it implies, returning null for the
-ordinary un-escrowed order rather than fabricating one. One live dispute per
-order; only an admin resolves.
+**The premise was wrong.** This roadmap said ordinary orders had no
+buyer-facing dispute entry. They did: `POST /store/order-claims`, built on the
+generic `request` model, with a storefront section, a public
+`/buyer-protection` page, and admin triage via `/admin/requests`. Its own
+docblock warned that "a parallel claims module would duplicate all of it" —
+and `modules/order-dispute` (`cbe99e6`) was then built as exactly that,
+with a 60-day window against the claims route's published 30. Two systems
+with two published windows was worse than either alone. A 57-agent audit
+caught it; §1's "checked against the tree" did not, because it checked
+module names rather than routes.
+
+**Reconciled 2026-09-03, operator decision: order-dispute is the single
+engine.** It has what a real arbitration needs and the request shell cannot
+hold — per-vendor scoping, claim and award amounts, a vendor right of reply,
+an append-only event log. The claims route keeps its path, request body and
+response shape so the storefront works unchanged, and files a dispute
+underneath (`order-dispute/claims-compat.ts` translates the vocabularies,
+`shared/order-dispute-intake.ts` is the one intake both routes use). The
+published window is now **60 days**, defined once: the claims route's
+`CLAIM_WINDOW_DAYS` *is* `DEFAULT_FILING_WINDOW_DAYS`. Pending legacy claims
+migrate via `scripts/backfill-order-claims.ts`. Admin triage moved from
+`/admin/requests` to `/admin/disputes`.
+
+Also repaired the same day (`dcc8aef`): on a multi-vendor order the route
+had taken the first seller found as respondent and the whole order total as
+the claim ceiling, so Vendor A could be held liable for Vendor B's goods, and
+the live-dispute index (scoped by order alone) refused the buyer any remedy
+against B until the argument about A resolved. Now the buyer names the
+vendor, the ceiling is that vendor's share, and the index is per
+`(order_id, seller_id)`.
 
 Surfaces: `/store/orders/[id]/dispute`, `/vendor/disputes` (+`/[id]`),
 `/admin/disputes` (+`/[id]`).
