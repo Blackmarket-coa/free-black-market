@@ -93,51 +93,82 @@ class BlackstarFulfillmentModuleService extends MedusaService({
       }
     }
 
-    const [existing] = await this.listBlackstarShipments({
+    // EVERY shipment row on the order, not the first one found.
+    //
+    // A second Blackstar fulfillment on one order creates a second
+    // blackstar_shipment keyed by (order_id, fulfillment_id). Contract v1
+    // events carry only `source_order_ref` — there is no per-parcel key on
+    // the wire — so the receiver used to match `[0]` and the second row could
+    // never receive an event: an orphan that stayed `pending` forever while
+    // its parcel was delivered. Until the wire format grows a per-fulfillment
+    // listing key (a Blackstar-side change), an order-scoped event is applied
+    // to every parcel on that order, which is what it actually asserts.
+    const rows = (await this.listBlackstarShipments({
       order_id: input.source_order_ref,
-    })
-    const decision = decideStatusWrite(
-      (existing as { external_status?: string | null } | undefined)?.external_status,
-      input.external_status
-    )
+    })) as unknown as {
+      id: string
+      external_status?: string | null
+      metadata?: Record<string, unknown> | null
+    }[]
 
-    // Metadata is MERGED, not replaced. `recordOrUpdateShipment` swaps the
-    // whole blob, which was harmless while every event was applied and fatal
-    // once some are skipped: a refused out-of-order event would otherwise
-    // stamp `last_event_type: in_transit` onto a shipment reading
-    // `delivered`, and the two fields would contradict each other.
-    const existingMetadata =
-      ((existing as { metadata?: Record<string, unknown> | null } | undefined)
-        ?.metadata ?? {}) as Record<string, unknown>
+    const targets = rows.length ? rows : [null]
+    let firstShipmentId: string | null = null
+    let firstDecision: StatusDecision | null = null
+    let firstResulting: string | null = null
+    const perRow: Record<string, string> = {}
 
-    const metadata: Record<string, unknown> = {
-      ...existingMetadata,
-      ...(input.metadata ?? {}),
+    for (const existing of targets) {
+      const decision = decideStatusWrite(existing?.external_status, input.external_status)
+
+      // Metadata is MERGED, not replaced. `recordOrUpdateShipment` swaps the
+      // whole blob, which was harmless while every event was applied and
+      // fatal once some are skipped: a refused out-of-order event would
+      // otherwise stamp `last_event_type: in_transit` onto a shipment reading
+      // `delivered`, and the two fields would contradict each other.
+      const metadata: Record<string, unknown> = {
+        ...((existing?.metadata ?? {}) as Record<string, unknown>),
+        ...(input.metadata ?? {}),
+      }
+      if (decision.apply) {
+        metadata.last_applied_event_id = input.event_id ?? null
+        metadata.last_applied_event_type = input.event_type
+      } else {
+        metadata.last_skipped_event_id = input.event_id ?? null
+        metadata.last_skipped_event_type = input.event_type
+        metadata.last_skipped_reason = decision.reason
+      }
+
+      let shipment: { id: string; external_status?: string | null }
+      if (existing) {
+        const [updated] = await this.updateBlackstarShipments([
+          {
+            id: existing.id,
+            ...(input.fulfillment_node_id
+              ? { fulfillment_node_id: input.fulfillment_node_id }
+              : {}),
+            ...(decision.apply ? { external_status: input.external_status } : {}),
+            metadata,
+          },
+        ])
+        shipment = updated as unknown as { id: string; external_status?: string | null }
+      } else {
+        shipment = (await this.recordOrUpdateShipment({
+          order_id: input.source_order_ref,
+          fulfillment_node_id: input.fulfillment_node_id ?? null,
+          ...(decision.apply ? { external_status: input.external_status } : {}),
+          metadata,
+        })) as unknown as { id: string; external_status?: string | null }
+      }
+
+      perRow[shipment.id] = decision.reason
+      if (firstShipmentId === null) {
+        firstShipmentId = shipment.id
+        firstDecision = decision
+        firstResulting = shipment.external_status ?? null
+      }
     }
 
-    if (decision.apply) {
-      metadata.last_applied_event_id = input.event_id ?? null
-      metadata.last_applied_event_type = input.event_type
-    } else {
-      // Recorded so the skip is visible on the shipment itself, not only in
-      // the receipt table.
-      metadata.last_skipped_event_id = input.event_id ?? null
-      metadata.last_skipped_event_type = input.event_type
-      metadata.last_skipped_reason = decision.reason
-    }
-
-    const shipment = await this.recordOrUpdateShipment({
-      order_id: input.source_order_ref,
-      fulfillment_node_id: input.fulfillment_node_id ?? null,
-      // The guard decides the status; everything else on the event still
-      // lands. A late event can carry a node id or listing id we did not
-      // have, and refusing its status is not a reason to drop those.
-      ...(decision.apply ? { external_status: input.external_status } : {}),
-      metadata,
-    })
-
-    const resultingStatus =
-      (shipment as { external_status?: string | null }).external_status ?? null
+    const decision = firstDecision ?? { apply: false, reason: "unknown_status" as const }
 
     if (input.event_id) {
       try {
@@ -149,12 +180,13 @@ class BlackstarFulfillmentModuleService extends MedusaService({
             correlation_id: input.correlation_id ?? null,
             outcome: decision.reason,
             requested_status: input.external_status,
-            resulting_status: resultingStatus,
+            resulting_status: firstResulting,
+            metadata: rows.length > 1 ? { per_shipment: perRow } : null,
           },
         ])
       } catch {
         // A concurrent delivery of the same event won the unique index. The
-        // state write above is idempotent for that case, so losing the race
+        // state writes above are idempotent for that case, so losing the race
         // is not an error worth failing the request over.
       }
     }
@@ -162,8 +194,8 @@ class BlackstarFulfillmentModuleService extends MedusaService({
     return {
       processed: true,
       decision,
-      shipment_id: (shipment as { id: string }).id,
-      resulting_status: resultingStatus,
+      shipment_id: firstShipmentId,
+      resulting_status: firstResulting,
     }
   }
 

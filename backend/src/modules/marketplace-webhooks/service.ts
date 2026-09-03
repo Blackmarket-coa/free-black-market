@@ -223,6 +223,78 @@ class MarketplaceWebhooksService extends MedusaService({
   }
 
   /**
+   * Outbound Blackstar deliveries by status — the operator's view of the
+   * bridge's health.
+   *
+   * Before this existed a delivery that exhausted its retries went DEAD in
+   * `marketplace_webhook_delivery` and nothing surfaced it: no admin route, no
+   * alert, no count. A Blackstar listing that was never created because FBM's
+   * four attempts all hit a 5xx was indistinguishable, from any screen, from
+   * one that was never meant to be. The inbound direction got a receipt table
+   * and an ordering guard on 2026-09-03; this is the outbound direction
+   * getting its first pair of eyes.
+   */
+  async listBlackstarDeliveries(args: {
+    status?: WebhookDeliveryStatus | WebhookDeliveryStatus[]
+    limit?: number
+  } = {}) {
+    const filters: Record<string, unknown> = {
+      subscription_id: BLACKSTAR_SUBSCRIPTION_ID,
+    }
+    if (args.status) filters.status = args.status
+    return this.listWebhookDeliveries(filters, {
+      order: { created_at: "DESC" },
+      take: Math.min(Math.max(1, args.limit ?? 50), 200),
+    })
+  }
+
+  /**
+   * Put a DEAD or FAILED Blackstar delivery back on the queue.
+   *
+   * Resets the attempt counter rather than continuing it: a delivery that
+   * died after four attempts against a Blackstar that was down for an hour
+   * deserves a fresh four, not a fifth that dies again on the next transient.
+   * The envelope and its `event_id` are untouched, so Blackstar's receipt
+   * table dedupes a replay of something it did in fact receive — replaying is
+   * always safe from FBM's side, which is what makes an operator button
+   * defensible at all.
+   *
+   * Refuses a SUCCEEDED delivery: replaying one that landed is not a retry,
+   * it is a duplicate, and the fact that Blackstar would dedupe it is not a
+   * reason to send it.
+   */
+  async replayBlackstarDelivery(
+    deliveryId: string,
+    opts: { attemptNow?: boolean } = {}
+  ): Promise<{ delivery: unknown; attempted: boolean; succeeded: boolean | null }> {
+    const [delivery] = await this.listWebhookDeliveries({ id: deliveryId })
+    if (!delivery) throw new Error(`No delivery ${deliveryId}`)
+    if (delivery.subscription_id !== BLACKSTAR_SUBSCRIPTION_ID) {
+      throw new Error(`Delivery ${deliveryId} is not a Blackstar delivery`)
+    }
+    if (delivery.status === WebhookDeliveryStatus.SUCCEEDED) {
+      throw new Error(`Delivery ${deliveryId} already succeeded; replaying it would duplicate it`)
+    }
+
+    await (this as any).updateWebhookDeliveries({
+      id: delivery.id,
+      attempt: 0,
+      status: WebhookDeliveryStatus.PENDING,
+      next_attempt_at: new Date(),
+      response_code: null,
+      response_body: null,
+    })
+
+    let succeeded: boolean | null = null
+    if (opts.attemptNow) {
+      succeeded = await this.attemptDelivery(delivery.id)
+    }
+
+    const [fresh] = await this.listWebhookDeliveries({ id: delivery.id })
+    return { delivery: fresh, attempted: !!opts.attemptNow, succeeded }
+  }
+
+  /**
    * Attempt one delivery. Returns true on 2xx, false otherwise (and schedules
    * retry or marks dead).
    */

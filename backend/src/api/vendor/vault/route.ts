@@ -1,4 +1,8 @@
 import type { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
+import {
+  daysUntilExpiry,
+  effectiveDocumentStatus,
+} from "../../../modules/document-vault/document-status"
 import { DOCUMENT_VAULT_MODULE } from "../../../modules/document-vault"
 import type DocumentVaultModuleService from "../../../modules/document-vault/service"
 import { VaultDocumentType } from "../../../modules/document-vault/models/vault-document"
@@ -16,7 +20,18 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
   if (!sellerId) return res.status(401).json({ message: "Unauthorized" })
 
   const service = req.scope.resolve<DocumentVaultModuleService>(DOCUMENT_VAULT_MODULE)
-  const documents = await service.listForSeller(sellerId)
+  const rows = await service.listForSeller(sellerId)
+  // `verified` is the stored fact; `effective_status` is what the document
+  // currently proves. A vendor should see "expired" on a lapsed certificate
+  // before a buyer or a quest predicate does.
+  const now = new Date()
+  const documents = (rows as unknown as Parameters<typeof effectiveDocumentStatus>[0][]).map(
+    (doc) => ({
+      ...doc,
+      effective_status: effectiveDocumentStatus(doc, now),
+      days_until_expiry: daysUntilExpiry(doc, now),
+    })
+  )
   res.json({ documents, count: documents.length })
 }
 

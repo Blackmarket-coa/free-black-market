@@ -166,14 +166,16 @@ class AccountsReceivableService extends MedusaService({
    *
    * Read-only — the caller decides what to do with a refusal.
    *
-   * NOTE: this has no production caller yet. The credit ceiling it reads
-   * (`vendor_customer_tier.credit_limit_cents`) also has no writer — there is
-   * no vendor or admin route for editing tiers at all — so today every buyer
-   * resolves to "no limit" and nothing consults this. Two things must land
-   * before a limit can bind: a tier-editing surface, and a call site
-   * (quote acceptance and `completeCartWorkflow.hooks.validate` are the two
-   * natural ones). Until then this is machinery waiting for its wiring, and
-   * saying so is better than a comment claiming a caller that does not exist.
+   * Writer and caller, as of 2026-09-03: `credit_limit_cents` is set through
+   * `/vendor/customer-tiers` (+ `/[id]`), and `POST /store/quotes/:id/accept`
+   * consults this before building a cart at negotiated prices. The past-due
+   * gate is the part that bites today; the ceiling arithmetic binds only once
+   * a pay-later checkout exists, since ordinary checkout settles at Stripe and
+   * adds nothing to exposure. `completeCartWorkflow.hooks.validate` is the
+   * other natural call site and is deliberately not wired here — it is a
+   * single-handler chokepoint (see `workflows/hooks/complete-cart-validate.ts`)
+   * that several pending items all need, and it should be extended once, on
+   * purpose.
    */
   async checkCreditLimit(args: {
     sellerId: string

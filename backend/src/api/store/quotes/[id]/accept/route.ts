@@ -6,6 +6,9 @@ import { QUOTE_MODULE } from "../../../../../modules/quote"
 import type QuoteService from "../../../../../modules/quote/service"
 import { QuoteStateError, canAccept } from "../../../../../modules/quote/pricing"
 import { resolveRegionIdForCurrency } from "../../../../../lib/blackout-checkout"
+import { ACCOUNTS_RECEIVABLE_MODULE } from "../../../../../modules/accounts-receivable"
+import type AccountsReceivableService from "../../../../../modules/accounts-receivable/service"
+import { loadTiersForSeller } from "../../../../../shared/ar-tiers"
 import {
   BASE_UNIT_PRICE_METADATA_KEY,
   BASE_CURRENCY_METADATA_KEY,
@@ -62,9 +65,11 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
   const quote = row as
     | {
         id: string
+        seller_id: string
         customer_id: string
         currency_code: string
         status: string
+        subtotal: number
         valid_until: Date | null
         cart_id: string | null
       }
@@ -108,6 +113,44 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
   }
 
   const currency = (quote.currency_code || "usd").toLowerCase()
+
+  // Credit standing with THIS vendor, before a cart is built at negotiated
+  // prices. This is the first production caller of the credit check that AR
+  // shipped: a buyer sitting on a past-due invoice with the vendor is refused,
+  // and a vendor who has set a ceiling has it honoured against what the buyer
+  // already owes. A vendor who runs no limit (the default) is untouched.
+  //
+  // Honest scope note: the cart still pays through ordinary checkout, so
+  // accepting a quote does not itself add to exposure today — the ceiling
+  // arithmetic only bites once a pay-later checkout exists. The past-due gate
+  // bites now, and is the reason to check here rather than nowhere.
+  try {
+    const tiers = await loadTiersForSeller(req.scope, quote.seller_id)
+    const ar = req.scope.resolve<AccountsReceivableService>(
+      ACCOUNTS_RECEIVABLE_MODULE
+    )
+    const credit = await ar.checkCreditLimit({
+      sellerId: quote.seller_id,
+      customerId,
+      tiers,
+      chargeCents: Math.floor(Number(quote.subtotal) || 0),
+      now,
+    })
+    if (!credit.allowed) {
+      return res.status(409).json({
+        message:
+          credit.reason === "past_due"
+            ? "You have an overdue invoice with this vendor. Settle it before accepting a new quote."
+            : "Accepting this quote would exceed the credit limit this vendor has set for you.",
+        type: "credit_limit",
+        decision: credit,
+      })
+    }
+  } catch (err) {
+    // A credit read failing must not block a buyer who is not on credit at
+    // all; log it and let ordinary checkout proceed.
+    log.warn(`[quote-accept] credit check failed for quote ${quote.id}`, err)
+  }
 
   try {
     const regionId = await resolveRegionIdForCurrency(req.scope, currency)
