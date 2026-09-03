@@ -1,9 +1,9 @@
 import { readFileSync } from "node:fs"
 import path from "node:path"
 
-import { InvoiceStatus } from "../accounts-receivable/terms"
-import { QuoteStatus } from "../quote/pricing"
-import { DisputeReason, DisputeStatus } from "../order-dispute/resolution"
+import { InvoiceStatus } from "../modules/accounts-receivable/terms"
+import { QuoteStatus } from "../modules/quote/pricing"
+import { DisputeReason, DisputeStatus } from "../modules/order-dispute/resolution"
 
 /**
  * Every status vocabulary in this session's new modules is written down twice:
@@ -71,7 +71,7 @@ const sorted = (values: readonly string[]): string[] => [...values].sort()
 
 describe("accounts-receivable: invoice status parity", () => {
   const migration = readSource(
-    "../accounts-receivable/migrations/Migration20260902000000CreateAccountsReceivable.ts"
+    "../modules/accounts-receivable/migrations/Migration20260902000000CreateAccountsReceivable.ts"
   )
   const checkValues = checkConstraintValues(migration, "CK_ar_invoice_status")
 
@@ -97,7 +97,7 @@ describe("accounts-receivable: invoice status parity", () => {
 
 describe("quote: status parity", () => {
   const migration = readSource(
-    "../quote/migrations/Migration20260902000200CreateQuote.ts"
+    "../modules/quote/migrations/Migration20260902000200CreateQuote.ts"
   )
   const checkValues = checkConstraintValues(migration, "CK_quote_status")
 
@@ -113,7 +113,7 @@ describe("quote: status parity", () => {
 
 describe("order-dispute: status and reason parity", () => {
   const migration = readSource(
-    "../order-dispute/migrations/Migration20260902000300CreateOrderDispute.ts"
+    "../modules/order-dispute/migrations/Migration20260902000300CreateOrderDispute.ts"
   )
 
   it("status agrees exactly with DisputeStatus", () => {
@@ -149,7 +149,7 @@ describe("order-dispute: status and reason parity", () => {
 
 describe("blackstar: event receipt outcome parity", () => {
   const migration = readSource(
-    "../blackstar-fulfillment/migrations/Migration20260902000400CreateBlackstarEventReceipt.ts"
+    "../modules/blackstar-fulfillment/migrations/Migration20260902000400CreateBlackstarEventReceipt.ts"
   )
   const checkValues = checkConstraintValues(
     migration,
@@ -161,7 +161,7 @@ describe("blackstar: event receipt outcome parity", () => {
    * parsed from source the same way the sibling spec parses `model.enum()`.
    */
   const decisionReasons: string[] = (() => {
-    const source = readSource("../blackstar-fulfillment/shipment-lifecycle.ts")
+    const source = readSource("../modules/blackstar-fulfillment/shipment-lifecycle.ts")
     const block = source.match(/reason\s*:\s*\n?([\s\S]*?)\n\}/)
     if (!block) {
       throw new Error(

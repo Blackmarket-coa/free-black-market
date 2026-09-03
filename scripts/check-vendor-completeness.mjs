@@ -97,6 +97,13 @@ function checkBackendModuleScaffold() {
     if (!entry.isDirectory()) {
       continue
     }
+    // A `__tests__` directory beside the modules is a test folder, never a
+    // module: it has no index.ts or service.ts to require, and flagging it as
+    // "missing scaffold" fails CI for a cross-module spec that has nowhere
+    // else natural to live.
+    if (entry.name === "__tests__") {
+      continue
+    }
 
     const moduleDir = join(backendModulesPath, entry.name)
     const hasIndex = existsSync(join(moduleDir, "index.ts"))
