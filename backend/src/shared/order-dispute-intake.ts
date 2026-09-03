@@ -1,5 +1,6 @@
 import type { MedusaContainer } from "@medusajs/framework/types"
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
+import { HAWALA_LEDGER_MODULE } from "../modules/hawala-ledger"
 import { ORDER_DISPUTE_MODULE } from "../modules/order-dispute"
 import type OrderDisputeService from "../modules/order-dispute/service"
 import {
@@ -166,6 +167,44 @@ export function resolveDisputeTarget(
   return { sellerId, ceilingCents }
 }
 
+/**
+ * The hawala escrow agreement holding this order's funds, if one exists.
+ *
+ * `order_dispute.escrow_agreement_id` was nullable-and-always-null: the
+ * service accepted it, and no caller ever supplied it, so the admin route's
+ * headline feature — naming the escrow transition a decision implies — was
+ * unreachable even for the escrowed orders it was designed for. This is the
+ * writer.
+ *
+ * Ordinary orders settle through Stripe and have no agreement; that is the
+ * common case and returns null. Resolution failure also returns null rather
+ * than blocking the complaint — a buyer's right to raise a dispute must not
+ * depend on the ledger module being reachable.
+ */
+async function findOrderEscrowId(
+  container: MedusaContainer,
+  orderId: string
+): Promise<string | null> {
+  try {
+    const hawala = container.resolve(HAWALA_LEDGER_MODULE) as {
+      listEscrowAgreements?: (
+        filters: Record<string, unknown>
+      ) => Promise<{ id: string; state?: string }[]>
+    }
+    if (typeof hawala?.listEscrowAgreements !== "function") return null
+    const rows = await hawala.listEscrowAgreements({
+      subject_type: "order",
+      subject_id: orderId,
+    })
+    // Prefer a live agreement; a released or recovered one holds nothing to
+    // move, and naming it would imply a transition that cannot happen.
+    const live = rows.find((r) => r.state === "funded" || r.state === "disputed")
+    return (live ?? rows[0])?.id ?? null
+  } catch {
+    return null
+  }
+}
+
 export async function openDisputeForOrder(
   container: MedusaContainer,
   args: {
@@ -216,6 +255,7 @@ export async function openDisputeForOrder(
       reason: args.reason,
       description: args.description,
       claimCents: args.claimCents ?? null,
+      escrowAgreementId: await findOrderEscrowId(container, order.id),
       filingWindowDays: windowDays,
     })
 
