@@ -33,7 +33,7 @@ much the correction changes the plan.
 | Claim in the consolidated state | What the code says | Consequence |
 | --- | --- | --- |
 | **TigerBeetle ledger correctness is a hard gate blocking Buyer Center and module-licensing monetization** | TigerBeetle was **rejected**, not deferred pending work: `REPO_CONSOLIDATION_REVIEW.md` D1 — "`hawala-ledger` is the org-canonical ledger… TigerBeetle stays rejected (PR #800)". The string appears in exactly two docs and **zero** source files. The Buyer Center escrow/idempotency defects it was said to gate were "closed before Move 1, guarded by blocking CI soak (PR #800)" (`FEDERATION_VS_FOUNDATION_DECISION.md` §182-185). | **Drop the gate.** Nothing is blocked on it. Ledger investment goes into `hawala-ledger` instead — the harvest items in `REPO_CONSOLIDATION_REVIEW.md` §5, of which 1–4 landed as W1a. |
-| **Blackstar needs to be built out — mesh routing, reverse-auction bidding, batch claim aggregation, micro-depots** | D2: "Blackstar frozen; FBM fulfillment modules are the live implementation." What exists in FBM is a persistence + webhook layer: `modules/blackstar-fulfillment` (3 models, 2 migrations, signature verification, bridge-credential cipher, 4 unit specs) and `modules/blackstar-fulfillment-provider`, a stub provider behind `FBM_BLACKSTAR_INTEGRATION=1`. | **Do not build.** Building the federated protocol reverses a standing decision and needs an operator reversal first, not a roadmap slot. Micro-depot listings are reachable without it — see §3. |
+| **Blackstar needs to be built out — mesh routing, reverse-auction bidding, batch claim aggregation, micro-depots** | D2: "Blackstar frozen; FBM fulfillment modules are the live implementation." What exists in FBM is a persistence + webhook layer: `modules/blackstar-fulfillment` (3 models, 2 migrations, signature verification, bridge-credential cipher, 4 unit specs) and `modules/blackstar-fulfillment-provider`, a stub provider behind `FBM_BLACKSTAR_INTEGRATION=1`. | **Superseded 2026-09-03 — the freeze was lifted.** The operator reversed D2; Blackstar is active work again (§1b). FBM's fulfillment modules remain the live implementation. Micro-depot listings are still reachable without the federated protocol — see §3. |
 | **connect.js is scoped (three tiers, publishable key, two checkout modes)** | Shipped, versioned and frozen: `/v2.0.0/connect.js` went out SRI-pinned on 2026-08-13 (PRs #801–#803). `modules/embed-keys` issues `pk_live_*` (SHA-256 at rest, plaintext once), `modules/embed-analytics` records the funnel, and `shared/__tests__/connect-sri.unit.spec.ts` enforces release/template parity so a version bump cannot leave the pinned template behind. | Treat connect.js as a **shipped artifact under version discipline**, not a scoped design. New embed work is a v2.x change with a changelog entry (`docs/integrations/fbm-connect-changelog.md`). |
 | **Bulk-buying cooperative orders are new** | The deepest cluster in the repo already: `demand-pool` (6 models, 5 migrations, ~3,430 LOC — demand posts, pledge thresholds, supplier proposals, proposal votes, bounties), `bargaining` (6 models — groups, negotiation threads, proposals, votes, with `payment_terms`/`quality_standards`), `cooperative`, `buyer-network`, `collective-campaign` (8 models), and the `collective-purchase` workflows. | **Wire, don't build.** The pivot's flagship B2B mechanic is largely done; what it lacks is a route from a group to a priced quote (§3). |
 | **Community garden coordination likely lives in Coalition App or Blackout, not FBM** | It is already in FBM: `modules/garden` (5 models — gardens, plots, plot assignments, soil zones, memberships, plus a garden-ledger service) behind `/store/gardens`, with `modules/governance` (proposals, votes, delegation) and `/store/work-parties` alongside it. | **Do not relocate.** Coordination stays in FBM; only the spatial layer belongs elsewhere (D5 — Blackout is the single spatial home). |
@@ -78,6 +78,42 @@ in `docs/ADDON_COMMITMENTS.md` §3a.
 
 The flat 3% is unchanged and unchanged-able upward (§3 of the same document);
 all eleven playbook recipes set `commission_rate: 0.03`.
+
+---
+
+### 1b. Blackstar, unfrozen 2026-09-03
+
+D2 froze Blackstar and made FBM's own fulfillment modules the live
+implementation. The operator lifted that freeze on 2026-09-03. The
+absorption half of D2 is unchanged — FBM's modules stay the live
+implementation — but Blackstar is an active line of work again, and the
+plan to archive the repo is withdrawn.
+
+What the freeze had obscured: the FBM↔Blackstar bridge was **far more built
+than this roadmap's §1 row credited**. Contract v1 is fully specified in
+`docs/integrations/federated-logistics.md` — signed webhooks both
+directions, per-partner machine credentials with overlap rotation, an
+outbound retry queue, a receiver, and a fulfillment provider. Calling it a
+"persistence + webhook layer" undersold it.
+
+What the freeze did leave broken, and what unfreezing fixed first:
+
+- **Out-of-order events corrupted shipment state.** The bridge is
+  at-least-once with no ordering guarantee, and the receiver applied
+  last-writer-wins, so a delayed `in_transit` retry landing after
+  `delivered` would report a delivered parcel as still travelling. The
+  contract acknowledged this and pushed it onto "downstream consumers".
+  Now guarded in `shipment-lifecycle.ts` (contract §8).
+- **No replay dedupe.** Contract §9.4 was open. `blackstar_event_receipt`
+  closes it, keyed on the stable outbound `event_id` that §9.2 made
+  available.
+
+Still open and genuinely bilateral: per-shipment sequence numbers
+(contract §9.3) are a wire-format change needing the Laravel side too.
+
+The integration remains dark by default (`FBM_BLACKSTAR_INTEGRATION=0`).
+Unfreezing the decision is not the same act as enabling it in production,
+which needs paired secrets per contract §4.
 
 ---
 
@@ -253,9 +289,10 @@ screen withheld.
 15. **Freight/customs/3PL** (§3.10) — only when a real cross-border vendor
     exists.
 
-**Not on this roadmap, deliberately:** TigerBeetle (rejected, D1),
-the Blackstar federated protocol (frozen, D2), and federation protocol work
-(gated on a second real marketplace, D3).
+**Not on this roadmap, deliberately:** TigerBeetle (rejected, D1) and
+federation protocol work (gated on a second real marketplace, D3). The
+Blackstar freeze was lifted on 2026-09-03 and is no longer an exclusion —
+see §1b.
 
 ---
 

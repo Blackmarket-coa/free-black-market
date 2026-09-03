@@ -64,10 +64,15 @@ not a planning change.
 
 - **TigerBeetle** — rejected (D1). `hawala-ledger` is the org-canonical
   ledger.
-- **The Blackstar federated protocol** — frozen (D2). FBM's own fulfillment
-  modules are the live implementation.
 - **Federation protocol build** — gated on a second real marketplace (D3).
   The interface (connect.js, `/v1`, webhooks, signing) already ships.
+
+**Blackstar was on this list and is no longer.** The D2 freeze was lifted by
+operator decision on 2026-09-03; see `docs/REPO_CONSOLIDATION_REVIEW.md` §3.
+FBM's fulfillment modules remain the live implementation — that half of D2
+did not change — but Blackstar work is active again, starting with the
+inbound bridge hardening in `docs/integrations/federated-logistics.md` §7–§9.
+The integration stays dark by default until two deployments are paired.
 
 ## Gates
 

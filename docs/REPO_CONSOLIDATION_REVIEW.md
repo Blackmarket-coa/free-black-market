@@ -119,7 +119,28 @@ Two findings frame everything else:
   excluded from build/lint/store archives) is removed on this branch;
   the inventory README with pinned upstream commits is kept.
 
-### Blackstar — frozen and absorbed (operator decision)
+### Blackstar — ~~frozen and absorbed~~ UNFROZEN 2026-09-03 (operator decision)
+
+> **Unfrozen by operator decision, 2026-09-03.** D2's freeze is lifted and
+> the "archive the repo after merge / revive standalone node software only
+> when a real external logistics node exists" condition below is waived. The
+> absorption stands — FBM's fulfillment modules remain the live
+> implementation and nothing about them is reverted — but Blackstar is again
+> an active line of work rather than a parked one. The original text is kept
+> below as the record of what was decided in August.
+>
+> First increment landed FBM-side immediately: the inbound bridge's
+> out-of-order and replay defects are closed (contract §7–§9), which is what
+> the integration needed before it could safely be turned on anywhere. The
+> integration itself stays dark by default (`FBM_BLACKSTAR_INTEGRATION=0`) —
+> unfreezing the decision is not the same act as enabling it in production,
+> which still requires paired secrets per contract §4.
+>
+> Two things this session could not do, both org-admin actions outside the
+> `free-black-market` repo: un-archiving or re-activating the `Blackstar`
+> repo itself, and any change to its Laravel side (sequence numbers per
+> contract §9.3 need both halves).
+
 
 - FBM already carries the absorption (`blackstar-fulfillment`,
   `blackstar-fulfillment-provider`, per-partner HMAC bridge). The
@@ -163,7 +184,7 @@ Two findings frame everything else:
 | # | Decision |
 | --- | --- |
 | D1 | **Ledger**: `hawala-ledger` is the org-canonical ledger. BMC-alchemizer is parked (archive after §5 harvest). Blackout's second money layer is absorbed per W1. TigerBeetle stays rejected (PR #800). |
-| D2 | **Logistics**: AOG absorption executed. Blackstar frozen; FBM fulfillment modules are the live implementation. |
+| D2 | **Logistics**: AOG absorption executed. ~~Blackstar frozen~~; FBM fulfillment modules are the live implementation. *(Freeze lifted by operator decision 2026-09-03 — see the Blackstar section in §3. The absorption and FBM's role as the live implementation are unchanged; what is reversed is the parking of further Blackstar work and the plan to archive the repo.)* |
 | D3 | **Federation**: protocol by extraction. BMC Connect = FBM `/v1` + connect.js + webhooks + signing today; UCP mirror kept as the future front-door reference; no protocol build until a second marketplace exists. |
 | D4 | **Identity**: Matrix OIDC/MAS becomes the ecosystem IdP (the surface already exists in the Synapse fork). FBM integrates via one Medusa OIDC auth provider. Blackout's bespoke JWT account system retires behind it. Blackmask is re-scoped to persona/credential manager + trust signals. |
 | D5 | **Geospatial**: Blackout is the single spatial home (maplibre + PostGIS + martin + geocoder proxy). FBM's haversine/ZIP3 code is retired when it can consume Blackout's spatial API. No new geospatial service repo. |

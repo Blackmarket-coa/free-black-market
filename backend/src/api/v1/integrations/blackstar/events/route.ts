@@ -112,22 +112,32 @@ export async function POST(req: MedusaRequest<BlackstarEnvelope>, res: MedusaRes
     return res.status(400).json({ message: "payload.source_order_ref is required" })
   }
 
-  const shipment = await service.recordOrUpdateShipment({
-    order_id: payload.source_order_ref,
-    fulfillment_node_id: payload.claimed_by_node_id ?? null,
+  const result = await service.applyBlackstarEvent({
+    event_id: body.event_id ?? null,
+    event_type: eventType,
+    source_order_ref: payload.source_order_ref,
+    correlation_id: correlationId,
     external_status: externalStatus,
+    fulfillment_node_id: payload.claimed_by_node_id ?? null,
     metadata: {
       shipment_listing_id: payload.shipment_listing_id ?? null,
-      last_event_id: body.event_id ?? null,
-      last_event_type: eventType,
       last_reported_status: payload.status ?? null,
     },
   })
 
+  // Every outcome is a 202. A replay, an out-of-order event and a
+  // post-terminal event are all things the sender did correctly under an
+  // at-least-once contract with no ordering guarantee — answering with an
+  // error would make Blackstar retry, and retrying is exactly what produced
+  // the out-of-order delivery in the first place. The body says what
+  // actually happened so an operator can tell them apart.
   return res.status(202).json({
-    status: "processed",
+    status: result.processed ? "processed" : "duplicate",
+    outcome: result.decision.reason,
+    applied: result.decision.apply,
     event_id: body.event_id ?? null,
     correlation_id: correlationId,
-    shipment_id: shipment.id,
+    shipment_id: result.shipment_id,
+    shipment_status: result.resulting_status,
   })
 }
