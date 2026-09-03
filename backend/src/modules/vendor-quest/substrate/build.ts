@@ -1,6 +1,7 @@
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 import type { MedusaContainer } from "@medusajs/framework/types"
 import { featureFlagState } from "../../../shared/feature-flags"
+import { isDocumentCurrent } from "../../document-vault/document-status"
 import { computeRevenueSummary, type LedgerHistoryEntry } from "./revenue"
 import type {
   VendorSubstrate,
@@ -282,12 +283,18 @@ async function buildDocuments(
     const svc: any = container.resolve("documentVaultModuleService")
     const docs = await svc.listForSeller(sellerId)
     if (!docs?.length) return null
+    const now = new Date()
     return {
       documents: docs.map((d: any) => ({
         id: d.id,
         doc_type: d.doc_type,
         label: d.label,
-        verified: !!d.verified,
+        // Expiry-aware at the boundary, so every predicate downstream that
+        // reads `verified` (verifiedDocsAtLeast, hasVerifiedDocType, the
+        // compliance-tracker gates) gets "checked AND in date" without each
+        // being taught about dates. The raw column is a stored fact about a
+        // past check; a lapsed certificate must not count as evidence.
+        verified: isDocumentCurrent(d, now),
         expires_at: d.expires_at ? new Date(d.expires_at).toISOString() : null,
       })),
     }

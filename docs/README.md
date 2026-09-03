@@ -10,6 +10,9 @@ This index organizes project docs by purpose. Start with the repo-root
   surfaces
 - `docs/MODULE_CATALOG.md` — one-line inventory of every backend module
   (purpose, key routes/jobs, doc links)
+- `docs/COMMERCE_ROADMAP.md` — commerce build priority for the B2B/community
+  pivot, with the consolidated offering inventory reconciled against the code
+  (which "gaps" already have a module, and which gates were retired)
 - `docs/PLAYBOOK_SYSTEM.md` — the vendor playbooks, mapping from legacy
   vendor-type, 3-question picker decision tree
 - `docs/LISTING_TYPES.md` — v1 listing-type ship list, v2/v3 deferrals,

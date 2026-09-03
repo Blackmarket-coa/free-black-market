@@ -2,15 +2,18 @@ import {
   AuthenticatedMedusaRequest,
   MedusaResponse,
 } from "@medusajs/framework/http"
-import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 
-import { REQUEST_MODULE } from "../../../modules/request"
-import type RequestModuleService from "../../../modules/request/service"
+import { ORDER_DISPUTE_MODULE } from "../../../modules/order-dispute"
+import type OrderDisputeService from "../../../modules/order-dispute/service"
 import {
-  REQUEST_TYPES,
-  orderClaimPayloadSchema,
-} from "../../../modules/request/validators"
+  CLAIM_METADATA_KEYS,
+  claimReasonToDisputeReason,
+  toLegacyClaim,
+} from "../../../modules/order-dispute/claims-compat"
+import { DEFAULT_FILING_WINDOW_DAYS } from "../../../modules/order-dispute/resolution"
+import { orderClaimPayloadSchema, REQUEST_TYPES } from "../../../modules/request/validators"
 import { requireCustomerId } from "../../../shared"
+import { openDisputeForOrder } from "../../../shared/order-dispute-intake"
 
 /**
  * Buyer claims: "it never arrived", "it isn't what was described".
@@ -20,20 +23,29 @@ import { requireCustomerId } from "../../../shared"
  * while `/how-it-works` promised buyers "we'll step in to make it right". This
  * is the mechanism behind that promise.
  *
- * Built on the existing `request` module rather than a new one: it already has
- * a customer-submits / admin-triages lifecycle (PENDING → ACCEPTED/REJECTED),
- * store and admin routes, and an approve/reject surface. A parallel claims
- * module would duplicate all of it.
+ * **Now backed by `order-dispute`, not `request`.** This route was originally
+ * built on the generic `request` model, and its docblock warned that "a
+ * parallel claims module would duplicate all of it". A parallel module was
+ * then built anyway — `modules/order-dispute`, with per-vendor scoping, claim
+ * and award amounts, a vendor right of reply and an audit log, none of which
+ * fit the request shell. The operator chose order-dispute as the single engine
+ * on 2026-09-03. This route keeps its path, its request body and its response
+ * shape so the storefront's `OrderClaimSection` and `/buyer-protection` page
+ * keep working unchanged; underneath, a claim is a dispute.
+ *
+ * Admin triage moved with it: claims no longer appear in `/admin/requests`,
+ * they are worked from `/admin/disputes`.
  */
 
 /**
  * How long after an order a claim can be filed.
  *
- * Long enough to cover slow shipping and a buyer who waited on the seller
- * first, short enough that evidence still exists. Published on
- * `/buyer-protection` — change both together.
+ * Published on `/buyer-protection`. This is no longer a value of its own — it
+ * IS the dispute filing window, so the two systems cannot publish different
+ * numbers again. The storefront's copy in `lib/constants/order-claims.ts`
+ * mirrors it for rendering the policy page.
  */
-export const CLAIM_WINDOW_DAYS = 30
+export const CLAIM_WINDOW_DAYS = DEFAULT_FILING_WINDOW_DAYS
 
 /**
  * GET /store/order-claims
@@ -46,13 +58,13 @@ export async function GET(
   const customerId = requireCustomerId(req, res)
   if (!customerId) return
 
-  const requestService = req.scope.resolve<RequestModuleService>(REQUEST_MODULE)
+  const service = req.scope.resolve<OrderDisputeService>(ORDER_DISPUTE_MODULE)
+  const rows = (await service.listOrderDisputes(
+    { customer_id: customerId },
+    { order: { created_at: "DESC" } }
+  )) as unknown as Parameters<typeof toLegacyClaim>[0][]
 
-  const claims = await requestService.listRequests({
-    submitter_id: customerId,
-    type: REQUEST_TYPES.ORDER_CLAIM,
-  })
-
+  const claims = rows.map(toLegacyClaim)
   res.json({ claims, count: claims.length })
 }
 
@@ -80,71 +92,33 @@ export async function POST(
     })
   }
 
-  const query = req.scope.resolve(ContainerRegistrationKeys.QUERY)
+  const body = req.body as { seller_id?: unknown }
 
-  // Confirm the order is this customer's before recording anything against it.
-  // Without this check any authenticated customer could file claims against
-  // strangers' orders, which is both a privacy leak (the claim is visible to
-  // admins alongside the order) and an abuse vector.
-  const { data: orders } = await query.graph({
-    entity: "order",
-    fields: ["id", "customer_id", "created_at"],
-    filters: { id: parsed.data.order_id },
-  })
-
-  const order = orders?.[0]
-  if (!order || order.customer_id !== customerId) {
-    // Deliberately the same response for "no such order" and "not yours" —
-    // distinguishing them would confirm an order id exists.
-    return res
-      .status(404)
-      .json({ message: "Order not found", type: "not_found" })
-  }
-
-  const orderAgeMs = Date.now() - new Date(order.created_at).getTime()
-  if (orderAgeMs > CLAIM_WINDOW_DAYS * 24 * 60 * 60 * 1000) {
-    return res.status(422).json({
-      message: `Claims can be filed within ${CLAIM_WINDOW_DAYS} days of an order. Your card issuer's dispute window is usually longer — contact them if this order is outside ours.`,
-      type: "claim_window_expired",
-    })
-  }
-
-  const requestService = req.scope.resolve<RequestModuleService>(REQUEST_MODULE)
-
-  // One open claim per order. A buyer adding detail should not create a second
-  // ticket a reviewer has to reconcile against the first.
-  const existing = await requestService.listRequests({
-    submitter_id: customerId,
-    type: REQUEST_TYPES.ORDER_CLAIM,
-    status: "pending",
-  })
-
-  const duplicate = existing.find(
-    (claim) =>
-      (claim.data as { order_id?: string } | null)?.order_id ===
-      parsed.data.order_id
-  )
-
-  if (duplicate) {
-    return res.status(409).json({
-      message:
-        "You already have an open claim on this order. Reply on that claim rather than filing another.",
-      type: "duplicate_claim",
-      claim_id: duplicate.id,
-    })
-  }
-
-  const claim = await requestService.createRequest({
-    type: REQUEST_TYPES.ORDER_CLAIM,
-    submitter_id: customerId,
-    data: {
-      order_id: parsed.data.order_id,
-      reason: parsed.data.reason,
-      description: parsed.data.description,
-      evidence_urls: parsed.data.evidence_urls,
-      contacted_seller: parsed.data.contacted_seller,
+  const result = await openDisputeForOrder(req.scope, {
+    customerId,
+    orderId: parsed.data.order_id,
+    sellerId: typeof body.seller_id === "string" ? body.seller_id : null,
+    reason: claimReasonToDisputeReason(parsed.data.reason),
+    description: parsed.data.description,
+    windowDays: CLAIM_WINDOW_DAYS,
+    metadata: {
+      // The original claim vocabulary, so the round-trip through the claims
+      // surface is lossless — see `toLegacyClaim`.
+      [CLAIM_METADATA_KEYS.reason]: parsed.data.reason,
+      [CLAIM_METADATA_KEYS.evidenceUrls]: parsed.data.evidence_urls ?? [],
+      [CLAIM_METADATA_KEYS.contactedSeller]: parsed.data.contacted_seller ?? false,
+      [CLAIM_METADATA_KEYS.source]: "store/order-claims",
     },
   })
 
-  res.status(201).json({ claim })
+  if (!result.ok) {
+    return res.status(result.status).json(result.body)
+  }
+
+  const service = req.scope.resolve<OrderDisputeService>(ORDER_DISPUTE_MODULE)
+  const [fresh] = (await service.listOrderDisputes({
+    id: result.dispute.id,
+  })) as unknown as Parameters<typeof toLegacyClaim>[0][]
+
+  res.status(201).json({ claim: toLegacyClaim(fresh ?? result.dispute) })
 }

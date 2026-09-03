@@ -221,9 +221,14 @@ Both directions are **at-least-once**. Consumers must tolerate duplicates.
   `FBM_OUTBOUND_SECRET` is unset.
 - **Blackstar inbound** — receipt table keyed by unique `event_id`;
   replayed events return 202 with no side effects.
-- **FBM inbound** — idempotent by construction: applying the same event
-  twice rewrites the same state. There is no receipt table on this side
-  yet; the last-processed `event_id` is kept in shipment metadata (§9).
+- **FBM inbound** — receipt table `blackstar_event_receipt`, keyed by a
+  unique `event_id`; a replayed event returns 202 `{"status":"duplicate"}`
+  with no side effects and is not re-evaluated. This replaced
+  "idempotent by construction", which held only while every handler was a
+  blind overwrite and stopped holding when §8's ordering guard made
+  handling depend on current state. The unique index also settles the race
+  between two concurrent deliveries of the same event: one insert wins and
+  the loser returns the same answer.
 
 ## 8. Correlation and ordering
 
@@ -233,10 +238,34 @@ on the event record and propagate it on anything emitted downstream. FBM
 uses the order id as the correlation id for everything it originates.
 
 Ordering is **not guaranteed**. There are no sequence numbers in contract
-v1, and independent retries can deliver lifecycle events out of order; the
-FBM receiver applies last-writer-wins to `external_status`. Downstream
-consumers reconciling shipment state should treat `delivered` and
-`disputed` as terminal rather than trusting the latest write blindly.
+v1, and independent retries can deliver lifecycle events out of order.
+
+The FBM receiver no longer applies last-writer-wins. `shipment-lifecycle.ts`
+decides whether an incoming status may overwrite the current one:
+
+- Forward progress only along `claimed → in_transit → delivered`. A delayed
+  `shipment.in_transit` retry landing after `shipment.delivered` is refused
+  as `out_of_order`, so a delivered parcel is never reported as still
+  travelling.
+- `disputed` and `cancelled` are exits, reachable from any live state.
+  `delivered` is **not** terminal — a delivered parcel can still be
+  disputed.
+- `cancelled` and `disputed` **are** terminal: no later lifecycle event
+  reopens them. What happens after a dispute is a human decision recorded
+  in `order_dispute`, not a webhook rewriting history.
+- An unrecognised status never overwrites a known one, so a newer Blackstar
+  adding lifecycle states cannot corrupt an older FBM; a known status does
+  land over an unknown one, so an unfamiliar state cannot wedge a shipment.
+
+A refused event is still recorded — its receipt carries the reason, and the
+shipment stamps `last_skipped_event_type` / `last_skipped_reason`. An event
+that arrived and was deliberately not applied must be distinguishable from
+one that was lost.
+
+Consumers therefore no longer need to re-derive terminality themselves. A
+monotonic per-shipment sequence number remains the complete fix and still
+needs both sides (§9.3); what is closed is the corruption FBM can prevent
+alone.
 
 ## 9. Open contract items
 
@@ -247,19 +276,26 @@ consumers reconciling shipment state should treat `delivered` and
 2. ~~**Outbound `event_id`**~~ — **closed.** The Blackstar → FBM envelope
    now carries the outbound record's uuid, stable across retries (§5).
 3. **Sequencing** — a monotonic per-shipment sequence number would close
-   the ordering caveat in §8.
-4. **FBM-side receipt table** — with outbound `event_id` in place, FBM can
-   add receipt-level dedupe symmetric to Blackstar's
-   `fbm_inbound_event_receipts`; today FBM relies on idempotent-by-
-   construction handling plus the metadata stamp (§7).
+   the ordering caveat in §8 completely. **Still open**, and bilateral: it
+   is a wire-format change and cannot be adopted from the FBM side alone.
+   FBM has closed its own half in the meantime with the status guard in §8,
+   which removes the corruption a receiver can prevent without sequence
+   numbers.
+4. ~~**FBM-side receipt table**~~ — **closed.** `blackstar_event_receipt`
+   gives receipt-level dedupe symmetric to Blackstar's
+   `fbm_inbound_event_receipts`, keyed on the stable outbound `event_id`
+   that item 2 made available (§7).
 
 ## 10. Verifying an integration
 
 - FBM unit specs (run in `backend/`):
   `src/modules/marketplace-webhooks/__tests__/blackstar-emit.unit.spec.ts`
-  (envelope, idempotency, signing, retry) and
+  (envelope, idempotency, signing, retry),
   `src/modules/blackstar-fulfillment/__tests__/verify-blackstar-signature.unit.spec.ts`
-  (verifier edge cases, status map).
+  (verifier edge cases, status map),
+  `.../shipment-lifecycle.unit.spec.ts` (the §8 ordering guard) and
+  `.../apply-blackstar-event.unit.spec.ts` (replay dedupe, skip recording,
+  metadata merge).
 - Blackstar: `php artisan test` covers the webhook controller (timestamped
   verify, replay rejection) and the outbound publisher (exact-body
   signing per attempt).

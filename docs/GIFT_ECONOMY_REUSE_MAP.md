@@ -51,6 +51,28 @@ operator sets, which the 3%-of-a-dollar problem never could.
 
 ## The gap that is worse than described
 
+> **Update (2026-09-02): partly closed — read the specifics, not the
+> headline.** Commit `1af77af` landed the CCR cart-**reservation** lifecycle
+> (`lib/ccr-cart-ledger.ts`, `lib/ccr-checkout.ts`,
+> `POST /store/carts/[id]/credits`, and the `validate-ccr-reservation` hook
+> wired into `complete-cart-validate.ts`), so the `CART` purchase context
+> described below as "a permission granted for a mechanism that was never
+> built" now has its writer, and `BURN` has its first real caller. The
+> compliance-document correction this section calls for was made separately
+> in `dec8156`.
+>
+> **CCR still cannot be spent.** By that commit's own statement, credits are
+> tender and the tender half is not built: applying credits must reduce the
+> cash charged while the vendor is still paid in full, and the reduced-amount
+> payment collection is not implemented. `completeCartWorkflow` therefore
+> refuses any cart holding a reservation — the one transition that could
+> charge full price *and* consume credits is deliberately bolted shut. The
+> whole surface is dark behind `FBM_CCR_CHECKOUT_LIVE` and
+> `FBM_CCR_CENTS_PER_CREDIT`, both operator config with no defaults.
+>
+> So this section's conclusion still holds: paying anyone in CCR before the
+> tender half exists recreates the shape it warns about.
+
 `docs/POSTURE_A_COMPLIANCE.md` states, as one of the three ways the closed-loop rules are
 "enforced architecturally":
 

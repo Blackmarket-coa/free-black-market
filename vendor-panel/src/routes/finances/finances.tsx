@@ -26,7 +26,7 @@ import {
   useAdvanceEligibility,
   useRequestAdvance,
 } from "../../hooks/api/hawala"
-import { useCreateInvoice, useInvoices, useUpdateInvoiceState } from "../../hooks/api/invoicing"
+import { useCreateInvoice, useInvoiceAging, useInvoices, useRecordInvoicePayment, useUpdateInvoiceState } from "../../hooks/api/invoicing"
 
 const formatCurrency = (amount: number, currency = "USD") => {
   return new Intl.NumberFormat("en-US", {
@@ -423,20 +423,28 @@ const RecentTransactions = ({ transactions }: { transactions: Array<{
 
 const InvoicingSection = () => {
   const { data } = useInvoices()
+  const { data: aging } = useInvoiceAging()
   const createInvoice = useCreateInvoice()
   const updateInvoice = useUpdateInvoiceState()
+  const recordPayment = useRecordInvoicePayment()
+  const [customerId, setCustomerId] = useState("")
   const [orderId, setOrderId] = useState("")
   const [total, setTotal] = useState("0")
 
   const onCreate = async () => {
+    if (!customerId.trim()) {
+      toast.error("A customer is required — net terms are resolved from their tier")
+      return
+    }
     try {
       await createInvoice.mutateAsync({
-        order_id: orderId,
+        customer_id: customerId.trim(),
+        order_id: orderId.trim() || undefined,
         total: Number(total),
         currency_code: "USD",
-        status: "draft",
       })
-      toast.success("Invoice created")
+      toast.success("Invoice issued")
+      setCustomerId("")
       setOrderId("")
       setTotal("0")
     } catch (e: any) {
@@ -444,26 +452,79 @@ const InvoicingSection = () => {
     }
   }
 
+  const act = async (fn: Promise<unknown>, ok: string) => {
+    try {
+      await fn
+      toast.success(ok)
+    } catch (e: any) {
+      toast.error(e?.message || "Action failed")
+    }
+  }
+
   return (
     <div className="space-y-4">
       <Heading level="h3">Invoicing</Heading>
-      <Text className="text-ui-fg-subtle">Lifecycle states: draft → sent → paid / void.</Text>
-      <div className="grid grid-cols-3 gap-3">
-        <Input placeholder="Order ID" value={orderId} onChange={(e) => setOrderId(e.target.value)} />
+      <Text className="text-ui-fg-subtle">
+        Lifecycle: draft → issued → paid, or void / written off. Issuing reads the
+        buyer&apos;s payment terms from their tier and sets the due date.
+      </Text>
+
+      {aging && aging.total_outstanding > 0 && (
+        <div className="border rounded p-3">
+          <Text className="font-medium">
+            Outstanding: {formatCurrency(aging.total_outstanding, "USD")} across{" "}
+            {aging.invoice_count} invoice{aging.invoice_count === 1 ? "" : "s"}
+          </Text>
+          <Text size="small" className="text-ui-fg-subtle">
+            Current {formatCurrency(aging.buckets.current, "USD")} · 1–30{" "}
+            {formatCurrency(aging.buckets.d1_30, "USD")} · 31–60{" "}
+            {formatCurrency(aging.buckets.d31_60, "USD")} · 61–90{" "}
+            {formatCurrency(aging.buckets.d61_90, "USD")} · 90+{" "}
+            {formatCurrency(aging.buckets.d90_plus, "USD")}
+          </Text>
+        </div>
+      )}
+
+      <div className="grid grid-cols-4 gap-3">
+        <Input placeholder="Customer ID (required)" value={customerId} onChange={(e) => setCustomerId(e.target.value)} />
+        <Input placeholder="Order ID (optional)" value={orderId} onChange={(e) => setOrderId(e.target.value)} />
         <Input type="number" placeholder="Total" value={total} onChange={(e) => setTotal(e.target.value)} />
-        <Button onClick={onCreate} isLoading={createInvoice.isPending}>Create Draft Invoice</Button>
+        <Button onClick={onCreate} isLoading={createInvoice.isPending}>Issue Invoice</Button>
       </div>
+
       <div className="space-y-2">
         {(data?.invoices || []).map((invoice) => (
           <div key={invoice.id} className="border rounded p-3 flex items-center justify-between">
             <div>
-              <Text className="font-medium">{invoice.order_id}</Text>
-              <Text size="small">{formatCurrency(invoice.total, invoice.currency_code)} · {invoice.status}</Text>
+              <Text className="font-medium">
+                {invoice.invoice_number}
+                {invoice.order_id ? ` · ${invoice.order_id}` : ""}
+              </Text>
+              <Text size="small">
+                {formatCurrency(invoice.total, invoice.currency_code)} ·{" "}
+                {invoice.presentation_status}
+                {invoice.outstanding > 0 && invoice.outstanding !== invoice.total
+                  ? ` · ${formatCurrency(invoice.outstanding, invoice.currency_code)} outstanding`
+                  : ""}
+                {invoice.due_at
+                  ? ` · due ${new Date(invoice.due_at).toLocaleDateString()}`
+                  : ""}
+                {invoice.terms_days ? ` · Net-${invoice.terms_days}` : ""}
+              </Text>
             </div>
             <div className="flex gap-2">
-              {invoice.status === "draft" && <Button size="small" variant="secondary" onClick={() => updateInvoice.mutate({ id: invoice.id, status: "sent" })}>Send</Button>}
-              {invoice.status === "sent" && <Button size="small" variant="secondary" onClick={() => updateInvoice.mutate({ id: invoice.id, status: "paid" })}>Mark Paid</Button>}
-              {invoice.status !== "void" && <Button size="small" variant="transparent" onClick={() => updateInvoice.mutate({ id: invoice.id, status: "void" })}>Void</Button>}
+              {invoice.status === "draft" && (
+                <Button size="small" variant="secondary" onClick={() => act(updateInvoice.mutateAsync({ id: invoice.id, status: "issued" }), "Invoice issued")}>Issue</Button>
+              )}
+              {invoice.status === "issued" && invoice.outstanding > 0 && (
+                <Button size="small" variant="secondary" onClick={() => act(recordPayment.mutateAsync({ id: invoice.id, amount: invoice.outstanding }), "Payment recorded")}>Record Payment</Button>
+              )}
+              {invoice.status === "issued" && (
+                <Button size="small" variant="transparent" onClick={() => act(updateInvoice.mutateAsync({ id: invoice.id, status: "written_off" }), "Written off")}>Write Off</Button>
+              )}
+              {(invoice.status === "draft" || invoice.status === "issued") && (
+                <Button size="small" variant="transparent" onClick={() => act(updateInvoice.mutateAsync({ id: invoice.id, status: "void" }), "Voided")}>Void</Button>
+              )}
             </div>
           </div>
         ))}

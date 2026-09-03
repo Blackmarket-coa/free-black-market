@@ -21,8 +21,14 @@ export type OrderClaimReason =
  * How long after an order a claim can be filed. Mirrors `CLAIM_WINDOW_DAYS`
  * in `backend/src/api/store/order-claims/route.ts` — the backend enforces it,
  * this copy is for stating it on the policy page before a buyer tries.
+ *
+ * 60, not 30, since 2026-09-03: claims are now backed by `order-dispute`,
+ * whose filing window is `DEFAULT_FILING_WINDOW_DAYS` in
+ * `backend/src/modules/order-dispute/resolution.ts`, and the backend's
+ * `CLAIM_WINDOW_DAYS` is defined AS that value so the two systems can never
+ * publish different numbers again. Change it there, then here.
  */
-export const CLAIM_WINDOW_DAYS = 30
+export const CLAIM_WINDOW_DAYS = 60
 
 export const CLAIM_REASON_LABELS: Record<OrderClaimReason, string> = {
   not_received: "It never arrived",
