@@ -164,8 +164,16 @@ class AccountsReceivableService extends MedusaService({
   /**
    * May this buyer take on more of this vendor's credit?
    *
-   * Read-only — the caller decides what to do with a refusal. Used by the
-   * quote-acceptance path and by `assertWithinCreditLimit` below.
+   * Read-only — the caller decides what to do with a refusal.
+   *
+   * NOTE: this has no production caller yet. The credit ceiling it reads
+   * (`vendor_customer_tier.credit_limit_cents`) also has no writer — there is
+   * no vendor or admin route for editing tiers at all — so today every buyer
+   * resolves to "no limit" and nothing consults this. Two things must land
+   * before a limit can bind: a tier-editing surface, and a call site
+   * (quote acceptance and `completeCartWorkflow.hooks.validate` are the two
+   * natural ones). Until then this is machinery waiting for its wiring, and
+   * saying so is better than a comment claiming a caller that does not exist.
    */
   async checkCreditLimit(args: {
     sellerId: string

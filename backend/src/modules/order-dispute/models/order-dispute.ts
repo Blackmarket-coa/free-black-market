@@ -16,9 +16,12 @@ import OrderDisputeEvent from "./order-dispute-event"
  * agreement does exist for the order, its id is recorded and its own machine
  * does the moving — this model never becomes a second ledger.
  *
- * One live dispute per order, enforced by a partial unique index: a second
- * claim on the same order is the same argument, and letting two run would let
- * two admins resolve it in opposite directions.
+ * One live dispute per order PER VENDOR, enforced by a partial unique index on
+ * `(order_id, seller_id)`. Two live claims against the same vendor on one
+ * order are the same argument and could be resolved in opposite directions by
+ * two admins. Scoping by order alone was wrong on a multi-vendor cart: it took
+ * a remedy away, refusing a dispute against Vendor B until the argument about
+ * Vendor A resolved.
  */
 const OrderDispute = model
   .define("order_dispute", {
@@ -60,7 +63,7 @@ const OrderDispute = model
   })
   .indexes([
     {
-      on: ["order_id"],
+      on: ["order_id", "seller_id"],
       name: "UQ_order_dispute_live",
       unique: true,
       where:

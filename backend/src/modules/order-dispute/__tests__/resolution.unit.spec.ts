@@ -10,6 +10,8 @@ import {
   isWithinFilingWindow,
   resolveAwardCents,
   resolveClaimCents,
+  sellerShareCents,
+  sellersOnOrder,
 } from "../resolution"
 
 const at = (iso: string) => new Date(iso)
@@ -230,5 +232,51 @@ describe("order dispute: escrow linkage", () => {
     expect(escrowTransitionFor(DisputeStatus.OPEN)).toBeNull()
     expect(escrowTransitionFor(DisputeStatus.UNDER_REVIEW)).toBeNull()
     expect(escrowTransitionFor(DisputeStatus.WITHDRAWN)).toBeNull()
+  })
+})
+
+describe("order dispute: multi-vendor scoping", () => {
+  const lines = [
+    { seller_id: "sel_a", total: 3_000 },
+    { seller_id: "sel_a", total: 2_000 },
+    { seller_id: "sel_b", total: 7_500 },
+    { seller_id: null, total: 900 },
+  ]
+
+  it("lists every vendor on the order, once each", () => {
+    expect(sellersOnOrder(lines).sort()).toEqual(["sel_a", "sel_b"])
+  })
+
+  it("ignores lines with no vendor attribution", () => {
+    expect(sellersOnOrder([{ seller_id: null, total: 100 }])).toEqual([])
+  })
+
+  it("charges each vendor only for their own goods", () => {
+    // The defect this replaces: the claim ceiling was the WHOLE order total,
+    // so a claim against sel_a could be worth up to sel_b's shipment too.
+    expect(sellerShareCents(lines, "sel_a")).toBe(5_000)
+    expect(sellerShareCents(lines, "sel_b")).toBe(7_500)
+  })
+
+  it("never spreads unattributed lines across vendors", () => {
+    // Attributing money to a vendor because nothing said otherwise is how a
+    // wrong respondent gets a real bill.
+    const total = sellerShareCents(lines, "sel_a") + sellerShareCents(lines, "sel_b")
+    expect(total).toBe(12_500)
+    expect(total).toBeLessThan(13_400)
+  })
+
+  it("gives an unknown vendor nothing", () => {
+    expect(sellerShareCents(lines, "sel_zzz")).toBe(0)
+  })
+
+  it("clamps a claim to the vendor share, not the order total", () => {
+    // A buyer claiming everything against sel_a gets sel_a's 5000, not 13400.
+    expect(
+      resolveClaimCents({
+        requestedCents: null,
+        orderTotalCents: sellerShareCents(lines, "sel_a"),
+      })
+    ).toBe(5_000)
   })
 })

@@ -4,7 +4,11 @@ import { createLogger } from "../../../../../shared/logger"
 import { ORDER_DISPUTE_MODULE } from "../../../../../modules/order-dispute"
 import type OrderDisputeService from "../../../../../modules/order-dispute/service"
 import { DisputeStateError } from "../../../../../modules/order-dispute/service"
-import { DisputeReason } from "../../../../../modules/order-dispute/resolution"
+import {
+  DisputeReason,
+  sellerShareCents,
+  sellersOnOrder,
+} from "../../../../../modules/order-dispute/resolution"
 
 const log = createLogger("api/store/orders/[id]/dispute")
 
@@ -23,7 +27,10 @@ type OrderShape = {
   created_at: string | Date
   currency_code: string | null
   total: number | string | null
-  items?: { product?: { seller_id?: string | null } | null }[]
+  items?: {
+    total?: number | string | null
+    product?: { seller_id?: string | null } | null
+  }[]
 }
 
 /**
@@ -52,6 +59,7 @@ async function loadOwnOrder(
       "created_at",
       "currency_code",
       "total",
+      "items.total",
       "items.product.seller_id",
     ],
     filters: { id },
@@ -113,16 +121,54 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     ? (rawReason as DisputeReason)
     : DisputeReason.OTHER
 
-  // A multi-vendor order is disputed against the vendor whose items are in
-  // question; v1 takes the first seller on the order and records it, so the
-  // queue always names a respondent. A per-line dispute is a later refinement,
-  // not a reason to leave the buyer with no route at all.
-  const sellerId =
-    order.items?.find((i) => i.product?.seller_id)?.product?.seller_id ?? null
-  if (!sellerId) {
+  // A dispute is against ONE vendor. On a multi-vendor order the buyer says
+  // which, because taking the first seller found — as this route originally
+  // did — names the wrong vendor half the time and, with the live-dispute
+  // index scoped per seller, would also consume the buyer's one open slot
+  // against a vendor they never meant to accuse.
+  const lines = (order.items ?? []).map((i) => ({
+    seller_id: i.product?.seller_id ?? null,
+    total: i.total ?? 0,
+  }))
+  const sellers = sellersOnOrder(lines)
+
+  if (!sellers.length) {
     return res
       .status(409)
       .json({ message: "This order has no vendor to dispute against." })
+  }
+
+  const requestedSeller =
+    typeof body.seller_id === "string" ? body.seller_id.trim() : ""
+
+  let sellerId: string
+  if (requestedSeller) {
+    if (!sellers.includes(requestedSeller)) {
+      // 404-shaped rather than 403: naming a seller not on this order should
+      // not confirm whether that seller exists.
+      return res
+        .status(404)
+        .json({ message: "That vendor has no items on this order." })
+    }
+    sellerId = requestedSeller
+  } else if (sellers.length === 1) {
+    sellerId = sellers[0]
+  } else {
+    return res.status(400).json({
+      message:
+        "This order has items from more than one vendor — name the one you are disputing.",
+      sellers,
+    })
+  }
+
+  // The ceiling is THIS vendor's goods, not the order total. Clamping to the
+  // order total would let a claim against one vendor be worth up to another
+  // vendor's shipment.
+  const claimCeiling = sellerShareCents(lines, sellerId)
+  if (claimCeiling <= 0) {
+    return res.status(409).json({
+      message: "That vendor's items on this order have no value to dispute.",
+    })
   }
 
   const service = req.scope.resolve<OrderDisputeService>(ORDER_DISPUTE_MODULE)
@@ -133,7 +179,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       sellerId,
       customerId,
       orderPlacedAt: order.created_at,
-      orderTotalCents: Math.floor(Number(order.total) || 0),
+      orderTotalCents: claimCeiling,
       currencyCode: order.currency_code ?? "usd",
       reason,
       description,

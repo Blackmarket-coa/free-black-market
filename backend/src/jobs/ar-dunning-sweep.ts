@@ -88,14 +88,51 @@ export default async function arDunningSweep(container: MedusaContainer) {
   try {
     eventBus = container.resolve<IEventBusModuleService>(Modules.EVENT_BUS)
   } catch {
-    // No event bus configured: the sweep still advances the ladder so an
-    // invoice is not chased repeatedly once one is wired up.
     eventBus = null
   }
 
+  /**
+   * The ladder is only consumed when a reminder can actually reach someone.
+   *
+   * `ar.invoice.overdue` currently has NO subscriber anywhere in the repo, and
+   * there is no notification template for it — `resend`'s provider accepts a
+   * fixed list that does not include one. The original version emitted into
+   * that void and marked the stage anyway, with a comment claiming this stopped
+   * an invoice being "chased repeatedly once one is wired up". It did the
+   * opposite: `last_dunning_stage` only ever advances, and `dunningStageFor`
+   * fires only on the exact day a stage is reached, so every stage burned while
+   * unwired is a reminder the buyer can never receive. A buyer would be
+   * recorded as chased at days 1, 7, 14, 30 and 60 having been sent nothing,
+   * and wiring a handler later would not re-send them.
+   *
+   * So the sweep now runs in one of two modes, and says which:
+   *
+   * - `FBM_AR_DUNNING_LIVE=1` — reminders are deliverable. Emit and mark.
+   * - unset (default) — dry run. Report what WOULD be sent and leave
+   *   `last_dunning_stage` untouched, so the ladder is intact on the day the
+   *   notification rail lands.
+   *
+   * Delete this flag once a subscriber exists; a permanent dry run is its own
+   * kind of lie.
+   */
+  const live = process.env.FBM_AR_DUNNING_LIVE === "1" && !!eventBus
+
+  if (!live) {
+    const pending = await ar.dueForDunning()
+    if (pending.length > 0) {
+      log.warn(
+        `[ar-dunning] DRY RUN: ${pending.length} invoice(s) have reached a dunning ` +
+          `stage and would be chased, but no reminder can be delivered ` +
+          `(FBM_AR_DUNNING_LIVE is not 1, or no event bus). The ladder is NOT ` +
+          `being advanced, so these stages remain sendable once a subscriber for ` +
+          `ar.invoice.overdue exists.`
+      )
+    }
+    return { considered: pending.length, notified: 0, failed: 0 }
+  }
+
   const result = await sweepDunning(ar, async (payload) => {
-    if (!eventBus) return
-    await eventBus.emit({ name: "ar.invoice.overdue", data: payload })
+    await eventBus!.emit({ name: "ar.invoice.overdue", data: payload })
   })
 
   if (result.considered > 0) {

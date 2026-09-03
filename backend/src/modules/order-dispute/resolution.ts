@@ -222,3 +222,52 @@ export function escrowTransitionFor(
   if (status === DisputeStatus.RESOLVED_REFUND) return "recover"
   return null
 }
+
+export type OrderLineForDispute = {
+  seller_id?: string | null
+  total?: number | string | null
+}
+
+/**
+ * The sellers a buyer could dispute on one order.
+ *
+ * FBM is a multi-vendor marketplace, so an order routinely spans sellers. The
+ * first version of the dispute route took `items.find(...)` — the first seller
+ * it happened to encounter — and recorded that as the respondent. On a
+ * two-vendor order that names the wrong vendor half the time.
+ */
+export function sellersOnOrder(
+  lines: readonly OrderLineForDispute[]
+): string[] {
+  const seen = new Set<string>()
+  for (const line of lines) {
+    const id = line.seller_id
+    if (typeof id === "string" && id) seen.add(id)
+  }
+  return [...seen]
+}
+
+/**
+ * What ONE seller's goods on an order came to, in minor units.
+ *
+ * This is the ceiling a claim against that seller may reach. Clamping to the
+ * whole order total — as the first version did — let a claim against Vendor A
+ * be worth up to Vendor B's goods as well, which is not a rounding problem but
+ * a vendor being made liable for someone else's shipment.
+ *
+ * Lines with no seller attribution are excluded rather than spread across
+ * sellers: attributing money to a vendor because nothing said otherwise is how
+ * a wrong respondent gets a real bill.
+ */
+export function sellerShareCents(
+  lines: readonly OrderLineForDispute[],
+  sellerId: string
+): number {
+  let sum = 0
+  for (const line of lines) {
+    if (line.seller_id !== sellerId) continue
+    const value = Math.floor(Number(line.total) || 0)
+    if (Number.isFinite(value) && value > 0) sum += value
+  }
+  return sum
+}

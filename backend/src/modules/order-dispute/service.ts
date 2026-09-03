@@ -49,10 +49,21 @@ class OrderDisputeService extends MedusaService({
   OrderDispute,
   OrderDisputeEvent,
 }) {
-  /** The live dispute on an order, if there is one. */
-  async liveForOrder(orderId: string): Promise<DisputeRow | null> {
+  /**
+   * The live dispute against ONE vendor on an order, if there is one.
+   *
+   * Seller-scoped to match `UQ_order_dispute_live`. Scoping by order alone
+   * would refuse a buyer's dispute against Vendor B while their argument with
+   * Vendor A on the same multi-vendor order was still open — taking away a
+   * remedy rather than preventing a duplicate.
+   */
+  async liveForOrder(
+    orderId: string,
+    sellerId?: string
+  ): Promise<DisputeRow | null> {
     const rows = (await this.listOrderDisputes({
       order_id: orderId,
+      ...(sellerId ? { seller_id: sellerId } : {}),
       status: [DisputeStatus.OPEN, DisputeStatus.UNDER_REVIEW],
     })) as unknown as DisputeRow[]
     return rows[0] ?? null
@@ -61,10 +72,11 @@ class OrderDisputeService extends MedusaService({
   /**
    * Raise a dispute.
    *
-   * Refuses a second live claim on the same order: it is the same argument,
-   * and two running at once could be resolved in opposite directions by two
-   * admins. The partial unique index is the backstop; this is the readable
-   * error.
+   * Refuses a second live claim against the SAME VENDOR on the same order: it
+   * is the same argument, and two running at once could be resolved in
+   * opposite directions by two admins. A different vendor on the same order is
+   * a different argument and is allowed. The partial unique index on
+   * `(order_id, seller_id)` is the backstop; this is the readable error.
    */
   async open(args: {
     orderId: string
@@ -100,10 +112,10 @@ class OrderDisputeService extends MedusaService({
       )
     }
 
-    const existing = await this.liveForOrder(args.orderId)
+    const existing = await this.liveForOrder(args.orderId, args.sellerId)
     if (existing) {
       throw new DisputeStateError(
-        "there is already an open dispute on this order"
+        "there is already an open dispute against this vendor on this order"
       )
     }
 
