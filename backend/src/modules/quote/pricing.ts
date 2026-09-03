@@ -80,12 +80,15 @@ export type QuoteLineInput = {
   unit_price: number
   /** The catalogue price when the quote was built, minor units. */
   list_unit_price?: number | null
+  /** Days from acceptance until this line ships. Null = none stated. */
+  lead_time_days?: number | null
 }
 
 export type PricedQuoteLine = QuoteLineInput & {
   quantity: number
   unit_price: number
   list_unit_price: number | null
+  lead_time_days: number | null
   /** `unit_price * quantity`. */
   line_subtotal: number
   /** What the buyer saves against list on this line. 0 when unknown. */
@@ -121,6 +124,18 @@ export function priceLine(line: QuoteLineInput): PricedQuoteLine {
       ? null
       : Math.max(0, Math.floor(Number(listRaw)))
 
+  const leadRaw = line.lead_time_days
+  let leadTimeDays: number | null = null
+  if (leadRaw !== null && leadRaw !== undefined) {
+    const lead = Number(leadRaw)
+    if (!Number.isInteger(lead) || lead < 0) {
+      throw new QuotePricingError(
+        `lead_time_days must be a non-negative whole number of days, got ${leadRaw}`
+      )
+    }
+    leadTimeDays = lead
+  }
+
   const lineSubtotal = unitPrice * quantity
   // Never negative: a quote priced ABOVE list is a legitimate thing (rush
   // work, small batch), and reporting it as negative savings would read as a
@@ -135,6 +150,7 @@ export function priceLine(line: QuoteLineInput): PricedQuoteLine {
     quantity,
     unit_price: unitPrice,
     list_unit_price: listUnitPrice,
+    lead_time_days: leadTimeDays,
     line_subtotal: lineSubtotal,
     line_savings: lineSavings,
   }
@@ -146,6 +162,13 @@ export type QuoteTotals = {
   savings: number
   line_count: number
   item_count: number
+  /**
+   * The longest stated lead time across the lines — when the whole basket can
+   * ship together. Null when no line states one. The max, not the sum: lines
+   * are produced in parallel, and a buyer asks "when does my order arrive",
+   * not "how many production-days did it consume".
+   */
+  max_lead_time_days: number | null
 }
 
 /**
@@ -162,12 +185,16 @@ export function totalQuote(lines: readonly QuoteLineInput[]): QuoteTotals {
   let subtotal = 0
   let listSubtotal = 0
   let itemCount = 0
+  let maxLead: number | null = null
 
   for (const line of priced) {
     subtotal += line.line_subtotal
     listSubtotal +=
       (line.list_unit_price ?? line.unit_price) * line.quantity
     itemCount += line.quantity
+    if (line.lead_time_days !== null) {
+      maxLead = maxLead === null ? line.lead_time_days : Math.max(maxLead, line.lead_time_days)
+    }
   }
 
   return {
@@ -176,6 +203,7 @@ export function totalQuote(lines: readonly QuoteLineInput[]): QuoteTotals {
     savings: Math.max(0, listSubtotal - subtotal),
     line_count: priced.length,
     item_count: itemCount,
+    max_lead_time_days: maxLead,
   }
 }
 

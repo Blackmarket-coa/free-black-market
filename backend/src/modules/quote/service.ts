@@ -40,6 +40,8 @@ export type QuoteView = QuoteRow & {
   savings: number
   is_expired: boolean
   can_accept: boolean
+  /** Longest stated lead time across the lines; null when none stated. */
+  max_lead_time_days: number | null
   lines: unknown[]
 }
 
@@ -99,8 +101,12 @@ class QuoteService extends MedusaService({
 
   async view(row: QuoteRow, now: Date = new Date()): Promise<QuoteView> {
     const lines = await this.listQuoteLines({ quote_id: row.id })
+    const leads = (lines as unknown as { lead_time_days?: number | null }[])
+      .map((l) => l.lead_time_days)
+      .filter((d): d is number => typeof d === "number" && Number.isFinite(d))
     return {
       ...row,
+      max_lead_time_days: leads.length ? Math.max(...leads) : null,
       savings: Math.max(
         0,
         Math.floor(Number(row.list_subtotal) || 0) -
@@ -159,6 +165,7 @@ class QuoteService extends MedusaService({
         quantity: line.quantity,
         unit_price: line.unit_price,
         list_unit_price: line.list_unit_price,
+        lead_time_days: line.lead_time_days ?? null,
       }))
     )
 
@@ -196,6 +203,7 @@ class QuoteService extends MedusaService({
         quantity: line.quantity,
         unit_price: line.unit_price,
         list_unit_price: line.list_unit_price,
+        lead_time_days: line.lead_time_days ?? null,
       }))
     )
 

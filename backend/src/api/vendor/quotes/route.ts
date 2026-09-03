@@ -74,6 +74,10 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
         line.list_unit_price === undefined || line.list_unit_price === null
           ? null
           : Number(line.list_unit_price),
+      lead_time_days:
+        line.lead_time_days === undefined || line.lead_time_days === null
+          ? null
+          : Number(line.lead_time_days),
     }
   })
 

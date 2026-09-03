@@ -286,6 +286,77 @@ screen withheld.
 
 **Tier 2 is now the front of the queue.**
 
+**2026-09-03 — audit-driven repairs and the first Tier 2 slices.** A 57-agent
+audit of Tiers 2/3 and Blackstar spent most of its findings on Tier 1. What
+closed the same day, in order of buyer impact:
+
+- Lapsed vendor badges were being served to buyers as current —
+  `processExpirations()` was written and never scheduled. Now runs daily
+  (`jobs/vendor-verification-expiry`). This was the real "expired but still
+  shows verified" bug, and it was in `vendor-verification`, not the module
+  Tier 2.4 named.
+- The vendor invoice UI was broken by `502d336` (PATCH moved, panel not
+  updated) and every invoice it created was silently Net-0 (no customer
+  sent). Fixed at the client; a customer is now required.
+- Multi-vendor disputes named the wrong vendor and capped the claim at the
+  whole order. Now per-vendor, with the ceiling at that vendor's share.
+- Two dispute systems reconciled onto one (§3.3), published window 60 days.
+- Dunning burned reminder stages nobody could receive; now dry-run until a
+  subscriber exists (`FBM_AR_DUNNING_LIVE`).
+- `credit_limit_cents` got its first writer (`/vendor/customer-tiers`) and
+  first caller (quote acceptance). `quote.order_id` got its writer
+  (`link-quote-on-order-placed`). `escrow_agreement_id` got its writer.
+- `markVerified` got its first caller (`PATCH /admin/vault/:id`), with the
+  expiry rule that makes it safe: `document-status.ts` derives
+  `effective_status`, refuses verifying an already-expired document, and the
+  quest substrate now reads "checked AND in date" at the boundary.
+- Tier 2.5's first slice: a quote line can state `lead_time_days`; the
+  basket reports the max. Vendor-entered — the audit found three per-product
+  lead-time fields that already exist and enforce nothing, so a fourth
+  auto-default waits on the 2.6 decision below.
+- Blackstar: dead outbound deliveries are visible and replayable
+  (`/admin/blackstar/deliveries`); an order-scoped inbound event now updates
+  every parcel on the order instead of orphaning the second; the provider's
+  advertised return option that silently did nothing is withdrawn and cancel
+  updates local state through the ordering guard.
+
+**Decisions the operator must take before the next items can be built** —
+each was flagged by the audit as blocking, and none is a planning change:
+
+1. **Tier 2.6 direction.** The audit rejected "consolidate four batch
+   implementations onto `production-ledger`": they are legitimately
+   different domains. What is broken is narrower — the quest substrate reads
+   inventory from `harvest_batch`, a table nothing writes; propagation
+   batches can be created but never advanced; `production_batch` yield is
+   write-once. Recommended: repoint the substrate onto `agriculture.Lot`,
+   retire `harvest-batches` as D8 hygiene (after the repoint, or a null
+   becomes a thrown query), and treat the botanical write paths as a
+   vertical build-out, not consolidation. Tier 2.5's auto-default lead time
+   should read from whichever table this settles on.
+2. **Tier 3.7 survivor: `rental` or `kitchen`.** The audit says the
+   roadmap has it backwards — `kitchen` is the richer model — but either
+   way a bookable-resource abstraction (rate ladder, calendar, multi-unit)
+   is the build, and rentals are never created on a normal checkout today.
+3. **A refundable security deposit is FBM holding a buyer's money.**
+   `REPO_CONSOLIDATION_REVIEW.md` §8 lists three gates and none covers
+   custodial deposits. §8 can only be amended by an operator; the same
+   document warns an unrecorded gate blocks nothing. Get the ruling before
+   Tier 3 items 7–9 build a money-holding path with no gate on it.
+4. **Should a courier's `shipment.disputed` auto-open an `order_dispute`?**
+   The inbound bridge records it; nothing reads it; no human sees it. Wiring
+   it is small; deciding it is policy.
+5. **`vault_document.doc_type` is a Postgres enum** against the house
+   TEXT+CHECK convention, which is why the one genuinely missing B2B type
+   (organic/regenerative certification) is a type-conversion migration
+   rather than a one-liner. Convert, or accept the enum.
+
+**Still open and buildable without a ruling:** the notification rail
+(`ar.invoice.overdue` subscriber + resend template — vault expiry reminders
+share it); a buyer/vendor surface that reads `blackstar_shipment.external_status`
+(nothing does); `completeCartWorkflow.hooks.validate` as the single-handler
+chokepoint that credit limits, capacity and deposits will all need — extend
+once, on purpose.
+
 **Tier 2 — make B2B credible.**
 4. **B2B document types and expiry** on `document-vault` — certificates of
    insurance, licences, organic/regenerative certs, with expiry reminders.

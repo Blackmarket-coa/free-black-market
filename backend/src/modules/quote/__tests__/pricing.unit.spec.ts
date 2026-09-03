@@ -114,6 +114,7 @@ describe("quote pricing: totalQuote", () => {
       savings: 0,
       line_count: 0,
       item_count: 0,
+      max_lead_time_days: null,
     })
   })
 })
@@ -251,5 +252,38 @@ describe("quote pricing: the 3% invariant", () => {
         { variant_id: "v1", metadata: { fee_type: "CHANNEL_FEE" } },
       ])
     ).not.toThrow()
+  })
+})
+
+describe("quote pricing: lead time", () => {
+  it("accepts a stated lead time and keeps null distinct from 0", () => {
+    expect(priceLine({ variant_id: "v", quantity: 1, unit_price: 1, lead_time_days: 14 }).lead_time_days).toBe(14)
+    expect(priceLine({ variant_id: "v", quantity: 1, unit_price: 1, lead_time_days: 0 }).lead_time_days).toBe(0)
+    expect(priceLine({ variant_id: "v", quantity: 1, unit_price: 1 }).lead_time_days).toBeNull()
+  })
+
+  it("refuses a negative or fractional lead time", () => {
+    expect(() =>
+      priceLine({ variant_id: "v", quantity: 1, unit_price: 1, lead_time_days: -1 })
+    ).toThrow(QuotePricingError)
+    expect(() =>
+      priceLine({ variant_id: "v", quantity: 1, unit_price: 1, lead_time_days: 2.5 })
+    ).toThrow(QuotePricingError)
+  })
+
+  it("reports the basket's lead time as the MAX across lines, not the sum", () => {
+    // Lines are produced in parallel; the buyer asks when the order arrives.
+    const totals = totalQuote([
+      { variant_id: "a", quantity: 1, unit_price: 1, lead_time_days: 3 },
+      { variant_id: "b", quantity: 1, unit_price: 1, lead_time_days: 21 },
+      { variant_id: "c", quantity: 1, unit_price: 1 },
+    ])
+    expect(totals.max_lead_time_days).toBe(21)
+  })
+
+  it("reports null when no line states a lead time", () => {
+    expect(
+      totalQuote([{ variant_id: "a", quantity: 1, unit_price: 1 }]).max_lead_time_days
+    ).toBeNull()
   })
 })

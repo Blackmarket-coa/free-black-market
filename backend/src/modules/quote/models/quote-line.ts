@@ -30,7 +30,13 @@ const QuoteLine = model
     /** What the catalogue said when the quote was built, minor units. */
     list_unit_price: model.number().nullable(),
 
-    /** Vendor's note on this line — lead time, substitution, batch size. */
+    /**
+     * Days from acceptance until this line ships, as the vendor states it.
+     * Null means "none stated" (in stock, ships now) and is distinct from 0.
+     */
+    lead_time_days: model.number().nullable(),
+
+    /** Vendor's note on this line — substitution, batch size, conditions. */
     note: model.text().nullable(),
 
     metadata: model.json().nullable(),
