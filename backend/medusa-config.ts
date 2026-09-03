@@ -209,6 +209,7 @@ const marketplaceModules = [
   { resolve: './src/modules/collective-quest' },
   { resolve: './src/modules/vendor-quest' },
   { resolve: './src/modules/production-ledger' },
+  { resolve: './src/modules/production-costing' },
   { resolve: './src/modules/document-vault' },
   { resolve: './src/modules/nursery-vertical' },
   { resolve: './src/modules/botanical' },

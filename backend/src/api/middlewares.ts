@@ -1103,6 +1103,14 @@ export default defineMiddlewares({
       ],
     },
     {
+      matcher: "/vendor/production-costs*",
+      middlewares: [
+        authenticate("seller", "bearer"),
+        requireFeatureFlagMiddleware("PRODUCTION_COSTING_V1"),
+        requirePlanFeature("vendor.production_ledger"),
+      ],
+    },
+    {
       matcher: "/vendor/vault*",
       middlewares: [
         authenticate("seller", "bearer"),
