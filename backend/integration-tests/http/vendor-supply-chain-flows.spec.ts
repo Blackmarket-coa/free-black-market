@@ -1,4 +1,5 @@
 import { medusaIntegrationTestRunner } from "@medusajs/test-utils"
+import { HAWALA_LEDGER_MODULE } from "../../src/modules/hawala-ledger"
 import {
   createAuthenticatedSeller,
   authHeader,
@@ -180,11 +181,79 @@ medusaIntegrationTestRunner({
         )
         expect(award.status).toBe(201)
 
+        // ── A spend must cite a settlement ────────────────────────────────
+        // Fixture: two real hawala entries debited from the paid seller's
+        // earnings account — one that moved ($200, COMPLETED) and one that
+        // has not (PENDING). Hawala amounts are major units; funds are cents.
+        // The account is keyed by the sel_* id, which is why the route resolves
+        // through `resolveVendorSellerId` rather than the mem_* actor.
+        const hawala = getContainer().resolve(HAWALA_LEDGER_MODULE) as any
+        const earnings = await hawala.getOrCreateSellerEarnings(paid.seller.id)
+        const counterparty = await hawala.createAccount({
+          account_type: "SETTLEMENT",
+          owner_type: "PLATFORM",
+          owner_id: `platform-${Date.now()}`,
+        })
+        const mkEntry = async (amount: number, status: string, description: string) => {
+          const created = await hawala.createLedgerEntries({
+            debit_account_id: earnings.id,
+            credit_account_id: counterparty.id,
+            amount,
+            currency_code: "USD",
+            entry_type: "WITHDRAWAL",
+            status,
+            description,
+          })
+          return (Array.isArray(created) ? created[0] : created).id as string
+        }
+        const settlementId = await mkEntry(200, "COMPLETED", "Meals program vendor payment")
+        const pendingId = await mkEntry(50, "PENDING", "Not yet moved")
+
+        // The picker lists only outflows whose money has moved, in cents.
+        const settlements = await safe(api.get("/vendor/funds/settlements", h))
+        expect(settlements.status).toBe(200)
+        const listed = settlements.data.settlements.find((s: any) => s.id === settlementId)
+        expect(listed).toMatchObject({ amount_cents: 20_000, cited_cents: 0, available_cents: 20_000 })
+        expect(settlements.data.settlements.some((s: any) => s.id === pendingId)).toBe(false)
+
+        // No citation: 400, and nothing written.
+        const uncited = await safe(
+          api.post(
+            `/vendor/funds/${fundId}/entries`,
+            { entry_type: "expenditure", amount_cents: 1_000, occurred_at: "2026-06-01" },
+            h
+          )
+        )
+        expect(uncited.status).toBe(400)
+        expect(uncited.data.message).toMatch(/must cite the settlement/i)
+
+        // Citing money that has not moved: 409.
+        const notMoved = await safe(
+          api.post(
+            `/vendor/funds/${fundId}/entries`,
+            { entry_type: "expenditure", amount_cents: 1_000, occurred_at: "2026-06-01", settlement_id: pendingId },
+            h
+          )
+        )
+        expect(notMoved.status).toBe(409)
+        expect(notMoved.data.message).toMatch(/has not completed/i)
+
+        // Citing an unknown id — or another seller's entry — reads as 404.
+        const unknown = await safe(
+          api.post(
+            `/vendor/funds/${fundId}/entries`,
+            { entry_type: "expenditure", amount_cents: 1_000, occurred_at: "2026-06-01", settlement_id: "hle_nope" },
+            h
+          )
+        )
+        expect(unknown.status).toBe(404)
+
         // The guard's refusal is a 409 carrying the reason, not a 500.
+        // 12,000 is within the $200 settlement but past the 10,000 award.
         const overspend = await safe(
           api.post(
             `/vendor/funds/${fundId}/entries`,
-            { entry_type: "expenditure", amount_cents: 12_000, occurred_at: "2026-06-01" },
+            { entry_type: "expenditure", amount_cents: 12_000, occurred_at: "2026-06-01", settlement_id: settlementId },
             h
           )
         )
@@ -194,7 +263,7 @@ medusaIntegrationTestRunner({
         const outOfPeriod = await safe(
           api.post(
             `/vendor/funds/${fundId}/entries`,
-            { entry_type: "expenditure", amount_cents: 100, occurred_at: "2027-06-01" },
+            { entry_type: "expenditure", amount_cents: 100, occurred_at: "2027-06-01", settlement_id: settlementId },
             h
           )
         )
@@ -210,11 +279,47 @@ medusaIntegrationTestRunner({
               amount_cents: 1_000,
               program_id: "prog_admin",
               occurred_at: "2026-06-01",
+              settlement_id: settlementId,
             },
             h
           )
         )
         expect(offPurpose.status).toBe(201)
+        expect(offPurpose.data.fund_transaction).toMatchObject({
+          reference_type: "hawala_ledger_entry",
+          reference_id: settlementId,
+        })
+
+        // The cap: 1,000 already attributed; 19,500 more would claim 20,500 of
+        // a 20,000 settlement. Refused as the settlement cap, not the award
+        // limit, even though both would — structural before policy.
+        const overCap = await safe(
+          api.post(
+            `/vendor/funds/${fundId}/entries`,
+            { entry_type: "expenditure", amount_cents: 19_500, occurred_at: "2026-06-01", settlement_id: settlementId },
+            h
+          )
+        )
+        expect(overCap.status).toBe(409)
+        expect(overCap.data.message).toMatch(/exceeds the settlement/i)
+
+        // A reversal must cite too, and cannot reverse more than was cited.
+        const overReverse = await safe(
+          api.post(
+            `/vendor/funds/${fundId}/entries`,
+            { entry_type: "expenditure", amount_cents: -2_000, occurred_at: "2026-06-01", settlement_id: settlementId },
+            h
+          )
+        )
+        expect(overReverse.status).toBe(409)
+        expect(overReverse.data.message).toMatch(/reverses more/i)
+
+        // The picker now reflects the attribution.
+        const after = await safe(api.get("/vendor/funds/settlements", h))
+        expect(after.data.settlements.find((s: any) => s.id === settlementId)).toMatchObject({
+          cited_cents: 1_000,
+          available_cents: 19_000,
+        })
 
         const report = await safe(api.get(`/vendor/funds/${fundId}/report`, h))
         expect(report.status).toBe(200)

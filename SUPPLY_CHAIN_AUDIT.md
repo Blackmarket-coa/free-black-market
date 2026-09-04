@@ -75,6 +75,16 @@ thing that costs the grant. `checkCompliance` still reports every finding at
 once for reconciliation, including the case that is not provably wrong but is
 not auditable either — a purpose-restricted spend carrying no `program_id`.
 
+**A spend must cite a settlement.** An expenditure now has to point at the
+`hawala_ledger_entry` that moved the money — one debited from this seller's own
+account, completed, in the fund's currency — and across every fund the seller
+holds, the cents attributed to one settlement can never exceed what it moved.
+The route composes the verifier from hawala; the module never resolves the
+ledger, and fails closed without a verifier. `force` bypasses policy (award
+limit, period), never conservation (citation, cap). Legacy uncited spends
+surface as `uncited_spend`. Covered by unit, module-integration and http specs,
+the last against real hawala rows.
+
 ### 3. In-kind material intake — **closed**
 
 `intake_receipt` in `modules/aid-network` records goods arriving with no
@@ -174,3 +184,24 @@ end" could not persist an attribution. `Migration20260904AddRawBigNumberColumns`
 adds the companions (nullable, backfilled from the numeric values, idempotent),
 and `integration-tests/http/creator-attribution-bignumber.spec.ts` writes and
 reads a row through the generated CRUD to hold it closed.
+
+The same class of drift, in the money ledger: `hawala_ledger_entry` declared
+five columns its migrations never created — `currency_code`,
+`settlement_batch_id`, `settled_at`, `debit_balance_after`,
+`credit_balance_after` (the last two bigNumber, so their `raw_*` companions were
+missing too). `currency_code` carries a model default and so sat in every
+insert, which meant that on a database built from its own migrations the
+generated CRUD could not write a ledger entry at all. It surfaced only when the
+settlement-citation http spec tried to create a real settlement to cite. No
+existing spec had caught it: none writes an entry, and the module runners
+generate schema from the model rather than the migrations.
+`Migration20260904AddLedgerEntryModelColumns` adds the columns (all
+`IF NOT EXISTS`, forward-applied and re-run to confirm idempotence), and
+`integration-tests/http/hawala-ledger-entry-schema.spec.ts` writes an entry
+that sets every one of them and reads it back.
+
+Both findings point at the same gap: nothing checks that a module's migrations
+build the schema its model needs. The module runners cannot (they generate
+schema from the model), and the http job only catches a table when a spec
+happens to write to it. A model-vs-`information_schema` diff over every module,
+run against the migrated database, would catch this class outright.

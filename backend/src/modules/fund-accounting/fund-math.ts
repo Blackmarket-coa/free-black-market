@@ -12,6 +12,12 @@
 import { FundRestriction } from "./models/fund"
 import { FundEntryType } from "./models/fund-transaction"
 
+/**
+ * The reference_type an expenditure must carry to cite the settlement that
+ * moved its money — a `hawala_ledger_entry` debited from the seller's account.
+ */
+export const SETTLEMENT_REFERENCE_TYPE = "hawala_ledger_entry"
+
 /** Minimum shape the math needs. Real model rows satisfy it. */
 export interface FundEntry {
   id?: string
@@ -19,6 +25,8 @@ export interface FundEntry {
   amount_cents: number | string | bigint
   occurred_at?: Date | string | null
   program_id?: string | null
+  reference_type?: string | null
+  reference_id?: string | null
 }
 
 /** Minimum fund shape the compliance test needs. */
@@ -50,6 +58,7 @@ export type ViolationCode =
   | "over_received"
   | "off_purpose"
   | "untagged_spend"
+  | "uncited_spend"
   | "out_of_period"
   | "permanent_corpus_spent"
 
@@ -72,6 +81,30 @@ function toDate(value: Date | string | null | undefined): Date | null {
   if (!value) return null
   const d = value instanceof Date ? value : new Date(value)
   return Number.isNaN(d.getTime()) ? null : d
+}
+
+/** Whether an entry cites the settlement that moved its money. */
+export function hasSettlementCitation(entry: {
+  reference_type?: string | null
+  reference_id?: string | null
+}): boolean {
+  return (
+    entry.reference_type === SETTLEMENT_REFERENCE_TYPE &&
+    typeof entry.reference_id === "string" &&
+    entry.reference_id.length > 0
+  )
+}
+
+/**
+ * How much of a settlement is still available to be attributed to a fund.
+ * Not clamped: a settlement over-cited by legacy rows reads negative and is
+ * visibly wrong rather than quietly reading as spent-out.
+ */
+export function settlementHeadroomCents(
+  settlementAmountCents: number,
+  citedCents: number
+): number {
+  return toCents(settlementAmountCents) - toCents(citedCents)
 }
 
 /** Purpose-restricted funds must be spent on their designated program. */
@@ -212,6 +245,20 @@ export function checkCompliance(
   for (const entry of entries) {
     if (entry.entry_type !== FundEntryType.EXPENDITURE) continue
     const amount = toCents(entry.amount_cents)
+
+    // Every non-zero spend, reversals included, must say which settlement
+    // moved the money. A row without that is unauditable: the spend guards
+    // refuse to write one, so this catches rows that predate the rule.
+    if (amount !== 0 && !hasSettlementCitation(entry)) {
+      violations.push({
+        code: "uncited_spend",
+        severity: "error",
+        message: "Expenditure does not cite the settlement that moved the money",
+        transaction_id: entry.id,
+        amount_cents: amount,
+      })
+    }
+
     // Reversing entries undo a spend; they cannot themselves break intent.
     if (amount <= 0) continue
 

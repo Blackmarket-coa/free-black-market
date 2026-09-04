@@ -40,6 +40,41 @@ That needs money tagged with intent **at rest**, not just in motion.
 - **Compliance returns every finding.** A reconciliation needs the whole list,
   so `checkCompliance` collects rather than throwing on the first failure.
 
+## A spend must cite a settlement
+
+An expenditure is a claim that grant money paid for something. The claim is
+only auditable if it points at the money that actually moved, so every
+non-zero expenditure — reversals included — must cite a `hawala_ledger_entry`
+(`reference_type = "hawala_ledger_entry"`, `reference_id`; the vendor route
+accepts `settlement_id` as the friendly form). The write is refused unless the
+cited entry:
+
+- exists and is debited from one of **this seller's** accounts — an unknown id
+  and another seller's entry both read as not-found, so the guard never
+  confirms someone else's ledger rows;
+- has actually moved (`COMPLETED` or `SETTLED`); a `PENDING` entry is money that
+  has not left yet;
+- is in the fund's currency;
+- and, summed across **every fund the seller holds**, is not attributed beyond
+  what it moved. A $1,000 payment may be split $600/$400 between two grants; it
+  may never be claimed as $600 by one and $500 by another.
+
+The module never resolves the ledger. The route composes a `SettlementVerifier`
+from hawala (`api/vendor/funds/_settlements.ts`) and passes it in; without one,
+an expenditure fails closed rather than being written unverified.
+
+`force` bypasses the award limit and the spend period — policy, with documented
+exceptions. It does **not** bypass the citation or the cap. Those are
+conservation: money cannot be attributed that did not move, and there is no
+documented exception to that.
+
+A spend written before this rule surfaces as an `uncited_spend` finding.
+
+Two things the route layer has to get right: hawala accounts are keyed by the
+`sel_*` seller id while the vendor guard rewrites the actor to `mem_*`, so the
+lookup goes through `resolveVendorSellerId`; and hawala stores amounts in major
+units while this module is integer cents, so the conversion happens once, there.
+
 ## Restrictions
 
 `unrestricted` · `purpose` · `time` · `purpose_and_time` · `permanent`

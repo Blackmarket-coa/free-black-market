@@ -18,6 +18,7 @@ import {
   useCreateFund,
   useFundEntries,
   useFundPortfolio,
+  useFundSettlements,
   useRecordFundEntry,
 } from "../../../hooks/api/funds"
 
@@ -366,11 +367,22 @@ function RecordEntryForm({ fundId }: { fundId: string }) {
   const [description, setDescription] = useState("")
   const [programId, setProgramId] = useState("")
   const [occurredAt, setOccurredAt] = useState("")
+  const [settlementId, setSettlementId] = useState("")
+
+  const isExpenditure = entryType === "expenditure"
+  // Only an expenditure needs the ledger; do not fetch it otherwise.
+  const { data: settlementsData } = useFundSettlements(isExpenditure)
+  const settlements: Array<Record<string, unknown>> =
+    settlementsData?.settlements ?? []
 
   const submit = () => {
     const dollars = Number(amount)
     if (!Number.isFinite(dollars) || dollars === 0) {
       toast.error("Enter an amount")
+      return
+    }
+    if (isExpenditure && !settlementId) {
+      toast.error("Pick the settlement that moved the money")
       return
     }
 
@@ -381,6 +393,7 @@ function RecordEntryForm({ fundId }: { fundId: string }) {
         description: description || undefined,
         program_id: programId || undefined,
         occurred_at: occurredAt || undefined,
+        settlement_id: isExpenditure ? settlementId : undefined,
       },
       {
         onSuccess: () => {
@@ -430,6 +443,38 @@ function RecordEntryForm({ fundId }: { fundId: string }) {
             placeholder="0.00"
           />
         </label>
+        {isExpenditure && (
+          <label className="block md:col-span-2">
+            <Text size="small" className="mb-1">
+              Settlement that moved the money
+            </Text>
+            <Select value={settlementId} onValueChange={setSettlementId}>
+              <Select.Trigger>
+                <Select.Value placeholder="Pick a completed outflow" />
+              </Select.Trigger>
+              <Select.Content>
+                {settlements.length === 0 ? (
+                  <Select.Item value="__none" disabled>
+                    No completed outflows to cite yet
+                  </Select.Item>
+                ) : (
+                  settlements.map((s) => (
+                    <Select.Item key={String(s.id)} value={String(s.id)}>
+                      {money(Number(s.amount_cents))} ·{" "}
+                      {String(s.description ?? s.entry_type)} ·{" "}
+                      {money(Number(s.available_cents))} available
+                    </Select.Item>
+                  ))
+                )}
+              </Select.Content>
+            </Select>
+            <Text size="xsmall" className="text-ui-fg-muted mt-1">
+              A spend is only auditable if it points at the money that moved.
+              What you attribute here can never exceed what the settlement
+              moved, across all your funds.
+            </Text>
+          </label>
+        )}
         <label className="block">
           <Text size="small" className="mb-1">
             Program (for purpose compliance)

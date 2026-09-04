@@ -3,7 +3,9 @@ import { MedusaError } from "@medusajs/framework/utils"
 import { FUND_ACCOUNTING_MODULE } from "../../../../../modules/fund-accounting"
 import type FundAccountingModuleService from "../../../../../modules/fund-accounting/service"
 import { FundEntryType } from "../../../../../modules/fund-accounting/models/fund-transaction"
+import { SETTLEMENT_REFERENCE_TYPE } from "../../../../../modules/fund-accounting/fund-math"
 import { getSellerId } from "../../../quests/_helpers"
+import { makeSettlementVerifier } from "../../_settlements"
 
 const ENTRY_TYPES = new Set<string>(Object.values(FundEntryType))
 
@@ -25,6 +27,12 @@ interface CreateEntryBody {
   occurred_at?: string
   description?: string
   program_id?: string
+  /**
+   * For an expenditure: the hawala ledger entry that moved the money. The
+   * friendly name for `reference_type = "hawala_ledger_entry"` +
+   * `reference_id`; takes precedence over those when both are sent.
+   */
+  settlement_id?: string
   reference_type?: string
   reference_id?: string
   metadata?: Record<string, unknown>
@@ -48,32 +56,49 @@ export const POST = async (
   if (typeof b.amount_cents !== "number" || !Number.isFinite(b.amount_cents)) {
     return res.status(400).json({ message: "amount_cents must be a number" })
   }
+  if (b.settlement_id !== undefined && typeof b.settlement_id !== "string") {
+    return res.status(400).json({ message: "settlement_id must be a string" })
+  }
+
+  const reference_type = b.settlement_id
+    ? SETTLEMENT_REFERENCE_TYPE
+    : (b.reference_type ?? null)
+  const reference_id = b.settlement_id ?? b.reference_id ?? null
 
   const service = req.scope.resolve<FundAccountingModuleService>(
     FUND_ACCOUNTING_MODULE
   )
 
+  // Only an expenditure needs the ledger; do not touch it otherwise.
+  const verifySettlement =
+    b.entry_type === FundEntryType.EXPENDITURE && b.amount_cents !== 0
+      ? await makeSettlementVerifier(req)
+      : undefined
+
   try {
-    const fund_transaction = await service.recordEntry({
-      seller_id: sellerId,
-      fund_id: req.params.id,
-      entry_type: b.entry_type as FundEntryType,
-      amount_cents: b.amount_cents,
-      occurred_at: b.occurred_at,
-      description: b.description ?? null,
-      program_id: b.program_id ?? null,
-      reference_type: b.reference_type ?? null,
-      reference_id: b.reference_id ?? null,
-      metadata: b.metadata ?? null,
-      force: b.force,
-    })
+    const fund_transaction = await service.recordEntry(
+      {
+        seller_id: sellerId,
+        fund_id: req.params.id,
+        entry_type: b.entry_type as FundEntryType,
+        amount_cents: b.amount_cents,
+        occurred_at: b.occurred_at,
+        description: b.description ?? null,
+        program_id: b.program_id ?? null,
+        reference_type,
+        reference_id,
+        metadata: b.metadata ?? null,
+        force: b.force,
+      },
+      { verifySettlement }
+    )
     res.status(201).json({ fund_transaction })
   } catch (e) {
-    // The guards are the point of the endpoint: a refused spend is a 409 the
-    // caller can act on, not a 500.
+    // The guards are the point of the endpoint: a refused spend is a status the
+    // caller can act on, carrying the reason, not a 500.
     if (e instanceof MedusaError) {
       if (e.type === MedusaError.Types.NOT_FOUND) {
-        return res.status(404).json({ message: "Fund not found" })
+        return res.status(404).json({ message: e.message })
       }
       if (e.type === MedusaError.Types.NOT_ALLOWED) {
         return res.status(409).json({ message: e.message })

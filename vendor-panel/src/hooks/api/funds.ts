@@ -14,6 +14,7 @@ export const fundQueryKeys = {
   portfolio: () => ["funds", "portfolio"] as const,
   report: (id: string) => ["funds", "report", id] as const,
   entries: (id: string) => ["funds", "entries", id] as const,
+  settlements: () => ["funds", "settlements"] as const,
 }
 
 export const useFunds = () =>
@@ -27,6 +28,17 @@ export const useFundPortfolio = () =>
   useQuery({
     queryKey: fundQueryKeys.portfolio(),
     queryFn: () => fetchQuery("/vendor/funds/portfolio", { method: "GET" }),
+  })
+
+/**
+ * Settlements an expenditure may cite — the seller's completed ledger outflows,
+ * each with what is already attributed across funds and what is left.
+ */
+export const useFundSettlements = (enabled = true) =>
+  useQuery({
+    queryKey: fundQueryKeys.settlements(),
+    queryFn: () => fetchQuery("/vendor/funds/settlements", { method: "GET" }),
+    enabled,
   })
 
 export const useFundReport = (fundId: string | null) =>

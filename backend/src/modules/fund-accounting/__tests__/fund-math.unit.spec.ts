@@ -1,9 +1,12 @@
 import {
+  SETTLEMENT_REFERENCE_TYPE,
   checkCompliance,
+  hasSettlementCitation,
   isPurposeRestricted,
   isTimeRestricted,
   isWithinSpendPeriod,
   rollupFund,
+  settlementHeadroomCents,
   spendHeadroomCents,
   type FundEntry,
   type FundTerms,
@@ -18,12 +21,17 @@ import { FundEntryType } from "../models/fund-transaction"
  * outside the period, and spending on the wrong program.
  */
 
+// Every expenditure the factory makes cites a settlement by default: the
+// citation rule is tested on its own below, and the guards under test here
+// (award, period, purpose) should not trip over it.
 const entry = (over: Partial<FundEntry> = {}): FundEntry => ({
   id: "ft_1",
   entry_type: FundEntryType.EXPENDITURE,
   amount_cents: 1000,
   occurred_at: "2026-06-01T00:00:00Z",
   program_id: null,
+  reference_type: SETTLEMENT_REFERENCE_TYPE,
+  reference_id: "hle_1",
   ...over,
 })
 
@@ -304,6 +312,80 @@ describe("checkCompliance", () => {
         entry({ amount_cents: -1_000, program_id: "prog_admin" }),
       ]
     )
+    expect(v).toEqual([])
+  })
+})
+
+// ── Settlement citation ───────────────────────────────────────────────────
+
+
+describe("hasSettlementCitation", () => {
+  it("accepts a hawala ledger entry reference", () => {
+    expect(
+      hasSettlementCitation({ reference_type: SETTLEMENT_REFERENCE_TYPE, reference_id: "hle_1" })
+    ).toBe(true)
+  })
+
+  it("rejects a missing id, an empty id, and any other reference type", () => {
+    expect(hasSettlementCitation({ reference_type: SETTLEMENT_REFERENCE_TYPE, reference_id: null })).toBe(false)
+    expect(hasSettlementCitation({ reference_type: SETTLEMENT_REFERENCE_TYPE, reference_id: "" })).toBe(false)
+    expect(hasSettlementCitation({ reference_type: "order", reference_id: "hle_1" })).toBe(false)
+    expect(hasSettlementCitation({})).toBe(false)
+  })
+})
+
+describe("settlementHeadroomCents", () => {
+  it("is what the settlement moved less what is already attributed", () => {
+    expect(settlementHeadroomCents(20_000, 4_500)).toBe(15_500)
+  })
+
+  it("is not clamped, so an over-cited settlement reads negative", () => {
+    expect(settlementHeadroomCents(20_000, 21_000)).toBe(-1_000)
+  })
+})
+
+describe("checkCompliance — uncited_spend", () => {
+  const cited = { reference_type: SETTLEMENT_REFERENCE_TYPE, reference_id: "hle_1" }
+
+  it("flags a spend with no settlement citation", () => {
+    const v = checkCompliance(terms(), [
+      entry({ entry_type: FundEntryType.AWARD, amount_cents: 10_000 }),
+      entry({ id: "ft_legacy", amount_cents: 1_000, reference_type: null, reference_id: null }),
+    ])
+    const found = v.find((x) => x.code === "uncited_spend")
+    expect(found?.severity).toBe("error")
+    expect(found?.transaction_id).toBe("ft_legacy")
+  })
+
+  it("flags an uncited reversal too", () => {
+    const v = checkCompliance(terms(), [
+      entry({ entry_type: FundEntryType.AWARD, amount_cents: 10_000 }),
+      entry({ amount_cents: -1_000, reference_type: null, reference_id: null }),
+    ])
+    expect(v.map((x) => x.code)).toContain("uncited_spend")
+  })
+
+  it("passes a cited spend", () => {
+    const v = checkCompliance(terms(), [
+      entry({ entry_type: FundEntryType.AWARD, amount_cents: 10_000 }),
+      entry({ amount_cents: 1_000, ...cited }),
+    ])
+    expect(v).toEqual([])
+  })
+
+  it("does not care what a non-expenditure row references", () => {
+    const v = checkCompliance(terms(), [
+      entry({ entry_type: FundEntryType.AWARD, amount_cents: 10_000, reference_type: null, reference_id: null }),
+    ])
+    expect(v).toEqual([])
+  })
+
+  it("does not ask non-expenditure movements to cite anything", () => {
+    const v = checkCompliance(terms(), [
+      entry({ entry_type: FundEntryType.AWARD, amount_cents: 10_000 }),
+      entry({ entry_type: FundEntryType.RECEIPT, amount_cents: 10_000 }),
+      entry({ entry_type: FundEntryType.RETURN, amount_cents: 1_000 }),
+    ])
     expect(v).toEqual([])
   })
 })
