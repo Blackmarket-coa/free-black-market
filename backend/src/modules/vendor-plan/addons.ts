@@ -117,6 +117,32 @@ export const VENDOR_ADDON_CATALOG: VendorAddonDefinition[] = [
     display_order: 4,
   },
   {
+    /**
+     * Grant and restricted-fund tracking as a pack.
+     *
+     * Priced at the low end deliberately: the vendors who need it are
+     * grant-funded nonprofits, and the module exists so they can prove an award
+     * was spent as designated. An org holding a grant can carry $39; the pack
+     * is here so reaching that does not require the $99 plan jump.
+     *
+     * Deliberately does NOT carry aid-network. Hub inventory, in-kind intake
+     * and surplus routing ship free on every tier, including Free — a pantry
+     * moving rescued food is exactly who should not meet a paywall. Only the
+     * compliance surface, which by definition only matters once someone has
+     * been given money, is sold.
+     */
+    code: "fund_pack",
+    display_name: "Grant & Fund Tracking",
+    description:
+      "Restricted funds and grants: award, receipt and expenditure tracking with period and purpose compliance checks for grant reconciliation.",
+    price_amount: 3900,
+    currency_code: "usd",
+    duration_days: 30,
+    feature_keys: ["vendor.fund_accounting"],
+    is_active: true,
+    display_order: 5,
+  },
+  {
     code: "embed_pack",
     display_name: "Embedded Storefront",
     description:

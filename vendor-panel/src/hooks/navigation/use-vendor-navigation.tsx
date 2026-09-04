@@ -327,6 +327,24 @@ function getVendorNavigationConfig({
       to: "/donations",
       showFor: (f) => f.hasDonations,
     },
+    // Hub inventory, in-kind intake and surplus routing. Free on every plan —
+    // no `requiresPlanFeature` — so a pantry never meets a paywall to move
+    // rescued food.
+    {
+      icon: <Buildings />,
+      label: "Aid Network",
+      to: "/aid-network",
+      showFor: (f) => f.hasDonations || f.hasVolunteers,
+    },
+    // Restricted funds and grants. Plan-gated: the compliance surface only
+    // matters once someone has been given money to account for.
+    {
+      icon: <DocumentText />,
+      label: "Funds & Grants",
+      to: "/funds",
+      showFor: (f) => f.hasDonations,
+      requiresPlanFeature: "vendor.fund_accounting",
+    },
     // Order Cycles (for subscriptions)
     {
       icon: <CalendarMini />,

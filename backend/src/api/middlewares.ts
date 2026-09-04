@@ -1103,6 +1103,29 @@ export default defineMiddlewares({
       ],
     },
     {
+      matcher: "/vendor/production-costs*",
+      middlewares: [
+        authenticate("seller", "bearer"),
+        requireFeatureFlagMiddleware("PRODUCTION_COSTING_V1"),
+        requirePlanFeature("vendor.production_ledger"),
+      ],
+    },
+    {
+      matcher: "/vendor/funds*",
+      middlewares: [
+        authenticate("seller", "bearer"),
+        requireFeatureFlagMiddleware("FUND_ACCOUNTING_V1"),
+        requirePlanFeature("vendor.fund_accounting"),
+      ],
+    },
+    {
+      matcher: "/vendor/aid-network*",
+      middlewares: [
+        authenticate("seller", "bearer"),
+        requireFeatureFlagMiddleware("AID_NETWORK_V1"),
+      ],
+    },
+    {
       matcher: "/vendor/vault*",
       middlewares: [
         authenticate("seller", "bearer"),
