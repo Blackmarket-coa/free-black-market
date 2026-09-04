@@ -28,6 +28,7 @@ export const VENDOR_FEATURE_KEYS = [
   "vendor.pick_pack",
   "vendor.embed",
   "vendor.buyer_network",
+  "vendor.fund_accounting",
 ] as const
 
 export type VendorFeatureKey = (typeof VENDOR_FEATURE_KEYS)[number]
@@ -116,7 +117,7 @@ export const VENDOR_PLAN_CATALOG: VendorPlanDefinition[] = [
     code: "pro",
     display_name: "Pro",
     description:
-      "Adds in-person selling, invoicing, external channel sync and fulfilment tooling.",
+      "Adds in-person selling, invoicing, external channel sync, fulfilment tooling and restricted-fund tracking.",
     price_amount: 9900,
     currency_code: "usd",
     interval: "month",
@@ -132,6 +133,7 @@ export const VENDOR_PLAN_CATALOG: VendorPlanDefinition[] = [
       "vendor.invoicing",
       "vendor.channel_sync",
       "vendor.pick_pack",
+      "vendor.fund_accounting",
     ],
   },
   {

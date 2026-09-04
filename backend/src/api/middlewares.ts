@@ -1115,6 +1115,7 @@ export default defineMiddlewares({
       middlewares: [
         authenticate("seller", "bearer"),
         requireFeatureFlagMiddleware("FUND_ACCOUNTING_V1"),
+        requirePlanFeature("vendor.fund_accounting"),
       ],
     },
     {
