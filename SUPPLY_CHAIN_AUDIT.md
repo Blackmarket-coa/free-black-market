@@ -35,7 +35,7 @@ OpenBoxes wholesale.
 
 ## Genuine gaps
 
-### 1. Cost accounting / COGS — **closed by this change**
+### 1. Cost accounting / COGS — **closed**
 
 `modules/production-ledger` tracks what was made and realized yield, and states
 in its README that it deliberately carries no money ("that stays in the hawala
@@ -53,28 +53,92 @@ cost line carries `is_cash_outlay`, derived from its source, so one set of books
 answers both "what did this batch cost to make?" and "how much cash did we need?"
 A COGS model that collapses those two numbers is wrong for mutual aid.
 
-### 2. Restricted-fund / grant tracking — **still open**
+### 2. Restricted-fund / grant tracking — **closed**
 
-No `fund_id`, `restricted_fund`, `designated_fund` or equivalent anywhere in
-`backend/src`. `modules/donation` routes money *to* beneficiaries
-(`donation-beneficiary`, `donation-disbursement`) but does not track designated
-money held *against* a program. A nonprofit cannot currently answer "how much of
-this grant is unspent, and did we spend it on what it was designated for?"
+No `fund_id`, `restricted_fund` or equivalent existed anywhere in `backend/src`.
+`modules/donation` routes money *to* beneficiaries; it does not track designated
+money held *against* a program. A nonprofit could not answer "how much of this
+grant is unspent, and did we spend it on what it was designated for?"
 
-This is a fund-tagging layer over the existing ledger, not a separate product.
-`production_cost_entry.reference_type`/`reference_id` is a plausible attachment
-point on the spend side.
+Added as `modules/fund-accounting` (`fund`, `fund_transaction`). See
+`backend/src/modules/fund-accounting/README.md`.
 
-### 3. In-kind material intake — **partially addressed, still open**
+Award, receipt and spend are separate entry types rather than one signed number,
+because "committed but not received" and "received but not spent" are both real
+states a grant report has to show. Balances are never stored — every figure
+derives from transaction rows, so a fund cannot disagree with its own history.
 
-`CostSource.DONATED` now lets a donated input be valued into a batch's COGS
-without inflating cash outlay, which covers the *production-input* case. It does
-not cover intake as inventory: receiving donated goods into stock, with no
-purchase order and no vendor, is still unmodelled.
+The guards refuse the write rather than flagging it afterwards: overspending an
+award, spending outside the permitted period, and spending a permanently
+restricted corpus are all rejected at `recordEntry`, because the write is the
+thing that costs the grant. `checkCompliance` still reports every finding at
+once for reconciliation, including the case that is not provably wrong but is
+not auditable either — a purpose-restricted spend carrying no `program_id`.
 
-## Not evaluated
+### 3. In-kind material intake — **closed**
 
-Reverse logistics (food rescue / gleaning / surplus routing) was searched for and
-not found, but the adjacent modules (`food-distribution`, `mutual-aid`,
-`harvest`) are large enough that absence of a keyword is not proof of absence of
-the capability. Treat it as unverified rather than as a confirmed gap.
+`intake_receipt` in `modules/aid-network` records goods arriving with no
+purchase order behind them — donation, rescue, gleaning, overproduction — and
+creates the `node_stock` lots in the same call, because a receipt that produces
+no stock is exactly what made donated goods invisible to allocation.
+
+In-kind valuation (`estimated_value_cents` + `valuation_basis`) is deliberately
+kept out of the money ledgers: no cash moved, but the figure is needed for donor
+acknowledgment and in-kind contribution reporting, and it is only defensible
+alongside how it was reached.
+
+`CostSource.DONATED` in `production-costing` covers the adjacent case — a
+donated *input consumed by a production batch* — so donated flour lands in COGS
+without inflating cash outlay.
+
+### 4. Reverse logistics / surplus rescue — verified absent, now **closed**
+
+Previously listed as unverified. Confirmed absent: `mutual-aid` is a
+person-to-person offer/request board, and `harvest`'s `donation` pool allocates
+one garden's harvest by percentage — neither routes recovered goods between
+organisations.
+
+Closed by `node_transfer` (reasons `rescue` and `surplus_redistribution`) plus
+`findExpiringSurplus`, which supplies the input the problem actually has: rescue
+and gleaning produce stock nobody requested, so the question is not "who asked
+for it" but "what spoils next".
+
+### 5. Network-wide multi-node allocation — **closed**
+
+`agriculture/node-fulfillment` splits an order across the growers who *own* the
+stock. That is seller-scoped routing, and it does not let a network rebalance
+its own inventory between its own hubs — because the stack had no entity for "a
+place that holds stock". `food_producer` is an organisation with an address;
+`seller` is a vendor; neither holds inventory.
+
+`network_node` + `node_stock` supply the missing noun, and `allocation.ts` plans
+across them: first-expired-first-out, local shelves before any transfer,
+distance as tiebreak, cold items never planned into a hub that cannot hold them.
+Planning is pure, read-only and deterministic, so a plan can be re-run, diffed
+and reviewed before anyone moves food.
+
+Unfilled demand reports *why* — `no_supply`, `cold_chain_unavailable`,
+`expires_before_needed`, `out_of_range`, `transfers_disabled` — because those get
+fixed differently. "We have it but cannot keep it cold" is a fridge, not a food
+drive.
+
+## Adoption note
+
+None of this required adopting OpenBoxes, PostHog or Umami. The attribution
+bridge was already built; the allocation and fund-accounting gaps were narrow
+enough to close directly against the existing module conventions, which keeps
+seller scoping, feature flags and the vendor API surface consistent with the
+rest of FBM.
+
+## Status
+
+| Gap | State |
+| --- | --- |
+| Cost accounting / COGS | Closed — `production-costing` |
+| Restricted-fund / grant tracking | Closed — `fund-accounting` |
+| In-kind material intake | Closed — `aid-network` (`intake_receipt`) |
+| Reverse logistics / surplus rescue | Closed — `aid-network` (`node_transfer`, `findExpiringSurplus`) |
+| Network-wide multi-node allocation | Closed — `aid-network` (`allocation.ts`) |
+
+All five are behind feature flags (`FF_PRODUCTION_COSTING_V1`,
+`FF_FUND_ACCOUNTING_V1`, `FF_AID_NETWORK_V1`) and default off.

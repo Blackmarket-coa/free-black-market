@@ -1111,6 +1111,20 @@ export default defineMiddlewares({
       ],
     },
     {
+      matcher: "/vendor/funds*",
+      middlewares: [
+        authenticate("seller", "bearer"),
+        requireFeatureFlagMiddleware("FUND_ACCOUNTING_V1"),
+      ],
+    },
+    {
+      matcher: "/vendor/aid-network*",
+      middlewares: [
+        authenticate("seller", "bearer"),
+        requireFeatureFlagMiddleware("AID_NETWORK_V1"),
+      ],
+    },
+    {
       matcher: "/vendor/vault*",
       middlewares: [
         authenticate("seller", "bearer"),
