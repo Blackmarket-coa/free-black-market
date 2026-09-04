@@ -142,3 +142,35 @@ rest of FBM.
 
 All five are behind feature flags (`FF_PRODUCTION_COSTING_V1`,
 `FF_FUND_ACCOUNTING_V1`, `FF_AID_NETWORK_V1`) and default off.
+
+## Verification
+
+Unit coverage alone cannot show that a migration matches its model or that a
+route's gates, validation and guards compose correctly, so the modules were
+also verified against a live Postgres 16:
+
+- **Migrations.** `medusa db:migrate` applies all three cleanly. The migrated
+  schema was inspected: every `model.bigNumber()` field has its `raw_*` JSONB
+  companion, all 14 enum types exist, both unique partial indexes exist, and
+  column counts match the models.
+- **Module specs** (`*.integration.spec.ts`, via `moduleIntegrationTestRunner`):
+  cents survive the bigNumber roundtrip; the fund overspend guard refuses
+  against real history and yields once a reversing entry is written; an intake
+  produces stock the planner finds on the next read; receiving a transfer draws
+  the origin down by what shipped and stocks the destination with what arrived.
+- **HTTP spec** (`integration-tests/http/vendor-supply-chain-flows.spec.ts`):
+  the real seller-auth path through every new route, with three sellers — two
+  paid to prove ownership isolation, one free to prove the
+  `vendor.fund_accounting` paywall 402s and that aid-network answers it anyway.
+
+### Found and fixed on the way
+
+`order_attribution` declares three `model.bigNumber()` fields, and its create
+migration made only the NUMERIC half of each — none of the `raw_*` companions
+the generated CRUD reads and writes. On a database built from its own
+migrations, `createOrderAttributions` and `listOrderAttributions` failed on a
+missing column: the creator-to-commerce bridge this audit called "closed end to
+end" could not persist an attribution. `Migration20260904AddRawBigNumberColumns`
+adds the companions (nullable, backfilled from the numeric values, idempotent),
+and `integration-tests/http/creator-attribution-bignumber.spec.ts` writes and
+reads a row through the generated CRUD to hold it closed.
