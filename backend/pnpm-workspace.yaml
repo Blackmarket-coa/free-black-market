@@ -13,6 +13,19 @@
 #     ignore this file entirely, with no warning at all. This directory is
 #     its own workspace root precisely so the flag is unnecessary.
 overrides:
+  # GHSA-73wf-gq98-2v4g / GHSA-c83g-rgw3-j3cx: uncaught crash + prototype
+  # write parsing untrusted browserslist-stats.json, and unbounded cache
+  # growth to OOM. Both HIGH with a fix, so ignore-unfixed does not spare
+  # them. Production here (not in the root or the panels, where
+  # browserslist is dev-only and Trivy skips it).
+  "browserslist": ">=4.28.7"
+  # GHSA-82x6-q7mm-w9cf / GHSA-v5mp-jgw5-2x6j: prototype pollution and a
+  # parser DoS in toml, reaching production through @stellar/stellar-sdk
+  # (stellar.toml resolution). Fixed in 4.2.0. A major bump on a
+  # transitive dep, so bounded rather than open-ended: 4.x stays
+  # CommonJS, while 5.x is unverified against the SDK and a bare ">="
+  # would drift there — the same trap documented for nanoid below.
+  "toml@3": "^4.2.0"
   "glob": ">=10.5.0"
   "qs": ">=6.14.2"
   "jws": ">=3.2.3"

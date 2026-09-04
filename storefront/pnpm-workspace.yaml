@@ -13,6 +13,12 @@
 #     ignore this file entirely, with no warning at all. This directory is
 #     its own workspace root precisely so the flag is unnecessary.
 overrides:
+  # GHSA-73wf-gq98-2v4g / GHSA-c83g-rgw3-j3cx: uncaught crash + prototype
+  # write parsing untrusted browserslist-stats.json, and unbounded cache
+  # growth to OOM. Both HIGH with a fix, so ignore-unfixed does not spare
+  # them. Production here (not in the root or the panels, where
+  # browserslist is dev-only and Trivy skips it).
+  "browserslist": ">=4.28.7"
   "glob": ">=10.5.0"
   "qs": ">=6.14.2"
   "axios": ">=1.18.0"
@@ -26,7 +32,11 @@ overrides:
   "vite": "^7.3.5"
   "zod": "4.2.0"
   "brace-expansion@5": "^5.0.9"
-  "fast-uri": "^3.1.5"
+  # Four HIGH advisories (GHSA-jqff-g426-hqxp, -f65p-4m7j-42xc,
+  # -5jgf-p345-68v8, -fph4-wmhf-6fwf) are only fixed in 3.1.6. The floor
+  # was ^3.1.5, which permitted 3.1.6 but left the lockfile resolved at
+  # 3.1.5 — a permissive range is not a bump.
+  "fast-uri": "^3.1.6"
   # CVE-2026-67213: infinite loop in nanoid's customAlphabet. Fixed in the
   # 3.x line at 3.3.17. Caret-bounded on purpose: a bare ">=3.3.17" lets pnpm
   # resolve to nanoid 6, which is ESM-only and breaks every CommonJS require.
