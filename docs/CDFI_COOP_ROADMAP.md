@@ -1,0 +1,570 @@
+# CDFI, Co-op and Solidarity-Economy Roadmap — market connections reconciled against the code
+
+Status: **code-verified 2026-09-05** against `free-black-market` `6585024`,
+`blackout` `aee4837` and `Blackstar` `c86b335`. No code rides with this
+document.
+
+This document takes the ten features that came out of the market-connections
+brainstorm — CDFI lending, co-op formation, farmers-market compliance, mutual
+aid, co-op delivery and time banking — and reconciles each against what is
+actually in `backend/src/modules/`, `backend/src/api/`, the storefront, the
+vendor panel, and the two sibling repositories, in the same way
+`docs/COMMERCE_ROADMAP.md` did for the B2B/community pivot. It is canonical
+for the ordering of this cluster of work.
+
+It does **not** supersede `docs/REPO_CONSOLIDATION_REVIEW.md` (decisions
+D1–D8, the legal gates in its §8) or `docs/POSTURE_A_COMPLIANCE.md` (the
+money-movement frame). Where this document and either of those could
+conflict, they win and this one is wrong. Where a feature here overlaps a
+tier in `docs/COMMERCE_ROADMAP.md` (barter adapters, micro-depot listings,
+seed library, market-day mode), that roadmap keeps the item and this one
+points at it rather than re-scheduling it.
+
+**The headline finding: the brainstorm was more built than it knew.** Of the
+ten features, three are already a quest definition in the Vendor Quest Engine
+(the CDFI quest is Q3, the certification assistant is Q8, co-op formation is
+Q11), one is a settlement rail that is specified and guarded but not lit (time
+bank hours), one is a template library that already ships — in Blackout, not
+FBM — and one is a CSA primitive the operations guide already calls a wedge
+product. The two items the brainstorm ranked "highest value, lowest build
+cost" — the CDFI quest and the bylaws library — are both definition and wiring
+changes, not builds. Two items were framed in a way the code and the
+compliance posture cannot support (a time-bank *payment* rail; an *existing*
+set of barter adapters), and one (insurance pooling) needs a ruling before a
+line of it is designed.
+
+---
+
+## 1. Corrections — the brainstorm against the code
+
+Each row was checked by opening the cited files, not by matching module
+names — `docs/COMMERCE_ROADMAP.md` §3.3 records what module-name matching
+missed. Rows are ordered by how much the correction changes the plan.
+
+| Claim in the brainstorm | What the code says | Consequence |
+| --- | --- | --- |
+| **Add a CDFI loan-readiness quest to the Vendor Quest Engine's capital/funding family** | It is already there. Q3 `microlender-readiness` (`backend/src/modules/vendor-quest/definitions/microlender-readiness.ts`) is titled "Microlender / CDFI Readiness", sits in "Capital & Funding" beside Q1 `fsa-farm-loan`, Q2 `grant-readiness` and Q4 `crowdfunding-traction`, and runs three stage gates (Operating → Documented → Lender-Ready, the last at 6 months and $500 lifetime revenue) into a "Lender Summary" packet. Its four requirements read the universal substrate — recorded income, tenure, three months of cash-flow buckets — plus one vendor-supplied checklist item (character references). Its single gatekeeper link is Kiva — and an enrolled vendor never sees it: the vendor catalog serializer (`vendor-quest/service.ts` `toCatalogEntry`) drops `gatekeeper.links`, the vendor-panel `QuestCatalogEntry` type carries `gatekeeper: string`, and the packet export carries name and disclaimer but no links; only the public `/quests` page (via `GET /store/quest-catalog`) renders them. The engine is generic by construction: adding a requirement, a link or a packet section is a definition change, and the engine test fails if a quest key leaks into `engine.ts`. Q1 `fsa-farm-loan` is the fuller lender template in the same family (nine requirements, a seven-section packet with `business_plan_draft` and `vault_documents` sections). Quests are a plan feature: `/vendor/quests*` requires `FF_VENDOR_QUESTS_V1` **and** `vendor.quests`, which the `scale` and `internal` plans, the `quest_pack` add-on ("Readiness Quests", $49 for 30 days) or an aligned-org tenancy tier grant; `starter` and `pro` do not. | **Extend Q3, do not add a quest — and make the links reach the vendor.** What is missing is CDFI-specific: the document items a CDFI underwriter asks for beyond what the ledger proves (a business plan — the vault already has a `business_plan` type nothing in Q3 reads — a use-of-funds statement, entity documents), gatekeeper links to real CDFI locators rather than one crowdfunder, and the two-line serializer change that lets the panel and the packet show them. Whether capital-access quests belong behind a paid add-on is a pricing question for the operator, recorded in §4. §3.1. |
+| **CDFI/credit-union directory + referral layer, searchable by location and type** | Nothing exists — no module, route, seed or page (`referral` is seller-refers-seller affiliate attribution paying a `REFERRAL_FEE` share, not lender referral). The only refer-out primitive in the tree is `gatekeeper.links` on a quest definition, and four of thirteen definitions carry any. Three code-config registry patterns exist to copy: `donation/fiscal-sponsors.ts` (a keyed registry of external partners with display fields, a `live` flag and an env-selected default), `opportunity-engine/startup-guides/index.ts` (a code catalog seeded into a table and served at `GET /store/startup-guides` → storefront `/start-business`), and `channel-connector/catalog.ts`, whose docblock rule — never list an entry that cannot work — should govern a directory too. Storefront directory shapes exist to mirror: `/directory` (server-rendered filter form over `GET /store/directory`), `/vendors` (ZIP → coordinates → `radius_miles` over `GET /store/vendors`), and the static `/community-resources` card hub. Location search has W5's `lib/zip3` + `lib/geo-distance` behind `GET /store/geocode`; Blackout's `/v1/spatial/*` is geocode-only ("no nearby search"). `docs/POSTURE_A_COMPLIANCE.md` records the banking-partner choice itself as an open, non-blocking question that "affects vendor onboarding copy" — no copy or code implements it today. | **Build, small, as refer-out.** Posture A rule 6 already refers unbanked vendors to named banking partners and says FBM "does not stand between the vendor and that partner". A directory is that rule made into a table: link out, never hand off an application, never take a fee (§5 records why the fee is a gate) — and it closes the open onboarding-copy question. It must sit apart from `hawala-ledger`'s quiescent `VendorAdvance` / `VendorCreditLine` models: a directory exists precisely because FBM cannot lend, and nothing may read as "FBM financing". §3.2. |
+| **Fiscal sponsorship pathway for co-op-structured vendors** | `docs/FISCAL_SPONSOR_DECISION.md` and `fiscal-sponsors.ts` are about **FBM's own** sponsor for routing checkout donations (Allied Media Projects recommended, agreement not signed, disbursement job held). Nothing vendor-facing mentions fiscal sponsorship. Q11 `coop-formation.ts` marks incorporation "outside-fbm — FBM never generates legal filings". The bookkeeping a sponsored project is actually audited on — restricted funds, award vs. receipt vs. spend, spend inside the period — shipped last week as `modules/fund-accounting` behind `FF_FUND_ACCOUNTING_V1`, and nothing in the quest substrate reads it yet. | **Split the ask.** Fiscal sponsorship fits charitable-purpose projects (a mutual-aid pod, a community fridge, a garden — the Grove and Harvest shapes), not a for-profit worker co-op, whose path is incorporation (Q11, §3.4). The vendor-facing pathway is a new *definition* — fiscal-sponsorship readiness — reading `fund-accounting` as a domain-optional substrate field and linking out to the sponsors already in the registry. It moves no money. §3.3. |
+| **Bylaws/incorporation template library, borrowing Fairmondo's model of sharing co-op docs** | It ships today — in Blackout. `apps/blackout-client/src/app/features/documents/templates/index.ts` seeds four founding documents (bylaws, mission, decision rules, mutual-aid agreement) adapted from SELC, USFWC and Center for Family Life sources with licence attribution, stored as Matrix state events per den (`packages/blackout-protocol/src/documents/contracts.ts`) and edited in the Coalition Documents tab; its docblock records that legal review of production text is "a parallel content task". On the FBM side Q11 asks for "Governance / bylaws" as a vendor-supplied vault upload, its packet lists bylaws, articles and a member-equity agreement as remaining items, and the vault's `doc_type` enum (`lease, contract, license, insurance, credential, business_plan, other`) has no governing-document type. FBM's `knowledge-base` is DIY and gardening content, not legal. | **Wire, do not build a second library.** Under the two-layer model (FBM substrate, Blackout governance interface) the templates are in the right repo. FBM's part is a vault document type and a link from Q11 to the Blackout surface; Blackout's part is a way to get a finished document *out* as a file the vendor can upload to the vault. The Fairmondo angle has a gap the code cannot close: `docs/MEMBER_GOVERNANCE.md` records that platform-level member governance "does not exist", so there are no coalition bylaws to publish yet. §3.4. |
+| **Shared back-office service marketplace (insurance pooling, payroll, legal referrals) as a connect.js add-on tier** | `connect.js` is the buyer-facing storefront embed, frozen at v2.0.0 under SRI pinning and a changelog (`docs/integrations/fbm-connect-changelog.md`); it has no vendor-facing tier concept. Vendor monetization lives in `vendor-plan` (plans + 30-day add-on windows, `docs/ADDON_COMMITMENTS.md`) and the `plugin-registry` extension marketplace (W3). Nothing in any repo scopes insurance pooling, a captive, payroll or a PEO. | **Wrong surface, and three different features.** Legal and back-office *referrals* are directory entries (§3.2, same registry, a `legal`/`back_office` category). Payroll is a banking-as-a-service shape Posture A rule 6 forbids FBM to offer — refer out. Insurance *pooling* means FBM holding pooled premiums and paying claims: a regulated, custodial product with no recorded gate, in the same class as the custodial-deposit question `docs/COMMERCE_ROADMAP.md` §4 already flags. Gate-first; recommended disposition is "not on the roadmap, deliberately". The "recurring revenue line" does not survive: a refer-out directory earns nothing, and a compensated referral is itself a gate. §3.5. |
+| **Certification/compliance assistant (organic cert, scale certification paperwork)** | Q8 `compliance-tracker` exists (`definitions/compliance-tracker.ts`: organic, Certified Naturally Grown, cottage-food, food-handler and practitioner credentials; three gates ending at "a verified license or credential on file"; a Certification Checklist packet; the wellness health-claims guardrail). The vault gained real verification and expiry on 2026-09-03: `PATCH /admin/vault/:id` is `markVerified`'s first caller and `document-status.ts` derives `effective_status` so an expired certificate stops reading as verified. `modules/cottage-food` already tracks permit and food-handler expiry as **self-declared** facts and refuses to ship a state-law table. Two gaps are recorded in `docs/COMMERCE_ROADMAP.md`: the organic/regenerative certification document type is blocked on the `doc_type` enum conversion (its §4 decision 5), and the expiry-reminder notification rail is unbuilt. "Scale certification" (weights-and-measures device certificates for selling by weight) appears nowhere. | **Extend Q8; no new module.** Add the missing certification vocabulary as vendor-supplied checklist items with links, add the document types once the enum decision lands, and build the one shared reminder rail that vault expiry and AR overdue both need. Nursery-side learnings become checklist content, under the cottage-food rule: the seller declares, FBM ships no regulatory table. §3.6. |
+| **CSA/Order Cycles is scoped; market it to CSA networks** | It is shipped, not scoped. `modules/order-cycle` carries ten models (cycle, exchange, product, seller and enterprise fees, share-box template, share box, share-box subscription, plant-ship window) behind `/vendor/order-cycles/*` and `/store/order-cycles`, with the `order-cycle-status-update` job; the Cycle playbook (`playbook/recipes/cycle.ts`) enables seasons, subscriptions, harvests and the farm module; `cooperative.cooperative_type` has a `CSA` value; the storefront's vendor-types page already carries a "CSA & Order-Cycle Farm" card; `docs/AGGRESSIVE_OPERATIONS_GUIDE.md` §1.3 names Order Cycles and share boxes as a wedge product. | **Reposition-only**, after one honest end-to-end check of the share-box season (§3.7). The positioning plan already lists CSA/Subscriptions as an entry point; what is missing is the network-facing pitch and a pilot checklist, not code. |
+| **A mutual-aid network adapter alongside the existing Craigslist/TrashNothing/hOurworld barter adapters** | The barter adapters do not exist. `docs/COMMERCE_ROADMAP.md` §3.7 and `docs/FBM_BUYER_HUB.md` §1 both say so; `modules/barter` is one `barter_proposal` model with two routes under `/store/collective/demand-pools/[id]/barter`. The **internal** mutual-aid half, by contrast, is the better-built side of the brainstorm: `mutual-aid` (requests and offers with a privacy-split location), `aid-network` (hubs, lot-level stock, in-kind intake, transfers and an allocation planner, behind `FF_AID_NETWORK_V1`), `donation`, `volunteer`, `fund-accounting`, the Grove playbook, and on the Blackout side aid boards and pooled funds (`packages/api/src/services/aidPools.ts`). No document in either repo names an external mutual-aid network with an API. hOurworld is a time-bank network, so it belongs with §3.10, not here. | **Correct the premise, then wire before adapting.** The valuable near-term work is the FBM↔Blackout mutual-aid seam and surfacing asks on Grove storefronts. An external adapter follows the channel-connector rule: no catalogue entry without a working adapter against a named target. §3.8. |
+| **Co-op delivery pooling — micro-depot relay points — activates Blackstar's mesh routing** | Blackstar has the relay half: `ShipmentLeg` (sequence, from/to node, handoff proof, settlement ref, a guarded state machine) with list/create/update routes and `api/docs/shipment-leg-relay-protocol.md`'s multi-leg completion rules. It does not have depots, pooling or mesh routing — `CONSOLIDATION.md` records that "mesh routing, batch aggregation, micro-depots, reverse-auction" exist as design docs only (`api/docs/network-advantage-engine.md`), and its `Node` model is a legal entity with a service radius and attestations, not a place with capacity. Blackstar was unfrozen on 2026-09-03; the FBM bridge is dark by default and per-shipment sequence numbers are an open bilateral change. On the FBM side, `docs/COMMERCE_ROADMAP.md` Tier 3.8 already plans micro-depot *listings* on whichever of `rental`/`kitchen` survives (its §4 decision 2), and `aid-network`'s `network_node` — "a place that holds stock", with cold storage and inter-node transfers — is the closest existing depot noun. | **Sequence it; it is not near-term.** A depot is first an FBM listing (Tier 3.8, waiting on a ruling), then a Blackstar node kind a leg can hand off to (Laravel side), and only then a pooling problem (design only). §3.9. |
+| **Time bank as an alt payment rail alongside Stellar/USDC** | The rail exists and the framing is wrong. `hawala-ledger/rails.ts` defines HRS as closed-loop, member-to-member, `account_type: TIME_BANK`, `cash_convertible: false`; `posture-a-guard.ts` enforces the time-bank rules (no self-transfer; a `TIMEBANK_*` reference type on every entry); `dual-rail-selector.ts` **throws** `NonCashRailError` if anyone tries to settle HRS the way USDC settles. Hours are not, and under Posture A cannot be, checkout tender for goods — they settle labour between members of a collective (the courier-collective, childcare and tool-library manifests declare `hours` for exactly that). And the rail is not lit: `docs/CCR_HRS_IGNITION.md` §2 finds no `TIME_BANK` account is ever created and the `TIMEBANK_OPEN_BALANCE` writer has no callers. A second, unreconciled hours model exists in `modules/volunteer` (`garden_time_credit`, priced in currency at an hourly rate). Blackout's Grove den playbook already seeds "4 FBM-HOUR" as an onboarding grant with nothing on the FBM side to receive it. | **Reframe, then ignite.** Position hours as a labour-settlement rail inside collectives, never as a way to pay for goods. The build is `docs/CCR_HRS_IGNITION.md` §5 steps 4–5, gated on the two policy answers only the operator can give. Decide the `garden_time_credit` overlap the way channel points were decided in W1b. §3.10. |
+| **KARMA tiers are an existing system the quests build on** | Confirmed, with one precision: the ladder is `progression/grower-karma.ts` (`GROWER_TIERS`, published at `GET /store/karma-ladder`) and the canonical reputation write path is `karma_event` (D7). The quest substrate reads `reputation.tier` from it. | No change. Cite `karma_event`, not "KARMA tiers", when positioning. |
+| **The time bank belongs with Blackout and connect.js** | Neither. The rail and its guards are FBM (`hawala-ledger`); Blackout carries vocabulary (`FBM-HOUR`) and templates; `connect.js` carries nothing about hours. | The cross-repo contract, when written, is FBM-canonical with a Blackout consumer mirror, following `docs/contracts/mas-identity-consumer.md`. |
+
+### 1a. Found along the way — the quest substrate under-reports, and three quests cannot finish
+
+Not in the brainstorm, but every extension in §3 leans on the quest engine,
+so it is recorded here rather than left for the next audit.
+
+`substrate/build.ts` initialises five substrate fields and never assigns
+them again: `operating.orders_fulfilled` (0), `operating.fulfillment_reliability`
+(`null`), `customers.wholesale_relationships` (0), `reputation.total_xp`
+(0) and `reputation.dispute_count` (0). Every quest reads the same
+substrate, so the effect is catalogue-wide:
+
+- **Q5 `wholesale-account` cannot pass its second gate** — it needs five
+  fulfilled orders, then 90% proven reliability and twenty orders; both
+  figures are constant. **Q7 `ready-to-hire`** needs fifty, then a hundred.
+  **Q13 `commons-contribution`** needs `total_xp > 0` at its "Established"
+  gate. None of the three can reach its final stage for any vendor.
+- **Q10 `trust-tier` and Q13's "clean dispute record" cannot fail** —
+  `dispute_count` is never read from `order-dispute`, so the check is
+  always true. A quest that says "resolve open disputes" and never notices
+  one is the honest-UI constraint inverted.
+- Packets for Q1, Q5, Q7, Q11 and Q12 print `orders_fulfilled: 0` as if it
+  were a fact about the vendor.
+- One engine rule compounds it: an `assisted` or `platform` requirement
+  with no `satisfied` predicate and no missing `needs` evaluates
+  **satisfied** unconditionally (`engine.ts`). Q1's `business_plan`
+  requirement is `assisted` with no predicate, so it reads as met before
+  any plan exists. Q3's extension in §3.1 must give its `business_plan` a
+  real predicate; Q1's should get the same one.
+
+The fix is substrate work the authoring guide already sanctions ("map any
+missing substrate field in `substrate/build.ts`"): fulfilled orders and
+reliability from the orders the customers builder already queries; disputes
+from `order-dispute`, which has been keyed by `(order_id, seller_id)` since
+2026-09-03; wholesale relationships from `vendor-rules` customer tiers. XP
+is the one field without an obvious seller-scoped source — `progression`'s
+`xp_event` is member-keyed — so either the vendor-side projection of
+`karma_event` (D7) feeds it, or Q13's gate stops reading it; a constant is
+the one option that is wrong. S–M, no ruling needed, and it belongs before
+any new lender is shown a packet.
+
+---
+
+## 2. What these features already stand on
+
+For planning, the substrate that exists today:
+
+- **Quest engine** — `vendor-quest` (engine, substrate, packet, five owned tables)
+  with thirteen definitions, of which six are directly relevant here: Q1
+  `fsa-farm-loan`, Q2 `grant-readiness`, Q3 `microlender-readiness`, Q6
+  `market-vendor` (farmers-market stall / co-op membership bundle), Q8
+  `compliance-tracker`, Q11 `coop-formation` (collective) and Q12
+  `land-pooling` (collective — "shared land, equipment, or cold storage").
+  Behind `FF_VENDOR_QUESTS_V1` plus the `vendor.quests` plan feature; routes
+  `GET /vendor/quests` (catalog), `/vendor/quests/enrollments` (+ `/[id]`,
+  `/[id]/packet`), `/vendor/quests/collective/*`, and the public
+  `GET /store/quest-catalog`; vendor-panel screens `/quests` and
+  `/quests/:id`; storefront page `/quests`.
+- **Documents and verification** — `document-vault` (typed uploads, admin
+  `markVerified`, derived expiry status, `/admin/vault?expiring_within=`),
+  `vendor-verification` (badges, daily expiry job), `cottage-food`
+  (self-declared permits, caps and labels; never blocks a sale).
+- **Cooperative forms** — the eleven playbooks (`playbook/recipes/*`: Grove,
+  Workshop, Commons, Cycle, Harvest, Hub, Service among them), the 23-edge
+  progression map (`playbook/progressions.ts`, `docs/VENDOR_PROGRESSIONS.md`)
+  that already names `coop-formation` as the quest on the Atelier→Workshop,
+  Atelier→Commons, Workshop→Commons and Grove→Commons edges, `cooperative`
+  (with `FARM_COOP`, `FOOD_HUB`, `CSA`, `BUYING_CLUB`, `INDIGENOUS`,
+  `WORKER_OWNED` types), and `governance` (garden-scoped proposals, votes,
+  delegation).
+- **Mutual aid** — `mutual-aid`, `aid-network`, `donation` (+ the
+  fiscal-sponsor registry), `volunteer`, `fund-accounting`, the Threshold
+  surface (`docs/COMPOSITION_LAYER.md`), and Blackout's aid pools and Grove
+  den playbook.
+- **Recurring and cyclical supply** — `order-cycle`, `subscription`,
+  `season`, `agriculture`, `harvest`.
+- **Money and rails** — `hawala-ledger` with the six-rail registry
+  (`rails.ts`), the Posture A guard, the dual-rail selector, escrow with
+  arbitration, external reconciliation, monitors and lineage (W1a);
+  `payout-breakdown`; the asset-graph settlement reconciler as the HRS and
+  KARMA writer.
+- **Partner registries to copy** — `donation/fiscal-sponsors.ts`,
+  `channel-connector/catalog.ts`, `vendor-quest/definitions/index.ts`.
+- **Logistics** — FBM `blackstar-fulfillment` (+ provider, receiver,
+  `/admin/blackstar/deliveries`), `delivery`, `local-delivery-fulfillment`,
+  `food-distribution`; Blackstar shipment board, claims, `ShipmentLeg`
+  relay, node attestation; the `courier-collective` manifest.
+- **Reach** — `docs/WEBSITE_POSITIONING_ALIGNMENT_PLAN.md`, the storefront
+  vendor-types page (eleven playbook cards including "Mutual-Aid Co-op",
+  "CSA & Order-Cycle Farm" and "Time-Bank & Sliding-Scale Services"),
+  `docs/SNAP_EBT_RESEARCH.md`.
+
+---
+
+## 3. The verified gaps
+
+Sizes follow `docs/AUDIT_DEBT.md`: **S** ≤ 1 day · **M** 2–5 days · **L** >
+1 week.
+
+### 3.1 Q3 is generic; a CDFI application is not — **extend, S**
+
+Q3 proves what the ledger can prove (income, tenure, cash-flow) and stops.
+A CDFI or credit-union small-business application typically also asks for a
+business plan and use-of-funds statement, personal financial statements and
+tax returns, entity documents, collateral or a co-signer, and references —
+none of which FBM may generate (hard constraint 1, "assemble, never
+fabricate"), all of which it can *checklist* and, for documents, store in
+the vault.
+
+The definition change is confined to `definitions/microlender-readiness.ts`,
+modelled on Q1's document handling:
+
+- Requirements: `business_plan` (`assisted`, `needs: ["documents"]`,
+  satisfied by `hasVerifiedDocType("business_plan")` — the type already
+  exists, the vendor-panel vault screen already offers it, and nothing
+  reads it; the predicate matters because of the auto-satisfy rule in §1a),
+  `use_of_funds` (vendor-supplied), `entity_documents` (vendor-supplied;
+  for a co-op, points at Q11), `personal_financials_tax_returns`
+  (outside-fbm), `collateral_or_cosigner` (outside-fbm).
+- Gatekeeper links: the CDFI Fund's certified-CDFI list and the Opportunity
+  Finance Network locator as the generic entry points, plus whatever named
+  lenders the §3.2 registry carries. Kiva stays as the crowdfunding option.
+- Packet: a third section, "Documents (verified state shown)", identical in
+  shape to Q8's and Q1's `vault_documents`, and `remainingItems` extended
+  with the outside-FBM items.
+
+Two small changes outside the definition, because a link the vendor cannot
+see is not a referral:
+
+- `toCatalogEntry` in `vendor-quest/service.ts` returns `gatekeeper_links`
+  (the public serializer in `api/store/quest-catalog/route.ts` already
+  does), the panel's `QuestCatalogEntry` type and quest-detail screen render
+  them, and `packet.ts` prints them under the disclaimer.
+- The vault is its own gate (`FF_DOCUMENT_VAULT_V1` + `vendor.document_vault`,
+  which `starter`, `pro` and `scale` all carry); the quest copy should say a
+  document requirement needs the vault enabled rather than showing it as
+  "unavailable" without explanation.
+
+Stage-gate thresholds stay as they are until a real lender says otherwise;
+the disclaimer already says the lender decides. Whole-catalog coverage is
+automatic (`__tests__/catalog.unit.spec.ts`).
+
+### 3.2 No lender directory — **build, S–M, refer-out only**
+
+A code-config registry in a new `lender-directory` (or `partner-directory`)
+module, shaped like `FISCAL_SPONSORS`: `key`, `name`, `url`, `tagline`,
+`kind` (`cdfi | credit_union | community_bank | microlender | crowdfunder |
+legal | back_office`), `states` served (or `national`), `serves`
+(`sole_proprietor | cooperative | nonprofit | farm`), and `products` (free
+text). Seeded the way `startup-guides` is (code catalog → idempotent seed
+script → optional table), read through `GET /store/partners?kind=&state=&serves=`,
+and rendered on a storefront page built like `/directory` (a server-rendered
+filter form) or, for a first cut, the static `/community-resources` hub;
+consumed by Q1/Q3/Q11/Q12 as gatekeeper links so the quests stop
+hard-coding URLs. It also resolves the open Posture A question about which
+banking partners the unbanked-vendor onboarding copy names.
+
+Three rules, all already written down elsewhere and restated here so the
+directory cannot drift:
+
+1. **Link out; never intermediate.** No application handoff, no lead form,
+   no vendor data leaves FBM (Posture A rule 6 — FBM "does not stand
+   between the vendor and that partner").
+2. **List only what works.** An entry is a page a vendor can act on today
+   (the `channel-connector/catalog.ts` rule). Curate; do not scrape.
+3. **No compensation.** A referral fee or lead payment from a lender is a
+   loan-brokering shape that is licensed state by state and is not in
+   `docs/REPO_CONSOLIDATION_REVIEW.md` §8. Until an operator records a ruling
+   there, the directory is unpaid by construction (§5).
+
+Location search reuses `GET /store/geocode` and `lib/zip3` the way
+`GET /store/vendors` already does; a state filter is enough for a first cut,
+and D5 says any richer spatial query comes from Blackout's API, not a new
+FBM table — Blackout's spatial contract is geocode-only today.
+
+Keep the directory visibly separate from `hawala-ledger`'s `VendorAdvance`
+and `VendorCreditLine` models, which are quiescent under Posture A pending
+legal review. A lender directory exists because FBM does not lend; no page
+may present the two side by side as "financing on FBM".
+
+Hygiene found alongside: the `referral` module has no row in
+`docs/MODULE_CATALOG.md`.
+
+### 3.3 No vendor-facing fiscal-sponsorship pathway — **extend, S–M**
+
+A new definition, `fiscal-sponsorship-readiness`, in "Cooperative &
+Mission", for a project that is charitable in purpose and not (yet) a
+501(c)(3): a mutual-aid pod, a community fridge, a garden, a free store.
+Requirements: project purpose statement (vendor-supplied), a governing
+document (vendor-supplied — the Blackout templates, §3.4), a **budget and
+fund ledger** (platform, from `fund-accounting` when enabled), a fiscal
+sponsor's application (outside-fbm). Gatekeeper links: the entries in
+`FISCAL_SPONSORS` (AMP, NEO, Tides, the SELC list) — the same registry FBM
+chose from for itself.
+
+The one substrate change is legitimate under the authoring guide's step 3:
+add `funds` as a **domain-optional** field in `substrate/build.ts` (null when
+`FF_FUND_ACCOUNTING_V1` is off or the vendor holds no fund), snapshotted
+from `fund-accounting`'s derived balances — never re-summed. No engine edit.
+
+Two honesty rules for the copy: FBM's own AMP relationship (not yet signed)
+sponsors FBM's checkout donations, not vendors — a vendor's sponsor is the
+vendor's own relationship; and a worker co-op is directed to Q11, because
+fiscal sponsorship is not the instrument for a for-profit enterprise.
+
+### 3.4 Bylaws live in Blackout; FBM cannot store them as what they are — **wire, S + S**
+
+FBM side:
+
+- A `governing_document` value on `vault_document.doc_type` — which is the
+  same migration `docs/COMMERCE_ROADMAP.md` §4 decision 5 already needs for
+  organic certification, so it lands together or not at all. Until then a
+  bylaws upload is `contract`.
+- Q11's `governance_bylaws` requirement gains `satisfied:
+  hasVerifiedDocType("governing_document")` (checked and in date, like every
+  other vault predicate since 2026-09-03) and its gatekeeper links point at
+  the Blackout founding-documents surface and at the SELC and USFWC
+  libraries directly, so a vendor who is not on Blackout still has the
+  source material.
+
+Blackout side (recorded here; built there):
+
+- An export of a den document as a file (Markdown or PDF) from the
+  Documents tab, so the finished bylaws can be uploaded to the FBM vault.
+- The legal review of the four seed texts, already recorded as "a parallel
+  content task" in `templates/index.ts`, gets an owner. Seeds are
+  scaffolds; the vendor's state law decides the rest, and the copy must say
+  so — Q11 already does ("Filed with your state; FBM never generates legal
+  filings").
+
+The Fairmondo model — publish our own cooperative's documents — waits on the
+coalition having cooperative documents to publish. `docs/MEMBER_GOVERNANCE.md`
+is explicit that platform-level member governance does not exist yet; when
+it does, its bylaws become the fifth seed.
+
+### 3.5 "Back-office marketplace" is three features, one of them gated — **refer-out / drop**
+
+- **Legal, accounting, insurance-brokerage and payroll *referrals*** — rows
+  in the §3.2 registry with `kind: legal | back_office`. Refer-out; S.
+- **Payroll as an FBM service** — Posture A rule 6 (no banking-as-a-service,
+  FBM does not stand between the vendor and the banking partner). Drop as
+  an FBM product; refer out.
+- **Insurance pooling** — FBM holding pooled premiums and paying claims is
+  a regulated risk-bearing product and a custodial balance with no
+  purchase context. There is no gate for it in §8 and, per that document,
+  an unrecorded gate blocks nothing. **Gate-first**: recommended ruling is
+  to add it to "Not on the roadmap, deliberately" and point vendors at the
+  cooperative federations' existing member programmes through the
+  directory.
+- If the operator wants a *paid* vendor bundle around any of this, the
+  surface is a `vendor-plan` add-on pack (a 30-day window,
+  `docs/ADDON_COMMITMENTS.md` §1), it must not gate selling, verification
+  or privacy (§4), and it is not a `connect.js` change.
+
+### 3.6 Q8 lacks the certification vocabulary and the reminder — **extend, S + M**
+
+- Requirements added to `definitions/compliance-tracker.ts`, all
+  vendor-supplied or outside-fbm with links: USDA Organic certificate
+  (INTEGRITY database), Certified Naturally Grown, GAP/GHP audit, state
+  weights-and-measures device certificate ("scale certification" — the
+  thing a vendor selling by weight is inspected on; the storefront already
+  scopes weight-based pricing in `FEATURE_BUILD_PLAN.md`), and the
+  cottage-food permit the `cottage-food` module already tracks — read it,
+  do not duplicate it.
+- Document types `organic_certification` and `device_certificate` once the
+  enum conversion lands (decision 5). Until then they are `credential`.
+- **The shared reminder rail.** `/admin/vault?expiring_within=` can list
+  what lapses; nothing tells the vendor. `docs/COMMERCE_ROADMAP.md` §4
+  lists the `ar.invoice.overdue` subscriber and resend template as "still
+  open and buildable without a ruling" and notes vault expiry reminders
+  share it. Build it once: one subscriber, two producers (vault expiry, AR
+  overdue), dry-run until a subscriber exists, following
+  `FBM_AR_DUNNING_LIVE`. M.
+
+What the nursery experience contributes is content — which certificates,
+which agencies, which renewal cadences — as checklist items and links. The
+`cottage-food` README's first design decision governs: the seller declares
+everything, FBM ships no state-law table.
+
+### 3.7 The CSA primitive is built; the pitch is not — **reposition-only**
+
+Before pitching a CSA network, run one share-box season end to end on
+staging and record the result here: template → cycle → subscription →
+allocation → dispatch → renewal, plus what a member sees at
+`/store/order-cycles/[id]`. Anything that dead-ends is a Tier 2 item in
+`docs/COMMERCE_ROADMAP.md`, not a new feature.
+
+Then the reach work, none of it code:
+
+- A CSA-network landing (the positioning plan's "CSA / Subscriptions"
+  destination) that says what Open Food Network users will recognise —
+  order cycles, enterprise fees, share boxes — and the 3% native-sale
+  commission, unchanged and unchanged-able upward (`docs/ADDON_COMMITMENTS.md`
+  §3).
+- The SNAP position, stated honestly from `docs/SNAP_EBT_RESEARCH.md`: a
+  CSA farm can accept EBT at physical point of sale as an authorised
+  direct-marketing retailer with free federal equipment; online SNAP is a
+  separate, heavier authorisation; nothing about SNAP touches CCR.
+
+### 3.8 Mutual aid: the internal half is built, the external half has no target — **wire, then build only against a name**
+
+- **Wire (S–M).** Expose mutual-aid asks and offers on Grove storefronts
+  (the playbook already enables `hasRequests`, `hasVolunteers`,
+  `hasDonations`); confirm whether the FBM→Blackout event catalogue
+  (`docs/contracts/blackout-integration.md`) carries any mutual-aid event
+  and, if not, add `aid.request.opened` / `aid.request.fulfilled` so
+  Blackout's aid boards can mirror FBM asks. Record the `mutual_aid_request`
+  / `demand_post` overlap (two "ask" models) as a D8 hygiene item.
+- **External adapter (L, deferred).** Only against a named source with an
+  API and a working adapter, per the channel-connector rule. hOurworld is
+  §3.10's external half; Craigslist/TrashNothing remain
+  `docs/COMMERCE_ROADMAP.md` Tier 5.14.
+
+### 3.9 Depot relay is three builds in two repos — **sequence, L, not near-term**
+
+1. **A depot is a listing** (FBM). `docs/COMMERCE_ROADMAP.md` Tier 3.8 on
+   the `rental`/`kitchen` survivor — waiting on its §4 decision 2 — with a
+   storage fee whose refundable deposit is the custodial-money question its
+   decision 3 raises. `aid-network`'s `network_node` is the model to
+   generalise from if the survivor lacks a "place that holds stock".
+2. **A depot is a node a leg can hand off to** (Blackstar). Today `Node` is
+   a legal entity with a service radius; a depot needs a kind, hours and
+   capacity, and `ShipmentLeg` already has `from_node_id`/`to_node_id`.
+   Laravel-side; bilateral with the open per-shipment sequence numbers
+   (contract §9.3).
+3. **Pooling** (Blackstar). `api/docs/network-advantage-engine.md` §2
+   ("milk runs") is the design; nothing implements it. Design only until 1
+   and 2 exist and a real farmers-market cluster asks.
+
+Gates that hold throughout: FBM's fulfillment modules stay the live
+implementation (D2's absorption half is unchanged by the unfreeze);
+`NonCustodialPaymentGuard` — no pooled custody of shipment principal;
+spatial queries come from Blackout (D5); the integration stays dark until
+two deployments are paired (contract §4).
+
+### 3.10 Hours: the rail is guarded, unlit and mis-framed — **gate-first, then S + S**
+
+The ignition sequence is `docs/CCR_HRS_IGNITION.md` §5 and is not
+re-planned here. What this roadmap adds:
+
+- **Framing.** Every surface that mentions time banking — the Service
+  playbook card ("Time banks" is one of its examples today), the Grove
+  card's "internal scrip", any CSA or mutual-aid pitch — must say hours
+  settle labour between members and are never tender for goods. That is
+  what `rails.ts`, the guard and `NonCashRailError` enforce; the copy should
+  not promise what the ledger refuses.
+- **The Blackout grant.** Grove dens seed `onboardingCreditGrant: { amount:
+  '4', currency: 'FBM-HOUR' }` (`packages/blackout-protocol/src/playbook/contracts.ts`).
+  Its FBM counterpart is a `HOURS_OPEN_BALANCE` entry on a member's
+  `TIME_BANK` account — ignition step 4. Write the contract as
+  FBM-canonical with a Blackout consumer mirror once that step exists;
+  until then the grant is vocabulary.
+- **The second hours ledger.** `volunteer/models/time-credit.ts`
+  (`garden_time_credit`) prices hours in currency and redeems them for
+  harvest claims and plot fees. Either it becomes garden-local state,
+  declared non-monetary the way channel points were (W1b), or it is
+  migrated onto HRS. An operator decision; record it with the two policy
+  answers.
+- **hOurworld** is the external time-bank network — a `Tier 5.14` adapter,
+  and the same target the brainstorm listed under barter.
+
+---
+
+## 4. Build priority
+
+Ordered by dependency and by how much each unblocks. Each tier is
+independently shippable; nothing here requires an engine change.
+
+**Tier A — definition and content changes, buildable now, no ruling
+needed.** Two hygiene fixes from §1a go first, because everything below
+shows a packet to an outsider: populate the five never-assigned substrate
+fields (S–M), and return `gatekeeper_links` from the vendor catalog
+serializer so the panel and packet can render them (S).
+1. Extend Q3 with CDFI requirements, links and a documents section (§3.1).
+2. The partner directory registry, `/store/partners`, its storefront page,
+   and the quests reading it for gatekeeper links (§3.2), with legal and
+   back-office referral rows (§3.5).
+3. Q8 certification vocabulary as checklist items and links (§3.6, first
+   half).
+4. Q11 gatekeeper links to the Blackout founding-documents surface and the
+   SELC/USFWC libraries (§3.4, first half).
+5. The CSA end-to-end check and the network-facing positioning (§3.7).
+6. Honest time-bank copy on the Service and Grove cards (§3.10, framing).
+
+**Tier B — wiring across modules and repos, no ruling needed.**
+7. `fiscal-sponsorship-readiness` definition + the `funds` domain-optional
+   substrate field (§3.3).
+8. The shared expiry/overdue reminder rail (§3.6, second half).
+9. Mutual-aid asks on Grove storefronts and the FBM→Blackout mutual-aid
+   events (§3.8, wire half).
+10. Blackout: den-document export as a file (§3.4, Blackout half).
+
+**Tier C — waiting on a recorded operator decision.**
+11. `governing_document`, `organic_certification` and `device_certificate`
+    vault types — on `docs/COMMERCE_ROADMAP.md` §4 decision 5 (the enum
+    conversion). Then Q11's and Q8's `satisfied` predicates read them.
+12. HRS ignition steps 4–5 and the Blackout `FBM-HOUR` contract — on
+    `docs/CCR_HRS_IGNITION.md` §5 policy answers (a) and (b), plus the
+    `garden_time_credit` disposition (§3.10).
+13. Micro-depot listings — on the `rental`/`kitchen` ruling and the
+    custodial-deposit ruling (§3.9 step 1).
+
+**Tier D — only against a real counterpart.**
+14. Blackstar depot node kind and relay through a depot (§3.9 step 2) —
+    when a farmers-market cluster and a logistics node both exist.
+15. External adapters: hOurworld (time bank, §3.10), mutual-aid data
+    sources (§3.8) — each only with a working adapter against a named API.
+16. Batched aggregation / "milk runs" (§3.9 step 3) — design only.
+
+**Not on this roadmap, deliberately (recommended rulings for §8):**
+FBM-run insurance pooling; FBM-run payroll; any compensated lender or
+service referral. TigerBeetle (D1) and federation protocol work (D3) remain
+excluded as before.
+
+### Decisions the operator must take before Tier C can start
+
+None is a planning change; each is a ruling this document cannot make.
+
+1. **Referral compensation** — confirm the directory is unpaid, and record
+   in §8 that any lender or service-provider fee is a licensing question
+   before it is a revenue line.
+2. **Insurance pooling** — rule it out of scope (recommended) or commission
+   the regulatory work; either way, write it into §8.
+3. **`doc_type` enum conversion** — `docs/COMMERCE_ROADMAP.md` §4 decision
+   5; three document types in this roadmap wait on it.
+4. **HRS policy** — `docs/CCR_HRS_IGNITION.md` §5 (a) who holds wallets,
+   (b) what governs issuance; plus (c) whether `garden_time_credit` is
+   garden-local or migrates.
+5. **`rental` vs `kitchen`** and **custodial deposits** —
+   `docs/COMMERCE_ROADMAP.md` §4 decisions 2 and 3; micro-depots wait on
+   both.
+6. **Seed-template legal review owner** (Blackout) — the four texts are
+   scaffolds until someone with standing has read them.
+7. **Pricing of capital-access quests** — today Q3 and Q8 sit behind the
+   `scale` plan or the $49/30-day `quest_pack` add-on. `docs/ADDON_COMMITMENTS.md`
+   §4 permits this (quests gate neither selling nor verification), but a
+   readiness packet is most valuable to the vendors least able to pay for
+   it. Whether the capital family moves into the free tier is a pricing
+   decision; the public `/quests` page must keep stating whichever gate
+   applies.
+
+---
+
+## 5. Gates
+
+The standing gates are `docs/REPO_CONSOLIDATION_REVIEW.md` §8 and are
+unchanged: ACH payouts disabled pending money-transmitter sign-off;
+Coalition investing and revenue-share gated on Reg CF and CSA-style claim
+work; Coliseum betting shelved. Anything money-touching reads
+`docs/POSTURE_A_COMPLIANCE.md` first.
+
+The rules from that document this cluster runs closest to:
+
+- **Rule 6 — no banking-as-a-service; FBM does not stand between the vendor
+  and a banking partner.** It shapes the directory (§3.2), rules out
+  payroll (§3.5), and is why "CDFI readiness" ends at a packet the vendor
+  carries to the lender.
+- **Rule 10 — donations route through a 501(c)(3) fiscal sponsor.** It is
+  FBM's own posture, not a vendor's; §3.3 must not blur the two.
+- **Closed-loop rails.** HRS is `cash_convertible: false`, `closed_loop:
+  true`, and refused by the cash-settlement selector; no hours-for-goods
+  promise may be made (§3.10).
+- **The quest engine's hard constraints** (`docs/VENDOR_QUEST_ENGINE.md`):
+  assemble, never fabricate; opt-in, never a prerequisite for selling;
+  honest UI; "FBM never generates legal filings". Every extension in §3
+  adds checklist items and links, never a generated document.
+
+Gates this roadmap surfaces that are **not** in §8 — recorded so the
+discrepancy is visible, because an unrecorded gate blocks nothing:
+
+- Compensated lender or service referrals (loan-brokering, state-licensed).
+- FBM-run insurance pooling (risk-bearing, custodial).
+- Refundable depot storage deposits (already flagged as
+  `docs/COMMERCE_ROADMAP.md` §4 decision 3).
+
+---
+
+## 6. Who this is for — the outreach list mapped to what exists
+
+The brainstorm's second half listed communities to reach. Each maps to
+something in the tree; where it does not, this says so, so outreach does
+not promise a feature that is not there.
+
+| Community | What exists | What this roadmap adds | Honest gap |
+| --- | --- | --- | --- |
+| CSA networks, buying clubs, bulk-food co-ops | `order-cycle`, Cycle playbook, `cooperative` (`CSA`, `BUYING_CLUB`), `demand-pool`, `bargaining` | §3.7 pitch and pilot checklist | Share-box season needs its end-to-end check first |
+| CDFIs, credit unions | Q3 `microlender-readiness`, Q1 `fsa-farm-loan`, Q12 `land-pooling` | §3.1, §3.2 | No lender partnership exists; the directory is unpaid and link-out |
+| Community land trusts, freedom farms, Black land reclamation | Q12 `land-pooling` (pooled loan-readiness toward shared land), `garden` + `governance`, Q1 | §3.1 links; Q12 gains the §3.2 registry as gatekeeper links | Land tenure itself is outside FBM; Q12 assembles the joint financing packet, the lender or seller decides |
+| Seed libraries, seed-saving networks | `knowledge-base` seed-starting article; `barter_proposal`; `garden` | — | Seed library is `docs/COMMERCE_ROADMAP.md` Tier 4.11, unbuilt |
+| Mutual-aid networks, community fridges, tool libraries, free stores | Grove playbook, `mutual-aid`, `aid-network`, `donation`, `volunteer`, `fund-accounting`; tool-library and repair-cafe manifests; Blackout aid pools | §3.3, §3.8 | External network adapters have no named target |
+| Time banks | HRS rail (guarded), Service playbook, manifests declaring `hours`, Blackout Grove grant | §3.10 | Rail not lit; hours never buy goods |
+| Worker co-ops (cleaning, construction, delivery) | Workshop/Commons playbooks, Q11 `coop-formation`, progressions map, `courier-collective` manifest | §3.4, §3.5 referrals, §3.9 | Bylaws templates are in Blackout; delivery relay is Tier D |
+| Farmers markets and their vendors | Q6 `market-vendor` (application bundle), Q8, `cottage-food`, `season`, `venues` | §3.6 | Market-day mode is `docs/COMMERCE_ROADMAP.md` Tier 4.12 |
+| Bail funds, reentry networks | `fund-accounting`, `donation` via fiscal sponsor | §3.3 | Posture A rule 9: no third-party fund routing outside a registered beneficiary |
+| Black business associations, chambers, HBCU programmes | Q5 `wholesale-account`, Q2 `grant-readiness`, `knowledge-base` contributions | positioning only | No association or campus feature exists; do not imply one |
+| Church gardens, intentional communities, ecovillages | Harvest playbook, `garden`, `governance`, `kitchen` | §3.3 | — |
+| Homesteaders, right-to-repair, maker spaces, privacy communities, Fediverse | repair-cafe / tool-library manifests; Blackout (D4 identity, E2EE) | — | Outside this roadmap's scope; Blackout's roadmap covers reach |
+
+---
+
+## 7. Maintenance
+
+- When a gap in §3 closes, move it to §2 and cite the module or definition.
+- When a claim here is contradicted by code, the code wins — correct this
+  document rather than working around it.
+- A new quest definition gets a row in `docs/VENDOR_QUEST_ENGINE.md`'s
+  catalogue table and, if it ships a module, `docs/MODULE_CATALOG.md`.
+- Items shared with `docs/COMMERCE_ROADMAP.md` (Tier 3.8 micro-depots, Tier
+  4.11 seed library, Tier 4.12 market-day mode, Tier 5.14 barter adapters)
+  are tracked there; this document only points.
+- Gates and consolidation decisions stay in
+  `docs/REPO_CONSOLIDATION_REVIEW.md`; the "Decisions the operator must
+  take" list in §4 is a request for rulings, not a record of them.

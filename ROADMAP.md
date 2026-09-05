@@ -8,6 +8,7 @@ canonical for its own scope:
 | --- | --- |
 | Consolidation decisions (D1–D8), the W1–W6 workstreams, legal gates | `docs/REPO_CONSOLIDATION_REVIEW.md` |
 | Commerce build priority — B2B and community pivot | `docs/COMMERCE_ROADMAP.md` |
+| CDFI lending, co-op formation, farmers-market compliance, mutual aid, co-op delivery, time banking — the market-connections cluster reconciled against the code | `docs/CDFI_COOP_ROADMAP.md` |
 | Commerce-operational feature specs (POS, weight pricing, pick/pack, invoicing) | `FEATURE_BUILD_PLAN.md` |
 
 `docs/REPO_CONSOLIDATION_REVIEW.md` §2 recorded this file as "stale and
@@ -20,6 +21,12 @@ also reconciles the commerce backlog against the code.
 - **Make B2B transactable** — Tier 1 of `docs/COMMERCE_ROADMAP.md`: the
   priced quote object, net-terms enforcement (accounts receivable), and a
   buyer-facing dispute entry point for ordinary orders.
+- **Turn the quest engine toward capital access** — Tier A of
+  `docs/CDFI_COOP_ROADMAP.md`: extend the existing CDFI readiness quest (Q3)
+  and certification tracker (Q8), add the refer-out partner directory that
+  the quests link to, point co-op formation (Q11) at Blackout's founding
+  document templates, and state the CSA and time-bank positioning honestly.
+  Definition and content changes; no engine work.
 - Vendor activation acceleration (Time to First Live Listing improvements).
 - Validation automation rollout (`scripts/release_validation.sh`) on release
   branches.
@@ -38,6 +45,12 @@ also reconciles the commerce backlog against the code.
   `document-vault`, production capacity/lead time, batch/lot consolidation
   onto `production-ledger`, and storage / micro-depot / tool-lending
   listings.
+- **Wire the solidarity-economy seams** — Tiers B and C of
+  `docs/CDFI_COOP_ROADMAP.md`: the fiscal-sponsorship readiness quest on
+  `fund-accounting`, the shared expiry/overdue reminder rail, mutual-aid
+  asks on Grove storefronts and the FBM→Blackout mutual-aid events, then —
+  once the recorded operator rulings land — the governing-document and
+  certification vault types, time-bank ignition, and micro-depot listings.
 - Core commerce operations from `FEATURE_BUILD_PLAN.md`: POS sessions and
   transactions, weight-based pricing rules, pick/pack batching and
   operational dashboards, invoicing and sync hardening.
@@ -51,6 +64,10 @@ also reconciles the commerce backlog against the code.
   `docs/COMMERCE_ROADMAP.md`: garden coordination surfacing, seed library,
   market-day mode, then outbound channel adapters, barter adapters, and
   freight/customs/3PL when a real cross-border vendor exists.
+- **Relay and external adapters** — Tier D of `docs/CDFI_COOP_ROADMAP.md`:
+  a Blackstar depot node kind and relay through a depot, external time-bank
+  and mutual-aid adapters, each only against a real counterpart with a
+  working adapter.
 - Deeper service layers (merchant support, training program delivery, managed
   onboarding).
 - Risk and trust systems expansion (fraud analytics, policy automation).
@@ -73,6 +90,11 @@ FBM's fulfillment modules remain the live implementation — that half of D2
 did not change — but Blackstar work is active again, starting with the
 inbound bridge hardening in `docs/integrations/federated-logistics.md` §7–§9.
 The integration stays dark by default until two deployments are paired.
+
+`docs/CDFI_COOP_ROADMAP.md` §4 recommends three further exclusions — FBM-run
+insurance pooling, FBM-run payroll, and any compensated lender or service
+referral — as rulings for `docs/REPO_CONSOLIDATION_REVIEW.md` §8. They are
+requests, not decisions, until an operator records them there.
 
 ## Gates
 
