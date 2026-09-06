@@ -39,8 +39,18 @@ export interface OperatingHistory {
   account_age_days: number
   months_active: number
   listing_count: number
+  /**
+   * Orders on the seller's `seller_order` link whose `fulfillment_status` is
+   * `fulfilled`, `shipped` or `delivered` and that were not canceled
+   * (`substrate/operating.ts`).
+   */
   orders_fulfilled: number
-  /** 0..1, or null when there is not enough history to compute it. */
+  /**
+   * 0..1: fulfilled ÷ decided, where a decided order is fulfilled, canceled, or
+   * left unfulfilled past `STALE_UNFULFILLED_DAYS`. Null under
+   * `RELIABILITY_MIN_SAMPLE` decided orders — not enough history — which the
+   * `fulfillmentReliabilityAtLeast` predicate reads as "not proven".
+   */
   fulfillment_reliability: number | null
 }
 
@@ -48,13 +58,16 @@ export interface CustomerRecord {
   distinct_customers: number
   repeat_customers: number
   repeat_rate: number | null
+  /** Distinct customers across the seller's active `WHOLESALE` tiers (`vendor-rules`). */
   wholesale_relationships: number
 }
 
 export interface ReputationSummary {
   trust_score: number | null // 0..100
   tier: string | null
+  /** Lifetime `total_xp` summed over the seller's members' character sheets (`progression`). */
   total_xp: number
+  /** Live (`open` / `under_review`) `order-dispute` cases against the seller. */
   dispute_count: number
   /** Only reflects credentials a human actually verified (never fabricated). */
   verified_credentials: number
