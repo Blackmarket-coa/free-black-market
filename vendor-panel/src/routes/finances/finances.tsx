@@ -27,6 +27,7 @@ import {
   useRequestAdvance,
 } from "../../hooks/api/hawala"
 import { useCreateInvoice, useInvoiceAging, useInvoices, useRecordInvoicePayment, useUpdateInvoiceState } from "../../hooks/api/invoicing"
+import { phase1ModuleFlags } from "../../lib/phase0-feature-flags"
 
 const formatCurrency = (amount: number, currency = "USD") => {
   return new Intl.NumberFormat("en-US", {
@@ -644,13 +645,18 @@ export const FinancesPage = () => {
         </div>
       </div>
 
-      {/* Advance Section */}
-      <div className="mb-8">
-        <Heading level="h3" className="mb-4">Get Advance</Heading>
-        <div className="bg-ui-bg-base border border-ui-border-base rounded-lg p-6">
-          <AdvanceSection />
+      {/* Advance Section — hawala-ledger VendorAdvance is quiescent under
+          Posture A pending legal review (docs/POSTURE_A_COMPLIANCE.md).
+          Hidden unless the operator enables VITE_FF_VENDOR_ADVANCES_V1 here
+          and FF_VENDOR_ADVANCES_V1 on the API. */}
+      {phase1ModuleFlags.vendorAdvances && (
+        <div className="mb-8">
+          <Heading level="h3" className="mb-4">Get Advance</Heading>
+          <div className="bg-ui-bg-base border border-ui-border-base rounded-lg p-6">
+            <AdvanceSection />
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Recent Transactions */}
       <div className="mb-8">

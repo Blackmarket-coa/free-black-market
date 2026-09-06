@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { useQuery } from "@tanstack/react-query"
 import { fetchQuery } from "../../lib/client"
 
 export const donationQueryKeys = {
@@ -7,22 +7,12 @@ export const donationQueryKeys = {
   beneficiaries: ["donations", "beneficiaries"] as const,
 }
 
+// Read-only: donation checkout settings are platform-wide and written only
+// through the admin route; the vendor route answers POST with 403.
 export const useDonationSettings = () => {
   return useQuery({
     queryKey: donationQueryKeys.settings,
     queryFn: () => fetchQuery("/vendor/donations/settings", { method: "GET" }),
-  })
-}
-
-export const useUpdateDonationSettings = () => {
-  const queryClient = useQueryClient()
-
-  return useMutation({
-    mutationFn: (payload: Record<string, unknown>) =>
-      fetchQuery("/vendor/donations/settings", { method: "POST", body: payload }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: donationQueryKeys.settings })
-    },
   })
 }
 

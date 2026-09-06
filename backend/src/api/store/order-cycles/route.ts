@@ -40,7 +40,9 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
       is_active: true,
     })
     
-    const cycleIds = sellerCycles.map((sc) => sc.id)
+    // `order_cycle_seller.id` is the membership row, not the cycle; mapping
+    // it here made every per-seller listing come back empty (CDFI roadmap §1a).
+    const cycleIds = sellerCycles.map((sc) => sc.order_cycle_id)
     
     if (cycleIds.length === 0) {
       return res.json({

@@ -119,7 +119,10 @@ each on a surface this roadmap would otherwise build on:
   change platform-wide donation percentage and settlement mode; and its
   schema accepts `settlement_mode: "direct"`, a value the model enum
   (`split_processor | ledger_batch`) does not have. Fix the copy and the
-  route before §3.3 ships anything that inherits them.
+  route before §3.3 ships anything that inherits them. *Closed 2026-09-06
+  (route):* the vendor route now answers `POST` with 403 and the panel block
+  is read-only; only `/admin/donations/settings` writes the row, and the
+  `direct` value left with the vendor schema. The copy fix stays open.
 - **A dormant insurance pool is already in the money core.**
   `hawala-ledger/models/payout-config.ts` defines `ChargebackProtection`
   ("Pool for vendor chargeback insurance": 0.2% of each sale, capped
@@ -129,7 +132,8 @@ each on a surface this roadmap would otherwise build on:
   dormant; `docs/POSTURE_A_COMPLIANCE.md`'s quiescent-models list omits it.
   It overlaps the `order-dispute` engine that `docs/COMMERCE_ROADMAP.md`
   §3.3 made the single dispute engine. Quiesce it in that list or drop the
-  tables (§3.5).
+  tables (§3.5). *Listed 2026-09-06* in Posture A's quiescent models; the
+  keep-or-drop ruling is still decision 8.
 - **Q8 is a certification quest without certification content**, and its
   `sourcing` requirement auto-satisfies for the same engine reason as Q1's
   business plan. Certification truth is held three ways — vault documents,
@@ -152,7 +156,11 @@ The adversarial verification of 2026-09-06 added four more:
   and always comes back empty. Two dead buttons sit on the panel screens
   ("Import OFN" posts to a route that does not exist; "remove product"
   calls a `DELETE` that does not exist). S each, and the first is a
-  data-exposure fix before anything else in §3.7.
+  data-exposure fix before anything else in §3.7. *Closed 2026-09-06:* the
+  list is scoped to the cycles the caller coordinates or takes part in, and
+  the store filter — plus the service's two seller lookups that shared the
+  wrong-column bug — now map `order_cycle_id`. The two dead buttons stay
+  open.
 - **A cash-advance surface is live against a model Posture A calls
   quiescent.** The vendor-panel Finances screen renders an "unlock cash
   advances" section with a request button against `GET/POST
@@ -160,6 +168,9 @@ The adversarial verification of 2026-09-06 added four more:
   middleware matcher, while `docs/POSTURE_A_COMPLIANCE.md` records
   `VendorAdvance` as "quiescent under Posture A — activate only after legal
   review". Gate or hide it (S); no lender directory may sit beside it.
+  *Closed 2026-09-06:* the routes sit behind `FF_VENDOR_ADVANCES_V1` and the
+  panel section behind `VITE_FF_VENDOR_ADVANCES_V1`, both default off;
+  flipping them is the activation Posture A gates.
 - **The donation rail's documents disagree with its code twice more.**
   `docs/FISCAL_SPONSOR_DECISION.md` says a non-live sponsor forces
   `settlement_mode` to `ledger_batch`; the service never touches
@@ -778,12 +789,14 @@ serializer so the panel and packet can render them (S); render
 `effective_status` in the vendor vault table and add the admin vault screen
 (S + S); fix the donation widget and marketing copy to say "pending" until a
 sponsor is live, scope `POST /vendor/donations/settings` correctly and
-align its `settlement_mode` values (S); list `ChargebackProtection` /
-`ChargebackClaim` in `docs/POSTURE_A_COMPLIANCE.md`'s quiescent models (S)
+align its `settlement_mode` values (S — route done 2026-09-06, copy open);
+list `ChargebackProtection` / `ChargebackClaim` in
+`docs/POSTURE_A_COMPLIANCE.md`'s quiescent models (S — done 2026-09-06)
 pending the ruling in decision 8; scope `GET /vendor/order-cycles` to the
-caller and fix the store `seller_id` filter (S); gate or hide the
-vendor-panel cash-advance section until the legal review Posture A already
-requires (S); and make the character-sheet "Time Credits" stat honest (S).
+caller and fix the store `seller_id` filter (S — done 2026-09-06); gate or
+hide the vendor-panel cash-advance section until the legal review Posture A
+already requires (S — done 2026-09-06, flag-gated default off); and make
+the character-sheet "Time Credits" stat honest (S).
 1. Extend Q3 with CDFI requirements, links and a documents section (§3.1).
 2. The partner directory registry, `/store/partners`, its storefront page,
    and the quests reading it for gatekeeper links (§3.2), with legal and
@@ -876,6 +889,8 @@ None is a planning change; each is a ruling this document cannot make.
    (recommended: add to the quiescent-models list, no readers or writers
    until a ruling on FBM bearing chargeback risk) or drop the two tables as
    D8 hygiene. Either is a ruling on whether FBM may ever run a risk pool.
+   The quiescent listing was done 2026-09-06; the keep-or-drop ruling is
+   still open.
 
 ---
 
@@ -915,7 +930,9 @@ discrepancy is visible, because an unrecorded gate blocks nothing:
   rail" that has never been written, and the document's transfer rules
   carry no carve-out for a user-to-user non-money rail (§3.10).
 - Vendor cash advances: `VendorAdvance` is recorded as quiescent pending
-  legal review, and a live vendor-panel surface offers it anyway (§1a).
+  legal review; the vendor-panel surface that offered it anyway has been
+  flag-gated, default off, since 2026-09-06 (§1a). The review itself is
+  still the gate.
 
 ---
 
