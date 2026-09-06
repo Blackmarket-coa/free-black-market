@@ -65,6 +65,17 @@ describe("buildPacketExport", () => {
     expect(html).not.toContain('href="mailto:')
   })
 
+  it("cannot be broken out of an href by quotes in a link", () => {
+    const links = [{ label: 'Say "hi"', url: 'https://example.org/?q="><script>alert(1)</script>' }]
+    const html = renderPacketHtml(
+      buildPacketExport({ ...fsa, gatekeeper: { ...fsa.gatekeeper, links } }, makeEstablishedNursery())!
+    )
+    expect(html).toContain(
+      '<a href="https://example.org/?q=&quot;&gt;&lt;script&gt;alert(1)&lt;/script&gt;">Say &quot;hi&quot;</a>'
+    )
+    expect(html).not.toContain("<script>")
+  })
+
   it("omits the links section when the definition has none", () => {
     const noLinks = { ...fsa, gatekeeper: { ...fsa.gatekeeper, links: [] } }
     const html = renderPacketHtml(buildPacketExport(noLinks, makeEstablishedNursery())!)

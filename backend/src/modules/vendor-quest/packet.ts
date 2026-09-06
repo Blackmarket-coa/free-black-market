@@ -71,11 +71,15 @@ export function buildPacketExport(
  * the top AND bottom so it survives any partial print.
  */
 export function renderPacketHtml(packet: PacketExport): string {
+  // Escapes for text AND attribute context: the gatekeeper link hrefs are
+  // attributes, so quotes must not survive either.
   const esc = (s: unknown) =>
     String(s ?? "")
       .replace(/&/g, "&amp;")
       .replace(/</g, "&lt;")
       .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;")
 
   const disclaimerBlock = `
     <div class="disclaimer">
