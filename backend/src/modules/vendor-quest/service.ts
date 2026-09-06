@@ -52,6 +52,9 @@ class VendorQuestModuleService extends MedusaService({
       type: d.type,
       gatekeeper: d.gatekeeper.name,
       disclaimer: d.gatekeeper.disclaimer,
+      // Where to take the outcome. Dropped until 2026-09-06, so an enrolled
+      // vendor never saw the links the public catalog shows.
+      gatekeeper_links: d.gatekeeper.links ?? [],
       health_claims_guardrail: !!d.healthClaimsGuardrail,
       uses_fields: d.usesFields,
       has_packet: !!d.packetTemplate,

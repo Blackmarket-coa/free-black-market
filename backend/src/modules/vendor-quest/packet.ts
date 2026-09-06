@@ -6,6 +6,8 @@ export interface PacketExport {
   title: string
   gatekeeper: string
   disclaimer: string
+  /** Where to take the packet; printed under the disclaimer. */
+  gatekeeper_links: { label: string; url: string }[]
   generated_at: string
   sections: {
     key: string
@@ -56,6 +58,7 @@ export function buildPacketExport(
     title: template.title,
     gatekeeper: definition.gatekeeper.name,
     disclaimer: definition.gatekeeper.disclaimer,
+    gatekeeper_links: definition.gatekeeper.links ?? [],
     generated_at: substrate.generated_at,
     sections,
     remaining_items: safeList(() => template.remainingItems(substrate)),
@@ -94,6 +97,19 @@ export function renderPacketHtml(packet: PacketExport): string {
     ? `<ul>${packet.remaining_items.map((i) => `<li>${esc(i)}</li>`).join("")}</ul>`
     : `<p>No outstanding FBM-assembled items.</p>`
 
+  // The URL is printed beside the label: a printed packet keeps no hrefs.
+  // Only http(s) links become anchors; anything else is shown as text.
+  const links = (packet.gatekeeper_links ?? []).filter((l) => l?.label && l?.url)
+  const linksBlock = links.length
+    ? `<section><h2>Where to take this packet</h2><ul>${links
+        .map((l) =>
+          /^https?:\/\//i.test(l.url)
+            ? `<li><a href="${esc(l.url)}">${esc(l.label)}</a> — ${esc(l.url)}</li>`
+            : `<li>${esc(l.label)} — ${esc(l.url)}</li>`
+        )
+        .join("")}</ul></section>`
+    : ""
+
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -115,6 +131,7 @@ export function renderPacketHtml(packet: PacketExport): string {
   <h1>${esc(packet.title)}</h1>
   <div class="meta">Gatekeeper: ${esc(packet.gatekeeper)} · Generated ${esc(packet.generated_at)}</div>
   ${disclaimerBlock}
+  ${linksBlock}
   ${sectionsHtml}
   <section><h2>Remaining items (you must provide these to the gatekeeper)</h2>${remaining}</section>
   ${disclaimerBlock}
