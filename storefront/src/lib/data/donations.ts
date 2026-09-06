@@ -61,6 +61,11 @@ export type DonationConfig = {
     fiscal_sponsor_name: string | null
     /** Optional link to the sponsor's 501c3 page. */
     fiscal_sponsor_url: string | null
+    /**
+     * True only once the sponsorship agreement is live. Absent or false means
+     * routing is pending and the widget must not claim 501(c)(3) receipts.
+     */
+    fiscal_sponsor_live?: boolean
   }
   feature_gates?: { donation_routing: boolean; advanced_automation: boolean }
   tier?: string
