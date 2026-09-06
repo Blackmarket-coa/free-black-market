@@ -13,6 +13,11 @@ This index organizes project docs by purpose. Start with the repo-root
 - `docs/COMMERCE_ROADMAP.md` — commerce build priority for the B2B/community
   pivot, with the consolidated offering inventory reconciled against the code
   (which "gaps" already have a module, and which gates were retired)
+- `docs/CDFI_COOP_ROADMAP.md` — the market-connections cluster (CDFI
+  lending, co-op formation, farmers-market compliance, mutual aid, co-op
+  delivery, time banking) reconciled against the code and the two sibling
+  repos: which items are quest-definition changes, which are wiring, which
+  wait on a recorded ruling, and who each is for
 - `docs/PLAYBOOK_SYSTEM.md` — the vendor playbooks, mapping from legacy
   vendor-type, 3-question picker decision tree
 - `docs/LISTING_TYPES.md` — v1 listing-type ship list, v2/v3 deferrals,
