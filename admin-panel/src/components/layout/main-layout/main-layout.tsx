@@ -1,11 +1,12 @@
 import {
   BottomToTop,
-  BuildingStorefront,
   Buildings,
+  BuildingStorefront,
   ChatBubble,
   ChevronDownMini,
   CogSixTooth,
   CurrencyDollar,
+  DocumentText,
   EllipsisHorizontal,
   MagnifyingGlass,
   MinusMini,
@@ -247,6 +248,11 @@ const useCoreRoutes = (): Omit<INavItem, "pathname">[] => {
       icon: <Shopping />,
       label: t("sellers.domain"),
       to: "/sellers",
+    },
+    {
+      icon: <DocumentText />,
+      label: "Document Vault",
+      to: "/vault",
     },
     {
       icon: <Sun />,

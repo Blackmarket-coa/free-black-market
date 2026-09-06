@@ -71,6 +71,9 @@ export class SelfAttestationError extends Error {
 export const ATTESTATION_WEIGHT_MIN = 0.5
 export const ATTESTATION_WEIGHT_MAX = 2
 
+/** `garden_time_credit.status` values that mean the credit was actually earned. */
+const EARNED_TIME_CREDIT_STATUSES: readonly string[] = ["available", "redeemed"]
+
 class ProgressionModuleService extends MedusaService({
   CharacterSheet,
   XpEvent,
@@ -253,19 +256,23 @@ class ProgressionModuleService extends MedusaService({
       /* ignore */
     }
 
-    // Volunteer time credits → contributions + credit sum.
+    // Volunteer time credits → contributions + credit sum. The `volunteer`
+    // module's model is `garden_time_credit` with an `amount`; until
+    // 2026-09-06 this queried a `time_credit` entity and a `credit_amount`
+    // field, neither of which exists, and the swallowed error left the
+    // character sheet's "Time Credits" stat permanently 0. Only earned
+    // credits count: `pending` ones are unverified hours, and `expired` /
+    // `cancelled` ones were never the member's to keep.
     try {
       const { data } = await query.graph({
-        entity: "time_credit",
-        fields: ["credit_amount"],
+        entity: "garden_time_credit",
+        fields: ["amount", "status"],
         filters: { customer_id: customerId },
       })
       if (Array.isArray(data)) {
-        patch.time_credits = data.reduce(
-          (sum, c) => sum + Number(c.credit_amount ?? 0),
-          0
-        )
-        patch.mutual_aid_contributions = data.length
+        const earned = data.filter((c) => EARNED_TIME_CREDIT_STATUSES.includes(String(c.status)))
+        patch.time_credits = earned.reduce((sum, c) => sum + Number(c.amount ?? 0), 0)
+        patch.mutual_aid_contributions = earned.length
       }
     } catch {
       /* ignore */
