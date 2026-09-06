@@ -2,7 +2,19 @@ import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 import type { MedusaContainer } from "@medusajs/framework/types"
 import { featureFlagState } from "../../../shared/feature-flags"
 import { isDocumentCurrent } from "../../document-vault/document-status"
+import { ORDER_DISPUTE_MODULE } from "../../order-dispute"
+import { DisputeStatus } from "../../order-dispute/resolution"
+import { PROGRESSION_MODULE } from "../../progression"
+import { VENDOR_RULES_MODULE } from "../../vendor-rules"
 import { computeRevenueSummary, type LedgerHistoryEntry } from "./revenue"
+import {
+  channelsFromTiers,
+  countWholesaleRelationships,
+  summarizeCustomers,
+  summarizeOrders,
+  type CustomerTierRecord,
+  type SellerOrderRecord,
+} from "./operating"
 import type {
   VendorSubstrate,
   RevenueSummary,
@@ -28,7 +40,10 @@ import type {
  * erroring never breaks the whole substrate (the "aggregate, never duplicate,
  * best-effort" convention shared with `progression.recomputeAggregates`).
  *
- * `asOf` is injectable so callers/tests get deterministic revenue windows.
+ * The seller row, the seller's orders and the seller's customer tiers are each
+ * read once and shared by every field that needs them, so a packet's figures
+ * all come from the same rows. `asOf` is injectable so callers/tests get
+ * deterministic tenure, reliability and revenue windows.
  */
 export async function buildSubstrate(
   sellerId: string,
@@ -36,24 +51,31 @@ export async function buildSubstrate(
   opts: { asOf?: Date } = {}
 ): Promise<VendorSubstrate> {
   const query = safeResolve(container, ContainerRegistrationKeys.QUERY)
+  const asOf = opts.asOf ?? new Date()
 
-  const [revenue, operating, customers, reputation] = await Promise.all([
-    buildRevenue(sellerId, container, opts.asOf),
-    buildOperating(sellerId, query),
-    buildCustomers(sellerId, query),
-    buildReputation(sellerId, container),
+  const [seller, orders, tiers] = await Promise.all([
+    loadSeller(sellerId, query),
+    loadSellerOrders(sellerId, query),
+    loadSellerTiers(sellerId, container),
   ])
 
-  const [inventory, production, channels, documents] = await Promise.all([
+  const [revenue, reputation] = await Promise.all([
+    buildRevenue(sellerId, container, opts.asOf),
+    buildReputation(sellerId, container, seller.member_ids),
+  ])
+  const operating = buildOperating(seller, orders, asOf)
+  const customers = buildCustomers(orders, tiers)
+
+  const [inventory, production, documents] = await Promise.all([
     buildInventory(sellerId, query),
     buildProduction(sellerId, container),
-    buildChannels(sellerId, container),
     buildDocuments(sellerId, container),
   ])
+  const channels = buildChannels(tiers)
 
   return {
     seller_id: sellerId,
-    generated_at: (opts.asOf ?? new Date()).toISOString(),
+    generated_at: asOf.toISOString(),
     revenue,
     operating,
     customers,
@@ -72,6 +94,84 @@ function safeResolve(container: MedusaContainer, key: string): any {
     return container.resolve(key)
   } catch {
     return null
+  }
+}
+
+// ── Shared reads: the seller row, its orders, its customer tiers ────────────
+interface SellerSnapshot {
+  created_at: string | null
+  product_count: number
+  /** The seller's members: the progression subjects whose XP is the seller's. */
+  member_ids: string[]
+}
+
+async function loadSeller(sellerId: string, query: any): Promise<SellerSnapshot> {
+  const empty: SellerSnapshot = { created_at: null, product_count: 0, member_ids: [] }
+  if (!query) return empty
+  try {
+    const { data } = await query.graph({
+      entity: "seller",
+      fields: ["id", "created_at", "products.id", "members.id"],
+      filters: { id: sellerId },
+    })
+    const seller = data?.[0]
+    if (!seller) return empty
+    const members: any[] = Array.isArray(seller.members) ? seller.members : []
+    return {
+      created_at: seller.created_at ? new Date(seller.created_at).toISOString() : null,
+      product_count: Array.isArray(seller.products) ? seller.products.length : 0,
+      member_ids: members.map((m) => m?.id).filter((id): id is string => Boolean(id)),
+    }
+  } catch {
+    return empty
+  }
+}
+
+/**
+ * The seller's orders through the MercurJS `seller_order` link, the way the
+ * plugin's own `GET /vendor/orders` reads them. The order entity has no
+ * `seller_id` column: filtering on one (as this file did until 2026-09-06)
+ * throws inside the graph and, swallowed, reported zero customers for every
+ * vendor.
+ */
+async function loadSellerOrders(sellerId: string, query: any): Promise<SellerOrderRecord[]> {
+  if (!query) return []
+  try {
+    const { data: links } = await query.graph({
+      entity: "seller_order",
+      fields: ["order_id"],
+      filters: { seller_id: sellerId, deleted_at: { $eq: null } },
+    })
+    const orderIds = Array.from(
+      new Set(
+        ((links ?? []) as Array<{ order_id?: string }>)
+          .map((link) => link?.order_id)
+          .filter((id): id is string => Boolean(id))
+      )
+    )
+    if (orderIds.length === 0) return []
+
+    const { data: orders } = await query.graph({
+      entity: "order",
+      fields: ["id", "customer_id", "created_at", "canceled_at", "status", "fulfillment_status"],
+      filters: { id: orderIds },
+    })
+    return Array.isArray(orders) ? (orders as SellerOrderRecord[]) : []
+  } catch {
+    return []
+  }
+}
+
+async function loadSellerTiers(
+  sellerId: string,
+  container: MedusaContainer
+): Promise<CustomerTierRecord[]> {
+  try {
+    const svc: any = container.resolve(VENDOR_RULES_MODULE)
+    const tiers = await svc.listVendorCustomerTiers({ seller_id: sellerId })
+    return Array.isArray(tiers) ? (tiers as CustomerTierRecord[]) : []
+  } catch {
+    return []
   }
 }
 
@@ -110,75 +210,43 @@ async function buildRevenue(
 }
 
 // ── Universal: operating history ────────────────────────────────────────────
-async function buildOperating(sellerId: string, query: any): Promise<OperatingHistory> {
+function buildOperating(
+  seller: SellerSnapshot,
+  orders: SellerOrderRecord[],
+  asOf: Date
+): OperatingHistory {
   const base: OperatingHistory = {
     account_created_at: null,
     account_age_days: 0,
     months_active: 0,
-    listing_count: 0,
-    orders_fulfilled: 0,
-    fulfillment_reliability: null,
+    listing_count: seller.product_count,
+    ...summarizeOrders(orders, asOf),
   }
-  if (!query) return base
-  try {
-    const { data } = await query.graph({
-      entity: "seller",
-      fields: ["id", "created_at", "products.id"],
-      filters: { id: sellerId },
-    })
-    const seller = data?.[0]
-    if (seller?.created_at) {
-      const created = new Date(seller.created_at)
-      base.account_created_at = created.toISOString()
-      base.account_age_days = Math.max(
-        0,
-        Math.floor((Date.now() - created.getTime()) / 86_400_000)
-      )
-      base.months_active = Math.floor(base.account_age_days / 30)
-    }
-    base.listing_count = Array.isArray(seller?.products) ? seller.products.length : 0
-  } catch {
-    /* seller graph unavailable — keep defaults */
+  if (seller.created_at) {
+    const created = new Date(seller.created_at)
+    base.account_created_at = created.toISOString()
+    base.account_age_days = Math.max(
+      0,
+      Math.floor((asOf.getTime() - created.getTime()) / 86_400_000)
+    )
+    base.months_active = Math.floor(base.account_age_days / 30)
   }
   return base
 }
 
 // ── Universal: customer / client record ─────────────────────────────────────
-async function buildCustomers(sellerId: string, query: any): Promise<CustomerRecord> {
-  const base: CustomerRecord = {
-    distinct_customers: 0,
-    repeat_customers: 0,
-    repeat_rate: null,
-    wholesale_relationships: 0,
+function buildCustomers(orders: SellerOrderRecord[], tiers: CustomerTierRecord[]): CustomerRecord {
+  return {
+    ...summarizeCustomers(orders),
+    wholesale_relationships: countWholesaleRelationships(tiers),
   }
-  if (!query) return base
-  try {
-    // Orders linked to this seller; count distinct + repeat customers.
-    const { data } = await query.graph({
-      entity: "order",
-      fields: ["id", "customer_id", "seller_id"],
-      filters: { seller_id: sellerId },
-    })
-    const byCustomer = new Map<string, number>()
-    for (const o of data ?? []) {
-      const c = (o as any).customer_id
-      if (!c) continue
-      byCustomer.set(c, (byCustomer.get(c) ?? 0) + 1)
-    }
-    base.distinct_customers = byCustomer.size
-    base.repeat_customers = [...byCustomer.values()].filter((n) => n > 1).length
-    base.repeat_rate =
-      byCustomer.size > 0 ? round2(base.repeat_customers / byCustomer.size) : null
-  } catch {
-    /* order graph unavailable — keep defaults */
-  }
-  return base
 }
 
-// ── Universal: reputation / XP ──────────────────────────────────────────────
+// ── Universal: reputation / XP / disputes ───────────────────────────────────
 async function buildReputation(
   sellerId: string,
-  container: MedusaContainer
+  container: MedusaContainer,
+  memberIds: string[]
 ): Promise<ReputationSummary> {
   const base: ReputationSummary = {
     trust_score: null,
@@ -199,7 +267,53 @@ async function buildReputation(
   } catch {
     /* verification module unavailable — keep defaults */
   }
+  const [disputes, xp] = await Promise.all([
+    countLiveDisputes(sellerId, container),
+    sumMemberXp(memberIds, container),
+  ])
+  base.dispute_count = disputes
+  base.total_xp = xp
   return base
+}
+
+/**
+ * Live cases against the seller in `order-dispute` (open or under review) —
+ * the ones "Resolve open disputes" asks the vendor to clear. Decided and
+ * withdrawn cases are history, not a hold.
+ */
+async function countLiveDisputes(sellerId: string, container: MedusaContainer): Promise<number> {
+  try {
+    const svc: any = container.resolve(ORDER_DISPUTE_MODULE)
+    const rows = await svc.listOrderDisputes(
+      { seller_id: sellerId, status: [DisputeStatus.OPEN, DisputeStatus.UNDER_REVIEW] },
+      { select: ["id"] }
+    )
+    return Array.isArray(rows) ? rows.length : 0
+  } catch {
+    return 0
+  }
+}
+
+/**
+ * A seller's XP is the XP its people earned: `progression` keys character
+ * sheets by member, so the seller's members' lifetime `total_xp` is summed —
+ * the same seller→member bridge `grower-karma` uses. Read with the list
+ * method, never `getOrCreateCharacterSheet`, so building a substrate creates
+ * nothing.
+ */
+async function sumMemberXp(memberIds: string[], container: MedusaContainer): Promise<number> {
+  if (memberIds.length === 0) return 0
+  try {
+    const svc: any = container.resolve(PROGRESSION_MODULE)
+    const sheets = await svc.listCharacterSheets(
+      { customer_id: memberIds },
+      { select: ["customer_id", "total_xp"] }
+    )
+    const rows: Array<{ total_xp?: number | string | null }> = Array.isArray(sheets) ? sheets : []
+    return rows.reduce((sum, sheet) => sum + Math.max(0, Number(sheet?.total_xp ?? 0) || 0), 0)
+  } catch {
+    return 0
+  }
 }
 
 // ── Domain-optional: inventory & asset valuation ────────────────────────────
@@ -254,23 +368,11 @@ async function buildProduction(
 }
 
 // ── Domain-optional: channels (per-channel pricing tiers) ───────────────────
-async function buildChannels(
-  sellerId: string,
-  container: MedusaContainer
-): Promise<ChannelSummary | null> {
-  try {
-    const svc: any = container.resolve("vendorRulesModuleService")
-    const tiers = await svc.listVendorCustomerTiers?.({ seller_id: sellerId })
-    if (!tiers?.length) return null
-    return {
-      channels: tiers.map((t: any) => ({
-        key: t.tier_type ?? t.id,
-        label: t.name ?? t.tier_type ?? "channel",
-      })),
-    }
-  } catch {
-    return null
-  }
+// Until 2026-09-06 this resolved a container key that does not exist
+// (`vendorRulesModuleService`; the module registers as `vendorRules`), so the
+// throw was swallowed and every vendor's `channels` was `null`.
+function buildChannels(tiers: CustomerTierRecord[]): ChannelSummary | null {
+  return channelsFromTiers(tiers)
 }
 
 // ── Domain-optional: document vault (opt-in) ────────────────────────────────

@@ -49,9 +49,9 @@ Only **universal** fields are assumed for every vendor:
 | Field | Source |
 |-------|--------|
 | `revenue` (income, cash-flow, seasonality) | `hawala-ledger` (CREDIT + PURCHASE entries) |
-| `operating` (tenure, listings, fulfillment) | seller + orders |
-| `customers` (buyers/clients, repeat) | orders |
-| `reputation` (trust score, XP, disputes) | `vendor-verification`, `progression` |
+| `operating` (tenure, listings, fulfillment) | seller + orders on the `seller_order` link (`substrate/operating.ts` defines fulfilled and reliability) |
+| `customers` (buyers/clients, repeat, wholesale) | orders; `vendor-rules` `WHOLESALE` tiers |
+| `reputation` (trust score, XP, disputes) | `vendor-verification`; `progression` (the seller's members' `total_xp`); `order-dispute` (live cases) |
 
 **Domain-optional** fields are `null` unless relevant, and quests degrade
 gracefully around them:

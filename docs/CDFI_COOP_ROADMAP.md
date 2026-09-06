@@ -101,6 +101,24 @@ is the one field without an obvious seller-scoped source — `progression`'s
 the one option that is wrong. S–M, no ruling needed, and it belongs before
 any new lender is shown a packet.
 
+*Closed 2026-09-06.* `substrate/operating.ts` now holds the pure arithmetic
+and `substrate/build.ts` reads the seller row, its orders and its customer
+tiers once each: fulfilled orders and reliability come from the orders on
+the MercurJS `seller_order` link (fulfilled = `fulfilled | shipped |
+delivered`, uncanceled; reliability = fulfilled / decided, where decided
+adds canceled and 30-day-stale unfulfilled orders, null under five);
+disputes are the seller's live `order-dispute` cases; wholesale
+relationships are distinct customers on active `WHOLESALE` tiers; and XP is
+the seller's members' lifetime `total_xp` summed from `progression`, the
+seller-to-member bridge `grower-karma` already uses, chosen over the
+`karma_event` projection because the field is XP and the engine doc names
+`progression` as its source. The same pass found and fixed two more
+under-reports in the builder: the customer record filtered orders on an
+`order.seller_id` column that does not exist (swallowed, so every vendor
+had zero customers), and the channels reader resolved a container key that
+does not exist (so `channels` was always `null`). Q1's `business_plan`
+predicate is still open under 3.1.
+
 The re-sweep of 2026-09-06 found four more, each outside the brainstorm and
 each on a surface this roadmap would otherwise build on:
 
@@ -784,7 +802,8 @@ independently shippable; nothing here requires an engine change.
 **Tier A — definition and content changes, buildable now, no ruling
 needed.** The §1a hygiene goes first, because everything below shows a
 packet or a promise to an outsider: populate the five never-assigned
-substrate fields (S–M); return `gatekeeper_links` from the vendor catalog
+substrate fields (done 2026-09-06, with the customer and channel readers
+fixed alongside; was S–M); return `gatekeeper_links` from the vendor catalog
 serializer so the panel and packet can render them (S); render
 `effective_status` in the vendor vault table and add the admin vault screen
 (S + S); fix the donation widget and marketing copy to say "pending" until a
