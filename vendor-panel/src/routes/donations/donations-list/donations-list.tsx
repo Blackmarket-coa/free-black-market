@@ -1,6 +1,6 @@
 import { useState } from "react"
 import { Outlet } from "react-router-dom"
-import { Container, Heading, Button, Text, Badge, Tabs, Switch, Input, toast } from "@medusajs/ui"
+import { Container, Heading, Button, Text, Badge, Tabs, Switch, Input } from "@medusajs/ui"
 import { Gift, CurrencyDollar } from "@medusajs/icons"
 import { SingleColumnPage } from "../../../components/layout/pages"
 import { useDashboardExtension } from "../../../extensions"
@@ -9,7 +9,6 @@ import {
   useDonationBeneficiaries,
   useDonationReport,
   useDonationSettings,
-  useUpdateDonationSettings,
 } from "../../../hooks/api/donations"
 
 export function DonationsList() {
@@ -20,7 +19,6 @@ export function DonationsList() {
   const { data: settingsData } = useDonationSettings()
   const { data: reportData } = useDonationReport()
   const { data: beneficiariesData } = useDonationBeneficiaries()
-  const updateSettings = useUpdateDonationSettings()
 
   const settings = settingsData?.settings
   const report = reportData?.report
@@ -90,42 +88,22 @@ export function DonationsList() {
         <div className="rounded-xl border p-4 space-y-3">
           <Heading level="h3">Donation checkout settings</Heading>
           <Text size="small" className="text-ui-fg-subtle">
-            Configure default donation percent and round-up behavior used by storefront checkout.
+            The default donation percent and round-up behavior used by storefront checkout are
+            platform-wide and set by the operator. They are shown here for reference.
           </Text>
           <div className="grid grid-cols-2 gap-4 items-end">
             <label className="block">
               <Text size="small" className="mb-1">Default donation %</Text>
               <Input
                 type="number"
-                min={0}
-                max={100}
-                step={0.5}
-                defaultValue={settings?.default_percentage ?? 0}
-                onBlur={(e) => {
-                  updateSettings.mutate(
-                    { default_percentage: Number(e.target.value || 0) },
-                    {
-                      onSuccess: () => toast.success("Donation default percentage updated"),
-                      onError: (error) => toast.error(error.message),
-                    }
-                  )
-                }}
+                value={settings?.default_percentage ?? 0}
+                readOnly
+                disabled
               />
             </label>
             <div className="flex items-center justify-between border rounded p-3">
-              <Text size="small">Enable round-up</Text>
-              <Switch
-                checked={Boolean(settings?.round_up_enabled)}
-                onCheckedChange={(checked) => {
-                  updateSettings.mutate(
-                    { round_up_enabled: checked },
-                    {
-                      onSuccess: () => toast.success("Round-up setting updated"),
-                      onError: (error) => toast.error(error.message),
-                    }
-                  )
-                }}
-              />
+              <Text size="small">Round-up enabled</Text>
+              <Switch checked={Boolean(settings?.round_up_enabled)} disabled />
             </div>
           </div>
         </div>

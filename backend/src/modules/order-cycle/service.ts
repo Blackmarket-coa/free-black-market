@@ -66,7 +66,7 @@ class OrderCycleModuleService extends MedusaService({
         is_active: true,
       })
 
-      const cycleIds = sellerCycles.map((sc) => sc.id)
+      const cycleIds = sellerCycles.map((sc) => sc.order_cycle_id)
       if (cycleIds.length === 0) return []
 
       filters.id = cycleIds
@@ -89,7 +89,7 @@ class OrderCycleModuleService extends MedusaService({
         is_active: true,
       })
 
-      const cycleIds = sellerCycles.map((sc) => sc.id)
+      const cycleIds = sellerCycles.map((sc) => sc.order_cycle_id)
       if (cycleIds.length === 0) return []
 
       filters.id = cycleIds

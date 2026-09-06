@@ -211,10 +211,22 @@ following models exist but are either inactive or restricted under Posture A:
 
 - **`VendorAdvance`**: vendor advance against future sales. Quiescent under
   Posture A — an advance can look like lending without proper licensure.
-  Activate only after legal review.
+  Activate only after legal review. *2026-09-06:* the `GET/POST
+  /vendor/hawala/advances` routes and the vendor-panel "Get Advance" section
+  had been live behind seller auth alone; both now sit behind
+  `FF_VENDOR_ADVANCES_V1` (API) and `VITE_FF_VENDOR_ADVANCES_V1` (panel),
+  default off. Flipping them is the activation this bullet gates.
 - **`InvestmentPool`**: pooled investment vehicle. Quiescent under Posture A
   unless and until the offering is structured under a securities exemption
   (Reg CF, Reg A, Coop Investment Cooperative) with appropriate filings.
+- **`ChargebackProtection` / `ChargebackClaim`**: a pool for vendor
+  chargeback insurance (0.2% of each sale, capped coverage, claim
+  adjudication states). Tables are migrated; no service method, route, job
+  or dispute handler reads or writes them. Quiescent under Posture A — FBM
+  holding pooled premiums and paying claims is a risk-bearing, custodial
+  product with no recorded gate (`docs/CDFI_COOP_ROADMAP.md` §3.5, §5).
+  Do not wire until an operator rules on it in
+  `docs/REPO_CONSOLIDATION_REVIEW.md` §8.
 - **`BankAccount`**: vendor banking metadata. Active for storing payout-
   destination details only; does not constitute FBM offering banking
   services.

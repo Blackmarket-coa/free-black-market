@@ -1009,6 +1009,14 @@ export default defineMiddlewares({
       middlewares: [requireFeatureFlagMiddleware("PICK_PACK_V1")],
     },
     {
+      // hawala-ledger `VendorAdvance` is quiescent under Posture A pending
+      // legal review (docs/POSTURE_A_COMPLIANCE.md). These routes were live
+      // behind seller auth alone until 2026-09-06; they stay dark unless an
+      // operator flips the flag.
+      matcher: "/vendor/hawala/advances*",
+      middlewares: [requireFeatureFlagMiddleware("VENDOR_ADVANCES_V1")],
+    },
+    {
       matcher: "/vendor/hawala/payments*",
       middlewares: [
         requireFeatureFlagMiddleware("INVOICING_V1"),

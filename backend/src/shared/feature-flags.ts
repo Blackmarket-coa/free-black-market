@@ -24,6 +24,12 @@ export const PHASE0_FEATURE_FLAGS = {
   AID_NETWORK_V1: "FF_AID_NETWORK_V1",
   DOCUMENT_VAULT_V1: "FF_DOCUMENT_VAULT_V1",
   NURSERY_VERTICAL_V1: "FF_NURSERY_VERTICAL_V1",
+  // Vendor cash advances (hawala-ledger `VendorAdvance`), quiescent under
+  // Posture A pending legal review — docs/POSTURE_A_COMPLIANCE.md § "Existing
+  // models documented as quiescent". Default off: the `/vendor/hawala/advances`
+  // routes and the vendor-panel "Get Advance" section stay dark until an
+  // operator flips it deliberately.
+  VENDOR_ADVANCES_V1: "FF_VENDOR_ADVANCES_V1",
 } as const
 
 export type Phase0FeatureFlag = keyof typeof PHASE0_FEATURE_FLAGS
