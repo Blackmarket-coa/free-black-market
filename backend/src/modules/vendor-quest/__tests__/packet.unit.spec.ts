@@ -44,4 +44,41 @@ describe("buildPacketExport", () => {
     expect(html).toContain("Important:")
     expect(html).toContain("FSA Lender Packet")
   })
+
+  // A link the vendor cannot see is not a referral: the export carries the
+  // definition's gatekeeper links and the print view shows label and URL.
+  it("carries the gatekeeper links and prints them with their URLs", () => {
+    const links = [
+      { label: "Find a lender", url: "https://example.org/lenders?q=1&r=2" },
+      { label: "Not a web link", url: "mailto:loans@example.org" },
+    ]
+    const withLinks = { ...fsa, gatekeeper: { ...fsa.gatekeeper, links } }
+    const packet = buildPacketExport(withLinks, makeEstablishedNursery())!
+    expect(packet.gatekeeper_links).toEqual(links)
+
+    const html = renderPacketHtml(packet)
+    expect(html).toContain("Where to take this packet")
+    expect(html).toContain('<a href="https://example.org/lenders?q=1&amp;r=2">Find a lender</a>')
+    expect(html).toContain("https://example.org/lenders?q=1&amp;r=2</li>")
+    // Non-http(s) URLs are printed, never made clickable.
+    expect(html).toContain("Not a web link — mailto:loans@example.org")
+    expect(html).not.toContain('href="mailto:')
+  })
+
+  it("cannot be broken out of an href by quotes in a link", () => {
+    const links = [{ label: 'Say "hi"', url: 'https://example.org/?q="><script>alert(1)</script>' }]
+    const html = renderPacketHtml(
+      buildPacketExport({ ...fsa, gatekeeper: { ...fsa.gatekeeper, links } }, makeEstablishedNursery())!
+    )
+    expect(html).toContain(
+      '<a href="https://example.org/?q=&quot;&gt;&lt;script&gt;alert(1)&lt;/script&gt;">Say &quot;hi&quot;</a>'
+    )
+    expect(html).not.toContain("<script>")
+  })
+
+  it("omits the links section when the definition has none", () => {
+    const noLinks = { ...fsa, gatekeeper: { ...fsa.gatekeeper, links: [] } }
+    const html = renderPacketHtml(buildPacketExport(noLinks, makeEstablishedNursery())!)
+    expect(html).not.toContain("Where to take this packet")
+  })
 })

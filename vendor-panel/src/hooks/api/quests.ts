@@ -28,6 +28,8 @@ export interface QuestCatalogEntry {
   type: "individual" | "collective"
   gatekeeper: string
   disclaimer: string
+  /** Where to take the outcome; rendered under the disclaimer. */
+  gatekeeper_links: Array<{ label: string; url: string }>
   health_claims_guardrail: boolean
   uses_fields: string[]
   has_packet: boolean
@@ -83,6 +85,7 @@ export interface PacketExport {
   title: string
   gatekeeper: string
   disclaimer: string
+  gatekeeper_links: Array<{ label: string; url: string }>
   generated_at: string
   sections: { key: string; title: string; available: boolean; data: unknown; note?: string }[]
   remaining_items: string[]

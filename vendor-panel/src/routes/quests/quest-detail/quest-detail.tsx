@@ -72,6 +72,24 @@ const QuestDetailPage = () => {
               disclaimer={def.disclaimer}
               guardrail={def.health_claims_guardrail}
             />
+            {def.gatekeeper_links?.length ? (
+              <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1">
+                <Text size="small" className="text-ui-fg-subtle">
+                  Where to take it:
+                </Text>
+                {def.gatekeeper_links.map((link) => (
+                  <a
+                    key={link.url}
+                    href={link.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-ui-fg-interactive text-sm underline"
+                  >
+                    {link.label}
+                  </a>
+                ))}
+              </div>
+            ) : null}
           </div>
         ) : null}
       </Container>
