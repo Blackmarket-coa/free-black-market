@@ -1,9 +1,10 @@
 # CDFI, Co-op and Solidarity-Economy Roadmap — market connections reconciled against the code
 
 Status: **code-verified 2026-09-05** against `free-black-market` `6585024`,
-`blackout` `aee4837` and `Blackstar` `c86b335`; six of the ten features were
-re-swept independently on 2026-09-06 and the corrections are folded in. No
-code rides with this document.
+`blackout` `aee4837` and `Blackstar` `c86b335`; all ten features were
+re-swept independently on 2026-09-06, four of the sweeps were then
+adversarially verified, and the corrections are folded in. No code rides
+with this document.
 
 This document takes the ten features that came out of the market-connections
 brainstorm — CDFI lending, co-op formation, farmers-market compliance, mutual
@@ -27,12 +28,15 @@ ten features, three are already a quest definition in the Vendor Quest Engine
 Q11), one is a settlement rail that is specified and guarded but not lit (time
 bank hours), one is a template library that already ships — in Blackout, not
 FBM — and one is a CSA primitive the operations guide already calls a wedge
-product. The two items the brainstorm ranked "highest value, lowest build
-cost" — the CDFI quest and the bylaws library — are both definition and wiring
+product, half of which (the share-box season) is a service nothing calls.
+The two items the brainstorm ranked "highest value, lowest build cost" —
+the CDFI quest and the bylaws library — are both definition and wiring
 changes, not builds. Two items were framed in a way the code and the
 compliance posture cannot support (a time-bank *payment* rail; an *existing*
 set of barter adapters), and one (insurance pooling) needs a ruling before a
-line of it is designed.
+line of it is designed. Checking the tree this closely also turned up a
+dozen defects on the surfaces these features would build on; they are
+recorded in §1a and go first.
 
 ---
 
@@ -50,10 +54,10 @@ missed. Rows are ordered by how much the correction changes the plan.
 | **Bylaws/incorporation template library, borrowing Fairmondo's model of sharing co-op docs** | It ships today — in Blackout. `apps/blackout-client/src/app/features/documents/templates/index.ts` seeds four founding documents (bylaws, mission, decision rules, mutual-aid agreement) adapted from SELC, USFWC and Center for Family Life sources with licence attribution, stored as Matrix state events per den (`co.bmc.den.documents`, `packages/blackout-protocol/src/documents/contracts.ts`) and edited in the Documents tool of the Coalition tool sheet on route `/coalition` — per-den, not feature-flagged, and with no export, download, print or HTTP API: a vendor gets text out of it by copying from a textarea. The seeds are ~30-line scaffolds that "point cooperatives at the canonical source material rather than reproducing it"; the licence `attribution` field is never rendered, and the mutual-aid seed is CC BY-NC. The docblock records that legal review of production text is "a parallel content task". On the FBM side Q11 asks for "Governance / bylaws" as a vendor-supplied vault upload, its packet lists bylaws, articles and a member-equity agreement as remaining items, and the vault's `doc_type` enum (`lease, contract, license, insurance, credential, business_plan, other`) has no governing-document type. FBM's `knowledge-base` is DIY and gardening content, not legal. | **Wire, do not build a second library.** Under the two-layer model (FBM substrate, Blackout governance interface) the templates are in the right repo. FBM's part is a vault document type and a link from Q11 to the Blackout surface; Blackout's part is a way to get a finished document *out* as a file the vendor can upload to the vault. The Fairmondo angle has a gap the code cannot close: `docs/MEMBER_GOVERNANCE.md` records that platform-level member governance "does not exist", so there are no coalition bylaws to publish yet. "Removes the single biggest barrier" overclaims what six one-line headings can do; the honest framing is scaffolds plus referral to SELC, USFWC and the vendor's state. §3.4. |
 | **Shared back-office service marketplace (insurance pooling, payroll, legal referrals) as a connect.js add-on tier** | `connect.js` is the buyer-facing storefront embed, frozen at v2.0.0 under SRI pinning and a changelog (`docs/integrations/fbm-connect-changelog.md`); it has no vendor-facing tier concept. Vendor monetization lives in `vendor-plan` (plans + 30-day add-on windows, `docs/ADDON_COMMITMENTS.md`); `plugin-registry` (W3) lists installable *software* only (`MARKETPLACE_EXTENSION | ANALYTICS | AUTOMATION`, signed bundles with a manifest), so it can host a bookkeeping-sync plugin but not a payroll company; `service-program` is a vendor-to-vendor marketplace for *physical* production services (press, packaging, co-packing…). Payroll is already outside FBM in code: Q7 `ready-to-hire` names "your payroll provider" as gatekeeper and lists payroll/tax registration and workers' comp as remaining items. No repo scopes insurance pooling, a captive, payroll or a PEO as a product — but `hawala-ledger` carries a **dormant chargeback-insurance pool schema** (`ChargebackProtection`, `ChargebackClaim`: 0.2% contributions, capped coverage, claim adjudication states; tables migrated, zero readers or writers, absent from Posture A's quiescent list). | **Wrong surface, and three different features.** Legal and back-office *referrals* are directory entries (§3.2, same registry, a `legal`/`back_office` category). Payroll is a banking-as-a-service shape Posture A rule 6 forbids FBM to offer — refer out. Insurance *pooling* means FBM holding pooled premiums and paying claims: a regulated, custodial product with no recorded gate, in the same class as the custodial-deposit question `docs/COMMERCE_ROADMAP.md` §4 already flags. Gate-first; recommended disposition is "not on the roadmap, deliberately". The "recurring revenue line" does not survive: a refer-out directory earns nothing, and a compensated referral is itself a gate. §3.5. |
 | **Certification/compliance assistant (organic cert, scale certification paperwork)** | Q8 `compliance-tracker` exists (`definitions/compliance-tracker.ts`) — but organic, Certified Naturally Grown, cottage-food, food-handler and practitioner credentials appear only in its docblock. Its coded requirements are four generic items (`doc_checklist`, `production_records`, `sourcing`, `inspection_forms`), its gatekeeper links are empty, its gates test only the `license`/`credential` vault types, and `sourcing` is `assisted` with no predicate, so it auto-satisfies (§1a). It is a generic document tracker with a certification title. Certification truth is also kept in two other stores that never read the vault: `vendor-verification` badges (`ORGANIC_CERTIFIED`, `REGENERATIVE`, `FAIR_TRADE`…, with certifying body, expiry, a daily expiry job and storefront trust indicators) and `producer.certifications` JSON with its own admin verify route and 30-day recertification notices. The vault gained real verification and expiry on 2026-09-03: `PATCH /admin/vault/:id` is `markVerified`'s first caller and `document-status.ts` derives `effective_status` so an expired certificate stops reading as verified. `modules/cottage-food` already tracks permit and food-handler expiry as **self-declared** facts and refuses to ship a state-law table. `docs/COMMERCE_ROADMAP.md` records the organic/regenerative document type as blocked on the `doc_type` enum conversion (its §4 decision 5) — but the repo already adds enum values in their own idempotent migration (`ALTER TYPE … ADD VALUE IF NOT EXISTS`, `demand-pool/migrations/Migration20260604AddBountyObjectiveTypes.ts`), so the type is a one-line migration and the conversion stays a hygiene ruling. The expiry-reminder rail is unbuilt (`ar.invoice.overdue` has no subscriber; the vendor in-app feed reader has no producer). Neither panel shows the 2026-09-03 expiry work: the vendor vault table renders the raw `verified` flag, so a lapsed certificate still reads "Verified", and there is no admin screen for the `/admin/vault` queue. "Scale certification" (weights-and-measures device certificates for selling by weight) appears nowhere, and neither do the sell-by-weight pricing fields it would accompany. | **Extend Q8; no new module — and choose the vault as the evidence store.** Give Q8 real requirements and links, add the document types now, make the two panels show derived status, and build the one shared reminder rail that vault expiry and AR overdue both need. Nursery-side learnings become checklist content, under the cottage-food rule: the seller declares, FBM ships no regulatory table. §3.6. |
-| **CSA/Order Cycles is scoped; market it to CSA networks** | It is shipped, not scoped. `modules/order-cycle` carries ten models (cycle, exchange, product, seller and enterprise fees, share-box template, share box, share-box subscription, plant-ship window) behind `/vendor/order-cycles/*` and `/store/order-cycles`, with the `order-cycle-status-update` job; the Cycle playbook (`playbook/recipes/cycle.ts`) enables seasons, subscriptions, harvests and the farm module; `cooperative.cooperative_type` has a `CSA` value; the storefront's vendor-types page already carries a "CSA & Order-Cycle Farm" card; `docs/AGGRESSIVE_OPERATIONS_GUIDE.md` §1.3 names Order Cycles and share boxes as a wedge product. | **Reposition-only**, after one honest end-to-end check of the share-box season (§3.7). The positioning plan already lists CSA/Subscriptions as an entry point; what is missing is the network-facing pitch and a pilot checklist, not code. |
-| **A mutual-aid network adapter alongside the existing Craigslist/TrashNothing/hOurworld barter adapters** | The barter adapters do not exist. `docs/COMMERCE_ROADMAP.md` §3.7 and `docs/FBM_BUYER_HUB.md` §1 both say so; `modules/barter` is one `barter_proposal` model with two routes under `/store/collective/demand-pools/[id]/barter`. The **internal** mutual-aid half, by contrast, is the better-built side of the brainstorm: `mutual-aid` (requests and offers with a privacy-split location), `aid-network` (hubs, lot-level stock, in-kind intake, transfers and an allocation planner, behind `FF_AID_NETWORK_V1`), `donation`, `volunteer`, `fund-accounting`, the Grove playbook, and on the Blackout side aid boards and pooled funds (`packages/api/src/services/aidPools.ts`). No document in either repo names an external mutual-aid network with an API. hOurworld is a time-bank network, so it belongs with §3.10, not here. | **Correct the premise, then wire before adapting.** The valuable near-term work is the FBM↔Blackout mutual-aid seam and surfacing asks on Grove storefronts. An external adapter follows the channel-connector rule: no catalogue entry without a working adapter against a named target. §3.8. |
-| **Co-op delivery pooling — micro-depot relay points — activates Blackstar's mesh routing** | Blackstar has the relay half: `ShipmentLeg` (sequence, from/to node, handoff proof, settlement ref, a guarded state machine) with list/create/update routes and `api/docs/shipment-leg-relay-protocol.md`'s multi-leg completion rules. It does not have depots, pooling or mesh routing — `CONSOLIDATION.md` records that "mesh routing, batch aggregation, micro-depots, reverse-auction" exist as design docs only (`api/docs/network-advantage-engine.md`), and its `Node` model is a legal entity with a service radius and attestations, not a place with capacity. Blackstar was unfrozen on 2026-09-03; the FBM bridge is dark by default and per-shipment sequence numbers are an open bilateral change. On the FBM side, `docs/COMMERCE_ROADMAP.md` Tier 3.8 already plans micro-depot *listings* on whichever of `rental`/`kitchen` survives (its §4 decision 2), and `aid-network`'s `network_node` — "a place that holds stock", with cold storage and inter-node transfers — is the closest existing depot noun. | **Sequence it; it is not near-term.** A depot is first an FBM listing (Tier 3.8, waiting on a ruling), then a Blackstar node kind a leg can hand off to (Laravel side), and only then a pooling problem (design only). §3.9. |
-| **Time bank as an alt payment rail alongside Stellar/USDC** | The rail exists and the framing is wrong. `hawala-ledger/rails.ts` defines HRS as closed-loop, member-to-member, `account_type: TIME_BANK`, `cash_convertible: false`; `posture-a-guard.ts` enforces the time-bank rules (no self-transfer; a `TIMEBANK_*` reference type on every entry); `dual-rail-selector.ts` **throws** `NonCashRailError` if anyone tries to settle HRS the way USDC settles. Hours are not, and under Posture A cannot be, checkout tender for goods — they settle labour between members of a collective (the courier-collective, childcare and tool-library manifests declare `hours` for exactly that). And the rail is not lit: `docs/CCR_HRS_IGNITION.md` §2 finds no `TIME_BANK` account is ever created and the `TIMEBANK_OPEN_BALANCE` writer has no callers. A second, unreconciled hours model exists in `modules/volunteer` (`garden_time_credit`, priced in currency at an hourly rate). Blackout's Grove den playbook already seeds "4 FBM-HOUR" as an onboarding grant with nothing on the FBM side to receive it. | **Reframe, then ignite.** Position hours as a labour-settlement rail inside collectives, never as a way to pay for goods. The build is `docs/CCR_HRS_IGNITION.md` §5 steps 4–5, gated on the two policy answers only the operator can give. Decide the `garden_time_credit` overlap the way channel points were decided in W1b. §3.10. |
+| **CSA/Order Cycles is scoped; market it to CSA networks** | Half of it is shipped. `modules/order-cycle` carries nine models; the cycle half — cycles, incoming/outgoing exchanges, per-cycle products, seller roles, enterprise fees — has vendor routes (`/vendor/order-cycles/**`, `/vendor/enterprise-fees`), public reads (`/store/order-cycles`, `/[id]`), a five-minute status job and complete vendor-panel screens. The share-box half — template, subscription, box, and the whole scheduler in `service.ts` — is model + service + unit spec only: no route, job, workflow or screen calls any of it, and `share_box_subscription` carries no price, payment method, cart, order or link to the `subscription` module (which has Stripe renewal, dark behind `FBM_SUBSCRIPTION_RENEWAL_LIVE`). Nothing in the storefront calls `/store/order-cycles`; no cart or order path writes `order.metadata.order_cycle_id`, so the order-placed subscriber never fires and `sold_quantity` never moves; per-cycle caps and enterprise fees are configurable and never enforced or settled. Blackout already has the *consumer* side — a per-vendor "order cycles" announcement room and `cycle.open / cycle.close / sold_out` formatting — and FBM emits none of those events. The Cycle playbook, the `CSA` cooperative type, the vendor-types card and `docs/AGGRESSIVE_OPERATIONS_GUIDE.md` §1.3 ("wedge product"; "share-box scheduler 100% shipped") all describe the feature as complete. | **Wire, then reposition.** §3.7's own end-to-end check was run and fails at step one: a coordinator cannot create a share template. Pitching CSA networks today would advertise a dead end. The wiring is M and mostly routes and one storefront page; the positioning follows it. |
+| **A mutual-aid network adapter alongside the existing Craigslist/TrashNothing/hOurworld barter adapters** | The barter adapters do not exist. `docs/COMMERCE_ROADMAP.md` §3.7 and `docs/FBM_BUYER_HUB.md` §1 both say so; `modules/barter` is one `barter_proposal` model with two routes under `/store/collective/demand-pools/[id]/barter`. The **internal** side is better built than barter's, but unevenly: `mutual-aid` itself is two models and four routes (`/store/mutual-aid/requests`, `/offers`, `/[id]/match`, `/[id]/confirm`) with a privacy-split location and **no screen anywhere** — no storefront page, no panel, no `connect.js` kind — and no writer for its `WITHDRAWN`/`EXPIRED` states; the Grove playbook's `hasRequests` toggles the generic `request` module, not this one. What reaches a screen is the hub side: `aid-network` (hubs, lot-level stock, in-kind intake, transfers, an allocation planner and an 899-line panel, behind `FF_AID_NETWORK_V1`), `donation`, `fund-accounting`, `volunteer`. The ask path that *does* have UI is `demand_post` with its `MUTUAL_AID` buyer archetype (storefront demand-pool pages, the vendorless `data-fbm="demand-pools"` embed, the `/store/cooperatives/[handle]/needs` board). Blackout has three mutual-aid surfaces, not one: server-backed coalition aid posts (`/v1/coalition/mutual-aid`, `coalition_aid_posts`, precise coordinates required), deaddrop aid threads (protocol and client, no server route), and aid pools whose money is FBM tips. No document in either repo names an external mutual-aid network with an API. hOurworld is a time-bank network, so it belongs with §3.10, not here. | **Correct the premise, then wire before adapting — and the wire is not pure.** FBM publishes locality and a distance band only (the W5-3 privacy exclusion); Blackout's aid-post table requires coordinates, so a mirrored ask either lands without a map pin or Blackout admits coordinate-less posts. An external adapter follows the channel-connector rule: no catalogue entry without a working adapter against a named target. §3.8. |
+| **Co-op delivery pooling — micro-depot relay points — activates Blackstar's mesh routing** | Blackstar has the relay half: `ShipmentLeg` (sequence, from/to node, handoff proof, settlement ref, a guarded state machine) with list/create/update routes and `api/docs/shipment-leg-relay-protocol.md`'s multi-leg completion rules. It does not have depots, pooling or mesh routing — `CONSOLIDATION.md` records that "mesh routing, batch aggregation, micro-depots, reverse-auction" exist as design docs only (`api/docs/network-advantage-engine.md`), and its `Node` model is a legal entity with attestations and a service radius that has no centre — the table carries no coordinates, no kind, no hours, no capacity — while listings hold origin and destination as free strings. The relay is API-only (the console has no board or leg screen), and FBM cannot see it: the receiver's event map holds the five listing-level events, so `shipment.leg.updated` and `shipment.leg.handoff_proof` are accepted and ignored, and contract v1 has no per-parcel key. Blackstar was unfrozen on 2026-09-03; the bridge is dark by default and per-shipment sequence numbers are an open bilateral change. On the FBM side the *batch* noun already exists — `food-distribution`'s `food_delivery_batch` is one courier run carrying many producers' deliveries, with `/store/delivery-batches` routes — and `order-cycle` already aggregates many producers to one scheduled pickup; what FBM lacks is a depot noun and a planner. `docs/COMMERCE_ROADMAP.md` Tier 3.8 plans micro-depot *listings* on whichever of `rental`/`kitchen` survives (its §4 decision 2); `aid-network`'s `network_node` is the closest "place that holds stock" but is single-seller (transfers refuse another seller's node). Blackout carries a consumer for `blackstar.driver_assigned / pickup_confirmed / delivered / failed` logistics events that FBM never emits, in a vocabulary that differs from the FBM↔Blackstar contract. | **Sequence it; it is not near-term.** A depot is first an FBM listing (Tier 3.8, waiting on a ruling), then a Blackstar node kind a leg can hand off to plus the contract change that lets FBM see legs, and only then a pooling problem (design only). §3.9. |
+| **Time bank as an alt payment rail alongside Stellar/USDC** | The rail exists and the framing is wrong. `hawala-ledger/rails.ts` defines HRS as closed-loop, member-to-member, `account_type: TIME_BANK`, `cash_convertible: false`; `posture-a-guard.ts` enforces the time-bank rules (no self-transfer; a `TIMEBANK_*` reference type on every entry); `dual-rail-selector.ts` **throws** `NonCashRailError` if anyone tries to settle HRS the way USDC settles. Hours are not, and under Posture A cannot be, checkout tender for goods — they settle labour between members of a collective (the courier-collective, childcare and tool-library manifests declare `hours` for exactly that). And the rail is not lit: no dedicated provisioning path creates a `TIME_BANK` account (the unvalidated `POST /admin/hawala/accounts` could, by accident), and nothing can fund one — `createTransfer` refuses overdraft and no `ISSUE` or `HOURS_OPEN_BALANCE` writer exists, so an opening balance cannot be posted from an empty reserve; the `HOURS_*`/`TIMEBANK_*` entry types the guard and reconciler use are absent from the `ledger_entry.entry_type` enum; and the guard cites a "§ hours rail" section of `docs/POSTURE_A_COMPLIANCE.md` that does not exist. The `modules/volunteer` hours stack is dead rather than parallel: `garden_time_credit`'s only writer has no callers and writes fields the model lacks, and the storefront character sheet's "Time Credits" stat reads a non-existent entity, so it is always 0. Blackout's Grove den playbook seeds "4 FBM-HOUR" and its reveal screen tells the user their den "starts with 4 FBM-HOUR in its kitty" — a live promise with no ledger behind it and a unit name (`FBM-HOUR`) that is not FBM's (`HRS`). | **Reframe, then ignite.** Position hours as a labour-settlement rail inside collectives, never as a way to pay for goods. The build is `docs/CCR_HRS_IGNITION.md` §5 steps 4–5, which cannot run ahead of its step 1 (issuance), gated on the policy answers only the operator can give — including one that document does not list: issued hours from a reserve, or mutual credit that lets balances go negative, which the ledger's non-negative invariant forbids today. Retire the dead volunteer hours model the way channel points were decided in W1b. §3.10. |
 | **KARMA tiers are an existing system the quests build on** | Confirmed, with one precision: the ladder is `progression/grower-karma.ts` (`GROWER_TIERS`, published at `GET /store/karma-ladder`) and the canonical reputation write path is `karma_event` (D7). The quest substrate reads `reputation.tier` from it. | No change. Cite `karma_event`, not "KARMA tiers", when positioning. |
 | **The time bank belongs with Blackout and connect.js** | Neither. The rail and its guards are FBM (`hawala-ledger`); Blackout carries vocabulary (`FBM-HOUR`) and templates; `connect.js` carries nothing about hours. | The cross-repo contract, when written, is FBM-canonical with a Blackout consumer mirror, following `docs/contracts/mas-identity-consumer.md`. |
 
@@ -139,6 +143,39 @@ each on a surface this roadmap would otherwise build on:
   only caller — has no admin-panel screen, so a document can be verified
   only by calling the API. Both are S.
 
+The adversarial verification of 2026-09-06 added four more:
+
+- **`GET /vendor/order-cycles` returns every vendor's cycles.** The list
+  filters on status only and the `/vendor/**` middleware authenticates
+  without scoping, so any seller reads every coordinator's draft and closed
+  cycles; the `?seller_id=` filter on the store read maps the wrong column
+  and always comes back empty. Two dead buttons sit on the panel screens
+  ("Import OFN" posts to a route that does not exist; "remove product"
+  calls a `DELETE` that does not exist). S each, and the first is a
+  data-exposure fix before anything else in §3.7.
+- **A cash-advance surface is live against a model Posture A calls
+  quiescent.** The vendor-panel Finances screen renders an "unlock cash
+  advances" section with a request button against `GET/POST
+  /vendor/hawala/advances`, which sit behind no flag, plan feature or
+  middleware matcher, while `docs/POSTURE_A_COMPLIANCE.md` records
+  `VendorAdvance` as "quiescent under Posture A — activate only after legal
+  review". Gate or hide it (S); no lender directory may sit beside it.
+- **The donation rail's documents disagree with its code twice more.**
+  `docs/FISCAL_SPONSOR_DECISION.md` says a non-live sponsor forces
+  `settlement_mode` to `ledger_batch`; the service never touches
+  `settlement_mode`. `docs/POSTURE_A_COMPLIANCE.md`'s CI invariant for the
+  donation job cites a spec file name that does not exist, and the spec
+  that does exist has no donation assertion. And the admin settings route
+  refuses `ledger_batch` unless the tenancy grants it while the vendor
+  route applies no such check on the same row.
+- **The volunteer hours stack is broken end to end.** `garden_time_credit`'s
+  only writer (`verifyVolunteerHoursWorkflow`) has no callers and writes
+  columns the model does not have; `POST /store/gardens/[id]/members`
+  writes three fields `garden_membership` lacks; `progression`'s aggregate
+  recompute queries an entity and field that do not exist and swallows the
+  error, so the storefront character sheet's "⏱ Time Credits" stat is
+  always 0. Retire or repair before any time-bank copy points at it (§3.10).
+
 ---
 
 ## 2. What these features already stand on
@@ -172,12 +209,16 @@ For planning, the substrate that exists today:
   (with `FARM_COOP`, `FOOD_HUB`, `CSA`, `BUYING_CLUB`, `INDIGENOUS`,
   `WORKER_OWNED` types), and `governance` (garden-scoped proposals, votes,
   delegation).
-- **Mutual aid** — `mutual-aid`, `aid-network`, `donation` (+ the
-  fiscal-sponsor registry), `volunteer`, `fund-accounting`, the Threshold
-  surface (`docs/COMPOSITION_LAYER.md`), and Blackout's aid pools and Grove
-  den playbook.
-- **Recurring and cyclical supply** — `order-cycle`, `subscription`,
-  `season`, `agriculture`, `harvest`.
+- **Mutual aid** — `mutual-aid` (routes only, no screen), `aid-network`
+  (routes and a panel), `donation` (+ the fiscal-sponsor registry),
+  `volunteer`, `fund-accounting`, `demand-pool`'s `MUTUAL_AID` archetype
+  (the ask path that has UI), the Threshold surface
+  (`docs/COMPOSITION_LAYER.md`), and Blackout's coalition aid posts, aid
+  pools and Grove den playbook.
+- **Recurring and cyclical supply** — `order-cycle` (the cycle half
+  surfaced; the share-box half service-only), `subscription` (Stripe
+  renewal, dark), `season` (crop planning, not a selling season),
+  `agriculture`, `harvest`.
 - **Money and rails** — `hawala-ledger` with the six-rail registry
   (`rails.ts`), the Posture A guard, the dual-rail selector, escrow with
   arbitration, external reconciliation, monitors and lineage (W1a);
@@ -236,9 +277,12 @@ see is not a referral:
   does), the panel's `QuestCatalogEntry` type and quest-detail screen render
   them, and `packet.ts` prints them under the disclaimer.
 - The vault is its own gate (`FF_DOCUMENT_VAULT_V1` + `vendor.document_vault`,
-  which `starter`, `pro` and `scale` all carry); the quest copy should say a
-  document requirement needs the vault enabled rather than showing it as
-  "unavailable" without explanation.
+  which `starter`, `pro`, `scale` and the embed pack carry and the free
+  plan does not); the quest copy should say a document requirement needs
+  the vault enabled rather than showing it as "unavailable" without
+  explanation. A third serializer of the definitions, `GET
+  /vendor/creator/quests`, is gated by the feature flag alone with no plan
+  check; either align it or record it as a deliberately different gate.
 
 Stage-gate thresholds stay as they are until a real lender says otherwise;
 the disclaimer already says the lender decides. Whole-catalog coverage is
@@ -278,12 +322,15 @@ and D5 says any richer spatial query comes from Blackout's API, not a new
 FBM table — Blackout's spatial contract is geocode-only today.
 
 Keep the directory visibly separate from `hawala-ledger`'s `VendorAdvance`
-and `VendorCreditLine` models, which are quiescent under Posture A pending
-legal review. A lender directory exists because FBM does not lend; no page
-may present the two side by side as "financing on FBM".
+(cash advances, recorded as quiescent under Posture A pending legal review —
+and, per §1a, already offered on the vendor-panel Finances screen against
+ungated routes) and `VendorCreditLine` (vendor-to-vendor trade credit). A
+lender directory exists because FBM does not lend; no page may present the
+two side by side as "financing on FBM".
 
 Hygiene found alongside: the `referral` module has no row in
-`docs/MODULE_CATALOG.md`.
+`docs/MODULE_CATALOG.md`, and that catalogue's `creator-attribution` row
+appears twice.
 
 ### 3.3 No vendor-facing fiscal-sponsorship pathway — **extend, S–M**
 
@@ -331,7 +378,11 @@ Three things the copy and the definition must get right:
 - **Whose sponsor.** FBM's own AMP relationship (not yet signed) covers
   FBM's checkout donations, not vendors; a vendor's sponsor is the vendor's
   own relationship. A worker co-op is directed to Q11, because fiscal
-  sponsorship is not the instrument for a for-profit enterprise. And the
+  sponsorship is not the instrument for a for-profit enterprise. The Grove
+  recipe's `hasDonations` key has no vendor-scoped donation surface behind
+  it — donations are one platform-level beneficiary rail — so a sponsored
+  project's only in-FBM receipt path today is as a verified
+  `donation_beneficiary`, and the copy must not imply more. And the
   donation-rail copy defects in §1a are fixed in the same change, so the new
   quest does not inherit an over-claim it sits beside.
 
@@ -348,16 +399,20 @@ FBM side:
   migration with §3.6's certification types. The vocabulary is
   hand-duplicated in three places that all change together — the model
   enum, the vendor `POST /vendor/vault` body union, and the vendor-panel
-  `VaultDocType` + `DOC_TYPES` list. Until then a bylaws upload is
-  `contract`.
-- Q11's `governance_bylaws` requirement gains `satisfied:
-  hasVerifiedDocType("governing_document")` (checked and in date, like every
-  other vault predicate since 2026-09-03) — which only means anything once
-  the admin vault screen from §1a exists, because today verification is an
-  API call nobody has a button for. Its note changes from "upload to the
-  shared vault" to "upload to your vault and consent to the documents
-  scope": the vault is seller-scoped and collective quests flat-map
-  consenting members' own documents; there is no collective-owned vault.
+  `VaultDocType` + `DOC_TYPES` list — and the route itself casts an unknown
+  `doc_type` to `other` without validating, so the new value needs a
+  400-path too. Until then a bylaws upload is `contract`.
+- Q11's `governance_bylaws` requirement is retagged `assisted` and gains
+  `satisfied: hasVerifiedDocType("governing_document")` (checked and in
+  date, like every other vault predicate since 2026-09-03). The retag is
+  not optional: the engine returns `checklist` for any `vendor-supplied` or
+  `outside-fbm` requirement and never calls its predicate, so a predicate on
+  the current tag is a dead step. It only means anything once the admin
+  vault screen from §1a exists, because today verification is an API call
+  nobody has a button for. Its note changes from "upload to the shared
+  vault" to "upload to your vault and consent to the documents scope": the
+  vault is seller-scoped and collective quests flat-map consenting members'
+  own documents; there is no collective-owned vault.
 - Q11's gatekeeper links point at the Blackout Coalition tools and at the
   SELC and USFWC libraries directly (from the §3.2 registry, `kind:
   legal`), so a vendor who is not on Blackout still has the source
@@ -377,6 +432,11 @@ Blackout side (recorded here; built there):
 - Render the `attribution` field (it is never displayed; only the italic
   trailer inside each body credits the source), and note that the
   mutual-aid seed is CC BY-NC.
+- A "new document" affordance. The Documents tool only lists what the
+  playbook reveal seeded at den creation; a den seeded without bylaws (a
+  Circle or Grove, whose seeds are mission, decision rules and the
+  mutual-aid agreement) has no way to add them, although the reveal copy
+  says the user can author documents from scratch.
 - The legal review of the four seed texts, already recorded as "a parallel
   content task" in `templates/index.ts`, gets an owner. Seeds are
   scaffolds; nothing in either repo carries articles of incorporation or a
@@ -492,13 +552,59 @@ which agencies, which renewal cadences — as checklist items and links;
 everything, FBM ships no state-law table. This is the same work item as
 `docs/COMMERCE_ROADMAP.md` Tier 2.4; it is tracked there and detailed here.
 
-### 3.7 The CSA primitive is built; the pitch is not — **reposition-only**
+### 3.7 The CSA cycle is built; the share-box season is not surfaced — **wire, M, then reposition**
 
-Before pitching a CSA network, run one share-box season end to end on
-staging and record the result here: template → cycle → subscription →
-allocation → dispatch → renewal, plus what a member sees at
-`/store/order-cycles/[id]`. Anything that dead-ends is a Tier 2 item in
-`docs/COMMERCE_ROADMAP.md`, not a new feature.
+The end-to-end check this section originally asked for was run against the
+tree on 2026-09-06: template → cycle → subscription → allocation → dispatch
+→ renewal. It fails at the first arrow. What a CSA network would be buying
+exists as service methods with no caller:
+
+- **The share-box half has no surface.** `createShareBoxTemplate`,
+  `createShareBoxSubscriptionRecord`, pause/resume/cancel,
+  `generateBoxesForCycle`, packed/dispatched, and the list methods are
+  called from no route, job, workflow, subscriber or screen. A coordinator
+  cannot define a template; a member cannot subscribe; boxes are never
+  generated.
+- **No money path.** `share_box_subscription` has no price, payment
+  method, cart, order or ledger link and is not connected to the
+  `subscription` module (whose Stripe off-session renewal exists behind
+  `FBM_SUBSCRIPTION_RENEWAL_LIVE`, undocumented in
+  `docs/ENV_CONFIGURATION.md`); `share_box.total_price` uses 0 as the unit
+  price whenever no per-cycle override is set.
+- **No buyer surface.** Nothing in the storefront calls
+  `/store/order-cycles`; no cart or order path writes
+  `order.metadata.order_cycle_id`, so the order-placed subscriber never
+  matches a real order, `sold_quantity` never moves, and the order↔cycle
+  link is never created. Every CSA sentence on the storefront is marketing
+  copy.
+- **Configured, never enforced.** `checkProductAvailability()` and
+  `calculateFeesForProduct()` have no callers; checkout ignores per-cycle
+  caps and enterprise fees. `is_recurring`/`recurrence_rule` are stored and
+  never read; `cloneOrderCycle` has no callers; nothing moves a cycle from
+  `closed` to `dispatched`.
+- **Two bugs and two dead buttons** on the surfaced half (§1a): the
+  unscoped vendor list, the wrong-column `seller_id` filter, "Import OFN"
+  and "remove product".
+- **Blackout is ahead.** It already has a per-vendor "order cycles"
+  announcement room, `cycle.open / cycle.close / sold_out` formatting and a
+  client card; FBM's only candidate emitter (`plant-ship-window.ts`,
+  `order_cycle.closed`, an aggregate count) has the wrong name and shape
+  and no callers.
+
+The wire, in order: scope the vendor list and fix the filter (S); expose
+the scheduler — template CRUD for coordinators, subscribe/pause/cancel for
+members, generate/pack/dispatch for the cycle (M); pick one billing owner —
+recommended: a share box references a `subscription` id and each generated
+box becomes that cycle's renewal order — rather than adding a third
+recurring model (M); one storefront cycle page that writes
+`order_cycle_id` into the cart (S–M); emit the three cycle events from the
+status job in the shape Blackout consumes (S); remove or implement the two
+dead buttons (S). `docs/AGGRESSIVE_OPERATIONS_GUIDE.md`'s "share-box
+scheduler 100% shipped" and `docs/LISTING_TYPES.md`'s seasonal `recurring`
+listing with a `share_template_id` describe this state as done; correct
+both when the wire lands. Six modules carry a "CSA" label with no shared
+key; only `subscription.type` and `share_box_subscription` mean "a member's
+standing share".
 
 Then the reach work, none of it code:
 
@@ -514,33 +620,84 @@ Then the reach work, none of it code:
 
 ### 3.8 Mutual aid: the internal half is built, the external half has no target — **wire, then build only against a name**
 
-- **Wire (S–M).** Expose mutual-aid asks and offers on Grove storefronts
-  (the playbook already enables `hasRequests`, `hasVolunteers`,
-  `hasDonations`); confirm whether the FBM→Blackout event catalogue
-  (`docs/contracts/blackout-integration.md`) carries any mutual-aid event
-  and, if not, add `aid.request.opened` / `aid.request.fulfilled` so
-  Blackout's aid boards can mirror FBM asks. Record the `mutual_aid_request`
-  / `demand_post` overlap (two "ask" models) as a D8 hygiene item.
+- **Give the ask board a surface (M).** `/store/mutual-aid/*` has none;
+  the Grove recipe's `hasRequests` is the generic `request` module, not
+  this one. The cheapest honest surface is a Grove storefront section, or a
+  vendorless `data-fbm="mutual-aid"` embed kind beside `demand-pools` —
+  which is a `connect.js` v2.x change with a changelog entry, not a copy
+  edit. Add the missing lifecycle writers (`WITHDRAWN`/`EXPIRED` on
+  requests and offers, an expiry job on `needed_by`/`available_until`) so
+  stale asks do not sit open on a public board forever; barter's
+  `DECLINED`/`WITHDRAWN` have the same gap.
+- **The FBM→Blackout seam (S + M).** The event catalogue
+  (`docs/contracts/blackout-integration.md`) carries no mutual-aid event and
+  Blackout's receiver accepts none. Add `aid.request.opened` /
+  `aid.request.fulfilled` carrying only what `toPublicAid` publishes —
+  locality and a distance band; FBM never sends coordinates (AUDIT_DEBT
+  W5-3) — and a Blackout handler onto `coalition_aid_posts`, whose
+  coordinates are `NOT NULL`: either that schema admits coordinate-less
+  mirrored posts or FBM asks are listed without map pins. Blackout's
+  `/v1/coalition/nearby`, which already returns no coordinates, is the
+  payload model. The deaddrop aid threads are not the target — they have no
+  server route.
+- **Record the overlap.** Four "ask" stores across two repos
+  (`mutual_aid_request`; `demand_post` with the `MUTUAL_AID` archetype;
+  Blackout coalition aid posts; Blackout deaddrop threads) and three
+  in-kind intake vocabularies (`aid-network` intake sources,
+  `food-distribution` order types, `harvest` allocation destinations) go
+  into `docs/AUDIT_DEBT.md` as D8 items; today its only mutual-aid entry is
+  the W5-3 privacy exclusion. Also record that a completed barter is posted
+  as a zero-amount `TRANSFER` with `reference_type: "ORDER"` on the
+  parties' USD wallets and merely tagged `intended_rail: "GIFT"` — GIFT has
+  no account type, so no entry can be on it.
 - **External adapter (L, deferred).** Only against a named source with an
-  API and a working adapter, per the channel-connector rule. hOurworld is
-  §3.10's external half; Craigslist/TrashNothing remain
+  API, a working adapter, and the consent agreement `docs/FBM_BUYER_HUB.md`
+  §5 requires before any inbound aggregation. No document names one.
+  hOurworld is §3.10's external half; Craigslist/TrashNothing remain
   `docs/COMMERCE_ROADMAP.md` Tier 5.14.
 
 ### 3.9 Depot relay is three builds in two repos — **sequence, L, not near-term**
 
-1. **A depot is a listing** (FBM). `docs/COMMERCE_ROADMAP.md` Tier 3.8 on
-   the `rental`/`kitchen` survivor — waiting on its §4 decision 2 — with a
-   storage fee whose refundable deposit is the custodial-money question its
-   decision 3 raises. `aid-network`'s `network_node` is the model to
-   generalise from if the survivor lacks a "place that holds stock".
-2. **A depot is a node a leg can hand off to** (Blackstar). Today `Node` is
-   a legal entity with a service radius; a depot needs a kind, hours and
-   capacity, and `ShipmentLeg` already has `from_node_id`/`to_node_id`.
-   Laravel-side; bilateral with the open per-shipment sequence numbers
-   (contract §9.3).
+1. **A depot is a listing** (FBM). `docs/COMMERCE_ROADMAP.md` §4 Tier 3
+   item 8 on the `rental`/`kitchen` survivor — waiting on its decision 2 —
+   with a storage fee whose refundable deposit is the custodial-money
+   question its decision 3 raises. `kitchen` already has `storage_cold` /
+   `storage_dry` space types, a rate ladder, capacity and operating hours,
+   and two deposit fields nothing writes; `rental` has none of that.
+   `aid-network`'s `network_node` is the "place that holds stock" to learn
+   from, but it is single-seller — nothing lets vendor B leave stock at, or
+   route through, vendor A's node — and it landed with its own
+   `haversineKm` after W5 retired six copies (a D8 regression to fold into
+   `lib/geo-distance`). `blackstar_shipment.pickup_point_id` is already a
+   placeholder a depot could ride, and five unshared pickup-location fields
+   (`order_cycle`, exchanges, `vendor-rules` windows, `food_delivery`,
+   `blackstar_shipment`) are the sixth thing a depot must not become.
+2. **A depot is a node a leg can hand off to** (Blackstar + contract).
+   `Node` has no kind, hours, capacity or coordinates, and eligibility is
+   jurisdiction + attestation + transport class, so a depot with no
+   vehicles can never be eligible; `ShipmentLeg` has `from_node_id`/
+   `to_node_id` but the console has no board or leg screen. On the FBM
+   side the receiver ignores leg events and contract v1 has no per-parcel
+   key — order-scoped events are applied to every parcel on the order — so
+   a depot leg is one wire-format change together with the open sequence
+   numbers (contract §9.3), not a Laravel-only change. `Node` coordinates,
+   if added, are data only: D5 keeps routing and nearby search in Blackout.
 3. **Pooling** (Blackstar). `api/docs/network-advantage-engine.md` §2
-   ("milk runs") is the design; nothing implements it. Design only until 1
-   and 2 exist and a real farmers-market cluster asks.
+   ("milk runs") is the design; nothing implements it, and its §1 OSRM
+   engine as written conflicts with D5. FBM's `food_delivery_batch` (one
+   courier run, many producers' parcels, client-written route) and
+   `order-cycle`'s hub role are the batch nouns to build a planner on.
+   Design only until 1 and 2 exist and a real farmers-market cluster asks.
+
+Two dead seams to resolve before adding any event: Blackout's
+`fbmMatrixBridge/logisticsRooms.ts` consumes `blackstar.driver_assigned /
+pickup_confirmed / delivered / failed` and says FBM emits them — no FBM
+producer exists, and the vocabulary differs from the FBM↔Blackstar
+`shipment.*` contract; and `docs/contracts/marketplace-layer.md` still
+documents the retired static-key `POST /v1/integrations/blackstar/shipments`.
+Pick one lifecycle vocabulary. The `courier-collective` manifest is a
+schema fixture, not a running co-op — its own notes say the settlement
+chain is unwired — so it is not evidence that a delivery co-op exists.
 
 Gates that hold throughout: FBM's fulfillment modules stay the live
 implementation (D2's absorption half is unchanged by the unfreeze);
@@ -559,20 +716,52 @@ re-planned here. What this roadmap adds:
   settle labour between members and are never tender for goods. That is
   what `rails.ts`, the guard and `NonCashRailError` enforce; the copy should
   not promise what the ledger refuses.
+- **What ignition actually needs.** `docs/CCR_HRS_IGNITION.md` §5 step 4
+  (provisioning + the open-balance writer) cannot run ahead of its step 1:
+  `createTransfer` refuses overdraft, so an opening balance cannot be
+  posted from an empty reserve without `ISSUE` or an HRS-specific issuance
+  script. Three smaller prerequisites ride with it: a validated
+  provisioning path (today only the unvalidated `POST /admin/hawala/accounts`
+  could make a `TIME_BANK` account — tighten it); the `HOURS_OPEN_BALANCE`
+  / `HOURS_ARCHIVE_BALANCE` / `TIMEBANK_*` entry types added to the
+  `ledger_entry.entry_type` enum with the parity spec extended past
+  `reference_type`; and one opening-balance vocabulary chosen between the
+  issuer entry type and the bilateral reference type, both declared and
+  neither written. Then the first settlement-record emitter on a manifest
+  that declares `hours` (childcare, tool-library, courier-collective) —
+  step 5 — lights the reconciler.
+- **The policy answer §5 does not list.** Issued hours (a starter grant
+  from a reserve — the model Blackout's "4 FBM-HOUR" grant and its "we
+  begin in trust, not debt" seed imply) or classic mutual credit, where
+  members may go negative. The ledger's balance-never-negative invariant
+  forbids the second without a ledger change. Record it as (d) beside (a)
+  and (b).
 - **The Blackout grant.** Grove dens seed `onboardingCreditGrant: { amount:
-  '4', currency: 'FBM-HOUR' }` (`packages/blackout-protocol/src/playbook/contracts.ts`).
-  Its FBM counterpart is a `HOURS_OPEN_BALANCE` entry on a member's
-  `TIME_BANK` account — ignition step 4. Write the contract as
-  FBM-canonical with a Blackout consumer mirror once that step exists;
-  until then the grant is vocabulary.
-- **The second hours ledger.** `volunteer/models/time-credit.ts`
-  (`garden_time_credit`) prices hours in currency and redeems them for
-  harvest claims and plot fees. Either it becomes garden-local state,
-  declared non-monetary the way channel points were (W1b), or it is
-  migrated onto HRS. An operator decision; record it with the two policy
-  answers.
+  '4', currency: 'FBM-HOUR' }` (`packages/blackout-protocol/src/playbook/contracts.ts`),
+  and the reveal screen renders "Your new den starts with 4 FBM-HOUR in its
+  kitty" — a live promise held in client den state with no server code and
+  no ledger behind it. Its FBM counterpart is a `HOURS_OPEN_BALANCE` entry
+  on a member's `TIME_BANK` account. Write the contract as FBM-canonical
+  with a Blackout consumer mirror once step 4 exists, settling the name
+  (`FBM-HOUR` is not FBM's unit, `HRS`) and an hours balance on the
+  entitlements read; until then soften the reveal copy.
+- **The dead hours stack.** `volunteer`'s `garden_time_credit` is not a
+  second ledger but a broken one (§1a): an uncalled writer, wrong field
+  names, a character-sheet stat that is always 0, plus `volunteer_log`'s
+  informational `credits_earned` at a hard-coded $15/hour and a third
+  `TimeCredit` interface in `garden/services/garden-ledger.ts` with no callers. Retire it
+  the way channel points were decided in W1b, or migrate its intent onto
+  HRS. An operator decision; record it as (c) with the policy answers.
+- **The doc gate.** `posture-a-guard.ts` cites `docs/POSTURE_A_COMPLIANCE.md`
+  "§ hours rail"; no such section exists, and that document's rules 7–8 (no
+  buyer-to-buyer or vendor-to-buyer transfers) carry no carve-out for a
+  user-to-user-transferable non-money rail. Write the section before the
+  first hour moves.
 - **hOurworld** is the external time-bank network — a `Tier 5.14` adapter,
   and the same target the brainstorm listed under barter.
+  `docs/manifests/tool-library.md` already records the decision not to
+  adopt Cyclos or hOurworld as the ledger, so any adapter is a bridge to an
+  external network, never a rail.
 
 ---
 
@@ -589,9 +778,12 @@ serializer so the panel and packet can render them (S); render
 `effective_status` in the vendor vault table and add the admin vault screen
 (S + S); fix the donation widget and marketing copy to say "pending" until a
 sponsor is live, scope `POST /vendor/donations/settings` correctly and
-align its `settlement_mode` values (S); and list `ChargebackProtection` /
+align its `settlement_mode` values (S); list `ChargebackProtection` /
 `ChargebackClaim` in `docs/POSTURE_A_COMPLIANCE.md`'s quiescent models (S)
-pending the ruling in decision 8.
+pending the ruling in decision 8; scope `GET /vendor/order-cycles` to the
+caller and fix the store `seller_id` filter (S); gate or hide the
+vendor-panel cash-advance section until the legal review Posture A already
+requires (S); and make the character-sheet "Time Credits" stat honest (S).
 1. Extend Q3 with CDFI requirements, links and a documents section (§3.1).
 2. The partner directory registry, `/store/partners`, its storefront page,
    and the quests reading it for gatekeeper links (§3.2), with legal and
@@ -600,8 +792,11 @@ pending the ruling in decision 8.
    half).
 4. Q11 gatekeeper links to the Blackout founding-documents surface and the
    SELC/USFWC libraries (§3.4, first half).
-5. The CSA end-to-end check and the network-facing positioning (§3.7).
-6. Honest time-bank copy on the Service and Grove cards (§3.10, framing).
+5. The CSA-network positioning and pilot checklist (§3.7) — written now,
+   published only after item 12 lands.
+6. Honest time-bank copy on the Service and Grove cards, the vendor-panel
+   "bank your hours" pathway, and Blackout's "4 FBM-HOUR" reveal line
+   (§3.10, framing).
 
 **Tier B — wiring across modules and repos, no ruling needed.**
 7. `fiscal-sponsorship-readiness` definition + the `funds` domain-optional
@@ -617,20 +812,29 @@ pending the ruling in decision 8.
     `satisfied` predicates read them, and Q8 gains the `permits` substrate
     field. The TEXT+CHECK conversion in `docs/COMMERCE_ROADMAP.md` §4
     decision 5 remains a hygiene ruling, no longer a blocker.
+12. The CSA share-box wire (§3.7): scheduler routes and screens, one
+    billing owner, a storefront cycle page that writes `order_cycle_id`,
+    the three cycle events Blackout already consumes, the two dead buttons.
+    M; no ruling needed, and the one item here a CSA network would notice
+    first.
 
 **Tier C — waiting on a recorded operator decision.**
-12. HRS ignition steps 4–5 and the Blackout `FBM-HOUR` contract — on
-    `docs/CCR_HRS_IGNITION.md` §5 policy answers (a) and (b), plus the
-    `garden_time_credit` disposition (§3.10).
-13. Micro-depot listings — on the `rental`/`kitchen` ruling and the
+13. HRS ignition — `docs/CCR_HRS_IGNITION.md` §5 step 1 (issuance) then
+    steps 4–5, the entry-type parity, the Posture A hours section, and the
+    Blackout `FBM-HOUR` contract — on that document's policy answers (a)
+    and (b), plus (c) the dead volunteer hours stack and (d) issued hours
+    versus mutual credit (§3.10).
+14. Micro-depot listings — on the `rental`/`kitchen` ruling and the
     custodial-deposit ruling (§3.9 step 1).
 
 **Tier D — only against a real counterpart.**
-14. Blackstar depot node kind and relay through a depot (§3.9 step 2) —
-    when a farmers-market cluster and a logistics node both exist.
-15. External adapters: hOurworld (time bank, §3.10), mutual-aid data
-    sources (§3.8) — each only with a working adapter against a named API.
-16. Batched aggregation / "milk runs" (§3.9 step 3) — design only.
+15. Blackstar depot node kind, leg events and a per-parcel key on the
+    contract, and relay through a depot (§3.9 step 2) — when a
+    farmers-market cluster and a logistics node both exist.
+16. External adapters: hOurworld (time bank, §3.10), mutual-aid data
+    sources (§3.8) — each only with a working adapter against a named API
+    and a consent agreement.
+17. Batched aggregation / "milk runs" (§3.9 step 3) — design only.
 
 **Not on this roadmap, deliberately (recommended rulings for §8):**
 FBM-run insurance pooling; FBM-run payroll; any compensated lender or
@@ -652,8 +856,10 @@ None is a planning change; each is a ruling this document cannot make.
    house-convention question, and that roadmap's row should be corrected to
    match.
 4. **HRS policy** — `docs/CCR_HRS_IGNITION.md` §5 (a) who holds wallets,
-   (b) what governs issuance; plus (c) whether `garden_time_credit` is
-   garden-local or migrates.
+   (b) what governs issuance; plus (c) whether the dead `garden_time_credit`
+   stack is retired or migrated, and (d) issued hours from a reserve or
+   mutual credit with negative balances — the ledger supports only the
+   first today.
 5. **`rental` vs `kitchen`** and **custodial deposits** —
    `docs/COMMERCE_ROADMAP.md` §4 decisions 2 and 3; micro-depots wait on
    both.
@@ -705,6 +911,11 @@ discrepancy is visible, because an unrecorded gate blocks nothing:
   chargeback pool whose schema is already migrated and unlisted (§1a).
 - Refundable depot storage deposits (already flagged as
   `docs/COMMERCE_ROADMAP.md` §4 decision 3).
+- The hours rail itself: `posture-a-guard.ts` cites a Posture A "§ hours
+  rail" that has never been written, and the document's transfer rules
+  carry no carve-out for a user-to-user non-money rail (§3.10).
+- Vendor cash advances: `VendorAdvance` is recorded as quiescent pending
+  legal review, and a live vendor-panel surface offers it anyway (§1a).
 
 ---
 
@@ -716,12 +927,12 @@ not promise a feature that is not there.
 
 | Community | What exists | What this roadmap adds | Honest gap |
 | --- | --- | --- | --- |
-| CSA networks, buying clubs, bulk-food co-ops | `order-cycle`, Cycle playbook, `cooperative` (`CSA`, `BUYING_CLUB`), `demand-pool`, `bargaining` | §3.7 pitch and pilot checklist | Share-box season needs its end-to-end check first |
+| CSA networks, buying clubs, bulk-food co-ops | `order-cycle` (cycle half), Cycle playbook, `cooperative` (`CSA`, `BUYING_CLUB`), `demand-pool`, `bargaining` | §3.7 wire, then the pitch and pilot checklist | The share-box season has no surface and no billing yet; do not pitch it before Tier B item 12 lands |
 | CDFIs, credit unions | Q3 `microlender-readiness`, Q1 `fsa-farm-loan`, Q12 `land-pooling` | §3.1, §3.2 | No lender partnership exists; the directory is unpaid and link-out |
 | Community land trusts, freedom farms, Black land reclamation | Q12 `land-pooling` (pooled loan-readiness toward shared land), `garden` + `governance`, Q1 | §3.1 links; Q12 gains the §3.2 registry as gatekeeper links | Land tenure itself is outside FBM; Q12 assembles the joint financing packet, the lender or seller decides |
 | Seed libraries, seed-saving networks | `knowledge-base` seed-starting article; `barter_proposal`; `garden` | — | Seed library is `docs/COMMERCE_ROADMAP.md` Tier 4.11, unbuilt |
-| Mutual-aid networks, community fridges, tool libraries, free stores | Grove playbook, `mutual-aid`, `aid-network`, `donation`, `volunteer`, `fund-accounting`; tool-library and repair-cafe manifests; Blackout aid pools | §3.3, §3.8 | External network adapters have no named target |
-| Time banks | HRS rail (guarded), Service playbook, manifests declaring `hours`, Blackout Grove grant | §3.10 | Rail not lit; hours never buy goods |
+| Mutual-aid networks, community fridges, tool libraries, free stores | Grove playbook, `aid-network` (with a panel), `donation`, `fund-accounting`, `demand-pool`'s `MUTUAL_AID` archetype (with storefront pages); `mutual-aid` routes; tool-library and repair-cafe manifests; Blackout coalition aid posts and aid pools | §3.3, §3.8 | FBM's own ask board has no screen; external network adapters have no named target |
+| Time banks | HRS rail (guarded), Service playbook, manifests declaring `hours`, Blackout Grove grant | §3.10 | Rail not lit and cannot be funded before issuance exists; hours never buy goods; the "Time Credits" stat and the "4 FBM-HOUR" reveal are promises with nothing behind them |
 | Worker co-ops (cleaning, construction, delivery) | Workshop/Commons playbooks, Q11 `coop-formation`, progressions map, `courier-collective` manifest | §3.4, §3.5 referrals, §3.9 | Bylaws templates are in Blackout; delivery relay is Tier D |
 | Farmers markets and their vendors | Q6 `market-vendor` (application bundle), Q8, `cottage-food`, `season`, `ticket-booking` venues | §3.6 | Market-day mode is `docs/COMMERCE_ROADMAP.md` Tier 4.12 |
 | Bail funds, reentry networks | `fund-accounting`, `donation` via fiscal sponsor | §3.3 | Posture A rule 9: no third-party fund routing outside a registered beneficiary |
