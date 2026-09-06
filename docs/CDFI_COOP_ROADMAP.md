@@ -140,7 +140,12 @@ each on a surface this roadmap would otherwise build on:
   route before §3.3 ships anything that inherits them. *Closed 2026-09-06
   (route):* the vendor route now answers `POST` with 403 and the panel block
   is read-only; only `/admin/donations/settings` writes the row, and the
-  `direct` value left with the vendor schema. The copy fix stays open.
+  `direct` value left with the vendor schema. *Copy closed the same day:*
+  `GET /store/donations/config` now reports `fiscal_sponsor_live`, the
+  checkout widget shows "Fiscal sponsor pending — routing held" until it is
+  true, and the home and `/why-we-exist` copy say the same. The
+  `settlement_mode` sentence in `docs/FISCAL_SPONSOR_DECISION.md` is still
+  ahead of the service (below).
 - **A dormant insurance pool is already in the money core.**
   `hawala-ledger/models/payout-config.ts` defines `ChargebackProtection`
   ("Pool for vendor chargeback insurance": 0.2% of each sale, capped
@@ -163,7 +168,11 @@ each on a surface this roadmap would otherwise build on:
   `days_until_expiry`; the vendor-panel table ignores both and renders the
   stored `verified` boolean. `PATCH /admin/vault/:id` — `markVerified`'s
   only caller — has no admin-panel screen, so a document can be verified
-  only by calling the API. Both are S.
+  only by calling the API. Both are S. *Closed 2026-09-06:* the vendor table
+  renders the API's `effective_status` with an expiry warning, and the admin
+  panel has a Document Vault queue (unverified first, expiring-soon filter,
+  verify / withdraw with a note) over `GET /admin/vault` and
+  `PATCH /admin/vault/:id`.
 
 The adversarial verification of 2026-09-06 added four more:
 
@@ -204,6 +213,10 @@ The adversarial verification of 2026-09-06 added four more:
   recompute queries an entity and field that do not exist and swallows the
   error, so the storefront character sheet's "⏱ Time Credits" stat is
   always 0. Retire or repair before any time-bank copy points at it (§3.10).
+  *Read repaired 2026-09-06:* the recompute now queries `garden_time_credit`
+  by `customer_id` and sums `amount` over `available` / `redeemed` credits,
+  so the stat reports what the table holds — which is nothing until the
+  writer is fixed or the model retired (decision 4c).
 
 ---
 
@@ -806,16 +819,17 @@ substrate fields (done 2026-09-06, with the customer and channel readers
 fixed alongside; was S–M); return `gatekeeper_links` from the vendor catalog
 serializer so the panel and packet can render them (S — done 2026-09-06); render
 `effective_status` in the vendor vault table and add the admin vault screen
-(S + S); fix the donation widget and marketing copy to say "pending" until a
-sponsor is live, scope `POST /vendor/donations/settings` correctly and
-align its `settlement_mode` values (S — route done 2026-09-06, copy open);
+(S + S — done 2026-09-06); fix the donation widget and marketing copy to say
+"pending" until a sponsor is live, scope `POST /vendor/donations/settings`
+correctly and align its `settlement_mode` values (S — done 2026-09-06);
 list `ChargebackProtection` / `ChargebackClaim` in
 `docs/POSTURE_A_COMPLIANCE.md`'s quiescent models (S — done 2026-09-06)
 pending the ruling in decision 8; scope `GET /vendor/order-cycles` to the
 caller and fix the store `seller_id` filter (S — done 2026-09-06); gate or
 hide the vendor-panel cash-advance section until the legal review Posture A
 already requires (S — done 2026-09-06, flag-gated default off); and make
-the character-sheet "Time Credits" stat honest (S).
+the character-sheet "Time Credits" stat honest (S — read repaired
+2026-09-06; the dead writer stays decision 4c).
 1. Extend Q3 with CDFI requirements, links and a documents section (§3.1).
 2. The partner directory registry, `/store/partners`, its storefront page,
    and the quests reading it for gatekeeper links (§3.2), with legal and

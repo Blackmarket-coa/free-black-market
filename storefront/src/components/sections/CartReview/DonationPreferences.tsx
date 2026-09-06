@@ -12,6 +12,13 @@ type Props = {
   /** 501(c)(3) fiscal sponsor name surfaced under Posture A compliance. */
   fiscalSponsorName?: string | null
   fiscalSponsorUrl?: string | null
+  /**
+   * Only true once the sponsorship agreement is live
+   * (`docs/FISCAL_SPONSOR_DECISION.md`). Anything else renders the "pending"
+   * copy: the widget must never tell a donor their gift is routed through a
+   * 501(c)(3) before it is.
+   */
+  fiscalSponsorLive?: boolean
   initialMetadata?: Record<string, any>
 }
 
@@ -22,6 +29,7 @@ export default function DonationPreferences({
   roundUpEnabled,
   fiscalSponsorName,
   fiscalSponsorUrl,
+  fiscalSponsorLive = false,
   initialMetadata,
 }: Props) {
   const [isPending, startTransition] = useTransition()
@@ -39,7 +47,7 @@ export default function DonationPreferences({
     <div className="w-full mb-6 border rounded-sm p-4 bg-white">
       <h3 className="font-semibold mb-3">Community Donation</h3>
       <p className="text-sm text-gray-600 mb-2">Choose donation percentage, optional round-up, and a beneficiary organization.</p>
-      {fiscalSponsorName ? (
+      {fiscalSponsorName && fiscalSponsorLive ? (
         <p className="text-xs text-gray-500 mb-4">
           Routed through{" "}
           {fiscalSponsorUrl ? (
@@ -57,7 +65,20 @@ export default function DonationPreferences({
           , our 501(c)(3) fiscal sponsor. They issue donor receipts and handle
           state charity registrations.
         </p>
-      ) : null}
+      ) : (
+        <p className="text-xs text-gray-500 mb-4" data-testid="donation-sponsor-pending">
+          Fiscal sponsor pending — routing held.
+          {fiscalSponsorName ? (
+            <>
+              {" "}Our sponsorship agreement with{" "}
+              <span className="font-medium">{fiscalSponsorName}</span> is not yet in
+              effect.
+            </>
+          ) : null}{" "}
+          Donations are recorded and held until it is; no 501(c)(3) donor receipt
+          is issued yet.
+        </p>
+      )}
 
       <div className="space-y-3">
         <label className="block text-sm">

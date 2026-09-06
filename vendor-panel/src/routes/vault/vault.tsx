@@ -20,6 +20,7 @@ import {
   useUploadVaultFile,
   type VaultDocType,
 } from "../../hooks/api/vault"
+import { describeVaultStatus } from "../../lib/vault-status"
 
 const DOC_TYPES: VaultDocType[] = [
   "lease",
@@ -92,7 +93,8 @@ const VaultPage = () => {
         <Text className="text-ui-fg-subtle">
           Store leases, licenses, insurance certificates, and credentials. Quests
           reference these as evidence. Verification is done by an FBM reviewer —
-          it is never auto-set.
+          it is never auto-set — and a verified document stops counting the day
+          it expires.
         </Text>
       </Container>
 
@@ -146,7 +148,7 @@ const VaultPage = () => {
               <Table.Row>
                 <Table.HeaderCell>Label</Table.HeaderCell>
                 <Table.HeaderCell>Type</Table.HeaderCell>
-                <Table.HeaderCell>Verified</Table.HeaderCell>
+                <Table.HeaderCell>Status</Table.HeaderCell>
                 <Table.HeaderCell>Expires</Table.HeaderCell>
                 <Table.HeaderCell />
               </Table.Row>
@@ -159,11 +161,17 @@ const VaultPage = () => {
                     <Badge size="2xsmall">{d.doc_type}</Badge>
                   </Table.Cell>
                   <Table.Cell>
-                    {d.verified ? (
-                      <Badge size="2xsmall" color="green">Verified</Badge>
-                    ) : (
-                      <Badge size="2xsmall" color="grey">Unverified</Badge>
-                    )}
+                    {(() => {
+                      // The API's `effective_status`, not the stored flag: a
+                      // lapsed certificate must read "Expired" here before a
+                      // buyer or a quest predicate stops counting it.
+                      const status = describeVaultStatus(d)
+                      return (
+                        <Badge size="2xsmall" color={status.color}>
+                          {status.label}
+                        </Badge>
+                      )
+                    })()}
                   </Table.Cell>
                   <Table.Cell>
                     {d.expires_at ? new Date(d.expires_at).toLocaleDateString() : "—"}

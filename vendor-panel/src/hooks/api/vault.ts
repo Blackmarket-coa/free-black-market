@@ -20,6 +20,10 @@ export interface VaultDocument {
   expires_at?: string | null
   verified: boolean
   verified_at?: string | null
+  /** Derived by the API at request time: what the document proves today. */
+  effective_status?: "unverified" | "verified" | "expired"
+  /** Whole days until expiry; negative once past; null when open-ended. */
+  days_until_expiry?: number | null
 }
 
 export interface CreateVaultInput {

@@ -51,6 +51,7 @@ const Review = ({
     round_up_enabled: boolean
     fiscal_sponsor_name?: string | null
     fiscal_sponsor_url?: string | null
+    fiscal_sponsor_live?: boolean
   }
   storefronts: PublicStorefront[]
   donationFeatureGates?: { donation_routing: boolean; advanced_automation: boolean }
@@ -99,6 +100,7 @@ const Review = ({
           roundUpEnabled={Boolean(donationSettings?.round_up_enabled)}
           fiscalSponsorName={donationSettings?.fiscal_sponsor_name ?? null}
           fiscalSponsorUrl={donationSettings?.fiscal_sponsor_url ?? null}
+          fiscalSponsorLive={donationSettings?.fiscal_sponsor_live === true}
           initialMetadata={(cart?.metadata as Record<string, any>) || {}}
         />
       ) : (

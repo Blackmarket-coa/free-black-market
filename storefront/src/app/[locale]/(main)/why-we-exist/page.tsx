@@ -65,7 +65,7 @@ export default function WhyWeExistPage() {
           <div className="rounded-2xl border p-5"><p className="font-semibold mb-1">Shoppers</p><p className="text-gray-700">Buy direct from verified makers at fair prices — no middlemen, no markups.</p></div>
           <div className="rounded-2xl border p-5"><p className="font-semibold mb-1">Producers &amp; agriculture</p><p className="text-gray-700">Growers and food producers reach neighbors through CSA shares and order cycles.</p></div>
           <div className="rounded-2xl border p-5"><p className="font-semibold mb-1">Creators &amp; vendors</p><p className="text-gray-700">Own your storefront, audience, and referrals — and keep 97% of every sale.</p></div>
-          <div className="rounded-2xl border p-5"><p className="font-semibold mb-1">Mutual aid &amp; organizers</p><p className="text-gray-700">Run community programs and route giving transparently through a fiscal sponsor.</p></div>
+          <div className="rounded-2xl border p-5"><p className="font-semibold mb-1">Mutual aid &amp; organizers</p><p className="text-gray-700">Run community programs and route giving transparently. Fiscal-sponsor routing is pending; donations are held until it is live.</p></div>
         </div>
       </section>
 

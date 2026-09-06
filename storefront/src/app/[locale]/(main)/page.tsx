@@ -356,7 +356,7 @@ export default async function Home({
             </Link>
             <Link href="/community-resources" className="rounded-xl border p-4 hover:border-green-400 hover:bg-green-50 transition-colors">
               <p className="font-semibold mb-1">🤝 Mutual aid &amp; community programs</p>
-              <p className="text-gray-600">Fund fridges, free stores, and local initiatives through transparent, fiscally-sponsored giving.</p>
+              <p className="text-gray-600">Fund fridges, free stores, and local initiatives through transparent giving. Fiscal sponsorship is pending; until it is live, donations are held and no 501(c)(3) receipts are issued.</p>
             </Link>
             <Link href="/why-we-exist" className="rounded-xl border p-4 hover:border-green-400 hover:bg-green-50 transition-colors">
               <p className="font-semibold mb-1">🌍 Why we exist</p>

@@ -792,6 +792,19 @@ export function getRouteMap({
               ],
             },
             {
+              path: "/vault",
+              errorElement: <ErrorBoundary />,
+              handle: {
+                breadcrumb: () => "Document Vault",
+              },
+              children: [
+                {
+                  path: "",
+                  lazy: () => import("@routes/vault"),
+                },
+              ],
+            },
+            {
               path: "/sellers",
               errorElement: <ErrorBoundary />,
               handle: {
