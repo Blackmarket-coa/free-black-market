@@ -330,6 +330,14 @@ Stage-gate thresholds stay as they are until a real lender says otherwise;
 the disclaimer already says the lender decides. Whole-catalog coverage is
 automatic (`__tests__/catalog.unit.spec.ts`).
 
+*Closed 2026-09-06* for the definition: Q3 carries the five requirements
+above (`business_plan` with the `hasVerifiedDocType("business_plan")`
+predicate, and Q1's `business_plan` got the same one), the CDFI Fund and
+OFN links beside Kiva, the documents section and the extended remaining
+items. Named lenders from the §3.2 registry are added when that registry
+exists. The vault-gate copy question and the `GET /vendor/creator/quests`
+gate alignment are still open.
+
 ### 3.2 No lender directory — **build, S–M, refer-out only**
 
 A code-config registry in a new `lender-directory` (or `partner-directory`)
@@ -831,6 +839,7 @@ already requires (S — done 2026-09-06, flag-gated default off); and make
 the character-sheet "Time Credits" stat honest (S — read repaired
 2026-09-06; the dead writer stays decision 4c).
 1. Extend Q3 with CDFI requirements, links and a documents section (§3.1).
+   *Done 2026-09-06.*
 2. The partner directory registry, `/store/partners`, its storefront page,
    and the quests reading it for gatekeeper links (§3.2), with legal and
    back-office referral rows (§3.5).

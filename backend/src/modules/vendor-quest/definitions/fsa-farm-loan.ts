@@ -4,6 +4,7 @@ import {
   monthsActiveAtLeast,
   lifetimeRevenueAtLeast,
   hasCashFlowHistory,
+  hasVerifiedDocType,
 } from "./shared"
 
 /**
@@ -79,7 +80,12 @@ const fsaFarmLoan: QuestDefinition = {
       key: "business_plan",
       label: "Business plan (draft)",
       tag: "assisted",
-      note: "FBM drafts a starting plan from your records; you complete it.",
+      // Same predicate as Q3: an assisted requirement with no predicate is
+      // treated as satisfied by the engine, so until 2026-09-06 this read as
+      // done before any plan existed.
+      needs: ["documents"],
+      satisfied: hasVerifiedDocType("business_plan"),
+      note: "FBM drafts a starting plan from your records; you complete it and upload it to your vault (type: business plan) for FBM review.",
     },
     {
       key: "leases_contracts",
