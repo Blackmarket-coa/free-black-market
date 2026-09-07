@@ -382,6 +382,21 @@ Hygiene found alongside: the `referral` module has no row in
 `docs/MODULE_CATALOG.md`, and that catalogue's `creator-attribution` row
 appears twice.
 
+*Closed 2026-09-07, first cut:* `modules/partner-directory` is the code
+registry (`key`, `name`, `url`, `tagline`, `kind`, `states`, `serves`,
+`products`; the eleven entries are national locators and program pages,
+every URL fetched at curation and the three that block automated clients
+marked `unverified_reason` for one human click), `GET /store/partners`
+filters by kind, state and audience, the storefront `/partners` page is the
+`/directory` filter form with a hub card on `/community-resources`, and
+Q1/Q3/Q11/Q12 take their partner links from the registry — a quest keeps
+only the gatekeeper's own program page inline. The `referral` row was
+added; `creator-attribution` appears once. Still open: named local lenders
+per launch region (added with `states` once an operator confirms the
+page), the optional table and seed, and the banking-partner names for
+unbanked-vendor onboarding copy — the directory carries the NCUA and CDFI
+Fund locators, and which partners the copy names is the operator's call.
+
 ### 3.3 No vendor-facing fiscal-sponsorship pathway — **extend, S–M**
 
 A new definition, `fiscal-sponsorship-readiness`, in "Cooperative &
@@ -842,7 +857,8 @@ the character-sheet "Time Credits" stat honest (S — read repaired
    *Done 2026-09-06.*
 2. The partner directory registry, `/store/partners`, its storefront page,
    and the quests reading it for gatekeeper links (§3.2), with legal and
-   back-office referral rows (§3.5).
+   back-office referral rows (§3.5). *First cut done 2026-09-07; regional
+   entries and the optional table remain.*
 3. Q8 certification vocabulary as checklist items and links (§3.6, first
    half).
 4. Q11 gatekeeper links to the Blackout founding-documents surface and the

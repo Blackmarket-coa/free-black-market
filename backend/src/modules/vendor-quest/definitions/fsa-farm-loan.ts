@@ -1,4 +1,5 @@
 import type { QuestDefinition, VendorSubstrate } from "../types"
+import { partnerLinks } from "../../partner-directory"
 import {
   disclaimer,
   monthsActiveAtLeast,
@@ -27,9 +28,11 @@ const fsaFarmLoan: QuestDefinition = {
   gatekeeper: {
     name: "your FSA loan officer",
     disclaimer: disclaimer("Your FSA loan officer"),
+    // The gatekeeper's own program page first, then every farm-serving
+    // lender the partner directory carries (FSA microloans among them).
     links: [
       { label: "USDA FSA Farm Loans", url: "https://www.fsa.usda.gov/programs-and-services/farm-loan-programs" },
-      { label: "FSA Microloan Program", url: "https://www.fsa.usda.gov/resources/programs/microloans" },
+      ...partnerLinks({ kind: ["microlender", "cdfi"], serves: "farm" }),
     ],
   },
   usesFields: ["inventory", "production", "documents", "channels"],

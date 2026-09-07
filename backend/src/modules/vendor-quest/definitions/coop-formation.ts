@@ -1,4 +1,5 @@
 import type { QuestDefinition } from "../types"
+import { partnerLinks } from "../../partner-directory"
 import { disclaimer, lifetimeRevenueAtLeast, monthsActiveAtLeast } from "./shared"
 
 /**
@@ -26,6 +27,7 @@ const coopFormation: QuestDefinition = {
     disclaimer: disclaimer("Your co-op's incorporation body and members"),
     links: [
       { label: "USDA Co-op Information", url: "https://www.rd.usda.gov/programs-services/cooperative-services" },
+      ...partnerLinks({ kind: ["legal", "back_office"], serves: "cooperative" }),
     ],
   },
   usesFields: ["documents"],
