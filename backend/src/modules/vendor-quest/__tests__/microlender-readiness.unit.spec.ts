@@ -2,6 +2,7 @@ import { getQuestDefinition } from "../definitions"
 import { evaluateQuest } from "../engine"
 import { buildPacketExport } from "../packet"
 import { makeSubstrate, makeEstablishedNursery } from "./_fixtures"
+import { partnerLinks } from "../../partner-directory"
 
 /**
  * Q3 `microlender-readiness` after the CDFI extension of 2026-09-06
@@ -28,13 +29,14 @@ const withPlan = (verified: boolean) =>
   })
 
 describe("Q3 microlender-readiness — CDFI requirements", () => {
-  it("links to the generic CDFI entry points and keeps Kiva", () => {
+  it("takes its links from the partner directory: CDFI locators, microlenders, crowdfunders", () => {
+    expect(q3.gatekeeper.links).toEqual(
+      partnerLinks({ kind: ["cdfi", "microlender", "crowdfunder"] })
+    )
     const labels = q3.gatekeeper.links.map((l) => l.label)
-    expect(labels).toEqual([
-      "CDFI Fund — list of certified CDFIs",
-      "Opportunity Finance Network — CDFI locator",
-      "Kiva",
-    ])
+    expect(labels).toContain("CDFI Fund — list of certified CDFIs")
+    expect(labels).toContain("Opportunity Finance Network — CDFI locator")
+    expect(labels).toContain("Kiva U.S.")
     for (const link of q3.gatekeeper.links) expect(link.url).toMatch(/^https:\/\//)
   })
 

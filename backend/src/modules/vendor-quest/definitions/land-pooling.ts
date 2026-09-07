@@ -1,4 +1,5 @@
 import type { QuestDefinition } from "../types"
+import { partnerLinks } from "../../partner-directory"
 import {
   disclaimer,
   membersAtLeast,
@@ -24,7 +25,7 @@ const landPooling: QuestDefinition = {
   gatekeeper: {
     name: "the FSA / lender / seller",
     disclaimer: disclaimer("The FSA, lender, or seller"),
-    links: [],
+    links: partnerLinks({ kind: ["cdfi", "microlender"], serves: "farm" }),
   },
   usesFields: ["documents"],
   requirements: [

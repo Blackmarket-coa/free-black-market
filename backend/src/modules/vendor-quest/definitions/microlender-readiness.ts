@@ -1,4 +1,5 @@
 import type { QuestDefinition } from "../types"
+import { partnerLinks } from "../../partner-directory"
 import {
   disclaimer,
   monthsActiveAtLeast,
@@ -31,25 +32,11 @@ const microlenderReadiness: QuestDefinition = {
   gatekeeper: {
     name: "the CDFI or microlender",
     disclaimer: disclaimer("The CDFI or microlender"),
-    // Generic entry points first — refer-out only; FBM never stands between
-    // the vendor and the lender. Kiva stays as the crowdfunding option.
-    // The CDFI Fund publishes its list of certified CDFIs as a dated download
-    // linked at the top of the certification page, so the page — the stable
-    // URL — is what we point at, not the file.
-    links: [
-      {
-        label: "CDFI Fund — list of certified CDFIs",
-        url: "https://www.cdfifund.gov/programs-training/certification/cdfi",
-      },
-      // OFN's site answers automated requests with 403, so this URL could not
-      // be machine-checked; it is OFN's long-standing locator and should be
-      // clicked once by a reviewer, like any refer-out link.
-      {
-        label: "Opportunity Finance Network — CDFI locator",
-        url: "https://www.ofn.org/cdfi-locator/",
-      },
-      { label: "Kiva", url: "https://www.kiva.org/borrow" },
-    ],
+    // Refer-out only; FBM never stands between the vendor and the lender.
+    // Every URL lives in the partner directory (`modules/partner-directory`),
+    // never here: the CDFI locators, the microlender programs and the
+    // crowdfunders, in directory order.
+    links: partnerLinks({ kind: ["cdfi", "microlender", "crowdfunder"] }),
   },
   usesFields: ["documents"],
   requirements: [
