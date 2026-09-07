@@ -108,7 +108,7 @@ const rankSimplicity = (id: PlaybookId): number => {
 export const PLAYBOOK_BLURBS: Record<PlaybookId, string> = {
   stall: "Solo seller — you list, you fulfill, you get paid.",
   atelier: "A small affinity group of makers, 2–12, deciding together.",
-  grove: "Mutual-aid co-op with sliding-scale pricing and volunteers.",
+  grove: "Mutual-aid co-op with sliding scale and member-to-member hour-sharing.",
   workshop: "Worker co-op with sociocratic circles and patronage refunds.",
   commons: "Multi-stakeholder co-op: producers, workers, and consumers.",
   cycle: "CSA / order-cycle farm with seasonal shares and subscriptions.",

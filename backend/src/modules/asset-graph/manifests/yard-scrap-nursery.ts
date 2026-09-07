@@ -9,8 +9,8 @@ import { ProjectManifestSchema, type ProjectManifestRecipe } from "./types"
  * plant plugs that flow to FBM retail (USDC / USD via Stripe ACH edge)
  * and to member-rate Commons sales.
  *
- * Plays on the `grove` playbook: "Mutual-aid co-op with internal scrip
- * and sliding scale." Sits on the `commerce` surface (FBM proper).
+ * Plays on the `grove` playbook: "Mutual-aid co-op with sliding scale and
+ * member-to-member hour-sharing." Sits on the `commerce` surface (FBM proper).
  *
  * Orthogonality role for v0: this manifest contributes recurring
  * production output, individual governance, and the CCR/USDC/USD

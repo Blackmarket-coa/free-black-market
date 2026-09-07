@@ -16,14 +16,14 @@ release to avoid breaking the 100+ call sites currently in vendor-panel.
 |-----------|-----------------------------------------------------|-----------:|:-------------:|:--------------:|:-------------------:|
 | Stall     | Solo seller                                         | 3 %        | opt-in        | opt-in         | no                  |
 | Atelier   | Affinity group, 2–12 members, flat consensus        | 3 %        | yes           | yes            | yes                 |
-| Grove     | Mutual-aid co-op with internal scrip + sliding scale| 3 %        | yes (first)   | yes            | yes                 |
+| Grove     | Mutual-aid co-op, sliding scale + member hour-sharing| 3 %        | yes (first)   | yes            | yes                 |
 | Workshop  | Worker co-op, sociocratic circles, patronage refunds| 3 %        | yes           | yes            | yes                 |
 | Commons   | Multi-stakeholder co-op (producer/worker/consumer)  | 3 %        | yes           | yes            | yes                 |
 | Cycle     | CSA / order-cycle farm                              | 3 %        | yes           | yes            | yes                 |
 | Kitchen   | Restaurant, commissary, shared kitchen              | 3 %        | yes           | yes            | yes                 |
 | Harvest   | Community garden, collective harvest                | 3 %        | yes           | yes            | yes                 |
 | Hub       | Federation hub, aggregates other vendors            | 3 %        | yes           | yes            | yes                 |
-| Service   | Time-bank service, sliding-scale practitioner       | 3 %        | yes           | opt-in         | yes                 |
+| Service   | Sliding-scale practitioner, scheduled hours         | 3 %        | yes           | opt-in         | yes                 |
 | Creator   | Independent creator monetizing an audience          | 3 %        | opt-in        | opt-in         | no                  |
 
 A vendor picks a **primary** playbook plus, optionally, **additional roles**
