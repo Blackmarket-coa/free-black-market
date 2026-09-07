@@ -190,9 +190,13 @@ describe("vendor invoices route: lifecycle", () => {
     expect(res.body.invoice.terms_days).toBe(30)
     const due = new Date(res.body.invoice.due_at)
     const issued = new Date(res.body.invoice.issued_at)
-    expect(
-      Math.round((due.getTime() - issued.getTime()) / (24 * 3600 * 1000))
-    ).toBe(30)
+    // Net-30 is thirty UTC calendar days, due at end of that day — the
+    // documented `deriveDueDate` semantics. Rounding the raw millisecond
+    // gap instead made this pass only in the afternoon (UTC): the end-of-day
+    // due time adds most of a day whenever the test runs before noon.
+    const utcDay = (d: Date) => Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate())
+    expect((utcDay(due) - utcDay(issued)) / (24 * 3600 * 1000)).toBe(30)
+    expect([due.getUTCHours(), due.getUTCMinutes()]).toEqual([23, 59])
   })
 
   it("leaves an invoice in draft when asked, with no due date", async () => {
