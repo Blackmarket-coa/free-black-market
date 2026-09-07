@@ -1,5 +1,5 @@
 import type { QuestDefinition } from "../types"
-import { partnerLinks } from "../../partner-directory"
+import { coopFoundingDocumentLinks } from "../../../shared/coop-founding-links"
 import { disclaimer, lifetimeRevenueAtLeast, monthsActiveAtLeast } from "./shared"
 
 /**
@@ -25,10 +25,11 @@ const coopFormation: QuestDefinition = {
   gatekeeper: {
     name: "your co-op's incorporation process and members",
     disclaimer: disclaimer("Your co-op's incorporation body and members"),
-    links: [
-      { label: "USDA Co-op Information", url: "https://www.rd.usda.gov/programs-services/cooperative-services" },
-      ...partnerLinks({ kind: ["legal", "back_office"], serves: "cooperative" }),
-    ],
+    // Blackout's Coalition tools plus the co-op-serving rows of the partner
+    // registry. Nothing is hard-coded here: the USDA Cooperative Services page
+    // that used to sit inline is now a registry row like the rest, so the
+    // progression edges that name bylaws show the same list.
+    links: coopFoundingDocumentLinks(),
   },
   usesFields: ["documents"],
   requirements: [
@@ -51,7 +52,15 @@ const coopFormation: QuestDefinition = {
       label: "Governance / bylaws",
       tag: "vendor-supplied",
       needs: ["documents"],
-      note: "Draft and upload to the shared vault.",
+      // There is no collective-owned vault: the vault is seller-scoped and a
+      // collective quest flat-maps the documents of members who consented to
+      // the `documents` scope. So the instruction is "your vault", not "the
+      // shared vault". The vault has no governing-document type yet
+      // (`docs/CDFI_COOP_ROADMAP.md` §3.4, Tier B item 11), which is also why
+      // this stays `vendor-supplied`: an `assisted` tag would need a
+      // `satisfied` predicate reading a type that does not exist, and without
+      // one the engine would read the requirement as already met.
+      note: "Draft it, then upload to your own vault (as a contract, until the vault has a governing-document type) and consent to the documents scope so the collective packet can include it. FBM never drafts or reviews it.",
     },
     {
       key: "incorporation",

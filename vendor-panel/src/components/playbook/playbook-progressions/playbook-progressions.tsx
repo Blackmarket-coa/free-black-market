@@ -179,6 +179,32 @@ const ProgressionCard = ({
         </div>
       )}
 
+      {edge.resource_links && edge.resource_links.length > 0 && (
+        <div className="flex flex-col gap-y-1">
+          <Text size="xsmall" weight="plus" className="text-ui-fg-subtle">
+            Where to read about those documents
+          </Text>
+          <ul className="flex flex-col gap-y-1">
+            {edge.resource_links.map((link) => (
+              <li key={link.url}>
+                <a
+                  href={link.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="txt-small text-ui-fg-interactive hover:text-ui-fg-interactive-hover"
+                >
+                  {link.label}
+                </a>
+              </li>
+            ))}
+          </ul>
+          <Text size="xsmall" className="text-ui-fg-muted">
+            Reference material only. FBM does not draft, review or file any of
+            these documents, and does not endorse any of these organisations.
+          </Text>
+        </div>
+      )}
+
       {edge.quest_key && (
         <Text size="xsmall" className="text-ui-fg-muted">
           There's a readiness quest that assembles the paperwork for this step.

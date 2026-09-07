@@ -117,7 +117,7 @@ is why it is the only terminal playbook.
 
 | Surface | Where | Behaviour |
 |---|---|---|
-| Panel | `vendor-panel` playbook settings | Opened, never pushed. Grouped by engine, shows gains, losses, prerequisites, and the seller's own affected listings |
+| Panel | `vendor-panel` playbook settings | Opened, never pushed. Grouped by engine, shows gains, losses, prerequisites, and the seller's own affected listings. An edge whose prerequisites name bylaws also lists where to read about those documents (`resource_links`, from `shared/coop-founding-links.ts`) — reference material, never a gate |
 | Onboarding | Picker reveal step | A short "where this can lead" strip that states staying put is normal |
 | Public | `storefront` `/vendor-types` | A "commonly leads to" line per card |
 

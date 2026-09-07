@@ -141,6 +141,16 @@ export const PARTNER_DIRECTORY: readonly PartnerEntry[] = [
     unverified_reason: "theselc.org answers automated requests with 403.",
   },
   {
+    key: "usfwc_coop_clinic",
+    name: "U.S. Federation of Worker Cooperatives — Co-op Clinic",
+    url: "https://www.usworker.coop/clinic/startups/",
+    tagline: "Startup resources and mini-guides for people forming a worker cooperative.",
+    kind: "legal",
+    states: "national",
+    serves: ["cooperative"],
+    products: "Startup checklists, downloadable mini-guides on worker ownership and conflict resolution, a monthly start-up webinar, and peer advisors who are current or former worker-owners.",
+  },
+  {
     key: "democracy_at_work_institute",
     name: "Democracy at Work Institute",
     url: "https://institute.coop/",
@@ -149,6 +159,17 @@ export const PARTNER_DIRECTORY: readonly PartnerEntry[] = [
     states: "national",
     serves: ["cooperative"],
     products: "Technical assistance for starting a worker cooperative or converting a business to worker ownership; training through the School for Democratic Management.",
+  },
+  {
+    key: "usda_rd_cooperative_services",
+    name: "USDA Rural Development — Cooperative Services",
+    url: "https://www.rd.usda.gov/programs-services/cooperative-services",
+    tagline: "Federal research, guides and grants for forming and running a cooperative.",
+    kind: "back_office",
+    states: "national",
+    serves: ["cooperative"],
+    products: "How-to-start guides, cooperative structure and finance research, and the Rural Cooperative Development Grant program that funds local co-op development centres.",
+    unverified_reason: "rd.usda.gov answers automated requests with 403.",
   },
 
   // ── Certifiers, inspection programs and the agencies behind them (§3.6) ──
