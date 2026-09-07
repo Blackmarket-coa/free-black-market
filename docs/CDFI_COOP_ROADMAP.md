@@ -610,6 +610,17 @@ D). When both exist, the coalition's bylaws become the fifth seed.
   subscriber exists, following `FBM_AR_DUNNING_LIVE` — and let the
   in-app half be `seller_feed`'s first producer. M.
 
+*First bullet closed 2026-09-07:* Q8 carries the certificates above as
+vendor-supplied or outside-FBM items (organic, CNG, GAP/GHP, the
+weights-and-measures device certificate, nursery licence and inspection,
+phytosanitary, seed labelling — conditional ones say "if you…" in the
+label), `sourcing` is vendor-supplied, `doc_checklist` needs a verified
+document instead of merely a vault, and the links come from the §3.2
+registry's new `certifier` kind (eight agency and certifier pages; the
+usda.gov ones answer automated requests with 403 and are marked for one
+human click). Still open here: the `permits` substrate field, the two
+document types, the badge-refresh design rule and the reminder rail.
+
 What the nursery experience contributes is content — which certificates,
 which agencies, which renewal cadences — as checklist items and links;
 `nursery-vertical` itself carries no compliance vocabulary. The
@@ -860,7 +871,8 @@ the character-sheet "Time Credits" stat honest (S — read repaired
    back-office referral rows (§3.5). *First cut done 2026-09-07; regional
    entries and the optional table remain.*
 3. Q8 certification vocabulary as checklist items and links (§3.6, first
-   half).
+   half). *Done 2026-09-07; the `permits` substrate field, the document
+   types and the reminder rail remain.*
 4. Q11 gatekeeper links to the Blackout founding-documents surface and the
    SELC/USFWC libraries (§3.4, first half).
 5. The CSA-network positioning and pilot checklist (§3.7) — written now,

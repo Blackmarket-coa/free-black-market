@@ -14,6 +14,10 @@ export const PARTNER_KINDS = [
   "crowdfunder",
   "legal",
   "back_office",
+  // Certifiers, inspection programs and the agencies behind them — the
+  // compliance quest's gatekeepers (§3.6). A vendor is certified by these,
+  // never by FBM.
+  "certifier",
   // Reserved for the fiscal-sponsorship pathway (§3.3); seeded from the
   // fiscal-sponsor registry's display fields when that quest ships.
   "fiscal_sponsor",
