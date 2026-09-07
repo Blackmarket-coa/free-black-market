@@ -1,5 +1,6 @@
 import { GET } from "../route"
-import { PARTNER_DIRECTORY } from "../../../../modules/partner-directory"
+import { PARTNER_DIRECTORY, PARTNER_DIRECTORY_MODULE } from "../../../../modules/partner-directory"
+import PartnerDirectoryModuleService from "../../../../modules/partner-directory/service"
 
 /**
  * `GET /store/partners` serves the refer-out directory: filters validated,
@@ -30,7 +31,10 @@ const createRes = (): TestRes => {
 type RouteArgs = Parameters<typeof GET>
 const call = async (query: Record<string, unknown>) => {
   const res = createRes()
-  await GET({ query, scope: { resolve: () => undefined } } as unknown as RouteArgs[0], res as unknown as RouteArgs[1])
+  const scope = {
+    resolve: (key: string) => (key === PARTNER_DIRECTORY_MODULE ? new PartnerDirectoryModuleService() : undefined),
+  }
+  await GET({ query, scope } as unknown as RouteArgs[0], res as unknown as RouteArgs[1])
   return res
 }
 

@@ -203,6 +203,7 @@ const financialModules = [
   { resolve: './src/modules/accounts-receivable' },
   // Buyer-facing arbitration entry for ordinary orders.
   { resolve: './src/modules/order-dispute' },
+  { resolve: './src/modules/partner-directory' },
   { resolve: './src/modules/vendor-usage' },
 ]
 

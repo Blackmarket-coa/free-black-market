@@ -2,11 +2,12 @@ import type { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import {
   isPartnerKind,
   isPartnerServes,
-  listPartners,
+  PARTNER_DIRECTORY_MODULE,
   PARTNER_KINDS,
   PARTNER_SERVES,
   type PartnerKind,
 } from "../../../modules/partner-directory"
+import type PartnerDirectoryModuleService from "../../../modules/partner-directory/service"
 
 /**
  * GET /store/partners?kind=&state=&serves=
@@ -52,7 +53,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     serves = q.serves
   }
 
-  const partners = listPartners({ kind, state, serves }).map((entry) => ({
+  const directory = req.scope.resolve<PartnerDirectoryModuleService>(PARTNER_DIRECTORY_MODULE)
+  const partners = directory.list({ kind, state, serves }).map((entry) => ({
     key: entry.key,
     name: entry.name,
     url: entry.url,
