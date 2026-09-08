@@ -52,8 +52,11 @@ A subscription. Renewal cadence configurable. Underlies CSA shares
 
 - Fields: `cadence` (weekly / biweekly / monthly / seasonal / annual),
   `term_length`, `auto_renew`, `cancel_window`, `pro_rate_on_cancel`.
-- Cycle CSA uses this listing-type with the `cadence=seasonal` setting and
-  a `share_template_id` link to `order_cycle.share_box_template`.
+- Cycle CSA is *intended* to use this listing-type with the
+  `cadence=seasonal` setting and a `share_template_id` link to
+  `order_cycle.share_box_template`. Nothing creates that link yet: the
+  share-box half of `order-cycle` has no surface
+  (`docs/CDFI_COOP_ROADMAP.md` §3.7, Tier B item 12).
 
 ### `wholesale`
 
