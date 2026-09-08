@@ -7,6 +7,7 @@ import type {
   InventoryValuation,
   ProductionSummary,
   VaultSummary,
+  FundsSummary,
 } from "../types"
 
 /**
@@ -43,7 +44,29 @@ export function aggregateSubstrates(
     production: aggregateProduction(substrates.map((s) => s.production)),
     channels: unionChannels(substrates),
     documents: unionDocuments(substrates.map((s) => s.documents)),
+    funds: aggregateFunds(substrates.map((s) => s.funds)),
     collective: { member_count: substrates.length, member_ids: memberIds },
+  }
+}
+
+/**
+ * Sum the members' fund portfolios. Null when no member has one, so a
+ * collective of vendors without fund accounting reads "unavailable" exactly as
+ * an individual would. Cents add across members because each member's figures
+ * were already derived from their own ledger — this sums snapshots, it does not
+ * re-derive them.
+ */
+function aggregateFunds(items: (FundsSummary | null)[]): FundsSummary | null {
+  const present = items.filter((f): f is FundsSummary => f != null)
+  if (present.length === 0) return null
+  return {
+    fund_count: sum(present.map((f) => f.fund_count)),
+    currency_code: present[0].currency_code,
+    awarded_cents: sum(present.map((f) => f.awarded_cents)),
+    received_cents: sum(present.map((f) => f.received_cents)),
+    spent_cents: sum(present.map((f) => f.spent_cents)),
+    cash_available_cents: sum(present.map((f) => f.cash_available_cents)),
+    violation_count: sum(present.map((f) => f.violation_count)),
   }
 }
 

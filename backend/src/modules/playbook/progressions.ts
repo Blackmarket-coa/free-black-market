@@ -40,6 +40,7 @@
  * See `docs/VENDOR_PROGRESSIONS.md` for the full table and reasoning.
  */
 
+import { partnerLinks } from "../partner-directory"
 import { coopFoundingDocumentLinks } from "../../shared/coop-founding-links"
 import { PLAYBOOK_RECIPES, getRecipe } from "./recipes"
 import type {
@@ -131,6 +132,19 @@ export type ProgressionEdge = {
  * document, and that edge has no quest behind it either.
  */
 const COOP_FOUNDING_LINKS = coopFoundingDocumentLinks()
+
+/**
+ * The fiscal-sponsor reading list, resolved once.
+ *
+ * Two edges below tell a vendor they need "a fiscal sponsor if you intend to
+ * take donations" and, until now, said it in bare prose. They read the same
+ * partner-registry rows the Fiscal Sponsorship Readiness quest links to
+ * (`docs/CDFI_COOP_ROADMAP.md` §3.3), so the two lists cannot drift.
+ *
+ * Not sourced from `donation/fiscal-sponsors.ts`: that registry's `live` flag
+ * means FBM's own agreement status, not whether a sponsor takes applicants.
+ */
+const FISCAL_SPONSOR_LINKS = partnerLinks({ kind: "fiscal_sponsor" })
 
 export const PROGRESSION_EDGES: ProgressionEdge[] = [
   // ---- facility: where you're allowed to produce -----------------------
@@ -369,6 +383,7 @@ export const PROGRESSION_EDGES: ProgressionEdge[] = [
       "A volunteer roster and intake practice",
       "A fiscal sponsor if you intend to take donations",
     ],
+    resource_links: FISCAL_SPONSOR_LINKS,
   },
   {
     from: "harvest",
@@ -482,6 +497,7 @@ export const PROGRESSION_EDGES: ProgressionEdge[] = [
       "A volunteer roster, if others will help deliver it",
       "A fiscal sponsor if you intend to take donations",
     ],
+    resource_links: FISCAL_SPONSOR_LINKS,
   },
 ]
 

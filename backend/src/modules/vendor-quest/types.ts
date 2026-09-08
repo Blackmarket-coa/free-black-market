@@ -20,7 +20,12 @@
 // ────────────────────────────────────────────────────────────────────────────
 
 /** Domain-optional substrate field keys (the nullable ones). */
-export type DomainFieldKey = "inventory" | "production" | "channels" | "documents"
+export type DomainFieldKey =
+  | "inventory"
+  | "production"
+  | "channels"
+  | "documents"
+  | "funds"
 
 export interface RevenueSummary {
   currency: string
@@ -101,6 +106,28 @@ export interface VaultSummary {
 }
 
 /**
+ * A snapshot of `fund-accounting`'s derived portfolio — restricted grants and
+ * the funds a sponsored project reports on.
+ *
+ * Copied, never re-summed. `getPortfolioReport` derives every figure from
+ * `fund_transaction` rows on each call, so a fund can never disagree with its
+ * own history; re-adding cents here would invent a second source of truth.
+ * `violation_count` carries whether the ledger already disagrees with the
+ * grantor's intent, without dragging the violation detail into the substrate.
+ */
+export interface FundsSummary {
+  fund_count: number
+  /** Closed funds included — the portfolio report does not filter by status. */
+  currency_code: string
+  awarded_cents: number
+  received_cents: number
+  spent_cents: number
+  cash_available_cents: number
+  /** Compliance breaks across the portfolio; 0 when the ledger is clean. */
+  violation_count: number
+}
+
+/**
  * Present only on an AGGREGATE substrate (a collective quest's combined record).
  * `null` for an individual vendor. Collective quest definitions read
  * `s.collective?.member_count`; individual quests ignore it — so the engine
@@ -124,6 +151,7 @@ export interface VendorSubstrate {
   production: ProductionSummary | null
   channels: ChannelSummary | null
   documents: VaultSummary | null
+  funds: FundsSummary | null
   /** Null for individual vendors; populated when this is an aggregate. */
   collective: CollectiveAggregateInfo | null
 }

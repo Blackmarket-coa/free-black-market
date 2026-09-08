@@ -25,6 +25,7 @@ import type {
   ProductionSummary,
   ChannelSummary,
   VaultSummary,
+  FundsSummary,
 } from "../types"
 
 /**
@@ -66,10 +67,11 @@ export async function buildSubstrate(
   const operating = buildOperating(seller, orders, asOf)
   const customers = buildCustomers(orders, tiers)
 
-  const [inventory, production, documents] = await Promise.all([
+  const [inventory, production, documents, funds] = await Promise.all([
     buildInventory(sellerId, query),
     buildProduction(sellerId, container),
     buildDocuments(sellerId, container),
+    buildFunds(sellerId, container),
   ])
   const channels = buildChannels(tiers)
 
@@ -84,6 +86,7 @@ export async function buildSubstrate(
     production,
     channels,
     documents,
+    funds,
     // An individually-built substrate is never an aggregate.
     collective: null,
   }
@@ -361,6 +364,56 @@ async function buildProduction(
       total_started: s.total_started,
       total_yield: s.total_yield,
       methods: s.methods,
+    }
+  } catch {
+    return null
+  }
+}
+
+// ── Domain-optional: fund accounting (opt-in) ───────────────────────────────
+/**
+ * Snapshot of the seller's restricted-fund portfolio.
+ *
+ * Follows `buildProduction`: flag first, resolve inside the try, null on
+ * absence. The figures are COPIED from `getPortfolioReport`, which re-derives
+ * them from `fund_transaction` rows every call — this must never re-sum them,
+ * or the substrate becomes a second, divergent ledger.
+ *
+ * A vendor without the fund pack has never been able to create a fund (the
+ * `/vendor/funds*` routes are plan-gated), so their portfolio is empty and this
+ * returns null — the requirement reads "unavailable" rather than unsatisfied.
+ * That is the graceful degradation the roadmap asks for, and it comes from
+ * emptiness, not from an entitlement check: the engine never reads a plan.
+ */
+async function buildFunds(
+  sellerId: string,
+  container: MedusaContainer
+): Promise<FundsSummary | null> {
+  if (!featureFlagState.isEnabled("FUND_ACCOUNTING_V1")) return null
+  try {
+    const svc: any = container.resolve("fundAccountingModuleService")
+    const portfolio = await svc.getPortfolioReport(sellerId)
+    if (!portfolio?.length) return null
+    let awarded = 0
+    let received = 0
+    let spent = 0
+    let cash = 0
+    let violations = 0
+    for (const report of portfolio) {
+      awarded += report.rollup?.awarded_cents ?? 0
+      received += report.rollup?.received_cents ?? 0
+      spent += report.rollup?.spent_cents ?? 0
+      cash += report.rollup?.cash_available_cents ?? 0
+      violations += report.violations?.length ?? 0
+    }
+    return {
+      fund_count: portfolio.length,
+      currency_code: portfolio[0]?.currency_code ?? "usd",
+      awarded_cents: awarded,
+      received_cents: received,
+      spent_cents: spent,
+      cash_available_cents: cash,
+      violation_count: violations,
     }
   } catch {
     return null

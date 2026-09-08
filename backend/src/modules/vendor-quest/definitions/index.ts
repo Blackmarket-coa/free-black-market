@@ -12,6 +12,7 @@ import trustTier from "./trust-tier"
 import coopFormation from "./coop-formation"
 import landPooling from "./land-pooling"
 import commonsContribution from "./commons-contribution"
+import fiscalSponsorshipReadiness from "./fiscal-sponsorship-readiness"
 
 /**
  * Quest definition registry — the full catalog (Q1–Q13).
@@ -39,6 +40,7 @@ export const QUEST_DEFINITIONS: QuestDefinition[] = [
   coopFormation, // Q11
   landPooling, // Q12
   commonsContribution, // Q13
+  fiscalSponsorshipReadiness, // Q14
 ]
 
 const BY_KEY: Record<string, QuestDefinition> = Object.fromEntries(
