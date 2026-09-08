@@ -30,9 +30,13 @@ export const RESOURCE_PATHWAYS: ResourcePathway[] = [
   },
   {
     resources: ["time"],
-    title: "Volunteer & bank your hours",
+    // "Bank your hours" and "earn time credits" promised a balance a vendor
+    // could build and spend. The hours rail settles labour between members of
+    // a collective, never buys goods, and is not switched on yet
+    // (`docs/CDFI_COOP_ROADMAP.md` §3.10).
+    title: "Volunteer & log your hours",
     description:
-      "Join work parties, log volunteer hours, and earn time credits — no storefront needed.",
+      "Join work parties and log volunteer hours — no storefront needed. Hours settle work between members of a collective; they never buy goods.",
     emoji: "⏰",
   },
   {

@@ -102,12 +102,12 @@ export default function VendorTypesPage() {
       type: "Grove",
       icon: "🌳",
       tagline: "Mutual-Aid Co-op",
-      description: "Grove pairs sliding-scale pricing with co-op governance and a volunteer-rich front desk. Built for mutual-aid networks that move food and goods on solidarity terms, with internal scrip for members.",
+      description: "Grove pairs sliding-scale pricing with co-op governance and a volunteer-rich front desk. Built for mutual-aid networks that move food and goods on solidarity terms. Members can settle hours of work between themselves; hours never pay for goods at checkout, and that ledger is not switched on yet.",
       examples: ["Food distribution networks", "Community fridges", "Solidarity pantries", "Neighborhood aid networks", "Free stores", "Meal programs", "Resource-sharing collectives", "Community care networks"],
       features: [
         "Sliding-scale pricing first",
         "Volunteer coordination & scheduling",
-        "Internal scrip & community credits",
+        "Member-to-member hour-sharing (ledger not switched on yet)",
         "Multi-member payout splits",
         "Bookable distribution events",
         "Recurring share listings",
@@ -255,8 +255,8 @@ export default function VendorTypesPage() {
     {
       type: "Service",
       icon: "🤝",
-      tagline: "Time-Bank & Sliding-Scale Services",
-      description: "Service lets you publish booking windows and apply sliding-scale rates. For practitioners offering time on a schedule — with predictable cash flow when you need it.",
+      tagline: "Sliding-Scale Services & Booked Hours",
+      description: "Service lets you publish booking windows and apply sliding-scale rates. For practitioners offering time on a schedule — with predictable cash flow when you need it. A time bank can run its booking here; settling hours between members is a separate rail that never pays for goods, and it is not switched on yet.",
       examples: ["Childcare collectives", "Herbalists & bodyworkers", "Repair cafés", "Doulas", "Tutors & educators", "Gardeners for hire", "Bike mechanics", "Time banks"],
       features: [
         "Bookable time slots & windows",

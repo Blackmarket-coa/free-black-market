@@ -815,7 +815,16 @@ re-planned here. What this roadmap adds:
   card's "internal scrip", any CSA or mutual-aid pitch — must say hours
   settle labour between members and are never tender for goods. That is
   what `rails.ts`, the guard and `NonCashRailError` enforce; the copy should
-  not promise what the ledger refuses.
+  not promise what the ledger refuses. *FBM half done 2026-09-07:* the two
+  recipe `social_form` strings ("Time-bank service…", "…internal scrip…"),
+  the public `/vendor-types` Grove and Service cards, and the vendor-panel
+  "Volunteer & bank your hours" pathway now say hours settle work between
+  members, never buy goods, and are not switched on yet. The `social_form`
+  strings are also quoted in `docs/PLAYBOOK_SYSTEM.md`, the
+  `yard-scrap-nursery` manifest and its doc; all four moved together.
+  `playbook/__tests__/hours-framing.unit.spec.ts` pins the framing against
+  the rail definition so the old copy cannot return. Blackout's reveal line
+  is the other half and ships in that repo.
 - **What ignition actually needs.** `docs/CCR_HRS_IGNITION.md` §5 step 4
   (provisioning + the open-balance writer) cannot run ahead of its step 1:
   `createTransfer` refuses overdraft, so an opening balance cannot be
@@ -905,7 +914,8 @@ the character-sheet "Time Credits" stat honest (S — read repaired
    published only after item 12 lands.
 6. Honest time-bank copy on the Service and Grove cards, the vendor-panel
    "bank your hours" pathway, and Blackout's "4 FBM-HOUR" reveal line
-   (§3.10, framing).
+   (§3.10, framing). *FBM half done 2026-09-07; the Blackout reveal line
+   ships in that repo.*
 
 **Tier B — wiring across modules and repos, no ruling needed.**
 7. `fiscal-sponsorship-readiness` definition + the `funds` domain-optional

@@ -3,7 +3,11 @@ import type { PlaybookRecipe } from "./types"
 export const SERVICE: PlaybookRecipe = {
   id: "service",
   display_name: "Service",
-  social_form: "Time-bank service, sliding-scale practitioner, scheduled hours.",
+  // "Time-bank service" read as a platform feature FBM does not run. The HRS
+  // rail settles labour between members of a collective (`hawala-ledger/rails.ts`:
+  // closed-loop, not cash-convertible) and is never tender for goods — and it is
+  // not switched on yet. `docs/CDFI_COOP_ROADMAP.md` §3.10.
+  social_form: "Sliding-scale practitioner, scheduled hours, member-to-member time-banking.",
   commission_rate: 0.03,
   allow_sliding_scale: true,
   allow_credits_payout: "opt_in",

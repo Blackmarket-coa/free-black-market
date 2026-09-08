@@ -3,7 +3,7 @@
 | Field | Value |
 | --- | --- |
 | Slug | `yard-scrap-nursery` |
-| Playbook | `grove` (mutual-aid co-op with internal scrip and sliding scale) |
+| Playbook | `grove` (mutual-aid co-op with sliding scale and member-to-member hour-sharing) |
 | Listing types | `physical_product`, `bookable`, `recurring` |
 | Surface | `commerce` (FBM proper) |
 | Governance | `individual` |
@@ -25,8 +25,8 @@ A neighborhood-scale closed-loop urban-agriculture node:
   (`recurring`).
 
 The `grove` playbook is the right composition: its social form is
-"mutual-aid co-op with internal scrip and sliding scale," which
-matches the CCR-to-households pattern, and it allows the three
+"mutual-aid co-op with sliding scale and member-to-member hour-sharing,"
+which matches the CCR-to-households pattern, and it allows the three
 listing-types this manifest composes.
 
 ## Required asset declarations
