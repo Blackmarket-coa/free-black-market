@@ -790,9 +790,22 @@ list and fix the filter" was done 2026-09-06 in the §1a pass —
 `sellerScopedCycleFilters` unions the cycles a seller coordinates with the
 ones they participate in, matching both the `sel_*` and `mem_*` spellings the
 writing routes stored — and the two dead buttons were closed 2026-09-08 (see
-above). What is left: expose
-the scheduler — template CRUD for coordinators, subscribe/pause/cancel for
-members, generate/pack/dispatch for the cycle (M); pick one billing owner —
+above), and the scheduler is being exposed a slice at a time: **template CRUD
+for coordinators closed 2026-09-08** (`/vendor/share-box-templates`, the first
+callers `createShareBoxTemplate` has ever had), and **subscribe/pause/cancel
+for members closed 2026-09-08** (`/store/share-box-subscriptions`). Two things
+the service could not tell you, found while wiring the member half and both
+now handled at the route with tests that fail without them: a member who
+cancels and re-subscribes would have tripped `share_box_subscription`'s UNIQUE
+(`share_box_template_id`, `customer_id`) index and 500'd, because
+`createShareBoxSubscriptionRecord` plainly creates — so re-subscribing revives
+the existing row through a new `reactivateShareBoxSubscription`, which also
+clears the cancellation stamp that `resumeShareBoxSubscription` leaves behind;
+and subscribing to an `is_active: false` template would have produced a
+subscription that can never generate a box, since `generateBoxesForCycle`
+filters on `is_active` and deleting a subscribed template now deactivates it.
+
+What is left: generate/pack/dispatch for the cycle (M); pick one billing owner —
 recommended: a share box references a `subscription` id and each generated
 box becomes that cycle's renewal order — rather than adding a third
 recurring model (M); one storefront cycle page that writes
