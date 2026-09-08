@@ -57,6 +57,47 @@ describe("MutualAidModuleService", () => {
       ).rejects.toThrow(/cannot match/i)
     })
 
+    it("refuses a request whose needed-by date has already passed", async () => {
+      // The status guard alone let a helper commit to a months-dead need: the
+      // board filters on status, so an OPEN request stays matchable forever.
+      // The daily sweep flips these to EXPIRED, but it is housekeeping, not a
+      // lock — a request can go out of date between two runs of it.
+      const ctx: any = makeCtx(req({ needed_by: "2020-01-01T00:00:00.000Z" }))
+
+      await expect(
+        proto.matchRequest.call(ctx, {
+          request_id: "mar_1",
+          helper_id: "cus_helper",
+        })
+      ).rejects.toThrow(/needed-by date has passed/i)
+
+      expect(ctx.updateMutualAidRequests).not.toHaveBeenCalled()
+    })
+
+    it("matches a request whose needed-by date is still ahead", async () => {
+      const future = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
+      const ctx: any = makeCtx(req({ needed_by: future }))
+
+      await proto.matchRequest.call(ctx, {
+        request_id: "mar_1",
+        helper_id: "cus_helper",
+      })
+
+      expect(ctx.updateMutualAidRequests).toHaveBeenCalled()
+    })
+
+    it("matches a request with no stated needed-by date", async () => {
+      // Most asks carry none; the guard must not turn that into a refusal.
+      const ctx: any = makeCtx(req({ needed_by: null }))
+
+      await proto.matchRequest.call(ctx, {
+        request_id: "mar_1",
+        helper_id: "cus_helper",
+      })
+
+      expect(ctx.updateMutualAidRequests).toHaveBeenCalled()
+    })
+
     it("decides the race with a status = OPEN predicate", async () => {
       const request = req()
       const ctx: any = makeCtx(request, { pg: true })

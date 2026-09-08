@@ -87,6 +87,14 @@ class MutualAidModuleService extends MedusaService({
         `Cannot match a request with status "${request.status}"`
       )
     }
+    // A helper committing to a need whose date has already passed is worse
+    // than a helper who never saw it: the requester gets a notification that
+    // help is coming for something they needed weeks ago. The sweep flips
+    // these to EXPIRED, but a request posted between two runs of it would
+    // still be matchable without this, and the sweep is not a lock.
+    if (request.needed_by && new Date(request.needed_by as never) < new Date()) {
+      throw new Error("Cannot match a request whose needed-by date has passed")
+    }
 
     const pg = this.resolvePgConnection()
     if (pg) {
@@ -169,6 +177,132 @@ class MutualAidModuleService extends MedusaService({
 
     const [updated] = await this.listMutualAidRequests({ id: requestId })
     return updated
+  }
+
+  /**
+   * The asker takes their request back down.
+   *
+   * The board had no way to do this at all: `WITHDRAWN` was declared on both
+   * enums and written by nothing, so a need that had already been met off the
+   * platform — or posted in a moment someone would rather undo — stayed open
+   * forever and kept attracting helpers.
+   *
+   * Withdrawing a *matched* request releases the offer that took it on. Without
+   * that the offer sits `COMMITTED` against a request nobody will ever confirm,
+   * which quietly removes a willing helper from the board.
+   */
+  async withdrawRequest(requestId: string, requesterId: string) {
+    const requests = await this.listMutualAidRequests({ id: requestId })
+    if (requests.length === 0) {
+      throw new Error("Aid request not found")
+    }
+    const request = requests[0]
+
+    if (request.requester_id !== requesterId) {
+      throw new Error("Only the requester can withdraw this request")
+    }
+    if (
+      request.status !== AidRequestStatus.OPEN &&
+      request.status !== AidRequestStatus.MATCHED
+    ) {
+      throw new Error(
+        `Cannot withdraw a request with status "${request.status}"`
+      )
+    }
+
+    // Read before the write. The update clears these columns, and whether the
+    // row object in hand is the same instance the data layer mutated is not
+    // something this method should depend on.
+    const committedOfferId = request.matched_offer_id as string | null
+
+    await this.updateMutualAidRequests({
+      id: requestId,
+      status: AidRequestStatus.WITHDRAWN,
+      matched_offer_id: null,
+      matched_helper_id: null,
+      matched_at: null,
+    })
+
+    if (committedOfferId) {
+      await this.updateMutualAidOffers({
+        id: committedOfferId,
+        status: AidOfferStatus.AVAILABLE,
+      })
+    }
+
+    const [updated] = await this.listMutualAidRequests({ id: requestId })
+    return updated
+  }
+
+  /**
+   * The offerer takes their offer back down.
+   *
+   * Only from `AVAILABLE`. A `COMMITTED` offer is a promise already made to a
+   * specific person who is waiting on it; letting it vanish silently is exactly
+   * the failure `matchRequest` guards against from the other direction. The
+   * helper's way out of a commitment is the requester withdrawing above, which
+   * releases the offer and leaves a trace on the request.
+   */
+  async withdrawOffer(offerId: string, offererId: string) {
+    const offers = await this.listMutualAidOffers({ id: offerId })
+    if (offers.length === 0) {
+      throw new Error("Aid offer not found")
+    }
+    const offer = offers[0]
+
+    if (offer.offerer_id !== offererId) {
+      throw new Error("Only the offerer can withdraw this offer")
+    }
+    if (offer.status !== AidOfferStatus.AVAILABLE) {
+      throw new Error(`Cannot withdraw an offer with status "${offer.status}"`)
+    }
+
+    await this.updateMutualAidOffers({
+      id: offerId,
+      status: AidOfferStatus.WITHDRAWN,
+    })
+
+    const [updated] = await this.listMutualAidOffers({ id: offerId })
+    return updated
+  }
+
+  /**
+   * Retire requests and offers whose stated date has passed.
+   *
+   * `needed_by` and `available_until` were write-only columns: both routes
+   * accepted them, the models stored them, and nothing ever read them back. The
+   * public board filters on `status` alone, so a need dated last spring still
+   * reads as OPEN and a helper can still commit to it.
+   *
+   * A null date means "no stated deadline" and is never swept — `$lt` does not
+   * match NULL, which is the behaviour wanted here rather than an accident.
+   * Only pre-terminal statuses are touched: a FULFILLED request that ran past
+   * its date was still fulfilled.
+   */
+  async expireStaleAid(now: Date) {
+    const requests = await this.listMutualAidRequests({
+      status: AidRequestStatus.OPEN,
+      needed_by: { $lt: now },
+    })
+    for (const request of requests) {
+      await this.updateMutualAidRequests({
+        id: request.id,
+        status: AidRequestStatus.EXPIRED,
+      })
+    }
+
+    const offers = await this.listMutualAidOffers({
+      status: AidOfferStatus.AVAILABLE,
+      available_until: { $lt: now },
+    })
+    for (const offer of offers) {
+      await this.updateMutualAidOffers({
+        id: offer.id,
+        status: AidOfferStatus.EXPIRED,
+      })
+    }
+
+    return { requests_expired: requests.length, offers_expired: offers.length }
   }
 
   /**
