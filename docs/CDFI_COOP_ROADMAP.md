@@ -911,7 +911,13 @@ the character-sheet "Time Credits" stat honest (S — read repaired
    `governing_document` vault type and the `assisted` retag that depends on
    it remain, as Tier B item 11.*
 5. The CSA-network positioning and pilot checklist (§3.7) — written now,
-   published only after item 12 lands.
+   published only after item 12 lands. *Done 2026-09-08:*
+   `docs/CSA_NETWORK_POSITIONING.md` carries the draft landing copy, the
+   SNAP paragraph, what a pilot can really run today, and the publication
+   gate. The two status lines that described the unwired state as done
+   (`AGGRESSIVE_OPERATIONS_GUIDE.md`, `LISTING_TYPES.md`) were corrected
+   with it, since a positioning note cannot hold the line while the repo's
+   own tables contradict it.
 6. Honest time-bank copy on the Service and Grove cards, the vendor-panel
    "bank your hours" pathway, and Blackout's "4 FBM-HOUR" reveal line
    (§3.10, framing). *FBM half done 2026-09-07; the Blackout reveal line
