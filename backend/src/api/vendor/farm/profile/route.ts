@@ -1,4 +1,5 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
+import { daysUntil } from "../../../../shared/expiry"
 
 interface ProducerServiceType {
   createProducers: (data: Record<string, unknown>) => Promise<{ id: string }>
@@ -15,7 +16,12 @@ const parseDateValue = (value: unknown): Date | null => {
   return Number.isNaN(date.getTime()) ? null : date
 }
 
-const buildRecertificationAlerts = (certifications: unknown): Array<{
+/**
+ * Exported for test. The 24-hour window in which a lapsed certification used to
+ * report itself as still valid had no regression guard, which is how a `ceil`
+ * survived here while two other copies of this arithmetic used `floor`.
+ */
+export const buildRecertificationAlerts = (certifications: unknown): Array<{
   certification_name: string
   valid_until: string
   days_remaining: number
@@ -39,8 +45,13 @@ const buildRecertificationAlerts = (certifications: unknown): Array<{
         return null
       }
 
-      const diffMs = validUntilDate.getTime() - now.getTime()
-      const daysRemaining = Math.ceil(diffMs / (1000 * 60 * 60 * 24))
+      // `Math.floor`, via the shared convention. This was `Math.ceil`, which
+      // mapped every instant in the 24 hours *after* a certification lapsed to
+      // `-0` — and `-0 < 0` is false, so a certificate that expired earlier
+      // today, or yesterday evening, was reported as
+      // `days_remaining: 0, status: "expiring_soon"` rather than expired, for
+      // a full day after it stopped being worth anything.
+      const daysRemaining = daysUntil(validUntilDate, now)
 
       if (daysRemaining > RECERTIFICATION_NOTICE_DAYS) {
         return null

@@ -28,6 +28,7 @@ Medusa scheduled jobs for FBM. Each file exports a handler plus a cron
 | `review-request-emails.ts` | daily 14:00 | Send post-purchase review request emails |
 | `supplier-forwarding-retries.ts` | every 5 min | Retry failed supplier-forwarding submissions |
 | `sync-woocommerce-inventory.ts` | daily 02:00 | Pull inventory updates from linked WooCommerce stores |
+| `vault-expiry-reminders.ts` | daily 09:30 | Tell vendors which vault documents are lapsing, on the shared reminder rail (dry-run unless `FF_SELLER_REMINDERS_V1`) |
 | `wellness-reminders.ts` | hourly | Send wellness-program reminders |
 | `xp-demurrage.ts` | Sundays 03:00 | Apply XP demurrage decay (see `docs/adr/ADR-0003-xp-demurrage-and-soulbound-semantics.md`) |
 

@@ -94,12 +94,16 @@ export default async function arDunningSweep(container: MedusaContainer) {
   /**
    * The ladder is only consumed when a reminder can actually reach someone.
    *
-   * `ar.invoice.overdue` currently has NO subscriber anywhere in the repo, and
-   * there is no notification template for it — `resend`'s provider accepts a
-   * fixed list that does not include one. The original version emitted into
-   * that void and marked the stage anyway, with a comment claiming this stopped
-   * an invoice being "chased repeatedly once one is wired up". It did the
-   * opposite: `last_dunning_stage` only ever advances, and `dunningStageFor`
+   * `ar.invoice.overdue` HAS had a subscriber since 2026-09-08:
+   * `subscribers/ar-invoice-overdue-reminder.ts` turns it into a row on the
+   * seller's notification feed. Email is still not a delivery path for it —
+   * `resend`'s provider accepts a fixed list of eight templates and silently
+   * drops anything outside it — so the reminder is in-app only for now.
+   *
+   * When this comment was written no subscriber existed at all. The original
+   * version emitted into that void and marked the stage anyway, with a comment
+   * claiming this stopped an invoice being "chased repeatedly once one is
+   * wired up". It did the opposite: `last_dunning_stage` only ever advances, and `dunningStageFor`
    * fires only on the exact day a stage is reached, so every stage burned while
    * unwired is a reminder the buyer can never receive. A buyer would be
    * recorded as chased at days 1, 7, 14, 30 and 60 having been sent nothing,
@@ -112,8 +116,13 @@ export default async function arDunningSweep(container: MedusaContainer) {
    *   `last_dunning_stage` untouched, so the ladder is intact on the day the
    *   notification rail lands.
    *
-   * Delete this flag once a subscriber exists; a permanent dry run is its own
-   * kind of lie.
+   * This flag is deliberately still here now that a subscriber exists. Its
+   * removal would make the sweep live the moment it merged, which starts
+   * chasing real buyers — an operator's decision about their own customers,
+   * not a side effect of building the delivery rail. Delivery has a second,
+   * independent switch (`FF_SELLER_REMINDERS_V1`), so turning dunning on is a
+   * deliberate act at both ends. Delete this flag when an operator has decided
+   * dunning should always run; a permanent dry run is still its own kind of lie.
    */
   const live = process.env.FBM_AR_DUNNING_LIVE === "1" && !!eventBus
 
@@ -122,10 +131,11 @@ export default async function arDunningSweep(container: MedusaContainer) {
     if (pending.length > 0) {
       log.warn(
         `[ar-dunning] DRY RUN: ${pending.length} invoice(s) have reached a dunning ` +
-          `stage and would be chased, but no reminder can be delivered ` +
+          `stage and would be chased, but this sweep is not live ` +
           `(FBM_AR_DUNNING_LIVE is not 1, or no event bus). The ladder is NOT ` +
-          `being advanced, so these stages remain sendable once a subscriber for ` +
-          `ar.invoice.overdue exists.`
+          `being advanced, so these stages remain sendable. A subscriber for ` +
+          `ar.invoice.overdue does now exist; delivery is separately gated by ` +
+          `FF_SELLER_REMINDERS_V1.`
       )
     }
     return { considered: pending.length, notified: 0, failed: 0 }
