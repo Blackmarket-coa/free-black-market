@@ -759,6 +759,49 @@ class OrderCycleModuleService extends MedusaService({
     return created
   }
 
+  /**
+   * Update a template, validating `slots` the same way `createShareBoxTemplate`
+   * does.
+   *
+   * The symmetric partner to the create wrapper, and it exists for the same
+   * reason: `validateSlots` is private, so without this an update path would
+   * either re-implement the slot contract outside the service — where the two
+   * copies drift — or force the validator public. `coordinator_seller_id` is
+   * not accepted: a template cannot change hands through an update.
+   */
+  async updateShareBoxTemplate(
+    id: string,
+    args: {
+      name?: string
+      description?: string | null
+      base_price?: number | null
+      currency_code?: string
+      slots?: ShareBoxSlot[] | unknown
+      is_active?: boolean
+      metadata?: Record<string, unknown> | null
+    }
+  ) {
+    if (!id) {
+      throw new Error("id is required")
+    }
+
+    const update: Record<string, unknown> = { id }
+
+    if (args.name !== undefined) {
+      if (!args.name.trim()) throw new Error("name cannot be empty")
+      update.name = args.name.trim()
+    }
+    if (args.description !== undefined) update.description = args.description
+    if (args.base_price !== undefined) update.base_price = args.base_price
+    if (args.currency_code !== undefined) update.currency_code = args.currency_code
+    if (args.is_active !== undefined) update.is_active = args.is_active
+    if (args.metadata !== undefined) update.metadata = args.metadata
+    if (args.slots !== undefined) update.slots = this.validateSlots(args.slots)
+
+    const [updated] = await this.updateShareBoxTemplates([update as any])
+    return updated
+  }
+
   async createShareBoxSubscriptionRecord(args: {
     share_box_template_id: string
     customer_id?: string | null
