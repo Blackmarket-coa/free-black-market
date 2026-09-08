@@ -1135,6 +1135,41 @@ class OrderCycleModuleService extends MedusaService({
     }
   }
 
+  /**
+   * The share-box lifecycle, as the model's docblock defines it:
+   *
+   *   pending -> allocated -> packed -> dispatched
+   *
+   * with `skipped` and `cancelled` off to the side.
+   *
+   * `markShareBoxPacked`, `markShareBoxDispatched` and `cancelShareBox` each
+   * write `status` unconditionally, so on their own they permit a box to be
+   * packed after being cancelled, **dispatched without ever being packed**, or
+   * cancelled after it physically went out — the last being a false record
+   * rather than merely an odd one. This table is the rule they were missing,
+   * and it lives here rather than in the route so a second caller (a job, an
+   * admin screen) cannot re-implement it differently.
+   */
+  static readonly SHARE_BOX_TRANSITIONS: Record<string, readonly string[]> = {
+    // A box is packed from the states that precede packing.
+    packed: ["pending", "allocated"],
+    // Dispatch requires a packed box. This is the one that matters: dispatching
+    // straight from `pending` skips the lifecycle and reports a box as gone out
+    // that nobody filled.
+    dispatched: ["packed"],
+    // Anything can be called off except a box that has already left.
+    cancelled: ["pending", "allocated", "packed", "skipped"],
+  }
+
+  /**
+   * Is this transition legal? Pure, so the routes can ask before acting and
+   * answer 409 rather than writing a state the lifecycle forbids.
+   */
+  static canTransitionShareBox(from: string, to: string): boolean {
+    const allowed = OrderCycleModuleService.SHARE_BOX_TRANSITIONS[to]
+    return Array.isArray(allowed) && allowed.includes(from)
+  }
+
   async markShareBoxPacked(id: string) {
     const [updated] = await this.updateShareBoxes([
       { id, status: "packed" as const },
