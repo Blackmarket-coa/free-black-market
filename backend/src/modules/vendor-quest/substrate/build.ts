@@ -6,6 +6,7 @@ import { ORDER_DISPUTE_MODULE } from "../../order-dispute"
 import { DisputeStatus } from "../../order-dispute/resolution"
 import { PROGRESSION_MODULE } from "../../progression"
 import { VENDOR_RULES_MODULE } from "../../vendor-rules"
+import { COTTAGE_FOOD_MODULE } from "../../cottage-food"
 import { computeRevenueSummary, type LedgerHistoryEntry } from "./revenue"
 import {
   channelsFromTiers,
@@ -26,6 +27,7 @@ import type {
   ChannelSummary,
   VaultSummary,
   FundsSummary,
+  PermitsSummary,
 } from "../types"
 
 /**
@@ -67,11 +69,12 @@ export async function buildSubstrate(
   const operating = buildOperating(seller, orders, asOf)
   const customers = buildCustomers(orders, tiers)
 
-  const [inventory, production, documents, funds] = await Promise.all([
+  const [inventory, production, documents, funds, permits] = await Promise.all([
     buildInventory(sellerId, query),
     buildProduction(sellerId, container),
     buildDocuments(sellerId, container),
     buildFunds(sellerId, container),
+    buildPermits(sellerId, container),
   ])
   const channels = buildChannels(tiers)
 
@@ -87,6 +90,7 @@ export async function buildSubstrate(
     channels,
     documents,
     funds,
+    permits,
     // An individually-built substrate is never an aggregate.
     collective: null,
   }
@@ -414,6 +418,54 @@ async function buildFunds(
       spent_cents: spent,
       cash_available_cents: cash,
       violation_count: violations,
+    }
+  } catch {
+    return null
+  }
+}
+
+// ── Domain-optional: permits (cottage-food's self-declared profile) ─────────
+/**
+ * Snapshot the permit and food-handler dates a home-based food seller declared.
+ *
+ * NO FEATURE FLAG, and that is not an oversight. Every other opt-in domain
+ * builder here checks one first, before touching the container, because its
+ * module is registered behind a flag. `cottage-food` has none — it is always
+ * registered — so absence is expressed the only way it can be: a seller with
+ * no compliance profile. `getComplianceSnapshot` is explicitly "safe to call
+ * for a seller with no profile", returning `has_profile: false` rather than
+ * throwing, and that is the null this returns. A vendor who never opened a
+ * cottage-food profile reads `permits: null`, so any requirement needing it
+ * evaluates as `unavailable` — never as unsatisfied, and never as a
+ * compliance failure.
+ *
+ * Copied, never recomputed. `status` and `days_until` come straight from the
+ * snapshot so this can never disagree with the compliance dashboard the vendor
+ * is reading; re-deriving them here would be a second source of truth, and the
+ * two day-count conventions the 2026-09-08 audit found are exactly what that
+ * produces.
+ */
+async function buildPermits(
+  sellerId: string,
+  container: MedusaContainer
+): Promise<PermitsSummary | null> {
+  try {
+    const svc: any = container.resolve(COTTAGE_FOOD_MODULE)
+    const snapshot = await svc.getComplianceSnapshot(sellerId)
+    if (!snapshot?.has_profile) return null
+    return {
+      operation_type: snapshot.operation_type ?? null,
+      permit: {
+        status: snapshot.permit.status,
+        expires_at: snapshot.permit.expires_at,
+        days_until: snapshot.permit.days_until,
+      },
+      food_handler: {
+        status: snapshot.food_handler.status,
+        expires_at: snapshot.food_handler.expires_at,
+        days_until: snapshot.food_handler.days_until,
+      },
+      advisory_count: snapshot.advisories?.length ?? 0,
     }
   } catch {
     return null

@@ -44,6 +44,7 @@ export function makeSubstrate(overrides: Partial<VendorSubstrate> = {}): VendorS
     channels: null,
     documents: null,
     funds: null,
+    permits: null,
     collective: null,
     ...overrides,
   }

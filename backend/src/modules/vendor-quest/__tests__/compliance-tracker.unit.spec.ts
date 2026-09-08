@@ -116,3 +116,85 @@ describe("Q8 cert_ready gate — widened, never narrowed", () => {
     }
   })
 })
+
+/**
+ * The `permits` substrate field (`docs/CDFI_COOP_ROADMAP.md` §3.6, "read the
+ * permit store that exists"). `cottage-food` has computed permit and
+ * food-handler expiry as self-declared facts since it shipped and Q8 read none
+ * of it.
+ *
+ * Two constraints govern these requirements, and both come from `cottage-food`
+ * itself. It "never blocks a sale" and "the seller is the authority on their
+ * own compliance" — so these say only that a date was recorded and has not
+ * passed, they are labelled as self-declared, and they gate nothing.
+ */
+describe("Q8 permit requirements — self-declared, and gating nothing", () => {
+  const permitStanding = (status: string, days: number | null = 100) => ({
+    status: status as "unset" | "ok" | "expiring_soon" | "expired",
+    expires_at: days === null ? null : "2027-01-01T00:00:00.000Z",
+    days_until: days,
+  })
+
+  const withPermits = (permit: string, foodHandler = "ok") =>
+    makeSubstrate({
+      permits: {
+        operation_type: "cottage_food",
+        permit: permitStanding(permit, permit === "unset" ? null : 100),
+        food_handler: permitStanding(foodHandler, foodHandler === "unset" ? null : 100),
+        advisory_count: 0,
+      },
+    })
+
+  it("reads unavailable for a vendor with no cottage-food profile", () => {
+    // Not "unsatisfied" — a jeweller has no food permit to be missing, and the
+    // engine derives this purely from the field being null.
+    expect(status("permit_current").status).toBe("unavailable")
+    expect(status("food_handler_current").status).toBe("unavailable")
+  })
+
+  it("is satisfied by a recorded, in-date permit", () => {
+    expect(status("permit_current", withPermits("ok")).status).toBe("satisfied")
+    expect(status("permit_current", withPermits("expiring_soon")).status).toBe("satisfied")
+  })
+
+  it("is unsatisfied once the declared date has passed", () => {
+    expect(status("permit_current", withPermits("expired")).status).not.toBe("satisfied")
+  })
+
+  it("is unsatisfied when no date was declared at all", () => {
+    // The defect this avoids: an `assisted` requirement with no predicate reads
+    // as satisfied unconditionally, so "unset" must be an explicit failure.
+    expect(status("permit_current", withPermits("unset")).status).not.toBe("satisfied")
+  })
+
+  it("tracks the two credentials separately", () => {
+    const s = withPermits("ok", "expired")
+    expect(status("permit_current", s).status).toBe("satisfied")
+    expect(status("food_handler_current", s).status).not.toBe("satisfied")
+  })
+
+  it("says in its own label that the date is the vendor's own", () => {
+    // The honest-UI constraint, asserted rather than trusted to review: FBM
+    // ships no state-law table and must not read as certifying compliance.
+    for (const key of ["permit_current", "food_handler_current"]) {
+      const req = q8.requirements.find((r) => r.key === key)!
+      expect(req.label).toMatch(/as you declared it/i)
+      expect(req.tag).toBe("assisted")
+      expect(req.needs).toEqual(["permits"])
+    }
+    const permitReq = q8.requirements.find((r) => r.key === "permit_current")!
+    expect(permitReq.note).toMatch(/makes no legal determination/i)
+  })
+
+  it("moves no stage gate, in either direction", () => {
+    // The #836 lesson: a new requirement must not close a gate a vendor has
+    // already passed. Compare every gate with and without a permit profile.
+    const bare = makeSubstrate()
+    const withProfile = withPermits("ok")
+    const gatesOf = (s: ReturnType<typeof makeSubstrate>) =>
+      evaluateQuest(q8, s).stages.map((g) => [g.key, g.open])
+
+    expect(gatesOf(withProfile)).toEqual(gatesOf(bare))
+    expect(gatesOf(withPermits("expired"))).toEqual(gatesOf(bare))
+  })
+})

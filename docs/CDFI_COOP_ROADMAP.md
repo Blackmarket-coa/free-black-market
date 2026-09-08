@@ -685,7 +685,34 @@ dry-run by default — with four corrections to this section's account of it:
    decision, not a side effect of building a rail. Delivery has its own switch
    (`FF_SELLER_REMINDERS_V1`), so turning dunning on is now two deliberate acts.
 
-Still open here: the `permits` substrate field, the badge-refresh design rule,
+*`permits` closed 2026-09-08.* Added as a domain-optional substrate field
+snapshotted from `getComplianceSnapshot()`, with two Q8 requirements reading
+it (`permit_current`, `food_handler_current`). Three notes on how it differs
+from the other domain-optional fields:
+
+1. **No feature flag, and that is not an oversight.** Every other opt-in
+   domain builder checks one before touching the container because its module
+   is registered behind a flag. `cottage-food` has none — it is always
+   registered — so absence can only be expressed as "this seller has no
+   compliance profile", which is exactly what `getComplianceSnapshot` returns
+   (`has_profile: false`) and is safe to call for.
+2. **Self-declared is the whole point, and the wording carries it.**
+   `cottage-food`'s governing rule is that it "never blocks a sale" and "the
+   seller is the authority on their own compliance"; a substrate snapshot does
+   not get to be stricter than its source. Both requirements are labelled "as
+   you declared it" and say FBM makes no legal determination. A test asserts
+   the label and the note, rather than trusting review to keep them honest.
+3. **They gate nothing.** Adding either to `cert_ready` would close a gate
+   non-food vendors have already passed — the same regression the Q8 gate
+   widening avoided. A test compares every gate with and without a permit
+   profile and requires them identical.
+
+The aggregate is deliberately not a sum: a co-op does not hold its members'
+permits, so a collective takes the worst status and the soonest expiry across
+members, and `operation_type` goes null when members disagree rather than
+naming one member's.
+
+Still open here: the badge-refresh design rule,
 and a reminder *email* (adding one means adding a real template to `resend`'s
 closed list, which silently drops anything outside it).
 
