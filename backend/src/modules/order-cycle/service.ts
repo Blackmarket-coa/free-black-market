@@ -854,6 +854,33 @@ class OrderCycleModuleService extends MedusaService({
     return updated
   }
 
+  /**
+   * Bring a paused or cancelled subscription back to active.
+   *
+   * Distinct from `resumeShareBoxSubscription`, which un-pauses and leaves
+   * `cancelled_at` / `cancelled_reason` untouched — correct for a pause, wrong
+   * for a resurrection: the row would read `active` while still carrying the
+   * date and reason it was cancelled.
+   *
+   * This exists because `share_box_subscription` has a UNIQUE index on
+   * (`share_box_template_id`, `customer_id`). A member who cancels and later
+   * re-subscribes cannot get a second row, so re-subscribing has to revive the
+   * one they have; creating another would trip the index and 500 — the same
+   * defect the exchange-products route carried until 2026-09-08.
+   */
+  async reactivateShareBoxSubscription(id: string) {
+    const [updated] = await this.updateShareBoxSubscriptions([
+      {
+        id,
+        status: "active" as const,
+        pause_until: null,
+        cancelled_at: null,
+        cancelled_reason: null,
+      },
+    ])
+    return updated
+  }
+
   async cancelShareBoxSubscription(id: string, reason?: string) {
     const [updated] = await this.updateShareBoxSubscriptions([
       {
