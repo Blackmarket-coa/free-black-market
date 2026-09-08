@@ -8,6 +8,8 @@ import type {
   ProductionSummary,
   VaultSummary,
   FundsSummary,
+  PermitsSummary,
+  PermitStanding,
 } from "../types"
 
 /**
@@ -45,6 +47,7 @@ export function aggregateSubstrates(
     channels: unionChannels(substrates),
     documents: unionDocuments(substrates.map((s) => s.documents)),
     funds: aggregateFunds(substrates.map((s) => s.funds)),
+    permits: aggregatePermits(substrates.map((s) => s.permits)),
     collective: { member_count: substrates.length, member_ids: memberIds },
   }
 }
@@ -67,6 +70,65 @@ function aggregateFunds(items: (FundsSummary | null)[]): FundsSummary | null {
     spent_cents: sum(present.map((f) => f.spent_cents)),
     cash_available_cents: sum(present.map((f) => f.cash_available_cents)),
     violation_count: sum(present.map((f) => f.violation_count)),
+  }
+}
+
+/**
+ * Combine members' self-declared permit standings.
+ *
+ * Permits do NOT sum. A co-op does not hold its members' cottage-food permits —
+ * each member holds their own — so the only honest combined reading is the
+ * conservative one: the collective is no better off than its worst member.
+ * Status takes the worst across members, and the expiry reported is the
+ * soonest, because that is the date the collective actually has to act on.
+ *
+ * `unset` ranks worse than `ok` but better than a lapse: a member who never
+ * declared anything is an unknown, not a known failure, and the two should not
+ * read alike. `operation_type` is null unless every member declared the same
+ * one — a mixed collective has no single operation, and naming one member's
+ * would be a fabrication.
+ *
+ * Null when no member has a profile, so a collective of vendors without
+ * cottage-food reads "unavailable" exactly as an individual would.
+ */
+const PERMIT_STATUS_SEVERITY: Record<PermitStanding["status"], number> = {
+  ok: 0,
+  unset: 1,
+  expiring_soon: 2,
+  expired: 3,
+}
+
+function worstStanding(items: PermitStanding[]): PermitStanding {
+  const worst = items.reduce((a, b) =>
+    PERMIT_STATUS_SEVERITY[b.status] > PERMIT_STATUS_SEVERITY[a.status] ? b : a
+  )
+  // The soonest real expiry across members, independent of which row was worst:
+  // a collective acts on the next date that lapses, not on the worst status's.
+  const dated = items.filter((i) => i.days_until != null)
+  if (dated.length === 0) return { ...worst, expires_at: null, days_until: null }
+  const soonest = dated.reduce((a, b) =>
+    (b.days_until as number) < (a.days_until as number) ? b : a
+  )
+  return {
+    status: worst.status,
+    expires_at: soonest.expires_at,
+    days_until: soonest.days_until,
+  }
+}
+
+function aggregatePermits(
+  items: (PermitsSummary | null)[]
+): PermitsSummary | null {
+  const present = items.filter((p): p is PermitsSummary => p != null)
+  if (present.length === 0) return null
+
+  const types = new Set(present.map((p) => p.operation_type))
+
+  return {
+    operation_type: types.size === 1 ? present[0].operation_type : null,
+    permit: worstStanding(present.map((p) => p.permit)),
+    food_handler: worstStanding(present.map((p) => p.food_handler)),
+    advisory_count: sum(present.map((p) => p.advisory_count)),
   }
 }
 

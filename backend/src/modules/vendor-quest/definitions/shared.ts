@@ -63,3 +63,22 @@ export const membersAtLeast = (n: number) => (s: VendorSubstrate) =>
 /** A verified document of a given type exists in the vault. */
 export const hasVerifiedDocType = (docType: string) => (s: VendorSubstrate) =>
   (s.documents?.documents ?? []).some((d) => d.doc_type === docType && d.verified)
+
+/**
+ * A self-declared credential is on file and has not lapsed.
+ *
+ * "Recorded and in date", never "compliant". The dates come from the seller's
+ * own `cottage-food` profile — FBM ships no state-law table and makes no legal
+ * determination — so this says only that the vendor entered a date and that
+ * date has not passed. `expiring_soon` passes: a permit expiring in three weeks
+ * is still a valid permit, and the reminder rail is what chases it.
+ *
+ * `unset` does not pass, and it is the reason this reads the status rather
+ * than testing `days_until != null`: a seller who declared no date at all is
+ * not satisfying a requirement to have one on file.
+ */
+export const permitRecordedAndCurrent =
+  (which: "permit" | "food_handler") => (s: VendorSubstrate) => {
+    const status = s.permits?.[which].status
+    return status === "ok" || status === "expiring_soon"
+  }

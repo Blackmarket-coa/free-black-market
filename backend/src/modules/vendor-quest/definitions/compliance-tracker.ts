@@ -5,6 +5,7 @@ import {
   WELLNESS_GUARDRAIL,
   verifiedDocsAtLeast,
   hasVerifiedDocType,
+  permitRecordedAndCurrent,
 } from "./shared"
 
 /**
@@ -71,6 +72,29 @@ const complianceTracker: QuestDefinition = {
       note: "Where your inputs, seed and stock come from — invoices, seed tags, supplier declarations. Keep on file or upload; FBM has no record of them.",
     },
     { key: "inspection_forms", label: "Inspection forms", tag: "outside-fbm", note: "Filed with the certifier/inspector." },
+    {
+      key: "permit_current",
+      label: "Food permit recorded and in date (as you declared it)",
+      tag: "assisted",
+      needs: ["permits"],
+      satisfied: permitRecordedAndCurrent("permit"),
+      note:
+        "Read from the permit expiry date in your cottage-food profile. FBM " +
+        "ships no state-law table and makes no legal determination about your " +
+        "operation — you are the authority on your own compliance. This says " +
+        "only that you recorded a date and it has not passed.",
+    },
+    {
+      key: "food_handler_current",
+      label: "Food-handler certification recorded and in date (as you declared it)",
+      tag: "assisted",
+      needs: ["permits"],
+      satisfied: permitRecordedAndCurrent("food_handler"),
+      note:
+        "Read from the food-handler expiry date in your cottage-food profile. " +
+        "Self-declared, like the permit above; unavailable unless you keep a " +
+        "cottage-food profile.",
+    },
     {
       key: "organic_certificate",
       label: "USDA Organic certificate (if you claim organic)",

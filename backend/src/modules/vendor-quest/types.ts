@@ -26,6 +26,7 @@ export type DomainFieldKey =
   | "channels"
   | "documents"
   | "funds"
+  | "permits"
 
 export interface RevenueSummary {
   currency: string
@@ -127,6 +128,49 @@ export interface FundsSummary {
   violation_count: number
 }
 
+/** One self-declared credential's standing, copied from `cottage-food`. */
+export interface PermitStanding {
+  /** `cottage-food`'s own `ExpiryStatus`, carried through unchanged. */
+  status: "unset" | "ok" | "expiring_soon" | "expired"
+  expires_at: string | null
+  /** Whole days remaining; negative once past. Copied, never recomputed. */
+  days_until: number | null
+}
+
+/**
+ * A snapshot of `cottage-food`'s compliance profile — the permit and
+ * food-handler dates a home-based food seller declared about themselves.
+ *
+ * SELF-DECLARED, AND THAT IS THE WHOLE POINT. `cottage-food`'s governing rule
+ * is that "the seller is the authority on their own compliance; FBM's job is
+ * to count accurately and show them the number" — the platform ships no
+ * state-law table and makes no legal determination about anyone's operation.
+ * Nothing reading this field may present it as FBM certifying compliance, and
+ * nothing may treat it as a block: that module "never blocks a sale", and a
+ * substrate snapshot of it does not get to be stricter than its source.
+ *
+ * What a requirement reading this can honestly say is "you told us this date,
+ * and it has passed" — which is worth saying, and is exactly what nothing said
+ * before.
+ *
+ * Copied, never recomputed — the `funds` rule. `getComplianceSnapshot` derives
+ * `status` and `days_until` from the stored dates on every call, so
+ * recomputing them here would invent a second source of truth that could
+ * disagree with the compliance dashboard the vendor is looking at.
+ */
+export interface PermitsSummary {
+  /** What the seller said they run, e.g. "cottage_food". Null when unset. */
+  operation_type: string | null
+  permit: PermitStanding
+  food_handler: PermitStanding
+  /**
+   * How many plain-language notes the module raised. A count, not the text:
+   * the advisories are sentences written for a human to read, and dragging
+   * them into the substrate would invite a predicate to match on their wording.
+   */
+  advisory_count: number
+}
+
 /**
  * Present only on an AGGREGATE substrate (a collective quest's combined record).
  * `null` for an individual vendor. Collective quest definitions read
@@ -152,6 +196,7 @@ export interface VendorSubstrate {
   channels: ChannelSummary | null
   documents: VaultSummary | null
   funds: FundsSummary | null
+  permits: PermitsSummary | null
   /** Null for individual vendors; populated when this is an aggregate. */
   collective: CollectiveAggregateInfo | null
 }
