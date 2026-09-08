@@ -1,5 +1,6 @@
 import type { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { DOCUMENT_VAULT_MODULE } from "../../../modules/document-vault"
+import { VaultDocumentType } from "../../../modules/document-vault/models/vault-document"
 import type DocumentVaultModuleService from "../../../modules/document-vault/service"
 import {
   daysUntilExpiry,
@@ -25,7 +26,17 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 
   const filters: Record<string, unknown> = {}
   if (typeof req.query.seller_id === "string") filters.seller_id = req.query.seller_id
-  if (typeof req.query.doc_type === "string") filters.doc_type = req.query.doc_type
+  if (typeof req.query.doc_type === "string") {
+    // Refuse an unknown type rather than filtering on a value the enum has
+    // never held, which silently returns an empty queue.
+    if (!(Object.values(VaultDocumentType) as string[]).includes(req.query.doc_type)) {
+      return res.status(400).json({
+        message: `Unknown doc_type: ${req.query.doc_type}`,
+        allowed: Object.values(VaultDocumentType),
+      })
+    }
+    filters.doc_type = req.query.doc_type
+  }
   const verifiedParam =
     typeof req.query.verified === "string" ? req.query.verified : "false"
   if (verifiedParam !== "all") filters.verified = verifiedParam === "true"

@@ -69,3 +69,50 @@ describe("Q8 compliance-tracker — certification vocabulary", () => {
     expect(evaluateQuest(q8, licensed).stages.every((s) => s.open)).toBe(true)
   })
 })
+
+/**
+ * Tier B item 11 gave the organic and weights-and-measures certificates their
+ * own vault types. The `cert_ready` gate accepted only `license` and
+ * `credential`, which is where those documents used to land — so widening it
+ * is not a nicety. Narrowing it, or swapping the old types for the new ones,
+ * would close a gate vendors have already passed.
+ */
+describe("Q8 cert_ready gate — widened, never narrowed", () => {
+  const certGate = (docType: string, verified = true) =>
+    evaluateQuest(
+      q8,
+      makeSubstrate({
+        documents: {
+          documents: [
+            { id: "d1", doc_type: docType, label: "Cert", verified, expires_at: null },
+          ],
+        },
+      })
+    ).stages.find((g) => g.key === "cert_ready")!.open
+
+  it("still opens on the types certificates used to be filed under", () => {
+    expect(certGate("license")).toBe(true)
+    expect(certGate("credential")).toBe(true)
+  })
+
+  it("also opens on the new dedicated certificate types", () => {
+    expect(certGate("organic_certification")).toBe(true)
+    expect(certGate("device_certificate")).toBe(true)
+  })
+
+  it("still needs the document to be verified, and ignores unrelated types", () => {
+    expect(certGate("organic_certification", false)).toBe(false)
+    expect(certGate("lease")).toBe(false)
+  })
+
+  it("keeps the certificate requirements vendor-supplied — a type is not a validation", () => {
+    for (const key of ["organic_certificate", "device_certificate"]) {
+      const req = q8.requirements.find((r) => r.key === key)!
+      expect({ key, tag: req.tag, hasPredicate: req.satisfied != null }).toEqual({
+        key,
+        tag: "vendor-supplied",
+        hasPredicate: false,
+      })
+    }
+  })
+})

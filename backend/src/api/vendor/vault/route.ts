@@ -35,8 +35,18 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
   res.json({ documents, count: documents.length })
 }
 
+/**
+ * Accepted `doc_type` values, derived from the model enum rather than
+ * hand-listed: the union and the runtime guard below cannot drift from the
+ * database, which is what let an unknown value through before.
+ */
+const DOC_TYPES = Object.values(VaultDocumentType)
+
+const isDocType = (v: unknown): v is VaultDocumentType =>
+  typeof v === "string" && (DOC_TYPES as string[]).includes(v)
+
 interface CreateDocBody {
-  doc_type?: "lease" | "contract" | "license" | "insurance" | "credential" | "business_plan" | "other"
+  doc_type?: VaultDocumentType
   label: string
   file_id?: string
   issued_at?: string
@@ -56,6 +66,14 @@ export const POST = async (req: MedusaRequest<CreateDocBody>, res: MedusaRespons
 
   const b = req.body ?? ({} as CreateDocBody)
   if (!b.label) return res.status(400).json({ message: "label is required" })
+  // `doc_type` was cast straight through, so an unrecognised value reached
+  // Postgres and failed at the enum instead of being refused here.
+  if (b.doc_type != null && !isDocType(b.doc_type)) {
+    return res.status(400).json({
+      message: `Unknown doc_type: ${String(b.doc_type)}`,
+      allowed: DOC_TYPES,
+    })
+  }
 
   const service = req.scope.resolve<DocumentVaultModuleService>(DOCUMENT_VAULT_MODULE)
 
@@ -98,7 +116,7 @@ export const POST = async (req: MedusaRequest<CreateDocBody>, res: MedusaRespons
 
   const document = await service.createVaultDocuments({
     seller_id: sellerId,
-    doc_type: (b.doc_type ?? "other") as VaultDocumentType,
+    doc_type: b.doc_type ?? VaultDocumentType.OTHER,
     label: b.label,
     file_id: b.file_id ?? null,
     bytes_stored: bytes,

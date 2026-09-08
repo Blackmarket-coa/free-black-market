@@ -51,12 +51,13 @@ const fiscalSponsorshipReadiness: QuestDefinition = {
     {
       key: "governing_document",
       label: "Governing document",
-      tag: "vendor-supplied",
+      tag: "assisted",
       needs: ["documents"],
-      // Upload type is `contract` until the vault gains a governing-document
-      // type (§3.4, Tier B item 11); the predicate follows the type, not the
-      // other way round, so this stays vendor-supplied for now.
-      note: "Bylaws, a decision-making agreement or a memorandum of understanding. Draft from the scaffolds in Blackout's Coalition tools, then upload to your vault as a contract.",
+      // The type exists now, so the predicate follows it. Both of this
+      // quest's document gates are type-agnostic (any document, any verified
+      // document), so this retag moves neither.
+      satisfied: hasVerifiedDocType("governing_document"),
+      note: "Bylaws, a decision-making agreement or a memorandum of understanding. Draft from the scaffolds in Blackout's Coalition tools, then upload to your vault as a governing document; it counts once an FBM reviewer verifies it.",
     },
     {
       key: "operating_history",

@@ -29,8 +29,34 @@ const DOC_TYPES: VaultDocType[] = [
   "insurance",
   "credential",
   "business_plan",
+  "governing_document",
+  "organic_certification",
+  "device_certificate",
   "other",
 ]
+
+/**
+ * The picker and the table rendered the raw stored value, so a vendor read
+ * "business_plan" in a dropdown. Adding `governing_document` and
+ * `organic_certification` would have made that worse, so the labels are
+ * spelled here. Typed as a total record, so a new member of the union fails
+ * the build until it is named.
+ */
+const DOC_TYPE_LABELS: Record<VaultDocType, string> = {
+  lease: "Lease",
+  contract: "Contract",
+  license: "Licence",
+  insurance: "Insurance",
+  credential: "Credential",
+  business_plan: "Business plan",
+  governing_document: "Governing document (bylaws, articles)",
+  organic_certification: "Organic certification",
+  device_certificate: "Weights & measures certificate",
+  other: "Other",
+}
+
+export const docTypeLabel = (t: string): string =>
+  (DOC_TYPE_LABELS as Record<string, string>)[t] ?? t
 
 const VaultPage = () => {
   const { data, isLoading } = useVaultDocuments()
@@ -114,7 +140,7 @@ const VaultPage = () => {
               <Select.Content>
                 {DOC_TYPES.map((t) => (
                   <Select.Item key={t} value={t}>
-                    {t}
+                    {docTypeLabel(t)}
                   </Select.Item>
                 ))}
               </Select.Content>
@@ -158,7 +184,7 @@ const VaultPage = () => {
                 <Table.Row key={d.id}>
                   <Table.Cell>{d.label}</Table.Cell>
                   <Table.Cell>
-                    <Badge size="2xsmall">{d.doc_type}</Badge>
+                    <Badge size="2xsmall">{docTypeLabel(d.doc_type)}</Badge>
                   </Table.Cell>
                   <Table.Cell>
                     {(() => {
