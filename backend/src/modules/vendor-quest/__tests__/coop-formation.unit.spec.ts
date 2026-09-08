@@ -56,22 +56,58 @@ describe("Q11 coop-formation — founding-document links", () => {
 })
 
 describe("Q11 coop-formation — the bylaws requirement", () => {
-  it("stays vendor-supplied, so FBM never marks it done", () => {
-    const bylaws = requirement("governance_bylaws")
-    expect(bylaws.tag).toBe("vendor-supplied")
-    expect(bylaws.satisfied).toBeUndefined()
+  const bylawsStatus = (docs: { doc_type: string; verified: boolean }[]) =>
+    evaluateQuest(
+      q11,
+      makeSubstrate({
+        documents: {
+          documents: docs.map((d, i) => ({
+            id: `d${i}`,
+            label: "Bylaws",
+            expires_at: null,
+            ...d,
+          })),
+        },
+      })
+    ).requirements.find((r) => r.key === "governance_bylaws")!.status
 
-    const withVerifiedDocs = makeSubstrate({
+  /**
+   * Retagged `assisted` once the vault gained a `governing_document` type
+   * (Tier B item 11). An `assisted` requirement with no predicate reads as
+   * satisfied unconditionally, so the predicate is what makes the tag safe.
+   */
+  it("reads a verified governing document, and nothing else", () => {
+    const bylaws = requirement("governance_bylaws")
+    expect(bylaws.tag).toBe("assisted")
+    expect(bylaws.satisfied).toBeDefined()
+
+    expect(bylawsStatus([{ doc_type: "governing_document", verified: true }])).toBe("satisfied")
+    // Unverified, and the older `contract` upload, both fall short — FBM
+    // never counts a document it has not checked.
+    expect(bylawsStatus([{ doc_type: "governing_document", verified: false }])).toBe("unsatisfied")
+    expect(bylawsStatus([{ doc_type: "contract", verified: true }])).toBe("unsatisfied")
+  })
+
+  it("moves no stage gate, because Q11's gates never read documents", () => {
+    const withDoc = makeSubstrate({
+      operating: { ...makeSubstrate().operating, months_active: 24 },
+      revenue: { ...makeSubstrate().revenue, lifetime_revenue: 50_000 },
+      collective: { member_count: 4, member_ids: ["a", "b", "c", "d"] },
       documents: {
         documents: [
-          { id: "d1", doc_type: "contract", label: "Bylaws", verified: true, expires_at: null },
+          { id: "d1", doc_type: "governing_document", label: "Bylaws", verified: true, expires_at: null },
         ],
       },
     })
-    const evaluated = evaluateQuest(q11, withVerifiedDocs).requirements.find(
-      (r) => r.key === "governance_bylaws"
-    )!
-    expect(evaluated.status).toBe("checklist")
+    const withoutDoc = makeSubstrate({
+      operating: { ...makeSubstrate().operating, months_active: 24 },
+      revenue: { ...makeSubstrate().revenue, lifetime_revenue: 50_000 },
+      collective: { member_count: 4, member_ids: ["a", "b", "c", "d"] },
+    })
+    const gates = (s: typeof withDoc) =>
+      evaluateQuest(q11, s).stages.map((g) => `${g.key}:${g.open}`)
+
+    expect(gates(withoutDoc)).toEqual(gates(withDoc))
   })
 
   it("tells the vendor it is their own vault, not a shared one", () => {

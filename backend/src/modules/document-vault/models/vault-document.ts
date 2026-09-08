@@ -13,6 +13,12 @@ export enum VaultDocumentType {
   INSURANCE = "insurance",
   CREDENTIAL = "credential",
   BUSINESS_PLAN = "business_plan",
+  /** Bylaws, an operating agreement, articles — a co-op's founding papers. */
+  GOVERNING_DOCUMENT = "governing_document",
+  /** USDA Organic or an equivalent certifier's certificate. */
+  ORGANIC_CERTIFICATION = "organic_certification",
+  /** A weights-and-measures device certificate for a sealed scale. */
+  DEVICE_CERTIFICATE = "device_certificate",
   OTHER = "other",
 }
 

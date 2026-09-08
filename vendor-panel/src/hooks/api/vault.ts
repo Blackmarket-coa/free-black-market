@@ -8,6 +8,9 @@ export type VaultDocType =
   | "insurance"
   | "credential"
   | "business_plan"
+  | "governing_document"
+  | "organic_certification"
+  | "device_certificate"
   | "other"
 
 export interface VaultDocument {

@@ -73,7 +73,27 @@ const statusBadge = (row: VaultRow): { color: "green" | "orange" | "red" | "grey
 
 const formatDate = (value: string | null) => (value ? new Date(value).toLocaleDateString() : "—")
 
-export const VaultPage = () => {
+export /**
+ * The admin queue rendered the raw stored value too. Kept local: this panel
+ * imports nothing from the vendor panel or the backend, so a shared map would
+ * be a new dependency for one string table.
+ */
+const DOC_TYPE_LABELS: Record<string, string> = {
+  lease: "Lease",
+  contract: "Contract",
+  license: "Licence",
+  insurance: "Insurance",
+  credential: "Credential",
+  business_plan: "Business plan",
+  governing_document: "Governing document (bylaws, articles)",
+  organic_certification: "Organic certification",
+  device_certificate: "Weights & measures certificate",
+  other: "Other",
+}
+
+const docTypeLabel = (t: string): string => DOC_TYPE_LABELS[t] ?? t
+
+const VaultPage = () => {
   const queryClient = useQueryClient()
   const [scope, setScope] = useState<Scope>("false")
   const [expiringWithin, setExpiringWithin] = useState("")
@@ -196,7 +216,7 @@ export const VaultPage = () => {
                       <Text size="xsmall" className="text-ui-fg-subtle">No file attached</Text>
                     )}
                   </Table.Cell>
-                  <Table.Cell><Badge size="2xsmall">{row.doc_type}</Badge></Table.Cell>
+                  <Table.Cell><Badge size="2xsmall">{docTypeLabel(row.doc_type)}</Badge></Table.Cell>
                   <Table.Cell><Badge size="2xsmall" color={status.color}>{status.label}</Badge></Table.Cell>
                   <Table.Cell>{formatDate(row.expires_at)}</Table.Cell>
                   <Table.Cell>{formatDate(row.created_at)}</Table.Cell>

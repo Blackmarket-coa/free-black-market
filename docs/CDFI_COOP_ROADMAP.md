@@ -951,7 +951,24 @@ the character-sheet "Time Credits" stat honest (S — read repaired
     vault types in one `ADD VALUE IF NOT EXISTS` migration, with the three
     duplicated vocabulary sites (§3.4, §3.6); then Q11's and Q8's
     `satisfied` predicates read them, and Q8 gains the `permits` substrate
-    field. The TEXT+CHECK conversion in `docs/COMMERCE_ROADMAP.md` §4
+    field. *Migration, vocabulary and predicates done 2026-09-08; the
+    `permits` substrate field remains.* Four corrections this turned up.
+    (a) The vocabulary is duplicated in **five** places, not three: the model
+    enum, the `CREATE TYPE` literal in the vault's own create migration, the
+    vendor `POST /vendor/vault` body union, the vendor-panel `VaultDocType`
+    + `DOC_TYPES` pair, and the unvalidated `?doc_type=` filter on
+    `GET /admin/vault`. (b) The route did not "cast an unknown `doc_type` to
+    `other`" — `??` only fills an **absent** value, so an unrecognised string
+    passed through to Postgres and failed at the enum. Both routes now
+    validate and return 400. (c) Q8 has no `satisfied` predicate to give: its
+    certificate items are vendor-supplied by §3.6's own rule, and a type says
+    what a document is, not that it is valid. What actually needed changing
+    was its `cert_ready` gate, which accepted only `license` and `credential`
+    — exactly where these certificates used to land — so it is **widened** to
+    accept the new types alongside the old. Narrowing it, or swapping old for
+    new, would have closed a gate vendors had already passed. (d) Neither
+    panel had a label map, so the picker read `business_plan`; adding
+    `governing_document` would have read worse, so both now carry one. The TEXT+CHECK conversion in `docs/COMMERCE_ROADMAP.md` §4
     decision 5 remains a hygiene ruling, no longer a blocker.
 12. The CSA share-box wire (§3.7): scheduler routes and screens, one
     billing owner, a storefront cycle page that writes `order_cycle_id`,

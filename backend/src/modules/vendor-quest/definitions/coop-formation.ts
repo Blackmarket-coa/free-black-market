@@ -1,6 +1,11 @@
 import type { QuestDefinition } from "../types"
 import { coopFoundingDocumentLinks } from "../../../shared/coop-founding-links"
-import { disclaimer, lifetimeRevenueAtLeast, monthsActiveAtLeast } from "./shared"
+import {
+  disclaimer,
+  hasVerifiedDocType,
+  lifetimeRevenueAtLeast,
+  monthsActiveAtLeast,
+} from "./shared"
 
 /**
  * Q11 — Co-op Formation Readiness (COLLECTIVE quest).
@@ -50,17 +55,18 @@ const coopFormation: QuestDefinition = {
     {
       key: "governance_bylaws",
       label: "Governance / bylaws",
-      tag: "vendor-supplied",
+      tag: "assisted",
       needs: ["documents"],
+      // The vault gained a `governing_document` type, so the predicate has a
+      // real thing to read and the tag can carry it. Q11's three gates read
+      // member count, tenure and revenue only — never `s.documents` — so this
+      // moves no vendor's progress.
+      satisfied: hasVerifiedDocType("governing_document"),
       // There is no collective-owned vault: the vault is seller-scoped and a
       // collective quest flat-maps the documents of members who consented to
       // the `documents` scope. So the instruction is "your vault", not "the
       // shared vault". The vault has no governing-document type yet
-      // (`docs/CDFI_COOP_ROADMAP.md` §3.4, Tier B item 11), which is also why
-      // this stays `vendor-supplied`: an `assisted` tag would need a
-      // `satisfied` predicate reading a type that does not exist, and without
-      // one the engine would read the requirement as already met.
-      note: "Draft it, then upload to your own vault (as a contract, until the vault has a governing-document type) and consent to the documents scope so the collective packet can include it. FBM never drafts or reviews it.",
+      note: "Draft it, then upload to your own vault as a governing document and consent to the documents scope so the collective packet can include it. It counts once an FBM reviewer verifies it. FBM never drafts or reviews the content itself.",
     },
     {
       key: "incorporation",

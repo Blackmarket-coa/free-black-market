@@ -25,6 +25,19 @@ import {
  * `organic_certification` and `device_certificate` vault types ship, those
  * certificates are uploaded as `credential`.
  */
+/**
+ * Vault types that evidence a certification. The `cert_ready` gate accepts
+ * any of them: `license` and `credential` are where these documents landed
+ * before the vault had dedicated types, and they stay accepted so no vendor
+ * who already passed the gate falls back behind it.
+ */
+const CERT_DOC_TYPES = [
+  "license",
+  "credential",
+  "organic_certification",
+  "device_certificate",
+] as const
+
 const complianceTracker: QuestDefinition = {
   key: "compliance-tracker",
   category: "Certification & Trust",
@@ -62,7 +75,7 @@ const complianceTracker: QuestDefinition = {
       key: "organic_certificate",
       label: "USDA Organic certificate (if you claim organic)",
       tag: "vendor-supplied",
-      note: "Issued by an accredited certifier and listed in the USDA Organic INTEGRITY database. Upload as a credential; FBM never certifies.",
+      note: "Issued by an accredited certifier and listed in the USDA Organic INTEGRITY database. Upload as an organic certification; FBM never certifies.",
     },
     {
       key: "naturally_grown_certificate",
@@ -80,7 +93,7 @@ const complianceTracker: QuestDefinition = {
       key: "device_certificate",
       label: "Weights-and-measures device certificate (if you sell by weight)",
       tag: "vendor-supplied",
-      note: "Your state weights-and-measures office inspects and seals the scale you sell on. Upload the certificate as a credential.",
+      note: "Your state weights-and-measures office inspects and seals the scale you sell on. Upload it as a weights-and-measures certificate.",
     },
     {
       key: "nursery_license",
@@ -126,9 +139,13 @@ const complianceTracker: QuestDefinition = {
       key: "cert_ready",
       label: "Certification-Ready",
       order: 3,
-      unlocks: (s) => hasVerifiedDocType("license")(s) || hasVerifiedDocType("credential")(s),
+      // Widened, never narrowed. The certificates below now have their own
+      // vault types, and a gate that still accepted only license/credential
+      // would refuse an upload typed `organic_certification` — closing a gate
+      // a vendor had already passed. Adding types can only open it sooner.
+      unlocks: (s) => CERT_DOC_TYPES.some((t) => hasVerifiedDocType(t)(s)),
       missing: (s) =>
-        hasVerifiedDocType("license")(s) || hasVerifiedDocType("credential")(s)
+        CERT_DOC_TYPES.some((t) => hasVerifiedDocType(t)(s))
           ? []
           : ["A verified license or credential on file"],
     },

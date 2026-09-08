@@ -236,6 +236,38 @@ describe("POST /vendor/vault", () => {
     expect(createVaultDocuments).toHaveBeenCalled()
   })
 
+  /**
+   * `doc_type` was cast straight through, so an unrecognised value reached
+   * Postgres and failed at the enum instead of being refused here.
+   */
+  it("refuses an unknown doc_type with a 400 before touching the service", async () => {
+    const { req, createVaultDocuments } = makeReq(
+      { planCode: "free", vaultDocs: [] },
+      { ...authed, body: { label: "Bylaws", doc_type: "not_a_real_type" } }
+    )
+    const res = createRes()
+    await CREATE_VAULT_DOC(req as never, res as never)
+
+    expect(res.statusCode).toBe(400)
+    expect(createVaultDocuments).not.toHaveBeenCalled()
+  })
+
+  it("accepts the document types added for governance and certification", async () => {
+    for (const doc_type of ["governing_document", "organic_certification", "device_certificate"]) {
+      const { req, createVaultDocuments } = makeReq(
+        { planCode: "free", vaultDocs: [] },
+        { ...authed, body: { label: "Doc", doc_type } }
+      )
+      const res = createRes()
+      await CREATE_VAULT_DOC(req as never, res as never)
+
+      expect({ doc_type, status: res.statusCode }).toEqual({ doc_type, status: 201 })
+      expect(createVaultDocuments).toHaveBeenCalledWith(
+        expect.objectContaining({ doc_type })
+      )
+    }
+  })
+
   it("refuses with a 402 at the cap", async () => {
     const { req, createVaultDocuments } = makeReq(
       {
