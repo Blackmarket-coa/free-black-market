@@ -172,6 +172,44 @@ export const PARTNER_DIRECTORY: readonly PartnerEntry[] = [
     unverified_reason: "rd.usda.gov answers automated requests with 403.",
   },
 
+  // ── Fiscal sponsors (§3.3) ──────────────────────────────────────────────
+  // Seeded from the display fields of `donation/fiscal-sponsors.ts`, never
+  // from that registry directly: its `live` flag means FBM's own agreement
+  // status, not whether the sponsor takes applicants, and a vendor's sponsor
+  // is the vendor's own relationship. Its `selc_local` entry is a placeholder
+  // for a per-region choice, not an entity anyone can apply to, so it is not
+  // reproduced here.
+  {
+    key: "allied_media_projects",
+    name: "Allied Media Projects",
+    url: "https://alliedmedia.org",
+    tagline: "Detroit-rooted fiscal sponsor for movement and solidarity-economy projects.",
+    kind: "fiscal_sponsor",
+    states: "national",
+    serves: ["nonprofit", "cooperative"],
+    products: "Comprehensive fiscal sponsorship for media, movement and solidarity-economy projects, with an application round and a sponsored-project network.",
+  },
+  {
+    key: "neo_philanthropy",
+    name: "NEO Philanthropy",
+    url: "https://neophilanthropy.org",
+    tagline: "National fiscal sponsor for social-change initiatives.",
+    kind: "fiscal_sponsor",
+    states: "national",
+    serves: ["nonprofit"],
+    products: "Fiscal sponsorship and fund management for social-justice initiatives, including grantmaking and back-office administration.",
+  },
+  {
+    key: "tides_foundation",
+    name: "Tides Foundation",
+    url: "https://tides.org",
+    tagline: "Broad-spectrum 501(c)(3) fiscal sponsor at scale.",
+    kind: "fiscal_sponsor",
+    states: "national",
+    serves: ["nonprofit"],
+    products: "Fiscal sponsorship, donor-advised funds and grantmaking infrastructure for projects that do not hold their own 501(c)(3).",
+  },
+
   // ── Certifiers, inspection programs and the agencies behind them (§3.6) ──
   // A vendor is certified by these, never by FBM; the compliance quest lists
   // the certificate and links here. usda.gov properties answer automated

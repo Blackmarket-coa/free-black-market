@@ -16,6 +16,7 @@ import {
   commonlyLeadsTo,
 } from "../progressions"
 import { coopFoundingDocumentLinks } from "../../../shared/coop-founding-links"
+import { partnerLinks } from "../../partner-directory"
 import { PLAYBOOK_IDS, PLAYBOOK_RECIPES } from "../recipes"
 import type { PlaybookId } from "../recipes"
 import { QUEST_DEFINITIONS } from "../../vendor-quest/definitions"
@@ -109,10 +110,39 @@ describe("playbook progressions", () => {
       }
     })
 
-    it("leaves the reading list off edges that do not ask for founding documents", () => {
+    /**
+     * Links are attached only where a prerequisite asks a vendor to obtain a
+     * document or a relationship they could go and read about — bylaws, or a
+     * fiscal sponsor. Never on an edge about facilities, licences or land,
+     * where only the vendor's own state can answer.
+     */
+    it("leaves the reading list off edges that ask for none of it", () => {
       const linked = PROGRESSION_EDGES.filter((e) => e.resource_links != null)
+      expect(linked.length).toBeGreaterThan(0)
       for (const edge of linked) {
-        expect(edge.real_world_prerequisites.some((p) => /bylaws/i.test(p))).toBe(true)
+        const asksForSomethingLinkable = edge.real_world_prerequisites.some(
+          (p) => /bylaws/i.test(p) || /fiscal sponsor/i.test(p)
+        )
+        expect({ from: edge.from, to: edge.to, asksForSomethingLinkable }).toEqual({
+          from: edge.from,
+          to: edge.to,
+          asksForSomethingLinkable: true,
+        })
+      }
+    })
+
+    /**
+     * `docs/CDFI_COOP_ROADMAP.md` §3.3: the two edges naming a fiscal sponsor
+     * read the same partner-registry rows the readiness quest links to, so the
+     * two lists cannot drift.
+     */
+    it("every edge that names a fiscal sponsor carries the sponsor list", () => {
+      const sponsorEdges = PROGRESSION_EDGES.filter((e) =>
+        e.real_world_prerequisites.some((p) => /fiscal sponsor/i.test(p))
+      )
+      expect(sponsorEdges).toHaveLength(2)
+      for (const edge of sponsorEdges) {
+        expect(edge.resource_links).toEqual(partnerLinks({ kind: "fiscal_sponsor" }))
       }
     })
 

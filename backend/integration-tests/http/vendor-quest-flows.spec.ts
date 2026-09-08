@@ -78,13 +78,14 @@ medusaIntegrationTestRunner({
         const noAuth = await safe(api.get("/vendor/quests"))
         expect(noAuth.status).toBe(401)
 
-        // ── Catalog: all 13 quests, config-only, before any opt-in ─────────
+        // ── Catalog: all 14 quests, config-only, before any opt-in ─────────
         const catalog = await safe(api.get("/vendor/quests", h))
         expect(catalog.status).toBe(200)
-        expect(catalog.data.count).toBe(13)
+        expect(catalog.data.count).toBe(14)
         const keys = catalog.data.quests.map((q: any) => q.key)
         expect(keys).toContain("fsa-farm-loan")
         expect(keys).toContain("coop-formation")
+        expect(keys).toContain("fiscal-sponsorship-readiness")
         // Requirements are tagged for the "what it needs" surface.
         const fsa = catalog.data.quests.find((q: any) => q.key === "fsa-farm-loan")
         expect(fsa.requirements.some((r: any) => r.tag === "outside-fbm")).toBe(true)

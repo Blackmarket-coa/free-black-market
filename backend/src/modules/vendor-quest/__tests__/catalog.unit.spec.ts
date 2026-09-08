@@ -58,9 +58,9 @@ function makeMaxedSubstrate(): VendorSubstrate {
 }
 
 describe("full quest catalog", () => {
-  it("has all 13 quests across the four categories", () => {
+  it("has all 14 quests across the four categories", () => {
     const defs = listQuestDefinitions()
-    expect(defs).toHaveLength(13)
+    expect(defs).toHaveLength(14)
     const categories = new Set(defs.map((d) => d.category))
     expect(categories).toEqual(
       new Set([
@@ -71,7 +71,7 @@ describe("full quest catalog", () => {
       ])
     )
     // keys are unique
-    expect(new Set(defs.map((d) => d.key)).size).toBe(13)
+    expect(new Set(defs.map((d) => d.key)).size).toBe(14)
   })
 
   it("every quest evaluates through the engine without throwing", () => {

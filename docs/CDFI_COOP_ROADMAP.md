@@ -419,6 +419,22 @@ sponsor if you intend to take donations" (`playbook/progressions.ts`,
 Harvest→Grove and Service→Grove) should read the same rows, or two lists
 will drift.
 
+*Done 2026-09-08.* Q14 `fiscal-sponsorship-readiness` ships with the `funds`
+substrate field, three `fiscal_sponsor` registry rows seeded from the sponsor
+list's display fields (AMP, NEO, Tides — `selc_local` is a per-region
+placeholder, not an entity anyone applies to, so it is not reproduced), and
+the two progression edges reading those same rows through the
+`resource_links` mechanism added in §3.4. One correction to the plan below:
+**the paywall paragraph names the wrong mechanism.** The engine never reads a
+plan or an entitlement — `evaluateRequirement` derives "unavailable" purely
+from substrate nullity, and that is a documented invariant. A vendor without
+the fund pack reads "unavailable" because the plan-gated `/vendor/funds*`
+routes never let them create a fund, so `getPortfolioReport` is empty and
+`buildFunds` returns null. The outcome the paragraph wants is right; it comes
+from emptiness, not from an entitlement check. Also worth knowing for anyone
+reading the snapshot: `getPortfolioReport` applies no status filter, so closed
+funds are included in the totals.
+
 The substrate change is the authoring guide's step 3, not an engine edit:
 `funds` joins `DomainFieldKey` and `VendorSubstrate` in `types.ts`, a
 `buildFunds` in `substrate/build.ts` follows the `buildProduction` pattern
@@ -925,7 +941,7 @@ the character-sheet "Time Credits" stat honest (S — read repaired
 
 **Tier B — wiring across modules and repos, no ruling needed.**
 7. `fiscal-sponsorship-readiness` definition + the `funds` domain-optional
-   substrate field (§3.3).
+   substrate field (§3.3). *Done 2026-09-08.*
 8. The shared expiry/overdue reminder rail (§3.6, second half).
 9. Mutual-aid asks on Grove storefronts and the FBM→Blackout mutual-aid
    events (§3.8, wire half).
