@@ -38,8 +38,17 @@ const createRes = (): TestRes => {
 
 const SLOTS = [{ key: "leafy_green", label: "Leafy Green", quantity: 1 }]
 
+// Parameters are declared even though the bodies ignore them: without them
+// `mock.calls[0]` is typed as the empty tuple, and the filter assertions below
+// cannot read argument 0. `tsc` catches that; jest, which transpiles without
+// type-checking, does not.
 const makeService = () => ({
-  listAndCountShareBoxTemplates: jest.fn(async () => [[{ id: "sbt_1" }], 1]),
+  listAndCountShareBoxTemplates: jest.fn(
+    async (
+      _filters: Record<string, unknown>,
+      _config?: Record<string, unknown>
+    ) => [[{ id: "sbt_1" }], 1]
+  ),
   createShareBoxTemplate: jest.fn(async (args: Record<string, unknown>) => ({
     id: "sbt_new",
     ...args,
@@ -105,9 +114,7 @@ describe("GET /vendor/share-box-templates", () => {
   it("always scopes the list to the caller", async () => {
     const service = makeService()
     await callGet(service, "sel_me")
-    const [filters] = service.listAndCountShareBoxTemplates.mock.calls[0] as [
-      Record<string, unknown>,
-    ]
+    const [filters] = service.listAndCountShareBoxTemplates.mock.calls[0]
     expect(filters.coordinator_seller_id).toContain("sel_me")
   })
 
@@ -116,25 +123,22 @@ describe("GET /vendor/share-box-templates", () => {
     // would turn this into a directory of other coordinators' templates.
     const service = makeService()
     await callGet(service, "sel_me", { coordinator_seller_id: "sel_other" })
-    const [filters] = service.listAndCountShareBoxTemplates.mock.calls[0] as [
-      Record<string, unknown>,
-    ]
+    const [filters] = service.listAndCountShareBoxTemplates.mock.calls[0]
     expect(JSON.stringify(filters)).not.toContain("sel_other")
   })
 
   it("passes through the is_active filter, and only when given", async () => {
     const service = makeService()
     await callGet(service, "sel_me", { is_active: "true" })
-    expect(
-      (service.listAndCountShareBoxTemplates.mock.calls[0] as [Record<string, unknown>])[0]
-        .is_active
-    ).toBe(true)
+    expect(service.listAndCountShareBoxTemplates.mock.calls[0][0].is_active).toBe(
+      true
+    )
 
     const service2 = makeService()
     await callGet(service2, "sel_me")
-    expect(
-      (service2.listAndCountShareBoxTemplates.mock.calls[0] as [Record<string, unknown>])[0]
-    ).not.toHaveProperty("is_active")
+    expect(service2.listAndCountShareBoxTemplates.mock.calls[0][0]).not.toHaveProperty(
+      "is_active"
+    )
   })
 })
 
