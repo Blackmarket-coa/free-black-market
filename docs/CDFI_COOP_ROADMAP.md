@@ -484,7 +484,20 @@ FBM side:
   material; the six progression edges whose prose prerequisites say
   "bylaws" read the same rows. Blackout's `/coalition` route takes no den
   or tool parameter, so the link lands on Coalition, not on a den's
-  Documents tool.
+  Documents tool. *Done 2026-09-07:* `shared/coop-founding-links.ts` builds
+  the list once — the Blackout Coalition URL from `BLACKOUT_APP_URL` (the
+  schema-declared variable, falling back to `https://theblackout.app`) plus
+  `partnerLinks({ kind: ["legal", "back_office"], serves: "cooperative" })`
+  — and both Q11 and `ProgressionEdge.resource_links` read it, so a new
+  registry row reaches both at once. Two new registry rows came with it: the
+  USFWC Co-op Clinic, and the USDA Cooperative Services page that had been
+  hard-coded inside the quest definition. The bylaws requirement's note now
+  says "your own vault", not "the shared vault", and names the documents
+  consent scope. Left for Tier B item 11: the `governing_document` type and
+  the `assisted` retag, since an `assisted` tag with no predicate reads as
+  satisfied and the predicate has no type to read. Also noted while wiring:
+  `BLACKOUT_APP_URL` and the undeclared `BLACKOUT_BASE_URL` are two names for
+  one origin, inlined separately in the overlay and embed-chat routes.
 
 Blackout side (recorded here; built there):
 
@@ -885,7 +898,9 @@ the character-sheet "Time Credits" stat honest (S — read repaired
    half). *Done 2026-09-07; the `permits` substrate field, the document
    types and the reminder rail remain.*
 4. Q11 gatekeeper links to the Blackout founding-documents surface and the
-   SELC/USFWC libraries (§3.4, first half).
+   SELC/USFWC libraries (§3.4, first half). *Done 2026-09-07; the
+   `governing_document` vault type and the `assisted` retag that depends on
+   it remain, as Tier B item 11.*
 5. The CSA-network positioning and pilot checklist (§3.7) — written now,
    published only after item 12 lands.
 6. Honest time-bank copy on the Service and Grove cards, the vendor-panel

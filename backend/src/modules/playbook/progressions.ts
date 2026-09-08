@@ -40,6 +40,7 @@
  * See `docs/VENDOR_PROGRESSIONS.md` for the full table and reasoning.
  */
 
+import { coopFoundingDocumentLinks } from "../../shared/coop-founding-links"
 import { PLAYBOOK_RECIPES, getRecipe } from "./recipes"
 import type {
   PlaybookId,
@@ -90,6 +91,18 @@ export type ProgressionEdge = {
    */
   real_world_prerequisites: string[]
   /**
+   * Where to read about the documents a prerequisite names, when the move
+   * turns on paperwork a vendor has to write rather than a fact about their
+   * business. Same rows as the Co-op Formation quest's gatekeeper links
+   * (`docs/CDFI_COOP_ROADMAP.md` §3.4) — one list, two surfaces.
+   *
+   * Reference material, never a gate and never an endorsement: FBM does not
+   * draft, review or file any of it. Absent on every edge whose prerequisites
+   * are facilities, licences or land, where the vendor's own state or
+   * inspector is the only real answer and a national link would mislead.
+   */
+  resource_links?: { label: string; url: string }[]
+  /**
    * An existing vendor-quest that assembles documentation for this step, when
    * one fits. Quests are opt-in and never a prerequisite for selling — this is
    * a pointer, not an enrollment.
@@ -105,6 +118,20 @@ export type ProgressionEdge = {
  * `docs/VENDOR_PROGRESSIONS.md` — `__tests__/progressions.unit.spec.ts` asserts
  * the counts match.
  */
+/**
+ * The co-op founding-document reading list, resolved once.
+ *
+ * Six edges below ask for bylaws, a member agreement, articles or a
+ * capitalization policy. They all get this same list rather than a link each,
+ * so the vocabulary lives in one place (`shared/coop-founding-links.ts`) and
+ * a new registry row reaches the quest and the edges together.
+ *
+ * `commons -> hub` is deliberately not in the set: "Inter-cooperative
+ * agreements" is a contract between co-ops that already exist, not a founding
+ * document, and that edge has no quest behind it either.
+ */
+const COOP_FOUNDING_LINKS = coopFoundingDocumentLinks()
+
 export const PROGRESSION_EDGES: ProgressionEdge[] = [
   // ---- facility: where you're allowed to produce -----------------------
   {
@@ -184,6 +211,7 @@ export const PROGRESSION_EDGES: ProgressionEdge[] = [
       "Bylaws and a member agreement",
       "A patronage policy",
     ],
+    resource_links: COOP_FOUNDING_LINKS,
     quest_key: "coop-formation",
   },
   {
@@ -200,6 +228,7 @@ export const PROGRESSION_EDGES: ProgressionEdge[] = [
       "Bylaws defining each class and its representation",
       "An elected board or council",
     ],
+    resource_links: COOP_FOUNDING_LINKS,
     quest_key: "coop-formation",
   },
   {
@@ -216,6 +245,7 @@ export const PROGRESSION_EDGES: ProgressionEdge[] = [
       "A member vote to restructure",
       "Representation for each new class",
     ],
+    resource_links: COOP_FOUNDING_LINKS,
     quest_key: "coop-formation",
   },
   {
@@ -261,6 +291,7 @@ export const PROGRESSION_EDGES: ProgressionEdge[] = [
       "Bylaws and an elected board",
       "A capitalization plan (member shares, loans, or grants)",
     ],
+    resource_links: COOP_FOUNDING_LINKS,
     quest_key: "coop-formation",
   },
   {
@@ -291,6 +322,7 @@ export const PROGRESSION_EDGES: ProgressionEdge[] = [
       "Bylaws and a member agreement",
       "Professional licensure and insurance for the entity, where the trade requires it",
     ],
+    resource_links: COOP_FOUNDING_LINKS,
     quest_key: "coop-formation",
   },
 
@@ -352,6 +384,7 @@ export const PROGRESSION_EDGES: ProgressionEdge[] = [
       "Bylaws and a member agreement",
       "A land agreement that survives the change of entity",
     ],
+    resource_links: COOP_FOUNDING_LINKS,
     quest_key: "coop-formation",
   },
   {

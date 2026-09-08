@@ -15,6 +15,7 @@ import {
   groupByEngine,
   commonlyLeadsTo,
 } from "../progressions"
+import { coopFoundingDocumentLinks } from "../../../shared/coop-founding-links"
 import { PLAYBOOK_IDS, PLAYBOOK_RECIPES } from "../recipes"
 import type { PlaybookId } from "../recipes"
 import { QUEST_DEFINITIONS } from "../../vendor-quest/definitions"
@@ -88,6 +89,40 @@ describe("playbook progressions", () => {
     it("kind is replace or add_role", () => {
       for (const edge of PROGRESSION_EDGES) {
         expect(["replace", "add_role"]).toContain(edge.kind)
+      }
+    })
+
+    /**
+     * `docs/CDFI_COOP_ROADMAP.md` §3.4: an edge that asks a vendor to write
+     * bylaws says where to read about them, and it reads the same rows the
+     * Co-op Formation quest does — one list, not a second copy that drifts.
+     */
+    it("every edge that names bylaws carries the co-op reading list", () => {
+      const namesBylaws = (edge: (typeof PROGRESSION_EDGES)[number]) =>
+        edge.real_world_prerequisites.some((p) => /bylaws/i.test(p))
+
+      const withBylaws = PROGRESSION_EDGES.filter(namesBylaws)
+      expect(withBylaws).toHaveLength(6)
+
+      for (const edge of withBylaws) {
+        expect(edge.resource_links).toEqual(coopFoundingDocumentLinks())
+      }
+    })
+
+    it("leaves the reading list off edges that do not ask for founding documents", () => {
+      const linked = PROGRESSION_EDGES.filter((e) => e.resource_links != null)
+      for (const edge of linked) {
+        expect(edge.real_world_prerequisites.some((p) => /bylaws/i.test(p))).toBe(true)
+      }
+    })
+
+    it("every resource link is a plain https label + url pair", () => {
+      for (const edge of PROGRESSION_EDGES) {
+        for (const link of edge.resource_links ?? []) {
+          expect(Object.keys(link).sort()).toEqual(["label", "url"])
+          expect(link.url).toMatch(/^https:\/\//)
+          expect(link.label.trim().length).toBeGreaterThan(0)
+        }
       }
     })
   })

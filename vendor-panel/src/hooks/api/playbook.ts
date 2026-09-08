@@ -66,6 +66,7 @@ export type Progression = {
   headline: string
   ceiling: string
   real_world_prerequisites: string[]
+  resource_links?: { label: string; url: string }[]
   quest_key?: string
   to_display_name: string
   to_social_form: string
