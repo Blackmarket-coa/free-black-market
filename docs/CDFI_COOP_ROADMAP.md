@@ -658,9 +658,20 @@ exists as service methods with no caller:
   caps and enterprise fees. `is_recurring`/`recurrence_rule` are stored and
   never read; `cloneOrderCycle` has no callers; nothing moves a cycle from
   `closed` to `dispatched`.
-- **Two bugs and two dead buttons** on the surfaced half (§1a): the
+- **Three bugs and two dead buttons** on the surfaced half (§1a): the
   unscoped vendor list, the wrong-column `seller_id` filter, "Import OFN"
-  and "remove product".
+  and "remove product" — and, found 2026-09-08 while gathering facts for
+  the positioning note below, an unguarded child route. Every route under
+  `order-cycles/[id]` resolved cycle access except
+  `exchanges/[exchangeId]/products`, which resolved nothing: any
+  authenticated seller could read another coordinator's exchange products,
+  and its POST took `order_cycle_id` from the path without checking the
+  exchange belonged to it, so a guessed `:id`/`:exchangeId` pair wrote into
+  a stranger's cycle. The same handler also re-implemented
+  `addProductsToExchange` as a plain insert, so re-adding a variant tripped
+  the unique index and 500'd. *Fixed 2026-09-08:* the exchange gate moved
+  into `order-cycles/_access.ts` as `resolveExchangeAccess`, shared with the
+  parent route, and the handler calls the upserting service method.
 - **Blackout is ahead.** It already has a per-vendor "order cycles"
   announcement room, `cycle.open / cycle.close / sold_out` formatting and a
   client card; FBM's only candidate emitter (`plant-ship-window.ts`,
