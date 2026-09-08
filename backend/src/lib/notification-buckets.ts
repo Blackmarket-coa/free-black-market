@@ -61,6 +61,15 @@ const AWAITS_ME_TEMPLATES = new Set<string>([
   "seller_patronage_request_pending",
   "seller_bargaining_bid_pending_response",
   "seller_collective_pool_commit_window_closing",
+  // The shared reminder rail (`shared/seller-reminders.ts`). Registered
+  // explicitly rather than left to the pattern fallbacks: these are the
+  // drawer's first real producer, and a reminder that lands in `about_me`
+  // never raises the badge the vendor actually looks at. They also carry the
+  // `action_required` substring, so the fallback agrees — the explicit entry
+  // is what keeps them here if that string is ever edited out of a name.
+  "seller_document_expiring_action_required",
+  "seller_document_expired_action_required",
+  "seller_invoice_overdue_action_required",
 ])
 
 /**

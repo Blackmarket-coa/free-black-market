@@ -401,50 +401,64 @@ const redisModules = (() => {
   ]
 })()
 
-// Notification module (Email provider - SMTP or Resend)
+// Notification module (in-app seller feed, plus an email provider when configured)
+//
+// The `seller_feed` provider is registered unconditionally and the notification
+// module is now always present. Medusa routes `createNotifications` to a
+// provider *by channel*, so before this the vendor drawer's channel had nothing
+// to route to: `smtp` and `resend` both register `channels: ["email"]`, and with
+// neither configured the whole module was absent. In-app delivery must not
+// depend on an outbound email credential — that is the point of building the
+// rail once.
+//
+// Email behaviour is unchanged. When no email provider is configured an email
+// notification now fails at send rather than at `resolve("notification")`;
+// every caller already wraps both in a best-effort try/catch, so the outcome
+// is the same swallowed failure it was before.
 const notificationModules = (() => {
+  const providers: Array<Record<string, unknown>> = [
+    {
+      resolve: './src/modules/seller-feed',
+      id: 'seller-feed',
+      options: {
+        channels: ['seller_feed'],
+      },
+    },
+  ]
+
   if (process.env.SMTP_HOST) {
-    return [{
-      resolve: '@medusajs/medusa/notification',
+    providers.push({
+      resolve: './src/modules/smtp',
+      id: 'smtp',
       options: {
-        providers: [{
-          resolve: './src/modules/smtp',
-          id: 'smtp',
-          options: {
-            channels: ['email'],
-            host: process.env.SMTP_HOST,
-            port: parseInt(process.env.SMTP_PORT || '587'),
-            secure: process.env.SMTP_SECURE === 'true',
-            auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
-            from: process.env.SMTP_FROM || process.env.SMTP_USER,
-          },
-        }],
+        channels: ['email'],
+        host: process.env.SMTP_HOST,
+        port: parseInt(process.env.SMTP_PORT || '587'),
+        secure: process.env.SMTP_SECURE === 'true',
+        auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+        from: process.env.SMTP_FROM || process.env.SMTP_USER,
       },
-    }]
+    })
+  } else if (process.env.RESEND_API_KEY) {
+    providers.push({
+      resolve: './src/modules/resend',
+      id: 'resend',
+      options: {
+        channels: ['email'],
+        api_key: process.env.RESEND_API_KEY,
+        from: process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev',
+        retry: {
+          maxAttempts: Number(process.env.RESEND_MAX_RETRIES) || 3,
+          baseDelayMs: Number(process.env.RESEND_RETRY_BASE_MS) || 250,
+        },
+      },
+    })
   }
 
-  if (process.env.RESEND_API_KEY) {
-    return [{
-      resolve: '@medusajs/medusa/notification',
-      options: {
-        providers: [{
-          resolve: './src/modules/resend',
-          id: 'resend',
-          options: {
-            channels: ['email'],
-            api_key: process.env.RESEND_API_KEY,
-            from: process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev',
-            retry: {
-              maxAttempts: Number(process.env.RESEND_MAX_RETRIES) || 3,
-              baseDelayMs: Number(process.env.RESEND_RETRY_BASE_MS) || 250,
-            },
-          },
-        }],
-      },
-    }]
-  }
-
-  return []
+  return [{
+    resolve: '@medusajs/medusa/notification',
+    options: { providers },
+  }]
 })()
 
 // ============================================================================

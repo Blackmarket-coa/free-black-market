@@ -30,6 +30,12 @@ export const PHASE0_FEATURE_FLAGS = {
   // routes and the vendor-panel "Get Advance" section stay dark until an
   // operator flips it deliberately.
   VENDOR_ADVANCES_V1: "FF_VENDOR_ADVANCES_V1",
+  // The shared seller reminder rail (`shared/seller-reminders.ts`). Default
+  // off, following the reasoning `FBM_AR_DUNNING_LIVE` records on the dunning
+  // sweep: a reminder ladder that advances while nothing can be delivered
+  // burns stages the vendor can never receive. Off, the rail reports what it
+  // would send and records nothing, so every reminder stays sendable.
+  SELLER_REMINDERS_V1: "FF_SELLER_REMINDERS_V1",
 } as const
 
 export type Phase0FeatureFlag = keyof typeof PHASE0_FEATURE_FLAGS

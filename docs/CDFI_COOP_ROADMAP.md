@@ -650,6 +650,45 @@ usda.gov ones answer automated requests with 403 and are marked for one
 human click). Still open here: the `permits` substrate field, the two
 document types, the badge-refresh design rule and the reminder rail.
 
+*Document types closed 2026-09-08* (`organic_certification`,
+`device_certificate` and `governing_document`, one migration; Q8's
+`cert_ready` gate widened rather than switched so an upload that already
+opened it still does).
+
+*Reminder rail closed 2026-09-08.* Built as described — one delivery path
+(`shared/seller-reminders.ts`), two producers, one day-count convention,
+dry-run by default — with four corrections to this section's account of it:
+
+1. **`seller_feed` had no provider, not merely no producer.** Medusa routes
+   `createNotifications` to a provider *by channel*, and `smtp` and `resend`
+   both register `channels: ["email"]` only; with neither configured the
+   notification module was absent entirely. Nothing could have written a feed
+   row. `modules/seller-feed` is that provider, and the notification module is
+   now always registered so in-app delivery does not depend on an outbound
+   email credential.
+2. **There were two day-count conventions, not three, and one was wrong.**
+   `document-vault`'s `daysUntilExpiry` and `cottage-food`'s `daysUntil` are
+   `Math.floor` and already identical; `vendor-verification` has no day count
+   at all, only `expires_at < now`. The outlier was the farm profile's
+   `Math.ceil`, which mapped every instant in the 24 hours *after* expiry to
+   `-0` — and `-0 < 0` is false — so a certification that lapsed yesterday
+   reported `status: "expiring_soon", days_remaining: 0` for a further day.
+   `shared/expiry.ts` is the one convention (`floor`), the farm profile now
+   uses it, and a test pins the boundary that had no guard.
+3. **Bucket registration is load-bearing.** `lib/notification-buckets.ts`
+   classifies by template and defaults to `about_me`; the drawer's badge counts
+   `awaits_me` only. A correctly delivered reminder would have raised no badge.
+   The three templates are registered explicitly.
+4. **`FBM_AR_DUNNING_LIVE` is deliberately not deleted.** Its docblock says to
+   remove it once a subscriber exists, and one now does — but removing it makes
+   the sweep chase real buyers the moment it merges, which is an operator's
+   decision, not a side effect of building a rail. Delivery has its own switch
+   (`FF_SELLER_REMINDERS_V1`), so turning dunning on is now two deliberate acts.
+
+Still open here: the `permits` substrate field, the badge-refresh design rule,
+and a reminder *email* (adding one means adding a real template to `resend`'s
+closed list, which silently drops anything outside it).
+
 What the nursery experience contributes is content — which certificates,
 which agencies, which renewal cadences — as checklist items and links;
 `nursery-vertical` itself carries no compliance vocabulary. The
