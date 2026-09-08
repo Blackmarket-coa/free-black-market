@@ -756,7 +756,19 @@ exists as service methods with no caller:
 - **Three bugs and two dead buttons** on the surfaced half (§1a): the
   unscoped vendor list, the wrong-column `seller_id` filter, "Import OFN"
   and "remove product" — and, found 2026-09-08 while gathering facts for
-  the positioning note below, an unguarded child route. Every route under
+  the positioning note below, an unguarded child route. *(Both dead buttons
+  closed 2026-09-08.* "Remove product" was **implemented**, not removed: the
+  panel had been calling `DELETE /vendor/order-cycles/:id/products/:productId`
+  since the screens shipped and no `DELETE` handler existed anywhere under
+  `order-cycles`, so it 404'd. It is now a real route, authorized as
+  coordinator-or-the-product's-own-seller — the rule `resolveExchangeAccess`
+  already uses, and deliberately not the fees route's coordinator-only, since
+  a participant adds their own products through the sibling `POST`. "Import
+  OFN" was **removed**: it posted to `/vendor/order-cycles/import`, which does
+  not exist, and an Open Food Network CSV import is a real integration rather
+  than an S-sized job, so a button that 404s was promising something FBM does
+  not have. The empty-state variant of it, a second button reading "Import from
+  OFN", went with it.) Every route under
   `order-cycles/[id]` resolved cycle access except
   `exchanges/[exchangeId]/products`, which resolved nothing: any
   authenticated seller could read another coordinator's exchange products,
@@ -773,15 +785,20 @@ exists as service methods with no caller:
   `order_cycle.closed`, an aggregate count) has the wrong name and shape
   and no callers.
 
-The wire, in order: scope the vendor list and fix the filter (S); expose
+The wire, in order. *Two of these are already closed:* "scope the vendor
+list and fix the filter" was done 2026-09-06 in the §1a pass —
+`sellerScopedCycleFilters` unions the cycles a seller coordinates with the
+ones they participate in, matching both the `sel_*` and `mem_*` spellings the
+writing routes stored — and the two dead buttons were closed 2026-09-08 (see
+above). What is left: expose
 the scheduler — template CRUD for coordinators, subscribe/pause/cancel for
 members, generate/pack/dispatch for the cycle (M); pick one billing owner —
 recommended: a share box references a `subscription` id and each generated
 box becomes that cycle's renewal order — rather than adding a third
 recurring model (M); one storefront cycle page that writes
 `order_cycle_id` into the cart (S–M); emit the three cycle events from the
-status job in the shape Blackout consumes (S); remove or implement the two
-dead buttons (S). `docs/AGGRESSIVE_OPERATIONS_GUIDE.md`'s "share-box
+status job in the shape Blackout consumes (S).
+`docs/AGGRESSIVE_OPERATIONS_GUIDE.md`'s "share-box
 scheduler 100% shipped" and `docs/LISTING_TYPES.md`'s seasonal `recurring`
 listing with a `share_template_id` describe this state as done; correct
 both when the wire lands. Six modules carry a "CSA" label with no shared
