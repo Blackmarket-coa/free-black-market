@@ -16,6 +16,7 @@ const KIND_LABELS: Record<string, string> = {
   crowdfunder: "Crowdfunder",
   legal: "Legal help",
   back_office: "Business & back-office help",
+  certifier: "Certifier / inspection program",
   fiscal_sponsor: "Fiscal sponsor",
 }
 
