@@ -342,6 +342,17 @@ Three constraints shaped it:
   on aid who is told twice that help is coming, and then receives none, is worse off than
   someone never matched at all.
 
+*Added since:* the board can now be taken down as well as put up. `WITHDRAWN` and
+`EXPIRED` were declared on both enums and written by nothing — there was no withdraw
+endpoint or service method at all, and `needed_by` / `available_until` were write-only
+columns nothing read back. So a need met off the platform stayed open forever, and
+`matchRequest` guarded status but never the date: a helper could commit to a months-dead
+ask. `POST /store/mutual-aid/{requests,offers}/:id/withdraw` writes the first, a daily
+`mutual-aid-expiry` sweep writes the second, and the match guard refuses an out-of-date
+request whether or not the sweep has run. Withdrawing a *matched* request releases the
+offer that took it on; a `COMMITTED` offer cannot be withdrawn on its own, because that is
+a promise already made to a named person waiting on it.
+
 XP is flat — not scaled by urgency or quantity. Paying more for `URGENT` would create a
 reason to overstate urgency on a board read by people in need, and paying by size would
 rank a large donation above showing up.

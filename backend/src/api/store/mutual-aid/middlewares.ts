@@ -30,5 +30,15 @@ export default defineMiddlewares({
       method: "POST",
       middlewares: [authenticate("customer", ["bearer", "session"])],
     },
+    {
+      matcher: "/store/mutual-aid/requests/*/withdraw",
+      method: "POST",
+      middlewares: [authenticate("customer", ["bearer", "session"])],
+    },
+    {
+      matcher: "/store/mutual-aid/offers/*/withdraw",
+      method: "POST",
+      middlewares: [authenticate("customer", ["bearer", "session"])],
+    },
   ],
 })
