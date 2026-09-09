@@ -6,6 +6,7 @@ import {
   OnboardingChecklist,
   type OnboardingStep,
 } from "@/components/sections/Onboarding/OnboardingChecklist"
+import { phase1ModuleFlags } from "@/lib/feature-flags"
 
 export const metadata: Metadata = {
   title: "What are you doing today?",
@@ -39,14 +40,20 @@ const CARDS: StanceCard[] = [
     destination: "/shop",
     accent: "border-amber-500 hover:bg-amber-50",
   },
-  {
-    stance: "investor",
-    emoji: "💰",
-    title: "Invest",
-    blurb: "Fund farms, workshops, projects, and creators.",
-    destination: "/invest",
-    accent: "border-amber-700 hover:bg-amber-50",
-  },
+  // Shown only while the investment offering is enabled — /invest 404s
+  // otherwise (docs/TRANSMUTATION_STRATEGY.md §7.2).
+  ...(phase1ModuleFlags.investmentPools
+    ? [
+        {
+          stance: "investor",
+          emoji: "💰",
+          title: "Invest",
+          blurb: "Fund farms, workshops, projects, and creators.",
+          destination: "/invest",
+          accent: "border-amber-700 hover:bg-amber-50",
+        },
+      ]
+    : []),
   {
     stance: "coalition",
     emoji: "🤝",

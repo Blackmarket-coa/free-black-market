@@ -1,4 +1,5 @@
 import { createLogger } from "../../shared/logger"
+import { featureFlagState } from "../../shared/feature-flags"
 const log = createLogger("modules/hawala-ledger/service")
 import { MedusaService, ContainerRegistrationKeys } from "@medusajs/framework/utils"
 import { auditFinancialTransaction } from "./audit-logger"
@@ -2741,14 +2742,21 @@ class HawalaLedgerModuleService extends MedusaService({
         auto_enabled: payoutConfigs[0].auto_payout_enabled || false,
       } : null,
 
-      // Investment pools - simplified
-      investment_pools: pools.map(p => ({
-        id: p.id,
-        name: p.name,
-        target: Number(p.target_amount || 0),
-        raised: Number(p.total_raised || 0),
-        status: p.status,
-      })),
+      // Investment pools — quiescent under Posture A unless
+      // FF_INVESTMENT_POOLS_V1 is set (docs/POSTURE_A_COMPLIANCE.md, and
+      // docs/TRANSMUTATION_STRATEGY.md §7.2). Gated here rather than only at
+      // the route because this dashboard is not one of the flagged matchers,
+      // and the service layer is where this repo puts boundaries that must
+      // not be routed around.
+      investment_pools: !featureFlagState.isEnabled("INVESTMENT_POOLS_V1")
+        ? []
+        : pools.map((p) => ({
+            id: p.id,
+            name: p.name,
+            target: Number(p.target_amount || 0),
+            raised: Number(p.total_raised || 0),
+            status: p.status,
+          })),
     }
   }
 

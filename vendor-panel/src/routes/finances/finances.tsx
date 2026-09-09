@@ -666,8 +666,14 @@ export const FinancesPage = () => {
         </div>
       </div>
 
-      {/* Investment Pools */}
-      {dashboard.investment_pools && dashboard.investment_pools.length > 0 && (
+      {/* Investment Pools — quiescent under Posture A pending a securities
+          exemption (docs/POSTURE_A_COMPLIANCE.md). Hidden unless the operator
+          enables VITE_FF_INVESTMENT_POOLS_V1 here and FF_INVESTMENT_POOLS_V1
+          on the API, which also empties the payload. Same shape as the
+          advances section above. */}
+      {phase1ModuleFlags.investmentPools &&
+        dashboard.investment_pools &&
+        dashboard.investment_pools.length > 0 && (
         <div className="mt-8">
           <Heading level="h3" className="mb-4">
             🌱 Your Investment Pools

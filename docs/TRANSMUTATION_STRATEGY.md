@@ -537,8 +537,25 @@ never touched.
    entries for electrical and PV test labs.
 4. **`vendor-verification` badges stay about the vendor, not the product.**
    Badges like `ORGANIC_CERTIFIED` describe a seller's credential. Introducing
-   a product-level FBM badge would be FBM vouching for an item — the underwriting
-   posture rule 6 forbids.
+   a product-level FBM badge would be FBM vouching for an item — the
+   underwriting posture rule 6 forbids.
+
+   Worth seeing clearly before copying the pattern, because it is the weakest
+   boundary in the tree. `POST /admin/vendor-verification/[id]/badges` grants
+   `ORGANIC_CERTIFIED` on either a `documentation_url` that need only parse as
+   a URL or a `certification_number` of up to 200 characters; `expires_at` is
+   optional; nothing resolves the link or contacts the certifying body. The
+   route's own error text is candid that the badge "asserts an external
+   certification". It is admin-granted, so an operator stands behind each one —
+   but what the storefront then displays is an FBM assertion about a third
+   party's certification, recorded on a string.
+
+   For produce that is a manageable risk. For a used 480V disconnect or a
+   twenty-five-year-old PV module the failure mode is not a mislabelled
+   tomato, so **salvage grading should copy Blackstar's attestation-plus-
+   eligibility shape rather than FBM's badge shape**: the seller attests, the
+   document is verified and dated in the vault, and eligibility is computed
+   from it — rather than FBM minting a mark that reads as its own judgement.
 
 **Net-new: S.** One `doc_type` value, a handful of directory entries, and copy
 that states plainly that a condition grade is a marketplace descriptor and not
@@ -1026,12 +1043,32 @@ section "had been live behind seller auth alone; both now sit behind
 `FF_VENDOR_ADVANCES_V1` (API) and `VITE_FF_VENDOR_ADVANCES_V1` (panel), default
 off." The 2026-09-06 sweep that fixed advances did not reach pools.
 
-**Shape.** `FF_INVESTMENT_POOLS_V1`, default off, applied as route middleware
-across `/vendor/hawala/pools*`, `/admin/hawala/pools*`,
-`/store/hawala/pools` and `/store/hawala/investments*`, returning 404 when
-unset — matching how advances were handled. Then update the Posture A bullet to
-say the flag is the activation this gates, exactly as the `VendorAdvance`
-bullet now does.
+**Shape, and what shipped.** `FF_INVESTMENT_POOLS_V1`, default off — matching
+how advances were handled, including the same `=== "true"` semantics. Route
+middleware over `/vendor/hawala/pools*`, `/admin/hawala/pools*`,
+`/store/hawala/pools*` and `/store/hawala/investments*`, returning 404 when
+unset. The Posture A bullet now records the correction rather than claiming an
+enforcement it never had.
+
+Route middleware alone was not enough, and the gaps are worth recording because
+they are the shape this kind of fix usually leaks through:
+
+- **`GET /vendor/hawala/dashboard` is not one of those matchers**, and
+  `getVendorDashboard` returns an `investment_pools` array. The gate therefore
+  also sits in the service, which is where this repo puts boundaries that must
+  not be routed around (`posture-a-guard.ts:19-21` gives the reasoning). With
+  the flag unset the array is empty regardless of caller.
+- **The vendor panel rendered that array unconditionally.**
+  `vendor-panel/src/routes/finances/finances.tsx` gated the advances section on
+  `VITE_FF_VENDOR_ADVANCES_V1` and rendered "Your Investment Pools" with no
+  check at all. It now mirrors the API on `VITE_FF_INVESTMENT_POOLS_V1`.
+- **The public offer was the largest part and is not an API surface at all.**
+  `/invest` now calls `notFound()` unless `NEXT_PUBLIC_FF_INVESTMENT_POOLS_V1`
+  is set, and the three inbound links — the footer, the investor card on
+  `/start`, and the "Learn about investing" link on `/how-it-works` — are
+  removed or gated with it. An offer of securities is an exposure whether or
+  not anyone can act on it, so a gated API behind a live advertisement would
+  have closed the smaller half.
 
 **And it is not only an API surface.** `storefront/src/app/[locale]/(main)/invest/page.tsx`
 is a live, footer-linked marketing page (`storefront/src/data/footerLinks.ts:31`)
@@ -1131,7 +1168,7 @@ Ordering rule: close the gaps between what a canonical document asserts and
 what the code does, before building anything new on either.
 
 **Now — guards and truth (days)**
-1. `FF_INVESTMENT_POOLS_V1`, default off, across the pool and investment routes; update the Posture A bullet. **Shipped with this document.** Still to do by hand: take `/invest` down or gate it, and remove its footer link — a gated API behind a live advertisement is worse than either alone. §7.2.
+1. `FF_INVESTMENT_POOLS_V1`, default off, across the pool and investment routes, the vendor dashboard payload, the panel section and the `/invest` page with its three inbound links; Posture A bullet corrected. **Shipped with this document.** §7.2.
 2. Micro-investor escrow guard. §7.1.
 3. Hide or allowlist the six unenforced privileges on the character sheet. §1a.
 4. Fix or flag off the three prediction-module defects. §5.6.

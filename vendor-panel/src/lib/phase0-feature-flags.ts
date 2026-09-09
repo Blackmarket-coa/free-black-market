@@ -16,4 +16,9 @@ export const phase1ModuleFlags = {
   // quiescent under Posture A pending legal review, so the "Get Advance"
   // section is hidden unless both sides are switched on.
   vendorAdvances: enabled(import.meta.env.VITE_FF_VENDOR_ADVANCES_V1),
+  // Mirrors the API's FF_INVESTMENT_POOLS_V1: hawala-ledger InvestmentPool is
+  // quiescent under Posture A unless an offering is structured under a
+  // securities exemption, so the "Your Investment Pools" section stays hidden
+  // unless both sides are switched on. See docs/TRANSMUTATION_STRATEGY.md §7.2.
+  investmentPools: enabled(import.meta.env.VITE_FF_INVESTMENT_POOLS_V1),
 }
