@@ -36,8 +36,12 @@ overrides:
   # GHSA-5p4m-2wfm-xmqj (CVE-2026-59870): quadratic CPU consumption resolving
   # !!omap. Both lines are patched — 3.15.1 and 4.3.1 — so this is a floor
   # bump on the existing pins, not a major migration.
-  "js-yaml@3": "^3.15.1"
-  "js-yaml@4": "^4.3.1"
+  #
+  # Raised again for CVE-2026-84375 (HIGH, DoS in YAML parsing), fixed at
+  # 3.15.2 and 4.3.2. Both lines stay major-bounded: js-yaml 3→4 is an API
+  # break (`safeLoad` removed), which is why the two pins exist separately.
+  "js-yaml@3": "^3.15.2"
+  "js-yaml@4": "^4.3.2"
   # CVE-2026-67213: infinite loop in nanoid's customAlphabet. Fixed in the
   # 3.x line at 3.3.17. Caret-bounded on purpose: a bare ">=3.3.17" lets pnpm
   # resolve to nanoid 6, which is ESM-only and breaks every CommonJS require.
@@ -65,8 +69,18 @@ overrides:
   "immutable": ">=5.1.8"
   "minimatch@3": "^3.1.3"
   "minimatch@10": "^10.2.1"
-  "multer": ">=2.2.0"
-  "nodemailer": ">=9.0.1"
+  # CVE-2026-77037, CVE-2026-77078, CVE-2026-82333 (all HIGH): three
+  # denial-of-service paths — a file-descriptor leak on aborted uploads, a
+  # crafted multipart field name, and an oversized array index in a field
+  # name. multer parses untrusted multipart bodies on upload routes, so all
+  # three are reachable. Fixed in 2.3.0. Caret-bounded, not ">=": an
+  # open-ended floor lets pnpm drift onto the next major.
+  "multer": "^2.3.0"
+  # GHSA-2x7j-588g-ccc2 (HIGH): quadratic time in addressparser, so a crafted
+  # address header is a remote DoS. Fixed in 9.1.0. Caret-bounded for the
+  # reason above and because it was not theoretical here — ">=9.1.0" resolved
+  # to nodemailer 10.0.1, an unreviewed major, on the first install.
+  "nodemailer": "^9.1.0"
   "path-to-regexp@0": "^0.1.13"
   "path-to-regexp@8": "^8.4.0"
   "protobufjs": ">=8.4.1"

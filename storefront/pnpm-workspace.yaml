@@ -24,7 +24,12 @@ overrides:
   "axios": ">=1.18.0"
   "@isaacs/brace-expansion": ">=5.0.1"
   "preact": ">=10.27.3"
-  "next": "15.5.21"
+  # CVE-2026-75604 and GHSA-2xp9-vwfh-vxw4 are both CRITICAL and both
+  # unauthenticated remote code execution — the first on Windows-hosted
+  # servers, the second in the Image Optimization API on crafted AVIF input.
+  # Fixed in 15.5.24. Pinned exactly rather than caret-ranged, as before, so
+  # the resolved version is the reviewed one.
+  "next": "15.5.24"
   "picomatch": ">=4.0.4"
   "postcss": ">=8.5.18"
   "esbuild": ">=0.28.1"
@@ -42,7 +47,11 @@ overrides:
   # resolve to nanoid 6, which is ESM-only and breaks every CommonJS require.
   "nanoid@3": "^3.3.17"
   "serialize-javascript": ">=7.0.3"
-  "sharp@^0.34.0": ">=0.35.0"
+  # GHSA-rgj7-g3m4-5g8c (HIGH): sharp bundles libheif, and 0.35.3 carries
+  # GHSA-g89c-p67h-r497 / GHSA-2jg2-4ch7-h545 through it. Fixed in 0.35.4.
+  # The floor was >=0.35.0, which permitted 0.35.4 but left the lockfile at
+  # 0.35.3 — a permissive range is not a bump.
+  "sharp@^0.34.0": ">=0.35.4"
 
 # pnpm 11 makes an unadjudicated build script a hard error, so each is a
 # decision. See backend/pnpm-workspace.yaml for the full rationale.
