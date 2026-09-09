@@ -4,15 +4,20 @@
  * Layered on the existing `order-cycle` module: `updateOrderCycleStatuses()`
  * already auto-opens/closes cycles (invoked by `jobs/order-cycle-status-update.ts`
  * every 5 min). This adds (a) per-product orderability driven by the plant
- * metadata ship window, and (b) a Blackout notification when cycles close so the
- * Hub gets a fulfillment trigger.
+ * metadata ship window.
+ *
+ * It used to also hold a `syncCycleStatuses` wrapper that emitted a Blackout
+ * notification when cycles closed. That method had no callers — the scheduled
+ * job calls `updateOrderCycleStatuses` on the module service directly — and its
+ * emit named `order_cycle.closed`, which is not a registered Blackout type, so
+ * `emitBlackout` threw and `emitBlackoutEvent` swallowed it. The announcement
+ * now lives in `jobs/order-cycle-status-update.ts`, on the path that runs.
  */
 
 import type { MedusaContainer } from "@medusajs/framework/types"
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 import { ORDER_CYCLE_MODULE } from "./index"
 import type OrderCycleModuleService from "./service"
-import { emitBlackoutEvent } from "../../lib/blackout-emit"
 import { readPlantMetadata } from "../../types/plant"
 
 export type OrderableReason =
@@ -108,21 +113,4 @@ export class PlantShipWindowService {
     return evaluateShipWindow({ opensAt, closesAt, allowPreorder, inventoryKnownZero }, now)
   }
 
-  /**
-   * Drive the existing cycle status transitions and, when cycles close, emit a
-   * Blackout notification so the Hub can trigger fulfillment. Returns the counts
-   * from the underlying transition.
-   */
-  async syncCycleStatuses(): Promise<{ opened: number; closed: number }> {
-    const result = await this.orderCycles.updateOrderCycleStatuses()
-    if (result.closed > 0) {
-      await emitBlackoutEvent(
-        this.container,
-        "order_cycle.closed",
-        { closedCount: result.closed, openedCount: result.opened },
-        { eventId: `order_cycle.closed:${Date.now()}` }
-      )
-    }
-    return result
-  }
 }

@@ -101,9 +101,38 @@ class OrderCycleModuleService extends MedusaService({
     })
   }
 
-  async updateOrderCycleStatuses(): Promise<{ opened: number; closed: number }> {
+  async updateOrderCycleStatuses(
+    /**
+     * Called once per cycle that actually transitioned, so a caller can
+     * announce it (§3 `cycle.open` / `cycle.close`). Injected rather than
+     * resolved from a container so the sweep stays unit-testable, matching
+     * `expireOverduePools` and `expireStaleAid`.
+     *
+     * The announcement is per cycle because that is what the event means. The
+     * counts returned below say how many moved; they cannot say which, and a
+     * consumer needs the which.
+     */
+    onTransition?: (
+      cycle: Record<string, unknown>,
+      to: "open" | "closed"
+    ) => Promise<void>
+  ): Promise<{ opened: number; closed: number }> {
     const now = new Date()
     const results = { opened: 0, closed: 0 }
+
+    const announce = async (
+      cycle: Record<string, unknown>,
+      to: "open" | "closed"
+    ) => {
+      if (!onTransition) return
+      try {
+        await onTransition(cycle, to)
+      } catch {
+        // The status transition is the sweep's real work. A consumer that
+        // could not be told is not a reason to leave the rest of the cycles
+        // in the wrong state.
+      }
+    }
 
     const toOpen = await this.listOrderCycles({
       status: ["draft", "upcoming"],
@@ -114,6 +143,7 @@ class OrderCycleModuleService extends MedusaService({
     for (const cycle of toOpen) {
       await this.updateOrderCycles({ id: cycle.id, status: "open" })
       results.opened++
+      await announce(cycle as Record<string, unknown>, "open")
     }
 
     const toClose = await this.listOrderCycles({
@@ -124,6 +154,7 @@ class OrderCycleModuleService extends MedusaService({
     for (const cycle of toClose) {
       await this.updateOrderCycles({ id: cycle.id, status: "closed" })
       results.closed++
+      await announce(cycle as Record<string, unknown>, "closed")
     }
 
     return results

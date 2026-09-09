@@ -67,6 +67,7 @@ and `BLACKOUT_API_BASE` are set (`features.freeblackmarketEmit()`).
 | `launch.created` | wired | `workflows/launch-product` (emit-launch-events step) |
 | `bounty.opened` | wired | `workflows/launch-product` (emit-launch-events step) |
 | `aid.request.opened` / `fulfilled` / `closed` | wired | `subscribers/emit-blackout-aid-request` (one subscriber; the request's status picks the type) |
+| `cycle.open` / `cycle.close` | wired | `jobs/order-cycle-status-update` (per cycle, from the status sweep's transition callback) |
 
 **Mutual-aid mirror (§3.8).** FBM's ask board feeds Blackout's Coalition
 board, which is the surface a member browses on the map. Three types because an
@@ -93,6 +94,41 @@ carrying only a request id — the create, withdraw and confirm routes plus the
 `mutual-aid-expiry` sweep — and the subscriber re-reads and projects the row.
 That is why the requester's id never has to be trusted not to travel: it is
 never put on an internal event that the emitter reads.
+
+**Order-cycle events (§3).** `cycle.open` and `cycle.close`, one per cycle that
+actually transitioned, emitted from the five-minute status sweep. `eventId` is
+`<type>:<cycle_id>`.
+
+The payload carries the three fields Blackout's parser requires — `vendorId`
+(the cycle's `coordinator_seller_id`), `cycleId`, `name` — plus `closingAt`.
+Four optional fields Blackout accepts are deliberately **not** sent, because
+each would have to be invented:
+
+-   `items` needs a product join: `order_cycle_product` carries `variant_id`,
+    not the `{sku, title}` pairs the field means.
+-   `ordersPlaced` needs an order-to-cycle link that does not exist yet — the
+    storefront does not write `order_cycle_id` into the cart, which is the
+    other half of the roadmap's item 12.
+-   `listingDeepLink` would point at a storefront order-cycle route that does
+    not exist.
+-   `soldOutSku` belongs to `sold_out`, which is **not registered** on this
+    side: Blackout accepts it, but FBM decides sold-out per product
+    (`evaluateShipWindow`), not per cycle, so there is no trigger to emit it
+    from.
+
+A row missing any of the required three is skipped with a log line rather than
+enqueued, since Blackout's parser would reject it.
+
+**What this replaced.** `PlantShipWindowService.syncCycleStatuses` emitted
+`order_cycle.closed` with `{closedCount, openedCount}`. That call never reached
+Blackout once: the method had no callers (the scheduled job calls
+`updateOrderCycleStatuses` on the module service directly), and the type was
+never registered, so `emitBlackout` threw — before the `isBlackoutEmitConfigured`
+gate, so in every environment — and `emitBlackoutEvent` swallowed it. Its
+`eventId` also keyed on `Date.now()`, which would have defeated delivery dedupe
+had it ever run. `backend/src/lib/__tests__/blackout-cycle.unit.spec.ts` now
+asserts every emitted cycle type passes `isBlackoutEventType`, which is the
+check whose absence let that sit silent.
 
 **Growth-loop events (§ ecosystem build).** Emitted by the Launch
 orchestration (`POST /v1/seller/launches` → `launch-product` workflow) so the
