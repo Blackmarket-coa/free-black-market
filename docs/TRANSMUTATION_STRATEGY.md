@@ -84,7 +84,7 @@ Rows are ordered by how much the correction changes the plan.
 | **A cap-table/equity-ownership data model is missing, "distinct from transaction history", and must be built** | `modules/collective-campaign` ships seven models with migrations (`Migration20260304120000CreateCollectiveCampaign.ts`): `Campaign`, `MaterialLineItem`, `Backing`, `PurchaseOrder`, `VendorReputation`, `ProductiveAssetToken`, `YieldReport`. `Backing` (`models/backing.ts`) carries `mode` (`PRE_ORDER` \| `MICRO_INVESTOR`), `amount`, `investor_pool_share` (float), `payout_cap_amount` and `payout_released_amount`, with status `PLEDGED \| REFUNDED \| SETTLED`. That is a revenue-share register with cap tracking. Four store routes exist under `api/store/collective/campaigns/**` (list/create, detail, `backings`, `purchase-orders`) plus `api/admin/collective/campaigns/[id]/resolve-escrow`, `lib/campaign-escrow.ts`, a `links/order-collective-campaign.ts` link and a `subscribers/progression-campaign-backed.ts` subscriber. `service.ts` is 394 lines implementing a twelve-state campaign machine. `docs/COLLECTIVE_BUYS_MICRO_INVESTMENT_SPEC.md` is its 249-line spec. | **Extend `collective-campaign`; do not build a cap table.** The gap is not the data model — it is that the model registers a *revenue-share claim against a campaign*, not *equity in a vendor*, and those are different instruments with different law. Deciding which one BMC is offering is the real first task, and §3.1 argues the campaign-scoped one is both already built and the safer instrument. |
 | **The primary blocker is a legal wrapper (Reg CF vs Reg D vs state co-op statute vs revenue-share notes) that does not exist yet** | The gate exists and is canonical. `docs/REPO_CONSOLIDATION_REVIEW.md` §8: "**Coalition investing and revenue-share subscriptions**: the EconomicUnit/claim modeling may be designed, but no cash-in/cash-out code path ships before the compliance work completes (Reg CF requirements for revenue-share; CSA-style claim framing for production claims). These are hard release gates, not configuration toggles." `docs/COMMERCE_ROADMAP.md` §4 repeats it. What does not exist is the *answer*, not the recognition. | **Re-frame the task.** The brief asks for a decision that is already scheduled; what it must supply is the content of that decision. And §3.2 records that the gate is currently crossable by an env var, which is a defect against §8 as written, not a new policy question. |
 | **An internal capital market where vendor shares trade inside BMC is "the most technically ambitious net-new subsystem in this entire plan"** | Technically ambitious is the wrong axis. A venue that matches buyers and sellers of securities is an exchange; operating one in the US means registering as a national securities exchange or an alternative trading system under Reg ATS, which in turn requires broker-dealer registration and FINRA membership. That is not a build problem a solo operator solves with an order-matching engine. The repo has already reasoned about an adjacent case and refused it: §8 shelves Coliseum betting — "No money staking on debate outcomes under any framing." | **Do not build it, and record the refusal.** §3.3. The transferable part of the idea — liquidity for a backer who wants out — has a non-exchange answer (transfer-with-issuer-consent, capped and off-venue) that does not create a market. |
-| **`connect.js` has three tiers, Seed free / Root $29mo / Canopy $99mo+3%, and Canopy is the natural home for a paid raise-capital feature** | The prices are right, the names are wrong, and the fee direction is inverted. Vendor monetization lives in `modules/vendor-plan`, not `connect.js`. `vendor-plan/catalog.ts` seeds five plans: `free` ($0, `platform_fee_percent: 3`), `starter` ($2900/mo, **2.5**), `pro` ($9900/mo, **2**), `scale` ($24900/mo, **1.5**), `internal` (hidden, `null`). Paid plans *reduce* commission; none adds 3%. `connect.js` is a buyer-facing storefront embed in `storefront/public/`, pinned at `v2.0.0`, supporting ten `data-fbm` kinds (`products`, `services`, `digital`, `booking`, `events`, `reviews`, `vendor`, `chat`, `demand-pools`, `mutual-aid`) with no vendor-facing tier concept. | **Attach a capital-raise feature to `vendor-plan` as a feature key, not to `connect.js`.** And correct the public claim: the promise the code keeps is "3% is the default and the ceiling, and it is never raised" — not "flat 3%". A tier that added 3% on top of a subscription would break the promise; the existing ladder does not. |
+| **`connect.js` has three tiers, Seed free / Root $29mo / Canopy $99mo+3%, and Canopy is the natural home for a paid raise-capital feature** | The prices are right, the names are wrong, and the fee direction is inverted. Vendor monetization lives in `modules/vendor-plan`, not `connect.js`. `vendor-plan/catalog.ts` seeds five plans: `free` ($0, `platform_fee_percent: 3`), `starter` ($2900/mo, **2.5**), `pro` ($9900/mo, **2**), `scale` ($24900/mo, **1.5**), `internal` (hidden, `null`). Paid plans *reduce* commission; none adds 3%. `connect.js` is a buyer-facing storefront embed in `storefront/public/` — 1,205 lines, pinned at `v2.0.0` with an SRI hash and a test that fails the build on drift — supporting nine `data-fbm` kinds (`products`, `services`, `digital`, `booking`, `events`, `reviews`, `vendor`, `chat`, `demand-pools`) with no plan, tier, price or subscription concept anywhere in the file. (`mutual-aid` is a *proposal* in `docs/CDFI_COOP_ROADMAP.md`, not an implemented kind.) Root and Canopy are real BMC names — but they are KARMA tiers in `progression/grower-karma.ts`, Seedling / Sprout / Root / Canopy / Ancestor, carrying payout `split_pct` from 0.60 to 0.72. The brief has fused two unrelated ladders. | **Attach a capital-raise feature to `vendor-plan` as a twelfth `VendorFeatureKey`, not to `connect.js`.** Drop the Seed/Root/Canopy naming — reusing Canopy for billing would make it mean two different money things on two screens. Drop "+3%" outright: pricing a $99 tier at 3% inverts the ladder and fails `vendor-plan/__tests__/catalog.unit.spec.ts`, which asserts no plan exceeds 3% and that the ladder falls monotonically. And correct the public claim to what the code keeps — "3% is the default and the ceiling, never raised" — before someone else finds the 5% default on demand-pool group purchases (`api/admin/collective/demand-pools/[id]/route.ts`). |
 | **KARMA/XP is "intentionally NOT tied to commission tiers", and reputation and capital must remain structurally separate** | The separation is intact only because the coupling was never implemented. `progression/thresholds.ts:42` declares `producer.reduced-commission` — "Reach Producer level 5 for a lower cooperative commission rate." In the other direction, `subscribers/progression-campaign-backed.ts` awards `Stance.INVESTOR` XP at 1 XP per dollar for a `MICRO_INVESTOR` backing, and `thresholds.ts:50` declares `investor.priority-campaigns` — "Reach Investor level 3 for early access to new campaigns." Deploy capital, gain XP, gain earlier access to the next capital deployment. | **Close the loop deliberately in one direction and delete the other.** §3.4. XP for *money deployed* is the coupling that matters legally; XP for *documentation completed* is the trust signal the brief actually wants. Both changes are small and both are definition-level. |
 | **The Vendor Quest Engine has 13 quests in four families, and the quest pattern can carry compliance checklists** | 14 quests, four families: Capital & Funding (4), Certification & Trust (3), Cooperative & Mission (4), Market Access & Growth (3). `fiscal-sponsorship-readiness` was added since the CDFI roadmap, which recommended it. The substrate defect that roadmap recorded in its §1a — five fields initialised and never assigned, making Q5/Q7/Q13 unfinishable — has since been **fixed**: `substrate/build.ts` now assigns `wholesale_relationships` from `countWholesaleRelationships(tiers)` and `total_xp`/`dispute_count` at lines 281-282, and `substrate/__tests__/operating.unit.spec.ts` covers `summarizeOrders` precisely because "packets printed `orders_fulfilled: 0` as a fact". | **Use the engine; the objection to using it has been retired.** Adding a quest is a definition change. The open question is not capability but pricing — see §4.4 on charging for a safety checklist. |
 | **Blackstar's mesh routing, reverse-auction bidding and micro-depot relays already exist and are an "ideal fit" for salvage freight** | Blackstar's own `CONSOLIDATION.md` says the opposite, in the repo's words: the "Network Advantage Engine" features — "mesh routing, batch aggregation, micro-depots, reverse-auction mechanics" — "exist as design docs only" (`api/docs/network-advantage-engine.md`). What is real is the board/claim/bid/leg data model and the per-partner HMAC bridge. The bridge is dark by default (`FBM_BLACKSTAR_INTEGRATION=0`). | **Re-sequence; it is not near-term.** `CONSOLIDATION.md` already records the ordering, pointing at `docs/CDFI_COOP_ROADMAP.md` §3.9: an FBM depot listing first, then a depot node kind a `ShipmentLeg` can hand off to, then pooling. Salvage freight does not unfreeze Blackstar; it queues behind the same three steps. §4.3. |
@@ -1019,6 +1019,53 @@ honest funnel is the one that already works: the public
 `GET /store/quest-catalog` surface on the FBM side, which renders gatekeeper
 links to non-enrolled visitors.
 
+### 6b. Creator monetisation — the recommended currency cannot be spent
+
+The brief proposes that members document and monetise deconstruction
+walkthroughs through the Creator Hub. Two of its three pieces hold up and the
+third has to be re-pointed.
+
+**Streaming is real.** Owncast, RTMP to HLS, with VOD recording, server-side
+clip cutting with captions, RTMP simulcast fanout and OBS-WebSocket
+compatibility. (LiveKit is also present but is the voice SFU, not the video
+path.) The client is not yet a player — the viewer embeds the Owncast player in
+an iframe pending an `hls.js` wiring that is deferred. **One thing to do before
+anyone links a stream:** the viewer routes sit behind `BLACKOUT_STREAMS_VIEWER`,
+default false, while the Creator Hub's Content tab imports the live directory
+directly and bypasses that gate. On defaults, Content → Live is a wall of dead
+links.
+
+**Short-form is real and reachable** — a genuine vertical reel with scroll-snap
+paging and a browser-side composer, behind a flag that defaults on.
+
+**Earnings is the dead end.** Blackout's bounty module says so in its own
+source: settlement and payout "live in FBM and are out of scope here — the
+bounty only records the reward terms." Its schema has no escrow columns and its
+routes make no ledger calls. Completion writes `status: 'earned'` and waits for
+an inbound FBM webhook `bounty.reward_settled` that **FBM never emits**; FBM
+emits `quest.reward_settled` instead, with a composite completion id that can
+never match the random id Blackout generates. Blackout bounty rewards are
+therefore permanently `earned` and never paid.
+
+Coalition Credits are the other half of the problem and `POSTURE_A_COMPLIANCE.md`
+already records it: CCR can be minted and burned but not spent, because no
+spend path exists. Directing members to monetise in CCR points them at a
+balance that cannot be spent, converted or withdrawn, whose only exit burns it
+for nothing.
+
+**Re-point the recommendation at the two paths that move real money.** The
+creator-rewards pool distribution settles over the Stripe ACH payout rail, and
+FBM's demand-pool bounties carry live creator-facing objectives
+(`CREATOR_NEEDED`, `MARKETING_NEEDED`, `PHOTOGRAPHY_NEEDED`) with real escrow,
+payout and refund paths and a `DEMAND_BOUNTY` purchase context already blessed
+in `posture-a-guard.ts`. Both are USD. Neither needs CCR.
+
+**One finding from that sweep belongs in §5.6's step 2 rather than here**, and
+it is the most serious defect this review found outside the securities line: an
+under-funded demand-pool bounty appears to pay out of other participants'
+escrowed money. That is a launch blocker, not a polish item, and it should be
+reproduced and fixed before any campaign or bounty surface is promoted.
+
 ---
 
 ## 7. The code this document recommends, and why it is only two guards
@@ -1220,26 +1267,27 @@ what the code does, before building anything new on either.
 4. Fix or flag off the three prediction-module defects. §5.6.
 5. Publish Terms, Privacy and Refund pages — `PRE_LAUNCH_AUDIT.md` LEG-1, P0, open. Every trust claim on the site currently rests on nothing enforceable. §5.6a.
 6. Stop rendering Tor transport as "active" in Blackout. §5.6a.
+7. Reproduce and fix the demand-pool bounty escrow gap — an under-funded bounty appears to pay from other participants' escrowed money. Launch blocker. §6b.
 
 **Next — repairs (weeks)**
-7. Stop awarding XP for `MICRO_INVESTOR` backings; delete `producer.reduced-commission` and `investor.priority-campaigns`. §3.4.
-8. Blackout's missing majority test; stop calling Borda scoring ranked-choice. §5.4.
-9. Wire FBM's `finalizeProposalWorkflow` to a scheduled job so garden proposals close. §5.4.
-10. FBM `LICENSE`; verify data export. §5.3.
+8. Stop awarding XP for `MICRO_INVESTOR` backings; delete `producer.reduced-commission` and `investor.priority-campaigns`. §3.4.
+9. Blackout's missing majority test; stop calling Borda scoring ranked-choice. §5.4.
+10. Wire FBM's `finalizeProposalWorkflow` to a scheduled job so garden proposals close. §5.4.
+11. FBM `LICENSE`; verify data export. §5.3.
 
 **Then — wiring what is already built (weeks)**
-11. `CIRCULAR_ECONOMY` in the vendor onboarding wizard; condition-grade filter on the storefront. §4.1.
-12. Finish patronage: take `patronage-refund` past `status=computed`. §5.5.
-13. Partner-directory kinds and entries for abatement, deconstruction, reuse centres, PV/electrical test labs. §4.4.
-14. Deconstruction-readiness quest definition, exempt from the entitlement gate. §4.4, §6.
-15. A campaign screen — business line 1's backend has no front door. §3.1.
+12. `CIRCULAR_ECONOMY` in the vendor onboarding wizard; condition-grade filter on the storefront. §4.1.
+13. Finish patronage: take `patronage-refund` past `status=computed`. §5.5.
+14. Partner-directory kinds and entries for abatement, deconstruction, reuse centres, PV/electrical test labs. §4.4.
+15. Deconstruction-readiness quest definition, exempt from the entitlement gate. §4.4, §6.
+16. A campaign screen — business line 1's backend has no front door. §3.1.
 
 **Later — gated or sequenced behind the above**
-16. Sell-by-weight pricing; a heterogeneous lot noun. §4.1.
-17. Micro-depot staging as an FBM listing, after the `rental`/`kitchen` ruling. §4.3.
-18. Generalise Q12 beyond land. §5.5.
-19. A parcel noun, when there is an acquisition pipeline to justify it. §4.5.
-20. Anything in business line 1 past `PRE_ORDER` — behind §8.
+17. Sell-by-weight pricing; a heterogeneous lot noun. §4.1.
+18. Micro-depot staging as an FBM listing, after the `rental`/`kitchen` ruling. §4.3.
+19. Generalise Q12 beyond land. §5.5.
+20. A parcel noun, when there is an acquisition pipeline to justify it. §4.5.
+21. Anything in business line 1 past `PRE_ORDER` — behind §8.
 
 **Refused, deliberately**
 - An internal secondary market in vendor claims. §3.3.
