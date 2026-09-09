@@ -357,6 +357,19 @@ XP is flat — not scaled by urgency or quantity. Paying more for `URGENT` would
 reason to overstate urgency on a board read by people in need, and paying by size would
 rank a large donation above showing up.
 
+*Surface, added later:* `/mutual-aid` on the storefront. The module and its
+routes shipped with no page, no route and no client, so the board was reachable
+only by hand-written HTTP. The page shows both columns, a composer for either
+kind, "I can help" on a request, and a "Yours" section — the last needing two
+new authenticated reads, `GET /store/mutual-aid/{requests,offers}/mine`, because
+the public projection withholds `requester_id` and so nothing had ever handed a
+person back the id of the row they posted. There was a way to withdraw an ask
+and no way to reach it. Those reads use `toOwnAid`, a whitelist extending the
+public one by exactly `urgency`, `needed_by` and `matched_at` — and still no
+coordinates, since the poster already knows where they are and W5-3 is a
+permanent exclusion rather than a default. The form does not collect
+coordinates at all, and the page has no map, no pin and no distance.
+
 *Not built, and not buildable here:* inbound aggregation from Mutual Aid Hub and
 rubyforgood/mutual-aid. §5 requires an actual consent and data-sharing agreement, so this
 is a conversation to have, not code to write. It is also the piece that solves the per-city

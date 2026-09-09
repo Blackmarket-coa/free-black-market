@@ -111,6 +111,38 @@ const num = (v: unknown): number | null => {
  * `viewer` supplies an optional vantage point so a distance *band* can be
  * included without ever revealing a position.
  */
+/**
+ * A row's own poster sees a little more than a stranger does.
+ *
+ * Managing your own asks needs three things the public board withholds: how
+ * urgent you said it was, when you need it by, and whether someone has taken it
+ * on. Without them "your asks" is a list you cannot act on — and the withdraw
+ * endpoint is unreachable, because the public projection also withholds the
+ * `requester_id` that would let you find your own rows at all.
+ *
+ * Still a whitelist, and still no coordinates. The owner already knows where
+ * they are, so echoing the pair back buys nothing and would cost the property
+ * that makes `AUDIT_DEBT.md` W5-3 a permanent exclusion rather than debt:
+ * mutual-aid coordinates never leave the server, on any path, for anyone.
+ */
+export type OwnAidFields = PublicAidFields & {
+  urgency: string | null
+  needed_by: string | null
+  matched_at: string | null
+}
+
+const iso = (v: unknown): string | null =>
+  v instanceof Date ? v.toISOString() : str(v)
+
+export function toOwnAid(row: AidRow): OwnAidFields {
+  return {
+    ...toPublicAid(row),
+    urgency: str(row.urgency),
+    needed_by: iso(row.needed_by),
+    matched_at: iso(row.matched_at),
+  }
+}
+
 export function toPublicAid(row: AidRow, viewer?: AidLocated): PublicAidFields {
   const located: AidLocated = {
     latitude: num(row.latitude),
