@@ -67,11 +67,21 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
       productsWithDetails = cycleProducts.map((cp) => {
         const variant = variants.find((v: { id: string }) => v.id === cp.variant_id)
         
-        // Calculate effective price (cycle override or variant price)
+        // Calculate effective price (cycle override or variant price).
+        //
+        // `== null`, not a falsy check: an override of 0 is a real price — a
+        // free or pay-what-you-can item in a cycle — and a falsy test sent it
+        // through to the variant's list price while `has_override_price` below
+        // still reported true. The row then advertised a cycle price it was
+        // not charging, in the direction that costs the buyer money.
         let effectivePrice = cp.override_price
         // In Medusa v2, prices are accessed via calculated_price, not prices array
         const variantWithPrices = variant as typeof variant & { prices?: Array<{ amount: number }> }
-        if (!effectivePrice && variantWithPrices?.prices && variantWithPrices.prices.length > 0) {
+        if (
+          effectivePrice == null &&
+          variantWithPrices?.prices &&
+          variantWithPrices.prices.length > 0
+        ) {
           effectivePrice = variantWithPrices.prices[0].amount
         }
         
