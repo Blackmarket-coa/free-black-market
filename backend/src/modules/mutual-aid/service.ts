@@ -279,7 +279,16 @@ class MutualAidModuleService extends MedusaService({
    * Only pre-terminal statuses are touched: a FULFILLED request that ran past
    * its date was still fulfilled.
    */
-  async expireStaleAid(now: Date) {
+  async expireStaleAid(
+    now: Date,
+    /**
+     * Called once per expired request so the Blackout mirror can close its
+     * copy (§3.8). Injected rather than resolved from a container so this stays
+     * unit-testable, matching `expireOverduePools`. A failing announcement must
+     * never abort the sweep — the status transition is the job's real work.
+     */
+    onRequestExpired?: (requestId: string) => Promise<void>
+  ) {
     const requests = await this.listMutualAidRequests({
       status: AidRequestStatus.OPEN,
       needed_by: { $lt: now },
@@ -289,6 +298,13 @@ class MutualAidModuleService extends MedusaService({
         id: request.id,
         status: AidRequestStatus.EXPIRED,
       })
+      if (onRequestExpired) {
+        try {
+          await onRequestExpired(request.id as string)
+        } catch {
+          /* announcement is best-effort */
+        }
+      }
     }
 
     const offers = await this.listMutualAidOffers({

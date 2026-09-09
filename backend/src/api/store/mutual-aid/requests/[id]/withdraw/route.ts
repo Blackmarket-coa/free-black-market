@@ -3,6 +3,7 @@ const log = createLogger("api/store/mutual-aid/requests/[id]/withdraw")
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { MUTUAL_AID_MODULE } from "../../../../../../modules/mutual-aid"
 import type MutualAidModuleService from "../../../../../../modules/mutual-aid/service"
+import { announceAidRequestChanged } from "../../../../../../lib/aid-events"
 
 /**
  * POST /store/mutual-aid/requests/:id/withdraw — the asker takes it back down.
@@ -27,6 +28,10 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
 
     const service = req.scope.resolve<MutualAidModuleService>(MUTUAL_AID_MODULE)
     const request = await service.withdrawRequest(id, requesterId)
+
+    // So a mirrored copy of this ask leaves Blackout's board too, rather than
+    // sitting open and sending someone to help with something already handled.
+    await announceAidRequestChanged(req, id)
 
     res.json({ withdrawn: true, status: request.status })
   } catch (error: unknown) {

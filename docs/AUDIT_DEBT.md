@@ -267,6 +267,27 @@ Closes the gaps from the security review. All landed on branch
 | ~~SH-3~~ | Sentry PII/secret redaction | **done (strengthened)** — the existing `beforeSend` already stripped `authorization`/`cookie`/`x-api-key`; broadened to a case-insensitive header allowlist (adds `set-cookie`, `x-medusa-access-token`, `x-publishable-api-key`), drops parsed `request.cookies`, and redacts token/secret/api_key/password query-string params. | `backend/src/shared/sentry.ts` |
 | SH-4 | helmet.js | **DECISION: not adopted.** Security headers are already hand-rolled and complete in `securityHeadersMiddleware` (CSP per route class, HSTS in prod, X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Permissions-Policy, no-store on admin/vendor). Adding `helmet` would duplicate/conflict with the existing per-route CSP logic for no security gain. Revisit only if the hand-rolled set drifts out of maintenance. | `backend/src/api/middlewares.ts` |
 
+## D8 — Duplication across the ask/in-kind surfaces (2026-09-09)
+
+**What D8 means.** `REPO_CONSOLIDATION_REVIEW.md`'s decision table defines D8 as
+the hygiene/consolidation decision: duplication executed on where safe, queued
+where riskier. This section is the queued half for one family of duplication
+that the CDFI/co-op roadmap (§3.8) asked to have recorded rather than resolved.
+Nothing here is a bug; each entry is a place where two or more systems model the
+same real thing with different vocabularies, and where a future consolidation
+has to pick one.
+
+Found while building the FBM→Blackout mutual-aid seam, and **verified against
+the code rather than transcribed** — the roadmap said "three in-kind intake
+vocabularies" and there are four.
+
+| # | Item | Status | Location |
+|---|------|--------|----------|
+| D8-1 | **Four "ask" stores across two repos, no shared vocabulary.** FBM `mutual_aid_request` (a person asks for help; OPEN/MATCHED/FULFILLED/WITHDRAWN/EXPIRED) · FBM `demand_post` (a group asks for supply; OPEN/THRESHOLD_MET/NEGOTIATING/EXPIRED) · Blackout `coalition_aid_posts` (need\|offer; open/in_progress/fulfilled/expired/cancelled) · Blackout `coalition_needs` (a coalition asks for a thing; open/claimed/fulfilled/closed). Four status vocabularies for four shapes of the same verb, and the FBM→Blackout mirror already has to map one onto another at the seam. **Near-miss to keep out of it:** FBM's `request` module is an RFQ/quote table whose docstring name-drops mutual aid; it is a buyer→vendor price request and shares no vocabulary with any of the above. | **deferred (L)** | `backend/src/modules/{mutual-aid,demand-pool}/models/`, blackout `packages/api/src/db/migrations/{020,054}_*.up.sql` |
+| D8-2 | **Four in-kind intake vocabularies, only one of which records provenance.** FBM `intake_receipt` has a real taxonomy — `source` (donation/rescue/gleaning/overproduction/transfer_in), `donor_type` (individual/business/farm/organization/anonymous), plus `estimated_value_cents` with a `valuation_basis`. FBM `mutual_aid_offer.category` is free text with no source or valuation concept at all. Blackout `coalition_aid_posts.category` is a closed set of ten (food/transport/labor/materials/care/housing/childcare/eldercare/tech_support/other). Blackout `coalition_needs.kind` is free TEXT with a seven-value `SUGGESTED_NEED_KINDS` UI hint. The mirror maps FBM's free text onto Blackout's closed ten with an `other` fallback, which is the safe direction but is lossy and one-way. | **deferred (M)** | `backend/src/modules/aid-network/models/intake-receipt.ts`, `backend/src/modules/mutual-aid/models/mutual-aid-offer.ts`, blackout `packages/core/src/coalition/{mutualAid,needs}.ts` |
+| D8-3 | **Two ways to record value that did not move as cash, neither aware of the other.** `RAIL_REGISTRY.GIFT` is `closed_loop: true` with `account_type: null` — it deliberately carries no balances — so the barter-accept route writes a zero-amount `TRANSFER` tagged `metadata.intended_rail: "GIFT"` and says so in a comment, because `createTransfer` takes no `currency_code` and GIFT-denominated accounts do not exist. Meanwhile `intake_receipt.estimated_value_cents` records an in-kind valuation for donor acknowledgment and contribution reporting, deliberately outside the money ledgers. Both are "value that is real but not cash"; they share no type, no unit, and no reporting path. Resolving means deciding whether GIFT gets an account type or whether in-kind valuation stays wholly outside the ledger — an accounting decision, not a refactor. | **deferred (L)** | `backend/src/modules/hawala-ledger/rails.ts`, `backend/src/api/store/collective/demand-pools/[id]/barter/[proposalId]/accept/route.ts`, `backend/src/modules/aid-network/models/intake-receipt.ts` |
+| D8-4 | **Two mutual-aid surfaces in Blackout with the same name and no relation.** `apps/blackout-client/.../deaddrop/MutualAidPage.tsx` renders Matrix dead-drop "mutual aid threads" and never touches `coalition_aid_posts`; the Coalition MapTab is the only display consumer of the board. A reader looking for where mirrored asks appear will find the wrong file first. | **deferred (S)** | blackout `apps/blackout-client/src/app/features/{deaddrop,coalition}/` |
+
 ## Process
 
 - Re-generate the in-code marker list with `rg -n "TODO|FIXME" admin-panel/src storefront/src vendor-panel/src` quarterly.

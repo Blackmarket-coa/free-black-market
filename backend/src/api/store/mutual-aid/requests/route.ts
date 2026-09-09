@@ -5,6 +5,7 @@ import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { MUTUAL_AID_MODULE } from "../../../../modules/mutual-aid"
 import type MutualAidModuleService from "../../../../modules/mutual-aid/service"
 import { toPublicAid } from "../../../../lib/aid-location"
+import { announceAidRequestChanged } from "../../../../lib/aid-events"
 
 const createSchema = z.object({
   title: z.string().min(1),
@@ -67,6 +68,11 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
         needed_by: body.needed_by ? new Date(body.needed_by) : null,
       } as never,
     ])
+
+    // Announce the new ask so it can be mirrored onto Blackout's Coalition
+    // board (§3.8). Best-effort: an event-bus hiccup must not fail a request
+    // that is already stored, and the subscriber re-reads the row anyway.
+    await announceAidRequestChanged(req, created.id as string)
 
     // The creator sees their own row back, still through the public
     // projection — there is nothing here they need that it withholds, and a
