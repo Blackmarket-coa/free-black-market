@@ -964,14 +964,60 @@ attribution — the co-op-formation cold start is already paid for, and
 `docs/CDFI_COOP_ROADMAP.md` §3.4 records the remaining work as export and
 linkage, not authorship.
 
-On the education surfaces the brief proposed for these materials: Coliseum is a
-contest format, and contest formats are good at surfacing disagreement and bad
-at establishing settled fact. Safety content where there is a correct answer
-and a fatal wrong one should live in the quest checklist and the knowledge
-base, with Coliseum reserved for genuinely contested questions — whether
-deconstruction pays better than demolition, whether a given co-op structure
-suits a given trade. Do not route "is this panel safe to reuse" through a
-debate.
+### 6a. The education surfaces, checked
+
+The brief proposed Coliseum as the home for salvage and cooperative-finance
+education, and Challenge Link as a funnel that pulls non-members in. Both
+premises need correcting, and the correction improves the plan.
+
+**Coliseum is real, live and default-on**, with two crowd-tallied verdict
+engines: a clean-room Polis port for topic debates (k-means clustering,
+consensus as the minimum agree-rate across clusters) and a 1v1 match format
+whose verdict is plurality tallying over five fixed questions. Its own source
+is explicit that "There is NO AI at any stage — this module is pure tallying
+over crowd input."
+
+That is the right instrument for a contested question and the wrong one for a
+settled one. **Adding "salvage" and "cooperative finance" as domains is nearly
+free and nearly pointless.** Free because domains are a hardcoded 13-key `as
+const` in `packages/core/src/coliseum/taxonomy.ts` — two keys plus labels.
+Pointless on its own because there would be no content, no seed and no
+reviewer; and it is not quite free either, because
+`REPUTATION_SUBJECTS = COLISEUM_TOPIC_CATEGORY_KEYS`, so a new domain silently
+becomes a new reputation subject.
+
+**Put canonical procedure in FBM's `knowledge-base` instead.** It already has
+drafts, categories, community submission and an admin approve/reject gate —
+the shape safety content needs, where a wrong answer is corrected rather than
+out-voted. Reserve Coliseum for what it is good at: whether deconstruction pays
+better than demolition, whether a given co-op structure suits a given trade.
+And follow the §8 precedent that shelved Coliseum betting by naming what the
+arena does not adjudicate. "Is this panel safe to reuse" is not a debate.
+
+**Challenge Link exists by that exact name and does not work.**
+`packages/core/src/coliseum/challengeLink.ts` is real, a token is minted at
+match creation, and `GET /matches/:id/link` returns a path of
+`/coliseum/c/<token>`. That path has no route registered —
+`features/coliseum/routes.ts` mounts only `/coliseum` and
+`/coliseum/topics/:topicId` — and the client fetch has zero callers, as does
+the endpoint that would mark a challenge seen, so the `seen` state can never
+be set. It is built-but-unreachable server plumbing.
+
+**And even finished it could not funnel non-members**, because the Blackout
+client router only mounts when logged in. There are exactly three logged-out
+escapes — an invite token, a public directory that depends on a Synapse
+setting left at its `False` default, and a handle page. Coliseum is not among
+them; a logged-out visitor gets the login card. (The API is a different story:
+19 of the 55 `/v1/coliseum` GET routes never call `requireUser`, so the content
+is publicly readable by `curl` while being unreachable in the product. That
+asymmetry is worth an operator decision in its own right.)
+
+**So the education funnel is an auth problem, not a Coliseum problem.** A
+guest-readable surface is a real M that touches authentication, and it should
+be scheduled as that rather than as a content task. Until it exists, the
+honest funnel is the one that already works: the public
+`GET /store/quest-catalog` surface on the FBM side, which renders gatekeeper
+links to non-enrolled visitors.
 
 ---
 
