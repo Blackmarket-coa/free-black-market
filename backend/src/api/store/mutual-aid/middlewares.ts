@@ -40,5 +40,18 @@ export default defineMiddlewares({
       method: "POST",
       middlewares: [authenticate("customer", ["bearer", "session"])],
     },
+    // The two reads that are NOT public. Everything else on this surface is
+    // browsable by anyone; these return a named person's own rows, including
+    // the withdrawn and expired ones the board never shows.
+    {
+      matcher: "/store/mutual-aid/requests/mine",
+      method: "GET",
+      middlewares: [authenticate("customer", ["bearer", "session"])],
+    },
+    {
+      matcher: "/store/mutual-aid/offers/mine",
+      method: "GET",
+      middlewares: [authenticate("customer", ["bearer", "session"])],
+    },
   ],
 })

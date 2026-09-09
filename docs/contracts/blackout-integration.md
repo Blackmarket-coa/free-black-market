@@ -66,6 +66,33 @@ and `BLACKOUT_API_BASE` are set (`features.freeblackmarketEmit()`).
 | `entitlements.changed` | wired | `subscribers/emit-blackout-order-refund-cancel` |
 | `launch.created` | wired | `workflows/launch-product` (emit-launch-events step) |
 | `bounty.opened` | wired | `workflows/launch-product` (emit-launch-events step) |
+| `aid.request.opened` / `fulfilled` / `closed` | wired | `subscribers/emit-blackout-aid-request` (one subscriber; the request's status picks the type) |
+
+**Mutual-aid mirror (§3.8).** FBM's ask board feeds Blackout's Coalition
+board, which is the surface a member browses on the map. Three types because an
+ask leaves the board three ways: `opened` (created, or matched — a helper having
+committed is not the ask leaving), `fulfilled` (the requester confirmed help
+arrived), and `closed` (withdrawn, or its `needed_by` passed). `eventId` is
+`<type>:<request_id>`, and Blackout upserts on `requestId`, so a retried
+transition lands on the same row rather than posting a second copy of somebody's
+need.
+
+The payload is exactly `toPublicAid`'s output, renamed to camelCase, with `id`
+becoming `requestId`: `{ requestId, title, description, category, status,
+quantity, unitOfMeasure, locality, createdAt }`. **This set is closed and adding
+to it is a decision, not a field addition** — Blackout's
+`GET /v1/coalition/mutual-aid` publishes its rows verbatim with no projection of
+its own, so anything put on this family is published to the world. Coordinates,
+`requester_id`, `matched_helper_id`, `urgency`, `needed_by` and `metadata` are
+all deliberately absent; `lib/blackout-aid.ts` builds the payload from the
+projection rather than the row, and `backend/src/lib/__tests__/blackout-aid.unit.spec.ts`
+pins the nine keys.
+
+Every transition announces `mutual_aid.request_changed` on the internal bus
+carrying only a request id — the create, withdraw and confirm routes plus the
+`mutual-aid-expiry` sweep — and the subscriber re-reads and projects the row.
+That is why the requester's id never has to be trusted not to travel: it is
+never put on an internal event that the emitter reads.
 
 **Growth-loop events (§ ecosystem build).** Emitted by the Launch
 orchestration (`POST /v1/seller/launches` → `launch-product` workflow) so the

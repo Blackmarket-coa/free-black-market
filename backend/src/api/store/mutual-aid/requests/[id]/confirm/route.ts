@@ -5,6 +5,7 @@ import { Modules } from "@medusajs/framework/utils"
 import type { IEventBusModuleService } from "@medusajs/framework/types"
 import { MUTUAL_AID_MODULE } from "../../../../../../modules/mutual-aid"
 import type MutualAidModuleService from "../../../../../../modules/mutual-aid/service"
+import { announceAidRequestChanged } from "../../../../../../lib/aid-events"
 
 /**
  * POST /store/mutual-aid/requests/:id/confirm — the requester confirms help arrived.
@@ -48,6 +49,11 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     } catch {
       /* event emission is best-effort */
     }
+
+    // Separate from the XP event above: that one carries helper and requester
+    // ids for progression, none of which may cross the Blackout seam. This one
+    // carries only a request id, and the subscriber projects the row.
+    await announceAidRequestChanged(req, id)
 
     res.json({ confirmed: true, status: request.status })
   } catch (error: unknown) {

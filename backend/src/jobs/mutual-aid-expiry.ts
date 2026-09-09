@@ -2,6 +2,7 @@ import { MedusaContainer } from "@medusajs/framework/types"
 import { createLogger } from "../shared/logger"
 import { MUTUAL_AID_MODULE } from "../modules/mutual-aid"
 import type MutualAidModuleService from "../modules/mutual-aid/service"
+import { emitAidRequestChanged } from "../lib/aid-events"
 
 const log = createLogger("jobs/mutual-aid-expiry")
 
@@ -24,12 +25,15 @@ const log = createLogger("jobs/mutual-aid-expiry")
  * often buys nothing.
  *
  * The rule itself is `MutualAidModuleService.expireStaleAid`, which takes `now`
- * as an argument and touches no container — this file is only the schedule.
+ * as an argument and touches no container — this file is only the schedule, plus
+ * the announcement that closes each expired ask's copy on Blackout's board.
  */
 export default async function mutualAidExpiryJob(container: MedusaContainer) {
   try {
     const service = container.resolve<MutualAidModuleService>(MUTUAL_AID_MODULE)
-    const result = await service.expireStaleAid(new Date())
+    const result = await service.expireStaleAid(new Date(), (requestId) =>
+      emitAidRequestChanged(container, requestId)
+    )
 
     if (result.requests_expired > 0 || result.offers_expired > 0) {
       log.info(

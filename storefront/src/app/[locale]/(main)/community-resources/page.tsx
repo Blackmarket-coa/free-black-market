@@ -35,12 +35,23 @@ const communityResources: CommunityResource[] = [
     emoji: "🍲",
   },
   {
-    title: "Mutual Aid",
+    // The board and the organizations are different things and were sharing a
+    // name: this card has always pointed at vendors of the `mutual_aid` type,
+    // which left the ask board itself with no way in from anywhere.
+    title: "Mutual Aid Board",
+    description:
+      "Ask for something you need, or say what you can give. Neighbours helping neighbours, no money involved.",
+    href: "/mutual-aid",
+    cta: "Open the board",
+    emoji: "🫶",
+  },
+  {
+    title: "Mutual Aid Organizations",
     description:
       "Connect with neighborhood care networks and community-led resource-sharing organizations.",
     href: "/vendors?vendor_type=mutual_aid",
     cta: "View mutual aid networks",
-    emoji: "🫶",
+    emoji: "🤝",
   },
   {
     title: "Food Banks",

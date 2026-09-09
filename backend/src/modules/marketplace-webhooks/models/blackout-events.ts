@@ -54,10 +54,31 @@ export const BLACKOUT_LAUNCH_EVENTS = [
   "sponsorship.created",
 ] as const
 
+/**
+ * §3.8 mutual-aid mirror. FBM's ask board feeds Blackout's Coalition board,
+ * which is the surface a member browses on the map.
+ *
+ * The payload is exactly `toPublicAid`'s output — a whitelist that emits a
+ * coarse `locality` and never coordinates. That is not a convention here, it is
+ * load-bearing: Blackout's `GET /v1/coalition/mutual-aid` publishes its rows
+ * verbatim, with no projection of its own, so anything added to this family is
+ * published to the world. Widening it is a decision, not a field addition.
+ *
+ * Three types because an ask leaves the board three ways: `closed` covers a
+ * withdrawal or a lapsed `needed_by`, without which a withdrawn ask would sit
+ * open on the mirror and send someone to help with something already handled.
+ */
+export const BLACKOUT_AID_EVENTS = [
+  "aid.request.opened",
+  "aid.request.fulfilled",
+  "aid.request.closed",
+] as const
+
 export const BLACKOUT_EVENT_TYPES = [
   ...BLACKOUT_LIFECYCLE_EVENTS,
   ...BLACKOUT_BRIDGE_EVENTS,
   ...BLACKOUT_LAUNCH_EVENTS,
+  ...BLACKOUT_AID_EVENTS,
 ] as const
 
 export type BlackoutEventType = (typeof BLACKOUT_EVENT_TYPES)[number]

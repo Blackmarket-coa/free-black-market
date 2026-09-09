@@ -150,6 +150,81 @@ describe("ownership refusals map to 403", () => {
   })
 })
 
+describe("the Blackout mirror is told", () => {
+  it("announces the change after a successful withdraw", async () => {
+    // Otherwise the mirrored copy of this ask sits open on Blackout's board
+    // and sends someone to help with something already handled.
+    const emitted: Array<{ name: string; data: unknown }> = []
+    const service = makeService()
+    const res = createRes()
+    const req = makeReq(service, "cus_me") as Record<string, unknown>
+    ;(req.scope as { resolve: (key: string) => unknown }) = {
+      resolve: (key: string) =>
+        key === MUTUAL_AID_MODULE || key === "mutualAidModuleService"
+          ? service
+          : {
+              emit: async (payload: { name: string; data: unknown }) => {
+                emitted.push(payload)
+              },
+            },
+    }
+
+    await WITHDRAW_REQUEST(
+      req as unknown as Args[0],
+      res as unknown as Args[1]
+    )
+
+    expect(res.statusCode).toBe(200)
+    expect(emitted).toEqual([
+      { name: "mutual_aid.request_changed", data: { request_id: "aid_1" } },
+    ])
+  })
+
+  it("does not announce when the withdraw was refused", async () => {
+    const emitted: unknown[] = []
+    const service = makeService(new Error("Aid request not found"))
+    const res = createRes()
+    const req = makeReq(service, "cus_me") as Record<string, unknown>
+    ;(req.scope as { resolve: (key: string) => unknown }) = {
+      resolve: (key: string) =>
+        key === MUTUAL_AID_MODULE || key === "mutualAidModuleService"
+          ? service
+          : { emit: async (payload: unknown) => void emitted.push(payload) },
+    }
+
+    await WITHDRAW_REQUEST(
+      req as unknown as Args[0],
+      res as unknown as Args[1]
+    )
+
+    expect(res.statusCode).toBe(404)
+    expect(emitted).toEqual([])
+  })
+
+  it("still returns 200 when the event bus is unreachable", async () => {
+    // The withdrawal is already committed; a mirror that could not be told is
+    // not a reason to tell the asker their withdrawal failed.
+    const service = makeService()
+    const res = createRes()
+    const req = makeReq(service, "cus_me") as Record<string, unknown>
+    ;(req.scope as { resolve: (key: string) => unknown }) = {
+      resolve: (key: string) => {
+        if (key === MUTUAL_AID_MODULE || key === "mutualAidModuleService") {
+          return service
+        }
+        throw new Error("event bus not registered")
+      },
+    }
+
+    await WITHDRAW_REQUEST(
+      req as unknown as Args[0],
+      res as unknown as Args[1]
+    )
+
+    expect(res.statusCode).toBe(200)
+  })
+})
+
 describe("middleware registration", () => {
   it("authenticates both new withdraw matchers", () => {
     // The 401 above is the route's own belt; the middleware is the braces. A
