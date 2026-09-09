@@ -45,6 +45,11 @@ export type OrderCycleVariant = {
 export type OrderCycleProduct = {
   id: string
   variant_id: string
+  /**
+   * Unlabeled by the API. `variant.prices[]` carries currency codes, but the
+   * route picks `prices[0]` with no region context, so this number cannot be
+   * safely paired with one of them.
+   */
   effective_price: number | null
   /** Remaining, not the original allowance: the API subtracts sold_quantity. */
   available_quantity: number | null

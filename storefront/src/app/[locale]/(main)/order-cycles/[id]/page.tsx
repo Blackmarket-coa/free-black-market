@@ -17,9 +17,12 @@ type PageProps = {
  * One cycle, and what can be ordered from it.
  *
  * Two things this page deliberately does not claim. It does not show a currency
- * symbol, because the store API returns a bare number with no `currency_code`
- * and labelling it would be a guess. And it does not render a price at all when
- * the API gives none, rather than printing a zero that would read as free.
+ * symbol: `effective_price` arrives unlabeled, and while the nested
+ * `variant.prices[]` rows do carry `currency_code`, neither store route is
+ * region-scoped — the route picks `prices[0]` and says so in its own comment —
+ * so choosing one of those codes to label the number with would be a guess
+ * dressed as a fact. And it does not render a price at all when the API gives
+ * none, rather than printing a zero that would read as free.
  */
 export default async function OrderCycleDetailPage({ params }: PageProps) {
   const { id, locale } = await params
