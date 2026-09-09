@@ -805,16 +805,29 @@ and subscribing to an `is_active: false` template would have produced a
 subscription that can never generate a box, since `generateBoxesForCycle`
 filters on `is_active` and deleting a subscribed template now deactivates it.
 
-What is left: generate/pack/dispatch for the cycle (M); pick one billing owner —
-recommended: a share box references a `subscription` id and each generated
-box becomes that cycle's renewal order — rather than adding a third
-recurring model (M); one storefront cycle page that writes
-`order_cycle_id` into the cart (S–M); emit the three cycle events from the
-status job in the shape Blackout consumes (S).
+What is left, as of 2026-09-09: **pick one billing owner** — and only that.
+Generate/pack/dispatch landed in #842, the storefront cycle page in #846, and
+the cycle events in #845.
+
+The billing owner turned out to need a ruling rather than wiring. The
+recommendation here was that a share box reference a `subscription` id and
+that each generated box become that cycle's renewal order, rather than adding
+a third recurring model. Reading the code found that this is not mechanical:
+`renewSubscriptionWorkflow` clones a **fixed template cart**, while a share
+box's contents are computed per cycle from what the coordinator packed. Taking
+the recommendation therefore means changing that workflow, choosing a
+different owner, or accepting the third model this line warns against.
+
+Two prerequisites hold whichever is chosen, both still open:
+`order-cycle/service.ts:1006-1007` prices a share box at **0** when its
+products carry no per-cycle override, and the box currency is `usd` in
+practice because `order_cycle_product` has no `currency_code` field. Billing
+switched on today would charge every member nothing.
 `docs/AGGRESSIVE_OPERATIONS_GUIDE.md`'s "share-box
 scheduler 100% shipped" and `docs/LISTING_TYPES.md`'s seasonal `recurring`
-listing with a `share_template_id` describe this state as done; correct
-both when the wire lands. Six modules carry a "CSA" label with no shared
+listing with a `share_template_id` described this state as done. Both were
+corrected 2026-09-08 and revised again 2026-09-09, once the wiring landed and
+made the first correction understated in its turn. Six modules carry a "CSA" label with no shared
 key; only `subscription.type` and `share_box_subscription` mean "a member's
 standing share".
 

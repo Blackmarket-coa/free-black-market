@@ -54,9 +54,13 @@ A subscription. Renewal cadence configurable. Underlies CSA shares
   `term_length`, `auto_renew`, `cancel_window`, `pro_rate_on_cancel`.
 - Cycle CSA is *intended* to use this listing-type with the
   `cadence=seasonal` setting and a `share_template_id` link to
-  `order_cycle.share_box_template`. Nothing creates that link yet: the
-  share-box half of `order-cycle` has no surface
-  (`docs/CDFI_COOP_ROADMAP.md` §3.7, Tier B item 12).
+  `order_cycle.share_box_template`. Nothing creates that link yet — still
+  true as of 2026-09-09, but no longer for the reason first given here. The
+  share-box half of `order-cycle` does have a surface now (templates,
+  subscriptions, generation, pack and dispatch all have routes); what it
+  lacks is a money path, so there is nothing for a `recurring` listing to
+  attach a charge to. See `docs/CDFI_COOP_ROADMAP.md` §3.7 Tier B item 12
+  and `docs/CSA_NETWORK_POSITIONING.md` §4.
 
 ### `wholesale`
 
