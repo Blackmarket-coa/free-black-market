@@ -1,6 +1,7 @@
 import { Metadata } from "next"
 import Link from "next/link"
 import { VENDOR_PANEL_URL } from "@/const"
+import { phase1ModuleFlags } from "@/lib/feature-flags"
 
 export const metadata: Metadata = {
   title: "How It Works | Free Black Market",
@@ -478,15 +479,19 @@ export default function HowItWorksPage() {
                   Blockchain-secured transactions
                 </li>
               </ul>
-              <Link
-                href="/invest"
-                className="inline-flex items-center gap-2 text-green-700 font-semibold hover:text-green-800"
-              >
-                Learn about investing
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                </svg>
-              </Link>
+              {/* /invest 404s unless the offering is enabled on both sides —
+                  docs/TRANSMUTATION_STRATEGY.md §7.2. */}
+              {phase1ModuleFlags.investmentPools && (
+                <Link
+                  href="/invest"
+                  className="inline-flex items-center gap-2 text-green-700 font-semibold hover:text-green-800"
+                >
+                  Learn about investing
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  </svg>
+                </Link>
+              )}
             </div>
 
             {/* CSA & Subscriptions */}

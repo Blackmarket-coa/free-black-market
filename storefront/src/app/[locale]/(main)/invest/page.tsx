@@ -1,5 +1,7 @@
 import { Metadata } from "next"
+import { notFound } from "next/navigation"
 import { InvestmentPoolsSection } from "@/components/sections/InvestmentPools"
+import { phase1ModuleFlags } from "@/lib/feature-flags"
 import Link from "next/link"
 
 export const metadata: Metadata = {
@@ -8,6 +10,13 @@ export const metadata: Metadata = {
 }
 
 export default function InvestPage() {
+  // A public offer of return-bearing positions on a model
+  // docs/POSTURE_A_COMPLIANCE.md records as quiescent. Dark unless the
+  // operator turns the offering on deliberately, on both sides.
+  if (!phase1ModuleFlags.investmentPools) {
+    notFound()
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Hero Section */}

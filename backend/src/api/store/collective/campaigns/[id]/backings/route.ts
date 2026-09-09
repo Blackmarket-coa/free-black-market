@@ -14,6 +14,8 @@ import type HawalaLedgerModuleService from "../../../../../../modules/hawala-led
 import {
   BACKING_ESCROW_CENTS_KEY,
   BACKING_ESCROW_ENTRY_KEY,
+  SecuritiesGateError,
+  assertBackingModeReleasable,
   campaignAmountToCents,
   isCampaignEscrowLive,
 } from "../../../../../../lib/campaign-escrow"
@@ -45,6 +47,13 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     }
 
     const body = createBackingSchema.parse(req.body)
+
+    // §8 securities gate, before anything is persisted or moved. A
+    // MICRO_INVESTOR backing is a capped revenue-share claim, not a purchase,
+    // and REPO_CONSOLIDATION_REVIEW.md §8 says such a cash-in path is "not a
+    // configuration toggle". See lib/campaign-escrow.ts.
+    assertBackingModeReleasable(body.mode)
+
     const service = req.scope.resolve<CollectiveCampaignModuleService>(COLLECTIVE_CAMPAIGN_MODULE)
 
     // All-or-nothing escrow (dark unless FBM_CAMPAIGN_ESCROW_LIVE=1): move the
@@ -147,6 +156,10 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
   } catch (error: unknown) {
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: "Validation failed", details: error.issues })
+    }
+
+    if (error instanceof SecuritiesGateError) {
+      return res.status(403).json({ error: error.message })
     }
 
     const message = getErrorMessage(error)

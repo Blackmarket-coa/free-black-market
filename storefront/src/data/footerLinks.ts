@@ -28,7 +28,6 @@ const links = {
     { label: 'Become a Provider', path: '/sell' },
     { label: 'Community Gardens', path: '/gardens' },
     { label: 'Community Kitchens', path: '/kitchens' },
-    { label: 'Invest', path: '/invest' },
   ],
   connect: [
     { label: 'GitHub Transparency', path: GITHUB_REPO_URL },

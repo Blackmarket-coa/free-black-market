@@ -18,6 +18,12 @@ This index organizes project docs by purpose. Start with the repo-root
   delivery, time banking) reconciled against the code and the two sibling
   repos: which items are quest-definition changes, which are wiring, which
   wait on a recorded ruling, and who each is for
+- `docs/TRANSMUTATION_STRATEGY.md` — the joint-stock/growth brief (vendors as
+  community-funded ventures; deconstruction and salvage; the six growth
+  mechanics borrowed from chartered companies) reconciled against the code and
+  the two sibling repos. Records two new §8 legal gates, the guards that now
+  hold the securities line in code (`FF_INVESTMENT_POOLS_V1`,
+  `FBM_SECURITIES_GATE_CLEARED`), and the live copy promises found on the way
 - `docs/PLAYBOOK_SYSTEM.md` — the vendor playbooks, mapping from legacy
   vendor-type, 3-question picker decision tree
 - `docs/LISTING_TYPES.md` — v1 listing-type ship list, v2/v3 deferrals,

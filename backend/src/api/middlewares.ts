@@ -1017,6 +1017,29 @@ export default defineMiddlewares({
       middlewares: [requireFeatureFlagMiddleware("VENDOR_ADVANCES_V1")],
     },
     {
+      // hawala-ledger `InvestmentPool` / `Investment` are quiescent under
+      // Posture A unless and until an offering is structured under a securities
+      // exemption (docs/POSTURE_A_COMPLIANCE.md). A vendor could create an
+      // ACTIVE pool with a chosen ROI type behind seller auth alone, and a
+      // customer could fund one from an ACH-topped wallet, until 2026-09-09.
+      // Same disposition as VendorAdvance above; see
+      // docs/TRANSMUTATION_STRATEGY.md §7.2.
+      matcher: "/vendor/hawala/pools*",
+      middlewares: [requireFeatureFlagMiddleware("INVESTMENT_POOLS_V1")],
+    },
+    {
+      matcher: "/admin/hawala/pools*",
+      middlewares: [requireFeatureFlagMiddleware("INVESTMENT_POOLS_V1")],
+    },
+    {
+      matcher: "/store/hawala/pools*",
+      middlewares: [requireFeatureFlagMiddleware("INVESTMENT_POOLS_V1")],
+    },
+    {
+      matcher: "/store/hawala/investments*",
+      middlewares: [requireFeatureFlagMiddleware("INVESTMENT_POOLS_V1")],
+    },
+    {
       matcher: "/vendor/hawala/payments*",
       middlewares: [
         requireFeatureFlagMiddleware("INVOICING_V1"),
