@@ -9,7 +9,7 @@ import {
 import { XpRedemptionStatus, XpRewardKind } from "./models/xp-redemption"
 import { Stance, isStance } from "./stance"
 import { levelForXp, levelProgress, ROLE_XP_WEIGHTS } from "./leveling"
-import { unlockedFeatures, nextUnlock } from "./thresholds"
+import { unlockedFeatures, nextUnlock, enforcedOnly, ENFORCED_PRIVILEGE_KEYS } from "./thresholds"
 import { getXpReward, XP_REWARDS, type XpReward } from "./rewards"
 
 /**
@@ -741,15 +741,29 @@ class ProgressionModuleService extends MedusaService({
       titles: earnedTitles,
       // Threshold privileges are derived (auto-lapsing): the keys unlocked now,
       // plus the closest upcoming unlock for just-in-time "you're close" guidance.
-      unlockedFeatures: unlockedFeatures(trackSnapshots, totalXp),
-      nextUnlock: next
-        ? { featureKey: next.featureKey, label: next.label, blurb: next.blurb, xpToGo: next.xpToGo }
-        : null,
+      //
+      // Narrowed to the privileges something actually honours. The catalog's
+      // labels and blurbs are promises to the member ("a lower cooperative
+      // commission rate"), and none of the six has a reader anywhere yet, so
+      // publishing the raw met-threshold list would advertise benefits that do
+      // not exist — including the one the storefront turns into a "you
+      // unlocked something" celebration. See thresholds.ts `enforced` and
+      // docs/TRANSMUTATION_STRATEGY.md §1a.
+      unlockedFeatures: enforcedOnly(unlockedFeatures(trackSnapshots, totalXp)),
+      nextUnlock:
+        next && ENFORCED_PRIVILEGE_KEYS.has(next.featureKey)
+          ? { featureKey: next.featureKey, label: next.label, blurb: next.blurb, xpToGo: next.xpToGo }
+          : null,
       lastRecomputedAt: sheet.last_recomputed_at,
     }
   }
 
-  /** The internal-benefit featureKeys a customer has currently unlocked. */
+  /**
+   * The internal-benefit featureKeys a customer has currently unlocked.
+   *
+   * Already narrowed to honoured privileges by `getCharacterSheetSummary`, so
+   * a future gate that consults this can trust it.
+   */
   async getUnlockedFeatures(customerId: string): Promise<string[]> {
     const summary = await this.getCharacterSheetSummary(customerId)
     return summary.unlockedFeatures

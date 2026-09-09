@@ -23,6 +23,23 @@ import {
 } from "./models"
 import { PredictionPolicyService } from "./policy-service"
 
+/**
+ * Per-user position cap for one market.
+ *
+ * `docs/VENDOR_HYPE_OPERATIONS_PREDICTION_COMPLIANCE_POLICY_MATRIX.md` sets
+ * `max_positions_per_market_per_user: 1` as the non-cash default and marks
+ * spend/entry limits `required: true`. The code shipped with 50, which is not
+ * a limit so much as the absence of one. See
+ * docs/TRANSMUTATION_STRATEGY.md §5.6.
+ *
+ * Overridable per deployment for a jurisdiction whose approved profile allows
+ * more, but the default is the matrix default.
+ */
+export const MAX_POSITIONS_PER_MARKET_PER_USER = Math.max(
+  1,
+  Number(process.env.VENDOR_HYPE_MAX_POSITIONS_PER_MARKET) || 1
+)
+
 class VendorHypeOperationsPredictionService extends MedusaService({
   HypeProfile,
   OpsFundingBucket,
@@ -255,7 +272,7 @@ class VendorHypeOperationsPredictionService extends MedusaService({
       market_id: input.market_id,
       supporter_id: input.supporter_id,
     })
-    if (existingBySupporter.length >= 50) {
+    if (existingBySupporter.length >= MAX_POSITIONS_PER_MARKET_PER_USER) {
       throw new Error("position_limit_reached_for_market")
     }
 
