@@ -191,8 +191,34 @@ describe("completeAndPayMilestone preconditions", () => {
     amount: 100,
     amount_paid_out: 0,
     currency_code: "USD",
+    // A payable bounty is a funded one: bounty escrow and participant escrow
+    // share one per-pool account, so paying an unfunded bounty spends other
+    // participants' money. See the "refuses an unfunded bounty" case below.
+    escrowed: true,
     milestones: [{ description: "m0", percentage: 100, condition: "x" }],
     ...overrides,
+  })
+
+  it("refuses an unfunded bounty without touching the completion or the ledger", async () => {
+    const hawala = makeFakeHawala()
+    const demandPool = makeFakeDemandPool({
+      post: { id: "dp_owner", escrow_account_id: "escrow_owner" },
+      bounties: { b_victim: payableBounty({ escrowed: false }) },
+    })
+    const svc = new CollectiveHawalaService(hawala as any, demandPool as any)
+
+    await expect(
+      svc.completeAndPayMilestone({
+        demand_post_id: "dp_owner",
+        bounty_id: "b_victim",
+        milestone_index: 0,
+      })
+    ).rejects.toThrow("Bounty escrow not funded")
+
+    // The completion is a committed UPDATE that no later failure can roll
+    // back, so the check has to land before it — not after the money moves.
+    expect(demandPool.completeBountyMilestone).not.toHaveBeenCalled()
+    expect(hawala.createTransfer).not.toHaveBeenCalled()
   })
 
   it("refuses a bounty from another pool without touching the completion", async () => {

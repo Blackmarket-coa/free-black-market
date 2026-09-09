@@ -1061,10 +1061,34 @@ payout and refund paths and a `DEMAND_BOUNTY` purchase context already blessed
 in `posture-a-guard.ts`. Both are USD. Neither needs CCR.
 
 **One finding from that sweep belongs in §5.6's step 2 rather than here**, and
-it is the most serious defect this review found outside the securities line: an
-under-funded demand-pool bounty appears to pay out of other participants'
-escrowed money. That is a launch blocker, not a polish item, and it should be
-reproduced and fixed before any campaign or bounty surface is promoted.
+it is the most serious defect this review found outside the securities line.
+Reproduced and fixed on 2026-09-09; recorded here because the shape is worth
+remembering.
+
+`escrowBountyFunds` and `escrowParticipantFunds` credit the **same** per-pool
+`ESCROW` account — both call `getOrCreateDemandEscrow(demand_post_id)` — and
+`payBountyMilestone` debits that account by id. So a bounty that was never
+escrowed did not fail for want of funds. It paid out of the purchase money
+other participants had committed to the pool, and the ledger's non-negative
+invariant only noticed once the whole pool was drained.
+
+Nothing in the preflight caught it, and the preflight is otherwise careful: it
+checks that the bounty exists, belongs to *this* pool, has an assignee, and
+that both ledger legs resolve, in that order and before the committed
+completion. It simply never asked whether the bounty had funded anything.
+
+It was reachable from the public API. `POST /store/collective/demand-pools/:id/bounties`
+lets any pool creator or participant add a bounty with any positive `amount`
+and never escrows it; only the `create-creator-bounty` workflow escrows, and
+its docblock says why — "a funded bounty must be backed by escrow so the
+displayed reward is real."
+
+The fix is one guard in the preflight: a milestone cannot be paid until the
+bounty's own funds are escrowed. Escrowing at creation instead would take money
+the caller may not have and would change the route's contract, so the payout
+side is the right place. `__tests__/collective-hawala.unit.spec.ts` now proves
+an unfunded bounty is refused with neither the completion nor the transfer
+attempted.
 
 ---
 
@@ -1263,11 +1287,11 @@ what the code does, before building anything new on either.
 **Now — guards and truth (days)**
 1. `FF_INVESTMENT_POOLS_V1`, default off, across the pool and investment routes, the vendor dashboard payload, the panel section and the `/invest` page with its three inbound links; Posture A bullet corrected. **Shipped with this document.** §7.2.
 2. Micro-investor escrow guard. §7.1.
-3. Hide or allowlist the six unenforced privileges on the character sheet. §1a.
-4. Fix or flag off the three prediction-module defects. §5.6.
+3. ~~Hide or allowlist the six unenforced privileges.~~ **Done 2026-09-09**: privileges carry an `enforced` marker, the summary publishes only marked keys, none is marked, and a spec fails the build if one is marked without a consumer. §1a.
+4. ~~Fix the three prediction-module defects.~~ **Done 2026-09-09**: unmapped jurisdictions now allow non-cash only and a subdivision inherits its country's blocks; the position cap defaults to the matrix's 1; a currency stake is refused on a non-cash market. §5.6.
 5. Publish Terms, Privacy and Refund pages — `PRE_LAUNCH_AUDIT.md` LEG-1, P0, open. Every trust claim on the site currently rests on nothing enforceable. §5.6a.
-6. Stop rendering Tor transport as "active" in Blackout. §5.6a.
-7. Reproduce and fix the demand-pool bounty escrow gap — an under-funded bounty appears to pay from other participants' escrowed money. Launch blocker. §6b.
+6. ~~Stop rendering Tor transport as "active" in Blackout.~~ **Done 2026-09-09** in `blackout#903`: entitlement and implementation are now separate questions, and an unbuilt capability reads "planned". §5.6a.
+7. ~~Reproduce and fix the demand-pool bounty escrow gap.~~ **Done 2026-09-09**: an unescrowed bounty paid from the shared pool escrow, reachable from the public bounty route. §6b.
 
 **Next — repairs (weeks)**
 8. Stop awarding XP for `MICRO_INVESTOR` backings; delete `producer.reduced-commission` and `investor.priority-campaigns`. §3.4.
