@@ -216,9 +216,21 @@ following models exist but are either inactive or restricted under Posture A:
   had been live behind seller auth alone; both now sit behind
   `FF_VENDOR_ADVANCES_V1` (API) and `VITE_FF_VENDOR_ADVANCES_V1` (panel),
   default off. Flipping them is the activation this bullet gates.
-- **`InvestmentPool`**: pooled investment vehicle. Quiescent under Posture A
-  unless and until the offering is structured under a securities exemption
-  (Reg CF, Reg A, Coop Investment Cooperative) with appropriate filings.
+- **`InvestmentPool`** (with `Investment`): pooled investment vehicle.
+  Quiescent under Posture A unless and until the offering is structured under a
+  securities exemption (Reg CF, Reg A, Coop Investment Cooperative) with
+  appropriate filings. *2026-09-09:* this bullet claimed quiescence that was
+  never enforced. `POST /vendor/hawala/pools` created an `ACTIVE` pool with a
+  caller-chosen `roi_type` behind seller auth alone; `GET /store/hawala/pools`
+  listed them; `POST /store/hawala/investments` debited a customer's
+  `USER_WALLET` into one; and `/store/hawala/deposit` funds that wallet by
+  Stripe ACH. All four now sit behind `FF_INVESTMENT_POOLS_V1`
+  (`api/middlewares.ts`), default off. Flipping it is the activation this
+  bullet gates, and it is also a `REPO_CONSOLIDATION_REVIEW.md` §8 item
+  (revenue-share cash-in). See `docs/TRANSMUTATION_STRATEGY.md` §7.2. Note the
+  pool's `auto_invest_percentage` field is settable but read by nothing: the
+  auto-invest branch in `processOrderPayment` fires only when a caller passes
+  the percentage, and the live order subscriber does not.
 - **`ChargebackProtection` / `ChargebackClaim`**: a pool for vendor
   chargeback insurance (0.2% of each sale, capped coverage, claim
   adjudication states). Tables are migrated; no service method, route, job

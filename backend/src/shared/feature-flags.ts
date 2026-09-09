@@ -30,6 +30,14 @@ export const PHASE0_FEATURE_FLAGS = {
   // routes and the vendor-panel "Get Advance" section stay dark until an
   // operator flips it deliberately.
   VENDOR_ADVANCES_V1: "FF_VENDOR_ADVANCES_V1",
+  // Producer investment pools (hawala-ledger `InvestmentPool` / `Investment`),
+  // quiescent under Posture A unless and until an offering is structured under
+  // a securities exemption — docs/POSTURE_A_COMPLIANCE.md § "Existing models
+  // documented as quiescent". The `/vendor/hawala/pools`, `/admin/hawala/pools`,
+  // `/store/hawala/pools` and `/store/hawala/investments` routes were live
+  // behind auth alone until 2026-09-09; same disposition, and the same default
+  // as VENDOR_ADVANCES_V1, for the same reason.
+  INVESTMENT_POOLS_V1: "FF_INVESTMENT_POOLS_V1",
   // The shared seller reminder rail (`shared/seller-reminders.ts`). Default
   // off, following the reasoning `FBM_AR_DUNNING_LIVE` records on the dunning
   // sweep: a reminder ladder that advances while nothing can be delivered
