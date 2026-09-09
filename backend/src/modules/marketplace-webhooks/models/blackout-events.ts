@@ -74,11 +74,23 @@ export const BLACKOUT_AID_EVENTS = [
   "aid.request.closed",
 ] as const
 
+/**
+ * §3 order-cycle events. Blackout's bridge posts these to the vendor's public
+ * announcement room, so a CSA cycle opening is visible to its members.
+ *
+ * `sold_out` is deliberately NOT here. Blackout accepts it, but FBM has no
+ * cycle-level sold-out trigger — `evaluateShipWindow` decides sold-out per
+ * product, not per cycle — and registering a type nothing emits is the same
+ * dead declaration this file's own history keeps producing.
+ */
+export const BLACKOUT_CYCLE_EVENTS = ["cycle.open", "cycle.close"] as const
+
 export const BLACKOUT_EVENT_TYPES = [
   ...BLACKOUT_LIFECYCLE_EVENTS,
   ...BLACKOUT_BRIDGE_EVENTS,
   ...BLACKOUT_LAUNCH_EVENTS,
   ...BLACKOUT_AID_EVENTS,
+  ...BLACKOUT_CYCLE_EVENTS,
 ] as const
 
 export type BlackoutEventType = (typeof BLACKOUT_EVENT_TYPES)[number]
