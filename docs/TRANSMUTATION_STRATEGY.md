@@ -1520,7 +1520,7 @@ what the code does, before building anything new on either.
 
 **Now — guards and truth (days)**
 1. `FF_INVESTMENT_POOLS_V1`, default off, across the pool and investment routes, the vendor dashboard payload, the panel section and the `/invest` page with its three inbound links; Posture A bullet corrected. **Shipped with this document.** §7.2.
-2. Micro-investor escrow guard. §7.1.
+2. ~~Micro-investor escrow guard.~~ **Done** — verified 2026-09-10 by reading the code, not the module name. `assertBackingModeReleasable` lives in `backend/src/lib/campaign-escrow.ts` and is called at `POST /store/collective/campaigns/:id/backings` **before** the campaign is even loaded, so a `MICRO_INVESTOR` backing is refused before anything is persisted or moved — which is the ordering §7.1 asked for. The flag is `FBM_SECURITIES_GATE_CLEARED`, separate from `FBM_CAMPAIGN_ESCROW_LIVE` and named as an assertion about the world rather than a feature switch, and the error message points at §8. §7.1.
 3. ~~Hide or allowlist the six unenforced privileges.~~ **Done 2026-09-09**: privileges carry an `enforced` marker, the summary publishes only marked keys, none is marked, and a spec fails the build if one is marked without a consumer. §1a.
 4. ~~Fix the three prediction-module defects.~~ **Done 2026-09-09**: unmapped jurisdictions now allow non-cash only and a subdivision inherits its country's blocks; the position cap defaults to the matrix's 1; a currency stake is refused on a non-cash market. §5.6.
 5. Publish Terms, Privacy and Refund pages — `PRE_LAUNCH_AUDIT.md` LEG-1, P0, open. Every trust claim on the site currently rests on nothing enforceable. §5.6a.
@@ -1538,7 +1538,7 @@ what the code does, before building anything new on either.
 13. Finish patronage: take `patronage-refund` past `status=computed`. **Review and visibility done 2026-09-10** — an operator review table, an idempotent `computed → queued` approval, and a member-facing view; disbursement (`queued → paid`) left open, being a Posture A rail decision rather than code. §5.5.
 14. ~~Partner-directory kinds and entries for abatement, deconstruction, reuse centres, PV/electrical test labs.~~ **Done 2026-09-10**: four kinds, nine verified entries, referring to the regulators that hold the licence lists rather than to licensees. §4.4.
 15. ~~Deconstruction-readiness quest definition, exempt from the entitlement gate.~~ **Done 2026-09-10**: Q15, with a `safetyCritical` flag that publishes the checklist on the unauthenticated catalog while leaving enrolment and packet export priced as they were. §4.4, §6.
-16. A campaign screen — business line 1's backend has no front door. §3.1.
+16. ~~A campaign screen — business line 1's backend has no front door.~~ **Done 2026-09-10** in `#851`: `storefront/src/app/[locale]/(main)/collective/campaigns/` — a list and a detail page, with `listCampaigns`/`getCampaign` in `lib/data/collective.ts`. The detail page leads with the allocation breakdown, and **backing is deliberately not offered from it**: the only cash-in mode that would need a button is `MICRO_INVESTOR`, which item 2's securities gate refuses. A screen that showed a Back button the API is built to reject would be the same class of defect this roadmap exists to close. §3.1.
 
 **Later — gated or sequenced behind the above**
 17. Sell-by-weight pricing; a heterogeneous lot noun. §4.1.
