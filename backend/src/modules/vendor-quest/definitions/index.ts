@@ -13,9 +13,10 @@ import coopFormation from "./coop-formation"
 import landPooling from "./land-pooling"
 import commonsContribution from "./commons-contribution"
 import fiscalSponsorshipReadiness from "./fiscal-sponsorship-readiness"
+import deconstructionReadiness from "./deconstruction-readiness"
 
 /**
- * Quest definition registry — the full catalog (Q1–Q13).
+ * Quest definition registry — the full catalog (Q1–Q15).
  *
  * Quest definitions are CODE CONFIG, not database rows (mirroring the
  * `listing-type` catalog pattern). Every entry here runs through the same
@@ -36,6 +37,7 @@ export const QUEST_DEFINITIONS: QuestDefinition[] = [
   complianceTracker, // Q8
   wellnessInsurance, // Q9
   trustTier, // Q10
+  deconstructionReadiness, // Q15 — safety-critical, published unGated
   // Cooperative & Mission (collective)
   coopFormation, // Q11
   landPooling, // Q12

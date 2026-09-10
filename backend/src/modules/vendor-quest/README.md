@@ -6,7 +6,7 @@ certification, co-op), structured as a stage-gated progression ending in an
 exportable **packet** for the outcome's gatekeeper.
 
 This is a general **engine**, not a set of bespoke features. Each quest in the
-catalog (Q1–Q13) is a **definition** (config); adding one is a new file, never
+catalog (Q1–Q15) is a **definition** (config); adding one is a new file, never
 an engine change.
 
 ## Layers

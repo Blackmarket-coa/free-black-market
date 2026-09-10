@@ -293,6 +293,28 @@ export interface QuestDefinition {
    *  their record may be aggregated. A member is included ONLY if they consent
    *  to every scope here (never aggregate data a member didn't consent to). */
   requiredConsentScopes?: string[]
+  /**
+   * When true, this quest's full requirement list is published to the
+   * unauthenticated `GET /store/quest-catalog`, requirement notes included,
+   * rather than only its counts.
+   *
+   * Quests are gated on `FF_VENDOR_QUESTS_V1` plus the `vendor.quests` plan
+   * feature, which the Scale plan and the quest-pack add-on grant. For a
+   * capital-readiness quest that is defensible pricing. For a checklist whose
+   * function is to stop somebody disturbing asbestos in a 1950s building, it
+   * puts safety content behind a paywall — and a person who cannot afford the
+   * plan is not thereby less likely to cut into a wall.
+   *
+   * The exemption is deliberately narrow, and it is not a change to who may
+   * *enrol*. Enrolment, progress tracking and packet export stay gated exactly
+   * as before; what becomes free is the content — which documents are needed,
+   * which rules apply, and which regulator to call. That is the part whose
+   * absence hurts someone. Leaving the pricing of the tracked experience
+   * alone also keeps this out of a revenue decision that is the operator's.
+   *
+   * docs/TRANSMUTATION_STRATEGY.md §4.4.
+   */
+  safetyCritical?: boolean
 }
 
 // ────────────────────────────────────────────────────────────────────────────

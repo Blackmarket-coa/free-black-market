@@ -6,7 +6,7 @@ wholesale account, a certification, a cooperative — structured as a stage-gate
 progression that ends in an exportable **packet** for the outcome's gatekeeper.
 
 It is a general **engine**, not thirteen bespoke features. Every quest in the
-catalog (Q1–Q13) is a **definition** (config). Adding one is a new file, never
+catalog (Q1–Q15) is a **definition** (config). Adding one is a new file, never
 an engine change.
 
 > **Pilot → general.** The pilot is a South Carolina edible/medicinal plant
@@ -66,9 +66,9 @@ gracefully around them:
 A service / digital / practitioner vendor has every domain field `null` and is a
 **first-class citizen** — this is enforced by tests, not just intent.
 
-## Implemented catalog (Q1–Q13)
+## Implemented catalog (Q1–Q15)
 
-All thirteen catalog quests ship as definitions in `definitions/`, each running
+All fifteen catalog quests ship as definitions in `definitions/`, each running
 through the same engine:
 
 | # | Key | Type | Packet |
@@ -86,9 +86,21 @@ through the same engine:
 | Q11 | `coop-formation` | collective | Co-op Formation Bundle |
 | Q12 | `land-pooling` | collective | Joint Financing Packet |
 | Q13 | `commons-contribution` | individual | none (internal + XP) |
+| Q14 | `fiscal-sponsorship-readiness` | individual | Fiscal Sponsorship Bundle |
+| Q15 | `deconstruction-readiness` | individual | Deconstruction Readiness Bundle *(safety-critical)* |
 
 A whole-catalog test (`__tests__/catalog.unit.spec.ts`) runs every definition
 through the engine, so a regression in any one is caught.
+
+**Safety-critical quests are exempt from the entitlement gate, for content
+only.** A definition may set `safetyCritical: true`, which makes the
+unauthenticated `GET /store/quest-catalog` publish its full requirement list —
+labels, tags and notes — rather than only requirement counts. Q15 is the first
+and, at time of writing, the only one. Enrolment, progress tracking against a
+vendor's own record, and packet export remain gated on `FF_VENDOR_QUESTS_V1`
+plus the `vendor.quests` plan feature exactly as before, so this is not a
+pricing change: what becomes free is the checklist a person needs before they
+open a wall. See `docs/TRANSMUTATION_STRATEGY.md` §4.4.
 
 ## How to author a new quest definition
 
