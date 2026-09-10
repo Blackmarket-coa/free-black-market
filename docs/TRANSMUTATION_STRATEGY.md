@@ -795,11 +795,37 @@ chartered monopoly worked because the subject could not leave. An ethical
 version of that mechanism has to keep the leaving genuinely available, and
 "you may fork" is only a mechanism if it is a licence.
 
-**Recommendation, in order:** (1) add a `LICENSE` to FBM; (2) make data export
-real and testable — `docs/TRUST_LANDSCAPE_AUDIT.md` Finding D is the existing
-record of this; (3) then invest in integration depth freely. Integration that a
-member could walk away from is a product advantage. Integration they cannot is
-the mechanism the brief excluded.
+**Recommendation, in order:** (1) add a `LICENSE` to FBM; (2) finish data
+export; (3) then invest in integration depth freely. Integration that a member
+could walk away from is a product advantage. Integration they cannot is the
+mechanism the brief excluded.
+
+**Correction to an earlier draft of this section.** It cited
+`docs/TRUST_LANDSCAPE_AUDIT.md` Finding D as "the existing record" of the data
+export gap. Finding D is the *licence* question only; that audit has no
+data-export finding. The state of export, checked directly:
+
+| Direction | What exists |
+| --- | --- |
+| Customer, out | `GET /store/customers/me/data-export` — profile, addresses and order history as one JSON attachment, scoped to the authenticated actor. Reachable from the storefront's `PrivacyDataSettings`. **Shipped and reachable.** |
+| Vendor, in | `POST /vendor/onboarding/import-csv` — products in. |
+| Vendor, out | `GET /vendor/sales-report?format=csv` — a date-ranged sales report: order id, date, product, variant, SKU, quantity, unit price, total, currency. |
+| Vendor catalogue, out | **Nothing.** No route exports a seller's own products, variants, prices, media or storefront configuration. |
+
+So the exit right is real for a *buyer* and partial for a *seller*: a vendor
+can bring a catalogue in and take a sales report out, but cannot take their
+store out. That is the asymmetry to close, and it is the one that matters for
+§5.3's argument — "you may fork" is addressed to the operator of a node, but
+the vendor's equivalent is "you may leave with your catalogue", and today they
+cannot. A catalogue export mirroring the existing CSV import is the smallest
+honest version, S, and it has the pleasant property of being the same schema
+read in the other direction.
+
+The customer export was shipped untested; it now has a spec covering the actor
+scoping (it must never trust a client-supplied id), the 401 and 404 paths, and
+the defensive per-section fetch that lets a schema gap in orders still yield a
+usable profile export. A right nobody checks is a norm, which is the same
+argument this section makes about the licence.
 
 The integration substrate itself is real but shallower than the brief implies:
 the FBM↔Blackstar bridge is dark by default (`FBM_BLACKSTAR_INTEGRATION=0`),
@@ -1327,8 +1353,18 @@ Nothing here loosens the standing gates in
    the Posture A bullet to say so rather than leaving it claiming quiescence.
 6. **Whether `/invest` comes down (§7.2, §5.6a).** Gating the API without
    touching the page leaves an advertisement for a 404.
-7. **Ship FBM's `LICENSE` (§5.3).** An operator action; it also unblocks the
-   honest version of the lock-in strategy.
+7. **Ship FBM's `LICENSE` (§5.3).** An operator action, and the choice of
+   licence is not one this document should make for you; it also unblocks the
+   honest version of the lock-in strategy. Two things worth knowing before
+   choosing. `backend/package.json` already declares `"license": "MIT"` — the
+   only licence declaration anywhere in the repo, made in one package rather
+   than for the project, and it is not a repository licence. And
+   `docs/AGGRESSIVE_OPERATIONS_GUIDE.md` twice describes forking "under its
+   open-source license" as the coalition's exit right, so two canonical
+   documents already assume a licence that does not exist. Blackout, for
+   comparison, carries `LICENSE-AGPL-3.0`, `LICENSE-GPL-3.0` and
+   `LICENSE-COMMERCIAL`; whether FBM matches that posture or takes the
+   permissive one its own dependency policy prefers is exactly the decision.
 8. **Abatement subcontractor relationships (§6).** Contracts, not code.
 
 ---
@@ -1351,7 +1387,7 @@ what the code does, before building anything new on either.
 8. ~~Stop awarding XP for `MICRO_INVESTOR` backings; delete `producer.reduced-commission` and `investor.priority-campaigns`.~~ **Done 2026-09-10**: the pay-in / level-up / pay-less / get-in-earlier loop is cut at both ends, and a spec on each half fails the build if either is reintroduced. §3.4.
 9. Blackout's missing majority test; stop calling Borda scoring ranked-choice. §5.4.
 10. ~~Wire FBM's `finalizeProposalWorkflow` to a scheduled job so garden proposals close.~~ **Done 2026-09-10**: hourly sweep, plus two fixes to the threshold arithmetic it was about to run for the first time — quorum was met unconditionally on an electorate nobody records, and the `tie` status was unreachable. §5.4.
-11. FBM `LICENSE`; verify data export. §5.3.
+11. FBM `LICENSE` (**operator decision, §9**); data export **verified 2026-09-10** — the customer export is shipped, reachable and now tested; the vendor *catalogue* export does not exist and is the real gap. §5.3.
 
 **Then — wiring what is already built (weeks)**
 12. `CIRCULAR_ECONOMY` in the vendor onboarding wizard; condition-grade filter on the storefront. §4.1.
