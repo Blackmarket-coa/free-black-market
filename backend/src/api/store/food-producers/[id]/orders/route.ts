@@ -1,6 +1,6 @@
 import { z } from "zod"
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
-import { actingCustomerId } from "../../../../../shared/actor-scope"
+import { actingCustomerId, actorOwnsResource } from "../../../../../shared/actor-scope"
 import { FOOD_DISTRIBUTION_MODULE } from "../../../../../modules/food-distribution"
 import type FoodDistributionService from "../../../../../modules/food-distribution/service"
 import { OperatingStatus } from "../../../../../modules/food-distribution/models/food-producer"
@@ -104,6 +104,24 @@ const listOrdersQuerySchema = z.object({
 // GET /food-producers/:id/orders
 // ===========================================
 
+/**
+ * GET /store/food-producers/:id/orders — a producer's own order list.
+ *
+ * **Owner-only, and authenticated in this handler rather than by middleware.**
+ * `api/middlewares.ts` gates the `/store/food-producers` prefix on
+ * `COMMUNITY_WRITE_VERBS` only — POST/PUT/PATCH/DELETE — because browsing
+ * producers is meant to be public. GET was therefore uncovered, and this
+ * handler read `:id` straight from the URL: with `GET /store/food-producers`
+ * also public, an anonymous caller could enumerate every producer and read
+ * every order, and a `food_order` carries `recipient_name`, `recipient_phone`,
+ * `recipient_email`, `delivery_address_line_1/2` and `customer_notes`.
+ *
+ * The sibling `orders/:orderId` route already checked ownership; only this
+ * list route was missed. It uses `actorOwnsResource` rather than
+ * `actorMayManage` because the latter grandfathers a null `owner_id`, which on
+ * a PII read would expose every legacy producer's orders to any account that
+ * can sign up. See that helper's docblock.
+ */
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
   const { id: producerId } = req.params
   
@@ -116,6 +134,13 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     const producer = await foodDistribution.retrieveFoodProducer(producerId)
     if (!producer) {
       res.status(404).json({ message: "Producer not found" })
+      return
+    }
+
+    if (!actorOwnsResource(req, (producer as { owner_id?: string | null }).owner_id)) {
+      // 403 for both "not signed in" and "not yours": distinguishing them
+      // would confirm which producer ids exist and who owns them.
+      res.status(403).json({ message: "This producer is not yours to manage" })
       return
     }
     

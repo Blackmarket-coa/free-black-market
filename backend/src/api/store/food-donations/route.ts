@@ -2,6 +2,7 @@ import { z } from "zod"
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { FOOD_DISTRIBUTION_MODULE } from "../../../modules/food-distribution"
 import type FoodDistributionService from "../../../modules/food-distribution/service"
+import { applyRecipientAnonymity } from "../../../modules/food-distribution/public-view"
 
 // ===========================================
 // VALIDATION SCHEMAS
@@ -99,7 +100,11 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         const producer = await foodDistribution.retrieveFoodProducer(order.producer_id)
         const items = await foodDistribution.listFoodOrderItems({ order_id: order.id })
         return {
-          ...order,
+          // A recipient who set `anonymous_recipient` is not named here.
+          // These rows are donation, gift, community-share, rescue and
+          // gleaning orders — food-aid recipients — and the flag had never
+          // been read by any path.
+          ...applyRecipientAnonymity(order as unknown as Record<string, unknown>),
           producer: producer ? {
             id: producer.id,
             name: producer.name,

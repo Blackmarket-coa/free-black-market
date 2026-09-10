@@ -2,6 +2,7 @@ import { z } from "zod"
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { FOOD_DISTRIBUTION_MODULE } from "../../../modules/food-distribution"
 import type FoodDistributionService from "../../../modules/food-distribution/service"
+import { redactDeliveries } from "../../../modules/food-distribution/public-view"
 
 // ===========================================
 // VALIDATION SCHEMAS
@@ -105,7 +106,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       .then((d) => d.length)
     
     res.json({
-      deliveries,
+      // Redacted: the delivery PIN is a credential, never a read field.
+      deliveries: redactDeliveries(deliveries as unknown as Record<string, unknown>[]),
       count,
       limit: query.limit,
       offset: query.offset,

@@ -307,6 +307,40 @@ introduced by that change, and none is fixable without a decision.
 | D9-4 | **The order↔cycle remote link is write-only.** The subscriber creates it and nothing in the repo reads it. It is the natural source for the `ordersPlaced` field that FBM's §3 `cycle.close` event deliberately omits (`docs/contracts/blackout-integration.md`), which is now unblocked because the link finally has real rows in it. | **deferred (S)** | `backend/src/subscribers/order-cycle-order-placed.ts`, `backend/src/jobs/order-cycle-status-update.ts` |
 | D9-5 | **Cart metadata does not survive FBM's checkout.** `@mercurjs/b2c-core` overrides `POST /store/carts/:id/complete` with `splitAndCompleteCartWorkflow`, which builds its order payload by hand and never copies `cart.metadata` onto the orders — it fetches the field (`completeCartFields` includes it) and drops it. Line-item metadata it does carry. This is why the order-cycle producer writes to the line item. **Anything else in this repo that stamps cart metadata and expects to read it off the order is silently broken on the main checkout path** — `storefront/src/lib/data/donations.ts` and the cart `tier` route are the ones to audit first. FBM's other completion routes wrap Medusa's own `completeCartWorkflow` and do propagate, so behaviour differs by checkout path. | **deferred (L)** | `backend/node_modules/@mercurjs/b2c-core/.medusa/server/src/workflows/cart/workflows/split-and-complete-cart.js`, `backend/src/api/store/carts/[id]/tier/route.ts` |
 
+## D10 — Unauthenticated reads on the community `/store` surfaces (2026-09-10)
+
+`api/middlewares.ts` `COMMUNITY_WRITE_PREFIXES` authenticates about fourteen
+`/store/*` prefixes for `COMMUNITY_WRITE_VERBS` — POST, PUT, PATCH, DELETE —
+and nothing else. Browsing those surfaces is meant to be public, so **GET was
+never covered**. The prefix list gates *verbs, not data sensitivity*, and
+several of those GETs return whole ORM entities by spreading them
+(`...order`, `...delivery`, `...courier`, `...producer`) or project a
+`customer_id` next to behavioural data. Two files make the gap visible in
+place: `delivery-batches/[id]/route.ts` and `volunteer-logs/route.ts` each
+enforce authorization in the write handler and none in the read handler
+beside it.
+
+Found while fixing D10-1. Ids are enumerable throughout: each prefix's own
+unauthenticated list endpoint supplies them.
+
+| ID | Finding | Status |
+| --- | --- | --- |
+| ~~D10-1~~ | ~~`GET /store/food-producers/:id/orders` — unauthenticated, no actor check, returning `recipient_name`, `recipient_phone`, `recipient_email`, `delivery_address_line_1/2`, `customer_notes` for every order of any producer. The sibling `orders/:orderId` route already checked ownership; only the list route was missed.~~ — **fixed 2026-09-10**: owner-only via a new `actorOwnsResource`, which unlike `actorMayManage` does **not** grandfather a null `owner_id`. Grandfathering is defensible for a write (middleware authenticates write verbs) but not for a read of a third party's address, where it would expose every legacy row to any account that can sign up. Both refusal paths return 403 so the response cannot confirm which producer ids exist. | done |
+| ~~D10-2~~ | ~~`proof_pin_code` served on every delivery read.~~ — **fixed 2026-09-10**. The PIN is the secret a recipient reads back to a courier to confirm delivery (`food-deliveries/[id]/route.ts` and `[id]/proof/route.ts` both compare against it), so serializing it defeats the control: anyone holding it can confirm someone else's delivery. It is a credential, not data about the delivery. `modules/food-distribution/public-view.ts` `redactDelivery` strips it at the boundary — applied to the delivery list, the delivery detail, `delivery-batches/:id` and the `active_deliveries` embedded in `couriers/:id` — so it cannot be serialized to *any* caller, authorized or not, independently of how D10-5 is resolved. | done |
+| ~~D10-3~~ | ~~`food_order.anonymous_recipient` never read by any path.~~ — **fixed 2026-09-10**. The column has always existed and no read consulted it, so a recipient who asked to be anonymous was returned with their name, phone, email and delivery address anyway. It matters most on `/store/food-donations`, whose rows are donation, gift, community-share, rescue and gleaning orders — food-aid recipients. `applyRecipientAnonymity` now blanks the identity fields and labels the recipient "Anonymous", applied on the donations and food-trades reads. The flag is a promise the schema makes to a person; the read path now keeps it. | done |
+| ~~D10-4~~ | ~~`garden_vote.comment_visibility` selected but never applied.~~ — **fixed 2026-09-10**. `GET /store/proposals/:id/votes` selected the column and ignored it, so a comment a voter marked `private` was served to anonymous callers beside their `customer_id`. Only the comment is withheld — the tally still needs every vote, its weight and its voter, and a governance record that quietly dropped ballots would be worse than one showing a comment as withheld. `members_only` is treated as non-public because the route cannot yet tell a member from a stranger; when it can, that case can widen. | done |
+| D10-5 | **The remaining unauthenticated reads, which need an access-model ruling rather than a patch.** Each returns personal data belonging to someone other than the caller: `GET /store/food-deliveries` and `/:id` (recipient name/phone, `delivery_address`, lat/long, `delivery_instructions`, `safe_place_description`, pickup contact); `/:id/track` and `/:id/subscribe` (live GPS breadcrumb plus the recipient's address — the SSE one continuously); `/store/food-trades` and `/:id` and `/store/food-donations` (the same `FoodOrder` field set as D10-1, through a different door); `/store/couriers` and `/:id` (`first_name`, `last_name`, `email`, `phone`, current lat/long, `license_plate`, `emergency_contact_name`/`_phone`, `documents`, `background_check_passed`, `total_earnings` — note `/:id/track` deliberately narrows the courier to name/vehicle/photo with the comment "Courier info (public only)", and the list endpoint has no such filter); `/store/delivery-batches/:id` (every delivery in the batch plus an explicit courier name and phone); `/store/volunteer-logs` (accepts `customer_id` as a filter, so one person's whole attendance history); `/store/work-parties/:id/signups` (attendance roster with check-in/out times); `/store/gardens/:id/members` (roster with `investment_balance`); `/store/harvests/:id/claims` (how much free food a named person took). **The ruling needed:** which of these are meant to be public at all, and for the rest, whether the reader must be the owner, a member of the same garden/network, or the subject. Not patched here because guessing the audience would either break a working surface or leave a hole. | open |
+| D10-6 | `food_producer.hide_address` — declared with the comment "For cottage food / privacy — don't show exact address" and read by no path, so a cottage-food producer working from home has their street address and lat/long published on `/store/food-producers` and `/:id`. Lower confidence than the rest (a producer address is partly public by design) but the explicit opt-out makes the intent unambiguous. Same shape as D10-3. | open |
+
+**The pattern, for whoever takes D10-5.** Every one of these is a route whose
+write verbs were locked down by the prefix matcher and whose read was not, and
+the fixed rows split cleanly into two kinds. D10-2/3/4 needed no decision
+because the schema *already* stated the intent — a PIN is a credential, an
+anonymity flag is a promise, a visibility enum is a rule — and the read path
+simply ignored it; those are bugs. D10-5 and D10-6 are different: the schema
+says nothing about who may read, so fixing them means *choosing* an audience,
+which is an operator decision and not a patch.
+
 ## Process
 
 - Re-generate the in-code marker list with `rg -n "TODO|FIXME" admin-panel/src storefront/src vendor-panel/src` quarterly.

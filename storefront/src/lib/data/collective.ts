@@ -68,6 +68,89 @@ export async function getDemandPool(id: string) {
   return response.demand_pool
 }
 
+// ── Collective campaigns ───────────────────────────────────────────────────
+//
+// Campaign-scoped funding, not vendor equity, and the distinction is
+// load-bearing: campaign funds buy approved material line items direct from
+// suppliers and never pass through vendor hands, the vendor takes a maker fee
+// released against milestones, and a backer is either a PRE_ORDER (buying
+// finished units) or a MICRO_INVESTOR (a revenue share capped by
+// `return_cap_multiplier`). See docs/TRANSMUTATION_STRATEGY.md §3.1 and
+// docs/COLLECTIVE_BUYS_MICRO_INVESTMENT_SPEC.md.
+
+export type Campaign = {
+  id: string
+  vendor_id: string
+  name: string
+  description: string
+  campaign_type: string
+  status: string
+  campaign_goal: number | string
+  total_backed_amount: number | string
+  pre_order_backed_amount: number | string
+  investor_backed_amount: number | string
+  per_unit_backer_cost: number | string
+  batch_minimum?: number | null
+  estimated_production_days?: number | null
+  media?: unknown
+}
+
+export type CampaignMaterialLineItem = {
+  id: string
+  description?: string | null
+  quantity?: number | null
+  unit_cost?: number | string | null
+  total_cost?: number | string | null
+  supplier_name?: string | null
+}
+
+export type CampaignDashboard = {
+  campaign: Campaign
+  /** Where a backer's money goes. The reason this screen exists. */
+  allocation_breakdown: {
+    material_total: number | string
+    maker_fee_subtotal: number | string
+    platform_fee_subtotal: number | string
+    shipping_subtotal: number | string
+  }
+  material_line_items: CampaignMaterialLineItem[]
+  sourcing_timeline: Array<Record<string, unknown>>
+  backing_summary: {
+    total_backed_amount: number | string
+    pre_order_backed_amount: number | string
+    investor_backed_amount: number | string
+    investor_payout_cap_progress: Array<{
+      backing_id: string
+      cap_amount: number | string
+      released_amount: number | string
+    }>
+  }
+  yield_reports: Array<Record<string, unknown>>
+}
+
+export async function listCampaigns(query?: {
+  status?: string
+  campaign_type?: string
+  limit?: number
+  offset?: number
+}) {
+  const response = await medusaFetch<{ campaigns: Campaign[] }>(
+    "/store/collective/campaigns",
+    { method: "GET", query, cache: "no-store" }
+  )
+
+  return response.campaigns || []
+}
+
+export async function getCampaign(id: string) {
+  const response = await medusaFetch<{ campaign_dashboard: CampaignDashboard }>(
+    `/store/collective/campaigns/${id}`,
+    { method: "GET", cache: "no-store" }
+  )
+
+  return response.campaign_dashboard
+}
+
 export async function createDemandPool(input: {
   title: string
   description: string

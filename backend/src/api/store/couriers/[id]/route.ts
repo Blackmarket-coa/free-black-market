@@ -4,6 +4,7 @@ import { FOOD_DISTRIBUTION_MODULE } from "../../../../modules/food-distribution"
 import type FoodDistributionService from "../../../../modules/food-distribution/service"
 import { CourierStatus } from "../../../../modules/food-distribution/models/courier"
 import { actorMayManage } from "../../../../shared/actor-scope"
+import { redactDeliveries } from "../../../../modules/food-distribution/public-view"
 
 // ===========================================
 // VALIDATION SCHEMAS
@@ -81,7 +82,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
   res.json({
     courier: {
       ...courier,
-      active_deliveries: activeDeliveries,
+      active_deliveries: redactDeliveries(activeDeliveries as unknown as Record<string, unknown>[]),
     },
   })
 }

@@ -3,6 +3,7 @@ import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { FOOD_DISTRIBUTION_MODULE } from "../../../../modules/food-distribution"
 import type FoodDistributionService from "../../../../modules/food-distribution/service"
 import { actorMayManage } from "../../../../shared/actor-scope"
+import { redactDeliveries } from "../../../../modules/food-distribution/public-view"
 
 // ===========================================
 // VALIDATION SCHEMAS
@@ -54,7 +55,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
   res.json({
     batch: {
       ...batch,
-      deliveries,
+      deliveries: redactDeliveries(deliveries as unknown as Record<string, unknown>[]),
       courier: courier ? {
         id: courier.id,
         name: `${courier.first_name} ${courier.last_name}`,

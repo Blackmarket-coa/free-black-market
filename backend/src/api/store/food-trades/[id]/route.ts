@@ -2,6 +2,7 @@ import { z } from "zod"
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { FOOD_DISTRIBUTION_MODULE } from "../../../../modules/food-distribution"
 import type FoodDistributionService from "../../../../modules/food-distribution/service"
+import { applyRecipientAnonymity } from "../../../../modules/food-distribution/public-view"
 
 // ===========================================
 // VALIDATION SCHEMAS
@@ -42,7 +43,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
   
   res.json({
     trade: {
-      ...order,
+      ...applyRecipientAnonymity(order as unknown as Record<string, unknown>),
       producer: producer ? {
         id: producer.id,
         name: producer.name,
