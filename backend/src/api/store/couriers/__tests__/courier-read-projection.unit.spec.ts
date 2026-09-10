@@ -1,5 +1,6 @@
 import { GET as listCouriers } from "../route"
 import { GET as getCourier } from "../[id]/route"
+import { GET as getDeliveryBatch } from "../../delivery-batches/[id]/route"
 import { FOOD_DISTRIBUTION_MODULE } from "../../../../modules/food-distribution"
 
 /**
@@ -157,5 +158,62 @@ describe("GET /store/couriers/:id", () => {
         "active_deliveries"
       )
     }
+  })
+})
+
+describe("GET /store/delivery-batches/:id", () => {
+  it("no longer publishes the courier's full name and phone", async () => {
+    // This route hand-built `{ id, name: "First Last", phone, vehicle_type }`
+    // — more than /food-deliveries/:id/track gives even the customer whose
+    // delivery is in flight. Who may read a batch at all is still open under
+    // D10-5; narrowing the courier neither answers that nor waits on it.
+    const service = {
+      retrieveDeliveryBatch: jest.fn(async () => ({ id: "bat_1", courier_id: "cour_1" })),
+      listFoodDeliveries: jest.fn(async () => []),
+      retrieveCourier: jest.fn(async () => ROW),
+    }
+    const req = {
+      params: { id: "bat_1" },
+      query: {},
+      scope: {
+        resolve: (key: string) => {
+          if (key === FOOD_DISTRIBUTION_MODULE) return service
+          throw new Error(`unresolvable: ${String(key)}`)
+        },
+      },
+    }
+    const res = createRes()
+
+    await getDeliveryBatch(req as never, res as never)
+
+    const batch = res.body.batch as Record<string, unknown>
+    const courier = batch.courier as Record<string, unknown>
+    expect(courier).not.toHaveProperty("phone")
+    expect(courier).not.toHaveProperty("name")
+    expect(courier.display_name).toBe("Ada O.")
+    expect(courier.vehicle_type).toBe("EBIKE")
+  })
+
+  it("still reports a batch with no courier assigned", async () => {
+    const service = {
+      retrieveDeliveryBatch: jest.fn(async () => ({ id: "bat_1", courier_id: null })),
+      listFoodDeliveries: jest.fn(async () => []),
+      retrieveCourier: jest.fn(async () => null),
+    }
+    const req = {
+      params: { id: "bat_1" },
+      query: {},
+      scope: {
+        resolve: (key: string) => {
+          if (key === FOOD_DISTRIBUTION_MODULE) return service
+          throw new Error(`unresolvable: ${String(key)}`)
+        },
+      },
+    }
+    const res = createRes()
+
+    await getDeliveryBatch(req as never, res as never)
+
+    expect((res.body.batch as Record<string, unknown>).courier).toBeNull()
   })
 })
