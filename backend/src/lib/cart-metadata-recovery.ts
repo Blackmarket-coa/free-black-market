@@ -1,0 +1,78 @@
+import type { MedusaContainer } from "@medusajs/framework/types"
+import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
+import { createLogger } from "../shared/logger"
+
+const log = createLogger("lib/cart-metadata-recovery")
+
+/**
+ * Read the metadata a buyer's cart carried, from an order.
+ *
+ * **Cart metadata does not survive FBM's main checkout path.**
+ * `@mercurjs/b2c-core` overrides `POST /store/carts/:id/complete` with
+ * `splitAndCompleteCartWorkflow`, which builds its order payload by hand —
+ * region, customer, sales channel, addresses, items, shipping methods — and
+ * has no `metadata` key at all. Line-item and shipping-method metadata are
+ * carried; the cart's own is dropped. FBM's other completion routes wrap
+ * Medusa's `completeCartWorkflow`, which does propagate, so behaviour differs
+ * by checkout path. Recorded as D9-5 in docs/AUDIT_DEBT.md.
+ *
+ * That is a vendored dependency, so this recovers rather than patches. The
+ * same workflow calls `createOrderSetStep({ cart_id: cart.id, ... })`, and
+ * `order_set` is linked to its orders, so the originating cart is reachable
+ * from any order it produced: order → order_set → cart_id → cart.metadata.
+ *
+ * **Order metadata still wins.** A checkout path that propagated correctly
+ * has the freshest value on the order itself, and an operator may have edited it
+ * after the fact; the cart is the fallback, not the source of truth.
+ *
+ * Never throws. A consumer of this is a subscriber reacting to `order.placed`,
+ * and failing to recover an optional preference must not fail the order.
+ */
+export async function getOrderCartMetadata(
+  container: MedusaContainer,
+  order: { id: string; metadata?: Record<string, unknown> | null },
+  /** Keys the caller needs. Recovery is skipped when the order already has one. */
+  keys: readonly string[]
+): Promise<Record<string, unknown>> {
+  const onOrder = (order.metadata ?? {}) as Record<string, unknown>
+
+  // Cheap exit: if the order carries any of the keys, the checkout path
+  // propagated and there is nothing to recover.
+  if (keys.some((key) => onOrder[key] !== undefined && onOrder[key] !== null)) {
+    return onOrder
+  }
+
+  try {
+    const query = container.resolve(ContainerRegistrationKeys.QUERY)
+
+    const { data: sets } = await query.graph({
+      entity: "order_set",
+      fields: ["cart_id"],
+      filters: { orders: { id: order.id } },
+    })
+
+    const cartId = (sets?.[0] as { cart_id?: string } | undefined)?.cart_id
+    if (!cartId) {
+      return onOrder
+    }
+
+    const { data: carts } = await query.graph({
+      entity: "cart",
+      fields: ["metadata"],
+      filters: { id: cartId },
+    })
+
+    const fromCart = ((carts?.[0] as { metadata?: Record<string, unknown> } | undefined)
+      ?.metadata ?? {}) as Record<string, unknown>
+
+    // Order wins on any key it does carry.
+    return { ...fromCart, ...onOrder }
+  } catch (error) {
+    log.warn(
+      `[cart-metadata-recovery] could not recover cart metadata for order ${order.id}: ${
+        (error as Error)?.message ?? error
+      }`
+    )
+    return onOrder
+  }
+}

@@ -4,6 +4,7 @@ import { FOOD_DISTRIBUTION_MODULE } from "../../../modules/food-distribution"
 import type FoodDistributionService from "../../../modules/food-distribution/service"
 import { OperatingStatus } from "../../../modules/food-distribution/models/food-producer"
 import { hawalaAccountOwnershipError } from "../../../shared/actor-scope"
+import { applyProducerAddressPrivacyAll } from "../../../modules/food-distribution/public-view"
 
 // ===========================================
 // VALIDATION SCHEMAS
@@ -133,7 +134,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     ])
     
     res.json({
-      producers,
+      // A producer who set `hide_address` does not publish their doorstep.
+      producers: applyProducerAddressPrivacyAll(producers as unknown as Record<string, unknown>[]),
       count,
       limit: query.limit,
       offset: query.offset,

@@ -88,3 +88,57 @@ export function applyRecipientAnonymityAll<T extends Record<string, unknown>>(
 ): T[] {
   return orders.map(applyRecipientAnonymity)
 }
+
+/**
+ * Honour a producer's request to keep their exact address private.
+ *
+ * `food_producer.hide_address` is declared with the comment "For cottage food
+ * / privacy - don't show exact address" and, like `anonymous_recipient`
+ * before it, was read by no path: `/store/food-producers` and `/:id` both
+ * return the whole entity, so a cottage-food producer working out of their
+ * home had their street address and precise coordinates published.
+ *
+ * **What stays and what goes.** The flag says *exact*, not *any*: city,
+ * state, postal code and country remain, because a buyer needs to know
+ * roughly where a producer is and that is the whole point of a local food
+ * marketplace. What goes is the doorstep — the street lines and the precise
+ * latitude/longitude.
+ *
+ * Coordinates are nulled rather than rounded. Rounding is the tempting option
+ * because it keeps map pins and distance sorting working, but "how coarse is
+ * coarse enough" is a judgement nobody has made here, and a rounded
+ * coordinate still reads as precise to every consumer of the field. Null is
+ * the honest signal that this producer does not publish a location, and a
+ * caller that needs proximity can use the postal code.
+ *
+ * `service_area_radius_miles` is deliberately kept: it describes how far a
+ * producer will travel, not where they live.
+ */
+const PRODUCER_EXACT_LOCATION_FIELDS = [
+  "address_line_1",
+  "address_line_2",
+  "latitude",
+  "longitude",
+] as const
+
+export function applyProducerAddressPrivacy<T extends Record<string, unknown>>(
+  producer: T
+): T {
+  if (!producer?.hide_address) {
+    return producer
+  }
+  const copy = { ...producer } as Record<string, unknown>
+  for (const field of PRODUCER_EXACT_LOCATION_FIELDS) {
+    if (field in copy) {
+      copy[field] = null
+    }
+  }
+  return copy as T
+}
+
+/** `applyProducerAddressPrivacy` over a list. */
+export function applyProducerAddressPrivacyAll<T extends Record<string, unknown>>(
+  producers: readonly T[]
+): T[] {
+  return producers.map(applyProducerAddressPrivacy)
+}

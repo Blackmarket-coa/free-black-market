@@ -8,6 +8,8 @@
  * and a recipient's request not to be named.
  */
 import {
+  applyProducerAddressPrivacy,
+  applyProducerAddressPrivacyAll,
   applyRecipientAnonymity,
   applyRecipientAnonymityAll,
   redactDeliveries,
@@ -116,5 +118,79 @@ describe("applyRecipientAnonymity", () => {
     ])
     expect(out[0].recipient_name).toBe("Anonymous")
     expect(out[1].recipient_name).toBe("Grace Hopper")
+  })
+})
+
+describe("applyProducerAddressPrivacy", () => {
+  const homeProducer = {
+    id: "fp_1",
+    name: "Ada's Kitchen",
+    hide_address: true,
+    address_line_1: "12 Analytical Way",
+    address_line_2: "Flat B",
+    city: "Oakland",
+    state: "CA",
+    postal_code: "94601",
+    country_code: "US",
+    latitude: 37.8,
+    longitude: -122.27,
+    service_area_radius_miles: 5,
+  }
+
+  it("withholds the doorstep when the producer asked it to", () => {
+    const out = applyProducerAddressPrivacy(homeProducer)
+    expect(out.address_line_1).toBeNull()
+    expect(out.address_line_2).toBeNull()
+    expect(out.latitude).toBeNull()
+    expect(out.longitude).toBeNull()
+    expect(JSON.stringify(out)).not.toContain("Analytical Way")
+  })
+
+  it("keeps the general area, because that is the point of a local marketplace", () => {
+    // The flag says *exact* address, not *any* location. A buyer still needs
+    // to know roughly where a producer is.
+    const out = applyProducerAddressPrivacy(homeProducer)
+    expect(out.city).toBe("Oakland")
+    expect(out.state).toBe("CA")
+    expect(out.postal_code).toBe("94601")
+    expect(out.country_code).toBe("US")
+  })
+
+  it("keeps the service radius, which says how far they travel, not where they live", () => {
+    expect(applyProducerAddressPrivacy(homeProducer).service_area_radius_miles).toBe(5)
+  })
+
+  it("nulls coordinates rather than rounding them", () => {
+    // A rounded coordinate still reads as precise to every consumer of the
+    // field; null is the honest signal that no location is published.
+    const out = applyProducerAddressPrivacy(homeProducer)
+    expect(out.latitude).toBeNull()
+    expect(out.longitude).toBeNull()
+    expect(typeof out.latitude).not.toBe("number")
+  })
+
+  it("leaves a producer who publishes their address untouched", () => {
+    const open = { ...homeProducer, hide_address: false }
+    expect(applyProducerAddressPrivacy(open)).toEqual(open)
+  })
+
+  it("treats a missing flag as not hidden", () => {
+    const row = { id: "fp_2", address_line_1: "1 Main St" }
+    expect(applyProducerAddressPrivacy(row)).toEqual(row)
+  })
+
+  it("does not mutate its input", () => {
+    const row = { ...homeProducer }
+    applyProducerAddressPrivacy(row)
+    expect(row.address_line_1).toBe("12 Analytical Way")
+  })
+
+  it("applies per producer across a list, honouring each one's own flag", () => {
+    const out = applyProducerAddressPrivacyAll([
+      homeProducer,
+      { ...homeProducer, id: "fp_2", hide_address: false, address_line_1: "9 Public Rd" },
+    ])
+    expect(out[0].address_line_1).toBeNull()
+    expect(out[1].address_line_1).toBe("9 Public Rd")
   })
 })
