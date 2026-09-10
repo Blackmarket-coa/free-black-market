@@ -4,6 +4,7 @@ import { FOOD_DISTRIBUTION_MODULE } from "../../../modules/food-distribution"
 import type FoodDistributionService from "../../../modules/food-distribution/service"
 import { CourierStatus } from "../../../modules/food-distribution/models/courier"
 import { hawalaAccountOwnershipError } from "../../../shared/actor-scope"
+import { publicCourierViewAll } from "../../../modules/food-distribution/public-view"
 
 // ===========================================
 // VALIDATION SCHEMAS
@@ -71,6 +72,17 @@ const listCouriersQuerySchema = z.object({
 // GET /couriers
 // ===========================================
 
+/**
+ * Unauthenticated, and therefore projected. This used to serialize the
+ * `food_courier` row verbatim — email, phone, live coordinates, licence
+ * plate, emergency contact name and phone, documents, background-check
+ * status, total earnings — to anyone who asked. D10-5.
+ *
+ * `publicCourierView` publishes the set the repository had already declared
+ * public in two places (the "Courier info (public only)" projection on
+ * `/food-deliveries/:id/track`, and the model's note that `display_name` is
+ * "What customers see"). See that function for why each field is in or out.
+ */
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
   try {
     const query = listCouriersQuerySchema.parse(req.query)
@@ -94,7 +106,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       .then((c) => c.length)
     
     res.json({
-      couriers,
+      couriers: publicCourierViewAll(couriers as unknown as Record<string, unknown>[]),
       count,
       limit: query.limit,
       offset: query.offset,
