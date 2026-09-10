@@ -87,6 +87,105 @@ class PluginSigningService {
     }
   }
 
+  /**
+   * Public keys that no longer sign anything but must still verify (W3-2).
+   *
+   * ## Why this exists
+   *
+   * The published keyset held exactly one key, derived from whatever private
+   * key is configured now. The Blackout client resolves a signature by
+   * `keys.find((entry) => entry.keyId === signature.keyId)` and returns
+   * `unknown-key-id` when nothing matches
+   * (`features/monetization/install/pluginSignature.ts`). So the moment
+   * `MARKETPLACE_SIGNING_KEY_ID` changed, **every artifact ever signed under
+   * the previous key stopped installing** — not with a warning, with a
+   * refusal. Rotation was unavailable in practice, which is the same as
+   * having no rotation story at all.
+   *
+   * The client already treats the document as a keyset. Publishing the
+   * retired keys alongside the active one is the whole fix on this side.
+   *
+   * ## Format
+   *
+   * `MARKETPLACE_SIGNING_RETIRED_KEYS` is a JSON array:
+   *
+   * ```json
+   * [{ "keyId": "fbm-2025", "publicKeyPem": "-----BEGIN PUBLIC KEY-----\n..." }]
+   * ```
+   *
+   * Public keys only. A retired key is for verifying history; nothing here
+   * can sign, and `getPrivateKey` is the only path that produces a signature.
+   *
+   * ## Why this throws rather than skipping a bad entry
+   *
+   * Dropping a malformed entry would silently stop verifying every artifact
+   * signed under it — exactly the outage this function exists to prevent, and
+   * one that surfaces as a user's install failing rather than as a deploy
+   * failing. A configuration error should be loud at the endpoint (503, with
+   * the reason) rather than quiet at the install.
+   */
+  getRetiredPublicKeys(): Array<{ keyId: string; pem: string }> {
+    const raw = process.env.MARKETPLACE_SIGNING_RETIRED_KEYS
+    if (!raw || !raw.trim()) {
+      return []
+    }
+
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(raw)
+    } catch {
+      throw new Error(
+        "[marketplace-signing] MARKETPLACE_SIGNING_RETIRED_KEYS must be valid JSON"
+      )
+    }
+
+    if (!Array.isArray(parsed)) {
+      throw new Error(
+        "[marketplace-signing] MARKETPLACE_SIGNING_RETIRED_KEYS must be a JSON array"
+      )
+    }
+
+    const activeKeyId = process.env.MARKETPLACE_SIGNING_KEY_ID
+    const seen = new Set<string>()
+
+    return parsed.map((entry, index) => {
+      const row = entry as { keyId?: unknown; publicKeyPem?: unknown }
+      const keyId = typeof row?.keyId === "string" ? row.keyId.trim() : ""
+      const pem = typeof row?.publicKeyPem === "string" ? row.publicKeyPem : ""
+
+      if (!keyId || !pem) {
+        throw new Error(
+          `[marketplace-signing] retired key at index ${index} needs both keyId and publicKeyPem`
+        )
+      }
+      if (keyId === activeKeyId) {
+        // Two entries under one keyId make the client's `find` depend on
+        // array order, which is not a thing to leave to chance for a
+        // signature check.
+        throw new Error(
+          `[marketplace-signing] retired keyId "${keyId}" is also the active key id`
+        )
+      }
+      if (seen.has(keyId)) {
+        throw new Error(`[marketplace-signing] duplicate retired keyId "${keyId}"`)
+      }
+      seen.add(keyId)
+
+      try {
+        // Normalize through the crypto layer so a key that cannot be loaded
+        // fails here rather than at a verification months from now.
+        const normalized = createPublicKey({ key: pem, format: "pem" })
+          .export({ type: "spki", format: "pem" })
+          .toString()
+        return { keyId, pem: normalized }
+      } catch {
+        throw new Error(
+          `[marketplace-signing] retired key "${keyId}" is not a readable PEM public key`
+        )
+      }
+    })
+  }
+
   sign(args: {
     manifest: PluginManifestLike
     codeSha256: string

@@ -87,6 +87,16 @@ const CONDITIONAL_RULES = {
         { key: "MARKETPLACE_SIGNING_PRIVATE_KEY_PEM", required: true, minLength: 64, banPrefixes: ["CHANGE_ME"] },
       ],
     },
+    {
+      // Retired verification keys (W3-2) are meaningless without an active
+      // signing key: the key endpoints 503 on the active pair before they
+      // ever reach the retired list, so retired keys alone publish nothing
+      // while looking configured.
+      when: { key: "MARKETPLACE_SIGNING_RETIRED_KEYS", present: true },
+      rules: [
+        { key: "MARKETPLACE_SIGNING_KEY_ID", required: true, banPrefixes: ["CHANGE_ME"] },
+      ],
+    },
   ],
 }
 
