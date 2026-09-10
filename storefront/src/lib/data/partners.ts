@@ -2,6 +2,13 @@
 
 import { medusaFetch } from "@/lib/config"
 
+/**
+ * Mirrors `backend/src/modules/partner-directory/types.ts` `PARTNER_KINDS`,
+ * which is the source of truth. `certifier` was missing here while the
+ * backend and the page's label map both had it — the page's `label()` helper
+ * falls back to the raw key, so the drift showed up as a tidy-looking
+ * "certifier" heading rather than as an error.
+ */
 export type PartnerKind =
   | "cdfi"
   | "credit_union"
@@ -10,7 +17,12 @@ export type PartnerKind =
   | "crowdfunder"
   | "legal"
   | "back_office"
+  | "certifier"
   | "fiscal_sponsor"
+  | "abatement"
+  | "deconstruction"
+  | "reuse_center"
+  | "test_lab"
 
 export type PartnerServes = "sole_proprietor" | "cooperative" | "nonprofit" | "farm"
 

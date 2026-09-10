@@ -18,6 +18,10 @@ const KIND_LABELS: Record<string, string> = {
   back_office: "Business & back-office help",
   certifier: "Certifier / inspection program",
   fiscal_sponsor: "Fiscal sponsor",
+  abatement: "Asbestos & lead abatement",
+  deconstruction: "Deconstruction & salvage",
+  reuse_center: "Reuse centre",
+  test_lab: "Equipment testing laboratory",
 }
 
 const SERVES_LABELS: Record<string, string> = {

@@ -709,6 +709,30 @@ fee. A compensated referral to an abatement contractor would be BMC taking a
 cut of a hazmat job, which is the fastest available route to being named in a
 suit.
 
+**Done 2026-09-10.** Four kinds — `abatement`, `deconstruction`,
+`reuse_center` and `test_lab` — and nine entries, every URL fetched at
+curation time per the catalog's own rule 2.
+
+The one design decision worth recording: **the directory refers to regulators,
+not to licensees.** Asbestos and lead abatement are licensed state by state,
+so the honest entry is the EPA's state-contacts page — the agency that holds
+the list — rather than a list of contractors FBM keeps. Keeping such a list
+would mean maintaining it, and standing behind it, for exactly the work where
+being wrong is worst. The RRP rule gets its own entry alongside abatement
+because salvage in pre-1978 housing is usually *renovation* under that rule
+rather than abatement, and the two carry different certifications; a checklist
+that conflates them sends someone to the wrong credential.
+
+`test_lab` is the fourth kind and was not in the original list: PV modules and
+electrical assemblies pulled out of a building are only resaleable if
+something competent has tested them, and that is a different referral from
+either abatement or deconstruction.
+
+A drift test now reads the storefront's duplicated `PartnerKind` union as text
+and fails if it omits a backend kind — it had already drifted, missing
+`certifier`, and because the partners page's `label()` falls back to the raw
+key the omission rendered as a plausible heading instead of an error.
+
 Compliance checklists then follow the quest pattern, which §1's sixth row
 confirms is sound and whose blocking substrate defect has been fixed. A
 "deconstruction contractor readiness" quest in the Certification & Trust family
@@ -1430,7 +1454,7 @@ what the code does, before building anything new on either.
 **Then — wiring what is already built (weeks)**
 12. ~~`CIRCULAR_ECONOMY` in the vendor onboarding wizard~~ **done 2026-09-10** (a `reclaimed` selling type, and the archetype mapping moved to the backend from a panel field nothing read); condition-grade filter on the storefront **re-scoped to M** — two filters already render and five vocabularies disagree, so it is a reconciliation rather than a wire. §4.1.
 13. Finish patronage: take `patronage-refund` past `status=computed`. §5.5.
-14. Partner-directory kinds and entries for abatement, deconstruction, reuse centres, PV/electrical test labs. §4.4.
+14. ~~Partner-directory kinds and entries for abatement, deconstruction, reuse centres, PV/electrical test labs.~~ **Done 2026-09-10**: four kinds, nine verified entries, referring to the regulators that hold the licence lists rather than to licensees. §4.4.
 15. Deconstruction-readiness quest definition, exempt from the entitlement gate. §4.4, §6.
 16. A campaign screen — business line 1's backend has no front door. §3.1.
 

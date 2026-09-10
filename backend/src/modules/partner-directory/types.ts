@@ -21,6 +21,18 @@ export const PARTNER_KINDS = [
   // Reserved for the fiscal-sponsorship pathway (§3.3); seeded from the
   // fiscal-sponsor registry's display fields when that quest ships.
   "fiscal_sponsor",
+  // Salvage and deconstruction (§4.4). These four exist so FBM can *refer*
+  // hazardous and specialist work out rather than host it. Licensed asbestos
+  // and lead abatement is a contracting relationship, and a compensated
+  // referral to an abatement contractor would be FBM taking a cut of a hazmat
+  // job — which is why rule 3 above is load-bearing here rather than merely
+  // tidy.
+  "abatement",
+  "deconstruction",
+  "reuse_center",
+  // Equipment safety testing: PV modules and electrical assemblies pulled from
+  // a building are only resaleable if something competent has tested them.
+  "test_lab",
 ] as const
 export type PartnerKind = (typeof PARTNER_KINDS)[number]
 

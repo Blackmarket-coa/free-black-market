@@ -47,6 +47,42 @@ describe("partner directory — shape", () => {
     }
   })
 
+  it("covers the salvage referral kinds, and refers out rather than listing licensees", () => {
+    // Asbestos and lead abatement are licensed state by state, so the honest
+    // referral is to the regulator holding the list — not to a list FBM keeps
+    // and would then have to stand behind. docs/TRANSMUTATION_STRATEGY.md §4.4.
+    for (const kind of ["abatement", "deconstruction", "reuse_center", "test_lab"] as const) {
+      expect(listPartners({ kind }).length).toBeGreaterThan(0)
+    }
+    expect(getPartner("epa_state_asbestos_contacts")?.kind).toBe("abatement")
+    expect(getPartner("build_reuse_directory")?.kind).toBe("deconstruction")
+    expect(getPartner("habitat_restores")?.kind).toBe("reuse_center")
+  })
+
+  it("mirrors every kind in the storefront's PartnerKind union", () => {
+    // The storefront duplicates this union in `lib/data/partners.ts` and had
+    // already drifted — it was missing `certifier` while both the backend and
+    // the partners page's label map carried it. The page's `label()` falls
+    // back to the raw key, so the drift rendered as a plausible heading
+    // instead of failing. Read as text rather than imported: the two packages
+    // do not share a build.
+    const fs = require("fs") as typeof import("fs")
+    const path = require("path") as typeof import("path")
+    const storefrontTypes = path.resolve(
+      __dirname,
+      "../../../../../storefront/src/lib/data/partners.ts"
+    )
+    if (!fs.existsSync(storefrontTypes)) {
+      // The backend is deployed on its own; skip rather than fail there.
+      return
+    }
+    const source = fs.readFileSync(storefrontTypes, "utf8")
+    const union = source.split("export type PartnerKind =")[1]?.split("export type")[0] ?? ""
+    for (const kind of PARTNER_KINDS) {
+      expect(union).toContain(`"${kind}"`)
+    }
+  })
+
   it("covers the generic entry points the lender quests link to", () => {
     expect(getPartner("cdfi_fund_certified_list")?.kind).toBe("cdfi")
     expect(getPartner("kiva_us")?.kind).toBe("crowdfunder")
