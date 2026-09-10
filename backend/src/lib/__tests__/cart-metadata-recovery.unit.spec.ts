@@ -16,9 +16,15 @@ const makeContainer = (opts: {
   throwOn?: "order_set" | "cart"
 }) => {
   const graph = jest.fn(async ({ entity }: { entity: string; [k: string]: unknown }) => {
-    if (entity === "order_set") {
+    // The order_set is reached by traversing `order.order_set`, not by
+    // filtering `order_set` on a nested `orders.id` — `RemoteQueryFilters`
+    // only accepts direct fields of the filtered entity, and the nested form
+    // passes plain `tsc` but fails the generated-type build.
+    if (entity === "order") {
       if (opts.throwOn === "order_set") throw new Error("link table gone")
-      return { data: opts.cartId ? [{ cart_id: opts.cartId }] : [] }
+      return {
+        data: opts.cartId ? [{ order_set: { cart_id: opts.cartId } }] : [{ order_set: null }],
+      }
     }
     if (entity === "cart") {
       if (opts.throwOn === "cart") throw new Error("cart read failed")
@@ -157,10 +163,25 @@ describe("getOrderCartMetadata", () => {
     expect(out.a).toBe(1)
   })
 
-  it("looks the order_set up by the order's own id", async () => {
+  it("reaches the order_set by the order's own id", async () => {
     const { container, graph } = makeContainer({ cartId: "cart_1", cartMetadata: {} })
     await getOrderCartMetadata(container, { id: "order_42", metadata: {} }, KEYS)
-    const call = graph.mock.calls.find((c) => c[0].entity === "order_set")!
+    const call = graph.mock.calls.find((c) => c[0].entity === "order")!
+    expect(call[0].fields).toEqual(["order_set.cart_id"])
     expect(JSON.stringify(call[0].filters)).toContain("order_42")
+  })
+
+  it("filters only on direct fields, never a nested relation path", async () => {
+    // The regression that turned CI red: `filters: { orders: { id } }` runs
+    // fine and type-checks under plain `tsc`, then fails `medusa build` once
+    // the generated `RemoteQueryFilters` exist. Pinning the shape here means
+    // the unit suite catches it before the build does.
+    const { container, graph } = makeContainer({ cartId: "cart_1", cartMetadata: {} })
+    await getOrderCartMetadata(container, { id: "order_42", metadata: {} }, KEYS)
+    for (const [args] of graph.mock.calls) {
+      for (const value of Object.values(args.filters ?? {})) {
+        expect(typeof value === "object" && value !== null && !Array.isArray(value)).toBe(false)
+      }
+    }
   })
 })

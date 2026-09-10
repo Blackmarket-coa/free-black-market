@@ -35,9 +35,16 @@ const makeContainer = (opts: {
       metadata: opts.orderMetadata ?? {},
     })),
   }
+  // Recovery traverses `order.order_set.cart_id`; it does not filter
+  // `order_set` on a nested `orders.id`, which fails the generated-type build.
   const graph = jest.fn(async ({ entity }: { entity: string }) => {
-    if (entity === "order_set") {
-      return { data: opts.cartId === null ? [] : [{ cart_id: opts.cartId ?? "cart_1" }] }
+    if (entity === "order") {
+      return {
+        data:
+          opts.cartId === null
+            ? [{ order_set: null }]
+            : [{ order_set: { cart_id: opts.cartId ?? "cart_1" } }],
+      }
     }
     if (entity === "cart") return { data: [{ metadata: opts.cartMetadata ?? {} }] }
     throw new Error(`unexpected entity ${entity}`)

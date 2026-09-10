@@ -21,8 +21,16 @@ const makeContainer = (opts: {
 }) => {
   const channels = { setChannelForOrder: jest.fn(async () => ({})) }
 
-  const graph = jest.fn(async ({ entity }: { entity: string }) => {
-    if (entity === "order") {
+  // Two different reads hit `entity: "order"` — the subscriber's own fetch and
+  // the recovery traversal of `order.order_set.cart_id` — so they are told
+  // apart by `fields`. Recovery does NOT filter `order_set` on a nested
+  // `orders.id`: `RemoteQueryFilters` accepts only direct fields, and the
+  // nested form passes plain `tsc` then fails `medusa build`.
+  const graph = jest.fn(async (args: { entity: string; fields?: string[] }) => {
+    const { entity, fields } = args
+    const isRecovery = !!fields?.includes("order_set.cart_id")
+
+    if (entity === "order" && !isRecovery) {
       return {
         data: [
           {
@@ -34,9 +42,12 @@ const makeContainer = (opts: {
       }
     }
     if (opts.graphThrows) throw new Error("link table missing")
-    if (entity === "order_set") {
+    if (entity === "order" && isRecovery) {
       return {
-        data: opts.cartId === null ? [] : [{ cart_id: opts.cartId ?? "cart_1" }],
+        data:
+          opts.cartId === null
+            ? [{ order_set: null }]
+            : [{ order_set: { cart_id: opts.cartId ?? "cart_1" } }],
       }
     }
     if (entity === "cart") return { data: [{ metadata: opts.cartMetadata ?? {} }] }

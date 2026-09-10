@@ -51,13 +51,21 @@ export async function getOrderCartMetadata(
   try {
     const query = container.resolve(ContainerRegistrationKeys.QUERY)
 
-    const { data: sets } = await query.graph({
-      entity: "order_set",
-      fields: ["cart_id"],
-      filters: { orders: { id: order.id } },
+    // Traversed from the order rather than filtered from `order_set`.
+    // `filters: { orders: { id } }` works at runtime but `RemoteQueryFilters`
+    // only accepts direct fields of the filtered entity, so it fails the
+    // generated-type build even though plain `tsc` lets it through. The
+    // order side carries a singular `order_set` alias, which asks the same
+    // question without a nested filter.
+    const { data: rows } = await query.graph({
+      entity: "order",
+      fields: ["order_set.cart_id"],
+      filters: { id: order.id },
     })
 
-    const cartId = (sets?.[0] as { cart_id?: string } | undefined)?.cart_id
+    const cartId = (
+      rows?.[0] as { order_set?: { cart_id?: string } | null } | undefined
+    )?.order_set?.cart_id
     if (!cartId) {
       return onOrder
     }
