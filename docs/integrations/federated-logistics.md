@@ -202,10 +202,41 @@ Each accepted event overwrites the matching shipment's status
 
 `claimed_by_node_id` is stored as the shipment's fulfillment node;
 `shipment_listing_id`, the reported `status`, and the last event type/id
-are kept in shipment metadata. Unknown `event_type` values are
-acknowledged with 202 `{"status":"ignored"}` — a newer Blackstar may add
-lifecycle events without dead-lettering against an older FBM. Additive
-evolution only; there is no envelope version field.
+are kept in shipment metadata.
+
+### Events that write no status
+
+Blackstar emits two more event types that carry relay progress rather than a
+listing status:
+
+| Event | Handling |
+| --- | --- |
+| `shipment.leg.updated` | receipt only, `outcome: ignored`, `reason: no_status_change` |
+| `shipment.leg.handoff_proof` | receipt only, `outcome: ignored`, `reason: no_status_change` |
+
+**No status is derived from them, deliberately.** A leg reaching `completed`
+says nothing about the shipment when four legs remain; Blackstar sends the
+listing-level event separately when the whole shipment moves.
+
+They are nonetheless **recorded**, in `blackstar_event_receipt`, with the leg
+identifiers on the receipt metadata. Until 2026-09-10 they were answered 202
+and discarded without a trace — so the receipt model's own documented
+`ignored` outcome was unreachable, and from FBM a relay that was arriving and
+being deliberately skipped looked exactly like a relay that was not arriving.
+
+Two further things were wrong and are fixed on the Blackstar side in the same
+pass: its `api/docs/events/freeblackmarket-contract.md` contract documented
+only the five listing-level events, so FBM had implemented the contract
+faithfully and the contract was incomplete; and the two leg payloads omitted
+`source_order_ref`, the field this receiver keys every inbound event on, which
+made them unattributable to an order even in principle. Both now carry it.
+
+An `event_type` neither table names is still acknowledged with 202
+`{"status":"ignored"}` — a newer Blackstar may add events without
+dead-lettering against an older FBM — but the response now carries
+`reason: unknown_event_type` and the receipt records it, so "the bridge has
+outrun this deployment" is distinguishable from "we knowingly skip this".
+Additive evolution only; there is no envelope version field.
 
 ## 7. Delivery guarantees
 

@@ -2,6 +2,7 @@ import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { BLACKSTAR_FULFILLMENT_MODULE } from "../../../../../modules/blackstar-fulfillment"
 import type BlackstarFulfillmentModuleService from "../../../../../modules/blackstar-fulfillment/service"
 import {
+  BLACKSTAR_EVENTS_WITHOUT_STATUS,
   STATUS_FOR_BLACKSTAR_EVENT,
   verifyBlackstarSignature,
 } from "../../../../../modules/blackstar-fulfillment/verify-blackstar-signature"
@@ -16,6 +17,11 @@ type BlackstarEnvelope = {
     source_order_ref?: string
     claimed_by_node_id?: string | null
     status?: string
+    // Relay-progress events (`shipment.leg.*`) only. They write no shipment
+    // status; these are carried onto the receipt so the leg a skipped event
+    // referred to is recoverable later.
+    shipment_leg_id?: string
+    sequence?: number
   }
 }
 
@@ -35,9 +41,11 @@ function isEnabled(): boolean {
  * `FBM_OUTBOUND_SECRET`.
  *
  * Idempotent by construction — applying the same event twice re-writes the
- * same shipment state. Unknown event types return 202 `ignored` rather than
- * an error so a newer Blackstar can add lifecycle events without dead-
- * lettering its deliveries against an older FBM.
+ * same shipment state. Event types that write no status return 202 `ignored`
+ * rather than an error so a newer Blackstar can add events without dead-
+ * lettering its deliveries against an older FBM. They are still **recorded**:
+ * see `recordUnappliedEvent`, and the `reason` field that separates a relay
+ * event this receiver knowingly skips from a type it has never heard of.
  */
 export async function POST(req: MedusaRequest<BlackstarEnvelope>, res: MedusaResponse) {
   if (!isEnabled()) {
@@ -101,8 +109,36 @@ export async function POST(req: MedusaRequest<BlackstarEnvelope>, res: MedusaRes
 
   const externalStatus = STATUS_FOR_BLACKSTAR_EVENT[eventType]
   if (!externalStatus) {
+    // Still 202, and still no status write — but recorded rather than
+    // dropped. These used to leave no trace at all, which meant a relay that
+    // was arriving and being deliberately skipped looked, from this side,
+    // exactly like a relay that was not arriving. The receipt table already
+    // documented an `ignored` outcome; nothing could reach it.
+    const documented = BLACKSTAR_EVENTS_WITHOUT_STATUS.has(eventType)
+    try {
+      await service.recordUnappliedEvent({
+        event_id: body.event_id ?? null,
+        event_type: eventType,
+        source_order_ref: payload.source_order_ref ?? null,
+        correlation_id: correlationId,
+        documented,
+        metadata: {
+          shipment_listing_id: payload.shipment_listing_id ?? null,
+          shipment_leg_id: payload.shipment_leg_id ?? null,
+          sequence: payload.sequence ?? null,
+          leg_status: payload.status ?? null,
+        },
+      })
+    } catch {
+      // Bookkeeping must not fail an event the sender got right.
+    }
+
     return res.status(202).json({
       status: "ignored",
+      // `status` stays "ignored" so Blackstar's existing handling is
+      // unchanged; `reason` is additive and says which kind this was. An
+      // `unknown_event_type` means the bridge has outrun this deployment.
+      reason: documented ? "no_status_change" : "unknown_event_type",
       event_id: body.event_id ?? null,
       correlation_id: correlationId,
     })

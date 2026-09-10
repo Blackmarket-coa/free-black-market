@@ -74,6 +74,13 @@ without generating types, so only the slower `Build backend` job catches it.
 Nothing broken can merge — `Build backend` is blocking — but you will find out
 minutes later than you needed to.
 
+One caveat once you have built: **do not then read `tsc --noEmit` as the
+verdict.** With `.medusa/` present it reports pre-existing `TS2321: Excessive
+stack depth` errors in `workflows/create-digital-product-order` and
+`workflows/rental/upsert-rental-config` that the build itself does not, because
+the two use different compiler settings. `medusa build`'s own exit status is
+the check; `tsc --noEmit` is the quick pass that runs before you have one.
+
 ## Commit Guidelines
 
 - Use clear, imperative commit messages.
