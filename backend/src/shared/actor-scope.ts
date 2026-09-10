@@ -103,3 +103,38 @@ export function actorMayManage(
   }).auth_context
   return !!ctx?.actor_id && ctx.actor_id === ownerId
 }
+
+/**
+ * Whether the authenticated actor owns `ownerId`, with **no grandfathering**.
+ *
+ * `actorMayManage` deliberately lets a row that predates ownership tracking
+ * through, so existing data keeps working. That is defensible for a *write*
+ * on the community surfaces, because `api/middlewares.ts` authenticates every
+ * write verb there — the worst case is one signed-in account managing a
+ * legacy producer.
+ *
+ * It is not defensible for a **read of someone else's personal data**. A null
+ * owner means ownership cannot be established, and "cannot establish" must
+ * fail closed when the payload carries a third party's name, phone, email and
+ * delivery address: grandfathering there would expose every legacy row to any
+ * account that can sign up. Same rule as the unknown quorum denominator in
+ * `workflows/governance/finalize-proposal.ts` — an unknown is refused, not
+ * guessed.
+ *
+ * The cost is that a legacy producer's owner cannot read their own order list
+ * until an owner is recorded. That is the right way round: the fix is a
+ * backfill, and the failure is visible to the operator rather than silent to
+ * the people whose addresses are in the payload.
+ */
+export function actorOwnsResource(
+  req: MedusaRequest,
+  ownerId?: string | null
+): boolean {
+  if (!ownerId) {
+    return false
+  }
+  const ctx = (req as unknown as {
+    auth_context?: { actor_id?: string }
+  }).auth_context
+  return !!ctx?.actor_id && ctx.actor_id === ownerId
+}
