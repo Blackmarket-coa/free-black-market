@@ -1,10 +1,9 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { HAWALA_LEDGER_MODULE } from "../../../../modules/hawala-ledger"
-import HawalaLedgerModuleService from "../../../../modules/hawala-ledger/service"
 import { resolveVendorSellerId } from "../seller-context"
 import {
   memberView,
-  type PatronageAllocationRow,
+  type PatronageAllocationStore,
 } from "../../../../modules/hawala-ledger/patronage-review"
 
 /**
@@ -34,11 +33,9 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       .json({ message: "Vendor authentication required", type: "unauthorized" })
   }
 
-  const service = req.scope.resolve<HawalaLedgerModuleService>(HAWALA_LEDGER_MODULE)
+  const service = req.scope.resolve<PatronageAllocationStore>(HAWALA_LEDGER_MODULE)
 
-  const rows = ((await (service as any).listPatronageAllocations({
-    seller_id: sellerId,
-  })) ?? []) as Array<PatronageAllocationRow & { paid_at?: Date | string | null }>
+  const rows = (await service.listPatronageAllocations({ seller_id: sellerId })) ?? []
 
   const allocations = rows
     .map(memberView)

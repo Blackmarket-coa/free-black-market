@@ -1,9 +1,9 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { HAWALA_LEDGER_MODULE } from "../../../../modules/hawala-ledger"
-import HawalaLedgerModuleService from "../../../../modules/hawala-ledger/service"
 import {
   summarisePeriod,
   type PatronageAllocationRow,
+  type PatronageAllocationStore,
 } from "../../../../modules/hawala-ledger/patronage-review"
 
 /**
@@ -21,7 +21,7 @@ import {
  * row ever computed.
  */
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
-  const service = req.scope.resolve<HawalaLedgerModuleService>(HAWALA_LEDGER_MODULE)
+  const service = req.scope.resolve<PatronageAllocationStore>(HAWALA_LEDGER_MODULE)
   const { period_key, status } = req.query as {
     period_key?: string
     status?: string
@@ -31,8 +31,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
   if (period_key) filters.period_key = period_key
   if (status) filters.status = status
 
-  const rows = ((await (service as any).listPatronageAllocations(filters)) ??
-    []) as PatronageAllocationRow[]
+  const rows = (await service.listPatronageAllocations(filters)) ?? []
 
   if (period_key) {
     return res.json({

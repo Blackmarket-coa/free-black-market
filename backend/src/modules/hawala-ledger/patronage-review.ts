@@ -30,6 +30,8 @@ export type PatronageAllocationRow = {
   allocation_amount: number
   allocation_currency: string
   status: string
+  /** Set once a disbursement lands. Always null today — see the note above. */
+  paid_at?: Date | string | null
 }
 
 export type PatronagePeriodSummary = {
@@ -41,6 +43,26 @@ export type PatronagePeriodSummary = {
   by_status: Record<string, number>
   /** True when at least one row is still `computed` and so can be approved. */
   approvable: boolean
+}
+
+/**
+ * The slice of the hawala-ledger service this review surface actually uses.
+ *
+ * `MedusaService` generates the CRUD methods at runtime without surfacing them
+ * on the service's static type, which is why `jobs/patronage-refund.ts` reaches
+ * for them through `as any`. That job lives in `src/jobs/**`, which the TS-3
+ * ratchet in `eslint.config.mjs` has not yet gated; `src/api/admin/**` and
+ * `src/api/vendor/**` are gated at `error`, and rightly — naming the two
+ * methods a route needs is better than casting away the whole service.
+ */
+export type PatronageAllocationStore = {
+  listPatronageAllocations(
+    filters?: Record<string, unknown>
+  ): Promise<PatronageAllocationRow[] | undefined>
+  updatePatronageAllocations(data: {
+    id: string
+    status?: string
+  }): Promise<unknown>
 }
 
 /** Raised when a period cannot be approved. */
@@ -121,7 +143,7 @@ export function planApproval(
  * nothing will move it is the kind of claim this codebase keeps having to
  * retract.
  */
-export function memberView(row: PatronageAllocationRow & { paid_at?: Date | string | null }) {
+export function memberView(row: PatronageAllocationRow) {
   const explanation: Record<string, string> = {
     computed: "Calculated from the commission you paid this period. Awaiting operator review.",
     queued: "Reviewed and approved. Not yet paid — disbursement is not automated yet.",

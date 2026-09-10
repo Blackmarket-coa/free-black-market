@@ -1,12 +1,11 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { HAWALA_LEDGER_MODULE } from "../../../../../modules/hawala-ledger"
-import HawalaLedgerModuleService from "../../../../../modules/hawala-ledger/service"
 import { auditFinancialTransaction } from "../../../../../modules/hawala-ledger/audit-logger"
 import {
   PatronageApprovalError,
   planApproval,
   summarisePeriod,
-  type PatronageAllocationRow,
+  type PatronageAllocationStore,
 } from "../../../../../modules/hawala-ledger/patronage-review"
 
 /**
@@ -30,7 +29,7 @@ import {
  * docs/TRANSMUTATION_STRATEGY.md §5.5, docs/POSTURE_A_COMPLIANCE.md.
  */
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
-  const service = req.scope.resolve<HawalaLedgerModuleService>(HAWALA_LEDGER_MODULE)
+  const service = req.scope.resolve<PatronageAllocationStore>(HAWALA_LEDGER_MODULE)
   const { period_key } = (req.body ?? {}) as { period_key?: string }
 
   if (!period_key || typeof period_key !== "string") {
@@ -40,8 +39,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     })
   }
 
-  const rows = ((await (service as any).listPatronageAllocations({ period_key })) ??
-    []) as PatronageAllocationRow[]
+  const rows = (await service.listPatronageAllocations({ period_key })) ?? []
 
   let plan: ReturnType<typeof planApproval>
   try {
@@ -58,7 +56,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
 
   for (const row of plan.toQueue) {
     try {
-      await (service as any).updatePatronageAllocations({
+      await service.updatePatronageAllocations({
         id: row.id,
         status: "queued",
       })
@@ -79,8 +77,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     }
   }
 
-  const after = ((await (service as any).listPatronageAllocations({ period_key })) ??
-    []) as PatronageAllocationRow[]
+  const after = (await service.listPatronageAllocations({ period_key })) ?? []
 
   res.json({
     period: summarisePeriod(period_key, after),
