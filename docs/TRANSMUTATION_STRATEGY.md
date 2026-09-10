@@ -965,12 +965,30 @@ decisions — and let the date follow the artifacts.
 Two defects found on the way, both of which must be fixed before any surface
 says "democratic":
 
-- **Blackout's client has no majority test.** `useProposals.ts:390-399`
-  computes `quorumReached` and sets a proposal `passed` on expiry if turnout
-  met quorum; `leadingOptionId` is computed and discarded. A binary proposal on
-  which every vote was "against" passes. Consent is the one method implemented
-  correctly (`lib/bmc-core/consent.ts:140-143`); "ranked" is Borda scoring, not
-  instant-runoff, and should not be called ranked-choice.
+- ~~**Blackout's client has no majority test.**~~ **Done 2026-09-10** in
+  `blackout#904`. `useProposals.ts` computed `quorumReached` and set a proposal
+  `passed` on expiry if turnout met quorum, computing `leadingOptionId` only to
+  discard it — so a binary proposal on which every vote was "against" passed,
+  provided enough people turned out to vote it down.
+
+  The tally and the decision now live in `lib/bmc-core/proposalTally.ts`,
+  beside the consent equivalents — consent was the one method already
+  implemented correctly (`lib/bmc-core/consent.ts:140-143`) and it is the
+  model, a tally being a pure function of ballots and belonging somewhere it
+  can be tested without a Matrix room. A proposal must now clear two
+  independent bars at its deadline: quorum, **and** an option actually winning.
+  For a binary proposal the winner must be the affirmative option, read by id
+  (`yes`) rather than by position, since the creator lets a proposer reorder
+  those options but not rename their ids. A dead heat selects nothing and reads
+  as `failed`, the status union having no `tie` member.
+
+  **"Ranked" is Borda scoring, not instant-runoff, and is now named that way**
+  rather than reimplemented: the vote-type selector reads "Ranked (Borda
+  score)" and the creator explains the consequence — a broadly-acceptable
+  second favourite can beat the option most people ranked first. A test
+  demonstrates exactly that on a worked four-ballot example, so the copy
+  cannot drift from the arithmetic. Implementing IRV remains open, and is
+  arguably the wrong default for a consent-first product.
 - ~~**FBM's garden proposals never close.**~~ **Done 2026-09-10.**
   `workflows/governance/finalize-proposal.ts` has the only real threshold
   arithmetic in either repo, and `finalizeProposalWorkflow` had no callers at
@@ -1511,7 +1529,7 @@ what the code does, before building anything new on either.
 
 **Next — repairs (weeks)**
 8. ~~Stop awarding XP for `MICRO_INVESTOR` backings; delete `producer.reduced-commission` and `investor.priority-campaigns`.~~ **Done 2026-09-10**: the pay-in / level-up / pay-less / get-in-earlier loop is cut at both ends, and a spec on each half fails the build if either is reintroduced. §3.4.
-9. Blackout's missing majority test; stop calling Borda scoring ranked-choice. §5.4.
+9. ~~Blackout's missing majority test; stop calling Borda scoring ranked-choice.~~ **Done 2026-09-10** in `blackout#904`: a proposal must now clear quorum *and* have an option actually win, and the ranked method is named Borda where a room can see it. §5.4.
 10. ~~Wire FBM's `finalizeProposalWorkflow` to a scheduled job so garden proposals close.~~ **Done 2026-09-10**: hourly sweep, plus two fixes to the threshold arithmetic it was about to run for the first time — quorum was met unconditionally on an electorate nobody records, and the `tie` status was unreachable. §5.4.
 11. FBM `LICENSE` (**operator decision, §9**); data export **verified 2026-09-10** — the customer export is shipped, reachable and now tested; the vendor *catalogue* export does not exist and is the real gap. §5.3.
 
