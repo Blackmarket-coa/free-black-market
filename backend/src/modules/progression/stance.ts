@@ -14,6 +14,16 @@ import { VendorType } from "../seller-extension/models/seller-metadata"
  *
  * Stance is stored per-customer on the character sheet (single source of truth)
  * and mirrored into a storefront cookie for instant SSR theming.
+ *
+ * **INVESTOR is a selectable stance with no XP source, on purpose.** It used to
+ * be fed by `subscribers/progression-campaign-backed.ts` at 1 XP per dollar
+ * backed, which made reputation a linear function of capital deployed; that
+ * award was removed (docs/TRANSMUTATION_STRATEGY.md §3.4). Nothing else writes
+ * the track, so `investor_level` stays at 0 and the two INVESTOR entries in
+ * `DEFAULT_TITLES` are unreachable — dormant catalog rows, not a promise shown
+ * to anyone, since only *earned* titles are ever exposed. If the track is to
+ * move again it must be driven by something other than money — documentation
+ * completeness is the intended signal.
  */
 export enum Stance {
   PRODUCER = "producer",

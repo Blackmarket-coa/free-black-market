@@ -37,13 +37,30 @@ export type ThresholdPrivilege = {
    * keys marked here, and `__tests__/threshold-enforcement.unit.spec.ts` fails
    * the build if a key is marked without a consumer.
    *
-   * Every privilege is currently unmarked: none of the six has a reader
+   * Every privilege is currently unmarked: none of the four has a reader
    * anywhere outside this file. Mark one **in the same change** that wires its
    * consumer, never before. See docs/TRANSMUTATION_STRATEGY.md §1a.
    */
   enforced?: boolean
 }
 
+/**
+ * Two privileges are deliberately absent, and should not be re-added.
+ *
+ * `producer.reduced-commission` (Producer L5, "a lower cooperative commission
+ * rate") and `investor.priority-campaigns` (Investor L3, "early access to new
+ * campaigns") together formed a closed loop with the XP awarded for backing a
+ * campaign: deploy capital, gain XP, gain a lower fee and earlier access to the
+ * next raise. Reputation and capital are required to stay structurally
+ * separate, and preferential access to an offering conditioned on prior
+ * investment is a distribution practice, not a loyalty perk.
+ *
+ * The commission ladder already lives in `vendor-plan`, where it is bought
+ * rather than earned; a second, earned path to the same benefit also
+ * contradicts the public "3% is the ceiling" claim. See
+ * docs/TRANSMUTATION_STRATEGY.md §3.4, and the matching half of the fix in
+ * `subscribers/progression-campaign-backed.ts`.
+ */
 export const THRESHOLD_PRIVILEGES: ThresholdPrivilege[] = [
   {
     featureKey: "producer.featured-listing",
@@ -52,22 +69,6 @@ export const THRESHOLD_PRIVILEGES: ThresholdPrivilege[] = [
     role: Stance.PRODUCER,
     minLevel: 3,
     icon: "star",
-  },
-  {
-    featureKey: "producer.reduced-commission",
-    label: "Reduced Commission",
-    blurb: "Reach Producer level 5 for a lower cooperative commission rate.",
-    role: Stance.PRODUCER,
-    minLevel: 5,
-    icon: "tag",
-  },
-  {
-    featureKey: "investor.priority-campaigns",
-    label: "Priority Campaign Access",
-    blurb: "Reach Investor level 3 for early access to new campaigns.",
-    role: Stance.INVESTOR,
-    minLevel: 3,
-    icon: "trending-up",
   },
   {
     featureKey: "coalition.proposal-authoring",

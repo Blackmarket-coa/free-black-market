@@ -132,7 +132,10 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       throw error
     }
 
-    // Emit a domain event so the progression layer can award INVESTOR XP.
+    // Emit a domain event so the progression layer can refresh the backer's
+    // aggregates, and award CONSUMER XP for a PRE_ORDER. A MICRO_INVESTOR
+    // backing earns no XP at all: reputation is not a function of capital
+    // deployed. docs/TRANSMUTATION_STRATEGY.md §3.4.
     // Isolated so an event-bus hiccup never fails the backing itself.
     try {
       const eventBus = req.scope.resolve<IEventBusModuleService>(
