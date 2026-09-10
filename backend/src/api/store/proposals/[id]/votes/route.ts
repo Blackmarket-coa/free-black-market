@@ -62,7 +62,25 @@ export async function GET(
     },
   })
 
-  res.json({ votes })
+  // `comment_visibility` was selected and never applied, so a comment a voter
+  // marked `private` or `members_only` was served to anonymous callers next
+  // to their `customer_id`. The column is a promise the schema makes to a
+  // voter; withholding the comment is the read path keeping it.
+  //
+  // Only the comment is withheld — the tally still needs every vote, its
+  // weight and its voter, and a governance record that quietly dropped
+  // ballots would be worse than one that shows a comment as withheld.
+  // `members_only` is treated as non-public here because this route is
+  // unauthenticated and cannot yet tell a member from a stranger; when it
+  // can, that case can widen.
+  const visibleVotes = (votes as Array<Record<string, unknown>>).map((vote) => {
+    if (vote.comment_visibility === "public") {
+      return vote
+    }
+    return { ...vote, comment: null, comment_withheld: true }
+  })
+
+  res.json({ votes: visibleVotes })
 }
 
 /**
