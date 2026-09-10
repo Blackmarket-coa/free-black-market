@@ -109,7 +109,25 @@ export default async function orderPlacedHandler({
     for (const [orderCycleId, cycleItems] of byCycle) {
       log.info(`[Order Cycle Subscriber] Order ${orderId} placed in cycle ${orderCycleId}`)
 
-      // Verify the order cycle exists and is valid
+      // Existence only. `status` is deliberately NOT inspected here, and
+      // that is worth stating because it reads like an oversight (D9-3).
+      //
+      // `order.placed` fires after checkout completed. If the five-minute
+      // sweep closed the cycle between the buyer paying and this handler
+      // running, the sale still happened and the cycle should carry it —
+      // refusing here would lose a real sale to a race the buyer could not
+      // see. So a closed cycle recording a sale is the intended outcome on
+      // THIS path.
+      //
+      // What is genuinely still open is the other end: nothing re-validates
+      // the cycle between add-to-cart and order-placed, so a cart tagged
+      // with a cycle that closed hours earlier also records a sale, and
+      // that one is not a race — it is a missing check. Medusa v2 allows
+      // one handler per workflow hook and `completeCartWorkflow.hooks.validate`
+      // is already occupied by a composed FBM handler, so that check has to
+      // go inside `workflows/hooks/complete-cart-validate.ts` rather than
+      // beside it. Left to D9-3 because whether a cycle closing mid-checkout
+      // should fail the checkout is a policy question, not a patch.
       try {
         await orderCycleService.retrieveOrderCycle(orderCycleId)
       } catch {
