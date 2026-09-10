@@ -62,7 +62,21 @@ RUN pnpm run build:preview
 # --- runtime stage -----------------------------------------------------------
 FROM nginx:${NGINX_VERSION} AS runtime
 
-RUN apk add --no-cache wget tini
+# `apk upgrade` is scoped to libuuid rather than run bare, deliberately.
+# nginx and its modules in this base image come from NGINX Packaging (F5), not
+# from Alpine main — `apk info` shows the maintainer on nginx 1.31.5-r1 as
+# nginx-packaging@f5.com. A bare `apk upgrade` therefore upgrades nginx out of
+# whatever the `1.31-alpine` tag pins it to, which is the one thing the pinned
+# tag exists to prevent. libuuid is Alpine main (Natanael Copa), so upgrading it
+# cannot touch the nginx line.
+#
+# SD-26: alpine 3.24.1 ships libuuid 2.42.1-r0, carrying seven fixed HIGH
+# util-linux advisories (CVE-2026-53612/53613/53614/76642/78408/78409/78410).
+# Alpine v3.24 has 2.42.3-r1; upstream has not rebuilt the nginx image against
+# it, and every alpine tag — `alpine`, `1.31-alpine`, `stable-alpine` — carries
+# the same stale package, so a tag bump does not help. See docs/AUDIT_DEBT.md.
+RUN apk add --no-cache wget tini \
+    && apk upgrade --no-cache libuuid
 
 COPY --from=build /app/dist /usr/share/nginx/html
 COPY nginx.conf /etc/nginx/conf.d/default.conf
