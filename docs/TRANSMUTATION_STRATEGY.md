@@ -853,10 +853,36 @@ says "democratic":
   which every vote was "against" passes. Consent is the one method implemented
   correctly (`lib/bmc-core/consent.ts:140-143`); "ranked" is Borda scoring, not
   instant-runoff, and should not be called ranked-choice.
-- **FBM's garden proposals never close.** `workflows/governance/finalize-proposal.ts`
-  has the only real threshold arithmetic in either repo, and
-  `finalizeProposalWorkflow` has no callers; routes hit the service directly.
-  Needs a scheduled job.
+- ~~**FBM's garden proposals never close.**~~ **Done 2026-09-10.**
+  `workflows/governance/finalize-proposal.ts` has the only real threshold
+  arithmetic in either repo, and `finalizeProposalWorkflow` had no callers at
+  all; routes hit the service directly, so a garden proposal stayed `active`
+  for ever. `jobs/close-garden-proposals.ts` now sweeps hourly for proposals
+  past `voting_end`.
+
+  Wiring it up meant that arithmetic would run for the first time, and two
+  defects in it had to be fixed before it could:
+
+  - **Quorum was met unconditionally.** Turnout is `unique_voters /
+    eligible_voters`, `eligible_voters` is nullable, and *nothing in the tree
+    writes it* — so it is always null, and the code read it as
+    `(proposal.eligible_voters as number) || 1`. One ballot was therefore 100%
+    turnout, at every quorum setting, for every proposal. It now throws
+    `UnknownElectorateError` rather than guessing a denominator, and the sweep
+    filters these out first so they are a counted, warned-about skip: a
+    proposal that stays visibly open is a better failure than one falsely
+    resolved. Recording an electorate is the remaining gap, and it is now a
+    loud one.
+  - **The `tie` status was unreachable.** `approvalPercentage >=
+    approvalThreshold` was tested before the tie branch, so a 50/50 split under
+    a simple-majority threshold took `passed` — 50 >= 50. An even split is not
+    a majority. The tie test now runs first, on raw counts rather than a float,
+    and only where the bar is 50%: meeting a 66% supermajority exactly is
+    passing it, not tying it.
+
+  The arithmetic is extracted into a pure `decideProposalOutcome` and covered
+  by 14 tests, because §5.4 makes it a precondition for any surface calling
+  itself democratic.
 
 ### 5.5 The internal capital pool — pool readiness, not money
 
@@ -1324,7 +1350,7 @@ what the code does, before building anything new on either.
 **Next — repairs (weeks)**
 8. ~~Stop awarding XP for `MICRO_INVESTOR` backings; delete `producer.reduced-commission` and `investor.priority-campaigns`.~~ **Done 2026-09-10**: the pay-in / level-up / pay-less / get-in-earlier loop is cut at both ends, and a spec on each half fails the build if either is reintroduced. §3.4.
 9. Blackout's missing majority test; stop calling Borda scoring ranked-choice. §5.4.
-10. Wire FBM's `finalizeProposalWorkflow` to a scheduled job so garden proposals close. §5.4.
+10. ~~Wire FBM's `finalizeProposalWorkflow` to a scheduled job so garden proposals close.~~ **Done 2026-09-10**: hourly sweep, plus two fixes to the threshold arithmetic it was about to run for the first time — quorum was met unconditionally on an electorate nobody records, and the `tie` status was unreachable. §5.4.
 11. FBM `LICENSE`; verify data export. §5.3.
 
 **Then — wiring what is already built (weeks)**
