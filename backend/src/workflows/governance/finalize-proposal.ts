@@ -14,12 +14,112 @@ interface GovernanceServiceType {
 
 /**
  * Finalize Proposal Workflow
- * 
- * Calculates final results and updates proposal status.
+ *
+ * Calculates final results and updates proposal status. This is the only real
+ * threshold arithmetic in either repo; `jobs/close-garden-proposals.ts` is its
+ * only caller, sweeping proposals whose `voting_end` has passed.
+ *
+ * See docs/TRANSMUTATION_STRATEGY.md §5.4 for why the arithmetic has to be
+ * right before any surface says "democratic".
  */
 
 type FinalizeProposalInput = {
   proposal_id: string
+}
+
+/**
+ * Raised when a proposal cannot be finalized because its quorum denominator is
+ * unknown.
+ *
+ * `eligible_voters` is nullable and **nothing in the tree writes it**. The
+ * original code read it as `(proposal.eligible_voters as number) || 1`, so an
+ * unset denominator meant one eligible voter, which meant a single ballot was
+ * 100% turnout and quorum was met unconditionally — for every proposal, at
+ * every quorum setting. Silently passing that test is worse than refusing it:
+ * it reports "quorum met" on a number nobody set.
+ */
+export class UnknownElectorateError extends Error {
+  constructor(public readonly proposalId: string) {
+    super(
+      `Proposal ${proposalId} has no eligible_voters recorded, so turnout ` +
+        `cannot be measured against its quorum. Record the electorate before ` +
+        `finalizing.`
+    )
+    this.name = "UnknownElectorateError"
+  }
+}
+
+export type ProposalTally = {
+  votesFor: number
+  votesAgainst: number
+  uniqueVoters: number
+  /** Size of the electorate. Must be a positive number; see UnknownElectorateError. */
+  eligibleVoters: number | null | undefined
+  /** Percentage of the electorate that must vote for the result to count. */
+  quorumRequired: number
+  /** Percentage of considered votes that must be "for" to pass. */
+  approvalThreshold: number
+}
+
+export type ProposalOutcome = {
+  status: "expired" | "tie" | "passed" | "rejected"
+  quorumMet: boolean
+  approvalPercentage: number
+}
+
+/**
+ * Decide a proposal's outcome from its tally.
+ *
+ * Pure and exported so the arithmetic can be tested directly — it is the only
+ * real threshold arithmetic in the ecosystem, and §5.4 makes it a precondition
+ * for any surface calling itself democratic.
+ *
+ * Abstentions count toward turnout (they are participation) but not toward the
+ * approval ratio (they are not an opinion), which is the conventional reading
+ * and matches how `unique_voters` is incremented.
+ */
+export function decideProposalOutcome(tally: ProposalTally, proposalId: string): ProposalOutcome {
+  // No `|| 1` fallback: an unknown electorate is refused, not guessed.
+  const eligibleVoters = tally.eligibleVoters
+  if (!eligibleVoters || eligibleVoters <= 0) {
+    throw new UnknownElectorateError(proposalId)
+  }
+
+  const voterTurnout = (tally.uniqueVoters / eligibleVoters) * 100
+  const quorumMet = voterTurnout >= tally.quorumRequired
+
+  // Approval excludes abstains.
+  const votesConsidered = tally.votesFor + tally.votesAgainst
+  const approvalPercentage =
+    votesConsidered > 0 ? (tally.votesFor / votesConsidered) * 100 : 0
+
+  // The tie test comes *before* the pass test, and did not used to. With
+  // `approvalPercentage >= approvalThreshold` evaluated first, a 50/50 split
+  // under a simple-majority threshold took the `passed` branch and the `tie`
+  // branch was unreachable — the model declares a `tie` status that nothing
+  // could ever produce. An even split is not a majority.
+  //
+  // The test is on the raw counts rather than on `approvalPercentage === 50`
+  // because the percentage is a float; and it is scoped to a 50% threshold
+  // because an even split only ties when half is the bar. Meeting a 66%
+  // supermajority exactly is passing it, not tying it.
+  const isEvenSplit =
+    votesConsidered > 0 &&
+    tally.votesFor === tally.votesAgainst &&
+    tally.approvalThreshold === 50
+
+  let status: ProposalOutcome["status"]
+  if (!quorumMet) {
+    status = "expired"
+  } else if (isEvenSplit) {
+    status = "tie"
+  } else if (approvalPercentage >= tally.approvalThreshold) {
+    status = "passed"
+  } else {
+    status = "rejected"
+  }
+
+  return { status, quorumMet, approvalPercentage }
 }
 
 const finalizeProposalStep = createStep(
@@ -57,36 +157,25 @@ const finalizeProposalStep = createStep(
       throw new Error("Proposal is not active")
     }
 
-    // Calculate results
     const votesFor = proposal.votes_for as number
     const votesAgainst = proposal.votes_against as number
-    const _votesAbstain = proposal.votes_abstain as number
     const uniqueVoters = proposal.unique_voters as number
-    const quorumRequired = proposal.quorum_required as number
-    const approvalThreshold = proposal.approval_threshold as number
-    const eligibleVoters = (proposal.eligible_voters as number) || 1
-    
-    // Check quorum (based on unique voters if eligible_voters not set)
-    const voterTurnout = (uniqueVoters / eligibleVoters) * 100
-    const quorumMet = voterTurnout >= quorumRequired
 
-    // Calculate approval percentage (excluding abstains)
-    const votesConsidered = votesFor + votesAgainst
-    const approvalPercentage = votesConsidered > 0 
-      ? (votesFor / votesConsidered) * 100 
-      : 0
-
-    // Determine status
-    let newStatus: string
-    if (!quorumMet) {
-      newStatus = "expired"
-    } else if (approvalPercentage >= approvalThreshold) {
-      newStatus = "passed"
-    } else if (approvalPercentage === 50 && approvalThreshold === 50) {
-      newStatus = "tie"
-    } else {
-      newStatus = "rejected"
-    }
+    const {
+      status: newStatus,
+      quorumMet,
+      approvalPercentage,
+    } = decideProposalOutcome(
+      {
+        votesFor,
+        votesAgainst,
+        uniqueVoters,
+        eligibleVoters: proposal.eligible_voters as number | null,
+        quorumRequired: proposal.quorum_required as number,
+        approvalThreshold: proposal.approval_threshold as number,
+      },
+      input.proposal_id
+    )
 
     // Update proposal
     const previousStatus = proposal.status

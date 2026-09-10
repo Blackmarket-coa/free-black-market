@@ -28,13 +28,19 @@ import {
  * the URL doesn't carry `?mode=full`.
  */
 
-type SellingType = "physical" | "digital" | "service" | "event_class"
+type SellingType =
+  | "physical"
+  | "digital"
+  | "service"
+  | "event_class"
+  | "reclaimed"
 
 const SELLING_TYPE_LABELS: Record<SellingType, string> = {
   physical: "Physical goods",
   digital: "Digital downloads",
   service: "Service or coaching",
   event_class: "Event or class",
+  reclaimed: "Repaired or salvaged goods",
 }
 
 async function authedPost<T>(path: string, body: unknown): Promise<T> {

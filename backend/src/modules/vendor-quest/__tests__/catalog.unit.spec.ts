@@ -1,5 +1,5 @@
 /**
- * Whole-catalog test: every quest definition (Q1–Q13) runs through the SAME
+ * Whole-catalog test: every quest definition (Q1–Q15) runs through the SAME
  * generic engine with no per-quest code. This is the guarantee that adding a
  * quest is pure config.
  */
@@ -58,9 +58,9 @@ function makeMaxedSubstrate(): VendorSubstrate {
 }
 
 describe("full quest catalog", () => {
-  it("has all 14 quests across the four categories", () => {
+  it("has all 15 quests across the four categories", () => {
     const defs = listQuestDefinitions()
-    expect(defs).toHaveLength(14)
+    expect(defs).toHaveLength(15)
     const categories = new Set(defs.map((d) => d.category))
     expect(categories).toEqual(
       new Set([
@@ -71,7 +71,7 @@ describe("full quest catalog", () => {
       ])
     )
     // keys are unique
-    expect(new Set(defs.map((d) => d.key)).size).toBe(14)
+    expect(new Set(defs.map((d) => d.key)).size).toBe(15)
   })
 
   it("every quest evaluates through the engine without throwing", () => {

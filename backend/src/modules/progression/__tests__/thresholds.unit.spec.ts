@@ -28,6 +28,25 @@ describe("threshold privileges catalog", () => {
     expect(new Set(keys).size).toBe(keys.length)
   })
 
+  it("declares no privilege that couples reputation to capital", () => {
+    // Both keys formed a closed loop with the XP once awarded for backing a
+    // campaign: pay in, level up, pay a lower fee, get into the next raise
+    // earlier. Deleted deliberately — see docs/TRANSMUTATION_STRATEGY.md §3.4
+    // and the matching assertion in
+    // ../../../subscribers/__tests__/progression-campaign-backed.unit.spec.ts.
+    const keys = THRESHOLD_PRIVILEGES.map((t) => t.featureKey)
+    expect(keys).not.toContain("producer.reduced-commission")
+    expect(keys).not.toContain("investor.priority-campaigns")
+  })
+
+  it("declares no privilege gated on the INVESTOR track", () => {
+    // Nothing awards INVESTOR XP any more, so a privilege gated on that track
+    // would be permanently unreachable rather than merely unearned.
+    for (const t of THRESHOLD_PRIVILEGES) {
+      expect(t.role).not.toBe(Stance.INVESTOR)
+    }
+  })
+
   it("gates each privilege on exactly one of role-level or total-xp", () => {
     for (const t of THRESHOLD_PRIVILEGES) {
       const roleGate = t.role !== undefined && t.minLevel !== undefined
@@ -41,7 +60,7 @@ describe("unlockedFeatures", () => {
   it("unlocks a role-level privilege once the track level is reached", () => {
     const unlocked = unlockedFeatures(tracks({ [Stance.PRODUCER]: { level: 3, xp: xpForLevel(3) } }), 0)
     expect(unlocked).toContain("producer.featured-listing")
-    expect(unlocked).not.toContain("producer.reduced-commission") // needs level 5
+    expect(unlocked).not.toContain("coalition.den-moderation") // needs Coalition level 5
   })
 
   it("lapses (excludes) a privilege when the level drops back below it", () => {
@@ -57,9 +76,9 @@ describe("unlockedFeatures", () => {
   it("unlocks a plan-granted privilege even with no XP earned toward it", () => {
     // Bought half of the duality: the plan grants the key outright.
     const unlocked = unlockedFeatures(tracks({}), 0, [
-      "producer.reduced-commission",
+      "coalition.den-moderation",
     ])
-    expect(unlocked).toContain("producer.reduced-commission")
+    expect(unlocked).toContain("coalition.den-moderation")
   })
 
   it("keeps an earned privilege that the plan does not grant", () => {
@@ -84,8 +103,7 @@ describe("nextUnlock", () => {
 
   it("is null when everything is unlocked", () => {
     const everything = tracks({
-      [Stance.PRODUCER]: { level: 5, xp: xpForLevel(5) },
-      [Stance.INVESTOR]: { level: 3, xp: xpForLevel(3) },
+      [Stance.PRODUCER]: { level: 3, xp: xpForLevel(3) },
       [Stance.COALITION]: { level: 5, xp: xpForLevel(5) },
     })
     expect(nextUnlock(everything, 5000)).toBeNull()

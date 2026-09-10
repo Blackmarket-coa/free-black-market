@@ -10,6 +10,7 @@ Medusa scheduled jobs for FBM. Each file exports a handler plus a cron
 | `activate-rentals.ts` | daily 00:00 | Activate rentals whose start date has arrived |
 | `asset-graph-settlement-reconciler.ts` | every 15 min | Write asset-graph settlement records into hawala-ledger / karma events |
 | `attribution-fraud-sweep.ts` | every 10 min | Flag suspicious creator-attribution activity |
+| `close-garden-proposals.ts` | hourly :20 | Close garden proposals past `voting_end` via `finalizeProposalWorkflow`; skips (and warns about) proposals with no recorded electorate, since quorum is unmeasurable without one |
 | `content-platform-metrics-poll.ts` | every 15 min | Poll external content-platform metrics for creators |
 | `creator-attribution-approve-held.ts` | hourly | Auto-approve held creator attributions past their review window |
 | `creator-rewards-pool-close.ts` | daily 01:30 | Close and settle creator reward pools |

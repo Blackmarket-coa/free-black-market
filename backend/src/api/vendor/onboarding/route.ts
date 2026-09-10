@@ -7,6 +7,7 @@ import {
   OnboardingWizardStep,
 } from "../../../modules/tenancy/models"
 import type TenancyModuleService from "../../../modules/tenancy/service"
+import { archetypeForSellingType } from "../../../modules/tenancy/selling-type-archetype"
 
 async function resolveSellerId(req: MedusaRequest, actorId?: string): Promise<string | undefined> {
   if (!actorId) return undefined
@@ -30,7 +31,14 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 
   const service = req.scope.resolve<TenancyModuleService>(TENANCY_MODULE)
   const state = await service.ensureSellerOnboardingState(sellerId)
-  return res.json({ state })
+  // Derived, never stored: the archetype a selling type implies is a mapping
+  // between two backend enums, and duplicating it in the panel is how it
+  // silently stopped meaning anything. See
+  // modules/tenancy/selling-type-archetype.ts.
+  return res.json({
+    state,
+    archetype_code: archetypeForSellingType(state?.selling_type),
+  })
 }
 
 type PatchBody = {

@@ -12,7 +12,7 @@ import {
  * reads the key and changes behaviour, publishing it as unlocked advertises a
  * benefit that does not exist.
  *
- * All six privileges shipped with no consumer at all — see
+ * Every privilege shipped with no consumer at all — see
  * docs/TRANSMUTATION_STRATEGY.md §1a. The `enforced` flag is the fix, and this
  * spec is what keeps it honest: mark a key only in the same change that wires
  * its consumer.

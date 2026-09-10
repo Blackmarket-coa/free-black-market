@@ -300,6 +300,118 @@ export const PARTNER_DIRECTORY: readonly PartnerEntry[] = [
     products: "Labelling and germination-testing requirements for agricultural and vegetable seed sold across state lines.",
     unverified_reason: "ams.usda.gov answers automated requests with 403.",
   },
+
+  // --- Salvage, deconstruction and equipment testing (§4.4) -----------------
+  //
+  // Rule 3 above matters more here than anywhere else in this table. A
+  // compensated referral to an abatement contractor is FBM taking a cut of a
+  // hazmat job, which is the fastest available route to being named in a suit.
+  // These entries link out and nothing else.
+  //
+  // Note what is deliberately absent: any claim about *who* is licensed.
+  // Asbestos and lead abatement are licensed state by state, so the honest
+  // referral is to the regulator that holds the list, not to a list FBM keeps
+  // and would then have to maintain and stand behind.
+  {
+    key: "epa_state_asbestos_contacts",
+    name: "EPA — state asbestos contacts",
+    url: "https://www.epa.gov/asbestos/state-asbestos-contacts",
+    tagline: "The agency in your state that licenses asbestos abatement, and holds the list of who is licensed.",
+    kind: "abatement",
+    states: "national",
+    serves: ["sole_proprietor", "cooperative", "nonprofit", "farm"],
+    products:
+      "Per-state contacts for asbestos programs. Abatement licensing is a state function, so this is where a contractor's credentials are actually verifiable.",
+  },
+  {
+    key: "epa_lead_abatement_professionals",
+    name: "EPA — lead abatement, inspection and risk assessment",
+    url: "https://www.epa.gov/lead/lead-abatement-inspection-and-risk-assessment",
+    tagline: "What lead abatement certification covers, and how to find a certified firm.",
+    kind: "abatement",
+    states: "national",
+    serves: ["sole_proprietor", "cooperative", "nonprofit", "farm"],
+    products:
+      "Certification requirements for lead abatement contractors, inspectors and risk assessors, and the route to your state or EPA-administered program.",
+  },
+  {
+    key: "epa_lead_rrp_program",
+    name: "EPA — Renovation, Repair and Painting (RRP) rule",
+    url: "https://www.epa.gov/lead/lead-renovation-repair-and-painting-program",
+    tagline: "The rule that applies when you disturb paint in a pre-1978 building — not just to abatement jobs.",
+    kind: "abatement",
+    states: "national",
+    serves: ["sole_proprietor", "cooperative", "nonprofit", "farm"],
+    products:
+      "RRP firm certification and renovator training requirements. Salvage work in older housing is usually renovation under this rule rather than abatement, and the two have different certifications.",
+  },
+  {
+    key: "osha_asbestos_standards",
+    name: "OSHA — asbestos standards",
+    url: "https://www.osha.gov/asbestos",
+    tagline: "Worker-exposure limits and required controls, which apply whoever holds the licence.",
+    kind: "abatement",
+    states: "national",
+    serves: ["sole_proprietor", "cooperative", "nonprofit"],
+    products:
+      "Permissible exposure limits, respiratory protection, work-practice controls and the construction-industry asbestos standard.",
+    unverified_reason: "osha.gov answers automated requests with 403 (bot protection at the apex too).",
+  },
+  {
+    key: "build_reuse_directory",
+    name: "Build Reuse — member directory",
+    url: "https://buildreuse.org/membership-directory",
+    tagline: "The trade body for deconstruction contractors and reuse retailers, and its member list.",
+    kind: "deconstruction",
+    states: "national",
+    serves: ["sole_proprietor", "cooperative", "nonprofit"],
+    products:
+      "Members by region: deconstruction contractors, salvage retailers and reuse warehouses. Formerly the Building Materials Reuse Association.",
+  },
+  {
+    key: "epa_cd_materials",
+    name: "EPA — sustainable management of construction and demolition materials",
+    url: "https://www.epa.gov/smm/sustainable-management-construction-and-demolition-materials",
+    tagline: "What a deconstruction job is expected to divert, and how it is measured.",
+    kind: "deconstruction",
+    states: "national",
+    serves: ["sole_proprietor", "cooperative", "nonprofit"],
+    products:
+      "Guidance on deconstruction versus demolition, C&D material recovery rates, and diversion reporting — the vocabulary a disposal manifest is written in.",
+  },
+  {
+    key: "habitat_restores",
+    name: "Habitat for Humanity ReStore — locator",
+    url: "https://www.habitat.org/restores",
+    tagline: "Find the reuse warehouse nearest you, to buy from or divert to.",
+    kind: "reuse_center",
+    states: "national",
+    serves: ["sole_proprietor", "cooperative", "nonprofit", "farm"],
+    products:
+      "Locator for ReStore outlets, which take donated building materials, fixtures and appliances and resell them. The most widely distributed reuse network in the US.",
+  },
+  {
+    key: "pvel",
+    name: "PVEL — PV module and inverter testing",
+    url: "https://www.pvel.com/",
+    tagline: "Independent reliability testing for photovoltaic modules and inverters.",
+    kind: "test_lab",
+    states: "national",
+    serves: ["sole_proprietor", "cooperative", "nonprofit", "farm"],
+    products:
+      "Reliability and performance test programmes for PV modules, inverters and storage. Relevant when second-life panels are resold and someone has to stand behind their condition.",
+  },
+  {
+    key: "tuv_rheinland_usa",
+    name: "TÜV Rheinland — North America",
+    url: "https://www.tuv.com/usa/en/",
+    tagline: "Nationally recognised testing laboratory for electrical and PV equipment.",
+    kind: "test_lab",
+    states: "national",
+    serves: ["sole_proprietor", "cooperative", "nonprofit", "farm"],
+    products:
+      "Product safety testing and certification for electrical assemblies and photovoltaic equipment, including the marks a resold panel or fixture may need to be installable.",
+  },
 ]
 
 const normalizeKinds = (kind: PartnerFilters["kind"]): PartnerKind[] | null => {

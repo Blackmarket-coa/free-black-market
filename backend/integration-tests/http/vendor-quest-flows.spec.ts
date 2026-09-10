@@ -6,6 +6,7 @@ import {
   safe,
   AuthenticatedSeller,
 } from "./helpers/seller-auth"
+import { QUEST_DEFINITIONS } from "../../src/modules/vendor-quest/definitions"
 
 // Boot (~45-55s) + seller bootstrap need headroom.
 jest.setTimeout(120 * 1000)
@@ -78,14 +79,22 @@ medusaIntegrationTestRunner({
         const noAuth = await safe(api.get("/vendor/quests"))
         expect(noAuth.status).toBe(401)
 
-        // ── Catalog: all 14 quests, config-only, before any opt-in ─────────
+        // ── Catalog: every quest, config-only, before any opt-in ───────────
+        // Counted against the registry rather than a literal: this assertion
+        // is here to prove the route returns the whole catalog, and a literal
+        // makes every new quest fail an integration run that needs Postgres
+        // and so is not what an author runs locally. The deliberate "adding a
+        // quest is a decision" check lives in the unit suite
+        // (`modules/vendor-quest/__tests__/catalog.unit.spec.ts`), which does
+        // pin an exact number.
         const catalog = await safe(api.get("/vendor/quests", h))
         expect(catalog.status).toBe(200)
-        expect(catalog.data.count).toBe(14)
+        expect(catalog.data.count).toBe(QUEST_DEFINITIONS.length)
         const keys = catalog.data.quests.map((q: any) => q.key)
         expect(keys).toContain("fsa-farm-loan")
         expect(keys).toContain("coop-formation")
         expect(keys).toContain("fiscal-sponsorship-readiness")
+        expect(keys).toContain("deconstruction-readiness")
         // Requirements are tagged for the "what it needs" surface.
         const fsa = catalog.data.quests.find((q: any) => q.key === "fsa-farm-loan")
         expect(fsa.requirements.some((r: any) => r.tag === "outside-fbm")).toBe(true)

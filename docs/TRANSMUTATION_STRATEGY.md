@@ -85,8 +85,8 @@ Rows are ordered by how much the correction changes the plan.
 | **The primary blocker is a legal wrapper (Reg CF vs Reg D vs state co-op statute vs revenue-share notes) that does not exist yet** | The gate exists and is canonical. `docs/REPO_CONSOLIDATION_REVIEW.md` §8: "**Coalition investing and revenue-share subscriptions**: the EconomicUnit/claim modeling may be designed, but no cash-in/cash-out code path ships before the compliance work completes (Reg CF requirements for revenue-share; CSA-style claim framing for production claims). These are hard release gates, not configuration toggles." `docs/COMMERCE_ROADMAP.md` §4 repeats it. What does not exist is the *answer*, not the recognition. | **Re-frame the task.** The brief asks for a decision that is already scheduled; what it must supply is the content of that decision. And §3.2 records that the gate is currently crossable by an env var, which is a defect against §8 as written, not a new policy question. |
 | **An internal capital market where vendor shares trade inside BMC is "the most technically ambitious net-new subsystem in this entire plan"** | Technically ambitious is the wrong axis. A venue that matches buyers and sellers of securities is an exchange; operating one in the US means registering as a national securities exchange or an alternative trading system under Reg ATS, which in turn requires broker-dealer registration and FINRA membership. That is not a build problem a solo operator solves with an order-matching engine. The repo has already reasoned about an adjacent case and refused it: §8 shelves Coliseum betting — "No money staking on debate outcomes under any framing." | **Do not build it, and record the refusal.** §3.3. The transferable part of the idea — liquidity for a backer who wants out — has a non-exchange answer (transfer-with-issuer-consent, capped and off-venue) that does not create a market. |
 | **`connect.js` has three tiers, Seed free / Root $29mo / Canopy $99mo+3%, and Canopy is the natural home for a paid raise-capital feature** | The prices are right, the names are wrong, and the fee direction is inverted. Vendor monetization lives in `modules/vendor-plan`, not `connect.js`. `vendor-plan/catalog.ts` seeds five plans: `free` ($0, `platform_fee_percent: 3`), `starter` ($2900/mo, **2.5**), `pro` ($9900/mo, **2**), `scale` ($24900/mo, **1.5**), `internal` (hidden, `null`). Paid plans *reduce* commission; none adds 3%. `connect.js` is a buyer-facing storefront embed in `storefront/public/` — 1,205 lines, pinned at `v2.0.0` with an SRI hash and a test that fails the build on drift — supporting nine `data-fbm` kinds (`products`, `services`, `digital`, `booking`, `events`, `reviews`, `vendor`, `chat`, `demand-pools`) with no plan, tier, price or subscription concept anywhere in the file. (`mutual-aid` is a *proposal* in `docs/CDFI_COOP_ROADMAP.md`, not an implemented kind.) Root and Canopy are real BMC names — but they are KARMA tiers in `progression/grower-karma.ts`, Seedling / Sprout / Root / Canopy / Ancestor, carrying payout `split_pct` from 0.60 to 0.72. The brief has fused two unrelated ladders. | **Attach a capital-raise feature to `vendor-plan` as a twelfth `VendorFeatureKey`, not to `connect.js`.** Drop the Seed/Root/Canopy naming — reusing Canopy for billing would make it mean two different money things on two screens. Drop "+3%" outright: pricing a $99 tier at 3% inverts the ladder and fails `vendor-plan/__tests__/catalog.unit.spec.ts`, which asserts no plan exceeds 3% and that the ladder falls monotonically. And correct the public claim to what the code keeps — "3% is the default and the ceiling, never raised" — before someone else finds the 5% default on demand-pool group purchases (`api/admin/collective/demand-pools/[id]/route.ts`). |
-| **KARMA/XP is "intentionally NOT tied to commission tiers", and reputation and capital must remain structurally separate** | The separation is intact only because the coupling was never implemented. `progression/thresholds.ts:42` declares `producer.reduced-commission` — "Reach Producer level 5 for a lower cooperative commission rate." In the other direction, `subscribers/progression-campaign-backed.ts` awards `Stance.INVESTOR` XP at 1 XP per dollar for a `MICRO_INVESTOR` backing, and `thresholds.ts:50` declares `investor.priority-campaigns` — "Reach Investor level 3 for early access to new campaigns." Deploy capital, gain XP, gain earlier access to the next capital deployment. | **Close the loop deliberately in one direction and delete the other.** §3.4. XP for *money deployed* is the coupling that matters legally; XP for *documentation completed* is the trust signal the brief actually wants. Both changes are small and both are definition-level. |
-| **The Vendor Quest Engine has 13 quests in four families, and the quest pattern can carry compliance checklists** | 14 quests, four families: Capital & Funding (4), Certification & Trust (3), Cooperative & Mission (4), Market Access & Growth (3). `fiscal-sponsorship-readiness` was added since the CDFI roadmap, which recommended it. The substrate defect that roadmap recorded in its §1a — five fields initialised and never assigned, making Q5/Q7/Q13 unfinishable — has since been **fixed**: `substrate/build.ts` now assigns `wholesale_relationships` from `countWholesaleRelationships(tiers)` and `total_xp`/`dispute_count` at lines 281-282, and `substrate/__tests__/operating.unit.spec.ts` covers `summarizeOrders` precisely because "packets printed `orders_fulfilled: 0` as a fact". | **Use the engine; the objection to using it has been retired.** Adding a quest is a definition change. The open question is not capability but pricing — see §4.4 on charging for a safety checklist. |
+| **KARMA/XP is "intentionally NOT tied to commission tiers", and reputation and capital must remain structurally separate** | The separation is intact only because the coupling was never implemented. `progression/thresholds.ts:42` declares `producer.reduced-commission` — "Reach Producer level 5 for a lower cooperative commission rate." In the other direction, `subscribers/progression-campaign-backed.ts` awards `Stance.INVESTOR` XP at 1 XP per dollar for a `MICRO_INVESTOR` backing, and `thresholds.ts:50` declares `investor.priority-campaigns` — "Reach Investor level 3 for early access to new campaigns." Deploy capital, gain XP, gain earlier access to the next capital deployment. | **Close the loop deliberately in one direction and delete the other.** §3.4. XP for *money deployed* is the coupling that matters legally; XP for *documentation completed* is the trust signal the brief actually wants. Both changes are small and both are definition-level. **Both halves deleted 2026-09-10**; the documentation signal is still to build. |
+| **The Vendor Quest Engine has 13 quests in four families, and the quest pattern can carry compliance checklists** | 15 quests as of 2026-09-10, four families: Capital & Funding (4), Certification & Trust (4), Cooperative & Mission (4), Market Access & Growth (3). `fiscal-sponsorship-readiness` was added since the CDFI roadmap, which recommended it. The substrate defect that roadmap recorded in its §1a — five fields initialised and never assigned, making Q5/Q7/Q13 unfinishable — has since been **fixed**: `substrate/build.ts` now assigns `wholesale_relationships` from `countWholesaleRelationships(tiers)` and `total_xp`/`dispute_count` at lines 281-282, and `substrate/__tests__/operating.unit.spec.ts` covers `summarizeOrders` precisely because "packets printed `orders_fulfilled: 0` as a fact". | **Use the engine; the objection to using it has been retired.** Adding a quest is a definition change. The open question is not capability but pricing — see §4.4 on charging for a safety checklist. |
 | **Blackstar's mesh routing, reverse-auction bidding and micro-depot relays already exist and are an "ideal fit" for salvage freight** | Blackstar's own `CONSOLIDATION.md` says the opposite, in the repo's words: the "Network Advantage Engine" features — "mesh routing, batch aggregation, micro-depots, reverse-auction mechanics" — "exist as design docs only" (`api/docs/network-advantage-engine.md`). What is real is the board/claim/bid/leg data model and the per-partner HMAC bridge. The bridge is dark by default (`FBM_BLACKSTAR_INTEGRATION=0`). | **Re-sequence; it is not near-term.** `CONSOLIDATION.md` already records the ordering, pointing at `docs/CDFI_COOP_ROADMAP.md` §3.9: an FBM depot listing first, then a depot node kind a `ShipmentLeg` can hand off to, then pooling. Salvage freight does not unfreeze Blackstar; it queues behind the same three steps. §4.3. |
 | **A materials grading/certification workflow is net-new and "distinct from FBM's existing product verification"** | The grading vocabulary is already seeded. `product-archetype/models/product-archetype.ts:37` defines `CIRCULAR_ECONOMY` — "Repaired goods, salvaged materials — condition-graded" — seeded by `Migration20260202001SeedCommunityArchetypes.ts` and assignable through `/vendor/products/[id]/archetype`. `cms-blueprint/seed/cms-blueprint-data.ts` seeds a `condition-grade` select attribute (`Like New`, `Good`, `Fair`, `Parts Only`, `is_filterable: true`), `repair-history`, `original-manufacturer`, a `salvaged-materials` category and a `tag_salvaged` source tag. `InventoryStrategy.LOT_BASED` exists for batch goods. | **Wire, do not build.** The archetype is not offered in the vendor onboarding wizard (`vendor-panel/src/components/onboarding/launch-wizard.tsx` hardcodes four codes: `NON_PERISHABLE`, `DIGITAL`, `SERVICE`, `TICKET`), so a salvage vendor cannot self-select it during onboarding. That is the gap, and it is S. §4.1. |
 | **Storage/staging must be solved by extending Blackstar's micro-depot concept onto the Coalition App map layer** | The depot noun does not exist on either side (previous row), and the brief's premise about the interface needs its own check — see §4.3. What *does* exist for "a place that holds stock" is `aid-network`'s `network_node`, which is single-seller by construction. | **Solve it as a listing first.** `docs/COMMERCE_ROADMAP.md` Tier 3.8 already plans micro-depot *listings* pending a ruling on which of `rental`/`kitchen` survives. Salvage staging is that listing with a different archetype, not a new registry. §4.3. |
@@ -104,11 +104,16 @@ unlocks with XP thresholds:
 | featureKey | Promise shown to the user | Threshold |
 | --- | --- | --- |
 | `producer.featured-listing` | "feature a listing on the market home" | Producer L3 |
-| `producer.reduced-commission` | "a lower cooperative commission rate" | Producer L5 |
-| `investor.priority-campaigns` | "early access to new campaigns" | Investor L3 |
+| ~~`producer.reduced-commission`~~ | ~~"a lower cooperative commission rate"~~ | ~~Producer L5~~ |
+| ~~`investor.priority-campaigns`~~ | ~~"early access to new campaigns"~~ | ~~Investor L3~~ |
 | `coalition.proposal-authoring` | "author governance proposals" | Coalition L3 |
 | `coalition.den-moderation` | "help moderate community dens" | Coalition L5 |
 | `member.market-day-queue` | "priority in market-day drops" | 2,000 lifetime XP |
+
+**Two of the six are now deleted rather than gated** — struck through above,
+removed 2026-09-10 with roadmap item 8. They were not merely unenforced; they
+were the wrong promise to keep. §3.4. Four remain, all still unenforced and
+therefore unpublished.
 
 `unlockedFeatures()` (`thresholds.ts:122`) computes which are met;
 `progression/service.ts:744` puts the result on the character-sheet summary
@@ -119,7 +124,7 @@ which displays `unlockedCount`. `service.ts:753` even exposes
 `getUnlockedFeatures(customerId)` and documents it as "The internal-benefit
 featureKeys a customer has currently unlocked".
 
-**Nothing calls it.** Each of the six keys has zero references anywhere in
+**Nothing calls it.** Each of the six keys had zero references anywhere in
 `backend/src`, `storefront/src` or `vendor-panel/src` outside
 `thresholds.ts` and `__tests__/thresholds.unit.spec.ts`. No route consults
 `getUnlockedFeatures`. No commission calculation reads
@@ -136,8 +141,11 @@ load-bearing; today they are decoration that reads as mechanism. **Fix before
 amplifying, not after.** Two acceptable fixes, and the choice is the
 operator's:
 
-1. **Implement them.** Each is small on its own, but `producer.reduced-commission`
-   is the one to leave out — see §3.4, it is the coupling that must not exist.
+1. **Implement them.** Each is small on its own. Two of the six were never
+   candidates for this option — `producer.reduced-commission` and
+   `investor.priority-campaigns` are the coupling that must not exist, and are
+   now deleted outright (§3.4). The choice below applies to the four that
+   remain.
 2. **Stop displaying what is not enforced.** Gate the character sheet's
    privilege list on an allowlist of keys that have a real consumer, so the
    list is empty until something honours it. This is S and is the honest
@@ -364,24 +372,40 @@ lawyer's eye.
 
 **Recommendations, all small:**
 
-1. **Stop awarding XP for `MICRO_INVESTOR` backings.** Keep the
-   `PRE_ORDER` → `CONSUMER` branch: buying a thing is ordinary commerce and XP
-   for it is ordinary loyalty. Delete the investor branch, or award a
-   non-XP-bearing `Stance.INVESTOR` marker if the role still needs to exist
-   for display. One conditional in one subscriber.
-2. **Delete `producer.reduced-commission` from `THRESHOLD_PRIVILEGES`.** The
-   commission ladder already lives in `vendor-plan` where it is bought, not
-   earned; having a second, earned path to the same benefit both couples the
-   systems and contradicts the public "3% is the ceiling" claim in a way that
-   is hard to explain. §1a's option 2 covers the rest of the list.
-3. **Delete or demote `investor.priority-campaigns`.** Preferential offering
-   access as an XP reward is the highest-risk item on the list.
+1. ~~**Stop awarding XP for `MICRO_INVESTOR` backings.**~~ **Done 2026-09-10.**
+   The `PRE_ORDER` → `CONSUMER` branch is kept: buying a thing is ordinary
+   commerce and XP for it is ordinary loyalty. The investor branch is gone —
+   one conditional in one subscriber. `recomputeAggregates` still runs for
+   every mode, so `capital_deployed_cents` is still refreshed: capital is
+   recorded as capital, it just no longer buys reputation.
+2. ~~**Delete `producer.reduced-commission` from `THRESHOLD_PRIVILEGES`.**~~
+   **Done 2026-09-10.** The commission ladder already lives in `vendor-plan`
+   where it is bought, not earned; having a second, earned path to the same
+   benefit both couples the systems and contradicts the public "3% is the
+   ceiling" claim in a way that is hard to explain. §1a's option 2 covers the
+   rest of the list.
+3. ~~**Delete or demote `investor.priority-campaigns`.**~~ **Done 2026-09-10.**
+   Preferential offering access as an XP reward was the highest-risk item on
+   the list.
 4. **Then build the coupling the brief actually wants.** Reputation should
    reflect *documentation completeness* — permits, insurance, safety
    certifications uploaded and verified — as a trust signal distinct from
    sales volume. That is a quest-substrate read, not a money read, and the
    vault already carries verification and expiry with `document-status.ts`
    deriving `effective_status`. §4.2.
+
+**One consequence of 1-3, deliberately left standing.** Nothing writes the
+INVESTOR XP track any more — that subscriber was its only source. So
+`investor_level` stays at 0 for everyone, and the two INVESTOR rows in
+`DEFAULT_TITLES` ("Community Investor" L1, "Guild Builder" L5) are now
+unreachable. They are dormant catalog rows rather than a broken promise: only
+*earned* titles are ever exposed, and no surface lists the catalog, so a title
+that cannot be earned is a title nobody is shown. They are left in place
+because the track should move again — driven by recommendation 4's
+documentation signal, not by dollars. Deleting them would need a migration to
+remove already-seeded rows and would foreclose that. The reasoning is recorded
+in `progression/stance.ts` so the next reader does not treat the flat track as
+a bug.
 
 Note also that `collective-campaign/models/vendor-reputation.ts` is a second
 reputation store, parallel to `karma_event`, which decision D7 names as the
@@ -476,17 +500,55 @@ components") and a `tag_salvaged` source tag. `InventoryStrategy.LOT_BASED`
 exists for goods that arrive as a batch rather than a SKU.
 
 What is missing is the front door. `vendor-panel/src/components/onboarding/launch-wizard.tsx`
-hardcodes four archetype codes — `NON_PERISHABLE`, `DIGITAL`, `SERVICE`,
-`TICKET` — so a salvage vendor completing onboarding cannot select the
-archetype built for them and lands on `NON_PERISHABLE`, losing the
-condition-grade attribute set. The same file is why
+offers four selling types — physical, digital, service, event/class — with no
+option a salvage seller can honestly pick. The same file is why
 `vendor-type-context.spec.ts` already carries a regression note about a literal
 list that "silently stopped covering any newly added archetype".
 
-**Wire, do not build. S.** Add `CIRCULAR_ECONOMY` to the wizard, confirm the
-cms-blueprint attributes are attached to the archetype rather than only seeded,
-and give the storefront a filter on `condition-grade`. That is the whole
-marketplace-side gap for reclaimed materials.
+**Front door: done 2026-09-10.** A fifth selling type, `reclaimed` ("Repaired
+or salvaged goods"), in both the launch wizard and the quick path, with the
+CHECK-constraint migration the existing four-value constraint required.
+
+Two corrections to an earlier draft of this section, both found while doing it:
+
+- **The wizard's four archetype codes were dead.** `SELLING_TYPE_DEFAULTS`
+  carried an `archetype_code` per entry — `NON_PERISHABLE`, `DIGITAL`,
+  `SERVICE`, `TICKET` — that **nothing read**. It was never sent anywhere, so
+  the claim that a salvage vendor "lands on `NON_PERISHABLE`" was wrong: the
+  wizard assigned no archetype at all. Neither panel calls
+  `PUT /vendor/products/[id]/archetype`; the endpoint has no UI. The mapping
+  now lives on the backend in `modules/tenancy/selling-type-archetype.ts` as a
+  total `Record`, so adding a selling type without deciding its archetype is a
+  type error, and the onboarding `GET` returns the resolved code. Adding a
+  fifth entry to a table whose key field nothing reads would have been the
+  exact failure mode §1a is about.
+- **The cms-blueprint attributes attach to categories, not to the archetype.**
+  `attr_condition_grade` is attached to `cat_repaired_goods` (required),
+  `cat_salvaged_materials` and `cat_second_life_electronics` (required). The
+  archetype's own `requires_condition_grade` metadata — seeded in three places:
+  the archetype row, the cms-blueprint, and `init-product-types.ts` — is read
+  nowhere.
+
+**The storefront filter is not a wire, and is left open deliberately.** §4.1
+called it "give the storefront a filter on `condition-grade`". Checked, there
+are already two, and the problem is that nothing agrees on the vocabulary:
+
+| Where | Vocabulary |
+| --- | --- |
+| `cms-blueprint` `attr_condition_grade` | Like New, Good, Fair, Parts Only |
+| `cms_tag` kind `CONDITION` | New, Used, Refurbished |
+| `cells/ConditionFilter` (non-Algolia sidebar) | New, New - With tags, Used - Excellent, Used - Good, Used - Fair — **hardcoded, with hardcoded counts** (78, 40, 7, 16, 0) |
+| `AlgoliaProductSidebar`'s `ConditionFilter` | whatever is indexed at `variants.condition`, a real configured facet in `algolia-config.json` |
+| `workflows/product-feed` | the literal `"new"` for every item |
+
+So a filter already renders on both sidebars; one shows invented numbers and
+the other a facet on a field with no writer in the tree. Adding a sixth
+vocabulary would make this worse. The real task is to pick one — the seeded
+`attr_condition_grade` set is the obvious candidate, being the one attached to
+the salvage categories — and make the filters, the facet and the feed read it.
+That is **M and a reconciliation**, not S and a wire. `storefront`'s
+`lib/data/cms-taxonomy.ts`, which already fetches a category's filterable
+attributes, has no consumers and is the natural place to start.
 
 Two genuinely absent things, both real and both small:
 
@@ -647,6 +709,30 @@ fee. A compensated referral to an abatement contractor would be BMC taking a
 cut of a hazmat job, which is the fastest available route to being named in a
 suit.
 
+**Done 2026-09-10.** Four kinds — `abatement`, `deconstruction`,
+`reuse_center` and `test_lab` — and nine entries, every URL fetched at
+curation time per the catalog's own rule 2.
+
+The one design decision worth recording: **the directory refers to regulators,
+not to licensees.** Asbestos and lead abatement are licensed state by state,
+so the honest entry is the EPA's state-contacts page — the agency that holds
+the list — rather than a list of contractors FBM keeps. Keeping such a list
+would mean maintaining it, and standing behind it, for exactly the work where
+being wrong is worst. The RRP rule gets its own entry alongside abatement
+because salvage in pre-1978 housing is usually *renovation* under that rule
+rather than abatement, and the two carry different certifications; a checklist
+that conflates them sends someone to the wrong credential.
+
+`test_lab` is the fourth kind and was not in the original list: PV modules and
+electrical assemblies pulled out of a building are only resaleable if
+something competent has tested them, and that is a different referral from
+either abatement or deconstruction.
+
+A drift test now reads the storefront's duplicated `PartnerKind` union as text
+and fails if it omits a backend kind — it had already drifted, missing
+`certifier`, and because the partners page's `label()` falls back to the raw
+key the omission rendered as a plausible heading instead of an error.
+
 Compliance checklists then follow the quest pattern, which §1's sixth row
 confirms is sound and whose blocking substrate defect has been fixed. A
 "deconstruction contractor readiness" quest in the Certification & Trust family
@@ -671,6 +757,36 @@ gate.** Either add a `is_safety` flag on the definition that exempts it, or
 publish the deconstruction checklist through the public
 `GET /store/quest-catalog` surface that already renders gatekeeper links for
 non-enrolled visitors. S either way.
+
+**Done 2026-09-10, and it turned out to be both, which is the point.** A
+`safetyCritical` flag on the definition, and what it does is make the *public*
+catalog publish that quest's whole requirement list — labels, tags and notes —
+instead of only requirement counts.
+
+Drawing it there rather than at the middleware is deliberate. **Enrolment,
+progress tracking and packet export stay gated exactly as before**, so this is
+not a pricing change and does not pre-empt the operator's revenue decision.
+What becomes free is the content: which documents are needed, which rules
+apply, which regulator to call. That is the part whose absence hurts someone,
+and a person who cannot afford $249/mo is not thereby less likely to cut into
+a wall.
+
+**Q15 `deconstruction-readiness` ships with it**, in Certification & Trust,
+reading the same substrate as the other fourteen. Three lines it holds, each
+with a test:
+
+- **FBM refers; it never underwrites.** The abatement requirement is tagged
+  `outside-fbm` and carries no `satisfied` predicate at all — FBM does not
+  evaluate, verify or vouch for a subcontractor's licence, and is paid nothing.
+- **FBM ships no regulatory table**, exactly as `modules/cottage-food` refuses
+  to encode state cottage-food law. The licence requirement says in as many
+  words that verification means an FBM reviewer confirmed the document is what
+  it claims to be, *not* that the state register was checked.
+- **Abatement and renovation are different credentials.** Salvage in pre-1978
+  housing is usually renovation under the EPA's RRP rule rather than
+  abatement. They are separate requirements, because a checklist that
+  conflates them sends someone after the wrong credential — which is worse
+  than no checklist.
 
 ### 4.5 The land loop, and the one place FBM has no noun
 
@@ -722,8 +838,9 @@ This is not a recommendation to adopt — it is a system to repair.
 The repair is §1a. Six privileges are advertised on the character sheet and
 none is enforced. A recruitment engine that promises a lower commission and a
 featured listing, and delivers neither, converts every new member into someone
-who will eventually discover it. The order is: **fix or hide the six, then
-amplify.** Not the reverse.
+who will eventually discover it. The order is: **fix or hide the remaining
+four, then amplify.** Not the reverse. (Two of the original six were deleted
+rather than fixed — §3.4.)
 
 One thing worth stating plainly because the brief does not: the Ifá/Odu routing
 layer has no implementation anywhere in the three repos. It is an aspiration,
@@ -746,10 +863,11 @@ by date of joining or by verified contribution, that confers recognition,
 sequence in non-scarce contexts, and nothing economic. `modules/progression`
 already has `titles` and a title catalog seeder; this is a seed-data change, S.
 
-The unsafe form is already half-present and should be removed:
-`investor.priority-campaigns` grants earlier access to investment opportunities
-based on prior capital deployed. Whatever else that is, it is not status
-capital — it is a distribution preference on a possible security. §3.4.
+The unsafe form was already half-present and has been removed:
+`investor.priority-campaigns` granted earlier access to investment
+opportunities based on prior capital deployed. Whatever else that is, it is not
+status capital — it is a distribution preference on a possible security.
+Deleted 2026-09-10; §3.4.
 
 ### 5.3 Infrastructure lock-in — ship the licence before deepening the moat
 
@@ -769,11 +887,37 @@ chartered monopoly worked because the subject could not leave. An ethical
 version of that mechanism has to keep the leaving genuinely available, and
 "you may fork" is only a mechanism if it is a licence.
 
-**Recommendation, in order:** (1) add a `LICENSE` to FBM; (2) make data export
-real and testable — `docs/TRUST_LANDSCAPE_AUDIT.md` Finding D is the existing
-record of this; (3) then invest in integration depth freely. Integration that a
-member could walk away from is a product advantage. Integration they cannot is
-the mechanism the brief excluded.
+**Recommendation, in order:** (1) add a `LICENSE` to FBM; (2) finish data
+export; (3) then invest in integration depth freely. Integration that a member
+could walk away from is a product advantage. Integration they cannot is the
+mechanism the brief excluded.
+
+**Correction to an earlier draft of this section.** It cited
+`docs/TRUST_LANDSCAPE_AUDIT.md` Finding D as "the existing record" of the data
+export gap. Finding D is the *licence* question only; that audit has no
+data-export finding. The state of export, checked directly:
+
+| Direction | What exists |
+| --- | --- |
+| Customer, out | `GET /store/customers/me/data-export` — profile, addresses and order history as one JSON attachment, scoped to the authenticated actor. Reachable from the storefront's `PrivacyDataSettings`. **Shipped and reachable.** |
+| Vendor, in | `POST /vendor/onboarding/import-csv` — products in. |
+| Vendor, out | `GET /vendor/sales-report?format=csv` — a date-ranged sales report: order id, date, product, variant, SKU, quantity, unit price, total, currency. |
+| Vendor catalogue, out | **Nothing.** No route exports a seller's own products, variants, prices, media or storefront configuration. |
+
+So the exit right is real for a *buyer* and partial for a *seller*: a vendor
+can bring a catalogue in and take a sales report out, but cannot take their
+store out. That is the asymmetry to close, and it is the one that matters for
+§5.3's argument — "you may fork" is addressed to the operator of a node, but
+the vendor's equivalent is "you may leave with your catalogue", and today they
+cannot. A catalogue export mirroring the existing CSV import is the smallest
+honest version, S, and it has the pleasant property of being the same schema
+read in the other direction.
+
+The customer export was shipped untested; it now has a spec covering the actor
+scoping (it must never trust a client-supplied id), the 401 and 404 paths, and
+the defensive per-section fetch that lets a schema gap in orders still yield a
+usable profile export. A right nobody checks is a norm, which is the same
+argument this section makes about the licence.
 
 The integration substrate itself is real but shallower than the brief implies:
 the FBM↔Blackstar bridge is dark by default (`FBM_BLACKSTAR_INTEGRATION=0`),
@@ -827,10 +971,36 @@ says "democratic":
   which every vote was "against" passes. Consent is the one method implemented
   correctly (`lib/bmc-core/consent.ts:140-143`); "ranked" is Borda scoring, not
   instant-runoff, and should not be called ranked-choice.
-- **FBM's garden proposals never close.** `workflows/governance/finalize-proposal.ts`
-  has the only real threshold arithmetic in either repo, and
-  `finalizeProposalWorkflow` has no callers; routes hit the service directly.
-  Needs a scheduled job.
+- ~~**FBM's garden proposals never close.**~~ **Done 2026-09-10.**
+  `workflows/governance/finalize-proposal.ts` has the only real threshold
+  arithmetic in either repo, and `finalizeProposalWorkflow` had no callers at
+  all; routes hit the service directly, so a garden proposal stayed `active`
+  for ever. `jobs/close-garden-proposals.ts` now sweeps hourly for proposals
+  past `voting_end`.
+
+  Wiring it up meant that arithmetic would run for the first time, and two
+  defects in it had to be fixed before it could:
+
+  - **Quorum was met unconditionally.** Turnout is `unique_voters /
+    eligible_voters`, `eligible_voters` is nullable, and *nothing in the tree
+    writes it* — so it is always null, and the code read it as
+    `(proposal.eligible_voters as number) || 1`. One ballot was therefore 100%
+    turnout, at every quorum setting, for every proposal. It now throws
+    `UnknownElectorateError` rather than guessing a denominator, and the sweep
+    filters these out first so they are a counted, warned-about skip: a
+    proposal that stays visibly open is a better failure than one falsely
+    resolved. Recording an electorate is the remaining gap, and it is now a
+    loud one.
+  - **The `tie` status was unreachable.** `approvalPercentage >=
+    approvalThreshold` was tested before the tie branch, so a 50/50 split under
+    a simple-majority threshold took `passed` — 50 >= 50. An even split is not
+    a majority. The tie test now runs first, on raw counts rather than a float,
+    and only where the bar is 50%: meeting a 66% supermajority exactly is
+    passing it, not tying it.
+
+  The arithmetic is extracted into a pure `decideProposalOutcome` and covered
+  by 14 tests, because §5.4 makes it a precondition for any surface calling
+  itself democratic.
 
 ### 5.5 The internal capital pool — pool readiness, not money
 
@@ -869,6 +1039,40 @@ Q12 rather than founding a bank.** Concretely:
    invested — is the co-operative mechanism for internal capital, it is
    already 80% built, and it does not create a security. This is the single
    highest-value unfinished thing in the money stack. M.
+
+   **Review and visibility done 2026-09-10; disbursement deliberately not.**
+   The job's docblock says it stops at `computed` "so an operator can review
+   before disbursement" — and there was nothing to review with. **No route read
+   a `PatronageAllocation` at all**, nothing wrote any status but `computed`,
+   and so a member had no way to learn a refund had been computed for them. A
+   surplus a member never hears about has not been returned. Three surfaces
+   now:
+
+   - `GET /admin/hawala/patronage` — the allocation table, summarised per
+     period with totals, seller count and a status breakdown. An operator
+     approving a disbursement should see what it comes to, not a page of rows
+     to add up. A period mixing currencies reports no total rather than a
+     wrong one.
+   - `POST /admin/hawala/patronage/approve` — the operator's explicit
+     `computed → queued` sign-off, idempotent so a retry after a partial
+     failure completes the period, and a 409 rather than a silent success when
+     there is nothing left to approve.
+   - `GET /vendor/hawala/patronage` — a member's own allocations, with only
+     `paid` counted as returned surplus.
+
+   **Approving moves no money, and that is the design.** `queued` means the
+   operator has signed off on the numbers; `queued → paid` needs a
+   disbursement rail that does not exist and whose shape is a Posture A
+   question — USD payout goes through the payment processor, not through
+   Stellar. Building auto-disbursement into a review endpoint would remove the
+   review. The member-facing copy says so too: an approved allocation reads
+   "not yet paid — disbursement is not automated yet" rather than implying
+   money is on its way, which is the kind of claim this document keeps having
+   to retract elsewhere.
+
+   What remains is genuinely the operator's: choosing the rail, and deciding
+   whether a quarter's table is right. Both were always going to be, which is
+   why the job stopped where it did.
 
 ### 5.6 Infrastructure before belief — the sequencing this document endorses
 
@@ -1262,8 +1466,10 @@ Nothing here loosens the standing gates in
    Everything else in that line is downstream. Needs counsel, not research.
 2. **Whether safety-critical quest content sits behind the `vendor.quests`
    entitlement (§4.4).** A pricing decision with a safety consequence.
-3. **Whether to fix or hide the six unenforced privileges (§1a).** Both are
-   defensible; leaving them displayed is not.
+3. **Whether to fix or hide the four remaining unenforced privileges (§1a).**
+   Both are defensible; leaving them displayed is not. Currently hidden, which
+   is the safe default while the decision is open. The other two of the
+   original six are deleted, not pending (§3.4).
 4. **Whether the vendor-hype prediction module falls inside the §8 betting
    gate (§5.6).** It is currently unaddressed in either direction.
 5. **Whether `FF_INVESTMENT_POOLS_V1` stays off (§7.2).** This document ships
@@ -1273,8 +1479,18 @@ Nothing here loosens the standing gates in
    the Posture A bullet to say so rather than leaving it claiming quiescence.
 6. **Whether `/invest` comes down (§7.2, §5.6a).** Gating the API without
    touching the page leaves an advertisement for a 404.
-7. **Ship FBM's `LICENSE` (§5.3).** An operator action; it also unblocks the
-   honest version of the lock-in strategy.
+7. **Ship FBM's `LICENSE` (§5.3).** An operator action, and the choice of
+   licence is not one this document should make for you; it also unblocks the
+   honest version of the lock-in strategy. Two things worth knowing before
+   choosing. `backend/package.json` already declares `"license": "MIT"` — the
+   only licence declaration anywhere in the repo, made in one package rather
+   than for the project, and it is not a repository licence. And
+   `docs/AGGRESSIVE_OPERATIONS_GUIDE.md` twice describes forking "under its
+   open-source license" as the coalition's exit right, so two canonical
+   documents already assume a licence that does not exist. Blackout, for
+   comparison, carries `LICENSE-AGPL-3.0`, `LICENSE-GPL-3.0` and
+   `LICENSE-COMMERCIAL`; whether FBM matches that posture or takes the
+   permissive one its own dependency policy prefers is exactly the decision.
 8. **Abatement subcontractor relationships (§6).** Contracts, not code.
 
 ---
@@ -1294,16 +1510,16 @@ what the code does, before building anything new on either.
 7. ~~Reproduce and fix the demand-pool bounty escrow gap.~~ **Done 2026-09-09**: an unescrowed bounty paid from the shared pool escrow, reachable from the public bounty route. §6b.
 
 **Next — repairs (weeks)**
-8. Stop awarding XP for `MICRO_INVESTOR` backings; delete `producer.reduced-commission` and `investor.priority-campaigns`. §3.4.
+8. ~~Stop awarding XP for `MICRO_INVESTOR` backings; delete `producer.reduced-commission` and `investor.priority-campaigns`.~~ **Done 2026-09-10**: the pay-in / level-up / pay-less / get-in-earlier loop is cut at both ends, and a spec on each half fails the build if either is reintroduced. §3.4.
 9. Blackout's missing majority test; stop calling Borda scoring ranked-choice. §5.4.
-10. Wire FBM's `finalizeProposalWorkflow` to a scheduled job so garden proposals close. §5.4.
-11. FBM `LICENSE`; verify data export. §5.3.
+10. ~~Wire FBM's `finalizeProposalWorkflow` to a scheduled job so garden proposals close.~~ **Done 2026-09-10**: hourly sweep, plus two fixes to the threshold arithmetic it was about to run for the first time — quorum was met unconditionally on an electorate nobody records, and the `tie` status was unreachable. §5.4.
+11. FBM `LICENSE` (**operator decision, §9**); data export **verified 2026-09-10** — the customer export is shipped, reachable and now tested; the vendor *catalogue* export does not exist and is the real gap. §5.3.
 
 **Then — wiring what is already built (weeks)**
-12. `CIRCULAR_ECONOMY` in the vendor onboarding wizard; condition-grade filter on the storefront. §4.1.
-13. Finish patronage: take `patronage-refund` past `status=computed`. §5.5.
-14. Partner-directory kinds and entries for abatement, deconstruction, reuse centres, PV/electrical test labs. §4.4.
-15. Deconstruction-readiness quest definition, exempt from the entitlement gate. §4.4, §6.
+12. ~~`CIRCULAR_ECONOMY` in the vendor onboarding wizard~~ **done 2026-09-10** (a `reclaimed` selling type, and the archetype mapping moved to the backend from a panel field nothing read); condition-grade filter on the storefront **re-scoped to M** — two filters already render and five vocabularies disagree, so it is a reconciliation rather than a wire. §4.1.
+13. Finish patronage: take `patronage-refund` past `status=computed`. **Review and visibility done 2026-09-10** — an operator review table, an idempotent `computed → queued` approval, and a member-facing view; disbursement (`queued → paid`) left open, being a Posture A rail decision rather than code. §5.5.
+14. ~~Partner-directory kinds and entries for abatement, deconstruction, reuse centres, PV/electrical test labs.~~ **Done 2026-09-10**: four kinds, nine verified entries, referring to the regulators that hold the licence lists rather than to licensees. §4.4.
+15. ~~Deconstruction-readiness quest definition, exempt from the entitlement gate.~~ **Done 2026-09-10**: Q15, with a `safetyCritical` flag that publishes the checklist on the unauthenticated catalog while leaving enrolment and packet export priced as they were. §4.4, §6.
 16. A campaign screen — business line 1's backend has no front door. §3.1.
 
 **Later — gated or sequenced behind the above**

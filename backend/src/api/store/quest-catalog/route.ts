@@ -21,8 +21,17 @@ import { VENDOR_PLAN_CATALOG } from "../../../modules/vendor-plan/catalog"
  *
  * Deliberately reports its own gating. Quests need `FF_VENDOR_QUESTS_V1` plus
  * the `vendor.quests` plan feature — the Scale plan or the Readiness Quests
- * add-on. A catalog page that showed thirteen quests without saying that would
+ * add-on. A catalog page that listed the quests without saying that would
  * be the next overclaim in a body of work about not making those.
+ *
+ * **One exemption: `safetyCritical` quests publish their whole requirement
+ * list, notes included, rather than only counts.** A checklist whose function
+ * is to stop somebody disturbing asbestos in a 1950s building should not sit
+ * behind a $249/mo plan; a person who cannot afford the plan is not thereby
+ * less likely to cut into a wall. The exemption covers content only — which
+ * documents are needed, which rules apply, which regulator to call. Enrolment,
+ * progress tracking and packet export stay gated exactly as before, so this is
+ * not a pricing change. docs/TRANSMUTATION_STRATEGY.md §4.4.
  */
 export async function GET(_req: MedusaRequest, res: MedusaResponse) {
   const quests = QUEST_DEFINITIONS.map((definition) => ({
@@ -49,6 +58,19 @@ export async function GET(_req: MedusaRequest, res: MedusaResponse) {
       },
       {}
     ),
+    safety_critical: definition.safetyCritical === true,
+    // Content, not evaluation. These are the definition's static fields — no
+    // `satisfied` predicate is run and no vendor is involved — so publishing
+    // them exposes nothing about any seller, exactly as the counts above do
+    // not.
+    requirements: definition.safetyCritical
+      ? definition.requirements.map((requirement) => ({
+          key: requirement.key,
+          label: requirement.label,
+          tag: requirement.tag,
+          note: requirement.note ?? null,
+        }))
+      : undefined,
   }))
 
   const plans = VENDOR_PLAN_CATALOG.filter((plan) =>
@@ -75,6 +97,13 @@ export async function GET(_req: MedusaRequest, res: MedusaResponse) {
   res.json({
     quests,
     categories: Array.from(new Set(quests.map((quest) => quest.category))),
-    access: { plans, addons },
+    access: {
+      plans,
+      addons,
+      // Said plainly so a reader does not have to infer it from a per-quest
+      // boolean: some checklists are readable without paying for anything.
+      safety_critical_note:
+        "Quests marked safety_critical publish their full checklist here, free and without an account. A plan or the add-on is needed to enrol in a quest, track progress against your own record, and export a packet.",
+    },
   })
 }
