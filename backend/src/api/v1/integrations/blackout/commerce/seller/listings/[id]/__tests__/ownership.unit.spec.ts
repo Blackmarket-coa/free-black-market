@@ -125,6 +125,60 @@ describe("commerce publish route — owner assertion", () => {
     expect(res.body.status).toBe(CreatorListingStatus.PUBLISHED)
   })
 
+  it("refuses an extension listing marked by plugin_slug", async () => {
+    // W3-1. This route signs nothing and writes no registry row, so an
+    // extension published here comes out PUBLISHED, unverifiable and absent
+    // from the registry — a state nothing else in the system can produce.
+    const extension: Listing = { ...ownedListing(), plugin_slug: "sparkle-tools" }
+    const service = makeService([extension])
+    const res = createRes()
+
+    await publishRoute(
+      makeReq(service, { body: { sellerUserId: "bo_owner" } }) as never,
+      res as never
+    )
+
+    expect(res.statusCode).toBe(409)
+    expect(res.body.code).toBe("extension_publish_unsupported")
+    expect(service.updateCreatorListings).not.toHaveBeenCalled()
+    expect(service.listings[0].status).toBe(CreatorListingStatus.DRAFT)
+  })
+
+  it("refuses an extension listing marked only by its manifest", async () => {
+    // `plugin_slug` is one of two markers; a manifest carrying `artifactKind`
+    // is the other, and the seller-API publish route treats them alike.
+    const extension: Listing = {
+      ...ownedListing(),
+      manifest: { artifactKind: "code_plugin" },
+    }
+    const service = makeService([extension])
+    const res = createRes()
+
+    await publishRoute(
+      makeReq(service, { body: { sellerUserId: "bo_owner" } }) as never,
+      res as never
+    )
+
+    expect(res.statusCode).toBe(409)
+    expect(res.body.code).toBe("extension_publish_unsupported")
+    expect(service.listings[0].status).toBe(CreatorListingStatus.DRAFT)
+  })
+
+  it("does not stamp signed_at, because it signs nothing", async () => {
+    // A `signed_at` with no `signature_envelope` or `signing_key_id` makes an
+    // unsigned listing indistinguishable from a signed one to a later audit.
+    const service = makeService([ownedListing()])
+    const res = createRes()
+
+    await publishRoute(
+      makeReq(service, { body: { sellerUserId: "bo_owner" } }) as never,
+      res as never
+    )
+
+    expect(res.statusCode).toBe(200)
+    expect(service.listings[0]).not.toHaveProperty("signed_at")
+  })
+
   it("refuses to publish a SUSPENDED listing, so publish cannot undo enforcement", async () => {
     const suspended: Listing = { ...ownedListing(), status: CreatorListingStatus.SUSPENDED }
     const service = makeService([suspended])

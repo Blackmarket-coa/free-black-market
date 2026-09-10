@@ -5,6 +5,7 @@ import { resolveSellerIdByBlackoutUserId } from "../../../../../../../../../lib/
 import { MARKETPLACE_LISTING_MODULE } from "../../../../../../../../../modules/marketplace-listing"
 import type MarketplaceListingService from "../../../../../../../../../modules/marketplace-listing/service"
 import { CreatorListingStatus } from "../../../../../../../../../modules/marketplace-listing/models/creator-listing"
+import { isExtensionListing } from "../../../../../../../../../modules/plugin-registry/manifest"
 
 /**
  * Owner assertion, required. `FREEBLACKMARKET_API_KEY` is a single shared
@@ -28,6 +29,30 @@ const BodySchema = z
 
 /**
  * §5 POST /v1/seller/listings/{id}/publish -> { id, slug?, status? }
+ *
+ * ## What this route may and may not publish
+ *
+ * This is the priced-catalog publish. It flips a listing to PUBLISHED and
+ * nothing more — it produces no signature, writes no registry row, and runs
+ * none of the extension pre-flight.
+ *
+ * `POST /v1/seller/listings/:id/publish` (the seller API) is the one that
+ * does: it validates the extension manifest, asserts plugin-slug ownership,
+ * rejects a version already published with a different artifact, signs the
+ * bundle, and bridges the result into the plugin registry.
+ *
+ * So an **extension** listing published here came out the far side marked
+ * PUBLISHED with no signature and no registry row — a state nothing else in
+ * the system can produce, and one that looks published to every consumer
+ * while failing signature verification and being absent from the registry.
+ * W3-1 in docs/AUDIT_DEBT.md. Extension listings are refused here now, with a
+ * pointer to the route that can actually publish them; porting the whole
+ * signing and registry bridge into a second route would mean two copies of a
+ * security-critical flow, free to diverge.
+ *
+ * `signed_at` is also no longer stamped. This route signs nothing, and a
+ * `signed_at` without a `signature_envelope` or `signing_key_id` makes an
+ * unsigned listing indistinguishable from a signed one to any later audit.
  */
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
   if (!requireCommerceApiKey(req, res)) return
@@ -70,8 +95,24 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       .json({ code: "listing_suspended", message: "A suspended listing cannot be published" })
   }
 
+  // An extension needs a signature and a registry row, neither of which this
+  // route produces. See the docblock: publishing one here yields a listing
+  // that claims to be published and cannot be verified or resolved.
+  if (
+    isExtensionListing({
+      plugin_slug: (listing as { plugin_slug?: string | null }).plugin_slug,
+      manifest: listing.manifest,
+    })
+  ) {
+    return res.status(409).json({
+      code: "extension_publish_unsupported",
+      message:
+        "Extension listings must be published through POST /v1/seller/listings/{id}/publish, which signs the bundle and registers the plugin version.",
+    })
+  }
+
   const [updated] = await service.updateCreatorListings([
-    { id, status: CreatorListingStatus.PUBLISHED, signed_at: new Date() },
+    { id, status: CreatorListingStatus.PUBLISHED },
   ])
 
   return res.json({ id: updated.id, slug: updated.slug, status: updated.status })
