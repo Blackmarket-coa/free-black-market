@@ -1040,6 +1040,40 @@ Q12 rather than founding a bank.** Concretely:
    already 80% built, and it does not create a security. This is the single
    highest-value unfinished thing in the money stack. M.
 
+   **Review and visibility done 2026-09-10; disbursement deliberately not.**
+   The job's docblock says it stops at `computed` "so an operator can review
+   before disbursement" — and there was nothing to review with. **No route read
+   a `PatronageAllocation` at all**, nothing wrote any status but `computed`,
+   and so a member had no way to learn a refund had been computed for them. A
+   surplus a member never hears about has not been returned. Three surfaces
+   now:
+
+   - `GET /admin/hawala/patronage` — the allocation table, summarised per
+     period with totals, seller count and a status breakdown. An operator
+     approving a disbursement should see what it comes to, not a page of rows
+     to add up. A period mixing currencies reports no total rather than a
+     wrong one.
+   - `POST /admin/hawala/patronage/approve` — the operator's explicit
+     `computed → queued` sign-off, idempotent so a retry after a partial
+     failure completes the period, and a 409 rather than a silent success when
+     there is nothing left to approve.
+   - `GET /vendor/hawala/patronage` — a member's own allocations, with only
+     `paid` counted as returned surplus.
+
+   **Approving moves no money, and that is the design.** `queued` means the
+   operator has signed off on the numbers; `queued → paid` needs a
+   disbursement rail that does not exist and whose shape is a Posture A
+   question — USD payout goes through the payment processor, not through
+   Stellar. Building auto-disbursement into a review endpoint would remove the
+   review. The member-facing copy says so too: an approved allocation reads
+   "not yet paid — disbursement is not automated yet" rather than implying
+   money is on its way, which is the kind of claim this document keeps having
+   to retract elsewhere.
+
+   What remains is genuinely the operator's: choosing the rail, and deciding
+   whether a quarter's table is right. Both were always going to be, which is
+   why the job stopped where it did.
+
 ### 5.6 Infrastructure before belief — the sequencing this document endorses
 
 The brief's sixth recommendation is correct and is the one everything else
@@ -1483,7 +1517,7 @@ what the code does, before building anything new on either.
 
 **Then — wiring what is already built (weeks)**
 12. ~~`CIRCULAR_ECONOMY` in the vendor onboarding wizard~~ **done 2026-09-10** (a `reclaimed` selling type, and the archetype mapping moved to the backend from a panel field nothing read); condition-grade filter on the storefront **re-scoped to M** — two filters already render and five vocabularies disagree, so it is a reconciliation rather than a wire. §4.1.
-13. Finish patronage: take `patronage-refund` past `status=computed`. §5.5.
+13. Finish patronage: take `patronage-refund` past `status=computed`. **Review and visibility done 2026-09-10** — an operator review table, an idempotent `computed → queued` approval, and a member-facing view; disbursement (`queued → paid`) left open, being a Posture A rail decision rather than code. §5.5.
 14. ~~Partner-directory kinds and entries for abatement, deconstruction, reuse centres, PV/electrical test labs.~~ **Done 2026-09-10**: four kinds, nine verified entries, referring to the regulators that hold the licence lists rather than to licensees. §4.4.
 15. ~~Deconstruction-readiness quest definition, exempt from the entitlement gate.~~ **Done 2026-09-10**: Q15, with a `safetyCritical` flag that publishes the checklist on the unauthenticated catalog while leaving enrolment and packet export priced as they were. §4.4, §6.
 16. A campaign screen — business line 1's backend has no front door. §3.1.
