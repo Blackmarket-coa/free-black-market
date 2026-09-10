@@ -74,12 +74,34 @@ without generating types, so only the slower `Build backend` job catches it.
 Nothing broken can merge — `Build backend` is blocking — but you will find out
 minutes later than you needed to.
 
-One caveat once you have built: **do not then read `tsc --noEmit` as the
-verdict.** With `.medusa/` present it reports pre-existing `TS2321: Excessive
-stack depth` errors in `workflows/create-digital-product-order` and
-`workflows/rental/upsert-rental-config` that the build itself does not, because
-the two use different compiler settings. `medusa build`'s own exit status is
-the check; `tsc --noEmit` is the quick pass that runs before you have one.
+**You need both checks, because neither covers the other.**
+
+| | covers `src/**` | covers `src/**/__tests__/**` | strict `query.graph` filters |
+| --- | --- | --- | --- |
+| `npx medusa build` | yes | **no** — the build tsconfig excludes tests | yes (it generates them) |
+| `npx tsc --noEmit` | yes | yes | no, unless `.medusa/` happens to exist |
+
+So a type error in a spec file passes `medusa build`, and a bad `query.graph`
+filter passes `tsc --noEmit`. Run both:
+
+```bash
+cd backend
+npx medusa build      # generates types, compiles src (not tests)
+npx tsc --noEmit      # compiles everything including tests
+pnpm lint
+```
+
+One caveat on ordering: **after** a build, `tsc --noEmit` sees the generated
+`.medusa/` and starts reporting pre-existing `TS2321: Excessive stack depth`
+errors in `workflows/create-digital-product-order` and
+`workflows/rental/upsert-rental-config` that neither the build nor CI reports,
+because the three use different compiler settings. Those two files are the
+only known instances — anything else `tsc` prints is real. To reproduce CI's
+job exactly, move `.medusa/` aside first:
+
+```bash
+mv .medusa /tmp/medusa-generated && npx tsc --noEmit; mv /tmp/medusa-generated .medusa
+```
 
 ## Commit Guidelines
 

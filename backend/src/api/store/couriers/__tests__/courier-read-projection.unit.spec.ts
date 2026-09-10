@@ -12,7 +12,7 @@ import { FOOD_DISTRIBUTION_MODULE } from "../../../../modules/food-distribution"
  * branch on the detail route is keyed on ownership rather than on merely
  * being signed in.
  */
-const ROW = {
+const ROW: Record<string, unknown> & { owner_id: string | null } = {
   id: "cour_1",
   first_name: "Ada",
   display_name: "Ada O.",
