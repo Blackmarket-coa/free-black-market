@@ -119,7 +119,13 @@ export default async function orderPlacedHandler({
 
       for (const item of cycleItems) {
         try {
-          await orderCycleService.recordSale(orderCycleId, item.variant_id, item.quantity)
+          // Keyed on the order so a retried or duplicated `order.placed`
+          // cannot double-count `sold_quantity` — D9-2. The service dedupes
+          // on (cycle, variant, source, source_id) behind a unique index.
+          await orderCycleService.recordSale(orderCycleId, item.variant_id, item.quantity, {
+            source: "medusa_order",
+            source_id: orderId,
+          })
           log.info(
             `[Order Cycle Subscriber] Recorded sale: ${item.quantity}x ${item.variant_id}`
           )

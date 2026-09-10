@@ -77,8 +77,8 @@ describe("order-cycle sale recording", () => {
 
     await run(ctx)
 
-    expect(ctx.recordSale).toHaveBeenCalledWith("oc_1", "v_1", 2)
-    expect(ctx.recordSale).toHaveBeenCalledWith("oc_1", "v_2", 1)
+    expect(ctx.recordSale).toHaveBeenCalledWith("oc_1", "v_1", 2, { source: "medusa_order", source_id: "order_1" })
+    expect(ctx.recordSale).toHaveBeenCalledWith("oc_1", "v_2", 1, { source: "medusa_order", source_id: "order_1" })
     expect(ctx.create).toHaveBeenCalledTimes(1)
   })
 
@@ -94,8 +94,8 @@ describe("order-cycle sale recording", () => {
 
     await run(ctx)
 
-    expect(ctx.recordSale).toHaveBeenCalledWith("oc_1", "v_1", 2)
-    expect(ctx.recordSale).toHaveBeenCalledWith("oc_2", "v_2", 3)
+    expect(ctx.recordSale).toHaveBeenCalledWith("oc_1", "v_1", 2, { source: "medusa_order", source_id: "order_1" })
+    expect(ctx.recordSale).toHaveBeenCalledWith("oc_2", "v_2", 3, { source: "medusa_order", source_id: "order_1" })
     expect(ctx.create).toHaveBeenCalledTimes(2)
   })
 
@@ -109,7 +109,7 @@ describe("order-cycle sale recording", () => {
     await run(ctx)
 
     expect(ctx.recordSale).toHaveBeenCalledTimes(1)
-    expect(ctx.recordSale).toHaveBeenCalledWith("oc_1", "v_1", 2)
+    expect(ctx.recordSale).toHaveBeenCalledWith("oc_1", "v_1", 2, { source: "medusa_order", source_id: "order_1" })
   })
 
   it("falls back to an order-level tag for paths that do propagate it", async () => {
@@ -123,8 +123,8 @@ describe("order-cycle sale recording", () => {
 
     await run(ctx)
 
-    expect(ctx.recordSale).toHaveBeenCalledWith("oc_legacy", "v_1", 2)
-    expect(ctx.recordSale).toHaveBeenCalledWith("oc_legacy", "v_2", 1)
+    expect(ctx.recordSale).toHaveBeenCalledWith("oc_legacy", "v_1", 2, { source: "medusa_order", source_id: "order_1" })
+    expect(ctx.recordSale).toHaveBeenCalledWith("oc_legacy", "v_2", 1, { source: "medusa_order", source_id: "order_1" })
   })
 
   it("prefers the line's own cycle over the order-level one", async () => {
@@ -136,8 +136,8 @@ describe("order-cycle sale recording", () => {
 
     await run(ctx)
 
-    expect(ctx.recordSale).toHaveBeenCalledWith("oc_item", "v_1", 1)
-    expect(ctx.recordSale).not.toHaveBeenCalledWith("oc_order", "v_1", 1)
+    expect(ctx.recordSale).toHaveBeenCalledWith("oc_item", "v_1", 1, { source: "medusa_order", source_id: "order_1" })
+    expect(ctx.recordSale).not.toHaveBeenCalledWith("oc_order", "v_1", 1, { source: "medusa_order", source_id: "order_1" })
   })
 
   it("does nothing for an order that went through no cycle", async () => {
@@ -166,7 +166,7 @@ describe("order-cycle sale recording", () => {
     await run(ctx)
 
     expect(ctx.recordSale).toHaveBeenCalledTimes(1)
-    expect(ctx.recordSale).toHaveBeenCalledWith("oc_1", "v_2", 1)
+    expect(ctx.recordSale).toHaveBeenCalledWith("oc_1", "v_2", 1, { source: "medusa_order", source_id: "order_1" })
   })
 
   it("keeps going when one item cannot be recorded", async () => {
@@ -181,7 +181,7 @@ describe("order-cycle sale recording", () => {
 
     await run(ctx)
 
-    expect(ctx.recordSale).toHaveBeenCalledWith("oc_1", "v_good", 2)
+    expect(ctx.recordSale).toHaveBeenCalledWith("oc_1", "v_good", 2, { source: "medusa_order", source_id: "order_1" })
     expect(ctx.create).toHaveBeenCalledTimes(1)
   })
 
