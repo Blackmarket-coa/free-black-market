@@ -27,6 +27,21 @@ export type ThresholdPrivilege = {
   /** Lifetime total XP required to unlock (role-agnostic). */
   minTotalXp?: number
   icon?: string
+  /**
+   * Whether anything in the tree actually honours this key.
+   *
+   * A privilege is a *promise* to the member: the catalog's `label` and `blurb`
+   * are member-facing copy. Until some route, service or screen reads the key
+   * and changes behaviour, publishing it as unlocked tells someone they have a
+   * benefit they do not have. So the character-sheet summary reports only the
+   * keys marked here, and `__tests__/threshold-enforcement.unit.spec.ts` fails
+   * the build if a key is marked without a consumer.
+   *
+   * Every privilege is currently unmarked: none of the six has a reader
+   * anywhere outside this file. Mark one **in the same change** that wires its
+   * consumer, never before. See docs/TRANSMUTATION_STRATEGY.md §1a.
+   */
+  enforced?: boolean
 }
 
 export const THRESHOLD_PRIVILEGES: ThresholdPrivilege[] = [
@@ -128,6 +143,23 @@ export function unlockedFeatures(
   return THRESHOLD_PRIVILEGES.filter(
     (t) => granted.has(t.featureKey) || isMet(t, tracks, totalXp)
   ).map((t) => t.featureKey)
+}
+
+/**
+ * The featureKeys that something actually honours.
+ *
+ * Deliberately separate from `unlockedFeatures`, which answers a different and
+ * still-useful question — "which thresholds has this member crossed?" — and is
+ * what the engine's own tests exercise. This is the member-facing answer:
+ * "which benefits does this member actually have?"
+ */
+export const ENFORCED_PRIVILEGE_KEYS: ReadonlySet<string> = new Set(
+  THRESHOLD_PRIVILEGES.filter((t) => t.enforced === true).map((t) => t.featureKey)
+)
+
+/** Narrow a met-threshold list to the privileges that are actually honoured. */
+export function enforcedOnly(featureKeys: readonly string[]): string[] {
+  return featureKeys.filter((key) => ENFORCED_PRIVILEGE_KEYS.has(key))
 }
 
 /**

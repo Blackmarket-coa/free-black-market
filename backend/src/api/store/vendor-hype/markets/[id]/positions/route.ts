@@ -49,6 +49,21 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     return res.status(400).json({ error: "disclosure_acknowledged is required for non-cash mode" })
   }
 
+  // A non-cash market pays "non-monetary points/rewards only"
+  // (docs/VENDOR_HYPE_OPERATIONS_PREDICTION_COMPLIANCE_POLICY_MATRIX.md), so a
+  // currency-denominated stake must not land on one. The schema accepts either
+  // unit and the service defaults to points, so without this check a caller
+  // could stake currency on the one mode whose whole compliance posture rests
+  // on no money being involved. See docs/TRANSMUTATION_STRATEGY.md §5.6.
+  if (
+    market.mode === PredictionMode.NON_CASH &&
+    body.stake_unit === PredictionStakeUnit.CURRENCY
+  ) {
+    return res.status(400).json({
+      error: "currency stakes are not permitted on a non-cash market",
+    })
+  }
+
   const headerKey = req.headers["idempotency-key"]
   const idempotencyKey = body.idempotency_key || (Array.isArray(headerKey) ? headerKey[0] : headerKey)
 

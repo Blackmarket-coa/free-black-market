@@ -40,20 +40,14 @@ const CARDS: StanceCard[] = [
     destination: "/shop",
     accent: "border-amber-500 hover:bg-amber-50",
   },
-  // Shown only while the investment offering is enabled — /invest 404s
-  // otherwise (docs/TRANSMUTATION_STRATEGY.md §7.2).
-  ...(phase1ModuleFlags.investmentPools
-    ? [
-        {
-          stance: "investor",
-          emoji: "💰",
-          title: "Invest",
-          blurb: "Fund farms, workshops, projects, and creators.",
-          destination: "/invest",
-          accent: "border-amber-700 hover:bg-amber-50",
-        },
-      ]
-    : []),
+  {
+    stance: "investor",
+    emoji: "💰",
+    title: "Invest",
+    blurb: "Fund farms, workshops, projects, and creators.",
+    destination: "/invest",
+    accent: "border-amber-700 hover:bg-amber-50",
+  },
   {
     stance: "coalition",
     emoji: "🤝",
@@ -63,6 +57,16 @@ const CARDS: StanceCard[] = [
     accent: "border-green-800 hover:bg-green-50",
   },
 ]
+
+/**
+ * The investor card is hidden while the investment offering is dark: `/invest`
+ * calls `notFound()` unless NEXT_PUBLIC_FF_INVESTMENT_POOLS_V1 is set, so
+ * showing the card would route people to a 404.
+ * See docs/TRANSMUTATION_STRATEGY.md §7.2.
+ */
+const VISIBLE_CARDS: StanceCard[] = CARDS.filter(
+  (card) => card.stance !== "investor" || phase1ModuleFlags.investmentPools
+)
 
 /**
  * Server action: persist the chosen stance (cookie + backend when logged in)
@@ -130,7 +134,7 @@ export default async function StartPage() {
       </header>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 max-w-5xl mx-auto">
-        {CARDS.map((card) => (
+        {VISIBLE_CARDS.map((card) => (
           <form key={card.stance} action={chooseStance}>
             <input type="hidden" name="stance" value={card.stance} />
             <input type="hidden" name="destination" value={card.destination} />

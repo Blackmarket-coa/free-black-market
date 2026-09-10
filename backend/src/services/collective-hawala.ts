@@ -387,6 +387,24 @@ export class CollectiveHawalaService {
       throw new Error("Bounty has no assignee to pay")
     }
 
+    // The bounty must have funded the pool escrow before it can draw on it.
+    //
+    // `escrowBountyFunds` and `escrowParticipantFunds` credit the SAME
+    // per-pool ESCROW account (`getOrCreateDemandEscrow`), and
+    // `payBountyMilestone` debits that account by id. So a bounty that was
+    // never escrowed does not fail for want of funds — it pays out of the
+    // purchase money other participants committed to the pool, and the
+    // ledger's non-negative invariant only notices once the whole pool is
+    // drained. Nothing else in this preflight catches it: the bounty exists,
+    // belongs to this pool, has an assignee, and both ledger legs resolve.
+    // See docs/TRANSMUTATION_STRATEGY.md §6b.
+    if (!bounty.escrowed) {
+      throw new Error(
+        "Bounty escrow not funded: a milestone cannot be paid from the pool's " +
+          "escrow until this bounty's own funds are escrowed"
+      )
+    }
+
     const accounts = await this.resolveMilestonePayoutAccounts({
       demand_post_id: input.demand_post_id,
       assignee_id: bounty.assignee_id as string,
