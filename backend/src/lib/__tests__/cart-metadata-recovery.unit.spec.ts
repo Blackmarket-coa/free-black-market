@@ -67,12 +67,44 @@ describe("getOrderCartMetadata", () => {
 
     const out = await getOrderCartMetadata(
       container,
-      { id: "order_1", metadata: { donation_total: 750, donation_beneficiary_id: "ben_x" } },
+      {
+        id: "order_1",
+        metadata: {
+          donation_total: 750,
+          donation_beneficiary_id: "ben_x",
+          storefront_id: "sf_x",
+        },
+      },
       KEYS
     )
 
     expect(graph).not.toHaveBeenCalled()
     expect(out.donation_total).toBe(750)
+  })
+
+  it("still reads the cart when the order carries only SOME of the keys", async () => {
+    // The short-circuit is an optimization, so it may only apply where the
+    // read could not have added anything. Skipping on a single present key
+    // would contradict the per-key merge below it: an order stamped with one
+    // value would silently lose every other key the cart still had.
+    const { container, graph } = makeContainer({
+      cartId: "cart_1",
+      cartMetadata: {
+        donation_total: 500,
+        donation_beneficiary_id: "ben_1",
+        storefront_id: "sf_1",
+      },
+    })
+
+    const out = await getOrderCartMetadata(
+      container,
+      { id: "order_1", metadata: { donation_total: 750 } },
+      KEYS
+    )
+
+    expect(graph).toHaveBeenCalled()
+    expect(out.donation_total).toBe(750)
+    expect(out.storefront_id).toBe("sf_1")
   })
 
   it("lets the order win on any key it carries", async () => {

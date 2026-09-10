@@ -1,4 +1,8 @@
-import { toBlackoutCycleFields, cycleEventTypeFor } from "../blackout-cycle"
+import {
+  countCycleOrders,
+  cycleEventTypeFor,
+  toBlackoutCycleFields,
+} from "../blackout-cycle"
 import {
   BLACKOUT_CYCLE_EVENTS,
   isBlackoutEventType,
@@ -102,9 +106,12 @@ describe("toBlackoutCycleFields", () => {
 
   it("sends nothing it would have to invent", () => {
     // items needs a product join (order_cycle_product carries variant_id, not
-    // sku/title); ordersPlaced needs an order-to-cycle link that does not
-    // exist yet; listingDeepLink would point at a storefront route that does
-    // not exist. All three are optional in Blackout's parser.
+    // sku/title); listingDeepLink would point at a storefront route that does
+    // not exist. Both are optional in Blackout's parser.
+    //
+    // `ordersPlaced` is not on this list any more, but it is not on the
+    // projection either: it needs a database read, so the job adds it after
+    // this function returns. This projection stays pure.
     const fields = toBlackoutCycleFields(cycle())!
     expect(Object.keys(fields).sort()).toEqual([
       "closingAt",
@@ -112,5 +119,69 @@ describe("toBlackoutCycleFields", () => {
       "name",
       "vendorId",
     ])
+  })
+})
+
+jest.mock("../../links/order-order-cycle", () => ({
+  __esModule: true,
+  default: { entryPoint: "order_order_ordercyclemodule_order_cycle" },
+}))
+
+describe("countCycleOrders", () => {
+  const queryReturning = (data: unknown) => ({
+    graph: jest.fn().mockResolvedValue({ data }),
+  })
+
+  it("counts the link rows for the cycle it was asked about", async () => {
+    const query = queryReturning([{ order_id: "o_1" }, { order_id: "o_2" }])
+
+    await expect(countCycleOrders(query, "oc_1")).resolves.toBe(2)
+
+    // Filtered by cycle, not by anything the caller has to remember to pass.
+    expect(query.graph).toHaveBeenCalledWith(
+      expect.objectContaining({
+        entity: "order_order_ordercyclemodule_order_cycle",
+        fields: ["order_id"],
+        filters: { order_cycle_id: "oc_1" },
+      })
+    )
+  })
+
+  it("reports a genuine zero as zero", async () => {
+    // A cycle that closed having sold nothing is a real, reportable outcome.
+    // Blackout renders "0 order(s) placed" for it, which is true.
+    await expect(countCycleOrders(queryReturning([]), "oc_1")).resolves.toBe(0)
+  })
+
+  it("returns undefined rather than zero when the read fails", async () => {
+    // The distinction this whole function exists for. Blackout drops the
+    // clause on undefined and prints "0 order(s) placed" on zero, so
+    // collapsing a failed read into 0 would announce a confident falsehood in
+    // the vendor's room.
+    const query = {
+      graph: jest.fn().mockRejectedValue(new Error("relation does not exist")),
+    }
+
+    await expect(countCycleOrders(query, "oc_1")).resolves.toBeUndefined()
+  })
+
+  it("returns undefined when the query answers with no rows array at all", async () => {
+    // Not the same as an empty array: `data: undefined` means the read did not
+    // produce a result set, which is a failure, not a count of nothing.
+    await expect(
+      countCycleOrders(queryReturning(undefined), "oc_1")
+    ).resolves.toBeUndefined()
+  })
+
+  it("never throws into the five-minute sweep", async () => {
+    // The caller is a scheduled job that also performs the status transition.
+    // An optional display field must not be able to fail the transition.
+    const query = {
+      graph: jest.fn(() => {
+        throw new Error("synchronous blow-up")
+      }),
+    }
+
+    await expect(countCycleOrders(query, "oc_1")).resolves.toBeUndefined()
   })
 })

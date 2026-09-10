@@ -4,7 +4,12 @@ import { MedusaContainer } from "@medusajs/framework/types"
 import { ORDER_CYCLE_MODULE } from "../modules/order-cycle"
 import type OrderCycleModuleService from "../modules/order-cycle/service"
 import { emitBlackoutEvent } from "../lib/blackout-emit"
-import { cycleEventTypeFor, toBlackoutCycleFields } from "../lib/blackout-cycle"
+import {
+  countCycleOrders,
+  cycleEventTypeFor,
+  toBlackoutCycleFields,
+} from "../lib/blackout-cycle"
+import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 
 /**
  * Scheduled Job: Update Order Cycle Statuses
@@ -43,6 +48,20 @@ export default async function orderCycleStatusUpdateJob(
             `[Order Cycle Job] skipping ${type} for cycle ${String(cycle.id)}: incomplete row`
           )
           return
+        }
+
+        // `ordersPlaced` only means anything on a close: a cycle that has
+        // just opened has had no chance to take orders, so announcing "0
+        // order(s) placed" there would read as a result rather than a start.
+        // Blackout renders the clause on `cycle.close` only, too.
+        if (type === "cycle.close") {
+          const ordersPlaced = await countCycleOrders(
+            container.resolve(ContainerRegistrationKeys.QUERY),
+            fields.cycleId
+          )
+          if (ordersPlaced !== undefined) {
+            fields.ordersPlaced = ordersPlaced
+          }
         }
 
         // Stable id: the same transition retried is the same event. The old

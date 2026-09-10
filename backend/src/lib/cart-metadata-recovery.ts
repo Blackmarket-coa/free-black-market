@@ -31,14 +31,20 @@ const log = createLogger("lib/cart-metadata-recovery")
 export async function getOrderCartMetadata(
   container: MedusaContainer,
   order: { id: string; metadata?: Record<string, unknown> | null },
-  /** Keys the caller needs. Recovery is skipped when the order already has one. */
+  /** Keys the caller needs. The cart read is skipped only when the order has them all. */
   keys: readonly string[]
 ): Promise<Record<string, unknown>> {
   const onOrder = (order.metadata ?? {}) as Record<string, unknown>
 
-  // Cheap exit: if the order carries any of the keys, the checkout path
-  // propagated and there is nothing to recover.
-  if (keys.some((key) => onOrder[key] !== undefined && onOrder[key] !== null)) {
+  // Cheap exit, and deliberately on EVERY key rather than any one of them.
+  // The merge below is per key — the order wins where it has a value, the
+  // cart fills the rest — and short-circuiting on a single present key would
+  // contradict that: an order carrying `fbm_short_code` but not
+  // `fbm_visitor_token` would silently lose the token the cart still had.
+  // Skipping the read is an optimization, so it may only apply where the read
+  // could not have added anything.
+  const has = (key: string) => onOrder[key] !== undefined && onOrder[key] !== null
+  if (keys.every(has)) {
     return onOrder
   }
 

@@ -6,6 +6,11 @@ jest.mock("../../lib/blackout-emit", () => ({
   emitBlackoutEvent: jest.fn(async () => "evt_1"),
 }))
 
+jest.mock("../../links/order-order-cycle", () => ({
+  __esModule: true,
+  default: { entryPoint: "order_order_ordercyclemodule_order_cycle" },
+}))
+
 const emitMock = emitBlackoutEvent as jest.MockedFunction<typeof emitBlackoutEvent>
 
 /**
@@ -27,18 +32,31 @@ const makeContainer = (
   onCall: (cb?: (c: Record<string, unknown>, to: "open" | "closed") => Promise<void>) => Promise<{
     opened: number
     closed: number
-  }>
+  }>,
+  // Left unresolvable by default, which is what the container looked like
+  // before `ordersPlaced` existed: the count then reads as unknown and the
+  // field is dropped, so every test written before this one still describes
+  // the payload it asserted.
+  query?: { graph: jest.Mock }
 ) => {
   const service = { updateOrderCycleStatuses: jest.fn(onCall) }
   return {
     container: {
-      resolve: jest.fn((key: string) =>
-        key === ORDER_CYCLE_MODULE ? service : undefined
-      ),
+      resolve: jest.fn((key: string) => {
+        if (key === ORDER_CYCLE_MODULE) return service
+        if (key === "query") return query
+        return undefined
+      }),
     },
     service,
   }
 }
+
+const linkRows = (count: number) => ({
+  graph: jest.fn().mockResolvedValue({
+    data: Array.from({ length: count }, (_, i) => ({ order_id: `o_${i}` })),
+  }),
+})
 
 beforeEach(() => emitMock.mockClear())
 
@@ -73,6 +91,74 @@ describe("order-cycle-status-update", () => {
 
     expect(emitMock.mock.calls[0][1]).toBe("cycle.close")
     expect(emitMock.mock.calls[0][3]).toEqual({ eventId: "cycle.close:oc_1" })
+  })
+
+  it("puts the order count on cycle.close", async () => {
+    const query = linkRows(3)
+    const { container } = makeContainer(async (cb) => {
+      await cb?.(CYCLE, "closed")
+      return { opened: 0, closed: 1 }
+    }, query)
+
+    await orderCycleStatusUpdateJob(container as never)
+
+    expect(emitMock.mock.calls[0][2]).toEqual({
+      vendorId: "sel_coord",
+      cycleId: "oc_1",
+      name: "Spring Harvest",
+      closingAt: "2026-09-15T00:00:00.000Z",
+      ordersPlaced: 3,
+    })
+    expect(query.graph).toHaveBeenCalledWith(
+      expect.objectContaining({ filters: { order_cycle_id: "oc_1" } })
+    )
+  })
+
+  it("does not put an order count on cycle.open", async () => {
+    // A cycle that has just opened has had no chance to take orders, so
+    // "0 order(s) placed" would read as a result rather than a start.
+    // Blackout renders the clause on close only, and so do we.
+    const query = linkRows(3)
+    const { container } = makeContainer(async (cb) => {
+      await cb?.(CYCLE, "open")
+      return { opened: 1, closed: 0 }
+    }, query)
+
+    await orderCycleStatusUpdateJob(container as never)
+
+    expect(emitMock.mock.calls[0][2]).not.toHaveProperty("ordersPlaced")
+    expect(query.graph).not.toHaveBeenCalled()
+  })
+
+  it("still announces the close when the count cannot be read", async () => {
+    // The count is a display field. Losing it must not lose the announcement
+    // that the cycle closed at all — and the field is dropped rather than
+    // sent as 0, so Blackout says nothing about orders instead of saying
+    // there were none.
+    const query = {
+      graph: jest.fn().mockRejectedValue(new Error("relation does not exist")),
+    }
+    const { container } = makeContainer(async (cb) => {
+      await cb?.(CYCLE, "closed")
+      return { opened: 0, closed: 1 }
+    }, query)
+
+    await orderCycleStatusUpdateJob(container as never)
+
+    expect(emitMock).toHaveBeenCalledTimes(1)
+    expect(emitMock.mock.calls[0][1]).toBe("cycle.close")
+    expect(emitMock.mock.calls[0][2]).not.toHaveProperty("ordersPlaced")
+  })
+
+  it("sends a genuine zero as zero", async () => {
+    const { container } = makeContainer(async (cb) => {
+      await cb?.(CYCLE, "closed")
+      return { opened: 0, closed: 1 }
+    }, linkRows(0))
+
+    await orderCycleStatusUpdateJob(container as never)
+
+    expect(emitMock.mock.calls[0][2]).toMatchObject({ ordersPlaced: 0 })
   })
 
   it("uses a stable event id, so a retried transition is the same event", async () => {
