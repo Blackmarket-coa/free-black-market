@@ -33,7 +33,7 @@ import {
  * and emitting `vendor.onboarding.first_listing_published`.
  */
 
-type SellingType = "physical" | "digital" | "service" | "event_class"
+type SellingType = "physical" | "digital" | "service" | "event_class" | "reclaimed"
 type WizardStep =
   | "signup"
   | "step_1"
@@ -92,13 +92,23 @@ async function authedFetch<T>(path: string, init?: RequestInit): Promise<T> {
   return (await res.json()) as T
 }
 
-const SELLING_TYPE_DEFAULTS: Record<
+/**
+ * Presentational copy per selling type.
+ *
+ * This table used to carry an `archetype_code` per entry that nothing read —
+ * it was never sent anywhere, so the panel held a mapping that looked
+ * authoritative and decided nothing. The mapping now lives on the backend in
+ * `modules/tenancy/selling-type-archetype.ts`, where the compiler can require
+ * it to be total and a test can require its targets to be real, and the
+ * onboarding GET response returns the resolved `archetype_code` alongside the
+ * state. What is left here is copy. docs/TRANSMUTATION_STRATEGY.md §4.1.
+ */
+export const SELLING_TYPE_DEFAULTS: Record<
   SellingType,
   {
     label: string
     delivery_label: string
     delivery_hint: string
-    archetype_code: string
     advanced_visible_default: boolean
   }
 > = {
@@ -106,28 +116,31 @@ const SELLING_TYPE_DEFAULTS: Record<
     label: "Physical goods",
     delivery_label: "Manual shipping (you ship from your location)",
     delivery_hint: "We'll set up a default manual shipping option. Add carrier integrations later.",
-    archetype_code: "NON_PERISHABLE",
     advanced_visible_default: false,
   },
   digital: {
     label: "Digital downloads",
     delivery_label: "Instant delivery (no shipping)",
     delivery_hint: "Customers receive a download link immediately after purchase.",
-    archetype_code: "DIGITAL",
     advanced_visible_default: false,
   },
   service: {
     label: "Service or coaching",
     delivery_label: "Scheduled (you schedule with the customer)",
     delivery_hint: "After purchase, customers receive a contact link to schedule. No shipping.",
-    archetype_code: "SERVICE",
     advanced_visible_default: false,
   },
   event_class: {
     label: "Event or class",
     delivery_label: "Ticket / access pass",
     delivery_hint: "We'll generate a ticket or access pass per purchase. No shipping.",
-    archetype_code: "TICKET",
+    advanced_visible_default: false,
+  },
+  reclaimed: {
+    label: "Repaired or salvaged goods",
+    delivery_label: "Manual shipping (you ship from your location)",
+    delivery_hint:
+      "Condition-graded listings. Each item records its grade — Like New, Good, Fair or Parts Only — plus repair history where you have it.",
     advanced_visible_default: false,
   },
 }

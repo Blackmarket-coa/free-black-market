@@ -28,6 +28,17 @@ export enum OnboardingSellingType {
   DIGITAL = "digital",
   SERVICE = "service",
   EVENT_CLASS = "event_class",
+  /**
+   * Repaired goods, salvaged materials, second-life electronics.
+   *
+   * Distinct from PHYSICAL because it is condition-graded: the
+   * `CIRCULAR_ECONOMY` archetype carries `requires_condition_grade`, and the
+   * cms-blueprint attaches `attr_condition_grade` to the repaired-goods,
+   * salvaged-materials and second-life-electronics categories. A salvage
+   * seller routed to PHYSICAL gets the general-goods archetype instead.
+   * docs/TRANSMUTATION_STRATEGY.md §4.1.
+   */
+  RECLAIMED = "reclaimed",
 }
 
 const OnboardingState = model.define("tenancy_onboarding_state", {

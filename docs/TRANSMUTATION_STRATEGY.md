@@ -500,17 +500,55 @@ components") and a `tag_salvaged` source tag. `InventoryStrategy.LOT_BASED`
 exists for goods that arrive as a batch rather than a SKU.
 
 What is missing is the front door. `vendor-panel/src/components/onboarding/launch-wizard.tsx`
-hardcodes four archetype codes — `NON_PERISHABLE`, `DIGITAL`, `SERVICE`,
-`TICKET` — so a salvage vendor completing onboarding cannot select the
-archetype built for them and lands on `NON_PERISHABLE`, losing the
-condition-grade attribute set. The same file is why
+offers four selling types — physical, digital, service, event/class — with no
+option a salvage seller can honestly pick. The same file is why
 `vendor-type-context.spec.ts` already carries a regression note about a literal
 list that "silently stopped covering any newly added archetype".
 
-**Wire, do not build. S.** Add `CIRCULAR_ECONOMY` to the wizard, confirm the
-cms-blueprint attributes are attached to the archetype rather than only seeded,
-and give the storefront a filter on `condition-grade`. That is the whole
-marketplace-side gap for reclaimed materials.
+**Front door: done 2026-09-10.** A fifth selling type, `reclaimed` ("Repaired
+or salvaged goods"), in both the launch wizard and the quick path, with the
+CHECK-constraint migration the existing four-value constraint required.
+
+Two corrections to an earlier draft of this section, both found while doing it:
+
+- **The wizard's four archetype codes were dead.** `SELLING_TYPE_DEFAULTS`
+  carried an `archetype_code` per entry — `NON_PERISHABLE`, `DIGITAL`,
+  `SERVICE`, `TICKET` — that **nothing read**. It was never sent anywhere, so
+  the claim that a salvage vendor "lands on `NON_PERISHABLE`" was wrong: the
+  wizard assigned no archetype at all. Neither panel calls
+  `PUT /vendor/products/[id]/archetype`; the endpoint has no UI. The mapping
+  now lives on the backend in `modules/tenancy/selling-type-archetype.ts` as a
+  total `Record`, so adding a selling type without deciding its archetype is a
+  type error, and the onboarding `GET` returns the resolved code. Adding a
+  fifth entry to a table whose key field nothing reads would have been the
+  exact failure mode §1a is about.
+- **The cms-blueprint attributes attach to categories, not to the archetype.**
+  `attr_condition_grade` is attached to `cat_repaired_goods` (required),
+  `cat_salvaged_materials` and `cat_second_life_electronics` (required). The
+  archetype's own `requires_condition_grade` metadata — seeded in three places:
+  the archetype row, the cms-blueprint, and `init-product-types.ts` — is read
+  nowhere.
+
+**The storefront filter is not a wire, and is left open deliberately.** §4.1
+called it "give the storefront a filter on `condition-grade`". Checked, there
+are already two, and the problem is that nothing agrees on the vocabulary:
+
+| Where | Vocabulary |
+| --- | --- |
+| `cms-blueprint` `attr_condition_grade` | Like New, Good, Fair, Parts Only |
+| `cms_tag` kind `CONDITION` | New, Used, Refurbished |
+| `cells/ConditionFilter` (non-Algolia sidebar) | New, New - With tags, Used - Excellent, Used - Good, Used - Fair — **hardcoded, with hardcoded counts** (78, 40, 7, 16, 0) |
+| `AlgoliaProductSidebar`'s `ConditionFilter` | whatever is indexed at `variants.condition`, a real configured facet in `algolia-config.json` |
+| `workflows/product-feed` | the literal `"new"` for every item |
+
+So a filter already renders on both sidebars; one shows invented numbers and
+the other a facet on a field with no writer in the tree. Adding a sixth
+vocabulary would make this worse. The real task is to pick one — the seeded
+`attr_condition_grade` set is the obvious candidate, being the one attached to
+the salvage categories — and make the filters, the facet and the feed read it.
+That is **M and a reconciliation**, not S and a wire. `storefront`'s
+`lib/data/cms-taxonomy.ts`, which already fetches a category's filterable
+attributes, has no consumers and is the natural place to start.
 
 Two genuinely absent things, both real and both small:
 
@@ -1390,7 +1428,7 @@ what the code does, before building anything new on either.
 11. FBM `LICENSE` (**operator decision, §9**); data export **verified 2026-09-10** — the customer export is shipped, reachable and now tested; the vendor *catalogue* export does not exist and is the real gap. §5.3.
 
 **Then — wiring what is already built (weeks)**
-12. `CIRCULAR_ECONOMY` in the vendor onboarding wizard; condition-grade filter on the storefront. §4.1.
+12. ~~`CIRCULAR_ECONOMY` in the vendor onboarding wizard~~ **done 2026-09-10** (a `reclaimed` selling type, and the archetype mapping moved to the backend from a panel field nothing read); condition-grade filter on the storefront **re-scoped to M** — two filters already render and five vocabularies disagree, so it is a reconciliation rather than a wire. §4.1.
 13. Finish patronage: take `patronage-refund` past `status=computed`. §5.5.
 14. Partner-directory kinds and entries for abatement, deconstruction, reuse centres, PV/electrical test labs. §4.4.
 15. Deconstruction-readiness quest definition, exempt from the entitlement gate. §4.4, §6.

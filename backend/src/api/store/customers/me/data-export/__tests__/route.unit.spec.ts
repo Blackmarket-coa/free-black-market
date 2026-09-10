@@ -64,7 +64,8 @@ const makeReq = (
   const actorId = "actorId" in opts ? opts.actorId : "cus_1"
   const { customer = CUSTOMER, orders = ORDERS } = opts
 
-  const graph = jest.fn(async ({ entity }: { entity: string }) => {
+  const graph = jest.fn(async (args: { entity: string; filters?: unknown }) => {
+    const { entity } = args
     if (entity === "customer") {
       if (customer instanceof Error) throw customer
       return { data: customer === null ? [] : [customer] }
