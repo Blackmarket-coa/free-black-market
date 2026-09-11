@@ -3,6 +3,7 @@ import { DONATION_MODULE } from "../modules/donation"
 import DonationModuleService from "../modules/donation/service"
 import { TENANCY_MODULE } from "../modules/tenancy"
 import TenancyModuleService from "../modules/tenancy/service"
+import { getOrderCartMetadata } from "../lib/cart-metadata-recovery"
 
 export default async function donationOrderAccruedSubscriber({ event, container }: SubscriberArgs<{ id: string }>) {
   const donationService = container.resolve<DonationModuleService>(DONATION_MODULE)
@@ -10,9 +11,24 @@ export default async function donationOrderAccruedSubscriber({ event, container 
   const orderService = container.resolve("order")
 
   const order = await orderService.retrieveOrder(event.data.id, { relations: ["items"] })
-  const donationTotal = Number((order.metadata as any)?.donation_total || 0)
-  const beneficiaryId = String((order.metadata as any)?.donation_beneficiary_id || "")
-  const storefrontId = String((order.metadata as any)?.storefront_id || "")
+
+  // The storefront writes these onto the CART
+  // (`storefront/src/lib/data/donations.ts` `setCartDonationPreferences`), and
+  // FBM's main checkout path drops cart metadata on the floor — see
+  // `lib/cart-metadata-recovery.ts` and D9-5. Reading `order.metadata`
+  // directly meant `beneficiaryId` was always "" and `donationTotal` always 0
+  // on that path, so the guard below returned early and **the donation a
+  // buyer chose at checkout was silently never accrued**. Nothing failed
+  // loudly: the beneficiary's balance simply never moved.
+  const metadata = await getOrderCartMetadata(container, order, [
+    "donation_total",
+    "donation_beneficiary_id",
+    "storefront_id",
+  ])
+
+  const donationTotal = Number(metadata?.donation_total || 0)
+  const beneficiaryId = String(metadata?.donation_beneficiary_id || "")
+  const storefrontId = String(metadata?.storefront_id || "")
 
   if (!beneficiaryId || donationTotal <= 0) {
     return

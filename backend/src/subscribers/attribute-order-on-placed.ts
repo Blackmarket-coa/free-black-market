@@ -13,12 +13,28 @@ import {
   resolveCustomerMxid,
   resolveSellerIdByMxid,
 } from "../lib/blackout-identity"
+import { getOrderCartMetadata } from "../lib/cart-metadata-recovery"
 
 /**
  * Subscriber: attribute the order to a creator (if applicable) and emit
- * `creator.commission.earned` webhook. The storefront stamps the visitor's
- * `_fbm_visitor` cookie value into `order.metadata.fbm_visitor_token` at
- * cart-completion time, so we read it from there.
+ * `creator.commission.earned` webhook.
+ *
+ * ## Where the attribution keys come from, and why not straight off the order
+ *
+ * `POST /store/carts/:id/attribution` writes `fbm_short_code`,
+ * `fbm_aff_link_id` and `fbm_visitor_token` onto **cart** metadata, on the
+ * stated expectation that they "propagate to order.metadata at completion".
+ * On FBM's main checkout path they do not: `@mercurjs/b2c-core` overrides
+ * `POST /store/carts/:id/complete` with `splitAndCompleteCartWorkflow`, which
+ * builds its order payload by hand and never copies `cart.metadata` — see
+ * `lib/cart-metadata-recovery.ts` and D9-5.
+ *
+ * So reading `order.metadata` directly meant both keys were always null there,
+ * and **last-click affiliate attribution never happened on the main checkout
+ * path**: a creator whose link drove the sale earned nothing. Promo-code
+ * attribution kept working, because it reads `order.promotions`, a real
+ * relation — which is why the failure looked like "affiliate links convert
+ * badly" rather than like a bug.
  *
  * This subscriber transitions the new attribution from `pending` -> `held`
  * with a hold window (default 7 days) so refunds can short-circuit payout.
@@ -64,7 +80,10 @@ export default async function attributeOrderOnPlacedSubscriber({
       return
     }
 
-    const md = (order.metadata || {}) as Record<string, unknown>
+    const md = await getOrderCartMetadata(container, order, [
+      "fbm_visitor_token",
+      "fbm_short_code",
+    ])
     const visitorToken = (md.fbm_visitor_token as string) || null
     const shortCode = (md.fbm_short_code as string) || null
     const promotions = (order.promotions || []) as Array<{ code?: string | null }>

@@ -18,14 +18,18 @@ import { buildPublishingKeysDocument } from "../../modules/marketplace-signing/v
  *
  * Serves the Ed25519 publishing keyset: `publicKey` is base64 SPKI DER (what
  * WebCrypto importKey("spki") needs); `publicKeyPem` rides along for parity
- * with /v1/marketplace/signing-keys. 503 while signing is unconfigured.
+ * with /v1/marketplace/signing-keys. 503 while signing is unconfigured — and
+ * also when `MARKETPLACE_SIGNING_RETIRED_KEYS` is malformed, deliberately:
+ * serving the document minus a retired key would silently stop every artifact
+ * signed under it from installing, which is worse than serving nothing.
  */
 export function servePublishingKeys(req: MedusaRequest, res: MedusaResponse) {
   const service = req.scope.resolve<PluginSigningService>(MARKETPLACE_SIGNING_MODULE)
   try {
     const { keyId, pem } = service.getPublicKeyPem()
+    const retired = service.getRetiredPublicKeys()
     res.setHeader("cache-control", "public, max-age=300")
-    return res.json(buildPublishingKeysDocument({ keyId, pem }))
+    return res.json(buildPublishingKeysDocument({ keyId, pem, retired }))
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error"
     return res.status(503).json({ message, type: "signing_unavailable" })

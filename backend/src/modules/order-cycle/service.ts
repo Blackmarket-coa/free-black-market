@@ -2,6 +2,7 @@ import { MedusaService } from "@medusajs/framework/utils"
 import {
   OrderCycle,
   OrderCycleProduct,
+  OrderCycleSale,
   OrderCycleSeller,
   OrderCycleExchange,
   OrderCycleFee,
@@ -38,9 +39,23 @@ export type ShareBoxItem = {
   currency_code: string
 }
 
+/**
+ * Whether a driver error is a unique-constraint violation.
+ *
+ * Postgres reports 23505. The message check is a fallback for wrappers that
+ * lose the code, which MikroORM sometimes does through its own error layer.
+ */
+function isUniqueViolation(error: unknown): boolean {
+  const err = error as { code?: string; message?: string } | null
+  if (err?.code === "23505") return true
+  const message = err?.message ?? ""
+  return /duplicate key value|unique constraint/i.test(message)
+}
+
 class OrderCycleModuleService extends MedusaService({
   OrderCycle,
   OrderCycleProduct,
+  OrderCycleSale,
   OrderCycleSeller,
   OrderCycleExchange,
   OrderCycleFee,
@@ -595,7 +610,31 @@ class OrderCycleModuleService extends MedusaService({
     return { available: true }
   }
 
-  async recordSale(orderCycleId: string, variantId: string, quantity: number) {
+  /**
+   * Record a sale against a cycle product.
+   *
+   * **Idempotent on `(order_cycle_id, variant_id, source, source_id)`** when a
+   * `source_id` is given. `sold_quantity` is a bare counter incremented with
+   * `sold_quantity + quantity`, so before this a retried or duplicated
+   * `order.placed` double-counted it with no record to check against — D9-2 in
+   * docs/AUDIT_DEBT.md. `modules/cottage-food` had already solved the same
+   * problem the same way; this follows it.
+   *
+   * The dedupe is enforced by a unique index, not by the read below. The read
+   * is the fast path; two concurrent deliveries of the same event would both
+   * pass it, and the index is what actually stops the second write. A unique
+   * violation is therefore treated as "already recorded" and swallowed, which
+   * is the correct reading of it.
+   *
+   * Called without a `source_id` (a manual adjustment) it is NOT idempotent,
+   * and deliberately so: two identical manual corrections are two corrections.
+   */
+  async recordSale(
+    orderCycleId: string,
+    variantId: string,
+    quantity: number,
+    options?: { source?: string; source_id?: string | null }
+  ) {
     const products = await this.listOrderCycleProducts({
       order_cycle_id: orderCycleId,
       variant_id: variantId,
@@ -606,6 +645,40 @@ class OrderCycleModuleService extends MedusaService({
     }
 
     const product = products[0]
+    const source = options?.source ?? "medusa_order"
+    const sourceId = options?.source_id ?? null
+
+    if (sourceId) {
+      const [already] = await this.listOrderCycleSales({
+        order_cycle_id: orderCycleId,
+        variant_id: variantId,
+        source,
+        source_id: sourceId,
+      })
+      if (already) {
+        return product
+      }
+    }
+
+    if (sourceId) {
+      try {
+        await this.createOrderCycleSales({
+          order_cycle_id: orderCycleId,
+          order_cycle_product_id: product.id,
+          variant_id: variantId,
+          quantity,
+          source,
+          source_id: sourceId,
+        })
+      } catch (error) {
+        // The unique index fired: another delivery of the same event got
+        // there first. Already recorded, so the increment must not happen.
+        if (isUniqueViolation(error)) {
+          return product
+        }
+        throw error
+      }
+    }
 
     return this.updateOrderCycleProducts({
       id: product.id,

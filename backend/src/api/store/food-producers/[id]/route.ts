@@ -4,6 +4,7 @@ import { FOOD_DISTRIBUTION_MODULE } from "../../../../modules/food-distribution"
 import type FoodDistributionService from "../../../../modules/food-distribution/service"
 import { OperatingStatus } from "../../../../modules/food-distribution/models/food-producer"
 import { actorMayManage } from "../../../../shared/actor-scope"
+import { applyProducerAddressPrivacy } from "../../../../modules/food-distribution/public-view"
 
 // ===========================================
 // VALIDATION SCHEMAS
@@ -91,7 +92,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     
     res.json({
       producer: {
-        ...producer,
+        ...applyProducerAddressPrivacy(producer as unknown as Record<string, unknown>),
         is_currently_open: isOpen,
       },
     })

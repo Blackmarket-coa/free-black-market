@@ -3,8 +3,11 @@ import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { FOOD_DISTRIBUTION_MODULE } from "../../../../modules/food-distribution"
 import type FoodDistributionService from "../../../../modules/food-distribution/service"
 import { CourierStatus } from "../../../../modules/food-distribution/models/courier"
-import { actorMayManage } from "../../../../shared/actor-scope"
-import { redactDeliveries } from "../../../../modules/food-distribution/public-view"
+import { actorMayManage, actorOwnsResource } from "../../../../shared/actor-scope"
+import {
+  publicCourierView,
+  redactDeliveries,
+} from "../../../../modules/food-distribution/public-view"
 
 // ===========================================
 // VALIDATION SCHEMAS
@@ -61,6 +64,25 @@ const claimDeliverySchema = z.object({
 // GET /couriers/:id
 // ===========================================
 
+/**
+ * Unauthenticated, and therefore projected for anyone but the owner.
+ *
+ * This used to serialize the `food_courier` row verbatim to any caller —
+ * email, phone, live coordinates, licence plate, emergency contact name and
+ * phone, documents, background-check status, total earnings and pending
+ * payout. D10-5. See `publicCourierView` for the field set and why each
+ * field is in or out of it.
+ *
+ * The owner still gets the whole row: `actorOwnsResource` (not
+ * `actorMayManage`, which the write paths below use) because that one
+ * grandfathers a null `owner_id`, and a courier created before ownership was
+ * stamped must not therefore be readable in full by any signed-in account.
+ * On this GET the safe default for an unknown owner is the public view.
+ *
+ * `active_deliveries` stays on both branches. It is already redacted of the
+ * delivery's own secrets, and it is the operational fact a requester asks
+ * this endpoint for — whether this courier is currently free.
+ */
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
   const { id } = req.params
   
@@ -78,10 +100,13 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     courier_id: id,
     status: { $in: ["ASSIGNED", "COURIER_EN_ROUTE_PICKUP", "COURIER_ARRIVED_PICKUP", "ORDER_PICKED_UP", "EN_ROUTE_DELIVERY", "ARRIVED_AT_DESTINATION", "ATTEMPTING_DELIVERY"] },
   })
-  
+
+  const row = courier as unknown as Record<string, unknown>
+  const isOwner = actorOwnsResource(req, row.owner_id as string | null | undefined)
+
   res.json({
     courier: {
-      ...courier,
+      ...(isOwner ? row : publicCourierView(row)),
       active_deliveries: redactDeliveries(activeDeliveries as unknown as Record<string, unknown>[]),
     },
   })

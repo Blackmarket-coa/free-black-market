@@ -1,5 +1,6 @@
 export { default as OrderCycle } from "./order-cycle"
 export { default as OrderCycleProduct } from "./order-cycle-product"
+export { default as OrderCycleSale } from "./order-cycle-sale"
 export { default as OrderCycleSeller } from "./order-cycle-seller"
 export { default as OrderCycleExchange } from "./order-cycle-exchange"
 export { default as OrderCycleFee } from "./order-cycle-fee"

@@ -76,12 +76,18 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       delivered_at: delivery.delivered_at,
     },
     
-    // Courier info (public only)
+    // Courier info (public only).
+    //
+    // `photo_url` reads `avatar_url`: `food_courier` has no `photo_url`
+    // column, so this field has been `undefined` on every response since the
+    // route shipped and no customer has ever seen a courier's photo. The
+    // response key is left as-is — the value was never populated, so nothing
+    // can depend on it, and renaming it would be a wire change for no gain.
     courier: courier
       ? {
-          name: courier.first_name,
+          name: courier.display_name || courier.first_name,
           vehicle_type: courier.vehicle_type,
-          photo_url: courier.photo_url,
+          photo_url: courier.avatar_url ?? null,
         }
       : null,
   })

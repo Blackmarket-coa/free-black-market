@@ -45,6 +45,64 @@ pnpm --filter vendor-panel lint
 
 If a check cannot run in your environment, document why in the PR.
 
+### On the backend, `tsc --noEmit` is not the whole typecheck
+
+`npx tsc --noEmit` in `backend/` passes on code that `medusa build` rejects.
+The Medusa CLI **generates** `.medusa/types/query-entry-points.d.ts` as the
+first step of a build, and that file is what gives `query.graph()` its real
+types — most importantly `RemoteQueryFilters`, which accepts only **direct
+fields of the entity being filtered**. Without those generated types, `filters`
+is loose and a nested relation filter type-checks fine:
+
+```ts
+// passes `tsc --noEmit`; fails `medusa build` with TS2322
+filters: { orders: { id: order.id } }
+
+// ask the same question from the other side instead
+entity: "order", fields: ["order_set.cart_id"], filters: { id: order.id }
+```
+
+A fresh checkout has no `.medusa/` at all, so this is the default state, not an
+edge case. Before pushing backend changes that touch `query.graph`, run:
+
+```bash
+cd backend && npx medusa build     # generates types, then compiles
+```
+
+CI reproduces this split: the `Lint & Type Check` job runs `tsc --noEmit`
+without generating types, so only the slower `Build backend` job catches it.
+Nothing broken can merge — `Build backend` is blocking — but you will find out
+minutes later than you needed to.
+
+**You need both checks, because neither covers the other.**
+
+| | covers `src/**` | covers `src/**/__tests__/**` | strict `query.graph` filters |
+| --- | --- | --- | --- |
+| `npx medusa build` | yes | **no** — the build tsconfig excludes tests | yes (it generates them) |
+| `npx tsc --noEmit` | yes | yes | no, unless `.medusa/` happens to exist |
+
+So a type error in a spec file passes `medusa build`, and a bad `query.graph`
+filter passes `tsc --noEmit`. Run both:
+
+```bash
+cd backend
+npx medusa build      # generates types, compiles src (not tests)
+npx tsc --noEmit      # compiles everything including tests
+pnpm lint
+```
+
+One caveat on ordering: **after** a build, `tsc --noEmit` sees the generated
+`.medusa/` and starts reporting pre-existing `TS2321: Excessive stack depth`
+errors in `workflows/create-digital-product-order` and
+`workflows/rental/upsert-rental-config` that neither the build nor CI reports,
+because the three use different compiler settings. Those two files are the
+only known instances — anything else `tsc` prints is real. To reproduce CI's
+job exactly, move `.medusa/` aside first:
+
+```bash
+mv .medusa /tmp/medusa-generated && npx tsc --noEmit; mv /tmp/medusa-generated .medusa
+```
+
 ## Commit Guidelines
 
 - Use clear, imperative commit messages.

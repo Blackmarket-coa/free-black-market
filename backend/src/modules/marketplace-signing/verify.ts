@@ -140,8 +140,25 @@ export function pemToSpkiBase64(pem: string): string {
  * `publicKey` (base64 SPKI) is what the Blackout client consumes;
  * `publicKeyPem` rides along for tooling parity with /v1/marketplace/signing-keys.
  */
-export function buildPublishingKeysDocument(args: { keyId: string; pem: string }): {
-  keys: Array<{ keyId: string; alg: "ed25519"; publicKey: string; publicKeyPem: string }>
+export function buildPublishingKeysDocument(args: {
+  keyId: string
+  pem: string
+  /**
+   * Keys that no longer sign but must still verify (W3-2). The Blackout
+   * client resolves a signature by `keys.find(entry => entry.keyId === ...)`
+   * and returns `unknown-key-id` on no match, so an artifact signed under a
+   * rotated-away key only installs while its key is still published here.
+   */
+  retired?: ReadonlyArray<{ keyId: string; pem: string }>
+}): {
+  keys: Array<{
+    keyId: string
+    alg: "ed25519"
+    publicKey: string
+    publicKeyPem: string
+    /** Absent on the active key; true on a key kept only for verification. */
+    retired?: true
+  }>
 } {
   return {
     keys: [
@@ -151,6 +168,17 @@ export function buildPublishingKeysDocument(args: { keyId: string; pem: string }
         publicKey: pemToSpkiBase64(args.pem),
         publicKeyPem: args.pem,
       },
+      // After the active key, deliberately. The client looks up by keyId so
+      // order does not affect correctness, but a consumer that reaches for
+      // `keys[0]` — and the original single-key document invited exactly
+      // that — gets the signing key rather than a historical one.
+      ...(args.retired ?? []).map((key) => ({
+        keyId: key.keyId,
+        alg: "ed25519" as const,
+        publicKey: pemToSpkiBase64(key.pem),
+        publicKeyPem: key.pem,
+        retired: true as const,
+      })),
     ],
   }
 }

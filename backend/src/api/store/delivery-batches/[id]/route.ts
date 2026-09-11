@@ -3,7 +3,10 @@ import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { FOOD_DISTRIBUTION_MODULE } from "../../../../modules/food-distribution"
 import type FoodDistributionService from "../../../../modules/food-distribution/service"
 import { actorMayManage } from "../../../../shared/actor-scope"
-import { redactDeliveries } from "../../../../modules/food-distribution/public-view"
+import {
+  publicCourierView,
+  redactDeliveries,
+} from "../../../../modules/food-distribution/public-view"
 
 // ===========================================
 // VALIDATION SCHEMAS
@@ -56,12 +59,17 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     batch: {
       ...batch,
       deliveries: redactDeliveries(deliveries as unknown as Record<string, unknown>[]),
-      courier: courier ? {
-        id: courier.id,
-        name: `${courier.first_name} ${courier.last_name}`,
-        phone: courier.phone,
-        vehicle_type: courier.vehicle_type,
-      } : null,
+      // D10-5. This route is unauthenticated and hand-built a courier
+      // object carrying their full legal name and phone number — more than
+      // `/food-deliveries/:id/track` gives even to the customer whose
+      // delivery is in flight. The same declared public projection applies
+      // here; see `publicCourierView`.
+      //
+      // Who may read a batch at all is still open under D10-5. Narrowing
+      // the courier does not answer that, and does not depend on it either.
+      courier: courier
+        ? publicCourierView(courier as unknown as Record<string, unknown>)
+        : null,
     },
   })
 }

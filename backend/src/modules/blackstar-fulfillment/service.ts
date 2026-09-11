@@ -199,6 +199,70 @@ class BlackstarFulfillmentModuleService extends MedusaService({
     }
   }
 
+  /**
+   * Record a verified event that writes no shipment status.
+   *
+   * Two kinds reach here: a relay event the contract documents and this
+   * receiver knowingly does not act on (`shipment.leg.*`), and an event type
+   * this deployment has never heard of. Both were previously answered 202
+   * `ignored` and then dropped without a trace — so the receipt table's own
+   * documented `ignored` outcome was unreachable, and an operator asking "is
+   * the bridge delivering?" had nothing to look at but the absence of
+   * anything.
+   *
+   * That absence is the failure mode worth closing. A relay that is arriving
+   * and being deliberately skipped looks, from FBM, exactly like a relay that
+   * is not arriving at all.
+   *
+   * Same dedupe key and the same tolerance for losing the unique-index race
+   * as `applyBlackstarEvent`: a redelivery is a no-op, not an error.
+   */
+  async recordUnappliedEvent(input: {
+    event_id?: string | null
+    event_type: string
+    source_order_ref?: string | null
+    correlation_id?: string | null
+    documented: boolean
+    metadata?: Record<string, unknown> | null
+  }): Promise<{ recorded: boolean }> {
+    if (!input.event_id) {
+      // Without Blackstar's stable event id there is no dedupe key, so a
+      // receipt would multiply on every retry. Skip rather than accumulate.
+      return { recorded: false }
+    }
+
+    const [seen] = await this.listBlackstarEventReceipts({ event_id: input.event_id })
+    if (seen) {
+      return { recorded: false }
+    }
+
+    try {
+      await this.createBlackstarEventReceipts([
+        {
+          event_id: input.event_id,
+          event_type: input.event_type,
+          source_order_ref: input.source_order_ref ?? null,
+          correlation_id: input.correlation_id ?? null,
+          outcome: "ignored",
+          requested_status: null,
+          resulting_status: null,
+          metadata: {
+            ...(input.metadata ?? {}),
+            // Which of the two kinds this was. An undocumented type means the
+            // bridge has outrun this deployment and someone should look; a
+            // documented one is business as usual.
+            reason: input.documented ? "no_status_change" : "unknown_event_type",
+          },
+        },
+      ])
+      return { recorded: true }
+    } catch {
+      // A concurrent delivery won the unique index. Nothing was going to be
+      // written twice anyway.
+      return { recorded: false }
+    }
+  }
+
   async recordOrUpdateShipment(input: RecordShipmentInput) {
     const where: Record<string, unknown> = { order_id: input.order_id }
     if (input.fulfillment_id) where.fulfillment_id = input.fulfillment_id

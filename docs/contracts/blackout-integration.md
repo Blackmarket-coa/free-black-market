@@ -100,21 +100,43 @@ actually transitioned, emitted from the five-minute status sweep. `eventId` is
 `<type>:<cycle_id>`.
 
 The payload carries the three fields Blackout's parser requires — `vendorId`
-(the cycle's `coordinator_seller_id`), `cycleId`, `name` — plus `closingAt`.
-Four optional fields Blackout accepts are deliberately **not** sent, because
-each would have to be invented:
+(the cycle's `coordinator_seller_id`), `cycleId`, `name` — plus `closingAt`,
+plus `ordersPlaced` on `cycle.close`. Three optional fields Blackout accepts
+are deliberately **not** sent, because each would have to be invented:
 
 -   `items` needs a product join: `order_cycle_product` carries `variant_id`,
     not the `{sku, title}` pairs the field means.
--   `ordersPlaced` needs an order-to-cycle link that does not exist yet — the
-    storefront does not write `order_cycle_id` into the cart, which is the
-    other half of the roadmap's item 12.
 -   `listingDeepLink` would point at a storefront order-cycle route that does
     not exist.
 -   `soldOutSku` belongs to `sold_out`, which is **not registered** on this
     side: Blackout accepts it, but FBM decides sold-out per product
     (`evaluateShipWindow`), not per cycle, so there is no trigger to emit it
     from.
+
+`ordersPlaced` was on that list until 2026-09-10, for want of an order-to-cycle
+link. It is sent now: the storefront tags line items with `order_cycle_id`
+(`storefront/src/lib/data/order-cycles.ts`), the `order.placed` subscriber
+writes one row per (order, cycle) into `order_order_ordercyclemodule_order_cycle`,
+and `countCycleOrders` in `backend/src/lib/blackout-cycle.ts` counts them. Three
+things about it are deliberate:
+
+-   **Close only.** A cycle that has just opened has had no chance to take
+    orders, so "0 order(s) placed" on an open would read as a result rather
+    than a start. Blackout's renderer prints the clause on `cycle.close` only
+    (`packages/api/src/services/fbmMatrixBridge/messageFormat.ts`), so the two
+    sides agree.
+-   **The link, not `order_cycle_sale`.** A sale row exists only for variants
+    registered in the cycle, so an order carrying an unregistered variant would
+    go uncounted; the link is created for every order tagged with the cycle.
+-   **Omitted, not zeroed, when the read fails.** Blackout distinguishes the
+    two — `undefined` drops the clause, `0` prints "0 order(s) placed" — and a
+    cycle whose count could not be read is not a cycle that sold nothing. A
+    genuine zero is still sent as zero; that one is true.
+
+Both sources are only recently populated, so a cycle that ran before the
+storefront started tagging line items will report a count lower than it really
+was. That is a bounded, one-time undercount of history rather than an ongoing
+one, and it is not backfillable: the tag was never written.
 
 A row missing any of the required three is skipped with a log line rather than
 enqueued, since Blackout's parser would reject it.

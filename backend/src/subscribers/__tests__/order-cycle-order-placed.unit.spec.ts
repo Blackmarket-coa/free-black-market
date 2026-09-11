@@ -16,7 +16,11 @@ import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
  */
 const makeContainer = (
   order: Record<string, unknown> | null,
-  opts: { retrieveThrows?: string[]; recordThrowsFor?: string[] } = {}
+  opts: {
+    retrieveThrows?: string[]
+    recordThrowsFor?: string[]
+    cycleStatus?: string
+  } = {}
 ) => {
   const recordSale = jest.fn(async (cycleId: string, variantId: string) => {
     if (opts.recordThrowsFor?.includes(variantId)) {
@@ -26,7 +30,7 @@ const makeContainer = (
   })
   const retrieveOrderCycle = jest.fn(async (id: string) => {
     if (opts.retrieveThrows?.includes(id)) throw new Error("not found")
-    return { id, status: "open" }
+    return { id, status: opts.cycleStatus ?? "open" }
   })
   const create = jest.fn(async () => undefined)
 
@@ -77,8 +81,8 @@ describe("order-cycle sale recording", () => {
 
     await run(ctx)
 
-    expect(ctx.recordSale).toHaveBeenCalledWith("oc_1", "v_1", 2)
-    expect(ctx.recordSale).toHaveBeenCalledWith("oc_1", "v_2", 1)
+    expect(ctx.recordSale).toHaveBeenCalledWith("oc_1", "v_1", 2, { source: "medusa_order", source_id: "order_1" })
+    expect(ctx.recordSale).toHaveBeenCalledWith("oc_1", "v_2", 1, { source: "medusa_order", source_id: "order_1" })
     expect(ctx.create).toHaveBeenCalledTimes(1)
   })
 
@@ -94,8 +98,8 @@ describe("order-cycle sale recording", () => {
 
     await run(ctx)
 
-    expect(ctx.recordSale).toHaveBeenCalledWith("oc_1", "v_1", 2)
-    expect(ctx.recordSale).toHaveBeenCalledWith("oc_2", "v_2", 3)
+    expect(ctx.recordSale).toHaveBeenCalledWith("oc_1", "v_1", 2, { source: "medusa_order", source_id: "order_1" })
+    expect(ctx.recordSale).toHaveBeenCalledWith("oc_2", "v_2", 3, { source: "medusa_order", source_id: "order_1" })
     expect(ctx.create).toHaveBeenCalledTimes(2)
   })
 
@@ -109,7 +113,7 @@ describe("order-cycle sale recording", () => {
     await run(ctx)
 
     expect(ctx.recordSale).toHaveBeenCalledTimes(1)
-    expect(ctx.recordSale).toHaveBeenCalledWith("oc_1", "v_1", 2)
+    expect(ctx.recordSale).toHaveBeenCalledWith("oc_1", "v_1", 2, { source: "medusa_order", source_id: "order_1" })
   })
 
   it("falls back to an order-level tag for paths that do propagate it", async () => {
@@ -123,8 +127,8 @@ describe("order-cycle sale recording", () => {
 
     await run(ctx)
 
-    expect(ctx.recordSale).toHaveBeenCalledWith("oc_legacy", "v_1", 2)
-    expect(ctx.recordSale).toHaveBeenCalledWith("oc_legacy", "v_2", 1)
+    expect(ctx.recordSale).toHaveBeenCalledWith("oc_legacy", "v_1", 2, { source: "medusa_order", source_id: "order_1" })
+    expect(ctx.recordSale).toHaveBeenCalledWith("oc_legacy", "v_2", 1, { source: "medusa_order", source_id: "order_1" })
   })
 
   it("prefers the line's own cycle over the order-level one", async () => {
@@ -136,8 +140,8 @@ describe("order-cycle sale recording", () => {
 
     await run(ctx)
 
-    expect(ctx.recordSale).toHaveBeenCalledWith("oc_item", "v_1", 1)
-    expect(ctx.recordSale).not.toHaveBeenCalledWith("oc_order", "v_1", 1)
+    expect(ctx.recordSale).toHaveBeenCalledWith("oc_item", "v_1", 1, { source: "medusa_order", source_id: "order_1" })
+    expect(ctx.recordSale).not.toHaveBeenCalledWith("oc_order", "v_1", 1, { source: "medusa_order", source_id: "order_1" })
   })
 
   it("does nothing for an order that went through no cycle", async () => {
@@ -166,7 +170,7 @@ describe("order-cycle sale recording", () => {
     await run(ctx)
 
     expect(ctx.recordSale).toHaveBeenCalledTimes(1)
-    expect(ctx.recordSale).toHaveBeenCalledWith("oc_1", "v_2", 1)
+    expect(ctx.recordSale).toHaveBeenCalledWith("oc_1", "v_2", 1, { source: "medusa_order", source_id: "order_1" })
   })
 
   it("keeps going when one item cannot be recorded", async () => {
@@ -181,7 +185,7 @@ describe("order-cycle sale recording", () => {
 
     await run(ctx)
 
-    expect(ctx.recordSale).toHaveBeenCalledWith("oc_1", "v_good", 2)
+    expect(ctx.recordSale).toHaveBeenCalledWith("oc_1", "v_good", 2, { source: "medusa_order", source_id: "order_1" })
     expect(ctx.create).toHaveBeenCalledTimes(1)
   })
 
@@ -197,6 +201,53 @@ describe("order-cycle sale recording", () => {
       metadata: { order_cycle_id: 42 },
       items: [{ variant_id: "v_1", quantity: 1, metadata: { order_cycle_id: true } }],
     })
+
+    await run(ctx)
+
+    expect(ctx.recordSale).not.toHaveBeenCalled()
+  })
+})
+
+describe("a closed cycle still records the sale — stated, not accidental (D9-3)", () => {
+  it("records against a cycle whose status is closed", () => {
+    // `order.placed` fires after checkout completed. If the five-minute
+    // sweep closed the cycle between the buyer paying and this handler
+    // running, the sale still happened and refusing here would lose a real
+    // sale to a race the buyer could not see.
+    //
+    // The audit row called this "unstated behaviour rather than a
+    // decision". This test is the statement: change it and something goes
+    // red, rather than a shipped behaviour quietly inverting.
+    const ctx = makeContainer(
+      { id: "order_1", metadata: null, items: [item("var_1", 2, "oc_1")] },
+      { cycleStatus: "closed" }
+    )
+
+    return run(ctx).then(() => {
+      expect(ctx.recordSale).toHaveBeenCalledWith("oc_1", "var_1", 2, {
+        source: "medusa_order",
+        source_id: "order_1",
+      })
+    })
+  })
+
+  it("records against a cancelled cycle too — existence is the only check", async () => {
+    const ctx = makeContainer(
+      { id: "order_1", metadata: null, items: [item("var_1", 1, "oc_1")] },
+      { cycleStatus: "cancelled" }
+    )
+
+    await run(ctx)
+
+    expect(ctx.recordSale).toHaveBeenCalledTimes(1)
+  })
+
+  it("still skips a cycle that does not exist at all", async () => {
+    // The one thing `retrieveOrderCycle` is called for.
+    const ctx = makeContainer(
+      { id: "order_1", metadata: null, items: [item("var_1", 1, "oc_gone")] },
+      { retrieveThrows: ["oc_gone"] }
+    )
 
     await run(ctx)
 
