@@ -32,10 +32,17 @@ FBM is useful to you if you want to:
 > responsible-disclosure policy. **Do not file public issues for security
 > vulnerabilities.**
 
-> **License.** This repository does not currently include a `LICENSE` file.
-> Until one is added, treat the code as "all rights reserved" — do not assume
-> MIT or any other open-source license applies, even where older vendored
-> READMEs (inherited from the upstream Mercur starter) display an MIT badge.
+> **License.** FBM is licensed under the **GNU Affero General Public License
+> v3.0** — see [`LICENSE`](LICENSE), and [`NOTICE`](NOTICE) for why the AGPL
+> rather than a permissive licence, third-party attribution, and the questions
+> the licence leaves to the operator. The AGPL's section 13 is the point: run a
+> modified FBM as a network service and the people using it can get your
+> source. That is the same promise FBM makes its own members.
+>
+> Ignore MIT badges in older vendored READMEs inherited from the upstream
+> Mercur starter — they describe those upstream projects, not this one.
+> `backend/package.json` also declared MIT until 2026-09-13; that was the
+> Medusa starter template's own unedited metadata, not a licence chosen here.
 
 ## Repository Layout
 

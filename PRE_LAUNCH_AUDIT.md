@@ -233,7 +233,7 @@ re-verified by hand in this audit (§ note under each group).
 | LEG-6 | **High** | **No prohibited-items policy or listing moderation** for a platform selling plants/herbal/wellness goods; DMCA/abuse "report" forms are dead ends (`logger.info`, no persistence or network call); no designated DMCA agent. | listing flow; report-form handlers |
 | LEG-7 | **High** | `POSTURE_A_COMPLIANCE.md` **overstates enforced controls** — it claims immutable audit logs and a purchase-context middleware that aren't wired, and the CCR guard is env-degradable (`HAWALA_CCR_GUARD_MODE=warn\|off`). Align the doc with the code or wire the controls. | `docs/POSTURE_A_COMPLIANCE.md` vs module wiring |
 | LEG-8 | **Med** | Tracking cookies with no consent banner; creator-attribution IP hash uses an **empty salt** by default (`…IP_SALT \|\| ""`); trademarked brand SVGs and stock photos appear committed; no data-retention/purge jobs. | `creator-attribution` config; asset tree |
-| LEG-9 | **Med** | **License is contradictory** — no `LICENSE` file, `package.json` says MIT, a footer says "Open Source." Resolve before public code exposure. | repo root; `package.json` |
+| ~~LEG-9~~ | **Med** | ~~**License is contradictory** — no `LICENSE` file, `package.json` says MIT, a footer says "Open Source."~~ **Resolved 2026-09-13: AGPL-3.0.** The contradiction had a mundane cause — `backend/package.json`'s `"license": "MIT"` was the Medusa starter template's own unedited metadata, sitting beside its equally unedited `medusa-starter-default` package name. No one ever chose MIT for FBM, so this is a correction rather than a change of licence. `LICENSE` carries the AGPL-3.0 text verbatim; `NOTICE` records why the AGPL rather than a permissive licence (section 13 — FBM is encountered over a network, and a permissive licence would let an operator run a closed fork owing its users nothing), the third-party attribution MIT requires for the Medusa and Mercur code FBM derives from, and three questions left to the operator: who the copyright holder legally is, whether to offer commercial terms alongside, and whether to require a CLA. A dependency scan across 1694 packages found no GPL/AGPL/SSPL/BUSL/Elastic package and nothing that conflicts. Every workspace `package.json` now declares `AGPL-3.0-only`. | repo root; `package.json` |
 
 > **Verified solid (compliance):** the CCR closed-loop guard is real and CI-gated
 > (not `continue-on-error`); escrow is DB-constrained; donations fail closed;
@@ -313,7 +313,7 @@ triaged, not ignored.)
 - [ ] **LEG-5/6** Seller KYC/tax (W-9/TIN); email consent + CAN-SPAM footer; prohibited-items policy + a working abuse/DMCA intake. *(Legal + Backend)*
 
 ### P2 — fast-follow (first 30 days)
-- [ ] **LEG-7/9** Align `POSTURE_A_COMPLIANCE.md` with the wired controls; resolve the license contradiction (add a `LICENSE`, fix the MIT/"Open Source" mismatch). 
+- [ ] **LEG-7** Align `POSTURE_A_COMPLIANCE.md` with the wired controls. ~~**LEG-9** resolve the license contradiction~~ — **done 2026-09-13**: `LICENSE` (AGPL-3.0) and `NOTICE` shipped, every `package.json` declares `AGPL-3.0-only`, and the "Open Source. Community Governed." badge is now backed. 
 - [ ] **FE-5/6/7** Add `sitemap.ts`; remove `mercurjs.com` fallbacks; stop ignoring storefront type errors.
 - [ ] **INFRA-7/8** Pin `minio`; add resource limits; provision Grafana dashboards/alerts; split migrate/seed out of the replica start path.
 - [ ] **LEG-8** Consent banner; set a real `CREATOR_ATTRIBUTION_IP_SALT`; remove trademarked/stock assets; add retention/purge jobs.

@@ -874,9 +874,14 @@ Deleted 2026-09-10; §3.4.
 This is the recommendation this document declines, and the reason is in the
 repo rather than in ethics.
 
-`docs/MEMBER_GOVERNANCE.md:142-143`: FBM has no `LICENSE` file — "A fork right
-that is not licensed is a norm, not a right." (Blackout, by contrast, carries
-`LICENSE-AGPL-3.0`, `LICENSE-GPL-3.0` and `LICENSE-COMMERCIAL`.) FBM's stated
+`docs/MEMBER_GOVERNANCE.md:142-143`: FBM had no `LICENSE` file — "A fork right
+that is not licensed is a norm, not a right." **Closed 2026-09-13: AGPL-3.0**
+(`LICENSE`, `NOTICE`), which makes step (1) of the recommendation below done
+and unblocks the rest. (Blackout carries `LICENSE-AGPL-3.0`,
+`LICENSE-GPL-3.0` and `LICENSE-COMMERCIAL` — but note that its
+`LICENSE-COMMERCIAL` is Element's, inherited unmodified from the Synapse fork
+and pointing at `licensing@element.io`, so it is not a coalition licence and
+was not treated as a template.) FBM's stated
 philosophy is forkable, community-data-sovereign infrastructure, and the whole
 legitimacy of asking members to invest their commerce in it rests on their
 being able to leave with it. That exit right is currently unlicensed.
@@ -1497,18 +1502,26 @@ Nothing here loosens the standing gates in
    the Posture A bullet to say so rather than leaving it claiming quiescence.
 6. **Whether `/invest` comes down (§7.2, §5.6a).** Gating the API without
    touching the page leaves an advertisement for a 404.
-7. **Ship FBM's `LICENSE` (§5.3).** An operator action, and the choice of
-   licence is not one this document should make for you; it also unblocks the
-   honest version of the lock-in strategy. Two things worth knowing before
-   choosing. `backend/package.json` already declares `"license": "MIT"` — the
-   only licence declaration anywhere in the repo, made in one package rather
-   than for the project, and it is not a repository licence. And
-   `docs/AGGRESSIVE_OPERATIONS_GUIDE.md` twice describes forking "under its
-   open-source license" as the coalition's exit right, so two canonical
-   documents already assume a licence that does not exist. Blackout, for
-   comparison, carries `LICENSE-AGPL-3.0`, `LICENSE-GPL-3.0` and
-   `LICENSE-COMMERCIAL`; whether FBM matches that posture or takes the
-   permissive one its own dependency policy prefers is exactly the decision.
+7. ~~**Ship FBM's `LICENSE` (§5.3).**~~ **Done 2026-09-13 — AGPL-3.0.** This
+   document declined to make the choice; it has since been made and is
+   recorded with its reasoning in `NOTICE`. Two things this entry got wrong
+   are worth keeping visible. First, it treated `backend/package.json`'s
+   `"license": "MIT"` as a licence declaration to be weighed. It was not one:
+   that field is the Medusa starter template's own metadata, left unedited
+   beside its equally unedited `medusa-starter-default` package name, so there
+   was no prior choice to overturn. Second, it framed the decision as matching
+   Blackout's posture versus taking "the permissive one its own dependency
+   policy prefers" — but that policy governs what FBM may take *in*, not what
+   it gives *out*, and the two do not trade off. Licensing FBM under the AGPL
+   in fact widens what it may absorb, since an AGPL work can incorporate GPL
+   and AGPL sources a permissive FBM could not. The deciding argument was
+   section 13: FBM is encountered over a network, so a permissive licence
+   would let an operator run a closed fork owing its users nothing, which is
+   the arrangement the project exists to be an alternative to. Three questions
+   remain genuinely open and are recorded in `NOTICE` — the legal identity of
+   the copyright holder, whether to offer commercial terms alongside, and
+   whether to require a CLA. Each gets harder once an outside contribution
+   lands.
 8. **Abatement subcontractor relationships (§6).** Contracts, not code.
 
 ---

@@ -138,9 +138,13 @@ What genuinely backs the platform-level claim today:
    available, and it is real in a way a consultative process would not be.
 3. **Project-level self-governance**, per §1.
 
-It is worth stating plainly that (2) is weakened while the repository carries no
-`LICENSE` file — see `docs/TRUST_LANDSCAPE_AUDIT.md` Finding D. A fork right
-that is not licensed is a norm, not a right.
+It was worth stating plainly that (2) was weakened while the repository carried
+no `LICENSE` file — a fork right that is not licensed is a norm, not a right.
+**Resolved 2026-09-13:** FBM is licensed under the AGPL-3.0 (`LICENSE`,
+`NOTICE`), so (2) is now a right. The licence goes further than a bare fork
+right: under section 13, an operator who runs a modified FBM as a network
+service must offer its source to the people using it, so the exit does not
+depend on this project's goodwill or on its continued existence.
 
 ### If platform governance is built
 

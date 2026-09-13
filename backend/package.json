@@ -3,7 +3,7 @@
   "version": "0.0.1",
   "description": "A starter for Medusa projects.",
   "author": "Medusa (https://medusajs.com)",
-  "license": "MIT",
+  "license": "AGPL-3.0-only",
   "packageManager": "pnpm@11.20.0",
   "keywords": [
     "sqlite",

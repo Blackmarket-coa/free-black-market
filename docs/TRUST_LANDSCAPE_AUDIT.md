@@ -345,16 +345,28 @@ handler at all**, next to a hardcoded "Import progress: 3/4 products previewed" 
 choice. So this is not lead capture with optimistic labelling; it is a mockup rendered as
 if it were live onboarding.
 
-### D. "Open Source. Community Governed." with no licence
+### D. ~~"Open Source. Community Governed." with no licence~~ — closed 2026-09-13
 
-The homepage badge (`(main)/page.tsx:363`) says "Open Source. Community Governed." There is
-no `LICENSE` file in the repository, and the root `README.md` says so explicitly: *"This
+The homepage badge (`(main)/page.tsx:363`) said "Open Source. Community Governed." while the
+repository carried no `LICENSE` file, and the root `README.md` said so explicitly: *"This
 repository does not currently include a `LICENSE` file. Until one is added, treat the code
-as 'all rights reserved'."*
+as 'all rights reserved'."* The badge was therefore an unbacked claim, and it mattered beyond
+the badge: the analysis's proposed wind-down insurance for paid add-ons — "lean on the
+open-source, self-hostable nature of connect.js as the ultimate insurance" — did not exist
+as a legal matter.
 
-This matters beyond the badge. The analysis's proposed wind-down insurance for paid add-ons
-— "lean on the open-source, self-hostable nature of connect.js as the ultimate insurance" —
-does not exist as a legal matter today.
+**FBM is now licensed under the AGPL-3.0** (`LICENSE`, with `NOTICE` recording the reasoning
+and the third-party attribution). The badge is backed, the fork right in
+`docs/MEMBER_GOVERNANCE.md` is a right rather than a norm, and the self-hosting insurance is
+real. Section 13 does more than the badge claims: an operator running a modified FBM as a
+network service owes its users the source, so the exit right survives someone else taking
+the code as well as this project abandoning it.
+
+One caveat carried forward into `NOTICE`: the copyright line names "Blackmarket Coalition",
+which is the project's name and not necessarily a legal entity, and the repository history
+shows more than one committer address. Both need settling before an outside contribution
+lands — not because the licence fails without it, but because relicensing later requires
+every holder's agreement.
 
 Resolving it is a licensing decision for the maintainers, not an engineering one. It is
 recorded here so it is not mistaken for an oversight.
