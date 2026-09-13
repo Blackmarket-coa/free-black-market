@@ -1,4 +1,8 @@
-import { MedusaService } from "@medusajs/framework/utils"
+import {
+  ContainerRegistrationKeys,
+  MedusaService,
+} from "@medusajs/framework/utils"
+import { createLogger } from "../../shared/logger"
 import {
   OrderCycle,
   OrderCycleProduct,
@@ -11,6 +15,8 @@ import {
   ShareBoxSubscription,
   ShareBox,
 } from "./models"
+
+const log = createLogger("modules/order-cycle")
 
 type _OrderCycleStatus = "draft" | "upcoming" | "open" | "closed" | "dispatched" | "cancelled"
 type FeeType = "admin" | "packing" | "transport" | "fundraising" | "sales" | "coordinator"
@@ -680,10 +686,116 @@ class OrderCycleModuleService extends MedusaService({
       }
     }
 
-    return this.updateOrderCycleProducts({
-      id: product.id,
-      sold_quantity: product.sold_quantity + quantity,
-    })
+    return this.applySoldQuantity(product, quantity)
+  }
+
+  /**
+   * Resolve a knex-style pg connection with `.raw`, for the one update the
+   * MedusaService CRUD cannot express. Mirrors the resolver in
+   * `modules/demand-pool/service.ts` and `modules/hawala-ledger/service.ts`.
+   * Returns undefined when no connection is reachable — unit tests without DI
+   * take the read-modify-write fallback in `applySoldQuantity`.
+   */
+  private resolvePgConnection():
+    | { raw: (sql: string, bindings?: any[]) => Promise<any> }
+    | undefined {
+    const container = (this as any).__container__
+    try {
+      const pg =
+        container?.resolve?.(ContainerRegistrationKeys.PG_CONNECTION) ??
+        container?.[ContainerRegistrationKeys.PG_CONNECTION]
+      if (pg?.raw) return pg
+    } catch {
+      // fall through
+    }
+    try {
+      const em =
+        (this as any).baseRepository_?.getActiveManager?.() ??
+        container?.manager
+      const knex = em?.getConnection?.()?.getKnex?.()
+      if (knex?.raw) return knex
+    } catch {
+      // no reachable connection
+    }
+    return undefined
+  }
+
+  /**
+   * Add `quantity` to a cycle product's `sold_quantity` without losing a
+   * concurrent increment, and report when the result exceeds capacity (D9-1).
+   *
+   * ## Why one UPDATE rather than read-then-write
+   *
+   * The previous form read `sold_quantity`, added, and wrote the sum back. Two
+   * buyers completing at once both read the same starting value and the second
+   * write overwrote the first: a lost update, so the cycle undercounted its own
+   * sales and oversold without even recording that it had. `col = col + ?` in
+   * a single statement cannot lose one. `sold_quantity` is a plain integer with
+   * no `raw_` sibling (unlike `price_override`), so the ORM reads a raw-SQL
+   * increment back correctly — the same condition `demand-pool` checks before
+   * doing this.
+   *
+   * ## Why it increments past capacity instead of refusing
+   *
+   * This runs from the `order.placed` subscriber, which fires **after** the
+   * buyer has paid. Refusing the increment there would leave the money taken,
+   * the order real, and the cycle unaware of a sale its coordinator has to
+   * pack — silently under-reporting is worse than an overshoot, and it would
+   * also desynchronise `sold_quantity` from the `order_cycle_sale` rows written
+   * moments earlier for idempotency.
+   *
+   * So the sale always lands, and an overshoot is made **visible** instead:
+   * `RETURNING` gives the post-state, and crossing capacity is logged as a
+   * warning naming the cycle, variant and the amount over. A coordinator can
+   * then refund or source more, which is a decision only a person can make.
+   *
+   * Prevention belongs earlier, before any money moves, and lives in
+   * `workflows/hooks/validate-order-cycle.ts` — that is what stops the ordinary
+   * case. What survives it is the genuine simultaneous race, which is exactly
+   * the case that has to be recorded rather than refused.
+   */
+  private async applySoldQuantity(
+    product: { id: string; sold_quantity: number; available_quantity?: number | null },
+    quantity: number
+  ) {
+    const pg = this.resolvePgConnection()
+
+    if (!pg) {
+      // No DI (unit tests). Not race-safe, and cannot be: there is no database
+      // to be atomic against.
+      return this.updateOrderCycleProducts({
+        id: product.id,
+        sold_quantity: product.sold_quantity + quantity,
+      })
+    }
+
+    const result = await pg.raw(
+      `UPDATE "order_cycle_product"
+          SET "sold_quantity" = "sold_quantity" + ?, "updated_at" = now()
+        WHERE "id" = ? AND "deleted_at" IS NULL
+    RETURNING "sold_quantity", "available_quantity"`,
+      [quantity, product.id]
+    )
+
+    const row = (result?.rows ?? result)?.[0] as
+      | { sold_quantity: number; available_quantity: number | null }
+      | undefined
+
+    if (!row) {
+      // The product vanished between the read above and this write.
+      throw new Error("Product not found in order cycle")
+    }
+
+    const capacity = row.available_quantity
+    if (capacity !== null && capacity !== undefined && row.sold_quantity > capacity) {
+      log.warn(
+        `[order-cycle] OVERSOLD product ${product.id}: sold ${row.sold_quantity} ` +
+          `of ${capacity} available (${row.sold_quantity - capacity} over). ` +
+          `The sale is recorded — a coordinator has to refund or source more.`
+      )
+    }
+
+    return this.retrieveOrderCycleProduct(product.id)
   }
 
   async cloneOrderCycle(
