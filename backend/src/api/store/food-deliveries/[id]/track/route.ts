@@ -1,4 +1,8 @@
 import { z } from "zod"
+import {
+  actorMayReadDelivery,
+  forbidden,
+} from "../../../../../shared/community-read-access"
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { FOOD_DISTRIBUTION_MODULE } from "../../../../../modules/food-distribution"
 import type FoodDistributionService from "../../../../../modules/food-distribution/service"
@@ -26,10 +30,12 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
   const foodDistribution = req.scope.resolve<FoodDistributionService>(FOOD_DISTRIBUTION_MODULE)
   
   const delivery = await foodDistribution.retrieveFoodDelivery(id)
-  
-  if (!delivery) {
-    res.status(404).json({ message: "Delivery not found" })
-    return
+
+  // Producer, courier or recipient only (D10-5). Unauthenticated over
+  // enumerable ids, this returned a home address, its coordinates, the live
+  // position of the courier heading there and an ETA.
+  if (!delivery || !(await actorMayReadDelivery(req, delivery))) {
+    return forbidden(res)
   }
   
   // Get courier info if assigned

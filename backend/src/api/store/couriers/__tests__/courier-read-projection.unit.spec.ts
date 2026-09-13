@@ -165,16 +165,24 @@ describe("GET /store/delivery-batches/:id", () => {
   it("no longer publishes the courier's full name and phone", async () => {
     // This route hand-built `{ id, name: "First Last", phone, vehicle_type }`
     // — more than /food-deliveries/:id/track gives even the customer whose
-    // delivery is in flight. Who may read a batch at all is still open under
-    // D10-5; narrowing the courier neither answers that nor waits on it.
+    // delivery is in flight. The caller here is the batch's own planner:
+    // D10-5 has since scoped the route to them and to the assigned courier
+    // (`__tests__/d10-5-read-scoping` covers that refusal), and the
+    // projection still applies to both — the courier's phone number is not
+    // the planner's to read either.
     const service = {
-      retrieveDeliveryBatch: jest.fn(async () => ({ id: "bat_1", courier_id: "cour_1" })),
+      retrieveDeliveryBatch: jest.fn(async () => ({
+        id: "bat_1",
+        owner_id: "cus_planner",
+        courier_id: "cour_1",
+      })),
       listFoodDeliveries: jest.fn(async () => []),
       retrieveCourier: jest.fn(async () => ROW),
     }
     const req = {
       params: { id: "bat_1" },
       query: {},
+      auth_context: { actor_id: "cus_planner", actor_type: "customer" },
       scope: {
         resolve: (key: string) => {
           if (key === FOOD_DISTRIBUTION_MODULE) return service
@@ -196,13 +204,18 @@ describe("GET /store/delivery-batches/:id", () => {
 
   it("still reports a batch with no courier assigned", async () => {
     const service = {
-      retrieveDeliveryBatch: jest.fn(async () => ({ id: "bat_1", courier_id: null })),
+      retrieveDeliveryBatch: jest.fn(async () => ({
+        id: "bat_1",
+        owner_id: "cus_planner",
+        courier_id: null,
+      })),
       listFoodDeliveries: jest.fn(async () => []),
       retrieveCourier: jest.fn(async () => null),
     }
     const req = {
       params: { id: "bat_1" },
       query: {},
+      auth_context: { actor_id: "cus_planner", actor_type: "customer" },
       scope: {
         resolve: (key: string) => {
           if (key === FOOD_DISTRIBUTION_MODULE) return service

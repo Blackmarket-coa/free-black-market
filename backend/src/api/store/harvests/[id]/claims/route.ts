@@ -1,5 +1,9 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
+import {
+  actorIsGardenMember,
+  forbidden,
+} from "../../../../../shared/community-read-access"
 import { actingCustomerId } from "../../../../../shared/actor-scope"
 
 const HARVEST_MODULE = "harvestModuleService"
@@ -14,12 +18,32 @@ interface HarvestServiceType {
  * 
  * Get claims for a harvest
  */
+/**
+ * Claims are visible to members of the garden that grew the harvest, and to
+ * nobody else (D10-5). A claim record says how much free food a named person
+ * took; published to strangers that is a means-testing disclosure about
+ * someone who never agreed to one. Within the garden it is the distribution
+ * record members share.
+ *
+ * The garden is reached through the harvest rather than taken from the caller.
+ */
 export async function GET(
   req: MedusaRequest,
   res: MedusaResponse
 ) {
   const { id } = req.params
   const query = req.scope.resolve(ContainerRegistrationKeys.QUERY)
+
+  const { data: harvests } = await query.graph({
+    entity: "garden_harvest",
+    fields: ["id", "garden_id"],
+    filters: { id },
+  })
+  const gardenId = (harvests?.[0] as { garden_id?: string } | undefined)?.garden_id
+
+  if (!gardenId || !(await actorIsGardenMember(req, gardenId))) {
+    return forbidden(res)
+  }
 
   const { data: claims } = await query.graph({
     entity: "harvest_claim",

@@ -1,5 +1,10 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
+import {
+  actorIsAnyOf,
+  actorIsGardenMember,
+  forbidden,
+} from "../../../shared/community-read-access"
 import { actingCustomerId } from "../../../shared/actor-scope"
 
 const VOLUNTEER_MODULE = "volunteerModuleService"
@@ -18,12 +23,44 @@ function calculateTimeCreditValue(hours: number, creditRate: number): number {
  * 
  * List volunteer logs
  */
+/**
+ * Two readings are allowed, and no third (D10-5):
+ *
+ * - **Your own history**, `?customer_id=<you>` — the subject reading the
+ *   subject.
+ * - **A garden's log**, `?garden_id=<g>` — for a member of that garden. Hours
+ *   and credits are the shared record a garden verifies against.
+ *
+ * Neither is optional. The handler used to accept a bare `?customer_id=` from
+ * anyone, which returned one named person's entire attendance history — when
+ * they turn up, how often, how long they stay — to an unauthenticated caller.
+ * With no filter at all it returned every log in every garden.
+ *
+ * An unscoped request is a 400 rather than a silent cross-garden dump: there
+ * is no sensible whole-platform answer to this question, so asking for one is
+ * a malformed request, not a forbidden one.
+ */
 export async function GET(
   req: MedusaRequest,
   res: MedusaResponse
 ) {
   const query = req.scope.resolve(ContainerRegistrationKeys.QUERY)
   const { garden_id, customer_id, status } = req.query
+
+  const gardenId = typeof garden_id === "string" ? garden_id : null
+  const subjectId = typeof customer_id === "string" ? customer_id : null
+
+  if (!gardenId && !subjectId) {
+    return res.status(400).json({
+      message: "Provide garden_id, or customer_id for your own logs.",
+      type: "invalid_data",
+    })
+  }
+
+  const readingOwnHistory = !!subjectId && actorIsAnyOf(req, subjectId)
+  if (!readingOwnHistory && !(await actorIsGardenMember(req, gardenId))) {
+    return forbidden(res)
+  }
 
   const filters: Record<string, unknown> = {}
   if (garden_id) filters.garden_id = garden_id

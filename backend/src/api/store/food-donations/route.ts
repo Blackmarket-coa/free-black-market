@@ -1,4 +1,8 @@
 import { z } from "zod"
+import {
+  actorOwnsProducer,
+  forbidden,
+} from "../../../shared/community-read-access"
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { FOOD_DISTRIBUTION_MODULE } from "../../../modules/food-distribution"
 import type FoodDistributionService from "../../../modules/food-distribution/service"
@@ -66,9 +70,24 @@ const createDonationSchema = z.object({
 // List donations and food rescue orders
 // ===========================================
 
+/**
+ * A producer's own donation board (D10-5), same field set and same reasoning
+ * as the trade list. Recipients of donated food are the last people whose
+ * names and addresses should be enumerable by anyone who asks.
+ */
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
   try {
     const query = listDonationsQuerySchema.parse(req.query)
+
+    if (!query.producer_id) {
+      return res.status(400).json({
+        message: "Provide producer_id.",
+        type: "invalid_data",
+      })
+    }
+    if (!(await actorOwnsProducer(req, query.producer_id))) {
+      return forbidden(res)
+    }
     
     const foodDistribution = req.scope.resolve<FoodDistributionService>(FOOD_DISTRIBUTION_MODULE)
     
