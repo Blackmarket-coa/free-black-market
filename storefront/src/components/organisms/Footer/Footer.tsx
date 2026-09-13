@@ -13,7 +13,7 @@ function CopyrightYear() {
 export function Footer() {
   return (
     <footer className="bg-primary container">
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4">
         {/* Customer Services Column */}
         <div className="p-6 border rounded-sm hover:shadow-solarpunk-sm transition-shadow duration-300">
           <h2 className="heading-sm text-primary mb-3 uppercase">
@@ -57,6 +57,22 @@ export function Footer() {
                   {label}
                 </LocalizedClientLink>
               )
+            ))}
+          </nav>
+        </div>
+
+        {/* Legal Column — LEG-1: these must be reachable from every page. */}
+        <div className="p-6 border rounded-sm hover:shadow-solarpunk-sm transition-shadow duration-300">
+          <h2 className="heading-sm text-primary mb-3 uppercase">Legal</h2>
+          <nav className="space-y-3" aria-label="Legal navigation">
+            {footerLinks.legal.map(({ label, path }) => (
+              <LocalizedClientLink
+                key={label}
+                href={path}
+                className="block label-md hover:text-action transition-colors duration-200"
+              >
+                {label}
+              </LocalizedClientLink>
             ))}
           </nav>
         </div>

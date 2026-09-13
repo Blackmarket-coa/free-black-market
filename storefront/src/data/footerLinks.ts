@@ -29,6 +29,15 @@ const links = {
     { label: 'Community Gardens', path: '/gardens' },
     { label: 'Community Kitchens', path: '/kitchens' },
   ],
+  // Required on every page: LEG-1 in PRE_LAUNCH_AUDIT flagged that no legal
+  // pages existed and none were linked. Kept as their own column rather than
+  // folded into "About" so they are findable where people look for them.
+  legal: [
+    { label: 'Terms of Service', path: '/legal/terms' },
+    { label: 'Privacy Policy', path: '/legal/privacy' },
+    { label: 'Refunds & Returns', path: '/legal/refunds' },
+    { label: 'Buyer Protection', path: '/buyer-protection' },
+  ],
   connect: [
     { label: 'GitHub Transparency', path: GITHUB_REPO_URL },
     { label: 'TikTok', path: 'https://www.tiktok.com/@blackmarketcoa' },
