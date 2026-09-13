@@ -42,7 +42,7 @@ jobs:
           docker pull nginx:1.27-alpine &
           docker pull postgres:15-alpine &
           docker pull redis:7-alpine &
-          docker pull minio/minio:latest &
+          docker pull quay.io/minio/minio:latest &
           wait
 
       - name: Install Playwright browsers
