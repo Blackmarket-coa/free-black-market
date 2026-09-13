@@ -120,6 +120,8 @@ async function getCountryCode(
 function applyAttributionCookies(request: NextRequest, response: NextResponse) {
   const VISITOR_COOKIE = "_fbm_visitor"
   const AFF_COOKIE = "_fbm_aff"
+  const BOOKING_COOKIE = "_fbm_booking"
+  const BOOKING_MAX_AGE_HOURS = 24
   const COOKIE_MAX_AGE_DAYS = 90
   const AFF_MAX_AGE_DAYS =
     parseInt(process.env.NEXT_PUBLIC_CREATOR_ATTRIBUTION_DEFAULT_COOKIE_DAYS || "7", 10) || 7
@@ -138,6 +140,28 @@ function applyAttributionCookies(request: NextRequest, response: NextResponse) {
   if (fbmRef) {
     response.cookies.set(AFF_COOKIE, `${fbmRef}.${Date.now()}`, {
       maxAge: AFF_MAX_AGE_DAYS * 24 * 60 * 60,
+      sameSite: "lax",
+      path: "/",
+    })
+  }
+
+  // Booking cookie: pin if `?booking_id=` is present (D9-6).
+  //
+  // `GET /store/embed/bookings` hands back a checkout URL carrying this
+  // parameter, and nothing read it back out — the string appeared in exactly
+  // one place in the repository, so no booking was ever linked to its order and
+  // no confirmation email was ever sent. Pinned here for the same reason the
+  // affiliate code is: the visitor lands on a product page and creates the cart
+  // several navigations later, by which time the query string is long gone.
+  //
+  // Short-lived on purpose. A booking is a slot at a time, so a stale id in a
+  // 90-day cookie would attach a months-old reservation to an unrelated
+  // purchase. One day is longer than any checkout and shorter than any booking
+  // horizon.
+  const bookingId = request.nextUrl.searchParams.get("booking_id")
+  if (bookingId) {
+    response.cookies.set(BOOKING_COOKIE, bookingId, {
+      maxAge: BOOKING_MAX_AGE_HOURS * 60 * 60,
       sameSite: "lax",
       path: "/",
     })

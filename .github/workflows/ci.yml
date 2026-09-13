@@ -97,6 +97,30 @@ jobs:
         working-directory: storefront
         run: pnpm typecheck
 
+      # Generate Medusa's types before typechecking (W3-7).
+      #
+      # `query.graph()`'s types — `RemoteQueryFilters` above all — are generated
+      # into `.medusa/`, and without them `filters` is loosely typed. A nested
+      # relation filter such as `filters: { orders: { id } }` passed this job
+      # and then failed `Build backend` with TS2322 minutes later in a different
+      # workflow, which is how it turned #852 red after a local `tsc --noEmit`
+      # came back clean.
+      #
+      # `medusa build` is the only way to generate them in Medusa 2.14 — there
+      # is no standalone generate command — so this costs ~35s here and repeats
+      # work the Docker build also does. Worth it: nothing broken could merge
+      # before (`Build backend` is blocking), but the signal arrived in the
+      # wrong job, minutes late.
+      #
+      # Order matters. `medusa build` EXCLUDES `src/**/__tests__/**` from its
+      # tsconfig, so it cannot catch a type error in a spec; `tsc --noEmit`
+      # covers the specs but needs the generated types to catch the other half.
+      # Neither check covers the other, which is why both run, in this order.
+      # The matrix is in `backend/CONTRIBUTING.md`.
+      - name: Generate Medusa types
+        working-directory: backend
+        run: pnpm exec medusa build
+
       - name: TypeScript check
         working-directory: backend
         run: pnpm exec tsc --noEmit
