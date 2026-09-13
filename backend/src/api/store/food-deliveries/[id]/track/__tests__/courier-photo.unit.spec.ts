@@ -1,4 +1,5 @@
 import { GET } from "../route"
+import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 import { FOOD_DISTRIBUTION_MODULE } from "../../../../../../modules/food-distribution"
 
 /**
@@ -31,8 +32,14 @@ const createRes = (): TestRes => {
   return res
 }
 
+// The caller is the recipient of the delivery, which is who actually sees
+// this block. D10-5 scoped the route to its producer, courier or recipient,
+// so an unauthenticated request now gets a 403 and never reaches the
+// projection these tests are about — `__tests__/d10-5-read-scoping` covers
+// that refusal, and this file assumes it has been passed.
 const makeReq = (courier: Record<string, unknown> | null) => ({
   params: { id: "del_1" },
+  auth_context: { actor_id: "cus_recipient", actor_type: "customer" },
   scope: {
     resolve: (key: string) => {
       if (key === FOOD_DISTRIBUTION_MODULE) {
@@ -40,9 +47,20 @@ const makeReq = (courier: Record<string, unknown> | null) => ({
           retrieveFoodDelivery: jest.fn(async () => ({
             id: "del_1",
             status: "EN_ROUTE_DELIVERY",
+            order_id: "fo_1",
             courier_id: courier ? "cour_1" : null,
           })),
           retrieveCourier: jest.fn(async () => courier),
+        }
+      }
+      if (key === ContainerRegistrationKeys.QUERY) {
+        return {
+          graph: async ({ entity }: { entity: string }) => ({
+            data:
+              entity === "food_order"
+                ? [{ id: "fo_1", customer_id: "cus_recipient" }]
+                : [],
+          }),
         }
       }
       throw new Error(`unresolvable: ${String(key)}`)

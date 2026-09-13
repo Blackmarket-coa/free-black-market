@@ -16,6 +16,7 @@ import {
 import { getRegion } from "./regions"
 import { parseVariantIdsFromError } from "@/lib/helpers/parse-variant-error"
 import { applyAttributionToCart } from "./attribution"
+import { applyBookingToCart } from "./booking"
 
 /**
  * Retrieves a cart by its ID. If no ID is provided, it will use the cart ID from the cookies.
@@ -88,6 +89,15 @@ export async function getOrSetCart(countryCode: string) {
       await applyAttributionToCart(cart.id)
     } catch {
       // never block cart load on attribution failures
+    }
+
+    // Same, for a booking the visitor arrived with (`?booking_id=` →
+    // `_fbm_booking`). Without this the id never leaves the URL and
+    // `link-booking-on-order-placed` can never fire — D9-6.
+    try {
+      await applyBookingToCart(cart.id)
+    } catch {
+      // never block cart load on booking failures
     }
   }
 

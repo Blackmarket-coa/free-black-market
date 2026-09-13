@@ -12,6 +12,29 @@ import { Modules } from "@medusajs/framework/utils"
 import ticketPurchaseOrderLink from "../links/ticket-purchase-order"
 import { validateTicketOrderStep, ValidateTicketOrderStepInput } from "./steps/validate-ticket-order"
 
+/**
+ * The refetched order row, narrowed where the query result enters the
+ * workflow.
+ *
+ * `useQueryGraphStep` types its rows as the full generated `Order`, whose
+ * `items` alone is `Maybe<OrderLineItem>[]` with every field a
+ * `T | WorkflowData<T>` union. Carrying that into `WorkflowResponse` exhausts
+ * the compiler's comparison depth (TS2321). The cut is made once, here, for
+ * the reason spelled out in `create-digital-product-order`: narrowing at the
+ * use site does not work, because the comparison happens when the reference is
+ * typed.
+ *
+ * The index signature is deliberate. `POST /store/carts/:id/complete-tickets`
+ * serializes `result.order` straight to the response, and this cast is
+ * type-only — the runtime object still carries every field the query asked
+ * for, so the wire payload is unchanged. Enumerating the fields here would
+ * imply a contract this workflow does not actually narrow.
+ */
+type CompletedTicketOrderRow = {
+  id: string
+  [key: string]: unknown
+}
+
 export type CompleteCartWithTicketsWorkflowInput = {
   cart_id: string
 }
@@ -106,7 +129,9 @@ export const completeCartWithTicketsWorkflow = createWorkflow(
       filters: {
         id: order.id
       }
-    }).config({ name: "refetch-order" })
+    }).config({ name: "refetch-order" }) as unknown as {
+      data: CompletedTicketOrderRow[]
+    }
 
     releaseLockStep({
       key: input.cart_id,

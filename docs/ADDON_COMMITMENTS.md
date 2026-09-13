@@ -126,12 +126,14 @@ deals go wrong:
   window — days, not the years an unhonoured lifetime deal represents.
 - The code is public, so another operator can run the same platform.
 
-**The caveat, stated plainly:** the repository currently has no `LICENSE` file,
-and the root `README.md` says to treat the code as all rights reserved. Until a
-licence is added, "you could run it yourself" is a description of what is
-technically possible, not a right you hold. That gap is tracked as Finding D in
-`docs/TRUST_LANDSCAPE_AUDIT.md` and should be closed before any wind-down clause
-leans on self-hosting.
+**The caveat that used to sit here is closed.** Until 2026-09-13 the repository
+had no `LICENSE` file and the root `README.md` said to treat the code as all
+rights reserved, so "you could run it yourself" described what was technically
+possible rather than a right anyone held. FBM is now AGPL-3.0 (`LICENSE`,
+`NOTICE`), and a wind-down clause may lean on self-hosting: the right is real,
+it survives this project, and under section 13 it survives another operator
+taking the code and closing it, since running a modified FBM as a network
+service obliges them to offer its source to the people using it.
 
 ---
 

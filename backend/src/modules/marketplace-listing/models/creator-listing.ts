@@ -77,10 +77,6 @@ const CreatorListing = model
     theme_slug: model.text().nullable(),
     emoji_pack_slug: model.text().nullable(),
     /**
-     * Compatibility map e.g. { blackout: ">=1.0", fbm: ">=2.12" }.
-     */
-    compatible_with: model.json().nullable(),
-    /**
      * Distinct from `seller_id` to support white-label distribution where the
      * listing seller is not the developer earning the plugin-developer split.
      */

@@ -1,4 +1,8 @@
 import { z } from "zod"
+import {
+  actorOwnsProducer,
+  forbidden,
+} from "../../../shared/community-read-access"
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { FOOD_DISTRIBUTION_MODULE } from "../../../modules/food-distribution"
 import type FoodDistributionService from "../../../modules/food-distribution/service"
@@ -70,9 +74,27 @@ const _respondToTradeSchema = z.object({
 // List trade offers
 // ===========================================
 
+/**
+ * A producer's own trade board (D10-5). `food_order` rows carry
+ * `recipient_name`, `recipient_phone`, `recipient_email` and the delivery
+ * address — the same field set D10-1 closed on
+ * `/store/food-producers/:id/orders`, reachable here through a different
+ * door. `applyRecipientAnonymity` honours the recipient's own flag but says
+ * nothing about who may ask, so the caller must now own the producer.
+ */
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
   try {
     const query = listTradesQuerySchema.parse(req.query)
+
+    if (!query.producer_id) {
+      return res.status(400).json({
+        message: "Provide producer_id.",
+        type: "invalid_data",
+      })
+    }
+    if (!(await actorOwnsProducer(req, query.producer_id))) {
+      return forbidden(res)
+    }
     
     const foodDistribution = req.scope.resolve<FoodDistributionService>(FOOD_DISTRIBUTION_MODULE)
     

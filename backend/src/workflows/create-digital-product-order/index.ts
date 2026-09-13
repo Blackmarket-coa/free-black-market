@@ -22,6 +22,42 @@ import createDigitalProductOrderStep, {
 import { DIGITAL_PRODUCT_MODULE } from "../../modules/digital-product"
 import digitalProductOrderOrderLink from "../../links/digital-product-order";
 
+/**
+ * The order fields this workflow reads, narrowed where the query result enters
+ * it.
+ *
+ * `useQueryGraphStep` types its rows as the full generated `Order` — a hundred
+ * and some fields, each one a `T | WorkflowData<T>` union — and every SDK
+ * construct that touches them has to compare
+ * `(Order | WorkflowData<Order>)[]` against
+ * `((Order | WorkflowData<Order>) & Order)[]`. That exhausts the compiler's
+ * comparison depth (TS2321). Narrowing at each use site does not work: the
+ * comparison happens when the reference is typed, so clearing it at the
+ * `transform` simply moved the same error onto the `WorkflowResponse`. The deep
+ * type has to be cut where it enters, once.
+ *
+ * Narrowing here also narrows the `order` this workflow returns, which is fine
+ * and was checked rather than assumed: both callers
+ * (`api/v1/checkout/sessions/[id]/page` and the Blackout checkout route)
+ * already read the result as `{ order?: { id?: string } }` and use nothing
+ * else.
+ *
+ * The error surfaced only once `.medusa/` generated types existed, so neither
+ * `medusa build` nor the CI typecheck job ever reported it — that gap is W3-7,
+ * and this is one of the two files that had to be fixed before the job could
+ * generate types and stay green.
+ */
+type DigitalProductItem = {
+  id: string
+  quantity: number
+  variant?: { digital_product?: unknown } | null
+} | null
+
+type DigitalProductOrderRow = {
+  id: string
+  items?: DigitalProductItem[]
+}
+
 type WorkflowInput = {
   cart_id: string
 }
@@ -55,7 +91,7 @@ const createDigitalProductOrderWorkflow = createWorkflow(
       options: {
         throwIfKeyNotFound: true
       }
-    })
+    }) as unknown as { data: DigitalProductOrderRow[] }
 
     const { data: existingLinks } = useQueryGraphStep({
       entity: digitalProductOrderOrderLink.entryPoint,

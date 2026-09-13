@@ -1,5 +1,6 @@
 {
   "name": "@medusajs/dashboard",
+  "license": "AGPL-3.0-only",
   "version": "2.14.2",
   "packageManager": "pnpm@11.20.0",
   "scripts": {

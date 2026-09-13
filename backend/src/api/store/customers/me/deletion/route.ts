@@ -1,6 +1,7 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { Modules } from "@medusajs/framework/utils"
 import { createLogger } from "../../../../../shared/logger"
+import { eraseCustomerAcrossRegistry } from "../../../../../lib/customer-erasure"
 
 const log = createLogger("api/store/customers/me/deletion")
 
@@ -69,7 +70,20 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     },
   } as any)
 
-  // 3) Revoke the auth identity so the account can no longer sign in (best-effort).
+  // 3) Apply the customer-data registry across every other module (D11-1).
+  //
+  // Before this, deletion touched addresses, the customer record and the auth
+  // identity, and nothing else — while 47 tables carried a `customer_id`. A
+  // past delivery kept the recipient's name, phone and street address;
+  // volunteer attendance, garden membership, ledger balances, governance votes
+  // and wellness records all survived. `lib/customer-data-registry.ts` decides
+  // what happens to each, and a test fails the build when a model gains a
+  // `customer_id` without an entry, so this cannot silently fall behind again.
+  const registryResults = await eraseCustomerAcrossRegistry(req.scope, customerId)
+  const registryFailures = registryResults.filter((r) => r.error)
+  const registryRows = registryResults.reduce((sum, r) => sum + r.rows, 0)
+
+  // 4) Revoke the auth identity so the account can no longer sign in (best-effort).
   let loginRevoked = false
   try {
     if (authIdentityId) {
@@ -84,14 +98,28 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
   }
 
   log.info(
-    `account deletion processed for ${customerId} (addresses removed: ${addressesRemoved}, login revoked: ${loginRevoked})`
+    `account deletion processed for ${customerId} (addresses removed: ${addressesRemoved}, ` +
+      `login revoked: ${loginRevoked}, registry rows affected: ${registryRows}, ` +
+      `registry failures: ${registryFailures.length})`
   )
+  if (registryFailures.length > 0) {
+    // Surfaced as an operator problem rather than swallowed: a partial erasure
+    // is exactly what the person was told would not happen.
+    log.warn(
+      `deletion: ${registryFailures.length} entities could not be erased for ` +
+        `${customerId}: ${registryFailures.map((f) => `${f.entity} (${f.error})`).join("; ")}`
+    )
+  }
 
   res.status(200).json({
     deleted: true,
     customer_id: customerId,
     addresses_removed: addressesRemoved,
     login_revoked: loginRevoked,
+    records_erased: registryRows,
+    // Named rather than counted: a person told their data was deleted should be
+    // able to see which parts were not.
+    entities_failed: registryFailures.map((f) => f.entity),
     note:
       "Your personal data has been erased. Completed-order records are retained in " +
       "anonymised form under a tax/accounting legal-basis exception.",

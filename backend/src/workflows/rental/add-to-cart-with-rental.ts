@@ -11,6 +11,7 @@ import {
   useQueryGraphStep
 } from "@medusajs/medusa/core-flows"
 import { QueryContext } from "@medusajs/framework/utils"
+import { asRows } from "../query-rows"
 import {
   ValidateRentalCartItemInput,
   validateRentalCartItemStep
@@ -105,13 +106,16 @@ export const addToCartWithRentalWorkflow = createWorkflow(
       },
     })
 
-    const { data: updatedCart } = useQueryGraphStep({
-      entity: "cart",
-      fields: ["*", "items.*"],
-      filters: {
-        id: input.cart_id,
-      },
-    }).config({ name: "refetch-cart" })
+    // Narrowed where the rows enter — see `workflows/query-rows.ts` (W3-7).
+    const { data: updatedCart } = asRows<{ id: string }>(
+      useQueryGraphStep({
+        entity: "cart",
+        fields: ["*", "items.*"],
+        filters: {
+          id: input.cart_id,
+        },
+      }).config({ name: "refetch-cart" })
+    )
 
     releaseLockStep({
       key: input.cart_id,

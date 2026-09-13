@@ -12,9 +12,15 @@ import { canonicalJson, sha256 } from "../marketplace-signing/service"
 /**
  * The canonical karma write path (W4, decision D7).
  *
- * `karma_event` is the ecosystem's reputation event log: append-only by
- * convention (no update/delete path is exposed on the write API), deduped at
- * the database by the partial-unique `(source_module, source_id)` index,
+ * `karma_event` is the ecosystem's reputation event log: **append-only in the
+ * schema** — `Migration20260913KarmaAppendOnly` installs a trigger that refuses
+ * UPDATE and DELETE on the table, soft deletion included, so the guarantee no
+ * longer rests on nobody calling the `updateKarmaEvents` / `deleteKarmaEvents`
+ * that `MedusaService` generates whether a route wants them or not (W4-2). A
+ * correction is a counter-event with a negative `delta`, which the signed-sum
+ * model was built for and which leaves what it reverses legible. It is also
+ * deduped at the database by the partial-unique `(source_module, source_id)`
+ * index,
  * transfer-prohibited at runtime by the Posture-A rail guard, and — from W4 —
  * source-attributed against the registry below and tamper-evident via a
  * per-event attestation (hashed always; Ed25519-signed when the marketplace

@@ -1,0 +1,109 @@
+Free Black Market (FBM)
+Copyright (C) 2026 Blackmarket Coalition and the FBM contributors
+
+This program is free software: you can redistribute it and/or modify it
+under the terms of the GNU Affero General Public License as published by
+the Free Software Foundation, version 3.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero
+General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+The full text is in `LICENSE`.
+
+
+## Why the AGPL and not a permissive licence
+
+FBM asks members to put their commerce, their customer relationships and
+their cooperative's internal ledger into shared infrastructure. The whole
+basis for that ask is that they can leave with it. `docs/MEMBER_GOVERNANCE.md`
+puts it as "a fork right that is not licensed is a norm, not a right", and
+until this file existed the right was a norm.
+
+Section 13 is the reason for this licence specifically rather than the GPL.
+FBM is used over a network: a hosted marketplace is the normal way anyone
+encounters it. Under a permissive licence, or under the plain GPL, an
+operator could take this code, run it as a closed service, and owe its users
+nothing — which is precisely the arrangement the project exists to be an
+alternative to. Section 13 says that if you run a modified FBM as a network
+service, the people using it can get your source. That is the same promise
+FBM makes to its own members, applied to whoever comes next.
+
+The cost is real and is accepted deliberately: code under this licence
+cannot be absorbed into a closed product. An organisation that needs that
+should ask about separate terms rather than assume them.
+
+
+## Relationship to `docs/AGGRESSIVE_OPERATIONS_GUIDE.md`
+
+That document states a preference for permissive licences and treats
+strong-copyleft projects as sidecar-only. It is not in conflict with this
+file: it governs what FBM may take *in* as a dependency, which is a
+constraint imposed by the licence of the incoming code. This file governs
+what FBM gives *out*. Choosing the AGPL for FBM's own code in fact relaxes
+the inbound rule rather than tightening it, since an AGPL work can
+incorporate GPL and AGPL sources that a permissively licensed FBM could not.
+
+
+## Third-party software
+
+FBM is built on, and distributed with, software by others. Their licences
+are not superseded by this one — each component remains under its own terms,
+and the copyright notices in `node_modules` are part of the distribution.
+
+  - MedusaJS (`@medusajs/*`) — MIT — https://github.com/medusajs/medusa
+  - Mercur (`@mercurjs/*`) — MIT — https://github.com/mercurjs/mercur
+  - Stellar SDK (`@stellar/stellar-sdk`) — Apache-2.0
+  - lightningcss — MPL-2.0 (redistribution under the AGPL is permitted by
+    MPL-2.0 section 3.3)
+  - the remainder of the dependency tree — predominantly MIT, Apache-2.0,
+    ISC and BSD
+
+As of this writing the tree contains no GPL, AGPL, SSPL, BUSL or
+Elastic-licensed package, and no dependency's terms conflict with
+distributing the combined work under the AGPL. Apache-2.0 is compatible in
+this direction only: Apache-2.0 code may be combined into an AGPL-3.0 work,
+but AGPL-3.0 code may not be taken back into an Apache-2.0 or MIT project.
+
+FBM began from the Mercur marketplace starter, and some files in
+`backend/`, `admin-panel/` and `vendor-panel/` still derive from Medusa and
+Mercur sources. Those upstream projects are MIT-licensed, which permits
+relicensing the combined work, and this notice preserves the attribution
+that the MIT licence requires. `backend/package.json` declared
+`"license": "MIT"` until this change; that field was the Medusa starter
+template's own metadata, left unedited along with its `medusa-starter-default`
+package name. It was never a licence chosen for FBM.
+
+
+## Open questions for the operator
+
+These are recorded rather than guessed at, and should be settled before the
+first outside contribution lands, because each becomes harder afterwards.
+
+  1. **The copyright holder.** "Blackmarket Coalition" is the project's name,
+     not necessarily a legal entity. If no entity has been formed, copyright
+     vests in the individual authors and this line should name them; once one
+     is formed, assign to it and update this file. The repository history
+     shows commits from more than one address — anyone who is a separate
+     person is a co-holder whose agreement is needed to relicense.
+
+  2. **Whether to offer commercial terms.** Dual licensing (AGPL for the
+     commons, a paid exception for anyone who needs to embed FBM in a closed
+     product) is compatible with everything above and is a normal revenue
+     path. It requires holding all the copyright, which is the same
+     precondition as (1). No commercial licence is offered here, because
+     offering one means naming a seller and a contact. Note that Blackout's
+     `LICENSE-COMMERCIAL` is Element's, inherited unmodified from the Synapse
+     fork and pointing at `licensing@element.io`; it is not a coalition
+     licence and is not a template to copy.
+
+  3. **A contributor agreement.** Without a CLA or DCO, outside contributions
+     arrive under the AGPL and cannot be relicensed without each
+     contributor's consent. That is a defensible position — it is what keeps
+     the licence honest — but it forecloses (2) for any code written by
+     someone else, so it is a choice to make knowingly rather than by
+     default.

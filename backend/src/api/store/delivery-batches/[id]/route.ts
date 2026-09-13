@@ -2,7 +2,11 @@ import { z } from "zod"
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { FOOD_DISTRIBUTION_MODULE } from "../../../../modules/food-distribution"
 import type FoodDistributionService from "../../../../modules/food-distribution/service"
-import { actorMayManage } from "../../../../shared/actor-scope"
+import { actorMayManage, actorOwnsResource } from "../../../../shared/actor-scope"
+import {
+  actorOwnsCourier,
+  forbidden,
+} from "../../../../shared/community-read-access"
 import {
   publicCourierView,
   redactDeliveries,
@@ -37,12 +41,27 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
   const foodDistribution = req.scope.resolve<FoodDistributionService>(FOOD_DISTRIBUTION_MODULE)
   
   const batch = await foodDistribution.retrieveDeliveryBatch(id)
-  
-  if (!batch) {
-    res.status(404).json({ message: "Batch not found" })
-    return
+
+  // D10-5. A batch is a courier's run: the account that planned it and the
+  // courier driving it. Everyone else is refused, and refused identically
+  // whether the batch is missing or merely not theirs — batch ids are
+  // enumerable and the payload is a list of people's delivery addresses.
+  //
+  // `actorOwnsResource`, not the `actorMayManage` the write verbs below use:
+  // that one grandfathers a null `owner_id` so pre-ownership batches stay
+  // manageable, which is defensible for a write behind the authenticated
+  // prefix matcher and is not defensible for a read of a third party's
+  // address. A legacy batch is unreadable until an owner is backfilled.
+  if (
+    !batch ||
+    !(
+      actorOwnsResource(req, (batch as { owner_id?: string | null }).owner_id) ||
+      (await actorOwnsCourier(req, batch.courier_id))
+    )
+  ) {
+    return forbidden(res)
   }
-  
+
   // Get deliveries in batch
   const deliveries = await foodDistribution.listFoodDeliveries(
     { batch_id: id },
@@ -65,8 +84,9 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       // delivery is in flight. The same declared public projection applies
       // here; see `publicCourierView`.
       //
-      // Who may read a batch at all is still open under D10-5. Narrowing
-      // the courier does not answer that, and does not depend on it either.
+      // Who may read a batch at all is now settled above; the projection
+      // still applies, because the courier's own phone number is not the
+      // planner's to read either.
       courier: courier
         ? publicCourierView(courier as unknown as Record<string, unknown>)
         : null,

@@ -1,5 +1,9 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
+import {
+  actorIsGardenMember,
+  forbidden,
+} from "../../../../../shared/community-read-access"
 import { actingCustomerId } from "../../../../../shared/actor-scope"
 
 const VOLUNTEER_MODULE = "volunteerModuleService"
@@ -14,12 +18,34 @@ interface VolunteerServiceType {
  * 
  * Get signups for a work party
  */
+/**
+ * The attendance roster is visible to members of the garden running the work
+ * party, and to nobody else (D10-5). Check-in and check-out times say when a
+ * named person was and was not somewhere; that is not a stranger's business.
+ *
+ * The garden is reached through the work party rather than taken from the
+ * caller, so the membership being checked is always the one that owns this
+ * roster.
+ */
 export async function GET(
   req: MedusaRequest,
   res: MedusaResponse
 ) {
   const { id } = req.params
   const query = req.scope.resolve(ContainerRegistrationKeys.QUERY)
+
+  const { data: parties } = await query.graph({
+    entity: "garden_work_party",
+    fields: ["id", "garden_id"],
+    filters: { id },
+  })
+  const gardenId = (parties?.[0] as { garden_id?: string } | undefined)?.garden_id
+
+  // Same refusal for "no such work party" and "not your garden": ids are
+  // enumerable, so distinguishing them would make this an existence oracle.
+  if (!gardenId || !(await actorIsGardenMember(req, gardenId))) {
+    return forbidden(res)
+  }
 
   const { data: signups } = await query.graph({
     entity: "work_party_signup",

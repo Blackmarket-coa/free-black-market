@@ -1,4 +1,9 @@
 import { z } from "zod"
+import {
+  actorIsAnyOf,
+  actorOwnsProducer,
+  forbidden,
+} from "../../../../shared/community-read-access"
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { FOOD_DISTRIBUTION_MODULE } from "../../../../modules/food-distribution"
 import type FoodDistributionService from "../../../../modules/food-distribution/service"
@@ -33,6 +38,14 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
   if (order.transaction_type !== "TRADE") {
     res.status(400).json({ message: "Order is not a trade" })
     return
+  }
+
+  // The producer running the trade, or the customer on it (D10-5).
+  if (
+    !(await actorOwnsProducer(req, order.producer_id)) &&
+    !actorIsAnyOf(req, order.customer_id)
+  ) {
+    return forbidden(res)
   }
   
   // Get related data

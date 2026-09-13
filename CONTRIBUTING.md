@@ -69,10 +69,11 @@ edge case. Before pushing backend changes that touch `query.graph`, run:
 cd backend && npx medusa build     # generates types, then compiles
 ```
 
-CI reproduces this split: the `Lint & Type Check` job runs `tsc --noEmit`
-without generating types, so only the slower `Build backend` job catches it.
-Nothing broken can merge — `Build backend` is blocking — but you will find out
-minutes later than you needed to.
+CI used to reproduce this split — `Lint & Type Check` ran `tsc --noEmit`
+without generating types, so only the slower `Build backend` job caught it, and
+you found out minutes later than you needed to. **Closed 2026-09-13 (W3-7):**
+that job now runs `medusa build` before `tsc --noEmit`, so the generated types
+exist and the fast job catches these. It costs about 35 seconds.
 
 **You need both checks, because neither covers the other.**
 
@@ -91,13 +92,31 @@ npx tsc --noEmit      # compiles everything including tests
 pnpm lint
 ```
 
-One caveat on ordering: **after** a build, `tsc --noEmit` sees the generated
-`.medusa/` and starts reporting pre-existing `TS2321: Excessive stack depth`
-errors in `workflows/create-digital-product-order` and
-`workflows/rental/upsert-rental-config` that neither the build nor CI reports,
-because the three use different compiler settings. Those two files are the
-only known instances — anything else `tsc` prints is real. To reproduce CI's
-job exactly, move `.medusa/` aside first:
+That ordering used to come with a caveat: **after** a build, `tsc --noEmit`
+saw the generated `.medusa/` and reported `TS2321: Excessive stack depth`
+errors that neither the build nor CI did. **All of them are fixed** — the
+precondition for the CI change above, since the job could not generate types
+and stay green while they existed. Both sequences are now clean, and anything
+`tsc` prints is real.
+
+Four workflow files carried them, not the two originally recorded:
+`create-digital-product-order`, `rental/upsert-rental-config`,
+`complete-cart-with-tickets` and `rental/add-to-cart-with-rental`. TypeScript
+caps how many of these it reports per compilation, so clearing the first two
+revealed the rest — if you ever see one again, fix it and re-run rather than
+assuming it is the last.
+
+The cause and the fix are one pattern, written up in
+`backend/src/workflows/query-rows.ts`: a `useQueryGraphStep` row is typed as
+the whole generated entity, and any SDK construct consuming it compares
+`(T | WorkflowData<T>)[]` against `((T | WorkflowData<T>) & T)[]`, which on
+`Order` or `Product` runs out of comparison depth. **Narrow where the rows
+enter the workflow, with `asRows<{...}>(...)`, not where they are used** — the
+comparison happens when the reference is typed, so a cast at the use site just
+moves the error a few lines down. The cast is type-only; the row still carries
+every field at runtime.
+
+To reproduce the old CI job (no generated types), move `.medusa/` aside:
 
 ```bash
 mv .medusa /tmp/medusa-generated && npx tsc --noEmit; mv /tmp/medusa-generated .medusa

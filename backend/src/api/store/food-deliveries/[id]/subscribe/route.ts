@@ -1,4 +1,8 @@
 import { createLogger } from "../../../../../shared/logger"
+import {
+  actorMayReadDelivery,
+  forbidden,
+} from "../../../../../shared/community-read-access"
 const log = createLogger("api/store/food-deliveries/[id]/subscribe")
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { FOOD_DISTRIBUTION_MODULE } from "../../../../../modules/food-distribution"
@@ -15,11 +19,12 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 
   const foodDistribution = req.scope.resolve<FoodDistributionService>(FOOD_DISTRIBUTION_MODULE)
 
-  // Verify delivery exists
+  // Producer, courier or recipient only (D10-5). This one streams the
+  // courier's position continuously, so an unauthenticated subscriber was not
+  // reading a location but following one.
   const delivery = await foodDistribution.retrieveFoodDelivery(deliveryId)
-  if (!delivery) {
-    res.status(404).json({ message: "Delivery not found" })
-    return
+  if (!delivery || !(await actorMayReadDelivery(req, delivery))) {
+    return forbidden(res)
   }
 
   // Set up SSE headers

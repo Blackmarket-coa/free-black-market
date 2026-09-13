@@ -2,6 +2,11 @@ import { z } from "zod"
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { FOOD_DISTRIBUTION_MODULE } from "../../../modules/food-distribution"
 import type FoodDistributionService from "../../../modules/food-distribution/service"
+import {
+  actorOwnsCourier,
+  actorOwnsProducer,
+  forbidden,
+} from "../../../shared/community-read-access"
 import { redactDeliveries } from "../../../modules/food-distribution/public-view"
 
 // ===========================================
@@ -83,10 +88,36 @@ const listDeliveriesQuerySchema = z.object({
 // GET /food-deliveries
 // ===========================================
 
+/**
+ * A producer's own delivery board, or a courier's own run list — not a public
+ * feed (D10-5). Every row carries `recipient_name`, `recipient_phone`,
+ * `delivery_address_line_1/2`, coordinates, `delivery_instructions` and
+ * `safe_place_description`: where someone lives, how to get in, and when they
+ * will be home.
+ *
+ * `redactDeliveries` below strips the delivery PIN, which is a credential, but
+ * a projection cannot answer "who may ask" — so the caller must now name a
+ * producer they own or a courier they are, and an unscoped request is a 400
+ * rather than the whole platform's deliveries.
+ */
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
   try {
     const query = listDeliveriesQuerySchema.parse(req.query)
-    
+
+    if (!query.producer_id && !query.courier_id) {
+      return res.status(400).json({
+        message: "Provide producer_id or courier_id.",
+        type: "invalid_data",
+      })
+    }
+
+    const permitted = query.producer_id
+      ? await actorOwnsProducer(req, query.producer_id)
+      : await actorOwnsCourier(req, query.courier_id)
+    if (!permitted) {
+      return forbidden(res)
+    }
+
     const foodDistribution = req.scope.resolve<FoodDistributionService>(FOOD_DISTRIBUTION_MODULE)
     
     const filters: Record<string, any> = {}

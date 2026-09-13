@@ -1,6 +1,7 @@
 "use client"
 
 import PaymentButton from "./PaymentButton"
+import LocalizedClientLink from "@/components/molecules/LocalizedLink/LocalizedLink"
 import { CartItems } from "./CartItems"
 import { CartSummary } from "@/components/organisms"
 import { TrustWidget } from "@/components/sections/TrustWidget"
@@ -120,7 +121,32 @@ const Review = ({
       </div>
 
       {previousStepsCompleted && (
-        <PaymentButton cart={cart} data-testid="submit-order-button" />
+        <>
+          <PaymentButton cart={cart} data-testid="submit-order-button" />
+          {/*
+            LEG-1: the terms, privacy and refund policies have to be reachable
+            at the point of payment, not only from the footer. Placed here
+            rather than inside PaymentButton because that component has two
+            separate "Place order" branches (Stripe and manual) and the notice
+            would have to be duplicated into both, where one would eventually
+            drift from the other.
+          */}
+          <p className="label-sm text-secondary text-center mt-4">
+            {"By placing this order you agree to the "}
+            <LocalizedClientLink href="/legal/terms" className="underline">
+              Terms of Service
+            </LocalizedClientLink>
+            {", the "}
+            <LocalizedClientLink href="/legal/privacy" className="underline">
+              Privacy Policy
+            </LocalizedClientLink>
+            {" and the "}
+            <LocalizedClientLink href="/legal/refunds" className="underline">
+              Refunds and Returns policy
+            </LocalizedClientLink>
+            {". You are buying from an independent seller; FBM processes the payment."}
+          </p>
+        </>
       )}
     </div>
   )

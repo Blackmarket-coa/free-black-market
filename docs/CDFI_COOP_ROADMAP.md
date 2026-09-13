@@ -541,9 +541,10 @@ Blackout side (recorded here; built there):
 The Fairmondo model — publish our own cooperative's documents — waits on the
 coalition having cooperative documents to publish. `docs/MEMBER_GOVERNANCE.md`
 is explicit that platform-level member governance does not exist yet and
-lists "a published constitution" among what it would need; the repository
-also still has no `LICENSE` file (`docs/TRUST_LANDSCAPE_AUDIT.md` Finding
-D). When both exist, the coalition's bylaws become the fifth seed.
+lists "a published constitution" among what it would need. The licence half
+of that gap closed on 2026-09-13 — FBM is AGPL-3.0 (`LICENSE`, `NOTICE`), so
+Finding D is no longer open. The constitution is still outstanding; when it
+exists, the coalition's bylaws become the fifth seed.
 
 ### 3.5 "Back-office marketplace" is three features, one of them gated — **refer-out / drop**
 

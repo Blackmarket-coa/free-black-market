@@ -126,6 +126,23 @@ const Form = () => {
           >
             Create account
           </Button>
+          {/*
+            LEG-1: the terms have to be presented where consent is given, not
+            only in the footer. Stated as notice at the point of the act rather
+            than as a pre-ticked box, which several states do not accept as
+            consent anyway.
+          */}
+          <p className="label-sm text-secondary text-center mt-4">
+            {"By creating an account you agree to our "}
+            <Link href="/legal/terms" className="underline">
+              Terms of Service
+            </Link>
+            {" and "}
+            <Link href="/legal/privacy" className="underline">
+              Privacy Policy
+            </Link>
+            {"."}
+          </p>
         </form>
       </Container>
       <Container className="border max-w-xl mx-auto mt-8 p-4">
