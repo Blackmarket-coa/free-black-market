@@ -318,6 +318,31 @@ jobs:
           format: 'sarif'
           output: 'trivy-${{ matrix.app }}.sarif'
 
+      # Print what tripped the gate.
+      #
+      # The scan above writes SARIF and nothing else, so a red gate says only
+      # "Process completed with exit code 1" — the findings exist solely in the
+      # Code Scanning tab, and the log a reviewer is actually looking at names
+      # neither the CVE nor the package. That cost real time on the
+      # 2026-09-13 failure: the run was red on `main` and the log could not say
+      # why, so triage needed access the log reader may not have.
+      #
+      # `if: failure()` so it costs nothing on a green run, and `exit-code: 0`
+      # so this step reports rather than re-fails — the step above is the gate
+      # and stays the only thing that can fail the job. Same image, same
+      # severities, same ignore file, so the table lists exactly the findings
+      # the gate tripped on and not a wider set.
+      - name: Trivy findings (table, for the log)
+        if: failure()
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ steps.image_ref.outputs.value }}
+          severity: 'HIGH,CRITICAL'
+          ignore-unfixed: true
+          exit-code: '0'
+          trivyignores: '.trivyignore.image'
+          format: 'table'
+
       - name: Upload SARIF
         # `always()` alone tried to upload a file the scan never produced when
         # it failed before writing one, adding a second, louder error
