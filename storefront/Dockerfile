@@ -82,7 +82,29 @@ ENV NEXT_TELEMETRY_DISABLED=1
 ENV PORT=3000
 ENV HOSTNAME=0.0.0.0
 
-RUN groupadd -g 10001 storefront && useradd -u 10001 -g storefront -s /usr/sbin/nologin -m storefront \
+# Cache-bust the security-update layer below.
+#
+# That `apt-get upgrade` is meant to pick up fixes published after the base tag
+# was built, and the comment below says so. It did not: `docker-build.yml`
+# builds with `cache-from/to: type=gha,mode=max`, so this layer is restored
+# from cache on every build and the upgrade runs **once**, when the layer is
+# first created, and never again. The image therefore keeps whatever package
+# versions existed that day, permanently.
+#
+# That is not hypothetical. On 2026-09-14 the backend and storefront image
+# scans went red on `libpcre2-8-0` 10.42-1 (CVE-2026-86145 out-of-bounds
+# write, CVE-2026-89161 memory corruption in `pcre2_jit_match`, both HIGH),
+# while `10.42-1+deb12u1` was already sitting in bookworm-security — checked
+# against the mirror's own Packages index, not inferred. The upgrade step was
+# right there in this file and could not run.
+#
+# CI passes a date, so the layer rebuilds once a day and the rest of the
+# cache is untouched: the expensive dependency and build stages above are
+# unaffected. Referenced inside the RUN because BuildKit only invalidates on
+# an ARG that is actually used.
+ARG SECURITY_REFRESH=unset
+RUN echo "security-refresh=${SECURITY_REFRESH}" >/dev/null \
+    && groupadd -g 10001 storefront && useradd -u 10001 -g storefront -s /usr/sbin/nologin -m storefront \
     && apt-get update && apt-get install -y --no-install-recommends wget tini ca-certificates \
     # Debian security updates on top of the base tag — see the same note in
     # backend/Dockerfile on why this is applied at our build time.

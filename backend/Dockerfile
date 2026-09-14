@@ -64,10 +64,32 @@ ENV NODE_ENV=production
 ENV pnpm_config_verify_deps_before_run=false
 ENV PORT=9000
 
+# Cache-bust the security-update layer below.
+#
+# That `apt-get upgrade` is meant to pick up fixes published after the base tag
+# was built, and the comment below says so. It did not: `docker-build.yml`
+# builds with `cache-from/to: type=gha,mode=max`, so this layer is restored
+# from cache on every build and the upgrade runs **once**, when the layer is
+# first created, and never again. The image therefore keeps whatever package
+# versions existed that day, permanently.
+#
+# That is not hypothetical. On 2026-09-14 the backend and storefront image
+# scans went red on `libpcre2-8-0` 10.42-1 (CVE-2026-86145 out-of-bounds
+# write, CVE-2026-89161 memory corruption in `pcre2_jit_match`, both HIGH),
+# while `10.42-1+deb12u1` was already sitting in bookworm-security — checked
+# against the mirror's own Packages index, not inferred. The upgrade step was
+# right there in this file and could not run.
+#
+# CI passes a date, so the layer rebuilds once a day and the rest of the
+# cache is untouched: the expensive dependency and build stages above are
+# unaffected. Referenced inside the RUN because BuildKit only invalidates on
+# an ARG that is actually used.
+ARG SECURITY_REFRESH=unset
 # `corepack prepare` caches pnpm in the image so `pnpm start` does NOT download
 # it from the npm registry on every container boot (which was DNS-flaky and
 # forced a `sleep` workaround in production).
-RUN corepack enable && corepack prepare pnpm@11.20.0 --activate \
+RUN echo "security-refresh=${SECURITY_REFRESH}" >/dev/null \
+    && corepack enable && corepack prepare pnpm@11.20.0 --activate \
     && groupadd -g 10001 medusa \
     && useradd -u 10001 -g medusa -s /usr/sbin/nologin -m medusa \
     && apt-get update && apt-get install -y --no-install-recommends wget tini ca-certificates \

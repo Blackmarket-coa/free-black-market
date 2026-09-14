@@ -62,6 +62,27 @@ RUN pnpm run build:preview
 # --- runtime stage -----------------------------------------------------------
 FROM nginx:${NGINX_VERSION} AS runtime
 
+# Cache-bust the security-update layer below.
+#
+# That `apk upgrade` is meant to pick up fixes published after the base tag
+# was built, and the comment below says so. It did not: `docker-build.yml`
+# builds with `cache-from/to: type=gha,mode=max`, so this layer is restored
+# from cache on every build and the upgrade runs **once**, when the layer is
+# first created, and never again. The image therefore keeps whatever package
+# versions existed that day, permanently.
+#
+# That is not hypothetical. On 2026-09-14 the backend and storefront image
+# scans went red on `libpcre2-8-0` 10.42-1 (CVE-2026-86145 out-of-bounds
+# write, CVE-2026-89161 memory corruption in `pcre2_jit_match`, both HIGH),
+# while `10.42-1+deb12u1` was already sitting in bookworm-security — checked
+# against the mirror's own Packages index, not inferred. The upgrade step was
+# right there in this file and could not run.
+#
+# CI passes a date, so the layer rebuilds once a day and the rest of the
+# cache is untouched: the expensive dependency and build stages above are
+# unaffected. Referenced inside the RUN because BuildKit only invalidates on
+# an ARG that is actually used.
+ARG SECURITY_REFRESH=unset
 # `apk upgrade` is scoped to libuuid rather than run bare, deliberately.
 # nginx and its modules in this base image come from NGINX Packaging (F5), not
 # from Alpine main — `apk info` shows the maintainer on nginx 1.31.5-r1 as
@@ -75,7 +96,8 @@ FROM nginx:${NGINX_VERSION} AS runtime
 # Alpine v3.24 has 2.42.3-r1; upstream has not rebuilt the nginx image against
 # it, and every alpine tag — `alpine`, `1.31-alpine`, `stable-alpine` — carries
 # the same stale package, so a tag bump does not help. See docs/AUDIT_DEBT.md.
-RUN apk add --no-cache wget tini \
+RUN echo "security-refresh=${SECURITY_REFRESH}" >/dev/null \
+    && apk add --no-cache wget tini \
     && apk upgrade --no-cache libuuid
 
 COPY --from=build /app/dist /usr/share/nginx/html
