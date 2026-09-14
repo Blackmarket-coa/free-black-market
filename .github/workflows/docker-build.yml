@@ -118,6 +118,26 @@ jobs:
             echo PANELARGS_EOF
           } >> "$GITHUB_OUTPUT"
 
+      # Feed the runtime stages' `SECURITY_REFRESH` ARG a value that changes
+      # daily, so their `apt-get upgrade` / `apk upgrade` layer is rebuilt
+      # rather than restored from the gha cache below.
+      #
+      # Without this the upgrade runs once, when the layer is first created,
+      # and never again — the images keep that day's package versions
+      # permanently while the Dockerfiles claim to be applying security
+      # updates. That is how `libpcre2-8-0` stayed at 10.42-1 on 2026-09-14
+      # (CVE-2026-86145, CVE-2026-89161, both HIGH) with the fixed
+      # 10.42-1+deb12u1 already published to bookworm-security.
+      #
+      # A date rather than the commit sha or `no-cache`: per-commit would
+      # rebuild the runtime stage on every push for no benefit, and disabling
+      # the cache outright would throw away the dependency and build stages
+      # too. Daily bounds the exposure at 24 hours and leaves everything above
+      # the runtime stage cached.
+      - name: Resolve security-refresh date
+        id: secrefresh
+        run: echo "date=$(date -u +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
+
       # docker/build-push-action with `provenance: true` produces a manifest
       # list that the local docker daemon's image store cannot import via
       # `load`. On PRs we don't push to the registry — we only verify the
@@ -133,6 +153,7 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
+            SECURITY_REFRESH=${{ steps.secrefresh.outputs.date }}
             ${{ steps.sfargs.outputs.args }}
             ${{ steps.panelargs.outputs.args }}
           cache-from: type=gha,scope=${{ matrix.app }}
