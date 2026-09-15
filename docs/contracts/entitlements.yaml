@@ -371,7 +371,7 @@ components:
         coalitionId: { type: string }
         role:
           type: string
-          description: Role within the coalition (e.g. `vendor`, `steward`, `member`).
+          description: Role within the coalition (e.g. `vendor`, `steward`, `griot`, `member`).
         matrixAcls:
           type: array
           description: Applied verbatim by Blackout's ACL sync worker. FBM owns the mapping.

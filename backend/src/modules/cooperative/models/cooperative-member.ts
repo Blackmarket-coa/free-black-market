@@ -22,6 +22,15 @@ const CooperativeMember = model.define("cooperative_member", {
   // Links
   cooperative_id: model.text(),
   producer_id: model.text(),
+  /**
+   * The MercurJS seller this member sells as, when they have a shop.
+   *
+   * `producer_id` is written with a customer actor id on the store join path
+   * and a producer row id on the seller launch path, so it cannot be used to
+   * resolve a catalog. A collective storefront needs seller ids, so it reads
+   * this column and ignores `producer_id` entirely.
+   */
+  seller_id: model.text().nullable(),
   
   // Role
   role: model.enum(Object.values(CooperativeMemberRole)).default(CooperativeMemberRole.PRODUCER),

@@ -30,6 +30,8 @@ import axios, { AxiosInstance } from "axios"
 export const GOVERNANCE_POWER_LEVEL: Record<string, number> = {
   vendor: 25,
   steward: 50,
+  /** A coalition's griot: can speak for the coalition, cannot spend for it. */
+  griot: 25,
   member: 0,
   observer: 0,
 }

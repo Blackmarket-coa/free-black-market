@@ -68,6 +68,26 @@ const Cooperative = model.define("cooperative", {
   verified: model.boolean().default(false),
   verified_at: model.dateTime().nullable(),
   
+  /**
+   * The Blackout coalition this cooperative is the FBM face of, when one
+   * exists. An opaque Blackout coalition id — FBM never parses it, it only
+   * joins on it, so the two id spaces stay independent.
+   */
+  blackout_coalition_id: model.text().nullable(),
+
+  /**
+   * Joint-drive milestones, pushed by Blackout when a coalition drive closes.
+   *
+   * Mirrored here rather than queried live so a coalition quest can be
+   * evaluated without a synchronous call into Blackout, and so a Blackout
+   * outage reads as "no new milestones" rather than "this coalition has done
+   * nothing". Counts and cents only — never who gave what.
+   */
+  coalition_drives_completed: model.number().default(0),
+  coalition_drive_raised_cents: model.number().default(0),
+  coalition_contributing_members: model.number().default(0),
+  coalition_milestones_at: model.dateTime().nullable(),
+
   // Metadata
   metadata: model.json().nullable(),
 })
@@ -75,6 +95,10 @@ const Cooperative = model.define("cooperative", {
     {
       on: ["handle"],
       name: "IDX_cooperative_handle",
+    },
+    {
+      on: ["blackout_coalition_id"],
+      name: "IDX_cooperative_blackout_coalition",
     },
     {
       on: ["cooperative_type"],

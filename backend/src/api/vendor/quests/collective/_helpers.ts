@@ -3,6 +3,7 @@ import { VENDOR_QUEST_MODULE } from "../../../../modules/vendor-quest"
 import type VendorQuestModuleService from "../../../../modules/vendor-quest/service"
 import { buildSubstrate } from "../../../../modules/vendor-quest/substrate/build"
 import { getQuestDefinition } from "../../../../modules/vendor-quest/definitions"
+import { resolveCollectiveCoalition } from "./_coalition"
 
 /**
  * Build the aggregate evaluation for a collective quest from ONLY the members
@@ -12,7 +13,12 @@ import { getQuestDefinition } from "../../../../modules/vendor-quest/definitions
  */
 export async function evaluateCollectiveFromConsent(
   req: MedusaRequest,
-  collective: { id: string; quest_key: string }
+  collective: {
+    id: string
+    quest_key: string
+    owner_seller_id?: string
+    metadata?: Record<string, unknown> | null
+  }
 ) {
   const service = req.scope.resolve<VendorQuestModuleService>(VENDOR_QUEST_MODULE)
   const def = getQuestDefinition(collective.quest_key)
@@ -36,10 +42,21 @@ export async function evaluateCollectiveFromConsent(
     }
   }
 
+  // Resolved for every collective quest, read by the coalition-only one. A
+  // collective with no coalition behind it gets null and evaluates exactly as
+  // it did before this field existed.
+  const coalition = collective.owner_seller_id
+    ? await resolveCollectiveCoalition(req, {
+        owner_seller_id: collective.owner_seller_id,
+        metadata: collective.metadata ?? null,
+      })
+    : null
+
   const { aggregate, evaluation } = service.evaluateCollective(
     collective.quest_key,
     substrates,
-    memberIds
+    memberIds,
+    { coalition }
   )
   return {
     required_scopes: requiredScopes,

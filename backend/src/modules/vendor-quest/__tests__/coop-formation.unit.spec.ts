@@ -92,7 +92,7 @@ describe("Q11 coop-formation — the bylaws requirement", () => {
     const withDoc = makeSubstrate({
       operating: { ...makeSubstrate().operating, months_active: 24 },
       revenue: { ...makeSubstrate().revenue, lifetime_revenue: 50_000 },
-      collective: { member_count: 4, member_ids: ["a", "b", "c", "d"] },
+      collective: { member_count: 4, member_ids: ["a", "b", "c", "d"], coalition: null },
       documents: {
         documents: [
           { id: "d1", doc_type: "governing_document", label: "Bylaws", verified: true, expires_at: null },
@@ -102,7 +102,7 @@ describe("Q11 coop-formation — the bylaws requirement", () => {
     const withoutDoc = makeSubstrate({
       operating: { ...makeSubstrate().operating, months_active: 24 },
       revenue: { ...makeSubstrate().revenue, lifetime_revenue: 50_000 },
-      collective: { member_count: 4, member_ids: ["a", "b", "c", "d"] },
+      collective: { member_count: 4, member_ids: ["a", "b", "c", "d"], coalition: null },
     })
     const gates = (s: typeof withDoc) =>
       evaluateQuest(q11, s).stages.map((g) => `${g.key}:${g.open}`)
