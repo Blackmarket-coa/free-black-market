@@ -39,6 +39,8 @@ export const KARMA_SOURCE_MODULES: Record<string, string> = {
   vendor_verification:
     "Verification checks passed and badges granted; trust_score stays the derived projection.",
   threshold: "Threshold loan completions (reserved; no writer yet).",
+  blackout_coalition:
+    "Blackout coalition activity (drives completed, mutual aid fulfilled, coalition quests) awarded through /v1/integrations/blackout/reputation/events. Flat deltas only — never scaled by money, never coupled to pricing or commission.",
   manual: "Operator grants recorded with an explicit source id.",
 }
 
