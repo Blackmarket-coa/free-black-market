@@ -4,7 +4,7 @@ import { createLogger } from "../../../../shared/logger"
 import { VENDOR_PLAN_MODULE } from "../../../../modules/vendor-plan"
 import type VendorPlanService from "../../../../modules/vendor-plan/service"
 import { getPlanDefinition } from "../../../../modules/vendor-plan/catalog"
-import { VendorPlanAssignedBy } from "../../../../modules/vendor-plan/models"
+import { VendorPlanAssignedBy, VendorPlanStatus } from "../../../../modules/vendor-plan/models"
 import { VENDOR_BILLING_MODULE } from "../../../../modules/vendor-billing"
 import type VendorBillingService from "../../../../modules/vendor-billing/service"
 import {
@@ -90,9 +90,15 @@ export async function POST(
     // mid-period upgrade never bills a full month for four days. Downgrades
     // are deferred to period end and charge nothing here.
     let charge_status: string | null = null
+    // A trialing assignment bills nothing now. The first charge is raised by
+    // the renewal job on the day the trial ends, which is what the assignment's
+    // first period end is set to — so a plan that advertises a free trial
+    // delivers one instead of taking the full amount on signup.
+    const isTrialing = result.assignment.status === VendorPlanStatus.TRIALING
     if (
       result.decision.kind === "immediate" &&
       !result.replayed &&
+      !isTrialing &&
       definition.price_amount > 0
     ) {
       try {
