@@ -12,6 +12,12 @@
  *     practice, not a loyalty perk." A flat award for completing a drive is a
  *     contribution record; an award proportional to the dollars is a rebate,
  *     which is the pattern flagged for legal review. So: flat, always.
+ *  3. **Every event is backed by captured money.** `coalition_founded`,
+ *     `member_joined` and `aid_raised` were awarded once and removed: each was
+ *     a row insert by one actor, with no counterparty and no cost, so one
+ *     person could mint reputation by founding coalitions and joining them.
+ *     What survives fires only when a contribution was actually captured.
+ *
  *  2. **One ladder, one write path.** These deltas ride
  *     `ProgressionModuleService.recordXpEvent` on the COALITION stance, which
  *     the 15-minute mirror copies into `karma_event`. There is no second
@@ -20,12 +26,9 @@
 import { Stance } from "./stance"
 
 export type CoalitionKarmaEventType =
-  | "coalition_founded"
-  | "member_joined"
   | "drive_completed"
   | "drive_contributed"
   | "mutual_aid_fulfilled"
-  | "aid_raised"
   | "project_delivered"
   | "quest_completed"
 
@@ -35,23 +38,17 @@ export type CoalitionKarmaEventType =
  * records that the group did the thing — not how much money moved.
  */
 export const COALITION_KARMA_DELTAS: Record<CoalitionKarmaEventType, number> = {
-  coalition_founded: 10,
-  member_joined: 2,
   drive_completed: 25,
   drive_contributed: 5,
   mutual_aid_fulfilled: 15,
-  aid_raised: 3,
   project_delivered: 20,
   quest_completed: 30,
 }
 
 export const COALITION_KARMA_DESCRIPTIONS: Record<CoalitionKarmaEventType, string> = {
-  coalition_founded: "Founded a coalition",
-  member_joined: "Joined a coalition",
   drive_completed: "Completed a coalition drive",
   drive_contributed: "Contributed to a coalition drive",
   mutual_aid_fulfilled: "Fulfilled a mutual-aid request through a coalition",
-  aid_raised: "Raised a neighbour's request to a coalition",
   project_delivered: "Delivered a coalition project",
   quest_completed: "Completed a coalition quest",
 }

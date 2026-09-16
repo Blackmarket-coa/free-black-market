@@ -120,9 +120,22 @@ describe("POST /v1/integrations/blackout/reputation/events", () => {
 
   it("derives a deterministic replay key from the event and its reference", async () => {
     const res = makeRes()
-    await POST(makeReq({ ...validBody, eventType: "member_joined", referenceId: "mem_9" }), res as never)
-    expect((recordXpEvent.mock.calls[0][0] as { source_id: string }).source_id).toBe(
-      "member_joined:mem_9"
+    await POST(
+      makeReq({ ...validBody, eventType: "drive_contributed", referenceId: "tip_9" }),
+      res as never
     )
+    expect((recordXpEvent.mock.calls[0][0] as { source_id: string }).source_id).toBe(
+      "drive_contributed:tip_9"
+    )
+  })
+
+  it("no longer awards for founding, joining or raising — none is backed by money", async () => {
+    for (const eventType of ["coalition_founded", "member_joined", "aid_raised"]) {
+      const res = makeRes()
+      await POST(makeReq({ ...validBody, eventType }), res as never)
+      expect(res.statusCode).toBe(400)
+      expect(res.body?.code).toBe("unknown_event_type")
+    }
+    expect(recordXpEvent).not.toHaveBeenCalled()
   })
 })
