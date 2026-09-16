@@ -85,18 +85,88 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     })
   }
 
-  // The visitor is anonymous on a third-party site, so the session is opened
-  // against the storefront checkout for the drive's listing rather than a
-  // Blackout member id. Quantity carries the chosen amount: a contribution of
-  // N units of the drive's contribution-unit listing.
+  // The listing must belong to the drive that named it. Without this, any
+  // embed key could point any coalition's drive at any published listing and
+  // take money in that coalition's name — the coalition_id and drive_id would
+  // be decoration over somebody else's checkout.
+  const listingMeta = (listing.metadata ?? {}) as Record<string, unknown>
+  if (
+    listingMeta.coalition_id !== parsed.data.coalition_id ||
+    listingMeta.drive_id !== parsed.data.drive_id
+  ) {
+    return res.status(409).json({
+      code: "listing_not_for_drive",
+      message: "That listing does not belong to this drive",
+    })
+  }
+
   const units = Math.max(1, Math.round(parsed.data.amount_cents / listing.price_cents))
-  const checkoutUrl =
-    `${apiBase()}/v1/integrations/blackout/commerce/checkout/drive` +
-    `?listing=${encodeURIComponent(listing.id)}` +
-    `&drive=${encodeURIComponent(parsed.data.drive_id)}` +
-    `&coalition=${encodeURIComponent(parsed.data.coalition_id)}` +
-    `&units=${units}` +
-    `&embed=1`
+
+  // Open a real session on the §5 checkout endpoint — the same one every other
+  // embedded purchase uses. The previous version hand-built a URL at
+  // `/commerce/checkout/drive`, which is not a route: only `checkout/sessions`
+  // exists, so every donate click was a 404. The server's own API key never
+  // leaves this process; the visitor is anonymous and never sees it.
+  const apiKey = process.env.FREEBLACKMARKET_API_KEY
+  if (!apiKey) {
+    log.warn("drive checkout unavailable: FREEBLACKMARKET_API_KEY not configured", {
+      drive_id: parsed.data.drive_id,
+    })
+    return res.status(503).json({
+      code: "checkout_unavailable",
+      message: "Drive checkout is not configured",
+    })
+  }
+
+  let checkoutUrl: string
+  try {
+    const response = await fetch(`${apiBase()}/v1/integrations/blackout/commerce/checkout/sessions`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        // An anonymous supporter on a third-party site: the drive, not a member,
+        // is the identity the session carries.
+        userId: `drive:${parsed.data.drive_id}`,
+        listingId: listing.id,
+        embed: true,
+        metadata: {
+          coalitionId: parsed.data.coalition_id,
+          campaignId: parsed.data.drive_id,
+          units: String(units),
+        },
+      }),
+    })
+    if (!response.ok) {
+      log.warn("drive checkout session refused", {
+        drive_id: parsed.data.drive_id,
+        status: response.status,
+      })
+      return res.status(502).json({
+        code: "checkout_failed",
+        message: "Could not open a checkout for this drive",
+      })
+    }
+    const session = (await response.json()) as { url?: string }
+    if (!session?.url) {
+      return res.status(502).json({
+        code: "checkout_failed",
+        message: "Could not open a checkout for this drive",
+      })
+    }
+    checkoutUrl = session.url
+  } catch (error) {
+    log.warn("drive checkout session failed", {
+      drive_id: parsed.data.drive_id,
+      error: error instanceof Error ? error.name : "unknown",
+    })
+    return res.status(502).json({
+      code: "checkout_failed",
+      message: "Could not open a checkout for this drive",
+    })
+  }
 
   log.info("drive checkout minted", {
     drive_id: parsed.data.drive_id,

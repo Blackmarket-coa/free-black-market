@@ -12,7 +12,7 @@ jest.mock("../../../../../../../../lib/blackout-entitlements-auth", () => ({
   requireEntitlementsAuth: jest.fn(() => true),
 }))
 
-const updateCooperatives = jest.fn(async () => [{}])
+const updateCooperatives = jest.fn(async (..._args: unknown[]) => [{}])
 
 const makeRes = () => {
   const res = {
@@ -55,7 +55,7 @@ describe("PUT /v1/integrations/blackout/coalitions/:id/milestones", () => {
       res as never
     )
     expect(res.statusCode).toBe(200)
-    const written = updateCooperatives.mock.calls[0][0][0] as Record<string, unknown>
+    const written = (updateCooperatives.mock.calls[0][0] as Record<string, unknown>[])[0]
     expect(written.id).toBe("coop_1")
     expect(written.coalition_drives_completed).toBe(3)
     expect(written.coalition_contributing_members).toBe(7)

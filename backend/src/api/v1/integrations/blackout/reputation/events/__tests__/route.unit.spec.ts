@@ -39,7 +39,7 @@ const makeRes = () => {
   return res
 }
 
-const recordXpEvent = jest.fn(async () => ({ id: "xp_1" }))
+const recordXpEvent = jest.fn(async (..._args: unknown[]) => ({ id: "xp_1" }))
 
 const makeReq = (body: Record<string, unknown>) =>
   ({

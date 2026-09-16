@@ -36,9 +36,9 @@ type Ctx = {
   cycles: Record<string, unknown>[]
 }
 
-const addSellerToOrderCycle = jest.fn(async () => ({}))
-const createIncomingExchange = jest.fn(async () => ({}))
-const createOrderCycles = jest.fn(async () => ({ id: "oc_new" }))
+const addSellerToOrderCycle = jest.fn(async (..._args: unknown[]) => ({}))
+const createIncomingExchange = jest.fn(async (..._args: unknown[]) => ({}))
+const createOrderCycles = jest.fn(async (..._args: unknown[]) => ({ id: "oc_new" }))
 
 function makeReq(ctx: Ctx, body: Record<string, unknown>) {
   const cooperative = {

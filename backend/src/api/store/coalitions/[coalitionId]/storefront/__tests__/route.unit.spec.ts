@@ -30,7 +30,7 @@ const makeRes = () => {
   return res
 }
 
-const graph = jest.fn(async () => ({ data: [] as Record<string, unknown>[] }))
+const graph = jest.fn(async (..._args: unknown[]) => ({ data: [] as Record<string, unknown>[] }))
 
 function makeReq(
   cooperatives: Record<string, unknown>[],
