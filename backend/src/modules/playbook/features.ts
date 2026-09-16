@@ -29,6 +29,13 @@ export const LEGACY_VENDOR_TYPE_TO_PLAYBOOK: Record<string, PlaybookId> = {
   maker: "stall",
   mutual_aid: "grove",
   creator: "creator",
+  // A carrier sells delivery capacity rather than goods, so it takes `stall`
+  // (products + inventory + support) for the same reason `general` does:
+  // reusing an existing recipe rather than growing the playbook set, which is
+  // asserted verbatim by storefront tests and seeded into the `playbook` table.
+  // A carrier's real surface is the Blackstar node it is provisioned, not a
+  // storefront recipe.
+  logistics: "stall",
   // The archetype-neutral vendor maps to `stall` — the solo-seller recipe
   // (products + inventory + support). Deliberately reuses an existing recipe
   // rather than introducing a 12th playbook: the playbook set is asserted

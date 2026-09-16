@@ -36,6 +36,12 @@ export enum VendorType {
   RESTAURANT = "restaurant",
   MUTUAL_AID = "mutual_aid",
   CREATOR = "creator",
+  /**
+   * A carrier / delivery node. Approving a logistics seller provisions a
+   * Blackstar node operator over the bridge, so this type is the gate on who
+   * ends up holding logistics credentials — not every approved seller.
+   */
+  LOGISTICS = "logistics",
   GENERAL = "general",
 }
 

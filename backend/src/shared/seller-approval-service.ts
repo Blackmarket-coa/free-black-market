@@ -12,6 +12,7 @@ import {
   type PlaybookId,
 } from "../modules/playbook"
 import { sendVendorAcceptedNotificationWorkflow } from "../workflows/send-vendor-accepted-notification"
+import { provisionNodeOperator } from "./provision-node-operator"
 import { appendPath } from "./url"
 import { sendCustomerAcceptedNotificationWorkflow } from "../workflows/send-customer-accepted-notification"
 import { VendorType } from "../modules/seller-extension/models/seller-metadata"
@@ -559,6 +560,23 @@ export class SellerApprovalService {
         log.info(`[SellerApproval] Vendor acceptance notification sent to ${maskEmail(data.member.email)}`)
       } catch (notificationError: any) {
         log.warn(`[SellerApproval] Failed to send vendor acceptance notification: ${notificationError.message}`)
+      }
+
+      try {
+        // A logistics seller also becomes a Blackstar node operator. Best
+        // effort: the bridge retries on its own, and an outage over there must
+        // never fail or roll back an approval over here.
+        await provisionNodeOperator(this.container, {
+          sellerId: seller.id,
+          sellerName: seller.name,
+          memberEmail: data.member.email,
+          memberName: data.member.name,
+          vendorType,
+        })
+      } catch (provisionError: any) {
+        log.warn(
+          `[SellerApproval] Failed to provision node operator for ${seller.id}: ${provisionError.message}`
+        )
       }
 
       return {
