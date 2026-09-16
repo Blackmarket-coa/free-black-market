@@ -32,8 +32,8 @@ The whole storefront is driven by one script tag and a few HTML attributes:
 <div data-fbm="events"></div>
 
 <script
-  src="https://freeblackmarket.com/v2.1.0/connect.js"
-  integrity="sha384-8qDWdtSLiaBKntMQd3rgIzuYY1R3utwsxaCfFschn8DO4nJJXknTAl14ZrzJtUfK"
+  src="https://freeblackmarket.com/v2.1.1/connect.js"
+  integrity="sha384-qwQf/vmuuk0PBRJG0VY1TcGIipOB5lK+fGIL2hHYHdiosKJgUZpT6ySXVita5Coq"
   crossorigin="anonymous"
   data-fbm-handle="your-handle"
   data-fbm-api="https://api.freeblackmarket.com"

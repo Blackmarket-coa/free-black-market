@@ -78,9 +78,9 @@ export function storefrontBase(): string {
  * pinning it to the mutable /connect.js would break every embed on the next
  * edit.
  */
-export const CONNECT_VERSION = "2.1.0";
+export const CONNECT_VERSION = "2.1.1";
 export const CONNECT_SRI =
-  "sha384-8qDWdtSLiaBKntMQd3rgIzuYY1R3utwsxaCfFschn8DO4nJJXknTAl14ZrzJtUfK";
+  "sha384-qwQf/vmuuk0PBRJG0VY1TcGIipOB5lK+fGIL2hHYHdiosKJgUZpT6ySXVita5Coq";
 
 /** The pinned, immutable SDK URL the snippet embeds. */
 export function sdkUrl(): string {
