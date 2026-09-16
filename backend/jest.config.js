@@ -20,6 +20,9 @@ module.exports = {
     "<rootDir>/restaurant-marketplace/",
   ],
   setupFiles: ["./integration-tests/setup.js"],
+  // MikroORM writes a schema snapshot per module per test database and never
+  // cleans them up; a full integration pass leaks ~7 GB. See the file header.
+  globalTeardown: "./integration-tests/prune-orm-snapshots.js",
 };
 
 if (process.env.TEST_TYPE === "integration:http") {
