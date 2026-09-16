@@ -29,7 +29,12 @@ if (process.env.TEST_TYPE === "integration:http") {
   // testTimeout to hooks too.
   module.exports.testTimeout = 120000;
 } else if (process.env.TEST_TYPE === "integration:modules") {
-  module.exports.testMatch = ["**/src/modules/*/__tests__/**/*.[jt]s"];
+  // Require `.spec.` like the other two modes do. Matching every .ts under a
+  // module's __tests__ dir also matched shared helper files, and Jest fails a
+  // "suite" that declares no tests — so adding a fixtures file to any module
+  // broke the run. Both *.unit.spec.ts and *.integration.spec.ts still match,
+  // so this drops nothing that was being tested.
+  module.exports.testMatch = ["**/src/modules/*/__tests__/**/*.spec.[jt]s"];
   module.exports.testTimeout = 120000;
 } else if (process.env.TEST_TYPE === "unit") {
   module.exports.testMatch = ["**/src/**/__tests__/**/*.unit.spec.[jt]s"];
