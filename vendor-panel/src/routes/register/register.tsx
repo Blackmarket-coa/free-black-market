@@ -79,6 +79,7 @@ export const Register = () => {
   const [recommendedPlaybook, setRecommendedPlaybook] = useState<PlaybookId | null>(null)
   const [roles, setRoles] = useState<PlaybookId[]>([])
   const [resources, setResources] = useState<ResourceKey[]>([])
+  const [nodeOperatorOptIn, setNodeOperatorOptIn] = useState(false)
   const [success, setSuccess] = useState(false)
   const [showOptionalFields, setShowOptionalFields] = useState(false)
   const { t } = useTranslation()
@@ -105,6 +106,7 @@ export const Register = () => {
     setRecommendedPlaybook(result.recommended_recipe_id)
     setRoles(result.roles)
     setResources(result.resources)
+    setNodeOperatorOptIn(result.node_operator_opt_in)
     setStep("details")
   }
   const handleBackToQuiz = () => setStep("quiz")
@@ -120,6 +122,7 @@ export const Register = () => {
         recommended_playbook: recommendedPlaybook || undefined,
         roles,
         resources,
+        node_operator_opt_in: nodeOperatorOptIn,
       },
       {
         onError: (error) => {

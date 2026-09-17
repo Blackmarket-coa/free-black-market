@@ -867,6 +867,14 @@ export default defineMiddlewares({
       method: "POST",
       middlewares: [vendorRegistrationRateLimiter, normalizeEmailMiddleware],
     },
+    // Email verification completes registration AND approves the seller, so it
+    // is a credential-redemption endpoint: rate limited like registration so a
+    // token cannot be brute-forced by volume.
+    {
+      matcher: "/vendor/verify-email",
+      method: "POST",
+      middlewares: [vendorRegistrationRateLimiter],
+    },
     // Vendor product creation - enforce playbook × listing-type compatibility
     // pre-commit (replaces the productsCreated workflow hook, which collided
     // with mercurjs b2c-core's single-handler registration).

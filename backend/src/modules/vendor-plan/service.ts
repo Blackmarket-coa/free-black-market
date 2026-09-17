@@ -1,5 +1,5 @@
-import { MedusaService } from "@medusajs/framework/utils"
-import { InferTypeOf } from "@medusajs/framework/types"
+import { MedusaService } from "@medusajs/framework/utils";
+import { InferTypeOf } from "@medusajs/framework/types";
 import {
   VendorPlan,
   VendorPlanAssignment,
@@ -7,13 +7,13 @@ import {
   VendorPlanEvent,
   VendorPlanEventType,
   VendorPlanStatus,
-} from "./models"
+} from "./models";
 import {
   DEFAULT_PLAN_CODE,
   featureKeysForPlan,
   getPlanDefinition,
   type VendorFeatureKey,
-} from "./catalog"
+} from "./catalog";
 import {
   applyPeriodRollover,
   decidePlanTransition,
@@ -22,39 +22,46 @@ import {
   reconcileFeatureKeys,
   type AssignmentSnapshot,
   type PlanTransitionDecision,
-} from "./transitions"
-import { invalidateSellerPlan } from "../../shared/plan-entitlement-cache"
+} from "./transitions";
+import { invalidateSellerPlan } from "../../shared/plan-entitlement-cache";
 
-export type VendorPlanType = InferTypeOf<typeof VendorPlan>
-export type VendorPlanAssignmentType = InferTypeOf<typeof VendorPlanAssignment>
-export type VendorPlanEventType_ = InferTypeOf<typeof VendorPlanEvent>
+export type VendorPlanType = InferTypeOf<typeof VendorPlan>;
+export type VendorPlanAssignmentType = InferTypeOf<typeof VendorPlanAssignment>;
+export type VendorPlanEventType_ = InferTypeOf<typeof VendorPlanEvent>;
 
 /** Postgres unique-violation. Used to detect an idempotency-key replay. */
-const PG_UNIQUE_VIOLATION = "23505"
+const PG_UNIQUE_VIOLATION = "23505";
 
 function isUniqueViolation(err: unknown): boolean {
-  const code = (err as { code?: string; cause?: { code?: string } })?.code
-  const causeCode = (err as { cause?: { code?: string } })?.cause?.code
-  return code === PG_UNIQUE_VIOLATION || causeCode === PG_UNIQUE_VIOLATION
+  const code = (err as { code?: string; cause?: { code?: string } })?.code;
+  const causeCode = (err as { cause?: { code?: string } })?.cause?.code;
+  return code === PG_UNIQUE_VIOLATION || causeCode === PG_UNIQUE_VIOLATION;
 }
 
 export type ApplyTransitionInput = {
-  seller_id: string
-  to_plan_code: string
+  seller_id: string;
+  to_plan_code: string;
   /** Dedupe key. A replay with the same key is a no-op. */
-  idempotency_key?: string | null
-  assigned_by?: VendorPlanAssignedBy
+  idempotency_key?: string | null;
+  assigned_by?: VendorPlanAssignedBy;
   /** Operator override: apply a downgrade now rather than at period end. */
-  immediate?: boolean
-  reason?: string
-}
+  immediate?: boolean;
+  reason?: string;
+  /**
+   * Clock for this transition. Defaults to now; supplied by tests and by any
+   * caller replaying a transition at a known instant, so the trial window and
+   * period boundaries this writes are reproducible rather than wall-clock.
+   * Matches `rollPeriod(seller_id, now)` in the same service.
+   */
+  now?: Date;
+};
 
 export type ApplyTransitionResult = {
-  assignment: VendorPlanAssignmentType
-  decision: PlanTransitionDecision
+  assignment: VendorPlanAssignmentType;
+  decision: PlanTransitionDecision;
   /** True when the call was deduped by its idempotency key. */
-  replayed: boolean
-}
+  replayed: boolean;
+};
 
 /**
  * Owns a seller's billing plan: the catalog, their assignment, and the
@@ -78,22 +85,25 @@ class VendorPlanService extends MedusaService({
   // ── Catalog ───────────────────────────────────────────────────────────────
 
   async listActivePlans(): Promise<VendorPlanType[]> {
-    return this.listVendorPlans({ is_active: true }, { order: { display_order: "ASC" } })
+    return this.listVendorPlans(
+      { is_active: true },
+      { order: { display_order: "ASC" } },
+    );
   }
 
   async getPlanByCode(code: string): Promise<VendorPlanType | null> {
-    const [row] = await this.listVendorPlans({ code })
-    return row ?? null
+    const [row] = await this.listVendorPlans({ code });
+    return row ?? null;
   }
 
   // ── Assignment ────────────────────────────────────────────────────────────
 
   async getAssignment(
-    seller_id: string
+    seller_id: string,
   ): Promise<VendorPlanAssignmentType | null> {
-    if (!seller_id) return null
-    const [row] = await this.listVendorPlanAssignments({ seller_id })
-    return row ?? null
+    if (!seller_id) return null;
+    const [row] = await this.listVendorPlanAssignments({ seller_id });
+    return row ?? null;
   }
 
   /**
@@ -106,12 +116,12 @@ class VendorPlanService extends MedusaService({
    */
   async ensureAssignment(
     seller_id: string,
-    opts: { assigned_by?: VendorPlanAssignedBy } = {}
+    opts: { assigned_by?: VendorPlanAssignedBy } = {},
   ): Promise<VendorPlanAssignmentType> {
-    const existing = await this.getAssignment(seller_id)
-    if (existing) return existing
+    const existing = await this.getAssignment(seller_id);
+    if (existing) return existing;
 
-    const now = new Date()
+    const now = new Date();
     const [created] = await this.createVendorPlanAssignments([
       {
         seller_id,
@@ -121,7 +131,7 @@ class VendorPlanService extends MedusaService({
         activated_at: now,
         assigned_by: opts.assigned_by ?? VendorPlanAssignedBy.SYSTEM,
       },
-    ])
+    ]);
 
     await this.recordEvent({
       seller_id,
@@ -131,22 +141,20 @@ class VendorPlanService extends MedusaService({
       // No idempotency key: creation is already guarded by the unique
       // seller_id index, and a key here would be a second, weaker guard.
       payload: { auto_provisioned: true },
-    })
+    });
 
-    return created
+    return created;
   }
 
   /** The plan code a seller is effectively on right now. */
   async getEffectivePlanCode(seller_id: string): Promise<string> {
-    const assignment = await this.ensureAssignment(seller_id)
-    return effectivePlanCode(this.toSnapshot(assignment))
+    const assignment = await this.ensureAssignment(seller_id);
+    return effectivePlanCode(this.toSnapshot(assignment));
   }
 
   /** Feature keys the seller's current plan grants. */
-  async getEntitledFeatureKeys(
-    seller_id: string
-  ): Promise<VendorFeatureKey[]> {
-    return featureKeysForPlan(await this.getEffectivePlanCode(seller_id))
+  async getEntitledFeatureKeys(seller_id: string): Promise<VendorFeatureKey[]> {
+    return featureKeysForPlan(await this.getEffectivePlanCode(seller_id));
   }
 
   // ── Transitions ───────────────────────────────────────────────────────────
@@ -160,11 +168,11 @@ class VendorPlanService extends MedusaService({
    * than transitioning twice.
    */
   async applyPlanTransition(
-    input: ApplyTransitionInput
+    input: ApplyTransitionInput,
   ): Promise<ApplyTransitionResult> {
-    const now = new Date()
-    const assignment = await this.ensureAssignment(input.seller_id)
-    const snapshot = this.toSnapshot(assignment)
+    const now = input.now ?? new Date();
+    const assignment = await this.ensureAssignment(input.seller_id);
+    const snapshot = this.toSnapshot(assignment);
 
     if (input.idempotency_key) {
       const claimed = await this.claimIdempotencyKey({
@@ -173,13 +181,13 @@ class VendorPlanService extends MedusaService({
         idempotency_key: input.idempotency_key,
         from_plan_code: assignment.plan_code,
         to_plan_code: input.to_plan_code,
-      })
+      });
       if (!claimed) {
         return {
           assignment,
           decision: { kind: "rejected", reason: "replayed idempotency key" },
           replayed: true,
-        }
+        };
       }
     }
 
@@ -188,10 +196,10 @@ class VendorPlanService extends MedusaService({
       to_plan_code: input.to_plan_code,
       immediate: input.immediate,
       now,
-    })
+    });
 
     if (decision.kind === "rejected") {
-      return { assignment, decision, replayed: false }
+      return { assignment, decision, replayed: false };
     }
 
     if (decision.kind === "deferred") {
@@ -201,7 +209,7 @@ class VendorPlanService extends MedusaService({
           pending_plan_code: decision.to_plan_code,
           pending_effective_at: decision.effective_at,
         },
-      ])
+      ]);
       await this.recordEvent({
         seller_id: input.seller_id,
         assignment_id: assignment.id,
@@ -213,8 +221,8 @@ class VendorPlanService extends MedusaService({
           effective_at: decision.effective_at.toISOString(),
           reason: input.reason ?? decision.reason,
         },
-      })
-      return { assignment: updated, decision, replayed: false }
+      });
+      return { assignment: updated, decision, replayed: false };
     }
 
     const updated = await this.writeImmediateChange({
@@ -222,7 +230,7 @@ class VendorPlanService extends MedusaService({
       to_plan_code: decision.to_plan_code,
       assigned_by: input.assigned_by,
       now,
-    })
+    });
 
     await this.recordEvent({
       seller_id: input.seller_id,
@@ -234,26 +242,26 @@ class VendorPlanService extends MedusaService({
       from_plan_code: assignment.plan_code,
       to_plan_code: decision.to_plan_code,
       payload: { reason: input.reason ?? decision.reason },
-    })
+    });
 
-    return { assignment: updated, decision, replayed: false }
+    return { assignment: updated, decision, replayed: false };
   }
 
   /** Apply a scheduled downgrade whose effective date has arrived. */
   async applyPendingChange(
     seller_id: string,
-    now: Date = new Date()
+    now: Date = new Date(),
   ): Promise<VendorPlanAssignmentType | null> {
-    const assignment = await this.getAssignment(seller_id)
-    if (!assignment) return null
-    if (!isPendingChangeDue(this.toSnapshot(assignment), now)) return null
+    const assignment = await this.getAssignment(seller_id);
+    if (!assignment) return null;
+    if (!isPendingChangeDue(this.toSnapshot(assignment), now)) return null;
 
-    const toPlan = assignment.pending_plan_code as string
+    const toPlan = assignment.pending_plan_code as string;
     const updated = await this.writeImmediateChange({
       assignment,
       to_plan_code: toPlan,
       now,
-    })
+    });
 
     await this.recordEvent({
       seller_id,
@@ -267,27 +275,27 @@ class VendorPlanService extends MedusaService({
           : "unknown"
       }`,
       payload: { applied_from_pending: true },
-    })
+    });
 
-    return updated
+    return updated;
   }
 
   /** Every assignment with a pending change now due. */
   async listDuePendingChanges(
-    now: Date = new Date()
+    now: Date = new Date(),
   ): Promise<VendorPlanAssignmentType[]> {
     const rows = await this.listVendorPlanAssignments({
       pending_effective_at: { $lte: now },
-    } as Record<string, unknown>)
-    return rows.filter((r) => !!r.pending_plan_code)
+    } as Record<string, unknown>);
+    return rows.filter((r) => !!r.pending_plan_code);
   }
 
   /** Schedule cancellation at period end; falls back to immediate. */
   async cancelAtPeriodEnd(
     seller_id: string,
-    reason?: string
+    reason?: string,
   ): Promise<VendorPlanAssignmentType> {
-    const assignment = await this.ensureAssignment(seller_id)
+    const assignment = await this.ensureAssignment(seller_id);
     const [updated] = await this.updateVendorPlanAssignments([
       {
         id: assignment.id,
@@ -295,7 +303,7 @@ class VendorPlanService extends MedusaService({
         pending_plan_code: DEFAULT_PLAN_CODE,
         pending_effective_at: assignment.current_period_end ?? new Date(),
       },
-    ])
+    ]);
     await this.recordEvent({
       seller_id,
       assignment_id: assignment.id,
@@ -303,9 +311,9 @@ class VendorPlanService extends MedusaService({
       from_plan_code: assignment.plan_code,
       to_plan_code: DEFAULT_PLAN_CODE,
       payload: { reason: reason ?? "canceled by request" },
-    })
-    invalidateSellerPlan(seller_id)
-    return updated
+    });
+    invalidateSellerPlan(seller_id);
+    return updated;
   }
 
   /**
@@ -317,35 +325,47 @@ class VendorPlanService extends MedusaService({
    */
   async planReconciliation(
     seller_id: string,
-    current_keys: readonly string[]
+    current_keys: readonly string[],
   ): Promise<{
-    plan_code: string
-    desired: VendorFeatureKey[]
-    to_grant: VendorFeatureKey[]
-    to_revoke: string[]
+    plan_code: string;
+    desired: VendorFeatureKey[];
+    to_grant: VendorFeatureKey[];
+    to_revoke: string[];
   }> {
-    const plan_code = await this.getEffectivePlanCode(seller_id)
-    return { plan_code, ...reconcileFeatureKeys({ plan_code, current_keys }) }
+    const plan_code = await this.getEffectivePlanCode(seller_id);
+    return { plan_code, ...reconcileFeatureKeys({ plan_code, current_keys }) };
   }
 
   /** Roll an assignment into its next billing period. */
   async rollPeriod(
     seller_id: string,
-    now: Date = new Date()
+    now: Date = new Date(),
   ): Promise<VendorPlanAssignmentType | null> {
-    const assignment = await this.getAssignment(seller_id)
-    if (!assignment) return null
+    const assignment = await this.getAssignment(seller_id);
+    if (!assignment) return null;
 
     const rolled = applyPeriodRollover({
       plan_code: assignment.plan_code,
       current_period_end: assignment.current_period_end as Date | null,
       now,
-    })
-    if (!rolled) return assignment
+    });
+    if (!rolled) return assignment;
+
+    // A trial that has run its course converts on the same tick that raises its
+    // first charge. Without this the assignment would stay TRIALING forever,
+    // billing every period while still reading as a trial to anything that
+    // checks the status.
+    const trialEnded =
+      assignment.status === VendorPlanStatus.TRIALING &&
+      (!assignment.trial_ends_at || new Date(assignment.trial_ends_at) <= now);
 
     const [updated] = await this.updateVendorPlanAssignments([
-      { id: assignment.id, ...rolled },
-    ])
+      {
+        id: assignment.id,
+        ...rolled,
+        ...(trialEnded ? { status: VendorPlanStatus.ACTIVE } : {}),
+      },
+    ]);
 
     await this.recordEvent({
       seller_id,
@@ -358,9 +378,9 @@ class VendorPlanService extends MedusaService({
         period_start: rolled.current_period_start.toISOString(),
         period_end: rolled.current_period_end.toISOString(),
       },
-    })
+    });
 
-    return updated
+    return updated;
   }
 
   // ── Internals ─────────────────────────────────────────────────────────────
@@ -373,27 +393,43 @@ class VendorPlanService extends MedusaService({
       cancel_at_period_end: !!a.cancel_at_period_end,
       pending_plan_code: (a.pending_plan_code as string | null) ?? null,
       pending_effective_at: (a.pending_effective_at as Date | null) ?? null,
-    }
+    };
   }
 
   private async writeImmediateChange(args: {
-    assignment: VendorPlanAssignmentType
-    to_plan_code: string
-    assigned_by?: VendorPlanAssignedBy
-    now: Date
+    assignment: VendorPlanAssignmentType;
+    to_plan_code: string;
+    assigned_by?: VendorPlanAssignedBy;
+    now: Date;
   }): Promise<VendorPlanAssignmentType> {
-    const def = getPlanDefinition(args.to_plan_code)
+    const def = getPlanDefinition(args.to_plan_code);
     const rolled = applyPeriodRollover({
       plan_code: args.to_plan_code,
       current_period_end: null,
       now: args.now,
-    })
+    });
+
+    // A plan that advertises a trial actually gets one. `trial_ends_at` was
+    // already being written here, but the status went straight to ACTIVE and
+    // the first period ran a full month, so the change route billed the whole
+    // amount immediately and nothing ever read the trial: the only status
+    // writers in the module were ACTIVE and PAST_DUE, so TRIALING could not
+    // occur and the renewal job's handling of it never ran.
+    //
+    // The first period ends when the trial does, so the renewal job raises the
+    // first charge on exactly that day and rolls a normal period from there.
+    const trialEndsAt =
+      def && def.trial_days > 0
+        ? new Date(args.now.getTime() + def.trial_days * 86_400_000)
+        : null;
 
     const [updated] = await this.updateVendorPlanAssignments([
       {
         id: args.assignment.id,
         plan_code: args.to_plan_code,
-        status: VendorPlanStatus.ACTIVE,
+        status: trialEndsAt
+          ? VendorPlanStatus.TRIALING
+          : VendorPlanStatus.ACTIVE,
         activated_at: args.now,
         // Clear any scheduled change — it has been superseded.
         pending_plan_code: null,
@@ -403,22 +439,18 @@ class VendorPlanService extends MedusaService({
         dunning_attempts: 0,
         next_retry_at: null,
         ...(rolled ?? {}),
-        ...(def && def.trial_days > 0
-          ? {
-              trial_ends_at: new Date(
-                args.now.getTime() + def.trial_days * 86_400_000
-              ),
-            }
+        ...(trialEndsAt
+          ? { trial_ends_at: trialEndsAt, current_period_end: trialEndsAt }
           : {}),
         ...(args.assigned_by ? { assigned_by: args.assigned_by } : {}),
       },
-    ])
+    ]);
 
     // Drop the gate's cached snapshot synchronously, so an upgrade takes
     // effect on this instance immediately rather than after the cache TTL.
-    invalidateSellerPlan(args.assignment.seller_id)
+    invalidateSellerPlan(args.assignment.seller_id);
 
-    return updated
+    return updated;
   }
 
   /**
@@ -426,16 +458,16 @@ class VendorPlanService extends MedusaService({
    * already used, which is how a replay is detected.
    */
   private async claimIdempotencyKey(args: {
-    seller_id: string
-    assignment_id: string
-    idempotency_key: string
-    from_plan_code: string
-    to_plan_code: string
+    seller_id: string;
+    assignment_id: string;
+    idempotency_key: string;
+    from_plan_code: string;
+    to_plan_code: string;
   }): Promise<boolean> {
     const [existing] = await this.listVendorPlanEvents({
       idempotency_key: args.idempotency_key,
-    })
-    if (existing) return false
+    });
+    if (existing) return false;
 
     try {
       await this.createVendorPlanEvents([
@@ -449,24 +481,24 @@ class VendorPlanService extends MedusaService({
           occurred_at: new Date(),
           payload: { claim: true },
         },
-      ])
-      return true
+      ]);
+      return true;
     } catch (err) {
       // Lost a race to a concurrent caller holding the same key — that caller
       // is performing the transition, so this one must not repeat it.
-      if (isUniqueViolation(err)) return false
-      throw err
+      if (isUniqueViolation(err)) return false;
+      throw err;
     }
   }
 
   private async recordEvent(args: {
-    seller_id: string
-    assignment_id: string
-    type: VendorPlanEventType
-    from_plan_code?: string | null
-    to_plan_code?: string | null
-    idempotency_key?: string | null
-    payload?: Record<string, unknown> | null
+    seller_id: string;
+    assignment_id: string;
+    type: VendorPlanEventType;
+    from_plan_code?: string | null;
+    to_plan_code?: string | null;
+    idempotency_key?: string | null;
+    payload?: Record<string, unknown> | null;
   }): Promise<void> {
     try {
       await this.createVendorPlanEvents([
@@ -480,13 +512,13 @@ class VendorPlanService extends MedusaService({
           payload: args.payload ?? null,
           occurred_at: new Date(),
         },
-      ])
+      ]);
     } catch (err) {
       // A duplicate history row must never fail the transition that produced
       // it — the assignment is already updated and is the operative state.
-      if (!isUniqueViolation(err)) throw err
+      if (!isUniqueViolation(err)) throw err;
     }
   }
 }
 
-export default VendorPlanService
+export default VendorPlanService;

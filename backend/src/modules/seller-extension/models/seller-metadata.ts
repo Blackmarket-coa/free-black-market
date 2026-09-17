@@ -36,6 +36,12 @@ export enum VendorType {
   RESTAURANT = "restaurant",
   MUTUAL_AID = "mutual_aid",
   CREATOR = "creator",
+  /**
+   * A carrier / delivery node. Approving a logistics seller provisions a
+   * Blackstar node operator over the bridge, so this type is the gate on who
+   * ends up holding logistics credentials — not every approved seller.
+   */
+  LOGISTICS = "logistics",
   GENERAL = "general",
 }
 
@@ -146,6 +152,14 @@ const SellerMetadata = model.define("seller_metadata", {
   // General extended fields
   featured: model.boolean().default(false),
   verified: model.boolean().default(false),
+  /**
+   * Has this seller asked to run a Blackstar logistics node?
+   *
+   * The gate on being handed node credentials. Not `vendor_type`: that is one
+   * archetype chosen once at registration, so it could not express a kitchen
+   * that also drives, or a seller who decided later.
+   */
+  node_operator_opt_in: model.boolean().default(false),
   // DEPRECATED — do not read these, and do not start writing them.
   //
   // Nothing has ever incremented either field, so both always read null/0. They

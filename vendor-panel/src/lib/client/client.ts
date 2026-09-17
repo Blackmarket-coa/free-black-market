@@ -3,7 +3,14 @@ import { devLogger } from "../logger"
 
 // PUBLIC ROUTE CHECKER
 export const isPublicAuthRoute = (url: string) => {
-  return url.startsWith("/auth/") || url.startsWith("/vendor/auth")
+  return (
+    url.startsWith("/auth/") ||
+    url.startsWith("/vendor/auth") ||
+    // Completing email verification is necessarily anonymous: the caller is
+    // proving control of a mailbox and has no seller session yet. Treated as
+    // authenticated, fetchQuery would attach a stale token or bail out.
+    url.startsWith("/vendor/verify-email")
+  )
 }
 
 // BACKEND CONFIG

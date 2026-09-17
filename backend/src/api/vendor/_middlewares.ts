@@ -99,6 +99,12 @@ export async function ensureSellerContext(
     ["/vendor/register", new Set(["POST"])],
     ["/vendor/registration-status", new Set(["GET"])],
     ["/vendor/sellers", new Set(["POST"])],
+    // Completing email verification is necessarily anonymous — the caller is
+    // proving control of a mailbox, and has no seller yet to be in the context
+    // of. `export const AUTHENTICATE = false` on the route does not reach this:
+    // it disables Medusa's own authenticate middleware, not a defineMiddlewares
+    // entry, and `/vendor/**` is guarded here.
+    ["/vendor/verify-email", new Set(["POST"])],
   ])
 
   const rawPath = req.originalUrl || req.url || req.path || ""

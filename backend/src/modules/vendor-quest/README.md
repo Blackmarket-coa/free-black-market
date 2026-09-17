@@ -6,8 +6,13 @@ certification, co-op), structured as a stage-gated progression ending in an
 exportable **packet** for the outcome's gatekeeper.
 
 This is a general **engine**, not a set of bespoke features. Each quest in the
-catalog (Q1–Q15) is a **definition** (config); adding one is a new file, never
+catalog (Q1–Q16) is a **definition** (config); adding one is a new file, never
 an engine change.
+
+The engine stays generic even for quests with an audience of one kind of group:
+Q16 (`coalition-drive`) is completable only by a Blackout coalition, and it gets
+there by reading `collective.coalition` — a domain-optional substrate field that
+is null for everyone else — not by any coalition awareness in `engine.ts`.
 
 ## Layers
 
