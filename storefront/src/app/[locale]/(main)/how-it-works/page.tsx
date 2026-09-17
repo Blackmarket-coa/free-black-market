@@ -98,7 +98,7 @@ export default function HowItWorksPage() {
     {
       number: "1",
       title: "Sign Up Free",
-      description: "Create your account in minutes. No upfront costs, no monthly fees, no commitments.",
+      description: "Create your account in minutes. No upfront costs, no required monthly fee, no commitments.",
     },
     {
       number: "2",
@@ -113,7 +113,7 @@ export default function HowItWorksPage() {
     {
       number: "4",
       title: "Get Paid Fast",
-      description: "Receive 97% of every sale via Stripe Connect. Payouts arrive in 2-3 business days.",
+      description: "Receive at least 97% of every sale. FBM collects the payment and pays you by ACH, weekly by default.",
     },
   ]
 
@@ -121,7 +121,7 @@ export default function HowItWorksPage() {
     {
       icon: CurrencyDollarIcon,
       title: "Just 3% Coalition Fee",
-      description: "No subscriptions. No monthly fees. No listing fees. No payment processing fees passed to you. Just 3% when you make a sale.",
+      description: "No required subscription. No listing fees. No payment processing fees passed to you. 3% when you make a sale on the free plan — optional paid plans bring it to 2.5%, 2% or 1.5%.",
       color: "bg-green-100 text-green-600",
     },
     {
@@ -261,7 +261,7 @@ export default function HowItWorksPage() {
               </div>
               <p className="text-gray-600">
                 Just 3% covers everything: platform operations, payment processing,
-                development, and community support. No subscriptions. No additional fees.
+                development, and community support. No required subscription. No additional fees.
                 That&apos;s the whole story.
               </p>
             </div>
@@ -650,8 +650,9 @@ export default function HowItWorksPage() {
                 How do providers get paid?
               </h3>
               <p className="text-gray-600">
-                Through Stripe Connect. When you make a sale, 97% goes directly to your bank account
-                within 2-3 business days. No invoicing, no waiting for thresholds, no complicated processes.
+                By ACH. When you make a sale, at least 97% is credited to you and paid out to your bank
+                account — weekly by default, with faster tiers available for a fee. No invoicing, no
+                waiting for thresholds, no complicated processes.
               </p>
             </div>
 
@@ -661,7 +662,7 @@ export default function HowItWorksPage() {
               </h3>
               <p className="text-gray-600">
                 Everything. Platform hosting, development, payment processing, customer support,
-                and community programs. There are no hidden fees, no subscriptions, no listing fees,
+                and community programs. There are no hidden fees, no required subscription, no listing fees,
                 and no payment processing fees passed to providers.
               </p>
             </div>

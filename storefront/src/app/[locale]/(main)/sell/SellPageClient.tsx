@@ -61,7 +61,7 @@ const dashboardShots = [
   {
     title: "Payout tracking",
     image: "/talkjs-placeholder.jpg",
-    caption: "Track payouts with clear Stripe Connect visibility and transparent fee math.",
+    caption: "See what you are owed and what was deducted, with the fee math shown per order.",
   },
   {
     title: "Vendor messaging",
@@ -171,8 +171,8 @@ export default function SellPage() {
   const benefits = [
     {
       icon: CurrencyDollarIcon,
-      title: "Keep 97% of Every Transaction",
-      description: "Just a 3% coalition fee—that's it. No hidden fees, no monthly charges, no listing fees, no payment processing fees passed to you.",
+      title: "Keep at least 97% of Every Transaction",
+      description: "A 3% coalition fee on the free plan, and lower on a paid plan. No listing fees, and no payment processing fees passed to you — we absorb those.",
     },
     {
       icon: UserGroupIcon,
@@ -218,7 +218,7 @@ export default function SellPage() {
   const faqs = [
     {
       question: "How much does it cost to join?",
-      answer: "Nothing upfront. Just 3% to the coalition when you make a sale—that's it. No subscriptions, no monthly fees, no listing fees, no payment processing fees, no hidden charges. If you don't sell, you don't pay.",
+      answer: "Nothing upfront. On the free plan it is 3% to the coalition when you make a sale, with no listing fees, no payment processing fees and no hidden charges — if you don't sell, you don't pay. Paid plans are optional and lower the rate: Starter $29/mo for 2.5%, Pro $99/mo for 2%, Scale $249/mo for 1.5%. Starter and Pro include a 30-day free trial.",
     },
     {
       question: "Do I need a commercial kitchen?",
@@ -226,7 +226,7 @@ export default function SellPage() {
     },
     {
       question: "How do I get paid?",
-      answer: "We use Stripe Connect for secure, fast payments. You'll receive payouts directly to your bank account, typically within 2-3 business days of each sale.",
+      answer: "Payouts go to your bank account by ACH. The default cadence is weekly, and faster tiers are available for a fee — next-day 0.25%, same-day 0.5%, instant 1%. Weekly costs nothing.",
     },
     {
       question: "Can I set my own prices?",
@@ -264,7 +264,7 @@ export default function SellPage() {
               <p className="text-sm font-semibold text-green-200 mb-4 uppercase tracking-wide">Sign-up steps</p>
               <ol className="grid sm:grid-cols-2 gap-3 text-sm">
                 <li className="rounded-lg bg-white/10 p-3"><span className="font-semibold text-white">1. Create account</span><br />Start in minutes with email + store name.</li>
-                <li className="rounded-lg bg-white/10 p-3"><span className="font-semibold text-white">2. Connect payouts</span><br />Use Stripe Connect for secure direct deposits.</li>
+                <li className="rounded-lg bg-white/10 p-3"><span className="font-semibold text-white">2. Connect payouts</span><br />Add your bank details for direct ACH deposits.</li>
                 <li className="rounded-lg bg-white/10 p-3"><span className="font-semibold text-white">3. Choose what you sell</span><br />Goods, services, subscriptions, tickets, rentals, or programs.</li>
                 <li className="rounded-lg bg-white/10 p-3"><span className="font-semibold text-white">4. Launch storefront</span><br />Publish and manage operations from one dashboard.</li>
               </ol>
@@ -284,7 +284,7 @@ export default function SellPage() {
             <div className="flex flex-wrap gap-4 mb-10">
               <div className="flex items-center gap-2 bg-white/10 px-4 py-2 rounded-full">
                 <CheckCircleIcon className="w-5 h-5 text-green-300" />
-                <span>Just 3% Coalition Fee</span>
+                <span>3% Coalition Fee, Less on a Plan</span>
               </div>
               <div className="flex items-center gap-2 bg-white/10 px-4 py-2 rounded-full">
                 <CheckCircleIcon className="w-5 h-5 text-green-300" />
@@ -522,7 +522,7 @@ export default function SellPage() {
 
           <div className="mt-16 text-center">
             <p className="text-gray-300 max-w-2xl mx-auto">
-              That&apos;s it. No subscriptions. No additional fees. No payment processing fees passed to you.
+              That&apos;s the free plan. Paid plans are optional and lower the rate. No listing fees, and no payment processing fees passed to you.
               Unlike venture-backed platforms that burn cash to gain market share then raise fees,
               we&apos;re building something sustainable for our community.
             </p>

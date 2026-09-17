@@ -96,7 +96,7 @@ const COMMITMENTS = [
 
 /** What the fee funds. Vendors are entitled to know what they are buying. */
 const WHAT_THE_FEE_PAYS_FOR = [
-  "Hosting, payments infrastructure, and the Stripe Connect payout rail",
+  "Hosting, payments infrastructure, and the card processing we absorb rather than pass on",
   "Storefront, vendor dashboard, and the ordering, fulfilment, and messaging systems behind them",
   "Vendor verification review and dispute handling",
   "The shared ledger that settles value between coalition members",
@@ -144,7 +144,7 @@ export default async function TransparencyPage() {
             On a $100 sale
           </h2>
           <p className="text-gray-600 mb-6">
-            No listing fee to get here, no subscription to stay here, no ad
+            No listing fee to get here, no subscription required to stay here, no ad
             spend to be seen here.
           </p>
           <div className="grid sm:grid-cols-3 gap-3 mb-6">
