@@ -10,6 +10,7 @@ const DEFAULT_METADATA_FIELDS = [
   "storefront_links",
   "certifications",
   "enabled_extensions",
+  "node_operator_opt_in",
 ]
 
 const METADATA_FIELD_SET = new Set(DEFAULT_METADATA_FIELDS)

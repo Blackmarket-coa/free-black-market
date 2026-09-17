@@ -95,6 +95,9 @@ export const handleSellerRegistration = async (
           name: body.name,
         },
         vendor_type: body.vendor_type || "general",
+        // "I also want to run deliveries." Answered in the onboarding survey;
+        // it decides whether approval hands this seller node credentials.
+        node_operator_opt_in: body.node_operator_opt_in === true,
         playbook: body.playbook,
         roles: body.roles,
         recommended_playbook: body.recommended_playbook,

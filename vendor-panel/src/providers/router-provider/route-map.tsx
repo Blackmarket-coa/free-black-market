@@ -1620,6 +1620,14 @@ export const RouteMap: RouteObject[] = [
             },
           },
           {
+            path: "node-operator",
+            errorElement: <ErrorBoundary />,
+            lazy: () => import("../../routes/settings/node-operator"),
+            handle: {
+              breadcrumb: () => "Run deliveries",
+            },
+          },
+          {
             path: "store",
             errorElement: <ErrorBoundary />,
             lazy: () => import("../../routes/store/store-detail"),

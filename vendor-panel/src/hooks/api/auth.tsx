@@ -105,6 +105,8 @@ export const useSignUpWithEmailPass = (
       recommended_playbook?: string
       roles?: string[]
       resources?: string[]
+      /** Ticked "sign me up to carry deliveries" in the onboarding survey. */
+      node_operator_opt_in?: boolean
     }
   >
 ) => {
@@ -117,6 +119,7 @@ export const useSignUpWithEmailPass = (
         recommended_playbook,
         roles,
         resources,
+        node_operator_opt_in,
         ...authPayload
       } = payload
       const normalizedEmail = payload.email.toLowerCase().trim()
@@ -177,6 +180,7 @@ export const useSignUpWithEmailPass = (
             recommended_playbook: variables.recommended_playbook,
             roles: variables.roles,
             resources: variables.resources,
+            node_operator_opt_in: variables.node_operator_opt_in === true,
             member: {
               name: variables.name,
               email: variables.email.toLowerCase().trim(),
