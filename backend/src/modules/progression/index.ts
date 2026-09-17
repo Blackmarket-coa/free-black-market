@@ -10,3 +10,4 @@ export default Module(PROGRESSION_MODULE, {
 export * from "./models"
 export * from "./stance"
 export * from "./leveling"
+export * from "./coalition-tiers"
