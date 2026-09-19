@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef } from "react"
 import { Link, useSearchParams } from "react-router-dom"
-import { Button, Heading, Spinner, Text } from "@medusajs/ui"
+import { Spinner } from "@medusajs/icons"
+import { Button, Heading, Text } from "@medusajs/ui"
 
 import { useVerifySellerEmail } from "../../hooks/api/auth"
 
