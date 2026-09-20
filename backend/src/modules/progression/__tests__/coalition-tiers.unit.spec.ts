@@ -65,17 +65,17 @@ describe("coalitionTierForXp", () => {
 
 describe("getCoalitionKarmaTier", () => {
   const makeService = (sheets: Array<Record<string, unknown>>) => {
-    const svc = Object.create(
-      ProgressionModuleService.prototype
-    ) as ProgressionModuleService & {
-      listCharacterSheets: jest.Mock
-      createCharacterSheets: jest.Mock
-    }
+    // Prototype instance so the real method runs against stubbed persistence,
+    // the same shape attestation.unit.spec.ts uses. Typed `any` while the
+    // stubs are assigned: the repo-wide `tsc --noEmit` type-checks test files
+    // too, and a jest.fn returning partial sheet rows is not assignable to the
+    // generated `listCharacterSheets` signature.
+    const svc: any = Object.create(ProgressionModuleService.prototype)
     svc.listCharacterSheets = jest.fn(async () => sheets)
     svc.createCharacterSheets = jest.fn(async () => {
       throw new Error("a read must not create a character sheet")
     })
-    return svc
+    return svc as ProgressionModuleService & Record<string, jest.Mock>
   }
 
   it("reads coalition_xp, not producer_xp", async () => {
