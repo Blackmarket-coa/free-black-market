@@ -192,7 +192,10 @@ function loadConfig(): Config {
     // it attribution IP hashing silently degrades to no hashing: the helper
     // refuses to store an unsalted hash, so every click row would lose its
     // ip_hash. Fail fast rather than booting with attribution half-blind.
-    if (!result.data.CREATOR_ATTRIBUTION_IP_SALT?.trim()) {
+    // A copied template placeholder is not a salt either: hashing under a
+    // public string is the same exposure as no salt.
+    const ipSalt = result.data.CREATOR_ATTRIBUTION_IP_SALT?.trim() ?? ""
+    if (!ipSalt || ipSalt.startsWith("CHANGE_ME") || ipSalt.startsWith("local-dev-")) {
       logger.error("CREATOR_ATTRIBUTION_IP_SALT is required in production.")
       throw new Error("CREATOR_ATTRIBUTION_IP_SALT is required in production.")
     }
