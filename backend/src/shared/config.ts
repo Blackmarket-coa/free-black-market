@@ -81,6 +81,10 @@ const envSchema = z.object({
   // (enforced below in loadConfig); optional in dev/test so local boots succeed.
   FREEBLACKMARKET_WEBHOOK_SECRET: optionalString,
   FREEBLACKMARKET_API_KEY: optionalString,
+  // Salt for creator-attribution IP hashing (LEG-8). Required in production
+  // (enforced below in loadConfig): without it `hashIpForAttribution` returns
+  // null, so click rows carry no IP hash rather than an unsalted, reversible one.
+  CREATOR_ATTRIBUTION_IP_SALT: optionalString,
   FREEBLACKMARKET_BASE_URL: optionalString,
   BLACKOUT_API_BASE: optionalString,
   ENTITLEMENTS_SERVICE_TOKEN: optionalString,
@@ -182,6 +186,15 @@ function loadConfig(): Config {
     if (!result.data.FREEBLACKMARKET_API_KEY) {
       logger.error("FREEBLACKMARKET_API_KEY is required in production.")
       throw new Error("FREEBLACKMARKET_API_KEY is required in production.")
+    }
+
+    // CREATOR_ATTRIBUTION_IP_SALT is required in production (LEG-8). Without
+    // it attribution IP hashing silently degrades to no hashing: the helper
+    // refuses to store an unsalted hash, so every click row would lose its
+    // ip_hash. Fail fast rather than booting with attribution half-blind.
+    if (!result.data.CREATOR_ATTRIBUTION_IP_SALT?.trim()) {
+      logger.error("CREATOR_ATTRIBUTION_IP_SALT is required in production.")
+      throw new Error("CREATOR_ATTRIBUTION_IP_SALT is required in production.")
     }
 
     const warnings: string[] = []

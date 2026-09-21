@@ -22,6 +22,7 @@ const baseProd = {
   DATABASE_URL: "postgres://localhost:5432/fbm",
   JWT_SECRET: "x".repeat(40),
   COOKIE_SECRET: "y".repeat(40),
+  CREATOR_ATTRIBUTION_IP_SALT: "z".repeat(64),
 }
 
 describe("config boot — Blackout secrets (§7)", () => {
@@ -85,6 +86,43 @@ describe("config boot — required secrets", () => {
         NODE_ENV: "development",
         DATABASE_URL: "postgres://localhost:5432/fbm",
         COOKIE_SECRET: undefined,
+      })
+    ).not.toThrow()
+  })
+})
+
+describe("config boot — CREATOR_ATTRIBUTION_IP_SALT (LEG-8)", () => {
+  const blackoutSecrets = {
+    FREEBLACKMARKET_WEBHOOK_SECRET: "whsec",
+    FREEBLACKMARKET_API_KEY: "apikey",
+  }
+
+  it("throws in production when CREATOR_ATTRIBUTION_IP_SALT is missing", () => {
+    expect(() =>
+      loadConfigWith({
+        ...baseProd,
+        ...blackoutSecrets,
+        CREATOR_ATTRIBUTION_IP_SALT: undefined,
+      })
+    ).toThrow(/CREATOR_ATTRIBUTION_IP_SALT is required in production/)
+  })
+
+  it("throws in production when CREATOR_ATTRIBUTION_IP_SALT is blank", () => {
+    expect(() =>
+      loadConfigWith({
+        ...baseProd,
+        ...blackoutSecrets,
+        CREATOR_ATTRIBUTION_IP_SALT: "   ",
+      })
+    ).toThrow(/CREATOR_ATTRIBUTION_IP_SALT is required in production/)
+  })
+
+  it("does NOT require CREATOR_ATTRIBUTION_IP_SALT outside production", () => {
+    expect(() =>
+      loadConfigWith({
+        NODE_ENV: "development",
+        DATABASE_URL: "postgres://localhost:5432/fbm",
+        CREATOR_ATTRIBUTION_IP_SALT: undefined,
       })
     ).not.toThrow()
   })

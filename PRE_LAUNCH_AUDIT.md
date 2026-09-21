@@ -316,7 +316,7 @@ triaged, not ignored.)
 - [ ] **LEG-7** Align `POSTURE_A_COMPLIANCE.md` with the wired controls. ~~**LEG-9** resolve the license contradiction~~ — **done 2026-09-13**: `LICENSE` (AGPL-3.0) and `NOTICE` shipped, every `package.json` declares `AGPL-3.0-only`, and the "Open Source. Community Governed." badge is now backed. 
 - [ ] **FE-5/6/7** Add `sitemap.ts`; remove `mercurjs.com` fallbacks; stop ignoring storefront type errors.
 - [ ] **INFRA-7/8** Pin `minio`; add resource limits; provision Grafana dashboards/alerts; split migrate/seed out of the replica start path.
-- [ ] **LEG-8** Consent banner; set a real `CREATOR_ATTRIBUTION_IP_SALT`; remove trademarked/stock assets; add retention/purge jobs.
+- [ ] **LEG-8** Consent banner; set a real `CREATOR_ATTRIBUTION_IP_SALT` (salt is now required at boot in production via `shared/config.ts`, and `hashIpForAttribution` skips hashing — stores `null` — when it is unset, so an unsalted IP hash is never written); remove trademarked/stock assets; add retention/purge jobs.
 - [ ] Confirm the `docs/GO_LIVE_CHECKLIST.md` §A operator items (PagerDuty, DNS, certs, managed DB snapshots, GHCR pull auth).
 
 ---

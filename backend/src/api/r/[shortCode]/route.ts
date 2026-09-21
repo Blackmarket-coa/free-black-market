@@ -4,6 +4,7 @@ import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { createHash, randomUUID } from "crypto"
 import { CREATOR_ATTRIBUTION_MODULE } from "../../../modules/creator-attribution"
 import CreatorAttributionService from "../../../modules/creator-attribution/service"
+import { hashIpForAttribution } from "../../../lib/attribution-ip-hash"
 
 /**
  * Public affiliate-link redirector.
@@ -36,12 +37,6 @@ function getCookieSecret(): string {
     process.env.JWT_SECRET ||
     "fbm-default-cookie-key"
   )
-}
-
-function hashIp(ip: string | null | undefined): string | null {
-  if (!ip) return null
-  const salt = process.env.CREATOR_ATTRIBUTION_IP_SALT || ""
-  return createHash("sha256").update(`${salt}:${ip}`).digest("hex").slice(0, 32)
 }
 
 function hashUserAgent(ua: string | null | undefined): string | null {
@@ -141,7 +136,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     .recordClick({
       shortCode,
       visitorToken,
-      ipHash: hashIp(ip),
+      ipHash: hashIpForAttribution(ip),
       userAgentHash: hashUserAgent(ua),
       referrer,
       country,
