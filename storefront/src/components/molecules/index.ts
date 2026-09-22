@@ -35,6 +35,8 @@ import { AddressForm } from "./AddressForm/AddressForm"
 import { ReviewForm } from "./ReviewForm/ReviewForm"
 import { ProfileDetails } from "./ProfileDetails/ProfileDetails"
 import { PrivacyDataSettings } from "./PrivacyDataSettings/PrivacyDataSettings"
+import { ConsentBanner } from "./ConsentBanner/ConsentBanner"
+import { CookieSettingsLink } from "./CookieSettingsLink/CookieSettingsLink"
 import { DeliveryCheck } from "./DeliveryCheck/DeliveryCheck"
 import { ContactSellerButton } from "./ContactSellerButton/ContactSellerButton"
 import { CheckoutProgress } from "./CheckoutProgress/CheckoutProgress"
@@ -91,6 +93,8 @@ export {
   ReviewForm,
   ProfileDetails,
   PrivacyDataSettings,
+  ConsentBanner,
+  CookieSettingsLink,
   DeliveryCheck,
   ContactSellerButton,
   CheckoutProgress,

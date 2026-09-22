@@ -1,4 +1,5 @@
 import { logger } from "@/lib/logger"
+import { hasTrackingConsent } from "@/lib/consent"
 export type AnalyticsPayload = Record<string, string | number | boolean | null | undefined>
 
 /**
@@ -190,11 +191,17 @@ const postToBackend = (eventName: CanonicalEventName, payload: AnalyticsPayload)
   }
 }
 
+/**
+ * Dispatch a website event to the data layer, the DOM and (for canonical
+ * funnel events) the backend. LEG-8: the entire dispatch is a no-op until
+ * the visitor has accepted non-essential cookies; nothing is queued for later.
+ */
 export const emitWebsiteEvent = (
   name: WebsiteEventName,
   payload: AnalyticsPayload = {}
 ) => {
   if (typeof window === "undefined") return
+  if (!hasTrackingConsent()) return
 
   const enriched = enrichWithContext(payload)
   const eventPayload = {
