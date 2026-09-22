@@ -12,6 +12,7 @@ Medusa scheduled jobs for FBM. Each file exports a handler plus a cron
 | `attribution-fraud-sweep.ts` | every 10 min | Flag suspicious creator-attribution activity |
 | `close-garden-proposals.ts` | hourly :20 | Close garden proposals past `voting_end` via `finalizeProposalWorkflow`; skips (and warns about) proposals with no recorded electorate, since quorum is unmeasurable without one |
 | `content-platform-metrics-poll.ts` | every 15 min | Poll external content-platform metrics for creators |
+| `creator-attribution-retention.ts` | daily 04:30 | Null `ip_hash`/`user_agent_hash`/`referrer` on click events older than `CREATOR_ATTRIBUTION_IDENTIFIER_RETENTION_DAYS` (30) and delete click events older than `CREATOR_ATTRIBUTION_CLICK_RETENTION_DAYS` (365), in id batches of 500 |
 | `creator-attribution-approve-held.ts` | hourly | Auto-approve held creator attributions past their review window |
 | `creator-rewards-pool-close.ts` | daily 01:30 | Close and settle creator reward pools |
 | `demand-pool-expiry.ts` | hourly | Expire lapsed demand pools |
