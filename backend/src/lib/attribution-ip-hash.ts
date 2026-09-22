@@ -4,15 +4,17 @@ import { createHash } from "crypto"
  * Salted IP hashing for creator-attribution click events.
  *
  * Provenance: PRE_LAUNCH_AUDIT.md item LEG-8. The `/r/:shortCode` redirector
- * and `POST /marketplace/attribution/click` used to each carry a private
+ * and `POST /v1/marketplace/attribution/click` used to each carry a private
  * `hashIp` that fell back to an empty salt when `CREATOR_ATTRIBUTION_IP_SALT`
  * was unset. An unsalted SHA-256 of an IPv4 address is trivially reversible
  * (the whole address space fits in a rainbow table), so that fallback stored
  * what is effectively the raw IP.
  *
  * Rule: when the salt is missing or blank this helper returns `null` and no
- * hash is stored at all. Production boot additionally refuses to start
- * without the salt (see `shared/config.ts`), so the null path only ever
+ * hash is stored at all. Production additionally refuses to run without a
+ * real salt — the deploy-time env gate (`scripts/assert-env.mjs`) and the
+ * production config check (`shared/config.ts`) both reject a missing value
+ * and the `CHANGE_ME` template placeholder — so the null path only ever
  * applies to dev/test environments that never configured one.
  *
  * Output format is intentionally byte-for-byte what the routes produced

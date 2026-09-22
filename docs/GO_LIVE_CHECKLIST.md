@@ -68,7 +68,8 @@ notable flags this pass (all default to the safe value):
   auth flow is in use.
 - Fail-closed required secrets (backend refuses to boot without them):
   `JWT_SECRET`, `COOKIE_SECRET`, `FREEBLACKMARKET_WEBHOOK_SECRET`,
-  `FREEBLACKMARKET_API_KEY` (see `scripts/assert-env.mjs`).
+  `FREEBLACKMARKET_API_KEY`, `CREATOR_ATTRIBUTION_IP_SALT` (see
+  `scripts/assert-env.mjs`; a `CHANGE_ME` placeholder is rejected too).
 
 ---
 

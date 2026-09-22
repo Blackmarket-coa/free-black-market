@@ -117,6 +117,17 @@ describe("config boot — CREATOR_ATTRIBUTION_IP_SALT (LEG-8)", () => {
     ).toThrow(/CREATOR_ATTRIBUTION_IP_SALT is required in production/)
   })
 
+  it("throws in production when CREATOR_ATTRIBUTION_IP_SALT is the template placeholder", () => {
+    expect(() =>
+      loadConfigWith({
+        ...baseProd,
+        FREEBLACKMARKET_WEBHOOK_SECRET: "whsec",
+        FREEBLACKMARKET_API_KEY: "apikey",
+        CREATOR_ATTRIBUTION_IP_SALT: "CHANGE_ME_creator_attribution_ip_salt_openssl_rand_hex_32",
+      })
+    ).toThrow(/CREATOR_ATTRIBUTION_IP_SALT is required in production/)
+  })
+
   it("does NOT require CREATOR_ATTRIBUTION_IP_SALT outside production", () => {
     expect(() =>
       loadConfigWith({
