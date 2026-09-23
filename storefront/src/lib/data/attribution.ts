@@ -3,6 +3,7 @@
 import { cookies as nextCookies } from "next/headers"
 import { medusaFetch } from "../config"
 import { getAuthHeaders } from "./cookies"
+import { hasTrackingConsent } from "../consent"
 
 const AFF_COOKIE = "_fbm_aff"
 const VISITOR_COOKIE = "_fbm_visitor"
@@ -13,6 +14,10 @@ const STAMPED_COOKIE_PREFIX = "_fbm_aff_applied_"
  * If the visitor has a `_fbm_aff` cookie (set by the storefront middleware on
  * `?fbm_ref=`), POST it to the backend so the cart picks up the attribution.
  * Idempotent: short-circuits when this cart already has the same code applied.
+ *
+ * LEG-8: a no-op unless `fbm_consent=accepted`. The affiliate cookie may
+ * still exist (the backend redirector sets it on its own host), but without
+ * consent it is never forwarded.
  */
 export async function applyAttributionToCart(cartId: string): Promise<void> {
   if (!cartId) return
@@ -23,6 +28,8 @@ export async function applyAttributionToCart(cartId: string): Promise<void> {
   } catch {
     return
   }
+
+  if (!hasTrackingConsent(cookieStore)) return
 
   const ref = cookieStore.get(AFF_COOKIE)?.value
   if (!ref) return

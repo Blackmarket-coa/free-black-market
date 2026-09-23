@@ -1,6 +1,9 @@
 import type { Metadata } from "next"
 
-import { LegalPage, type LegalSection } from "@/components/organisms/LegalPage/LegalPage"
+import {
+  LegalPage,
+  type LegalSection,
+} from "@/components/organisms/LegalPage/LegalPage"
 import {
   CONTACT_PRIVACY,
   LEGAL_ADDRESS,
@@ -181,7 +184,7 @@ const SECTIONS: LegalSection[] = [
     blocks: [
       {
         kind: "p",
-        text: "We use cookies and local storage to keep you signed in, remember your cart and region, and carry the referral attribution described in section 2. We do not run third-party advertising or cross-site tracking cookies. Blocking cookies will break signing in and checkout.",
+        text: "We use cookies and local storage to keep you signed in, remember your cart and region, and carry the referral attribution described in section 2. We do not run third-party advertising or cross-site tracking cookies. The referral and visitor cookies, and our own analytics events, are set only after you choose Accept in the cookie notice; choosing Only essential leaves you with the sign-in, cart and region cookies, and your choice is stored for 180 days in a cookie named fbm_consent. You can change it at any time from Cookie settings in the footer. Blocking essential cookies will break signing in and checkout.",
       },
     ],
   },

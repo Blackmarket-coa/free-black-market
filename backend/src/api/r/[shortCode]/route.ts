@@ -5,6 +5,8 @@ import { createHash, randomUUID } from "crypto"
 import { CREATOR_ATTRIBUTION_MODULE } from "../../../modules/creator-attribution"
 import CreatorAttributionService from "../../../modules/creator-attribution/service"
 import { hashIpForAttribution } from "../../../lib/attribution-ip-hash"
+import { resolveAttributionCookieSecret } from "../../../lib/attribution-cookie-secret"
+import { trackingConsented } from "../../../lib/attribution-consent"
 
 /**
  * Public affiliate-link redirector.
@@ -13,6 +15,13 @@ import { hashIpForAttribution } from "../../../lib/attribution-ip-hash"
  * (signed visitor token + affiliate code), records an `AttributionClickEvent`
  * (best-effort, non-blocking), and 302s to the destination URL with UTM
  * parameters appended.
+ *
+ * Consent: the cookies and the click identifiers (IP hash, user-agent hash,
+ * referrer, country) are written only when the request carries the
+ * storefront's `fbm_consent=accepted`. Without it the link still works — the
+ * click is counted with no identifiers and an ephemeral visitor token, no
+ * cookie is set, and the short code rides to the storefront as `?fbm_ref=`
+ * so the storefront can pin the referral itself once the visitor accepts.
  *
  * Mounted at `/r/:shortCode` so creators can drop short URLs anywhere
  * (TikTok bio, Instagram link-in-bio, podcast show notes, etc.).
@@ -31,12 +40,29 @@ function getStorefrontBase(): string {
   return process.env.STOREFRONT_URL || first || ""
 }
 
-function getCookieSecret(): string {
-  return (
-    process.env.STOREFRONT_VISITOR_SIGNING_KEY ||
-    process.env.JWT_SECRET ||
-    "fbm-default-cookie-key"
-  )
+function buildRedirectTarget(redirectUrl: string): string {
+  if (redirectUrl.startsWith("http")) return redirectUrl
+  const base = getStorefrontBase().replace(/\/$/, "")
+  return `${base}${redirectUrl.startsWith("/") ? "" : "/"}${redirectUrl}`
+}
+
+/**
+ * Carry the short code to the storefront as `fbm_ref` so its middleware can
+ * pin the referral cookie on its own host — the only place attribution is
+ * read — and can do so after consent even when this host set nothing.
+ * Only for storefront destinations: an external URL is left untouched.
+ */
+function withReferral(target: string, redirectUrl: string, shortCode: string): string {
+  const base = getStorefrontBase().replace(/\/$/, "")
+  const isStorefront = !redirectUrl.startsWith("http") || (base !== "" && target.startsWith(base))
+  if (!isStorefront) return target
+  try {
+    const url = new URL(target)
+    if (!url.searchParams.has("fbm_ref")) url.searchParams.set("fbm_ref", shortCode)
+    return url.toString()
+  } catch {
+    return target
+  }
 }
 
 function hashUserAgent(ua: string | null | undefined): string | null {
@@ -91,8 +117,47 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     return
   }
 
+  // Cookie signing key: STOREFRONT_VISITOR_SIGNING_KEY, else JWT_SECRET, else
+  // none. Production never reaches the `null` branch because JWT_SECRET is
+  // required at boot (shared/config.ts). In a dev/test process with neither
+  // set we still honour the link, but set no cookies and record no click:
+  // a cookie signed with a known literal would be forgeable, and a click row
+  // keyed on an unsigned visitor token would be meaningless.
+  const cookieSecret = resolveAttributionCookieSecret()
+  const target = withReferral(
+    buildRedirectTarget(resolved.redirectUrl),
+    resolved.redirectUrl,
+    shortCode
+  )
+  if (!cookieSecret) {
+    log.warn(
+      "[creator-attribution] no cookie signing key configured; redirecting without attribution cookies"
+    )
+    res.redirect(302, target)
+    return
+  }
+
+  // No accepted consent visible on this request: count the click, keep
+  // nothing that identifies the visitor, set no cookie. The storefront will
+  // attribute from `fbm_ref` on its own host if and when the visitor accepts.
+  if (!trackingConsented(req.headers.cookie)) {
+    service
+      .recordClick({
+        shortCode,
+        visitorToken: randomUUID(),
+        ipHash: null,
+        userAgentHash: null,
+        referrer: null,
+        country: null,
+      })
+      .catch((err) => {
+        log.error("[creator-attribution] recordClick failed", err)
+      })
+    res.redirect(302, target)
+    return
+  }
+
   // Visitor cookie: read existing or mint a new UUID, sign it.
-  const cookieSecret = getCookieSecret()
   const existingSignedVisitor = readCookie(req, VISITOR_COOKIE)
   let visitorToken: string | null = null
   if (existingSignedVisitor) {
@@ -144,12 +209,6 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     .catch((err) => {
       log.error("[creator-attribution] recordClick failed", err)
     })
-
-  // Compose the redirect URL.
-  const base = getStorefrontBase().replace(/\/$/, "")
-  const target = resolved.redirectUrl.startsWith("http")
-    ? resolved.redirectUrl
-    : `${base}${resolved.redirectUrl.startsWith("/") ? "" : "/"}${resolved.redirectUrl}`
 
   res.redirect(302, target)
 }

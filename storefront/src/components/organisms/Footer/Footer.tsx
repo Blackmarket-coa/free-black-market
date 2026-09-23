@@ -1,5 +1,6 @@
 import LocalizedClientLink from "@/components/molecules/LocalizedLink/LocalizedLink"
 import { BugReportButton } from "@/components/molecules/BugReportButton/BugReportButton"
+import { CookieSettingsLink } from "@/components/molecules/CookieSettingsLink/CookieSettingsLink"
 import footerLinks from "@/data/footerLinks"
 import { GITHUB_REPO_URL } from "@/lib/constants/links"
 
@@ -74,6 +75,8 @@ export function Footer() {
                 {label}
               </LocalizedClientLink>
             ))}
+            {/* LEG-8: lets a visitor revisit their cookie choice from any page. */}
+            <CookieSettingsLink className="block label-md hover:text-action transition-colors duration-200 text-left" />
           </nav>
         </div>
 
