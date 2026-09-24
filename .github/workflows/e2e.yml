@@ -19,9 +19,10 @@ jobs:
     # BLOCKING GATE. Flipped to fail-fast in the production-readiness pass
     # (TI-2 in docs/AUDIT_DEBT.md). The cold-build flakiness this gate
     # previously masked is mitigated below: BuildKit + a buildx builder,
-    # base-image pre-pull, and a wider per-service healthcheck wait window
-    # (90 x 5s). The Playwright report is still uploaded as an artifact and
-    # docker logs are dumped on failure for forensics.
+    # a pre-pull of the service images, a retried pnpm fetch in each
+    # Dockerfile's `pnpm` stage, and a wider per-service healthcheck wait
+    # window (90 x 5s). The Playwright report is still uploaded as an artifact
+    # and docker logs are dumped on failure for forensics.
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -34,15 +35,24 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Pre-pull base and infrastructure images
+      - name: Pre-pull infrastructure images
         run: |
-          # Warm the local image cache so cold `docker compose up --build`
-          # runs don't pay the full pull cost inside the healthcheck window.
-          docker pull node:20-bookworm-slim &
-          docker pull nginx:1.27-alpine &
+          # Warm the daemon's image store with the images compose runs as
+          # containers, in parallel and ahead of the build. A pull that fails
+          # here is not fatal (the bare `wait` ignores it): compose pulls the
+          # image again, so it effectively gets a second attempt.
+          #
+          # The node and nginx base images are deliberately not pulled here.
+          # setup-buildx-action creates a docker-container builder and makes
+          # it the current builder (`--use`), and compose builds through it.
+          # That builder keeps its own content store and fetches base images
+          # itself, so a pull into the daemon never reached an image build.
+          # This list used to pull both anyway, under stale tags (node:20,
+          # nginx:1.27) that no Dockerfile used either.
           docker pull postgres:15-alpine &
           docker pull redis:7-alpine &
           docker pull quay.io/minio/minio:latest &
+          docker pull quay.io/minio/mc:latest &
           wait
 
       - name: Install Playwright browsers
