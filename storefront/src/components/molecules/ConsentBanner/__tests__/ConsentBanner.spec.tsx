@@ -6,7 +6,13 @@ import { Button } from "@/components/atoms/Button/Button"
 import { CONSENT_COOKIE, CONSENT_MAX_AGE_SECONDS } from "@/lib/consent"
 import { PRIVACY_POLICY_PATH } from "@/lib/constants/legal"
 
-import { ConsentBanner, ConsentBannerView } from "../ConsentBanner"
+import {
+  ConsentBanner,
+  ConsentBannerView,
+  CONSENT_OFFSET_VAR,
+  holdBannerSpace,
+  reserveBannerSpace,
+} from "../ConsentBanner"
 
 /**
  * There is no DOM test environment in this workspace, so the stateful banner
@@ -114,5 +120,98 @@ describe("ConsentBannerView buttons", () => {
       `${CONSENT_COOKIE}=essential; Max-Age=${CONSENT_MAX_AGE_SECONDS}; Path=/; SameSite=Lax; Secure`,
     ])
     expect(onChosen).toHaveBeenCalledWith("essential")
+  })
+})
+
+const styleStub = (padding: string, props: Record<string, string> = {}) => {
+  const vars = new Map(Object.entries(props))
+  return {
+    vars,
+    style: {
+      scrollPaddingBottom: padding,
+      getPropertyValue: (name: string) => vars.get(name) ?? "",
+      setProperty: (name: string, value: string) => void vars.set(name, value),
+      removeProperty: (name: string) => {
+        const had = vars.get(name) ?? ""
+        vars.delete(name)
+        return had
+      },
+    },
+  }
+}
+
+describe("reserveBannerSpace", () => {
+  it("reserves the banner height and gives the previous values back", () => {
+    const root = styleStub("8px")
+
+    const restore = reserveBannerSpace(root, 151.2)
+
+    // Rounded up, so a fractional height never leaves a sliver covered.
+    expect(root.style.scrollPaddingBottom).toBe("152px")
+    expect(root.vars.get(CONSENT_OFFSET_VAR)).toBe("152px")
+    restore()
+    expect(root.style.scrollPaddingBottom).toBe("8px")
+    expect(root.vars.has(CONSENT_OFFSET_VAR)).toBe(false)
+  })
+
+  it("restores an offset that was already set", () => {
+    const root = styleStub("", { [CONSENT_OFFSET_VAR]: "40px" })
+
+    reserveBannerSpace(root, 100)()
+
+    expect(root.vars.get(CONSENT_OFFSET_VAR)).toBe("40px")
+  })
+})
+
+describe("holdBannerSpace", () => {
+  class FakeObserver {
+    static last: FakeObserver | null = null
+    observed: unknown[] = []
+    disconnected = false
+    constructor(readonly fire: () => void) {
+      FakeObserver.last = this
+    }
+    observe(target: unknown) {
+      this.observed.push(target)
+    }
+    disconnect() {
+      this.disconnected = true
+    }
+  }
+
+  it("follows the banner as it resizes and gives everything back", () => {
+    const root = styleStub("8px")
+    let height = 110.4
+    const region = { getBoundingClientRect: () => ({ height }) }
+
+    const release = holdBannerSpace(root, region, FakeObserver)
+    const observer = FakeObserver.last!
+
+    expect(observer.observed).toEqual([region])
+    expect(root.style.scrollPaddingBottom).toBe("111px")
+
+    // The card wraps onto more lines; the observer may fire more than once.
+    height = 183.6
+    observer.fire()
+    observer.fire()
+    expect(root.style.scrollPaddingBottom).toBe("184px")
+    expect(root.vars.get(CONSENT_OFFSET_VAR)).toBe("184px")
+
+    release()
+    expect(observer.disconnected).toBe(true)
+    expect(root.style.scrollPaddingBottom).toBe("8px")
+    expect(root.vars.has(CONSENT_OFFSET_VAR)).toBe(false)
+  })
+
+  it("still reserves and releases without ResizeObserver", () => {
+    const root = styleStub("")
+    const region = { getBoundingClientRect: () => ({ height: 90 }) }
+
+    const release = holdBannerSpace(root, region, undefined)
+    expect(root.vars.get(CONSENT_OFFSET_VAR)).toBe("90px")
+
+    release()
+    expect(root.style.scrollPaddingBottom).toBe("")
+    expect(root.vars.has(CONSENT_OFFSET_VAR)).toBe(false)
   })
 })

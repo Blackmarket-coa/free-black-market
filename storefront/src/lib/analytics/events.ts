@@ -169,21 +169,29 @@ const postToBackend = (eventName: CanonicalEventName, payload: AnalyticsPayload)
     payload,
   })
 
-  const url = "/store/analytics/events"
+  // The storefront has no rewrite for `/store/*`, so a relative URL never
+  // reaches Medusa: the Next router answers it with a locale redirect and a
+  // 404. Post to the configured backend origin instead. `sendBeacon` cannot
+  // carry the publishable key every `/store` route requires, so a keepalive
+  // fetch (which survives unload the same way) is the transport.
+  const backendUrl = (process.env.NEXT_PUBLIC_MEDUSA_BACKEND_URL || "").replace(
+    /\/+$/,
+    ""
+  )
+  const publishableKey = process.env.NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY || ""
+  // Without both there is nowhere to send the event: a relative URL goes
+  // nowhere (above), and Medusa rejects a /store request with no key.
+  if (!backendUrl || !publishableKey) return
+  const url = `${backendUrl}/store/analytics/events`
 
   try {
-    if (
-      typeof navigator !== "undefined" &&
-      typeof navigator.sendBeacon === "function"
-    ) {
-      const blob = new Blob([body], { type: "application/json" })
-      const ok = navigator.sendBeacon(url, blob)
-      if (ok) return
-    }
     void fetch(url, {
       method: "POST",
       keepalive: true,
-      headers: { "content-type": "application/json" },
+      headers: {
+        "content-type": "application/json",
+        "x-publishable-api-key": publishableKey,
+      },
       body,
     }).catch(() => {})
   } catch {
@@ -228,6 +236,11 @@ export const emitWebsiteEvent = (
   }
 
   if (process.env.NODE_ENV !== "production") {
-    logger.info("[analytics]", eventPayload)
+    // A development aid only; the visitor and referral identifiers stay out
+    // of the console.
+    const loggable: Record<string, unknown> = { ...eventPayload }
+    delete loggable.visitor_token
+    delete loggable.affiliate_short_code
+    logger.info("[analytics]", loggable)
   }
 }

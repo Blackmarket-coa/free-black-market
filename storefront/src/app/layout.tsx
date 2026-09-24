@@ -118,10 +118,14 @@ export default async function RootLayout({
       <body
         className={`${exo2.variable} ${urbanist.variable} ${urbanist.className} antialiased bg-primary text-secondary relative solarpunk-atmosphere`}
       >
+        {/* First in the DOM so keyboard and screen-reader users meet the
+            choice before the page; it is fixed to the bottom visually. Later
+            z-50 layers (the mobile menu, modals) now paint over it, which is
+            intended: an open menu or dialog belongs on top. */}
+        <ConsentBanner initialConsent={consent} />
         <Providers cart={cart}>{children}</Providers>
         {/* Capacitor shell integration (deep links, push) — no-op on the web */}
         <NativeAppBridge />
-        <ConsentBanner initialConsent={consent} />
         <Toaster position="top-right" />
       </body>
     </html>

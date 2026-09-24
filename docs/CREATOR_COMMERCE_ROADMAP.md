@@ -174,7 +174,9 @@ a canonical event taxonomy to feed Phase 4 dashboards.
 - `storefront/src/lib/analytics/events.ts` — extend `WebsiteEventName` with
   canonical funnel; add `enrichWithContext` helper that auto-attaches
   `_fbm_visitor`, `_fbm_aff`, `utm_*`, `creator_handle`; add `postToBackend`
-  via `navigator.sendBeacon`.
+  via `navigator.sendBeacon` (since replaced by a keepalive fetch to the
+  backend origin that carries `x-publishable-api-key`, which `sendBeacon`
+  cannot send).
 
 **Acceptance criteria.**
 1. With `FBM_MULTILEVEL_REFERRALS=1`, an order driven by a 3-deep referral
