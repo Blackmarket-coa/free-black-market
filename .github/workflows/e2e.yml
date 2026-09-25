@@ -51,8 +51,8 @@ jobs:
           # nginx:1.27) that no Dockerfile used either.
           docker pull postgres:15-alpine &
           docker pull redis:7-alpine &
-          docker pull quay.io/minio/minio:latest &
-          docker pull quay.io/minio/mc:latest &
+          # Keep in step with the minio image pinned in docker-compose.yml.
+          docker pull pgsty/minio:RELEASE.2026-08-04T00-00-00Z@sha256:b6bfe7239bfc83fb90d31612d9704d86039dd714f7904b3f1ad68f211e602372 &
           wait
 
       - name: Install Playwright browsers

@@ -31,16 +31,23 @@ services:
       timeout: 5s
       retries: 5
   minio:
-    # quay.io, not Docker Hub: `minio/minio` and `minio/mc` stopped being
-    # pullable from Docker Hub, and the E2E stack has been unable to come up
-    # since. The pull fails in about a second with
-    #   pull access denied for minio/mc, repository does not exist or may
-    #   require 'docker login'
-    # quay.io is MinIO's other published registry and serves both images
-    # anonymously — checked against the registry API rather than assumed:
-    # quay.io/minio/mc:latest and quay.io/minio/minio:latest both answer 200,
-    # while Docker Hub answers 401 for the same tag.
-    image: quay.io/minio/minio:latest
+    # MinIO no longer publishes pullable images. `minio/minio` and `minio/mc`
+    # left Docker Hub first, and this file moved to quay.io. Then quay.io
+    # started demanding authentication for both, and the E2E stack failed in
+    # about a second (2026-09-25):
+    #   minio-init Error unauthorized: access to the requested resource is
+    #   not authorized
+    # `pgsty/minio` is Pigsty's community build of the same AGPL MinIO source,
+    # published on Docker Hub. It keeps the official image's layout: the same
+    # docker-entrypoint.sh and `minio` default command, the console, and
+    # `mc` (as `mcli`) for the healthcheck. It is a third-party build, so it
+    # is pinned by release tag and index digest; bump both together.
+    #
+    # Checked by running this release's binaries with this file's command,
+    # healthcheck and init script: `mc ready local` succeeds, the bucket is
+    # created (twice, idempotently), anonymous GET answers 200 and anonymous
+    # PUT 403, and the console answers on :9001.
+    image: pgsty/minio:RELEASE.2026-08-04T00-00-00Z@sha256:b6bfe7239bfc83fb90d31612d9704d86039dd714f7904b3f1ad68f211e602372
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
@@ -53,8 +60,10 @@ services:
       timeout: 5s
       retries: 5
   minio-init:
-    # See the note on the `minio` service above.
-    image: quay.io/minio/mc:latest
+    # The server image, not a separate client image: it already carries
+    # /usr/bin/mc and /bin/sh at the same release, and the stack has pulled
+    # it for `minio` anyway. See the note on that service.
+    image: pgsty/minio:RELEASE.2026-08-04T00-00-00Z@sha256:b6bfe7239bfc83fb90d31612d9704d86039dd714f7904b3f1ad68f211e602372
     depends_on:
       minio:
         condition: service_healthy
