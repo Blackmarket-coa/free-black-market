@@ -5,8 +5,10 @@ import { model } from "@medusajs/framework/utils"
  * (the BMC physical-fulfillment sibling) is expected to provide once it
  * comes online: `fulfillment_node_id`, `pickup_point_id`, `vending_machine_id`.
  *
- * In stub mode (FBM_BLACKSTAR_INTEGRATION!=1) the row is still written so
- * the contract is exercised, but no external HTTP call happens.
+ * Written on `order.fulfillment_created` for a fulfillment on the Blackstar
+ * provider (`subscribers/emit-blackstar-delivery-option-selected.ts`), so
+ * only while that provider is registered (FBM_BLACKSTAR_INTEGRATION=1). The
+ * row is written whether or not the outbound Blackstar channel is configured.
  */
 const BlackstarShipment = model
   .define("blackstar_shipment", {

@@ -10,15 +10,30 @@ import {
 } from "@medusajs/framework/types"
 import { BLACKSTAR_FULFILLMENT_MODULE } from "../blackstar-fulfillment"
 import type BlackstarFulfillmentModuleService from "../blackstar-fulfillment/service"
-import { emitBlackstarEvent } from "../../lib/blackstar-emit"
 import { decideStatusWrite } from "../blackstar-fulfillment/shipment-lifecycle"
 
 /**
- * Stub Blackstar fulfillment provider. Registered in medusa-config.ts only
- * when FBM_BLACKSTAR_INTEGRATION=1. Returns no-op success and persists the
- * three placeholder identifiers (`fulfillment_node_id`, `pickup_point_id`,
- * `vending_machine_id`) into BlackstarShipment so Blackstar's webhook
- * receiver can later update status by order_id.
+ * Blackstar fulfillment provider: hands an order to Blackstar's federated
+ * delivery network. Registered in medusa-config.ts only when
+ * FBM_BLACKSTAR_INTEGRATION=1.
+ *
+ * The provider itself creates no label and books no carrier —
+ * `createFulfillment` returns the shipping method's data unchanged with no
+ * labels. The real work happens on `order.fulfillment_created`, in
+ * `subscribers/emit-blackstar-delivery-option-selected.ts`: it records the
+ * BlackstarShipment row (with `fulfillment_node_id` / `pickup_point_id` /
+ * `vending_machine_id` when the shipping data carries them) that
+ * Blackstar's lifecycle webhooks update by order, and emits
+ * `delivery.option.selected`, from which Blackstar creates the shipment
+ * board listing.
+ *
+ * That work lives in a subscriber because it cannot live here. Medusa
+ * constructs a fulfillment provider with the fulfillment module's own
+ * container cradle, which holds only that module's dependencies (logger,
+ * event bus, manager, config, pg connection, caching) — not `query` and not
+ * any FBM module. A cradle has no `resolve` method either: the property is
+ * itself looked up as a registration, so `this.container_.resolve(...)`
+ * throws before it resolves anything.
  *
  * Adapted from `printful-fulfillment` and `digital-product-fulfillment`,
  * both of which extend AbstractFulfillmentProviderService.
@@ -57,64 +72,17 @@ class BlackstarFulfillmentProviderService extends AbstractFulfillmentProviderSer
     return true
   }
 
+  /**
+   * Returns the shipping method's data unchanged, with no labels. The
+   * BlackstarShipment row and the `delivery.option.selected` emit happen on
+   * `order.fulfillment_created` (see the class comment for why not here).
+   */
   async createFulfillment(
     data: Record<string, unknown>,
     _items: Partial<Omit<FulfillmentItemDTO, "fulfillment">>[],
-    order: Partial<FulfillmentOrderDTO> | undefined,
-    fulfillment: Partial<Omit<FulfillmentDTO, "provider_id" | "data" | "items">>
+    _order: Partial<FulfillmentOrderDTO> | undefined,
+    _fulfillment: Partial<Omit<FulfillmentDTO, "provider_id" | "data" | "items">>
   ): Promise<CreateFulfillmentResult> {
-    const orderId = (order?.id ?? (data as any).order_id ?? "") as string
-    const fulfillmentNodeId = (data.fulfillment_node_id ?? null) as string | null
-    const pickupPointId = (data.pickup_point_id ?? null) as string | null
-    const vendingMachineId = (data.vending_machine_id ?? null) as string | null
-
-    if (orderId) {
-      try {
-        const service = this.container_.resolve(
-          BLACKSTAR_FULFILLMENT_MODULE
-        ) as BlackstarFulfillmentModuleService
-        await service.recordOrUpdateShipment({
-          order_id: orderId,
-          fulfillment_id: fulfillment?.id ?? null,
-          fulfillment_node_id: fulfillmentNodeId,
-          pickup_point_id: pickupPointId,
-          vending_machine_id: vendingMachineId,
-          external_status: "pending",
-          metadata: (data.metadata as Record<string, unknown> | undefined) ?? null,
-        })
-      } catch (err) {
-        log.error("[blackstar-fulfillment] failed to persist BlackstarShipment", err)
-      }
-
-      // The contract's delivery.option.selected moment: a Blackstar shipping
-      // option was actually fulfilled. Blackstar creates its shipment board
-      // listing idempotently from source_order_ref, so a retried fulfillment
-      // re-emits harmlessly. Note: created_by_user_id is deliberately absent —
-      // FBM has no Blackstar user identity to send; the listing-side default
-      // is Blackstar's to own (tracked as a contract gap in the partner spec).
-      try {
-        await emitBlackstarEvent(
-          this.container_,
-          "delivery.option.selected",
-          {
-            delivery_option: "federated_delivery_network",
-            source_order_ref: orderId,
-            claim_policy: "first_claim",
-            job_type: "delivery",
-            fulfillment_node_id: fulfillmentNodeId,
-            pickup_point_id: pickupPointId,
-            vending_machine_id: vendingMachineId,
-          },
-          {
-            eventId: `blackstar:delivery.option.selected:${orderId}:${fulfillment?.id ?? "none"}`,
-            correlationId: orderId,
-          }
-        )
-      } catch (err) {
-        log.error("[blackstar-fulfillment] failed to emit delivery.option.selected", err)
-      }
-    }
-
     return { data, labels: [] }
   }
 
@@ -134,6 +102,13 @@ class BlackstarFulfillmentProviderService extends AbstractFulfillmentProviderSer
    * `subscribers/emit-blackstar-order-cancel.ts`; a per-fulfillment cancel
    * has no event in contract v1, and inventing one FBM-side would be a wire
    * change Blackstar has not agreed to. Recorded rather than pretended.
+   *
+   * Known gap: the local-state half resolves the blackstar-fulfillment module
+   * through `this.container_`, which (see the class comment) is the
+   * fulfillment module's cradle, where that call throws. As registered by
+   * Medusa it therefore logs and returns `{}` without touching the row. It
+   * needs the same move `createFulfillment`'s work made — to a subscriber on
+   * `order.fulfillment_canceled` — which has not been done.
    */
   async cancelFulfillment(data: Record<string, unknown> = {}): Promise<any> {
     const orderId = String((data as any)?.order_id ?? "")
