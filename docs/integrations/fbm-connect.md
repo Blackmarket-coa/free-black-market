@@ -50,31 +50,36 @@ curl -sS https://api.freeblackmarket.com/store/vendors/shaktiinnergy \
 #      request header: x-publishable-api-key. …"}
 ```
 
-> **Known gaps: Connect does not currently work from a vendor's own site.**
+> **Calling from a vendor's own site (connect.js).** The shipped SDK versions
+> (the mutable `/connect.js`, `v2.0.0`, `v2.1.0`, `v2.1.1`) never send
+> `x-publishable-api-key`; they send only the vendor embed key, as
+> `Authorization: PublishableKey pk_live_…`, and only when `data-fbm-key` is
+> set. Medusa's store CORS and publishable-key check run on every `/store/*`
+> request before any project middleware, so on their own they block every
+> vendor origin (preflight `204` with no `Access-Control-Allow-Origin`, then
+> `400`). The backend closes this with a gate
+> (`backend/src/api/middlewares/connect-cors.ts`) that applies only to the
+> connect.js routes (`GET /store/vendors/:handle` and its `/reviews` and
+> `/availability`, `GET /store/collective/demand-pools`, and
+> `POST /store/embed/{bookings,chat/start,events,drives/checkout}`):
 >
-> - **The SDK does not send the Medusa key.** No shipped `connect.js` (the
->   mutable `/connect.js`, `v2.0.0`, `v2.1.0`, `v2.1.1`) sends
->   `x-publishable-api-key`; they send only the embed key, and only when
->   `data-fbm-key` is set. Against the live API their catalog, reviews,
->   availability, demand-pool and `/store/embed/*` requests all get this `400`.
-> - **The CORS preflight fails for vendor origins.** `x-publishable-api-key`
->   (and `Authorization`) are custom headers, so every browser call needs a
->   preflight. Medusa's built-in store CORS runs on every `/store/*` route (none
->   opts out with `export const CORS = false`) and answers the `OPTIONS` request
->   itself (`preflightContinue: false`) before `publicStoreCorsMiddleware` or
->   `embedCorsMiddleware` runs. It allows only the `STORE_CORS` origins, plus
->   `https://freeblackmarket.com`, which `medusa-config.ts` always adds. For any
->   other origin, including the vendor's own domain, the preflight returns `204`
->   with no `Access-Control-Allow-Origin`, and the browser blocks the request. This covers `/store/vendors/**`,
->   `/store/embed/**` and `/store/collective/demand-pools`. The route-level CORS
->   helpers would not be enough on their own either: `publicStoreCorsMiddleware`
->   does not allow `Authorization`, and `embedCorsMiddleware` does not allow
->   `x-publishable-api-key`.
+> - A preflight is answered when the `Origin` is in some vendor's
+>   `connect_domains`.
+> - The actual request is admitted only when its embed key exists, is not
+>   revoked, and belongs to a vendor whose `connect_domains` lists the
+>   `Origin`. The backend then supplies the platform publishable key
+>   (`FBM_CONNECT_PUBLISHABLE_KEY`, the same key the FBM storefront uses) so
+>   Medusa's own check passes. Allowed request headers are `Authorization`,
+>   `Content-Type` and `Accept`.
+> - Everything else is unchanged: other `/store` routes, keyless requests,
+>   invalid or revoked keys and unregistered origins still get Medusa's CORS
+>   answer and the `400`. **Keyless embeds (`data-fbm-key` unset) therefore
+>   still do not work from a vendor's site**; set `data-fbm-key` and register
+>   the site in `connect_domains`.
 >
-> Sending the Medusa key from the SDK is necessary, but it is not enough. The
-> store CORS handling for `/store/vendors/**` and `/store/embed/**` (and the
-> demand-pools route), plus `embedCorsMiddleware`'s `allowedHeaders`, also have
-> to change before Connect works from a vendor's site.
+> The gate does nothing until `FBM_CONNECT_PUBLISHABLE_KEY` is set on the
+> backend: without it a verified request gets the CORS header but still the
+> `400`, and a warning is logged once.
 
 **Query parameters** (all optional):
 
@@ -186,7 +191,6 @@ on the visitor's behalf:
 
 ```bash
 curl -sS -X POST https://api.freeblackmarket.com/store/embed/chat/start \
-  -H "x-publishable-api-key: pk_…" \
   -H "Authorization: PublishableKey pk_live_…" \
   -H "Origin: https://<a host in the vendor's connect_domains>" \
   -H "Content-Type: application/json" \
@@ -254,10 +258,10 @@ Configure it entirely from the script tag:
 | `data-fbm-theme`    |          | `light`                           | `light \| dark \| minimal \| warm \| forest`.            |
 | `data-fbm-currency` |          | `usd`                             | Preferred price currency.                                |
 
-No attribute sets the Medusa `x-publishable-api-key` header, so this snippet
-hits the `400` described in §1. Adding the key will not fix it on its own: the
-store CORS preflight also blocks vendor origins until the backend changes (see
-the known gaps in §1).
+No attribute sets the Medusa `x-publishable-api-key` header; the backend
+supplies it for verified embed-key requests from the vendor's registered
+`connect_domains` (see §1). This requires `data-fbm-key` and a backend with
+`FBM_CONNECT_PUBLISHABLE_KEY` set.
 
 Per-element overrides on any `[data-fbm]` node: `data-fbm-vendor`,
 `data-fbm-limit`, `data-fbm-currency`. Buy buttons use `data-fbm-buy` with

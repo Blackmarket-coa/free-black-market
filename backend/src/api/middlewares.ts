@@ -45,11 +45,18 @@ import {
   requireEmbedKey,
   optionalEmbedKey,
 } from "./middlewares/embed-key";
+import { installConnectStoreCorsHook } from "./middlewares/connect-cors";
 import {
   inventoryLedgerEventSchema,
   pickPackBatchSchema,
   weightPriceRuleSchema,
 } from "../shared/phase0-contracts";
+
+// connect.js on vendor sites: Medusa's /store CORS and publishable-key check
+// run before every middleware in this file, so the connect.js gate has to be
+// installed on the framework itself — at import time, before ApiLoader.load()
+// registers those middlewares. See middlewares/connect-cors.ts.
+installConnectStoreCorsHook();
 
 // Basic email validation regex
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
