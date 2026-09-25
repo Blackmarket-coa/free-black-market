@@ -32,6 +32,11 @@ export type EmbedRequest = MedusaRequest & {
  * which validates the publishable key AND that the request Origin is in the
  * vendor's `connect_domains` allow-list. CORS only governs what the browser
  * lets the page read back.
+ *
+ * Preflights never reach this middleware: Medusa's own /store CORS runs
+ * before any project middleware, so a preflight is answered upstream — by
+ * Medusa for STORE_CORS origins, by the connect.js gate in `connect-cors.ts`
+ * for vendor origins. This only ever decorates actual requests.
  */
 export function embedCorsMiddleware(
   req: MedusaRequest,
@@ -47,14 +52,32 @@ export function embedCorsMiddleware(
   })(req, res, next)
 }
 
-/** Resolve a request's publishable key to a seller, enforcing the origin allow-list. */
-async function resolveEmbedContext(
-  req: MedusaRequest
-): Promise<
+export type EmbedContextResolution =
   | { ok: true; seller_id: string; key_id: string }
   | { ok: false; status: 401 | 403; message: string }
   | { ok: "absent" }
-> {
+
+// One resolution per request. The connect.js CORS gate (connect-cors.ts)
+// resolves the key before Medusa's publishable-key check, and the route-level
+// gates below resolve it again; memoizing keeps that to a single key lookup
+// (and a single `last_used_at` touch) per request.
+const resolvedContexts = new WeakMap<object, Promise<EmbedContextResolution>>()
+
+/** Resolve a request's publishable key to a seller, enforcing the origin allow-list. */
+export function resolveEmbedContext(
+  req: MedusaRequest
+): Promise<EmbedContextResolution> {
+  let pending = resolvedContexts.get(req)
+  if (!pending) {
+    pending = resolveEmbedContextUncached(req)
+    resolvedContexts.set(req, pending)
+  }
+  return pending
+}
+
+async function resolveEmbedContextUncached(
+  req: MedusaRequest
+): Promise<EmbedContextResolution> {
   const plaintext = extractEmbedKey(req.headers.authorization)
   if (!plaintext) {
     return { ok: "absent" }

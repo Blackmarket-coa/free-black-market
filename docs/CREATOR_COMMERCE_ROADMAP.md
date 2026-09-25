@@ -83,7 +83,7 @@ Verdicts are based on file/path evidence inside `backend/src`, `storefront/src`,
 | Service listing / contract lifecycle | Present | `backend/src/modules/service-program/` (ServiceProgram, ServiceApplication, ServiceContract; PENDING→ACCEPTED→IN_PROGRESS→COMPLETED→DISPUTED) |
 | Reviews / ratings on services | Present | `ServiceReview` model on `service-program` (accepted-contract, client-authored, 1..5, one per contract); `POST /vendor/service-contracts/:id/reviews` + public `GET /store/service-sellers/:sellerId/reviews` |
 | Contract lifecycle transitions | Present | `POST /v1/seller/services/contracts/:id/{start,deliver,accept,dispute,cancel}` with a per-transition authorization guard (`contract-transitions.ts`); the `accept` transition is what makes a contract reviewable |
-| Messaging hooks | Present | Lifecycle transitions dispatch the per-seller `service.contract.{delivered,accepted,disputed}` webhooks to both parties; disputes also emit the Blackout `dispute.opened` bridge. Deeper Blackout/RocketChat room hooks remain out of scope |
+| Messaging hooks | Present | Lifecycle transitions dispatch the per-seller `service.contract.{delivered,accepted,disputed}` webhooks to both parties; disputes also emit the Blackout `dispute.opened` bridge. Deeper Blackout/Matrix room hooks remain out of scope |
 
 ### 1.7 Omnichannel
 
@@ -103,7 +103,7 @@ Verdicts are based on file/path evidence inside `backend/src`, `storefront/src`,
 | Backend event ingest table | Missing | No `analytics_event` table — see Phase 1 Slice B |
 | Creator-side performance metrics | Partial | `creator-rewards/models/content-post.ts` + `engagement-snapshot.ts` track external content; no conversion/funnel dashboard |
 | Vendor analytics dashboard | Partial | Dashboard charts + the new Performance page (`/analytics`: product funnel, per-product conversion, creator performance/campaigns). Retention/cohort views still open |
-| Discoverability (trending / for-you) | Missing | Algolia search integrated but no recommendation/trending surfaces |
+| Discoverability (trending / for-you) | Missing | Postgres `ILIKE` search only (the backend Algolia sync, `@mercurjs/algolia`, was removed); no recommendation/trending surfaces |
 
 ---
 
@@ -241,7 +241,7 @@ context. Dependencies on Phase 1 are noted.
 | Phase | Scope | Notes / dependencies |
 |---|---|---|
 | 2A | Plugin marketplace runtime — ✅ install/entitlement-verification API + ✅ version-compatibility gate (`min/max_host_version` vs `PLATFORM_VERSION`, deprecated-block). + ✅ event/hook registry (`/v1/seller/plugins/:slug/hooks` + `plugin.*` events) — 2A complete | Schema is already in place |
-| 2B | Service marketplace reviews — ✅ review/rating model + endpoints + ✅ contract lifecycle transitions/messaging landed on `service-program`. Remaining: deeper Blackout/RocketChat room hooks | Mirrored the existing product-review + subcontract-dispute patterns |
+| 2B | Service marketplace reviews — ✅ review/rating model + endpoints + ✅ contract lifecycle transitions/messaging landed on `service-program`. Remaining: deeper Blackout/Matrix room hooks | Mirrored the existing product-review + subcontract-dispute patterns |
 | 3A | Omnichannel `order_channel` first-class — ✅ landed: `order-channel` module + `order.placed` subscriber + cart-stamp route + unified customer view + POS order flow (`POST /vendor/pos/orders` creates a real `pos`-stamped order and emits `order.placed`; mirrors the delivery flow's direct order creation). Remaining: POS inventory reservation + vendor-panel ring-up UI (future POS module) | None |
 | 3B | POS + vending hardware — Stripe Terminal / Square integrations | Depends on 3A |
 | 4A | Creator / vendor dashboards — ✅ first slice landed: `GET /vendor/analytics/{products,creator}` (conversion funnel from `analytics_event` + ground-truth orders; creator events + attributed commission + by-campaign) and the vendor-panel Performance page. Ingest now resolves `creator_handle`→seller id. Remaining: retention/cohort views, subscription-growth charts, community dashboards | Reads from Slice B `analytics_event` table |

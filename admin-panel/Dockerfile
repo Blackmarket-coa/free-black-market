@@ -82,9 +82,21 @@ COPY . .
 ARG VITE_MEDUSA_BACKEND_URL=http://backend:9000
 ARG VITE_MEDUSA_STOREFRONT_URL=
 ARG VITE_PUBLIC_BASE_URL=
+# Phase-1 feature flags (src/lib/phase0-feature-flags.ts). Only the literal
+# "true" enables one, so the empty defaults keep every flag off.
+ARG VITE_FF_POS_V1=
+ARG VITE_FF_WEIGHT_PRICING_V1=
+ARG VITE_FF_PICK_PACK_V1=
+ARG VITE_FF_INVOICING_V1=
+ARG VITE_FF_CHANNEL_SYNC_V1=
 ENV VITE_MEDUSA_BACKEND_URL=$VITE_MEDUSA_BACKEND_URL \
     VITE_MEDUSA_STOREFRONT_URL=$VITE_MEDUSA_STOREFRONT_URL \
-    VITE_PUBLIC_BASE_URL=$VITE_PUBLIC_BASE_URL
+    VITE_PUBLIC_BASE_URL=$VITE_PUBLIC_BASE_URL \
+    VITE_FF_POS_V1=$VITE_FF_POS_V1 \
+    VITE_FF_WEIGHT_PRICING_V1=$VITE_FF_WEIGHT_PRICING_V1 \
+    VITE_FF_PICK_PACK_V1=$VITE_FF_PICK_PACK_V1 \
+    VITE_FF_INVOICING_V1=$VITE_FF_INVOICING_V1 \
+    VITE_FF_CHANNEL_SYNC_V1=$VITE_FF_CHANNEL_SYNC_V1
 
 RUN pnpm run build
 
@@ -136,6 +148,16 @@ COPY nginx.conf /etc/nginx/conf.d/default.conf
 RUN chown -R nginx:nginx /usr/share/nginx/html /var/cache/nginx /var/log/nginx \
     && touch /var/run/nginx.pid && chown nginx:nginx /var/run/nginx.pid
 USER nginx
+
+# Build stamp: GET /version.json reports the commit this image was built from
+# (CI passes `github.sha`). Declared after the chown above on purpose — a
+# build-arg that changes every commit invalidates every RUN below its ARG, and
+# the only one below this is the write itself. The value is reduced to
+# [0-9A-Za-z._-] so a stray build-arg cannot produce invalid JSON.
+ARG GIT_SHA=
+RUN printf '{"commit":"%s"}\n' \
+      "$(printf '%s' "${GIT_SHA:-unknown}" | tr -cd '0-9A-Za-z._-')" \
+      > /usr/share/nginx/html/version.json
 
 EXPOSE 80
 

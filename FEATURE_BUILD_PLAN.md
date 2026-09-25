@@ -322,7 +322,7 @@ This track should run before or in parallel with larger platform modules.
 ### Backend
 - `merchant-support` module:
   - `merchant_case`, `case_note`, `case_tag`, `sla_timer`, `case_event`.
-- Integrate with Rocket.Chat/email for threaded communication.
+- Integrate with Matrix chat/email for threaded communication.
 
 ### Frontend
 - Vendor “Support” center (open case, attach files, track status).

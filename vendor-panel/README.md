@@ -41,7 +41,6 @@ At minimum, set:
 VITE_MEDUSA_BASE='/'
 VITE_MEDUSA_STOREFRONT_URL=http://localhost:3000
 VITE_MEDUSA_BACKEND_URL=http://localhost:9000
-VITE_ROCKETCHAT_URL=https://your-rocketchat-url
 VITE_DISABLE_SELLERS_REGISTRATION=false
 ```
 
@@ -49,10 +48,16 @@ See `.env.template` for the full list of supported variables.
 
 ## Guides
 
-### Rocket.Chat setup
+### Chat (Matrix) setup
 
-Set up a Rocket.Chat instance and configure `VITE_ROCKETCHAT_URL` with your
-Rocket.Chat server URL to enable chat functionality.
+Chat runs on Blackout's Matrix/Synapse server through an embedded Element Web
+client, configured on the **backend**: set the `MATRIX_*` variables in
+`../backend/.env.template` (`MATRIX_HOMESERVER_URL`, `MATRIX_SERVER_NAME`,
+`MATRIX_ADMIN_TOKEN`, `MATRIX_ELEMENT_URL`, …). The panel calls
+`GET /vendor/chat`, which returns whether chat is configured, the Element URL,
+the server name and a single-use login token; the unread badge polls
+`GET /vendor/chat/unread`. `VITE_MATRIX_ELEMENT_URL` / `VITE_MATRIX_SERVER_NAME`
+are optional build-time fallbacks for when the backend does not return them.
 
 ## Related
 

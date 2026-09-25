@@ -26,6 +26,10 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     status: "ok",
     service: "freeblackmarket-backend",
     version: process.env.npm_package_version || "unknown",
+    // GIT_SHA is stamped into the image by the Dockerfile (CI passes
+    // github.sha); Railway supplies its own. Same fallback order as the
+    // storefront's /api/health so both report a deploy the same way.
+    commit: process.env.GIT_SHA || process.env.RAILWAY_GIT_COMMIT_SHA || "unknown",
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
     uptimeFormatted: formatUptime(process.uptime()),

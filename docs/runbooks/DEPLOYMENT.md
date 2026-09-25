@@ -2,9 +2,11 @@
 
 **Last validated:** 2026-05-06
 
-This runbook covers the two supported deploy paths: generic Docker/Kubernetes (primary) and Railway (legacy).
+This runbook covers two deploy paths: generic Docker/Kubernetes and Railway (legacy). **Neither is how production runs today.**
 
-## Path A — Generic Docker / Kubernetes (primary)
+> **Actual production path:** a single Fedora host running `docker-compose.yml` + `docker-compose.prod.yml` behind host nginx, with Cloudflare in front, rolled by running `scripts/deploy-fedora.sh` on the host — see [`FEDORA_DEPLOYMENT.md`](./FEDORA_DEPLOYMENT.md). The Kubernetes manifests and the `staging-deploy.yml` / `prod-deploy.yml` workflows below are committed but have never been run against a cluster (no runs of either workflow on GitHub), and the Railway files are unused.
+
+## Path A — Generic Docker / Kubernetes (unused)
 
 ### Prerequisites
 

@@ -36,6 +36,11 @@ on:
         required: true
         default: 'main'
         type: string
+      allow_legal_placeholders:
+        description: 'EMERGENCY ONLY (production): deploy even though the legal pages still have unfilled [[PLACEHOLDERS]] (recorded in the run summary).'
+        required: false
+        default: false
+        type: boolean
 
 concurrency:
   group: fedora-deploy-${{ github.event.inputs.environment }}
@@ -56,6 +61,37 @@ jobs:
           echo "Git ref   : ${{ inputs.git_ref }}"
           echo "Host      : ${{ secrets.FEDORA_HOST }}"
 
+      # Legal release gate — same script, override and rationale as in
+      # prod-deploy.yml. Production only: an unfilled token is the expected
+      # state until counsel signs off, and the gate is about going public.
+      # Checked out at `git_ref`, the ref the host checks out below, so this
+      # reads the same legal constants the host would; failing here stops the
+      # run before the host is touched. deploy-fedora.sh repeats the check on
+      # the host (FBM_DEPLOY_ENV / FBM_ALLOW_LEGAL_PLACEHOLDERS below) because
+      # it is also run by hand.
+      - name: Checkout deploy ref (legal gate)
+        if: inputs.environment == 'production'
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.git_ref }}
+
+      - name: Legal pages release gate
+        if: inputs.environment == 'production'
+        env:
+          ALLOW_LEGAL_PLACEHOLDERS: ${{ inputs.allow_legal_placeholders }}
+          ACTOR: ${{ github.actor }}
+        run: |
+          if node scripts/check-legal-placeholders.mjs; then
+            exit 0
+          fi
+          if [ "$ALLOW_LEGAL_PLACEHOLDERS" = "true" ]; then
+            echo "::warning::Legal pages have unfilled placeholders; deploying anyway because allow_legal_placeholders is set."
+            echo "**Legal release gate overridden** by @${ACTOR}: the legal pages still carry unfilled placeholders." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          echo "::error::Legal pages are not ready to publish (listed above). Fill storefront/src/lib/constants/legal.ts, or re-run with allow_legal_placeholders for an emergency deploy."
+          exit 1
+
       - name: Run deploy on Fedora host
         uses: appleboy/ssh-action@v1.2.0
         with:
@@ -70,7 +106,9 @@ jobs:
             git fetch --all --tags --prune
             git checkout "${{ inputs.git_ref }}"
             git pull --ff-only origin "${{ inputs.git_ref }}" || true
-            bash scripts/deploy-fedora.sh "${{ inputs.image_tag }}"
+            FBM_DEPLOY_ENV="${{ inputs.environment }}" \
+            FBM_ALLOW_LEGAL_PLACEHOLDERS="${{ inputs.allow_legal_placeholders && '1' || '' }}" \
+              bash scripts/deploy-fedora.sh "${{ inputs.image_tag }}"
 
       - name: Resolve smoke-test hostnames
         id: hosts

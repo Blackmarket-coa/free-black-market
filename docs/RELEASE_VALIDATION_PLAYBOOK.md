@@ -67,7 +67,7 @@ Minimum E2E checks to run before production rollout:
   - `GET /store/proposals?limit=25&offset=0` returns bounded pagination metadata.
   - Invalid pagination (`limit>100`, negative `offset`) is rejected with `400`.
 - **IPFS/chat room-event UX surface**
-  - User messages screen displays connection status transitions (`idle` → `connecting` → `connected`) when Rocket.Chat is configured.
+  - User messages screen displays connection status transitions (`idle` → `connecting` → `connected`) when Matrix chat is configured (`MATRIX_*`).
   - Room/event diagnostics (`activeRoom`, `lastRoomEvent`) update when channel navigation occurs.
 
 ## 6) Final rollout hardening checks (policy/localization)
@@ -94,7 +94,7 @@ This updates:
 
 ## 8) Hermes vendor runtime validation (WO-2026-02-HERMES-VENDOR-RUNTIME)
 
-Run the Hermes vendor runtime suite to verify the vendor tool registry contract and LangGraph guardrails before release:
+Run the Hermes vendor runtime suite to verify the vendor tool registry contract and tool-call guardrails before release (`services/ai-orchestrator` has no LangGraph dependency despite the test name):
 
 ```bash
 pnpm -s test:hermes-vendor-suite
@@ -102,7 +102,7 @@ pnpm -s test:hermes-vendor-suite
 
 This command gates:
 
-- Canonical Hermes LangGraph prompt/runtime wiring regressions (`test:hermes-langgraph`)
+- Canonical Hermes prompt + entrypoint validator regressions (`test:hermes-langgraph`)
 - Vendor runtime contract coverage for `create_vendor`, `create_product`, and destructive confirmation behavior (`test:hermes-vendor-runtime`)
 
 ## Suggested CI usage

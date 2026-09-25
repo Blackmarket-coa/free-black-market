@@ -512,8 +512,10 @@ FBM side:
   consent scope. Left for Tier B item 11: the `governing_document` type and
   the `assisted` retag, since an `assisted` tag with no predicate reads as
   satisfied and the predicate has no type to read. Also noted while wiring:
-  `BLACKOUT_APP_URL` and the undeclared `BLACKOUT_BASE_URL` are two names for
-  one origin, inlined separately in the overlay and embed-chat routes.
+  the creator stream-overlay route still inlines the `BLACKOUT_APP_URL`
+  fallback rather than calling the helper. (The embed-chat route no longer
+  reads `BLACKOUT_BASE_URL`: it reads `BLACKOUT_EMBED_ROOM_URL`, a `{roomId}`
+  template with no default, and returns `widget_url: null` when it is unset.)
 
 Blackout side (recorded here; built there):
 

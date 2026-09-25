@@ -36,32 +36,6 @@ class WorkVerificationService extends MedusaService({ ProofArtifact }) {
     })
   }
 
-  /**
-   * Attach a signed bundle to a proof. The envelope shape mirrors
-   * `marketplace-signing.CreatorListingSignatureEnvelope` so the same
-   * verification toolchain works for content bundles AND service work.
-   */
-  async signProof(args: {
-    proofId: string
-    keyId: string
-    manifestHash: string
-    signature: string
-    assetHashes?: Record<string, string>
-  }): Promise<any> {
-    const envelope = {
-      keyId: args.keyId,
-      alg: "ed25519",
-      manifestHash: args.manifestHash,
-      assetHashes: args.assetHashes ?? {},
-      signedAt: new Date().toISOString(),
-      signature: args.signature,
-    }
-    return (this as any).updateProofArtifacts({
-      id: args.proofId,
-      signature_envelope: envelope,
-    })
-  }
-
   async autoVerify(args: {
     proofId: string
     method: ProofVerificationMethod

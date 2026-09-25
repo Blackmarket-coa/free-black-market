@@ -94,6 +94,17 @@ jobs:
             echo "NEXT_PUBLIC_ALGOLIA_SEARCH_KEY=${{ secrets.NEXT_PUBLIC_ALGOLIA_SEARCH_KEY }}"
             echo "NEXT_PUBLIC_MATRIX_ELEMENT_URL=${{ vars.NEXT_PUBLIC_MATRIX_ELEMENT_URL }}"
             echo "NEXT_PUBLIC_MATRIX_SERVER_NAME=${{ vars.NEXT_PUBLIC_MATRIX_SERVER_NAME }}"
+            # Phase-1 feature flags (storefront/src/lib/feature-flags.ts). Only
+            # the literal "true" turns one on, so an unset repo Variable (empty
+            # here) keeps it off. INVESTMENT_POOLS_V1 is Posture A gated: set it
+            # only together with the API's FF_INVESTMENT_POOLS_V1, and only once
+            # an offering has a securities exemption (docs/POSTURE_A_COMPLIANCE.md).
+            echo "NEXT_PUBLIC_FF_POS_V1=${{ vars.NEXT_PUBLIC_FF_POS_V1 }}"
+            echo "NEXT_PUBLIC_FF_WEIGHT_PRICING_V1=${{ vars.NEXT_PUBLIC_FF_WEIGHT_PRICING_V1 }}"
+            echo "NEXT_PUBLIC_FF_PICK_PACK_V1=${{ vars.NEXT_PUBLIC_FF_PICK_PACK_V1 }}"
+            echo "NEXT_PUBLIC_FF_INVOICING_V1=${{ vars.NEXT_PUBLIC_FF_INVOICING_V1 }}"
+            echo "NEXT_PUBLIC_FF_CHANNEL_SYNC_V1=${{ vars.NEXT_PUBLIC_FF_CHANNEL_SYNC_V1 }}"
+            echo "NEXT_PUBLIC_FF_INVESTMENT_POOLS_V1=${{ vars.NEXT_PUBLIC_FF_INVESTMENT_POOLS_V1 }}"
             echo SFARGS_EOF
           } >> "$GITHUB_OUTPUT"
 
@@ -115,6 +126,26 @@ jobs:
             echo "VITE_PUBLISHABLE_API_KEY=${{ secrets.NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY }}"
             echo "VITE_MEDUSA_STOREFRONT_URL=${{ vars.NEXT_PUBLIC_BASE_URL || 'https://freeblackmarket.com' }}"
             echo "VITE_PUBLIC_BASE_URL=${{ vars.NEXT_PUBLIC_BASE_URL || 'https://freeblackmarket.com' }}"
+            # Vendor-panel admin chat (src/lib/element-url.ts). Its own
+            # Variables rather than a fallback to the storefront's
+            # NEXT_PUBLIC_MATRIX_*: empty leaves the chat unconfigured, as it
+            # is today, until someone decides to turn it on for the panel.
+            echo "VITE_MATRIX_ELEMENT_URL=${{ vars.VITE_MATRIX_ELEMENT_URL }}"
+            echo "VITE_MATRIX_SERVER_NAME=${{ vars.VITE_MATRIX_SERVER_NAME }}"
+            # Phase-1 feature flags (src/lib/phase0-feature-flags.ts in each
+            # panel). Only the literal "true" turns one on, so an unset repo
+            # Variable (empty here) keeps it off. VENDOR_ADVANCES_V1 (pending
+            # legal review) and INVESTMENT_POOLS_V1 (pending a securities
+            # exemption) are vendor-panel only and Posture A gated
+            # (docs/POSTURE_A_COMPLIANCE.md): set them only together with the
+            # API's FF_* of the same name.
+            echo "VITE_FF_POS_V1=${{ vars.VITE_FF_POS_V1 }}"
+            echo "VITE_FF_WEIGHT_PRICING_V1=${{ vars.VITE_FF_WEIGHT_PRICING_V1 }}"
+            echo "VITE_FF_PICK_PACK_V1=${{ vars.VITE_FF_PICK_PACK_V1 }}"
+            echo "VITE_FF_INVOICING_V1=${{ vars.VITE_FF_INVOICING_V1 }}"
+            echo "VITE_FF_CHANNEL_SYNC_V1=${{ vars.VITE_FF_CHANNEL_SYNC_V1 }}"
+            echo "VITE_FF_VENDOR_ADVANCES_V1=${{ vars.VITE_FF_VENDOR_ADVANCES_V1 }}"
+            echo "VITE_FF_INVESTMENT_POOLS_V1=${{ vars.VITE_FF_INVESTMENT_POOLS_V1 }}"
             echo PANELARGS_EOF
           } >> "$GITHUB_OUTPUT"
 
@@ -144,6 +175,13 @@ jobs:
       # Dockerfile builds — so we skip both `load` and the manifest-list
       # outputs. On push to main / tags / release branches we still publish
       # with full provenance + SBOM attestations.
+      #
+      # GIT_SHA stamps the commit into every image so a running deploy can say
+      # what it is: backend `/health` and storefront `/api/health` report it as
+      # `commit`, and the panels serve it at `/version.json`. Unlike the
+      # per-commit SECURITY_REFRESH rejected above, each Dockerfile consumes it
+      # only after its last expensive instruction, so a new commit adds one
+      # tiny final layer and everything above it stays cached.
       - name: Build${{ github.event_name != 'pull_request' && ' & push' || '' }} image
         uses: docker/build-push-action@v6
         with:
@@ -154,6 +192,7 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
             SECURITY_REFRESH=${{ steps.secrefresh.outputs.date }}
+            GIT_SHA=${{ github.sha }}
             ${{ steps.sfargs.outputs.args }}
             ${{ steps.panelargs.outputs.args }}
           cache-from: type=gha,scope=${{ matrix.app }}
