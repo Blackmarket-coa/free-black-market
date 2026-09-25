@@ -131,6 +131,15 @@ COPY --from=build --chown=medusa:medusa /app/sql ./sql
 RUN for d in /app/src/modules/*/; do mkdir -p "$d/migrations"; done \
     && chown -R medusa:medusa /app/src
 
+# Commit this image was built from, reported as `commit` by GET /health so a
+# running deploy is identifiable. CI passes `github.sha`. Declared after the
+# last RUN on purpose: a build-arg that changes every commit invalidates every
+# RUN below its ARG, and there are none below this one. Empty by default, not
+# "unknown", so a build that doesn't pass it (Railway builds this file via
+# railway.json) still falls through to RAILWAY_GIT_COMMIT_SHA in the route.
+ARG GIT_SHA=
+ENV GIT_SHA=$GIT_SHA
+
 USER medusa
 EXPOSE 9000
 

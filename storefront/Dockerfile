@@ -54,6 +54,14 @@ ARG NEXT_PUBLIC_ALGOLIA_ID=
 ARG NEXT_PUBLIC_ALGOLIA_SEARCH_KEY=
 ARG NEXT_PUBLIC_MATRIX_ELEMENT_URL=
 ARG NEXT_PUBLIC_MATRIX_SERVER_NAME=
+# Phase-1 feature flags (src/lib/feature-flags.ts). Only the literal "true"
+# enables one, so the empty defaults keep every flag off.
+ARG NEXT_PUBLIC_FF_POS_V1=
+ARG NEXT_PUBLIC_FF_WEIGHT_PRICING_V1=
+ARG NEXT_PUBLIC_FF_PICK_PACK_V1=
+ARG NEXT_PUBLIC_FF_INVOICING_V1=
+ARG NEXT_PUBLIC_FF_CHANNEL_SYNC_V1=
+ARG NEXT_PUBLIC_FF_INVESTMENT_POOLS_V1=
 ENV NEXT_PUBLIC_MEDUSA_BACKEND_URL=$NEXT_PUBLIC_MEDUSA_BACKEND_URL \
     NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY=$NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY \
     NEXT_PUBLIC_BASE_URL=$NEXT_PUBLIC_BASE_URL \
@@ -66,7 +74,13 @@ ENV NEXT_PUBLIC_MEDUSA_BACKEND_URL=$NEXT_PUBLIC_MEDUSA_BACKEND_URL \
     NEXT_PUBLIC_ALGOLIA_ID=$NEXT_PUBLIC_ALGOLIA_ID \
     NEXT_PUBLIC_ALGOLIA_SEARCH_KEY=$NEXT_PUBLIC_ALGOLIA_SEARCH_KEY \
     NEXT_PUBLIC_MATRIX_ELEMENT_URL=$NEXT_PUBLIC_MATRIX_ELEMENT_URL \
-    NEXT_PUBLIC_MATRIX_SERVER_NAME=$NEXT_PUBLIC_MATRIX_SERVER_NAME
+    NEXT_PUBLIC_MATRIX_SERVER_NAME=$NEXT_PUBLIC_MATRIX_SERVER_NAME \
+    NEXT_PUBLIC_FF_POS_V1=$NEXT_PUBLIC_FF_POS_V1 \
+    NEXT_PUBLIC_FF_WEIGHT_PRICING_V1=$NEXT_PUBLIC_FF_WEIGHT_PRICING_V1 \
+    NEXT_PUBLIC_FF_PICK_PACK_V1=$NEXT_PUBLIC_FF_PICK_PACK_V1 \
+    NEXT_PUBLIC_FF_INVOICING_V1=$NEXT_PUBLIC_FF_INVOICING_V1 \
+    NEXT_PUBLIC_FF_CHANNEL_SYNC_V1=$NEXT_PUBLIC_FF_CHANNEL_SYNC_V1 \
+    NEXT_PUBLIC_FF_INVESTMENT_POOLS_V1=$NEXT_PUBLIC_FF_INVESTMENT_POOLS_V1
 
 RUN corepack enable
 COPY --from=deps /app/node_modules ./node_modules
@@ -118,6 +132,15 @@ RUN echo "security-refresh=${SECURITY_REFRESH}" >/dev/null \
 COPY --from=build --chown=storefront:storefront /app/.next/standalone ./
 COPY --from=build --chown=storefront:storefront /app/.next/static ./.next/static
 COPY --from=build --chown=storefront:storefront /app/public ./public
+
+# Commit this image was built from, reported as `commit` by GET /api/health
+# (read at request time — that route is dynamic, so it is not baked in by
+# `next build`). CI passes `github.sha`. Declared after the last RUN on
+# purpose: a build-arg that changes every commit invalidates every RUN below
+# its ARG, and there are none below this one. Empty by default, not "unknown",
+# so the route's RAILWAY_GIT_COMMIT_SHA fallback still applies when unset.
+ARG GIT_SHA=
+ENV GIT_SHA=$GIT_SHA
 
 USER storefront
 EXPOSE 3000
