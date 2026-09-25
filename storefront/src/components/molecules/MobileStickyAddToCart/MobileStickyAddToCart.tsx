@@ -28,8 +28,10 @@ export const MobileStickyAddToCart = ({
 }: MobileStickyAddToCartProps) => {
   const isDisabled = !variantStock || !variantHasPrice || !hasAnyPrice
 
+  // Lifted clear of the cookie-consent banner while it is shown (see
+  // ConsentBanner), so the banner never hides the Add to Cart button's focus.
   return (
-    <div className="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t shadow-lg z-40 safe-area-inset-bottom">
+    <div className="lg:hidden fixed bottom-[var(--fbm-consent-offset,0px)] left-0 right-0 bg-white border-t shadow-lg z-40 safe-area-inset-bottom">
       <div className="container flex items-center justify-between gap-4 py-3 px-4">
         {/* Product info */}
         <div className="flex-1 min-w-0">

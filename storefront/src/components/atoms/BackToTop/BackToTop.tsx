@@ -46,11 +46,13 @@ export function BackToTop() {
     return null
   }
 
+  // Lifted clear of the cookie-consent banner while it is shown (see
+  // ConsentBanner), so the banner never hides this button's focus.
   return (
     <button
       onClick={scrollToTop}
       aria-label="Back to top"
-      className="fixed bottom-6 right-6 z-40 p-3 bg-green-600 text-white rounded-full shadow-lg hover:bg-green-700 hover:shadow-xl transition-all duration-200 group"
+      className="fixed bottom-[calc(1.5rem+var(--fbm-consent-offset,0px))] right-6 z-40 p-3 bg-green-600 text-white rounded-full shadow-lg hover:bg-green-700 hover:shadow-xl transition-all duration-200 group"
     >
       <ArrowUpIcon className="w-5 h-5 group-hover:-translate-y-0.5 transition-transform" />
     </button>
