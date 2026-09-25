@@ -69,4 +69,4 @@ Brings up `postgres`, `redis`, `minio` (with bucket initialised), `backend`, `st
 1. Read `runbooks/RELEASE.md`.
 2. Confirm all gates green on the release branch.
 3. Run `scripts/release_validation.sh` (also runs in CI on `release/*`).
-4. Tag with the next semver; deploy on the Fedora host with `bash scripts/deploy-fedora.sh <tag>` (see `runbooks/FEDORA_DEPLOYMENT.md`).
+4. Tag with the next semver; deploy on the Fedora host with `bash scripts/deploy-fedora.sh <tag>` (see `runbooks/FEDORA_DEPLOYMENT.md`). The script refuses a production deploy while `node scripts/check-legal-placeholders.mjs` fails (it does today — unfilled tokens in `storefront/src/lib/constants/legal.ts`); on a staging host run it with `FBM_DEPLOY_ENV=staging`, and use `FBM_ALLOW_LEGAL_PLACEHOLDERS=1` (or the `allow_legal_placeholders` workflow input) only as an emergency override.

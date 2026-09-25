@@ -169,8 +169,8 @@ id), so receivers can deduplicate at the receipt level:
 | Event | FBM emits when | Blackstar effect |
 | --- | --- | --- |
 | `order.created` | An order is placed whose shipping method resolves to the Blackstar provider | Idempotent pre-validation hook; creates nothing by itself |
-| `delivery.option.selected` | A fulfillment is created on the `blackstar` provider | Creates the shipment board listing, idempotently keyed by `payload.source_order_ref` |
-| `order.cancelled` | An order is cancelled **and** a `BlackstarShipment` exists for it | Cancels the listing when its status is `open`, `claimed`, or `in_transit` |
+| `delivery.option.selected` | A fulfillment is created on the `blackstar` provider (subscriber on `order.fulfillment_created`) | Creates the shipment board listing, idempotently keyed by `payload.source_order_ref` |
+| `order.cancelled` | An order is cancelled **and** a `BlackstarShipment` exists for it; also on `order.fulfillment_canceled` once no live Blackstar shipment remains on the order (same `eventId`, `subscribers/blackstar-fulfillment-canceled.ts`) | Cancels the listing when its status is `open`, `claimed`, or `in_transit` |
 
 `delivery.option.selected` payload:
 
@@ -182,9 +182,37 @@ id), so receivers can deduplicate at the receipt level:
   "job_type": "delivery",
   "fulfillment_node_id": "string or null",
   "pickup_point_id": "string or null",
-  "vending_machine_id": "string or null"
+  "vending_machine_id": "string or null",
+  "origin_latitude": 40.7128,
+  "origin_longitude": -74.006,
+  "coalition_ref": "string",
+  "drive_ref": "string"
 }
 ```
+
+The last four fields are **optional** and are **omitted entirely** (never
+sent as `null` or a default) when FBM does not know them, because each one
+narrows who may claim the job. Built in
+`backend/src/lib/blackstar-delivery-payload.ts`, emitted by
+`backend/src/subscribers/emit-blackstar-delivery-option-selected.ts`:
+
+- `origin_latitude` / `origin_longitude` — numbers, rounded to 7 decimal
+  places (Blackstar stores `decimal(10,7)`); sent together or not at all.
+  The origin is the fulfillment's stock location, resolved from its postal
+  code: the ZIP3 centroid, refined by Blackout's geocoder (when
+  `FBM_BLACKOUT_SPATIAL` is on) only if the geocoder's answer lies within
+  150 mi of that centroid — otherwise the ZIP3 centroid is sent. It is a
+  postal-code centroid, not the building. Omitted for a location with no
+  address, a non-US country, a malformed ZIP, or a ZIP with no ZIP3 entry.
+  With both set, Blackstar applies node service radii; without them it does
+  not.
+- `coalition_ref` / `drive_ref` — strings (at most 255 chars), the Blackout
+  coalition and campaign ids stamped on the order cycles the order sold
+  through (read from the `order_cycle_sale` ledger, not from buyer-writable
+  cart metadata). `coalition_ref` is sent only when every cycle names the
+  same coalition; `drive_ref` only alongside it and only when every cycle
+  names the same campaign. With `coalition_ref` set, Blackstar offers the
+  listing only to nodes with an active membership of that coalition.
 
 The FBM emitter refuses event types outside this table at the call site —
 the contract cannot drift silently from FBM's side.

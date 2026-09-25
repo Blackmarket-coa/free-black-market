@@ -2,7 +2,7 @@
 
 **Last validated:** 2026-05-06
 
-> **Deploy target (verified 2026-09-25):** production runs on a single Fedora host (Docker Compose + host nginx, Cloudflare in front), rolled with `bash scripts/deploy-fedora.sh <tag>` — see [`./FEDORA_DEPLOYMENT.md`](./FEDORA_DEPLOYMENT.md). The Kubernetes steps below (`kubectl`, **Deploy → Production** / `prod-deploy.yml`) describe a committed path that has never run. To roll back, re-run the script with the previous tag; for logs, `docker compose -f docker-compose.yml -f docker-compose.prod.yml logs <service>`.
+> **Deploy target (verified 2026-09-25):** production runs on a single Fedora host (Docker Compose + host nginx, Cloudflare in front), rolled with `bash scripts/deploy-fedora.sh <tag>` — see [`./FEDORA_DEPLOYMENT.md`](./FEDORA_DEPLOYMENT.md). The Kubernetes steps below (`kubectl`, **Deploy → Production** / `prod-deploy.yml`) describe a committed path that has never run. On a staging host prefix `FBM_DEPLOY_ENV=staging`; otherwise the script treats the host as production and refuses to deploy — including a rollback — while `scripts/check-legal-placeholders.mjs` fails (unfilled legal-page placeholders; it fails today), unless run with `FBM_ALLOW_LEGAL_PLACEHOLDERS=1` (or the `allow_legal_placeholders` input of the **Deploy to Fedora** workflow) — see [`./FEDORA_DEPLOYMENT.md`](./FEDORA_DEPLOYMENT.md) §2.5. To roll back, re-run the script with the previous tag; for logs, `docker compose -f docker-compose.yml -f docker-compose.prod.yml logs <service>`.
 
 ## Targets
 

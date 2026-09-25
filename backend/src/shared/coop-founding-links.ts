@@ -24,11 +24,12 @@ export const BLACKOUT_APP_URL_FALLBACK = "https://theblackout.app"
  *
  * `BLACKOUT_APP_URL` is the schema-declared variable (`shared/config.ts`) for
  * the user-facing app, as distinct from `BLACKOUT_API_BASE` (the service API).
- * Two older call sites inline this same fallback — the creator stream-overlay
- * route on `BLACKOUT_APP_URL`, and the embed-chat route on the undeclared
- * `BLACKOUT_BASE_URL`. Folding those two into this helper, and settling the
- * variable-name split, is left alone here on purpose: it would change the
- * behaviour of a deploy that sets only `BLACKOUT_BASE_URL`.
+ * One older call site inlines this same fallback — the creator stream-overlay
+ * route, on `BLACKOUT_APP_URL`; folding it into this helper is left alone
+ * here. The embed-chat route no longer builds on a Blackout origin at all: it
+ * reads `BLACKOUT_EMBED_ROOM_URL` (a `{roomId}` template, no default — unset
+ * means no widget URL), and nothing in the backend reads `BLACKOUT_BASE_URL`
+ * any more.
  */
 export const blackoutAppUrl = (): string =>
   (process.env.BLACKOUT_APP_URL || BLACKOUT_APP_URL_FALLBACK).replace(/\/+$/, "")

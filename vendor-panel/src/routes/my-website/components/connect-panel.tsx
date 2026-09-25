@@ -56,7 +56,7 @@ const SDK_METHODS: Array<{ call: string; desc: string }> = [
   },
   {
     call: "FBM.openChat('#chat')",
-    desc: "Message button that opens a Blackout chat (needs a key).",
+    desc: "Message button that sends a visitor's message to you; reply to them by email (needs a key).",
   },
   {
     call: "FBM.cartUrl(product)",

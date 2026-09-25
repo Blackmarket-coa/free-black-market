@@ -6,10 +6,14 @@ Every app exposes a stable HTTP endpoint that container orchestrators (Docker, K
 
 | App | Port | Liveness | Readiness | Sample 200 body |
 |-----|-----:|----------|-----------|-----------------|
-| backend | 9000 | `GET /health` | `GET /health/ready` | `{ "status": "ok", "service": "freeblackmarket-backend", "uptime": ..., "memory": { ... } }` |
+| backend | 9000 | `GET /health` | `GET /health/ready` | `{ "status": "ok", "service": "freeblackmarket-backend", "version": "...", "commit": "...", "uptime": ..., "memory": { ... } }` |
 | storefront | 3000 | `GET /api/health` | `GET /api/health` | `{ "status": "ok", "service": "freeblackmarket-storefront", "commit": "..." }` |
 | admin-panel | 80 | `GET /healthz` | `GET /healthz` | `ok\n` (text/plain) |
 | vendor-panel | 80 | `GET /healthz` | `GET /healthz` | `ok\n` (text/plain) |
+
+`commit` (backend `/health`, storefront `/api/health`) is the build SHA: `GIT_SHA`, stamped into the image by its Dockerfile (CI passes `github.sha`), else `RAILWAY_GIT_COMMIT_SHA`, else `"unknown"`.
+
+The admin and vendor panels also serve `GET /version.json` → `{"commit":"<sha>"}` (text written at image build from the `GIT_SHA` build arg, `"unknown"` when unset; served with `Cache-Control: no-cache`). It is a build stamp, not a probe — keep probes on `/healthz`.
 
 The legacy storefront route `GET /api/healthcheck` is preserved for backwards compatibility with any existing operators; new probes should target `/api/health`.
 
@@ -71,4 +75,6 @@ curl -fsS localhost:9000/health/ready
 curl -fsS localhost:3000/api/health
 curl -fsS localhost:7000/healthz   # admin-panel
 curl -fsS localhost:7001/healthz   # vendor-panel
+curl -fsS localhost:7000/version.json   # admin-panel build SHA
+curl -fsS localhost:7001/version.json   # vendor-panel build SHA
 ```

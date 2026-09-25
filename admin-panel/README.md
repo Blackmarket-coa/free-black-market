@@ -45,10 +45,15 @@ See `.env.template` for the full list of supported variables.
 
 ## Guides
 
-### Rocket.Chat setup
+### Chat (Matrix) setup
 
-Chat functionality requires a Rocket.Chat instance. Set the `ROCKETCHAT_URL`
-environment variable in the backend to enable messaging.
+Chat runs on Blackout's Matrix/Synapse server through an embedded Element Web
+client. It is configured entirely on the backend: set the `MATRIX_*`
+variables in `../backend/.env.template` (`MATRIX_HOMESERVER_URL`,
+`MATRIX_SERVER_NAME`, `MATRIX_ADMIN_TOKEN`, `MATRIX_ELEMENT_URL`, …). The
+panel calls `GET /admin/chat`, which returns the Element configuration and a
+single-use login token (or `configured: false` when chat is not set up), and
+polls `GET /admin/chat/unread` for the badge.
 
 ## Related
 
