@@ -2,6 +2,8 @@
 
 **Last validated:** 2026-05-06
 
+> **Deploy target (verified 2026-09-25):** production runs on a single Fedora host (Docker Compose + host nginx, Cloudflare in front), rolled with `bash scripts/deploy-fedora.sh <tag>` — see [`./FEDORA_DEPLOYMENT.md`](./FEDORA_DEPLOYMENT.md). The Kubernetes steps below (`kubectl`, **Deploy → Production** / `prod-deploy.yml`) describe a committed path that has never run. To roll back, re-run the script with the previous tag; for logs, `docker compose -f docker-compose.yml -f docker-compose.prod.yml logs <service>`.
+
 ## Severity matrix
 
 | SEV | Description | Examples | Target ack | Target mitigate |

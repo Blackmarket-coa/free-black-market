@@ -2,6 +2,10 @@
 
 This project should use **[`jitsi/docker-jitsi-meet`](https://github.com/jitsi/docker-jitsi-meet)** as the base for Railway deployment.
 
+> **Status: not deployed, not wired in.** Jitsi is not part of the production
+> stack (`docker-compose.prod.yml` / `scripts/deploy-fedora.sh`), and no FBM
+> app code references it. This directory is a deployment recipe only.
+
 ## Why this is the best option
 
 Between:
@@ -46,26 +50,15 @@ For media quality on hosted platforms, tune:
 
 ---
 
-## Rocket.Chat integration (Jitsi as call provider)
+## FBM chat integration notes
 
-After both services are live:
+There is no Rocket.Chat in this repo. FBM chat is Matrix: the backend
+provisions users and rooms on the Blackout Synapse homeserver
+(`backend/src/shared/matrix-service.ts`) and hands out auto-login tokens for
+an embedded Element Web client through `/store/chat`, `/vendor/chat` and
+`/admin/chat`.
 
-1. Open **Rocket.Chat Admin → Settings → Video Conference**.
-2. Enable video conferencing.
-3. Set provider to **Jitsi**.
-4. Set Jitsi domain to your Railway Jitsi URL host (for example: `meet.example.com`).
-5. Save and test from a channel DM with the video button.
-
-### Optional Rocket.Chat environment overrides
-
-If you manage Rocket.Chat via env var overrides, set the corresponding `OVERWRITE_SETTING_*` keys for video conference provider = Jitsi and the Jitsi domain.
-
----
-
-## MercurJS integration notes
-
-This repo already integrates Rocket.Chat for customer/vendor/admin messaging through:
-- backend Rocket.Chat API routes (`/store/rocketchat`, `/vendor/rocketchat`, `/admin/rocketchat`)
-- embedded chat experiences in storefront/vendor/admin panels
-
-Once Rocket.Chat is configured to use your Jitsi domain, MercurJS users can launch Jitsi meetings directly from Rocket.Chat without further application code changes.
+Nothing connects that chat to this Jitsi stack today. Using Jitsi for calls
+would mean configuring the Element Web / Synapse deployment (which lives with
+Blackout, outside this repo) to point at your Jitsi domain; no FBM
+application code is involved.

@@ -31,7 +31,7 @@ out of Railway and onto the new server.
                 └─────────────────────────────────────────────────┘
 ```
 
-Hostnames mirror `infrastructure/k8s/production/30-ingress.yaml`:
+Hostnames (the unused `infrastructure/k8s/production/30-ingress.yaml` declares the same four):
 
 - `freeblackmarket.com` → storefront
 - `api.freeblackmarket.com` → backend (Medusa)

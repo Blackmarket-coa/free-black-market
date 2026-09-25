@@ -3,6 +3,15 @@
 This directory contains everything needed to provision a fresh Fedora 40+
 server to run the FreeBlackMarket Docker Compose stack behind nginx + TLS.
 
+**This is the production deploy path.** Production is this single host:
+`docker-compose.yml` + `docker-compose.prod.yml`, host nginx, with Cloudflare
+in front of the public hostnames, rolled by running `scripts/deploy-fedora.sh`
+on the host. The Kubernetes manifests (`infrastructure/k8s/`), the Railway
+files (`backend/railway*.json`) and the Vercel files
+(`admin-panel/vercel.json`, `vendor-panel/vercel.json`) are committed but
+unused; `.github/workflows/prod-deploy.yml` and `staging-deploy.yml` (the
+Kubernetes path) have never run.
+
 For the full step-by-step procedure (DNS, secrets, cutover, rollback,
 backup/restore, Railway data migration), see
 [`docs/runbooks/FEDORA_DEPLOYMENT.md`](../../docs/runbooks/FEDORA_DEPLOYMENT.md).
@@ -38,7 +47,8 @@ sudo systemctl restart fbm.service
 
 ## Expectations
 
-- **Hostnames** match `infrastructure/k8s/production/30-ingress.yaml`:
+- **Hostnames** (from `nginx/freeblackmarket.conf`; the unused
+  `infrastructure/k8s/production/30-ingress.yaml` declares the same four):
   `freeblackmarket.com`, `api.freeblackmarket.com`,
   `admin.freeblackmarket.com`, `vendor.freeblackmarket.com`.
 - **Images** are pulled from `ghcr.io/blackmarket-coa/free-black-market-*`

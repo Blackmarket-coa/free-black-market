@@ -12,6 +12,9 @@ updates flow back. Contract v1.
   wire-format source of truth, this one adds the FBM-side operational view.
 - **Default posture:** dark. FBM ships with `FBM_BLACKSTAR_INTEGRATION=0`;
   nothing is emitted or accepted until both deployments are paired (§4).
+- **Scope:** "federated" here names two separately run deployments talking
+  over this bridge. There is no federation protocol (no discovery, no
+  multi-node routing): FBM posts to a single `BLACKSTAR_API_BASE`.
 
 ## 1. Shape of the seam
 

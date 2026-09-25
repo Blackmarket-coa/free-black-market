@@ -9,6 +9,13 @@ verification that runs in CI (Postgres/Docker), not in a code-review sandbox.
 Use this alongside `runbooks/DEPLOYMENT.md` (which has the authoritative
 cluster-external table) and `runbooks/RELEASE.md` (go/no-go recording).
 
+> **Deploy target (verified 2026-09-25):** production actually runs on a
+> single Fedora host (Docker Compose + host nginx, Cloudflare in front), rolled
+> with `scripts/deploy-fedora.sh` — see `runbooks/FEDORA_DEPLOYMENT.md`. The
+> cluster rows below (cert-manager, External Secrets, `staging-deploy.yml`,
+> `prod-deploy.yml`) belong to the committed Kubernetes path, which has never
+> run and is not what serves production.
+
 ---
 
 ## Code-side status (verified in-repo)

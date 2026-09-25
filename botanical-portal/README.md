@@ -5,6 +5,20 @@ A vertical operator dashboard for general botanical-goods makers on
 production collective. Built with React + Vite on the shared
 `@bmc/portal-kit` and `@bmc/ui` workspace packages.
 
+## Status
+
+A vendor back-office dashboard, not a customer storefront, and not deployed:
+there is no Dockerfile, compose service, nginx vhost or DNS name for it. In
+dev (`pnpm botanical-portal:dev`) its data calls resolve from the typed mock
+layer in `src/lib/mock/` unless `VITE_USE_MOCK_DATA=false`; production builds
+call the backend. These backend routes it calls do not exist yet:
+
+- `GET /vendor/botanical/collective/makers`, `/collective/splits`,
+  `/nursery-network`, `/payouts/current-period`
+- the Blackout feed reads (`/blackout/maker-room/messages`,
+  `/blackout/network-all/messages`, `/blackout/governance/proposals`) — there
+  is no Blackout proxy in the backend
+
 ## What it covers
 
 - Production/inventory tracking for a maker or collective
@@ -35,8 +49,9 @@ Key environment variables (see `.env.example` for the full list):
   env var is a dev-only shortcut.
 - `VITE_NURSERY_NODE_ID` — optional link to a nursery node for ingredient
   sourcing.
-- `VITE_BLACKOUT_URL` — Blackout (Matrix) base; all reads/writes are proxied
-  through the FBM backend, never called directly from the browser.
+- `VITE_BLACKOUT_URL` — Blackout (Matrix) base; reads/writes are meant to be
+  proxied through the FBM backend, never called directly from the browser
+  (that proxy is not built yet — see Status).
 
 ## Related
 
