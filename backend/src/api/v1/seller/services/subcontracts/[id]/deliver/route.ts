@@ -14,6 +14,12 @@ import {
 } from "../../../../../../../modules/work-verification/models"
 import { MARKETPLACE_WEBHOOKS_MODULE } from "../../../../../../../modules/marketplace-webhooks"
 import type MarketplaceWebhooksService from "../../../../../../../modules/marketplace-webhooks/service"
+import { MARKETPLACE_SIGNING_MODULE } from "../../../../../../../modules/marketplace-signing"
+import type PluginSigningService from "../../../../../../../modules/marketplace-signing/service"
+import {
+  buildWorkProofEnvelope,
+  type WorkProofSigner,
+} from "../../../../../../../modules/marketplace-signing/work-proof"
 
 const DeliverSchema = z.object({
   units_delivered: z.number().int().min(0).max(1_000_000).optional(),
@@ -35,13 +41,24 @@ const DeliverSchema = z.object({
     .optional(),
 })
 
+/** The platform signing service, or null when the module is not registered. */
+function resolveProofSigner(req: MedusaRequest): WorkProofSigner | null {
+  try {
+    return req.scope.resolve<PluginSigningService>(MARKETPLACE_SIGNING_MODULE)
+  } catch {
+    return null
+  }
+}
+
 /**
  * POST /v1/seller/services/subcontracts/:id/deliver
  *
  * Service vendor marks the subcontract as delivered, attaching one or
  * more proof artifacts (photos, shipping labels, etc.). Each proof gets
- * its `signature_envelope` filled in with a deterministic manifest hash
- * so admins can later verify integrity.
+ * its `signature_envelope` filled in with the delivery's deterministic
+ * manifest hash and a platform attestation (marketplace-signing/work-proof):
+ * Ed25519-signed when MARKETPLACE_SIGNING_* is configured, explicitly
+ * `status: "unsigned"` with a null signature when it is not.
  *
  * The buyer-vendor still needs to call `/accept` to release escrow.
  */
@@ -88,6 +105,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
         if (p.sha256) assetHashes[`asset_${i}`] = p.sha256
       }
       const manifestHash = WorkVerificationService.computeManifestHash(assetHashes)
+      const signer = resolveProofSigner(req)
 
       for (const p of parsed.data.proofs) {
         const proof = await wv.submitProof({
@@ -102,16 +120,29 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
           metadata:
             (p.metadata as Record<string, unknown> | null) ?? null,
         })
-        // Attach a signed envelope so the proof can be later audited by
-        // anyone who knows the platform's signing key id. We use a
-        // pseudo-signature placeholder when no real signing infra is
-        // wired up — the manifest hash is what's audit-relevant.
-        await wv.signProof({
-          proofId: proof.id,
-          keyId: process.env.WORK_VERIFICATION_KEY_ID || "platform-default",
-          manifestHash,
-          signature: "",
-          assetHashes,
+        // Attach the platform attestation so the proof can later be audited
+        // against the published signing keys. Without a configured key it is
+        // recorded as explicitly unsigned (signature null) — never an empty
+        // placeholder a reader could take for a signature. Written directly
+        // rather than via `wv.signProof`, which stamps its own `signedAt`
+        // after the fact and so could not hold a verifiable signature.
+        const envelope = buildWorkProofEnvelope({
+          signer,
+          proof: {
+            id: proof.id,
+            owner_seller_id: sellerId,
+            context_type: ProofContextType.ORDER_SUBCONTRACT,
+            context_id: id,
+            kind: p.kind,
+            sha256: p.sha256 ?? null,
+          },
+          bundle: { manifestHash, assetHashes },
+          onSigningError: (err) =>
+            log.error("[subcontract/deliver] proof signing failed; recorded unsigned", err),
+        })
+        await wv.updateProofArtifacts({
+          id: proof.id,
+          signature_envelope: envelope as unknown as Record<string, unknown>,
         })
         // Auto-verify if a carrier-style proof was attached (shipping label
         // or tracking event) — minimal Release E rule profile.
