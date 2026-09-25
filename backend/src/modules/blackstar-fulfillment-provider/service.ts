@@ -1,5 +1,3 @@
-import { createLogger } from "../../shared/logger"
-const log = createLogger("modules/blackstar-fulfillment-provider/service")
 import { AbstractFulfillmentProviderService } from "@medusajs/framework/utils"
 import {
   CreateFulfillmentResult,
@@ -8,9 +6,6 @@ import {
   FulfillmentOption,
   FulfillmentOrderDTO,
 } from "@medusajs/framework/types"
-import { BLACKSTAR_FULFILLMENT_MODULE } from "../blackstar-fulfillment"
-import type BlackstarFulfillmentModuleService from "../blackstar-fulfillment/service"
-import { decideStatusWrite } from "../blackstar-fulfillment/shipment-lifecycle"
 
 /**
  * Blackstar fulfillment provider: hands an order to Blackstar's federated
@@ -25,9 +20,11 @@ import { decideStatusWrite } from "../blackstar-fulfillment/shipment-lifecycle"
  * `vending_machine_id` when the shipping data carries them) that
  * Blackstar's lifecycle webhooks update by order, and emits
  * `delivery.option.selected`, from which Blackstar creates the shipment
- * board listing.
+ * board listing. Cancelling works the same way, on
+ * `order.fulfillment_canceled` in
+ * `subscribers/blackstar-fulfillment-canceled.ts`.
  *
- * That work lives in a subscriber because it cannot live here. Medusa
+ * That work lives in subscribers because it cannot live here. Medusa
  * constructs a fulfillment provider with the fulfillment module's own
  * container cradle, which holds only that module's dependencies (logger,
  * event bus, manager, config, pg connection, caching) — not `query` and not
@@ -87,73 +84,19 @@ class BlackstarFulfillmentProviderService extends AbstractFulfillmentProviderSer
   }
 
   /**
-   * Cancel a Blackstar fulfillment: the local-state half.
+   * Nothing to do here: the cancel's work happens on
+   * `order.fulfillment_canceled`, in
+   * `subscribers/blackstar-fulfillment-canceled.ts`, which marks the
+   * BlackstarShipment row `cancelled` through the inbound bridge's ordering
+   * guard and sends Blackstar `order.cancelled` once the order has no live
+   * Blackstar shipment left.
    *
-   * This used to be `return {}` — a cancelled fulfillment left its
-   * blackstar_shipment reading whatever it last read, so an operator looking
-   * at the row could not tell a cancelled parcel from a stuck one. Now the
-   * matching shipment (by fulfillment id when the data carries one, else
-   * every shipment on the order) is moved to `cancelled` through the same
-   * ordering guard the inbound bridge uses, so a parcel already delivered or
-   * disputed is left alone rather than rewritten.
-   *
-   * The emit half is deliberately absent. `order.cancelled` on the wire means
-   * the whole order (contract §6) and is already sent by
-   * `subscribers/emit-blackstar-order-cancel.ts`; a per-fulfillment cancel
-   * has no event in contract v1, and inventing one FBM-side would be a wire
-   * change Blackstar has not agreed to. Recorded rather than pretended.
-   *
-   * Known gap: the local-state half resolves the blackstar-fulfillment module
-   * through `this.container_`, which (see the class comment) is the
-   * fulfillment module's cradle, where that call throws. As registered by
-   * Medusa it therefore logs and returns `{}` without touching the row. It
-   * needs the same move `createFulfillment`'s work made — to a subscriber on
-   * `order.fulfillment_canceled` — which has not been done.
+   * It used to be attempted here, by resolving the blackstar-fulfillment
+   * module through `this.container_` — the fulfillment module's cradle, where
+   * that call throws (see the class comment). As registered by Medusa it
+   * logged an error and returned `{}` without touching the row.
    */
-  async cancelFulfillment(data: Record<string, unknown> = {}): Promise<any> {
-    const orderId = String((data as any)?.order_id ?? "")
-    const fulfillmentId = (data as any)?.fulfillment_id
-      ? String((data as any).fulfillment_id)
-      : null
-    if (!orderId) return {}
-
-    try {
-      const service = this.container_.resolve(
-        BLACKSTAR_FULFILLMENT_MODULE
-      ) as BlackstarFulfillmentModuleService
-      const rows = (await service.listBlackstarShipments({
-        order_id: orderId,
-        ...(fulfillmentId ? { fulfillment_id: fulfillmentId } : {}),
-      })) as unknown as {
-        id: string
-        external_status?: string | null
-        metadata?: Record<string, unknown> | null
-      }[]
-
-      for (const row of rows) {
-        const decision = decideStatusWrite(row.external_status, "cancelled")
-        if (!decision.apply) {
-          log.info(
-            `[blackstar-fulfillment] cancel: shipment ${row.id} is ${row.external_status}; not rewinding (${decision.reason})`
-          )
-          continue
-        }
-        await service.updateBlackstarShipments([
-          {
-            id: row.id,
-            external_status: "cancelled",
-            metadata: {
-              ...(row.metadata ?? {}),
-              cancelled_locally_at: new Date().toISOString(),
-              cancelled_via: "fulfillment_provider",
-            },
-          },
-        ])
-      }
-    } catch (err) {
-      log.error("[blackstar-fulfillment] cancelFulfillment failed", err)
-    }
-
+  async cancelFulfillment(): Promise<any> {
     return {}
   }
 

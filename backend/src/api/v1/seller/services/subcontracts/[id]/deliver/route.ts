@@ -123,9 +123,9 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
         // Attach the platform attestation so the proof can later be audited
         // against the published signing keys. Without a configured key it is
         // recorded as explicitly unsigned (signature null) — never an empty
-        // placeholder a reader could take for a signature. Written directly
-        // rather than via `wv.signProof`, which stamps its own `signedAt`
-        // after the fact and so could not hold a verifiable signature.
+        // placeholder a reader could take for a signature. The envelope is
+        // built here and written as-is, so its `signedAt` is the one that was
+        // signed.
         const envelope = buildWorkProofEnvelope({
           signer,
           proof: {

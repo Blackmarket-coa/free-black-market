@@ -1,4 +1,5 @@
 jest.mock("../../../lib/blackout-spatial", () => ({
+  ...jest.requireActual("../../../lib/blackout-spatial"),
   geocodePostalCode: jest.fn(async () => null),
 }))
 
@@ -292,7 +293,7 @@ describe("resolveBlackstarOrigin", () => {
   })
 
   it("sends no origin for a US ZIP the ZIP3 table lacks, whatever Blackout would answer", async () => {
-    // 885xx (El Paso) has no ZIP3 entry, so nothing can vouch for a remote
+    // 886 is not an assigned ZIP3 prefix, so nothing can vouch for a remote
     // answer; a same-digits Mexican postcode would sit inside any crude US
     // bounding box.
     geocode.mockResolvedValue({
@@ -301,7 +302,7 @@ describe("resolveBlackstarOrigin", () => {
       label: "elsewhere",
       approximate: true,
     })
-    const query = stockLocationQuery({ postal_code: "88501", country_code: "us" })
+    const query = stockLocationQuery({ postal_code: "88601", country_code: "us" })
     await expect(resolveBlackstarOrigin(containerOf({ query }), "sloc_1")).resolves.toBeNull()
     expect(geocode).not.toHaveBeenCalled()
   })

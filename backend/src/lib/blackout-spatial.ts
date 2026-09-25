@@ -1,5 +1,7 @@
 import { createLogger } from "../shared/logger"
 import { buildBlackoutSpatialConfig } from "./blackout-spatial-env"
+import { distanceMiles } from "./geo-distance"
+import { zipToCoords } from "./zip3"
 
 const log = createLogger("lib/blackout-spatial")
 
@@ -86,11 +88,58 @@ async function spatialGet(path: string): Promise<unknown | null> {
   }
 }
 
+/** A US ZIP or ZIP+4. */
+const US_ZIP = /^(\d{5})(?:-?\d{4})?$/
+
+/**
+ * How far Blackout's answer for a US ZIP may sit from that ZIP's ZIP3
+ * centroid and still be taken as the same place. Blackout forwards the bare
+ * postal code to the operator's geocoder with no country, and Nominatim ranks
+ * foreign postcodes with the same digits first for some ZIPs (94110 →
+ * Bavaria, 10115 → Zagreb). Those land thousands of miles out; a real answer
+ * lands within the prefix's area. The same bound
+ * `lib/blackstar-delivery-payload.ts` applies to a Blackstar origin.
+ */
+export const MAX_GEOCODE_DRIFT_MILES = 150
+
+/**
+ * Is a remote answer for this postal code plausibly the US ZIP it was asked
+ * for? Only US-shaped codes (5-digit ZIP or ZIP+4) are checked, against the
+ * ZIP3 centroid: within `MAX_GEOCODE_DRIFT_MILES` is kept, anything further
+ * is dropped. A US-shaped code with no ZIP3 entry has nothing to check
+ * against and is dropped too, so the answer is never a foreign place. Other
+ * codes pass through unchanged.
+ */
+function isConsistentWithZip3(
+  postal: string,
+  latitude: number,
+  longitude: number
+): boolean {
+  const zip = US_ZIP.exec(postal)?.[1]
+  if (!zip) return true
+  const local = zipToCoords(zip)
+  if (!local) {
+    log.warn(`blackout spatial answer for ZIP ${zip} dropped: no ZIP3 entry to check it against`)
+    return false
+  }
+  const drift = distanceMiles(local.lat, local.lng, latitude, longitude)
+  if (drift <= MAX_GEOCODE_DRIFT_MILES) return true
+  log.warn(
+    `blackout spatial answer for ZIP ${zip} is ${Math.round(drift)} mi from its ZIP3 area; using the ZIP3 centroid`
+  )
+  return false
+}
+
 /**
  * Postal code → coordinates via Blackout's geocoder (`GET /v1/spatial/geocode
  * ?q=<postal>`). Null when disabled or on any failure — callers fall back to
  * the ZIP3 table. Successful AND empty answers cache for an hour (postal
  * centroids don't move); failures are not cached so a blip recovers.
+ *
+ * For a US ZIP, an answer outside the ZIP's ZIP3 area (see
+ * `isConsistentWithZip3`) is treated as no answer, so callers fall back to
+ * the ZIP3 centroid instead of searching around a foreign postcode. That
+ * verdict caches like an empty answer.
  */
 export async function geocodePostalCode(
   postalCode: string
@@ -115,7 +164,8 @@ export async function geocodePostalCode(
   const value: RemoteGeocodeResult | null =
     first &&
     typeof first.latitude === "number" &&
-    typeof first.longitude === "number"
+    typeof first.longitude === "number" &&
+    isConsistentWithZip3(postal, first.latitude, first.longitude)
       ? {
           latitude: first.latitude,
           longitude: first.longitude,

@@ -3,7 +3,7 @@ import type { MedusaContainer } from "@medusajs/framework/types"
 import { createLogger } from "../shared/logger"
 import { ORDER_CYCLE_MODULE } from "../modules/order-cycle"
 import type OrderCycleModuleService from "../modules/order-cycle/service"
-import { geocodePostalCode } from "./blackout-spatial"
+import { geocodePostalCode, MAX_GEOCODE_DRIFT_MILES } from "./blackout-spatial"
 import { distanceMiles } from "./geo-distance"
 import { zipToCoords } from "./zip3"
 
@@ -109,16 +109,6 @@ export function buildDeliveryOptionSelectedPayload(input: {
 
 /** A US ZIP or ZIP+4. */
 const US_ZIP = /^(\d{5})(?:-?\d{4})?$/
-
-/**
- * How far Blackout's answer for a ZIP may sit from that ZIP's ZIP3 centroid
- * and still be taken as the same place. Blackout forwards the bare ZIP to the
- * operator's geocoder with no country, and Nominatim ranks foreign postcodes
- * with the same digits first for some ZIPs (94110 → Bavaria, 10115 → Zagreb).
- * Those land thousands of miles out; a real answer lands within the prefix's
- * area.
- */
-const MAX_GEOCODE_DRIFT_MILES = 150
 
 /**
  * Where a Blackstar fulfillment starts: the stock location it ships from.

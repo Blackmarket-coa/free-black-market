@@ -84,7 +84,6 @@ const makeHarness = (opts: { signingRegistered?: boolean } = {}) => {
       envelopeWrites.push(data as never)
       return data
     }),
-    signProof: jest.fn(),
     autoVerify: jest.fn(async () => ({})),
   }
   const subcontracts = {
@@ -144,7 +143,6 @@ describe("POST /v1/seller/services/subcontracts/:id/deliver — proof signing", 
 
     expect(res.statusCode).toBe(200)
     expect(res.body.proof_ids).toEqual(["proof_1", "proof_2"])
-    expect(h.wv.signProof).not.toHaveBeenCalled()
     expect(h.envelopeWrites).toHaveLength(2)
 
     const [photo, label] = h.envelopeWrites
