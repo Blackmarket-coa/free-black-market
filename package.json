@@ -34,6 +34,7 @@
     "portals:build": "pnpm --filter \"@bmc/*-portal\" -r build",
     "portals:typecheck": "pnpm --filter \"@bmc/*-portal\" -r typecheck",
     "portals:test": "pnpm --filter \"@bmc/portal-kit\" test",
-    "portals:lint": "eslint --config eslint.portals.config.mjs --max-warnings 0 \"nursery-portal/src/**/*.{ts,tsx}\" \"wellness-portal/src/**/*.{ts,tsx}\" \"botanical-portal/src/**/*.{ts,tsx}\" \"creator-portal/src/**/*.{ts,tsx}\" \"packages/*/src/**/*.{ts,tsx}\""
+    "portals:lint": "eslint --config eslint.portals.config.mjs --max-warnings 0 \"nursery-portal/src/**/*.{ts,tsx}\" \"wellness-portal/src/**/*.{ts,tsx}\" \"botanical-portal/src/**/*.{ts,tsx}\" \"creator-portal/src/**/*.{ts,tsx}\" \"packages/*/src/**/*.{ts,tsx}\"",
+    "check:panel-feature-flags": "node scripts/check-panel-feature-flags.mjs"
   }
 }

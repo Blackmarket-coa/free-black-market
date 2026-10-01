@@ -207,6 +207,34 @@ jobs:
           format: 'sarif'
           output: 'trivy-fs.sarif'
 
+      # SD-25, ported from docker-build.yml's image scan to this filesystem
+      # scan. The gate above runs `format: sarif` with `exit-code: 1`, so a
+      # failure prints "Process completed with exit code 1" and nothing else:
+      # the findings land in the Code Scanning tab and never in the log the
+      # person debugging is actually reading.
+      #
+      # That cost real time on 2026-09-30, when this job went red on a
+      # scheduled main run and the log named neither package nor CVE — the
+      # same blindness SD-25 fixed for the image scan in #854 and that was
+      # never applied here.
+      #
+      # Same scan-ref, severities, ignore file and skip-dirs as the gate, so
+      # the table lists exactly what tripped it rather than a wider set. It
+      # cannot fail the job (`exit-code: '0'`) and costs nothing on a green
+      # run (`if: failure()`); the step above stays the only gate.
+      - name: Trivy findings (table, for the log)
+        if: failure()
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: fs
+          scan-ref: '.'
+          severity: 'HIGH,CRITICAL'
+          ignore-unfixed: true
+          exit-code: '0'
+          skip-dirs: 'node_modules,**/node_modules,.git,**/dist,**/.next,**/.medusa,e2e/test-results'
+          trivyignores: '.trivyignore'
+          format: 'table'
+
       - name: Upload SARIF
         if: always()
         uses: github/codeql-action/upload-sarif@v3

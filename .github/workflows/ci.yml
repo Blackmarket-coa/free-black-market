@@ -85,6 +85,12 @@ jobs:
       - name: Check logging hygiene (no bare console.* in runtime code)
         run: pnpm check:no-console
 
+      - name: Check panel feature-flag wiring (reader = Dockerfile = build-args)
+        run: pnpm check:panel-feature-flags
+
+      - name: Check panel feature-flag wiring (reader = Dockerfile = build-args)
+        run: pnpm check:panel-feature-flags
+
       - name: Lint storefront
         working-directory: storefront
         run: pnpm lint
