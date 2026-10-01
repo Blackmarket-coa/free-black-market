@@ -56,6 +56,39 @@ ENV VITE_MEDUSA_BACKEND_URL=$VITE_MEDUSA_BACKEND_URL \
     VITE_MEDUSA_STOREFRONT_URL=$VITE_MEDUSA_STOREFRONT_URL \
     VITE_PUBLIC_BASE_URL=$VITE_PUBLIC_BASE_URL
 
+# Phase-0/1 module feature flags, read by src/lib/phase0-feature-flags.ts.
+#
+# These were missing until 2026-10-01, and their absence was silent. Vite
+# inlines `import.meta.env.VITE_*` at build time, and the reader is
+# `enabled(value, fallback = false)` — so an undeclared flag is not "unset at
+# runtime", it is baked into the bundle as literally `false`. POS, weight
+# pricing, pick/pack, invoicing and channel sync were therefore unreachable in
+# every published image no matter what the backend's FF_* vars said, and no
+# error was raised anywhere to say so.
+#
+# VENDOR_ADVANCES and INVESTMENT_POOLS were dark too. That outcome is correct —
+# both are quiescent under Posture A (docs/POSTURE_A_COMPLIANCE.md) — but it was
+# being produced by the missing ARG rather than by the flag, which means the
+# flag was not actually holding that line. Defaulting them to empty keeps them
+# off while making the gate real.
+#
+# Keep this list in sync with src/lib/phase0-feature-flags.ts; a flag the
+# reader uses but this file omits is silently false forever.
+ARG VITE_FF_POS_V1=
+ARG VITE_FF_WEIGHT_PRICING_V1=
+ARG VITE_FF_PICK_PACK_V1=
+ARG VITE_FF_INVOICING_V1=
+ARG VITE_FF_CHANNEL_SYNC_V1=
+ARG VITE_FF_VENDOR_ADVANCES_V1=
+ARG VITE_FF_INVESTMENT_POOLS_V1=
+ENV VITE_FF_POS_V1=$VITE_FF_POS_V1 \
+    VITE_FF_WEIGHT_PRICING_V1=$VITE_FF_WEIGHT_PRICING_V1 \
+    VITE_FF_PICK_PACK_V1=$VITE_FF_PICK_PACK_V1 \
+    VITE_FF_INVOICING_V1=$VITE_FF_INVOICING_V1 \
+    VITE_FF_CHANNEL_SYNC_V1=$VITE_FF_CHANNEL_SYNC_V1 \
+    VITE_FF_VENDOR_ADVANCES_V1=$VITE_FF_VENDOR_ADVANCES_V1 \
+    VITE_FF_INVESTMENT_POOLS_V1=$VITE_FF_INVESTMENT_POOLS_V1
+
 # build:preview emits the SPA bundle without the (heavier) tsup library output.
 RUN pnpm run build:preview
 

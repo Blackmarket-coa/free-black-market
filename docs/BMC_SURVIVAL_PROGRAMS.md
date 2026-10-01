@@ -149,8 +149,13 @@ and channel sync are permanently dark in the published panel image.** Vendor
 advances and investment pools are also dark — correct outcome, but by accident,
 which means the flag is not actually holding that line.
 
-Same shape as SD-26. Fix this before Phase 1 ships anything panel-side, or no
-panel flag we add will work either. Tracked separately.
+Same shape as SD-26. **Fixed 2026-10-01** — and it was worse than first
+reported: `admin-panel` has the identical defect (5 flags, no ARGs). Both
+Dockerfiles now declare and re-export every flag their reader consumes,
+`docker-build.yml` passes all 7, and `scripts/check-panel-feature-flags.mjs`
+fails CI if the reader, the Dockerfile and the build-args ever drift apart
+again. Mutation-tested three ways: missing ARG, ARG-without-ENV, and a flag
+dropped from the workflow.
 
 ### Still to do for Step 0
 
@@ -263,6 +268,8 @@ line in `docker-build.yml`'s `panelargs` — see the blocker in §1.
 
 ## Changelog
 
+- **2026-10-01** — Panel feature-flag wiring fixed in both panels, with a CI
+  drift guard. Unblocks any panel-side flag this programme adds.
 - **2026-10-01** — File opened. Internal inventory verified (Reuse step 0.1).
   Three prompt statuses corrected against the code; two new open decisions
   raised. Production-ship override recorded. No code written yet.

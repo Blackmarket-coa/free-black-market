@@ -115,6 +115,23 @@ jobs:
             echo "VITE_PUBLISHABLE_API_KEY=${{ secrets.NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY }}"
             echo "VITE_MEDUSA_STOREFRONT_URL=${{ vars.NEXT_PUBLIC_BASE_URL || 'https://freeblackmarket.com' }}"
             echo "VITE_PUBLIC_BASE_URL=${{ vars.NEXT_PUBLIC_BASE_URL || 'https://freeblackmarket.com' }}"
+            # Phase-0/1 module flags. Vite inlines VITE_* at build time and the
+            # panels' reader defaults an undefined flag to false, so a flag not
+            # passed here is compiled into the bundle as false — not merely
+            # unset. Omitting them is how POS, weight pricing, pick/pack,
+            # invoicing and channel sync stayed unreachable in every published
+            # panel image. Blank is a valid "off"; set the repo variable to the
+            # string "true" to turn one on.
+            echo "VITE_FF_POS_V1=${{ vars.VITE_FF_POS_V1 }}"
+            echo "VITE_FF_WEIGHT_PRICING_V1=${{ vars.VITE_FF_WEIGHT_PRICING_V1 }}"
+            echo "VITE_FF_PICK_PACK_V1=${{ vars.VITE_FF_PICK_PACK_V1 }}"
+            echo "VITE_FF_INVOICING_V1=${{ vars.VITE_FF_INVOICING_V1 }}"
+            echo "VITE_FF_CHANNEL_SYNC_V1=${{ vars.VITE_FF_CHANNEL_SYNC_V1 }}"
+            # vendor-panel only; both stay off under Posture A until an
+            # operator deliberately sets them. Declared so the flag is the
+            # gate, rather than the absence of the build-arg.
+            echo "VITE_FF_VENDOR_ADVANCES_V1=${{ vars.VITE_FF_VENDOR_ADVANCES_V1 }}"
+            echo "VITE_FF_INVESTMENT_POOLS_V1=${{ vars.VITE_FF_INVESTMENT_POOLS_V1 }}"
             echo PANELARGS_EOF
           } >> "$GITHUB_OUTPUT"
 

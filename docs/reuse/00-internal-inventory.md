@@ -81,8 +81,13 @@ Vite inlines `import.meta.env.VITE_*` at build time; the helper is
 seven are false in the published image, permanently. Five built features are
 unreachable; two are correctly dark but by accident rather than by the flag.
 
-Same failure shape as SD-26: a mechanism that looks wired and isn't. Must be
-fixed before any panel-side flag in this programme can work.
+`admin-panel` has the identical defect — 5 flags read, 0 ARGs declared. The
+initial report named only vendor-panel; both are affected.
+
+Same failure shape as SD-26: a mechanism that looks wired and isn't.
+**Resolved 2026-10-01** — both Dockerfiles declare + re-export every flag,
+`docker-build.yml` passes all 7, and `scripts/check-panel-feature-flags.mjs`
+guards the three lists against drift in CI.
 
 ---
 

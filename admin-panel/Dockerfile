@@ -54,6 +54,28 @@ ENV VITE_MEDUSA_BACKEND_URL=$VITE_MEDUSA_BACKEND_URL \
     VITE_MEDUSA_STOREFRONT_URL=$VITE_MEDUSA_STOREFRONT_URL \
     VITE_PUBLIC_BASE_URL=$VITE_PUBLIC_BASE_URL
 
+# Phase-0/1 module feature flags, read by src/lib/phase0-feature-flags.ts.
+#
+# Same defect as vendor-panel, found the same day: Vite inlines
+# `import.meta.env.VITE_*` at build time and the reader is
+# `enabled(value, fallback = false)`, so a flag this file does not declare is
+# compiled into the bundle as `false` rather than left unset. POS, weight
+# pricing, pick/pack, invoicing and channel sync were unreachable in every
+# published admin image regardless of the backend's FF_* vars, silently.
+#
+# Keep this list in sync with src/lib/phase0-feature-flags.ts; a flag the
+# reader uses but this file omits is silently false forever.
+ARG VITE_FF_POS_V1=
+ARG VITE_FF_WEIGHT_PRICING_V1=
+ARG VITE_FF_PICK_PACK_V1=
+ARG VITE_FF_INVOICING_V1=
+ARG VITE_FF_CHANNEL_SYNC_V1=
+ENV VITE_FF_POS_V1=$VITE_FF_POS_V1 \
+    VITE_FF_WEIGHT_PRICING_V1=$VITE_FF_WEIGHT_PRICING_V1 \
+    VITE_FF_PICK_PACK_V1=$VITE_FF_PICK_PACK_V1 \
+    VITE_FF_INVOICING_V1=$VITE_FF_INVOICING_V1 \
+    VITE_FF_CHANNEL_SYNC_V1=$VITE_FF_CHANNEL_SYNC_V1
+
 RUN pnpm run build
 
 # --- runtime stage -----------------------------------------------------------
