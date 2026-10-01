@@ -82,20 +82,34 @@ existing fix instead of redoing it.
 **Method note for the remaining Reuse Reports:** verify against `origin/main`,
 not the working tree, and stamp every status with the commit it was checked at.
 
+## Steps 0.2 and 0.3 — done 2026-10-01
+
+- **0.2 OSS equivalents** → `docs/reuse/02-oss-equivalents.md`. Ten candidates,
+  licence verified from each project's own statement: AGPL-3.0 (CiviCRM with a
+  PHP-License exception, Open Food Network, Listmonk, Bigcapital, Windmill CE),
+  GPL-3.0 (Mautic, ERPNext), MIT (Open Collective, Activepieces core),
+  Apache-2.0 + LGPL-3.0 plugins (Karrio core — **with a paid Enterprise Edition
+  to pin away from**). Last-commit and maintainer counts are **not** recorded:
+  this session's GitHub access is gated to the three BMC repos, so
+  `api.github.com` 403s for third parties. Liveness checks are still owed.
+- **0.3 Public data and APIs** → `docs/reuse/03-public-data-and-apis.md`. The
+  two load-bearing results: **IRS TEOS has no API** (monthly pipe-delimited bulk
+  files only — so it becomes the system of record for org verification, with
+  ProPublica's keyless v2 API as enrichment only), and **Open Referral HSDS 3.0**
+  already exists as the interchange standard that findhelp, United Way 211 and
+  Unite Us consume — which replaces a stack of bilateral integrations with one
+  documented format. Feeding America publishes **no** developer API; the ones on
+  commercial marketplaces are third-party scrapers and must not be built on.
+  Four new legal checkpoints (L11–L14) came out of this step.
+
 ## Not yet done
 
-Steps 0.2–0.4 require outbound research and are outstanding:
-
-- **0.2 OSS equivalents** — CiviCRM, Open Collective, Open Food Network, Karrio,
-  Bigcapital, ERPNext, Listmonk, Mautic, Activepieces, Windmill, plus whatever
-  search surfaces. Record licence, last commit, maintainers, and whether it runs
-  on the single DL360. **FBM is AGPL-3.0 — licence compatibility must be checked
-  per candidate before adoption.**
-- **0.3 Public data and APIs** — IRS TEOS / Pub 78 / EO BMF, ProPublica
-  Nonprofit Explorer, HRSA Find a Health Center, NAFC clinic locator,
-  LawHelp.org, LSC grantee directory, 211 / findhelp, Feeding America locator.
-  Verify terms, rate limits and current availability for each.
 - **0.4 Existing nonprofit and mutual-aid platforms** to partner with rather
-  than compete against.
+  than compete against. HSDS 3.0 from 0.3 makes this far more tractable than it
+  looked: the question becomes "who already publishes or consumes an HSDS feed"
+  rather than "who will grant us API access".
+- **NAFC clinic locator** (carried from 0.3, not researched).
+- **Liveness** for every 0.2 candidate — last commit, maintainer count, and
+  whether it actually runs on the single DL360 alongside Node 22 + PostgreSQL.
 
-No BUILD NEW decision is final until these three land and are approved.
+No BUILD NEW decision is final until 0.4 lands and the operator approves.

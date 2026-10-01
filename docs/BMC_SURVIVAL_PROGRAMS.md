@@ -168,13 +168,34 @@ original gap.
 diagnosing anything, and treat any inventory in this file as valid only as of
 its stated commit.
 
-### Still to do for Step 0
+### Step 0 progress
 
-Steps 0.2–0.4 of the Reuse Report (OSS equivalents with licence/maintenance
-checks, public-data APIs with terms and rate limits, existing nonprofit
-platforms to partner with) require outbound research and are **not yet done**.
-AGPL-3.0 compatibility must be checked per candidate before adoption. No BUILD
-NEW decision is final until these land.
+**0.2 and 0.3 are done (2026-10-01)** — `docs/reuse/02-oss-equivalents.md` and
+`docs/reuse/03-public-data-and-apis.md`. **0.4 is still outstanding**, and no
+BUILD NEW decision is final until it lands and the operator approves.
+
+Two results from 0.3 change the Phase 1 design rather than merely informing it,
+so they are folded into the phase description below:
+
+1. **IRS TEOS has no API.** It publishes monthly, pipe-delimited bulk files
+   (Pub 78 Data, EO BMF, the 990 series, and the Automatic Revocation list).
+   ProPublica's Nonprofit Explorer *does* have a keyless v2 API, but its own
+   docs publish no rate limit and say the API is "subject to change". So the
+   IRS bulk files become the **system of record** and ProPublica is enrichment
+   only — not the other way round, which is the tempting build because the API
+   is easier to call.
+2. **Open Referral HSDS 3.0 already exists**, licensed CC-BY-SA-4.0, and is
+   already consumed by findhelp, United Way 211 and Unite Us. Any partner or
+   resource directory should speak that format instead of accumulating
+   bilateral integrations. It also reframes 0.4: the question is "who already
+   publishes or consumes an HSDS feed", not "who will grant us API access".
+
+From 0.2, the one adoption trap worth carrying forward: **Karrio has a paid
+Enterprise Edition** above its Apache-2.0 core, so the existing
+`label-provider.ts` seam must pin the OSS edition explicitly. Liveness checks
+(last commit, maintainers, whether it runs on the DL360) could not be done —
+this session's GitHub access is scoped to the three BMC repos and
+`api.github.com` 403s for third parties — and are still owed.
 
 ---
 
@@ -186,11 +207,23 @@ Order per the prompt: Reuse Reports → approval → Phase 1 → Phase 2 → Pha
 
 Smallest set that makes a nonprofit a first-class actor.
 
-1. **Org verification.** EIN → IRS Tax Exempt Organization Search / Pub 78 /
-   BMF, or ProPublica Nonprofit Explorer. Store org type: `501c3`, `501c4`,
+1. **Org verification.** EIN → a **monthly ingest of the IRS bulk files**
+   (Pub 78 Data for deductibility eligibility, EO BMF for determination, and
+   the **Automatic Revocation list**, which is the one that stops BMC vouching
+   for an org whose status has lapsed). ProPublica Nonprofit Explorer is
+   enrichment only — see 0.3 for why. Store org type: `501c3`, `501c4`,
    `coop`, `unincorporated`. Only `501c3` may surface receipt tooling, and the
    receipt is issued **by the org**, never by BMC.
-   Flag: `FF_NONPROFIT_PARITY_V1`.
+   Three constraints that fall out of the data rather than the design:
+   - **Show the as-of date.** "Verified" means verified against the file
+     published on a given date, not verified live. The UI must say which.
+   - **"Not found" is not "not a charity."** Absence from Pub 78 and presence
+     on the Automatic Revocation list are different states and must not
+     collapse into one `unverified` value.
+   - Monthly refresh is not a compromise — it is the actual resolution of the
+     upstream data.
+   Flag: `FF_NONPROFIT_PARITY_V1`. Legal checkpoints **L11** (representing a
+   third party's tax status) and **L14** (ProPublica terms unread).
 2. **0% BMC fee on donations / pledges / tips**, processor cost passed through.
    Implemented in the `platform-fee.ts` precedence chain as a
    transaction-kind rule, not a plan rule, so it cannot be confused with the

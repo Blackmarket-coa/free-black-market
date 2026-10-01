@@ -29,10 +29,40 @@ overrides:
   "glob": ">=10.5.0"
   "qs": ">=6.14.2"
   "jws": ">=3.2.3"
-  "axios": ">=1.18.0"
-  "@isaacs/brace-expansion": ">=5.0.1"
-  "brace-expansion@1": "^1.1.18"
-  "brace-expansion@5": "^5.0.9"
+  # Seven HIGH advisories are fixed only in 1.20.0: GHSA-3pq3-5fj3-cg6v
+  # (HTTP/2 adapter bypasses the configured DNS lookup and proxy control),
+  # -542g-h47m-68v8 (DoS via an unhandled 'error' event on the HTTP/2
+  # ClientHttp2Session), -c29m-xwm3-cm6r (ReDoS in the fromDataURI data: URL
+  # parser, which freezes the Node event loop), -m8m8-qj5v-23w3 (prototype-
+  # pollution gadget in the Node HTTP adapter), -mghh-pgcx-3jjj (O(N2) ReDoS
+  # in shouldBypassProxy host normalisation), -r4gj-5m52-g5wh (maxRedirects: 0
+  # not enforced by the fetch adapter) and -x97p-jq2g-jp4f (prototype-pollution
+  # gadget in toFormData).
+  #
+  # The floor was a bare ">=1.18.0", which PERMITTED 1.20.0 and resolved to the
+  # vulnerable 1.18.1 — a caret that allows the fix does not cause the fix.
+  # Caret-bounded rather than left bare so a future axios 2.x cannot arrive
+  # unreviewed.
+  "axios": "^1.20.0"
+  # GHSA-7h2j-956f-4vf2 (CVE-2026-25547, HIGH): uncontrolled resource
+  # consumption, fixed only in 5.0.1. This is the renamed 5.x line, a separate
+  # package from `brace-expansion` above, so it needs its own pin.
+  "@isaacs/brace-expansion": "^5.0.1"
+  # brace-expansion: five HIGH DoS advisories across the 1.x/2.x/5.x lines
+  # (GHSA-3jxr-9vmj-r5cp, -6j4f-fj2g-mc7p, -mh99-v99m-4gvg, -qhr7-859c-m2p7,
+  # -rgw5-rvv9-x895) plus the MODERATE -q2hr-2g5m-vwhr. The highest fix on each
+  # line clears all six: 1.1.21, 2.1.7, 5.0.12.
+  #
+  # Each line is pinned separately because they are not interchangeable. 1.x and
+  # 2.x still export the bare function (`module.exports = expandTop`), which
+  # `minimatch@3.1.5` requires as `var expand = require('brace-expansion')`;
+  # 5.x exports `{ expand }`. Forcing minimatch@3's consumers onto 5.x throws
+  # `TypeError: expand is not a function` — that is what broke PR #754 and is
+  # why SD-22 suppressed CVE-2026-14257 instead. The backports to 1.1.17/2.1.3
+  # landed after SD-22 was written, so the suppression is no longer needed; the
+  # export shape of 1.1.21 and 2.1.7 was re-verified before this bump.
+  "brace-expansion@1": "^1.1.21"
+  "brace-expansion@5": "^5.0.12"
   # GHSA-5p4m-2wfm-xmqj (CVE-2026-59870): quadratic CPU consumption resolving
   # !!omap. Both lines are patched — 3.15.1 and 4.3.1 — so this is a floor
   # bump on the existing pins, not a major migration.
@@ -54,7 +84,14 @@ overrides:
   "lodash": ">=4.18.0"
   "picomatch": ">=4.0.4"
   "postcss": ">=8.5.18"
-  "@grpc/grpc-js": ">=1.14.4"
+  # CVE-2026-101916 (HIGH): authentication bypass via improper peer
+  # certificate validation — a TLS peer can present a certificate grpc-js
+  # accepts when it should not. Fixed in 1.13.6 and 1.14.5.
+  #
+  # The floor here was ">=1.14.4" and the tree resolved exactly 1.14.4: one
+  # patch short of the fix, which the range already permitted. Same failure
+  # as the axios entry above, and the reason both are caret-bounded now.
+  "@grpc/grpc-js": "^1.14.5"
   "esbuild": ">=0.28.1"
   "form-data": ">=4.0.6"
   "vite": "^6.4.3"
@@ -80,7 +117,21 @@ overrides:
   # address header is a remote DoS. Fixed in 9.1.0. Caret-bounded for the
   # reason above and because it was not theoretical here — ">=9.1.0" resolved
   # to nodemailer 10.0.1, an unreviewed major, on the first install.
-  "nodemailer": "^9.1.0"
+  #
+  # 2026-10-01: the 9.x line is now a dead end. Two more addressparser DoS
+  # advisories landed — GHSA-prgh-xp8r-p3m5 (O(n^2) on comment-joined
+  # addresses, fixed 10.0.5) and GHSA-v53p-9fqp-m79j (quadratic backtracking
+  # in the free-text fallback, fixed 10.0.6) — and NEITHER has a 9.x
+  # backport. Holding at ^9.1.0 is therefore no longer the conservative
+  # choice; it is the vulnerable one, so the major this comment previously
+  # refused is now the only fix.
+  #
+  # The 10.x major is reviewed rather than assumed: the whole FBM surface is
+  # backend/src/modules/smtp/service.ts — `createTransport({host, port,
+  # secure, auth})`, `transporter.verify()` and `sendMail()`, all unchanged
+  # in 10.x. The sibling Blackout repo runs the same 9->10 bump in
+  # production (its PR #938), which is the same call shape.
+  "nodemailer": "^10.0.9"
   "path-to-regexp@0": "^0.1.13"
   "path-to-regexp@8": "^8.4.0"
   "protobufjs": ">=8.4.1"
