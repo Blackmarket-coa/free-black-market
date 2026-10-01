@@ -51,7 +51,90 @@ overrides:
   "qs": ">=6.14.2"
   "lodash": ">=4.18.0"
   "picomatch": ">=4.0.4"
-  "postcss": ">=8.5.10"
+  # SD-28 (docs/AUDIT_DEBT.md): this root lagged pins its sibling roots already
+  # carried, so the same advisories cleared elsewhere in SD-22 and SD-27 stayed
+  # live here. Everything below is dev-only in this Vite SPA (Trivy's pnpm
+  # parser never gated it), so these close the gap between "the gate is green"
+  # and "the tree is clean" rather than fixing a red gate.
+  # GHSA-r28c-9q8g-f849 (HIGH, path traversal in source-map auto-loading).
+  # Root, backend and storefront moved to >=8.5.18 in SD-22; the panels kept
+  # SD-15's >=8.5.10 and resolved 8.5.14. Mirrors the sibling string exactly.
+  "postcss": ">=8.5.18"
+  # GHSA-73wf-gq98-2v4g and GHSA-c83g-rgw3-j3cx (both HIGH). backend and
+  # storefront pinned >=4.28.7 in SD-27; mirrored here. Dev-only (autoprefixer,
+  # babel preset-env) so Trivy skips it, which is why it was missed.
+  "browserslist": ">=4.28.7"
+  # GHSA-mw96-cpmx-2vgc (HIGH). backend pins >=4.59.0; caret-bounded here per
+  # CLAUDE.md rule 6 so a future rollup 5 cannot arrive unreviewed. vite@5.4.21
+  # declares ^4.20.0, and the repo root already runs this vite against 4.62.x.
+  "rollup": "^4.59.0"
+  # GHSA-xwg4-73v4-xw9w, -28wg-ghj8-5hjv, -2v37-7h3g-55p8 (all HIGH). The
+  # highest fix on the 3.x line is 3.3.18 -- NOT 3.3.17 as the sibling roots'
+  # comments said; those are corrected in this same change. Selector-scoped and
+  # caret-bounded because "latest" is nanoid 6, which is ESM-only.
+  "nanoid@3": "^3.3.18"
+  # GHSA-3ppc-4f35-3m26, -23c5-xmqv-rm74, -7r86-cg39-jmmj (all HIGH) across
+  # the 3.x / 9.x / 10.x lines. Fixes: 3.1.4, 9.0.7, 10.2.3. Each line is a
+  # separate selector key because they are not interchangeable (minimatch@3
+  # needs the function-export brace-expansion 1.x -- the SD-22 trap; 10.x
+  # needs the named-export 5.x). backend carries the @3 and @10 keys already.
+  "minimatch@3": "^3.1.4"
+  "minimatch@9": "^9.0.7"
+  "minimatch@10": "^10.2.3"
+  # minimatch@10 pulls the named-export 5.x brace-expansion line, which this
+  # root did not previously resolve at all. Mirrors the sibling string exactly.
+  "brace-expansion@5": "^5.0.12"
+  # GHSA-25h7-pfq9-p65f and GHSA-rf6f-7fwh-wjgh (both HIGH), eslint's
+  # flat-cache serializer. No sibling root carries a pin because backend and
+  # root resolve 3.4.2 naturally; the panels and storefront did not.
+  "flatted": "^3.4.2"
+  # GHSA-52cp-r559-cp3m, -5p4m-2wfm-xmqj, -2883-xcg3-v3hh (all HIGH). Mirrors
+  # backend's "js-yaml@4": "^4.3.2" exactly. Selector-scoped so the 3.x line
+  # (which still has safeLoad consumers) is never forced onto 4.x.
+  "js-yaml@4": "^4.3.2"
+  # GHSA-52cp-r559-cp3m, -5p4m-2wfm-xmqj, -2883-xcg3-v3hh on the 3.x line too;
+  # fixed 3.15.2. Mirrors backend's "js-yaml@3": "^3.15.2" (cli-ux wants ^3.13).
+  "js-yaml@3": "^3.15.2"
+  # Eight HIGH advisories on fast-uri 3.1.0 (GHSA-q3j6-qgpj-74h6 through
+  # -qw65-cvwx-89v3), all fixed by 3.1.7. storefront pins "^3.1.6", which
+  # PERMITTED 3.1.7 and resolved it; the floor here is the real fix so the
+  # range says what it means. Bounded to 3.x because ajv declares ^3.0.1 --
+  # and ajv itself is NOT touched (.trivyignore SD-15: >=8.18 breaks eslint).
+  "fast-uri": "^3.1.8"
+  # GHSA-v56q-mh7h-f735 and GHSA-xvcm-6775-5m9r (both HIGH), via the Medusa
+  # graphql-codegen toolchain. backend pins ">=5.1.8"; caret-bounded here
+  # because immutable 6.0.0 is already on the registry as a beta.
+  "immutable": "^5.1.8"
+  # --- the Medusa CLI toolchain (dev-only here) --------------------------
+  # GHSA-cfw5-68c4-ffqp (HIGH) on @mikro-orm/knex 6.6.12. Pinned as a block
+  # of five, exactly as root and backend do, because @mikro-orm/cli,
+  # migrations and postgresql declare their siblings at EXACT versions: an
+  # override on knex alone leaves cli@6.6.12 running against knex@6.6.14, a
+  # mixed graph the maintainers do not support.
+  "@mikro-orm/core": "6.6.14"
+  "@mikro-orm/cli": "6.6.14"
+  "@mikro-orm/knex": "6.6.14"
+  "@mikro-orm/migrations": "6.6.14"
+  "@mikro-orm/postgresql": "6.6.14"
+  # CVE-2026-101916 (HIGH): authentication bypass via improper peer-cert
+  # validation. Same advisory backend fixed in SD-27; same string.
+  "@grpc/grpc-js": "^1.14.5"
+  # GHSA-wcpc-wj8m-hjx6 (HIGH). Deliberately NOT backend's ">=8.4.1": both
+  # dependents here (@grpc/proto-loader, @opentelemetry/otlp-transformer)
+  # declare 7.x ranges, so that string would force an unreviewed major onto
+  # them. Selector-scoped to the 7.x line and caret-bounded.
+  "protobufjs@7": "^7.6.1"
+  # GHSA-q7rr-3cgh-j5r3 (HIGH), fixed 0.217.0. The two overrides below MUST
+  # carry the identical string: sdk-node pins exporter-prometheus at exactly
+  # its own version, so two different floors would split the graph. Under
+  # 0.x caret semantics ^0.218.0 means <0.219.0 -- a tighter bound than
+  # backend's bare ">=0.217.0", on purpose (CLAUDE.md rule 6).
+  "@opentelemetry/sdk-node": "^0.218.0"
+  "@opentelemetry/exporter-prometheus": "^0.218.0"
+  # GHSA-45rx-2jwx-cxfr (HIGH), fixed 2.9.0. sdk-node@0.218.0 would otherwise
+  # leave this at the still-vulnerable 2.7.1. Caret-bounded; a 3.0.0
+  # development release already exists on the registry.
+  "@opentelemetry/propagator-jaeger": "^2.9.0"
   "@remix-run/router": ">=1.23.2"
   "zod": "4.2.0"
 
