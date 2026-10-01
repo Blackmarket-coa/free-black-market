@@ -32,6 +32,12 @@ To reproduce a cold CI run (no `.medusa/` present):
 mv .medusa /tmp/mg && npx tsc --noEmit; mv /tmp/mg .medusa
 ```
 
+The complement bites too: a **stale** `.medusa/` makes `tsc` invent errors that do not
+exist. On 2026-10-01 it reported `SellerMetadata` missing `node_operator_opt_in` in
+`src/api/vendor/node-operator/route.ts` against a three-week-old generated type, in a
+change whose diff contained no `.ts` file at all. Run them in CI's order — `medusa
+build` first, which regenerates the types, then `tsc` — before believing either.
+
 ### 2. Module registration keys are unguessable. Import them.
 
 The key a module registers under has **no derivable relationship** to its directory
@@ -108,6 +114,18 @@ claim the old version was always intended).
 Two guards: `scripts/check-override-coverage.mjs` asserts every override actually
 binds in the resolved lockfile, and installs must **never** pass
 `--ignore-workspace` — that flag makes pnpm ignore the file entirely with no warning.
+
+There are **six** workspace roots with their own lockfile and override block, not four:
+root, `backend`, `storefront`, `admin-panel`, `vendor-panel` and `mobile`. `mobile` was
+missing from that script's `DEFAULT_ROOTS` until 2026-10-01 while Trivy scanned its
+lockfile like any other — a pin there was shipped unasserted. A new root needs adding to
+both places or it is unguarded.
+
+**And a green Trivy gate is not a clean tree.** Trivy's pnpm parser excludes dev
+dependencies, so the gate speaks only for production paths. On 2026-10-01 the gate read
+0 HIGH while a full OSV sweep of the same six lockfiles found ~20 fixed HIGH/CRITICAL
+advisories (one CRITICAL) still present in dev-only paths — see SD-28. Defensible, but
+do not quote "0 HIGH" as evidence of anything wider than what Trivy actually looks at.
 
 A permissive range is not a bump. `>=0.35.0` happily resolves to the vulnerable
 `0.35.3`; pin what you mean, and caret-bound it so a bare `>=` doesn't drag in an

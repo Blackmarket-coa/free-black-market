@@ -30,7 +30,11 @@
 import { readFileSync, existsSync } from "node:fs"
 import { join, resolve } from "node:path"
 
-const DEFAULT_ROOTS = [".", "backend", "storefront", "admin-panel", "vendor-panel"]
+// Every directory that is its own pnpm workspace root AND carries a lockfile.
+// `mobile` was missing here until 2026-10-01: Trivy's filesystem scan reads its
+// lockfile like any other, so a CVE pin declared there was shipped unasserted —
+// the precise blind spot this script exists to close.
+const DEFAULT_ROOTS = [".", "backend", "storefront", "admin-panel", "vendor-panel", "mobile"]
 
 /**
  * Where overrides can legitimately live.

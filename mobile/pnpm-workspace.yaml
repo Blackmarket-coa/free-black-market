@@ -4,7 +4,20 @@
 # and being a root means installs never need --ignore-workspace (which would
 # silently drop any overrides declared here).
 #
-# No overrides yet: everything below dependencies/ is @capacitor/* first-party
-# packages. Add CVE pins here (not package.json) if that changes — see
-# storefront/pnpm-workspace.yaml for the rationale and the coverage check.
+# Add CVE pins here, not in package.json — see storefront/pnpm-workspace.yaml
+# for the rationale and the coverage check.
 packages: []
+
+overrides:
+  # brace-expansion 5.0.9 arrives transitively (not via any @capacitor/*
+  # dependency of ours) and carries two fixed HIGH DoS advisories:
+  # GHSA-6j4f-fj2g-mc7p (uncontrolled recursion in parseCommaParts, fixed
+  # 5.0.10) and GHSA-qhr7-859c-m2p7 (uncontrolled recursion on nested brace
+  # groups, fixed 5.0.11). 5.0.12 also clears the MODERATE -q2hr-2g5m-vwhr.
+  #
+  # This root had no overrides block at all until now, and `mobile` was absent
+  # from DEFAULT_ROOTS in scripts/check-override-coverage.mjs — so its lockfile
+  # was scanned by Trivy but its (nonexistent) pins were never asserted. Both
+  # are fixed together; adding a pin here without the root would have been
+  # unguarded config.
+  "brace-expansion@5": "^5.0.12"
