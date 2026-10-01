@@ -64,32 +64,23 @@ are marked **confirmed** or **corrected**.
 | Modules `bounty`, `escrow`, `app-store`, `campaign` | Not present under those names. `plugin-registry` and `collective-campaign` are the nearest real things; bounty/escrow logic sits inside `demand-pool` |
 | Blackstar "batch claims and micro-depots" | Not under those names. Real shape: `ShipmentBoardListing` + `claim_policy` + the award endpoint |
 
-## Blocker discovered while inventorying
+## A reported blocker that was already fixed
 
-**Seven panel feature flags can never be true.**
+The first pass reported the panels' `VITE_FF_*` flags as unwired. Against
+`main` that is **wrong** — `965d9d40` (25 Sep) declares all twelve ARGs across
+the two panels and passes all seven from repo variables.
 
-`vendor-panel/src/lib/phase0-feature-flags.ts` reads `VITE_FF_POS_V1`,
-`VITE_FF_WEIGHT_PRICING_V1`, `VITE_FF_PICK_PACK_V1`, `VITE_FF_INVOICING_V1`,
-`VITE_FF_CHANNEL_SYNC_V1`, `VITE_FF_VENDOR_ADVANCES_V1`,
-`VITE_FF_INVESTMENT_POOLS_V1`.
+The finding was made against `ebff02ea`, this branch's six-day-old base, without
+re-checking `origin/main`. The mechanism described (Vite inlines at build time;
+`enabled(undefined)` is `false`; an undeclared flag is compiled as permanently
+false) is accurate and worth keeping. Its application to current `main` was not.
 
-`vendor-panel/Dockerfile` declares four `VITE_*` ARGs — none of them `VITE_FF_*`.
-`docker-build.yml`'s `panelargs` step emits four vars — none of them `VITE_FF_*`.
+What remains novel is the guard, `scripts/check-panel-feature-flags.mjs` —
+`main` has no equivalent. It passes against `main`'s wiring, so it locks in the
+existing fix instead of redoing it.
 
-Vite inlines `import.meta.env.VITE_*` at build time; the helper is
-`enabled(value, fallback = false)` and returns `false` for `undefined`. So all
-seven are false in the published image, permanently. Five built features are
-unreachable; two are correctly dark but by accident rather than by the flag.
-
-`admin-panel` has the identical defect — 5 flags read, 0 ARGs declared. The
-initial report named only vendor-panel; both are affected.
-
-Same failure shape as SD-26: a mechanism that looks wired and isn't.
-**Resolved 2026-10-01** — both Dockerfiles declare + re-export every flag,
-`docker-build.yml` passes all 7, and `scripts/check-panel-feature-flags.mjs`
-guards the three lists against drift in CI.
-
----
+**Method note for the remaining Reuse Reports:** verify against `origin/main`,
+not the working tree, and stamp every status with the commit it was checked at.
 
 ## Not yet done
 

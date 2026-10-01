@@ -12,7 +12,12 @@ import { getQuestDefinition, listQuestDefinitions } from "./definitions"
 import { evaluateQuest } from "./engine"
 import { aggregateSubstrates } from "./substrate/aggregate"
 import { buildPacketExport, renderPacketHtml, type PacketExport } from "./packet"
-import type { QuestDefinition, QuestEvaluation, VendorSubstrate } from "./types"
+import type {
+  CollectiveCoalitionInfo,
+  QuestDefinition,
+  QuestEvaluation,
+  VendorSubstrate,
+} from "./types"
 
 /** XP granted per newly-passed stage gate (best-effort, via injected callback). */
 const STAGE_XP = 50
@@ -296,14 +301,17 @@ class VendorQuestModuleService extends MedusaService({
   evaluateCollective(
     questKey: string,
     substrates: VendorSubstrate[],
-    memberIds: string[]
+    memberIds: string[],
+    opts: { coalition?: CollectiveCoalitionInfo | null } = {}
   ) {
     const def = getQuestDefinition(questKey)
     if (!def) throw new Error(`Unknown quest '${questKey}'`)
     if (def.type !== "collective") {
       throw new Error(`Quest '${questKey}' is not a collective quest`)
     }
-    const aggregate = aggregateSubstrates(substrates, memberIds)
+    const aggregate = aggregateSubstrates(substrates, memberIds, {
+      coalition: opts.coalition ?? null,
+    })
     return { aggregate, evaluation: evaluateQuest(def, aggregate) }
   }
 

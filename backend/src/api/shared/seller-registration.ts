@@ -1,4 +1,7 @@
 import { createLogger } from "../../shared/logger"
+import { issueVerificationToken } from "../../shared/seller-email-verification"
+import { sendSellerEmailVerificationWorkflow } from "../../workflows/send-seller-email-verification"
+
 const log = createLogger("api/shared/seller-registration")
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { Modules } from "@medusajs/framework/utils"
@@ -92,6 +95,9 @@ export const handleSellerRegistration = async (
           name: body.name,
         },
         vendor_type: body.vendor_type || "general",
+        // "I also want to run deliveries." Answered in the onboarding survey;
+        // it decides whether approval hands this seller node credentials.
+        node_operator_opt_in: body.node_operator_opt_in === true,
         playbook: body.playbook,
         roles: body.roles,
         recommended_playbook: body.recommended_playbook,
@@ -103,12 +109,42 @@ export const handleSellerRegistration = async (
 
     log.info(`[Seller registration] Created request: ${sellerRequest.id}`)
 
+    // Approval is automatic, so proving control of the mailbox IS the gate on
+    // becoming a seller — and, through the Blackstar bridge, on holding node
+    // credentials. Only the hash is persisted; the raw token leaves in the mail.
+    const { token, state } = issueVerificationToken()
+    await requestService.updateRequests({
+      selector: { id: sellerRequest.id },
+      data: {
+        data: { ...(sellerRequest.data as Record<string, unknown>), email_verification: state },
+      },
+    })
+
+    try {
+      await sendSellerEmailVerificationWorkflow(req.scope).run({
+        input: {
+          request_id: sellerRequest.id,
+          member_email: body.member.email,
+          member_name: body.member.name,
+          seller_name: body.name,
+          token,
+        },
+      })
+    } catch (notifyError) {
+      // The request and its token are already durable, so a mail outage must
+      // not lose the registration — the member can ask for a new link.
+      log.error(
+        "[Seller registration] Verification email failed to send:",
+        notifyError instanceof Error ? notifyError.message : String(notifyError)
+      )
+    }
+
     return res.status(201).json({
       request: {
         id: sellerRequest.id,
         status: sellerRequest.status || "pending",
         message:
-          "Your seller registration request has been submitted and is pending approval.",
+          "Check your email and open the verification link to finish setting up your store.",
       },
     })
   } catch (error) {

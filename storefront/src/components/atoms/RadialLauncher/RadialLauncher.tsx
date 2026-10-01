@@ -91,8 +91,9 @@ export function RadialLauncher({
     <div
       ref={containerRef}
       className={cn(
-        // Mobile-only, bottom-center, above BackToTop's z-index.
-        "fixed bottom-6 left-1/2 -translate-x-1/2 z-50 md:hidden",
+        // Mobile-only, bottom-center, above BackToTop's z-index. Lifted clear
+        // of the cookie-consent banner while it is shown (see ConsentBanner).
+        "fixed bottom-[calc(1.5rem+var(--fbm-consent-offset,0px))] left-1/2 -translate-x-1/2 z-50 md:hidden",
         className
       )}
       data-state={open ? "open" : "closed"}

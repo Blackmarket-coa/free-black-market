@@ -28,6 +28,13 @@ const GOVERNANCE_FBM_PERMISSIONS: Record<string, string[]> = {
     "governance.proposal.create",
     "coalition.member.invite",
   ],
+  /**
+   * Griot — the coalition's storyteller. Promotes the coalition's campaigns
+   * and brings people in; it is a voice role, not a purse role, so it carries
+   * no `payout.withdraw` and no listing write. Mirrors the `griot` coalition
+   * role on Blackout at power level 25.
+   */
+  griot: ["listing.read", "governance.proposal.vote", "coalition.member.invite"],
   member: ["listing.read", "governance.proposal.vote"],
   observer: ["listing.read"],
 }
@@ -35,6 +42,7 @@ const GOVERNANCE_FBM_PERMISSIONS: Record<string, string[]> = {
 const GOVERNANCE_VOTE_ELIGIBILITY: Record<string, string[]> = {
   vendor: ["finance", "operations"],
   steward: ["finance", "operations", "membership", "constitution"],
+  griot: ["finance", "operations", "membership"],
   member: ["finance", "operations", "membership"],
   observer: [],
 }
@@ -47,6 +55,7 @@ const GOVERNANCE_VOTE_ELIGIBILITY: Record<string, string[]> = {
 const GOVERNANCE_POWER_LEVEL: Record<string, number> = {
   vendor: 25,
   steward: 50,
+  griot: 25,
   member: 0,
   observer: 0,
 }

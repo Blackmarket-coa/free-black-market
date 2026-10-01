@@ -1,4 +1,4 @@
-import { Button, Heading, Text } from "@medusajs/ui"
+import { Button, Checkbox, Heading, Text } from "@medusajs/ui"
 import { useMemo, useState } from "react"
 
 import { MultiQuestionCard } from "../playbook-picker/question-cards"
@@ -21,6 +21,13 @@ export type ResourceQuizResult = {
   resources: ResourceKey[]
   recommended_recipe_id: PlaybookId
   overridden: boolean
+  /**
+   * Asked only when the answers include transportation: "I also want to carry
+   * deliveries." This is what decides whether approval hands the seller
+   * Blackstar node credentials, so it has to be a deliberate tick rather than
+   * inferred from owning a van.
+   */
+  node_operator_opt_in: boolean
 }
 
 type ResourceQuizProps = {
@@ -30,6 +37,14 @@ type ResourceQuizProps = {
   initialRoles?: PlaybookId[]
   /** Pre-selected resources when re-running. */
   initialResources?: ResourceKey[]
+  /**
+   * Offer the "carry deliveries" opt-in when the answers include
+   * transportation. Registration wants it; the re-run from the dashboard does
+   * not, because turning it on issues a credential secret that is shown once
+   * and that surface has nowhere to show it — Settings → Run deliveries owns
+   * that.
+   */
+  offerNodeOperatorOptIn?: boolean
   /** Called when the user confirms their role selection. */
   onComplete: (result: ResourceQuizResult) => void
   /** Optional cancel handler. */
@@ -42,6 +57,7 @@ export function ResourceQuiz({
   initial,
   initialRoles,
   initialResources,
+  offerNodeOperatorOptIn = true,
   onComplete,
   onCancel,
 }: ResourceQuizProps) {
@@ -52,6 +68,12 @@ export function ResourceQuiz({
   const [selectedRoles, setSelectedRoles] = useState<PlaybookId[]>(
     initialRoles ?? (initial ? [initial] : [])
   )
+  const [wantsToDeliver, setWantsToDeliver] = useState(false)
+
+  // Owning a van is not the same as agreeing to drive for the network, so the
+  // opt-in is only offered once transportation is among the answers.
+  const offersDelivery =
+    offerNodeOperatorOptIn && selected.includes("transportation")
 
   const recommendation: Recommendation = useMemo(
     () => recommendPlaybookFromResources(selected),
@@ -110,6 +132,8 @@ export function ResourceQuiz({
       resources: selected,
       recommended_recipe_id: recommendation.playbook,
       overridden: primary !== recommendation.playbook || safeRoles.length > 1,
+      // Only meaningful if we actually offered it.
+      node_operator_opt_in: offersDelivery && wantsToDeliver,
     })
   }
 
@@ -215,6 +239,24 @@ export function ResourceQuiz({
                   </div>
                 ))}
               </div>
+              {offersDelivery && (
+                <label className="mt-3 flex items-start gap-x-3 p-3 rounded-lg border border-ui-border-base bg-ui-bg-base cursor-pointer">
+                  <Checkbox
+                    checked={wantsToDeliver}
+                    onCheckedChange={(v) => setWantsToDeliver(v === true)}
+                  />
+                  <div>
+                    <Text size="small" weight="plus">
+                      Sign me up to carry deliveries
+                    </Text>
+                    <Text size="small" className="text-ui-fg-muted">
+                      Registers you as a Blackstar node operator and issues the
+                      credential your node signs with. You can turn this on or
+                      off later in Settings.
+                    </Text>
+                  </div>
+                </label>
+              )}
               <Text size="xsmall" className="text-ui-fg-muted text-center mt-2">
                 These don't require a storefront — you'll find them across the
                 platform once you're in.

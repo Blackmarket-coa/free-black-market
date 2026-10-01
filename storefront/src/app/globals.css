@@ -10,6 +10,10 @@
   body {
     font-family: var(--font-solarpunk-body), ui-sans-serif, system-ui, sans-serif;
     background-color: rgb(var(--neutral-0));
+    /* Set only while the cookie-consent banner is shown (ConsentBanner), so
+       the end of the page can scroll out from under it. Scroll padding
+       alone cannot, because it adds no room past the end of the document. */
+    padding-bottom: var(--fbm-consent-offset, 0px);
   }
 
   h1,

@@ -13,14 +13,17 @@ import {
 import { devLogger } from "../../lib/logger"
 
 const fetchRegistrationStatus = async (token: string) => {
-  const response = await fetch(`${backendUrl}/auth/seller/registration-status`, {
-    method: "GET",
-    credentials: "include",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-    },
-  })
+  const response = await fetch(
+    `${backendUrl}/auth/seller/registration-status`,
+    {
+      method: "GET",
+      credentials: "include",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+    }
+  )
 
   return response.json() as Promise<{
     status: string
@@ -67,8 +70,7 @@ const playbookToVendorType = (playbook?: string): string | undefined =>
  */
 export const useSignInWithEmailPass = (
   options?: UseMutationOptions<
-    | string
-    | { location: string },
+    string | { location: string },
     FetchError,
     HttpTypes.AdminSignUpWithEmailPassword
   >
@@ -103,6 +105,8 @@ export const useSignUpWithEmailPass = (
       recommended_playbook?: string
       roles?: string[]
       resources?: string[]
+      /** Ticked "sign me up to carry deliveries" in the onboarding survey. */
+      node_operator_opt_in?: boolean
     }
   >
 ) => {
@@ -115,6 +119,7 @@ export const useSignUpWithEmailPass = (
         recommended_playbook,
         roles,
         resources,
+        node_operator_opt_in,
         ...authPayload
       } = payload
       const normalizedEmail = payload.email.toLowerCase().trim()
@@ -132,10 +137,12 @@ export const useSignUpWithEmailPass = (
       } catch (error) {
         const message =
           error instanceof Error ? error.message : "Registration failed"
-        const status =
-          error instanceof FetchError ? error.status : undefined
+        const status = error instanceof FetchError ? error.status : undefined
 
-        if (status === 409 || message.toLowerCase().includes("already exists")) {
+        if (
+          status === 409 ||
+          message.toLowerCase().includes("already exists")
+        ) {
           const result = await sdk.auth.login("seller", "emailpass", {
             ...authPayload,
             email: normalizedEmail,
@@ -173,6 +180,7 @@ export const useSignUpWithEmailPass = (
             recommended_playbook: variables.recommended_playbook,
             roles: variables.roles,
             resources: variables.resources,
+            node_operator_opt_in: variables.node_operator_opt_in === true,
             member: {
               name: variables.name,
               email: variables.email.toLowerCase().trim(),
@@ -181,10 +189,7 @@ export const useSignUpWithEmailPass = (
           headers: token ? { Authorization: `Bearer ${token}` } : undefined,
         })
       } catch (error) {
-        devLogger.error(
-          "Failed to create seller registration request:",
-          error
-        )
+        devLogger.error("Failed to create seller registration request:", error)
       }
 
       // Call user's onSuccess callback if provided
@@ -198,7 +203,11 @@ export const useSignUpWithEmailPass = (
  * Sign up for invite flow (no vendor type)
  */
 export const useSignUpForInvite = (
-  options?: UseMutationOptions<string, FetchError, HttpTypes.AdminSignInWithEmailPassword>
+  options?: UseMutationOptions<
+    string,
+    FetchError,
+    HttpTypes.AdminSignInWithEmailPassword
+  >
 ) => {
   return useMutation({
     mutationFn: async (payload) => {
@@ -253,6 +262,42 @@ export const useUpdateProviderForEmailPass = (
   return useMutation({
     mutationFn: (payload) =>
       sdk.auth.updateProvider("seller", "emailpass", payload, token),
+    ...options,
+  })
+}
+
+export type VerifySellerEmailPayload = {
+  request: string
+  token: string
+}
+
+export type VerifySellerEmailResponse = {
+  verified: boolean
+  approved: boolean
+  seller?: { id: string; name: string; handle?: string }
+}
+
+/**
+ * Complete a seller registration from the emailed verification link.
+ *
+ * Anonymous by necessity — the caller is proving control of the mailbox the
+ * registration named and has no seller session yet, which is why
+ * `/vendor/verify-email` is in `isPublicAuthRoute`. On success the backend has
+ * already approved the seller, so the member can go straight to login.
+ */
+export const useVerifySellerEmail = (
+  options?: UseMutationOptions<
+    VerifySellerEmailResponse,
+    FetchError,
+    VerifySellerEmailPayload
+  >
+) => {
+  return useMutation({
+    mutationFn: async (payload) =>
+      (await fetchQuery("/vendor/verify-email", {
+        method: "POST",
+        body: payload,
+      })) as VerifySellerEmailResponse,
     ...options,
   })
 }

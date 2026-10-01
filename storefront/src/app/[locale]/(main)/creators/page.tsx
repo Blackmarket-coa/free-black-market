@@ -42,7 +42,7 @@ export default function CreatorsPage() {
         <article className="rounded-2xl border p-6">
           <h2 className="text-xl font-semibold mb-2">Keep 97%</h2>
           <p className="text-sm text-gray-700">
-            A flat 3% coalition fee — no listing fees, no monthly subscription, and no payment
+            A 3% coalition fee on the free plan — no listing fees, no required subscription, and no payment
             processing fees passed to you. Value stays with the people who create it.
           </p>
         </article>

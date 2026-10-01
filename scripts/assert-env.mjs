@@ -106,6 +106,9 @@ const RULES = {
     { key: "COOKIE_SECRET", required: true, minLength: MIN_SECRET_LENGTH, banPrefixes: ["CHANGE_ME", "local-dev-"] },
     { key: "DATABASE_URL", required: true, pattern: /^postgres(ql)?:\/\// },
     { key: "MEDUSA_ADMIN_PASSWORD", required: true, minLength: 12, banPrefixes: ["CHANGE_ME"] },
+    // LEG-8: without a real salt the attribution IP hash is either skipped
+    // (helper stores null) or, with a placeholder, salted with a public string.
+    { key: "CREATOR_ATTRIBUTION_IP_SALT", required: true, minLength: MIN_SECRET_LENGTH, banPrefixes: ["CHANGE_ME", "local-dev-"] },
   ],
   storefront: [
     { key: "REVALIDATE_SECRET", required: true, minLength: MIN_SECRET_LENGTH, banPrefixes: ["CHANGE_ME", "local-dev-"] },

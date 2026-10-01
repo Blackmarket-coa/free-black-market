@@ -12,7 +12,7 @@ architecture and compliance frame before touching money-moving code.
 FBM's backend builds on [Medusa](https://www.medusajs.com), an open-source
 commerce framework. The sections below cover Medusa's generic starter setup,
 followed by FBM-specific integration and module notes (health checks,
-Algolia, collective campaigns).
+search, collective campaigns).
 
 <p align="center">
   <a href="https://www.medusajs.com">
@@ -67,26 +67,16 @@ This backend exposes two health endpoints:
 
 For Railway deployments that need to verify PostgreSQL connectivity, set the service health check to `/health/ready`. The default `railway.json` and `railway.staging.json` files already point to this path so Railway will only mark the service healthy when the database is reachable.
 
-## Algolia Integration
+Railway is not the production path. Production runs as a single-host Docker Compose stack on Fedora behind host nginx, rolled by `scripts/deploy-fedora.sh` (see [`../docs/runbooks/FEDORA_DEPLOYMENT.md`](../docs/runbooks/FEDORA_DEPLOYMENT.md)); its compose healthcheck probes `GET /health`. The Railway files are kept but unused.
 
-This backend includes automatic Algolia index setup via an initialization script. When you provide the following environment variables:
+## Search (Algolia removed)
 
-```
-ALGOLIA_API_KEY=your_admin_api_key
-ALGOLIA_APP_ID=your_application_id
-```
+Product search runs on Postgres. `@mercurjs/algolia` was removed from `medusa-config.ts` (it crashed the backend), so nothing indexes products into Algolia; store queries filter with `ILIKE` instead.
 
-The `init-algolia` script runs before the backend starts and will:
-1. Check if the "products" index exists in your Algolia application
-2. Create the index if it doesn't exist
-3. Configure the index using settings from `algolia-config.json` in the backend root directory
+Leftovers you may still see:
 
-**Important Notes:**
-- Use your **Admin API Key** (not the Search-Only API Key) for the backend, as it needs write permissions to create indexes and sync products.
-- If you modify the Algolia configuration, **make sure to update both** `backend/algolia-config.json` and `storefront/algolia-config.json` to keep them aligned. The backend config is used to create/configure the index, while the storefront config is used by the frontend search interface.
-- The init script is run as part of the `start` command: `pnpm run init-algolia`
-
-No manual index creation or configuration is required - everything happens automatically on backend startup!
+- `src/scripts/init-algolia.ts` can create and configure a `products` index from `algolia-config.json` when `ALGOLIA_APP_ID` and `ALGOLIA_API_KEY` are set, but **nothing runs it**. The `start` command (`scripts/railway-start.js`) does not call it, and there is no `init-algolia` package script. It never pushes product records either.
+- The storefront still has optional Algolia listing components that switch on only when `NEXT_PUBLIC_ALGOLIA_ID` and `NEXT_PUBLIC_ALGOLIA_SEARCH_KEY` are set. With no backend sync, an index behind them goes stale.
 
 
 ## Collective Campaign Module

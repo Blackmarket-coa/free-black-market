@@ -6,8 +6,9 @@ from the [Mercur](https://github.com/mercurjs/mercur) marketplace starter and
 has grown into a broader **cooperative-economy substrate**: vendors pick a
 governance "playbook" (solo seller, worker co-op, multi-stakeholder co-op,
 CSA, mutual-aid garden, and more), an internal ledger settles value across
-commerce, creator bounties, mutual aid, and delivery, and several
-vertical-specific storefront apps sit on top of the same backend.
+commerce, creator bounties, mutual aid, and delivery, and four
+vertical-specific vendor dashboards (in development, not yet deployed) sit on
+top of the same backend.
 
 FBM is useful to you if you want to:
 
@@ -22,9 +23,10 @@ FBM is useful to you if you want to:
   operates as a Stripe-ACH payment facilitator (not a money transmitter);
   see [`docs/POSTURE_A_COMPLIANCE.md`](docs/POSTURE_A_COMPLIANCE.md) for the
   regulatory frame every money-touching module is built against.
-- **Stand up a vertical-specific storefront** (plant nursery, wellness/herbal,
+- **Build vertical-specific vendor tooling** (plant nursery, wellness/herbal,
   creator commerce, general botanical goods) on shared infrastructure instead
-  of building each one from scratch.
+  of building each one from scratch. The four portals here are early
+  back-office dashboards, not customer storefronts (see below).
 
 > **Testing & security.** We run an external crowdsourced testing program with
 > a security bounty. See [`TESTING.md`](TESTING.md) to join as a tester or
@@ -52,13 +54,13 @@ FBM is useful to you if you want to:
 ├── admin-panel/           Operator dashboard
 ├── vendor-panel/          Seller dashboard
 ├── storefront/            Customer-facing web app (Next.js)
-├── nursery-portal/        Vertical storefront: plant nursery / growers
-├── wellness-portal/       Vertical storefront: wellness / herbal
-├── botanical-portal/      Vertical storefront: general botanical goods
-├── creator-portal/        Vertical storefront: independent creators
+├── nursery-portal/        Vendor dashboard (dev only): plant nursery / growers
+├── wellness-portal/       Vendor dashboard (dev only): wellness / herbal
+├── botanical-portal/      Vendor dashboard (dev only): general botanical goods
+├── creator-portal/        Vendor dashboard (dev only): independent creators
 ├── packages/               Shared UI kit and portal-framework packages (@bmc/*)
-├── services/ai-orchestrator/  LangGraph-based AI supervisor/vendor-tooling agent
-├── infrastructure/         Kubernetes, observability, Jitsi, deployment configs
+├── services/ai-orchestrator/  Hermes system prompt + tool-call guardrails (not deployed)
+├── infrastructure/         Fedora host (production), observability, Jitsi, unused k8s manifests
 ├── templates/              Starter site template for spinning up a new node
 ├── e2e/                    Playwright end-to-end suite across surfaces
 ├── docs/                   Architecture, compliance, and operational docs
@@ -74,16 +76,29 @@ FBM is useful to you if you want to:
 - **Composition layer** (see [`docs/COMPOSITION_LAYER.md`](docs/COMPOSITION_LAYER.md)):
   a "playbook" system (co-op governance shapes a vendor can pick),
   listing-types (physical, event, digital, subscription, consignment,
-  bookable, campaign, ...), an internal hawala-style ledger on Stellar
-  (Coalition Credits + USDC treasury, settling out via Stripe ACH), creator
-  bounties (**Refrain**), mutual aid (**Threshold**), and delivery
-  federation (**Blackstar**).
+  bookable, campaign, ...), an internal hawala-style double-entry ledger
+  (Coalition Credits + USDC treasury; Stellar anchoring and outbound Stripe
+  ACH payouts are built but ship disabled — `ENABLE_STELLAR_SETTLEMENT=false`
+  and `ACH_PAYOUTS_ENABLED=false`), creator bounties (**Refrain**), mutual aid
+  (**Threshold**), and a delivery hand-off to the separate **Blackstar**
+  logistics app — a signed-webhook bridge between two deployments
+  ([`docs/integrations/federated-logistics.md`](docs/integrations/federated-logistics.md)),
+  off unless `FBM_BLACKSTAR_INTEGRATION=1`. There is no federation protocol.
 - **Vertical portals** (`nursery-portal`, `wellness-portal`,
-  `botanical-portal`, `creator-portal`): focused storefront experiences for
+  `botanical-portal`, `creator-portal`): vendor back-office dashboards for
   specific vendor communities, built on the shared `@bmc/portal-kit` and
-  `@bmc/ui` packages.
-- **AI orchestrator** (`services/ai-orchestrator`): a LangGraph supervisor
-  agent with a vendor tool registry, used for AI-assisted vendor workflows.
+  `@bmc/ui` packages. They are not customer storefronts and are not deployed:
+  in dev they read from a typed mock data layer, there is no Dockerfile,
+  compose service or DNS entry for them, and 17 of the `/vendor/**` routes
+  they call, plus the Blackout feed routes, do not exist in the backend yet
+  (each portal's README lists its own).
+- **AI orchestrator** (`services/ai-orchestrator`, codename Hermes): the
+  versioned Hermes system prompt plus a tool-call schema validator and a
+  destructive-action confirmation checker, with tests. It has no LangGraph
+  dependency, makes no model calls, and is not deployed or imported by any
+  app; the backend's `POST /vendor/hermes/runtime` keeps its own copy of the
+  validator and forwards chat to the OpenAI-compatible endpoint set by
+  `HERMES_CHAT_*`.
 - **Commerce feature families** beyond the basics, each backed by one or
   more backend modules: restaurant/commissary ordering, rentals, ticketed
   events and venue booking, digital products, subscriptions and CSA-style
@@ -95,11 +110,17 @@ FBM is useful to you if you want to:
   with demurrage, vendor quests, buyer networks, group bargaining, demand
   pools, impact metrics, volunteer and work verification.
 - **Integrations**: WooCommerce import + inventory sync, Odoo import,
-  Printful fulfillment, Stripe (payments/ACH payouts), Stellar (internal
-  ledger), Algolia search, Rocket.Chat messaging, Resend/SMTP email, MinIO
-  file storage, and the `connect.js` embed layer
+  Printful fulfillment, Stripe (payments; ACH payouts off by default),
+  Stellar (ledger anchoring, off by default), Postgres search (`ILIKE`
+  filtering — `@mercurjs/algolia` was removed from `backend/medusa-config.ts`),
+  Matrix/Element chat against the Blackout Synapse homeserver
+  (`backend/src/shared/matrix-service.ts`), Resend/SMTP email, MinIO file
+  storage, and the `connect.js` embed layer
   ([`docs/integrations/fbm-connect.md`](docs/integrations/fbm-connect.md))
-  that powers standalone vendor sites and the vertical portals.
+  for standalone vendor sites. It does not work from vendor origins yet: no
+  shipped `connect.js` sends the Medusa publishable key (`/store/*` returns
+  `400` without it), and store CORS rejects vendor origins (see the §1 known
+  gaps).
 - **Operational tooling**: release-validation scripts, health checks,
   observability config, runbooks, and a documented compliance posture for
   anything that touches money.
@@ -116,9 +137,15 @@ aspirational scope.
 - **Backend**: Node.js + TypeScript + MedusaJS, PostgreSQL + Redis
 - **Frontends**: React/Vite (`admin-panel`, `vendor-panel`, vertical portals),
   Next.js (`storefront`)
-- **Internal ledger**: Stellar (Coalition Credits, USDC treasury), Stripe ACH
-  for vendor payout settlement
-- **AI**: LangGraph-based orchestrator service for vendor tooling
+- **Internal ledger**: Postgres double-entry (Coalition Credits, USDC
+  treasury); Stellar anchoring and Stripe ACH payouts built but off by default
+- **AI**: Hermes prompt + tool-call guardrails (`services/ai-orchestrator`,
+  not deployed); the backend proxies vendor chat to an OpenAI-compatible
+  endpoint
+- **Deploy**: single-host Docker Compose + host nginx on Fedora via
+  `scripts/deploy-fedora.sh`
+  ([`docs/runbooks/FEDORA_DEPLOYMENT.md`](docs/runbooks/FEDORA_DEPLOYMENT.md));
+  the Kubernetes, Railway and Vercel configs are committed but unused
 
 ## Quick Start
 

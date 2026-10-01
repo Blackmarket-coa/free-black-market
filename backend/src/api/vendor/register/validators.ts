@@ -75,6 +75,8 @@ export const createSellerRegistrationSchema = z.object({
   // on approval; multi-role selections union each role's default feature
   // keys into seller_metadata.enabled_extensions. All optional for backward
   // compatibility with older clients.
+  // "I also want to run deliveries." Optional so older clients keep working.
+  node_operator_opt_in: z.boolean().optional(),
   playbook: playbookIdEnum.optional(),
   roles: z.array(playbookIdEnum).optional(),
   recommended_playbook: playbookIdEnum.optional(),

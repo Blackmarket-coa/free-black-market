@@ -18,6 +18,27 @@ cooperative-economics constraint — transparent, never extractive.
 > infrastructure that demonstrably exists (§3). If the vendor-hub document is later
 > written, reconcile §3 against it rather than assuming agreement.
 
+## Status at a glance
+
+**The FBM Buyer Hub named in this spec is planned, not built.** There is no
+buyer-hub app, module, route or page — no single surface where a buyer posts a
+buy order, joins a group buy, requests mutual aid and browses order cycles.
+What exists is the Buyer Center cluster the hub would compose:
+
+| Piece | Code | Where it surfaces today |
+|---|---|---|
+| Demand pools (buy orders, group buys, escrow-backed bounties, supplier proposals and votes) | `modules/demand-pool` | Storefront `(main)/collective/demand-pools/{,new,[id]}`; `/store/collective/demand-pools/*`; `/vendor/collective/demand-pools`, `/vendor/collective/demand-leads` and the vendor-panel `collective-demand-pools` page; `/admin/collective/demand-pools`; the embeddable `data-fbm="demand-pools"` kind (does not work from vendor sites yet: connect.js does not send `x-publishable-api-key`, and the store CORS preflight rejects vendor origins — see [`fbm-connect.md`](integrations/fbm-connect.md) §1) |
+| Bargaining groups | `modules/bargaining` (groups, members, proposals, votes, negotiation threads) | API only: `/store/collective/bargaining-groups`, `/admin/collective/bargaining-groups`. No UI. |
+| Buyer networks | `modules/buyer-network` (networks, members) | API only: `/store/collective/buyer-networks`, `/admin/collective/buyer-networks`; a demand pool can be created with a `buyer_network_id`. No UI. |
+| Collective campaigns | `modules/collective-campaign` | Storefront `(main)/collective/campaigns`; `/store/collective/campaigns/*`. Escrow is dark unless `FBM_CAMPAIGN_ESCROW_LIVE=1`; `MICRO_INVESTOR` backings are refused unless `FBM_SECURITIES_GATE_CLEARED=1`. |
+| `buyer_center` tier gate | `modules/tenancy/gates.ts`: `buyer_center: "tier2_aligned_org"`. Sellers in an aligned-org storefront get `vendor.buyer_network` as a plan floor. | `/vendor/collective*` answers `402` without `vendor.buyer_network` (`api/middlewares.ts`); `/store/collective/*` stays open. |
+| Buyer Center add-on | `modules/vendor-plan/addons.ts`: `buyer_center_pack`, $149 per 30 days, grants `vendor.buyer_network` | Same `/vendor/collective*` gate |
+
+Also built (details in §4): the `mutual-aid`
+module and `/mutual-aid` page, `barter`, the public pool ledger trail,
+order-cycle hand-off, buyer archetypes, and surplus disposition (its
+money-moving half is dark behind `FBM_SURPLUS_REDIRECT_LIVE`).
+
 ---
 
 ## 1. Module reality check

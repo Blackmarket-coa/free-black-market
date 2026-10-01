@@ -191,7 +191,8 @@ const SafetyStage = ({ onContinue }: StageProps) => {
       id: "no-hidden-fees",
       icon: <CurrencyDollar className="w-5 h-5" />,
       title: "No hidden fees",
-      description: "Simple 3% platform fee. That's it. No surprise charges.",
+      description:
+        "3% platform fee on the free plan, lower on an optional paid plan. No surprise charges.",
     },
     {
       id: "clear-payouts",

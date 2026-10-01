@@ -2,6 +2,7 @@ import { logger } from "@/lib/logger"
 import { HttpTypes } from "@medusajs/types"
 import { NextRequest, NextResponse } from "next/server"
 import { detectEmbedContext } from "./lib/runtime/embed-context"
+import { readConsent } from "./lib/consent"
 
 const BACKEND_URL = process.env.MEDUSA_BACKEND_URL || process.env.NEXT_PUBLIC_MEDUSA_BACKEND_URL || ""
 const PUBLISHABLE_API_KEY = process.env.NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY
@@ -116,6 +117,12 @@ async function getCountryCode(
  * Apply creator-attribution cookies (visitor token + affiliate code) to the
  * given response. Idempotent: existing visitor cookies are reused; the
  * affiliate cookie is only refreshed when `?fbm_ref=<code>` is present.
+ *
+ * LEG-8: the visitor and affiliate cookies are tracking cookies, so they are
+ * written only once `fbm_consent=accepted`. Until the visitor chooses, nothing
+ * is set; if they chose "essential", any copies this host set earlier are
+ * expired. The booking cookie below is functional (it links a reserved slot
+ * to the checkout that pays for it) and is never gated.
  */
 function applyAttributionCookies(request: NextRequest, response: NextResponse) {
   const VISITOR_COOKIE = "_fbm_visitor"
@@ -126,23 +133,33 @@ function applyAttributionCookies(request: NextRequest, response: NextResponse) {
   const AFF_MAX_AGE_DAYS =
     parseInt(process.env.NEXT_PUBLIC_CREATOR_ATTRIBUTION_DEFAULT_COOKIE_DAYS || "7", 10) || 7
 
-  // Visitor cookie: ensure one exists and is 90 days fresh.
-  if (!request.cookies.get(VISITOR_COOKIE)) {
-    response.cookies.set(VISITOR_COOKIE, crypto.randomUUID(), {
-      maxAge: COOKIE_MAX_AGE_DAYS * 24 * 60 * 60,
-      sameSite: "lax",
-      path: "/",
-    })
-  }
+  const consent = readConsent(request.cookies)
 
-  // Affiliate cookie: pin if `?fbm_ref=<short_code>` present in the URL.
-  const fbmRef = request.nextUrl.searchParams.get("fbm_ref")
-  if (fbmRef) {
-    response.cookies.set(AFF_COOKIE, `${fbmRef}.${Date.now()}`, {
-      maxAge: AFF_MAX_AGE_DAYS * 24 * 60 * 60,
-      sameSite: "lax",
-      path: "/",
-    })
+  if (consent === "accepted") {
+    // Visitor cookie: ensure one exists and is 90 days fresh.
+    if (!request.cookies.get(VISITOR_COOKIE)) {
+      response.cookies.set(VISITOR_COOKIE, crypto.randomUUID(), {
+        maxAge: COOKIE_MAX_AGE_DAYS * 24 * 60 * 60,
+        sameSite: "lax",
+        path: "/",
+      })
+    }
+
+    // Affiliate cookie: pin if `?fbm_ref=<short_code>` present in the URL.
+    const fbmRef = request.nextUrl.searchParams.get("fbm_ref")
+    if (fbmRef) {
+      response.cookies.set(AFF_COOKIE, `${fbmRef}.${Date.now()}`, {
+        maxAge: AFF_MAX_AGE_DAYS * 24 * 60 * 60,
+        sameSite: "lax",
+        path: "/",
+      })
+    }
+  } else if (consent === "essential") {
+    for (const name of [VISITOR_COOKIE, AFF_COOKIE]) {
+      if (request.cookies.get(name)) {
+        response.cookies.set(name, "", { maxAge: 0, sameSite: "lax", path: "/" })
+      }
+    }
   }
 
   // Booking cookie: pin if `?booking_id=` is present (D9-6).

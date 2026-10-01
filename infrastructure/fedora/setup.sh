@@ -104,6 +104,10 @@ echo "       sudo bash ${APP_DIR}/infrastructure/fedora/certbot/issue-certs.sh y
 echo
 echo "  5. Run the first deploy:"
 echo "       cd ${APP_DIR} && bash scripts/deploy-fedora.sh latest"
+echo "     It treats this host as production and refuses to deploy while the"
+echo "     legal pages have unfilled placeholders (scripts/check-legal-placeholders.mjs)."
+echo "     Staging host: prefix FBM_DEPLOY_ENV=staging. Production emergency"
+echo "     override: prefix FBM_ALLOW_LEGAL_PLACEHOLDERS=1."
 echo
 echo "  6. Enable boot-time start:"
 echo "       sudo cp ${APP_DIR}/infrastructure/fedora/systemd/fbm.service /etc/systemd/system/"

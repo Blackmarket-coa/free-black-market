@@ -7,12 +7,50 @@
 ARG NODE_VERSION=22-bookworm-slim
 ARG NGINX_VERSION=1.31-alpine
 
-# --- build stage -------------------------------------------------------------
-FROM node:${NODE_VERSION} AS build
+# --- pnpm stage --------------------------------------------------------------
+# Every stage that runs pnpm is FROM this one, so pnpm is fetched from the npm
+# registry once per image, here, with a retry — not once per stage with none.
+#
+# It used to be the latter: each stage ran its own `corepack enable` and let
+# its first `pnpm` call download pnpm. One fetch for this image, six across
+# the four images `e2e.yml` builds in parallel with `docker compose up --build`,
+# and any one of them failing failed the build.
+# That is what happened on PR #859 (2026-09-22): ECONNRESET from the registry
+# while corepack fetched pnpm.
+#
+# The version is read from package.json's `packageManager` field rather than
+# repeated here, so the image cannot drift from what developers and CI run.
+# `corepack prepare` is retried with a growing pause (1+4+9+16s) before the
+# build gives up. The closing `pnpm --version` runs with corepack's network
+# access switched off: it proves pnpm is usable from the cache alone, so no
+# stage FROM this one can silently fall back to downloading it again.
+FROM node:${NODE_VERSION} AS pnpm
 WORKDIR /app
-ENV NODE_ENV=production
+# Corepack keeps its downloads under COREPACK_HOME. Nothing in this image runs
+# pnpm as a non-root user, but the fixed, world-readable location is the same
+# one backend/Dockerfile relies on, so all four images set pnpm up identically.
+ENV COREPACK_HOME=/opt/corepack
+COPY package.json ./
+RUN corepack enable \
+    && pm="$(node -p "require('./package.json').packageManager")" \
+    && for attempt in 1 2 3 4 5; do \
+         corepack prepare "$pm" --activate && break; \
+         [ "$attempt" = 5 ] && exit 1; \
+         echo "corepack prepare $pm failed (attempt $attempt); retrying" >&2; \
+         sleep $((attempt * attempt)); \
+       done \
+    && chmod -R a+rX /opt/corepack \
+    && COREPACK_ENABLE_NETWORK=0 pnpm --version
 
-RUN corepack enable
+# --- build stage -------------------------------------------------------------
+FROM pnpm AS build
+ENV NODE_ENV=production
+ARG VITE_MEDUSA_BACKEND_URL
+ARG VITE_MEDUSA_STOREFRONT_URL
+ARG VITE_MEDUSA_BASE=/
+ENV VITE_MEDUSA_BACKEND_URL=$VITE_MEDUSA_BACKEND_URL
+ENV VITE_MEDUSA_STOREFRONT_URL=$VITE_MEDUSA_STOREFRONT_URL
+ENV VITE_MEDUSA_BASE=$VITE_MEDUSA_BASE
 
 # `pnpm-workspace.yaml` carries the dependency overrides, which pnpm 11 no
 # longer reads from package.json. Omitting it here does not fail the build —
@@ -51,29 +89,13 @@ ARG VITE_MEDUSA_BACKEND_URL=http://backend:9000
 ARG VITE_PUBLISHABLE_API_KEY=
 ARG VITE_MEDUSA_STOREFRONT_URL=
 ARG VITE_PUBLIC_BASE_URL=
-ENV VITE_MEDUSA_BACKEND_URL=$VITE_MEDUSA_BACKEND_URL \
-    VITE_PUBLISHABLE_API_KEY=$VITE_PUBLISHABLE_API_KEY \
-    VITE_MEDUSA_STOREFRONT_URL=$VITE_MEDUSA_STOREFRONT_URL \
-    VITE_PUBLIC_BASE_URL=$VITE_PUBLIC_BASE_URL
-
-# Phase-0/1 module feature flags, read by src/lib/phase0-feature-flags.ts.
-#
-# These were missing until 2026-10-01, and their absence was silent. Vite
-# inlines `import.meta.env.VITE_*` at build time, and the reader is
-# `enabled(value, fallback = false)` — so an undeclared flag is not "unset at
-# runtime", it is baked into the bundle as literally `false`. POS, weight
-# pricing, pick/pack, invoicing and channel sync were therefore unreachable in
-# every published image no matter what the backend's FF_* vars said, and no
-# error was raised anywhere to say so.
-#
-# VENDOR_ADVANCES and INVESTMENT_POOLS were dark too. That outcome is correct —
-# both are quiescent under Posture A (docs/POSTURE_A_COMPLIANCE.md) — but it was
-# being produced by the missing ARG rather than by the flag, which means the
-# flag was not actually holding that line. Defaulting them to empty keeps them
-# off while making the gate real.
-#
-# Keep this list in sync with src/lib/phase0-feature-flags.ts; a flag the
-# reader uses but this file omits is silently false forever.
+# Admin chat (src/lib/element-url.ts); empty leaves it unconfigured.
+ARG VITE_MATRIX_ELEMENT_URL=
+ARG VITE_MATRIX_SERVER_NAME=
+# Phase-1 feature flags (src/lib/phase0-feature-flags.ts). Only the literal
+# "true" enables one, so the empty defaults keep every flag off.
+# VENDOR_ADVANCES_V1 and INVESTMENT_POOLS_V1 are Posture A gated — see the
+# comments in that file.
 ARG VITE_FF_POS_V1=
 ARG VITE_FF_WEIGHT_PRICING_V1=
 ARG VITE_FF_PICK_PACK_V1=
@@ -81,7 +103,13 @@ ARG VITE_FF_INVOICING_V1=
 ARG VITE_FF_CHANNEL_SYNC_V1=
 ARG VITE_FF_VENDOR_ADVANCES_V1=
 ARG VITE_FF_INVESTMENT_POOLS_V1=
-ENV VITE_FF_POS_V1=$VITE_FF_POS_V1 \
+ENV VITE_MEDUSA_BACKEND_URL=$VITE_MEDUSA_BACKEND_URL \
+    VITE_PUBLISHABLE_API_KEY=$VITE_PUBLISHABLE_API_KEY \
+    VITE_MEDUSA_STOREFRONT_URL=$VITE_MEDUSA_STOREFRONT_URL \
+    VITE_PUBLIC_BASE_URL=$VITE_PUBLIC_BASE_URL \
+    VITE_MATRIX_ELEMENT_URL=$VITE_MATRIX_ELEMENT_URL \
+    VITE_MATRIX_SERVER_NAME=$VITE_MATRIX_SERVER_NAME \
+    VITE_FF_POS_V1=$VITE_FF_POS_V1 \
     VITE_FF_WEIGHT_PRICING_V1=$VITE_FF_WEIGHT_PRICING_V1 \
     VITE_FF_PICK_PACK_V1=$VITE_FF_PICK_PACK_V1 \
     VITE_FF_INVOICING_V1=$VITE_FF_INVOICING_V1 \
@@ -139,6 +167,16 @@ COPY nginx.conf /etc/nginx/conf.d/default.conf
 RUN chown -R nginx:nginx /usr/share/nginx/html /var/cache/nginx /var/log/nginx \
     && touch /var/run/nginx.pid && chown nginx:nginx /var/run/nginx.pid
 USER nginx
+
+# Build stamp: GET /version.json reports the commit this image was built from
+# (CI passes `github.sha`). Declared after the chown above on purpose — a
+# build-arg that changes every commit invalidates every RUN below its ARG, and
+# the only one below this is the write itself. The value is reduced to
+# [0-9A-Za-z._-] so a stray build-arg cannot produce invalid JSON.
+ARG GIT_SHA=
+RUN printf '{"commit":"%s"}\n' \
+      "$(printf '%s' "${GIT_SHA:-unknown}" | tr -cd '0-9A-Za-z._-')" \
+      > /usr/share/nginx/html/version.json
 
 EXPOSE 80
 

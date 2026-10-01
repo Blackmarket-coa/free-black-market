@@ -131,14 +131,14 @@ Preserve current route structure; add tests for status transitions and permissio
 ```
 
 ### 6) Messaging / Support Chat
-- Validate Rocket.Chat integration states (connected, degraded, unavailable).
+- Validate Matrix chat integration states (connected, degraded, unavailable).
 - Add vendor panel fallback UX for chat outages.
 - Decide and implement storefront chat entry policy (if in scope).
 
 **AI prompt**
 ```text
 Harden Messaging/Support capability:
-- audit current Rocket.Chat integration points
+- audit current Matrix chat integration points
 - add fallback UX for downtime
 - implement/confirm storefront chat entry if required by current product behavior
 Provide tests or smoke checks and doc evidence updates.

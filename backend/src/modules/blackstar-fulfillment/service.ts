@@ -3,6 +3,7 @@ import { MedusaService } from "@medusajs/framework/utils"
 import {
   BlackstarBridgeCredential,
   BlackstarEventReceipt,
+  BlackstarNodeOperatorCredential,
   BlackstarShipment,
 } from "./models"
 import { bridgeCredentialCipher } from "./bridge-credential-cipher"
@@ -22,6 +23,18 @@ export const BRIDGE_CREDENTIAL_STATUS = {
   ACTIVE: "active",
   REVOKED: "revoked",
 } as const
+
+export type NodeOperatorCredentialView = {
+  key_id: string
+  status: string
+  issued_at: string | null
+  revoked_at: string | null
+}
+
+export type IssuedNodeOperatorCredential = NodeOperatorCredentialView & {
+  /** Plaintext, returned exactly once at issue. Never read back. */
+  secret: string
+}
 
 export type IssuedBridgeCredential = {
   id: string
@@ -53,6 +66,7 @@ class BlackstarFulfillmentModuleService extends MedusaService({
   BlackstarShipment,
   BlackstarBridgeCredential,
   BlackstarEventReceipt,
+  BlackstarNodeOperatorCredential,
 }) {
   /**
    * Apply one inbound Blackstar lifecycle event.
@@ -293,6 +307,70 @@ class BlackstarFulfillmentModuleService extends MedusaService({
       },
     ])
     return created
+  }
+
+  /**
+   * Mint the credential a seller's Blackstar node will sign with.
+   *
+   * Revokes any live credential for that seller first: the table allows one
+   * active credential per seller precisely so an operator cannot accumulate
+   * secrets they have lost track of, and re-opting-in should replace rather
+   * than stack. The plaintext secret is returned exactly once — it is stored
+   * encrypted and there is no read-back path, so an operator who loses it
+   * rotates rather than recovers.
+   */
+  async issueNodeOperatorCredential(args: {
+    seller_id: string
+  }): Promise<IssuedNodeOperatorCredential> {
+    await this.revokeNodeOperatorCredential(args.seller_id)
+    const secret = randomBytes(32).toString("hex")
+    const [created] = await this.createBlackstarNodeOperatorCredentials([
+      {
+        seller_id: args.seller_id,
+        // Matches Blackstar's own `bsk_` convention.
+        key_id: `bsk_${randomBytes(10).toString("hex")}`,
+        secret: bridgeCredentialCipher.encrypt(secret),
+        status: "active",
+      },
+    ])
+    return {
+      key_id: created.key_id,
+      status: created.status,
+      issued_at: created.created_at ? new Date(created.created_at).toISOString() : null,
+      revoked_at: null,
+      secret,
+    }
+  }
+
+  /** What an operator may see afterwards: the key id, never the secret. */
+  async getNodeOperatorCredential(
+    sellerId: string
+  ): Promise<NodeOperatorCredentialView | null> {
+    const rows = await this.listBlackstarNodeOperatorCredentials({
+      seller_id: sellerId,
+      status: "active",
+    })
+    const live = rows.find((row) => !row.revoked_at)
+    if (!live) return null
+    return {
+      key_id: live.key_id,
+      status: live.status,
+      issued_at: live.created_at ? new Date(live.created_at).toISOString() : null,
+      revoked_at: null,
+    }
+  }
+
+  async revokeNodeOperatorCredential(sellerId: string): Promise<void> {
+    const rows = await this.listBlackstarNodeOperatorCredentials({
+      seller_id: sellerId,
+      status: "active",
+    })
+    for (const row of rows) {
+      if (row.revoked_at) continue
+      await this.updateBlackstarNodeOperatorCredentials([
+        { id: row.id, status: "revoked", revoked_at: new Date() },
+      ])
+    }
   }
 
   /**

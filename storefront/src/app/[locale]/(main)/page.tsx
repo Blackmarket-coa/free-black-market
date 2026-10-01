@@ -323,7 +323,7 @@ export default async function Home({
       <section className="px-4 lg:px-8 w-full">
         <div className="rounded-2xl border p-6 md:p-8 bg-neutral-50">
           <h2 className="text-2xl md:text-3xl font-semibold mb-2">The financials: you keep 97%</h2>
-          <p className="text-gray-700 mb-4">A flat 3% coalition fee — and that&apos;s it. No listing fees, no monthly subscription, and no payment processing fees passed to you. Transparent Stripe Connect payouts with vendor-controlled fulfillment.</p>
+          <p className="text-gray-700 mb-4">A 3% coalition fee on the free plan, lower on an optional paid plan. No listing fees, and no payment processing fees passed to you. Transparent ACH payouts with vendor-controlled fulfillment.</p>
           <div className="grid sm:grid-cols-3 gap-3 mb-4">
             <div className="rounded-lg bg-white p-4 border"><p className="text-sm text-gray-500">Sale</p><p className="text-xl font-semibold">$100.00</p></div>
             <div className="rounded-lg bg-white p-4 border"><p className="text-sm text-gray-500">Coalition fee (3%)</p><p className="text-xl font-semibold">$3.00</p></div>

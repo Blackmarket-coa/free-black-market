@@ -46,6 +46,19 @@ const OrderCycle = model.define("order_cycle", {
   // "Ready for" text shown to customers
   ready_for_text: model.text().nullable(),
   
+  /**
+   * The Blackout coalition whose members share this ordering window, and the
+   * coalition campaign that opened it.
+   *
+   * A coalition's shared batch-ordering window is an ordinary order cycle —
+   * same open/close/dispatch timing, same exchanges, same fees. These two
+   * columns record where it came from so Blackout can find the window it
+   * opened and so a coalition view can list its own cycles; nothing in the
+   * order-cycle engine branches on them.
+   */
+  blackout_coalition_id: model.text().nullable(),
+  blackout_campaign_id: model.text().nullable(),
+
   // Metadata for extensions
   metadata: model.json().nullable(),
 })
@@ -65,6 +78,15 @@ const OrderCycle = model.define("order_cycle", {
   {
     name: "IDX_ORDER_CYCLE_COORDINATOR",
     on: ["coordinator_seller_id"],
+  },
+  {
+    name: "IDX_ORDER_CYCLE_COALITION",
+    on: ["blackout_coalition_id"],
+  },
+  {
+    name: "IDX_ORDER_CYCLE_CAMPAIGN",
+    on: ["blackout_campaign_id"],
+    unique: true,
   },
 ])
 

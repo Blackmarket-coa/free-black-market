@@ -113,4 +113,34 @@ describe("GET /store/geocode", () => {
       globalThis.fetch = realFetch
     }
   })
+
+  it("answers a US ZIP from its ZIP3 centroid when Blackout returns a foreign postcode", async () => {
+    process.env.FBM_BLACKOUT_SPATIAL = "1"
+    process.env.BLACKOUT_API_BASE = "https://blackout.test"
+    process.env.BLACKOUT_SPATIAL_TOKEN = "spatial-token-xyz"
+
+    const realFetch = globalThis.fetch
+    // Nominatim ranks the Bavarian 94110 first for a bare "94110".
+    globalThis.fetch = (async () =>
+      new Response(
+        JSON.stringify({
+          results: [{ label: "Bayern, Deutschland", latitude: 48.14, longitude: 11.58 }],
+        }),
+        { status: 200, headers: { "content-type": "application/json" } }
+      )) as typeof fetch
+    try {
+      const res = createRes()
+      await geocode(makeReq({ postal_code: "94110" }), res as any)
+      expect(res.statusCode).toBe(200)
+      expect(res.body).toMatchObject({
+        zip: "94110",
+        latitude: 37.8,
+        longitude: -122.4,
+        approximate: true,
+        source: "zip3",
+      })
+    } finally {
+      globalThis.fetch = realFetch
+    }
+  })
 })

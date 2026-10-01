@@ -304,7 +304,7 @@ export default function VendorTypesPage() {
       icon: "💰",
       items: [
         { name: "97% Revenue Share", description: "Keep 97% of every sale, just 3% coalition fee" },
-        { name: "Stripe Connect Payments", description: "Secure, fast payouts in 2-3 business days" },
+        { name: "Direct Bank Payouts", description: "Weekly ACH by default; faster tiers available for a fee" },
         { name: "Set Your Own Prices", description: "Full control over your pricing strategy" },
         { name: "No Monthly Fees", description: "Zero subscriptions, listing fees, or hidden charges" },
         { name: "Digital Wallet", description: "Track earnings, manage funds in one place" },
@@ -506,7 +506,7 @@ export default function VendorTypesPage() {
               </div>
               <h3 className="text-xl font-bold text-gray-900 mb-2">Hidden Fees</h3>
               <p className="text-gray-600">
-                No subscriptions, no listing fees, no payment processing fees. That&apos;s the whole story.
+                No required subscription, no listing fees, no payment processing fees. Optional paid plans lower the rate.
               </p>
             </div>
           </div>

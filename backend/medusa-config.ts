@@ -339,9 +339,11 @@ const fulfillmentModule = {
             },
           }]
         : []),
-      // Blackstar fulfillment provider — stub mode when integration flag is on.
-      // Persists fulfillment_node_id / pickup_point_id / vending_machine_id on
-      // BlackstarShipment so Blackstar can update status via webhook later.
+      // Blackstar fulfillment provider — registered only when
+      // FBM_BLACKSTAR_INTEGRATION=1. The BlackstarShipment row and the
+      // `delivery.option.selected` emit happen in
+      // subscribers/emit-blackstar-delivery-option-selected.ts on
+      // order.fulfillment_created.
       ...(process.env.FBM_BLACKSTAR_INTEGRATION === '1'
         ? [{
             resolve: './src/modules/blackstar-fulfillment-provider',

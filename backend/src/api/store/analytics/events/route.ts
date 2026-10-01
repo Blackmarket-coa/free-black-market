@@ -8,8 +8,8 @@ import type SellerExtensionService from "../../../../modules/seller-extension/se
 
 /**
  * Canonical funnel events. The storefront emits these via
- * `emitWebsiteEvent` and POSTs them to this endpoint via
- * `navigator.sendBeacon` (or fetch fallback).
+ * `emitWebsiteEvent` and POSTs them to this endpoint with a keepalive fetch
+ * that carries `x-publishable-api-key` (`sendBeacon` cannot set that header).
  *
  * Adding an event name? Extend this allowlist and the matching
  * `WebsiteEventName` union in `storefront/src/lib/analytics/events.ts`.
@@ -83,8 +83,9 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     CREATOR_ATTRIBUTION_MODULE
   )
 
-  // Visitor + affiliate context can come from the body (server-side
-  // emitters) or from cookies (browser ingestion via sendBeacon).
+  // Visitor + affiliate context comes from the body. The storefront posts
+  // cross-origin without credentials, so its browser events carry it there;
+  // the cookie fallback serves same-origin and server-side callers.
   const visitorToken =
     strOrNull(body.visitor_token) ?? readCookie(req, VISITOR_COOKIE)
   const visitorRaw = visitorToken

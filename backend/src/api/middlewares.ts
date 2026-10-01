@@ -45,11 +45,18 @@ import {
   requireEmbedKey,
   optionalEmbedKey,
 } from "./middlewares/embed-key";
+import { installConnectStoreCorsHook } from "./middlewares/connect-cors";
 import {
   inventoryLedgerEventSchema,
   pickPackBatchSchema,
   weightPriceRuleSchema,
 } from "../shared/phase0-contracts";
+
+// connect.js on vendor sites: Medusa's /store CORS and publishable-key check
+// run before every middleware in this file, so the connect.js gate has to be
+// installed on the framework itself — at import time, before ApiLoader.load()
+// registers those middlewares. See middlewares/connect-cors.ts.
+installConnectStoreCorsHook();
 
 // Basic email validation regex
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -866,6 +873,14 @@ export default defineMiddlewares({
       matcher: "/vendor/register",
       method: "POST",
       middlewares: [vendorRegistrationRateLimiter, normalizeEmailMiddleware],
+    },
+    // Email verification completes registration AND approves the seller, so it
+    // is a credential-redemption endpoint: rate limited like registration so a
+    // token cannot be brute-forced by volume.
+    {
+      matcher: "/vendor/verify-email",
+      method: "POST",
+      middlewares: [vendorRegistrationRateLimiter],
     },
     // Vendor product creation - enforce playbook × listing-type compatibility
     // pre-commit (replaces the productsCreated workflow hook, which collided

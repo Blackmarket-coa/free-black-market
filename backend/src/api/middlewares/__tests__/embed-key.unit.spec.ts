@@ -1,5 +1,5 @@
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
-import { requireEmbedKey, optionalEmbedKey } from "../embed-key"
+import { requireEmbedKey, optionalEmbedKey, resolveEmbedContext } from "../embed-key"
 import type { EmbedRequest } from "../embed-key"
 import { meterEmbedRequest } from "../../../shared/usage-metering"
 import { EMBED_KEYS_MODULE } from "../../../modules/embed-keys"
@@ -197,6 +197,24 @@ describe("requireEmbedKey", () => {
     expect(next).not.toHaveBeenCalled()
     expect(res.statusCode).toBe(500)
     expect(res.body).toMatchObject({ type: "server_error" })
+  })
+})
+
+describe("resolveEmbedContext", () => {
+  it("resolves a request's key once, however many gates ask", async () => {
+    // The connect.js CORS gate resolves before Medusa's publishable-key check
+    // and requireEmbedKey resolves again at the route; one lookup per request.
+    const { req, embedKeys } = makeReq({
+      authorization: VALID_AUTH,
+      origin: ALLOWED_ORIGIN,
+    })
+
+    const first = await resolveEmbedContext(req)
+    await requireEmbedKey(req, makeRes() as never, jest.fn())
+
+    expect(first).toEqual({ ok: true, seller_id: "sel_1", key_id: "ek_1" })
+    expect(embedKeys.verifyKey).toHaveBeenCalledTimes(1)
+    expect(req.embed_seller_id).toBe("sel_1")
   })
 })
 

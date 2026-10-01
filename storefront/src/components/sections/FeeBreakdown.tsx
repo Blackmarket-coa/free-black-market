@@ -170,7 +170,7 @@ export function buildPlatforms(feePercent: number): Platform[] {
         "No payment processing fees passed to you",
         "No listing fees",
         "No mandatory ads",
-        "No monthly subscription",
+        "No monthly subscription required — paid plans are optional and lower the rate",
         "Internal ledger settlement (Coalition Credits) — internal processor coming soon",
       ],
       verdict: "COOPERATIVE",

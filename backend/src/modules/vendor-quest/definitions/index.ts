@@ -14,9 +14,10 @@ import landPooling from "./land-pooling"
 import commonsContribution from "./commons-contribution"
 import fiscalSponsorshipReadiness from "./fiscal-sponsorship-readiness"
 import deconstructionReadiness from "./deconstruction-readiness"
+import coalitionDrive from "./coalition-drive"
 
 /**
- * Quest definition registry — the full catalog (Q1–Q15).
+ * Quest definition registry — the full catalog (Q1–Q16).
  *
  * Quest definitions are CODE CONFIG, not database rows (mirroring the
  * `listing-type` catalog pattern). Every entry here runs through the same
@@ -43,6 +44,7 @@ export const QUEST_DEFINITIONS: QuestDefinition[] = [
   landPooling, // Q12
   commonsContribution, // Q13
   fiscalSponsorshipReadiness, // Q14
+  coalitionDrive, // Q16 — coalition-only
 ]
 
 const BY_KEY: Record<string, QuestDefinition> = Object.fromEntries(

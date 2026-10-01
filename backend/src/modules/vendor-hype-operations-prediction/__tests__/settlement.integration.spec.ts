@@ -41,6 +41,20 @@ const createInMemoryPredictionService = () => {
   const { privateKey, publicKey } = generateKeyPairSync("ed25519")
   const publicPem = publicKey.export({ type: "spki", format: "pem" }).toString("utf-8")
 
+  // The settlement subscriber verifies the oracle envelope against
+  // PREDICTION_ORACLE_PUBLIC_KEYS, NOT against the signing keys this fixture
+  // persists on the service. That split is deliberate: the env var is the trust
+  // root precisely so that writing a key through the admin API cannot by itself
+  // make settlements verifiable, and it is empty by default so settlement stays
+  // dark until an operator deploys a key (docs/TRANSMUTATION_STRATEGY.md §5).
+  // The service's key store governs receipt recording and rotation lifecycle
+  // only. Without this line every case here is rejected `unknown_key_id` before
+  // reaching the behaviour under test. Same convention as oracle-verifier.unit.spec.ts.
+  process.env.PREDICTION_ORACLE_PUBLIC_KEYS = `k1:${Buffer.from(
+    publicPem,
+    "utf-8"
+  ).toString("base64")}`
+
   const service: any = {
     keys: [{ key_id: "k1", status: OracleSigningKeyStatus.ACTIVE, public_key_pem: publicPem }],
     receipts,

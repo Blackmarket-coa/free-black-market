@@ -29,10 +29,11 @@
 
 **FBM (this repo) is launch-ready.** Auth, marketplace, orders, checkout,
 digital products, bounties, coalitions, creator attribution, the Launch
-orchestration (product / business / sponsorship), and a real Stripe-ACH +
-Stellar double-entry money system are in place. The recent ecosystem/growth-loop
-work plus this session's gap-closing pass have shipped the remaining FBM
-checklist items.
+orchestration (product / business / sponsorship), and a real double-entry
+ledger are in place. The Stripe-ACH payout and Stellar/USDC settlement rails
+are built but ship disabled (see the Money rails row). The recent
+ecosystem/growth-loop work plus this session's gap-closing pass have shipped
+the remaining FBM checklist items.
 
 The **social discovery half (Coliseum, Feed, Dens, Creator Hub UI) lives in the
 Blackout repo** and is tracked there — it is not a gate on FBM shipping its
@@ -52,7 +53,7 @@ Legend: ✅ complete · 🟡 partial · 🔴 missing/stub · ⏸️ deferred
 |---|---|---|---|
 | **Auth** | Register, login, reset, profile, single identity | ✅ Production-grade, end-to-end | `backend/src/shared/auth-helpers.ts`, `subscribers/password-reset.ts` |
 | **FBM Marketplace** | Listings, orders, checkout, categories | ✅ Largely complete (Medusa core) | `backend/src/api/v1/checkout/sessions/`, `hawala-order-payment.ts` |
-| **Money rails** | (implied by fees) | ✅ Stripe ACH + Stellar/USDC + double-entry ledger; 3% fee charged. ⚠️ verification debt (§2) | `backend/src/modules/hawala-ledger/`, `stripe-ach.ts`, `stellar-settlement.ts` |
+| **Money rails** | (implied by fees) | 🟡 Double-entry ledger live; 3% fee charged. Stripe ACH payouts and Stellar/USDC settlement are **built but disabled by default**: `ACH_PAYOUTS_ENABLED=false` makes `POST /store/hawala/withdraw` fail closed (503), and Stellar ships as `ENABLE_STELLAR_SETTLEMENT=false` on testnet with no `STELLAR_SIGNER_SECRET` until the mainnet cutover in `docs/runbooks/STELLAR_USDC_BRIDGE.md`. ⚠️ verification debt (§2) | `backend/src/modules/hawala-ledger/`, `stripe-ach.ts` (`isAchPayoutConfigured`), `stellar-settlement.ts`, `.env.production.example` |
 | **Demand Pools & Bounties** | Create, apply, complete, payout | ✅ Wired e2e (create/claim/escrow/vote) | `backend/src/modules/demand-pool/`, `.../bounties/[bountyId]/claim/route.ts` |
 | **Bounty objective types** | Creator / Marketing / Photography needed | ✅ Enum + vendor selector | `demand-pool/models/demand-bounty.ts`, vendor `find-creators` |
 | **Bounties as first-class nav** | Surfaced, not buried | ✅ Dedicated Bounties nav + route | `vendor-panel/src/routes/bounties/` |

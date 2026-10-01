@@ -183,9 +183,8 @@ export const RouteMap: RouteObject[] = [
               {
                 path: "",
                 lazy: async () => {
-                  const { Requests } = await import(
-                    "../../routes/requests/requests-list"
-                  )
+                  const { Requests } =
+                    await import("../../routes/requests/requests-list")
 
                   return {
                     Component: Requests,
@@ -198,9 +197,8 @@ export const RouteMap: RouteObject[] = [
                   breadcrumb: () => "Categories requests",
                 },
                 lazy: async () => {
-                  const { RequestsCategoriesList } = await import(
-                    "../../routes/requests/requests-list"
-                  )
+                  const { RequestsCategoriesList } =
+                    await import("../../routes/requests/requests-list")
 
                   return {
                     Component: RequestsCategoriesList,
@@ -224,9 +222,8 @@ export const RouteMap: RouteObject[] = [
                   breadcrumb: () => "Collection requests",
                 },
                 lazy: async () => {
-                  const { RequestsCollectionsList } = await import(
-                    "../../routes/requests/requests-list"
-                  )
+                  const { RequestsCollectionsList } =
+                    await import("../../routes/requests/requests-list")
 
                   return {
                     Component: RequestsCollectionsList,
@@ -251,9 +248,8 @@ export const RouteMap: RouteObject[] = [
                   breadcrumb: () => "Reviews requests",
                 },
                 lazy: async () => {
-                  const { RequestReviewsList } = await import(
-                    "../../routes/requests/requests-list"
-                  )
+                  const { RequestReviewsList } =
+                    await import("../../routes/requests/requests-list")
 
                   return {
                     Component: RequestReviewsList,
@@ -272,9 +268,8 @@ export const RouteMap: RouteObject[] = [
                   breadcrumb: () => "Orders requests",
                 },
                 lazy: async () => {
-                  const { RequestOrdersList } = await import(
-                    "../../routes/requests/requests-list"
-                  )
+                  const { RequestOrdersList } =
+                    await import("../../routes/requests/requests-list")
 
                   return {
                     Component: RequestOrdersList,
@@ -284,18 +279,15 @@ export const RouteMap: RouteObject[] = [
                   {
                     path: ":id/review",
                     lazy: async () =>
-                      await import(
-                        "../../routes/requests/request-order-return"
-                      ),
+                      await import("../../routes/requests/request-order-return"),
                   },
                 ],
               },
               {
                 path: ":id",
                 lazy: async () => {
-                  const { Component, Breadcrumb, loader } = await import(
-                    "../../routes/requests/request-detail"
-                  )
+                  const { Component, Breadcrumb, loader } =
+                    await import("../../routes/requests/request-detail")
 
                   return {
                     Component,
@@ -332,9 +324,8 @@ export const RouteMap: RouteObject[] = [
               {
                 path: ":id",
                 lazy: async () => {
-                  const { Component, Breadcrumb, loader } = await import(
-                    "../../routes/reviews/review-detail"
-                  )
+                  const { Component, Breadcrumb, loader } =
+                    await import("../../routes/reviews/review-detail")
 
                   return {
                     Component,
@@ -388,9 +379,8 @@ export const RouteMap: RouteObject[] = [
                 path: ":id",
                 errorElement: <ErrorBoundary />,
                 lazy: async () => {
-                  const { Breadcrumb, loader } = await import(
-                    "../../routes/products/product-detail"
-                  )
+                  const { Breadcrumb, loader } =
+                    await import("../../routes/products/product-detail")
 
                   return {
                     Component: Outlet,
@@ -410,9 +400,7 @@ export const RouteMap: RouteObject[] = [
                       {
                         path: "additional-attributes",
                         lazy: () =>
-                          import(
-                            "../../routes/products/product-additional-attributes"
-                          ),
+                          import("../../routes/products/product-additional-attributes"),
                       },
                       {
                         path: "edit",
@@ -422,16 +410,12 @@ export const RouteMap: RouteObject[] = [
                       {
                         path: "edit-variant",
                         lazy: () =>
-                          import(
-                            "../../routes/product-variants/product-variant-edit"
-                          ),
+                          import("../../routes/product-variants/product-variant-edit"),
                       },
                       {
                         path: "sales-channels",
                         lazy: () =>
-                          import(
-                            "../../routes/products/product-sales-channels"
-                          ),
+                          import("../../routes/products/product-sales-channels"),
                       },
                       {
                         path: "attributes",
@@ -446,9 +430,7 @@ export const RouteMap: RouteObject[] = [
                       {
                         path: "shipping-profile",
                         lazy: () =>
-                          import(
-                            "../../routes/products/product-shipping-profile"
-                          ),
+                          import("../../routes/products/product-shipping-profile"),
                       },
                       {
                         path: "media",
@@ -473,9 +455,7 @@ export const RouteMap: RouteObject[] = [
                       {
                         path: "variants/create",
                         lazy: () =>
-                          import(
-                            "../../routes/products/product-create-variant"
-                          ),
+                          import("../../routes/products/product-create-variant"),
                       },
                       {
                         path: "stock",
@@ -490,18 +470,15 @@ export const RouteMap: RouteObject[] = [
                       {
                         path: "edit-stocks-and-prices",
                         lazy: () =>
-                          import(
-                            "../../routes/products/product-edit-stocks-and-prices"
-                          ),
+                          import("../../routes/products/product-edit-stocks-and-prices"),
                       },
                     ],
                   },
                   {
                     path: "variants/:variant_id",
                     lazy: async () => {
-                      const { Component, Breadcrumb, loader } = await import(
-                        "../../routes/product-variants/product-variant-detail"
-                      )
+                      const { Component, Breadcrumb, loader } =
+                        await import("../../routes/product-variants/product-variant-detail")
 
                       return {
                         Component,
@@ -518,9 +495,7 @@ export const RouteMap: RouteObject[] = [
                       {
                         path: "edit",
                         lazy: () =>
-                          import(
-                            "../../routes/product-variants/product-variant-edit"
-                          ),
+                          import("../../routes/product-variants/product-variant-edit"),
                       },
                       {
                         path: "prices",
@@ -530,16 +505,12 @@ export const RouteMap: RouteObject[] = [
                       {
                         path: "manage-items",
                         lazy: () =>
-                          import(
-                            "../../routes/product-variants/product-variant-manage-inventory-items"
-                          ),
+                          import("../../routes/product-variants/product-variant-manage-inventory-items"),
                       },
                       {
                         path: "metadata/edit",
                         lazy: () =>
-                          import(
-                            "../../routes/product-variants/product-variant-metadata"
-                          ),
+                          import("../../routes/product-variants/product-variant-metadata"),
                       },
                     ],
                   },
@@ -573,9 +544,8 @@ export const RouteMap: RouteObject[] = [
               {
                 path: ":id",
                 lazy: async () => {
-                  const { Component, Breadcrumb, loader } = await import(
-                    "../../routes/categories/category-detail"
-                  )
+                  const { Component, Breadcrumb, loader } =
+                    await import("../../routes/categories/category-detail")
 
                   return {
                     Component,
@@ -625,9 +595,8 @@ export const RouteMap: RouteObject[] = [
               {
                 path: ":id",
                 lazy: async () => {
-                  const { Component, Breadcrumb, loader } = await import(
-                    "../../routes/orders/order-detail"
-                  )
+                  const { Component, Breadcrumb, loader } =
+                    await import("../../routes/orders/order-detail")
 
                   return {
                     Component,
@@ -668,11 +637,13 @@ export const RouteMap: RouteObject[] = [
             children: [
               {
                 path: "",
-                lazy: () => import("../../routes/order-cycles/order-cycle-list"),
+                lazy: () =>
+                  import("../../routes/order-cycles/order-cycle-list"),
               },
               {
                 path: ":id",
-                lazy: () => import("../../routes/order-cycles/order-cycle-detail"),
+                lazy: () =>
+                  import("../../routes/order-cycles/order-cycle-detail"),
               },
             ],
           },
@@ -753,9 +724,8 @@ export const RouteMap: RouteObject[] = [
               {
                 path: ":id",
                 lazy: async () => {
-                  const { Component, Breadcrumb, loader } = await import(
-                    "../../routes/promotions/promotion-detail"
-                  )
+                  const { Component, Breadcrumb, loader } =
+                    await import("../../routes/promotions/promotion-detail")
 
                   return {
                     Component,
@@ -806,9 +776,8 @@ export const RouteMap: RouteObject[] = [
               {
                 path: ":id",
                 lazy: async () => {
-                  const { Component, Breadcrumb, loader } = await import(
-                    "../../routes/campaigns/campaign-detail"
-                  )
+                  const { Component, Breadcrumb, loader } =
+                    await import("../../routes/campaigns/campaign-detail")
 
                   return {
                     Component,
@@ -865,9 +834,8 @@ export const RouteMap: RouteObject[] = [
               {
                 path: ":id",
                 lazy: async () => {
-                  const { Component, Breadcrumb, loader } = await import(
-                    "../../routes/collections/collection-detail"
-                  )
+                  const { Component, Breadcrumb, loader } =
+                    await import("../../routes/collections/collection-detail")
 
                   return {
                     Component,
@@ -888,9 +856,7 @@ export const RouteMap: RouteObject[] = [
                   {
                     path: "products",
                     lazy: () =>
-                      import(
-                        "../../routes/collections/collection-add-products"
-                      ),
+                      import("../../routes/collections/collection-add-products"),
                   },
                   {
                     path: "metadata/edit",
@@ -922,9 +888,8 @@ export const RouteMap: RouteObject[] = [
               {
                 path: ":id",
                 lazy: async () => {
-                  const { Component, Breadcrumb, loader } = await import(
-                    "../../routes/price-lists/price-list-detail"
-                  )
+                  const { Component, Breadcrumb, loader } =
+                    await import("../../routes/price-lists/price-list-detail")
 
                   return {
                     Component,
@@ -945,9 +910,7 @@ export const RouteMap: RouteObject[] = [
                   {
                     path: "configuration",
                     lazy: () =>
-                      import(
-                        "../../routes/price-lists/price-list-configuration"
-                      ),
+                      import("../../routes/price-lists/price-list-configuration"),
                   },
                   {
                     path: "products/add",
@@ -984,9 +947,8 @@ export const RouteMap: RouteObject[] = [
               {
                 path: ":id",
                 lazy: async () => {
-                  const { Component, Breadcrumb, loader } = await import(
-                    "../../routes/customers/customer-detail"
-                  )
+                  const { Component, Breadcrumb, loader } =
+                    await import("../../routes/customers/customer-detail")
 
                   return {
                     Component,
@@ -1006,9 +968,7 @@ export const RouteMap: RouteObject[] = [
                   {
                     path: "add-customer-groups",
                     lazy: () =>
-                      import(
-                        "../../routes/customers/customers-add-customer-group"
-                      ),
+                      import("../../routes/customers/customers-add-customer-group"),
                   },
                   {
                     path: "metadata/edit",
@@ -1034,18 +994,15 @@ export const RouteMap: RouteObject[] = [
                   {
                     path: "create",
                     lazy: () =>
-                      import(
-                        "../../routes/customer-groups/customer-group-create"
-                      ),
+                      import("../../routes/customer-groups/customer-group-create"),
                   },
                 ],
               },
               {
                 path: ":id",
                 lazy: async () => {
-                  const { Component, Breadcrumb, loader } = await import(
-                    "../../routes/customer-groups/customer-group-detail"
-                  )
+                  const { Component, Breadcrumb, loader } =
+                    await import("../../routes/customer-groups/customer-group-detail")
 
                   return {
                     Component,
@@ -1061,23 +1018,17 @@ export const RouteMap: RouteObject[] = [
                   {
                     path: "edit",
                     lazy: () =>
-                      import(
-                        "../../routes/customer-groups/customer-group-edit"
-                      ),
+                      import("../../routes/customer-groups/customer-group-edit"),
                   },
                   {
                     path: "add-customers",
                     lazy: () =>
-                      import(
-                        "../../routes/customer-groups/customer-group-add-customers"
-                      ),
+                      import("../../routes/customer-groups/customer-group-add-customers"),
                   },
                   {
                     path: "metadata/edit",
                     lazy: () =>
-                      import(
-                        "../../routes/customer-groups/customer-group-metadata"
-                      ),
+                      import("../../routes/customer-groups/customer-group-metadata"),
                   },
                 ],
               },
@@ -1105,9 +1056,8 @@ export const RouteMap: RouteObject[] = [
               {
                 path: ":id",
                 lazy: async () => {
-                  const { Component, Breadcrumb, loader } = await import(
-                    "../../routes/reservations/reservation-detail"
-                  )
+                  const { Component, Breadcrumb, loader } =
+                    await import("../../routes/reservations/reservation-detail")
 
                   return {
                     Component,
@@ -1123,9 +1073,7 @@ export const RouteMap: RouteObject[] = [
                   {
                     path: "edit",
                     lazy: () =>
-                      import(
-                        "../../routes/reservations/reservation-detail/components/edit-reservation"
-                      ),
+                      import("../../routes/reservations/reservation-detail/components/edit-reservation"),
                   },
                   {
                     path: "metadata/edit",
@@ -1162,9 +1110,8 @@ export const RouteMap: RouteObject[] = [
               {
                 path: ":id",
                 lazy: async () => {
-                  const { Component, Breadcrumb, loader } = await import(
-                    "../../routes/inventory/inventory-detail"
-                  )
+                  const { Component, Breadcrumb, loader } =
+                    await import("../../routes/inventory/inventory-detail")
 
                   return {
                     Component,
@@ -1180,16 +1127,12 @@ export const RouteMap: RouteObject[] = [
                   {
                     path: "edit",
                     lazy: () =>
-                      import(
-                        "../../routes/inventory/inventory-detail/components/edit-inventory-item"
-                      ),
+                      import("../../routes/inventory/inventory-detail/components/edit-inventory-item"),
                   },
                   {
                     path: "attributes",
                     lazy: () =>
-                      import(
-                        "../../routes/inventory/inventory-detail/components/edit-inventory-item-attributes"
-                      ),
+                      import("../../routes/inventory/inventory-detail/components/edit-inventory-item-attributes"),
                   },
                   {
                     path: "metadata/edit",
@@ -1199,16 +1142,12 @@ export const RouteMap: RouteObject[] = [
                   {
                     path: "locations",
                     lazy: () =>
-                      import(
-                        "../../routes/inventory/inventory-detail/components/manage-locations"
-                      ),
+                      import("../../routes/inventory/inventory-detail/components/manage-locations"),
                   },
                   {
                     path: "locations/:location_id",
                     lazy: () =>
-                      import(
-                        "../../routes/inventory/inventory-detail/components/adjust-inventory"
-                      ),
+                      import("../../routes/inventory/inventory-detail/components/adjust-inventory"),
                   },
                 ],
               },
@@ -1224,9 +1163,8 @@ export const RouteMap: RouteObject[] = [
               {
                 path: "",
                 lazy: async () => {
-                  const { DeliveryList } = await import(
-                    "../../routes/deliveries/delivery-list"
-                  )
+                  const { DeliveryList } =
+                    await import("../../routes/deliveries/delivery-list")
                   return { Component: DeliveryList }
                 },
               },
@@ -1236,9 +1174,8 @@ export const RouteMap: RouteObject[] = [
                   breadcrumb: () => "Delivery Details",
                 },
                 lazy: async () => {
-                  const { DeliveryDetail } = await import(
-                    "../../routes/deliveries/delivery-detail"
-                  )
+                  const { DeliveryDetail } =
+                    await import("../../routes/deliveries/delivery-detail")
                   return { Component: DeliveryDetail }
                 },
               },
@@ -1254,9 +1191,8 @@ export const RouteMap: RouteObject[] = [
               {
                 path: "",
                 lazy: async () => {
-                  const { DeliveryZoneList } = await import(
-                    "../../routes/delivery-zones/delivery-zone-list"
-                  )
+                  const { DeliveryZoneList } =
+                    await import("../../routes/delivery-zones/delivery-zone-list")
                   return { Component: DeliveryZoneList }
                 },
               },
@@ -1266,9 +1202,8 @@ export const RouteMap: RouteObject[] = [
                   breadcrumb: () => "Create Zone",
                 },
                 lazy: async () => {
-                  const { DeliveryZoneCreate } = await import(
-                    "../../routes/delivery-zones/delivery-zone-create"
-                  )
+                  const { DeliveryZoneCreate } =
+                    await import("../../routes/delivery-zones/delivery-zone-create")
                   return { Component: DeliveryZoneCreate }
                 },
               },
@@ -1278,9 +1213,8 @@ export const RouteMap: RouteObject[] = [
                   breadcrumb: () => "Edit Zone",
                 },
                 lazy: async () => {
-                  const { DeliveryZoneEdit } = await import(
-                    "../../routes/delivery-zones/delivery-zone-edit"
-                  )
+                  const { DeliveryZoneEdit } =
+                    await import("../../routes/delivery-zones/delivery-zone-edit")
                   return { Component: DeliveryZoneEdit }
                 },
               },
@@ -1441,8 +1375,7 @@ export const RouteMap: RouteObject[] = [
             children: [
               {
                 path: "",
-                lazy: () =>
-                  import("../../routes/collective-demand-pools"),
+                lazy: () => import("../../routes/collective-demand-pools"),
               },
             ],
           },
@@ -1495,7 +1428,8 @@ export const RouteMap: RouteObject[] = [
                       },
                       {
                         path: "lots/create",
-                        lazy: () => import("../../routes/farm/harvests/[id]/lots/create"),
+                        lazy: () =>
+                          import("../../routes/farm/harvests/[id]/lots/create"),
                       },
                     ],
                   },
@@ -1517,7 +1451,8 @@ export const RouteMap: RouteObject[] = [
                   },
                   {
                     path: "availability/create",
-                    lazy: () => import("../../routes/farm/lots/[id]/availability/create"),
+                    lazy: () =>
+                      import("../../routes/farm/lots/[id]/availability/create"),
                   },
                 ],
               },
@@ -1613,9 +1548,8 @@ export const RouteMap: RouteObject[] = [
               {
                 path: ":id",
                 lazy: async () => {
-                  const { Component, Breadcrumb, loader } = await import(
-                    "../../routes/regions/region-detail"
-                  )
+                  const { Component, Breadcrumb, loader } =
+                    await import("../../routes/regions/region-detail")
 
                   return {
                     Component,
@@ -1686,6 +1620,14 @@ export const RouteMap: RouteObject[] = [
             },
           },
           {
+            path: "node-operator",
+            errorElement: <ErrorBoundary />,
+            lazy: () => import("../../routes/settings/node-operator"),
+            handle: {
+              breadcrumb: () => "Run deliveries",
+            },
+          },
+          {
             path: "store",
             errorElement: <ErrorBoundary />,
             lazy: () => import("../../routes/store/store-detail"),
@@ -1740,9 +1682,8 @@ export const RouteMap: RouteObject[] = [
               {
                 path: ":id",
                 lazy: async () => {
-                  const { Component, Breadcrumb, loader } = await import(
-                    "../../routes/users/user-detail"
-                  )
+                  const { Component, Breadcrumb, loader } =
+                    await import("../../routes/users/user-detail")
 
                   return {
                     Component,
@@ -1783,18 +1724,15 @@ export const RouteMap: RouteObject[] = [
                   {
                     path: "create",
                     lazy: () =>
-                      import(
-                        "../../routes/sales-channels/sales-channel-create"
-                      ),
+                      import("../../routes/sales-channels/sales-channel-create"),
                   },
                 ],
               },
               {
                 path: ":id",
                 lazy: async () => {
-                  const { Component, Breadcrumb, loader } = await import(
-                    "../../routes/sales-channels/sales-channel-detail"
-                  )
+                  const { Component, Breadcrumb, loader } =
+                    await import("../../routes/sales-channels/sales-channel-detail")
 
                   return {
                     Component,
@@ -1815,16 +1753,12 @@ export const RouteMap: RouteObject[] = [
                   {
                     path: "add-products",
                     lazy: () =>
-                      import(
-                        "../../routes/sales-channels/sales-channel-add-products"
-                      ),
+                      import("../../routes/sales-channels/sales-channel-add-products"),
                   },
                   {
                     path: "metadata/edit",
                     lazy: () =>
-                      import(
-                        "../../routes/sales-channels/sales-channel-metadata"
-                      ),
+                      import("../../routes/sales-channels/sales-channel-metadata"),
                   },
                 ],
               },
@@ -1856,25 +1790,20 @@ export const RouteMap: RouteObject[] = [
                   {
                     path: "",
                     lazy: () =>
-                      import(
-                        "../../routes/shipping-profiles/shipping-profiles-list"
-                      ),
+                      import("../../routes/shipping-profiles/shipping-profiles-list"),
                     children: [
                       {
                         path: "create",
                         lazy: () =>
-                          import(
-                            "../../routes/shipping-profiles/shipping-profile-create"
-                          ),
+                          import("../../routes/shipping-profiles/shipping-profile-create"),
                       },
                     ],
                   },
                   {
                     path: ":shipping_profile_id",
                     lazy: async () => {
-                      const { Component, Breadcrumb, loader } = await import(
-                        "../../routes/shipping-profiles/shipping-profile-detail"
-                      )
+                      const { Component, Breadcrumb, loader } =
+                        await import("../../routes/shipping-profiles/shipping-profile-detail")
 
                       return {
                         Component,
@@ -1891,9 +1820,7 @@ export const RouteMap: RouteObject[] = [
                       {
                         path: "metadata/edit",
                         lazy: () =>
-                          import(
-                            "../../routes/shipping-profiles/shipping-profile-metadata"
-                          ),
+                          import("../../routes/shipping-profiles/shipping-profile-metadata"),
                       },
                     ],
                   },
@@ -1902,9 +1829,8 @@ export const RouteMap: RouteObject[] = [
               {
                 path: ":location_id",
                 lazy: async () => {
-                  const { Component, Breadcrumb, loader } = await import(
-                    "../../routes/locations/location-detail"
-                  )
+                  const { Component, Breadcrumb, loader } =
+                    await import("../../routes/locations/location-detail")
 
                   return {
                     Component,
@@ -1929,9 +1855,7 @@ export const RouteMap: RouteObject[] = [
                   {
                     path: "fulfillment-providers",
                     lazy: () =>
-                      import(
-                        "../../routes/locations/location-fulfillment-providers"
-                      ),
+                      import("../../routes/locations/location-fulfillment-providers"),
                   },
                   {
                     path: "fulfillment-set/:fset_id",
@@ -1939,9 +1863,7 @@ export const RouteMap: RouteObject[] = [
                       {
                         path: "service-zones/create",
                         lazy: () =>
-                          import(
-                            "../../routes/locations/location-service-zone-create"
-                          ),
+                          import("../../routes/locations/location-service-zone-create"),
                       },
                       {
                         path: "service-zone/:zone_id",
@@ -1949,16 +1871,12 @@ export const RouteMap: RouteObject[] = [
                           {
                             path: "edit",
                             lazy: () =>
-                              import(
-                                "../../routes/locations/location-service-zone-edit"
-                              ),
+                              import("../../routes/locations/location-service-zone-edit"),
                           },
                           {
                             path: "areas",
                             lazy: () =>
-                              import(
-                                "../../routes/locations/location-service-zone-manage-areas"
-                              ),
+                              import("../../routes/locations/location-service-zone-manage-areas"),
                           },
                           {
                             path: "shipping-option",
@@ -1966,9 +1884,7 @@ export const RouteMap: RouteObject[] = [
                               {
                                 path: "create",
                                 lazy: () =>
-                                  import(
-                                    "../../routes/locations/location-service-zone-shipping-option-create"
-                                  ),
+                                  import("../../routes/locations/location-service-zone-shipping-option-create"),
                               },
                               {
                                 path: ":so_id",
@@ -1976,16 +1892,12 @@ export const RouteMap: RouteObject[] = [
                                   {
                                     path: "edit",
                                     lazy: () =>
-                                      import(
-                                        "../../routes/locations/location-service-zone-shipping-option-edit"
-                                      ),
+                                      import("../../routes/locations/location-service-zone-shipping-option-edit"),
                                   },
                                   {
                                     path: "pricing",
                                     lazy: () =>
-                                      import(
-                                        "../../routes/locations/location-service-zone-shipping-option-pricing"
-                                      ),
+                                      import("../../routes/locations/location-service-zone-shipping-option-pricing"),
                                   },
                                 ],
                               },
@@ -2022,9 +1934,8 @@ export const RouteMap: RouteObject[] = [
               {
                 path: ":id",
                 lazy: async () => {
-                  const { Component, Breadcrumb, loader } = await import(
-                    "../../routes/product-tags/product-tag-detail"
-                  )
+                  const { Component, Breadcrumb, loader } =
+                    await import("../../routes/product-tags/product-tag-detail")
 
                   return {
                     Component,
@@ -2057,16 +1968,13 @@ export const RouteMap: RouteObject[] = [
               {
                 path: "",
                 lazy: () =>
-                  import(
-                    "../../routes/workflow-executions/workflow-execution-list"
-                  ),
+                  import("../../routes/workflow-executions/workflow-execution-list"),
               },
               {
                 path: ":id",
                 lazy: async () => {
-                  const { Component, Breadcrumb, loader } = await import(
-                    "../../routes/workflow-executions/workflow-execution-detail"
-                  )
+                  const { Component, Breadcrumb, loader } =
+                    await import("../../routes/workflow-executions/workflow-execution-detail")
 
                   return {
                     Component,
@@ -2104,9 +2012,8 @@ export const RouteMap: RouteObject[] = [
               {
                 path: ":id",
                 lazy: async () => {
-                  const { Component, Breadcrumb, loader } = await import(
-                    "../../routes/product-types/product-type-detail"
-                  )
+                  const { Component, Breadcrumb, loader } =
+                    await import("../../routes/product-types/product-type-detail")
 
                   return {
                     Component,
@@ -2159,9 +2066,8 @@ export const RouteMap: RouteObject[] = [
                   {
                     path: "",
                     lazy: async () => {
-                      const { Component } = await import(
-                        "../../routes/tax-regions/tax-region-detail"
-                      )
+                      const { Component } =
+                        await import("../../routes/tax-regions/tax-region-detail")
 
                       return {
                         Component,
@@ -2171,46 +2077,35 @@ export const RouteMap: RouteObject[] = [
                       {
                         path: "provinces/create",
                         lazy: () =>
-                          import(
-                            "../../routes/tax-regions/tax-region-province-create"
-                          ),
+                          import("../../routes/tax-regions/tax-region-province-create"),
                       },
                       {
                         path: "overrides/create",
                         lazy: () =>
-                          import(
-                            "../../routes/tax-regions/tax-region-tax-override-create"
-                          ),
+                          import("../../routes/tax-regions/tax-region-tax-override-create"),
                       },
                       {
                         path: "overrides/:tax_rate_id/edit",
                         lazy: () =>
-                          import(
-                            "../../routes/tax-regions/tax-region-tax-override-edit"
-                          ),
+                          import("../../routes/tax-regions/tax-region-tax-override-edit"),
                       },
                       {
                         path: "tax-rates/create",
                         lazy: () =>
-                          import(
-                            "../../routes/tax-regions/tax-region-tax-rate-create"
-                          ),
+                          import("../../routes/tax-regions/tax-region-tax-rate-create"),
                       },
                       {
                         path: "tax-rates/:tax_rate_id/edit",
                         lazy: () =>
-                          import(
-                            "../../routes/tax-regions/tax-region-tax-rate-edit"
-                          ),
+                          import("../../routes/tax-regions/tax-region-tax-rate-edit"),
                       },
                     ],
                   },
                   {
                     path: "provinces/:province_id",
                     lazy: async () => {
-                      const { Component, Breadcrumb, loader } = await import(
-                        "../../routes/tax-regions/tax-region-province-detail"
-                      )
+                      const { Component, Breadcrumb, loader } =
+                        await import("../../routes/tax-regions/tax-region-province-detail")
 
                       return {
                         Component,
@@ -2226,30 +2121,22 @@ export const RouteMap: RouteObject[] = [
                       {
                         path: "tax-rates/create",
                         lazy: () =>
-                          import(
-                            "../../routes/tax-regions/tax-region-tax-rate-create"
-                          ),
+                          import("../../routes/tax-regions/tax-region-tax-rate-create"),
                       },
                       {
                         path: "tax-rates/:tax_rate_id/edit",
                         lazy: () =>
-                          import(
-                            "../../routes/tax-regions/tax-region-tax-rate-edit"
-                          ),
+                          import("../../routes/tax-regions/tax-region-tax-rate-edit"),
                       },
                       {
                         path: "overrides/create",
                         lazy: () =>
-                          import(
-                            "../../routes/tax-regions/tax-region-tax-override-create"
-                          ),
+                          import("../../routes/tax-regions/tax-region-tax-override-create"),
                       },
                       {
                         path: "overrides/:tax_rate_id/edit",
                         lazy: () =>
-                          import(
-                            "../../routes/tax-regions/tax-region-tax-override-edit"
-                          ),
+                          import("../../routes/tax-regions/tax-region-tax-override-edit"),
                       },
                     ],
                   },
@@ -2272,9 +2159,7 @@ export const RouteMap: RouteObject[] = [
                   {
                     path: "create",
                     lazy: () =>
-                      import(
-                        "../../routes/return-reasons/return-reason-create"
-                      ),
+                      import("../../routes/return-reasons/return-reason-create"),
                   },
 
                   {
@@ -2283,9 +2168,7 @@ export const RouteMap: RouteObject[] = [
                       {
                         path: "edit",
                         lazy: () =>
-                          import(
-                            "../../routes/return-reasons/return-reason-edit"
-                          ),
+                          import("../../routes/return-reasons/return-reason-edit"),
                       },
                     ],
                   },
@@ -2322,6 +2205,12 @@ export const RouteMap: RouteObject[] = [
           {
             path: "/reset-password",
             lazy: () => import("../../routes/reset-password"),
+          },
+          {
+            // Where the registration verification email lands. Public: the
+            // person following it has no account to sign in with yet.
+            path: "/verify-email",
+            lazy: () => import("../../routes/verify-email"),
           },
           {
             path: "/pending-approval",

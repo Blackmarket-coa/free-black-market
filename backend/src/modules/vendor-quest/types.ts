@@ -177,9 +177,30 @@ export interface PermitsSummary {
  * `s.collective?.member_count`; individual quests ignore it — so the engine
  * stays generic and this behaves like any other domain-optional field.
  */
+/**
+ * The Blackout coalition behind a collective, when one exists.
+ *
+ * Present only when the collective's cooperative carries a
+ * `blackout_coalition_id` — so a quest definition can be coalition-only by
+ * gating on this field, without the engine learning what a coalition is. Every
+ * figure is a count or a total; nothing here identifies an individual
+ * contributor, because a quest predicate has no business reading that.
+ */
+export interface CollectiveCoalitionInfo {
+  coalition_id: string
+  /** Coalition drives that reached completion, as reported by Blackout. */
+  drives_completed: number
+  /** Distinct coalition members who contributed to at least one drive. */
+  contributing_members: number
+  /** Combined net raised across completed drives, in cents. */
+  raised_cents: number
+}
+
 export interface CollectiveAggregateInfo {
   member_count: number
   member_ids: string[]
+  /** Null unless the collective is the FBM face of a Blackout coalition. */
+  coalition: CollectiveCoalitionInfo | null
 }
 
 export interface VendorSubstrate {

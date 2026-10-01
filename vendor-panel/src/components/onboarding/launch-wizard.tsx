@@ -408,6 +408,10 @@ export function LaunchWizard() {
             initial={currentRecipeId ?? undefined}
             initialRoles={initialRoles}
             initialResources={initialResources}
+            // Re-running the quiz edits the playbook only. Node operating is
+            // turned on and off in Settings → Run deliveries, which is the one
+            // place that can show the credential secret it hands back.
+            offerNodeOperatorOptIn={false}
             onComplete={async (result) => {
               try {
                 await assignPlaybook({

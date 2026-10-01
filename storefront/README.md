@@ -16,10 +16,11 @@ FBM's vertical-portal branding.
 - Vendor-facing "Selling Hub" flows live in the separate `../vendor-panel`
   app.
 
-For vertical-specific storefronts (plant nursery, wellness, botanical,
-creator), see `../nursery-portal`, `../wellness-portal`,
-`../botanical-portal`, and `../creator-portal` — they share this backend and
-the `@bmc/portal-kit` / `@bmc/ui` packages.
+The vertical portals (plant nursery, wellness, botanical, creator) in
+`../nursery-portal`, `../wellness-portal`, `../botanical-portal`, and
+`../creator-portal` are vendor back-office dashboards (dev only, not deployed),
+not customer storefronts — this app is the only storefront. They share this
+backend and the `@bmc/portal-kit` / `@bmc/ui` packages.
 
 ## Quickstart
 
@@ -58,20 +59,33 @@ NEXT_PUBLIC_SITE_DESCRIPTION="Free Black Market"
 # Algolia (optional, see below)
 NEXT_PUBLIC_ALGOLIA_ID=
 NEXT_PUBLIC_ALGOLIA_SEARCH_KEY=
-# Rocket.Chat URL for messaging
-NEXT_PUBLIC_ROCKETCHAT_URL=https://your-rocketchat-url
+# Matrix/Synapse (Blackout) chat (optional, see below)
+NEXT_PUBLIC_MATRIX_ELEMENT_URL=
+NEXT_PUBLIC_MATRIX_SERVER_NAME=
 ```
 
 See `.env.template` for the full list of supported variables.
 
 ## Guides
 
-### Rocket.Chat setup
+### Chat (Matrix) setup
 
-Set up a Rocket.Chat instance and configure `NEXT_PUBLIC_ROCKETCHAT_URL` with
-your Rocket.Chat server URL to enable chat functionality.
+Chat runs on Blackout's Matrix/Synapse server through an embedded Element Web
+client. Set `NEXT_PUBLIC_MATRIX_ELEMENT_URL` to the public Element Web base URL
+and `NEXT_PUBLIC_MATRIX_SERVER_NAME` to the Matrix server name (used to build
+room aliases such as `#vendor-<handle>:<server>`). Auto-login tokens are
+delivered server-side via the backend's `/store/chat` route. With
+`NEXT_PUBLIC_MATRIX_ELEMENT_URL` unset, chat is not shown.
 
-### Algolia search setup
+### Algolia search setup (optional)
+
+Algolia is optional and client-side only. With `NEXT_PUBLIC_ALGOLIA_ID` and
+`NEXT_PUBLIC_ALGOLIA_SEARCH_KEY` set, the catalog, seller and product-listing
+views query an Algolia index directly from the browser; with either unset they
+fall back to listings served by the backend. The backend no longer indexes
+products into Algolia (the `@mercurjs/algolia` plugin was removed; see
+`../backend/medusa-config.ts`), so an index you point the storefront at has to
+be populated some other way.
 
 1. Get your Algolia keys: <https://www.algolia.com/doc/guides/security/api-keys/>
 2. In the Algolia dashboard, select your index, then **Manage index → Import

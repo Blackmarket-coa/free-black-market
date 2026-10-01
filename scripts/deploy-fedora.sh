@@ -7,6 +7,17 @@
 # image_tag defaults to "latest". Pass a specific sha-XXXXXXX or release
 # tag to pin a deploy (or to roll back).
 #
+# Environment (command line only — read before .env.production is sourced,
+# so neither can be left switched on in that file):
+#   FBM_DEPLOY_ENV=staging          Skip the legal pages gate (step 0) on a
+#                                   staging host. Anything else, including
+#                                   unset, is treated as production.
+#   FBM_ALLOW_LEGAL_PLACEHOLDERS=1  EMERGENCY override for step 0 — e.g. a
+#                                   security fix or a rollback while counsel's
+#                                   review is still open. The check still runs
+#                                   and prints what is unfilled; the deploy
+#                                   continues with a warning.
+#
 # Requires:
 #   - Docker + compose plugin
 #   - .env.production at repo root (gitignored), with at minimum:
@@ -14,6 +25,8 @@
 #   - Run as the 'fbm' deploy user (member of the docker group).
 #
 # What this script does:
+#   0. Production only: refuse to deploy while the storefront's legal pages
+#      still carry unfilled [[PLACEHOLDERS]] (scripts/check-legal-placeholders.mjs)
 #   1. Login to GHCR (so private images can be pulled)
 #   2. Pull all 4 app images at the requested tag
 #   3. Run a one-shot migration container to bring the DB up to date
@@ -38,6 +51,44 @@ err()  { echo -e "\033[1;31m[deploy]\033[0m $*" >&2; }
 
 if [[ ! -f "$ENV_FILE" ]]; then
   err "${ENV_FILE} not found. Copy .env.production.example and fill it in."
+  exit 1
+fi
+
+# ---------- 0. Legal pages release gate ----------------------------------
+# The Terms, Privacy and Refunds pages ship `[[TOKENS]]` for operator facts
+# (legal entity, governing law, contact inboxes) and a "not yet legally
+# reviewed" banner until counsel signs off; check-legal-placeholders.mjs exits
+# 1 while any of that remains. Same gate as prod-deploy.yml / fedora-deploy.yml,
+# repeated here because this script is also run by hand. It runs before the
+# GHCR login, the pulls and the migration, and before .env.production is
+# sourced (see the header for FBM_DEPLOY_ENV / FBM_ALLOW_LEGAL_PLACEHOLDERS).
+#
+# It checks the committed tree at HEAD — the ref being deployed from — not
+# the inside of the image, so deploy from the ref the image was built from.
+DEPLOY_ENV="${FBM_DEPLOY_ENV:-production}"
+ALLOW_LEGAL_PLACEHOLDERS="${FBM_ALLOW_LEGAL_PLACEHOLDERS:-}"
+
+check_legal_pages() {
+  # In the Node image the app images build on, because the host has no Node
+  # (infrastructure/fedora/setup.sh installs Docker, not Node). The files go in
+  # over stdin rather than a bind mount: under SELinux a bind mount of the
+  # checkout needs a `:z` relabel, a host change this check has no business
+  # making. Any failure here — docker, the pull, git — fails the gate closed.
+  git archive --format=tar HEAD -- scripts/check-legal-placeholders.mjs storefront/src \
+    | docker run --rm -i --network none --user node node:22-bookworm-slim \
+        sh -c 'mkdir -p /tmp/gate && cd /tmp/gate && tar -xf - && node scripts/check-legal-placeholders.mjs'
+}
+
+if [[ "$DEPLOY_ENV" == "staging" ]]; then
+  log "FBM_DEPLOY_ENV=staging: skipping the legal pages release gate"
+elif check_legal_pages; then
+  log "Legal pages release gate: OK"
+elif [[ "$ALLOW_LEGAL_PLACEHOLDERS" == "1" ]]; then
+  warn "FBM_ALLOW_LEGAL_PLACEHOLDERS=1: deploying to production although the legal pages gate failed (output above)."
+else
+  err "Legal pages release gate failed (output above); refusing a production deploy."
+  err "Fill in storefront/src/lib/constants/legal.ts, or in an emergency re-run with:"
+  err "  FBM_ALLOW_LEGAL_PLACEHOLDERS=1 bash scripts/deploy-fedora.sh ${IMAGE_TAG}"
   exit 1
 fi
 

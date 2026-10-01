@@ -680,6 +680,54 @@ class CreatorAttributionService extends MedusaService({
     })
   }
 
+  /**
+   * Retention helpers for `attribution_click_event` (LEG-8), used by the
+   * daily `creator-attribution-retention` job. The selectors return ids only,
+   * capped at `limit`, so the job can work a large table in bounded batches;
+   * the writers take those ids back. Nothing here touches order_attribution,
+   * affiliate_link, promo_code_binding or analytics_event.
+   */
+  async listClickEventIdsWithIdentifiersBefore(
+    cutoff: Date,
+    limit: number
+  ): Promise<string[]> {
+    const rows = await this.listAttributionClickEvents(
+      {
+        occurred_at: { $lt: cutoff },
+        $or: [
+          { ip_hash: { $ne: null } },
+          { user_agent_hash: { $ne: null } },
+          { referrer: { $ne: null } },
+        ],
+      },
+      { select: ["id"], take: limit, order: { occurred_at: "ASC" } }
+    )
+    return rows.map((r: any) => String(r.id))
+  }
+
+  async anonymizeClickEventIdentifiers(ids: string[]): Promise<number> {
+    if (ids.length === 0) return 0
+    await (this as any).updateAttributionClickEvents({
+      selector: { id: ids },
+      data: { ip_hash: null, user_agent_hash: null, referrer: null },
+    })
+    return ids.length
+  }
+
+  async listClickEventIdsBefore(cutoff: Date, limit: number): Promise<string[]> {
+    const rows = await this.listAttributionClickEvents(
+      { occurred_at: { $lt: cutoff } },
+      { select: ["id"], take: limit, order: { occurred_at: "ASC" } }
+    )
+    return rows.map((r: any) => String(r.id))
+  }
+
+  async deleteClickEventsByIds(ids: string[]): Promise<number> {
+    if (ids.length === 0) return 0
+    await (this as any).deleteAttributionClickEvents(ids)
+    return ids.length
+  }
+
   async creatorEarningsRollup(
     creatorSellerId: string,
     range?: { from?: Date; to?: Date }

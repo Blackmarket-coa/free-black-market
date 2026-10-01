@@ -29,6 +29,14 @@ type CreateSellerMetadataInput = {
   verified?: boolean
   /** Feature-key override (union of multi-role default features). */
   enabled_extensions?: string[] | null
+  /**
+   * "I also want to carry deliveries", from the onboarding survey.
+   *
+   * It has to be written here, at creation: approval provisions the Blackstar
+   * credential from the request, and if the flag never lands on the metadata
+   * row the settings page reads back "off" for a seller who already holds one.
+   */
+  node_operator_opt_in?: boolean
   metadata?: Record<string, any>
 }
 
@@ -60,6 +68,7 @@ const createSellerMetadataStep = createStep(
       featured: input.featured ?? false,
       verified: input.verified ?? false,
       enabled_extensions: input.enabled_extensions ?? null,
+      node_operator_opt_in: input.node_operator_opt_in ?? false,
       metadata: input.metadata || null,
     } as any)
 

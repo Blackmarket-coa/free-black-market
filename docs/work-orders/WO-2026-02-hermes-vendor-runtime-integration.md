@@ -63,5 +63,6 @@ Gap:
 ## Implementation evidence
 
 - Backend endpoint: `POST /vendor/hermes/runtime` wired to `buildLangGraphSupervisorEntrypoint` with `VENDOR_SAFE_TOOL_SCHEMAS`.
+  - Correction (2026-09-25): the route calls `buildVendorHermesSupervisor` from its own copy in `backend/src/lib/hermes/runtime-supervisor.ts`, not the `services/ai-orchestrator` entrypoint.
 - Vendor panel surface: Store detail page includes a Hermes assistant section that sends a vendor-safe `create_product` draft payload.
 - Tests: `pnpm -s test:hermes-vendor-suite`, `pnpm --dir backend test:integration:http -- --testPathPattern=vendor-hermes-runtime.spec.ts`.

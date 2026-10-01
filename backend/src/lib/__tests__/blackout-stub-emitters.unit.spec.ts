@@ -1,4 +1,6 @@
 import {
+  buildPurchaseChargebackedArgs,
+  buildPurchaseFailedArgs,
   buildQuestRewardSettledArgs,
   emitAmbassadorCommissionPaid,
   emitLedgerUsdcConverted,
@@ -6,6 +8,9 @@ import {
   emitPurchaseFailed,
   emitQuestRewardSettled,
   emitReferralAttributed,
+  isStripeChargebackEvent,
+  stripeDisputePaymentIntentId,
+  toBlackoutPurchaseKind,
 } from "../blackout-stub-emitters"
 
 jest.mock("../blackout-emit", () => ({
@@ -106,34 +111,159 @@ describe("blackout stub emitters build the contract envelopes", () => {
     )
   })
 
-  it("purchase.failed / purchase.chargebacked: eventId keyed by fbmOrderId", async () => {
+  it("purchase.failed: keyed by checkout session (no order exists yet), echo under FBM keys", async () => {
     await emitPurchaseFailed(container, {
       userId: "bo_user_1",
       providerListingId: "listing_1",
       kind: "asset_bundle",
-      fbmOrderId: "order_1",
+      checkoutSessionId: "bcs_1",
+      cartId: "cart_1",
+      metadata: { tipId: "tip_1", fbmCartId: "spoofed" },
     })
+
+    expect(emit).toHaveBeenCalledWith(
+      container,
+      "purchase.failed",
+      { userId: "bo_user_1", providerListingId: "listing_1", sku: null, kind: "asset_bundle" },
+      {
+        eventId: "purchase.failed:bcs_1",
+        metadata: { tipId: "tip_1", fbmCheckoutSessionId: "bcs_1", fbmCartId: "cart_1" },
+      }
+    )
+  })
+
+  it("purchase.chargebacked: eventId keyed by fbmOrderId, echo under fbmOrderId", async () => {
     await emitPurchaseChargebacked(container, {
       userId: "bo_user_1",
       providerListingId: "listing_1",
       kind: "asset_bundle",
       fbmOrderId: "order_1",
+      metadata: { creatorSubscriptionId: "csub_1" },
     })
 
-    expect(emit).toHaveBeenNthCalledWith(
-      1,
-      container,
-      "purchase.failed",
-      { userId: "bo_user_1", providerListingId: "listing_1", sku: null, kind: "asset_bundle" },
-      expect.objectContaining({ eventId: "purchase.failed:order_1" })
-    )
-    expect(emit).toHaveBeenNthCalledWith(
-      2,
+    expect(emit).toHaveBeenCalledWith(
       container,
       "purchase.chargebacked",
       { userId: "bo_user_1", providerListingId: "listing_1", kind: "asset_bundle" },
-      expect.objectContaining({ eventId: "purchase.chargebacked:order_1" })
+      {
+        eventId: "purchase.chargebacked:order_1",
+        metadata: { creatorSubscriptionId: "csub_1", fbmOrderId: "order_1" },
+      }
     )
+  })
+})
+
+describe("toBlackoutPurchaseKind", () => {
+  it("passes §2 kinds through and maps internal EntitlementKinds (as purchase.succeeded does)", () => {
+    expect(toBlackoutPurchaseKind("subscription_tier")).toBe("subscription_tier")
+    expect(toBlackoutPurchaseKind("access_pass")).toBe("channel_access")
+    expect(toBlackoutPurchaseKind(null)).toBe("vault_item")
+  })
+})
+
+describe("buildPurchaseFailedArgs", () => {
+  const session = {
+    id: "bcs_1",
+    blackout_user_id: "bo_user_1",
+    listing_id: "listing_1",
+    status: "pending",
+    order_id: null,
+    requested_metadata: { tipId: "tip_1", nested: { no: 1 } },
+  }
+  const base = {
+    session,
+    cartId: "cart_1",
+    cartCompleted: false,
+    paymentSessionStatus: "pending",
+    listingEntitlementKind: "digital",
+    hasPriorCompletedPurchase: false,
+  }
+
+  it("reports an open Blackout checkout whose charge failed", () => {
+    expect(buildPurchaseFailedArgs(base)).toEqual({
+      userId: "bo_user_1",
+      providerListingId: "listing_1",
+      kind: "asset_bundle",
+      checkoutSessionId: "bcs_1",
+      cartId: "cart_1",
+      sku: null,
+      metadata: { tipId: "tip_1" },
+    })
+  })
+
+  it("skips once the checkout completed (session, order, cart, or settled payment)", () => {
+    expect(buildPurchaseFailedArgs({ ...base, session: { ...session, status: "completed" } })).toBeNull()
+    expect(buildPurchaseFailedArgs({ ...base, session: { ...session, order_id: "order_1" } })).toBeNull()
+    expect(buildPurchaseFailedArgs({ ...base, cartCompleted: true })).toBeNull()
+    expect(buildPurchaseFailedArgs({ ...base, paymentSessionStatus: "authorized" })).toBeNull()
+    expect(buildPurchaseFailedArgs({ ...base, paymentSessionStatus: "captured" })).toBeNull()
+  })
+
+  it("skips when an earlier purchase of the listing stands (Blackout would revoke it)", () => {
+    expect(buildPurchaseFailedArgs({ ...base, hasPriorCompletedPurchase: true })).toBeNull()
+  })
+
+  it("skips without a Blackout identity or listing (never a non-Blackout id)", () => {
+    expect(buildPurchaseFailedArgs({ ...base, session: null })).toBeNull()
+    expect(buildPurchaseFailedArgs({ ...base, session: { ...session, blackout_user_id: null } })).toBeNull()
+    expect(buildPurchaseFailedArgs({ ...base, session: { ...session, listing_id: "" } })).toBeNull()
+  })
+})
+
+describe("buildPurchaseChargebackedArgs", () => {
+  const session = {
+    id: "bcs_1",
+    blackout_user_id: "bo_user_1",
+    listing_id: "listing_1",
+    status: "completed",
+    order_id: "order_1",
+    requested_metadata: { canopyPlanCode: "coalition" },
+  }
+
+  it("reports the session's order with the checkout echo", () => {
+    expect(
+      buildPurchaseChargebackedArgs({ session, orderId: "order_other", listingEntitlementKind: "subscription_tier" })
+    ).toEqual({
+      userId: "bo_user_1",
+      providerListingId: "listing_1",
+      kind: "subscription_tier",
+      fbmOrderId: "order_1",
+      metadata: { canopyPlanCode: "coalition" },
+    })
+  })
+
+  it("falls back to the cart's order when the session never recorded one", () => {
+    expect(
+      buildPurchaseChargebackedArgs({ session: { ...session, order_id: null }, orderId: "order_2" })?.fbmOrderId
+    ).toBe("order_2")
+  })
+
+  it("skips when no order exists or the session has no Blackout identity", () => {
+    expect(buildPurchaseChargebackedArgs({ session: { ...session, order_id: null }, orderId: null })).toBeNull()
+    expect(
+      buildPurchaseChargebackedArgs({ session: { ...session, blackout_user_id: null }, orderId: "order_1" })
+    ).toBeNull()
+  })
+})
+
+describe("Stripe dispute helpers", () => {
+  const dispute = (type: string, status: string) => ({ type, data: { object: { status } } })
+
+  it("counts funds withdrawn and non-inquiry disputes as chargebacks", () => {
+    expect(isStripeChargebackEvent(dispute("charge.dispute.created", "needs_response"))).toBe(true)
+    expect(isStripeChargebackEvent(dispute("charge.dispute.funds_withdrawn", "needs_response"))).toBe(true)
+  })
+
+  it("ignores inquiries, other dispute lifecycle events and non-dispute events", () => {
+    expect(isStripeChargebackEvent(dispute("charge.dispute.created", "warning_needs_response"))).toBe(false)
+    expect(isStripeChargebackEvent(dispute("charge.dispute.closed", "lost"))).toBe(false)
+    expect(isStripeChargebackEvent(dispute("payment_intent.payment_failed", "requires_payment_method"))).toBe(false)
+  })
+
+  it("reads the disputed PaymentIntent id, expanded or not", () => {
+    expect(stripeDisputePaymentIntentId({ payment_intent: "pi_1" })).toBe("pi_1")
+    expect(stripeDisputePaymentIntentId({ payment_intent: { id: "pi_2" } })).toBe("pi_2")
+    expect(stripeDisputePaymentIntentId({ payment_intent: null })).toBeNull()
   })
 })
 

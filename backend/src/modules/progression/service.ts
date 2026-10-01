@@ -11,6 +11,7 @@ import { Stance, isStance } from "./stance"
 import { levelForXp, levelProgress, ROLE_XP_WEIGHTS } from "./leveling"
 import { unlockedFeatures, nextUnlock, enforcedOnly, ENFORCED_PRIVILEGE_KEYS } from "./thresholds"
 import { getXpReward, XP_REWARDS, type XpReward } from "./rewards"
+import { coalitionTierForXp, type CoalitionTierName } from "./coalition-tiers"
 
 /**
  * Per-role XP column names on the character sheet, keyed by stance.
@@ -756,6 +757,30 @@ class ProgressionModuleService extends MedusaService({
           : null,
       lastRecomputedAt: sheet.last_recomputed_at,
     }
+  }
+
+  /**
+   * This customer's rung on the coalition ladder, read without creating a
+   * character sheet.
+   *
+   * Deliberately NOT `getOrCreateCharacterSheet`: this is called from a read
+   * path that answers "may this person join?", and a question should not write
+   * a row. A customer with no sheet has done no coalition work, which is
+   * exactly `seedling` — the same answer the sheet would give.
+   *
+   * Reads COALITION-stance XP only. The PRODUCER ladder (`getGrowerTier`)
+   * measures selling and its rungs set payout rates; conflating the two would
+   * gate coalition membership on vendor sales volume.
+   */
+  async getCoalitionKarmaTier(customerId: string): Promise<{
+    tier: CoalitionTierName
+    xp: number
+  }> {
+    const sheets = await this.listCharacterSheets({ customer_id: customerId })
+    const sheet = sheets[0] as Record<string, unknown> | undefined
+    const xp = Number(sheet?.[XP_COLUMN[Stance.COALITION].xp] ?? 0)
+    const safe = Number.isFinite(xp) ? Math.max(0, xp) : 0
+    return { tier: coalitionTierForXp(safe), xp: safe }
   }
 
   /**

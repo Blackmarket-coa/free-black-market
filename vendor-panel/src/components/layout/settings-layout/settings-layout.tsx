@@ -64,6 +64,10 @@ const useSettingRoutes = (): INavItem[] => {
         label: "Playbook",
         to: "/settings/playbook",
       },
+      {
+        label: "Run deliveries",
+        to: "/settings/node-operator",
+      },
     ],
     [t]
   )

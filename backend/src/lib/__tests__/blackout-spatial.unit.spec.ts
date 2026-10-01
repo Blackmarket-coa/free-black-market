@@ -138,6 +138,56 @@ describe("geocodePostalCode", () => {
     expect(spy).toHaveBeenCalledTimes(4)
   })
 
+  describe("US ZIP consistency with the ZIP3 table", () => {
+    const answer = (latitude: number, longitude: number, label = "somewhere") =>
+      (jest.fn(async () =>
+        new Response(JSON.stringify({ results: [{ label, latitude, longitude }] }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        })
+      ) as unknown) as typeof fetch
+
+    it("drops a foreign-first answer for a US ZIP (94110 → Bavaria) and caches that verdict", async () => {
+      enable()
+      const spy = answer(48.14, 11.58, "Bayern, Deutschland")
+      globalThis.fetch = spy
+      await expect(geocodePostalCode("94110")).resolves.toBeNull()
+      await expect(geocodePostalCode("94110")).resolves.toBeNull()
+      expect(spy).toHaveBeenCalledTimes(1)
+    })
+
+    it("keeps an answer inside the ZIP's ZIP3 area", async () => {
+      enable()
+      globalThis.fetch = answer(37.749, -122.415, "San Francisco, CA 94110")
+      await expect(geocodePostalCode("94110")).resolves.toMatchObject({
+        latitude: 37.749,
+        longitude: -122.415,
+      })
+    })
+
+    it("checks ZIP+4 by its ZIP", async () => {
+      enable()
+      globalThis.fetch = answer(45.81, 15.98, "Zagreb")
+      await expect(geocodePostalCode("10115-1234")).resolves.toBeNull()
+    })
+
+    it("drops a US-shaped ZIP with no ZIP3 entry to check against", async () => {
+      enable()
+      globalThis.fetch = answer(40.0, -75.0)
+      // 000 is not an assigned prefix.
+      await expect(geocodePostalCode("00012")).resolves.toBeNull()
+    })
+
+    it("passes non-US postal codes through unchecked", async () => {
+      enable()
+      globalThis.fetch = answer(43.64, -79.39, "Toronto")
+      await expect(geocodePostalCode("M5V 2T6")).resolves.toMatchObject({
+        latitude: 43.64,
+        longitude: -79.39,
+      })
+    })
+  })
+
   it("skips obviously invalid postals without a call", async () => {
     enable()
     const spy = jest.fn()

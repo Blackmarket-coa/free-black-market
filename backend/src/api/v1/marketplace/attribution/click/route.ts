@@ -3,6 +3,7 @@ import { z } from "zod"
 import { createHash } from "crypto"
 import { CREATOR_ATTRIBUTION_MODULE } from "../../../../../modules/creator-attribution"
 import CreatorAttributionService from "../../../../../modules/creator-attribution/service"
+import { hashIpForAttribution } from "../../../../../lib/attribution-ip-hash"
 
 /**
  * Record a click without redirect. Used by SPA / iframe widgets that can't
@@ -19,12 +20,6 @@ const ClickSchema = z.object({
   referrer: z.string().max(2048).optional().nullable(),
   fingerprint: z.string().max(128).optional().nullable(),
 })
-
-function hashIp(ip: string | null | undefined): string | null {
-  if (!ip) return null
-  const salt = process.env.CREATOR_ATTRIBUTION_IP_SALT || ""
-  return createHash("sha256").update(`${salt}:${ip}`).digest("hex").slice(0, 32)
-}
 
 function hashUserAgent(ua: string | null | undefined): string | null {
   if (!ua) return null
@@ -55,7 +50,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     const event = await service.recordClick({
       shortCode: parsed.data.short_code,
       visitorToken: parsed.data.visitor_token,
-      ipHash: hashIp(ip),
+      ipHash: hashIpForAttribution(ip),
       userAgentHash: hashUserAgent(ua),
       referrer: parsed.data.referrer ?? null,
       fingerprint: parsed.data.fingerprint ?? null,

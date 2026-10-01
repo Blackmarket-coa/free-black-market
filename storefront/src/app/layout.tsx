@@ -3,8 +3,11 @@ import { Exo_2, Urbanist } from "next/font/google"
 import "./globals.css"
 import { Toaster } from "@medusajs/ui"
 import Head from "next/head"
+import { cookies } from "next/headers"
 import { retrieveCart } from "@/lib/data/cart"
 import { NativeAppBridge } from "@/components/providers"
+import { ConsentBanner } from "@/components/molecules/ConsentBanner/ConsentBanner"
+import { readConsent } from "@/lib/consent"
 import { Providers } from "./providers"
 
 const exo2 = Exo_2({
@@ -44,6 +47,9 @@ export default async function RootLayout({
   children: React.ReactNode
 }>) {
   const cart = await retrieveCart()
+  // LEG-8: decide the banner's initial state on the server so a returning
+  // visitor never sees it flash before hydration.
+  const consent = readConsent(await cookies())
   const ALGOLIA_APP = process.env.NEXT_PUBLIC_ALGOLIA_ID
   const htmlLang = "en"
   
@@ -112,6 +118,11 @@ export default async function RootLayout({
       <body
         className={`${exo2.variable} ${urbanist.variable} ${urbanist.className} antialiased bg-primary text-secondary relative solarpunk-atmosphere`}
       >
+        {/* First in the DOM so keyboard and screen-reader users meet the
+            choice before the page; it is fixed to the bottom visually. Later
+            z-50 layers (the mobile menu, modals) now paint over it, which is
+            intended: an open menu or dialog belongs on top. */}
+        <ConsentBanner initialConsent={consent} />
         <Providers cart={cart}>{children}</Providers>
         {/* Capacitor shell integration (deep links, push) — no-op on the web */}
         <NativeAppBridge />

@@ -81,3 +81,10 @@ export const LEGAL_REVIEW_STATUS: string | null =
 
 /** Greppable token pattern. Kept here so the check script and the pages agree. */
 export const PLACEHOLDER_PATTERN = /\[\[[A-Z0-9_]+\]\]/
+
+/**
+ * Storefront path of the privacy policy. The consent banner and every other
+ * surface that points at the policy import this so a rename cannot leave a
+ * dangling link behind.
+ */
+export const PRIVACY_POLICY_PATH = "/legal/privacy"

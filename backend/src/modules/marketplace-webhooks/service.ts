@@ -33,13 +33,14 @@ export const BLACKOUT_SUBSCRIPTION_ID = "blackout-global"
 export const BLACKSTAR_SUBSCRIPTION_ID = "blackstar-global"
 
 /**
- * The three inbound event types Blackstar's InboundEventProcessor accepts.
- * Anything else dead-letters on their side, so the emitter refuses it here.
+ * The inbound event types Blackstar's InboundEventProcessor accepts. Anything
+ * else dead-letters on their side, so the emitter refuses it here.
  */
 export const BLACKSTAR_EVENT_TYPES = [
   "order.created",
   "delivery.option.selected",
   "order.cancelled",
+  "node.operator.approved",
 ] as const
 
 export type BlackstarEventType = (typeof BLACKSTAR_EVENT_TYPES)[number]

@@ -31,7 +31,7 @@ out of Railway and onto the new server.
                 └─────────────────────────────────────────────────┘
 ```
 
-Hostnames mirror `infrastructure/k8s/production/30-ingress.yaml`:
+Hostnames (the unused `infrastructure/k8s/production/30-ingress.yaml` declares the same four):
 
 - `freeblackmarket.com` → storefront
 - `api.freeblackmarket.com` → backend (Medusa)
@@ -143,7 +143,28 @@ sudo certbot renew --dry-run
 sudo -u fbm bash -c 'cd /opt/fbm && bash scripts/deploy-fedora.sh latest'
 ```
 
+On a **staging** host, prefix the command with `FBM_DEPLOY_ENV=staging`
+(see step 0 below):
+
+```bash
+sudo -u fbm bash -c 'cd /opt/fbm && FBM_DEPLOY_ENV=staging bash scripts/deploy-fedora.sh latest'
+```
+
 The script:
+0. **Legal pages release gate (production only).** Runs
+   `scripts/check-legal-placeholders.mjs` against the committed tree at
+   `HEAD` (in a throwaway `node:22-bookworm-slim` container, since the host
+   has no Node) and **refuses to deploy** while
+   `storefront/src/lib/constants/legal.ts` still has unfilled `[[TOKENS]]`
+   or `LEGAL_REVIEW_STATUS` is still set. It fails today: those tokens are
+   operator/counsel decisions that have not been made yet. Any value of
+   `FBM_DEPLOY_ENV` other than `staging` — including unset — is treated as
+   production. `FBM_ALLOW_LEGAL_PLACEHOLDERS=1` is the emergency override
+   (a security fix or rollback while counsel's review is still open): the
+   check still runs and prints what is unfilled, and the deploy continues
+   with a warning. Both variables are read from the command line only, before
+   `.env.production` is sourced, so neither can be left switched on in that
+   file.
 1. `docker login ghcr.io` using the `.env.production` PAT.
 2. `docker compose pull` for the four app images.
 3. Starts data services (postgres, redis, minio) and waits for postgres health.
@@ -175,6 +196,16 @@ Use the **Deploy to Fedora** workflow in GitHub Actions
 | `image_tag`   | `sha-abc1234`    | Built by `docker-build.yml` and pushed to GHCR. |
 | `environment` | `production`     | Selects post-deploy hostnames + GH Environment for approvals. |
 | `git_ref`     | `main`           | The ref to checkout on the server (so compose/scripts match). |
+| `allow_legal_placeholders` | `false` | **Emergency only, production only.** Deploy even though the legal pages gate fails. The override is written to the run summary with who triggered it. |
+
+For `environment: production` the workflow runs the legal pages release gate
+(`node scripts/check-legal-placeholders.mjs`, checked out at `git_ref`) on
+the runner before it touches the host, and fails the run unless
+`allow_legal_placeholders` is set. It then calls `deploy-fedora.sh` with
+`FBM_DEPLOY_ENV=<environment>` and, when the input is set,
+`FBM_ALLOW_LEGAL_PLACEHOLDERS=1`, so the script's own gate agrees. Staging
+runs skip the gate. The Kubernetes `prod-deploy.yml` has the same gate and
+the same `allow_legal_placeholders` input.
 
 Required repository secrets:
 
@@ -205,9 +236,22 @@ git fetch && git checkout main && git pull --ff-only
 bash scripts/deploy-fedora.sh sha-abc1234
 ```
 
+The script treats the host as **production** unless told otherwise, so the
+legal pages gate (step 0 in §2.5) applies. On a staging host run
+`FBM_DEPLOY_ENV=staging bash scripts/deploy-fedora.sh sha-abc1234`. For an
+emergency production deploy while the legal pages are still unfilled, run
+`FBM_ALLOW_LEGAL_PLACEHOLDERS=1 bash scripts/deploy-fedora.sh sha-abc1234`.
+The gate reads the checked-out tree, so deploy from the ref the image was
+built from.
+
 ### Rollback
 
-Re-run the workflow with the previous known-good `image_tag`. There is no
+Re-run the workflow with the previous known-good `image_tag`. A rollback is
+a production deploy like any other: the legal pages gate still applies, so
+while the legal pages are unfilled a production rollback needs
+`allow_legal_placeholders` (workflow) or `FBM_ALLOW_LEGAL_PLACEHOLDERS=1`
+(by hand: `FBM_ALLOW_LEGAL_PLACEHOLDERS=1 bash scripts/deploy-fedora.sh <previous-tag>`).
+There is no
 schema downgrade - migrations are forward-only - but Medusa migrations are
 small, additive, and tolerant of older app versions for one or two releases.
 For breaking schema changes, restore from the most recent Postgres backup

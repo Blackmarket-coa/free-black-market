@@ -68,8 +68,11 @@ This index organizes project docs by purpose. Start with the repo-root
 
 ## Integrations & External Contracts
 
-- `docs/integrations/fbm-connect.md` — the `connect.js` embed (Mode 1/2/3)
-  that powers vendor sites and the vertical portals
+- `docs/integrations/fbm-connect.md` — the `connect.js` embed (Mode 1
+  Connect, Mode 2 Launch) for vendor sites. It does not work from vendor origins yet (see its §1
+  known gaps), and Mode 2 Launch returns `501` until its provisioning env is
+  configured. The wellness and creator portals only show a vendor their
+  embed snippet.
 - `docs/integrations/n8n/README.md` — n8n automation integration
 - `docs/contracts/marketplace-layer.md` — BMC marketplace-layer API contracts
   (entitlements, affiliate attribution, group commerce, plugin/theme listings,
@@ -202,10 +205,12 @@ Start with the whitepaper; the rest are phase-specific deep dives.
 - Vendor Panel: `vendor-panel/README.md` and application sources.
 - Storefront: `storefront/README.md` and application sources.
 - Vertical portals (nursery, wellness, botanical, creator): `nursery-portal/`,
-  `wellness-portal/`, `botanical-portal/`, `creator-portal/` — share the
-  backend above plus the `packages/bmc-portal-kit` and `packages/bmc-ui`
-  workspace packages.
-- AI orchestrator: `services/ai-orchestrator/` — LangGraph supervisor agent
-  and vendor tool registry.
+  `wellness-portal/`, `botanical-portal/`, `creator-portal/` — vendor
+  back-office dashboards (dev only, mock data by default, not deployed) that
+  share the backend above plus the `packages/bmc-portal-kit` and
+  `packages/bmc-ui` workspace packages.
+- AI orchestrator: `services/ai-orchestrator/` — Hermes system prompt,
+  tool-call schema validator and destructive-action confirmation checker,
+  with tests (no LangGraph dependency, no model calls, not deployed).
 - End-to-end tests: `e2e/README.md`.
 - Repository overview and full layout: `README.md` (repo root).

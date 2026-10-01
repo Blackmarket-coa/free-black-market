@@ -20,14 +20,66 @@ Everything is built on one public, website-agnostic contract: the **FBM Store
 API**, plus a small set of key-authenticated write/runtime endpoints for
 bookings, chat, and analytics.
 
+Two different keys are involved, and they are easy to confuse:
+
+- **Medusa publishable API key** — sent as `x-publishable-api-key`. Medusa
+  requires it on **every** `/store/*` route, this contract included. It is the
+  same kind of key the storefront uses as `NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY`,
+  created in the admin panel.
+- **Embed key** (`pk_live_…`, §4) — per-vendor, sent as
+  `Authorization: PublishableKey pk_live_…`, required on `/store/embed/*` and
+  validated when present on `/store/vendors/**`. This is what `data-fbm-key`
+  carries.
+
 ---
 
 ## 1. FBM Store API
 
 ### `GET /store/vendors/:handle`
 
-Public, unauthenticated, read-only. No publishable key required, open CORS
-(reflects the request origin) so any third-party site can call it.
+Public and read-only. No customer login or embed key is needed, but the Medusa
+publishable API key **is** required. Without `x-publishable-api-key` the
+backend answers `400` before the route runs:
+
+```bash
+curl -sS https://api.freeblackmarket.com/store/vendors/shaktiinnergy \
+  -H "x-publishable-api-key: pk_…"            # Medusa store key
+
+# Same request without the header:
+# 400 {"type":"not_allowed","message":"Publishable API key required in the
+#      request header: x-publishable-api-key. …"}
+```
+
+> **Calling from a vendor's own site (connect.js).** The shipped SDK versions
+> (the mutable `/connect.js`, `v2.0.0`, `v2.1.0`, `v2.1.1`) never send
+> `x-publishable-api-key`; they send only the vendor embed key, as
+> `Authorization: PublishableKey pk_live_…`, and only when `data-fbm-key` is
+> set. Medusa's store CORS and publishable-key check run on every `/store/*`
+> request before any project middleware, so on their own they block every
+> vendor origin (preflight `204` with no `Access-Control-Allow-Origin`, then
+> `400`). The backend closes this with a gate
+> (`backend/src/api/middlewares/connect-cors.ts`) that applies only to the
+> connect.js routes (`GET /store/vendors/:handle` and its `/reviews` and
+> `/availability`, `GET /store/collective/demand-pools`, and
+> `POST /store/embed/{bookings,chat/start,events,drives/checkout}`):
+>
+> - A preflight is answered when the `Origin` is in some vendor's
+>   `connect_domains`.
+> - The actual request is admitted only when its embed key exists, is not
+>   revoked, and belongs to a vendor whose `connect_domains` lists the
+>   `Origin`. The backend then supplies the platform publishable key
+>   (`FBM_CONNECT_PUBLISHABLE_KEY`, the same key the FBM storefront uses) so
+>   Medusa's own check passes. Allowed request headers are `Authorization`,
+>   `Content-Type` and `Accept`.
+> - Everything else is unchanged: other `/store` routes, keyless requests,
+>   invalid or revoked keys and unregistered origins still get Medusa's CORS
+>   answer and the `400`. **Keyless embeds (`data-fbm-key` unset) therefore
+>   still do not work from a vendor's site**; set `data-fbm-key` and register
+>   the site in `connect_domains`.
+>
+> The gate does nothing until `FBM_CONNECT_PUBLISHABLE_KEY` is set on the
+> backend: without it a verified request gets the CORS header but still the
+> `400`, and a warning is logged once.
 
 **Query parameters** (all optional):
 
@@ -120,21 +172,55 @@ it even if a host page still has the markup.
 
 ### Other read endpoints
 
-| Endpoint                                 | Auth   | Purpose                                  |
-| ---------------------------------------- | ------ | ---------------------------------------- |
-| `GET /store/vendors/:handle/reviews`     | public | Paginated product/vendor reviews.        |
-| `GET /store/vendors/:handle/availability`| public | Bookable-service slots for a date range. |
+| Endpoint                                 | Auth       | Purpose                                  |
+| ---------------------------------------- | ---------- | ---------------------------------------- |
+| `GET /store/vendors/:handle/reviews`     | Medusa key | Paginated product/vendor reviews.        |
+| `GET /store/vendors/:handle/availability`| Medusa key | Bookable-service slots for a date range. |
 
 ### Key-authenticated write/runtime endpoints — `/store/embed/*`
 
-These accept a publishable key (see §4) and are the runtime actions the SDK
-performs on the visitor's behalf:
+These require the embed key (see §4) **and** the Medusa
+`x-publishable-api-key` header, and are the runtime actions the SDK performs
+on the visitor's behalf:
 
 | Endpoint                     | Purpose                                        |
 | ---------------------------- | ---------------------------------------------- |
 | `POST /store/embed/bookings` | Create a booking for a bookable service.       |
-| `POST /store/embed/chat/start` | Open a Blackout chat session with the vendor. |
+| `POST /store/embed/chat/start` | Send a visitor's message to the vendor (see below). |
 | `POST /store/embed/events`   | Ingest embed analytics events (views, clicks…).|
+
+```bash
+curl -sS -X POST https://api.freeblackmarket.com/store/embed/chat/start \
+  -H "Authorization: PublishableKey pk_live_…" \
+  -H "Origin: https://<a host in the vendor's connect_domains>" \
+  -H "Content-Type: application/json" \
+  -d '{"customer_email":"visitor@example.com","message":"Do you ship to Ohio?"}'
+```
+
+Embed-key requests must come from an allow-listed origin: `Origin` (or, if that
+is missing, `Referer`) must match a host in the vendor's `connect_domains`.
+Without a matching header, including when neither is sent, the request gets
+`403 {"message":"Origin not allowed for this embed key","type":"not_allowed"}`.
+
+#### What `chat/start` does
+
+Body: `{ customer_email, message, customer_name? }`. It is a contact form that
+relays one message to the vendor, not a live or encrypted chat:
+
+- When Matrix is configured and the vendor has an mxid, the backend creates
+  (or reuses) a private Matrix room for that visitor, invites the vendor, and
+  the backend's admin account posts
+  `New website message from <name> (<email>): <message>` into it as a plain
+  `m.text` event. That post is plaintext, not end-to-end encrypted, and the
+  visitor is not a Matrix participant — they have no Matrix account in this
+  flow and never join the room.
+- Otherwise (Matrix unconfigured, no vendor mxid, or the post fails) the
+  message is emailed to the vendor.
+- Either way the vendor replies to the visitor **by email**.
+
+Response: `201 { channel: "matrix" | "email", room_id, widget_url, message? }`.
+`widget_url` is `null` unless the deployment configures a visitor-facing room
+page; on `null`, connect.js tells the visitor the vendor will reply by email.
 
 ---
 
@@ -168,9 +254,14 @@ Configure it entirely from the script tag:
 | ------------------- | -------- | --------------------------------- | -------------------------------------------------------- |
 | `data-fbm-vendor`   | ✅       | —                                 | Vendor handle. `data-fbm-handle` is a back-compat alias. |
 | `data-fbm-api`      |          | `https://api.freeblackmarket.com` | Store API base.                                          |
-| `data-fbm-key`      |          | —                                 | Publishable key. Required for booking / chat / analytics. |
+| `data-fbm-key`      |          | —                                 | Embed key (`pk_live_…`, §4). Required for booking / chat / analytics. |
 | `data-fbm-theme`    |          | `light`                           | `light \| dark \| minimal \| warm \| forest`.            |
 | `data-fbm-currency` |          | `usd`                             | Preferred price currency.                                |
+
+No attribute sets the Medusa `x-publishable-api-key` header; the backend
+supplies it for verified embed-key requests from the vendor's registered
+`connect_domains` (see §1). This requires `data-fbm-key` and a backend with
+`FBM_CONNECT_PUBLISHABLE_KEY` set.
 
 Per-element overrides on any `[data-fbm]` node: `data-fbm-vendor`,
 `data-fbm-limit`, `data-fbm-currency`. Buy buttons use `data-fbm-buy` with
@@ -202,7 +293,7 @@ The element renders itself and stays in sync with the catalog:
 <button data-fbm-buy data-fbm-product="prod_…">Buy now</button>
 ```
 
-`booking`, `chat`, and analytics require a publishable key (`data-fbm-key`).
+`booking`, `chat`, and analytics require an embed key (`data-fbm-key`).
 
 **`demand-pools` is the one vendorless surface.** Every other kind resolves through
 `GET /store/vendors/:handle` and needs `data-fbm-vendor`. Demand is posted by buyers, not
@@ -244,10 +335,10 @@ const digital  = await FBM.getDigital()
 const services = await FBM.getServices()
 const events   = await FBM.getEvents()
 const reviews  = await FBM.getReviews()
-const slots    = await FBM.getBookingSlots("prod_…", { date: "2026-07-04" })
+const slots    = await FBM.getBookingSlots("prod_…", "2026-07-04")
 
 await FBM.createBooking({ product_id: "prod_…", starts_at: "…", customer_email: "…" })
-await FBM.startChat({ email: "…", message: "…" })
+await FBM.startChat({ customer_email: "…", message: "…" })
 ```
 
 ### SDK reference
@@ -261,9 +352,9 @@ await FBM.startChat({ email: "…", message: "…" })
 | `FBM.getServices(handle?, opts)`               | `Promise<product[]>`                      |
 | `FBM.getEvents(handle?, opts)`                  | `Promise<event[]>`                        |
 | `FBM.getReviews(handle?, opts)`                 | `Promise<review[]>`                       |
-| `FBM.getBookingSlots(product, { date })`        | `Promise<slot[]>`                         |
+| `FBM.getBookingSlots(product, date, handle?)`   | `Promise<slot[]>`                         |
 | `FBM.createBooking(payload)`                    | `Promise<booking>` *(key required)*       |
-| `FBM.startChat(payload)`                        | `Promise<{ widget_url }>` *(key required)*|
+| `FBM.startChat({ customer_email, message })`    | `Promise<{ channel, room_id, widget_url }>` *(key required)*|
 | `FBM.cartUrl(productOrHandle?)`                 | URL string (cart, or product deep link)   |
 | `FBM.openCart(target?)` / `FBM.openModal(url)`  | open checkout (new tab or modal iframe)   |
 | `FBM.formatPrice({ amount, currency_code })`    | formatted currency string                 |
@@ -360,8 +451,10 @@ A site that never answers is **not** left spinning forever: if it sits in
 
 ### Publishable keys (`embed-keys` module)
 
-The booking, chat, and analytics endpoints require a **publishable key**
-(`pk_live_…`) sent as `Authorization: PublishableKey pk_live_…`. Keys are:
+The booking, chat, and analytics endpoints require an **embed key**
+(`pk_live_…`; the SDK and panel call it a publishable key) sent as
+`Authorization: PublishableKey pk_live_…`. It is separate from, and needed in
+addition to, Medusa's `x-publishable-api-key` (§1). Keys are:
 
 - **Per-vendor, hashed (SHA-256) at rest**, shown once on creation, revocable.
 - Managed at `GET/POST /vendor/embed-keys` and `DELETE /vendor/embed-keys/:id`;
@@ -404,9 +497,12 @@ sites, and the keyed endpoints carry a public key, so:
 
 ## 6. Production-readiness checklist (Launch / Mode 2)
 
-Connect (Mode 1) needs no infra beyond the backend itself. Launch (Mode 2) stays
-disabled (`501`) until **all** of the following are in place — verify each before
-enabling the panel button in production:
+Connect (Mode 1) needs no infra beyond the backend itself, but it does not
+work from a vendor's site yet. The SDK has to send a Medusa publishable API
+key, and the backend's store CORS and embed CORS headers have to let vendor
+origins through; neither alone is enough (see the known gaps in §1). Launch
+(Mode 2) stays disabled (`501`) until **all** of the following are in place —
+verify each before enabling the panel button in production:
 
 - [ ] **GitHub token** — `GITHUB_TOKEN` with repo-create scope on `GITHUB_ORG`
       (fine-grained: Administration + Contents + Actions: read/write).

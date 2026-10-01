@@ -26,6 +26,8 @@ const BlackoutCheckoutSession = model
     listing_id: model.text(),
     idempotency_key: model.text().nullable(),
     mxid: model.text().nullable(),
+    /** Caller-chosen charge amount in minor units; null means the listing prices itself. */
+    amount_cents: model.number().nullable(),
 
     // Filled in as the page materializes the purchase.
     customer_id: model.text().nullable(),

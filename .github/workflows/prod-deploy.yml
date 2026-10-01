@@ -6,6 +6,11 @@ on:
       image_tag:
         description: 'Image tag to deploy (e.g. v1.2.3 or sha-abcd123). Required.'
         required: true
+      allow_legal_placeholders:
+        description: 'EMERGENCY ONLY: deploy even though the legal pages still have unfilled [[PLACEHOLDERS]] (recorded in the run summary).'
+        required: false
+        default: false
+        type: boolean
 
 concurrency:
   group: deploy-production
@@ -26,6 +31,37 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      # Legal release gate, before anything touches the cluster. The Terms,
+      # Privacy and Refunds pages ship `[[TOKENS]]` for operator facts (legal
+      # entity, governing law, contact inboxes) and a "not yet legally
+      # reviewed" banner; scripts/check-legal-placeholders.mjs exits 1 while
+      # any of that remains. Deliberately not in PR CI: an unfilled token is
+      # the correct state during development (see the script's header).
+      #
+      # It reads storefront/src/lib/constants/legal.ts at the ref this run was
+      # dispatched from, not from inside the image, so dispatch it from the ref
+      # `image_tag` was built from.
+      #
+      # `allow_legal_placeholders` is the emergency override (a security fix
+      # or rollback while counsel's review is still open): the check still
+      # runs and prints what is unfilled, the deploy proceeds, and the override
+      # is written to the run summary with who triggered it.
+      - name: Legal pages release gate
+        env:
+          ALLOW_LEGAL_PLACEHOLDERS: ${{ inputs.allow_legal_placeholders }}
+          ACTOR: ${{ github.actor }}
+        run: |
+          if node scripts/check-legal-placeholders.mjs; then
+            exit 0
+          fi
+          if [ "$ALLOW_LEGAL_PLACEHOLDERS" = "true" ]; then
+            echo "::warning::Legal pages have unfilled placeholders; deploying anyway because allow_legal_placeholders is set."
+            echo "**Legal release gate overridden** by @${ACTOR}: the legal pages still carry unfilled placeholders." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          echo "::error::Legal pages are not ready to publish (listed above). Fill storefront/src/lib/constants/legal.ts, or re-run with allow_legal_placeholders for an emergency deploy."
+          exit 1
 
       - name: Configure kubeconfig
         env:

@@ -58,6 +58,19 @@ const SIGNING_PROTOCOL_VERSION = "1"
  * the signed payload concatenates `${PROTOCOL_VERSION}|${manifestHash}|${codeHash}|${assetHashesHash}|${signedAt}`.
  */
 class PluginSigningService {
+  /**
+   * Whether the signing key pair is configured at all. Keyless-tolerant
+   * callers (work-proof attestations) check this to record an explicit
+   * unsigned state instead of treating an absent key as an error; a
+   * configured but unreadable key still throws from the signing methods.
+   */
+  isConfigured(): boolean {
+    return (
+      !!process.env.MARKETPLACE_SIGNING_PRIVATE_KEY_PEM &&
+      !!process.env.MARKETPLACE_SIGNING_KEY_ID
+    )
+  }
+
   private getPrivateKey(): { keyId: string; key: KeyObject } {
     const pem = process.env.MARKETPLACE_SIGNING_PRIVATE_KEY_PEM
     const keyId = process.env.MARKETPLACE_SIGNING_KEY_ID

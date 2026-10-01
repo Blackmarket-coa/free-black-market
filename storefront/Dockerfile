@@ -7,11 +7,44 @@
 
 ARG NODE_VERSION=22-bookworm-slim
 
-# --- deps stage --------------------------------------------------------------
-FROM node:${NODE_VERSION} AS deps
+# --- pnpm stage --------------------------------------------------------------
+# Every stage that runs pnpm is FROM this one, so pnpm is fetched from the npm
+# registry once per image, here, with a retry — not once per stage with none.
+#
+# It used to be the latter: each stage ran its own `corepack enable` and let
+# its first `pnpm` call download pnpm. One fetch for this image (the build
+# stage enabled corepack too, but calls `next` directly), six across the four
+# images `e2e.yml` builds in parallel with `docker compose up --build`, and any
+# one of them failing failed the build.
+# That is what happened on PR #859 (2026-09-22): ECONNRESET from the registry
+# while corepack fetched pnpm.
+#
+# The version is read from package.json's `packageManager` field rather than
+# repeated here, so the image cannot drift from what developers and CI run.
+# `corepack prepare` is retried with a growing pause (1+4+9+16s) before the
+# build gives up. The closing `pnpm --version` runs with corepack's network
+# access switched off: it proves pnpm is usable from the cache alone, so no
+# stage FROM this one can silently fall back to downloading it again.
+FROM node:${NODE_VERSION} AS pnpm
 WORKDIR /app
+# Corepack keeps its downloads under COREPACK_HOME. Nothing in this image runs
+# pnpm as a non-root user, but the fixed, world-readable location is the same
+# one backend/Dockerfile relies on, so all four images set pnpm up identically.
+ENV COREPACK_HOME=/opt/corepack
+COPY package.json ./
+RUN corepack enable \
+    && pm="$(node -p "require('./package.json').packageManager")" \
+    && for attempt in 1 2 3 4 5; do \
+         corepack prepare "$pm" --activate && break; \
+         [ "$attempt" = 5 ] && exit 1; \
+         echo "corepack prepare $pm failed (attempt $attempt); retrying" >&2; \
+         sleep $((attempt * attempt)); \
+       done \
+    && chmod -R a+rX /opt/corepack \
+    && COREPACK_ENABLE_NETWORK=0 pnpm --version
 
-RUN corepack enable
+# --- deps stage --------------------------------------------------------------
+FROM pnpm AS deps
 
 # `pnpm-workspace.yaml` carries the dependency overrides, which pnpm 11 no
 # longer reads from package.json. Omitting it here does not fail the build —
@@ -32,8 +65,7 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 RUN pnpm install --frozen-lockfile --prod=false --trust-lockfile
 
 # --- build stage -------------------------------------------------------------
-FROM node:${NODE_VERSION} AS build
-WORKDIR /app
+FROM pnpm AS build
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 # Next.js INLINES every NEXT_PUBLIC_* value into the client bundle at build
@@ -54,6 +86,14 @@ ARG NEXT_PUBLIC_ALGOLIA_ID=
 ARG NEXT_PUBLIC_ALGOLIA_SEARCH_KEY=
 ARG NEXT_PUBLIC_MATRIX_ELEMENT_URL=
 ARG NEXT_PUBLIC_MATRIX_SERVER_NAME=
+# Phase-1 feature flags (src/lib/feature-flags.ts). Only the literal "true"
+# enables one, so the empty defaults keep every flag off.
+ARG NEXT_PUBLIC_FF_POS_V1=
+ARG NEXT_PUBLIC_FF_WEIGHT_PRICING_V1=
+ARG NEXT_PUBLIC_FF_PICK_PACK_V1=
+ARG NEXT_PUBLIC_FF_INVOICING_V1=
+ARG NEXT_PUBLIC_FF_CHANNEL_SYNC_V1=
+ARG NEXT_PUBLIC_FF_INVESTMENT_POOLS_V1=
 ENV NEXT_PUBLIC_MEDUSA_BACKEND_URL=$NEXT_PUBLIC_MEDUSA_BACKEND_URL \
     NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY=$NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY \
     NEXT_PUBLIC_BASE_URL=$NEXT_PUBLIC_BASE_URL \
@@ -66,9 +106,14 @@ ENV NEXT_PUBLIC_MEDUSA_BACKEND_URL=$NEXT_PUBLIC_MEDUSA_BACKEND_URL \
     NEXT_PUBLIC_ALGOLIA_ID=$NEXT_PUBLIC_ALGOLIA_ID \
     NEXT_PUBLIC_ALGOLIA_SEARCH_KEY=$NEXT_PUBLIC_ALGOLIA_SEARCH_KEY \
     NEXT_PUBLIC_MATRIX_ELEMENT_URL=$NEXT_PUBLIC_MATRIX_ELEMENT_URL \
-    NEXT_PUBLIC_MATRIX_SERVER_NAME=$NEXT_PUBLIC_MATRIX_SERVER_NAME
+    NEXT_PUBLIC_MATRIX_SERVER_NAME=$NEXT_PUBLIC_MATRIX_SERVER_NAME \
+    NEXT_PUBLIC_FF_POS_V1=$NEXT_PUBLIC_FF_POS_V1 \
+    NEXT_PUBLIC_FF_WEIGHT_PRICING_V1=$NEXT_PUBLIC_FF_WEIGHT_PRICING_V1 \
+    NEXT_PUBLIC_FF_PICK_PACK_V1=$NEXT_PUBLIC_FF_PICK_PACK_V1 \
+    NEXT_PUBLIC_FF_INVOICING_V1=$NEXT_PUBLIC_FF_INVOICING_V1 \
+    NEXT_PUBLIC_FF_CHANNEL_SYNC_V1=$NEXT_PUBLIC_FF_CHANNEL_SYNC_V1 \
+    NEXT_PUBLIC_FF_INVESTMENT_POOLS_V1=$NEXT_PUBLIC_FF_INVESTMENT_POOLS_V1
 
-RUN corepack enable
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
@@ -118,6 +163,15 @@ RUN echo "security-refresh=${SECURITY_REFRESH}" >/dev/null \
 COPY --from=build --chown=storefront:storefront /app/.next/standalone ./
 COPY --from=build --chown=storefront:storefront /app/.next/static ./.next/static
 COPY --from=build --chown=storefront:storefront /app/public ./public
+
+# Commit this image was built from, reported as `commit` by GET /api/health
+# (read at request time — that route is dynamic, so it is not baked in by
+# `next build`). CI passes `github.sha`. Declared after the last RUN on
+# purpose: a build-arg that changes every commit invalidates every RUN below
+# its ARG, and there are none below this one. Empty by default, not "unknown",
+# so the route's RAILWAY_GIT_COMMIT_SHA fallback still applies when unset.
+ARG GIT_SHA=
+ENV GIT_SHA=$GIT_SHA
 
 USER storefront
 EXPOSE 3000

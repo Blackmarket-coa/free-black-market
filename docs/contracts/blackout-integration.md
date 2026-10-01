@@ -16,6 +16,7 @@ wire schema).
 | `ENTITLEMENTS_BASE_URL` | optional | entitlements service base |
 | `FBM_BLACKOUT_INTEGRATION=1` | yes | master flag; routes 503 and emitter no-ops when unset |
 | `STRIPE_API_KEY` | for real payments | registers the `pp_stripe_stripe` payment provider |
+| `STRIPE_WEBHOOK_SECRET` | for `purchase.failed` / `purchase.chargebacked` | signing secret of the Stripe webhook endpoint pointed at Medusa's payment webhook (`/hooks/payment/stripe_stripe`); the same value the Stripe provider is configured with. Unset = those two events are never emitted. The endpoint must have `payment_intent.payment_failed`, `charge.dispute.created` and `charge.dispute.funds_withdrawn` enabled |
 | `STRIPE_PUBLISHABLE_KEY` | for the hosted checkout page | Stripe Elements on the W1b checkout page; without it the page falls back to a plain confirm button (dev providers) |
 | `FBM_SUBSCRIPTION_PAYMENT_PROVIDER_ID` | optional | payment provider for Blackout checkout + renewals (default `pp_stripe_stripe`; set `pp_system_default` in dev) |
 | `FBM_SUBSCRIPTION_RENEWAL_LIVE=1` | go-live | renewal cron mints real orders + off-session charges; unset = legacy date-advance (grants WITHOUT charging — never enable paid tiers without this) |
@@ -43,8 +44,8 @@ and `BLACKOUT_API_BASE` are set (`features.freeblackmarketEmit()`).
 |---|---|---|
 | `purchase.succeeded` | wired | `subscribers/emit-blackout-order-placed` (per line item) |
 | `purchase.refunded` | wired | `subscribers/emit-blackout-order-refund-cancel` |
-| `purchase.failed` | stub | `lib/blackout-stub-emitters` (no payment-failed flow yet) |
-| `purchase.chargebacked` | stub | `lib/blackout-stub-emitters` (no chargeback flow yet) |
+| `purchase.failed` | wired | `subscribers/emit-blackout-stripe-payment-events` on a signature-verified Stripe `payment_intent.payment_failed`, Blackout-checkout carts only, and only while nothing can have been granted (checkout not completed, payment session not authorized/captured, no earlier completed checkout of the same listing by the same member); `eventId` `purchase.failed:<checkout_session_id>`, metadata carries `fbmCheckoutSessionId` / `fbmCartId` (no order exists yet) |
+| `purchase.chargebacked` | wired | `subscribers/emit-blackout-stripe-payment-events` on a signature-verified Stripe `charge.dispute.funds_withdrawn`, or `charge.dispute.created` past the inquiry stage (`warning_*` statuses skipped), for a Blackout-checkout order; `eventId` `purchase.chargebacked:<order_id>`. Report-only: FBM's own dispute/ledger records are not touched |
 | `creator.payout.completed` | wired | `api/v1/admin/marketplace/payouts` |
 | `listing.signed_bundle.published` | wired | `api/v1/seller/listings/[id]/publish` |
 | `creator.account.suspended` | wired | `api/v1/admin/marketplace/creators/[seller_id]/suspend` |

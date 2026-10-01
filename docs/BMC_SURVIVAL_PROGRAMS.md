@@ -139,23 +139,34 @@ nothing below gets rebuilt:
 Blackstar "batch claims"/"micro-depots" (the real shape is `ShipmentBoardListing`
 + `claim_policy`).
 
-### Blocker found while inventorying — unrelated to this programme but in the way
+### A blocker that turned out to be already fixed — recorded as a method failure
 
-Seven `VITE_FF_*` flags are read by `vendor-panel/src/lib/phase0-feature-flags.ts`.
-`vendor-panel/Dockerfile` declares **zero** of them as ARGs, and
-`docker-build.yml`'s `panelargs` step passes **zero**. Vite inlines at build;
-`enabled(undefined)` returns `false`. **POS, weight pricing, pick/pack, invoicing
-and channel sync are permanently dark in the published panel image.** Vendor
-advances and investment pools are also dark — correct outcome, but by accident,
-which means the flag is not actually holding that line.
+The first pass of this inventory reported that seven `VITE_FF_*` flags were
+read by the panels but declared in neither Dockerfile nor passed by
+`docker-build.yml`, leaving five built features permanently dark in every
+published image.
 
-Same shape as SD-26. **Fixed 2026-10-01** — and it was worse than first
-reported: `admin-panel` has the identical defect (5 flags, no ARGs). Both
-Dockerfiles now declare and re-export every flag their reader consumes,
-`docker-build.yml` passes all 7, and `scripts/check-panel-feature-flags.mjs`
-fails CI if the reader, the Dockerfile and the build-args ever drift apart
-again. Mutation-tested three ways: missing ARG, ARG-without-ENV, and a flag
-dropped from the workflow.
+**That was true of `ebff02ea` (14 Sep) and false of `main`.** It was fixed on
+25 Sep by `965d9d40` ("build: pass feature-flag build args, stamp build SHA,
+gate prod deploys on legal placeholders"), which declares all twelve ARGs
+across the two panels and passes all seven from repo variables.
+
+The error was procedural, not analytical: the branch was cut from a
+six-day-old `main` and the diagnosis was run against the working tree without
+re-checking `origin/main` first. Everything asserted about Vite's build-time
+inlining and `enabled(undefined) === false` is still correct; the claim that
+it was *live* was not.
+
+**What survived:** `scripts/check-panel-feature-flags.mjs`, which `main` does
+not have. It compares three lists — flags the reader consumes, flags the
+Dockerfile declares *and* re-exports as `ENV`, flags the workflow passes — and
+fails CI on drift. Verified to pass against `main`'s own wiring, so it ratifies
+the existing fix rather than duplicating it, and it would have caught the
+original gap.
+
+**The standing lesson for this programme:** re-read `origin/main` before
+diagnosing anything, and treat any inventory in this file as valid only as of
+its stated commit.
 
 ### Still to do for Step 0
 

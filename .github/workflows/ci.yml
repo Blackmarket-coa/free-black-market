@@ -88,6 +88,9 @@ jobs:
       - name: Check panel feature-flag wiring (reader = Dockerfile = build-args)
         run: pnpm check:panel-feature-flags
 
+      - name: Check panel feature-flag wiring (reader = Dockerfile = build-args)
+        run: pnpm check:panel-feature-flags
+
       - name: Lint storefront
         working-directory: storefront
         run: pnpm lint

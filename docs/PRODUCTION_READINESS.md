@@ -49,10 +49,12 @@ Every PR must pass these gates before merge:
 
 ## Deploy targets
 
-The platform supports two deploy paths simultaneously:
+Production runs on a **single Fedora host**: `docker-compose.yml` + `docker-compose.prod.yml` behind host nginx, with Cloudflare in front, rolled by running `scripts/deploy-fedora.sh` on the host with images published to GHCR by `docker-build.yml`. See `runbooks/FEDORA_DEPLOYMENT.md`.
 
-1. **Generic Docker / Kubernetes** — primary. Images are published to GHCR by `docker-build.yml`; environments deploy via `staging-deploy.yml` and `prod-deploy.yml` (both `workflow_dispatch` with GitHub environment approvals).
-2. **Railway** — legacy. The existing Railway auto-deploy from `main` is preserved; both paths read the same env contract.
+Two other paths are committed but unused:
+
+1. **Generic Docker / Kubernetes** — `infrastructure/k8s/` plus `staging-deploy.yml` and `prod-deploy.yml` (both `workflow_dispatch` with GitHub environment approvals). Neither workflow has ever run.
+2. **Railway** — legacy `backend/railway*.json`. It reads the same env contract.
 
 ## Local full-stack run
 
@@ -67,4 +69,4 @@ Brings up `postgres`, `redis`, `minio` (with bucket initialised), `backend`, `st
 1. Read `runbooks/RELEASE.md`.
 2. Confirm all gates green on the release branch.
 3. Run `scripts/release_validation.sh` (also runs in CI on `release/*`).
-4. Tag with the next semver; deploy via `prod-deploy.yml`.
+4. Tag with the next semver; deploy on the Fedora host with `bash scripts/deploy-fedora.sh <tag>` (see `runbooks/FEDORA_DEPLOYMENT.md`). The script refuses a production deploy while `node scripts/check-legal-placeholders.mjs` fails (it does today — unfilled tokens in `storefront/src/lib/constants/legal.ts`); on a staging host run it with `FBM_DEPLOY_ENV=staging`, and use `FBM_ALLOW_LEGAL_PLACEHOLDERS=1` (or the `allow_legal_placeholders` workflow input) only as an emergency override.

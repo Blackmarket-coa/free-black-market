@@ -1,17 +1,25 @@
 import { createPublicKey, verify as cryptoVerify } from "crypto"
-import { canonicalJson, sha256, type PluginSignedBundle } from "./service"
+import {
+  canonicalJson,
+  sha256,
+  type PluginSignedBundle,
+  type VendorEventSignedEnvelope,
+} from "./service"
 
 /**
  * Pure verification counterparts to PluginSigningService (W3): FBM signed
  * bundles for two years without being able to verify one. No env access —
  * keys are passed in — so everything here is containerless-testable.
  *
- * Two envelope formats exist, signed by the same platform Ed25519 key:
+ * Three envelope formats exist, signed by the same platform Ed25519 key:
  *  - the FBM envelope (`1|manifestHash|codeHash|assetHashesHash|signedAt`,
  *    service.sign()) — creator_listing/webhook surface, frozen;
  *  - the Blackout distribution envelope (`${manifestSha256}:${sha256}`,
  *    service.signBlackoutEnvelope()) — what plugin_version stores and the
- *    Blackout client's pluginSignature.ts verifies.
+ *    Blackout client's pluginSignature.ts verifies;
+ *  - the vendor-event envelope
+ *    (`1|payloadType|subject|payloadHash|signedAt`,
+ *    service.signVendorEvent()) — work-proof attestations (work-proof.ts).
  *
  * Canonical-JSON note: FBM's `canonicalJson` (JSON.stringify over
  * recursively key-sorted values) is byte-identical to the Blackout client's
@@ -114,6 +122,40 @@ export function verifyBlackoutEnvelope(
   const payload = `${envelope.manifestSha256}:${envelope.sha256}`
   try {
     return verifyEd25519(payload, envelope.signature, args.publicKeyPem)
+      ? { ok: true }
+      : { ok: false, reason: "signature-mismatch" }
+  } catch (err) {
+    return {
+      ok: false,
+      reason: `verification-error: ${err instanceof Error ? err.message : String(err)}`,
+    }
+  }
+}
+
+/**
+ * Verify a vendor-event envelope (service.signVendorEvent() output) against
+ * the payload it claims to cover: Ed25519 over
+ * `1|${payloadType}|${subject}|${payloadHash}|${signedAt}`.
+ */
+export function verifyVendorEventEnvelope(
+  envelope: Pick<
+    VendorEventSignedEnvelope,
+    "payloadType" | "subject" | "payloadHash" | "signedAt" | "signature"
+  >,
+  args: { payload: Record<string, unknown>; publicKeyPem: string }
+): VerifyResult {
+  if (sha256(canonicalJson(args.payload)) !== envelope.payloadHash) {
+    return { ok: false, reason: "payload-hash-mismatch" }
+  }
+  const message = [
+    "1",
+    envelope.payloadType,
+    envelope.subject,
+    envelope.payloadHash,
+    envelope.signedAt,
+  ].join("|")
+  try {
+    return verifyEd25519(message, envelope.signature, args.publicKeyPem)
       ? { ok: true }
       : { ok: false, reason: "signature-mismatch" }
   } catch (err) {

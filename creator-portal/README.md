@@ -5,16 +5,32 @@ audience on [Free Black Market](../README.md) (FBM) — the Creator playbook's
 home surface. Built with React + Vite on the shared `@bmc/portal-kit` and
 `@bmc/ui` workspace packages.
 
+## Status
+
+A vendor back-office dashboard, not a customer storefront, and not deployed:
+there is no Dockerfile, compose service, nginx vhost or DNS name for it. In
+dev (`pnpm creator-portal:dev`) its data calls resolve from the typed mock
+layer in `src/lib/mock/` unless `VITE_USE_MOCK_DATA=false`; production builds
+call the backend. These backend routes it calls do not exist yet:
+
+- `GET /vendor/creator/analytics`, `/boosts`, `/governance/proposals`,
+  `/splits`, and `POST /vendor/creator/splits/:id/activate`
+- the Blackout reads (`/api/blackout/community/messages`,
+  `/api/blackout/member-dms`, `/api/blackout/member-dms/:roomId/messages`) —
+  there is no Blackout proxy in the backend
+
 ## What it covers
 
 - Dashboard, analytics, and payouts
 - Memberships and boosts
-- Revenue splits (`SplitsPage`) tied into the internal ledger — see
+- Revenue splits (`SplitsPage`) — UI only until the `/vendor/creator/splits`
+  routes above exist; the intended ledger tie-in is described in
   `../docs/COMPOSITION_LAYER.md`
 - Stream overlay page and Blackout (Matrix) Space integration for
   split-contract proofs
 - Quests and Coalition Credits balance
-- Embedded storefront connect flow via `connect.js`
+- A page that gives the creator a `connect.js` embed snippet for their own
+  site
 
 ## Quickstart
 
@@ -40,8 +56,8 @@ Key environment variables (see `.env.example` for the full list):
 - `VITE_CONNECT_PUBLISHABLE_KEY` — publishable key for the embedded
   storefront widget.
 - `VITE_BLACKOUT_URL` — Blackout (Matrix) web app base; used to deep-link to
-  Space state events and the stream overlay page, always proxied through the
-  FBM backend.
+  Space state events and the stream overlay page. Blackout data reads are
+  meant to go through the FBM backend (not built yet — see Status).
 
 ## Related
 

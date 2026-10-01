@@ -1,18 +1,18 @@
-import { createLogger } from "../shared/logger"
-const log = createLogger("subscribers/emit-blackout-order-placed")
-import { SubscriberArgs, type SubscriberConfig } from "@medusajs/medusa"
-import { emitBlackoutEvent } from "../lib/blackout-emit"
+import { createLogger } from "../shared/logger";
+const log = createLogger("subscribers/emit-blackout-order-placed");
+import { SubscriberArgs, type SubscriberConfig } from "@medusajs/medusa";
+import { emitBlackoutEvent } from "../lib/blackout-emit";
 import {
   resolveBlackoutUserId,
   resolveSellerMxid,
-} from "../lib/blackout-identity"
+} from "../lib/blackout-identity";
 import {
   mapEntitlementKindToBlackout,
   BLACKOUT_DEAD_DROP_KINDS,
   BLACKOUT_PURCHASE_KINDS,
   type BlackoutPurchaseKind,
-} from "../modules/marketplace-webhooks/models/blackout-events"
-import { MARKETPLACE_LISTING_MODULE } from "../modules/marketplace-listing"
+} from "../modules/marketplace-webhooks/models/blackout-events";
+import { MARKETPLACE_LISTING_MODULE } from "../modules/marketplace-listing";
 
 /**
  * Order-metadata keys that are FBM-internal identity/infra stamps, excluded
@@ -27,19 +27,19 @@ const ECHO_EXCLUDED_KEYS = new Set([
   "subscription_id",
   "renewal",
   "order_channel",
-])
+]);
 
 function buildMetadataEcho(
-  orderMetadata: Record<string, unknown>
+  orderMetadata: Record<string, unknown>,
 ): Record<string, string> {
-  const echo: Record<string, string> = {}
+  const echo: Record<string, string> = {};
   for (const [key, value] of Object.entries(orderMetadata)) {
-    if (ECHO_EXCLUDED_KEYS.has(key)) continue
-    if (typeof value !== "string" || !value || value.length > 500) continue
-    echo[key] = value
-    if (Object.keys(echo).length >= 20) break
+    if (ECHO_EXCLUDED_KEYS.has(key)) continue;
+    if (typeof value !== "string" || !value || value.length > 500) continue;
+    echo[key] = value;
+    if (Object.keys(echo).length >= 20) break;
   }
-  return echo
+  return echo;
 }
 
 /**
@@ -56,10 +56,10 @@ export default async function emitBlackoutOrderPlaced({
   event: { data },
   container,
 }: SubscriberArgs<{ id: string }>) {
-  const orderId = data.id
+  const orderId = data.id;
 
   try {
-    const query = container.resolve("query") as any
+    const query = container.resolve("query") as any;
     const { data: orders } = await query.graph({
       entity: "order",
       fields: [
@@ -79,22 +79,22 @@ export default async function emitBlackoutOrderPlaced({
         "items.metadata",
       ],
       filters: { id: orderId },
-    })
+    });
 
-    const order = orders?.[0]
-    if (!order) return
+    const order = orders?.[0];
+    if (!order) return;
 
-    const metadata = (order.metadata || {}) as Record<string, unknown>
+    const metadata = (order.metadata || {}) as Record<string, unknown>;
     const userId = await resolveBlackoutUserId(container, {
       customerId: order.customer_id ?? null,
       sellerId: (order as any).seller_id ?? null,
       orderMetadata: metadata,
-    })
+    });
 
-    const sellerId = (order as any).seller_id || "default-seller"
-    const vendorMxid = await resolveSellerMxid(container, sellerId)
-    const currency = String(order.currency_code || "USD").toUpperCase()
-    const items = (order.items || []) as any[]
+    const sellerId = (order as any).seller_id || "default-seller";
+    const vendorMxid = await resolveSellerMxid(container, sellerId);
+    const currency = String(order.currency_code || "USD").toUpperCase();
+    const items = (order.items || []) as any[];
 
     // §2 purchase.succeeded — one per line item. Requires a Blackout user id.
     if (userId) {
@@ -102,28 +102,28 @@ export default async function emitBlackoutOrderPlaced({
       // dispatches on metadata.creatorSubscriptionId / canopyPlanCode /
       // tipId), and carry the listing's feature bundle so Blackout's primary
       // features.* channel stays webhook-driven.
-      const metadataEcho = buildMetadataEcho(metadata)
+      const metadataEcho = buildMetadataEcho(metadata);
       const checkoutListingId =
         typeof metadata.creator_listing_id === "string"
           ? (metadata.creator_listing_id as string)
-          : null
-      let checkoutListingFeatureKeys: string[] = []
+          : null;
+      let checkoutListingFeatureKeys: string[] = [];
       if (checkoutListingId) {
         try {
           const listingService = container.resolve(
-            MARKETPLACE_LISTING_MODULE
+            MARKETPLACE_LISTING_MODULE,
           ) as {
             listCreatorListings: (
-              f: Record<string, unknown>
-            ) => Promise<Array<{ id: string; feature_keys?: unknown }>>
-          }
+              f: Record<string, unknown>,
+            ) => Promise<Array<{ id: string; feature_keys?: unknown }>>;
+          };
           const [listing] = await listingService.listCreatorListings({
             id: checkoutListingId,
-          })
+          });
           if (Array.isArray(listing?.feature_keys)) {
-            checkoutListingFeatureKeys = (listing.feature_keys as unknown[]).filter(
-              (k): k is string => typeof k === "string" && k.length > 0
-            )
+            checkoutListingFeatureKeys = (
+              listing.feature_keys as unknown[]
+            ).filter((k): k is string => typeof k === "string" && k.length > 0);
           }
         } catch {
           // catalog module unavailable; the echo alone still round-trips
@@ -131,7 +131,9 @@ export default async function emitBlackoutOrderPlaced({
       }
 
       for (const it of items) {
-        const itemKind = (it.metadata?.entitlement_kind ?? null) as string | null
+        const itemKind = (it.metadata?.entitlement_kind ?? null) as
+          | string
+          | null;
         // Catalog listings stamp §2 purchase kinds directly (subscription_tier,
         // privacy_tool, ...) — pass those through verbatim; only internal
         // EntitlementKind values need the mapping.
@@ -139,22 +141,23 @@ export default async function emitBlackoutOrderPlaced({
           itemKind &&
           (BLACKOUT_PURCHASE_KINDS as readonly string[]).includes(itemKind)
             ? (itemKind as BlackoutPurchaseKind)
-            : mapEntitlementKindToBlackout(itemKind)
-        const digitalDelivery = BLACKOUT_DEAD_DROP_KINDS.includes(kind)
+            : mapEntitlementKindToBlackout(itemKind);
+        const digitalDelivery = BLACKOUT_DEAD_DROP_KINDS.includes(kind);
         const itemListingId =
-          (it.metadata?.creator_listing_id as string | undefined) ?? null
+          (it.metadata?.creator_listing_id as string | undefined) ?? null;
         const providerListingId =
           (it.metadata?.listing_id as string | undefined) ??
           itemListingId ??
           it.product_id ??
           it.variant_id ??
-          it.id
+          it.id;
         // Blackout-checkout carts carry exactly one item, stamped with the
         // same creator_listing_id as the order; only that item gets the bundle.
         const featureKeys =
-          checkoutListingId && (itemListingId ?? checkoutListingId) === checkoutListingId
+          checkoutListingId &&
+          (itemListingId ?? checkoutListingId) === checkoutListingId
             ? checkoutListingFeatureKeys
-            : []
+            : [];
 
         await emitBlackoutEvent(
           container,
@@ -164,6 +167,12 @@ export default async function emitBlackoutOrderPlaced({
             providerListingId,
             sku: it.variant_sku ?? null,
             kind,
+            // What this line actually charged, so the settling side can confirm
+            // the money that moved is the money it predicted. Medusa v2 prices
+            // are major units; Blackout's contract is minor units.
+            amountCents: Math.round(
+              Number(it.unit_price ?? 0) * 100 * Number(it.quantity ?? 1),
+            ),
           },
           {
             eventId: `purchase.succeeded:${orderId}:${it.id}`,
@@ -173,8 +182,8 @@ export default async function emitBlackoutOrderPlaced({
               digitalDelivery,
               ...(featureKeys.length > 0 ? { featureKeys } : {}),
             },
-          }
-        )
+          },
+        );
       }
     }
 
@@ -196,13 +205,13 @@ export default async function emitBlackoutOrderPlaced({
         currency,
         ...(vendorMxid ? { vendorMxid } : {}),
       },
-      { eventId: `order.created:${orderId}` }
-    )
+      { eventId: `order.created:${orderId}` },
+    );
   } catch (err) {
-    log.error(`[emit-blackout-order-placed] failed for order ${orderId}:`, err)
+    log.error(`[emit-blackout-order-placed] failed for order ${orderId}:`, err);
   }
 }
 
 export const config: SubscriberConfig = {
   event: "order.placed",
-}
+};

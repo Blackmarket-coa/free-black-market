@@ -12,9 +12,13 @@ import {
   type PlaybookId,
 } from "../modules/playbook"
 import { sendVendorAcceptedNotificationWorkflow } from "../workflows/send-vendor-accepted-notification"
+import { provisionNodeOperator } from "./provision-node-operator"
 import { appendPath } from "./url"
 import { sendCustomerAcceptedNotificationWorkflow } from "../workflows/send-customer-accepted-notification"
 import { VendorType } from "../modules/seller-extension/models/seller-metadata"
+import { SELLER_EXTENSION_MODULE } from "../modules/seller-extension"
+import type SellerExtensionService from "../modules/seller-extension/service"
+import { updateSellerMetadataRecord } from "../modules/seller-extension/metadata-service"
 import { GOVERNANCE_POWER_LEVEL } from "./matrix-service"
 import { getChatProvider } from "./chat"
 import { REQUEST_MODULE } from "../modules/request"
@@ -69,6 +73,12 @@ interface SellerRequestData {
     name: string
   }
   vendor_type?: string
+  /**
+   * The seller asked to run a Blackstar logistics node, answered in the
+   * onboarding survey. This, not vendor_type, is what decides whether approval
+   * hands them node credentials.
+   */
+  node_operator_opt_in?: boolean
   /** Primary playbook chosen via the resource quiz (canonical classification). */
   playbook?: string
   /** All roles the user selected (includes the primary). */
@@ -444,6 +454,9 @@ export class SellerApprovalService {
             seller_id: seller.id,
             vendor_type: vendorTypeEnum,
             enabled_extensions: enabledExtensions,
+            // Carry the survey answer onto the metadata row so the settings
+            // page agrees with the credential provisioning below.
+            node_operator_opt_in: data.node_operator_opt_in === true,
           },
         })
         log.info(`[SellerApproval] Metadata created with vendor_type: ${vendorTypeEnum}${enabledExtensions ? ` (+${enabledExtensions.length} union features)` : ""}`)
@@ -559,6 +572,53 @@ export class SellerApprovalService {
         log.info(`[SellerApproval] Vendor acceptance notification sent to ${maskEmail(data.member.email)}`)
       } catch (notificationError: any) {
         log.warn(`[SellerApproval] Failed to send vendor acceptance notification: ${notificationError.message}`)
+      }
+
+      try {
+        // A logistics seller also becomes a Blackstar node operator. Best
+        // effort: the bridge retries on its own, and an outage over there must
+        // never fail or roll back an approval over here.
+        const provisioned = await provisionNodeOperator(this.container, {
+          sellerId: seller.id,
+          sellerName: seller.name,
+          memberEmail: data.member.email,
+          memberName: data.member.name,
+          vendorType,
+          // Captured by the onboarding survey at registration. The flag is the
+          // real gate now; vendor_type only still counts for sellers who
+          // registered under the old logistics-archetype rule.
+          optedIn: data.node_operator_opt_in === true,
+        })
+
+        // Reconcile the metadata flag with what actually happened. Step 5 sets
+        // it at creation, but the sellerCreated subscriber can win that race
+        // and create the row first with defaults — and vendor_type === logistics
+        // provisions without the survey flag at all. Either way the settings
+        // page would read back "off" for a seller who holds a credential, and
+        // the next toggle would try to issue a second one.
+        if (provisioned.emitted) {
+          try {
+            const sellerExtension = this.container.resolve<SellerExtensionService>(
+              SELLER_EXTENSION_MODULE
+            )
+            const [meta] = await sellerExtension.listSellerMetadatas({
+              seller_id: seller.id,
+            })
+            if (meta && !meta.node_operator_opt_in) {
+              await updateSellerMetadataRecord(sellerExtension, [
+                { id: meta.id, node_operator_opt_in: true },
+              ])
+            }
+          } catch (flagError: any) {
+            log.warn(
+              `[SellerApproval] Could not record node operator opt-in for ${seller.id}: ${flagError.message}`
+            )
+          }
+        }
+      } catch (provisionError: any) {
+        log.warn(
+          `[SellerApproval] Failed to provision node operator for ${seller.id}: ${provisionError.message}`
+        )
       }
 
       return {

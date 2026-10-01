@@ -19,6 +19,7 @@ import { customerAcceptedEmail } from "./emails/customer-accepted";
 import { bookingConfirmationEmail } from "./emails/booking-confirmation";
 import { reviewRequestEmail } from "./emails/review-request";
 import { embedChatMessageEmail } from "./emails/embed-chat-message";
+import { sellerEmailVerificationEmail } from "./emails/seller-email-verification";
 
 enum Templates {
   ORDER_PLACED = "order-placed",
@@ -29,6 +30,7 @@ enum Templates {
   BOOKING_CONFIRMATION = "booking-confirmation",
   REVIEW_REQUEST = "review-request",
   EMBED_CHAT_MESSAGE = "embed-chat-message",
+  SELLER_EMAIL_VERIFICATION = "seller-email-verification",
 }
 
 const templates: {[key in Templates]?: (props: unknown) => React.ReactNode} = {
@@ -40,6 +42,7 @@ const templates: {[key in Templates]?: (props: unknown) => React.ReactNode} = {
   [Templates.BOOKING_CONFIRMATION]: bookingConfirmationEmail,
   [Templates.REVIEW_REQUEST]: reviewRequestEmail,
   [Templates.EMBED_CHAT_MESSAGE]: embedChatMessageEmail,
+  [Templates.SELLER_EMAIL_VERIFICATION]: sellerEmailVerificationEmail,
 }
 
 /**

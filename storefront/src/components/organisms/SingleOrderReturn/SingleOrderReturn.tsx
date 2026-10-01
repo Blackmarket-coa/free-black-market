@@ -44,9 +44,7 @@ export const SingleOrderReturn = ({
 
   const filteredItems: OrderLineItemWithReason[] = (item.order.items ?? [])
     .filter((orderItem) =>
-      item.line_items.some(
-        (lineItem) => lineItem.line_item_id === orderItem.id
-      )
+      item.line_items.some((lineItem) => lineItem.line_item_id === orderItem.id)
     )
     .map((orderItem) => {
       const correspondingLineItem = item.line_items.find(
@@ -115,7 +113,7 @@ export const SingleOrderReturn = ({
           <div className="p-4 flex justify-between">
             <div className="flex items-center gap-2">
               <Avatar
-                src={item.order.seller.photo || "/avatar-placeholder.jpg"}
+                src={item.order.seller.photo || "/talkjs-placeholder.jpg"}
               />
               <p className="label-lg text-primary">{item.order.seller.name}</p>
             </div>

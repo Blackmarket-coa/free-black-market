@@ -329,7 +329,7 @@ export function WalletDashboard() {
           <div className="max-w-md">
             <h3 className="font-semibold mb-4">Withdraw Funds</h3>
             <p className="text-sm text-gray-600 mb-4">
-              Transfer funds to your bank account. Usually arrives in 2-3 business days.
+              Transfer funds to your bank account by ACH. Weekly payouts are free; next-day, same-day and instant cost 0.25%, 0.5% and 1%.
             </p>
 
             {bankLoading ? (

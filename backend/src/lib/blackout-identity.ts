@@ -227,6 +227,37 @@ export async function resolveOrCreateCustomerForBlackoutUser(
   }
 }
 
+/**
+ * Resolve a customer from an mxid WITHOUT creating one.
+ *
+ * The sibling `resolveOrCreateCustomerForBlackoutUser` provisions on miss,
+ * which is right for an award (the reputation has to land somewhere) and wrong
+ * for a read. This one answers a question — "what is this person's standing?" —
+ * and a question must not create a customer row for every stranger whose join
+ * request happens to be checked against a tier gate.
+ *
+ * `null` means "no FBM identity", which is not the same as "no standing": the
+ * caller has to decide, and for the coalition gate that distinction is the
+ * difference between sending someone to a steward and telling them they are
+ * below the bar.
+ */
+export async function resolveCustomerIdByMxid(
+  container: MedusaContainer,
+  mxid: string
+): Promise<string | null> {
+  const conn = pg(container)
+  if (!conn || !mxid) return null
+  try {
+    const res = await conn.raw(
+      `SELECT id FROM customer WHERE metadata->>mxid = ? AND deleted_at IS NULL LIMIT 1`,
+      [mxid]
+    )
+    return firstString(res?.rows, "id")
+  } catch {
+    return null
+  }
+}
+
 function sanitizeForEmail(value: string): string {
   const cleaned = value.toLowerCase().replace(/[^a-z0-9._-]/g, "-")
   return cleaned.slice(0, 64) || "user"

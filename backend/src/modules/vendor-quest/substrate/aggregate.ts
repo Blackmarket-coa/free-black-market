@@ -10,6 +10,7 @@ import type {
   FundsSummary,
   PermitsSummary,
   PermitStanding,
+  CollectiveCoalitionInfo,
 } from "../types"
 
 /**
@@ -31,7 +32,7 @@ import type {
 export function aggregateSubstrates(
   substrates: VendorSubstrate[],
   memberIds: string[],
-  opts: { generatedAt?: string } = {}
+  opts: { generatedAt?: string; coalition?: CollectiveCoalitionInfo | null } = {}
 ): VendorSubstrate {
   const generated_at = opts.generatedAt ?? substrates[0]?.generated_at ?? ""
 
@@ -48,7 +49,11 @@ export function aggregateSubstrates(
     documents: unionDocuments(substrates.map((s) => s.documents)),
     funds: aggregateFunds(substrates.map((s) => s.funds)),
     permits: aggregatePermits(substrates.map((s) => s.permits)),
-    collective: { member_count: substrates.length, member_ids: memberIds },
+    collective: {
+      member_count: substrates.length,
+      member_ids: memberIds,
+      coalition: opts.coalition ?? null,
+    },
   }
 }
 
