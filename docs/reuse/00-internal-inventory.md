@@ -102,14 +102,32 @@ not the working tree, and stamp every status with the commit it was checked at.
   commercial marketplaces are third-party scrapers and must not be built on.
   Four new legal checkpoints (L11–L14) came out of this step.
 
-## Not yet done
+## Step 0.4 — done 2026-10-01, with four of five sections unfact-checked
 
-- **0.4 Existing nonprofit and mutual-aid platforms** to partner with rather
-  than compete against. HSDS 3.0 from 0.3 makes this far more tractable than it
-  looked: the question becomes "who already publishes or consumes an HSDS feed"
-  rather than "who will grant us API access".
-- **NAFC clinic locator** (carried from 0.3, not researched).
-- **Liveness** for every 0.2 candidate — last commit, maintainer count, and
-  whether it actually runs on the single DL360 alongside Node 22 + PostgreSQL.
+`docs/reuse/04-partner-platforms.md`. The one-line answer: **do not build a
+partner directory or a resource finder; publish FBM's partner directory as an
+HSDS 3.x feed, consume the two live open US HSDS feeds (Feed America, Mutual
+Aid NYC), and route money to whichever fiscal host a partner already has.**
+The only no-custody donation pattern found is a Stripe Connect *direct* charge
+on the nonprofit's own connected account — already FBM's processor. Eleven new
+legal checkpoints (L15–L25); L24 and L25 gate Open Decisions 2 and 1.
 
-No BUILD NEW decision is final until 0.4 lands and the operator approves.
+Four narrow BUILD NEW items are justified because nothing covers them: an
+HSDS 1.1→3.x upgrade in ingest (211 vendor exports are 1.1-era), a
+host+collective recipient model (every giving API models an EIN), group-
+controlled default-private publication (Mutual Aid LA pulled its directory
+over safety), and status/consent filtering on ingest (Mutual Aid NYC's public
+dump includes "Do Not Publish" records).
+
+**Limitation:** the HSDS section was adversarially fact-checked (14
+corrections applied); the 211, mutual-aid, food-access and giving sections were
+not — a rate limit cut those checks off. Their "unverified" labels are the
+researcher's own.
+
+## Still owed
+
+- **Liveness** for every 0.2 candidate and every 0.4 tool (last commit,
+  maintainer count, licence read from the repository) — GitHub API is 403 here.
+- **NAFC clinic locator** (carried from 0.3).
+- **Fact-check of 0.4 §3–§6** against primary sources.
+- **Operator approval** of the BUILD NEW list in 0.4 §7 before any of it starts.
