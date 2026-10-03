@@ -170,9 +170,13 @@ its stated commit.
 
 ### Step 0 progress
 
-**0.2 and 0.3 are done (2026-10-01)** — `docs/reuse/02-oss-equivalents.md` and
-`docs/reuse/03-public-data-and-apis.md`. **0.4 is still outstanding**, and no
-BUILD NEW decision is final until it lands and the operator approves.
+**0.2, 0.3 and 0.4 are done (2026-10-01)** — `docs/reuse/02-oss-equivalents.md`,
+`03-public-data-and-apis.md` and `04-partner-platforms.md`. **Step 0 is
+complete.** The BUILD NEW list in 0.4 §7 is four narrow items; **none starts
+until the operator approves it**, and 0.4 §3–§6 were not fact-checked (see its
+§9). Two of its checkpoints gate the open decisions directly: **L24** (Stripe
+destination vs direct charges) gates Decision 2 on custody, and **L25**
+(commercial co-venturer status) gates Decision 1 on the 0% donation fee.
 
 Two results from 0.3 change the Phase 1 design rather than merely informing it,
 so they are folded into the phase description below:

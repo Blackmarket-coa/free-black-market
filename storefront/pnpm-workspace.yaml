@@ -69,15 +69,39 @@ overrides:
   "brace-expansion@1": "^1.1.21"
   "brace-expansion@2": "^2.1.7"
   "brace-expansion@5": "^5.0.12"
+  # GHSA-3ppc-4f35-3m26, -23c5-xmqv-rm74, -7r86-cg39-jmmj (all HIGH) across
+  # the 3.x / 9.x / 10.x lines. Fixes: 3.1.4, 9.0.7, 10.2.3. Each line is a
+  # separate selector key because they are not interchangeable (minimatch@3
+  # needs the function-export brace-expansion 1.x -- the SD-22 trap; 10.x
+  # needs the named-export 5.x). storefront resolves 3.x and 9.x only.
+  "minimatch@3": "^3.1.4"
+  "minimatch@9": "^9.0.7"
+  # GHSA-25h7-pfq9-p65f and GHSA-rf6f-7fwh-wjgh (both HIGH), eslint's
+  # flat-cache serializer. No sibling root carries a pin because backend and
+  # root resolve 3.4.2 naturally; the panels and storefront did not.
+  "flatted": "^3.4.2"
+  # GHSA-52cp-r559-cp3m, -5p4m-2wfm-xmqj, -2883-xcg3-v3hh (all HIGH). Mirrors
+  # backend's "js-yaml@4": "^4.3.2" exactly. Selector-scoped so the 3.x line
+  # (which still has safeLoad consumers) is never forced onto 4.x.
+  "js-yaml@4": "^4.3.2"
+  # GHSA-96hv-2xvq-fx4p (HIGH), storybook's dev-server channel. Fixed 8.21.0.
+  # Selector-scoped so a future ws 5/6/7 consumer is untouched; caret-bounded.
+  "ws@8": "^8.21.0"
+  # GHSA-fv7c-fp4j-7gwp / CVE-2026-44728 (HIGH). Caret-bounded: an 8.0.x line
+  # exists on the registry. @babel/core stays at 7.28.x -- the plugin's peer is
+  # ^7.0.0-0 -- so nothing production-facing moves with it.
+  "@babel/plugin-transform-modules-systemjs": "^7.29.4"
   # Four HIGH advisories (GHSA-jqff-g426-hqxp, -f65p-4m7j-42xc,
   # -5jgf-p345-68v8, -fph4-wmhf-6fwf) are only fixed in 3.1.6. The floor
   # was ^3.1.5, which permitted 3.1.6 but left the lockfile resolved at
   # 3.1.5 — a permissive range is not a bump.
-  "fast-uri": "^3.1.6"
+  # Floor raised from ^3.1.6 to the real fix: ^3.1.6 PERMITTED 3.1.7 and the
+  # lockfile sat on it -- fine by luck, not by construction (CLAUDE.md rule 6).
+  "fast-uri": "^3.1.8"
   # CVE-2026-67213: infinite loop in nanoid's customAlphabet. Fixed in the
   # 3.x line at 3.3.17. Caret-bounded on purpose: a bare ">=3.3.17" lets pnpm
   # resolve to nanoid 6, which is ESM-only and breaks every CommonJS require.
-  "nanoid@3": "^3.3.17"
+  "nanoid@3": "^3.3.18"
   "serialize-javascript": ">=7.0.3"
   # GHSA-rgj7-g3m4-5g8c (HIGH): sharp bundles libheif, and 0.35.3 carries
   # GHSA-g89c-p67h-r497 / GHSA-2jg2-4ch7-h545 through it. Fixed in 0.35.4.
