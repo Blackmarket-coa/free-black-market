@@ -237,8 +237,9 @@ Smallest set that makes a nonprofit a first-class actor.
    `collective-campaign` and Blackout Coalition services rather than adding a
    container.
 4. **Money custody: split at checkout** direct to each org's own processor
-   account. No pooled BMC custody. **Decision 2 answered 2026-10-03: direct
-   split plus a record-only ledger** (see §6 for the custody reading).
+   account. No pooled BMC custody. **Decision 2 answered 2026-10-03: BMC
+   executes the split as one direct charge per org, plus a record-only
+   ledger** (see §6 for the custody reading).
 
 Not in Phase 1: restricted-fund ledger, donor receipts, grant exports, in-kind
 intake. They follow once custody and fee decisions are settled.
@@ -308,7 +309,7 @@ line in `docker-build.yml`'s `panelargs` — see the blocker in §1.
 | # | Question | Default if unanswered | Decision (operator, 2026-10-03) |
 |---|---|---|---|
 | 1 | 0% BMC fee on donations with processor pass-through? | Yes (Workstream A default) | **Decided: yes.** 0% BMC fee on donations, pledges and tips; processor cost passed through. Implemented as a transaction-kind rule in the platform-fee precedence chain, never as a plan rule. L25 (commercial co-venturer status at checkout) still has to be cleared by counsel before this is switched on for live money; the flag ships default-off. |
-| 2 | Money custody: direct split to each org's processor, or BMC-run ledger with counsel sign-off? | Direct split, no BMC custody | **Decided: direct split, with a ledger.** Read as: funds split at checkout directly to each org's own Stripe Connect account (direct charges, never destination charges transiting FBM's balance), plus a BMC-side **ledger that records every split and never holds funds** -- bookkeeping, not custody. That reading is the one that keeps Posture A intact; a fund-holding ledger would be custody and is gated by L24 and counsel. If the operator meant a fund-holding ledger, this row is wrong and the work stops at L24. |
+| 2 | Money custody: direct split to each org's processor, or BMC-run ledger with counsel sign-off? | Direct split, no BMC custody | **Decided: direct split, with a ledger, and the split is done by BMC** (operator, 2026-10-03, two messages). Read as: BMC's checkout computes and executes the split -- it issues **one direct Stripe Connect charge per recipient org**, each landing on that org's own connected account, and writes every leg to a BMC-side **ledger that records and never holds funds**. BMC does the split in software; no money transits an FBM balance. That is the one shape that keeps Posture A intact. The other way to "do the split" -- a single charge into FBM's Stripe balance followed by transfers out (Stripe's separate-charges-and-transfers or destination charges) -- is custody, is what **L24** exists for, and is not built unless counsel clears it in writing. If the operator specifically wants funds to transit BMC, that is an L24 answer, not a code change. |
 | 3 | Fiscal sponsorship: BMC supplies templates only, or partners with a sponsor org? | Templates only; BMC is not a party | **Decided: both.** BMC supplies the templates (Open Referral Data Collaboration Toolkit MOU, adapted -- L18) *and* partners with a sponsor org for groups that need a fiscal host (Open Collective hosts such as Raft; Zeffy for EIN-only groups, per 0.4 §6). BMC itself is still not a party to any sponsorship and holds no partner money. The sponsor-org relationship is a partner record with the "host + collective" shape from 0.4 §7, not a BMC product. |
 | 4 | Which 2–3 partner orgs for the pilot? | **Blocks Phase 2** | **Decided: Ground Up Liberation Project (GULP)** is the first pilot partner; a partner record is to be created for it. Only the name is known at decision time -- EIN, org type, fiscal host and contact are to be supplied by the operator, and the record stays unverified and unpublished until they are. Second and third partners still open; one partner is enough to unblock the Phase 2 build but not the live pilot. |
 | 5 | **New.** Is the $10/mo 0%-commission plan in scope? It does not exist and replaces the $29/$99/$249 ladder. | **Blocks nothing in Phase 1; treated as out of scope until answered** | Unanswered; default stands. |
@@ -319,7 +320,8 @@ line in `docker-build.yml`'s `panelargs` — see the blocker in §1.
 ## Changelog
 
 - **2026-10-03** — Operator answered Open Decisions 1–4: 0% on donations;
-  direct split with a record-only ledger (no custody); fiscal sponsorship via
+  direct split executed by BMC as one direct charge per org, with a
+  record-only ledger (no custody); fiscal sponsorship via
   partner sponsor orgs *and* templates; GULP named as the first pilot partner.
   Decision 6 answered later the same day, in two parts: the existing
   `VendorAdvance` + `InvestmentPool`, extended to verified nonprofits, with
