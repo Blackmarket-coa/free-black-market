@@ -312,7 +312,7 @@ line in `docker-build.yml`'s `panelargs` — see the blocker in §1.
 | 3 | Fiscal sponsorship: BMC supplies templates only, or partners with a sponsor org? | Templates only; BMC is not a party | **Decided: both.** BMC supplies the templates (Open Referral Data Collaboration Toolkit MOU, adapted -- L18) *and* partners with a sponsor org for groups that need a fiscal host (Open Collective hosts such as Raft; Zeffy for EIN-only groups, per 0.4 §6). BMC itself is still not a party to any sponsorship and holds no partner money. The sponsor-org relationship is a partner record with the "host + collective" shape from 0.4 §7, not a BMC product. |
 | 4 | Which 2–3 partner orgs for the pilot? | **Blocks Phase 2** | **Decided: Ground Up Liberation Project (GULP)** is the first pilot partner; a partner record is to be created for it. Only the name is known at decision time -- EIN, org type, fiscal host and contact are to be supplied by the operator, and the record stays unverified and unpublished until they are. Second and third partners still open; one partner is enough to unblock the Phase 2 build but not the live pilot. |
 | 5 | **New.** Is the $10/mo 0%-commission plan in scope? It does not exist and replaces the $29/$99/$249 ladder. | **Blocks nothing in Phase 1; treated as out of scope until answered** | Unanswered; default stands. |
-| 6 | **New.** Did "capital circles / first-order guarantee" mean `VendorAdvance` + `InvestmentPool`, or something genuinely new? | Treated as the existing two | Unanswered; default stands. |
+| 6 | **New.** Did "capital circles / first-order guarantee" mean `VendorAdvance` + `InvestmentPool`, or something genuinely new? | Treated as the existing two | **Decided: the existing two, extended to nonprofits.** `VendorAdvance` and `InvestmentPool` are the capital circles, and verified nonprofit orgs become eligible participants alongside vendors (as recipients of advances and as pool participants), gated on the org-verification status from Phase 1 item 1 and behind `FF_NONPROFIT_PARITY_V1`. Nothing new is built. **New legal checkpoint L26:** an investment pool with nonprofit participants raises securities and charitable-solicitation questions that differ from the vendor case (who may invest in, and who may receive from, a pool that includes a 501(c)(3)); counsel before any live pool includes a nonprofit. Scoped as Phase 1b: after items 1-4 land. |
 
 ---
 
@@ -321,7 +321,9 @@ line in `docker-build.yml`'s `panelargs` — see the blocker in §1.
 - **2026-10-03** — Operator answered Open Decisions 1–4: 0% on donations;
   direct split with a record-only ledger (no custody); fiscal sponsorship via
   partner sponsor orgs *and* templates; GULP named as the first pilot partner.
-  Decisions 5 and 6 stay on their defaults. Phase 1 build starts.
+  Decision 6 answered later the same day: the existing `VendorAdvance` +
+  `InvestmentPool`, extended to verified nonprofits (Phase 1b, new checkpoint
+  L26). Decision 5 stays on its default. Phase 1 build starts.
 - **2026-10-01** — Panel feature-flag wiring fixed in both panels, with a CI
   drift guard. Unblocks any panel-side flag this programme adds.
 - **2026-10-01** — File opened. Internal inventory verified (Reuse step 0.1).
