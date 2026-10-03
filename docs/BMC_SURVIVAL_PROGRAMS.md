@@ -231,13 +231,14 @@ Smallest set that makes a nonprofit a first-class actor.
 2. **0% BMC fee on donations / pledges / tips**, processor cost passed through.
    Implemented in the `platform-fee.ts` precedence chain as a
    transaction-kind rule, not a plan rule, so it cannot be confused with the
-   commission ladder. Pending Open Decision 1.
+   commission ladder. **Decision 1 answered 2026-10-03: yes.**
 3. **Shared-goal Coalition.** Goal + milestones + per-org role and contribution
    + public progress page + joint impact report. Extends the existing
    `collective-campaign` and Blackout Coalition services rather than adding a
    container.
 4. **Money custody: split at checkout** direct to each org's own processor
-   account. No pooled BMC custody. Pending Open Decision 2.
+   account. No pooled BMC custody. **Decision 2 answered 2026-10-03: direct
+   split plus a record-only ledger** (see §6 for the custody reading).
 
 Not in Phase 1: restricted-fund ledger, donor receipts, grant exports, in-kind
 intake. They follow once custody and fee decisions are settled.
@@ -247,7 +248,8 @@ intake. They follow once custody and fee decisions are settled.
 Operator's farm + 2–3 partner orgs. Paid boxes through FBM, sponsor-a-box
 pledges, volunteer-shift quests. Requires `FF_VENDOR_QUESTS_V1` on.
 **Acceptance: a full end-to-end run in Stripe test mode before any live money.**
-Partner orgs pending Open Decision 4.
+Partner orgs: **Ground Up Liberation Project (GULP) decided 2026-10-03**; two
+more still open (Decision 4).
 
 ### Phase 3 — Program templates + earning model (Workstreams C, D)
 
@@ -303,19 +305,23 @@ line in `docker-build.yml`'s `panelargs` — see the blocker in §1.
 
 ## 6. Open decisions
 
-| # | Question | Default if unanswered |
-|---|---|---|
-| 1 | 0% BMC fee on donations with processor pass-through? | Yes (Workstream A default) |
-| 2 | Money custody: direct split to each org's processor, or BMC-run ledger with counsel sign-off? | Direct split, no BMC custody |
-| 3 | Fiscal sponsorship: BMC supplies templates only, or partners with a sponsor org? | Templates only; BMC is not a party |
-| 4 | Which 2–3 partner orgs for the pilot? | **Blocks Phase 2** |
-| 5 | **New.** Is the $10/mo 0%-commission plan in scope? It does not exist and replaces the $29/$99/$249 ladder. | **Blocks nothing in Phase 1; treated as out of scope until answered** |
-| 6 | **New.** Did "capital circles / first-order guarantee" mean `VendorAdvance` + `InvestmentPool`, or something genuinely new? | Treated as the existing two |
+| # | Question | Default if unanswered | Decision (operator, 2026-10-03) |
+|---|---|---|---|
+| 1 | 0% BMC fee on donations with processor pass-through? | Yes (Workstream A default) | **Decided: yes.** 0% BMC fee on donations, pledges and tips; processor cost passed through. Implemented as a transaction-kind rule in the platform-fee precedence chain, never as a plan rule. L25 (commercial co-venturer status at checkout) still has to be cleared by counsel before this is switched on for live money; the flag ships default-off. |
+| 2 | Money custody: direct split to each org's processor, or BMC-run ledger with counsel sign-off? | Direct split, no BMC custody | **Decided: direct split, with a ledger.** Read as: funds split at checkout directly to each org's own Stripe Connect account (direct charges, never destination charges transiting FBM's balance), plus a BMC-side **ledger that records every split and never holds funds** -- bookkeeping, not custody. That reading is the one that keeps Posture A intact; a fund-holding ledger would be custody and is gated by L24 and counsel. If the operator meant a fund-holding ledger, this row is wrong and the work stops at L24. |
+| 3 | Fiscal sponsorship: BMC supplies templates only, or partners with a sponsor org? | Templates only; BMC is not a party | **Decided: both.** BMC supplies the templates (Open Referral Data Collaboration Toolkit MOU, adapted -- L18) *and* partners with a sponsor org for groups that need a fiscal host (Open Collective hosts such as Raft; Zeffy for EIN-only groups, per 0.4 §6). BMC itself is still not a party to any sponsorship and holds no partner money. The sponsor-org relationship is a partner record with the "host + collective" shape from 0.4 §7, not a BMC product. |
+| 4 | Which 2–3 partner orgs for the pilot? | **Blocks Phase 2** | **Decided: Ground Up Liberation Project (GULP)** is the first pilot partner; a partner record is to be created for it. Only the name is known at decision time -- EIN, org type, fiscal host and contact are to be supplied by the operator, and the record stays unverified and unpublished until they are. Second and third partners still open; one partner is enough to unblock the Phase 2 build but not the live pilot. |
+| 5 | **New.** Is the $10/mo 0%-commission plan in scope? It does not exist and replaces the $29/$99/$249 ladder. | **Blocks nothing in Phase 1; treated as out of scope until answered** | Unanswered; default stands. |
+| 6 | **New.** Did "capital circles / first-order guarantee" mean `VendorAdvance` + `InvestmentPool`, or something genuinely new? | Treated as the existing two | Unanswered; default stands. |
 
 ---
 
 ## Changelog
 
+- **2026-10-03** — Operator answered Open Decisions 1–4: 0% on donations;
+  direct split with a record-only ledger (no custody); fiscal sponsorship via
+  partner sponsor orgs *and* templates; GULP named as the first pilot partner.
+  Decisions 5 and 6 stay on their defaults. Phase 1 build starts.
 - **2026-10-01** — Panel feature-flag wiring fixed in both panels, with a CI
   drift guard. Unblocks any panel-side flag this programme adds.
 - **2026-10-01** — File opened. Internal inventory verified (Reuse step 0.1).
