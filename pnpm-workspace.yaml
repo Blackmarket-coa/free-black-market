@@ -20,6 +20,14 @@ packages:
 #     ignore this file entirely, with no warning at all. This directory is
 #     its own workspace root precisely so the flag is unnecessary.
 overrides:
+  # GHSA-62ch-8vmq-8xm7 (CVE-2026-96780, HIGH, published 2026-10-01): figlet
+  # <1.11.3 loops without bound when whitespaceBreak is used with a small width
+  # (denial of service). Pulled transitively via @jercle/yargonaut, which
+  # declares a range that resolved 1.9.4. Trivy's prod-scoped gate went red on
+  # main's scheduled scan the morning after the advisory landed. Caret-bound at
+  # the fix: 1.12.0 exists on the same major, and nothing here needs it pinned
+  # tighter.
+  "figlet": "^1.11.3"
   # Seven HIGH advisories are fixed only in 1.20.0: GHSA-3pq3-5fj3-cg6v
   # (HTTP/2 adapter bypasses the configured DNS lookup and proxy control),
   # -542g-h47m-68v8 (DoS via an unhandled 'error' event on the HTTP/2

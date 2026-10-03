@@ -13,6 +13,14 @@
 #     ignore this file entirely, with no warning at all. This directory is
 #     its own workspace root precisely so the flag is unnecessary.
 overrides:
+  # GHSA-62ch-8vmq-8xm7 (CVE-2026-96780, HIGH, published 2026-10-01): figlet
+  # <1.11.3 loops without bound when whitespaceBreak is used with a small width
+  # (denial of service). Pulled transitively via @jercle/yargonaut, which
+  # declares a range that resolved 1.9.4. Trivy's prod-scoped gate went red on
+  # main's scheduled scan the morning after the advisory landed. Caret-bound at
+  # the fix: 1.12.0 exists on the same major, and nothing here needs it pinned
+  # tighter.
+  "figlet": "^1.11.3"
   # GHSA-73wf-gq98-2v4g / GHSA-c83g-rgw3-j3cx: uncaught crash + prototype
   # write parsing untrusted browserslist-stats.json, and unbounded cache
   # growth to OOM. Both HIGH with a fix, so ignore-unfixed does not spare

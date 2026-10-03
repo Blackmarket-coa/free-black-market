@@ -5,6 +5,7 @@ settings:
   excludeLinksFromLockfile: false
 
 overrides:
+  figlet: ^1.11.3
   axios: ^1.20.0
   brace-expansion@1: ^1.1.21
   brace-expansion@5: ^5.0.12
@@ -1484,8 +1485,8 @@ packages:
   fetch-event-stream@0.1.6:
     resolution: {integrity: sha512-GREtJ5HNikdU2AXtZ6E/5bk+aslMU6ie5mPG6H9nvsdDkkHQ6m5lHwmmmDTOBexok9hApQ7EprsXCdmz9ZC68w==}
 
-  figlet@1.9.4:
-    resolution: {integrity: sha512-uN6QE+TrzTAHC1IWTyrc4FfGo2KH/82J8Jl1tyKB7+z5DBit/m3D++Iu5lg91qJMnQQ3vpJrj5gxcK/pk4R9tQ==}
+  figlet@1.12.0:
+    resolution: {integrity: sha512-Ith3WsUi0N/EqGt+0/F6XnWhT04sohhH2tT0Dq7GdUmWbMTIoCbg2Jq9qKggmTO62ST5kRCfB311EmIMbizGyA==}
     engines: {node: '>= 17.0.0'}
     hasBin: true
 
@@ -2672,7 +2673,7 @@ snapshots:
   '@jercle/yargonaut@1.1.5':
     dependencies:
       chalk: 4.1.2
-      figlet: 1.9.4
+      figlet: 1.12.0
       parent-require: 1.0.0
 
   '@jridgewell/gen-mapping@0.3.13':
@@ -3575,7 +3576,7 @@ snapshots:
 
   fetch-event-stream@0.1.6: {}
 
-  figlet@1.9.4:
+  figlet@1.12.0:
     dependencies:
       commander: 14.0.2
 
