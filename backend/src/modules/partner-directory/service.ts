@@ -3,13 +3,16 @@ import { MedusaError, MedusaService } from "@medusajs/framework/utils"
 import { getPartner, listPartners, partnerLinks } from "./catalog"
 import { PartnerOrg } from "./models"
 import {
+  NON_IRS_ORG_TYPES,
   normaliseEin,
   PARTNER_ORG_VERIFICATION_FIELDS,
   publishRefusal,
   type PartnerOrgRelationship,
   type PartnerOrgType,
+  type PartnerOrgVerification,
 } from "./org-types"
 import type { PartnerEntry, PartnerFilters } from "./types"
+import type { IrsLookupResult, IrsLookupState } from "../irs-exempt-org/lookup"
 
 export type PartnerOrgRecord = InferTypeOf<typeof PartnerOrg>
 
@@ -41,6 +44,49 @@ export type PartnerOrgWriteOptions = {
 
 /** Thrown when `published: true` is refused; `code` is the `PublishRefusalCode`. */
 export const PUBLISH_REFUSED = "partner_org_publish_refused"
+
+/** The only `verification_source` the system writes. An admin body cannot set one. */
+export const IRS_BULK_FILE_SOURCE = "irs_bulk_file"
+
+/**
+ * Lookup state → verification state. Spelled out, and typed over every
+ * `IrsLookupState`, so a fifth lookup state is a compile error here rather
+ * than a row silently left at its old status. `not_found` maps to
+ * `not_found` — never to `unverified` (which means "never asked") and never
+ * collapsed into `revoked` (L11).
+ */
+export const IRS_LOOKUP_TO_VERIFICATION: Readonly<Record<IrsLookupState, PartnerOrgVerification>> = {
+  pub78_eligible: "pub78_eligible",
+  bmf_only: "bmf_only",
+  not_found: "not_found",
+  revoked: "revoked",
+}
+
+/** Why `applyIrsLookup` wrote nothing. The row is left exactly as it was. */
+export type IrsLookupSkipReason =
+  /** The org has no EIN on record; there is nothing to look up. */
+  | "no_ein"
+  /** `coop` / `unincorporated`: the IRS has no opinion, so `not_found` would be a lie. */
+  | "non_irs_org_type"
+  /** The lookup carries no file date: no IRS file has been ingested yet, so no status can be dated (L11). */
+  | "no_irs_file"
+
+export type ApplyIrsLookupResult =
+  | {
+      applied: true
+      org: PartnerOrgRecord
+      /** True when this call set `published` from true to false. */
+      auto_unpublished: boolean
+    }
+  | { applied: false; reason: IrsLookupSkipReason; org: PartnerOrgRecord }
+
+/** Recorded under `metadata.auto_unpublished` when verification forces a row dark. */
+export type AutoUnpublishRecord = {
+  reason: string
+  verification_status: PartnerOrgVerification
+  verified_as_of: string | null
+  at: string
+}
 
 const KEY_PATTERN = /^[a-z0-9][a-z0-9_]{1,63}$/
 
@@ -102,6 +148,18 @@ class PartnerDirectoryModuleService extends MedusaService({ PartnerOrg }) {
   async getOrgByKey(key: string): Promise<PartnerOrgRecord | null> {
     const [row] = await this.listPartnerOrgs({ key })
     return row ?? null
+  }
+
+  /**
+   * One page of the orgs that carry an EIN, in a stable order, for the
+   * post-ingest re-verification sweep. Paging by `skip` is safe here because
+   * re-verification never changes whether a row has an EIN.
+   */
+  async listOrgsWithEin(page: { skip: number; take: number }): Promise<PartnerOrgRecord[]> {
+    return this.listPartnerOrgs(
+      { ein: { $ne: null } },
+      { skip: page.skip, take: page.take, order: { id: "ASC" } }
+    )
   }
 
   /**
@@ -178,8 +236,101 @@ class PartnerDirectoryModuleService extends MedusaService({ PartnerOrg }) {
       )
     }
 
-    const updated = await this.updatePartnerOrgs({ id: existing.id, ...toPersisted(data) })
+    // Retyping an org to coop / unincorporated takes it out of the IRS's
+    // jurisdiction, so an IRS-sourced status recorded while it was (or was
+    // thought to be) an exempt org must not survive the change: a coop with
+    // `not_found` on disk would be the exact collapse L11 forbids. The reset
+    // writes the verification columns directly because sanitiseWrite strips
+    // them from every caller-supplied patch by design.
+    const retypedToNonIrs =
+      data.org_type !== undefined &&
+      data.org_type !== existing.org_type &&
+      (data.org_type === "coop" || data.org_type === "unincorporated") &&
+      existing.verification_status !== "unverified"
+    const verificationReset = retypedToNonIrs
+      ? {
+          verification_status: "unverified" as const,
+          verification_source: null,
+          verified_as_of: null,
+          verification_checked_at: null,
+        }
+      : {}
+
+    const updated = await this.updatePartnerOrgs({ id: existing.id, ...toPersisted(data), ...verificationReset })
     return Array.isArray(updated) ? updated[0] : updated
+  }
+
+  // ── verification (the ingest's write path) ──────────────────────────────
+
+  /**
+   * Write what an IRS lookup said about an org. This is the only code that
+   * writes the four verification columns, and it writes them from a lookup
+   * result — never from a request body (`sanitiseWrite` strips those).
+   *
+   * Nothing is written when the IRS has no opinion to record:
+   *
+   * - no EIN on the row (there was nothing to look up);
+   * - `coop` / `unincorporated` (no IRS file covers them, so `not_found`
+   *   would read as "not a charity" — L11);
+   * - a lookup with no `as_of` (no file ingested yet; a status without the
+   *   file's date is exactly what L11 forbids showing).
+   *
+   * A lookup for a different EIN than the row's is refused outright.
+   *
+   * One state change the system makes on its own: when the new status would
+   * fail `publishRefusal` for a row that is currently published — `revoked`
+   * or `not_found` on an IRS org type, or any non-affirmed result on a row
+   * that was published while its type was unset — the row is unpublished and
+   * the reason and time recorded under `metadata.auto_unpublished`. L11
+   * forbids continuing to show a revoked (or no-longer-listed) org as
+   * verified, and S5's publish guard only ran on operator writes; this is
+   * that guard re-run when verification changes. A coop published with an
+   * operator ack is never touched (it is skipped above).
+   */
+  async applyIrsLookup(orgKey: string, lookup: IrsLookupResult, checkedAt: Date): Promise<ApplyIrsLookupResult> {
+    const org = await this.getOrgByKey(orgKey)
+    if (!org) {
+      throw new MedusaError(MedusaError.Types.NOT_FOUND, `Partner org ${orgKey} not found`)
+    }
+
+    if (!org.ein) return { applied: false, reason: "no_ein", org }
+    if (org.org_type && NON_IRS_ORG_TYPES.has(org.org_type)) {
+      return { applied: false, reason: "non_irs_org_type", org }
+    }
+    if (lookup.ein !== org.ein) {
+      throw new MedusaError(
+        MedusaError.Types.INVALID_DATA,
+        `IRS lookup is for EIN ${lookup.ein}, not this org's EIN ${org.ein}`
+      )
+    }
+    if (!(lookup.as_of instanceof Date)) return { applied: false, reason: "no_irs_file", org }
+
+    const verification_status = IRS_LOOKUP_TO_VERIFICATION[lookup.state]
+    const patch: Record<string, unknown> = {
+      verification_status,
+      verification_source: IRS_BULK_FILE_SOURCE,
+      verified_as_of: lookup.as_of,
+      verification_checked_at: checkedAt,
+    }
+
+    let auto_unpublished = false
+    if (org.published) {
+      const refusal = publishRefusal({ org_type: org.org_type ?? null, verification_status })
+      if (refusal) {
+        auto_unpublished = true
+        const record: AutoUnpublishRecord = {
+          reason: refusal.code,
+          verification_status,
+          verified_as_of: lookup.as_of.toISOString(),
+          at: checkedAt.toISOString(),
+        }
+        patch.published = false
+        patch.metadata = { ...(org.metadata ?? {}), auto_unpublished: record }
+      }
+    }
+
+    const updated = await this.updatePartnerOrgs({ id: org.id, ...patch })
+    return { applied: true, org: Array.isArray(updated) ? updated[0] : updated, auto_unpublished }
   }
 
   // ── guards ──────────────────────────────────────────────────────────────

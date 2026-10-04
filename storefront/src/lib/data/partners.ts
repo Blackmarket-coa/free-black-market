@@ -37,11 +37,51 @@ export type Partner = {
   products: string
 }
 
+/**
+ * Mirrors `backend/src/modules/partner-directory/org-types.ts`. Verification
+ * is written only by the IRS-file ingest; the storefront never renders these
+ * keys raw — `lib/helpers/partner-org-badge.ts` turns each into copy with
+ * the IRS file's as-of date (legal checkpoint L11).
+ */
+export type PartnerOrgType = "irs_501c3" | "irs_501c4" | "coop" | "unincorporated"
+
+export type PartnerOrgVerification =
+  | "unverified"
+  | "pending"
+  | "pub78_eligible"
+  | "bmf_only"
+  | "not_found"
+  | "revoked"
+
+export type PartnerOrgRelationship = "standalone" | "fiscal_host" | "sponsored_collective"
+
+/**
+ * A published pilot-partner record, as `GET /store/partners` serialises it
+ * through its allow-list (`PUBLIC_PARTNER_ORG_FIELDS`). No EIN, no Stripe
+ * account, no check timestamp — only the IRS file date (`verified_as_of`).
+ */
+export type PartnerOrg = {
+  key: string
+  name: string
+  org_type: PartnerOrgType | null
+  verification_status: PartnerOrgVerification
+  /** ISO timestamp of the IRS file that produced the status; null when never checked. */
+  verified_as_of: string | null
+  relationship: PartnerOrgRelationship
+  fiscal_host_key: string | null
+  url: string | null
+  tagline: string | null
+  states: string[]
+  serves: PartnerServes[]
+}
+
 export type PartnerDirectory = {
   partners: Partner[]
   count: number
   kinds: PartnerKind[]
   serves: PartnerServes[]
+  /** Present only while the API's FF_NONPROFIT_PARITY_V1 is on. */
+  orgs?: PartnerOrg[]
 }
 
 /**

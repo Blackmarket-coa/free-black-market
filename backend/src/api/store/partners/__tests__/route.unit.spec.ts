@@ -176,4 +176,54 @@ describe("GET /store/partners — partner orgs", () => {
     process.env[FLAG] = "1"
     expect((await call({}, seeded())).body).not.toHaveProperty("orgs")
   })
+
+  it("carries what the storefront badge needs — org_type, status and the IRS file date — for every published state", async () => {
+    process.env[FLAG] = "true"
+    const body = (await call({}, [
+      {
+        key: "c4_bmf",
+        name: "A 501(c)(4)",
+        org_type: "irs_501c4",
+        ein: "000000001",
+        verification_status: "bmf_only",
+        verification_source: "irs_bulk_file",
+        verified_as_of: new Date("2026-09-07T04:13:27Z"),
+        verification_checked_at: new Date("2026-10-04T04:00:00Z"),
+        published: true,
+      },
+      {
+        // Published with an operator ack; the ingest leaves coops unverified and undated.
+        key: "a_coop",
+        name: "A Coop",
+        org_type: "coop",
+        verification_status: "unverified",
+        published: true,
+      },
+      {
+        // Auto-unpublished by the ingest when the IRS list said revoked: never shown.
+        key: "revoked_c3",
+        name: "Revoked",
+        org_type: "irs_501c3",
+        ein: "000000002",
+        verification_status: "revoked",
+        verified_as_of: new Date("2026-09-30T09:14:54Z"),
+        published: false,
+        metadata: { auto_unpublished: { reason: "unverified_irs_org" } },
+      },
+    ])).body as Body
+
+    expect(body.orgs!.map((o) => o.key)).toEqual(["c4_bmf", "a_coop"])
+    expect(body.orgs![0]).toMatchObject({
+      org_type: "irs_501c4",
+      verification_status: "bmf_only",
+      verified_as_of: new Date("2026-09-07T04:13:27Z"),
+    })
+    expect(body.orgs![1]).toMatchObject({ org_type: "coop", verification_status: "unverified", verified_as_of: null })
+    // The check time and the auto-unpublish record stay server-side.
+    for (const o of body.orgs!) {
+      expect(o).not.toHaveProperty("verification_checked_at")
+      expect(o).not.toHaveProperty("metadata")
+    }
+    expect(JSON.stringify(body)).not.toContain("revoked")
+  })
 })
