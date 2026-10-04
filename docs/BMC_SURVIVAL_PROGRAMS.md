@@ -333,6 +333,11 @@ line in `docker-build.yml`'s `panelargs` — see the blocker in §1.
 
 ## Changelog
 
+- **2026-10-04 (part B)** — S2 (cross-app flag wiring; storefront now under the
+  drift guard; admin-panel deliberately unwired) and S8 (IRS lookup wired into
+  partner verification: `applyIrsLookup` as the only writer, admin verify route,
+  post-ingest re-verify, auto-unpublish on revoked / not_found, storefront badge
+  copy) built on the part-B branch, default-off; ledger rows P1-8, P1-9.
 - **2026-10-04** — Phase 1 slices S1 (flags), S3+S4 (0% donation rung + DONATION
   line), S5+S6 (`partner_org` record, admin CRUD, GULP seed) and S7 (IRS
   exempt-org ingest) built on the working branch, all default-off; ledger rows

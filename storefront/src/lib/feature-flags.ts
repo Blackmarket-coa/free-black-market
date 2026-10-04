@@ -22,4 +22,13 @@ export const phase1ModuleFlags = {
   // whether or not anyone funds a pool — so the page and every link to it stay
   // dark with the API. See docs/TRANSMUTATION_STRATEGY.md §7.2.
   investmentPools: enabled(process.env.NEXT_PUBLIC_FF_INVESTMENT_POOLS_V1),
+  // Mirrors the API's FF_NONPROFIT_PARITY_V1 (docs/BMC_SURVIVAL_PROGRAMS.md
+  // Phase 1). Gates the pilot-partner org rows and their IRS-file
+  // verification badges on /partners: showing a third party's tax status is
+  // legal checkpoint L11, and the donation path behind it is L24/L25
+  // (docs/legal/checkpoints.md). Set only together with the API's flag.
+  nonprofitParity: enabled(process.env.NEXT_PUBLIC_FF_NONPROFIT_PARITY_V1),
+  // Mirrors the API's FF_SHARED_GOAL_COALITION_V1: shared-goal Coalition
+  // campaign pages. Commercial co-venturer territory (L25); dark with the API.
+  sharedGoalCoalition: enabled(process.env.NEXT_PUBLIC_FF_SHARED_GOAL_COALITION_V1),
 }

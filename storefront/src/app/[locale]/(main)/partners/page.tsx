@@ -1,6 +1,8 @@
 import type { Metadata } from "next"
 import LocalizedClientLink from "@/components/molecules/LocalizedLink/LocalizedLink"
-import { listPartners, type Partner, type PartnerDirectory } from "@/lib/data/partners"
+import { listPartners, type Partner, type PartnerDirectory, type PartnerOrg } from "@/lib/data/partners"
+import { phase1ModuleFlags } from "@/lib/feature-flags"
+import { partnerOrgBadge, type PartnerOrgBadgeTone } from "@/lib/helpers/partner-org-badge"
 
 export const metadata: Metadata = {
   title: "Lenders & Partners",
@@ -33,11 +35,64 @@ const SERVES_LABELS: Record<string, string> = {
 
 const label = (map: Record<string, string>, key: string) => map[key] ?? key
 
+const BADGE_TONE_CLASS: Record<PartnerOrgBadgeTone, string> = {
+  affirmed: "bg-green-100 text-green-800",
+  neutral: "bg-gray-100 text-gray-700",
+  caution: "bg-amber-100 text-amber-900",
+}
+
+/**
+ * One published pilot-partner org. The badge copy comes from
+ * `partnerOrgBadge`, which carries the IRS file's as-of date and never a raw
+ * status key (legal checkpoint L11). Rendered only behind
+ * NEXT_PUBLIC_FF_NONPROFIT_PARITY_V1; the API's own flag decides whether
+ * `orgs` is in the response at all.
+ */
+function PartnerOrgCard({ org, locale }: { org: PartnerOrg; locale: string }) {
+  const badge = partnerOrgBadge(org, locale)
+  return (
+    <article className="flex flex-col rounded-xl border p-4">
+      <div className="flex items-start justify-between gap-2">
+        <h3 className="font-semibold">{org.name}</h3>
+        <span
+          className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold ${BADGE_TONE_CLASS[badge.tone]}`}
+        >
+          {badge.label}
+        </span>
+      </div>
+      {org.states.length > 0 || org.serves.length > 0 ? (
+        <p className="mt-1 text-xs uppercase tracking-wide text-ui-fg-muted">
+          {[
+            org.states.join(", "),
+            org.serves.map((s) => label(SERVES_LABELS, s)).join(", "),
+          ]
+            .filter(Boolean)
+            .join(" · ")}
+        </p>
+      ) : null}
+      {org.tagline ? <p className="mt-2 text-sm text-ui-fg-subtle">{org.tagline}</p> : null}
+      {org.url ? (
+        <a
+          href={org.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="mt-4 inline-block text-sm font-medium text-blue-700 underline"
+        >
+          Visit {org.name} ↗
+        </a>
+      ) : null}
+    </article>
+  )
+}
+
 export default async function PartnersPage({
+  params,
   searchParams,
 }: {
+  params: Promise<{ locale: string }>
   searchParams: Promise<{ kind?: string; state?: string; serves?: string }>
 }) {
+  const { locale } = await params
   const { kind, state, serves } = await searchParams
 
   let directory: PartnerDirectory = { partners: [], count: 0, kinds: [], serves: [] }
@@ -50,6 +105,9 @@ export default async function PartnersPage({
 
   const kinds = directory.kinds.length ? directory.kinds : (Object.keys(KIND_LABELS) as Partner["kind"][])
   const audiences = directory.serves.length ? directory.serves : (Object.keys(SERVES_LABELS) as Partner["serves"])
+  // Both sides must be on: the API only sends `orgs` behind its flag, and
+  // this page only renders them behind the storefront's.
+  const orgs = phase1ModuleFlags.nonprofitParity && !failed ? (directory.orgs ?? []) : []
 
   return (
     <main className="container py-10">
@@ -163,6 +221,25 @@ export default async function PartnersPage({
           ))}
         </div>
       )}
+
+      {orgs.length > 0 ? (
+        <section className="mt-12" aria-labelledby="partner-orgs-heading">
+          <h2 id="partner-orgs-heading" className="text-2xl font-semibold">
+            Pilot partner organisations
+          </h2>
+          <p className="mt-2 max-w-2xl text-sm text-ui-fg-subtle">
+            Organisations working with the coalition directly. Each badge states what the IRS
+            exempt-organisation files said about the organisation, and the date of the file it was
+            read from. A status that is not confirmed is not a judgement about the organisation —
+            many eligible organisations are not listed.
+          </p>
+          <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {orgs.map((org) => (
+              <PartnerOrgCard key={org.key} org={org} locale={locale} />
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       <p className="mt-10 text-xs text-ui-fg-subtle">
         Looking for readiness help before you apply? The{" "}
