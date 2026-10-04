@@ -64,8 +64,39 @@ function withDefaults(input: Record<string, unknown>, index: number): OrgRow {
   }
 }
 
+/**
+ * Equality, plus the one operator the service uses (`{ $ne: value }` in
+ * `listOrgsWithEin`). Anything else throws so a new operator in the service
+ * cannot be matched by accident and pass by fallback.
+ */
 function matches(row: OrgRow, filter: Filter): boolean {
-  return Object.entries(filter).every(([k, want]) => (row as Record<string, unknown>)[k] === want)
+  return Object.entries(filter).every(([k, want]) => {
+    const have = (row as Record<string, unknown>)[k]
+    if (want && typeof want === "object" && !(want instanceof Date)) {
+      const ops = Object.entries(want as Record<string, unknown>)
+      return ops.every(([op, v]) => {
+        if (op === "$ne") return have !== v
+        throw new Error(`in-memory partner orgs: unsupported filter operator ${op}`)
+      })
+    }
+    return have === want
+  })
+}
+
+type ListConfig = { skip?: number; take?: number; order?: Record<string, "ASC" | "DESC"> }
+
+function page(rows: OrgRow[], config: ListConfig = {}): OrgRow[] {
+  let out = rows
+  if (config.order) {
+    const [[field, dir]] = Object.entries(config.order)
+    out = [...out].sort((a, b) => {
+      const x = String((a as Record<string, unknown>)[field])
+      const y = String((b as Record<string, unknown>)[field])
+      return dir === "DESC" ? y.localeCompare(x) : x.localeCompare(y)
+    })
+  }
+  const skip = config.skip ?? 0
+  return config.take === undefined ? out.slice(skip) : out.slice(skip, skip + config.take)
 }
 
 export type InMemoryDirectory = {
@@ -81,7 +112,8 @@ export function makeInMemoryDirectory(seed: Array<Partial<OrgRow> & { key: strin
   const service = Object.create(PartnerDirectoryModuleService.prototype) as PartnerDirectoryModuleService
   const shadow = service as unknown as Record<string, unknown>
 
-  shadow.listPartnerOrgs = async (filter: Filter = {}) => rows.filter((r) => matches(r, filter))
+  shadow.listPartnerOrgs = async (filter: Filter = {}, config: ListConfig = {}) =>
+    page(rows.filter((r) => matches(r, filter)), config)
 
   shadow.retrievePartnerOrg = async (id: string) => {
     const row = rows.find((r) => r.id === id)

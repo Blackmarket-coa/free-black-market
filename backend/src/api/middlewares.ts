@@ -1318,7 +1318,9 @@ export default defineMiddlewares({
     },
     // BMC Survival Programs, Phase 1: pilot-partner org records
     // (docs/BMC_SURVIVAL_PROGRAMS.md §2 item 1). Operator-only and dark until
-    // FF_NONPROFIT_PARITY_V1 is set; the handlers repeat the flag check.
+    // FF_NONPROFIT_PARITY_V1 is set; the handlers repeat the flag check. The
+    // glob also covers POST /admin/partners/orgs/:key/verify (express 4's `*`
+    // spans path segments; pinned in verify-route.unit.spec.ts).
     {
       matcher: "/admin/partners/orgs*",
       middlewares: [
