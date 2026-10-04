@@ -333,6 +333,13 @@ line in `docker-build.yml`'s `panelargs` — see the blocker in §1.
 
 ## Changelog
 
+- **2026-10-04 (part D)** — S11 (shared-goal Coalitions as a `goal_kind` on
+  `collective-campaign`: participants, milestones, 0% fee, public progress and
+  joint impact report; contributions counted from the S9 direct-charge webhook
+  by one row per PaymentIntent, totals derived, full refunds reversed; no
+  backings, no escrow, no custody) built on the part-D branch, default-off;
+  ledger row P1-13. **All four Phase 1 items are now built.** Live money still
+  waits on L24 / L25; Phase 1b (L26) is next.
 - **2026-10-04 (part C)** — S9 (direct-charge donation checkout on the org's own
   Stripe account, record-only `donation_split_record`, service-layer guard,
   `stripe-connect-direct` provider, Connect webhook; Posture A doc corrected to
