@@ -85,7 +85,19 @@ export function findForbiddenDirectChargeParams(input: unknown): string[] {
  */
 export const DIRECT_CHARGE_CONTEXT_KEY = "fbm_direct_charge" as const
 
-export const DIRECT_CHARGE_KINDS = ["donation", "donation_pledge"] as const
+/**
+ * What a direct charge on a partner org's connected account can be for.
+ *
+ *   - `donation` / `donation_pledge`: the S9 donation checkout; recorded on
+ *     `donation_split_record` by the donation module.
+ *   - `pool_contribution`: a contribution to a nonprofit-CARRIED investment
+ *     pool (docs/BMC_SURVIVAL_PROGRAMS.md Decision 7; legal checkpoint L26).
+ *     Same no-custody shape — one intent ON the carrier's own account, 0 BMC
+ *     fee — recorded as a `hawala_investment` row of settlement CARRIER by
+ *     `recordCarrierContribution`, never on `donation_split_record` (the
+ *     donation guard refuses it by kind) and never as a hawala ledger leg.
+ */
+export const DIRECT_CHARGE_KINDS = ["donation", "donation_pledge", "pool_contribution"] as const
 export type DirectChargeKind = (typeof DIRECT_CHARGE_KINDS)[number]
 
 export type DirectChargeContext = {
@@ -94,6 +106,12 @@ export type DirectChargeContext = {
   /** The recipient org's key, stamped on the intent so the webhook can find it. */
   org_key: string
   kind: DirectChargeKind
+  /**
+   * The carried pool the contribution is for. Required for, and only for,
+   * `pool_contribution`; stamped on the intent as `fbm_pool_id` so the Connect
+   * webhook can find the pool's PENDING record.
+   */
+  pool_id?: string
 }
 
 /**
@@ -104,11 +122,16 @@ export function readDirectChargeContext(context: unknown): DirectChargeContext |
   if (!context || typeof context !== "object") return null
   const marker = (context as Record<string, unknown>)[DIRECT_CHARGE_CONTEXT_KEY]
   if (!marker || typeof marker !== "object") return null
-  const { connected_account_id, org_key, kind } = marker as Record<string, unknown>
+  const { connected_account_id, org_key, kind, pool_id } = marker as Record<string, unknown>
   if (!isStripeAccountId(connected_account_id)) return null
   if (typeof org_key !== "string" || org_key.length === 0) return null
   if (typeof kind !== "string" || !(DIRECT_CHARGE_KINDS as readonly string[]).includes(kind)) return null
-  return { connected_account_id, org_key, kind: kind as DirectChargeKind }
+  const hasPool = typeof pool_id === "string" && pool_id.length > 0
+  if (kind === "pool_contribution" && !hasPool) return null
+  if (kind !== "pool_contribution" && pool_id !== undefined && pool_id !== null) return null
+  return hasPool
+    ? { connected_account_id, org_key, kind: kind as DirectChargeKind, pool_id: pool_id as string }
+    : { connected_account_id, org_key, kind: kind as DirectChargeKind }
 }
 
 /** True for the error Stripe raises when an idempotency key is reused with different parameters. */

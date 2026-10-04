@@ -3,6 +3,7 @@ const log = createLogger("api/vendor/hawala/pools/[id]/withdraw")
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { HAWALA_LEDGER_MODULE } from "../../../../../../modules/hawala-ledger"
 import { isCarriedPool } from "../../../../../../modules/hawala-ledger/carrier"
+import { featureFlagState } from "../../../../../../shared/feature-flags"
 import { resolveRequestIdempotencyKey } from "../../../../../../shared/request-idempotency"
 import HawalaLedgerModuleService from "../../../../../../modules/hawala-ledger/service"
 import { withdrawPoolSchema, validateInput } from "../../../../../hawala-validation"
@@ -47,6 +48,22 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       return res.status(409).json({
         type: "carried_pool",
         message: `This pool is carried by ${pool.carrier_org_key}; its funds are held by the carrier and cannot be withdrawn from BMC's ledger.`,
+      })
+    }
+
+    // Designated legacy funds (docs/BMC_SURVIVAL_PROGRAMS.md Decision 8): with
+    // FF_NONPROFIT_PARITY_V1 on, the ledger money already in an uncarried pool
+    // is held in a DESIGNATED account — it may only go back to the people who
+    // contributed it (refund reversals, the operator's designated returns),
+    // never into the producer's own earnings. Refused here before any balance
+    // read, earnings-account creation or transfer; the service refuses the
+    // same leg (`designated_outbound_only`) for any other caller. Flag off:
+    // unchanged.
+    if (featureFlagState.isEnabled("NONPROFIT_PARITY_V1")) {
+      return res.status(409).json({
+        type: "designated_outbound_only",
+        message:
+          "This pool's funds are held in a designated account: they can only be returned to the people who contributed them, not withdrawn to your earnings.",
       })
     }
 

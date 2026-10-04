@@ -50,15 +50,21 @@ import { featureFlagState } from "../../../shared/feature-flags"
  * set for completeness but is not a kind of charge FBM collects — tips are
  * kept out of the fee base by `calculateBreakdown` and no caller classifies
  * one — so advertising "tips 0%" here would describe a mechanism that does not
- * exist.
+ * exist. `pool_contribution` (a contribution to a nonprofit-carried investment
+ * pool, Decision 7) is published only while FF_INVESTMENT_POOLS_V1 is ALSO on:
+ * the pool routes are dark without it, and a public fee page must not be the
+ * first place an offering gated on counsel (L26) is mentioned.
  */
-const PUBLISHED_ZERO_FEE_KINDS: readonly PlatformFeeTransactionKind[] = [
-  ...ZERO_FEE_TRANSACTION_KINDS,
-].filter((kind) => kind !== "tip")
+function publishedZeroFeeKinds(): readonly PlatformFeeTransactionKind[] {
+  const poolsLive = featureFlagState.isEnabled("INVESTMENT_POOLS_V1")
+  return [...ZERO_FEE_TRANSACTION_KINDS].filter(
+    (kind) => kind !== "tip" && (kind !== "pool_contribution" || poolsLive)
+  )
+}
 
 function publishedTransactionKinds(): Record<string, number> {
   return Object.fromEntries(
-    PUBLISHED_ZERO_FEE_KINDS.map((kind) => [
+    publishedZeroFeeKinds().map((kind) => [
       kind,
       resolvePlatformFee({ platformDefault: PLATFORM_DEFAULT_FEE_PERCENT, kind })
         .percent,

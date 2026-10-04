@@ -77,6 +77,8 @@ export interface InvestmentPool {
   total_raised: number
   minimum_investment: number
   roi_type: string
+  /** What GET /store/hawala/pools returns: the pool's `roi_rate` or `fixed_roi_rate` (an annual percentage), or null. */
+  roi_rate?: number | null
   fixed_roi_rate?: number
   revenue_share_percentage?: number
   product_credit_multiplier?: number
@@ -87,6 +89,51 @@ export interface InvestmentPool {
   carrier?: PoolCarrier | null
   start_date?: string
   end_date?: string
+}
+
+/**
+ * What `POST /store/hawala/pools/:id/contributions` answers: a PaymentIntent
+ * the API created ON the carrier's own Stripe account (confirm it with
+ * Stripe.js loaded for `stripe_account_id`), and the PENDING record FBM wrote
+ * for it. Free Black Market never holds the funds and takes no fee; the pool's
+ * total updates when the carrier's processor confirms the payment (via the
+ * Connect webhook), not when this returns.
+ */
+export interface CarriedPoolContributionIntent {
+  pool_id: string
+  pool_name: string
+  carrier_org_key: string
+  carrier_org_name: string
+  payment_collection_id: string
+  payment_session_id: string
+  stripe_payment_intent_id: string
+  stripe_account_id: string
+  client_secret: string | null
+  currency_code: string
+  gross_cents: number
+  bmc_fee_cents: 0
+  carrier_verification_status: string
+  carrier_verified_as_of: string | null
+  record_status: "PENDING"
+  disclosure: string
+}
+
+/**
+ * A refused hawala request, with the server's `type` beside its message
+ * (`feature_disabled`, `not_allowed`, `pool_not_open`, `no_carrier`,
+ * `fee_not_zero`, `below_minimum`, ...). Legacy handlers that answer only
+ * `{ error }` surface as `request_failed`.
+ */
+export class HawalaRequestError extends Error {
+  readonly type: string
+  readonly status: number
+
+  constructor(type: string, message: string, status: number) {
+    super(message)
+    this.name = "HawalaRequestError"
+    this.type = type
+    this.status = status
+  }
 }
 
 const API_BASE = process.env.NEXT_PUBLIC_MEDUSA_BACKEND_URL || "http://localhost:9000"
@@ -130,11 +177,32 @@ async function fetchWithAuth(url: string, options: RequestInit = {}) {
   if (!response.ok) {
     const error = await response.json().catch(() => ({ error: "Request failed" }))
     // Legacy handlers answer `{ error }`; the pool refusals (409 carried_pool /
-    // no_carrier) answer `{ type, message }`. Surface whichever the server sent.
-    throw new Error(error.error || error.message || "Request failed")
+    // no_carrier / pool_not_open, 403 not_allowed) answer `{ type, message }`.
+    // Surface whichever the server sent, with the type beside it.
+    throw new HawalaRequestError(
+      typeof error.type === "string" ? error.type : "request_failed",
+      error.error || error.message || "Request failed",
+      response.status
+    )
   }
 
   return response.json()
+}
+
+/**
+ * Start a contribution to a nonprofit-CARRIED pool: the API mints a
+ * PaymentIntent ON the carrier's connected account (BMC takes 0, the carrier
+ * bears card processing) and records a PENDING row; the caller then confirms
+ * the intent with Stripe.js for `stripe_account_id`. One Idempotency-Key per
+ * submission, so a transport retry reuses the same intent and record.
+ * Rejects with a `HawalaRequestError` carrying the server's `{ type, message }`.
+ */
+export async function contributeToCarriedPool(poolId: string, amountCents: number): Promise<CarriedPoolContributionIntent> {
+  return fetchWithAuth(`/store/hawala/pools/${encodeURIComponent(poolId)}/contributions`, {
+    method: "POST",
+    headers: { "Idempotency-Key": newIdempotencyKey() },
+    body: JSON.stringify({ amount_cents: Math.round(amountCents), currency_code: "usd" }),
+  })
 }
 
 export function useWallet() {

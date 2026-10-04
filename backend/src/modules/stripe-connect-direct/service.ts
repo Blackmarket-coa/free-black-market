@@ -121,7 +121,7 @@ class StripeConnectDirectProviderService extends AbstractPaymentProvider<Payment
     if (!marker) {
       throw new MedusaError(
         MedusaError.Types.NOT_ALLOWED,
-        `stripe-connect-direct: refused — the session context carries no server-set \`${DIRECT_CHARGE_CONTEXT_KEY}\` marker. This provider mints direct charges only for the donation checkout, which names the recipient org's connected account itself; a connected account supplied in session data is not accepted. See docs/POSTURE_A_COMPLIANCE.md rule 10.`
+        `stripe-connect-direct: refused — the session context carries no server-set \`${DIRECT_CHARGE_CONTEXT_KEY}\` marker. This provider mints direct charges only for the donation checkout and the carried-pool contribution checkout, which name the recipient org's connected account themselves; a connected account supplied in session data is not accepted. See docs/POSTURE_A_COMPLIANCE.md rule 10.`
       )
     }
     const fromData = data?.connected_account_id
@@ -248,6 +248,11 @@ class StripeConnectDirectProviderService extends AbstractPaymentProvider<Payment
     metadata.fbm_kind = marker.kind
     metadata.fbm_org_key = marker.org_key
     metadata.fbm_connected_account_id = account
+    // A carried-pool contribution names its pool (Decision 7); the Connect
+    // webhook finds the pool's PENDING record by it. Only the marker can set
+    // it, so a data-bag `fbm_pool_id` on any other kind is dropped.
+    if (marker.kind === "pool_contribution") metadata.fbm_pool_id = marker.pool_id as string
+    else delete metadata.fbm_pool_id
 
     const params: Stripe.PaymentIntentCreateParams = {
       amount: this.toSmallestUnit(amount, currency_code),

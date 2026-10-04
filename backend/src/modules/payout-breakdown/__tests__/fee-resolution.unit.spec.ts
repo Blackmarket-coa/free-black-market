@@ -200,10 +200,14 @@ describe("resolvePlatformFee transaction kind", () => {
   it("names exactly the kinds that carry no fee", () => {
     // Pinned so a new kind cannot slip into the zero set unreviewed. `pledge`
     // is deliberately absent: collective-campaign backings and demand-pool
-    // participant pledges keep their own fee paths.
+    // participant pledges keep their own fee paths. `pool_contribution` is a
+    // contribution to a nonprofit-CARRIED pool, a direct charge on the
+    // carrier's own account (Decision 7): 0 by the same mechanism as a
+    // donation, recorded as an operator assumption in docs/AUDIT_DEBT.md.
     expect([...ZERO_FEE_TRANSACTION_KINDS].sort()).toEqual([
       "donation",
       "donation_pledge",
+      "pool_contribution",
       "tip",
     ])
     expect(ZERO_FEE_TRANSACTION_KINDS.has("sale")).toBe(false)
@@ -212,7 +216,7 @@ describe("resolvePlatformFee transaction kind", () => {
     ).toBe(false)
   })
 
-  it.each(["donation", "donation_pledge", "tip"] as const)(
+  it.each(["donation", "donation_pledge", "tip", "pool_contribution"] as const)(
     "charges 0 on a %s even when a non-zero override and a plan are present",
     (kind) => {
       const r = resolvePlatformFee({ ...contested, kind })

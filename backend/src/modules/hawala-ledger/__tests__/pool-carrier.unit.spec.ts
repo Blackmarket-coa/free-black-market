@@ -26,7 +26,18 @@ import { makeAccount, makePool, makePoolAccount, makePoolLedger, type Row } from
  *     no account touched, totals DERIVED from the rows, and under two
  *     concurrent calls with the same carrier_reference exactly one is counted;
  *   - the generated createInvestmentPools / updateInvestmentPools strip the
- *     carrier columns on the real prototype.
+ *     carrier columns on the real prototype;
+ *   - the contribution lifecycle (Decision 7, S14): a PENDING row counts for
+ *     nothing; confirmCarrierContribution promotes it with the PROCESSOR's
+ *     amount and counts it once (a replay is already_confirmed, a concurrent
+ *     double confirm still counts once because totals are derived);
+ *     failCarrierContribution cancels a PENDING row and a later success
+ *     recovers it; reverseCarrierContribution closes the row exactly once
+ *     from ANY status — including a PENDING or failed row whose success has
+ *     not arrived yet, so a success delivered after its refund counts nothing
+ *     — after which it is terminal; racing events (fail vs succeed, refund vs
+ *     succeed) are settled by one conditional UPDATE whatever order they land
+ *     in; all dark with the flag off; no ledger entry or account anywhere.
  */
 
 const FLAG = PHASE0_FEATURE_FLAGS.NONPROFIT_PARITY_V1
@@ -124,13 +135,18 @@ describe("FF_NONPROFIT_PARITY_V1 unset — byte-identical pool paths", () => {
     expect(l.entries).toHaveLength(1)
   })
 
-  it("assignPoolCarrier, recordCarrierContribution and recordCarrierDistribution are dark: feature_disabled before any read or write", async () => {
+  it("assignPoolCarrier, recordCarrierContribution, recordCarrierDistribution and the contribution lifecycle are dark: feature_disabled before any read or write", async () => {
     const l = ledger({ carried: true })
+    l.investments.push({ id: "inv_p", pool_id: "pool_1", settlement: "CARRIER", amount: 10, carrier_reference: "pi_1", status: "PENDING", reversed_at: null })
     expect((await refusal(l.service.assignPoolCarrier("pool_1", snapshot()))).reason).toBe("feature_disabled")
     expect((await refusal(l.service.recordCarrierContribution({ pool_id: "pool_1", amount: 10, carrier_reference: "r1" }))).reason).toBe("feature_disabled")
     expect((await refusal(l.service.recordCarrierDistribution({ pool_id: "pool_1", amount: 10, carrier_reference: "d1" }))).reason).toBe("feature_disabled")
+    expect((await refusal(l.service.confirmCarrierContribution("pool_1", "pi_1", { amount_from_processor: 10 }))).reason).toBe("feature_disabled")
+    expect((await refusal(l.service.failCarrierContribution("pool_1", "pi_1"))).reason).toBe("feature_disabled")
+    expect((await refusal(l.service.reverseCarrierContribution("pool_1", "pi_1"))).reason).toBe("feature_disabled")
     expect(l.poolWrites).toEqual([])
-    expect(l.investments).toEqual([])
+    expect(l.investments).toHaveLength(1)
+    expect(l.investments[0].status).toBe("PENDING")
     expect(l.distributions).toEqual([])
   })
 })
@@ -203,9 +219,13 @@ describe("FF_NONPROFIT_PARITY_V1 on — a pool with no carrier cannot accept mon
   })
 
   it("createTransfer by investment_pool_id and by PRODUCER_POOL account id are both refused with no_carrier", async () => {
+    // A ZERO-balance uncarried pool account: no legacy funds, so nothing is
+    // designated and every leg is refused both ways. (A pool account that
+    // still HOLDS legacy funds is a designated account under Decision 8 —
+    // outbound to contributors allowed, to SELLER_EARNINGS refused; pinned in
+    // designated-funds.unit.spec.ts.)
     const l = ledger()
-    l.accounts[1].balance = 100
-    l.accounts[1].available_balance = 100
+    expect(l.accounts[1]).toMatchObject({ account_type: "PRODUCER_POOL", balance: 0 })
     expect((await refusal(l.service.createTransfer({ debit_account_id: "acc-wallet", credit_account_id: "acc-pool_1", amount: 10, entry_type: "INVESTMENT", investment_pool_id: "pool_1" }))).reason).toBe("no_carrier")
     expect((await refusal(l.service.createTransfer({ debit_account_id: "acc-pool_1", credit_account_id: "acc-wallet", amount: 10, entry_type: "REFUND" }))).reason).toBe("no_carrier")
     expect((await refusal(l.service.createTransfer({ debit_account_id: "acc-pool_1", credit_account_id: "acc-earnings", amount: 10, entry_type: "WITHDRAWAL" }))).reason).toBe("no_carrier")
@@ -407,6 +427,267 @@ describe("recordCarrierContribution (flag on)", () => {
   })
 })
 
+describe("the contribution lifecycle: PENDING -> CONFIRMED / CANCELLED / reversed (flag on)", () => {
+  beforeEach(() => {
+    process.env[FLAG] = "true"
+  })
+
+  const pending = async (l: ReturnType<typeof ledger>, reference = "pi_1", amount = 25, customer_id: string | null = "cust_1") => {
+    const out = await l.service.recordCarrierContribution({ pool_id: "pool_1", amount, carrier_reference: reference, customer_id, status: "PENDING", metadata: { recorded_from: "checkout" } })
+    if (!out.recorded) throw new Error("expected a fresh PENDING row")
+    return out
+  }
+
+  it("a PENDING record is a row with no account and no ledger entry that counts for NOTHING: totals stay at zero", async () => {
+    const l = ledger({ carried: true })
+    const out = await pending(l)
+    expect(out.investment).toMatchObject({ settlement: "CARRIER", status: "PENDING", investor_account_id: null, ledger_entry_id: null, carrier_reference: "pi_1", amount: 25, reversed_at: null })
+    expect(out.totals).toEqual({ total_raised: 0, total_investors: 0, total_distributed: 0 })
+    expect(l.pools[0]).toMatchObject({ total_raised: 0, total_investors: 0 })
+    expect(l.entries).toEqual([])
+    expect(l.balanceMoves).toEqual([])
+    expect(l.accounts.filter((a) => a.account_type === "PRODUCER_POOL")).toHaveLength(1)
+    expect(l.accounts[1]).toMatchObject({ balance: 0, available_balance: 0 })
+  })
+
+  it("recordCarrierContribution defaults to CONFIRMED (the admin record) and refuses any other status", async () => {
+    const l = ledger({ carried: true })
+    const out = await l.service.recordCarrierContribution({ pool_id: "pool_1", amount: 10, carrier_reference: "admin-1" })
+    expect(out.recorded && out.investment.status).toBe("CONFIRMED")
+    expect(l.pools[0].total_raised).toBe(10)
+    expect((await refusal(l.service.recordCarrierContribution({ pool_id: "pool_1", amount: 10, carrier_reference: "x", status: "EARNING" as never }))).reason).toBe("invalid_carrier_record")
+    expect(l.investments).toHaveLength(1)
+  })
+
+  it("confirmCarrierContribution promotes PENDING to CONFIRMED with the PROCESSOR's amount, counts it once, and a replay is already_confirmed", async () => {
+    const l = ledger({ carried: true })
+    await pending(l, "pi_1", 25)
+    // The checkout said 25; the processor says 24.5 moved. Stripe is the statement.
+    const confirmed = await l.service.confirmCarrierContribution("pool_1", "pi_1", { amount_from_processor: 24.5, metadata: { confirmed_from: "webhook" } })
+    expect(confirmed.confirmed).toBe(true)
+    if (!confirmed.confirmed) throw new Error("unreachable")
+    expect(confirmed.investment).toMatchObject({ id: "inv_1", status: "CONFIRMED", amount: 24.5, customer_id: "cust_1", metadata: { recorded_from: "checkout", confirmed_from: "webhook" } })
+    expect(confirmed.totals).toEqual({ total_raised: 24.5, total_investors: 1, total_distributed: 0 })
+    expect(l.pools[0]).toMatchObject({ total_raised: 24.5, total_investors: 1 })
+
+    const again = await l.service.confirmCarrierContribution("pool_1", "pi_1", { amount_from_processor: 24.5 })
+    expect(again).toEqual({ confirmed: false, reason: "already_confirmed", investment_id: "inv_1" })
+    expect(l.pools[0].total_raised).toBe(24.5)
+    expect(l.investments).toHaveLength(1)
+    expect(l.entries).toEqual([])
+    expect(l.balanceMoves).toEqual([])
+  })
+
+  it("fills in the customer from the processor's metadata only when the record had none", async () => {
+    const l = ledger({ carried: true })
+    await pending(l, "pi_g", 10, null)
+    const out = await l.service.confirmCarrierContribution("pool_1", "pi_g", { amount_from_processor: 10, customer_id: "cust_late" })
+    expect(out.confirmed && out.investment.customer_id).toBe("cust_late")
+    await pending(l, "pi_k", 10, "cust_known")
+    const kept = await l.service.confirmCarrierContribution("pool_1", "pi_k", { amount_from_processor: 10, customer_id: "cust_other" })
+    expect(kept.confirmed && kept.investment.customer_id).toBe("cust_known")
+    expect(l.pools[0]).toMatchObject({ total_raised: 20, total_investors: 2 })
+  })
+
+  it("two CONCURRENT confirmations of the same PENDING row count the contribution once: the totals are derived, not incremented", async () => {
+    const l = ledger({ carried: true })
+    await pending(l, "pi_race", 40)
+    const [a, b] = await Promise.all([
+      l.service.confirmCarrierContribution("pool_1", "pi_race", { amount_from_processor: 40 }),
+      l.service.confirmCarrierContribution("pool_1", "pi_race", { amount_from_processor: 40 }),
+    ])
+    // Both may read PENDING before either writes; the double write is harmless.
+    expect([a.confirmed, b.confirmed]).toContain(true)
+    expect(l.investments).toHaveLength(1)
+    expect(l.investments[0].status).toBe("CONFIRMED")
+    expect(l.pools[0]).toMatchObject({ total_raised: 40, total_investors: 1 })
+  })
+
+  it("an unknown reference is not_recorded and writes nothing; a bad processor amount is refused", async () => {
+    const l = ledger({ carried: true })
+    expect(await l.service.confirmCarrierContribution("pool_1", "pi_ghost", { amount_from_processor: 10 })).toEqual({ confirmed: false, reason: "not_recorded" })
+    expect(await l.service.failCarrierContribution("pool_1", "pi_ghost")).toEqual({ failed: false, reason: "not_recorded" })
+    expect(await l.service.reverseCarrierContribution("pool_1", "pi_ghost")).toEqual({ reversed: false, reason: "not_recorded" })
+    await pending(l, "pi_1", 10)
+    for (const amount of [0, -1, 1.005, Number.NaN]) {
+      expect((await refusal(l.service.confirmCarrierContribution("pool_1", "pi_1", { amount_from_processor: amount }))).reason).toBe("invalid_carrier_record")
+    }
+    expect((await refusal(l.service.confirmCarrierContribution("pool_1", "  ", { amount_from_processor: 10 }))).reason).toBe("invalid_carrier_record")
+    expect(l.investments[0].status).toBe("PENDING")
+    expect(l.pools[0].total_raised).toBe(0)
+  })
+
+  it("failCarrierContribution cancels a PENDING row (never counted, totals unmoved); a later success on the same intent recovers it; a late failure cannot un-confirm", async () => {
+    const l = ledger({ carried: true })
+    await pending(l, "pi_1", 25)
+    const failed = await l.service.failCarrierContribution("pool_1", "pi_1")
+    expect(failed.failed).toBe(true)
+    expect(l.investments[0]).toMatchObject({ status: "CANCELLED", reversed_at: null })
+    expect(l.pools[0].total_raised).toBe(0)
+    expect(await l.service.failCarrierContribution("pool_1", "pi_1")).toEqual({ failed: false, reason: "already_cancelled", investment_id: "inv_1" })
+
+    const recovered = await l.service.confirmCarrierContribution("pool_1", "pi_1", { amount_from_processor: 25 })
+    expect(recovered.confirmed).toBe(true)
+    expect(l.pools[0]).toMatchObject({ total_raised: 25, total_investors: 1 })
+
+    expect(await l.service.failCarrierContribution("pool_1", "pi_1")).toEqual({ failed: false, reason: "already_confirmed", investment_id: "inv_1" })
+    expect(l.investments[0].status).toBe("CONFIRMED")
+    expect(l.pools[0].total_raised).toBe(25)
+  })
+
+  it("reverseCarrierContribution reverses a CONFIRMED row exactly once: CANCELLED + reversed_at, totals drop, then terminal for every event", async () => {
+    const l = ledger({ carried: true })
+    await pending(l, "pi_1", 25)
+    await pending(l, "pi_2", 10)
+    await l.service.confirmCarrierContribution("pool_1", "pi_1", { amount_from_processor: 25 })
+    await l.service.confirmCarrierContribution("pool_1", "pi_2", { amount_from_processor: 10 })
+    expect(l.pools[0]).toMatchObject({ total_raised: 35, total_investors: 1 })
+
+    const when = new Date("2026-10-05T00:00:00Z")
+    const reversed = await l.service.reverseCarrierContribution("pool_1", "pi_1", { reversed_at: when })
+    expect(reversed.reversed).toBe(true)
+    if (!reversed.reversed) throw new Error("unreachable")
+    expect(reversed.investment).toMatchObject({ id: "inv_1", status: "CANCELLED", reversed_at: when })
+    expect(reversed.totals).toEqual({ total_raised: 10, total_investors: 1, total_distributed: 0 })
+
+    expect(await l.service.reverseCarrierContribution("pool_1", "pi_1")).toEqual({ reversed: false, reason: "already_reversed", investment_id: "inv_1" })
+    expect(await l.service.confirmCarrierContribution("pool_1", "pi_1", { amount_from_processor: 25 })).toEqual({ confirmed: false, reason: "already_reversed", investment_id: "inv_1" })
+    expect(await l.service.failCarrierContribution("pool_1", "pi_1")).toEqual({ failed: false, reason: "already_cancelled", investment_id: "inv_1" })
+    expect(l.investments[0]).toMatchObject({ status: "CANCELLED", reversed_at: when })
+    expect(l.pools[0].total_raised).toBe(10)
+    expect(l.entries).toEqual([])
+    expect(l.balanceMoves).toEqual([])
+  })
+
+  it("a full refund that arrives BEFORE the success closes the PENDING row for good: the later success counts nothing (Stripe does not order events)", async () => {
+    const l = ledger({ carried: true })
+    await pending(l, "pi_1", 25)
+    const when = new Date("2026-10-05T00:00:00Z")
+    const closed = await l.service.reverseCarrierContribution("pool_1", "pi_1", { reversed_at: when })
+    expect(closed).toMatchObject({ reversed: true, was_confirmed: false, investment: { id: "inv_1", status: "CANCELLED", reversed_at: when } })
+    if (!closed.reversed) throw new Error("unreachable")
+    expect(closed.totals).toEqual({ total_raised: 0, total_investors: 0, total_distributed: 0 })
+
+    // The success Stripe delivers (or retries) afterwards is terminal-refused.
+    expect(await l.service.confirmCarrierContribution("pool_1", "pi_1", { amount_from_processor: 25 })).toEqual({ confirmed: false, reason: "already_reversed", investment_id: "inv_1" })
+    expect(await l.service.failCarrierContribution("pool_1", "pi_1")).toEqual({ failed: false, reason: "already_cancelled", investment_id: "inv_1" })
+    expect(await l.service.reverseCarrierContribution("pool_1", "pi_1")).toEqual({ reversed: false, reason: "already_reversed", investment_id: "inv_1" })
+    expect(l.investments[0]).toMatchObject({ status: "CANCELLED", reversed_at: when, amount: 25 })
+    expect(l.pools[0]).toMatchObject({ total_raised: 0, total_investors: 0 })
+    expect(l.entries).toEqual([])
+  })
+
+  it("a full refund on a FAILED row (a later attempt succeeded, then was refunded) closes it too: a success delivered after the refund counts nothing", async () => {
+    const l = ledger({ carried: true })
+    await pending(l, "pi_1", 25)
+    await l.service.failCarrierContribution("pool_1", "pi_1")
+    const closed = await l.service.reverseCarrierContribution("pool_1", "pi_1")
+    expect(closed).toMatchObject({ reversed: true, was_confirmed: false })
+    expect(l.investments[0].reversed_at).toBeInstanceOf(Date)
+    expect(await l.service.confirmCarrierContribution("pool_1", "pi_1", { amount_from_processor: 25 })).toMatchObject({ confirmed: false, reason: "already_reversed" })
+    expect(l.investments[0].status).toBe("CANCELLED")
+    expect(l.pools[0].total_raised).toBe(0)
+  })
+
+  it("totals never count a reversed row, whatever its status column says", async () => {
+    const l = ledger({ carried: true })
+    l.investments.push(
+      { id: "inv_a", pool_id: "pool_1", settlement: "CARRIER", status: "CONFIRMED", amount: 10, carrier_reference: "a", customer_id: "c1", reversed_at: null },
+      // A row written around the transitions (never by them): CONFIRMED but reversed.
+      { id: "inv_b", pool_id: "pool_1", settlement: "CARRIER", status: "CONFIRMED", amount: 99, carrier_reference: "b", customer_id: "c2", reversed_at: new Date() }
+    )
+    await l.service.recordCarrierDistribution({ pool_id: "pool_1", amount: 1, carrier_reference: "d" })
+    expect(l.pools[0]).toMatchObject({ total_raised: 10, total_investors: 1 })
+  })
+
+  describe("racing processor events are settled by ONE conditional UPDATE in the database, not by write order", () => {
+    // The transition the database sees; every predicate must be in the statement.
+    const TRANSITION_SQL = /UPDATE hawala_investment\s+SET status = \?, reversed_at = \?, updated_at = NOW\(\)\s+WHERE id = \? AND settlement = 'CARRIER' AND status IN \(\?(, \?)*\) AND reversed_at IS NULL AND deleted_at IS NULL\s+RETURNING id/
+
+    /** A carried pool on a ledger whose pg stub parks every statement until released. */
+    async function held() {
+      const l = makePoolLedger({ pools: [carriedPool("pool_1")], accounts: [makePoolAccount("acc-pool_1")], pg: "hold" })
+      await pending(l, "pi_1", 25)
+      return l
+    }
+    const parked = async (l: { heldSql: unknown[] }, n: number) => {
+      for (let i = 0; i < 100 && l.heldSql.length < n; i++) await new Promise((r) => setTimeout(r, 0))
+      expect(l.heldSql).toHaveLength(n)
+    }
+    const to = (status: string) => (b: unknown[]) => b[0] === status
+
+    it("payment_failed and succeeded both read PENDING; the success lands first, then the failure: the failure's predicate (still PENDING) no longer holds, the paid contribution stays CONFIRMED and counted", async () => {
+      const l = await held()
+      const confirm = l.service.confirmCarrierContribution("pool_1", "pi_1", { amount_from_processor: 25 })
+      const fail = l.service.failCarrierContribution("pool_1", "pi_1")
+      await parked(l, 2)
+      l.releaseSql(to("CONFIRMED"))
+      await new Promise((r) => setTimeout(r, 0))
+      l.releaseSql(to("CANCELLED"))
+      expect(await confirm).toMatchObject({ confirmed: true })
+      expect(await fail).toEqual({ failed: false, reason: "already_confirmed", investment_id: "inv_1" })
+      expect(l.investments[0]).toMatchObject({ status: "CONFIRMED", reversed_at: null })
+      expect(l.pools[0]).toMatchObject({ total_raised: 25, total_investors: 1 })
+      expect(l.sql).toHaveLength(2)
+      for (const stmt of l.sql) expect(stmt.sql).toMatch(TRANSITION_SQL)
+      expect(l.entries).toEqual([])
+    })
+
+    it("the failure lands first, then the success: a CANCELLED row is still confirmable, so the paid contribution ends CONFIRMED either way", async () => {
+      const l = await held()
+      const confirm = l.service.confirmCarrierContribution("pool_1", "pi_1", { amount_from_processor: 25 })
+      const fail = l.service.failCarrierContribution("pool_1", "pi_1")
+      await parked(l, 2)
+      l.releaseSql(to("CANCELLED"))
+      await new Promise((r) => setTimeout(r, 0))
+      l.releaseSql(to("CONFIRMED"))
+      expect(await fail).toMatchObject({ failed: true })
+      expect(await confirm).toMatchObject({ confirmed: true })
+      expect(l.investments[0]).toMatchObject({ status: "CONFIRMED", reversed_at: null })
+      expect(l.pools[0].total_raised).toBe(25)
+    })
+
+    it("a full refund and the success both read PENDING; the refund lands first: the success's predicate (not reversed) no longer holds, nothing is counted", async () => {
+      const l = await held()
+      const confirm = l.service.confirmCarrierContribution("pool_1", "pi_1", { amount_from_processor: 25 })
+      const reverse = l.service.reverseCarrierContribution("pool_1", "pi_1")
+      await parked(l, 2)
+      l.releaseSql((b) => b[1] instanceof Date)
+      await new Promise((r) => setTimeout(r, 0))
+      l.releaseSql(to("CONFIRMED"))
+      expect(await reverse).toMatchObject({ reversed: true })
+      expect(await confirm).toEqual({ confirmed: false, reason: "already_reversed", investment_id: "inv_1" })
+      expect(l.investments[0]).toMatchObject({ status: "CANCELLED" })
+      expect(l.investments[0].reversed_at).toBeInstanceOf(Date)
+      expect(l.pools[0]).toMatchObject({ total_raised: 0, total_investors: 0 })
+    })
+
+    it("the success lands first, then the refund: the refund still closes the (now confirmed) row and the totals drop back to zero", async () => {
+      const l = await held()
+      const confirm = l.service.confirmCarrierContribution("pool_1", "pi_1", { amount_from_processor: 25 })
+      const reverse = l.service.reverseCarrierContribution("pool_1", "pi_1")
+      await parked(l, 2)
+      l.releaseSql(to("CONFIRMED"))
+      await new Promise((r) => setTimeout(r, 0))
+      l.releaseSql((b) => b[1] instanceof Date)
+      expect(await confirm).toMatchObject({ confirmed: true })
+      expect(await reverse).toMatchObject({ reversed: true })
+      expect(l.investments[0]).toMatchObject({ status: "CANCELLED" })
+      expect(l.investments[0].reversed_at).toBeInstanceOf(Date)
+      expect(l.pools[0]).toMatchObject({ total_raised: 0, total_investors: 0 })
+    })
+  })
+
+  it("the lifecycle refuses an uncarried pool with no_carrier and never reads a LEDGER row", async () => {
+    const l = ledger()
+    l.investments.push({ id: "inv_l", pool_id: "pool_1", settlement: "LEDGER", amount: 5, status: "CONFIRMED", carrier_reference: null })
+    expect((await refusal(l.service.confirmCarrierContribution("pool_1", "pi_1", { amount_from_processor: 5 }))).reason).toBe("no_carrier")
+    expect((await refusal(l.service.failCarrierContribution("pool_1", "pi_1"))).reason).toBe("no_carrier")
+    expect((await refusal(l.service.reverseCarrierContribution("pool_1", "pi_1"))).reason).toBe("no_carrier")
+    expect(l.investments[0].status).toBe("CONFIRMED")
+  })
+})
+
 describe("recordCarrierDistribution (flag on)", () => {
   beforeEach(() => {
     process.env[FLAG] = "true"
@@ -491,5 +772,29 @@ describe("payload projections", () => {
     expect(out).toHaveLength(2)
     expect(out[0]).toMatchObject({ id: "pool_u", carrier: null, current_balance: 50 })
     expect(out[1]).toMatchObject({ id: "pool_c", carrier: { org_key: "ground_up_liberation_project", verification_status: "pub78_eligible", verified_as_of: AS_OF }, current_balance: null })
+  })
+
+  it("getVendorPoolsWithDetails: investments_count counts every LEDGER row as before, but a CARRIER row only once CONFIRMED and unreversed (a PENDING checkout anyone can start is not an investor)", async () => {
+    const l = makePoolLedger({
+      pools: [makePool("pool_u"), carriedPool("pool_c")],
+      investments: [
+        // LEDGER rows: every status counts, exactly as before S14.
+        { id: "l1", pool_id: "pool_u", settlement: "LEDGER", status: "CONFIRMED", amount: 5 },
+        { id: "l2", pool_id: "pool_u", settlement: "LEDGER", status: "WITHDRAWN", amount: 5 },
+        { id: "l3", pool_id: "pool_u", settlement: "LEDGER", status: "CANCELLED", amount: 5 },
+        // CARRIER rows: only the confirmed, unreversed one counts.
+        { id: "c1", pool_id: "pool_c", settlement: "CARRIER", status: "CONFIRMED", amount: 5, reversed_at: null },
+        { id: "c2", pool_id: "pool_c", settlement: "CARRIER", status: "PENDING", amount: 5, reversed_at: null },
+        { id: "c3", pool_id: "pool_c", settlement: "CARRIER", status: "PENDING", amount: 5, reversed_at: null },
+        { id: "c4", pool_id: "pool_c", settlement: "CARRIER", status: "CANCELLED", amount: 5, reversed_at: null },
+        { id: "c5", pool_id: "pool_c", settlement: "CARRIER", status: "CANCELLED", amount: 5, reversed_at: new Date() },
+      ],
+      accounts: [makePoolAccount("acc-pool_u"), makePoolAccount("acc-pool_c")],
+    })
+    const out = await l.service.getVendorPoolsWithDetails("prod_1")
+    expect(out.map((p) => [p.id, p.investments_count])).toEqual([
+      ["pool_u", 3],
+      ["pool_c", 1],
+    ])
   })
 })

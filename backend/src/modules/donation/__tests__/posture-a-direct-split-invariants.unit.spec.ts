@@ -119,7 +119,10 @@ describe("assertDirectSplitInvariants (strict; there is no other mode)", () => {
   })
 
   it("REJECTS a kind that is not a donation (a sale or a pledge of goods has its own path)", () => {
-    for (const kind of ["sale", "pledge", "tip"]) {
+    // `pool_contribution` is a direct charge too (DIRECT_CHARGE_KINDS), but a
+    // contribution to a carried pool is not a donation: it is recorded on
+    // `hawala_investment` (settlement CARRIER), never on donation_split_record.
+    for (const kind of ["sale", "pledge", "tip", "pool_contribution"]) {
       violation(
         () => assertDirectSplitInvariants({ record: record({ kind: kind as DirectSplitRecordShape["kind"] }), intent: cleanIntent(), flow: cleanFlow() }),
         "kind_not_donation"
@@ -251,6 +254,15 @@ describe("DonationModuleService.recordDirectSplit / applyDirectSplitProcessorEve
     const b = await dons.service.recordDirectSplit(record(), cleanIntent(), cleanFlow())
     expect(b.id).toBe(a.id)
     expect(dons.calls.create).toHaveLength(1)
+  })
+
+  it("a pool_contribution never reaches donation_split_record: the service refuses it by kind before any write", async () => {
+    const dons = makeInMemoryDonations()
+    await expect(
+      dons.service.recordDirectSplit(record({ kind: "pool_contribution" as DirectSplitRecordShape["kind"] }), cleanIntent(), cleanFlow())
+    ).rejects.toMatchObject({ code: "kind_not_donation" })
+    expect(dons.calls.create).toEqual([])
+    expect(dons.rows).toEqual([])
   })
 
   it("the guard runs BEFORE the write: a destination charge leaves no row", async () => {

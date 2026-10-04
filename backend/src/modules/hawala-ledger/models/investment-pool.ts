@@ -33,7 +33,20 @@ export const InvestmentPool = model.define("hawala_investment_pool", {
   // `assignPoolCarrier`; the generated create/update strip both fields.
   carrier_org_key: model.text().nullable(),
   carrier_snapshot: model.json().nullable(),
-  
+
+  // Designated legacy funds (docs/BMC_SURVIVAL_PROGRAMS.md Decision 8; legal
+  // checkpoints L26, L3). With FF_NONPROFIT_PARITY_V1 on, ledger dollars
+  // already inside an UNCARRIED pool stay in this pool's own PRODUCER_POOL
+  // account, which becomes a DESIGNATED account: legs out of it back to the
+  // contributors (USER_WALLET / ESCROW) are allowed, legs in are refused, and
+  // the producer's withdraw-to-earnings is refused (service.ts
+  // `assertPoolLegAllowed_`). "Designated" is a STATE of the pool, not a new
+  // account_type: this column dates the first time the flag-on guard let an
+  // outbound leg leave the account. Reporting only — the rule itself reads
+  // the account balance, never this column. Written only by the service's
+  // private stamp; the generated create/update strip it (../designated.ts).
+  legacy_funds_designated_at: model.dateTime().nullable(),
+
   // Investment terms
   target_amount: model.bigNumber(), // Target raise amount
   minimum_investment: model.bigNumber().default(1), // Min per investor
@@ -102,6 +115,12 @@ export const InvestmentPool = model.define("hawala_investment_pool", {
       name: "IDX_hawala_investment_pool_carrier_org_key",
       where: "deleted_at IS NULL",
     },
+    // Designated-pool reporting (Decision 8): the stamped pools.
+    {
+      on: ["legacy_funds_designated_at"],
+      name: "IDX_hawala_investment_pool_legacy_funds_designated_at",
+      where: "deleted_at IS NULL AND legacy_funds_designated_at IS NOT NULL",
+    },
   ])
 
 /**
@@ -128,6 +147,13 @@ export const Investment = model.define("hawala_investment", {
   settlement: model.enum(["LEDGER", "CARRIER"]).default("LEDGER"),
   carrier_org_key: model.text().nullable(),
   carrier_reference: model.text().nullable(),
+  // A CARRIER row the processor fully refunded on the carrier's account
+  // (`reverseCarrierContribution`, Decision 7) — whether or not its success
+  // had been seen, since Stripe does not order events. Set once, never
+  // cleared; the row is then CANCELLED and terminal — a success delivered
+  // before or after cannot (re-)confirm it. The pool's derived totals count
+  // CONFIRMED, unreversed rows only, so a reversed contribution leaves them.
+  reversed_at: model.dateTime().nullable(),
   
   // Investment details
   amount: model.bigNumber(),

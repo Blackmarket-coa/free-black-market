@@ -14,6 +14,7 @@ import {
  */
 
 const ENV = PHASE0_FEATURE_FLAGS.NONPROFIT_PARITY_V1
+const POOLS_ENV = PHASE0_FEATURE_FLAGS.INVESTMENT_POOLS_V1
 
 type Body = {
   default_plan_code: string
@@ -46,6 +47,7 @@ const call = async () => {
 
 afterEach(() => {
   delete process.env[ENV]
+  delete process.env[POOLS_ENV]
 })
 
 describe("GET /store/fee-schedule", () => {
@@ -88,6 +90,23 @@ describe("GET /store/fee-schedule", () => {
     expect(res.body.transaction_kinds).not.toHaveProperty("pledge")
     expect(res.body.transaction_kinds).not.toHaveProperty("tip")
     expect(res.body.transaction_kinds).not.toHaveProperty("sale")
+    // The carried-pool contribution rule is not advertised while the pool
+    // routes themselves are dark (FF_INVESTMENT_POOLS_V1 off; L26).
+    expect(res.body.transaction_kinds).not.toHaveProperty("pool_contribution")
+  })
+
+  it("publishes pool_contribution at 0 only when FF_INVESTMENT_POOLS_V1 is on as well", async () => {
+    process.env[POOLS_ENV] = "true"
+    // Pools alone: no transaction_kinds field at all (the parity flag owns it).
+    expect((await call()).body).not.toHaveProperty("transaction_kinds")
+
+    process.env[ENV] = "true"
+    const res = await call()
+    expect(res.body.transaction_kinds).toEqual({
+      donation: 0,
+      donation_pledge: 0,
+      pool_contribution: 0,
+    })
   })
 
   it("never lets the rule appear as a plan, flag on or off", async () => {

@@ -3,11 +3,13 @@ import { applyStripeConnectEvent, POST } from "../route"
 import { COLLECTIVE_CAMPAIGN_MODULE } from "../../../../modules/collective-campaign"
 import { DONATION_MODULE } from "../../../../modules/donation"
 import { HAWALA_LEDGER_MODULE } from "../../../../modules/hawala-ledger"
+import { CarrierRefusalError } from "../../../../modules/hawala-ledger/carrier"
 import { PARTNER_DIRECTORY_MODULE } from "../../../../modules/partner-directory"
 import { STRIPE_CONNECT_WEBHOOK_SECRET_ENV } from "../../../../modules/stripe-connect-direct/registration"
 import { PHASE0_FEATURE_FLAGS } from "../../../../shared/feature-flags"
 import { makeInMemoryDirectory, type OrgRow } from "../../../../modules/partner-directory/__tests__/in-memory-partner-orgs"
 import { makeInMemoryDonations, type SplitRow } from "../../../../modules/donation/__tests__/in-memory-donation-splits"
+import { makePool, makePoolAccount, makePoolLedger, type PoolLedger, type Row } from "../../../../modules/hawala-ledger/__tests__/in-memory-pool-ledger"
 
 /**
  * `POST /webhooks/stripe-connect` — connected-account events for direct-charge
@@ -42,9 +44,28 @@ import { makeInMemoryDonations, type SplitRow } from "../../../../modules/donati
  * collective-campaign/__tests__/service.unit.spec.ts); a FULL refund reverses
  * the same intent, a partial refund does not; a module that cannot be resolved
  * or throws surfaces as `contribution: "failed"` on a 200.
+ *
+ * Carried-pool contributions (Phase 1b, Decision 7; L26): an intent whose
+ * metadata says `pool_contribution` is branched BEFORE the donation lookup
+ * onto the REAL hawala-ledger service (prototype + shadowed CRUD): the
+ * donation module is never resolved, no ledger entry or account is written;
+ * a success confirms the PENDING row with STRIPE's amount exactly once (a
+ * replay is unchanged; two concurrent deliveries still count once because
+ * the totals are derived); a failure cancels; a FULL refund reverses once; a
+ * partial refund changes nothing; a full refund that arrives BEFORE the
+ * success closes the row so the later success counts nothing; an event from a
+ * different connected account than the one the intent was minted on (stamped
+ * on the row by the checkout) is ignored and counts nothing, while a carrier
+ * that rotated its account in the directory since does not orphan the
+ * payment; a row without that stamp falls back to the directory's account; a
+ * success with no PENDING row is back-filled CONFIRMED with Stripe's amount
+ * only while FF_INVESTMENT_POOLS_V1 is on, the account matches and the
+ * carrier is eligible now; the donation path stays byte-identical (every
+ * donation test above runs unchanged).
  */
 
 const FLAG = PHASE0_FEATURE_FLAGS.NONPROFIT_PARITY_V1
+const POOLS = PHASE0_FEATURE_FLAGS.INVESTMENT_POOLS_V1
 const SECRET = "whsec_connect_test"
 const ACCT = "acct_1GULP"
 const AS_OF = new Date("2026-09-10T09:18:37Z")
@@ -131,11 +152,13 @@ function makeScope(
     contribution?: "recorded" | "no_participant" | "throws" | "unresolvable"
     /** What the campaign module answers a reversal; default: reversed. */
     reversal?: "reversed" | "not_recorded"
+    /** The REAL hawala service over an in-memory pool ledger; default: a stub that must never be reached. */
+    pools?: PoolLedger
   } = {}
 ) {
   const dons = makeInMemoryDonations(opts.rows ?? [existingRow()])
   const dir = makeInMemoryDirectory(opts.orgs ?? [gulp()])
-  const hawala = { processRefund: jest.fn(), createTransfer: jest.fn() }
+  const hawala = opts.pools ? (opts.pools.service as unknown as { processRefund: jest.Mock; createTransfer: jest.Mock }) : { processRefund: jest.fn(), createTransfer: jest.fn() }
   // Mirrors the real module's intent-keyed row: the same intent counts once.
   const counted = new Set<string>()
   const campaigns = {
@@ -194,6 +217,7 @@ beforeEach(() => {
 afterEach(() => {
   delete process.env[STRIPE_CONNECT_WEBHOOK_SECRET_ENV]
   delete process.env[FLAG]
+  delete process.env[POOLS]
 })
 
 describe("POST /webhooks/stripe-connect — the door", () => {
@@ -653,5 +677,314 @@ describe("applyStripeConnectEvent — shared-goal Coalition contributions (campa
       expect(ctx.dons.rows[0].status).toBe("succeeded")
       expect(ctx.resolved).toContain(COLLECTIVE_CAMPAIGN_MODULE)
     }
+  })
+})
+
+describe("applyStripeConnectEvent — carried-pool contributions (metadata.fbm_kind = pool_contribution)", () => {
+  const POOL_META = {
+    fbm_kind: "pool_contribution",
+    fbm_pool_id: "pool_c",
+    fbm_org_key: "ground_up_liberation_project",
+    fbm_customer_id: "cus_7",
+    fbm_gross_cents: "2500",
+    fbm_connected_account_id: ACCT,
+  }
+
+  const carriedPool = (over: Partial<Row> = {}): Row =>
+    makePool("pool_c", {
+      carrier_org_key: "ground_up_liberation_project",
+      carrier_snapshot: {
+        org_key: "ground_up_liberation_project",
+        org_type: "irs_501c3",
+        verification_status: "pub78_eligible",
+        verified_as_of: AS_OF.toISOString(),
+        stripe_connect_account_present: true,
+        snapshot_at: SNAP.toISOString(),
+      },
+      ...over,
+    })
+
+  const pendingRow = (over: Partial<Row> = {}): Row => ({
+    id: "inv_p",
+    pool_id: "pool_c",
+    settlement: "CARRIER",
+    status: "PENDING",
+    amount: 25,
+    customer_id: "cus_7",
+    carrier_org_key: "ground_up_liberation_project",
+    carrier_reference: "pi_pool",
+    investor_account_id: null,
+    ledger_entry_id: null,
+    reversed_at: null,
+    // What the real checkout stamps server-side: the account it minted on.
+    metadata: { recorded_from: "checkout", payment_collection_id: "paycol_1", payment_session_id: "payses_1", stripe_account_id: ACCT, gross_cents: 2500 },
+    ...over,
+  })
+
+  function poolCtx(opts: { pools?: Row[]; investments?: Row[]; orgs?: Array<Partial<OrgRow> & { key: string; name: string }> } = {}) {
+    const pools = makePoolLedger({
+      pools: opts.pools ?? [carriedPool()],
+      investments: opts.investments ?? [pendingRow()],
+      accounts: [makePoolAccount("acc-pool_c")],
+    })
+    const ctx = makeScope({ rows: [], orgs: opts.orgs, pools })
+    return { ...ctx, pools }
+  }
+
+  const poolIntent = (over: Record<string, unknown> = {}) => intentObject({ id: "pi_pool", metadata: POOL_META, ...over })
+  const poolCharge = (over: Record<string, unknown> = {}) => ({
+    id: "ch_pool",
+    object: "charge",
+    amount: 2500,
+    payment_intent: "pi_pool",
+    refunded: true,
+    amount_refunded: 2500,
+    metadata: POOL_META,
+    transfer_data: null,
+    on_behalf_of: null,
+    application_fee_amount: null,
+    ...over,
+  })
+
+  it("payment_intent.succeeded confirms the PENDING row with STRIPE's amount, counts it once, resolves hawala only (the row names the minting account) — never the donation module; a replay is unchanged", async () => {
+    const ctx = poolCtx()
+    // The checkout recorded 25.00 and the metadata claims 2500; Stripe says 2450 moved.
+    const r1 = await applyStripeConnectEvent(ctx.scope, event("payment_intent.succeeded", poolIntent({ amount: 2450 })))
+    expect(r1).toEqual({ outcome: "updated", intent_id: "pi_pool", kind: "pool_contribution", pool_id: "pool_c" })
+    expect(ctx.pools.investments[0]).toMatchObject({ status: "CONFIRMED", amount: 24.5, customer_id: "cus_7", carrier_reference: "pi_pool", investor_account_id: null, ledger_entry_id: null })
+    expect(ctx.pools.pools[0]).toMatchObject({ total_raised: 24.5, total_investors: 1 })
+    expect(ctx.resolved).toEqual([HAWALA_LEDGER_MODULE])
+    expect(ctx.resolved).not.toContain(DONATION_MODULE)
+    expect(ctx.dons.rows).toEqual([])
+    expect(ctx.pools.entries).toEqual([])
+    expect(ctx.pools.balanceMoves).toEqual([])
+    expect(ctx.pools.accounts.filter((a) => a.account_type === "PRODUCER_POOL")).toHaveLength(1)
+
+    const r2 = await applyStripeConnectEvent(ctx.scope, event("payment_intent.succeeded", poolIntent({ amount: 2450 })))
+    expect(r2).toEqual({ outcome: "unchanged", intent_id: "pi_pool", kind: "pool_contribution", pool_id: "pool_c" })
+    expect(ctx.pools.pools[0].total_raised).toBe(24.5)
+    expect(ctx.pools.investments).toHaveLength(1)
+  })
+
+  it("two CONCURRENT deliveries of the same success count the contribution once", async () => {
+    const ctx = poolCtx()
+    const ev = event("payment_intent.succeeded", poolIntent())
+    const [a, b] = await Promise.all([applyStripeConnectEvent(ctx.scope, ev), applyStripeConnectEvent(ctx.scope, ev)])
+    expect([a.outcome, b.outcome]).toContain("updated")
+    expect(ctx.pools.investments).toHaveLength(1)
+    expect(ctx.pools.pools[0]).toMatchObject({ total_raised: 25, total_investors: 1 })
+  })
+
+  it("ignores an event from a connected account that is not the one the intent was minted on, counting nothing", async () => {
+    const ctx = poolCtx()
+    const r = await applyStripeConnectEvent(ctx.scope, event("payment_intent.succeeded", poolIntent(), "acct_VENDOR"))
+    expect(r).toEqual({ outcome: "ignored_account_mismatch", intent_id: "pi_pool", kind: "pool_contribution", pool_id: "pool_c" })
+    expect(ctx.pools.investments[0].status).toBe("PENDING")
+    expect(ctx.pools.pools[0].total_raised).toBe(0)
+    // The row's minting account decided; the directory was not consulted.
+    expect(ctx.resolved).toEqual([HAWALA_LEDGER_MODULE])
+
+    // Not even when the DIRECTORY now names the event's account: the money did not go there.
+    const hijack = poolCtx({ orgs: [gulp({ stripe_connect_account_id: "acct_VENDOR" })] })
+    expect((await applyStripeConnectEvent(hijack.scope, event("payment_intent.succeeded", poolIntent(), "acct_VENDOR"))).outcome).toBe("ignored_account_mismatch")
+    expect(hijack.pools.investments[0].status).toBe("PENDING")
+  })
+
+  it("a carrier that rotated its connected account since the checkout does not orphan the payment: the account the intent was minted on decides", async () => {
+    const moved = poolCtx({ orgs: [gulp({ stripe_connect_account_id: "acct_NEW" })] })
+    expect(await applyStripeConnectEvent(moved.scope, event("payment_intent.succeeded", poolIntent()))).toEqual({ outcome: "updated", intent_id: "pi_pool", kind: "pool_contribution", pool_id: "pool_c" })
+    expect(moved.pools.investments[0]).toMatchObject({ status: "CONFIRMED", amount: 25 })
+    expect(moved.pools.pools[0].total_raised).toBe(25)
+  })
+
+  it("a row with no minting-account stamp (an admin record) falls back to the carrier's account in the directory NOW", async () => {
+    const unstamped = { metadata: { recorded_from: "admin" } }
+    const ok = poolCtx({ investments: [pendingRow(unstamped)] })
+    expect((await applyStripeConnectEvent(ok.scope, event("payment_intent.succeeded", poolIntent()))).outcome).toBe("updated")
+    expect(ok.resolved).toEqual([HAWALA_LEDGER_MODULE, PARTNER_DIRECTORY_MODULE])
+
+    const moved = poolCtx({ investments: [pendingRow(unstamped)], orgs: [gulp({ stripe_connect_account_id: "acct_NEW" })] })
+    expect((await applyStripeConnectEvent(moved.scope, event("payment_intent.succeeded", poolIntent()))).outcome).toBe("ignored_account_mismatch")
+    expect(moved.pools.investments[0].status).toBe("PENDING")
+
+    // No org on file at all ⇒ nothing can match.
+    const gone = poolCtx({ investments: [pendingRow(unstamped)], orgs: [] })
+    expect((await applyStripeConnectEvent(gone.scope, event("payment_intent.succeeded", poolIntent()))).outcome).toBe("ignored_account_mismatch")
+    expect(gone.pools.investments[0].status).toBe("PENDING")
+  })
+
+  it("ignores an unknown pool, an uncarried pool and a metadata bag with no pool id, without resolving the directory", async () => {
+    const unknown = poolCtx({ pools: [] })
+    expect(await applyStripeConnectEvent(unknown.scope, event("payment_intent.succeeded", poolIntent()))).toEqual({ outcome: "ignored_unknown_pool", intent_id: "pi_pool", kind: "pool_contribution", pool_id: "pool_c" })
+    expect(unknown.resolved).toEqual([HAWALA_LEDGER_MODULE])
+
+    const uncarried = poolCtx({ pools: [makePool("pool_c")] })
+    expect(await applyStripeConnectEvent(uncarried.scope, event("payment_intent.succeeded", poolIntent()))).toEqual({ outcome: "ignored_pool_not_carried", intent_id: "pi_pool", kind: "pool_contribution", pool_id: "pool_c" })
+    expect(uncarried.pools.investments[0].status).toBe("PENDING")
+
+    const noPool = poolCtx()
+    expect(await applyStripeConnectEvent(noPool.scope, event("payment_intent.succeeded", poolIntent({ metadata: { ...POOL_META, fbm_pool_id: undefined } })))).toEqual({ outcome: "ignored_unknown_pool", intent_id: "pi_pool", kind: "pool_contribution" })
+    expect(noPool.resolved).toEqual([])
+  })
+
+  it("payment_intent.payment_failed cancels the PENDING row (never counted); a later success on the same intent recovers it", async () => {
+    const ctx = poolCtx()
+    expect(await applyStripeConnectEvent(ctx.scope, event("payment_intent.payment_failed", poolIntent({ status: "requires_payment_method" })))).toEqual({ outcome: "updated", intent_id: "pi_pool", kind: "pool_contribution", pool_id: "pool_c" })
+    expect(ctx.pools.investments[0]).toMatchObject({ status: "CANCELLED", reversed_at: null })
+    expect(ctx.pools.pools[0].total_raised).toBe(0)
+    expect(await applyStripeConnectEvent(ctx.scope, event("payment_intent.payment_failed", poolIntent({ status: "requires_payment_method" })))).toMatchObject({ outcome: "unchanged" })
+
+    expect(await applyStripeConnectEvent(ctx.scope, event("payment_intent.succeeded", poolIntent()))).toMatchObject({ outcome: "updated" })
+    expect(ctx.pools.investments[0].status).toBe("CONFIRMED")
+    expect(ctx.pools.pools[0]).toMatchObject({ total_raised: 25, total_investors: 1 })
+    // A late failure cannot un-confirm.
+    expect(await applyStripeConnectEvent(ctx.scope, event("payment_intent.payment_failed", poolIntent({ status: "requires_payment_method" })))).toMatchObject({ outcome: "unchanged" })
+    expect(ctx.pools.investments[0].status).toBe("CONFIRMED")
+  })
+
+  it("a FULL charge.refunded reverses a confirmed contribution exactly once — totals drop, the row is terminal — and never calls processRefund", async () => {
+    const ctx = poolCtx({ investments: [pendingRow({ status: "CONFIRMED" })] })
+    ctx.pools.pools[0].total_raised = 25
+    ctx.pools.pools[0].total_investors = 1
+    const processRefund = jest.fn()
+    ;(ctx.pools.service as unknown as Record<string, unknown>).processRefund = processRefund
+
+    const ev = event("charge.refunded", poolCharge())
+    expect(await applyStripeConnectEvent(ctx.scope, ev)).toEqual({ outcome: "updated", intent_id: "pi_pool", kind: "pool_contribution", pool_id: "pool_c" })
+    expect(ctx.pools.investments[0]).toMatchObject({ status: "CANCELLED" })
+    expect(ctx.pools.investments[0].reversed_at).toBeInstanceOf(Date)
+    expect(ctx.pools.pools[0]).toMatchObject({ total_raised: 0, total_investors: 0 })
+    expect(processRefund).not.toHaveBeenCalled()
+    expect(ctx.pools.entries).toEqual([])
+
+    expect(await applyStripeConnectEvent(ctx.scope, ev)).toMatchObject({ outcome: "unchanged" })
+    // Terminal: a replayed success after the refund changes nothing.
+    expect(await applyStripeConnectEvent(ctx.scope, event("payment_intent.succeeded", poolIntent()))).toMatchObject({ outcome: "unchanged" })
+    expect(ctx.pools.investments[0].status).toBe("CANCELLED")
+    expect(ctx.pools.pools[0].total_raised).toBe(0)
+    expect(ctx.resolved).not.toContain(DONATION_MODULE)
+  })
+
+  it("a FULL refund that arrives BEFORE the success closes the PENDING row: the later success (a retry, or plain out-of-order delivery) is unchanged and counts nothing", async () => {
+    const ctx = poolCtx()
+    expect(await applyStripeConnectEvent(ctx.scope, event("charge.refunded", poolCharge()))).toEqual({ outcome: "updated", intent_id: "pi_pool", kind: "pool_contribution", pool_id: "pool_c" })
+    expect(ctx.pools.investments[0]).toMatchObject({ status: "CANCELLED" })
+    expect(ctx.pools.investments[0].reversed_at).toBeInstanceOf(Date)
+
+    expect(await applyStripeConnectEvent(ctx.scope, event("payment_intent.succeeded", poolIntent()))).toEqual({ outcome: "unchanged", intent_id: "pi_pool", kind: "pool_contribution", pool_id: "pool_c" })
+    expect(ctx.pools.investments[0]).toMatchObject({ status: "CANCELLED" })
+    expect(ctx.pools.investments[0].reversed_at).toBeInstanceOf(Date)
+    expect(ctx.pools.pools[0]).toMatchObject({ total_raised: 0, total_investors: 0 })
+    expect(ctx.pools.entries).toEqual([])
+  })
+
+  it("a PARTIAL refund leaves the contribution counted; the metadata is read off the charge when the intent is not expanded", async () => {
+    const ctx = poolCtx({ investments: [pendingRow({ status: "CONFIRMED" })] })
+    ctx.pools.pools[0].total_raised = 25
+    expect(await applyStripeConnectEvent(ctx.scope, event("charge.refunded", poolCharge({ refunded: false, amount_refunded: 500 })))).toEqual({ outcome: "unchanged", intent_id: "pi_pool", kind: "pool_contribution", pool_id: "pool_c" })
+    expect(ctx.pools.investments[0]).toMatchObject({ status: "CONFIRMED", reversed_at: null })
+    expect(ctx.pools.pools[0].total_raised).toBe(25)
+    expect(ctx.resolved).not.toContain(DONATION_MODULE)
+
+    // The expanded intent's metadata is read when the charge carries one.
+    const expanded = poolCtx({ investments: [pendingRow({ status: "CONFIRMED" })] })
+    const charge = poolCharge({ metadata: {}, payment_intent: { id: "pi_pool", object: "payment_intent", metadata: POOL_META, transfer_data: null, on_behalf_of: null, application_fee_amount: null } })
+    expect(await applyStripeConnectEvent(expanded.scope, event("charge.refunded", charge))).toMatchObject({ outcome: "updated", kind: "pool_contribution" })
+    expect(expanded.pools.investments[0].status).toBe("CANCELLED")
+  })
+
+  it("a success with no PENDING row is back-filled CONFIRMED from the metadata + Stripe's amount, only for an eligible carrier on the matching account", async () => {
+    process.env[POOLS] = "true"
+    const ctx = poolCtx({ investments: [] })
+    const r = await applyStripeConnectEvent(ctx.scope, event("payment_intent.succeeded", poolIntent({ id: "pi_new", amount: 1000, metadata: { ...POOL_META, fbm_gross_cents: "100000000" } })))
+    expect(r).toEqual({ outcome: "created", intent_id: "pi_new", kind: "pool_contribution", pool_id: "pool_c" })
+    expect(ctx.pools.investments[0]).toMatchObject({ settlement: "CARRIER", status: "CONFIRMED", amount: 10, carrier_reference: "pi_new", customer_id: "cus_7", investor_account_id: null, ledger_entry_id: null, metadata: { recorded_from: "webhook", stripe_account_id: ACCT } })
+    expect(ctx.pools.pools[0]).toMatchObject({ total_raised: 10, total_investors: 1 })
+    expect(ctx.dons.rows).toEqual([])
+    // Replay: the unique reference answers already_recorded ⇒ unchanged.
+    expect(await applyStripeConnectEvent(ctx.scope, event("payment_intent.succeeded", poolIntent({ id: "pi_new", amount: 1000 })))).toMatchObject({ outcome: "unchanged" })
+    expect(ctx.pools.investments).toHaveLength(1)
+
+    for (const org of [gulp({ published: false }), gulp({ verification_status: "revoked" }), gulp({ verification_status: "unverified", verified_as_of: null })]) {
+      const ineligible = poolCtx({ investments: [], orgs: [org] })
+      expect(await applyStripeConnectEvent(ineligible.scope, event("payment_intent.succeeded", poolIntent({ id: "pi_new" })))).toMatchObject({ outcome: "ignored_recipient_ineligible" })
+      expect(ineligible.pools.investments).toEqual([])
+    }
+  })
+
+  it("with FF_INVESTMENT_POOLS_V1 off the offering is dark: no record is back-filled from carrier-written metadata (an existing PENDING row is still confirmed — the money already moved)", async () => {
+    const ctx = poolCtx({ investments: [] })
+    expect(await applyStripeConnectEvent(ctx.scope, event("payment_intent.succeeded", poolIntent({ id: "pi_new" })))).toEqual({ outcome: "ignored_feature_disabled", intent_id: "pi_new", kind: "pool_contribution", pool_id: "pool_c" })
+    expect(ctx.pools.investments).toEqual([])
+    expect(ctx.pools.pools[0].total_raised).toBe(0)
+
+    const existing = poolCtx()
+    expect((await applyStripeConnectEvent(existing.scope, event("payment_intent.succeeded", poolIntent()))).outcome).toBe("updated")
+    expect(existing.pools.investments[0].status).toBe("CONFIRMED")
+  })
+
+  it("a revoked carrier's PENDING row is still confirmed when the processor says the money moved (the record states a fact; the checkout is where a revoked org is refused)", async () => {
+    const ctx = poolCtx({ orgs: [gulp({ verification_status: "revoked" })] })
+    expect(await applyStripeConnectEvent(ctx.scope, event("payment_intent.succeeded", poolIntent()))).toMatchObject({ outcome: "updated" })
+    expect(ctx.pools.investments[0].status).toBe("CONFIRMED")
+  })
+
+  it("ignores a failure or refund for an intent it never recorded, and a non-USD success", async () => {
+    const ctx = poolCtx({ investments: [] })
+    expect(await applyStripeConnectEvent(ctx.scope, event("payment_intent.payment_failed", poolIntent({ status: "requires_payment_method" })))).toMatchObject({ outcome: "ignored_unknown_intent", kind: "pool_contribution" })
+    expect(await applyStripeConnectEvent(ctx.scope, event("charge.refunded", poolCharge()))).toMatchObject({ outcome: "ignored_unknown_intent", kind: "pool_contribution" })
+    expect(await applyStripeConnectEvent(ctx.scope, event("payment_intent.succeeded", poolIntent({ currency: "eur" })))).toMatchObject({ outcome: "ignored_currency" })
+    expect(ctx.pools.investments).toEqual([])
+  })
+
+  it("refuses a pool-contribution payload carrying a forbidden Connect parameter and records nothing", async () => {
+    const ctx = poolCtx()
+    expect(await applyStripeConnectEvent(ctx.scope, event("payment_intent.succeeded", poolIntent({ application_fee_amount: 75 })))).toEqual({
+      outcome: "refused_forbidden_intent_param",
+      intent_id: "pi_pool",
+      kind: "pool_contribution",
+      pool_id: "pool_c",
+    })
+    expect(ctx.pools.investments[0].status).toBe("PENDING")
+    expect(ctx.resolved).toEqual([])
+  })
+
+  it("throws, not falls back, when the hawala ledger sits under a near-miss key", async () => {
+    const good = poolCtx()
+    const scope = {
+      resolve: <T,>(key: string): T => {
+        if (key === "hawala-ledger") return good.pools.service as unknown as T
+        if (key === HAWALA_LEDGER_MODULE) throw new Error(`Could not resolve '${key}'`)
+        return good.scope.resolve<T>(key)
+      },
+    }
+    await expect(applyStripeConnectEvent(scope, event("payment_intent.succeeded", poolIntent()))).rejects.toThrow(/Could not resolve 'hawalaLedger'/)
+    expect(good.pools.investments[0].status).toBe("PENDING")
+  })
+
+  it("through the full POST: a signed success confirms the row with 200; a service refusal is 200 refused so Stripe does not retry", async () => {
+    process.env[STRIPE_CONNECT_WEBHOOK_SECRET_ENV] = SECRET
+    const ctx = poolCtx()
+    const res = await post(ctx, event("payment_intent.succeeded", poolIntent()))
+    expect(res.statusCode).toBe(200)
+    expect(res.body).toMatchObject({ received: true, outcome: "updated", kind: "pool_contribution", pool_id: "pool_c" })
+    expect(ctx.pools.investments[0].status).toBe("CONFIRMED")
+
+    // The flag is on (the door is open) but the service's own parity check is
+    // what a CarrierRefusalError looks like: make the service refuse.
+    const refusing = poolCtx()
+    ;(refusing.pools.service as unknown as Record<string, unknown>).confirmCarrierContribution = async () => {
+      throw new CarrierRefusalError("invalid_carrier_record", "test")
+    }
+    const refused = await post(refusing, event("payment_intent.succeeded", poolIntent()))
+    expect(refused.statusCode).toBe(200)
+    expect(refused.body).toEqual({ received: true, outcome: "refused", code: "invalid_carrier_record" })
+  })
+
+  it("the donation path is untouched: a donation success still never resolves the hawala ledger even when a real one is registered", async () => {
+    const ctx = makeScope({ pools: makePoolLedger({ pools: [carriedPool()], accounts: [makePoolAccount("acc-pool_c")] }) })
+    expect(await applyStripeConnectEvent(ctx.scope, event("payment_intent.succeeded", intentObject()))).toEqual({ outcome: "updated", intent_id: "pi_1" })
+    expect(ctx.resolved).toEqual([DONATION_MODULE])
+    expect(ctx.dons.rows[0].status).toBe("succeeded")
   })
 })
