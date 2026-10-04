@@ -1,6 +1,6 @@
 {
   "license": "AGPL-3.0-only",
-  "packageManager": "pnpm@11.20.0",
+  "packageManager": "pnpm@11.28.4",
   "dependencies": {
     "@medusajs/js-sdk": "^2.13.1",
     "@medusajs/types": "^2.13.1",

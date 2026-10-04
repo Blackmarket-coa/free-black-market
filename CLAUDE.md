@@ -1,7 +1,7 @@
 # Free Black Market — working notes for Claude
 
 Multi-vendor marketplace on **MedusaJS v2 + MercurJS**. pnpm workspaces, TypeScript,
-Node >= 22, pnpm 11.20.0 (pinned via `packageManager`).
+Node >= 22, pnpm 11.28.4 (pinned via `packageManager`).
 
 Scale, so you calibrate: 98 backend modules, 702 API routes, 432 spec files.
 You cannot hold this repo in your head. Read before you assume.

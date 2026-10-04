@@ -4,7 +4,7 @@
   "description": "A starter for Medusa projects.",
   "author": "Medusa (https://medusajs.com)",
   "license": "AGPL-3.0-only",
-  "packageManager": "pnpm@11.20.0",
+  "packageManager": "pnpm@11.28.4",
   "keywords": [
     "sqlite",
     "postgres",
