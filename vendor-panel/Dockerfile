@@ -150,7 +150,8 @@ FROM nginx:${NGINX_VERSION} AS runtime
 # unaffected. Referenced inside the RUN because BuildKit only invalidates on
 # an ARG that is actually used.
 ARG SECURITY_REFRESH=unset
-# `apk upgrade` is scoped to libuuid rather than run bare, deliberately.
+# `apk upgrade` is scoped to named Alpine-main packages rather than run bare,
+# deliberately.
 # nginx and its modules in this base image come from NGINX Packaging (F5), not
 # from Alpine main — `apk info` shows the maintainer on nginx 1.31.5-r1 as
 # nginx-packaging@f5.com. A bare `apk upgrade` therefore upgrades nginx out of
@@ -163,9 +164,17 @@ ARG SECURITY_REFRESH=unset
 # Alpine v3.24 has 2.42.3-r1; upstream has not rebuilt the nginx image against
 # it, and every alpine tag — `alpine`, `1.31-alpine`, `stable-alpine` — carries
 # the same stale package, so a tag bump does not help. See docs/AUDIT_DEBT.md.
+#
+# SD-32: alpine 3.24.2 ships libexpat 2.8.4-r0 (CVE-2026-93990, XML injection
+# via malformed UTF-16) and pcre2 10.48-r0 (CVE-2026-103111, out-of-bounds
+# write via a crafted pattern), both HIGH; Alpine v3.24 main has 2.8.5-r0 and
+# 10.49-r0 (checked against the APKINDEX, not inferred). Both are Alpine main
+# packages, so they join the scoped list; nginx itself is still never upgraded
+# here. The image scan runs only on pushes to main, so a package added here is
+# proven by that scan, not by a PR check.
 RUN echo "security-refresh=${SECURITY_REFRESH}" >/dev/null \
     && apk add --no-cache wget tini \
-    && apk upgrade --no-cache libuuid
+    && apk upgrade --no-cache libuuid libexpat pcre2
 
 COPY --from=build /app/dist /usr/share/nginx/html
 COPY nginx.conf /etc/nginx/conf.d/default.conf
