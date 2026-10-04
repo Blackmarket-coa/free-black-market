@@ -1,5 +1,5 @@
 import type { Metadata } from "next"
-import { Exo_2, Urbanist } from "next/font/google"
+import localFont from "next/font/local"
 import "./globals.css"
 import { Toaster } from "@medusajs/ui"
 import Head from "next/head"
@@ -10,16 +10,24 @@ import { ConsentBanner } from "@/components/molecules/ConsentBanner/ConsentBanne
 import { readConsent } from "@/lib/consent"
 import { Providers } from "./providers"
 
-const exo2 = Exo_2({
+// Self-hosted variable builds of Exo 2 and Urbanist (latin subset, wght
+// 100-900). They used to come from next/font/google, which fetches the CSS and
+// files at build time; that fetch intermittently fails the storefront Docker
+// build (see src/fonts/README.md), so the files live in the repo and nothing is
+// fetched at build. Same families, same CSS variables, same weights in use
+// (headings 400-700, body 300-600).
+const exo2 = localFont({
+  src: "../fonts/exo2-latin-wght.woff2",
   variable: "--font-solarpunk-heading",
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
+  weight: "100 900",
+  display: "swap",
 })
 
-const urbanist = Urbanist({
+const urbanist = localFont({
+  src: "../fonts/urbanist-latin-wght.woff2",
   variable: "--font-solarpunk-body",
-  subsets: ["latin"],
-  weight: ["300", "400", "500", "600"],
+  weight: "100 900",
+  display: "swap",
 })
 
 // Ensure metadataBase is always a valid URL
