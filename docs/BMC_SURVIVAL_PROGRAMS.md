@@ -328,11 +328,26 @@ line in `docker-build.yml`'s `panelargs` — see the blocker in §1.
 | 4 | Which 2–3 partner orgs for the pilot? | **Blocks Phase 2** | **Decided: Ground Up Liberation Project (GULP)** is the first pilot partner; a partner record is to be created for it. Only the name is known at decision time -- EIN, org type, fiscal host and contact are to be supplied by the operator, and the record stays unverified and unpublished until they are. Second and third partners still open; one partner is enough to unblock the Phase 2 build but not the live pilot. |
 | 5 | **New.** Is the $10/mo 0%-commission plan in scope? It does not exist and replaces the $29/$99/$249 ladder. | **Blocks nothing in Phase 1; treated as out of scope until answered** | **Decided: in scope** (Black Mask launch spec, 2026-10-03, which treats it as an existing decision). Not built; scheduled as `docs/BLACK_MASK_LAUNCH_PLAN.md` F8. Not part of the Phase 1 nonprofit-parity slices. |
 | 6 | **New.** Did "capital circles / first-order guarantee" mean `VendorAdvance` + `InvestmentPool`, or something genuinely new? | Treated as the existing two | **Decided: the existing two, extended to nonprofits -- and the InvestmentPool is carried by a nonprofit, not by BMC** (operator, 2026-10-03, two messages). Concretely: (a) `VendorAdvance` gains verified nonprofit orgs as eligible recipients alongside vendors; (b) every `InvestmentPool` gets a **carrier**: a verified nonprofit partner record that holds and administers the pool's funds on its own accounts, under its own governance. BMC runs the software and the ledger, records every contribution and distribution, and **never holds pool funds** -- the same no-custody shape as Decision 2. A pool with no carrier cannot accept money. Both gated on the org-verification status from Phase 1 item 1 and behind `FF_NONPROFIT_PARITY_V1`. Nothing new is built. **New legal checkpoint L26** (securities, private benefit, charitable solicitation, now with the nonprofit as the issuing/operating party); counsel before any carried pool goes live. Scoped as Phase 1b: after items 1-4 land. |
+| 7 | **New (Phase 1b).** Does FBM build the public **contribution flow for a carried pool** (a contributor paying the carrier through FBM, by direct charge on the carrier's connected account like S9)? That flow *is* the offering: with it, BMC matches contributors to a revenue-sharing pool it does not carry. | Not built; a carried pool is read-only on the storefront and the operator records what the carrier received (P1-14). | **Open — needs counsel on L26 / L3 first.** Not a code question. |
+| 8 | **New (Phase 1b).** What happens to **ledger money already inside an uncarried pool** when `FF_NONPROFIT_PARITY_V1` turns on? Today a refund leg out of such a pool is refused mid-refund by the no-custody guard (P1-14). Options: (a) require every legacy pool to be emptied (withdraw / refund) before the flag; (b) allow refund legs *out* of a legacy pool but never *in*; (c) migrate legacy pools to carriers. | (a): the flag is set nowhere, and there are no production pools (the offering has always been dark). | **Open — operator.** Blocks setting the flag on a database that has pool balances; blocks nothing otherwise. |
 
 ---
 
 ## Changelog
 
+- **2026-10-04 (part E, Phase 1b)** — S12 (a verified nonprofit as an
+  InvestmentPool's **carrier**: frozen verification snapshot on the pool, a
+  service-layer guard in `createTransfer` so no pool ledger leg exists with the
+  flag on and a carried pool never gets one at all, record-only carrier
+  contributions and distributions with derived totals) and S13 (verified
+  nonprofits as record-only VendorAdvance recipients: operator-stated
+  eligibility, no auto-approve, one conditional-update approval carrying the
+  external disbursement reference, manual repayments idempotent by reference,
+  no ledger account or entry for the org) built on the part-E branch,
+  default-off; ledger rows P1-14, P1-15. Both migrations first reconcile the
+  pre-existing model/DDL drift that made those tables un-insertable on a
+  migration-built database. Two decisions deliberately NOT taken in code and
+  added to §6 as 7 and 8. Go-live waits on L26.
 - **2026-10-04 (part D)** — S11 (shared-goal Coalitions as a `goal_kind` on
   `collective-campaign`: participants, milestones, 0% fee, public progress and
   joint impact report; contributions counted from the S9 direct-charge webhook
