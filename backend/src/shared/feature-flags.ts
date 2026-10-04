@@ -44,6 +44,21 @@ export const PHASE0_FEATURE_FLAGS = {
   // burns stages the vendor can never receive. Off, the rail reports what it
   // would send and records nothing, so every reminder stays sendable.
   SELLER_REMINDERS_V1: "FF_SELLER_REMINDERS_V1",
+  // BMC Survival Programs, Phase 1 (docs/BMC_SURVIVAL_PROGRAMS.md §2-3):
+  // nonprofit parity -- persisted partner-org records, IRS-file org
+  // verification, the 0% transaction-kind fee rule on donations, and the
+  // direct-charge donation path. Default off. The operator may not set this to
+  // "true" for live money until counsel has cleared legal checkpoints L11
+  // (representing a third party's tax status), L24 (custody shape) and L25
+  // (commercial co-venturer status) in docs/legal/checkpoints.md. The flag
+  // surfaces those checkpoints; it does not resolve them.
+  NONPROFIT_PARITY_V1: "FF_NONPROFIT_PARITY_V1",
+  // Shared-goal Coalitions on collective-campaign (Phase 1 item 3): a goal,
+  // milestones, per-org roles and contributions, a public progress page and a
+  // joint impact report. Money on this path is the NONPROFIT_PARITY_V1 direct
+  // split, never the campaign escrow. Default off; L25 applies to any public
+  // coalition fundraising page.
+  SHARED_GOAL_COALITION_V1: "FF_SHARED_GOAL_COALITION_V1",
 } as const
 
 export type Phase0FeatureFlag = keyof typeof PHASE0_FEATURE_FLAGS

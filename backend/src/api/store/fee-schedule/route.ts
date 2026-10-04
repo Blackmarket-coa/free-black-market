@@ -5,6 +5,12 @@ import {
   PLATFORM_DEFAULT_FEE_PERCENT,
   VENDOR_PLAN_CATALOG,
 } from "../../../modules/vendor-plan/catalog"
+import {
+  resolvePlatformFee,
+  ZERO_FEE_TRANSACTION_KINDS,
+  type PlatformFeeTransactionKind,
+} from "../../../modules/payout-breakdown/fee-resolution"
+import { featureFlagState } from "../../../shared/feature-flags"
 
 /**
  * GET /store/fee-schedule
@@ -27,7 +33,39 @@ import {
  * coalition and one vendor, and publishing them would leak that vendor's deal.
  * `default_fee_percent` is what a vendor pays with no plan and no override,
  * which is the number the public page should lead with.
+ *
+ * `transaction_kinds` (only while `FF_NONPROFIT_PARITY_V1` is on) states the
+ * platform's fee on kinds of charge that are not sales — today, 0% on a
+ * donation and on a donation pledge. It is a separate field, not a plan row:
+ * the `platform_fee_percent !== null` filter above is what keeps a 0 from ever
+ * reading as a secret free tier, and the rule is about what FBM charges for,
+ * not a rate a vendor can buy down to. The values are resolved through the
+ * same chain that would charge them, so this page cannot quote a rule the
+ * resolver does not apply. It states FBM's fee rule only; it says nothing
+ * about any organisation's tax status (legal checkpoint L11).
  */
+
+/**
+ * The zero-fee kinds the public schedule publishes. `tip` is in the resolver's
+ * set for completeness but is not a kind of charge FBM collects — tips are
+ * kept out of the fee base by `calculateBreakdown` and no caller classifies
+ * one — so advertising "tips 0%" here would describe a mechanism that does not
+ * exist.
+ */
+const PUBLISHED_ZERO_FEE_KINDS: readonly PlatformFeeTransactionKind[] = [
+  ...ZERO_FEE_TRANSACTION_KINDS,
+].filter((kind) => kind !== "tip")
+
+function publishedTransactionKinds(): Record<string, number> {
+  return Object.fromEntries(
+    PUBLISHED_ZERO_FEE_KINDS.map((kind) => [
+      kind,
+      resolvePlatformFee({ platformDefault: PLATFORM_DEFAULT_FEE_PERCENT, kind })
+        .percent,
+    ])
+  )
+}
+
 export async function GET(_req: MedusaRequest, res: MedusaResponse) {
   const plans = VENDOR_PLAN_CATALOG.filter(
     (plan) => plan.platform_fee_percent !== null
@@ -46,5 +84,8 @@ export async function GET(_req: MedusaRequest, res: MedusaResponse) {
     default_plan_code: DEFAULT_PLAN_CODE,
     default_fee_percent: PLATFORM_DEFAULT_FEE_PERCENT,
     plans,
+    ...(featureFlagState.isEnabled("NONPROFIT_PARITY_V1")
+      ? { transaction_kinds: publishedTransactionKinds() }
+      : {}),
   })
 }

@@ -64,6 +64,14 @@ export type VendorPlanDefinition = {
    * strictly cheaper than the one below it — a vendor's take rate can only fall
    * as they move up, never rise. `PLATFORM_DEFAULT_FEE_PERCENT` and the drift
    * test in `__tests__/catalog.unit.spec.ts` hold that invariant.
+   *
+   * The ladder prices SALES. The 0% platform fee on a donation is not a plan
+   * row and is never expressed here: it is a transaction-kind rule that sits
+   * above the whole override → plan → default chain in
+   * `payout-breakdown/fee-resolution.ts`, because it is a decision about what
+   * FBM charges for rather than a rate a vendor can buy down to. A 0% plan
+   * would read as a secret free tier and the drift test would be the wrong
+   * guard for it.
    */
   platform_fee_percent: number | null
   trial_days: number

@@ -23,6 +23,7 @@ Medusa scheduled jobs for FBM. Each file exports a handler plus a cron
 | `hawala-monitor-sweep.ts` | every 15 min | Backstop evaluation of balance monitors (edge-triggered; primary path runs after each transfer) |
 | `hawala-settlement.ts` | daily 00:00 | Settle pending ledger entries out to payout rails |
 | `inventory-reconciliation.ts` | daily 03:00 | Reconcile inventory levels across sync sources |
+| `irs-exempt-org-ingest.ts` | Sundays 04:00 (gated by `FF_NONPROFIT_PARITY_V1`) | Conditional-GET the three public IRS bulk files (Pub 78 Data, Automatic Revocation list, EO Business Master File), stream-parse any that changed into staging and swap them live in one transaction with a per-source as-of date; unchanged files are skipped. Moves no money: reads public third-party org data, writes org-level facts only (no ICO/STREET), touches no cart, order, payout or ledger entry |
 | `order-cycle-status-update.ts` | every 5 min | Advance order-cycle (CSA) lifecycle states |
 | `patronage-refund.ts` | quarterly (daily fallback without Redis) | Return commission surplus to vendors weighted by paid commission |
 | `process-subscription-renewals.ts` | hourly | Renew due subscriptions |

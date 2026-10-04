@@ -1,4 +1,8 @@
-import { resolvePlatformFee } from "../fee-resolution"
+import {
+  resolvePlatformFee,
+  ZERO_FEE_TRANSACTION_KINDS,
+  type PlatformFeeTransactionKind,
+} from "../fee-resolution"
 
 const NOW = new Date("2026-08-02T12:00:00Z")
 const FUTURE = new Date("2026-12-01T00:00:00Z")
@@ -176,5 +180,117 @@ describe("resolvePlatformFee rejects unusable rates", () => {
     // `null` means "this plan expresses no opinion", not "this plan is free".
     const r = resolvePlatformFee({ planPercent: null, platformDefault: 3, now: NOW })
     expect(r.percent).toBe(3)
+  })
+})
+
+describe("resolvePlatformFee transaction kind", () => {
+  // A non-zero override AND a plan, both of which would normally win. If the
+  // kind rung were below either of them, these inputs would surface 1.5 or 5.
+  const contested = {
+    override: {
+      custom_platform_fee_percent: 1.5,
+      fee_reduction_reason: "founding vendor",
+      fee_reduction_expires_at: FUTURE,
+    },
+    planPercent: 5,
+    platformDefault: 3,
+    now: NOW,
+  }
+
+  it("names exactly the kinds that carry no fee", () => {
+    // Pinned so a new kind cannot slip into the zero set unreviewed. `pledge`
+    // is deliberately absent: collective-campaign backings and demand-pool
+    // participant pledges keep their own fee paths.
+    expect([...ZERO_FEE_TRANSACTION_KINDS].sort()).toEqual([
+      "donation",
+      "donation_pledge",
+      "tip",
+    ])
+    expect(ZERO_FEE_TRANSACTION_KINDS.has("sale")).toBe(false)
+    expect(
+      ZERO_FEE_TRANSACTION_KINDS.has("pledge" as PlatformFeeTransactionKind)
+    ).toBe(false)
+  })
+
+  it.each(["donation", "donation_pledge", "tip"] as const)(
+    "charges 0 on a %s even when a non-zero override and a plan are present",
+    (kind) => {
+      const r = resolvePlatformFee({ ...contested, kind })
+      expect(r).toEqual({
+        percent: 0,
+        source: "transaction_kind",
+        override_expired: false,
+        override_reason: null,
+      })
+    }
+  )
+
+  it("does not report the override as expired on a zero-fee kind", () => {
+    // The override is never consulted, so there is nothing to say about its
+    // expiry — an admin screen must not show "expired on …" for a donation.
+    const r = resolvePlatformFee({
+      ...contested,
+      override: { custom_platform_fee_percent: 1, fee_reduction_expires_at: PAST },
+      kind: "donation",
+    })
+    expect(r.override_expired).toBe(false)
+    expect(r.override_reason).toBeNull()
+  })
+
+  it("leaves a sale exactly as before", () => {
+    const explicit = resolvePlatformFee({ ...contested, kind: "sale" })
+    const implicit = resolvePlatformFee(contested)
+    expect(explicit).toEqual(implicit)
+    expect(explicit).toEqual({
+      percent: 1.5,
+      source: "seller_override",
+      override_expired: false,
+      override_reason: "founding vendor",
+    })
+  })
+
+  it("is distinguishable from a zero override by its source", () => {
+    // Both come out at 0. The source is the only thing telling an admin screen
+    // "this seller negotiated 0" apart from "this was a donation".
+    const concession = resolvePlatformFee({
+      override: { custom_platform_fee_percent: 0 },
+      planPercent: 5,
+      platformDefault: 3,
+      now: NOW,
+    })
+    const donation = resolvePlatformFee({
+      planPercent: 5,
+      platformDefault: 3,
+      now: NOW,
+      kind: "donation",
+    })
+    expect(concession.percent).toBe(0)
+    expect(donation.percent).toBe(0)
+    expect(concession.source).toBe("seller_override")
+    expect(donation.source).toBe("transaction_kind")
+    expect(concession.source).not.toBe(donation.source)
+  })
+
+  it("still rejects a negative or NaN rate for a sale", () => {
+    // The kind rung must not have weakened the guards below it.
+    const negative = resolvePlatformFee({
+      override: { custom_platform_fee_percent: -5 },
+      planPercent: 4,
+      platformDefault: 3,
+      now: NOW,
+      kind: "sale",
+    })
+    expect(negative.percent).toBe(4)
+    expect(negative.source).toBe("plan")
+
+    const nan = resolvePlatformFee({
+      override: { custom_platform_fee_percent: Number.NaN },
+      planPercent: Number.NaN,
+      platformDefault: 3,
+      now: NOW,
+      kind: "sale",
+    })
+    expect(nan.percent).toBe(3)
+    expect(nan.source).toBe("platform_default")
   })
 })
