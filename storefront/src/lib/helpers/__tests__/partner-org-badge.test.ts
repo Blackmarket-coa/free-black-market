@@ -35,6 +35,16 @@ describe("formatIrsFileDate", () => {
   })
 })
 
+describe("formatIrsFileDate locale", () => {
+  it("formats the same UTC day for the page's locale, defaulting to en-US", () => {
+    expect(formatIrsFileDate("2026-09-10T00:00:00Z")).toBe("September 10, 2026")
+    expect(formatIrsFileDate("2026-09-10T00:00:00Z", "es-ES")).toBe("10 de septiembre de 2026")
+    expect(partnerOrgBadge({ org_type: "irs_501c3", verification_status: "pub78_eligible", verified_as_of: "2026-09-10T00:00:00Z" }, "es-ES").label).toBe(
+      "IRS Pub 78 eligible as of 10 de septiembre de 2026"
+    )
+  })
+})
+
 describe("partnerOrgBadge", () => {
   it("pub78_eligible: eligible as of the file date", () => {
     expect(partnerOrgBadge({ org_type: "irs_501c3", verification_status: "pub78_eligible", verified_as_of: AS_OF })).toEqual({
