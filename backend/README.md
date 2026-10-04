@@ -58,6 +58,10 @@ Visit the [Quickstart Guide](https://docs.medusajs.com/learn/installation) to se
 
 Visit the [Docs](https://docs.medusajs.com/learn/installation#get-started) to learn more about our system requirements.
 
+### Operator-run seeds
+
+`pnpm medusa exec ./src/scripts/seed-partner-gulp.ts` creates the Ground Up Liberation Project partner record (name only, unverified, unpublished). It is operator-run on purpose and is not wired into `pnpm seed` / `seed:if-needed`, which run on deploy.
+
 ## Railway Health Checks
 
 This backend exposes two health endpoints:

@@ -1316,6 +1316,16 @@ export default defineMiddlewares({
       matcher: "/admin/donations/report",
       middlewares: [authenticate("user", ["bearer", "session"]), requireStorefrontContext(["finance_viewer", "storefront_admin", "org_owner"], "tier1_verified")],
     },
+    // BMC Survival Programs, Phase 1: pilot-partner org records
+    // (docs/BMC_SURVIVAL_PROGRAMS.md §2 item 1). Operator-only and dark until
+    // FF_NONPROFIT_PARITY_V1 is set; the handlers repeat the flag check.
+    {
+      matcher: "/admin/partners/orgs*",
+      middlewares: [
+        authenticate("user", ["bearer", "session"]),
+        requireFeatureFlagMiddleware("NONPROFIT_PARITY_V1"),
+      ],
+    },
     // Rental routes - admin
     {
       matcher: "/admin/products/:id/rental-config",
