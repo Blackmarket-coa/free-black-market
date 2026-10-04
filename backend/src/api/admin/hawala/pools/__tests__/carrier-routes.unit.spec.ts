@@ -1,7 +1,7 @@
 import { POST as assignCarrier } from "../[id]/carrier/route"
 import { POST as recordContribution } from "../[id]/carrier-contributions/route"
 import { POST as recordDistribution } from "../[id]/carrier-distributions/route"
-import { POST as storeInvest } from "../../../../store/hawala/investments/route"
+import { GET as storeInvestments, POST as storeInvest } from "../../../../store/hawala/investments/route"
 import { GET as storePools } from "../../../../store/hawala/pools/route"
 import { POST as vendorWithdraw } from "../../../../vendor/hawala/pools/[id]/withdraw/route"
 import { HAWALA_LEDGER_MODULE } from "../../../../../modules/hawala-ledger"
@@ -415,6 +415,29 @@ describe("POST /store/hawala/investments", () => {
       { accountId: "acc-pool_1", delta: 50 },
     ])
     expect(ctx.ledger.pools[0]).toMatchObject({ total_raised: 50, total_investors: 1 })
+  })
+})
+
+describe("GET /store/hawala/investments", () => {
+  it("summary.total_invested counts every LEDGER row exactly as before, but a CARRIER contribution only once CONFIRMED and unreversed (Decision 7)", async () => {
+    const ledger = makePoolLedger({
+      pools: [makePool("pool_1"), carried("pool_c")],
+      investments: [
+        { id: "l1", pool_id: "pool_1", customer_id: "cust_1", settlement: "LEDGER", status: "CONFIRMED", amount: 10, actual_return: 0 },
+        { id: "l2", pool_id: "pool_1", customer_id: "cust_1", settlement: "LEDGER", status: "WITHDRAWN", amount: 20, actual_return: 0 },
+        { id: "c1", pool_id: "pool_c", customer_id: "cust_1", settlement: "CARRIER", status: "CONFIRMED", amount: 5, reversed_at: null, actual_return: 0 },
+        { id: "c2", pool_id: "pool_c", customer_id: "cust_1", settlement: "CARRIER", status: "PENDING", amount: 100, reversed_at: null, actual_return: 0 },
+        { id: "c3", pool_id: "pool_c", customer_id: "cust_1", settlement: "CARRIER", status: "CANCELLED", amount: 200, reversed_at: null, actual_return: 0 },
+        { id: "c4", pool_id: "pool_c", customer_id: "cust_1", settlement: "CARRIER", status: "CANCELLED", amount: 400, reversed_at: new Date(), actual_return: 0 },
+      ],
+      accounts: [makePoolAccount("acc-pool_1"), makePoolAccount("acc-pool_c")],
+    })
+    const ctx = makeCtx({ ledger })
+    const res = await call(storeInvestments as unknown as Handler, ctx, { auth_context: { actor_id: "cust_1" } })
+    expect(res.statusCode).toBe(200)
+    expect(res.body.summary).toEqual({ total_invested: 35, total_returns: 0, active_investments: 2 })
+    // The rows themselves are all listed, each with its own status.
+    expect((res.body.investments as unknown[]).length).toBe(6)
   })
 })
 

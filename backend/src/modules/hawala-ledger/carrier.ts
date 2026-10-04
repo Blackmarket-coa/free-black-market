@@ -58,6 +58,26 @@ export type CarrierRefusalReason =
   | "invalid_carrier_snapshot"
   /** A record's amount or reference is not usable. */
   | "invalid_carrier_record"
+  // ── Designated legacy funds (Decision 8, ./designated.ts) ──
+  /** An uncarried pool's legacy ledger funds may only return to contributors (USER_WALLET / ESCROW). */
+  | "designated_outbound_only"
+  /** The investment is a CARRIER record (or has no ledger account): nothing on BMC's ledger to return. */
+  | "not_ledger_investment"
+  /** Only a CONFIRMED ledger investment can be returned from a designated account. */
+  | "investment_not_confirmed"
+  /** The designated account does not hold enough to return this investment. */
+  | "insufficient_designated_balance"
+  /** A prior return under the same key did not complete; never re-attempted under that key. */
+  | "designated_return_unsettled"
+
+/** Refusal reasons that belong to Decision 8 (designated legacy funds), not Decision 6b. */
+const DESIGNATED_REASONS: ReadonlySet<CarrierRefusalReason> = new Set<CarrierRefusalReason>([
+  "designated_outbound_only",
+  "not_ledger_investment",
+  "investment_not_confirmed",
+  "insufficient_designated_balance",
+  "designated_return_unsettled",
+])
 
 export class CarrierRefusalError extends Error {
   constructor(
@@ -65,7 +85,8 @@ export class CarrierRefusalError extends Error {
     message: string,
     public readonly details: Record<string, unknown> = {}
   ) {
-    super(`Pool carrier rule (${reason}): ${message} See docs/BMC_SURVIVAL_PROGRAMS.md Decision 6b.`)
+    const decision = DESIGNATED_REASONS.has(reason) ? "Decision 8" : "Decision 6b"
+    super(`Pool carrier rule (${reason}): ${message} See docs/BMC_SURVIVAL_PROGRAMS.md ${decision}.`)
     this.name = "CarrierRefusalError"
   }
 }
@@ -206,6 +227,20 @@ export function stripPoolCarrierFields<T>(input: T): T {
   for (const field of POOL_CARRIER_FIELDS) delete copy[field]
   if ("data" in copy && "selector" in copy) copy.data = stripPoolCarrierFields(copy.data)
   return copy as T
+}
+
+/**
+ * Does this investment row count as money in its pool (Decision 7)? Every
+ * LEDGER row exactly as before — this never changes a pre-existing figure. A
+ * CARRIER row only when the processor CONFIRMED it and it was not reversed: a
+ * PENDING row is a checkout the processor has not confirmed (anyone can start
+ * one), a CANCELLED row failed, a reversed row was fully refunded. The rule
+ * `recomputeCarriedPoolTotals_` derives the pool totals by, for the readers
+ * that sum or count rows themselves.
+ */
+export function countsTowardPool(row: { settlement?: unknown; status?: unknown; reversed_at?: unknown }): boolean {
+  if (row.settlement !== "CARRIER") return true
+  return row.status === "CONFIRMED" && !row.reversed_at
 }
 
 /** Major-unit amount with at most cents precision, positive and finite. */

@@ -2,6 +2,15 @@
 
 import React, { useState } from "react"
 import { useInvestmentPools, useInvestments, type PoolCarrier } from "@/lib/hooks/useHawalaWallet"
+import { phase1ModuleFlags } from "@/lib/feature-flags"
+import CarriedPoolContribution, { statedPoolReturn } from "./CarriedPoolContribution"
+
+/**
+ * A carried pool takes contributions THROUGH FBM only when both the pool
+ * offering and nonprofit parity are on (Decision 7; L26 gates go-live). Off,
+ * the card says who collects instead of offering a button that cannot succeed.
+ */
+const CARRIED_CONTRIBUTIONS_ENABLED = phase1ModuleFlags.nonprofitParity && phase1ModuleFlags.investmentPools
 
 interface InvestmentPoolCardProps {
   pool: {
@@ -13,6 +22,8 @@ interface InvestmentPoolCardProps {
     total_raised: number
     minimum_investment: number
     roi_type: string
+    /** What GET /store/hawala/pools returns: the pool's roi_rate or fixed_roi_rate (annual %), or null. */
+    roi_rate?: number | null
     fixed_roi_rate?: number
     revenue_share_percentage?: number
     product_credit_multiplier?: number
@@ -36,6 +47,7 @@ function formatCurrency(amount: number) {
 
 function InvestmentPoolCard({ pool, onInvest, producerName }: InvestmentPoolCardProps) {
   const [showInvestModal, setShowInvestModal] = useState(false)
+  const [showContribute, setShowContribute] = useState(false)
   const [amount, setAmount] = useState("")
   const [investing, setInvesting] = useState(false)
   const [error, setError] = useState("")
@@ -127,10 +139,16 @@ function InvestmentPoolCard({ pool, onInvest, producerName }: InvestmentPoolCard
             </p>
           </div>
 
-          {/* ROI Info */}
+          {/* ROI Info. A carried pool (the Decision 7 offering surface) states the
+              record's own terms from the fields the listing returns, never a 0
+              for a figure it does not carry; uncarried pools are unchanged. */}
           <div className="bg-gray-50 rounded-lg p-3 mb-4">
             <p className="text-sm font-medium text-gray-700">Return Type</p>
-            <p className="text-green-600 font-semibold">{getRoiDescription()}</p>
+            {carrier ? (
+              <p className="text-green-600 font-semibold">As stated on the pool record: {statedPoolReturn(pool)}</p>
+            ) : (
+              <p className="text-green-600 font-semibold">{getRoiDescription()}</p>
+            )}
           </div>
 
           {/* Investment Details */}
@@ -154,14 +172,30 @@ function InvestmentPoolCard({ pool, onInvest, producerName }: InvestmentPoolCard
             )}
           </div>
           {carrier ? (
-            // A carried pool takes no contribution here: the carrier collects
-            // on its own accounts and the store route answers 409 carried_pool.
-            // Until the carrier contribution flow exists (L26), say so instead
-            // of offering a button that cannot succeed.
-            <p className="text-xs text-gray-500">
-              Funds are held by the carrier, not by Free Black Market. Contributions to this pool are
-              collected by {carrier.org_key}, not here.
-            </p>
+            CARRIED_CONTRIBUTIONS_ENABLED ? (
+              // The carried-pool contribution flow (Decision 7): the contributor
+              // pays the carrier directly on the carrier's own Stripe account;
+              // FBM records it and holds nothing.
+              <div className="space-y-2">
+                <button
+                  onClick={() => setShowContribute(true)}
+                  className="w-full bg-green-600 text-white py-2 rounded-lg hover:bg-green-700 transition-colors"
+                >
+                  Contribute
+                </button>
+                <p className="text-xs text-gray-500">
+                  You pay the pool&apos;s carrier directly. Free Black Market never holds these funds and takes no fee.
+                </p>
+              </div>
+            ) : (
+              // The ledger investment path answers 409 carried_pool for a carried
+              // pool, and the carrier contribution flow is dark: say so instead
+              // of offering a button that cannot succeed.
+              <p className="text-xs text-gray-500">
+                Funds are held by the carrier, not by Free Black Market. Contributions to this pool are
+                collected by {carrier.org_key}, not here.
+              </p>
+            )
           ) : (
             <button
               onClick={() => setShowInvestModal(true)}
@@ -172,6 +206,22 @@ function InvestmentPoolCard({ pool, onInvest, producerName }: InvestmentPoolCard
           )}
         </div>
       </div>
+
+      {/* Carried-pool contribution (Decision 7): paid to the carrier, recorded by FBM */}
+      {showContribute && carrier && CARRIED_CONTRIBUTIONS_ENABLED && (
+        <CarriedPoolContribution
+          pool={{
+            id: pool.id,
+            name: pool.name,
+            minimum_investment: pool.minimum_investment,
+            roi_type: pool.roi_type,
+            roi_rate: pool.roi_rate ?? null,
+            revenue_share_percentage: pool.revenue_share_percentage ?? null,
+            carrier,
+          }}
+          onClose={() => setShowContribute(false)}
+        />
+      )}
 
       {/* Investment Modal (uncarried pools only) */}
       {showInvestModal && !carrier && (

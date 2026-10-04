@@ -1,6 +1,7 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { HAWALA_LEDGER_MODULE } from "../../../../modules/hawala-ledger"
 import HawalaLedgerModuleService from "../../../../modules/hawala-ledger/service"
+import { featureFlagState } from "../../../../shared/feature-flags"
 
 /**
  * GET /admin/hawala/summary
@@ -30,6 +31,16 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       0
     )
 
+    // Designated legacy pool funds (docs/BMC_SURVIVAL_PROGRAMS.md Decision 8):
+    // how many uncarried pools still hold legacy ledger money and how much,
+    // so an operator can wind them down. Present ONLY with
+    // FF_NONPROFIT_PARITY_V1 on — with it off the key is absent and the
+    // response is exactly what it was. The per-pool lines are at
+    // GET /admin/hawala/pools/designated.
+    const designated = featureFlagState.isEnabled("NONPROFIT_PARITY_V1")
+      ? await hawalaService.listDesignatedPoolFunds()
+      : null
+
     res.json({
       accounts: summary,
       investments: {
@@ -37,6 +48,9 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         total_invested: totalInvested,
         total_distributed: totalDistributed,
       },
+      ...(designated
+        ? { designated_pool_funds: { pools: designated.totals.pools, total: designated.totals.account_balance } }
+        : {}),
       settlements: {
         total_batches: settlements.length,
         completed_batches: completedSettlements.length,

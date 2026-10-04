@@ -14,6 +14,7 @@ import { splitAdvanceRepayment } from "./advance-repayment-split"
 import {
   assertCarrierSnapshot,
   CarrierRefusalError,
+  countsTowardPool,
   isCarriedPool,
   isValidCarrierAmount,
   projectPoolCarrier,
@@ -21,6 +22,17 @@ import {
   sumMajorUnits,
   type PoolCarrierSnapshot,
 } from "./carrier"
+import {
+  designatedReturnKey,
+  hasDesignatedBalance,
+  isDesignatedReturnAccountType,
+  isSystemEscrowAccount,
+  stripPoolDesignationFields,
+  summariseDesignatedPool,
+  toCents,
+  totalDesignatedPoolFunds,
+  type DesignatedPoolFundsReport,
+} from "./designated"
 import {
   assertOrgAdvanceEligibility,
   assertOrgAdvanceRecipient,
@@ -937,8 +949,10 @@ class HawalaLedgerModuleService extends MedusaService({
     // pool (BMC never holds pool funds), and for an uncarried pool once
     // FF_NONPROFIT_PARITY_V1 is on ("a pool with no carrier cannot accept
     // money"). Here, at the single money-movement chokepoint, before any
-    // entry is written. See `./carrier.ts`.
-    await this.assertPoolLegAllowed_(data, debitAccount, creditAccount)
+    // entry is written. See `./carrier.ts`. A designated pool's allowed
+    // outflow (Decision 8) comes back as the pool to stamp once this leg has
+    // COMPLETED; with the flag off it is always null.
+    const designatedPool = await this.assertPoolLegAllowed_(data, debitAccount, creditAccount)
 
     // Both legs must be on the same rail. The entry's rail is derived from
     // the debit account, so without this check a CCR-debit → USD-credit
@@ -1070,6 +1084,11 @@ class HawalaLedgerModuleService extends MedusaService({
     ;(entry as any).status = "COMPLETED"
     ;(entry as any).debit_balance_after = newDebitAccount.balance
     ;(entry as any).credit_balance_after = newCreditAccount.balance
+
+    // Decision 8: date the designated pool's first outflow only now that the
+    // money has actually moved — a leg refused after the guard (cross-rail,
+    // rail invariants, balance) never stamps. Never throws.
+    if (designatedPool) await this.stampLegacyFundsDesignated_(designatedPool)
 
     // AUDIT: Log the transfer
     auditFinancialTransaction(
@@ -1954,17 +1973,18 @@ class HawalaLedgerModuleService extends MedusaService({
    * Generated create, with the carrier columns stripped. Three producers call
    * the generated method (getOrCreateProducerPool, the admin POST, the vendor
    * POST); none may set a carrier. `assignPoolCarrier` is the only writer and
-   * reaches persistence through `writeCarrierColumns_`.
+   * reaches persistence through `writeCarrierColumns_`. The designation stamp
+   * (Decision 8) is stripped too: only `stampLegacyFundsDesignated_` writes it.
    */
   // @ts-expect-error - override parent method (declared as a property on the generated base; same as subscription/service.ts)
   async createInvestmentPools(data: any, ...rest: any[]): Promise<any> {
-    return this.persistInvestmentPools_("create", stripPoolCarrierFields(data), rest)
+    return this.persistInvestmentPools_("create", stripPoolDesignationFields(stripPoolCarrierFields(data)), rest)
   }
 
-  /** Generated update, with the carrier columns stripped (the two PATCH routes call this). */
+  /** Generated update, with the carrier columns and the designation stamp stripped (the two PATCH routes call this). */
   // @ts-expect-error - override parent method (declared as a property on the generated base; same as subscription/service.ts)
   async updateInvestmentPools(data: any, ...rest: any[]): Promise<any> {
-    return this.persistInvestmentPools_("update", stripPoolCarrierFields(data), rest)
+    return this.persistInvestmentPools_("update", stripPoolDesignationFields(stripPoolCarrierFields(data)), rest)
   }
 
   /**
@@ -2012,13 +2032,33 @@ class HawalaLedgerModuleService extends MedusaService({
    * refund reversal names no pool id). A leg that names a pool id no pool has
    * is a pool leg with no carrier. With the flag off and no pool involved
    * this reads nothing: every existing non-pool path is byte-identical.
+   *
+   * Designated legacy funds (Decision 8, `./designated.ts`), flag on, an
+   * UNCARRIED pool whose own account holds a positive balance: a leg whose
+   * DEBIT is that account (money leaving) and whose CREDIT is a contributor's
+   * account is allowed — the wallet of an investor who holds a LEDGER
+   * investment in THIS pool (`returnDesignatedFunds`, dividends), or the
+   * system order escrow (`processRefund`'s Pool -> Escrow reversal). It
+   * returns the pool, which `createTransfer` stamps
+   * (`legacy_funds_designated_at`) once the leg has COMPLETED. Any other
+   * destination — SELLER_EARNINGS, a stranger's wallet, a per-entity escrow
+   * (subcontract, campaign: a two-hop route to earnings), PLATFORM_FEE,
+   * RESERVE — is refused `designated_outbound_only`. A credit INTO the pool
+   * stays `no_carrier`, as does every leg on a zero-balance uncarried pool.
+   * Carried pools and orphan pool accounts are unchanged; flag off is
+   * unchanged (and always returns null).
    */
   private async assertPoolLegAllowed_(
     data: { investment_pool_id?: string; debit_account_id: string; credit_account_id: string },
-    debitAccount: { id: string; account_type?: string | null },
-    creditAccount: { id: string; account_type?: string | null }
-  ): Promise<void> {
-    let pool: { id: string; carrier_org_key?: string | null } | null = null
+    debitAccount: { id: string; account_type?: string | null; balance?: unknown },
+    creditAccount: { id: string; account_type?: string | null; owner_type?: string | null; owner_id?: string | null }
+  ): Promise<{ id: string; legacy_funds_designated_at?: Date | string | null } | null> {
+    let pool: {
+      id: string
+      carrier_org_key?: string | null
+      ledger_account_id?: string | null
+      legacy_funds_designated_at?: Date | string | null
+    } | null = null
     let named = false
     if (data.investment_pool_id) {
       named = true
@@ -2045,7 +2085,7 @@ class HawalaLedgerModuleService extends MedusaService({
           { pool_id: null, investment_pool_id: null, pool_account_ids: poolAccountIds }
         )
       }
-      return
+      return null
     }
 
     if (pool && isCarriedPool(pool)) {
@@ -2056,12 +2096,259 @@ class HawalaLedgerModuleService extends MedusaService({
       )
     }
     if (featureFlagState.isEnabled("NONPROFIT_PARITY_V1")) {
+      // Decision 8: money already in an uncarried pool's own account is
+      // designated — it may leave only back to the contributors. Only the
+      // pool's OWN account counts (a leg naming pool A while debiting pool B's
+      // account is not A's designated outflow), and only while it holds a
+      // positive balance (nothing to designate otherwise).
+      const designatedOutflow =
+        pool !== null &&
+        typeof pool.ledger_account_id === "string" &&
+        data.debit_account_id === pool.ledger_account_id &&
+        data.credit_account_id !== pool.ledger_account_id &&
+        hasDesignatedBalance(debitAccount)
+      if (pool && designatedOutflow) {
+        if (await this.isDesignatedContributorAccount_(pool.id, creditAccount)) return pool
+        throw new CarrierRefusalError(
+          "designated_outbound_only",
+          `ledger leg refused: pool ${pool.id} holds legacy ledger funds in a designated account; they may only return to the contributors (the wallet of an investor in this pool, or the system order escrow), never to ${creditAccount.account_type ?? "unknown"} account ${creditAccount.id}.`,
+          {
+            pool_id: pool.id,
+            investment_pool_id: data.investment_pool_id ?? null,
+            credit_account_type: creditAccount.account_type ?? null,
+          }
+        )
+      }
       throw new CarrierRefusalError(
         "no_carrier",
         `ledger leg refused: pool ${pool?.id ?? data.investment_pool_id} has no carrier, and a pool with no carrier cannot accept money.`,
         { pool_id: pool?.id ?? null, investment_pool_id: data.investment_pool_id ?? null }
       )
     }
+    return null
+  }
+
+  /**
+   * Is this a contributor's account a designated pool may pay back into
+   * (Decision 8)? The account TYPE alone is not enough: any USER_WALLET would
+   * let the money leave to a stranger, and any ESCROW includes the per-entity
+   * subcontract / campaign / sponsorship escrows that release into
+   * SELLER_EARNINGS — a two-hop route around `designated_outbound_only`. So:
+   * a USER_WALLET only when it is the `investor_account_id` of a LEDGER
+   * investment in this pool; an ESCROW only when it is the system order
+   * escrow (owner SYSTEM / "system"), which is where `processRefund`'s
+   * reversal goes.
+   */
+  private async isDesignatedContributorAccount_(
+    poolId: string,
+    account: { id: string; account_type?: string | null; owner_type?: string | null; owner_id?: string | null }
+  ): Promise<boolean> {
+    if (!isDesignatedReturnAccountType(account.account_type)) return false
+    if (account.account_type === "ESCROW") return isSystemEscrowAccount(account)
+    const [investor] = await this.listInvestments({ pool_id: poolId, investor_account_id: account.id, settlement: "LEDGER" })
+    return Boolean(investor)
+  }
+
+  /**
+   * Date the first designated outflow that actually COMPLETED (Decision 8):
+   * `createTransfer` calls this after the balances moved and the entry was
+   * flipped to COMPLETED, never from the guard, so a leg the guard allowed but
+   * a later check refused (cross-rail, rail invariants, balance) never stamps.
+   * Reporting only: the direction rule reads the balance, never this column,
+   * so a failure here is logged and never fails the (already completed) leg.
+   * Write-once from this path (the generated create/update strip the column);
+   * two legs in the same instant can both see it unset and both write, which
+   * moves the date by that instant and nothing else.
+   */
+  private async stampLegacyFundsDesignated_(pool: { id: string; legacy_funds_designated_at?: Date | string | null }): Promise<void> {
+    if (pool.legacy_funds_designated_at) return
+    try {
+      await this.persistInvestmentPools_("update", { id: pool.id, legacy_funds_designated_at: new Date() }, [])
+    } catch (error) {
+      log.warn(
+        `[Hawala] could not stamp legacy_funds_designated_at on pool ${pool.id}: ${(error as Error)?.message ?? error}`
+      )
+    }
+  }
+
+  /**
+   * The designated-funds report (Decision 8): every UNCARRIED pool that is
+   * stamped or whose account still holds a positive balance, with that
+   * balance, the sum of its outstanding LEDGER-settled investments, the count
+   * `returnDesignatedFunds` can send back, and the delta between them (the
+   * pre-existing counter drift makes it non-zero in general — surfaced, not
+   * hidden). Integer cents underneath. Dark with the flag off: a read that
+   * publishes is gated like the writes.
+   */
+  async listDesignatedPoolFunds(): Promise<DesignatedPoolFundsReport> {
+    this.requireParityFlag_("listDesignatedPoolFunds")
+    const pools = (await this.listInvestmentPools({})).filter((p) => !isCarriedPool(p))
+    const accountIds = pools
+      .map((p) => p.ledger_account_id)
+      .filter((id): id is string => typeof id === "string" && id.length > 0)
+    const accounts = accountIds.length > 0 ? await this.listLedgerAccounts({ id: accountIds }) : []
+    const accountById = new Map(accounts.map((a) => [a.id, a]))
+
+    const designated = pools.filter(
+      (p) => Boolean(p.legacy_funds_designated_at) || hasDesignatedBalance(accountById.get(p.ledger_account_id))
+    )
+    if (designated.length === 0) return { pools: [], totals: totalDesignatedPoolFunds([]) }
+
+    const ledgerRows = await this.listInvestments({ pool_id: designated.map((p) => p.id), settlement: "LEDGER" })
+    const rowsByPool = new Map<string, typeof ledgerRows>()
+    for (const row of ledgerRows) {
+      const list = rowsByPool.get(row.pool_id) ?? []
+      list.push(row)
+      rowsByPool.set(row.pool_id, list)
+    }
+    const lines = designated.map((p) =>
+      summariseDesignatedPool(p, accountById.get(p.ledger_account_id), rowsByPool.get(p.id) ?? [])
+    )
+    return { pools: lines, totals: totalDesignatedPoolFunds(lines) }
+  }
+
+  /**
+   * The wind-down primitive (Decision 8): return ONE legacy LEDGER investment
+   * from its uncarried pool's designated account to the investor's own
+   * account (`investment.investor_account_id`), as a REFUND leg keyed
+   * `designated-return-${investment.id}` — derived from the record, never the
+   * attempt — then mark the investment WITHDRAWN. Money first, record second.
+   *
+   *   - `feature_disabled` with the flag off, before any read;
+   *   - "Investment pool not found" / "Investment not found" (the investment
+   *     must belong to the named pool);
+   *   - `carried_pool` for a carried pool, `not_ledger_investment` for a
+   *     CARRIER row (or a LEDGER row with no account) — nothing of either is
+   *     on BMC's ledger;
+   *   - idempotent, and `returned` / `already_returned` ONLY on a COMPLETED
+   *     entry under the key — the one state in which the money is known to
+   *     have moved. A COMPLETED prior return answers `{ returned: false,
+   *     reason: "already_returned" }` (repairing the WITHDRAWN mark if a crash
+   *     fell between money and record). Every other entry under the key is
+   *     `designated_return_unsettled` and the investment stays CONFIRMED: a
+   *     FAILED one (this call's own leg, which createTransfer marks FAILED
+   *     when the balance move throws, or an earlier attempt's) is never
+   *     re-attempted under that key; a PENDING one is a concurrent return in
+   *     flight — whether this call lost on the ledger's unique idempotency key
+   *     or was handed that entry by createTransfer's own idempotency read —
+   *     and a retry reads its outcome. The money moves once in every case,
+   *     because the key is unique on hawala_ledger_entry;
+   *   - `investment_not_confirmed` for any other status;
+   *   - `insufficient_designated_balance` when the account cannot cover it.
+   *
+   * The leg itself still passes `createTransfer`'s guard, so the direction
+   * rule applies here too: an investor account that is not a USER_WALLET is
+   * refused `designated_outbound_only`. No automatic sweep; no Stripe payout
+   * (the investor's wallet exit is the existing payout path). The pool's
+   * historical counters (total_raised / total_investors) are not touched —
+   * they are pre-existing counters, not derivations.
+   */
+  async returnDesignatedFunds(poolId: string, investmentId: string, input: { returned_by?: string | null } = {}) {
+    this.requireParityFlag_("returnDesignatedFunds")
+    const pool = await this.requirePool_(poolId)
+    this.refuseIfCarried_(pool, "returnDesignatedFunds")
+    const [investment] = await this.listInvestments({ id: investmentId, pool_id: poolId })
+    if (!investment) throw new Error("Investment not found")
+    if (investment.settlement === "CARRIER" || !investment.investor_account_id) {
+      throw new CarrierRefusalError(
+        "not_ledger_investment",
+        `investment ${investmentId} is a ${investment.settlement} record with no ledger account; there is nothing on BMC's ledger to return.`,
+        { pool_id: poolId, investment_id: investmentId, settlement: investment.settlement }
+      )
+    }
+    const investorAccountId = investment.investor_account_id
+
+    const key = designatedReturnKey(investment.id)
+    const markWithdrawn = (entryId: string) =>
+      this.updateInvestments({
+        id: investment.id,
+        status: "WITHDRAWN" as const,
+        withdrawn_at: new Date(),
+        metadata: {
+          ...((investment.metadata as Record<string, unknown> | null) ?? {}),
+          designated_return_entry_id: entryId,
+          returned_by: input.returned_by ?? null,
+        },
+      })
+
+    // The money is known to have moved only when the entry under the key is
+    // COMPLETED. Anything else is refused and the investment stays CONFIRMED
+    // (money first, record second): a PENDING entry is a return in flight
+    // (retry to read its outcome); a FAILED one never moved money and is
+    // never re-attempted under the same key (reconcile it by hand).
+    const unsettled = (found: { id: string; status?: unknown }, cause?: unknown) =>
+      new CarrierRefusalError(
+        "designated_return_unsettled",
+        found.status === "PENDING"
+          ? `a return of investment ${investmentId} (entry ${found.id}) is still PENDING — another return of it is in flight; retry to read its outcome. It is never re-attempted under the same key.`
+          : `a return of investment ${investmentId} (entry ${found.id}) is ${String(found.status)}, so the money is not known to have moved; it is never re-attempted under the same key — reconcile it by hand.`,
+        {
+          pool_id: poolId,
+          investment_id: investmentId,
+          entry_id: found.id,
+          entry_status: found.status ?? null,
+          ...(cause !== undefined ? { cause: cause instanceof Error ? cause.message : String(cause) } : {}),
+        }
+      )
+
+    const [prior] = await this.listLedgerEntries({ idempotency_key: key })
+    if (prior) {
+      if (prior.status !== "COMPLETED") throw unsettled(prior)
+      if (investment.status !== "WITHDRAWN") await markWithdrawn(prior.id)
+      return { returned: false as const, reason: "already_returned" as const, investment_id: investment.id, entry_id: prior.id }
+    }
+
+    if (investment.status !== "CONFIRMED") {
+      throw new CarrierRefusalError(
+        "investment_not_confirmed",
+        `investment ${investmentId} is ${investment.status}; only a CONFIRMED ledger investment is returned from a designated account.`,
+        { pool_id: poolId, investment_id: investmentId, status: investment.status }
+      )
+    }
+
+    const amountCents = toCents(investment.amount)
+    const [account] = pool.ledger_account_id ? await this.listLedgerAccounts({ id: pool.ledger_account_id }) : []
+    const availableCents = toCents(account?.available_balance)
+    if (!account || amountCents <= 0 || availableCents < amountCents) {
+      throw new CarrierRefusalError(
+        "insufficient_designated_balance",
+        `pool ${poolId}'s designated account holds ${availableCents / 100}; investment ${investmentId} is ${amountCents / 100}.`,
+        { pool_id: poolId, investment_id: investmentId, available_balance: availableCents / 100, amount: amountCents / 100 }
+      )
+    }
+
+    let entry
+    try {
+      entry = await this.createTransfer({
+        debit_account_id: pool.ledger_account_id,
+        credit_account_id: investorAccountId,
+        amount: amountCents / 100,
+        entry_type: "REFUND",
+        investment_pool_id: pool.id,
+        idempotency_key: key,
+        description: `Designated return of investment ${investment.id} from pool ${pool.id} (Decision 8 wind-down)`,
+        metadata: { designated_return: true, pool_id: pool.id, investment_id: investment.id },
+      })
+    } catch (error) {
+      // Either a concurrent return won the ledger's unique idempotency key,
+      // or this call's own leg failed after its PENDING entry was written
+      // (createTransfer marks it FAILED and rethrows). Only a COMPLETED entry
+      // means the money moved.
+      const [raced] = await this.listLedgerEntries({ idempotency_key: key })
+      if (!raced) throw error
+      if (raced.status !== "COMPLETED") throw unsettled(raced, error)
+      // The winner marks it; repair the mark only if it has not landed (the
+      // read above is stale), so the winner's operator stays on the record.
+      const [current] = await this.listInvestments({ id: investment.id })
+      if (current?.status !== "WITHDRAWN") await markWithdrawn(raced.id)
+      return { returned: false as const, reason: "already_returned" as const, investment_id: investment.id, entry_id: raced.id }
+    }
+
+    // createTransfer's own idempotency read can hand back a concurrent
+    // caller's entry that has not settled yet; only COMPLETED is a return.
+    if (entry.status !== "COMPLETED") throw unsettled(entry)
+    const updated = await markWithdrawn(entry.id)
+    return { returned: true as const, investment: updated, entry }
   }
 
   /**
@@ -2127,10 +2414,17 @@ class HawalaLedgerModuleService extends MedusaService({
    * `customer_id` when known, else the carrier's reference.
    */
   private async recomputeCarriedPoolTotals_(poolId: string) {
-    const [rows, distributions] = await Promise.all([
-      this.listInvestments({ pool_id: poolId, settlement: "CARRIER" }),
+    // CONFIRMED rows only (Decision 7): a PENDING row is an intent the
+    // processor has not yet confirmed, a CANCELLED row failed or was reversed.
+    // Neither is money the carrier holds.
+    const [confirmed, distributions] = await Promise.all([
+      this.listInvestments({ pool_id: poolId, settlement: "CARRIER", status: "CONFIRMED" }),
       this.listPoolCarrierDistributions({ pool_id: poolId }),
     ])
+    // A reversed row is never money the carrier holds, whatever its status
+    // says (the transitions keep the two apart; this keeps the totals honest
+    // even if a row were ever written around them).
+    const rows = confirmed.filter((r) => !r.reversed_at)
     const contributors = new Set<string>()
     for (const row of rows) contributors.add(row.customer_id ? `customer:${row.customer_id}` : `ref:${row.carrier_reference}`)
     const totals = {
@@ -2162,23 +2456,42 @@ class HawalaLedgerModuleService extends MedusaService({
   /**
    * RECORD a contribution the carrier received on its own accounts. Writes an
    * Investment row { settlement CARRIER, investor_account_id null,
-   * ledger_entry_id null, status CONFIRMED, source DIRECT } under the partial
-   * unique index on (pool_id, carrier_reference); a duplicate reference — a
-   * replay or a concurrent second call — answers `already_recorded` after a
-   * re-read (the index is the arbiter, as in collective-campaign's
+   * ledger_entry_id null, source DIRECT } under the partial unique index on
+   * (pool_id, carrier_reference); a duplicate reference — a replay or a
+   * concurrent second call — answers `already_recorded` after a re-read (the
+   * index is the arbiter, as in collective-campaign's
    * recordParticipantContribution). No ledger leg, no account touched; totals
    * are then derived from the rows. `amount` is in the table's own unit
    * (major units).
+   *
+   * `status` (Decision 7): CONFIRMED — the default, what the admin route
+   * records when the carrier has already received the money — counts toward
+   * the pool's totals at once. PENDING is what the store checkout writes
+   * after minting the intent on the carrier's account: the money has not
+   * moved yet, so the row counts for nothing until the Connect webhook
+   * promotes it with `confirmCarrierContribution` (Stripe's amount), cancels
+   * it with `failCarrierContribution`, or — after a full refund, whether or
+   * not its success arrived first — closes it for good with
+   * `reverseCarrierContribution`.
    */
   async recordCarrierContribution(input: {
     pool_id: string
     amount: number
     carrier_reference: string
     customer_id?: string | null
+    status?: "PENDING" | "CONFIRMED"
     metadata?: Record<string, unknown> | null
   }) {
     this.requireParityFlag_("recordCarrierContribution")
     this.assertCarrierRecordInput_(input)
+    const status = input.status ?? "CONFIRMED"
+    if (status !== "PENDING" && status !== "CONFIRMED") {
+      throw new CarrierRefusalError(
+        "invalid_carrier_record",
+        `status must be PENDING or CONFIRMED; got ${String(input.status)}.`,
+        { status: input.status }
+      )
+    }
     const pool = await this.requirePool_(input.pool_id)
     if (!isCarriedPool(pool)) {
       throw new CarrierRefusalError(
@@ -2203,12 +2516,13 @@ class HawalaLedgerModuleService extends MedusaService({
         customer_id: input.customer_id ?? null,
         amount: input.amount,
         currency_code: "USD",
-        status: "CONFIRMED" as const,
+        status,
         source: "DIRECT" as const,
         ledger_entry_id: null,
         settlement: "CARRIER" as const,
         carrier_org_key: pool.carrier_org_key as string,
         carrier_reference: reference,
+        reversed_at: null,
         invested_at: new Date(),
         metadata: input.metadata ?? null,
       })
@@ -2224,6 +2538,185 @@ class HawalaLedgerModuleService extends MedusaService({
 
     const totals = await this.recomputeCarriedPoolTotals_(input.pool_id)
     return { recorded: true as const, investment, totals }
+  }
+
+  /**
+   * The CARRIER row a carrier reference names on a carried pool, after the
+   * same preconditions every carrier record has: flag on, a usable reference,
+   * an existing carried pool. Null when no row carries that reference.
+   */
+  private async findCarrierContribution_(operation: string, poolId: string, carrierReference: unknown) {
+    this.requireParityFlag_(operation)
+    if (typeof carrierReference !== "string" || carrierReference.trim().length === 0) {
+      throw new CarrierRefusalError(
+        "invalid_carrier_record",
+        "carrier_reference is required: the record is keyed by the carrier's own reference, never by the attempt.",
+        { operation }
+      )
+    }
+    const pool = await this.requirePool_(poolId)
+    if (!isCarriedPool(pool)) {
+      throw new CarrierRefusalError(
+        "no_carrier",
+        `pool ${poolId} has no carrier; ${operation} applies to carried pools only.`,
+        { pool_id: poolId, operation }
+      )
+    }
+    const [row] = await this.listInvestments({ pool_id: poolId, carrier_reference: carrierReference.trim(), settlement: "CARRIER" })
+    return { pool, row: row ?? null }
+  }
+
+  /** Re-read one investment row by id (after a conditional transition). */
+  private async rereadInvestment_(investmentId: string) {
+    const [row] = await this.listInvestments({ id: investmentId })
+    return row ?? null
+  }
+
+  /**
+   * One CARRIER-row lifecycle transition (Decision 7) as a single conditional
+   * UPDATE, so two processor events racing on the same intent cannot both
+   * read PENDING and let whichever write lands last decide (a paid
+   * contribution ending CANCELLED, or a refunded one re-confirmed): the
+   * predicate — CARRIER, `status IN from`, not yet reversed — is re-checked by
+   * the database at write time and exactly one matching writer succeeds.
+   * Returns true when this call's write landed, false when the predicate no
+   * longer held. The `casApproveOrgAdvance_` pattern: only `status` and
+   * `reversed_at` (plain columns, never the bigNumber `amount`), column names
+   * fixed, every value bound. With no pg connection reachable (unit tests
+   * without DI) it falls back to the generated `{ selector, data }` update,
+   * which is NOT atomic on a real database.
+   */
+  private async transitionCarrierRow_(
+    investmentId: string,
+    from: ReadonlyArray<"PENDING" | "CONFIRMED" | "CANCELLED">,
+    to: { status: "CONFIRMED" | "CANCELLED"; reversed_at?: Date | null }
+  ): Promise<boolean> {
+    const reversedAt = to.reversed_at ?? null
+    const pg = this.resolvePgConnection()
+    if (pg) {
+      const placeholders = from.map(() => "?").join(", ")
+      const result = await pg.raw(
+        `UPDATE hawala_investment
+            SET status = ?, reversed_at = ?, updated_at = NOW()
+          WHERE id = ? AND settlement = 'CARRIER' AND status IN (${placeholders}) AND reversed_at IS NULL AND deleted_at IS NULL
+          RETURNING id`,
+        [to.status, reversedAt, investmentId, ...from]
+      )
+      return Number(result?.rowCount ?? result?.rows?.length ?? 0) > 0
+    }
+    const updated = await this.updateInvestments({
+      selector: { id: investmentId, settlement: "CARRIER" as const, status: [...from], reversed_at: null },
+      data: { status: to.status, reversed_at: reversedAt },
+    })
+    return (Array.isArray(updated) ? updated : [updated]).filter(Boolean).length > 0
+  }
+
+  /**
+   * The processor confirmed the contribution (Decision 7: `payment_intent.
+   * succeeded` on the carrier's account). PENDING → CONFIRMED, and the amount
+   * becomes the PROCESSOR's figure — Stripe's statement of what moved, never
+   * the metadata the checkout stamped. A CANCELLED row whose intent later
+   * succeeded (a failed attempt, then a good card on the same intent) is
+   * confirmed too, exactly as a failed donation record recovers; a REVERSED
+   * row is terminal (`already_reversed`) — including one a full refund closed
+   * before this success arrived (Stripe does not order events). Idempotent: a
+   * replay on a CONFIRMED row is `already_confirmed` and writes nothing.
+   *
+   * Stripe's figure is written FIRST (amount / customer / metadata — never
+   * the status), then the status moves through `transitionCarrierRow_`: a
+   * crash between the two leaves a PENDING row a retry confirms, never a
+   * CONFIRMED row stuck on the checkout's amount; and a concurrent refund or
+   * failure is settled by the conditional transition, not by write order.
+   * Totals are re-derived.
+   */
+  async confirmCarrierContribution(
+    poolId: string,
+    carrierReference: string,
+    input: { amount_from_processor: number; customer_id?: string | null; metadata?: Record<string, unknown> | null }
+  ) {
+    const { row } = await this.findCarrierContribution_("confirmCarrierContribution", poolId, carrierReference)
+    if (!isValidCarrierAmount(input.amount_from_processor)) {
+      throw new CarrierRefusalError(
+        "invalid_carrier_record",
+        `amount_from_processor must be a positive, finite major-unit amount with at most two decimals; got ${String(input.amount_from_processor)}.`,
+        { amount_from_processor: input.amount_from_processor }
+      )
+    }
+    if (!row) return { confirmed: false as const, reason: "not_recorded" as const }
+    if (row.reversed_at) return { confirmed: false as const, reason: "already_reversed" as const, investment_id: row.id }
+    if (row.status === "CONFIRMED") return { confirmed: false as const, reason: "already_confirmed" as const, investment_id: row.id }
+
+    await this.updateInvestments({
+      id: row.id,
+      amount: input.amount_from_processor,
+      customer_id: row.customer_id ?? input.customer_id ?? null,
+      metadata: { ...((row.metadata as Record<string, unknown> | null) ?? {}), ...(input.metadata ?? {}) },
+    })
+    const won = await this.transitionCarrierRow_(row.id, ["PENDING", "CANCELLED"], { status: "CONFIRMED" })
+    if (!won) {
+      // Another event moved the row between the read and the write.
+      const current = await this.rereadInvestment_(row.id)
+      return current?.reversed_at
+        ? { confirmed: false as const, reason: "already_reversed" as const, investment_id: row.id }
+        : { confirmed: false as const, reason: "already_confirmed" as const, investment_id: row.id }
+    }
+    const investment = await this.rereadInvestment_(row.id)
+    const totals = await this.recomputeCarriedPoolTotals_(poolId)
+    return { confirmed: true as const, investment, totals }
+  }
+
+  /**
+   * The processor reported the intent failed (`payment_intent.payment_failed`).
+   * PENDING → CANCELLED; nothing was ever counted, so the totals do not move.
+   * A late failure cannot un-confirm a CONFIRMED row (`already_confirmed`) —
+   * not even one confirmed concurrently, because the transition only fires
+   * while the row is still PENDING — and a second failure is
+   * `already_cancelled`.
+   */
+  async failCarrierContribution(poolId: string, carrierReference: string) {
+    const { row } = await this.findCarrierContribution_("failCarrierContribution", poolId, carrierReference)
+    if (!row) return { failed: false as const, reason: "not_recorded" as const }
+    if (row.status === "CONFIRMED") return { failed: false as const, reason: "already_confirmed" as const, investment_id: row.id }
+    if (row.status !== "PENDING" || row.reversed_at) return { failed: false as const, reason: "already_cancelled" as const, investment_id: row.id }
+    const won = await this.transitionCarrierRow_(row.id, ["PENDING"], { status: "CANCELLED" })
+    if (!won) {
+      const current = await this.rereadInvestment_(row.id)
+      return current?.status === "CONFIRMED"
+        ? { failed: false as const, reason: "already_confirmed" as const, investment_id: row.id }
+        : { failed: false as const, reason: "already_cancelled" as const, investment_id: row.id }
+    }
+    const investment = await this.rereadInvestment_(row.id)
+    return { failed: true as const, investment }
+  }
+
+  /**
+   * The processor fully refunded the contribution on the carrier's account
+   * (`charge.refunded` covering the gross). The row becomes CANCELLED with
+   * `reversed_at` set — terminal from ANY status: a refund means the charge
+   * succeeded and the money went back, so a PENDING or CANCELLED row (whose
+   * success event has not arrived yet, or arrived out of order after a
+   * failure) is closed too, and a success delivered later answers
+   * `already_reversed` instead of confirming money the carrier returned —
+   * the donation path treats `refunded` as terminal the same way.
+   * `was_confirmed` says whether the row had been counted when it was read
+   * (`false` is what the S14 draft answered as `not_confirmed` and left
+   * open); the totals are re-derived either way, so the contribution leaves
+   * them exactly once. A second full refund is `already_reversed`. This is a
+   * RECORD of what the carrier's processor did; BMC moves nothing and never
+   * calls `processRefund` here.
+   */
+  async reverseCarrierContribution(poolId: string, carrierReference: string, input: { reversed_at?: Date | null } = {}) {
+    const { row } = await this.findCarrierContribution_("reverseCarrierContribution", poolId, carrierReference)
+    if (!row) return { reversed: false as const, reason: "not_recorded" as const }
+    if (row.reversed_at) return { reversed: false as const, reason: "already_reversed" as const, investment_id: row.id }
+    const won = await this.transitionCarrierRow_(row.id, ["PENDING", "CONFIRMED", "CANCELLED"], {
+      status: "CANCELLED",
+      reversed_at: input.reversed_at ?? new Date(),
+    })
+    if (!won) return { reversed: false as const, reason: "already_reversed" as const, investment_id: row.id }
+    const investment = await this.rereadInvestment_(row.id)
+    const totals = await this.recomputeCarriedPoolTotals_(poolId)
+    return { reversed: true as const, was_confirmed: row.status === "CONFIRMED", investment, totals }
   }
 
   /**
@@ -2363,9 +2856,13 @@ class HawalaLedgerModuleService extends MedusaService({
       }),
     ])
 
-    // Group investments by pool_id
+    // Group investments by pool_id. Every LEDGER row counts exactly as before;
+    // a CARRIER row only once the processor confirmed it and it was not
+    // reversed (Decision 7) — a PENDING checkout row (which anyone can start)
+    // or a failed / refunded one is not an investor in the pool.
     const investmentsByPool = new Map<string, number>()
     for (const inv of allInvestments) {
+      if (!countsTowardPool(inv)) continue
       const count = investmentsByPool.get(inv.pool_id) || 0
       investmentsByPool.set(inv.pool_id, count + 1)
     }

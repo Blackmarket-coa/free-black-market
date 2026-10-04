@@ -1080,9 +1080,37 @@ export default defineMiddlewares({
       method: "POST",
       middlewares: [requireFeatureFlagMiddleware("NONPROFIT_PARITY_V1")],
     },
+    // Phase 1b (docs/BMC_SURVIVAL_PROGRAMS.md Decision 8): designated legacy
+    // pool funds — the report and the per-investment wind-down return. Under
+    // the `/admin/hawala/pools*` INVESTMENT_POOLS_V1 matcher above AND
+    // FF_NONPROFIT_PARITY_V1 here; neither flag alone opens them, and the
+    // handlers (and the service) repeat the parity check. Both flags stay
+    // unset everywhere until counsel clears L26.
+    {
+      matcher: "/admin/hawala/pools/designated",
+      method: "GET",
+      middlewares: [requireFeatureFlagMiddleware("NONPROFIT_PARITY_V1")],
+    },
+    {
+      matcher: "/admin/hawala/pools/*/designated-returns",
+      method: "POST",
+      middlewares: [requireFeatureFlagMiddleware("NONPROFIT_PARITY_V1")],
+    },
     {
       matcher: "/store/hawala/pools*",
       middlewares: [requireFeatureFlagMiddleware("INVESTMENT_POOLS_V1")],
+    },
+    // Phase 1b (docs/BMC_SURVIVAL_PROGRAMS.md Decision 7): a contribution to a
+    // nonprofit-CARRIED pool, a direct charge on the carrier's own connected
+    // account. Under the `/store/hawala/pools*` INVESTMENT_POOLS_V1 glob above
+    // (express 4's `*` spans path segments; pinned in the route's spec) AND
+    // FF_NONPROFIT_PARITY_V1 here; neither flag alone opens it, and the
+    // handler repeats both checks. Rate-limited like the donation checkout.
+    // Both flags stay unset everywhere until counsel clears L26.
+    {
+      matcher: "/store/hawala/pools/*/contributions",
+      method: "POST",
+      middlewares: [standardRateLimiter, requireFeatureFlagMiddleware("NONPROFIT_PARITY_V1")],
     },
     {
       matcher: "/store/hawala/investments*",

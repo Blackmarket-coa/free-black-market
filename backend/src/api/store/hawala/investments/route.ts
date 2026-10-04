@@ -1,6 +1,6 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { HAWALA_LEDGER_MODULE } from "../../../../modules/hawala-ledger"
-import { CarrierRefusalError, isCarriedPool, projectPoolCarrier } from "../../../../modules/hawala-ledger/carrier"
+import { CarrierRefusalError, countsTowardPool, isCarriedPool, projectPoolCarrier } from "../../../../modules/hawala-ledger/carrier"
 import HawalaLedgerModuleService from "../../../../modules/hawala-ledger/service"
 import { resolveRequestIdempotencyKey } from "../../../../shared/request-idempotency"
 
@@ -46,8 +46,11 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       }
     })
 
-    // Calculate totals
-    const totalInvested = investments.reduce((sum, i) => sum + Number(i.amount), 0)
+    // Calculate totals. A CARRIER contribution counts only once the processor
+    // confirmed it and it was not reversed (Decision 7): a PENDING checkout or
+    // a failed / refunded one is not money invested. Every LEDGER row counts
+    // exactly as before.
+    const totalInvested = investments.filter(countsTowardPool).reduce((sum, i) => sum + Number(i.amount), 0)
     const totalReturns = investments.reduce((sum, i) => sum + Number(i.actual_return || 0), 0)
 
     res.json({

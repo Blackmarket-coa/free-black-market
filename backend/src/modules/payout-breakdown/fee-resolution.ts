@@ -63,10 +63,22 @@ export type PlatformFeeTransactionKind =
   | "donation"
   | "donation_pledge"
   | "tip"
+  | "pool_contribution"
 
-/** Kinds the platform takes no fee on, by rule rather than by negotiation. */
+/**
+ * Kinds the platform takes no fee on, by rule rather than by negotiation.
+ *
+ * `pool_contribution` (docs/BMC_SURVIVAL_PROGRAMS.md Decision 7, Phase 1b
+ * slice S14) is a contribution to a nonprofit-carried investment pool,
+ * collected as a direct charge ON the carrier's own connected account. BMC
+ * takes 0 for the same mechanical reason it takes 0 on a donation: a direct
+ * charge cannot carry a platform cut without `application_fee_amount`, which
+ * routes funds through FBM's balance and is forbidden (L24). Decision 1 named
+ * donations, pledges and tips; extending the 0 to carried-pool contributions
+ * by the same mechanism is recorded as an assumption for the operator.
+ */
 export const ZERO_FEE_TRANSACTION_KINDS: ReadonlySet<PlatformFeeTransactionKind> =
-  new Set<PlatformFeeTransactionKind>(["donation", "donation_pledge", "tip"])
+  new Set<PlatformFeeTransactionKind>(["donation", "donation_pledge", "tip", "pool_contribution"])
 
 /** The subset of `seller_payout_settings` this rule reads. */
 export type SellerFeeOverride = {

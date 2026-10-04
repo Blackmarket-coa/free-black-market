@@ -22,7 +22,23 @@ import HawalaLedgerModuleService from "../service"
  *
  * No `__container__` registration: `resolvePgConnection` finds nothing and
  * the legacy read-modify-write paths run, which is where the mocks can see
- * what moved. Not a `*.spec.ts`, so never collected as a suite.
+ * what moved — and the carrier lifecycle's conditional transition falls back
+ * to the generated `{ selector, data }` update, which `updateInvestments`
+ * honours here (returning the rows it touched, an empty list when the
+ * selector matched nothing). A `null` in any filter means SQL `IS NULL`
+ * (null or absent).
+ *
+ * With `pg: true` (or `pg: "hold"`), `resolvePgConnection` instead returns a
+ * stub whose `raw` interprets exactly ONE statement — the carrier lifecycle's
+ * `UPDATE hawala_investment SET status = ?, reversed_at = ? WHERE id = ? AND
+ * settlement = 'CARRIER' AND status IN (...) AND reversed_at IS NULL AND
+ * deleted_at IS NULL RETURNING id` — against the in-memory rows, honouring
+ * each predicate only if the statement actually carries it (so a statement
+ * that drops one is caught), and records every SQL text in `sql`. Anything
+ * else it is handed throws, which also proves no ledger leg is attempted.
+ * `"hold"` parks every statement until the spec releases it
+ * (`releaseSql(match)`), so a race can be replayed in a chosen order.
+ * Not a `*.spec.ts`, so never collected as a suite.
  */
 
 export type Row = Record<string, unknown> & { id: string }
@@ -30,6 +46,7 @@ export type Row = Record<string, unknown> & { id: string }
 function matches(row: Row, filter: Record<string, unknown>): boolean {
   return Object.entries(filter).every(([k, want]) => {
     const have = row[k]
+    if (want === null) return have === null || have === undefined
     if (Array.isArray(want)) return want.includes(have)
     if (want && typeof want === "object" && !(want instanceof Date)) {
       throw new Error(`in-memory pool ledger: unsupported filter operator on ${k}`)
@@ -54,6 +71,46 @@ export type PoolLedger = {
   /** Every write handed to the (shadowed) generated pool persistence. */
   poolWrites: Array<{ op: "create" | "update"; data: Record<string, unknown> }>
   balanceMoves: Array<{ accountId: string; delta: number }>
+  /** Every raw SQL statement the pg stub received (empty unless `pg` is set). */
+  sql: Array<{ sql: string; bindings: unknown[] }>
+  /** `pg: "hold"` only: statements parked until released, in arrival order. */
+  heldSql: Array<{ sql: string; bindings: unknown[] }>
+  /** `pg: "hold"` only: apply the first parked statement `match` accepts. */
+  releaseSql: (match: (bindings: unknown[]) => boolean) => void
+}
+
+/**
+ * The pg stub's whole vocabulary: the carrier lifecycle transition. The SET
+ * columns are read off the statement in order; `WHERE id = ?` takes the next
+ * binding and `status IN (?, ...)` the rest. Each predicate is honoured only
+ * if the text carries it.
+ */
+function interpretCarrierTransition(investments: Row[], text: string, bindings: unknown[]): { rowCount: number; rows: Array<{ id: string }> } {
+  const sql = text.replace(/\s+/g, " ").trim()
+  const shape = /^UPDATE hawala_investment SET (.+?) WHERE (.+?) RETURNING id$/.exec(sql)
+  if (!shape) throw new Error(`in-memory pool ledger pg stub: unexpected SQL: ${sql}`)
+  const setCols = shape[1]
+    .split(",")
+    .map((c) => c.trim())
+    .filter((c) => c.endsWith("= ?"))
+    .map((c) => c.replace(/\s*=\s*\?$/, ""))
+  const where = shape[2]
+  const values = [...bindings]
+  const patch: Record<string, unknown> = {}
+  for (const col of setCols) patch[col] = values.shift()
+  const id = values.shift()
+  const statusIn = /status IN \(([?, ]+)\)/.exec(where)
+  const from = statusIn ? values.splice(0, statusIn[1].split(",").length) : null
+  const hit = investments.filter(
+    (r) =>
+      r.id === id &&
+      (!/settlement = 'CARRIER'/.test(where) || r.settlement === "CARRIER") &&
+      (from === null || from.includes(r.status)) &&
+      (!/reversed_at IS NULL/.test(where) || r.reversed_at == null) &&
+      (!/deleted_at IS NULL/.test(where) || r.deleted_at == null)
+  )
+  for (const row of hit) Object.assign(row, patch)
+  return { rowCount: hit.length, rows: hit.map((r) => ({ id: r.id })) }
 }
 
 export function makeAccount(id: string, over: Partial<Row> = {}): Row {
@@ -94,7 +151,9 @@ export function makePool(id: string, over: Partial<Row> = {}): Row {
   }
 }
 
-export function makePoolLedger(seed: { pools?: Row[]; investments?: Row[]; distributions?: Row[]; accounts?: Row[] } = {}): PoolLedger {
+export function makePoolLedger(
+  seed: { pools?: Row[]; investments?: Row[]; distributions?: Row[]; accounts?: Row[]; pg?: boolean | "hold" } = {}
+): PoolLedger {
   const pools: Row[] = (seed.pools ?? []).map((r) => ({ ...r }))
   const investments: Row[] = (seed.investments ?? []).map((r) => ({ ...r }))
   const distributions: Row[] = (seed.distributions ?? []).map((r) => ({ ...r }))
@@ -102,9 +161,38 @@ export function makePoolLedger(seed: { pools?: Row[]; investments?: Row[]; distr
   const entries: Row[] = []
   const poolWrites: PoolLedger["poolWrites"] = []
   const balanceMoves: PoolLedger["balanceMoves"] = []
+  const sql: PoolLedger["sql"] = []
+  const held: Array<{ sql: string; bindings: unknown[]; apply: () => void }> = []
 
   const service = Object.create(HawalaLedgerModuleService.prototype) as HawalaLedgerModuleService
   const shadow = service as unknown as Record<string, unknown>
+
+  if (seed.pg) {
+    const hold = seed.pg === "hold"
+    shadow.resolvePgConnection = () => ({
+      raw: (text: string, bindings: unknown[] = []) =>
+        new Promise((resolve, reject) => {
+          sql.push({ sql: text, bindings: [...bindings] })
+          const apply = () => {
+            try {
+              resolve(interpretCarrierTransition(investments, text, bindings))
+            } catch (error) {
+              reject(error)
+            }
+          }
+          // Every caller reaches the database before any statement applies;
+          // the statement itself is then the only arbiter.
+          if (hold) held.push({ sql: text, bindings: [...bindings], apply })
+          else setTimeout(apply, 0)
+        }),
+    })
+  }
+  const releaseSql = (match: (bindings: unknown[]) => boolean) => {
+    const i = held.findIndex((h) => match(h.bindings))
+    if (i < 0) throw new Error("in-memory pool ledger: no parked statement matches")
+    const [stmt] = held.splice(i, 1)
+    stmt.apply()
+  }
 
   // pools — through the service's single persistence path (see header)
   shadow.listInvestmentPools = async (filter: Record<string, unknown> = {}) => pools.filter((r) => matches(r, filter))
@@ -149,6 +237,15 @@ export function makePoolLedger(seed: { pools?: Row[]; investments?: Row[]; distr
     return row
   }
   shadow.updateInvestments = async (data: Record<string, unknown> & { id: string }) => {
+    if ("selector" in data && "data" in data) {
+      // The generated update's `{ selector, data }` form (the conditional
+      // transition's no-pg fallback): the rows it touched, possibly none.
+      const selector = data.selector as Record<string, unknown>
+      const patch = data.data as Record<string, unknown>
+      const hit = investments.filter((r) => matches(r, selector))
+      for (const row of hit) Object.assign(row, patch)
+      return hit
+    }
     const row = investments.find((r) => r.id === data.id)
     if (!row) throw new Error(`Investment ${data.id} not found`)
     Object.assign(row, data)
@@ -197,5 +294,19 @@ export function makePoolLedger(seed: { pools?: Row[]; investments?: Row[]; distr
   // Fire-and-forget monitor sweep after a transfer; no monitors here.
   shadow.evaluateMonitorsForAccounts = async () => undefined
 
-  return { service, pools, investments, distributions, accounts, entries, poolWrites, balanceMoves }
+  return {
+    service,
+    pools,
+    investments,
+    distributions,
+    accounts,
+    entries,
+    poolWrites,
+    balanceMoves,
+    sql,
+    get heldSql() {
+      return held.map(({ sql: text, bindings }) => ({ sql: text, bindings }))
+    },
+    releaseSql,
+  }
 }
