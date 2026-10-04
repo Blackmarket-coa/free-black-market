@@ -8,6 +8,7 @@ import {
 } from "./models"
 import {
   resolvePlatformFee,
+  type PlatformFeeTransactionKind,
   type ResolvedPlatformFee,
   type SellerFeeOverride,
 } from "./fee-resolution"
@@ -81,6 +82,15 @@ const DEFAULT_FEE_LABELS: Record<FeeType, { label: string; description: string }
     description:
       "Commission taken by an external sales channel before payout reaches FBM",
   },
+  [FeeType.DONATION]: {
+    label: "Donation",
+    // Names the org as the recipient and says what the platform takes (nothing).
+    // Deliberately silent on card processing: a donation is a direct charge on
+    // the organisation's own payment account, so FBM neither collects nor
+    // remits a processing fee on it and this line must not read as if it did.
+    description:
+      "Goes to the named organisation, not the producer; 0% platform fee",
+  },
 }
 
 /**
@@ -91,6 +101,16 @@ export interface BreakdownInput {
   deliveryFee?: number       // Delivery fee (cents)
   tax?: number               // Tax (cents)
   tip?: number               // Tip (cents)
+  /**
+   * Donation to a named partner organisation (cents). Excluded from every
+   * seller's fee base, never added to what producers receive, and shown as its
+   * own DONATION line whose recipient is the org. Counted in `customerPaid`
+   * because the customer did pay it; counted in the processing estimate for
+   * DISPLAY only — on a direct charge the org's own account bears processing.
+   */
+  donation?: number
+  /** The organisation the donation goes to, for the DONATION line's recipient. */
+  donationRecipientName?: string
   sellerId?: string          // For single-seller orders
   sellerBreakdown?: Array<{  // For multi-seller orders
     sellerId: string
@@ -187,10 +207,18 @@ class PayoutBreakdownService extends MedusaService({
    *
    * Passing no `planPercent` yields the historical behaviour exactly:
    * seller override, else platform default.
+   *
+   * `kind` says what is being charged for and defaults to `sale`, which is the
+   * two-argument behaviour byte for byte. A zero-fee kind (`donation`,
+   * `donation_pledge`) resolves to 0 with source `transaction_kind` before the
+   * override or the plan is looked at — see `fee-resolution.ts`. The rows are
+   * still read here so the two paths stay symmetrical; the resolver is what
+   * decides not to consult them.
    */
   async getPlatformFeeDetail(
     sellerId: string,
-    planPercent: number | null = null
+    planPercent: number | null = null,
+    kind?: PlatformFeeTransactionKind
   ): Promise<ResolvedPlatformFee> {
     const config = await this.getDefaultConfig()
     // No settings row exists for most sellers; `getSellerSettings` returns null
@@ -201,6 +229,7 @@ class PayoutBreakdownService extends MedusaService({
       override: sellerSettings as SellerFeeOverride,
       planPercent,
       platformDefault: config.platform_fee_percent,
+      kind,
     })
   }
 
@@ -209,9 +238,14 @@ class PayoutBreakdownService extends MedusaService({
    */
   async getEffectivePlatformFee(
     sellerId: string,
-    planPercent: number | null = null
+    planPercent: number | null = null,
+    kind?: PlatformFeeTransactionKind
   ): Promise<number> {
-    const { percent } = await this.getPlatformFeeDetail(sellerId, planPercent)
+    const { percent } = await this.getPlatformFeeDetail(
+      sellerId,
+      planPercent,
+      kind
+    )
     return percent
   }
 
@@ -274,6 +308,7 @@ class PayoutBreakdownService extends MedusaService({
       communityFund: number
       tax: number
       tip: number
+      donation: number
       creatorCommission: number
       pluginDeveloperShare: number
       referralShare: number
@@ -392,9 +427,15 @@ class PayoutBreakdownService extends MedusaService({
       })
     }
     
-    // Calculate payment processing
+    // A donation never enters `seller.subtotal` above, so no seller's platform
+    // fee was computed on it. Clamped: a negative donation is not a thing.
+    const donation = Math.max(0, Math.floor(input.donation || 0))
+
+    // Calculate payment processing. The donation is in this total because the
+    // customer paid it; the processing estimate it produces is a display
+    // figure, not something FBM collects on the donation.
     const totalBeforeProcessing = totalSubtotal + (input.deliveryFee || 0) + 
-      (input.tax || 0) + (input.tip || 0) + (input.pickupDiscount || 0)
+      (input.tax || 0) + (input.tip || 0) + donation + (input.pickupDiscount || 0)
     const paymentProcessing = Math.round(
       totalBeforeProcessing * (config.payment_processing_percent / 100) + 
       config.payment_processing_fixed
@@ -531,6 +572,20 @@ class PayoutBreakdownService extends MedusaService({
         recipient: sellers.length === 1 ? sellers[0].sellerName : "Producers",
       })
     }
+
+    // Donation. Recipient is the organisation, never a producer, and the
+    // amount is NOT folded into `toProducers` below — a stored breakdown that
+    // did so would overstate what producers received on every donating order.
+    if (donation > 0) {
+      items.push({
+        type: FeeType.DONATION,
+        amount: donation,
+        percent: Math.round((donation / customerPaid) * 100),
+        label: DEFAULT_FEE_LABELS[FeeType.DONATION].label,
+        description: DEFAULT_FEE_LABELS[FeeType.DONATION].description,
+        recipient: input.donationRecipientName ?? "Named organisation",
+      })
+    }
     
     return {
       items,
@@ -543,6 +598,7 @@ class PayoutBreakdownService extends MedusaService({
         communityFund,
         tax: input.tax || 0,
         tip: input.tip || 0,
+        donation,
         creatorCommission: totalCreatorCommission,
         pluginDeveloperShare: totalPluginDeveloperShare,
         referralShare: totalReferralShare,
@@ -575,6 +631,7 @@ class PayoutBreakdownService extends MedusaService({
       total_community_fund: breakdown.totals.communityFund,
       total_tax: breakdown.totals.tax,
       total_tip: breakdown.totals.tip,
+      total_donation: breakdown.totals.donation ?? 0,
       total_creator_commission: breakdown.totals.creatorCommission ?? 0,
       // Both totals are computed by calculateBreakdown and were dropped here,
       // leaving columns that have existed since
@@ -602,6 +659,7 @@ class PayoutBreakdownService extends MedusaService({
       communityFund: number
       tax: number
       tip: number
+      donation: number
       creatorCommission: number
     }
     sellerBreakdown: Array<{
@@ -630,6 +688,7 @@ class PayoutBreakdownService extends MedusaService({
         communityFund: Number(breakdown.total_community_fund),
         tax: Number(breakdown.total_tax),
         tip: Number(breakdown.total_tip),
+        donation: Number(breakdown.total_donation ?? 0),
         creatorCommission: Number((breakdown as any).total_creator_commission ?? 0),
       },
       sellerBreakdown: (breakdown.seller_breakdown as Record<string, unknown>) as unknown as Array<{

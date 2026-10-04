@@ -22,6 +22,12 @@ export enum FeeType {
   // ever reaches FBM. Distinct from PLATFORM_FEE, which is ours: confusing the
   // two would either double-count our commission or hide theirs.
   CHANNEL_FEE = "CHANNEL_FEE",
+  // A donation to a named partner organisation collected alongside an order.
+  // Its recipient is the org, never the producer, and it carries a 0% platform
+  // fee by the transaction-kind rule in `fee-resolution.ts`. Kept out of the
+  // fee base and out of `total_to_producers` so a transparency page never
+  // overstates what producers received.
+  DONATION = "DONATION",
 }
 
 /**

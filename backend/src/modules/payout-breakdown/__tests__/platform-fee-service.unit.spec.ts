@@ -31,6 +31,7 @@ const makeService = (opts: {
   const rows: SettingsRow[] = [...(opts.settings ?? [])]
   const created: Record<string, unknown>[] = []
   const updated: Record<string, unknown>[] = []
+  const storedBreakdowns: Record<string, unknown>[] = []
 
   svc.listPayoutConfigs = (async () => [
     {
@@ -59,11 +60,24 @@ const makeService = (opts: {
     return row
   }) as never
 
+  // The stored-breakdown table, so storeOrderBreakdown -> getOrderBreakdown
+  // can be exercised as a round trip through the real service methods.
+  svc.createOrderPayoutBreakdowns = (async (data: Record<string, unknown>) => {
+    const row = { id: `opb_${storedBreakdowns.length + 1}`, ...data }
+    storedBreakdowns.push(row)
+    return row
+  }) as never
+  svc.listOrderPayoutBreakdowns = (async (filters: { order_id?: string }) =>
+    storedBreakdowns.filter(
+      (r) => !filters?.order_id || r.order_id === filters.order_id
+    )) as never
+
   return {
     svc: svc as unknown as PayoutBreakdownService,
     rows,
     created,
     updated,
+    storedBreakdowns,
   }
 }
 
@@ -112,6 +126,69 @@ describe("getPlatformFeeDetail", () => {
       ],
     })
     expect((await svc.getPlatformFeeDetail("sel_2")).percent).toBe(3)
+  })
+})
+
+describe("getPlatformFeeDetail transaction kind", () => {
+  // Through the real service and the real resolver — NOT the hand stubs in
+  // api/admin/sellers/__tests__/payout-settings-route.unit.spec.ts or
+  // hawala-ledger/__tests__/consignment-split.unit.spec.ts, which re-implement
+  // the chain and would stay green whatever the service did with `kind`.
+  const contested = {
+    defaultPercent: 3,
+    settings: [
+      {
+        id: "sps_1",
+        seller_id: "sel_1",
+        custom_platform_fee_percent: 1,
+        fee_reduction_reason: "pilot",
+      },
+    ],
+  }
+
+  it("charges 0 on a donation for a seller holding an override AND a plan", async () => {
+    const { svc } = makeService(contested)
+    const fee = await svc.getPlatformFeeDetail("sel_1", 6, "donation")
+
+    expect(fee.percent).toBe(0)
+    expect(fee.source).toBe("transaction_kind")
+    expect(fee.override_reason).toBeNull()
+  })
+
+  it("charges 0 on a donation pledge the same way", async () => {
+    const { svc } = makeService(contested)
+    const fee = await svc.getPlatformFeeDetail("sel_1", 6, "donation_pledge")
+
+    expect(fee.percent).toBe(0)
+    expect(fee.source).toBe("transaction_kind")
+  })
+
+  it("resolves a sale exactly as the two-argument call does", async () => {
+    const { svc } = makeService(contested)
+    const explicit = await svc.getPlatformFeeDetail("sel_1", 6, "sale")
+    const historical = await svc.getPlatformFeeDetail("sel_1", 6)
+
+    expect(explicit).toEqual(historical)
+    expect(explicit.percent).toBe(1)
+    expect(explicit.source).toBe("seller_override")
+  })
+
+  it("forwards the kind through getEffectivePlatformFee too", async () => {
+    const { svc } = makeService(contested)
+    expect(await svc.getEffectivePlatformFee("sel_1", 6, "donation")).toBe(0)
+    expect(await svc.getEffectivePlatformFee("sel_1", 6, "sale")).toBe(1)
+  })
+
+  it("keeps a seller's negotiated 0 distinct from a donation's 0", async () => {
+    const { svc } = makeService({ defaultPercent: 3 })
+    await svc.upsertSellerSettings("sel_1", { custom_platform_fee_percent: 0 })
+
+    const concession = await svc.getPlatformFeeDetail("sel_1", 6)
+    const donation = await svc.getPlatformFeeDetail("sel_1", 6, "donation")
+    expect(concession.percent).toBe(0)
+    expect(donation.percent).toBe(0)
+    expect(concession.source).toBe("seller_override")
+    expect(donation.source).toBe("transaction_kind")
   })
 })
 
@@ -413,5 +490,137 @@ describe("calculateBreakdown", () => {
     })
     expect(result.totals.referralShare).toBe(0)
     expect(result.referralShareAllocations).toEqual([])
+  })
+
+  it("never lets a tip enter the fee base", async () => {
+    // Tips are kept out of the platform fee by construction: the fee is taken
+    // on `seller.subtotal`, and the tip is not part of it. This pins that as
+    // the ONE mechanism for tips — the resolver's `kind: "tip"` has no caller,
+    // and a second mechanism here is how a tip ends up both excluded and
+    // classified.
+    const { svc } = makeService({ defaultPercent: 3 })
+    const withTip = await svc.calculateBreakdown({
+      subtotal: 10_000,
+      tip: 2_000,
+      sellerId: "sel_1",
+    })
+    const without = await svc.calculateBreakdown({
+      subtotal: 10_000,
+      sellerId: "sel_1",
+    })
+
+    // Same fee with and without the tip: 3% of 10 000, not of 12 000.
+    expect(withTip.totals.platformFees).toBe(300)
+    expect(withTip.totals.platformFees).toBe(without.totals.platformFees)
+    expect(withTip.sellerBreakdown[0].fees).toBe(without.sellerBreakdown[0].fees)
+    // The tip reaches the producer whole.
+    expect(withTip.totals.tip).toBe(2_000)
+    expect(withTip.totals.toProducers).toBe(without.totals.toProducers + 2_000)
+    expect(withTip.totals.customerPaid).toBe(12_000)
+  })
+
+  describe("donation", () => {
+    // No live caller passes `donation` yet (that is a later slice); these pin
+    // the shape it will get: fee on the goods only, producers never credited
+    // with it, the org named as recipient.
+    const order = {
+      subtotal: 10_000,
+      donation: 1_500,
+      donationRecipientName: "Ground Up Liberation Project",
+      sellerId: "sel_1",
+      sellerBreakdown: [
+        { sellerId: "sel_1", subtotal: 10_000, sellerName: "Maria's Farm" },
+      ],
+    }
+
+    it("computes the platform fee on the subtotal only", async () => {
+      const { svc } = makeService({ defaultPercent: 3 })
+      const result = await svc.calculateBreakdown(order)
+
+      // 3% of 10 000, not of 11 500.
+      expect(result.totals.platformFees).toBe(300)
+      expect(result.sellerBreakdown[0].fees).toBe(300)
+      expect(result.sellerBreakdown[0].gross).toBe(10_000)
+    })
+
+    it("never credits the donation to producers", async () => {
+      const { svc } = makeService({ defaultPercent: 3 })
+      const withDonation = await svc.calculateBreakdown(order)
+      const without = await svc.calculateBreakdown({
+        ...order,
+        donation: undefined,
+        donationRecipientName: undefined,
+      })
+
+      expect(withDonation.totals.toProducers).toBe(9_700)
+      expect(withDonation.totals.toProducers).toBe(without.totals.toProducers)
+      expect(withDonation.sellerBreakdown[0].net).toBe(9_700)
+      // The customer did pay it, so it is in what they paid.
+      expect(withDonation.totals.customerPaid).toBe(11_500)
+      expect(withDonation.totals.donation).toBe(1_500)
+    })
+
+    it("names the organisation, not the producer, as the DONATION recipient", async () => {
+      const { svc } = makeService({ defaultPercent: 3 })
+      const result = await svc.calculateBreakdown(order)
+
+      const line = result.items.find((i) => i.type === "DONATION")
+      expect(line).toBeDefined()
+      expect(line?.amount).toBe(1_500)
+      expect(line?.recipient).toBe("Ground Up Liberation Project")
+      expect(line?.recipient).not.toBe("Maria's Farm")
+      expect(line?.label).toBe("Donation")
+      expect(line?.description).toContain("not the producer")
+      expect(line?.description).toContain("0% platform fee")
+      // The PRODUCER_PRICE line is the goods net, untouched by the donation.
+      const producer = result.items.find((i) => i.type === "PRODUCER_PRICE")
+      expect(producer?.amount).toBe(9_700)
+      expect(producer?.recipient).toBe("Maria's Farm")
+    })
+
+    it("emits no DONATION line and a 0 total when there is no donation", async () => {
+      const { svc } = makeService({ defaultPercent: 3 })
+      const result = await svc.calculateBreakdown({
+        subtotal: 10_000,
+        sellerId: "sel_1",
+      })
+      expect(result.items.some((i) => i.type === "DONATION")).toBe(false)
+      expect(result.totals.donation).toBe(0)
+    })
+
+    it("ignores a negative donation rather than crediting it anywhere", async () => {
+      const { svc } = makeService({ defaultPercent: 3 })
+      const result = await svc.calculateBreakdown({
+        subtotal: 10_000,
+        sellerId: "sel_1",
+        donation: -500,
+      })
+      expect(result.totals.donation).toBe(0)
+      expect(result.totals.customerPaid).toBe(10_000)
+      expect(result.items.some((i) => i.type === "DONATION")).toBe(false)
+    })
+
+    it("stores total_donation and reads it back, separate from producers", async () => {
+      const { svc, storedBreakdowns } = makeService({ defaultPercent: 3 })
+      const breakdown = await svc.calculateBreakdown({ ...order, orderId: "order_1" })
+      await svc.storeOrderBreakdown("order_1", "cus_1", breakdown)
+
+      expect(storedBreakdowns).toHaveLength(1)
+      expect(storedBreakdowns[0]).toMatchObject({
+        order_id: "order_1",
+        total_donation: 1_500,
+        total_to_producers: 9_700,
+        total_platform_fees: 300,
+        customer_paid: 11_500,
+      })
+
+      const read = await svc.getOrderBreakdown("order_1")
+      expect(read).not.toBeNull()
+      expect(read?.totals.donation).toBe(1_500)
+      expect(read?.totals.toProducers).toBe(9_700)
+      expect(read?.items.find((i) => i.type === "DONATION")?.recipient).toBe(
+        "Ground Up Liberation Project"
+      )
+    })
   })
 })

@@ -8,6 +8,61 @@ import {
   type PartnerKind,
 } from "../../../modules/partner-directory"
 import type PartnerDirectoryModuleService from "../../../modules/partner-directory/service"
+import type { PartnerOrgRecord } from "../../../modules/partner-directory/service"
+import { featureFlagState } from "../../../shared/feature-flags"
+
+/**
+ * The public shape of a partner org. An explicit allow-list, not an omit:
+ * `ein`, `stripe_connect_account_id`, `verification_source` and
+ * `verification_checked_at` never leave the server, and a column added to the
+ * model later is private until someone adds it here on purpose.
+ *
+ * `verified_as_of` is the IRS file's date and is public because legal
+ * checkpoint L11 requires it be shown beside any status.
+ */
+export type PublicPartnerOrg = {
+  key: string
+  name: string
+  org_type: PartnerOrgRecord["org_type"]
+  verification_status: PartnerOrgRecord["verification_status"]
+  verified_as_of: Date | null
+  relationship: PartnerOrgRecord["relationship"]
+  fiscal_host_key: string | null
+  url: string | null
+  tagline: string | null
+  states: unknown
+  serves: unknown
+}
+
+export const PUBLIC_PARTNER_ORG_FIELDS = [
+  "key",
+  "name",
+  "org_type",
+  "verification_status",
+  "verified_as_of",
+  "relationship",
+  "fiscal_host_key",
+  "url",
+  "tagline",
+  "states",
+  "serves",
+] as const
+
+export function toPublicPartnerOrg(org: PartnerOrgRecord): PublicPartnerOrg {
+  return {
+    key: org.key,
+    name: org.name,
+    org_type: org.org_type,
+    verification_status: org.verification_status,
+    verified_as_of: org.verified_as_of ?? null,
+    relationship: org.relationship,
+    fiscal_host_key: org.fiscal_host_key ?? null,
+    url: org.url ?? null,
+    tagline: org.tagline ?? null,
+    states: org.states ?? [],
+    serves: org.serves ?? [],
+  }
+}
 
 /**
  * GET /store/partners?kind=&state=&serves=
@@ -20,6 +75,11 @@ import type PartnerDirectoryModuleService from "../../../modules/partner-directo
  *
  * `kind` accepts one value or a comma-separated list; `state` is a two-letter
  * USPS code (national entries always match); `serves` is one audience.
+ *
+ * When FF_NONPROFIT_PARITY_V1 is on, the response also carries `orgs`: the
+ * published pilot-partner records (`partner_org`), serialised through the
+ * allow-list above. Off, the response is byte-identical to before the flag
+ * existed — the key is absent, not empty.
  */
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
   const q = req.query as Record<string, unknown>
@@ -65,10 +125,23 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     products: entry.products,
   }))
 
-  return res.status(200).json({
+  const body: {
+    partners: typeof partners
+    count: number
+    kinds: typeof PARTNER_KINDS
+    serves: typeof PARTNER_SERVES
+    orgs?: PublicPartnerOrg[]
+  } = {
     partners,
     count: partners.length,
     kinds: PARTNER_KINDS,
     serves: PARTNER_SERVES,
-  })
+  }
+
+  if (featureFlagState.isEnabled("NONPROFIT_PARITY_V1")) {
+    const published = await directory.listPublishedOrgs()
+    body.orgs = published.map(toPublicPartnerOrg)
+  }
+
+  return res.status(200).json(body)
 }

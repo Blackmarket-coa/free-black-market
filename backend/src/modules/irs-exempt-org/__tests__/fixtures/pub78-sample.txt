@@ -1,0 +1,53 @@
+
+
+030424472|Kingdom Harvest Ministries International|Delta British Columbia||CANADA|FORGN
+113789744|Seminole Football Parent Association|Chicago||ASHMORE & CARTIER IS|FORGN
+200644142|Strategic Solutions Network Inc.|Frederiksted|VI|United States|PC
+010674736|Us-Japan Relationship Fund Inc.|Kawasaki Kanagawa||JAPAN|FORGN
+010728628|Intersections Inc.|Pago Pago|AS|United States|PC
+010880225|Yenza Inc.|Three Anchor Bay Weste||SOUTH AFRICA|FORGN
+030182719|Proctor Cemetery Assoc|Christiansted|VI|United States|EO
+030356850|Kosa Communications Ltd.|Montreal Quebec||CANADA|FORGN
+043328623|Triglav Circle|Ougny||FRANCE|FORGN
+043575007|Pentecostal Movement Council Inc.|St. Croix|VI|United States|PC
+043778039|Macedonia Community Action Project|Bonneau Sc||ARMENIA|FORGN
+060706038|Bermuda Institute of Ocean Sciences Bios Inc.|St. Georges St. Georges||BERMUDA|FORGN
+061497455|Hodgman Family Foundation Tr|Valaise||SWITZERLAND|FORGN,PF
+061680846|Georgias Workforce Leadership Association|Athens Ga||GEORGIA|FORGN
+061700976|Seed of Life World Ministries|Apo|AE|United States|PC
+061807560|Order of St. John Inc.|Frederiksted|VI|United States|PC
+066039988|Wiegand Memorial Foundation Inc.|Montreal Qc||CANADA|FORGN,PF
+112518719|Lennie Tristano Jazz Foundation Inc.|Arcueil Ile De France||FRANCE|FORGN
+113242441|The Joseph Katz and Shirely Katz Charitable Trust|Efrat Israel||IRAN|FORGN,PF
+113371873|Esh-Dat Inc.|Jerusalem||ISRAEL|FORGN
+122680572|Canadian Unicef Committee-Comite Unicef Canada|Toronto Ontario||CANADA|FORGN
+132556216|Upper Canada Educational Foundation|Toronto Ontario||CANADA|FORGN
+133211128|World Federation of Societies of Anaesthesiologists|London||UNITED KINGDOM|FORGN
+061681646|Save Our Children Mentoring Program|Baldwin|LA|United States|PC
+030291115|Jay Peak Ski Club Inc.|Jay Peak|VT|United States|PC
+010019705|Ancient Free & Accepted Masons of Maine Grand Lodge|Holden|ME|United States|EO,GROUP,LODGE
+010019709|Ancient Free & Accepted Masons of Maine|Houlton|ME|United States|EO,LODGE
+010095329|Improved Order of Redmen of Maine|Sebago|ME|United States|EO,GROUP,LODGE
+010221136|Maine Parent Teacher Association Inc.|Windham|ME|United States|GROUP
+010227085|Masonic Temple Assoc|Bucksport|ME|United States|EO,LODGE
+010282328|Piscataqua Garden Club|York Harbor|ME|United States|UNKWN
+010284280|Multiple Alternative Association of Central Aroostook County Inc.|Caribou|ME|United States|UNKWN
+010406214|Nami-Maine Incorporated|Hallowell|ME|United States|GROUP
+000587764|Iglesia Bethesda Inc.|Lowell|MA|United States|PC
+000635913|Ministerio Apostolico Jesucristo Es El Senor Inc.|Lawrence|MA|United States|PC
+000765634|Mercy Chapel International|Mattapan|MA|United States|PC
+000841363|Agape House of Prayer|Mattapan|MA|United States|PC
+000852649|Bethany Presbyterian Church|Brookline|MA|United States|PC
+000889899|Academic and Behavioral Clinic Inc.|Boston|MA|United States|PC
+001347537|Restoration of Hope Church Ministries|Roxbury|MA|United States|PC
+002030711|Church of Our Lord Jesus Christ of Macedonia|Newark|NJ|United States|PC
+002067446|Usta National Junior Tennis League Inc.|White Plains|NY|United States|POF
+002237333|Lincoln Loan Fund|Fayetteville|AR|United States|SOUNK
+002293921|Lockman Foundation|La Habra|CA|United States|PC
+002296179|Religious Science Church Center of San Diego|San Diego|CA|United States|PC
+002296211|Assistance League of Ventura County|Ventura|CA|United States|PC
+007764840|Tri-County Lighthouse Baptist Church & Ministries Inc.|Deerfield St.|NJ|United States|PC
+010002847|Hulls Cove Neighborhood Association|Mount Desert|ME|United States|PC
+010011694|Massachusetts Moderators Association Inc.|Haverhill|MA|United States|PC
+010015091|Hanover Soccer Club Inc.|Cedar Knolls|NJ|United States|PC
+
