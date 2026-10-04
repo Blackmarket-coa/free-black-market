@@ -205,6 +205,10 @@ const financialModules = [
   { resolve: './src/modules/order-dispute' },
   { resolve: './src/modules/partner-directory' },
   { resolve: './src/modules/vendor-usage' },
+  // IRS exempt-org bulk files (Pub 78, auto-revocation, EO BMF) for partner
+  // verification. Tables stay empty until the FF_NONPROFIT_PARITY_V1-gated
+  // weekly ingest runs. Moves no money.
+  { resolve: './src/modules/irs-exempt-org' },
 ]
 
 // FreeBlackMarket.com feature modules
