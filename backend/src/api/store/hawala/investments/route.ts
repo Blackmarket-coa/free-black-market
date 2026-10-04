@@ -1,5 +1,6 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { HAWALA_LEDGER_MODULE } from "../../../../modules/hawala-ledger"
+import { CarrierRefusalError, isCarriedPool, projectPoolCarrier } from "../../../../modules/hawala-ledger/carrier"
 import HawalaLedgerModuleService from "../../../../modules/hawala-ledger/service"
 import { resolveRequestIdempotencyKey } from "../../../../shared/request-idempotency"
 
@@ -39,6 +40,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
               producer_id: pool.producer_id,
               roi_type: pool.roi_type,
               status: pool.status,
+              carrier: projectPoolCarrier(pool),
             }
           : null,
       }
@@ -89,6 +91,18 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       return res.status(404).json({ error: "Investment pool not found" })
     }
 
+    // A carried pool's contributions are collected by its nonprofit carrier
+    // on the carrier's own accounts, never through BMC's ledger
+    // (docs/BMC_SURVIVAL_PROGRAMS.md Decision 6b). Refused before any wallet
+    // or balance is read. (An uncarried pool with FF_NONPROFIT_PARITY_V1 on
+    // is refused by the service with `no_carrier`; see the catch below.)
+    if (isCarriedPool(pool)) {
+      return res.status(409).json({
+        type: "carried_pool",
+        message: `This pool is carried by ${pool.carrier_org_key}; contributions are collected by the carrier, not here.`,
+      })
+    }
+
     if (pool.status !== "ACTIVE") {
       return res.status(400).json({ error: "Investment pool is not active" })
     }
@@ -135,6 +149,9 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
 
     res.status(201).json({ investment })
   } catch (error) {
+    if (error instanceof CarrierRefusalError) {
+      return res.status(409).json({ type: error.reason, message: error.message })
+    }
     res.status(400).json({ error: (error as Error).message })
   }
 }

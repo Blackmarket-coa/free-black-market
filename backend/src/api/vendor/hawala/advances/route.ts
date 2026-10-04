@@ -22,10 +22,12 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
       return res.status(401).json({ error: "Unauthorized" })
     }
 
-    // OPTIMIZATION: Fetch eligibility and advances in parallel
+    // OPTIMIZATION: Fetch eligibility and advances in parallel.
+    // Seller advances only: a PARTNER_ORG advance (Phase 1b, Decision 6a) is
+    // an operator record about a nonprofit and never surfaces on a vendor list.
     const [eligibility, advances] = await Promise.all([
       hawalaService.calculateAdvanceEligibility(vendorId),
-      hawalaService.listVendorAdvances({ vendor_id: vendorId }),
+      hawalaService.listVendorAdvances({ vendor_id: vendorId, recipient_type: "SELLER" }),
     ])
 
     res.json({

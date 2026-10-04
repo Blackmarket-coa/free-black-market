@@ -11,6 +11,27 @@ import {
   type KarmaEventInput,
 } from "./karma"
 import { splitAdvanceRepayment } from "./advance-repayment-split"
+import {
+  assertCarrierSnapshot,
+  CarrierRefusalError,
+  isCarriedPool,
+  isValidCarrierAmount,
+  projectPoolCarrier,
+  stripPoolCarrierFields,
+  sumMajorUnits,
+  type PoolCarrierSnapshot,
+} from "./carrier"
+import {
+  assertOrgAdvanceEligibility,
+  assertOrgAdvanceRecipient,
+  assertOrgAdvanceTerms,
+  deriveOrgAdvancePosition,
+  isOrgAdvance,
+  OPEN_ADVANCE_STATUSES,
+  OrgAdvanceRefusalError,
+  requireReference,
+  totalOwedMajorUnits,
+} from "./org-advance"
 import { splitConsignmentCents } from "../../lib/consignment"
 import {
   reconcileRecords,
@@ -55,6 +76,7 @@ import {
   IngestCursor,
   BalanceMonitor,
   MonitorBreach,
+  PoolCarrierDistribution,
 } from "./models"
 
 class HawalaLedgerModuleService extends MedusaService({
@@ -85,6 +107,7 @@ class HawalaLedgerModuleService extends MedusaService({
   IngestCursor,
   BalanceMonitor,
   MonitorBreach,
+  PoolCarrierDistribution,
 }) {
   // ==================== ACCOUNT MANAGEMENT ====================
 
@@ -909,6 +932,14 @@ class HawalaLedgerModuleService extends MedusaService({
       throw new Error("Invalid account ID")
     }
 
+    // Nonprofit-carried pools (Decision 6b, L26): a leg that names a pool, or
+    // a PRODUCER_POOL account a pool owns, is refused — always for a carried
+    // pool (BMC never holds pool funds), and for an uncarried pool once
+    // FF_NONPROFIT_PARITY_V1 is on ("a pool with no carrier cannot accept
+    // money"). Here, at the single money-movement chokepoint, before any
+    // entry is written. See `./carrier.ts`.
+    await this.assertPoolLegAllowed_(data, debitAccount, creditAccount)
+
     // Both legs must be on the same rail. The entry's rail is derived from
     // the debit account, so without this check a CCR-debit → USD-credit
     // transfer would pass the CCR guard and inflate a USD balance —
@@ -1433,8 +1464,15 @@ class HawalaLedgerModuleService extends MedusaService({
     let sellerAmount = data.total_amount - platformFee
     let investmentAmount = 0
 
-    // Auto-invest if configured
-    if (data.producer_id && data.auto_invest_percentage) {
+    // Auto-invest if configured. With FF_NONPROFIT_PARITY_V1 on no pool
+    // ledger leg can post (createTransfer refuses `no_carrier` for an
+    // uncarried pool and `carried_pool` for a carried one, Decision 6b), so
+    // the carve-out is not made at all: the seller leg carries the full
+    // amount and no pool is created. Decided HERE, before any leg posts —
+    // deciding it at step 4 would strand the carved-out amount in ESCROW
+    // after the purchase, fee and seller legs had already completed. With
+    // the flag off this path is unchanged.
+    if (data.producer_id && data.auto_invest_percentage && !featureFlagState.isEnabled("NONPROFIT_PARITY_V1")) {
       investmentAmount = Math.floor(sellerAmount * (data.auto_invest_percentage / 100))
       sellerAmount -= investmentAmount
     }
@@ -1778,6 +1816,13 @@ class HawalaLedgerModuleService extends MedusaService({
       throw new Error("Investment pool not found")
     }
 
+    // A carried pool's contributions are collected by the carrier on its own
+    // accounts and RECORDED here by `recordCarrierContribution`; a ledger
+    // investment into it would put pool funds on BMC's books (Decision 6b).
+    // Refused before any wallet is debited. (An uncarried pool with the flag
+    // on is refused inside createTransfer with reason `no_carrier`.)
+    this.refuseIfCarried_(pool, "createInvestment")
+
     // Create ledger transfer
     const entry = await this.createTransfer({
       debit_account_id: data.investor_account_id,
@@ -1832,6 +1877,11 @@ class HawalaLedgerModuleService extends MedusaService({
       throw new Error("Investment pool not found")
     }
 
+    // The carrier pays distributions from the funds it holds and allocates on
+    // its own books; BMC records them via `recordCarrierDistribution`. There
+    // is no BMC balance to pay from.
+    this.refuseIfCarried_(pool, "distributeDividends")
+
     const investments = await this.listInvestments({
       pool_id: data.pool_id, status: "CONFIRMED",
     })
@@ -1840,6 +1890,12 @@ class HawalaLedgerModuleService extends MedusaService({
     const distributions: any[] = []
 
     for (const investment of investments) {
+      // A CARRIER-settled row has no ledger account to pay into. It cannot
+      // occur on an uncarried pool, and a carried pool was refused above; the
+      // skip keeps the type honest rather than asserting it away.
+      const investorAccountId = investment.investor_account_id
+      if (!investorAccountId) continue
+
       // Calculate proportional share
       const share = Number(investment.amount) / totalInvested
       const dividend = Math.floor(data.total_amount * share * 100) / 100
@@ -1848,7 +1904,7 @@ class HawalaLedgerModuleService extends MedusaService({
         // Transfer dividend
         const _entry = await this.createTransfer({
           debit_account_id: pool.ledger_account_id,
-          credit_account_id: investment.investor_account_id,
+          credit_account_id: investorAccountId,
           amount: dividend,
           entry_type: "DIVIDEND",
           investment_pool_id: data.pool_id,
@@ -1884,6 +1940,344 @@ class HawalaLedgerModuleService extends MedusaService({
     }
 
     return distributions
+  }
+
+  // ==================== NONPROFIT-CARRIED POOLS ====================
+  //
+  // docs/BMC_SURVIVAL_PROGRAMS.md Decision 6b; legal checkpoints L26, L11, L3.
+  // A carried pool's funds are held and administered by a verified nonprofit
+  // partner_org on ITS OWN accounts; BMC keeps the record and takes no custody.
+  // The rules live here, in the service, because hooks and routes can be
+  // bypassed (the same reasoning as posture-a-guard.ts). See `./carrier.ts`.
+
+  /**
+   * Generated create, with the carrier columns stripped. Three producers call
+   * the generated method (getOrCreateProducerPool, the admin POST, the vendor
+   * POST); none may set a carrier. `assignPoolCarrier` is the only writer and
+   * reaches persistence through `writeCarrierColumns_`.
+   */
+  // @ts-expect-error - override parent method (declared as a property on the generated base; same as subscription/service.ts)
+  async createInvestmentPools(data: any, ...rest: any[]): Promise<any> {
+    return this.persistInvestmentPools_("create", stripPoolCarrierFields(data), rest)
+  }
+
+  /** Generated update, with the carrier columns stripped (the two PATCH routes call this). */
+  // @ts-expect-error - override parent method (declared as a property on the generated base; same as subscription/service.ts)
+  async updateInvestmentPools(data: any, ...rest: any[]): Promise<any> {
+    return this.persistInvestmentPools_("update", stripPoolCarrierFields(data), rest)
+  }
+
+  /**
+   * The one path to the generated persistence for pools. Named so a spec can
+   * shadow exactly this and prove the strip above ran on the real prototype.
+   */
+  private persistInvestmentPools_(op: "create" | "update", data: any, rest: any[]): Promise<any> {
+    return op === "create"
+      ? super.createInvestmentPools(data, ...rest)
+      : super.updateInvestmentPools(data, ...rest)
+  }
+
+  /** The only writer of `carrier_org_key` / `carrier_snapshot`. Private on purpose. */
+  private writeCarrierColumns_(poolId: string, carrier: { carrier_org_key: string; carrier_snapshot: PoolCarrierSnapshot }) {
+    return this.persistInvestmentPools_("update", { id: poolId, ...carrier }, [])
+  }
+
+  private refuseIfCarried_(pool: { id: string; carrier_org_key?: string | null }, operation: string): void {
+    if (!isCarriedPool(pool)) return
+    throw new CarrierRefusalError(
+      "carried_pool",
+      `${operation} refused: pool ${pool.id} is carried by ${pool.carrier_org_key}; its funds are held by the carrier, never on BMC's ledger.`,
+      { pool_id: pool.id, carrier_org_key: pool.carrier_org_key, operation }
+    )
+  }
+
+  private async requirePool_(poolId: string) {
+    const [pool] = await this.listInvestmentPools({ id: poolId })
+    if (!pool) throw new Error("Investment pool not found")
+    return pool
+  }
+
+  private requireParityFlag_(operation: string): void {
+    if (featureFlagState.isEnabled("NONPROFIT_PARITY_V1")) return
+    throw new CarrierRefusalError(
+      "feature_disabled",
+      `${operation} is dark: FF_NONPROFIT_PARITY_V1 is not enabled.`,
+      { operation }
+    )
+  }
+
+  /**
+   * createTransfer's pool rule. Resolves the pool by `investment_pool_id`, or
+   * by either account when it is a PRODUCER_POOL account a pool owns (the
+   * refund reversal names no pool id). A leg that names a pool id no pool has
+   * is a pool leg with no carrier. With the flag off and no pool involved
+   * this reads nothing: every existing non-pool path is byte-identical.
+   */
+  private async assertPoolLegAllowed_(
+    data: { investment_pool_id?: string; debit_account_id: string; credit_account_id: string },
+    debitAccount: { id: string; account_type?: string | null },
+    creditAccount: { id: string; account_type?: string | null }
+  ): Promise<void> {
+    let pool: { id: string; carrier_org_key?: string | null } | null = null
+    let named = false
+    if (data.investment_pool_id) {
+      named = true
+      const [byId] = await this.listInvestmentPools({ id: data.investment_pool_id })
+      pool = byId ?? null
+    }
+    const poolAccountIds = [debitAccount, creditAccount]
+      .filter((a) => a.account_type === "PRODUCER_POOL")
+      .map((a) => a.id)
+    if (!pool && poolAccountIds.length > 0) {
+      const [byAccount] = await this.listInvestmentPools({ ledger_account_id: poolAccountIds })
+      pool = byAccount ?? null
+    }
+    if (!pool && !named) {
+      // A PRODUCER_POOL account no pool row owns (minted by the admin/vendor
+      // pools POST before the pool insert failed, or via createAccount
+      // directly) is still the custody shape: with the flag on it has no
+      // carrier, so it cannot accept or release money either. Flag off: the
+      // leg passes exactly as before.
+      if (poolAccountIds.length > 0 && featureFlagState.isEnabled("NONPROFIT_PARITY_V1")) {
+        throw new CarrierRefusalError(
+          "no_carrier",
+          `ledger leg refused: PRODUCER_POOL account ${poolAccountIds.join(", ")} is owned by no pool and so has no carrier; a pool account with no carrier cannot accept money.`,
+          { pool_id: null, investment_pool_id: null, pool_account_ids: poolAccountIds }
+        )
+      }
+      return
+    }
+
+    if (pool && isCarriedPool(pool)) {
+      throw new CarrierRefusalError(
+        "carried_pool",
+        `ledger leg refused: pool ${pool.id} is carried by ${pool.carrier_org_key}; BMC never holds pool funds.`,
+        { pool_id: pool.id, carrier_org_key: pool.carrier_org_key, investment_pool_id: data.investment_pool_id ?? null }
+      )
+    }
+    if (featureFlagState.isEnabled("NONPROFIT_PARITY_V1")) {
+      throw new CarrierRefusalError(
+        "no_carrier",
+        `ledger leg refused: pool ${pool?.id ?? data.investment_pool_id} has no carrier, and a pool with no carrier cannot accept money.`,
+        { pool_id: pool?.id ?? null, investment_pool_id: data.investment_pool_id ?? null }
+      )
+    }
+  }
+
+  /**
+   * Assign a verified nonprofit carrier to a pool. The admin route resolved
+   * the directory, ran `partnerOrgCarrierRefusal` and built `snapshot`; this
+   * validates the snapshot's shape (never trusting an unverified status) and
+   * refuses:
+   *
+   *   - `feature_disabled` with FF_NONPROFIT_PARITY_V1 off;
+   *   - `pool_has_ledger_funds` when the pool has any custody: total_raised,
+   *     a non-zero ledger account balance, or a LEDGER-settled Investment row
+   *     (a custody pool with funds in it cannot be relabelled as carried);
+   *   - `pool_has_carrier_records` when changing the carrier of a pool that
+   *     already has CARRIER-settled rows (re-freezing the SAME carrier's
+   *     snapshot is allowed — that is how a newer IRS date lands).
+   *
+   * The pool keeps its existing `ledger_account_id`: zero-balance, dormant,
+   * and unusable because createTransfer refuses every leg against it.
+   */
+  async assignPoolCarrier(poolId: string, snapshot: unknown) {
+    this.requireParityFlag_("assignPoolCarrier")
+    const carrier = assertCarrierSnapshot(snapshot)
+    const pool = await this.requirePool_(poolId)
+
+    const [ledgerRows, carrierRows, distributions, accounts] = await Promise.all([
+      this.listInvestments({ pool_id: poolId, settlement: "LEDGER" }),
+      this.listInvestments({ pool_id: poolId, settlement: "CARRIER" }),
+      this.listPoolCarrierDistributions({ pool_id: poolId }),
+      pool.ledger_account_id ? this.listLedgerAccounts({ id: pool.ledger_account_id }) : Promise.resolve([]),
+    ])
+
+    const account = accounts[0]
+    const accountBalance = account ? Number(account.balance) + Number(account.pending_balance ?? 0) : 0
+    if (Number(pool.total_raised) !== 0 || accountBalance !== 0 || ledgerRows.length > 0) {
+      throw new CarrierRefusalError(
+        "pool_has_ledger_funds",
+        `pool ${poolId} holds funds on BMC's ledger (total_raised ${Number(pool.total_raised)}, account balance ${accountBalance}, ${ledgerRows.length} ledger-settled investments); a custody pool cannot be relabelled as carried.`,
+        { pool_id: poolId, total_raised: Number(pool.total_raised), account_balance: accountBalance, ledger_investments: ledgerRows.length }
+      )
+    }
+
+    const hasCarrierRecords = carrierRows.length > 0 || distributions.length > 0
+    if (hasCarrierRecords && pool.carrier_org_key !== carrier.org_key) {
+      throw new CarrierRefusalError(
+        "pool_has_carrier_records",
+        `pool ${poolId} already has records under carrier ${pool.carrier_org_key}; the carrier cannot change.`,
+        { pool_id: poolId, carrier_org_key: pool.carrier_org_key, requested_org_key: carrier.org_key }
+      )
+    }
+
+    const updated = await this.writeCarrierColumns_(poolId, {
+      carrier_org_key: carrier.org_key,
+      carrier_snapshot: carrier,
+    })
+    return Array.isArray(updated) ? updated[0] : updated
+  }
+
+  /**
+   * Derive a carried pool's totals from its records and write them. Never
+   * `atomicPoolIncrement`, never `+=`: for a carried pool these rows are the
+   * ONLY record (no ledger balance to reconcile against), so the totals are a
+   * function of the rows. `total_investors` counts distinct contributors —
+   * `customer_id` when known, else the carrier's reference.
+   */
+  private async recomputeCarriedPoolTotals_(poolId: string) {
+    const [rows, distributions] = await Promise.all([
+      this.listInvestments({ pool_id: poolId, settlement: "CARRIER" }),
+      this.listPoolCarrierDistributions({ pool_id: poolId }),
+    ])
+    const contributors = new Set<string>()
+    for (const row of rows) contributors.add(row.customer_id ? `customer:${row.customer_id}` : `ref:${row.carrier_reference}`)
+    const totals = {
+      total_raised: sumMajorUnits(rows.map((r) => r.amount)),
+      total_investors: contributors.size,
+      total_distributed: sumMajorUnits(distributions.map((d) => d.amount)),
+    }
+    await this.updateInvestmentPools({ id: poolId, ...totals })
+    return totals
+  }
+
+  private assertCarrierRecordInput_(input: { amount: unknown; carrier_reference: unknown }): void {
+    if (!isValidCarrierAmount(input.amount)) {
+      throw new CarrierRefusalError(
+        "invalid_carrier_record",
+        `amount must be a positive, finite major-unit amount with at most two decimals; got ${String(input.amount)}.`,
+        { amount: input.amount }
+      )
+    }
+    if (typeof input.carrier_reference !== "string" || input.carrier_reference.trim().length === 0) {
+      throw new CarrierRefusalError(
+        "invalid_carrier_record",
+        "carrier_reference is required: the record is keyed by the carrier's own reference, never by the attempt.",
+        {}
+      )
+    }
+  }
+
+  /**
+   * RECORD a contribution the carrier received on its own accounts. Writes an
+   * Investment row { settlement CARRIER, investor_account_id null,
+   * ledger_entry_id null, status CONFIRMED, source DIRECT } under the partial
+   * unique index on (pool_id, carrier_reference); a duplicate reference — a
+   * replay or a concurrent second call — answers `already_recorded` after a
+   * re-read (the index is the arbiter, as in collective-campaign's
+   * recordParticipantContribution). No ledger leg, no account touched; totals
+   * are then derived from the rows. `amount` is in the table's own unit
+   * (major units).
+   */
+  async recordCarrierContribution(input: {
+    pool_id: string
+    amount: number
+    carrier_reference: string
+    customer_id?: string | null
+    metadata?: Record<string, unknown> | null
+  }) {
+    this.requireParityFlag_("recordCarrierContribution")
+    this.assertCarrierRecordInput_(input)
+    const pool = await this.requirePool_(input.pool_id)
+    if (!isCarriedPool(pool)) {
+      throw new CarrierRefusalError(
+        "no_carrier",
+        `pool ${input.pool_id} has no carrier; a carrier contribution can only be recorded on a carried pool.`,
+        { pool_id: input.pool_id }
+      )
+    }
+    const reference = input.carrier_reference.trim()
+    const keyFilter = { pool_id: input.pool_id, carrier_reference: reference }
+
+    const [seen] = await this.listInvestments(keyFilter)
+    if (seen) {
+      return { recorded: false as const, reason: "already_recorded" as const, investment_id: seen.id }
+    }
+
+    let investment
+    try {
+      investment = await this.createInvestments({
+        pool_id: input.pool_id,
+        investor_account_id: null,
+        customer_id: input.customer_id ?? null,
+        amount: input.amount,
+        currency_code: "USD",
+        status: "CONFIRMED" as const,
+        source: "DIRECT" as const,
+        ledger_entry_id: null,
+        settlement: "CARRIER" as const,
+        carrier_org_key: pool.carrier_org_key as string,
+        carrier_reference: reference,
+        invested_at: new Date(),
+        metadata: input.metadata ?? null,
+      })
+    } catch (error) {
+      // Two calls passed the read above; the unique index decided. If the row
+      // exists now the other call won; otherwise this was a real failure.
+      const [raced] = await this.listInvestments(keyFilter)
+      if (raced) {
+        return { recorded: false as const, reason: "already_recorded" as const, investment_id: raced.id }
+      }
+      throw error
+    }
+
+    const totals = await this.recomputeCarriedPoolTotals_(input.pool_id)
+    return { recorded: true as const, investment, totals }
+  }
+
+  /**
+   * RECORD a distribution the carrier paid from the funds it holds. A row in
+   * hawala_pool_carrier_distribution under the same partial unique index;
+   * `total_distributed` is derived from these rows. BMC computes no
+   * per-investor allocation — the carrier allocates on its own books. This is
+   * a record, not a payment.
+   */
+  async recordCarrierDistribution(input: {
+    pool_id: string
+    amount: number
+    carrier_reference: string
+    distributed_at?: Date | null
+    metadata?: Record<string, unknown> | null
+  }) {
+    this.requireParityFlag_("recordCarrierDistribution")
+    this.assertCarrierRecordInput_(input)
+    const pool = await this.requirePool_(input.pool_id)
+    if (!isCarriedPool(pool)) {
+      throw new CarrierRefusalError(
+        "no_carrier",
+        `pool ${input.pool_id} has no carrier; a carrier distribution can only be recorded on a carried pool.`,
+        { pool_id: input.pool_id }
+      )
+    }
+    const reference = input.carrier_reference.trim()
+    const keyFilter = { pool_id: input.pool_id, carrier_reference: reference }
+
+    const [seen] = await this.listPoolCarrierDistributions(keyFilter)
+    if (seen) {
+      return { recorded: false as const, reason: "already_recorded" as const, distribution_id: seen.id }
+    }
+
+    let distribution
+    try {
+      distribution = await this.createPoolCarrierDistributions({
+        pool_id: input.pool_id,
+        carrier_org_key: pool.carrier_org_key as string,
+        carrier_reference: reference,
+        amount: input.amount,
+        distributed_at: input.distributed_at ?? new Date(),
+        metadata: input.metadata ?? null,
+      })
+    } catch (error) {
+      const [raced] = await this.listPoolCarrierDistributions(keyFilter)
+      if (raced) {
+        return { recorded: false as const, reason: "already_recorded" as const, distribution_id: raced.id }
+      }
+      throw error
+    }
+
+    const totals = await this.recomputeCarriedPoolTotals_(input.pool_id)
+    return { recorded: true as const, distribution, totals }
   }
 
   // ==================== BALANCE QUERIES ====================
@@ -1983,9 +2377,13 @@ class HawalaLedgerModuleService extends MedusaService({
         ? (Number(pool.total_raised) / Number(pool.target_amount)) * 100
         : 0
 
+      // A carried pool has no BMC balance to show: the carrier holds the
+      // funds. `null`, not 0 — 0 would be a claim about money BMC never held.
+      const carried = isCarriedPool(pool)
       return {
         ...pool,
-        current_balance: balance?.balance || 0,
+        carrier: projectPoolCarrier(pool),
+        current_balance: carried ? null : balance?.balance || 0,
         progress_percentage: Math.min(progress, 100),
         investments_count: investmentsByPool.get(pool.id) || 0,
       }
@@ -2300,9 +2698,11 @@ class HawalaLedgerModuleService extends MedusaService({
     )
     const avgDailyRevenue = last30DaysRevenue / 30
 
-    // Check for existing active advances
+    // Check for existing active advances (seller advances only: a PARTNER_ORG
+    // advance is never a vendor's, Phase 1b Decision 6a)
     const activeAdvances = await this.listVendorAdvances({
       vendor_id: vendorId,
+      recipient_type: "SELLER",
       status: "ACTIVE",
     })
 
@@ -2541,6 +2941,392 @@ class HawalaLedgerModuleService extends MedusaService({
     }
   }
 
+  // ==================== ORG ADVANCES (Phase 1b, Decision 6a) ====================
+  // A verified nonprofit partner_org as a VendorAdvance recipient. The row is a
+  // RECORD of an advance disbursed and repaid OUTSIDE the hawala ledger: the
+  // org has no ledger account and never gets one; RESERVE is never debited;
+  // no hawala_ledger_entry is written. The rules live here, in the service,
+  // because routes and hooks can be bypassed. See `./org-advance.ts`.
+
+  private requireOrgAdvanceFlag_(operation: string): void {
+    if (featureFlagState.isEnabled("NONPROFIT_PARITY_V1")) return
+    throw new OrgAdvanceRefusalError(
+      "feature_disabled",
+      `${operation} is dark: FF_NONPROFIT_PARITY_V1 is not enabled.`,
+      { operation }
+    )
+  }
+
+  private async requireOrgAdvance_(advanceId: string) {
+    const [advance] = await this.listVendorAdvances({ id: advanceId })
+    if (!advance) throw new Error("Vendor advance not found")
+    if (!isOrgAdvance(advance)) {
+      throw new OrgAdvanceRefusalError(
+        "not_org_advance",
+        `advance ${advanceId} is a ${advance.recipient_type} advance; this operation is for PARTNER_ORG advances only.`,
+        { advance_id: advanceId, recipient_type: advance.recipient_type }
+      )
+    }
+    return advance
+  }
+
+  /**
+   * Request an advance for a verified nonprofit partner_org. The admin route
+   * resolved the directory, ran `partnerOrgCarrierRefusal` and built
+   * `recipient_snapshot`; this validates the snapshot's shape (never trusting
+   * an unverified status), records the OPERATOR's eligibility statement, and
+   * writes a PENDING_APPROVAL row:
+   *
+   *   - `feature_disabled` with FF_NONPROFIT_PARITY_V1 off, before any read;
+   *   - `invalid_recipient_snapshot` / `invalid_eligibility` / `invalid_terms`;
+   *   - `over_limit` when amount > the operator's approved_limit;
+   *   - `open_advance_exists` when the org already has a pending / approved /
+   *     active advance (the seller path's "Active advance exists" rule).
+   *
+   * `calculateAdvanceEligibility` is NOT called: it reads sales metrics an org
+   * does not have, and BMC does not fabricate eligibility. No auto-approve;
+   * no ledger account; no ledger entry. `repayment_method` is MANUAL
+   * (AUTO_DEDUCT is impossible: the org's inflows never touch BMC's ledger)
+   * and `repayment_rate` is 0. Amounts are in the table's own unit (major
+   * units); total owed = principal * fee_rate (the seller path's FACTOR_RATE).
+   */
+  async requestOrgAdvance(input: {
+    partner_org_key: string
+    recipient_snapshot: unknown
+    amount: number
+    fee_rate: number
+    term_days: number
+    eligibility: unknown
+    requested_by?: string | null
+    metadata?: Record<string, unknown> | null
+  }) {
+    this.requireOrgAdvanceFlag_("requestOrgAdvance")
+    const now = new Date()
+    const recipient = assertOrgAdvanceRecipient(input.recipient_snapshot, input.partner_org_key)
+    const terms = assertOrgAdvanceTerms(input)
+    const eligibility = assertOrgAdvanceEligibility(input.eligibility, input.requested_by ?? null, now)
+    if (terms.amount > eligibility.approved_limit) {
+      throw new OrgAdvanceRefusalError(
+        "over_limit",
+        `requested ${terms.amount} exceeds the operator-approved limit ${eligibility.approved_limit} for ${recipient.org_key}.`,
+        { amount: terms.amount, approved_limit: eligibility.approved_limit, partner_org_key: recipient.org_key }
+      )
+    }
+
+    const open = await this.listVendorAdvances({
+      recipient_type: "PARTNER_ORG",
+      partner_org_key: recipient.org_key,
+      status: [...OPEN_ADVANCE_STATUSES],
+    })
+    if (open.length > 0) {
+      throw new OrgAdvanceRefusalError(
+        "open_advance_exists",
+        `${recipient.org_key} already has an open advance (${open[0].id}, ${open[0].status}).`,
+        { partner_org_key: recipient.org_key, advance_id: open[0].id, status: open[0].status }
+      )
+    }
+
+    const expectedEnd = new Date(now)
+    expectedEnd.setDate(expectedEnd.getDate() + terms.term_days)
+
+    // The read above is not atomic with the insert; the partial unique index
+    // UQ_hawala_vendor_advance_org_open (one open PARTNER_ORG advance per
+    // partner_org_key) is the arbiter when two requests race. A violation is
+    // re-read and answered as `open_advance_exists`, like a serial second
+    // request.
+    try {
+      return await this.createVendorAdvances(
+        this.orgAdvanceRow_(recipient, terms, eligibility, now, expectedEnd, input.metadata ?? null)
+      )
+    } catch (error) {
+      const [raced] = await this.listVendorAdvances({
+        recipient_type: "PARTNER_ORG",
+        partner_org_key: recipient.org_key,
+        status: [...OPEN_ADVANCE_STATUSES],
+      })
+      if (raced) {
+        throw new OrgAdvanceRefusalError(
+          "open_advance_exists",
+          `${recipient.org_key} already has an open advance (${raced.id}, ${raced.status}).`,
+          { partner_org_key: recipient.org_key, advance_id: raced.id, status: raced.status }
+        )
+      }
+      throw error
+    }
+  }
+
+  private orgAdvanceRow_(
+    recipient: ReturnType<typeof assertOrgAdvanceRecipient>,
+    terms: ReturnType<typeof assertOrgAdvanceTerms>,
+    eligibility: ReturnType<typeof assertOrgAdvanceEligibility>,
+    now: Date,
+    expectedEnd: Date,
+    metadata: Record<string, unknown> | null
+  ) {
+    return {
+      recipient_type: "PARTNER_ORG" as const,
+      vendor_id: null,
+      ledger_account_id: null,
+      partner_org_key: recipient.org_key,
+      recipient_snapshot: recipient,
+      disbursement_reference: null,
+      principal_amount: terms.amount,
+      outstanding_balance: totalOwedMajorUnits(terms.amount, terms.fee_rate),
+      total_repaid: 0,
+      fee_type: "FACTOR_RATE" as const,
+      fee_rate: terms.fee_rate,
+      total_fee_charged: 0,
+      repayment_method: "MANUAL" as const,
+      repayment_rate: 0,
+      term_days: terms.term_days,
+      // The term starts when the operator disburses; these are re-stamped on
+      // approval. The model requires both at creation.
+      start_date: now,
+      expected_end_date: expectedEnd,
+      eligibility_snapshot: eligibility,
+      status: "PENDING_APPROVAL" as const,
+      metadata,
+    }
+  }
+
+  /**
+   * Explicit operator approval: PENDING_APPROVAL -> ACTIVE, stamping
+   * approved_at / approved_by and the external `disbursement_reference` (the
+   * operator's reference for the money that moved from BMC's own balance to
+   * the org's connected account, outside the ledger). Idempotent on that
+   * reference: an ACTIVE advance approved again with the same reference is a
+   * no-op answer `{ approved: false, reason: "already_approved" }`; a
+   * different reference is refused (`reference_mismatch`); any other status
+   * is `invalid_state`.
+   *
+   * Two concurrent approvals are settled IN THE DATABASE: a single
+   * `UPDATE ... WHERE id = ? AND status = 'PENDING_APPROVAL' RETURNING id`
+   * through `resolvePgConnection()` (the `atomicPoolIncrement` pattern). The
+   * generated `updateVendorAdvances({ selector, data })` is NOT a CAS —
+   * Medusa's internal service implements it as a find-by-selector followed by
+   * an update of the found ids, two statements with no predicate on the
+   * write — so on Postgres both approvals could read PENDING_APPROVAL and the
+   * later one would overwrite the earlier disbursement reference. The
+   * generated path is kept only as the fallback when no connection is
+   * reachable (unit tests without DI); a zero-row CAS re-reads and answers by
+   * reference.
+   */
+  async approveOrgAdvance(advanceId: string, input: { approved_by: string; disbursement_reference: string }) {
+    this.requireOrgAdvanceFlag_("approveOrgAdvance")
+    const approvedBy = requireReference(input.approved_by, "approved_by", "invalid_state")
+    const reference = requireReference(input.disbursement_reference, "disbursement_reference", "invalid_state")
+    const advance = await this.requireOrgAdvance_(advanceId)
+
+    const alreadyApproved = (row: typeof advance) => {
+      if (row.disbursement_reference === reference) {
+        return { approved: false as const, reason: "already_approved" as const, advance: row }
+      }
+      throw new OrgAdvanceRefusalError(
+        "reference_mismatch",
+        `advance ${advanceId} was already approved under disbursement reference ${row.disbursement_reference}; a second reference cannot be recorded.`,
+        { advance_id: advanceId, disbursement_reference: row.disbursement_reference, requested_reference: reference }
+      )
+    }
+
+    if (advance.status === "ACTIVE") return alreadyApproved(advance)
+    if (advance.status !== "PENDING_APPROVAL") {
+      throw new OrgAdvanceRefusalError(
+        "invalid_state",
+        `advance ${advanceId} is ${advance.status}; only a PENDING_APPROVAL advance can be approved.`,
+        { advance_id: advanceId, status: advance.status }
+      )
+    }
+
+    const now = new Date()
+    const expectedEnd = new Date(now)
+    expectedEnd.setDate(expectedEnd.getDate() + Number(advance.term_days))
+    const patch = {
+      status: "ACTIVE" as const,
+      approved_at: now,
+      approved_by: approvedBy,
+      disbursement_reference: reference,
+      start_date: now,
+      expected_end_date: expectedEnd,
+    }
+
+    const won = await this.casApproveOrgAdvance_(advanceId, patch)
+    if (won === false) {
+      // Another approval won the CAS; answer from its result.
+      const [current] = await this.listVendorAdvances({ id: advanceId })
+      if (!current) throw new Error("Vendor advance not found")
+      return alreadyApproved(current)
+    }
+    if (won === true) {
+      const [current] = await this.listVendorAdvances({ id: advanceId })
+      if (!current) throw new Error("Vendor advance not found")
+      return { approved: true as const, advance: current }
+    }
+
+    // No pg connection reachable: the generated conditional update. Not a
+    // CAS on a real database (see the doc comment); unit tests without DI
+    // land here, where the in-memory shadow settles it in one tick.
+    const updated = await this.updateVendorAdvances({
+      selector: { id: advanceId, status: "PENDING_APPROVAL" },
+      data: patch,
+    })
+    const rows = Array.isArray(updated) ? updated : [updated]
+    if (rows.length === 0) {
+      const [current] = await this.listVendorAdvances({ id: advanceId })
+      if (!current) throw new Error("Vendor advance not found")
+      return alreadyApproved(current)
+    }
+    return { approved: true as const, advance: rows[0] }
+  }
+
+  /**
+   * The PENDING_APPROVAL -> ACTIVE transition as one conditional UPDATE, so
+   * exactly one of N concurrent approvals writes and every other sees zero
+   * rows. Returns `true` when this call won, `false` when the predicate
+   * matched nothing (someone else won, or the status moved), `undefined`
+   * when no pg connection is reachable so the caller can fall back. Column
+   * names are a fixed list in identifier position; every value is bound.
+   */
+  private async casApproveOrgAdvance_(
+    advanceId: string,
+    patch: {
+      status: "ACTIVE"
+      approved_at: Date
+      approved_by: string
+      disbursement_reference: string
+      start_date: Date
+      expected_end_date: Date
+    }
+  ): Promise<boolean | undefined> {
+    const pg = this.resolvePgConnection()
+    if (!pg) return undefined
+    const result = await pg.raw(
+      `UPDATE hawala_vendor_advance
+         SET status = ?, approved_at = ?, approved_by = ?, disbursement_reference = ?,
+             start_date = ?, expected_end_date = ?, updated_at = NOW()
+       WHERE id = ? AND status = 'PENDING_APPROVAL' AND deleted_at IS NULL
+       RETURNING id`,
+      [
+        patch.status,
+        patch.approved_at,
+        patch.approved_by,
+        patch.disbursement_reference,
+        patch.start_date,
+        patch.expected_end_date,
+        advanceId,
+      ]
+    )
+    const rowCount: number = Number(result?.rowCount ?? result?.rows?.length ?? 0)
+    return rowCount > 0
+  }
+
+  /**
+   * RECORD a repayment the org made outside the ledger. Writes an
+   * AdvanceRepayment { repayment_type MANUAL, status COMPLETED,
+   * external_reference, ledger_entry_id null } under the partial unique index
+   * on (advance_id, external_reference); a duplicate reference — a replay or a
+   * concurrent second call — answers `already_recorded` after a re-read (the
+   * index is the arbiter, as in S12's recordCarrierContribution). The
+   * advance's outstanding_balance / total_repaid / total_fee_charged are then
+   * DERIVED from its COMPLETED rows (never `+=`), and it goes REPAID (the
+   * status enum's terminal value) when the derived outstanding reaches 0.
+   * Only an ACTIVE advance takes a new repayment; a repayment above the
+   * derived outstanding is refused so the books close exactly.
+   */
+  async recordOrgAdvanceRepayment(
+    advanceId: string,
+    input: { amount: number; external_reference: string; repaid_at?: Date | null; recorded_by?: string | null; metadata?: Record<string, unknown> | null }
+  ) {
+    this.requireOrgAdvanceFlag_("recordOrgAdvanceRepayment")
+    if (!isValidCarrierAmount(input.amount)) {
+      throw new OrgAdvanceRefusalError(
+        "invalid_repayment",
+        `amount must be a positive, finite major-unit amount with at most two decimals; got ${String(input.amount)}.`,
+        { amount: input.amount }
+      )
+    }
+    const reference = requireReference(input.external_reference, "external_reference", "invalid_repayment")
+    const advance = await this.requireOrgAdvance_(advanceId)
+    const keyFilter = { advance_id: advanceId, external_reference: reference }
+
+    const [seen] = await this.listAdvanceRepayments(keyFilter)
+    if (seen) {
+      return { recorded: false as const, reason: "already_recorded" as const, repayment_id: seen.id }
+    }
+    if (advance.status !== "ACTIVE") {
+      throw new OrgAdvanceRefusalError(
+        "invalid_state",
+        `advance ${advanceId} is ${advance.status}; repayments are recorded against an ACTIVE advance only.`,
+        { advance_id: advanceId, status: advance.status }
+      )
+    }
+
+    const completedBefore = await this.listAdvanceRepayments({ advance_id: advanceId, status: "COMPLETED" })
+    const before = deriveOrgAdvancePosition(advance, completedBefore)
+    if (input.amount > before.outstanding_balance) {
+      throw new OrgAdvanceRefusalError(
+        "invalid_repayment",
+        `repayment ${input.amount} exceeds the outstanding balance ${before.outstanding_balance} on advance ${advanceId}.`,
+        { advance_id: advanceId, amount: input.amount, outstanding_balance: before.outstanding_balance }
+      )
+    }
+    const outstandingAfter = Math.round((before.outstanding_balance - input.amount) * 100) / 100
+    const split = splitAdvanceRepayment({
+      repayment_amount: input.amount,
+      fee_rate: Number(advance.fee_rate),
+      principal_amount: Number(advance.principal_amount),
+      prior_principal_repaid: before.principal_repaid,
+      is_final: outstandingAfter <= 0,
+    })
+
+    let repayment
+    try {
+      repayment = await this.createAdvanceRepayments({
+        advance_id: advanceId,
+        ledger_entry_id: null,
+        order_id: null,
+        external_reference: reference,
+        principal_amount: split.principal_amount,
+        fee_amount: split.fee_amount,
+        total_amount: input.amount,
+        outstanding_balance_after: outstandingAfter,
+        repayment_type: "MANUAL" as const,
+        status: "COMPLETED" as const,
+        metadata: {
+          ...(input.metadata ?? {}),
+          repaid_at: (input.repaid_at ?? new Date()).toISOString(),
+          recorded_by: input.recorded_by ?? null,
+        },
+      })
+    } catch (error) {
+      // Two calls passed the read above; the unique index decided. If the row
+      // exists now the other call won; otherwise this was a real failure.
+      const [raced] = await this.listAdvanceRepayments(keyFilter)
+      if (raced) {
+        return { recorded: false as const, reason: "already_recorded" as const, repayment_id: raced.id }
+      }
+      throw error
+    }
+
+    const position = await this.recomputeOrgAdvancePosition_(advanceId, advance)
+    return { recorded: true as const, repayment, position }
+  }
+
+  /** Derive an org advance's position from its rows and write it. Never `+=`. */
+  private async recomputeOrgAdvancePosition_(advanceId: string, advance: { principal_amount: unknown; fee_rate: unknown }) {
+    const completed = await this.listAdvanceRepayments({ advance_id: advanceId, status: "COMPLETED" })
+    const position = deriveOrgAdvancePosition(advance, completed)
+    const repaid = position.outstanding_balance <= 0
+    await this.updateVendorAdvances({
+      id: advanceId,
+      outstanding_balance: position.outstanding_balance,
+      total_repaid: position.total_repaid,
+      total_fee_charged: position.fee_repaid,
+      status: repaid ? ("REPAID" as const) : ("ACTIVE" as const),
+      actual_end_date: repaid ? new Date() : null,
+    })
+    return position
+  }
+
   // ==================== VENDOR-TO-VENDOR PAYMENTS ====================
 
   /**
@@ -2655,9 +3441,11 @@ class HawalaLedgerModuleService extends MedusaService({
         credit_account_id: account.id,
         status: "PENDING",
       }),
-      // Get active advance
+      // Get active advance (seller advances only; an org advance never
+      // surfaces on a vendor surface)
       this.listVendorAdvances({
         vendor_id: vendorId,
+        recipient_type: "SELLER",
         status: "ACTIVE",
       }),
       // Get payout config
@@ -2756,6 +3544,7 @@ class HawalaLedgerModuleService extends MedusaService({
             target: Number(p.target_amount || 0),
             raised: Number(p.total_raised || 0),
             status: p.status,
+            carrier: projectPoolCarrier(p),
           })),
     }
   }

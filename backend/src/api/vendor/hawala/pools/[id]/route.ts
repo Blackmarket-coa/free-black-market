@@ -1,5 +1,6 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { HAWALA_LEDGER_MODULE } from "../../../../../modules/hawala-ledger"
+import { isCarriedPool, projectPoolCarrier } from "../../../../../modules/hawala-ledger/carrier"
 import HawalaLedgerModuleService from "../../../../../modules/hawala-ledger/service"
 import { resolveVendorSellerId } from "../../seller-context"
 
@@ -27,12 +28,13 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       return res.status(403).json({ error: "Access denied" })
     }
 
-    const balance = await hawalaService.getAccountBalance(pool.ledger_account_id)
+    // A carried pool has no BMC balance to show (Decision 6b).
+    const balance = isCarriedPool(pool) ? null : await hawalaService.getAccountBalance(pool.ledger_account_id)
     const investments = await hawalaService.listInvestments({
       pool_id: id,
     })
 
-    res.json({ pool, balance, investments })
+    res.json({ pool, carrier: projectPoolCarrier(pool), balance, investments })
   } catch (error) {
     res.status(500).json({ error: (error as Error).message })
   }

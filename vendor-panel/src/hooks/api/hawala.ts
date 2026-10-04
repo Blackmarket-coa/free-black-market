@@ -187,6 +187,15 @@ export interface VendorDashboard {
     target: number
     raised: number
     status: string
+    /**
+     * The verified nonprofit carrying this pool, when it has one: it holds
+     * the funds on its own accounts; the platform keeps the record only.
+     */
+    carrier: {
+      org_key: string
+      verification_status: string
+      verified_as_of: string | null
+    } | null
   }>
 }
 

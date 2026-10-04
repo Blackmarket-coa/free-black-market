@@ -2,6 +2,7 @@ import { createLogger } from "../../../../shared/logger"
 const log = createLogger("api/store/hawala/pools")
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { HAWALA_LEDGER_MODULE } from "../../../../modules/hawala-ledger"
+import { isCarriedPool, projectPoolCarrier } from "../../../../modules/hawala-ledger/carrier"
 import HawalaLedgerModuleService from "../../../../modules/hawala-ledger/service"
 
 /**
@@ -22,7 +23,10 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     // Get balance and progress for each pool
     const poolsWithProgress = await Promise.all(
       pools.map(async (pool) => {
-        const balance = await hawalaService.getAccountBalance(pool.ledger_account_id)
+        // A carried pool has no BMC balance: the carrier holds the funds
+        // (Decision 6b). `null`, not a read of the dormant account.
+        const carried = isCarriedPool(pool)
+        const balance = carried ? null : await hawalaService.getAccountBalance(pool.ledger_account_id)
         const progress = Number(pool.target_amount) > 0
           ? (Number(pool.total_raised) / Number(pool.target_amount)) * 100
           : 0
@@ -43,7 +47,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
           revenue_share_percentage: p.revenue_share_percentage,
           total_investors: p.total_investors,
           progress_percentage: Math.min(progress, 100),
-          current_balance: balance.balance,
+          current_balance: balance ? balance.balance : null,
+          carrier: projectPoolCarrier(pool),
           fundraising_start: p.fundraising_start,
           fundraising_end: p.fundraising_end,
         }

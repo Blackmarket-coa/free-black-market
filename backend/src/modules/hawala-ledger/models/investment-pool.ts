@@ -19,8 +19,20 @@ export const InvestmentPool = model.define("hawala_investment_pool", {
   // Producer reference
   producer_id: model.text(), // Links to producer module
   
-  // Linked ledger account (PRODUCER_POOL type)
+  // Linked ledger account (PRODUCER_POOL type). A CARRIED pool keeps its
+  // account at zero: `createTransfer` refuses every leg that names a pool or a
+  // pool account (service.ts `assertPoolLegAllowed_`), so the row is dormant.
   ledger_account_id: model.text(),
+
+  // Nonprofit carrier (docs/BMC_SURVIVAL_PROGRAMS.md Decision 6b; legal
+  // checkpoints L26, L11). The verified partner_org that holds and administers
+  // this pool's funds ON ITS OWN ACCOUNTS. `carrier_org_key` points at
+  // `partner_org.key` by key, like `fiscal_host_key`; `carrier_snapshot` is the
+  // frozen `PoolCarrierSnapshot` (../carrier.ts) the admin route built from the
+  // directory at assignment time, dated by the IRS file (L11). Written only by
+  // `assignPoolCarrier`; the generated create/update strip both fields.
+  carrier_org_key: model.text().nullable(),
+  carrier_snapshot: model.json().nullable(),
   
   // Investment terms
   target_amount: model.bigNumber(), // Target raise amount
@@ -84,6 +96,12 @@ export const InvestmentPool = model.define("hawala_investment_pool", {
       on: ["ledger_account_id"],
       name: "idx_investment_pool_account",
     },
+    // Carried-pool lookups by org
+    {
+      on: ["carrier_org_key"],
+      name: "IDX_hawala_investment_pool_carrier_org_key",
+      where: "deleted_at IS NULL",
+    },
   ])
 
 /**
@@ -95,8 +113,21 @@ export const Investment = model.define("hawala_investment", {
   
   // References
   pool_id: model.text(), // Investment pool
-  investor_account_id: model.text(), // Investor's ledger account
+  // Investor's ledger account. Null on a CARRIER-settled row: the money never
+  // touched a BMC account.
+  investor_account_id: model.text().nullable(),
   customer_id: model.text().nullable(), // Customer who invested
+
+  // How this row settled. LEDGER: the historical shape — a USER_WALLET →
+  // PRODUCER_POOL transfer, `ledger_entry_id` set. CARRIER: a RECORD of a
+  // contribution the pool's nonprofit carrier received on its own accounts
+  // (`recordCarrierContribution`); no ledger leg, no account, idempotent by
+  // the carrier's own reference under a partial unique index on
+  // (pool_id, carrier_reference). No new entry_type or reference_type: the
+  // discriminator lives here, not on hawala_ledger_entry.
+  settlement: model.enum(["LEDGER", "CARRIER"]).default("LEDGER"),
+  carrier_org_key: model.text().nullable(),
+  carrier_reference: model.text().nullable(),
   
   // Investment details
   amount: model.bigNumber(),
@@ -151,5 +182,13 @@ export const Investment = model.define("hawala_investment", {
     {
       on: ["investor_account_id"],
       name: "idx_investment_account",
+    },
+    // One record per carrier reference per pool: the idempotency key for
+    // carried contributions. Partial so LEDGER rows (null reference) are free.
+    {
+      on: ["pool_id", "carrier_reference"],
+      name: "UQ_hawala_investment_pool_carrier_reference",
+      unique: true,
+      where: "deleted_at IS NULL AND carrier_reference IS NOT NULL",
     },
   ])
