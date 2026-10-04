@@ -17,6 +17,13 @@ import type MarketplaceListingService from "../../../../../../../../modules/mark
  * `plan_percent` are a vendor's negotiated terms and are not published, the
  * same line `/store/fee-schedule` already draws; this key belongs to Blackout,
  * not to the vendor whose listing is being quoted.
+ *
+ * `source` is one of `PlatformFeeSource`. A listing is a sale, so this quote
+ * only ever reports `seller_override`, `plan` or `platform_default`; the fourth
+ * value, `transaction_kind` (0% on donations), is in the union but cannot be
+ * produced by this route. A consumer switching on the literal values should
+ * still treat an unknown `source` as "the rate is `feeBps`, provenance unknown"
+ * rather than fail.
  */
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
   if (!requireCommerceApiKey(req, res)) return

@@ -51,6 +51,10 @@ const OrderPayoutBreakdown = model.define("order_payout_breakdown", {
   // Total tip
   total_tip: model.bigNumber().default(0),
 
+  // Total donated to a named partner organisation. Not part of
+  // total_to_producers and not part of the platform-fee base.
+  total_donation: model.bigNumber().default(0),
+
   // Total creator commission (affiliate share funded out of seller gross)
   total_creator_commission: model.bigNumber().default(0),
 

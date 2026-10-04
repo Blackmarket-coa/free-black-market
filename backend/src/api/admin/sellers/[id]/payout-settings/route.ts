@@ -26,7 +26,11 @@ function serialize(
     effective: {
       percent: fee.percent,
       // The whole point of this endpoint: an operator setting a rate has to be
-      // able to see which of the three sources actually won.
+      // able to see which source actually won. This route resolves the seller's
+      // SALE rate, so of the four sources in `PlatformFeeSource` only
+      // `seller_override`, `plan` and `platform_default` can appear here;
+      // `transaction_kind` (0% on donations) is not a per-seller setting and an
+      // operator cannot grant or revoke it from this screen.
       source: fee.source,
       override_expired: fee.override_expired,
       override_reason: fee.override_reason,

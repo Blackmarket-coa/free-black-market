@@ -4,12 +4,19 @@
  * Pure — no container, no I/O — mirroring the `modules/subscription/utils/dunning.ts`
  * precedent, so the precedence rule can be asserted directly without a database.
  *
- * There are three possible sources and they are strictly ordered:
+ * There are four possible sources and they are strictly ordered:
  *
+ *   0. **The transaction kind.** A donation (or a donation pledge) carries a 0%
+ *      platform fee by rule, whoever the seller is and whatever they negotiated.
+ *      This is a decision about what FBM charges for, not a rate, which is why
+ *      it sits ABOVE the override: a per-seller concession is a negotiable
+ *      number, the donation rule is not. It also means plan and override are
+ *      never consulted for a donation, so a 0% donation can never be mistaken
+ *      for the `seller_override: 0` concession or leak a plan rate.
  *   1. **A per-seller override** (`seller_payout_settings.custom_platform_fee_percent`),
  *      while it is unexpired. This is a negotiated or promotional concession made
- *      to one seller and must beat everything else — otherwise moving a seller
- *      onto a plan would silently revoke a rate someone agreed to.
+ *      to one seller and must beat everything else below it — otherwise moving a
+ *      seller onto a plan would silently revoke a rate someone agreed to.
  *   2. **The seller's billing plan's rate**, when the plan expresses one.
  *   3. **The platform default** (`payout_config.platform_fee_percent`).
  *
@@ -17,11 +24,49 @@
  * the settings row. Writing the plan's rate into `custom_platform_fee_percent`
  * would make that column permanently ambiguous — nothing downstream could then
  * tell a negotiated concession from a plan rate, and a plan change could not
- * safely overwrite it.
+ * safely overwrite it. For the same reason the kind rule is not a plan row and
+ * not an override of 0: `modules/vendor-plan/catalog.ts` only ever discounts a
+ * sale, and `__tests__/catalog.unit.spec.ts` would be the wrong guard for a
+ * rule about what is being charged.
+ *
+ * This function is unconditional. Whether a caller may classify a charge as a
+ * donation at all is decided at the container composition point
+ * (`shared/platform-fee.ts`), behind `FF_NONPROFIT_PARITY_V1`.
  */
 
 /** Where a resolved fee came from. */
-export type PlatformFeeSource = "seller_override" | "plan" | "platform_default"
+export type PlatformFeeSource =
+  | "transaction_kind"
+  | "seller_override"
+  | "plan"
+  | "platform_default"
+
+/**
+ * What is being charged for.
+ *
+ * `sale` is every goods-or-services purchase and the default when a caller says
+ * nothing. `donation` is a direct charge to a partner org; `donation_pledge` is
+ * a donation promised ahead of collection. `donation_pledge` is deliberately
+ * NOT `pledge`: a collective-campaign backing (PRE_ORDER / MICRO_INVESTOR) and
+ * a demand-pool participant commitment are also called pledges and keep their
+ * own fee paths (`services/collective-hawala.ts`, the demand-pool admin route)
+ * — a blanket "pledges are free" rule would zero revenue on goods pre-orders
+ * and group buys and reach into securities-gated flows.
+ *
+ * `tip` exists so the kind set is complete, but no caller passes it: tips are
+ * kept out of the fee base by `calculateBreakdown` (they are never part of
+ * `seller.subtotal`) and that stays the one mechanism. Two mechanisms for one
+ * outcome is how a tip ends up both excluded and classified.
+ */
+export type PlatformFeeTransactionKind =
+  | "sale"
+  | "donation"
+  | "donation_pledge"
+  | "tip"
+
+/** Kinds the platform takes no fee on, by rule rather than by negotiation. */
+export const ZERO_FEE_TRANSACTION_KINDS: ReadonlySet<PlatformFeeTransactionKind> =
+  new Set<PlatformFeeTransactionKind>(["donation", "donation_pledge", "tip"])
 
 /** The subset of `seller_payout_settings` this rule reads. */
 export type SellerFeeOverride = {
@@ -79,7 +124,22 @@ export function resolvePlatformFee(input: {
   planPercent?: number | null
   platformDefault: number
   now?: Date
+  /** What is being charged for. Defaults to `sale`. */
+  kind?: PlatformFeeTransactionKind
 }): ResolvedPlatformFee {
+  const kind = input.kind ?? "sale"
+  if (ZERO_FEE_TRANSACTION_KINDS.has(kind)) {
+    // Above the override on purpose (see the header). Nothing below is read:
+    // the override is not consulted, so it cannot be reported as expired, and
+    // the plan is not consulted, so its rate is neither applied nor leaked.
+    return {
+      percent: 0,
+      source: "transaction_kind",
+      override_expired: false,
+      override_reason: null,
+    }
+  }
+
   const now = input.now ?? new Date()
   const override = input.override ?? null
 
