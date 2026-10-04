@@ -1,9 +1,21 @@
 import LocalizedClientLink from "@/components/molecules/LocalizedLink/LocalizedLink"
+import DirectDonationForm from "@/components/sections/DirectDonation/DirectDonationForm"
 import { getDonationSettings, listDonationBeneficiaries } from "@/lib/data/donations"
+import { listPartners, type PartnerOrg } from "@/lib/data/partners"
+import { phase1ModuleFlags } from "@/lib/feature-flags"
 
 export default async function DonationsPage() {
   const settings = await getDonationSettings().catch(() => null)
   const beneficiaries = await listDonationBeneficiaries().catch(() => [])
+  // Direct-charge donations (docs/POSTURE_A_COMPLIANCE.md rule 10). Both
+  // sides must be on: the API only sends `orgs` behind its flag, and this
+  // page only renders the form behind the storefront's.
+  let directOrgs: PartnerOrg[] = []
+  if (phase1ModuleFlags.nonprofitParity) {
+    directOrgs = await listPartners()
+      .then((d) => d.orgs ?? [])
+      .catch(() => [])
+  }
 
   return (
     <div className="content-container py-12 space-y-6">
@@ -38,6 +50,19 @@ export default async function DonationsPage() {
           Go to checkout donation step
         </LocalizedClientLink>
       </div>
+
+      {phase1ModuleFlags.nonprofitParity ? (
+        <section id="direct" className="space-y-3" aria-labelledby="direct-donation-heading">
+          <h2 id="direct-donation-heading" className="text-2xl font-semibold">
+            Donate directly to a partner organisation
+          </h2>
+          <p className="text-ui-fg-subtle max-w-2xl">
+            Your gift is charged on the organisation&apos;s own Stripe account. It never passes through Free Black
+            Market; we record it and take nothing.
+          </p>
+          <DirectDonationForm orgs={directOrgs} />
+        </section>
+      ) : null}
     </div>
   )
 }

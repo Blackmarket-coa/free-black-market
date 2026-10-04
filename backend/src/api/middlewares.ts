@@ -1241,6 +1241,16 @@ export default defineMiddlewares({
       bodyParser: { preserveRawBody: true },
       middlewares: [standardRateLimiter],
     },
+    // Stripe Connect webhook: connected-account events for direct-charge
+    // donations, signed with STRIPE_CONNECT_WEBHOOK_SECRET (503 when unset).
+    // Dark with FF_NONPROFIT_PARITY_V1 off (the handler repeats the check).
+    // Same raw-body rule. docs/POSTURE_A_COMPLIANCE.md rule 10.
+    {
+      matcher: "/webhooks/stripe-connect",
+      method: "POST",
+      bodyParser: { preserveRawBody: true },
+      middlewares: [standardRateLimiter, requireFeatureFlagMiddleware("NONPROFIT_PARITY_V1")],
+    },
     // Embeddable storefront keys. No runtime feature flag — connect.js is
     // always available as a platform capability; the plan decides who may
     // mint keys for it.
@@ -1315,6 +1325,19 @@ export default defineMiddlewares({
     {
       matcher: "/admin/donations/report",
       middlewares: [authenticate("user", ["bearer", "session"]), requireStorefrontContext(["finance_viewer", "storefront_admin", "org_owner"], "tier1_verified")],
+    },
+    // BMC Survival Programs, Phase 1: direct-charge donation checkout. Dark
+    // until FF_NONPROFIT_PARITY_V1 is set (the handler repeats the check and
+    // also requires the stripe_connect_direct provider to be registered).
+    // Customer auth is optional here, as on every /store route: guests may
+    // donate; a signed-in donor's id is recorded for their receipt.
+    {
+      matcher: "/store/donations/checkout",
+      method: "POST",
+      middlewares: [
+        standardRateLimiter,
+        requireFeatureFlagMiddleware("NONPROFIT_PARITY_V1"),
+      ],
     },
     // BMC Survival Programs, Phase 1: pilot-partner org records
     // (docs/BMC_SURVIVAL_PROGRAMS.md §2 item 1). Operator-only and dark until

@@ -12,6 +12,9 @@ import handler from "../donation-order-accrued"
 import { DONATION_MODULE } from "../../modules/donation"
 import { TENANCY_MODULE } from "../../modules/tenancy"
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
+import { PHASE0_FEATURE_FLAGS } from "../../shared/feature-flags"
+
+const FLAG = PHASE0_FEATURE_FLAGS.NONPROFIT_PARITY_V1
 
 const BENEFICIARY = { id: "ben_1", metadata: { accrued_balance: 100 } }
 
@@ -50,8 +53,10 @@ const makeContainer = (opts: {
     throw new Error(`unexpected entity ${entity}`)
   })
 
+  const resolved: string[] = []
   const container = {
     resolve: (key: string) => {
+      resolved.push(key)
       if (key === DONATION_MODULE) return donationService
       if (key === TENANCY_MODULE) return tenancyService
       if (key === "order") return orderService
@@ -60,11 +65,53 @@ const makeContainer = (opts: {
     },
   }
 
-  return { container, donationService, tenancyService }
+  return { container, donationService, tenancyService, resolved }
 }
 
 const run = (container: unknown) =>
   handler({ event: { data: { id: "order_1" } }, container } as never)
+
+afterEach(() => {
+  // Flag specs mutate process.env; a leaked value flips later specs in the
+  // same jest worker.
+  delete process.env[FLAG]
+})
+
+describe("donation-order-accrued under FF_NONPROFIT_PARITY_V1 (S10: the accrual is retired under the flag)", () => {
+  it("accrues nothing and resolves nothing when the flag is on, even with a donation on the cart", async () => {
+    // Direct charges on the org's own account are the only donation path
+    // under the flag; a second, FBM-held balance beside them is exactly what
+    // Posture A rule 3 forbids. The container is not touched at all.
+    process.env[FLAG] = "true"
+    const { container, donationService, resolved } = makeContainer({
+      orderMetadata: {},
+      cartMetadata: {
+        donation_total: 500,
+        donation_beneficiary_id: "ben_1",
+        storefront_id: "sf_1",
+      },
+    })
+
+    await run(container)
+
+    expect(donationService.updateDonationBeneficiaries).not.toHaveBeenCalled()
+    expect(resolved).toEqual([])
+  })
+
+  it("only the literal string \"true\" retires it; \"1\" leaves the tier-2 path running", async () => {
+    process.env[FLAG] = "1"
+    const { container, donationService } = makeContainer({
+      orderMetadata: {},
+      cartMetadata: { donation_total: 500, donation_beneficiary_id: "ben_1", storefront_id: "sf_1" },
+    })
+
+    await run(container)
+
+    expect(donationService.updateDonationBeneficiaries).toHaveBeenCalledWith(
+      expect.objectContaining({ metadata: expect.objectContaining({ accrued_balance: 600 }) })
+    )
+  })
+})
 
 describe("donation-order-accrued", () => {
   it("accrues a donation the checkout path dropped from the order", async () => {

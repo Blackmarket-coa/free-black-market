@@ -90,7 +90,7 @@ function effectiveKind(
  */
 export async function resolveTransactionPlatformFee(
   container: MedusaContainer,
-  input: { sellerId: string; kind?: PlatformFeeTransactionKind }
+  input: { sellerId: string | null; kind?: PlatformFeeTransactionKind }
 ): Promise<SellerPlatformFee> {
   const payouts = container.resolve<PayoutBreakdownService>(
     PAYOUT_BREAKDOWN_MODULE
@@ -103,6 +103,16 @@ export async function resolveTransactionPlatformFee(
       null,
       kind
     )
+    return { ...resolved, plan_code: null, plan_percent: null }
+  }
+
+  // No seller, no plan: a charge with no seller (a direct-charge donation
+  // asked for while the flag coerces it to `sale`) has no plan to read and
+  // no override to honour, so it lands on the platform default. The donation
+  // checkout asserts `percent === 0` on what comes back and refuses to mint
+  // anything else, so this branch can only ever make it stop.
+  if (input.sellerId === null) {
+    const resolved = await payouts.getPlatformFeeDetail(null, null, kind)
     return { ...resolved, plan_code: null, plan_percent: null }
   }
 

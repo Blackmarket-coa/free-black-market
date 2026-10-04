@@ -117,13 +117,91 @@ operator can give (who holds CCR wallets, and what governs issuance volume).
 
 ### Donations
 
-10. **All donation receipts route through a 501(c)(3) fiscal sponsor.**
-    FBM does not maintain the donor-recipient relationship directly. The
-    fiscal sponsor (selected from Allied Media Projects, NEO Philanthropy,
-    Tides Foundation, or an SELC-recommended local sponsor) handles state
-    charity registration in roughly 40 states and issues donor receipts.
-    Donation widgets surface the sponsor name to the donor as part of the
-    consent flow.
+10. **A donation is collected only as a Stripe direct charge on the recipient
+    organisation's own connected account, and FBM records it without ever
+    holding it.** Concretely, under `FF_NONPROFIT_PARITY_V1`:
+
+    - One PaymentIntent per recipient org, created **on** that org's
+      connected account via the `stripeAccount` request option
+      (`modules/stripe-connect-direct`). N orgs ⇒ N intents. The funds settle
+      on the org's Stripe balance and never transit FBM's.
+    - **Only the server names the account.** The provider reads the
+      connected account from the payment-session *context*
+      (`shared/stripe-direct-charge.ts` `DIRECT_CHARGE_CONTEXT_KEY`), which
+      Medusa's stock `POST /store/payment-collections/:id/payment-sessions`
+      route cannot set — that route copies the request body into `data`, and
+      the provider refuses a session whose context lacks the marker or whose
+      `data.connected_account_id` disagrees with it. A storefront caller with
+      a Connect account of their own therefore cannot aim a goods payment at
+      it through this provider.
+    - **No** `transfer_data` (destination charges), **no** `on_behalf_of`,
+      **no** `application_fee_amount`, **no** separate-charges-and-transfers.
+      Those are the shapes under which money passes through the platform
+      first; the provider refuses them anywhere in its input and the donation
+      service's guard refuses to record an intent that carries them
+      (`shared/stripe-direct-charge.ts`).
+    - **BMC's fee is 0** by the transaction-kind rung of the platform-fee
+      chain (`payout-breakdown/fee-resolution.ts`, above the seller override;
+      not a plan row, not an override of 0). The checkout asserts the chain
+      returned 0 by that rung before minting; the record carries
+      `bmc_fee_cents` under a DB `CHECK (= 0)`.
+    - **The org bears Stripe's processing fee natively** — that is how a
+      direct charge settles. The checkout shows this to the donor as a
+      disclosure, never as a transfer FBM made.
+    - **FBM writes a record, never a balance.** `donation_split_record`
+      (donation module) holds the intent id, the connected account, gross and
+      fee cents, and the recipient's verification status, IRS file date and
+      org type **frozen at charge time** (L11). It is not a
+      `hawala_ledger_entry` — `createTransfer` needs two `LedgerAccount`s and
+      moves cached balances, which is the custody shape rule 3 forbids, and
+      the hawala guard cannot see USD at all. No `PURCHASE_CONTEXT_REFERENCE_TYPES`
+      or `reference_type` entry was added.
+    - **Recipient eligibility at charge time**: `partner_org.published`,
+      a non-null `stripe_connect_account_id`, and an IRS-affirmed
+      `verification_status` (`pub78_eligible`, `bmf_only`) or a
+      `coop` / `unincorporated` org type (publishable only with the
+      operator's acknowledgement already recorded). Every refusal is the
+      same 403 (`shared/community-read-access.ts` `forbidden()`).
+    - **Refunds** are issued on the connected account. `charge.refunded`
+      records Stripe's `amount_refunded` as `refunded_cents`; the status
+      becomes `refunded` only when that covers the gross, a partial refund
+      keeps the status and records the amount. Never routed through the
+      hawala `processRefund`.
+    - The guard lives in the **service layer**
+      (`modules/donation/direct-split-guard.ts`,
+      `DonationModuleService.recordDirectSplit` / `applyDirectSplitProcessorEvent`)
+      for the reason `posture-a-guard.ts` gives: hooks can be bypassed. It is
+      strict only; there is no warn or off mode.
+    - Connected-account webhooks arrive at `POST /webhooks/stripe-connect`,
+      dark (404) with the flag off, verified with
+      `STRIPE_CONNECT_WEBHOOK_SECRET` (503 when unset), and applied
+      idempotently by intent id — processor first, record second. An intent
+      the ledger never recorded is back-filled from a success **only** when
+      `event.account` is the connected account the directory holds for the
+      org the intent names and that org passes the eligibility rule now; the
+      gross is Stripe's `amount`, never the intent's metadata, because
+      metadata is writable by whoever holds the connected account.
+
+    The **legacy tier-2 path** — a 501(c)(3) fiscal sponsor as donor of
+    record, with the donation accrued on FBM's books
+    (`beneficiary.metadata.accrued_balance`) and batch-disbursed weekly — is
+    the custody shape legal checkpoint **L24** asks counsel about. It is
+    superseded under the flag: `subscribers/donation-order-accrued.ts` and
+    `jobs/donation-batch-disbursement.ts` are no-ops and the admin settings
+    route refuses `settlement_mode: "ledger_batch"` (409 naming
+    `split_processor`) while `FF_NONPROFIT_PARITY_V1` is on. With the flag off
+    it is unchanged for tenants without a Connect account. Whether it was ever
+    acceptable is not decided here.
+
+    **Needs counsel before live money** (docs/legal/checkpoints.md): **L24**
+    — confirm that direct charges (and only direct charges) satisfy the
+    custody question; **L25** — commercial co-venturer status; **L11** —
+    representing a third party's tax status, surfaced by the frozen snapshot
+    and the as-of date shown with every status. The flag,
+    `STRIPE_CONNECT_DIRECT_ENABLED` and `STRIPE_CONNECT_WEBHOOK_SECRET` stay
+    unset until then; with the flag off nothing on this path is reachable
+    (the provider is not even registered, the checkout and the webhook both
+    answer 404 before reading a body).
 
 ## How each module enforces these rules
 
@@ -194,9 +272,30 @@ drift apart again.
 
 ### `donation`
 
-- `fiscal_sponsor_account_id` (added in this branch) is required on the
-  `donation-settings` model; the donation-batch-disbursement job routes all
-  donations through the fiscal sponsor's LedgerAccount.
+- `DonationModuleService.recordDirectSplit` and `applyDirectSplitProcessorEvent`
+  are the only writers of `donation_split_record` **that run the guard**: both
+  call `assertDirectSplitInvariants` (`direct-split-guard.ts`) before the
+  write — charge on a connected account, none of `transfer_data` /
+  `on_behalf_of` / `application_fee_amount`, `bmc_fee_cents === 0`, a dated
+  recipient snapshot, and no `HAWALA_LEDGER_MODULE` resolution in the flow
+  that produced the record. Strict only. `MedusaService` also generates
+  `createDonationSplitRecords` / `updateDonationSplitRecords` on the same
+  class; they bypass the guard and are not to be called directly — for a
+  write that reaches them anyway, the DB CHECKs below are the only rules left.
+- `donation_split_record` carries `CHECK (bmc_fee_cents = 0)`,
+  `CHECK (gross_cents > 0)` and `CHECK (refunded_cents IS NULL OR 0 ≤
+  refunded_cents ≤ gross_cents)` at the DB layer; `stripe_payment_intent_id`
+  is unique (partial, `WHERE deleted_at IS NULL`, declared on both the model
+  and the migration), so the processor's intent id is the record's
+  idempotency key.
+- `modules/stripe-connect-direct` is the only provider that can mint a
+  donation intent; it exists in the process only when
+  `FF_NONPROFIT_PARITY_V1`, `STRIPE_CONNECT_DIRECT_ENABLED="true"` and the
+  platform `STRIPE_API_KEY` are all set (`registration.ts`).
+- Legacy (flag off only): `fiscal_sponsor_account_id` on `donation_settings`
+  names the LedgerAccount the batch-disbursement job would credit under
+  `settlement_mode: "ledger_batch"`. Under the flag that job, the accrual
+  subscriber and the `ledger_batch` setting are retired (see rule 10).
 
 ### `seller-extension`, `entitlement`, `order-cycle`, `creator-program`
 
@@ -264,30 +363,73 @@ schema migration.
 
 ## Compliance gate (CI)
 
-`backend/src/modules/hawala-ledger/__tests__/posture-a-invariants.spec.ts`
-asserts the following at every CI run:
+`pnpm test:posture-a` (`backend/package.json`, pattern `posture-a`) runs in
+`.github/workflows/security.yml` — not in `ci.yml` — and collects two specs.
+What they actually assert, and nothing more:
 
-1. Public methods on `HawalaLedgerModuleService` that move CCR throw when
-   called without a purchase context.
-2. The CCR asset configuration carries `authorization_required: true` and
-   `authorization_revocable: true`.
-3. `EscrowAgreement.subject_type` accepts only the four allowed values.
-4. The donation job test asserts disbursement target is the fiscal sponsor
-   account.
+`backend/src/modules/hawala-ledger/__tests__/posture-a-invariants.unit.spec.ts`
+
+1. `assertPurchaseContext` passes a CCR transfer that carries an `order_id`,
+   a `cart_id`, or a recognised `reference_type` + `reference_id`, and
+   rejects a CCR transfer with none (strict mode), including an empty
+   `reference_id`.
+2. Non-CCR currencies pass through; issuer entry types (`ISSUE`, `BURN`,
+   `CREDIT_PAYOUT_MINT`, `CREDIT_REFUND_BURN`) pass through.
+3. `warn` and `off` guard modes do not throw.
+4. The constant sets (`PURCHASE_CONTEXT_REFERENCE_TYPES`, `ISSUER_ENTRY_TYPES`,
+   `CCR_CURRENCY_CODE`) hold their documented values.
+
+`backend/src/modules/donation/__tests__/posture-a-direct-split-invariants.unit.spec.ts`
+
+5. `assertDirectSplitInvariants` rejects a record whose charge is not on a
+   connected account, an intent carrying `transfer_data` / `on_behalf_of` /
+   `application_fee_amount` at any depth, a non-zero `bmc_fee_cents`, a
+   non-positive or non-integer gross, a non-donation kind, a missing or
+   undated recipient snapshot, an IRS-affirmed status without the file's
+   as-of date, a snapshot that is neither IRS-affirmed nor a non-IRS org
+   type, and a flow in which `HAWALA_LEDGER_MODULE` was resolved; it has
+   no warn or off mode.
+6. `PURCHASE_CONTEXT_REFERENCE_TYPES` carries no donation or split entry.
+7. Through the real `DonationModuleService` (prototype, shadowed CRUD):
+   `recordDirectSplit` runs the guard before the write, is idempotent by
+   intent id and refuses to re-attach an intent to another account;
+   `applyDirectSplitProcessorEvent` is monotone (a full refund is terminal;
+   a late failure cannot un-succeed), records a partial refund as
+   `refunded_cents` without moving the status and clamps it to the gross,
+   refuses an account mismatch, ignores an unknown intent without a
+   fallback, and creates from a fallback only under the same guard.
+
+What this gate does **not** assert, and nothing else in CI does either:
+that `HawalaLedgerModuleService`'s public methods call the guard (the
+service-layer wiring is read, not tested); the Stellar asset
+`authorization_required` / `authorization_revocable` flags; the
+`EscrowAgreement.subject_type` CHECK (that is a DB constraint in
+`Migration20260510AddEscrowAndPatronage.ts`, exercised only by a database);
+any Stripe call shape (the provider and route specs under `pnpm test:unit`
+cover `{ stripeAccount }`, the forbidden parameters, the server-only context
+marker, idempotency against a Stripe fake with idempotency semantics, and the
+webhook's account pinning — but they are not in this gate). Do not cite "the
+posture gate passed" as evidence of any of those.
 
 A failing posture invariant blocks merge. Treat this gate as
 non-overridable.
 
 ## Open posture questions
 
-- **Fiscal sponsor selection**: ✓ Resolved (working recommendation —
-  Allied Media Projects). See `docs/FISCAL_SPONSOR_DECISION.md` for the
-  evaluation matrix and the open agreement / board-sign-off items that
-  must close before the disbursement job flips to live. Until then the
-  sponsor `live` flag stays false in
-  `backend/src/modules/donation/fiscal-sponsors.ts`, the donation
-  widget surfaces "pending fiscal sponsor" copy, and donations accrue
-  in pending state on FBM's books.
+- **Fiscal sponsor selection**: ✓ Resolved as a working recommendation
+  (Allied Media Projects) for the **legacy tier-2 path only**. See
+  `docs/FISCAL_SPONSOR_DECISION.md` for the evaluation matrix and the open
+  agreement / board-sign-off items. The sponsor `live` flag stays false in
+  `backend/src/modules/donation/fiscal-sponsors.ts` and the donation widget
+  surfaces "pending fiscal sponsor" copy. With `FF_NONPROFIT_PARITY_V1`
+  **off**, a donation chosen at checkout still accrues in pending state on
+  FBM's books (`beneficiary.metadata.accrued_balance`) — the custody shape
+  L24 asks about. With the flag **on**, that accrual is a no-op and
+  donations are direct charges on the org's own account (rule 10); whether
+  the sponsor path is retired for good is operator input, not decided here.
+- **Direct-charge donations (L24, L25, L11)**: needs counsel. Rule 10 is
+  built so that nothing on the path is reachable until the operator sets
+  the flag and the Stripe env after clearance.
 - **Banking partner for unbanked vendors**: Mercury, Lili, or LES People's
   FCU. Decision affects vendor onboarding copy. Not blocking for this
   branch.

@@ -9,6 +9,7 @@ import DonationPreferences from "./DonationPreferences"
 import SlidingScaleTier, { type SlidingScaleTier as TierValue } from "./SlidingScaleTier"
 import StorefrontSwitcher from "./StorefrontSwitcher"
 import { DonationBeneficiary, PublicStorefront } from "@/lib/data/donations"
+import { phase1ModuleFlags } from "@/lib/feature-flags"
 
 /**
  * Playbooks that allow sliding-scale pricing. Mirrors the backend
@@ -103,6 +104,7 @@ const Review = ({
           fiscalSponsorUrl={donationSettings?.fiscal_sponsor_url ?? null}
           fiscalSponsorLive={donationSettings?.fiscal_sponsor_live === true}
           initialMetadata={(cart?.metadata as Record<string, any>) || {}}
+          directDonationEnabled={phase1ModuleFlags.nonprofitParity}
         />
       ) : (
         <div className="w-full mb-6 border rounded-sm p-4 bg-gray-50 text-sm text-gray-600">

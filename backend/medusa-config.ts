@@ -1,5 +1,6 @@
 import { defineConfig, loadEnv } from '@medusajs/framework/utils'
 import { buildAuthModule } from './src/lib/build-auth-module'
+import { stripeConnectDirectProviderConfig } from './src/modules/stripe-connect-direct/registration'
 
 // Load environment variables
 loadEnv(process.env.NODE_ENV || 'development', process.cwd())
@@ -308,6 +309,16 @@ const optionalModules = [
 const authModule = buildAuthModule()
 
 // Payment providers
+//
+// `stripe_connect_direct` (Stripe Connect direct charges on a partner org's
+// connected account — docs/POSTURE_A_COMPLIANCE.md rule 10) is registered only
+// when `registration.ts` says so: FF_NONPROFIT_PARITY_V1, an explicit
+// STRIPE_CONNECT_DIRECT_ENABLED="true", and the platform STRIPE_API_KEY. All
+// three default unset, so the provider does not exist in this process until an
+// operator sets them after counsel clears L24/L25. @mercurjs/payment-stripe-connect
+// stays unregistered: it mints plain platform intents.
+const stripeConnectDirect = stripeConnectDirectProviderConfig(process.env)
+
 const paymentModule = {
   resolve: '@medusajs/medusa/payment',
   options: {
@@ -320,6 +331,7 @@ const paymentModule = {
           webhookSecret: process.env.STRIPE_WEBHOOK_SECRET || '',
         },
       },
+      ...(stripeConnectDirect ? [stripeConnectDirect] : []),
     ],
   },
 }
