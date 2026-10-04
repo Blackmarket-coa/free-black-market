@@ -335,6 +335,15 @@ line in `docker-build.yml`'s `panelargs` — see the blocker in §1.
 
 ## Changelog
 
+- **2026-10-04 (part F, Phase 1b-ii)** — Decisions 7 and 8 answered by the
+  operator and built. S14: a contributor pays a carried pool's carrier
+  through FBM by direct charge on the carrier's connected account (carrier
+  re-verified at charge time, 0 BMC fee, a PENDING record promoted by the
+  Connect webhook with Stripe's amount, a full refund closing it from any
+  status). S15: ledger money already in an uncarried pool stays in that
+  pool's designated account, outbound only to its own investors or the
+  system escrow, reported and returnable for wind-down. Ledger rows P1-16,
+  P1-17. Both default-off; the contribution flow is the L26 offering.
 - **2026-10-04 (part E, Phase 1b)** — S12 (a verified nonprofit as an
   InvestmentPool's **carrier**: frozen verification snapshot on the pool, a
   service-layer guard in `createTransfer` so no pool ledger leg exists with the
