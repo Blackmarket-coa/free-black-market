@@ -1084,6 +1084,35 @@ export default defineMiddlewares({
       // what selling it actually requires.
       middlewares: [requirePlanFeature("vendor.buyer_network")],
     },
+    // BMC Survival Programs, Phase 1 item 3: shared-goal Coalition campaigns
+    // (docs/BMC_SURVIVAL_PROGRAMS.md). Only the FOUR new shared-goal routes are
+    // flag-gated — the `/store/collective*` matcher above stays unflagged for
+    // the reason it gives. The public reads answer 404 feature_disabled when
+    // FF_SHARED_GOAL_COALITION_V1 is off; the host-only writes check the actor
+    // against the campaign's HOST participant in the handler (forbidden(),
+    // 403 always). Creating a SHARED_GOAL campaign through the unflagged
+    // POST /store/collective/campaigns is refused by the handler (409) when
+    // the flag is off, and the unflagged list excludes shared-goal rows.
+    {
+      matcher: "/store/collective/campaigns/:id/progress",
+      method: "GET",
+      middlewares: [requireFeatureFlagMiddleware("SHARED_GOAL_COALITION_V1")],
+    },
+    {
+      matcher: "/store/collective/campaigns/:id/impact-report",
+      method: "GET",
+      middlewares: [requireFeatureFlagMiddleware("SHARED_GOAL_COALITION_V1")],
+    },
+    {
+      matcher: "/store/collective/campaigns/:id/participants",
+      method: "POST",
+      middlewares: [requireFeatureFlagMiddleware("SHARED_GOAL_COALITION_V1")],
+    },
+    {
+      matcher: "/store/collective/campaigns/:id/milestones",
+      method: "POST",
+      middlewares: [requireFeatureFlagMiddleware("SHARED_GOAL_COALITION_V1")],
+    },
     // Outbound sales channels. Same flag and same plan key as the inbound
     // sync above — connecting a channel is one capability regardless of which
     // way the products travel, and splitting it would mean selling a vendor

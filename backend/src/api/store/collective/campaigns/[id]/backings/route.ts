@@ -5,10 +5,11 @@ import { IEventBusModuleService } from "@medusajs/framework/types"
 import { z } from "zod"
 import {
   BackingMode,
-  CampaignStatus,
   COLLECTIVE_CAMPAIGN_MODULE,
 } from "../../../../../../modules/collective-campaign"
-import CollectiveCampaignModuleService from "../../../../../../modules/collective-campaign/service"
+import CollectiveCampaignModuleService, {
+  campaignBackingRefusal,
+} from "../../../../../../modules/collective-campaign/service"
 import { HAWALA_LEDGER_MODULE } from "../../../../../../modules/hawala-ledger"
 import type HawalaLedgerModuleService from "../../../../../../modules/hawala-ledger/service"
 import {
@@ -69,8 +70,14 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       if (!campaign) {
         return res.status(404).json({ error: "Campaign not found" })
       }
-      if (campaign.status !== CampaignStatus.ACTIVE) {
-        return res.status(400).json({ error: "Backings can only be added to ACTIVE campaigns" })
+      // The service's own refusal (shared-goal campaign, non-ACTIVE status),
+      // asked BEFORE the ledger moves anything. `addBacking` repeats it, but a
+      // refusal there would land after `openCampaignBackingEscrow` and leave
+      // the backer's funds in an escrow account the compensating refund is not
+      // guaranteed to empty. A SHARED_GOAL campaign must never reach that call.
+      const refusal = campaignBackingRefusal(campaign)
+      if (refusal) {
+        return res.status(400).json({ error: refusal })
       }
 
       const hawala = req.scope.resolve<HawalaLedgerModuleService>(HAWALA_LEDGER_MODULE)
