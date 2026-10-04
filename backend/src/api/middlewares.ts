@@ -1043,8 +1043,42 @@ export default defineMiddlewares({
       middlewares: [requireFeatureFlagMiddleware("INVESTMENT_POOLS_V1")],
     },
     {
+      // Phase 1b (docs/BMC_SURVIVAL_PROGRAMS.md Decision 6a): verified
+      // nonprofit partner_orgs as record-only VendorAdvance recipients. The
+      // three org-advance admin routes need BOTH FF_VENDOR_ADVANCES_V1 (the
+      // feature is quiescent, see the vendor matcher above) AND
+      // FF_NONPROFIT_PARITY_V1; neither flag alone opens them, and the handlers
+      // repeat both checks. Both flags stay unset everywhere until counsel
+      // clears L26.
+      matcher: "/admin/hawala/advances/orgs*",
+      middlewares: [
+        requireFeatureFlagMiddleware("VENDOR_ADVANCES_V1"),
+        requireFeatureFlagMiddleware("NONPROFIT_PARITY_V1"),
+      ],
+    },
+    {
       matcher: "/admin/hawala/pools*",
       middlewares: [requireFeatureFlagMiddleware("INVESTMENT_POOLS_V1")],
+    },
+    // Phase 1b (docs/BMC_SURVIVAL_PROGRAMS.md Decision 6b): nonprofit-carried
+    // pools. The three carrier routes sit under the `/admin/hawala/pools*`
+    // INVESTMENT_POOLS_V1 matcher above AND need FF_NONPROFIT_PARITY_V1 here;
+    // neither flag alone opens them, and the handlers repeat the parity check.
+    // Both flags stay unset everywhere until counsel clears L26.
+    {
+      matcher: "/admin/hawala/pools/*/carrier",
+      method: "POST",
+      middlewares: [requireFeatureFlagMiddleware("NONPROFIT_PARITY_V1")],
+    },
+    {
+      matcher: "/admin/hawala/pools/*/carrier-contributions",
+      method: "POST",
+      middlewares: [requireFeatureFlagMiddleware("NONPROFIT_PARITY_V1")],
+    },
+    {
+      matcher: "/admin/hawala/pools/*/carrier-distributions",
+      method: "POST",
+      middlewares: [requireFeatureFlagMiddleware("NONPROFIT_PARITY_V1")],
     },
     {
       matcher: "/store/hawala/pools*",

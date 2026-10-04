@@ -37,6 +37,19 @@ export interface BankAccount {
   is_default: boolean
 }
 
+/**
+ * The nonprofit carrier of a pool, when it has one: the verified partner org
+ * that holds and administers the pool's funds on its own accounts. Free Black
+ * Market keeps the record and holds nothing. `verification_status` and
+ * `verified_as_of` are the IRS file's answer and date at assignment time —
+ * show them as given; never collapse them into a yes/no.
+ */
+export interface PoolCarrier {
+  org_key: string
+  verification_status: string
+  verified_as_of: string | null
+}
+
 export interface Investment {
   id: string
   pool_id: string
@@ -51,6 +64,7 @@ export interface Investment {
     producer_id: string
     roi_type: string
     status: string
+    carrier?: PoolCarrier | null
   }
 }
 
@@ -68,7 +82,9 @@ export interface InvestmentPool {
   product_credit_multiplier?: number
   total_investors: number
   progress_percentage: number
-  current_balance: number
+  /** A ledger figure on BMC's books; `null` for a carried pool, whose funds the carrier holds. */
+  current_balance: number | null
+  carrier?: PoolCarrier | null
   start_date?: string
   end_date?: string
 }
@@ -113,7 +129,9 @@ async function fetchWithAuth(url: string, options: RequestInit = {}) {
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ error: "Request failed" }))
-    throw new Error(error.error || "Request failed")
+    // Legacy handlers answer `{ error }`; the pool refusals (409 carried_pool /
+    // no_carrier) answer `{ type, message }`. Surface whichever the server sent.
+    throw new Error(error.error || error.message || "Request failed")
   }
 
   return response.json()

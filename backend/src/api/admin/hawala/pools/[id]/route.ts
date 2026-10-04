@@ -1,5 +1,6 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { HAWALA_LEDGER_MODULE } from "../../../../../modules/hawala-ledger"
+import { isCarriedPool, projectPoolCarrier } from "../../../../../modules/hawala-ledger/carrier"
 import HawalaLedgerModuleService from "../../../../../modules/hawala-ledger/service"
 
 /**
@@ -16,15 +17,17 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       return res.status(404).json({ error: "Investment pool not found" })
     }
 
-    // Get pool balance
-    const balance = await hawalaService.getAccountBalance(pool.ledger_account_id)
+    // A carried pool has no BMC balance to show: its funds are held by the
+    // carrier, and the dormant PRODUCER_POOL account's 0 would read as money
+    // BMC holds (Decision 6b). Same projection as the vendor and store GETs.
+    const balance = isCarriedPool(pool) ? null : await hawalaService.getAccountBalance(pool.ledger_account_id)
 
     // Get investments
     const investments = await hawalaService.listInvestments({
       pool_id: id,
     })
 
-    res.json({ pool, balance, investments })
+    res.json({ pool, carrier: projectPoolCarrier(pool), balance, investments })
   } catch (error) {
     res.status(500).json({ error: (error as Error).message })
   }

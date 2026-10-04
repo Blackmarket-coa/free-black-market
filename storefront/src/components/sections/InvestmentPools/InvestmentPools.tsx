@@ -1,7 +1,7 @@
 "use client"
 
 import React, { useState } from "react"
-import { useInvestmentPools, useInvestments } from "@/lib/hooks/useHawalaWallet"
+import { useInvestmentPools, useInvestments, type PoolCarrier } from "@/lib/hooks/useHawalaWallet"
 
 interface InvestmentPoolCardProps {
   pool: {
@@ -18,7 +18,8 @@ interface InvestmentPoolCardProps {
     product_credit_multiplier?: number
     total_investors: number
     progress_percentage: number
-    current_balance: number
+    current_balance: number | null
+    carrier?: PoolCarrier | null
     start_date?: string
     end_date?: string
   }
@@ -38,6 +39,7 @@ function InvestmentPoolCard({ pool, onInvest, producerName }: InvestmentPoolCard
   const [amount, setAmount] = useState("")
   const [investing, setInvesting] = useState(false)
   const [error, setError] = useState("")
+  const carrier = pool.carrier ?? null
 
   const getRoiDescription = () => {
     switch (pool.roi_type) {
@@ -82,6 +84,18 @@ function InvestmentPoolCard({ pool, onInvest, producerName }: InvestmentPoolCard
               {producerName && (
                 <p className="text-sm text-gray-500">{producerName}</p>
               )}
+              {carrier && (
+                <p className="text-sm text-gray-500">
+                  Carried by {carrier.org_key}
+                  {carrier.verified_as_of && (
+                    <span>
+                      {" "}
+                      ({carrier.verification_status}, IRS file as of{" "}
+                      {new Date(carrier.verified_as_of).toLocaleDateString()})
+                    </span>
+                  )}
+                </p>
+              )}
             </div>
             <span className="bg-green-100 text-green-800 text-xs px-2 py-1 rounded">
               Active
@@ -125,23 +139,42 @@ function InvestmentPoolCard({ pool, onInvest, producerName }: InvestmentPoolCard
               <p className="text-gray-500">Min Investment</p>
               <p className="font-medium">{formatCurrency(pool.minimum_investment)}</p>
             </div>
-            <div>
-              <p className="text-gray-500">Pool Balance</p>
-              <p className="font-medium">{formatCurrency(pool.current_balance)}</p>
-            </div>
+            {carrier ? (
+              <div className="col-span-2 sm:col-span-1">
+                <p className="text-gray-500">Funds held by</p>
+                <p className="font-medium">{carrier.org_key}</p>
+              </div>
+            ) : (
+              pool.current_balance !== null && (
+                <div>
+                  <p className="text-gray-500">Pool Balance</p>
+                  <p className="font-medium">{formatCurrency(pool.current_balance)}</p>
+                </div>
+              )
+            )}
           </div>
-
-          <button
-            onClick={() => setShowInvestModal(true)}
-            className="w-full bg-green-600 text-white py-2 rounded-lg hover:bg-green-700 transition-colors"
-          >
-            Invest Now
-          </button>
+          {carrier ? (
+            // A carried pool takes no contribution here: the carrier collects
+            // on its own accounts and the store route answers 409 carried_pool.
+            // Until the carrier contribution flow exists (L26), say so instead
+            // of offering a button that cannot succeed.
+            <p className="text-xs text-gray-500">
+              Funds are held by the carrier, not by Free Black Market. Contributions to this pool are
+              collected by {carrier.org_key}, not here.
+            </p>
+          ) : (
+            <button
+              onClick={() => setShowInvestModal(true)}
+              className="w-full bg-green-600 text-white py-2 rounded-lg hover:bg-green-700 transition-colors"
+            >
+              Invest Now
+            </button>
+          )}
         </div>
       </div>
 
-      {/* Investment Modal */}
-      {showInvestModal && (
+      {/* Investment Modal (uncarried pools only) */}
+      {showInvestModal && !carrier && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-lg max-w-md w-full p-6">
             <h3 className="text-lg font-semibold mb-4">Invest in {pool.name}</h3>

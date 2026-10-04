@@ -7,9 +7,24 @@ import { model } from "@medusajs/framework/utils"
 export const VendorAdvance = model.define("hawala_vendor_advance", {
   id: model.id().primaryKey(),
   
-  // Vendor reference
-  vendor_id: model.text(),
-  ledger_account_id: model.text(),
+  // Recipient. SELLER: the historical shape — a seller with a SELLER_EARNINGS
+  // ledger account the advance is credited to. PARTNER_ORG (Phase 1b, Decision
+  // 6a, L26): a verified nonprofit partner_org, for which the row is a RECORD
+  // of an advance disbursed and repaid OUTSIDE the hawala ledger — the org has
+  // no ledger account and never gets one (owner_type gains no value), so
+  // `vendor_id` and `ledger_account_id` are null and `partner_org_key` +
+  // `recipient_snapshot` (the L11-dated verification snapshot, same shape as
+  // the pool carrier's) name the recipient instead. No new entry_type or
+  // reference_type; the discriminator lives here.
+  recipient_type: model.enum(["SELLER", "PARTNER_ORG"]).default("SELLER"),
+  vendor_id: model.text().nullable(),
+  ledger_account_id: model.text().nullable(),
+  partner_org_key: model.text().nullable(),
+  recipient_snapshot: model.json().nullable(),
+  // The operator's reference for the money that actually moved (e.g. a Stripe
+  // transfer id from BMC's own balance to the org's connected account).
+  // Required to make a PARTNER_ORG advance ACTIVE; approval is idempotent on it.
+  disbursement_reference: model.text().nullable(),
   
   // Advance details
   principal_amount: model.bigNumber(), // Original advance amount
@@ -72,6 +87,12 @@ export const VendorAdvance = model.define("hawala_vendor_advance", {
       on: ["ledger_account_id"],
       name: "idx_vendor_advance_account",
     },
+    // Org-advance lookups by recipient org
+    {
+      on: ["partner_org_key", "status"],
+      name: "IDX_hawala_vendor_advance_org_status",
+      where: "deleted_at IS NULL",
+    },
   ])
 
 /**
@@ -85,6 +106,10 @@ export const AdvanceRepayment = model.define("hawala_advance_repayment", {
   advance_id: model.text(),
   ledger_entry_id: model.text().nullable(), // Linked ledger entry
   order_id: model.text().nullable(), // If auto-deducted from sale
+  // The payer's / operator's own reference for a MANUAL repayment recorded on
+  // a PARTNER_ORG advance (the money moved outside the ledger). The idempotency
+  // key, under a partial unique index on (advance_id, external_reference).
+  external_reference: model.text().nullable(),
   
   // Amounts
   principal_amount: model.bigNumber(), // Goes toward principal
@@ -123,5 +148,12 @@ export const AdvanceRepayment = model.define("hawala_advance_repayment", {
     {
       on: ["order_id"],
       name: "idx_advance_repayment_order",
+    },
+    // One record per external reference per advance (replays and races)
+    {
+      on: ["advance_id", "external_reference"],
+      name: "UQ_hawala_advance_repayment_external_reference",
+      unique: true,
+      where: "deleted_at IS NULL AND external_reference IS NOT NULL",
     },
   ])

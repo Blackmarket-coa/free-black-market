@@ -2,6 +2,7 @@ import { createLogger } from "../../../../../../shared/logger"
 const log = createLogger("api/vendor/hawala/pools/[id]/withdraw")
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { HAWALA_LEDGER_MODULE } from "../../../../../../modules/hawala-ledger"
+import { isCarriedPool } from "../../../../../../modules/hawala-ledger/carrier"
 import { resolveRequestIdempotencyKey } from "../../../../../../shared/request-idempotency"
 import HawalaLedgerModuleService from "../../../../../../modules/hawala-ledger/service"
 import { withdrawPoolSchema, validateInput } from "../../../../../hawala-validation"
@@ -35,6 +36,18 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
 
     if (pool.producer_id !== sellerId) {
       return res.status(403).json({ error: "Access denied" })
+    }
+
+    // A carried pool's funds are held by its nonprofit carrier, not on BMC's
+    // ledger (docs/BMC_SURVIVAL_PROGRAMS.md Decision 6b): there is nothing
+    // here to withdraw. Refused before any balance read, account creation or
+    // transfer — createTransfer would refuse the leg too, but by then an
+    // earnings account could have been minted.
+    if (isCarriedPool(pool)) {
+      return res.status(409).json({
+        type: "carried_pool",
+        message: `This pool is carried by ${pool.carrier_org_key}; its funds are held by the carrier and cannot be withdrawn from BMC's ledger.`,
+      })
     }
 
     // Check pool balance
