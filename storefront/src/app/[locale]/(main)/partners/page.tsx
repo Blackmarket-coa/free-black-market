@@ -48,8 +48,8 @@ const BADGE_TONE_CLASS: Record<PartnerOrgBadgeTone, string> = {
  * NEXT_PUBLIC_FF_NONPROFIT_PARITY_V1; the API's own flag decides whether
  * `orgs` is in the response at all.
  */
-function PartnerOrgCard({ org }: { org: PartnerOrg }) {
-  const badge = partnerOrgBadge(org)
+function PartnerOrgCard({ org, locale }: { org: PartnerOrg; locale: string }) {
+  const badge = partnerOrgBadge(org, locale)
   return (
     <article className="flex flex-col rounded-xl border p-4">
       <div className="flex items-start justify-between gap-2">
@@ -86,10 +86,13 @@ function PartnerOrgCard({ org }: { org: PartnerOrg }) {
 }
 
 export default async function PartnersPage({
+  params,
   searchParams,
 }: {
+  params: Promise<{ locale: string }>
   searchParams: Promise<{ kind?: string; state?: string; serves?: string }>
 }) {
+  const { locale } = await params
   const { kind, state, serves } = await searchParams
 
   let directory: PartnerDirectory = { partners: [], count: 0, kinds: [], serves: [] }
@@ -232,7 +235,7 @@ export default async function PartnersPage({
           </p>
           <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {orgs.map((org) => (
-              <PartnerOrgCard key={org.key} org={org} />
+              <PartnerOrgCard key={org.key} org={org} locale={locale} />
             ))}
           </div>
         </section>

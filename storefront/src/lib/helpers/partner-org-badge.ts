@@ -27,13 +27,17 @@ export type PartnerOrgBadge = {
 
 /**
  * The IRS file's date as a day, in UTC so the same file never shows two dates
- * on either side of midnight. Null when the value is missing or unparseable.
+ * on either side of midnight, formatted for the page's locale (en-US when none
+ * is known). Null when the value is missing or unparseable.
  */
-export function formatIrsFileDate(value: string | null | undefined): string | null {
+export function formatIrsFileDate(
+  value: string | null | undefined,
+  locale: string = "en-US"
+): string | null {
   if (!value) return null
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return null
-  return date.toLocaleDateString("en-US", {
+  return date.toLocaleDateString(locale, {
     year: "numeric",
     month: "long",
     day: "numeric",
@@ -44,13 +48,14 @@ export function formatIrsFileDate(value: string | null | undefined): string | nu
 const PENDING: PartnerOrgBadge = { label: "Verification pending", tone: "neutral" }
 
 export function partnerOrgBadge(
-  org: Pick<PartnerOrg, "org_type" | "verification_status" | "verified_as_of">
+  org: Pick<PartnerOrg, "org_type" | "verification_status" | "verified_as_of">,
+  locale: string = "en-US"
 ): PartnerOrgBadge {
   if (org.org_type === "coop" || org.org_type === "unincorporated") {
     return { label: "Not an IRS-exempt organisation type", tone: "neutral" }
   }
 
-  const date = formatIrsFileDate(org.verified_as_of)
+  const date = formatIrsFileDate(org.verified_as_of, locale)
 
   switch (org.verification_status) {
     case "pub78_eligible":
