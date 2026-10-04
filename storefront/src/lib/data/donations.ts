@@ -97,3 +97,50 @@ export async function setCartDonationPreferences(input: {
     },
   })
 }
+
+/**
+ * Direct-charge donation checkout (BMC Survival Programs Phase 1;
+ * docs/POSTURE_A_COMPLIANCE.md rule 10). Backed by
+ * `POST /store/donations/checkout`, which exists only while the API's
+ * FF_NONPROFIT_PARITY_V1 is on and its Stripe Connect provider is registered.
+ *
+ * One PaymentIntent per recipient org, created ON that org's own Stripe
+ * account: the storefront confirms it with Stripe.js loaded for that
+ * `stripe_account_id`. BMC takes 0; the org pays the card-processing fee.
+ * Nothing here touches the cart.
+ */
+export type DirectDonationLine = {
+  org_key: string
+  amount_cents: number
+  campaign_id?: string
+}
+
+export type DirectDonationIntent = {
+  org_key: string
+  org_name: string
+  payment_collection_id: string
+  payment_session_id: string
+  stripe_payment_intent_id: string
+  stripe_account_id: string
+  client_secret: string | null
+  currency_code: string
+  gross_cents: number
+  bmc_fee_cents: 0
+  recipient_verification_status: string
+  recipient_verified_as_of: string | null
+}
+
+export type DirectDonationCheckout = {
+  donations: DirectDonationIntent[]
+  disclosure: string
+}
+
+export async function createDirectDonationCheckout(input: {
+  donations: DirectDonationLine[]
+}): Promise<DirectDonationCheckout> {
+  return medusaFetch<DirectDonationCheckout>("/store/donations/checkout", {
+    method: "POST",
+    body: { donations: input.donations, currency_code: "usd" },
+    cache: "no-cache",
+  })
+}

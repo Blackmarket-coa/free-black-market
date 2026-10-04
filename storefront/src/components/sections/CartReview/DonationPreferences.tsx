@@ -3,6 +3,8 @@
 import { useMemo, useState, useTransition } from "react"
 import { setCartDonationPreferences, type DonationBeneficiary } from "@/lib/data/donations"
 import { Button } from "@/components/atoms"
+import LocalizedClientLink from "@/components/molecules/LocalizedLink/LocalizedLink"
+import { DIRECT_DONATION_DISCLOSURE, DIRECT_DONATION_PATH } from "@/lib/helpers/direct-donation"
 
 type Props = {
   cartTotal: number
@@ -20,6 +22,13 @@ type Props = {
    */
   fiscalSponsorLive?: boolean
   initialMetadata?: Record<string, any>
+  /**
+   * Mirrors the API's FF_NONPROFIT_PARITY_V1 (`phase1ModuleFlags.nonprofitParity`).
+   * When on, the widget also hands off to the direct-charge donation checkout
+   * (one PaymentIntent on the org's own Stripe account; BMC 0%) with a plain
+   * disclosure. When off — the default — the widget renders exactly as before.
+   */
+  directDonationEnabled?: boolean
 }
 
 export default function DonationPreferences({
@@ -31,6 +40,7 @@ export default function DonationPreferences({
   fiscalSponsorUrl,
   fiscalSponsorLive = false,
   initialMetadata,
+  directDonationEnabled = false,
 }: Props) {
   const [isPending, startTransition] = useTransition()
   const [percent, setPercent] = useState(Number(initialMetadata?.donation_percent || defaultPercent || 0))
@@ -47,6 +57,15 @@ export default function DonationPreferences({
     <div className="w-full mb-6 border rounded-sm p-4 bg-white">
       <h3 className="font-semibold mb-3">Community Donation</h3>
       <p className="text-sm text-gray-600 mb-2">Choose donation percentage, optional round-up, and a beneficiary organization.</p>
+      {directDonationEnabled ? (
+        <p className="text-xs text-gray-600 mb-4" data-testid="donation-direct-handoff">
+          Prefer to give to a partner organisation directly?{" "}
+          <LocalizedClientLink href={DIRECT_DONATION_PATH} className="underline">
+            Donate directly
+          </LocalizedClientLink>
+          . {DIRECT_DONATION_DISCLOSURE}
+        </p>
+      ) : null}
       {fiscalSponsorName && fiscalSponsorLive ? (
         <p className="text-xs text-gray-500 mb-4">
           Routed through{" "}

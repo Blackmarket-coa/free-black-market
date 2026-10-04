@@ -216,14 +216,15 @@ class PayoutBreakdownService extends MedusaService({
    * decides not to consult them.
    */
   async getPlatformFeeDetail(
-    sellerId: string,
+    sellerId: string | null,
     planPercent: number | null = null,
     kind?: PlatformFeeTransactionKind
   ): Promise<ResolvedPlatformFee> {
     const config = await this.getDefaultConfig()
     // No settings row exists for most sellers; `getSellerSettings` returns null
-    // and `resolvePlatformFee` handles that as "no override".
-    const sellerSettings = await this.getSellerSettings(sellerId)
+    // and `resolvePlatformFee` handles that as "no override". A null seller
+    // (a direct-charge donation has no seller) has no settings row to read.
+    const sellerSettings = sellerId === null ? null : await this.getSellerSettings(sellerId)
 
     return resolvePlatformFee({
       override: sellerSettings as SellerFeeOverride,

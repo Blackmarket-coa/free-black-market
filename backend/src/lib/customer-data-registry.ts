@@ -125,6 +125,11 @@ export const CUSTOMER_DATA_REGISTRY: CustomerDataEntry[] = [
   { entity: "buyer_impact", module: "impact-metrics", label: "Aggregate buyer impact", action: "anonymise", basis: TALLY },
   { entity: "embed_product_review", module: "reviews", label: "Product reviews written", action: "anonymise", basis: "A review other shoppers rely on outlives the account that wrote it." },
   { entity: "order_attribution", module: "creator-attribution", label: "Purchase attribution to a creator", action: "anonymise", basis: "A creator's earned attribution must not be revoked by someone else closing their account." },
+  // A direct-charge donation's record (docs/POSTURE_A_COMPLIANCE.md rule 10).
+  // The money sits on the recipient org's own Stripe account; this row is what
+  // lets the org's receipt and FBM's transparency page reconcile against it,
+  // so it stays — the donor's link to it does not.
+  { entity: "donation_split_record", module: "donation", label: "Donations to partner organisations", action: "anonymise", basis: "Donation receipt and processor reconciliation: the record must match the PaymentIntent on the recipient organisation's Stripe account; the donor identity is not what makes it match." },
 
   // ---- The person's own records: deleted ----
   { entity: "garden_membership", module: "garden", label: "Community garden memberships", action: "delete" },
