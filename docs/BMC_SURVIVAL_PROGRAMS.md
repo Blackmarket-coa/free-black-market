@@ -41,8 +41,14 @@ subscribes. It interacts with `platform-fee.ts`'s precedence chain (seller
 override → plan → platform default) and with every seller currently on a paid
 plan.
 
-**Not started. Needs an explicit decision** — see Open Decision 5. The "flat 3%
-is never increased" rule is unaffected either way and is being honoured.
+**Not started in code. Decided in scope 2026-10-03** by the Black Mask launch
+spec (`docs/BLACK_MASK_LAUNCH_PLAN.md` §4, F8), which lists the $10/month
+0%-commission all-access plan as an existing FBM decision. The code still has no
+such plan, so it is scheduled as work: add the plan, retire the $29/$99/$249
+tiers with a migration path for current subscribers, and revisit the catalog
+spec's "ladder only discounts / internal null" semantics. Open Decision 5 is
+answered. The "flat 3% is never increased" rule is unaffected (0% is a decrease)
+and is being honoured.
 
 ### 0.2 — "Capital circles" and "first-order guarantee" do not exist
 
@@ -66,6 +72,14 @@ as quiescent". If the intent was these two, say so and the plan reuses them. If
 Step-0 justification.
 
 ### 0.3 — The KARMA ladder is correct as the prompt states it
+
+> **Amended 2026-10-03 (Black Mask launch spec): money comes off the ladder.**
+> The reputation ladder below is unchanged — tiers, XP, quests and unlocks stay
+> exactly as described. What changes is that **payouts no longer vary by tier**:
+> the `split_pct` shares (0.60 Seedling → 0.72 Ancestor) and the per-node
+> `GROWER_SPLIT_CONFIG` flatten to one share, as a payout migration with counsel
+> review (legal checkpoint **L27**). See `docs/BLACK_MASK_LAUNCH_PLAN.md` §4 and
+> F7. Not implemented yet.
 
 Recorded because an earlier pass in conversation got this wrong. The prompt is
 right. `backend/src/modules/progression/grower-karma.ts`:
@@ -312,13 +326,20 @@ line in `docker-build.yml`'s `panelargs` — see the blocker in §1.
 | 2 | Money custody: direct split to each org's processor, or BMC-run ledger with counsel sign-off? | Direct split, no BMC custody | **Decided: direct split, with a ledger, and the split is done by BMC** (operator, 2026-10-03, two messages). Read as: BMC's checkout computes and executes the split -- it issues **one direct Stripe Connect charge per recipient org**, each landing on that org's own connected account, and writes every leg to a BMC-side **ledger that records and never holds funds**. BMC does the split in software; no money transits an FBM balance. That is the one shape that keeps Posture A intact. The other way to "do the split" -- a single charge into FBM's Stripe balance followed by transfers out (Stripe's separate-charges-and-transfers or destination charges) -- is custody, is what **L24** exists for, and is not built unless counsel clears it in writing. If the operator specifically wants funds to transit BMC, that is an L24 answer, not a code change. |
 | 3 | Fiscal sponsorship: BMC supplies templates only, or partners with a sponsor org? | Templates only; BMC is not a party | **Decided: both.** BMC supplies the templates (Open Referral Data Collaboration Toolkit MOU, adapted -- L18) *and* partners with a sponsor org for groups that need a fiscal host (Open Collective hosts such as Raft; Zeffy for EIN-only groups, per 0.4 §6). BMC itself is still not a party to any sponsorship and holds no partner money. The sponsor-org relationship is a partner record with the "host + collective" shape from 0.4 §7, not a BMC product. |
 | 4 | Which 2–3 partner orgs for the pilot? | **Blocks Phase 2** | **Decided: Ground Up Liberation Project (GULP)** is the first pilot partner; a partner record is to be created for it. Only the name is known at decision time -- EIN, org type, fiscal host and contact are to be supplied by the operator, and the record stays unverified and unpublished until they are. Second and third partners still open; one partner is enough to unblock the Phase 2 build but not the live pilot. |
-| 5 | **New.** Is the $10/mo 0%-commission plan in scope? It does not exist and replaces the $29/$99/$249 ladder. | **Blocks nothing in Phase 1; treated as out of scope until answered** | Unanswered; default stands. |
+| 5 | **New.** Is the $10/mo 0%-commission plan in scope? It does not exist and replaces the $29/$99/$249 ladder. | **Blocks nothing in Phase 1; treated as out of scope until answered** | **Decided: in scope** (Black Mask launch spec, 2026-10-03, which treats it as an existing decision). Not built; scheduled as `docs/BLACK_MASK_LAUNCH_PLAN.md` F8. Not part of the Phase 1 nonprofit-parity slices. |
 | 6 | **New.** Did "capital circles / first-order guarantee" mean `VendorAdvance` + `InvestmentPool`, or something genuinely new? | Treated as the existing two | **Decided: the existing two, extended to nonprofits -- and the InvestmentPool is carried by a nonprofit, not by BMC** (operator, 2026-10-03, two messages). Concretely: (a) `VendorAdvance` gains verified nonprofit orgs as eligible recipients alongside vendors; (b) every `InvestmentPool` gets a **carrier**: a verified nonprofit partner record that holds and administers the pool's funds on its own accounts, under its own governance. BMC runs the software and the ledger, records every contribution and distribution, and **never holds pool funds** -- the same no-custody shape as Decision 2. A pool with no carrier cannot accept money. Both gated on the org-verification status from Phase 1 item 1 and behind `FF_NONPROFIT_PARITY_V1`. Nothing new is built. **New legal checkpoint L26** (securities, private benefit, charitable solicitation, now with the nonprofit as the issuing/operating party); counsel before any carried pool goes live. Scoped as Phase 1b: after items 1-4 land. |
 
 ---
 
 ## Changelog
 
+- **2026-10-04** — Phase 1 slices S1 (flags), S3+S4 (0% donation rung + DONATION
+  line), S5+S6 (`partner_org` record, admin CRUD, GULP seed) and S7 (IRS
+  exempt-org ingest) built on the working branch, all default-off; ledger rows
+  P1-1 … P1-7 in `docs/AUDIT_DEBT.md`. Operator's Black Mask launch spec recorded
+  in `docs/BLACK_MASK_LAUNCH_PLAN.md`; it answers Open Decision 5 (the $10 plan
+  is in scope) and amends 0.3 (money comes off the KARMA ladder, L27). Legal
+  checkpoints L27–L31 added.
 - **2026-10-03** — Operator answered Open Decisions 1–4: 0% on donations;
   direct split executed by BMC as one direct charge per org, with a
   record-only ledger (no custody); fiscal sponsorship via
