@@ -116,12 +116,13 @@ moduleIntegrationTestRunner<IrsExemptOrgModuleService>({
           ein: "030424472",
           deductibility_codes: ["FORGN"],
           subsection: "03",
+          subsection_as_of: BMF_LM,
           as_of: PUB78_LM,
         })
 
         // Listed in Pub 78 only (not in this BMF sample): subsection null, not invented.
         const pub78Only = await service.lookupEin("000587764")
-        expect(pub78Only).toMatchObject({ state: "pub78_eligible", subsection: null, as_of: PUB78_LM })
+        expect(pub78Only).toMatchObject({ state: "pub78_eligible", subsection: null, subsection_as_of: BMF_LM, as_of: PUB78_LM })
 
         // Revoked 2011, never reinstated, not in Pub 78.
         const revoked = await service.lookupEin("260089814")

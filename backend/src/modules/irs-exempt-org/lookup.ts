@@ -23,7 +23,33 @@ import type { IrsSource } from "./sources"
  *
  * Every state's `as_of` is the `Last-Modified` of the specific file that
  * produced it — the pub78 snapshot for `pub78_eligible`, the revocation
- * snapshot for `revoked`, the BMF snapshot for `bmf_only`.
+ * snapshot for `revoked`, the BMF snapshot for `bmf_only`. A fact borrowed
+ * from another file names that file too: `pub78_eligible.subsection` comes
+ * from the BMF, so it travels with `subsection_as_of` (the BMF snapshot's
+ * date, null when no BMF file has been ingested) rather than being read
+ * under the Pub 78 date (L11: every surfaced fact says which file it came
+ * from).
+ *
+ * Precedence between a current revocation and the other two files is
+ * **deliberately asymmetric**, and this is the default S8 / counsel should
+ * revisit rather than a derived rule:
+ *
+ * - vs. Pub 78: the revocation wins only when its posting date is newer
+ *   than the Pub 78 file we hold. A Pub 78 file published *after* the
+ *   posting that still lists the org is treated as the IRS keeping it listed
+ *   knowing of the revocation, and the newer file is deferred to.
+ * - vs. the BMF: the revocation wins **unconditionally**, however new the
+ *   BMF file is and whatever its `status` code says (a status-01 row in a
+ *   newer BMF does not clear a standing revocation). Reasoning: Pub 78 is
+ *   the IRS's own eligibility determination and is what a revocation
+ *   removes an org from, so a newer Pub 78 listing is direct evidence; the
+ *   BMF `status` field is a filing-system code that has been observed to
+ *   lag the revocation list, so it is not given the power to override one.
+ *   Only a `reinstatement_date` on the newest revocation row clears it
+ *   (`currentRevocation`).
+ *
+ * The behaviour is pinned by `__tests__/lookup.unit.spec.ts`; change the
+ * rule there and here together, with the counsel reference.
  */
 export type IrsSourcesAsOf = Record<IrsSource, Date | null>
 
@@ -46,7 +72,10 @@ export type IrsLookupResult =
       state: "pub78_eligible"
       ein: string
       deductibility_codes: string[]
+      /** From the BMF, not Pub 78; null when the BMF does not carry the EIN. */
       subsection: string | null
+      /** Date of the BMF file `subsection` was read from; null when none is ingested. */
+      subsection_as_of: Date | null
       as_of: Date | null
     }
   | {
@@ -109,6 +138,8 @@ export function resolveIrsLookup(input: {
     // after the Pub 78 file we hold was published: that file could not have
     // reflected it. If Pub 78 is newer and still lists the org, the IRS has
     // kept it listed knowing of the revocation and we defer to the newer file.
+    // No such comparison is made against the BMF: with no Pub 78 listing a
+    // standing revocation wins whatever the BMF says (see the header).
     const pub78Older = !pub78 || !asOf.pub78 || postedOn.getTime() > asOf.pub78.getTime()
     if (pub78Older) {
       return {
@@ -131,6 +162,7 @@ export function resolveIrsLookup(input: {
         .map((c) => c.trim())
         .filter(Boolean),
       subsection: bmf?.subsection ?? null,
+      subsection_as_of: asOf.eo_bmf,
       as_of: asOf.pub78,
     }
   }

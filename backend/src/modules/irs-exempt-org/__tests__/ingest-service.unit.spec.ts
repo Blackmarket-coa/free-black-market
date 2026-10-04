@@ -1,6 +1,7 @@
 import { promises as fs } from "node:fs"
 import os from "node:os"
 import path from "node:path"
+import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 import IrsExemptOrgModuleService, {
   type FetchToFile,
   type FetchToFileResult,
@@ -67,6 +68,71 @@ const service = () => Object.create(IrsExemptOrgModuleService.prototype) as IrsE
 
 const sqlOf = (calls: Call[]) => calls.map((c) => c.sql)
 
+/** A completed snapshot as the service itself writes one: validators per URL in `metadata.files`. */
+const completedSnapshot = (source: "pub78" | "revocation", asOf: Date, etag: string) => {
+  const url = IRS_SOURCE_URLS[source][0]
+  return {
+    source,
+    as_of: asOf,
+    etag,
+    status: "complete",
+    metadata: { files: { [url]: { etag, last_modified: asOf.toISOString() } } },
+  }
+}
+
+/**
+ * Stands in for the module's awilix cradle: every property read is a resolve,
+ * and an unregistered name throws. In particular `cradle.resolve` throws, so
+ * an accessor that tries `.resolve?.()` before the property read never finds
+ * the registered connection.
+ */
+const cradleWith = (registrations: Record<string, unknown>) =>
+  new Proxy(registrations, {
+    get(target, name) {
+      if (typeof name === "string" && name in target) return target[name]
+      throw new Error(`AwilixResolutionError: Could not resolve '${String(name)}'.`)
+    },
+  })
+
+describe("IrsExemptOrgModuleService.resolvePgConnection", () => {
+  const knexLike = (): PgLike => ({ raw: async () => ({ rows: [] }), transaction: async (fn) => fn({ raw: async () => ({ rows: [] }) }) })
+
+  it("reads PG_CONNECTION as a property of the cradle, before trying .resolve()", () => {
+    const pg = knexLike()
+    const svc = service() as unknown as { __container__: unknown; resolvePgConnection: () => PgLike | undefined }
+    svc.__container__ = cradleWith({ [ContainerRegistrationKeys.PG_CONNECTION]: pg })
+    expect(svc.resolvePgConnection()).toBe(pg)
+  })
+
+  it("falls back to a real container's .resolve() when the property read finds nothing", () => {
+    const pg = knexLike()
+    const resolve = jest.fn((key: string) => {
+      if (key !== ContainerRegistrationKeys.PG_CONNECTION) throw new Error(`Could not resolve '${key}'`)
+      return pg
+    })
+    const svc = service() as unknown as { __container__: unknown; resolvePgConnection: () => PgLike | undefined }
+    svc.__container__ = { resolve }
+    expect(svc.resolvePgConnection()).toBe(pg)
+    expect(resolve).toHaveBeenCalledWith(ContainerRegistrationKeys.PG_CONNECTION)
+  })
+
+  it("uses the EntityManager's knex when the cradle registers no connection (the module test harness)", () => {
+    const pg = knexLike()
+    const svc = service() as unknown as {
+      __container__: unknown
+      baseRepository_: unknown
+      resolvePgConnection: () => PgLike | undefined
+    }
+    svc.__container__ = cradleWith({})
+    svc.baseRepository_ = { getActiveManager: () => ({ getConnection: () => ({ getKnex: () => pg }) }) }
+    expect(svc.resolvePgConnection()).toBe(pg)
+  })
+
+  it("is undefined with no container at all", () => {
+    expect(service().resolvePgConnection()).toBeUndefined()
+  })
+})
+
 describe("IrsExemptOrgModuleService.ingestSource", () => {
   let tmpDir: string
   beforeAll(async () => {
@@ -83,9 +149,7 @@ describe("IrsExemptOrgModuleService.ingestSource", () => {
   })
 
   it("304 on every file: marks the attempt complete-unchanged and never touches the tables", async () => {
-    const { pg, calls } = makePg({
-      snapshot: { source: "pub78", as_of: PUB78_LM, etag: '"etag-1"', status: "complete", metadata: null },
-    })
+    const { pg, calls } = makePg({ snapshot: completedSnapshot("pub78", PUB78_LM, '"etag-1"') })
     const fetchToFile = jest.fn(notModified)
     const out = await service().ingestSource("pub78", { fetchToFile, pg, tmpDir })
 
@@ -98,6 +162,23 @@ describe("IrsExemptOrgModuleService.ingestSource", () => {
     const unchanged = calls.find((c) => /SET status = 'complete'/.test(c.sql))
     expect(unchanged).toBeDefined()
     expect(unchanged?.sql).not.toMatch(/as_of =/)
+  })
+
+  it("first ever run: a 304 to a request that sent no validators is a failure, not 'unchanged'", async () => {
+    const { pg, calls } = makePg()
+    const fetchToFile = jest.fn(notModified)
+    const out = await service().ingestSource("pub78", { fetchToFile, pg, tmpDir })
+
+    expect(fetchToFile).toHaveBeenCalledWith(
+      IRS_SOURCE_URLS.pub78[0],
+      expect.objectContaining({ ifNoneMatch: null, ifModifiedSince: null })
+    )
+    expect(out).toMatchObject({ source: "pub78", outcome: "failed" })
+    expect((out as { error: string }).error).toMatch(/304 to an unconditional request/)
+    const sql = sqlOf(calls)
+    expect(sql.some((s) => /SET status = 'complete'/.test(s))).toBe(false)
+    expect(sql.some((s) => /SET status = 'failed'/.test(s))).toBe(true)
+    expect(sql.some((s) => /TRUNCATE/.test(s))).toBe(false)
   })
 
   it("sends the previous file's etag and last-modified as conditional headers", async () => {
@@ -136,7 +217,17 @@ describe("IrsExemptOrgModuleService.ingestSource", () => {
     expect(sql[0]).toMatch(/^SELECT .* FROM irs_ingest_snapshot/)
     expect(sql[1]).toMatch(/INSERT INTO irs_ingest_snapshot .* 'pending'/)
 
-    // Staging truncated, then three batches (20 + 20 + 10) of seven columns.
+    // The service owns its staging table: idempotent DDL runs before the first
+    // TRUNCATE (the module test harness builds the schema from the models, so
+    // the migration's UNLOGGED twin is not there). Then three batches (20 +
+    // 20 + 10) of seven columns.
+    const createTable = calls.findIndex((c) => c.sql === 'CREATE UNLOGGED TABLE IF NOT EXISTS "irs_pub78_listing_staging" (LIKE "irs_pub78_listing" INCLUDING DEFAULTS)')
+    const createIndex = calls.findIndex((c) => c.sql === 'CREATE UNIQUE INDEX IF NOT EXISTS "UQ_irs_pub78_listing_staging_ein" ON "irs_pub78_listing_staging" ("ein")')
+    const firstTruncate = calls.findIndex((c) => c.sql === 'TRUNCATE "irs_pub78_listing_staging"')
+    expect(createTable).toBeGreaterThan(-1)
+    expect(createIndex).toBeGreaterThan(createTable)
+    expect(firstTruncate).toBeGreaterThan(createIndex)
+    expect(calls[createTable].inTx).toBe(false)
     const stagingTruncates = calls.filter((c) => c.sql === 'TRUNCATE "irs_pub78_listing_staging"')
     expect(stagingTruncates).toHaveLength(2) // before load, and after the swap
     const batches = calls.filter((c) => /INSERT INTO "irs_pub78_listing_staging"/.test(c.sql))
@@ -158,8 +249,11 @@ describe("IrsExemptOrgModuleService.ingestSource", () => {
     const metadata = JSON.parse(snapshotWrite?.bindings[5] as string)
     expect(metadata.files[IRS_SOURCE_URLS.pub78[0]]).toEqual({ etag: '"etag-1"', last_modified: PUB78_LM.toISOString() })
 
-    // Nothing live is touched outside the transaction.
-    expect(calls.filter((c) => !c.inTx && /"irs_pub78_listing"/.test(c.sql))).toHaveLength(0)
+    // Nothing live is touched outside the transaction. The staging DDL names
+    // the live table in its LIKE clause (it reads the definition, not rows).
+    expect(
+      calls.filter((c) => !c.inTx && !/^CREATE /.test(c.sql) && /"irs_pub78_listing"/.test(c.sql))
+    ).toHaveLength(0)
   })
 
   it("revocation rows are keyed per event so repeated EINs are kept", async () => {
@@ -170,6 +264,11 @@ describe("IrsExemptOrgModuleService.ingestSource", () => {
       tmpDir,
     })
     expect(out).toMatchObject({ outcome: "ingested", row_count: 50 })
+    // The conflict target is the primary key, so the index the service ensures
+    // carries the PK's backing-index name: a no-op where the migration ran.
+    expect(sqlOf(calls)).toContain(
+      'CREATE UNIQUE INDEX IF NOT EXISTS "irs_revocation_staging_pkey" ON "irs_revocation_staging" ("id")'
+    )
     const batch = calls.find((c) => /INSERT INTO "irs_revocation_staging"/.test(c.sql))
     expect(batch?.sql).toMatch(/ON CONFLICT \("id"\) DO NOTHING/)
     const ids = (batch?.bindings ?? []).filter((b, i) => i % 11 === 0) as string[]
@@ -222,6 +321,38 @@ describe("IrsExemptOrgModuleService.ingestSource", () => {
     expect(batch?.sql).not.toMatch(/ico|street/i)
     const tx = calls2.filter((c) => c.inTx).map((c) => c.sql)
     expect(tx).toContain('TRUNCATE "irs_exempt_org"')
+    expect(sqlOf(calls2)).toContain(
+      'CREATE UNLOGGED TABLE IF NOT EXISTS "irs_exempt_org_staging" (LIKE "irs_exempt_org" INCLUDING DEFAULTS)'
+    )
+  })
+
+  it("a duplicate EIN inside one batch is collapsed to a single row before the INSERT, last row winning", async () => {
+    const { pg, calls } = makePg()
+    const header =
+      "EIN,NAME,ICO,STREET,CITY,STATE,ZIP,GROUP,SUBSECTION,AFFILIATION,CLASSIFICATION,RULING,DEDUCTIBILITY,FOUNDATION,ACTIVITY,ORGANIZATION,STATUS,TAX_PERIOD,ASSET_CD,INCOME_CD,FILING_REQ_CD,PF_FILING_REQ_CD,ACCT_PD,ASSET_AMT,INCOME_AMT,REVENUE_AMT,NTEE_CD,SORT_NAME\n"
+    const row = (name: string, status: string) =>
+      `010728628,${name},,,PAGO PAGO,AS,96799,0000,03,3,1000,200211,1,15,000000000,1,${status},202412,0,0,02,0,12,0,0,0,O50,\n`
+    const other = "000019818,SOME OTHER ORG,,,TOWN,ME,04101,0000,03,3,1000,199001,1,15,000000000,1,01,202412,0,0,02,0,12,0,0,0,A20,\n"
+    const fetchToFile: FetchToFile = async (url, opts) => {
+      // One CSV holds the duplicate; the other four parts are header-only.
+      const body = url.endsWith("eo_xx.csv") ? header + row("FIRST SPELLING", "01") + other + row("LAST SPELLING", "02") : header
+      await fs.writeFile(opts.destPath, body)
+      return { status: 200, lastModified: BMF_LM, etag: '"d"', sha256: "d", bytes: body.length }
+    }
+    const out = await service().ingestSource("eo_bmf", { fetchToFile, pg, tmpDir, batchSize: 2_000 })
+
+    // Three parsed rows, two distinct EINs: a single multi-row INSERT with two tuples.
+    expect(out).toEqual({ source: "eo_bmf", outcome: "ingested", row_count: 2, as_of: BMF_LM })
+    const batches = calls.filter((c) => /INSERT INTO "irs_exempt_org_staging"/.test(c.sql))
+    expect(batches).toHaveLength(1)
+    expect(batches[0].bindings).toHaveLength(2 * 14)
+    const eins = batches[0].bindings.filter((_b, i) => i % 14 === 1)
+    expect(eins).toEqual(["010728628", "000019818"])
+    // The later row's values are the ones kept.
+    expect(batches[0].bindings.slice(0, 14)).toEqual(
+      expect.arrayContaining(["irsorg_010728628", "010728628", "LAST SPELLING", "02"])
+    )
+    expect(batches[0].bindings).not.toContain("FIRST SPELLING")
   })
 
   it("a corrupt file fails the run, marks the snapshot failed and leaves as_of and live rows alone", async () => {

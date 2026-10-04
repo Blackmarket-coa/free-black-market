@@ -18,8 +18,10 @@ async function collect<T>(gen: AsyncIterable<T>): Promise<T[]> {
 /**
  * Fixtures are real rows from the live files of 2026-09-10 (Pub 78),
  * 2026-09-30 (revocation) and 2026-09-07 (eo_xx.csv), with ICO, STREET and
- * the revocation street address blanked. Column orders asserted here are
- * the ones observed in those files, not ones assumed from documentation.
+ * the revocation street address and ZIP blanked. Inline rows below carry
+ * placeholders in those fields for the same reason: a spec file is not a
+ * place to keep a street address. Column orders asserted here are the ones
+ * observed in those files, not ones assumed from documentation.
  */
 describe("Pub 78 parser", () => {
   it("reads EIN | Name | City | State | Country | Deductibility Status", () => {
@@ -68,7 +70,7 @@ describe("revocation parser", () => {
 
   it("reads the twelve observed fields, dropping the street address", () => {
     const row = parseRevocationLine(
-      "000003154|OAKLEAF FOREST TENANT MANAGEMENT ||1706 GREENLEAF DR|NORFOLK|VA|23523-2112|US|03|15-NOV-2017|12-MAR-2018|\r"
+      "000003154|OAKLEAF FOREST TENANT MANAGEMENT ||STREET REDACTED|NORFOLK|VA|ZIP REDACTED|US|03|15-NOV-2017|12-MAR-2018|\r"
     )
     expect(row).toEqual({
       ein: "000003154",
@@ -82,19 +84,19 @@ describe("revocation parser", () => {
       posting_date: new Date("2018-03-12T00:00:00Z"),
       reinstatement_date: null,
     })
-    expect(JSON.stringify(row)).not.toContain("GREENLEAF")
+    expect(JSON.stringify(row)).not.toContain("REDACTED")
   })
 
   it("carries the reinstatement date when the IRS has one", () => {
     const row = parseRevocationLine(
-      "001037180|MIDDLESEX BARBARIANS R F C INC||37 BOW ST|WOBURN|MA|01801-3636|US|00|15-JUN-2013|21-OCT-2013|15-JUN-2013"
+      "001037180|MIDDLESEX BARBARIANS R F C INC||STREET REDACTED|WOBURN|MA|ZIP REDACTED|US|00|15-JUN-2013|21-OCT-2013|15-JUN-2013"
     )
     expect(row?.reinstatement_date).toEqual(new Date("2013-06-15T00:00:00Z"))
   })
 
   it("skips a row missing either defining date rather than inventing one", () => {
-    expect(parseRevocationLine("000003154|X||ADDR|CITY|VA|23523|US|03||12-MAR-2018|")).toBeNull()
-    expect(parseRevocationLine("000003154|X||ADDR|CITY|VA|23523|US|03|15-NOV-2017||")).toBeNull()
+    expect(parseRevocationLine("000003154|X||STREET REDACTED|CITY|VA|ZIP REDACTED|US|03||12-MAR-2018|")).toBeNull()
+    expect(parseRevocationLine("000003154|X||STREET REDACTED|CITY|VA|ZIP REDACTED|US|03|15-NOV-2017||")).toBeNull()
     expect(parseRevocationLine("only|eleven|fields|here|a|b|c|d|e|f|g")).toBeNull()
   })
 
@@ -182,7 +184,8 @@ describe("EO BMF parser", () => {
     }
     const rev = await fs.readFile(fixture("revocation-sample.txt"), "utf8")
     for (const line of rev.split("\r\n").filter(Boolean)) {
-      expect(line.split("|")[3]).toBe("")
+      expect(line.split("|")[3]).toBe("") // street
+      expect(line.split("|")[6]).toBe("") // ZIP+4
     }
   })
 })

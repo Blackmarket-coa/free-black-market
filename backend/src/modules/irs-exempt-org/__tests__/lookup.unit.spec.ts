@@ -36,7 +36,7 @@ describe("resolveIrsLookup", () => {
     expect(result.as_of).toBeNull()
   })
 
-  it("pub78_eligible carries the Pub 78 file date and the split codes, subsection from BMF", () => {
+  it("pub78_eligible carries the Pub 78 file date and the split codes; subsection from the BMF names the BMF date", () => {
     const result = resolveIrsLookup({
       ein: "010017496",
       pub78: { deductibility_codes: "EO,GROUP,LODGE" },
@@ -49,6 +49,7 @@ describe("resolveIrsLookup", () => {
       ein: "010017496",
       deductibility_codes: ["EO", "GROUP", "LODGE"],
       subsection: "03",
+      subsection_as_of: BMF_AS_OF,
       as_of: PUB78_AS_OF,
     })
   })
@@ -62,7 +63,34 @@ describe("resolveIrsLookup", () => {
       asOf,
     })
     expect(result.state).toBe("pub78_eligible")
-    if (result.state === "pub78_eligible") expect(result.subsection).toBeNull()
+    if (result.state === "pub78_eligible") {
+      expect(result.subsection).toBeNull()
+      // The BMF file was consulted and did not carry the EIN: its date still names it.
+      expect(result.subsection_as_of).toEqual(BMF_AS_OF)
+    }
+  })
+
+  it("pub78_eligible has subsection_as_of null when no BMF file has ever been ingested", () => {
+    const result = resolveIrsLookup({
+      ein: "000587764",
+      pub78: { deductibility_codes: "PC" },
+      revocations: [],
+      bmf: null,
+      asOf: { ...asOf, eo_bmf: null },
+    })
+    expect(result).toMatchObject({ state: "pub78_eligible", subsection: null, subsection_as_of: null, as_of: PUB78_AS_OF })
+  })
+
+  it("a current revocation beats a newer BMF status-01 row unconditionally (documented asymmetry)", () => {
+    // Posted 2011, BMF file dated 2026-09-07 says status 01: the revocation stands.
+    const result = resolveIrsLookup({
+      ein: "260089814",
+      pub78: null,
+      revocations: [rev("2011-07-13", "2010-11-15")],
+      bmf: { subsection: "07", status: "01" },
+      asOf,
+    })
+    expect(result.state).toBe("revoked")
   })
 
   it("bmf_only carries the BMF file date and says nothing about deductibility", () => {
@@ -231,6 +259,7 @@ describe("IrsExemptOrgModuleService.lookupEin", () => {
       ein: "000587764",
       deductibility_codes: ["PC"],
       subsection: null,
+      subsection_as_of: BMF_AS_OF,
       as_of: PUB78_AS_OF,
     })
   })

@@ -82,7 +82,28 @@ type SnapshotMetadata = {
   last_checked_at?: string
 }
 
-type Table = { live: string; staging: string; columns: readonly string[]; conflict: string }
+type Table = {
+  live: string
+  staging: string
+  columns: readonly string[]
+  /**
+   * The column the batch upsert conflicts on. Rows inside one batch are
+   * de-duplicated on it before the INSERT, and the staging table's unique
+   * index on it is created by `ensureStagingTable` when missing.
+   */
+  key: "ein" | "id"
+  /**
+   * Name of that unique index. For the two `ein`-keyed tables it is the
+   * migration's index name, so `CREATE UNIQUE INDEX IF NOT EXISTS` is a no-op
+   * in production. For the revocation table the key is the primary key, and
+   * the index name is the one Postgres gives a PRIMARY KEY's backing index
+   * ("<table>_pkey"): where the migration ran, the name is taken and nothing
+   * happens; where only the models exist (the module test harness), a plain
+   * unique index of that name is created and serves as the conflict target.
+   */
+  conflictIndex: string
+  conflict: string
+}
 
 const TABLES: Record<IrsSource, Table> = {
   eo_bmf: {
@@ -92,6 +113,8 @@ const TABLES: Record<IrsSource, Table> = {
       "id", "ein", "name", "city", "state", "zip5", "subsection", "classification",
       "ruling", "deductibility", "foundation", "status", "ntee_cd", "sort_name",
     ],
+    key: "ein",
+    conflictIndex: "UQ_irs_exempt_org_staging_ein",
     conflict: `ON CONFLICT ("ein") DO UPDATE SET
       "name" = EXCLUDED."name", "city" = EXCLUDED."city", "state" = EXCLUDED."state",
       "zip5" = EXCLUDED."zip5", "subsection" = EXCLUDED."subsection",
@@ -104,6 +127,8 @@ const TABLES: Record<IrsSource, Table> = {
     live: "irs_pub78_listing",
     staging: "irs_pub78_listing_staging",
     columns: ["id", "ein", "name", "city", "state", "country", "deductibility_codes"],
+    key: "ein",
+    conflictIndex: "UQ_irs_pub78_listing_staging_ein",
     conflict: `ON CONFLICT ("ein") DO UPDATE SET
       "name" = EXCLUDED."name", "city" = EXCLUDED."city", "state" = EXCLUDED."state",
       "country" = EXCLUDED."country", "deductibility_codes" = EXCLUDED."deductibility_codes"`,
@@ -117,6 +142,8 @@ const TABLES: Record<IrsSource, Table> = {
     ],
     // One row per (ein, posting, revocation) event; an exact duplicate line in
     // the file is the same event and is dropped, not doubled.
+    key: "id",
+    conflictIndex: "irs_revocation_staging_pkey",
     conflict: `ON CONFLICT ("id") DO NOTHING`,
   },
 }
@@ -154,10 +181,18 @@ class IrsExemptOrgModuleService extends MedusaService({
 }) {
   /**
    * A knex connection with `.raw` and `.transaction`, or undefined when none
-   * is reachable (unit tests without DI). Same two-step accessor as
-   * hawala-ledger: the registered PG_CONNECTION first, then the module
-   * EntityManager's knex, which is what the module integration-test harness
-   * exposes.
+   * is reachable (unit tests without DI).
+   *
+   * `__container__` is the module's awilix **cradle** (modules-sdk
+   * `load-internal`: `new moduleService(localContainer.cradle, …)`), which
+   * registers `PG_CONNECTION` for every module. On a cradle every property
+   * read is a resolve, so reading `.resolve` on it *throws* (there is no
+   * registration named "resolve"). The property read therefore has to come
+   * first: `container?.resolve?.(…) ?? container?.[key]` never reaches the
+   * `??` on a cradle, and everything silently rode the EntityManager
+   * fallback. Order here: cradle property read, then a real container's
+   * `.resolve`, then the EntityManager's knex (what the module
+   * integration-test harness exposes).
    */
   resolvePgConnection(): PgLike | undefined {
     const container = (this as unknown as { __container__?: Record<string, unknown> & {
@@ -168,9 +203,13 @@ class IrsExemptOrgModuleService extends MedusaService({
       typeof (c as PgLike).raw === "function" &&
       typeof (c as PgLike).transaction === "function"
     try {
-      const pg =
-        container?.resolve?.(ContainerRegistrationKeys.PG_CONNECTION) ??
-        container?.[ContainerRegistrationKeys.PG_CONNECTION]
+      const pg = container?.[ContainerRegistrationKeys.PG_CONNECTION]
+      if (looksLikePg(pg)) return pg
+    } catch {
+      // an awilix cradle throws on an unregistered key; fall through
+    }
+    try {
+      const pg = container?.resolve?.(ContainerRegistrationKeys.PG_CONNECTION)
       if (looksLikePg(pg)) return pg
     } catch {
       // fall through
@@ -278,11 +317,16 @@ class IrsExemptOrgModuleService extends MedusaService({
       for (const [i, url] of urls.entries()) {
         const dest = path.join(tmpDir, `part-${i}`)
         const prior = previousFiles[url]
-        const result = await deps.fetchToFile(url, {
-          destPath: dest,
-          ifNoneMatch: prior?.etag ?? null,
-          ifModifiedSince: prior?.last_modified ? new Date(prior.last_modified) : null,
-        })
+        const ifNoneMatch = prior?.etag ?? null
+        const ifModifiedSince = prior?.last_modified ? new Date(prior.last_modified) : null
+        const result = await deps.fetchToFile(url, { destPath: dest, ifNoneMatch, ifModifiedSince })
+        // A 304 is only an answer to a conditional request. On the first ever
+        // run there is nothing to compare against, so a 304 here would be
+        // treated as "unchanged" and the snapshot marked complete with no
+        // data and `as_of` NULL. Same guard as the re-fetch below.
+        if (result.status === 304 && !ifNoneMatch && !ifModifiedSince) {
+          throw new Error(`irs-exempt-org: ${url} answered 304 to an unconditional request`)
+        }
         files.push({ url, path: dest, result })
       }
 
@@ -308,6 +352,7 @@ class IrsExemptOrgModuleService extends MedusaService({
         }
       }
 
+      await this.ensureStagingTable(pg, table)
       await pg.raw(`TRUNCATE "${table.staging}"`)
       let rowCount = 0
       for (const f of files) {
@@ -367,7 +412,35 @@ class IrsExemptOrgModuleService extends MedusaService({
     }
   }
 
-  /** Stream-parse one downloaded file into the source's staging table. */
+  /**
+   * The service owns its staging tables. The migration creates them too, but
+   * `@medusajs/test-utils` builds a module's schema from its models
+   * (`schema.refreshDatabase()`, no migrations path), so in that harness the
+   * UNLOGGED twins do not exist and the first `TRUNCATE` would fail every
+   * ingest. Both statements are `IF NOT EXISTS`: where the migration ran they
+   * are no-ops. `LIKE live INCLUDING DEFAULTS` keeps the column set and the
+   * `now()` defaults in step with the live table and copies no constraint or
+   * index, so the only unique index on staging is the batch upsert's conflict
+   * target, created here.
+   */
+  private async ensureStagingTable(pg: PgRaw, table: Table): Promise<void> {
+    await pg.raw(
+      `CREATE UNLOGGED TABLE IF NOT EXISTS "${table.staging}" (LIKE "${table.live}" INCLUDING DEFAULTS)`
+    )
+    await pg.raw(
+      `CREATE UNIQUE INDEX IF NOT EXISTS "${table.conflictIndex}" ON "${table.staging}" ("${table.key}")`
+    )
+  }
+
+  /**
+   * Stream-parse one downloaded file into the source's staging table.
+   *
+   * Each batch is de-duplicated on the conflict column before it is flushed
+   * (last row wins): a multi-row `INSERT … ON CONFLICT DO UPDATE` that meets
+   * the same key twice fails whole with "cannot affect row a second time".
+   * Duplicates across batches are handled by the upsert itself. The returned
+   * count is rows flushed, so an EIN repeated across two batches counts twice.
+   */
   private async loadIntoStaging(
     source: IrsSource,
     filePath: string,
@@ -375,22 +448,23 @@ class IrsExemptOrgModuleService extends MedusaService({
     batchSize: number
   ): Promise<number> {
     const table = TABLES[source]
+    const keyAt = table.columns.indexOf(table.key)
     const rows = this.rowsFrom(source, filePath)
-    let batch: unknown[][] = []
+    let batch = new Map<string, unknown[]>()
     let count = 0
     for await (const values of rows) {
-      batch.push(values)
-      if (batch.length >= batchSize) {
-        await this.flush(pg, table, batch)
-        count += batch.length
-        batch = []
+      batch.set(String(values[keyAt]), values)
+      if (batch.size >= batchSize) {
+        await this.flush(pg, table, [...batch.values()])
+        count += batch.size
+        batch = new Map()
         // Let request handling get a turn: this runs in the API process.
         await new Promise<void>((resolve) => setImmediate(resolve))
       }
     }
-    if (batch.length) {
-      await this.flush(pg, table, batch)
-      count += batch.length
+    if (batch.size) {
+      await this.flush(pg, table, [...batch.values()])
+      count += batch.size
     }
     return count
   }
