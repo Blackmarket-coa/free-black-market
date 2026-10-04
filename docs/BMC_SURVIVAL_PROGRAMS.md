@@ -333,6 +333,13 @@ line in `docker-build.yml`'s `panelargs` — see the blocker in §1.
 
 ## Changelog
 
+- **2026-10-04 (part C)** — S9 (direct-charge donation checkout on the org's own
+  Stripe account, record-only `donation_split_record`, service-layer guard,
+  `stripe-connect-direct` provider, Connect webhook; Posture A doc corrected to
+  what the specs assert) and S10 (accrual subscriber, batch disbursement and
+  `ledger_batch` retired under the flag) built on the part-C branch, default-off;
+  ledger rows P1-10, P1-11. Phase 1 items 1, 2 and 4 are now built; item 3
+  (shared-goal Coalitions) remains. Live money waits on L24 / L25.
 - **2026-10-04 (part B)** — S2 (cross-app flag wiring; storefront now under the
   drift guard; admin-panel deliberately unwired) and S8 (IRS lookup wired into
   partner verification: `applyIrsLookup` as the only writer, admin verify route,
