@@ -16,7 +16,7 @@ concurrency:
 
 env:
   NODE_VERSION: '22'
-  PNPM_VERSION: '11.20.0'
+  PNPM_VERSION: '11.28.4'
   # pnpm 11 re-verifies node_modules against the lockfile before running any
   # script, by spawning its own pnpm — which does NOT inherit the
   # `--trust-lockfile` on the install steps, so it re-ran the whole

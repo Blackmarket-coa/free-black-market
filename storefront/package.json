@@ -3,7 +3,7 @@
   "license": "AGPL-3.0-only",
   "version": "0.1.0",
   "private": true,
-  "packageManager": "pnpm@11.20.0",
+  "packageManager": "pnpm@11.28.4",
   "scripts": {
     "wait": "await-backend",
     "launcher": "launch-storefront",
