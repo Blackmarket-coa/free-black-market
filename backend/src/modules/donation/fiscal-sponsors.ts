@@ -1,12 +1,14 @@
 /**
- * Fiscal-sponsor registry.
+ * Fiscal-sponsor registry — the LEGACY tier-2 donation path.
  *
- * FBM does not maintain the donor-recipient relationship directly — a
- * 501(c)(3) fiscal sponsor receives donations of record, issues donor
- * receipts, and handles state charity registration. This module is the
- * single source of truth for which sponsors FBM knows how to route to,
- * which one is the active default, and what display copy to surface to
- * donors.
+ * Under this mode a 501(c)(3) fiscal sponsor receives donations of record,
+ * issues donor receipts, and handles state charity registration; FBM accrues
+ * the donation on its own books until the batch job routes it on. That accrual
+ * is the custody shape legal checkpoint L24 asks counsel about, and it is
+ * superseded under FF_NONPROFIT_PARITY_V1 by direct charges on the recipient
+ * org's own Stripe account (docs/POSTURE_A_COMPLIANCE.md rule 10), where no
+ * sponsor and no FBM-held balance exist. Kept, not deleted: tenants without a
+ * Connect account still run this path with the flag off (docs/AUDIT_DEBT.md).
  *
  * The active sponsor is selected via env (FBM_FISCAL_SPONSOR_PROVIDER).
  * A registry entry encodes:
@@ -14,9 +16,10 @@
  *     (`name`, `url`, `tagline`)
  *   - the agreement status (`live` true once the signed fiscal
  *     sponsorship agreement and test transfer are in place)
- *   - the LedgerAccount id the disbursement job credits (only set
- *     once the sponsor is live; until then, donations accrue in
- *     pending state on FBM's books)
+ *   - the LedgerAccount id the legacy disbursement job credits (only set
+ *     once the sponsor is live; until then, on this legacy path, donations
+ *     accrue in pending state on FBM's books — the thing the direct-charge
+ *     path exists to avoid)
  *
  * Selection rationale and the AMP-as-default recommendation live in
  * `docs/FISCAL_SPONSOR_DECISION.md`.

@@ -4,8 +4,33 @@ import DonationModuleService from "../modules/donation/service"
 import { TENANCY_MODULE } from "../modules/tenancy"
 import TenancyModuleService from "../modules/tenancy/service"
 import { getOrderCartMetadata } from "../lib/cart-metadata-recovery"
+import { featureFlagState } from "../shared/feature-flags"
+import { createLogger } from "../shared/logger"
 
+const log = createLogger("subscribers/donation-order-accrued")
+
+/**
+ * Legacy tier-2 accrual: increments `beneficiary.metadata.accrued_balance`
+ * from the donation a buyer chose at checkout. That is a balance on FBM's
+ * books — the custody shape docs/POSTURE_A_COMPLIANCE.md rule 3 forbids and
+ * legal checkpoint L24 asks counsel about.
+ *
+ * While FF_NONPROFIT_PARITY_V1 is on, donations are collected as direct
+ * charges on the recipient org's own Stripe account and recorded in
+ * `donation_split_record` (rule 10); there must never be a second, FBM-held
+ * donation balance beside that, so this subscriber is a no-op under the flag.
+ * With the flag off nothing here changes: tier-2 tenants without a Connect
+ * account still exist and the D9-5 cart-metadata recovery below stays as it
+ * was. Retire-under-flag rather than delete is deliberate (docs/AUDIT_DEBT.md).
+ */
 export default async function donationOrderAccruedSubscriber({ event, container }: SubscriberArgs<{ id: string }>) {
+  if (featureFlagState.isEnabled("NONPROFIT_PARITY_V1")) {
+    log.info(
+      `[donation-order-accrued] FF_NONPROFIT_PARITY_V1 is on; order ${event.data.id} accrues nothing — donations are direct charges recorded in donation_split_record`
+    )
+    return
+  }
+
   const donationService = container.resolve<DonationModuleService>(DONATION_MODULE)
   const tenancyService = container.resolve<TenancyModuleService>(TENANCY_MODULE)
   const orderService = container.resolve("order")

@@ -170,6 +170,14 @@ class TenancyModuleService extends MedusaService({
         key: "nonprofit_marketplace",
         name: "Nonprofit Marketplace",
         tier: "tier2_aligned_org" as TierFlag,
+        // `ledger_batch` selects the CUSTODY-SHAPED mode: donations accrue on
+        // FBM's books and a weekly job queues their disbursement (legal
+        // checkpoint L24). Under FF_NONPROFIT_PARITY_V1 the admin settings
+        // route refuses it and `split_processor` (direct charges on the org's
+        // own account, docs/POSTURE_A_COMPLIANCE.md rule 10) is the only mode.
+        // The default is left as-is here pending operator input: changing a
+        // template default re-shapes every new tier-2 storefront, and whether
+        // tenants without a Connect account keep this path is their call.
         defaults: { donation_default_percentage: 5, settlement_mode: "ledger_batch" },
       },
     ]

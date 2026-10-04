@@ -1,15 +1,22 @@
 import { model } from "@medusajs/framework/utils"
 
 /**
- * Posture A — donations routed through a 501(c)(3) fiscal sponsor.
+ * Donation settings. Two settlement modes, one of them legacy:
  *
- * Under FinCEN's payment-processor exemption FBM does not maintain
- * the donor-recipient relationship directly. The fiscal sponsor
- * (Allied Media Projects, NEO Philanthropy, Tides Foundation, or an
- * SELC-recommended local sponsor) handles state charity registration
- * (~40 states) and issues donor receipts. FBM is a routing layer.
+ * - `split_processor` — the donation is collected as a Stripe direct charge ON
+ *   the recipient org's own connected account and FBM records it in
+ *   `donation_split_record` (docs/POSTURE_A_COMPLIANCE.md rule 10). No money
+ *   sits on FBM's books. This is the Phase 1 path behind FF_NONPROFIT_PARITY_V1.
+ * - `ledger_batch` — the LEGACY tier-2 fiscal-sponsor / accrual path:
+ *   `subscribers/donation-order-accrued.ts` accrues `metadata.accrued_balance`
+ *   on a beneficiary and `jobs/donation-batch-disbursement.ts` queues rows
+ *   against `fiscal_sponsor_account_id`. That is a balance on FBM's books —
+ *   the custody shape legal checkpoint L24 asks counsel about. It is refused
+ *   by the admin settings route and both its writers are no-ops while the
+ *   flag is on; with the flag off it is unchanged for tenants that have no
+ *   Connect account yet. Superseded, not deleted (docs/AUDIT_DEBT.md).
  *
- * See `docs/POSTURE_A_COMPLIANCE.md`.
+ * The `fiscal_sponsor_*` columns belong to the legacy mode.
  */
 const DonationSettings = model.define("donation_settings", {
   id: model.id().primaryKey(),
