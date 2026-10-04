@@ -1,5 +1,6 @@
 import Stripe from "stripe"
 import { applyStripeConnectEvent, POST } from "../route"
+import { COLLECTIVE_CAMPAIGN_MODULE } from "../../../../modules/collective-campaign"
 import { DONATION_MODULE } from "../../../../modules/donation"
 import { HAWALA_LEDGER_MODULE } from "../../../../modules/hawala-ledger"
 import { PARTNER_DIRECTORY_MODULE } from "../../../../modules/partner-directory"
@@ -29,6 +30,18 @@ import { makeInMemoryDonations, type SplitRow } from "../../../../modules/donati
  * eligible recipient now, with Stripe's amount (never the metadata's); the
  * hawala ledger is never resolved; a payload carrying a forbidden Connect
  * parameter is refused.
+ *
+ * Shared-goal Coalition campaigns (Phase 1 item 3): a record carrying
+ * `campaign_id` reports its gross to `recordParticipantContribution` on the
+ * IMPORTED `COLLECTIVE_CAMPAIGN_MODULE`, keyed by the intent id, when it
+ * enters `succeeded`; a serial replay, a fee-only update of a succeeded row and
+ * a record with no campaign never reach the campaign module; two CONCURRENT
+ * deliveries both reach it with the same intent id and the module's own
+ * intent-keyed row decides (one `recorded`, one `already_recorded` — the
+ * exactly-once proof over the real service is in
+ * collective-campaign/__tests__/service.unit.spec.ts); a FULL refund reverses
+ * the same intent, a partial refund does not; a module that cannot be resolved
+ * or throws surfaces as `contribution: "failed"` on a 200.
  */
 
 const FLAG = PHASE0_FEATURE_FLAGS.NONPROFIT_PARITY_V1
@@ -110,10 +123,36 @@ const event = (type: string, object: Record<string, unknown>, account: string | 
     data: { object },
   }) as unknown as Stripe.Event
 
-function makeScope(opts: { rows?: SplitRow[]; orgs?: Array<Partial<OrgRow> & { key: string; name: string }> } = {}) {
+function makeScope(
+  opts: {
+    rows?: SplitRow[]
+    orgs?: Array<Partial<OrgRow> & { key: string; name: string }>
+    /** What the campaign module answers; default: recorded. */
+    contribution?: "recorded" | "no_participant" | "throws" | "unresolvable"
+    /** What the campaign module answers a reversal; default: reversed. */
+    reversal?: "reversed" | "not_recorded"
+  } = {}
+) {
   const dons = makeInMemoryDonations(opts.rows ?? [existingRow()])
   const dir = makeInMemoryDirectory(opts.orgs ?? [gulp()])
   const hawala = { processRefund: jest.fn(), createTransfer: jest.fn() }
+  // Mirrors the real module's intent-keyed row: the same intent counts once.
+  const counted = new Set<string>()
+  const campaigns = {
+    recordParticipantContribution: jest.fn(
+      async (input: { campaign_id: string; partner_org_key: string; amount_cents: number; stripe_payment_intent_id: string }) => {
+        if (opts.contribution === "throws") throw new Error("campaign write failed")
+        if (opts.contribution === "no_participant") return { recorded: false as const, reason: "no_participant" as const, campaign_id: input.campaign_id }
+        if (counted.has(input.stripe_payment_intent_id)) return { recorded: false as const, reason: "already_recorded" as const, campaign_id: input.campaign_id }
+        counted.add(input.stripe_payment_intent_id)
+        return { recorded: true as const, participant_id: "ccpart_1", campaign_id: input.campaign_id, contributed_amount_cents: input.amount_cents, campaign_total_cents: input.amount_cents, milestones_reached: [], status: "ACTIVE" }
+      }
+    ),
+    reverseParticipantContribution: jest.fn(async (input: { campaign_id: string; stripe_payment_intent_id: string }) => {
+      if (opts.reversal === "not_recorded") return { reversed: false as const, reason: "not_recorded" as const, campaign_id: input.campaign_id }
+      return { reversed: true as const, participant_id: "ccpart_1", campaign_id: input.campaign_id, contributed_amount_cents: 0, campaign_total_cents: 0 }
+    }),
+  }
   const resolved: string[] = []
   const scope = {
     resolve: <T,>(key: string): T => {
@@ -121,10 +160,11 @@ function makeScope(opts: { rows?: SplitRow[]; orgs?: Array<Partial<OrgRow> & { k
       if (key === DONATION_MODULE) return dons.service as unknown as T
       if (key === PARTNER_DIRECTORY_MODULE) return dir.service as unknown as T
       if (key === HAWALA_LEDGER_MODULE) return hawala as unknown as T
+      if (key === COLLECTIVE_CAMPAIGN_MODULE && opts.contribution !== "unresolvable") return campaigns as unknown as T
       throw new Error(`Could not resolve '${key}'`)
     },
   }
-  return { scope, resolved, dons, dir, hawala }
+  return { scope, resolved, dons, dir, hawala, campaigns }
 }
 
 type Req = Parameters<typeof POST>[0]
@@ -364,8 +404,15 @@ describe("applyStripeConnectEvent — an intent we never recorded", () => {
       ctx.scope,
       event("payment_intent.succeeded", intentObject({ id: "pi_new", amount: 2500, metadata: { ...donationMeta, fbm_gross_cents: "100000000" } }))
     )
-    expect(r).toEqual({ outcome: "created", intent_id: "pi_new" })
-    expect(ctx.resolved).toEqual([DONATION_MODULE, PARTNER_DIRECTORY_MODULE])
+    expect(r).toEqual({ outcome: "created", intent_id: "pi_new", contribution: "recorded" })
+    // The back-filled record names camp_9, so the campaign module is reached too — after the record is written.
+    expect(ctx.resolved).toEqual([DONATION_MODULE, PARTNER_DIRECTORY_MODULE, COLLECTIVE_CAMPAIGN_MODULE])
+    expect(ctx.campaigns.recordParticipantContribution).toHaveBeenCalledWith({
+      campaign_id: "camp_9",
+      partner_org_key: "ground_up_liberation_project",
+      amount_cents: 2500,
+      stripe_payment_intent_id: "pi_new",
+    })
     expect(ctx.dons.rows[0]).toMatchObject({
       stripe_payment_intent_id: "pi_new",
       stripe_account_id: ACCT,
@@ -453,5 +500,158 @@ describe("applyStripeConnectEvent — an intent we never recorded", () => {
       },
     }
     await expect(applyStripeConnectEvent(scope, event("payment_intent.succeeded", intentObject()))).rejects.toThrow(/Could not resolve 'donation'/)
+  })
+})
+
+describe("applyStripeConnectEvent — shared-goal Coalition contributions (campaign_id on the record)", () => {
+  const campaignRow = (over: Partial<SplitRow> = {}) => existingRow({ campaign_id: "camp_9", ...over })
+
+  it("reports the gross to recordParticipantContribution on the imported module exactly once, when the record ENTERS succeeded", async () => {
+    const ctx = makeScope({ rows: [campaignRow()] })
+    const ev = event("payment_intent.succeeded", intentObject())
+
+    const r1 = await applyStripeConnectEvent(ctx.scope, ev)
+    expect(r1).toEqual({ outcome: "updated", intent_id: "pi_1", contribution: "recorded" })
+    expect(ctx.dons.rows[0].status).toBe("succeeded")
+    expect(ctx.campaigns.recordParticipantContribution).toHaveBeenCalledTimes(1)
+    expect(ctx.campaigns.recordParticipantContribution).toHaveBeenCalledWith({
+      campaign_id: "camp_9",
+      partner_org_key: "ground_up_liberation_project",
+      amount_cents: 2500,
+      // The idempotency key is the record's intent, never the delivery.
+      stripe_payment_intent_id: "pi_1",
+    })
+    // The record was written BEFORE the campaign was told: processor, record, then report.
+    expect(ctx.resolved).toEqual([DONATION_MODULE, COLLECTIVE_CAMPAIGN_MODULE])
+
+    // Stripe re-delivers: unchanged, and the campaign is not told twice.
+    const r2 = await applyStripeConnectEvent(ctx.scope, ev)
+    expect(r2).toEqual({ outcome: "unchanged", intent_id: "pi_1" })
+    expect(ctx.campaigns.recordParticipantContribution).toHaveBeenCalledTimes(1)
+
+    // A later delivery with an expanded balance transaction updates the fee on
+    // the already-succeeded row — an update, not a second contribution.
+    const r3 = await applyStripeConnectEvent(
+      ctx.scope,
+      event("payment_intent.succeeded", intentObject({ latest_charge: { id: "ch_1", object: "charge", balance_transaction: { id: "txn_1", fee: 103 } } }))
+    )
+    expect(r3).toEqual({ outcome: "updated", intent_id: "pi_1" })
+    expect(ctx.dons.rows[0].processor_fee_cents).toBe(103)
+    expect(ctx.campaigns.recordParticipantContribution).toHaveBeenCalledTimes(1)
+    expect(ctx.hawala.createTransfer).not.toHaveBeenCalled()
+    expect(ctx.resolved).not.toContain(HAWALA_LEDGER_MODULE)
+  })
+
+  it("a failure then a success counts once, at the success; a failure alone never reaches the campaign", async () => {
+    const ctx = makeScope({ rows: [campaignRow()] })
+    expect(await applyStripeConnectEvent(ctx.scope, event("payment_intent.payment_failed", intentObject({ status: "requires_payment_method" })))).toEqual({
+      outcome: "updated",
+      intent_id: "pi_1",
+    })
+    expect(ctx.campaigns.recordParticipantContribution).not.toHaveBeenCalled()
+    expect(ctx.resolved).toEqual([DONATION_MODULE])
+
+    expect(await applyStripeConnectEvent(ctx.scope, event("payment_intent.succeeded", intentObject()))).toEqual({
+      outcome: "updated",
+      intent_id: "pi_1",
+      contribution: "recorded",
+    })
+    expect(ctx.campaigns.recordParticipantContribution).toHaveBeenCalledTimes(1)
+  })
+
+  it("two CONCURRENT deliveries of the same success both reach the module with the same intent id, and the module's intent-keyed row decides: one recorded, one already_recorded", async () => {
+    const ctx = makeScope({ rows: [campaignRow()] })
+    // Hold each delivery's WRITE until both have arrived: both deliveries then
+    // read `created` (pre-read and the read inside the service) before either
+    // writes, both write `succeeded`, and both decide "entered succeeded" from
+    // their own pre-read — the ordering a single process cannot rule out.
+    const shadow = ctx.dons.service as unknown as Record<string, unknown>
+    const realUpdate = shadow.updateDonationSplitRecords as (d: Record<string, unknown>) => Promise<SplitRow>
+    let held = 0
+    let waiting: Array<() => void> = []
+    shadow.updateDonationSplitRecords = async (data: Record<string, unknown>) => {
+      if (held < 2) {
+        held += 1
+        await new Promise<void>((resolve) => {
+          waiting.push(resolve)
+          if (held === 2) {
+            waiting.forEach((w) => w())
+            waiting = []
+          }
+        })
+      }
+      return realUpdate(data)
+    }
+    const ev = event("payment_intent.succeeded", intentObject())
+    const [a, b] = await Promise.all([applyStripeConnectEvent(ctx.scope, ev), applyStripeConnectEvent(ctx.scope, ev)])
+
+    // Both wrote (the status function is monotone, so the double write is harmless)...
+    expect(a.outcome).toBe("updated")
+    expect(b.outcome).toBe("updated")
+    expect(ctx.dons.rows[0].status).toBe("succeeded")
+    // ...and both told the module, with the same intent id, which is why the
+    // module and not this handler is the arbiter.
+    expect(ctx.campaigns.recordParticipantContribution).toHaveBeenCalledTimes(2)
+    for (const call of ctx.campaigns.recordParticipantContribution.mock.calls) {
+      expect(call[0]).toMatchObject({ campaign_id: "camp_9", stripe_payment_intent_id: "pi_1", amount_cents: 2500 })
+    }
+    expect([a.contribution, b.contribution].sort()).toEqual(["already_recorded", "recorded"])
+  })
+
+  it("a FULL refund of a succeeded shared-goal record reverses the same intent on the campaign module, exactly once", async () => {
+    const ctx = makeScope({ rows: [campaignRow({ status: "succeeded" })] })
+    const charge = { id: "ch_1", object: "charge", payment_intent: "pi_1", refunded: true, amount_refunded: 2500, transfer_data: null, on_behalf_of: null, application_fee_amount: null }
+    const ev = event("charge.refunded", charge)
+    expect(await applyStripeConnectEvent(ctx.scope, ev)).toEqual({ outcome: "updated", intent_id: "pi_1", contribution: "reversed" })
+    expect(ctx.campaigns.reverseParticipantContribution).toHaveBeenCalledWith({ campaign_id: "camp_9", stripe_payment_intent_id: "pi_1" })
+    expect(ctx.campaigns.recordParticipantContribution).not.toHaveBeenCalled()
+    expect(ctx.resolved).toEqual([DONATION_MODULE, COLLECTIVE_CAMPAIGN_MODULE])
+    expect(ctx.resolved).not.toContain(HAWALA_LEDGER_MODULE)
+
+    // Re-delivered: the record is already refunded, unchanged, nothing reversed twice.
+    expect(await applyStripeConnectEvent(ctx.scope, ev)).toEqual({ outcome: "unchanged", intent_id: "pi_1" })
+    expect(ctx.campaigns.reverseParticipantContribution).toHaveBeenCalledTimes(1)
+  })
+
+  it("a PARTIAL refund keeps the status and never reaches the campaign module; a refund of a record never counted is reported not_recorded", async () => {
+    const ctx = makeScope({ rows: [campaignRow({ status: "succeeded" })] })
+    const partial = { id: "ch_1", object: "charge", payment_intent: "pi_1", refunded: false, amount_refunded: 500, transfer_data: null, on_behalf_of: null, application_fee_amount: null }
+    expect(await applyStripeConnectEvent(ctx.scope, event("charge.refunded", partial))).toEqual({ outcome: "updated", intent_id: "pi_1" })
+    expect(ctx.dons.rows[0]).toMatchObject({ status: "succeeded", refunded_cents: 500 })
+    expect(ctx.campaigns.reverseParticipantContribution).not.toHaveBeenCalled()
+    expect(ctx.resolved).toEqual([DONATION_MODULE])
+
+    const never = makeScope({ rows: [campaignRow({ status: "created" })], reversal: "not_recorded" })
+    const full = { ...partial, refunded: true, amount_refunded: 2500 }
+    expect(await applyStripeConnectEvent(never.scope, event("charge.refunded", full))).toEqual({ outcome: "updated", intent_id: "pi_1", contribution: "not_recorded" })
+  })
+
+  it("a record with no campaign_id never resolves the campaign module", async () => {
+    const ctx = makeScope({ rows: [existingRow({ campaign_id: null })] })
+    expect(await applyStripeConnectEvent(ctx.scope, event("payment_intent.succeeded", intentObject()))).toEqual({ outcome: "updated", intent_id: "pi_1" })
+    expect(ctx.resolved).toEqual([DONATION_MODULE])
+    expect(ctx.campaigns.recordParticipantContribution).not.toHaveBeenCalled()
+  })
+
+  it("an org that is not a participant is reported as no_participant; the split record is still succeeded", async () => {
+    const ctx = makeScope({ rows: [campaignRow()], contribution: "no_participant" })
+    expect(await applyStripeConnectEvent(ctx.scope, event("payment_intent.succeeded", intentObject()))).toEqual({
+      outcome: "updated",
+      intent_id: "pi_1",
+      contribution: "no_participant",
+    })
+    expect(ctx.dons.rows[0].status).toBe("succeeded")
+  })
+
+  it("a campaign module that throws, or sits under a near-miss key, surfaces as contribution failed on a 200 — the record stands and Stripe is not retried into it", async () => {
+    process.env[STRIPE_CONNECT_WEBHOOK_SECRET_ENV] = SECRET
+    for (const contribution of ["throws", "unresolvable"] as const) {
+      const ctx = makeScope({ rows: [campaignRow()], contribution })
+      const res = await post(ctx, event("payment_intent.succeeded", intentObject()))
+      expect(res.statusCode).toBe(200)
+      expect(res.body).toMatchObject({ received: true, outcome: "updated", intent_id: "pi_1", contribution: "failed" })
+      expect(ctx.dons.rows[0].status).toBe("succeeded")
+      expect(ctx.resolved).toContain(COLLECTIVE_CAMPAIGN_MODULE)
+    }
   })
 })

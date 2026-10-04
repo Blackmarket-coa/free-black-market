@@ -5,6 +5,25 @@ export enum CampaignType {
   PRODUCTIVE_ASSET = "PRODUCTIVE_ASSET",
 }
 
+/**
+ * `goal_kind` discriminates a campaign that is a shared fundraising goal run by
+ * a coalition of organisations (docs/BMC_SURVIVAL_PROGRAMS.md Phase 1 item 3)
+ * from the two production kinds `campaign_type` names. It is a nullable TEXT
+ * column rather than a third enum value: `ALTER TYPE ... ADD VALUE` cannot be
+ * used inside the transaction MikroORM wraps a migration in on every Postgres
+ * version, and the production version is unverified. `null` means a production
+ * campaign and nothing else changes for those rows.
+ *
+ * A SHARED_GOAL campaign has no material lines, no maker fee and a platform fee
+ * of 0 (Decision 1, 0% on donations). Its money is NEVER a `collective_backing`
+ * and never touches the campaign escrow: contributions are direct charges on
+ * each participant organisation's own connected account (donation module,
+ * `donation_split_record.campaign_id`), and the Connect webhook reports them to
+ * `recordParticipantContribution`. Posture A rule 10; legal checkpoints L24, L25.
+ */
+export const CAMPAIGN_GOAL_KIND_SHARED_GOAL = "SHARED_GOAL" as const
+export type CampaignGoalKind = typeof CAMPAIGN_GOAL_KIND_SHARED_GOAL
+
 export enum CampaignStatus {
   DRAFT = "DRAFT",
   ACTIVE = "ACTIVE",
@@ -27,6 +46,10 @@ export enum CampaignStatus {
 const Campaign = model.define("collective_campaign", {
   id: model.id().primaryKey(),
   vendor_id: model.text(),
+  /** `"SHARED_GOAL"` for a coalition shared-goal campaign; null for a production campaign. */
+  goal_kind: model.text().nullable(),
+  /** The coalition's FBM face (`cooperative.id`) for a shared-goal campaign. */
+  cooperative_id: model.text().nullable(),
   name: model.text().searchable(),
   description: model.text(),
   media: model.json().nullable(),
@@ -61,6 +84,9 @@ const Campaign = model.define("collective_campaign", {
   { on: ["vendor_id"], name: "IDX_collective_campaign_vendor_id" },
   { on: ["status"], name: "IDX_collective_campaign_status" },
   { on: ["campaign_type", "status"], name: "IDX_collective_campaign_type_status" },
+  // Partial, mirroring Migration20261003SharedGoal exactly so `db:generate` stays quiet.
+  { on: ["goal_kind"], name: "IDX_collective_campaign_goal_kind", where: "deleted_at IS NULL" },
+  { on: ["cooperative_id"], name: "IDX_collective_campaign_cooperative_id", where: "deleted_at IS NULL" },
 ])
 
 export default Campaign

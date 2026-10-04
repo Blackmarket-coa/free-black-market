@@ -1,10 +1,12 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { z } from "zod"
 import {
+  CAMPAIGN_GOAL_KIND_SHARED_GOAL,
   CampaignStatus,
   COLLECTIVE_CAMPAIGN_MODULE,
 } from "../../../../../modules/collective-campaign"
 import CollectiveCampaignModuleService from "../../../../../modules/collective-campaign/service"
+import { featureFlagState } from "../../../../../shared/feature-flags"
 import { HAWALA_LEDGER_MODULE } from "../../../../../modules/hawala-ledger"
 import type HawalaLedgerModuleService from "../../../../../modules/hawala-ledger/service"
 import { emitBlackoutEvent } from "../../../../../lib/blackout-emit"
@@ -32,10 +34,25 @@ const getErrorMessage = (error: unknown) => {
   return "Unknown error"
 }
 
+/** The body an unknown id gets; a dark shared-goal campaign answers the same one. */
+const NOT_FOUND_BODY = { error: "Campaign not found" }
+
+/**
+ * A SHARED_GOAL campaign is dark on this unflagged surface whenever
+ * FF_SHARED_GOAL_COALITION_V1 is off — including a row created while the flag
+ * was on (counsel can ask for L25 to go dark again). It answers exactly what an
+ * unknown id answers, so the flag is not an existence oracle either.
+ */
+const isDarkSharedGoal = (campaign: { goal_kind?: string | null } | null | undefined) =>
+  campaign?.goal_kind === CAMPAIGN_GOAL_KIND_SHARED_GOAL && !featureFlagState.isEnabled("SHARED_GOAL_COALITION_V1")
+
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
   try {
     const service = req.scope.resolve<CollectiveCampaignModuleService>(COLLECTIVE_CAMPAIGN_MODULE)
     const dashboard = await service.getCampaignDashboard(req.params.id)
+    if (isDarkSharedGoal(dashboard.campaign)) {
+      return res.status(404).json(NOT_FOUND_BODY)
+    }
     return res.json({ campaign_dashboard: dashboard })
   } catch (error: unknown) {
     const message = getErrorMessage(error)
@@ -53,8 +70,8 @@ export async function PATCH(req: MedusaRequest, res: MedusaResponse) {
     const service = req.scope.resolve<CollectiveCampaignModuleService>(COLLECTIVE_CAMPAIGN_MODULE)
     const [campaign] = await service.listCampaigns({ id: req.params.id })
 
-    if (!campaign) {
-      return res.status(404).json({ error: "Campaign not found" })
+    if (!campaign || isDarkSharedGoal(campaign)) {
+      return res.status(404).json(NOT_FOUND_BODY)
     }
 
     if (campaign.vendor_id !== vendorId) {

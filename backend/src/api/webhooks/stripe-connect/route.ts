@@ -12,6 +12,8 @@ import {
 import { DONATION_SPLIT_KINDS, type DonationSplitKind } from "../../../modules/donation/models/donation-split-record"
 import { PARTNER_DIRECTORY_MODULE } from "../../../modules/partner-directory"
 import type PartnerDirectoryModuleService from "../../../modules/partner-directory/service"
+import { COLLECTIVE_CAMPAIGN_MODULE } from "../../../modules/collective-campaign"
+import type CollectiveCampaignModuleService from "../../../modules/collective-campaign/service"
 import { STRIPE_CONNECT_WEBHOOK_SECRET_ENV } from "../../../modules/stripe-connect-direct/registration"
 import { isStripeAccountId } from "../../../shared/stripe-direct-charge"
 import { featureFlagState, PHASE0_FEATURE_FLAGS } from "../../../shared/feature-flags"
@@ -56,6 +58,24 @@ const log = createLogger("api/webhooks/stripe-connect")
  *
  * The processor fee is read only when the payload carries an expanded balance
  * transaction; it is display data on the org's own account, never a transfer.
+ *
+ * Shared-goal Coalition campaigns (Phase 1 item 3): when the record carries a
+ * `campaign_id` and this event is the one that moves it INTO `succeeded`, the
+ * gross is reported to `recordParticipantContribution` on the collective-
+ * campaign module for the participant whose `partner_org_key` is the record's
+ * `org_key`, keyed by the intent id. That is the ONLY money path a shared goal
+ * has — a running total of what the processor did on the org's own account,
+ * never a backing, never the campaign escrow. Exactly once per intent, and not
+ * only for serial deliveries: the `enteredSucceeded` gate below is a per-process
+ * optimisation (it spares the module a call on a replay), while the guarantee
+ * is the campaign module's own `collective_campaign_contribution` row under a
+ * DB unique index on (campaign, intent) — two concurrent deliveries of the same
+ * success both reach the module and exactly one is counted; the other is
+ * `already_recorded`. When the record moves to `refunded` (a FULL refund; a
+ * partial one keeps the status) the same intent is reversed, so the public
+ * totals stop overstating. A failure to report is logged and surfaced as
+ * `contribution: "failed"` on a 200: the split record is already written and a
+ * Stripe retry would land on it as "unchanged", so a 5xx could not repair it.
  */
 
 export type StripeConnectWebhookOutcome =
@@ -70,7 +90,27 @@ export type StripeConnectWebhookOutcome =
   | "updated"
   | "unchanged"
 
-export type StripeConnectWebhookResult = { outcome: StripeConnectWebhookOutcome; intent_id?: string }
+/**
+ * What happened to the campaign's participant totals for this event:
+ * on a success `recorded` | `already_recorded` | `no_participant` |
+ * `campaign_closed`; on a full refund `reversed` | `already_reversed` |
+ * `not_recorded`; `failed` when the module threw or could not be resolved.
+ */
+export type StripeConnectContributionOutcome =
+  | "recorded"
+  | "already_recorded"
+  | "no_participant"
+  | "campaign_closed"
+  | "reversed"
+  | "already_reversed"
+  | "not_recorded"
+  | "failed"
+
+export type StripeConnectWebhookResult = {
+  outcome: StripeConnectWebhookOutcome
+  intent_id?: string
+  contribution?: StripeConnectContributionOutcome
+}
 
 type Scope = { resolve: <T = unknown>(key: string) => T }
 
@@ -190,6 +230,9 @@ export async function applyStripeConnectEvent(scope: Scope, event: Stripe.Event)
 
   const donations = flow.resolve<DonationModuleService>(DONATION_MODULE)
   const existing = await donations.getDirectSplitByIntentId(intentId)
+  // Snapshot the status as a primitive before the write: whether the service
+  // hands back the same object or a copy must not decide "entered succeeded".
+  const priorStatus = existing?.status ?? null
 
   let fallback: RecordDirectSplitInput | undefined
   if (!existing) {
@@ -213,7 +256,48 @@ export async function applyStripeConnectEvent(scope: Scope, event: Stripe.Event)
     flow: { resolved_module_keys: flow.resolved },
     fallback,
   })
-  return { outcome: result.outcome, intent_id: intentId }
+  if (result.outcome === "ignored_unknown_intent") {
+    return { outcome: result.outcome, intent_id: intentId }
+  }
+
+  // The record moved INTO succeeded (count) or INTO refunded (reverse) on this
+  // event — not a replay, not a fee-only update — and names a campaign.
+  const record = result.record
+  if (!record.campaign_id || result.outcome === "unchanged") {
+    return { outcome: result.outcome, intent_id: intentId }
+  }
+  const enteredSucceeded = record.status === "succeeded" && priorStatus !== "succeeded"
+  const enteredRefunded = record.status === "refunded" && priorStatus !== "refunded"
+  if (!enteredSucceeded && !enteredRefunded) {
+    return { outcome: result.outcome, intent_id: intentId }
+  }
+
+  let contribution: StripeConnectContributionOutcome
+  try {
+    const campaigns = flow.resolve<CollectiveCampaignModuleService>(COLLECTIVE_CAMPAIGN_MODULE)
+    if (enteredSucceeded) {
+      const reported = await campaigns.recordParticipantContribution({
+        campaign_id: record.campaign_id,
+        partner_org_key: record.org_key,
+        amount_cents: Number(record.gross_cents),
+        stripe_payment_intent_id: intentId,
+      })
+      contribution = reported.recorded ? "recorded" : reported.reason
+      if (!reported.recorded) {
+        log.warn(`Connect webhook: intent ${intentId} on campaign ${record.campaign_id} (org ${record.org_key}) not counted: ${reported.reason}`)
+      }
+    } else {
+      const reversed = await campaigns.reverseParticipantContribution({
+        campaign_id: record.campaign_id,
+        stripe_payment_intent_id: intentId,
+      })
+      contribution = reversed.reversed ? "reversed" : reversed.reason
+    }
+  } catch (error) {
+    contribution = "failed"
+    log.error(`Connect webhook: contribution for intent ${intentId} on campaign ${record.campaign_id} not ${enteredSucceeded ? "recorded" : "reversed"}: ${error instanceof Error ? error.message : String(error)}`)
+  }
+  return { outcome: result.outcome, intent_id: intentId, contribution }
 }
 
 export async function POST(req: MedusaRequest, res: MedusaResponse) {

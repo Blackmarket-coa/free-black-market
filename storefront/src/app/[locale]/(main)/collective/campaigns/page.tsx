@@ -1,6 +1,7 @@
 import type { Metadata } from "next"
 import LocalizedClientLink from "@/components/molecules/LocalizedLink/LocalizedLink"
 import { listCampaigns, type Campaign } from "@/lib/data/collective"
+import { phase1ModuleFlags } from "@/lib/feature-flags"
 
 export const metadata: Metadata = {
   title: "Production Campaigns",
@@ -32,11 +33,66 @@ const fundedPercent = (campaign: Campaign) => {
 }
 
 export default async function CampaignsPage() {
-  const all = await listCampaigns({ limit: 50 })
+  // Production campaigns only; the kind is filtered server-side so a shared
+  // goal never displaces a production run inside the 50-row page.
+  const all = await listCampaigns({ limit: 50, goal_kind: "STANDARD" })
   const campaigns = all.filter((c) => PUBLIC_STATUSES.has(c.status))
+
+  // Shared goals, when the flag is on. Dark with the API's flag: the API
+  // answers this query with an empty list and 404s their pages, so nothing
+  // here can show one the API does not. The kind is re-checked on each row so
+  // this section can never render anything but a shared goal, whatever the
+  // two independent flags are set to.
+  const sharedGoals = phase1ModuleFlags.sharedGoalCoalition
+    ? (await listCampaigns({ limit: 50, goal_kind: "SHARED_GOAL" })).filter(
+        (c) => c.goal_kind === "SHARED_GOAL" && PUBLIC_STATUSES.has(c.status)
+      )
+    : []
 
   return (
     <main className="container py-10">
+      {sharedGoals.length > 0 ? (
+        <section className="mb-10">
+          <h1 className="text-2xl font-semibold">Shared Goals</h1>
+          <p className="mt-1 mb-4 max-w-3xl text-sm text-ui-fg-subtle">
+            A coalition of organisations working toward one goal. Each
+            organisation collects its own contributions on its own account;
+            this page reports the totals.
+          </p>
+          <div className="grid gap-4 md:grid-cols-2">
+            {sharedGoals.map((campaign) => {
+              const percent = fundedPercent(campaign)
+              return (
+                <div key={campaign.id} className="rounded-md border p-4">
+                  <div className="mb-1 text-xs uppercase text-ui-fg-subtle">
+                    Shared goal · {campaign.status}
+                  </div>
+                  <h2 className="mb-2 text-lg font-medium">{campaign.name}</h2>
+                  <p className="mb-3 line-clamp-3 text-sm text-ui-fg-subtle">
+                    {campaign.description}
+                  </p>
+                  <div className="mb-1 text-xs text-ui-fg-subtle">
+                    {money(campaign.total_backed_amount)} of {money(campaign.campaign_goal)} contributed
+                    {percent > 0 ? ` · ${percent}%` : null}
+                  </div>
+                  <div className="h-2 w-full rounded bg-ui-bg-subtle">
+                    <div className="h-2 rounded bg-primary" style={{ width: `${percent}%` }} />
+                  </div>
+                  <div className="mt-4">
+                    <LocalizedClientLink
+                      href={`/collective/campaigns/${campaign.id}`}
+                      className="text-sm underline"
+                    >
+                      See progress by organisation
+                    </LocalizedClientLink>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </section>
+      ) : null}
+
       <div className="mb-6">
         <h1 className="text-2xl font-semibold">Production Campaigns</h1>
         <p className="mt-1 max-w-3xl text-sm text-ui-fg-subtle">

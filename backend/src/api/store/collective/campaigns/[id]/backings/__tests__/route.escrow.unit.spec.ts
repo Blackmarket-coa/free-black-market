@@ -1,5 +1,6 @@
 import { POST } from "../route"
 import {
+  CAMPAIGN_GOAL_KIND_SHARED_GOAL,
   COLLECTIVE_CAMPAIGN_MODULE,
   CampaignStatus,
 } from "../../../../../../../modules/collective-campaign"
@@ -187,6 +188,42 @@ describe("store collective campaign backings route (escrow)", () => {
 
     expect(res.statusCode).toBe(400)
     expect(hawala.openCampaignBackingEscrow).not.toHaveBeenCalled()
+    expect(service.addBacking).not.toHaveBeenCalled()
+  })
+
+  it("flag on: a SHARED_GOAL campaign never reaches the ledger — refused before openCampaignBackingEscrow, nothing to compensate", async () => {
+    process.env[CAMPAIGN_ESCROW_FLAG] = "1"
+
+    // ACTIVE: the host activated it through PATCH, which permits DRAFT -> ACTIVE
+    // for every goal_kind. Status alone would have let this through to escrow.
+    const service = {
+      listCampaigns: jest
+        .fn()
+        .mockResolvedValue([{ id: "cc_shared", goal_kind: CAMPAIGN_GOAL_KIND_SHARED_GOAL, status: CampaignStatus.ACTIVE }]),
+      addBacking: jest.fn(),
+    }
+    const hawala = {
+      openCampaignBackingEscrow: jest.fn().mockResolvedValue({ id: "le_escrow" }),
+      refundCampaignBackingEscrow: jest.fn(),
+    }
+
+    const req: any = {
+      params: { id: "cc_shared" },
+      auth_context: { actor_id: "backer_1" },
+      body: { mode: "PRE_ORDER", amount: 10 },
+      scope: makeScope({
+        [COLLECTIVE_CAMPAIGN_MODULE]: service,
+        [HAWALA_LEDGER_MODULE]: hawala,
+      }),
+    }
+
+    const res = createRes()
+    await POST(req, res)
+
+    expect(res.statusCode).toBe(400)
+    expect(res.body.error).toMatch(/Shared-goal campaigns do not take backings/)
+    expect(hawala.openCampaignBackingEscrow).not.toHaveBeenCalled()
+    expect(hawala.refundCampaignBackingEscrow).not.toHaveBeenCalled()
     expect(service.addBacking).not.toHaveBeenCalled()
   })
 

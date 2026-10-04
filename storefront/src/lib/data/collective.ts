@@ -84,6 +84,9 @@ export type Campaign = {
   name: string
   description: string
   campaign_type: string
+  /** `"SHARED_GOAL"` for a coalition shared-goal campaign; null/absent for a production campaign. */
+  goal_kind?: "SHARED_GOAL" | null
+  cooperative_id?: string | null
   status: string
   campaign_goal: number | string
   total_backed_amount: number | string
@@ -131,6 +134,8 @@ export type CampaignDashboard = {
 export async function listCampaigns(query?: {
   status?: string
   campaign_type?: string
+  /** `SHARED_GOAL` for coalition shared goals only, `STANDARD` for production campaigns only. */
+  goal_kind?: "SHARED_GOAL" | "STANDARD"
   limit?: number
   offset?: number
 }) {
@@ -149,6 +154,88 @@ export async function getCampaign(id: string) {
   )
 
   return response.campaign_dashboard
+}
+
+// ── Shared-goal Coalition campaigns (Phase 1 item 3) ─────────────────────────
+//
+// A coalition of organisations running one goal. Amounts here are INTEGER
+// CENTS (the production campaign fields above are major units). Nothing on
+// this surface takes money: contributions are direct charges on each
+// participant organisation's own connected account, and these reads report
+// what the processor did. Both routes are dark unless the API's
+// FF_SHARED_GOAL_COALITION_V1 is set; the pages gate on
+// `phase1ModuleFlags.sharedGoalCoalition` to match.
+
+export type SharedGoalParticipant = {
+  id: string
+  role: "HOST" | "COLLECTIVE" | "PARTNER" | "SPONSOR" | string
+  partner_org_key: string | null
+  seller_id: string | null
+  pledged_amount_cents: number
+  contributed_amount_cents: number
+}
+
+export type SharedGoalMilestone = {
+  id: string
+  title: string
+  target_amount_cents: number
+  unit: string
+  sort_order: number
+  reached_at: string | null
+  impact_summary: string | null
+}
+
+export type SharedGoalCampaignSummary = {
+  id: string
+  goal_kind: string | null
+  cooperative_id: string | null
+  name: string
+  description: string
+  media: unknown
+  status: string
+  goal_amount_cents: number
+  contributed_total_cents: number
+  percent_complete: number
+}
+
+export type CampaignProgress = {
+  campaign: SharedGoalCampaignSummary
+  milestones: SharedGoalMilestone[]
+  participants: SharedGoalParticipant[]
+}
+
+export type CampaignImpactReport = {
+  campaign: SharedGoalCampaignSummary
+  reached_milestones: SharedGoalMilestone[]
+  per_org_totals: Array<{
+    participant_id: string
+    role: string
+    partner_org_key: string | null
+    seller_id: string | null
+    pledged_amount_cents: number
+    contributed_amount_cents: number
+  }>
+  yield_reports: Array<Record<string, unknown>>
+  impact_summary: string | null
+  generated_at: string
+}
+
+export async function getCampaignProgress(id: string) {
+  const response = await medusaFetch<{ progress: CampaignProgress }>(
+    `/store/collective/campaigns/${id}/progress`,
+    { method: "GET", cache: "no-store" }
+  )
+
+  return response.progress
+}
+
+export async function getCampaignImpactReport(id: string) {
+  const response = await medusaFetch<{ impact_report: CampaignImpactReport }>(
+    `/store/collective/campaigns/${id}/impact-report`,
+    { method: "GET", cache: "no-store" }
+  )
+
+  return response.impact_report
 }
 
 export async function createDemandPool(input: {
