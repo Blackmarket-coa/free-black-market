@@ -7,6 +7,7 @@ import { SUBSCRIPTION_MODULE } from "../modules/subscription"
 import type SubscriptionModuleService from "../modules/subscription/service"
 import { SubscriptionStatus } from "../modules/subscription/types"
 import { manageSubscriptionWorkflow } from "../workflows/subscription/workflows/manage-subscription"
+import { REFUND_CANCEL_REASON } from "../workflows/subscription/steps/plan-subscription-cancel"
 import subscriptionOrderLink from "../links/subscription-order"
 
 /**
@@ -52,7 +53,9 @@ export default async function revokeEntitlementsOnRefund({
       input: {
         subscription_id: subscriptionId,
         action: "cancel",
-        reason: "order_refund_or_cancel",
+        // Keeps the refund cancel immediate under FF_CONSUMER_SUBSCRIPTIONS_V1
+        // too (plan-subscription-cancel.ts).
+        reason: REFUND_CANCEL_REASON,
       },
     })
     log.info(

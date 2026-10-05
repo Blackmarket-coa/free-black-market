@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect, useCallback } from "react"
+import { hawalaRequest, type HawalaRequest } from "@/lib/data/hawala"
 
 export interface WalletBalance {
   account_number: string
@@ -136,8 +137,6 @@ export class HawalaRequestError extends Error {
   }
 }
 
-const API_BASE = process.env.NEXT_PUBLIC_MEDUSA_BACKEND_URL || "http://localhost:9000"
-
 /**
  * One idempotency key per user-initiated money movement.
  *
@@ -162,31 +161,26 @@ function newIdempotencyKey(): string {
   return ""
 }
 
-async function fetchWithAuth(url: string, options: RequestInit = {}) {
-  const headers = {
-    "Content-Type": "application/json",
-    ...options.headers,
+/**
+ * Every hawala call goes through the `hawalaRequest` server action, which sends
+ * the publishable key and the signed-in customer's bearer (from the httpOnly
+ * `_medusa_jwt` cookie, which this browser code cannot read). Calling the API
+ * from here directly carried neither, so no request reached the backend as the
+ * customer.
+ *
+ * Legacy handlers answer `{ error }`; the pool refusals (409 carried_pool /
+ * no_carrier / pool_not_open, 403 not_allowed) answer `{ type, message }`.
+ * Either way the refusal surfaces as a HawalaRequestError with the type beside
+ * the message.
+ */
+// `any`, as `response.json()` was before: callers read the documented response
+// shapes field by field.
+async function fetchWithAuth(path: string, options: Omit<HawalaRequest, "path"> = {}): Promise<any> {
+  const result = await hawalaRequest<unknown>({ path, ...options })
+  if (!result.ok) {
+    throw new HawalaRequestError(result.type, result.message, result.status)
   }
-
-  const response = await fetch(`${API_BASE}${url}`, {
-    ...options,
-    headers,
-    credentials: "include",
-  })
-
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ error: "Request failed" }))
-    // Legacy handlers answer `{ error }`; the pool refusals (409 carried_pool /
-    // no_carrier / pool_not_open, 403 not_allowed) answer `{ type, message }`.
-    // Surface whichever the server sent, with the type beside it.
-    throw new HawalaRequestError(
-      typeof error.type === "string" ? error.type : "request_failed",
-      error.error || error.message || "Request failed",
-      response.status
-    )
-  }
-
-  return response.json()
+  return result.data
 }
 
 /**
@@ -200,8 +194,8 @@ async function fetchWithAuth(url: string, options: RequestInit = {}) {
 export async function contributeToCarriedPool(poolId: string, amountCents: number): Promise<CarriedPoolContributionIntent> {
   return fetchWithAuth(`/store/hawala/pools/${encodeURIComponent(poolId)}/contributions`, {
     method: "POST",
-    headers: { "Idempotency-Key": newIdempotencyKey() },
-    body: JSON.stringify({ amount_cents: Math.round(amountCents), currency_code: "usd" }),
+    idempotencyKey: newIdempotencyKey(),
+    body: { amount_cents: Math.round(amountCents), currency_code: "usd" },
   })
 }
 
@@ -247,7 +241,7 @@ export function useTransactions(limit = 50) {
   const fetchTransactions = useCallback(async () => {
     try {
       setLoading(true)
-      const data = await fetchWithAuth(`/store/hawala/transactions?limit=${limit}`)
+      const data = await fetchWithAuth("/store/hawala/transactions", { query: { limit } })
       setTransactions(data.transactions)
       setError(null)
     } catch (err) {
@@ -289,7 +283,7 @@ export function useBankAccounts() {
   const startLinking = useCallback(async (email: string, returnUrl: string) => {
     return fetchWithAuth("/store/hawala/bank-accounts", {
       method: "POST",
-      body: JSON.stringify({ email, return_url: returnUrl }),
+      body: { email, return_url: returnUrl },
     })
   }, [])
 
@@ -299,10 +293,10 @@ export function useBankAccounts() {
   ) => {
     const data = await fetchWithAuth("/store/hawala/bank-accounts/link", {
       method: "POST",
-      body: JSON.stringify({
+      body: {
         stripe_customer_id: stripeCustomerId,
         financial_connections_account_id: financialConnectionsAccountId,
-      }),
+      },
     })
     await fetchBankAccounts()
     return data
@@ -328,8 +322,8 @@ export function useDeposit() {
       setError(null)
       const data = await fetchWithAuth("/store/hawala/deposit", {
         method: "POST",
-        headers: { "Idempotency-Key": newIdempotencyKey() },
-        body: JSON.stringify({ bank_account_id: bankAccountId, amount }),
+        idempotencyKey: newIdempotencyKey(),
+        body: { bank_account_id: bankAccountId, amount },
       })
       return data
     } catch (err) {
@@ -353,8 +347,8 @@ export function useWithdraw() {
       setError(null)
       const data = await fetchWithAuth("/store/hawala/withdraw", {
         method: "POST",
-        headers: { "Idempotency-Key": newIdempotencyKey() },
-        body: JSON.stringify({ bank_account_id: bankAccountId, amount }),
+        idempotencyKey: newIdempotencyKey(),
+        body: { bank_account_id: bankAccountId, amount },
       })
       return data
     } catch (err) {
@@ -399,8 +393,8 @@ export function useInvestments() {
   const invest = useCallback(async (poolId: string, amount: number) => {
     const data = await fetchWithAuth("/store/hawala/investments", {
       method: "POST",
-      headers: { "Idempotency-Key": newIdempotencyKey() },
-      body: JSON.stringify({ pool_id: poolId, amount }),
+      idempotencyKey: newIdempotencyKey(),
+      body: { pool_id: poolId, amount },
     })
     await fetchInvestments()
     return data
@@ -417,10 +411,9 @@ export function useInvestmentPools(producerId?: string) {
   const fetchPools = useCallback(async () => {
     try {
       setLoading(true)
-      const url = producerId
-        ? `/store/hawala/pools?producer_id=${producerId}`
-        : "/store/hawala/pools"
-      const data = await fetchWithAuth(url)
+      const data = await fetchWithAuth("/store/hawala/pools", {
+        query: producerId ? { producer_id: producerId } : undefined,
+      })
       setPools(data.pools)
       setError(null)
     } catch (err) {

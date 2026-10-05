@@ -59,6 +59,17 @@ export const PHASE0_FEATURE_FLAGS = {
   // split, never the campaign escrow. Default off; L25 applies to any public
   // coalition fundraising page.
   SHARED_GOAL_COALITION_V1: "FF_SHARED_GOAL_COALITION_V1",
+  // Consumer subscription lifecycle (docs/BLACK_MASK_LAUNCH_PLAN.md §5 F4):
+  // a customer cancel or exhausted payment retries starts a grace period
+  // (`past_due`), then `read_only` with a read/export entitlement — never
+  // deletion — plus until-canceled subscriptions for products that opt in.
+  // The grace length is a setting (SUBSCRIPTION_GRACE_PERIOD_DAYS, per-product
+  // `subscription_grace_period_days`), never a constant; with this flag on and
+  // no length configured, each transition keeps today's behaviour and logs.
+  // Default off. Consumer auto-renewal disclosure / online-cancellation rules
+  // are a legal checkpoint the operator must clear before a paid launch; the
+  // flag surfaces that, it does not resolve it.
+  CONSUMER_SUBSCRIPTIONS_V1: "FF_CONSUMER_SUBSCRIPTIONS_V1",
   // Black Mask F8: the $10/month all-access vendor plan (0% platform fee,
   // every vendor.* feature, 30-day trial). On, the self-serve ladder becomes
   // free + all_access; starter/pro/scale stay DEFINED so any assignment still

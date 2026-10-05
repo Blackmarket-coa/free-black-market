@@ -195,6 +195,10 @@ export async function fetchQuery(
             type: data?.type,
             code: data?.code,
             requestId,
+            // Older handlers answer `{ error: "..." }` with no `message`. Kept
+            // apart from `message` so no existing caller starts surfacing it;
+            // a caller that wants it opts in (lib/data/hawala.ts does).
+            legacyError: typeof data?.error === "string" ? data.error : undefined,
           },
       data: res.ok ? data : null,
     }
