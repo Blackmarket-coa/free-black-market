@@ -4,6 +4,10 @@ import { LinkDefinition } from "@medusajs/framework/types"
 import { SUBSCRIPTION_MODULE } from "../../../modules/subscription"
 import SubscriptionModuleService from "../../../modules/subscription/service"
 import { SubscriptionInterval, SubscriptionType } from "../../../modules/subscription/types"
+import {
+  consumerSubscriptionsEnabled,
+  isUntilCanceledForProduct,
+} from "../grace-lifecycle"
 
 type StepInput = {
   cart_id: string
@@ -43,8 +47,18 @@ export const createSubscriptionStep = createStep(
       container.resolve(SUBSCRIPTION_MODULE)
     const linkDefs: LinkDefinition[] = []
 
+    // D (F4): until-canceled — no fixed horizon — only for a product that opts
+    // in via metadata `subscription_until_canceled`, and only with
+    // FF_CONSUMER_SUBSCRIPTIONS_V1 on. Otherwise the subscription expires
+    // after `period` cycles exactly as before; flag off, the product is not
+    // even looked up.
+    const untilCanceled =
+      consumerSubscriptionsEnabled() &&
+      (await isUntilCanceledForProduct(container, product_id))
+
     const subscription = await subscriptionService.createSubscriptions({
       ...subscription_data,
+      ...(untilCanceled ? { until_canceled: true } : {}),
       customer_id,
       seller_id,
       product_id,

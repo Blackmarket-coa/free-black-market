@@ -15,12 +15,12 @@ import {
 } from "@medusajs/medusa/core-flows"
 import { Modules } from "@medusajs/framework/utils"
 import { updateSubscriptionStep } from "../steps/update-subscription"
+import { chargeSubscriptionRenewalStep } from "../steps/charge-subscription-renewal"
 import { grantSubscriptionEntitlementsStep } from "../steps/grant-subscription-entitlements"
 import { SUBSCRIPTION_MODULE } from "../../../modules/subscription"
 import {
   buildRenewalCartInput,
-  buildRenewalPaymentContext,
-  buildRenewalPaymentSessionInput,
+  buildRenewalRecordSessionInput,
   type RenewalSubscription,
 } from "../renew-helpers"
 
@@ -56,10 +56,15 @@ const SUBSCRIPTION_FIELDS = [
  *   1. Loads the subscription and its template cart
  *   2. Clones the template cart into a fresh cart (createCartWorkflow) —
  *      the original cart already became the initial order
- *   3. Creates a payment collection + an off-session payment session against
- *      the subscription's saved payment method, then authorizes it. With the
- *      Stripe provider's automatic capture this settles the charge; explicit
- *      settlement otherwise follows the standard order payment lifecycle.
+ *   3. Creates a payment collection, then COLLECTS the cycle's charge with a
+ *      direct off-session Stripe PaymentIntent (confirm + automatic capture)
+ *      on the saved payment method — `chargeSubscriptionRenewalStep`, which
+ *      records the charge on the subscription, keyed by the record
+ *      (subscription id + period start), BEFORE the period rolls in step 5.
+ *      The order gets a bookkeeping session on the system provider carrying
+ *      the PaymentIntent id (renew-helpers `RENEWAL_RECORD_PROVIDER_ID`).
+ *      (Previously this step asked the Medusa Stripe provider with keys it
+ *      ignores and manual capture by default, so nothing was collected.)
  *   4. Completes the cart into an order and links it to the subscription
  *      (subscription↔order link, `isList` so each renewal appends)
  *   5. Advances the subscription dates and grants per-cycle entitlements with
@@ -69,10 +74,16 @@ const SUBSCRIPTION_FIELDS = [
  *
  * Any failure in steps 2–4 throws, so the calling job routes to
  * `handleSubscriptionFailureWorkflow` (dunning + pause-on-max-retries) and the
- * core-flow compensations roll back the partial cart/payment.
+ * core-flow compensations roll back the partial cart. A charge that already
+ * succeeded is not refunded; it stays recorded for the cycle and is not
+ * presented again on the retry. A missing saved payment method throws in the
+ * charge step — a dunning failure, never a free renewal.
  *
  * In legacy mode (flag unset) the order/payment steps are skipped: dates are
- * advanced and entitlements granted exactly as before.
+ * advanced and entitlements granted exactly as before — i.e. the renewal is
+ * FREE. That is the pre-existing behaviour, kept byte-identical here and
+ * recorded for the ledger; it is why FBM_SUBSCRIPTION_RENEWAL_LIVE must be set
+ * before any paid recurring product is sold.
  */
 export const renewSubscriptionWorkflowId = "renew-subscription-workflow"
 export const renewSubscriptionWorkflow = createWorkflow(
@@ -103,32 +114,47 @@ export const renewSubscriptionWorkflow = createWorkflow(
 
       const { data: cartsWithPc } = useQueryGraphStep({
         entity: "cart",
-        fields: ["id", "payment_collection.id"],
+        fields: ["id", "total", "currency_code", "payment_collection.id"],
         filters: { id: cart.id },
         options: { throwIfKeyNotFound: true },
       }).config({ name: "renewal-cart-payment-collection" })
 
-      // 3. Create + authorize an off-session payment session against the
-      //    subscription's saved payment method.
+      // 3. Collect the cycle's charge (recorded on the subscription first),
+      //    then give the order a system-provider session recording it.
+      const chargeInput = transform({ cartsWithPc, input }, (data) => {
+        const row = data.cartsWithPc[0] as unknown as {
+          total: number | string
+          currency_code: string
+        }
+        return {
+          subscription_id: data.input.subscription_id,
+          amount: row.total,
+          currency_code: row.currency_code,
+        }
+      })
+      const charge = chargeSubscriptionRenewalStep(chargeInput)
+
       const sessionInput = transform(
-        { cartsWithPc, subscriptions },
+        { cartsWithPc, charge, input },
         (data) =>
-          buildRenewalPaymentSessionInput({
-            payment_collection_id: (data.cartsWithPc[0] as any).payment_collection
-              ?.id,
-            subscription: data.subscriptions[0] as RenewalSubscription,
+          buildRenewalRecordSessionInput({
+            payment_collection_id: (
+              data.cartsWithPc[0] as unknown as {
+                payment_collection?: { id?: string } | null
+              }
+            ).payment_collection?.id as string,
+            subscription_id: data.input.subscription_id,
+            payment_intent_id: data.charge.payment_intent_id ?? "",
+            idempotency_key: data.charge.idempotency_key,
           })
       )
       const paymentSession = createPaymentSessionsWorkflow.runAsStep({
         input: sessionInput,
       })
 
-      const authContext = transform({ subscriptions }, (data) =>
-        buildRenewalPaymentContext(data.subscriptions[0] as RenewalSubscription)
-      )
       authorizePaymentSessionStep({
         id: paymentSession.id,
-        context: authContext,
+        context: {},
       })
 
       // 4. Complete the cart → order, then link it to the subscription.
