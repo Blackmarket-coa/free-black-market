@@ -70,6 +70,16 @@ export const PHASE0_FEATURE_FLAGS = {
   // are a legal checkpoint the operator must clear before a paid launch; the
   // flag surfaces that, it does not resolve it.
   CONSUMER_SUBSCRIPTIONS_V1: "FF_CONSUMER_SUBSCRIPTIONS_V1",
+  // Black Mask provisioning webhook channel (F3,
+  // docs/BLACK_MASK_PROVISIONING_CONTRACT.md): a signed outbound notice to the
+  // Black Mask provisioning service when a vault order is placed, renewed,
+  // cancelled, fails payment or enters grace / read-only. Default off; with it
+  // off nothing is enqueued, nothing is sent, and /admin/black-mask/* is 404.
+  // It also needs BLACK_MASK_PROVISIONING_URL / _WEBHOOK_SECRET /
+  // _WEBHOOK_KEY_ID / _SELLER_ID; any one unset keeps the channel a no-op.
+  // Legal checkpoint L28 (the vault licence) gates the paid launch this flag
+  // serves; the flag surfaces it and does not resolve it.
+  BLACK_MASK_PROVISIONING_V1: "FF_BLACK_MASK_PROVISIONING_V1",
   // Black Mask F8: the $10/month all-access vendor plan (0% platform fee,
   // every vendor.* feature, 30-day trial). On, the self-serve ladder becomes
   // free + all_access; starter/pro/scale stay DEFINED so any assignment still
