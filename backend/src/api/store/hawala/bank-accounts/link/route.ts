@@ -1,7 +1,10 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
+import { createLogger } from "../../../../../shared/logger"
 import { HAWALA_LEDGER_MODULE } from "../../../../../modules/hawala-ledger"
 import HawalaLedgerModuleService from "../../../../../modules/hawala-ledger/service"
 import { createStripeAchService } from "../../../../../modules/hawala-ledger/stripe-ach"
+
+const log = createLogger("api/store/hawala/bank-accounts/link")
 
 /**
  * POST /store/hawala/bank-accounts/link
@@ -69,6 +72,9 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
 
     res.status(201).json({ bank_account: bankAccount })
   } catch (error) {
-    res.status(500).json({ error: (error as Error).message })
+    // Logged here, not echoed: a Stripe or database error message is internal
+    // detail, and the storefront now surfaces a `{ error }` string verbatim.
+    log.error("Error completing bank account link:", error)
+    res.status(500).json({ error: "Failed to link bank account" })
   }
 }
