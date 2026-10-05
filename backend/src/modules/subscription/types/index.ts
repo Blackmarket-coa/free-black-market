@@ -10,13 +10,21 @@ import Subscription from "../models/subscription"
  * - CANCELED: Customer canceled, no more renewals
  * - EXPIRED: Reached end of subscription period
  * - FAILED: Payment or other failure
+ * - PAST_DUE: In a grace period after a customer cancel or exhausted payment
+ *   retries (FF_CONSUMER_SUBSCRIPTIONS_V1 only). Access continues until
+ *   `grace_ends_at`; nothing is revoked on entry.
+ * - READ_ONLY: Grace has ended (FF_CONSUMER_SUBSCRIPTIONS_V1 only). A
+ *   read/export entitlement is kept and nothing is deleted — BLACK_MASK
+ *   launch plan F4: "then read-only access with export. Never quick deletion."
  */
 export enum SubscriptionStatus {
   ACTIVE = "active",
   PAUSED = "paused",
   CANCELED = "canceled",
   EXPIRED = "expired",
-  FAILED = "failed"
+  FAILED = "failed",
+  PAST_DUE = "past_due",
+  READ_ONLY = "read_only",
 }
 
 /**
@@ -67,6 +75,13 @@ export type CreateSubscriptionData = {
   variant_id?: string
   quantity?: number
   metadata?: Record<string, unknown>
+  /**
+   * No fixed horizon: `expiration_date` is stored NULL and renewals continue
+   * until the subscription is canceled. Only set by createSubscriptionStep
+   * under FF_CONSUMER_SUBSCRIPTIONS_V1 for a product whose metadata sets
+   * `subscription_until_canceled`.
+   */
+  until_canceled?: boolean
 }
 
 export type SubscriptionData = InferTypeOf<typeof Subscription>

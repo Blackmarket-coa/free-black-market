@@ -409,6 +409,39 @@ class EntitlementModuleService extends MedusaService({
     return active.length
   }
 
+  /**
+   * Roll every ACTIVE, time-limited entitlement sourced to a subscription
+   * forward to `expiresAt` — never backward, and a perpetual row (expires_at
+   * null) stays perpetual. Used when a subscription enters its F4 grace
+   * period: access continues through grace, so per-cycle grants that would
+   * lapse at the end of the paid period are extended to `grace_ends_at`.
+   * Returns the count extended.
+   */
+  async extendBySubscriptionId(
+    subscriptionId: string,
+    expiresAt: Date
+  ): Promise<number> {
+    const ents = await this.listEntitlements({
+      source_subscription_id: subscriptionId,
+    })
+    const target = new Date(expiresAt).getTime()
+    const toExtend = ents.filter(
+      (e: EntitlementType) =>
+        e.status === EntitlementStatus.ACTIVE &&
+        e.expires_at !== null &&
+        e.expires_at !== undefined &&
+        new Date(e.expires_at).getTime() < target
+    )
+    if (!toExtend.length) return 0
+    await this.updateEntitlements(
+      toExtend.map((e: EntitlementType) => ({
+        id: e.id,
+        expires_at: new Date(target),
+      }))
+    )
+    return toExtend.length
+  }
+
   async revoke(id: string, reason?: string): Promise<EntitlementType> {
     const [updated] = await this.updateEntitlements([
       {

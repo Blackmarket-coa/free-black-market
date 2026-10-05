@@ -1,94 +1,23 @@
+/**
+ * Vendor seller-context guard, imported by `src/api/middlewares.ts` and
+ * registered there on `/vendor/**`.
+ *
+ * This file used to also `export default defineMiddlewares(...)` with its own
+ * vendorCorsMiddleware on `/vendor/**`. Medusa never loaded it (only the root
+ * `src/api/middlewares.ts` is read), and the live CORS is the root file's
+ * stricter vendorCorsMiddleware — this copy allowed any `*.freeblackmarket.com`
+ * subdomain and `*.up.railway.app` with credentials regardless of NODE_ENV.
+ * The dead default export was removed rather than wired, so nobody edits it
+ * believing it runs. `src/api/__tests__/nested-middlewares.unit.spec.ts`
+ * refuses a default export in any nested middleware file.
+ */
 import { createLogger } from "../../shared/logger"
 import type { VendorRequest } from "./types"
 const log = createLogger("api/vendor/_middlewares")
-import { defineMiddlewares } from "@medusajs/framework/http"
 import type { MedusaRequest, MedusaResponse, MedusaNextFunction } from "@medusajs/framework/http"
 import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils"
 import { decodeAuthTokenFromAuthorization } from "../../shared/auth-helpers"
 import { handleSellerRegistration } from "../shared/seller-registration"
-
-/**
- * Vendor-specific CORS middleware
- *
- * This middleware handles CORS for all /vendor/* routes, including those
- * handled by the @mercurjs/b2c-core plugin.
- *
- * Placed in src/api/vendor/ to ensure it runs for all vendor routes.
- */
-async function vendorCorsMiddleware(
-  req: MedusaRequest,
-  res: MedusaResponse,
-  next: MedusaNextFunction
-): Promise<void> {
-  const origin = req.headers.origin || ""
-
-  // Get allowed origins from environment
-  const vendorCors = process.env.VENDOR_CORS || ""
-  const storeCors = process.env.STORE_CORS || ""
-  const authCors = process.env.AUTH_CORS || ""
-
-  // Build list of allowed origins
-  const allowedOrigins = new Set<string>()
-
-  vendorCors.split(",").map(o => o.trim()).filter(Boolean).forEach(o => allowedOrigins.add(o))
-  storeCors.split(",").map(o => o.trim()).filter(Boolean).forEach(o => allowedOrigins.add(o))
-  authCors.split(",").map(o => o.trim()).filter(Boolean).forEach(o => allowedOrigins.add(o))
-
-  // Always allow freeblackmarket.com domains
-  allowedOrigins.add("https://vendor.freeblackmarket.com")
-  allowedOrigins.add("https://freeblackmarket.com")
-  allowedOrigins.add("https://www.freeblackmarket.com")
-
-  let matchedOrigin = ""
-
-  if (origin) {
-    // Exact match
-    if (allowedOrigins.has(origin)) {
-      matchedOrigin = origin
-    }
-    // Try without trailing slash
-    else if (allowedOrigins.has(origin.replace(/\/$/, ""))) {
-      matchedOrigin = origin.replace(/\/$/, "")
-    }
-    // Fallback: Allow known domains
-    else {
-      try {
-        const originUrl = new URL(origin)
-        const hostname = originUrl.hostname.toLowerCase()
-
-        // Allow any *.freeblackmarket.com subdomain
-        if (hostname.endsWith(".freeblackmarket.com") || hostname === "freeblackmarket.com") {
-          matchedOrigin = origin
-        }
-        // Allow Railway preview deployments
-        else if (hostname.endsWith(".up.railway.app")) {
-          matchedOrigin = origin
-        }
-      } catch (_e) {
-        // Invalid origin URL
-      }
-    }
-  }
-
-  if (matchedOrigin) {
-    res.setHeader("Access-Control-Allow-Origin", matchedOrigin)
-    res.setHeader("Access-Control-Allow-Credentials", "true")
-    res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
-    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Publishable-API-Key, x-publishable-api-key, X-Medusa-Access-Token, Cookie")
-    res.setHeader("Access-Control-Max-Age", "86400")
-    res.setHeader("Vary", "Origin")
-  } else if (origin) {
-    log.warn(`[VENDOR CORS] Origin not allowed: "${origin}"`)
-  }
-
-  // Handle preflight
-  if (req.method === "OPTIONS") {
-    res.status(204).end()
-    return
-  }
-
-  next()
-}
 
 export async function ensureSellerContext(
   req: MedusaRequest,
@@ -291,12 +220,3 @@ export async function ensureSellerContext(
   ;(req as VendorRequest)._sellerContextResolved = true
   next()
 }
-
-export default defineMiddlewares({
-  routes: [
-    {
-      matcher: "/vendor/**",
-      middlewares: [vendorCorsMiddleware, ensureSellerContext],
-    },
-  ],
-})

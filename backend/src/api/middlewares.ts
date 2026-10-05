@@ -30,6 +30,18 @@ import {
 import { preventPasswordReuseMiddleware } from "./middlewares/password-history";
 import { servePublishingKeys } from "./middlewares/publishing-keys";
 import { ensureSellerContext } from "./vendor/_middlewares";
+// Nested middleware route sets. Medusa's MiddlewareFileLoader reads ONLY this
+// file (it checks `<api dir>/middlewares.ts` and does not recurse), so a nested
+// `middlewares.ts` is never loaded. Each surface keeps its declarations beside
+// its routes in `_middlewares.ts` and they are spread into `routes` below.
+// `__tests__/nested-middlewares.unit.spec.ts` fails on a nested file this one
+// does not import and spread.
+import { deliveryMiddlewareRoutes } from "./deliveries/[id]/_middlewares";
+import { storeCollectiveMiddlewareRoutes } from "./store/collective/_middlewares";
+import { storeHawalaMiddlewareRoutes } from "./store/hawala/_middlewares";
+import { mutualAidMiddlewareRoutes } from "./store/mutual-aid/_middlewares";
+import { vendorHawalaMiddlewareRoutes } from "./vendor/hawala/_middlewares";
+import { vendorWellnessMiddlewareRoutes } from "./vendor/wellness/_middlewares";
 import { requireSellerContextV1 } from "./middlewares/seller-context-v1";
 import { CreateVenueSchema } from "./admin/venues/route";
 import { CreateTicketProductSchema } from "./admin/ticket-products/route";
@@ -1113,9 +1125,31 @@ export default defineMiddlewares({
       middlewares: [standardRateLimiter, requireFeatureFlagMiddleware("NONPROFIT_PARITY_V1")],
     },
     {
+      // Flag FIRST, then a required customer: with INVESTMENT_POOLS_V1 off an
+      // anonymous caller still gets 404 feature_disabled, so the dark surface
+      // does not reveal itself with a 401. One entry, so the order is this
+      // array's and not the route sorter's. Both handlers also 401 on their own.
       matcher: "/store/hawala/investments*",
-      middlewares: [requireFeatureFlagMiddleware("INVESTMENT_POOLS_V1")],
+      middlewares: [
+        requireFeatureFlagMiddleware("INVESTMENT_POOLS_V1"),
+        authenticate("customer", ["bearer", "session"]),
+      ],
     },
+    // The nested route sets (see the imports). Store hawala: required customer
+    // on wallet / bank-accounts / transactions / deposit / withdraw, and the
+    // money-path rate limits; `/store/hawala/pools*` stays public and the
+    // contributions POST above stays guest-capable — optional customer auth on
+    // /store comes from the framework itself. Vendor hawala and wellness: rate
+    // limits only (Mercur already requires seller auth on /vendor/*). Store
+    // collective and mutual-aid: required customer on the writes (every handler
+    // also 401s). Deliveries: the only auth `/deliveries/:id/*` has — it is
+    // outside every framework default.
+    ...storeHawalaMiddlewareRoutes,
+    ...vendorHawalaMiddlewareRoutes,
+    ...vendorWellnessMiddlewareRoutes,
+    ...storeCollectiveMiddlewareRoutes,
+    ...mutualAidMiddlewareRoutes,
+    ...deliveryMiddlewareRoutes,
     {
       matcher: "/vendor/hawala/payments*",
       middlewares: [

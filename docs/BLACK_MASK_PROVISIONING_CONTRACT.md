@@ -34,7 +34,7 @@ subscription when its `product_id` passes the same test.
 | `placed`         | `order.placed`, **first order of a subscription only** (see below)     | `order`        | `order.created_at`                                        |
 | `cancelled`      | `order.canceled`                                                       | `order`        | `order.canceled_at`                                       |
 | `renewed`        | `subscription.renewal_processed`, **live renewals only** (event carries `order_id`) | `subscription` | the renewal order's `created_at`                          |
-| `cancelled`      | `subscription.canceled` (emitted by `manageSubscriptionWorkflow` on cancel, only while the flag is on) | `subscription` | `subscription.canceled_at`                                |
+| `cancelled`      | `subscription.canceled` (emitted by `manageSubscriptionWorkflow` only on a cancel that ended the subscription, only while the flag is on; a cancel that starts grace sends `grace_started`, then `read_only`, instead) | `subscription` | `subscription.canceled_at`                                |
 | `payment_failed` | `subscription.payment_failed`                                          | `subscription` | `subscription.metadata.dunning_last_attempt_at`           |
 | `grace_started`  | `subscription.grace_started` (emitted by the grace slice)              | `subscription` | the event's `occurred_at` (required)                      |
 | `read_only`      | `subscription.read_only` (emitted by the grace slice)                  | `subscription` | the event's `occurred_at` (required)                      |
@@ -58,9 +58,17 @@ record's `updated_at`, which moves on any later write: a redelivered Medusa
 event would then compute a new `event_id` and enqueue a duplicate. An event
 without its source timestamp is not sent: an `order.canceled` with no
 `canceled_at` (Medusa's cancel always sets it), or a `grace_started` /
-`read_only` event that does not carry `occurred_at`. The grace slice that
-emits those two events must put the transition time on the event as
-`occurred_at`.
+`read_only` event that does not carry `occurred_at`. The grace slice
+(`grace-lifecycle.ts`) puts the transition time on both events as
+`occurred_at`, read from the row (`metadata.grace_started_at`, `read_only_at`)
+so a redelivered event carries the same value.
+
+**A customer cancel under the grace lifecycle is not `cancelled`.** With
+`FF_CONSUMER_SUBSCRIPTIONS_V1` on and a grace length configured, a cancel of a
+paid subscription keeps access through the paid period plus grace: you receive
+`grace_started` (keep the vault open), then `read_only` when grace ends. You
+receive `cancelled` for a subscription only when it actually ended: grace off
+or unconfigured, or a refund-driven cancel.
 
 ## 3. Payload
 

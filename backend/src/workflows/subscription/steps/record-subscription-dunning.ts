@@ -3,6 +3,10 @@ import { SUBSCRIPTION_MODULE } from "../../../modules/subscription"
 import SubscriptionModuleService from "../../../modules/subscription/service"
 import { SubscriptionData } from "../../../modules/subscription/types"
 import { decideDunningAction } from "../../../modules/subscription/utils/dunning"
+import {
+  consumerSubscriptionsEnabled,
+  startGraceForSubscription,
+} from "../grace-lifecycle"
 
 export type RecordSubscriptionDunningInput = {
   subscription_id: string
@@ -25,6 +29,12 @@ export type RecordSubscriptionDunningOutput = {
   attempts: number
   paused: boolean
   next_retry_at: Date | null
+  /**
+   * FF_CONSUMER_SUBSCRIPTIONS_V1 only: retries were exhausted and the
+   * subscription entered grace (PAST_DUE) instead of being paused. Absent
+   * with the flag off.
+   */
+  grace_started?: boolean
 }
 
 /**
@@ -60,6 +70,31 @@ export const recordSubscriptionDunningStep = createStep(
     })
 
     if (decision.kind === "pause") {
+      // F4: with the flag on, exhausting dunning starts the grace period
+      // (PAST_DUE, one final charge at grace end, then read-only) instead of
+      // an indefinite pause that keeps full access forever. No grace length
+      // configured → startGraceForSubscription logs and writes nothing, and
+      // the pre-F4 pause below runs unchanged.
+      if (consumerSubscriptionsEnabled()) {
+        const graced = await startGraceForSubscription(
+          container,
+          subscription_id,
+          "payment_failed"
+        )
+        if (graced.started) {
+          const sub = graced.subscription as unknown as SubscriptionData & {
+            next_order_date?: Date | string | null
+          }
+          return new StepResponse<RecordSubscriptionDunningOutput>({
+            subscription: sub,
+            attempts,
+            paused: false,
+            next_retry_at: sub.next_order_date ? new Date(sub.next_order_date) : null,
+            grace_started: true,
+          })
+        }
+      }
+
       const paused = await service.pauseSubscriptionWithReason(
         subscription_id,
         decision.reason
