@@ -3,7 +3,8 @@ import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import {
   DEFAULT_PLAN_CODE,
   PLATFORM_DEFAULT_FEE_PERCENT,
-  VENDOR_PLAN_CATALOG,
+  allAccessPlanEnabled,
+  offeredPlans,
 } from "../../../modules/vendor-plan/catalog"
 import {
   resolvePlatformFee,
@@ -24,9 +25,21 @@ import { featureFlagState } from "../../../shared/feature-flags"
  * pages — none of it connected to the catalog, so a pricing change would have
  * silently left the marketing copy lying.
  *
- * Only self-serve plans are exposed. `internal` carries a null rate (it means
- * "no plan-level opinion", not "free") and is an operator concept, so listing
- * it publicly would read as a secret cheaper tier.
+ * Only the plans a vendor can actually select right now are exposed: the
+ * offered ladder for the `FF_ALL_ACCESS_PLAN_V1` state (`offeredPlans`). Off,
+ * that is free 3% / starter 2.5% / pro 2% / scale 1.5%, exactly as before; on,
+ * it is free 3% / all_access 0%, so retired tiers vanish from the public page
+ * the moment they stop being sold. `internal` is never listed: it carries a
+ * null rate (it means "no plan-level opinion", not "free") and is an operator
+ * concept, so listing it publicly would read as a secret cheaper tier.
+ * `all_access` at 0% is the opposite case — a priced, public plan a vendor
+ * buys — and is listed as one.
+ *
+ * `trial_days` is published per plan ONLY while `FF_ALL_ACCESS_PLAN_V1` is
+ * on, so the storefront can render the all_access trial from data. Flag off,
+ * the response is byte-identical to what it was before F8 (pinned in the
+ * spec); the storefront then falls back to the trial sentence it always
+ * printed for starter and pro.
  *
  * Per-seller negotiated rates (`seller_payout_settings.custom_platform_fee_percent`)
  * are deliberately NOT exposed — they are commercial terms between the
@@ -37,9 +50,9 @@ import { featureFlagState } from "../../../shared/feature-flags"
  * `transaction_kinds` (only while `FF_NONPROFIT_PARITY_V1` is on) states the
  * platform's fee on kinds of charge that are not sales — today, 0% on a
  * donation and on a donation pledge. It is a separate field, not a plan row:
- * the `platform_fee_percent !== null` filter above is what keeps a 0 from ever
- * reading as a secret free tier, and the rule is about what FBM charges for,
- * not a rate a vendor can buy down to. The values are resolved through the
+ * a plan row is something a vendor buys (including the all_access 0% plan,
+ * listed only while its flag is on), whereas this rule is about what FBM
+ * charges for, not a rate a vendor can buy down to. The values are resolved through the
  * same chain that would charge them, so this page cannot quote a rule the
  * resolver does not apply. It states FBM's fee rule only; it says nothing
  * about any organisation's tax status (legal checkpoint L11).
@@ -73,18 +86,20 @@ function publishedTransactionKinds(): Record<string, number> {
 }
 
 export async function GET(_req: MedusaRequest, res: MedusaResponse) {
-  const plans = VENDOR_PLAN_CATALOG.filter(
-    (plan) => plan.platform_fee_percent !== null
-  ).map((plan) => ({
-    code: plan.code,
-    display_name: plan.display_name,
-    description: plan.description,
-    price_amount: plan.price_amount,
-    currency_code: plan.currency_code,
-    interval: plan.interval,
-    platform_fee_percent: plan.platform_fee_percent,
-    is_default: plan.code === DEFAULT_PLAN_CODE,
-  }))
+  const allAccessOn = allAccessPlanEnabled()
+  const plans = offeredPlans(allAccessOn)
+    .filter((plan) => plan.platform_fee_percent !== null)
+    .map((plan) => ({
+      code: plan.code,
+      display_name: plan.display_name,
+      description: plan.description,
+      price_amount: plan.price_amount,
+      currency_code: plan.currency_code,
+      interval: plan.interval,
+      platform_fee_percent: plan.platform_fee_percent,
+      is_default: plan.code === DEFAULT_PLAN_CODE,
+      ...(allAccessOn ? { trial_days: plan.trial_days } : {}),
+    }))
 
   res.json({
     default_plan_code: DEFAULT_PLAN_CODE,

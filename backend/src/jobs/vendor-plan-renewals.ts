@@ -5,10 +5,16 @@ import type VendorPlanService from "../modules/vendor-plan/service"
 import {
   applyPeriodRollover,
 } from "../modules/vendor-plan/transitions"
-import { getPlanDefinition } from "../modules/vendor-plan/catalog"
+import {
+  allAccessPlanEnabled,
+  getPlanDefinition,
+} from "../modules/vendor-plan/catalog"
 import { VENDOR_BILLING_MODULE } from "../modules/vendor-billing"
 import type VendorBillingService from "../modules/vendor-billing/service"
-import { VendorChargeKind } from "../modules/vendor-billing/charges"
+import {
+  VendorChargeKind,
+  VendorChargeStatus,
+} from "../modules/vendor-billing/charges"
 import { executeCharge } from "../shared/vendor-charge-execution"
 import { invalidateSellerPlan } from "../shared/plan-entitlement-cache"
 
@@ -59,14 +65,58 @@ export async function processPlanRenewals(
   const outcomes: RenewalOutcome[] = []
 
   // Pass 1: deferred downgrades whose effective date has arrived.
+  //
+  // With FF_ALL_ACCESS_PLAN_V1 on, a pending change onto a priced, recurring
+  // plan that does NOT start a trial also raises the new plan's first charge
+  // here. Before this, applying it opened a fresh paid period with no charge,
+  // and pass 2 below could not see it (its period end had just moved a month
+  // out), so the first period on the new plan was never billed (map F8-3).
+  // Same charge-first ordering as pass 2: the period is anchored to the
+  // recorded `pending_effective_at`, so the charge key
+  // `plan:<seller>:<code>:<new period end>` is derived from the record and a
+  // crash between the two writes replays instead of double-billing. A change
+  // that starts a trial raises nothing here — pass 2 bills it the day the
+  // trial ends, as it does for an immediate move. Flag off, this pass is
+  // exactly what it was: no charge, period from `now`.
+  const billFirstPeriod = allAccessPlanEnabled()
   const duePending = await plans.listDuePendingChanges(now)
   for (const assignment of duePending) {
     const seller_id = assignment.seller_id as string
     try {
-      const applied = await plans.applyPendingChange(seller_id, now)
+      let chargeId: string | null = null
+      if (billFirstPeriod) {
+        chargeId = await raisePendingChangeCharge(plans, billing, {
+          seller_id,
+          to_plan_code: assignment.pending_plan_code as string | null,
+          effective_at: (assignment.pending_effective_at as Date | null) ?? null,
+          now,
+        })
+      }
+
+      const applied = billFirstPeriod
+        ? await plans.applyPendingChange(seller_id, now, {
+            anchor_to_effective_at: true,
+          })
+        : await plans.applyPendingChange(seller_id, now)
       if (applied) {
         invalidateSellerPlan(seller_id)
-        outcomes.push({ seller_id, action: "pending_applied" })
+        if (chargeId) {
+          const execution = await executeCharge(container, chargeId)
+          outcomes.push({
+            seller_id,
+            action: "pending_applied",
+            charge_status: String(execution.status),
+          })
+        } else {
+          outcomes.push({ seller_id, action: "pending_applied" })
+        }
+      } else if (chargeId) {
+        // Listed as due but no longer applicable (superseded between the
+        // list and the apply). The charge was for a period that will not
+        // start — void it rather than leave it owed.
+        await billing.transitionCharge(chargeId, VendorChargeStatus.VOID, {
+          failure_reason: "pending plan change no longer applicable",
+        })
       }
     } catch (err) {
       outcomes.push({
@@ -86,12 +136,29 @@ export async function processPlanRenewals(
     plan_code: string
     status: string
     current_period_end: Date | null
+    pending_plan_code?: string | null
+    pending_effective_at?: Date | null
   }[]
 
   for (const assignment of dueRenewals) {
     const seller_id = assignment.seller_id
     try {
       if (assignment.status !== "active" && assignment.status !== "trialing") {
+        continue
+      }
+      // Flag on: an assignment still carrying a DUE pending change is one
+      // whose pass-1 apply failed this run. Renewing it here would bill the
+      // plan the seller is leaving (e.g. $249 scale on the day they move to
+      // $10 all_access); skip it and let the next run apply the change and
+      // raise the right first charge. Flag off, unchanged (the old plan
+      // renews — a pre-existing hazard left as it was).
+      if (
+        billFirstPeriod &&
+        assignment.pending_plan_code &&
+        assignment.pending_effective_at &&
+        new Date(assignment.pending_effective_at).getTime() <= now.getTime()
+      ) {
+        outcomes.push({ seller_id, action: "skipped" })
         continue
       }
       const definition = getPlanDefinition(assignment.plan_code)
@@ -149,6 +216,55 @@ export async function processPlanRenewals(
   }
 
   return outcomes
+}
+
+/**
+ * Record the first charge for a pending change onto a priced, recurring plan
+ * that starts no trial. Returns the charge id, or null when nothing is owed
+ * (free/operator plan, a trial, an unknown plan). Idempotent from the record:
+ * the period runs from `pending_effective_at`, so every retry derives the
+ * same key and `createCharge` replays it.
+ */
+async function raisePendingChangeCharge(
+  plans: VendorPlanService,
+  billing: VendorBillingService,
+  args: {
+    seller_id: string
+    to_plan_code: string | null
+    effective_at: Date | null
+    now: Date
+  }
+): Promise<string | null> {
+  if (!args.to_plan_code || !args.effective_at) return null
+  const definition = getPlanDefinition(args.to_plan_code)
+  if (!definition || definition.interval === "none") return null
+  if (definition.price_amount <= 0) return null
+
+  const trialEndsAt = await plans.trialEndsAtForChange(
+    args.seller_id,
+    args.to_plan_code,
+    args.now
+  )
+  if (trialEndsAt) return null
+
+  const period = applyPeriodRollover({
+    plan_code: args.to_plan_code,
+    current_period_end: new Date(args.effective_at),
+    now: args.now,
+  })
+  if (!period) return null
+
+  const { charge } = await billing.createCharge({
+    seller_id: args.seller_id,
+    kind: VendorChargeKind.PLAN,
+    amount: definition.price_amount,
+    currency_code: definition.currency_code,
+    description: `${definition.display_name} plan`,
+    discriminator: `${args.to_plan_code}:${period.current_period_end.toISOString()}`,
+    period_start: period.current_period_start,
+    period_end: period.current_period_end,
+  })
+  return charge.id
 }
 
 export default async function vendorPlanRenewals(container: MedusaContainer) {

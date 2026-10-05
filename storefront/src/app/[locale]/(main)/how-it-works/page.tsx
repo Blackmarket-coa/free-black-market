@@ -2,6 +2,8 @@ import { Metadata } from "next"
 import Link from "next/link"
 import { VENDOR_PANEL_URL } from "@/const"
 import { phase1ModuleFlags } from "@/lib/feature-flags"
+import { getFeeSchedule } from "@/lib/data/fee-schedule"
+import { howItWorksFeeDescription } from "@/lib/helpers/fee-ladder-copy"
 
 export const metadata: Metadata = {
   title: "How It Works | Free Black Market",
@@ -70,7 +72,10 @@ const GlobeIcon = ({ className = "" }: { className?: string }) => (
 )
 
 
-export default function HowItWorksPage() {
+export default async function HowItWorksPage() {
+  // The paid-plan rates in the fee card come from the schedule the backend
+  // offers, so a retired tier cannot linger in the copy.
+  const { plans: feePlans } = await getFeeSchedule()
   const buyerSteps = [
     {
       number: "1",
@@ -121,7 +126,7 @@ export default function HowItWorksPage() {
     {
       icon: CurrencyDollarIcon,
       title: "Just 3% Coalition Fee",
-      description: "No required subscription. No listing fees. No payment processing fees passed to you. 3% when you make a sale on the free plan — optional paid plans bring it to 2.5%, 2% or 1.5%.",
+      description: howItWorksFeeDescription(feePlans),
       color: "bg-green-100 text-green-600",
     },
     {

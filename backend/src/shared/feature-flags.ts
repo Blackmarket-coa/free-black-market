@@ -83,6 +83,15 @@ export const PHASE0_FEATURE_FLAGS = {
   // Legal checkpoint L28 (the vault licence) gates the paid launch this flag
   // serves; the flag surfaces it and does not resolve it.
   BLACK_MASK_PROVISIONING_V1: "FF_BLACK_MASK_PROVISIONING_V1",
+  // Black Mask F8: the $10/month all-access vendor plan (0% platform fee,
+  // every vendor.* feature, 30-day trial). On, the self-serve ladder becomes
+  // free + all_access; starter/pro/scale stay DEFINED so any assignment still
+  // resolves its features and limits, but are no longer offered, listed on
+  // /store/fee-schedule, or selectable through POST /vendor/plan/change. Off,
+  // every surface offers exactly the free/starter/pro/scale ladder it did
+  // before. Default off. Do not set before the fee-first split (F6) is live:
+  // at 0% the platform still absorbs card processing on every sale.
+  ALL_ACCESS_PLAN_V1: "FF_ALL_ACCESS_PLAN_V1",
 } as const
 
 export type Phase0FeatureFlag = keyof typeof PHASE0_FEATURE_FLAGS

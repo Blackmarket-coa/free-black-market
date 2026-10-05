@@ -18,6 +18,7 @@ import {
 } from "../../../hooks/api/vendor-tenancy"
 import { SingleColumnPageSkeleton } from "../../../components/common/skeleton"
 import { PaymentMethodForm } from "./payment-method-form"
+import { PlanPicker } from "./plan-picker"
 
 const money = (amount: number, currency: string | null) =>
   new Intl.NumberFormat("en-US", {
@@ -88,7 +89,7 @@ const UsageRow = ({ resource }: { resource: ResourceUsage }) => {
 }
 
 export const BillingSettings = () => {
-  const { plan, isPending: planPending } = useVendorPlan()
+  const { plan, availablePlans, isPending: planPending } = useVendorPlan()
   const { resources: usage, allowances } = useVendorUsage()
   const { tier, grantedFeatureKeys } = useVendorTenancy()
   const orgGrant = describeTenancyGrant(tier, grantedFeatureKeys)
@@ -154,6 +155,8 @@ export const BillingSettings = () => {
             </div>
           ) : null}
         </div>
+        {/* Rendered from the plans the backend offers right now. */}
+        <PlanPicker currentPlan={plan} availablePlans={availablePlans} />
       </Container>
 
       {/* Usage against plan allowances. Rendered only once it has loaded —

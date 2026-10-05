@@ -9,7 +9,10 @@ import { requireCustomerId } from "../../../../shared"
 
 /**
  * GET /store/hawala/bank-accounts
- * List customer's linked bank accounts
+ * List customer's linked bank accounts.
+ *
+ * Filters on the model's real owner columns. It used to pass `customer_id`,
+ * which `hawala_bank_account` does not have (SD-34).
  */
 export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) {
   const hawalaService = req.scope.resolve<HawalaLedgerModuleService>(HAWALA_LEDGER_MODULE)
@@ -19,7 +22,8 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
 
   try {
     const bankAccounts = await hawalaService.listBankAccounts({
-      customer_id: customerId,
+      owner_type: "CUSTOMER",
+      owner_id: customerId,
     })
 
     res.json({ bank_accounts: bankAccounts })
@@ -58,7 +62,8 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
 
     // Store or update Stripe customer ID
     const _existingAccounts = await hawalaService.listBankAccounts({
-      customer_id: customerId,
+      owner_type: "CUSTOMER",
+      owner_id: customerId,
     })
 
     if (method === "financial_connections" || !method) {

@@ -5,6 +5,7 @@ import {
   effectivePlanCode,
   isPendingChangeDue,
   reconcileFeatureKeys,
+  trialEndsAtFor,
   type AssignmentSnapshot,
 } from "../transitions"
 import { VendorPlanStatus } from "../models/vendor-plan-assignment"
@@ -223,5 +224,35 @@ describe("effectivePlanCode", () => {
         snapshot({ plan_code: "pro", status: VendorPlanStatus.CANCELED })
       )
     ).toBe("free")
+  })
+})
+
+describe("trialEndsAtFor", () => {
+  const DAY = 86_400_000
+
+  it("gives all_access a 30-day trial the first time", () => {
+    expect(
+      trialEndsAtFor({ plan_code: "all_access", now: NOW, trial_already_used: false })
+    ).toEqual(new Date(NOW.getTime() + 30 * DAY))
+  })
+
+  it("gives all_access no second trial", () => {
+    expect(
+      trialEndsAtFor({ plan_code: "all_access", now: NOW, trial_already_used: true })
+    ).toBeNull()
+  })
+
+  it("leaves every other plan's trial exactly as before, whatever the history", () => {
+    for (const used of [false, true]) {
+      expect(trialEndsAtFor({ plan_code: "starter", now: NOW, trial_already_used: used })).toEqual(
+        new Date(NOW.getTime() + 30 * DAY)
+      )
+      expect(trialEndsAtFor({ plan_code: "pro", now: NOW, trial_already_used: used })).toEqual(
+        new Date(NOW.getTime() + 30 * DAY)
+      )
+      expect(trialEndsAtFor({ plan_code: "scale", now: NOW, trial_already_used: used })).toBeNull()
+      expect(trialEndsAtFor({ plan_code: "free", now: NOW, trial_already_used: used })).toBeNull()
+      expect(trialEndsAtFor({ plan_code: "nope", now: NOW, trial_already_used: used })).toBeNull()
+    }
   })
 })

@@ -6,6 +6,8 @@ import Link from "next/link"
 import FeeBreakdown from "@/components/sections/FeeBreakdown"
 import { VENDOR_PANEL_URL } from "@/const"
 import { GITHUB_REPO_URL } from "@/lib/constants/links"
+import type { FeeSchedulePlan } from "@/lib/data/fee-schedule"
+import { sellPageCostAnswer } from "@/lib/helpers/fee-ladder-copy"
 
 // Inline SVG icons
 const CheckCircleIcon = ({ className = "" }: { className?: string }) => (
@@ -86,7 +88,14 @@ const dashboardShots = [
  * Inclusive of: Farmers, Community Gardens, Mutual Aid Organizations,
  * Community Kitchens, Food Producers, and more
  */
-export default function SellPage() {
+type SellPageProps = {
+  /** `/store/fee-schedule` plans; the cost FAQ is rendered from these. */
+  feePlans?: FeeSchedulePlan[]
+  /** `/store/fee-schedule` default rate, for the calculator. */
+  feePercent?: number
+}
+
+export default function SellPage({ feePlans = [], feePercent = 3 }: SellPageProps) {
   const [email, setEmail] = useState("")
   const [storeName, setStoreName] = useState("")
   const [selectedCategories, setSelectedCategories] = useState<string[]>([])
@@ -218,7 +227,7 @@ export default function SellPage() {
   const faqs = [
     {
       question: "How much does it cost to join?",
-      answer: "Nothing upfront. On the free plan it is 3% to the coalition when you make a sale, with no listing fees, no payment processing fees and no hidden charges — if you don't sell, you don't pay. Paid plans are optional and lower the rate: Starter $29/mo for 2.5%, Pro $99/mo for 2%, Scale $249/mo for 1.5%. Starter and Pro include a 30-day free trial.",
+      answer: sellPageCostAnswer(feePlans),
     },
     {
       question: "Do I need a commercial kitchen?",
@@ -489,7 +498,7 @@ export default function SellPage() {
       </section>
 
       {/* Trust & Transparency Section */}
-      <FeeBreakdown />
+      <FeeBreakdown feePercent={feePercent} />
 
       {/* Trust & Transparency Section */}
       <section className="py-20 bg-gray-900 text-white">

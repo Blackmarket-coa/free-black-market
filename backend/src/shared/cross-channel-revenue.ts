@@ -10,8 +10,7 @@ import {
   type CrossChannelRevenue,
 } from "../modules/payout-breakdown/channel-revenue"
 import { reportableFeeCents } from "../modules/payout-breakdown/commission-scope"
-import { PAYOUT_BREAKDOWN_MODULE } from "../modules/payout-breakdown"
-import type PayoutBreakdownService from "../modules/payout-breakdown/service"
+import { resolveSellerPlatformFeePercent } from "./platform-fee"
 
 /**
  * The commission rate to report on FBM's own line when the seller's effective
@@ -169,6 +168,14 @@ export async function collectCrossChannelRevenue(
 /**
  * The seller's effective commission rate, for reporting FBM's own line.
  *
+ * Read through `resolveSellerPlatformFeePercent` — the same composition point
+ * the order.placed subscriber charges through (override → plan → default) —
+ * rather than `PayoutBreakdownService.getEffectivePlatformFee` directly. The
+ * direct call never received the plan rate, so this screen reported the
+ * platform default to every plan vendor: an all_access vendor charged 0%
+ * would have been shown 3%. For a vendor on the free plan with the default
+ * payout config the number is unchanged (plan 3% = default 3%).
+ *
  * Degrades to the platform default rather than throwing, on the same reasoning
  * as the two order reads above: a revenue screen that 500s tells the vendor
  * less than one that reports the standard rate. A seller on a genuine
@@ -179,10 +186,7 @@ async function loadPlatformFeePercent(
   sellerId: string
 ): Promise<number> {
   try {
-    const service = container.resolve<PayoutBreakdownService>(
-      PAYOUT_BREAKDOWN_MODULE
-    )
-    const percent = await service.getEffectivePlatformFee(sellerId)
+    const percent = await resolveSellerPlatformFeePercent(container, sellerId)
     return Number.isFinite(percent) && percent >= 0
       ? percent
       : DEFAULT_PLATFORM_FEE_PERCENT
