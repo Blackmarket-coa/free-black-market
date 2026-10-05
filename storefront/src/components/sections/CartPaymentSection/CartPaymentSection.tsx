@@ -15,6 +15,11 @@ import PaymentContainer, {
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { useCallback, useEffect, useState } from "react"
 import { Button } from "@/components/atoms"
+import { phase1ModuleFlags } from "@/lib/feature-flags"
+import {
+  paymentSessionDataFor,
+  paymentSessionInitArgs,
+} from "@/lib/subscriptions/auto-renew"
 
 type StoreCardPaymentMethod = any & {
   service_zone?: {
@@ -51,12 +56,19 @@ const CartPaymentSection = ({
 
   const isStripe = isStripeFunc(selectedPaymentMethod)
 
+  // Only an approved subscription cart asks Stripe to keep the card for
+  // off-session renewals; undefined for every other cart, and always with
+  // NEXT_PUBLIC_FF_CONSUMER_SUBSCRIPTIONS_V1 off, so the session starts
+  // exactly as before.
+  const sessionData = paymentSessionDataFor(cart, phase1ModuleFlags.consumerSubscriptions)
+
   const setPaymentMethod = async (method: string) => {
     setError(null)
     setSelectedPaymentMethod(method)
     if (isStripeFunc(method)) {
       await initiatePaymentSession(cart, {
         provider_id: method,
+        ...(sessionData ? { data: sessionData } : {}),
       })
     }
   }
@@ -89,13 +101,16 @@ const CartPaymentSection = ({
       const shouldInputCard =
         isStripeFunc(selectedPaymentMethod) && !activeSession
 
-      const checkActiveSession =
-        activeSession?.provider_id === selectedPaymentMethod
+      // null → reuse the active session (same provider, and — for an
+      // approved subscription cart only — already set up for off-session use).
+      const initArgs = paymentSessionInitArgs({
+        activeSession,
+        selectedProviderId: selectedPaymentMethod,
+        sessionData,
+      })
 
-      if (!checkActiveSession) {
-        await initiatePaymentSession(cart, {
-          provider_id: selectedPaymentMethod,
-        })
+      if (initArgs) {
+        await initiatePaymentSession(cart, initArgs)
       }
 
       if (!shouldInputCard) {

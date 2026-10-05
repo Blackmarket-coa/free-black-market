@@ -327,6 +327,12 @@ export async function initiatePaymentSession(
   data: {
     provider_id: string
     context?: Record<string, unknown>
+    /**
+     * Provider data for the session. Set only for an approved subscription
+     * cart (`{ setup_future_usage: "off_session" }`, see
+     * lib/subscriptions/auto-renew.ts); absent everywhere else.
+     */
+    data?: Record<string, unknown>
   }
 ) {
   const headers = {

@@ -78,10 +78,22 @@ export type CreateSubscriptionData = {
   /**
    * No fixed horizon: `expiration_date` is stored NULL and renewals continue
    * until the subscription is canceled. Only set by createSubscriptionStep
-   * under FF_CONSUMER_SUBSCRIPTIONS_V1 for a product whose metadata sets
-   * `subscription_until_canceled`.
+   * under FF_CONSUMER_SUBSCRIPTIONS_V1, when the customer affirmatively
+   * approved auto-renewal AND the product's metadata sets
+   * `subscription_until_canceled` (the product-side marker that it MAY be
+   * sold until cancelled — never, on its own, a reason to renew).
    */
   until_canceled?: boolean
+  /**
+   * Exactly one period, never renewed: `period` is stored as 1, the
+   * expiration is the end of the first paid period and no next order is
+   * scheduled. Set by createSubscriptionStep under FF_CONSUMER_SUBSCRIPTIONS_V1
+   * when the customer did not approve auto-renewal.
+   */
+  single_period?: boolean
+  auto_renew_approved?: boolean
+  auto_renew_approved_at?: Date | null
+  auto_renew_disclosure_version?: string | null
 }
 
 export type SubscriptionData = InferTypeOf<typeof Subscription>

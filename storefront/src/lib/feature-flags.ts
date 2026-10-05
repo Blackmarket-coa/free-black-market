@@ -31,4 +31,10 @@ export const phase1ModuleFlags = {
   // Mirrors the API's FF_SHARED_GOAL_COALITION_V1: shared-goal Coalition
   // campaign pages. Commercial co-venturer territory (L25); dark with the API.
   sharedGoalCoalition: enabled(process.env.NEXT_PUBLIC_FF_SHARED_GOAL_COALITION_V1),
+  // Mirrors the API's FF_CONSUMER_SUBSCRIPTIONS_V1 (Black Mask F2/F4): the
+  // subscribe flow for products marked subscribable, the affirmative
+  // auto-renew approval, and /user/subscriptions. Consumer auto-renewal
+  // disclosure and online cancellation are a legal checkpoint the operator
+  // clears first; set only together with the API's flag.
+  consumerSubscriptions: enabled(process.env.NEXT_PUBLIC_FF_CONSUMER_SUBSCRIPTIONS_V1),
 }

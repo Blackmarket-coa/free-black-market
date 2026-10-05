@@ -9,6 +9,12 @@ import React, { useEffect, useState } from "react"
 import { Button } from "@/components/atoms"
 import { orderErrorFormatter } from "@/lib/helpers/order-error-formatter"
 import { toast } from "@/lib/helpers/toast"
+import { phase1ModuleFlags } from "@/lib/feature-flags"
+import { completeSubscriptionCheckout } from "@/lib/data/subscriptions"
+import {
+  intervalNoun,
+  subscriptionCheckoutOf,
+} from "@/lib/subscriptions/auto-renew"
 
 type PaymentButtonProps = {
   cart: HttpTypes.StoreCart
@@ -29,7 +35,45 @@ const cartTicketMode = (
   return ticketCount === items.length ? "all-tickets" : "mixed"
 }
 
-const PaymentButton: React.FC<PaymentButtonProps> = ({
+/**
+ * A subscription cart (NEXT_PUBLIC_FF_CONSUMER_SUBSCRIPTIONS_V1 only) completes
+ * through POST /store/subscriptions, carrying the customer's auto-renew answer.
+ * Returns true when it handled the cart; with the flag off it never does, so
+ * every other cart completes exactly as before.
+ */
+const completeIfSubscription = async (
+  cart: HttpTypes.StoreCart,
+  setErrorMessage: (message: string | null) => void
+): Promise<boolean> => {
+  const checkout = subscriptionCheckoutOf(cart, phase1ModuleFlags.consumerSubscriptions)
+  if (!checkout) return false
+  const res = await completeSubscriptionCheckout(cart.id, checkout)
+  if (!res.ok) setErrorMessage(res.error)
+  return true
+}
+
+/** The customer's recorded auto-renew answer, restated beside the final button. */
+const SubscriptionCheckoutNote = ({ cart }: { cart: HttpTypes.StoreCart }) => {
+  const checkout = subscriptionCheckoutOf(cart, phase1ModuleFlags.consumerSubscriptions)
+  if (!checkout) return null
+  const noun = intervalNoun(checkout.interval)
+  return (
+    <p className="mb-2 text-sm text-secondary" data-testid="subscription-checkout-note">
+      {checkout.auto_renew_approved
+        ? `Automatic renewal is on: this subscription renews every ${noun} until you cancel.`
+        : `Automatic renewal is off: you are paying for one ${noun} and nothing charges you again.`}
+    </p>
+  )
+}
+
+const PaymentButton: React.FC<PaymentButtonProps> = (props) => (
+  <>
+    <SubscriptionCheckoutNote cart={props.cart} />
+    <PaymentButtonForProvider {...props} />
+  </>
+)
+
+const PaymentButtonForProvider: React.FC<PaymentButtonProps> = ({
   cart,
   "data-testid": dataTestId,
 }) => {
@@ -83,6 +127,7 @@ const StripePaymentButton = ({
 
   const onPaymentCompleted = async () => {
     try {
+      if (await completeIfSubscription(cart, setErrorMessage)) return
       const ticketMode = cartTicketMode(cart)
       if (ticketMode === "mixed") {
         setErrorMessage(
@@ -224,6 +269,7 @@ const ManualTestPaymentButton = ({
 
   const onPaymentCompleted = async () => {
     try {
+      if (await completeIfSubscription(cart, setErrorMessage)) return
       const ticketMode = cartTicketMode(cart)
       if (ticketMode === "mixed") {
         setErrorMessage(

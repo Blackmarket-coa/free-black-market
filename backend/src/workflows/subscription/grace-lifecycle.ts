@@ -164,7 +164,11 @@ export async function resolveGraceForSubscription(
   })
 }
 
-/** Whether a new subscription for this product should be until-canceled. */
+/**
+ * Whether this product MAY be sold until cancelled (product-side marker only).
+ * A new subscription is until-cancelled only when this is true AND the
+ * customer approved auto-renewal (createSubscriptionStep).
+ */
 export async function isUntilCanceledForProduct(
   container: MedusaContainer,
   productId: string | null | undefined

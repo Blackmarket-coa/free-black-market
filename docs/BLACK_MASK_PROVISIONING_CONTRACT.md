@@ -249,7 +249,9 @@ Both routes are admin-authenticated and return 404 while the flag is off.
   `manageSubscriptionWorkflow` emits `subscription.canceled`. Until a
   follow-up emits and handles an expiry event, the receiver should also treat
   a subscription whose last `period_end` has passed with no later `renewed`
-  as lapsed.
+  as lapsed. This includes a seat whose customer withdrew auto-renew
+  (`disable_auto_renew`, ledger BM-4): withdrawing sends nothing, and the seat
+  then ends by expiry at the end of its paid period.
 - The two-drain claim is proven against an in-memory pg fake that is atomic
   by construction (it pins the SQL text). A real-Postgres concurrency test
   (`test:integration:modules`) is still to be written.

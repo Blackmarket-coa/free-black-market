@@ -16,6 +16,7 @@ import {
 import type { RenewalChargeRecord } from "../modules/subscription/service"
 import type { SubscriptionInterval } from "../modules/subscription/types"
 import { renewalPeriodStart } from "../modules/subscription/utils/renewal-charge"
+import { neverRenews } from "../modules/subscription/utils/auto-renew"
 
 /**
  * How far a grace end is held when the final grace charge collected (or may
@@ -74,7 +75,9 @@ async function revokeEntitlementsForExpired(
  *   6. `sweepGraceLifecycle`: dunning-paused rows enter grace, and PAST_DUE
  *      rows whose grace has ended become READ_ONLY (read/export kept, nothing
  *      deleted).
- * Flag off, neither pass runs and every path above is unchanged. An
+ * With the flag on, a PAUSED subscription that never renews (no auto-renew
+ * approval, or withdrawn) is also expired at its paid-period end.
+ * Flag off, none of these passes runs and every path above is unchanged. An
  * until-canceled subscription (expiration_date NULL) is never expired.
  */
 export default async function processSubscriptionRenewals(
@@ -206,6 +209,29 @@ export default async function processSubscriptionRenewals(
     }
 
     if (consumerSubscriptionsEnabled()) {
+      // A PAUSED subscription bought without auto-renew approval (or whose
+      // approval was withdrawn) ends at its paid-period end too. Pause keeps
+      // entitlement grants, and the sweep above reads ACTIVE rows only, so
+      // without this a customer who bought one period and paused on its last
+      // day kept the seat until they chose to resume. Runs before the grace
+      // sweep, so such a row is never moved into a grace final charge.
+      const paused = await subscriptionService.listSubscriptions({
+        status: SubscriptionStatus.PAUSED,
+      })
+      const pausedEnded = paused.filter(
+        (s) => neverRenews(s) && s.expiration_date && new Date(s.expiration_date) < now
+      )
+      if (pausedEnded.length > 0) {
+        log.info(
+          `[Subscription Job] Expiring ${pausedEnded.length} paused subscription(s) past their paid period`
+        )
+        await subscriptionService.expireSubscription(pausedEnded.map((s) => s.id))
+        for (const s of pausedEnded) {
+          await revokeEntitlementsForExpired(container, s.id)
+          trackSkip(await emitSubscriptionState(container, s, "expire"))
+        }
+      }
+
       const sweep = await sweepGraceLifecycle(container)
       if (sweep.read_only.length || sweep.dunning_paused_to_grace.length || sweep.failed.length) {
         log.info(

@@ -9,6 +9,7 @@ import {
   useQueryGraphStep,
 } from "@medusajs/medusa/core-flows"
 import { SubscriptionInterval, SubscriptionType } from "../../../modules/subscription/types"
+import type { AutoRenewApproval } from "../../../modules/subscription/utils/auto-renew"
 import { createSubscriptionStep } from "../steps/create-subscription"
 import { emitSubscriptionStateStep } from "../steps/emit-subscription-state"
 import subscriptionOrderLink from "../../../links/subscription-order"
@@ -21,6 +22,8 @@ type WorkflowInput = {
     type?: SubscriptionType
     delivery_day?: string
     delivery_instructions?: string
+    /** FF_CONSUMER_SUBSCRIPTIONS_V1: the customer's auto-renew answer. */
+    auto_renew?: AutoRenewApproval
   }
 }
 
