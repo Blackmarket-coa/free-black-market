@@ -80,6 +80,37 @@ export class StripeAchService {
   }
 
   /**
+   * The Stripe customer FBM created for this Medusa customer, or null.
+   *
+   * Read-only: never creates one. Linking a bank account must attach it to the
+   * Stripe customer FBM created when the customer started the flow
+   * (`POST /store/hawala/bank-accounts` -> `getOrCreateCustomer`), never to an
+   * id the client sends back. The metadata is re-checked on the result because
+   * Stripe search matches loosely and is eventually consistent.
+   */
+  async findCustomerIdFor(medusaCustomerId: string): Promise<string | null> {
+    const escaped = medusaCustomerId.replace(/\\/g, "\\\\").replace(/'/g, "\\'")
+    const found = await this.stripe.customers.search({
+      query: `metadata['medusa_customer_id']:'${escaped}'`,
+    })
+    const match = found.data.find(
+      (customer) => customer.metadata?.medusa_customer_id === medusaCustomerId
+    )
+    return match ? match.id : null
+  }
+
+  /**
+   * The Stripe customer that holds a Financial Connections account, or null
+   * when the account is held by anything other than a customer.
+   */
+  async financialConnectionsAccountHolder(accountId: string): Promise<string | null> {
+    const account = await this.stripe.financialConnections.accounts.retrieve(accountId)
+    const holder = account.account_holder
+    if (!holder || holder.type !== "customer" || !holder.customer) return null
+    return typeof holder.customer === "string" ? holder.customer : holder.customer.id
+  }
+
+  /**
    * Create a Financial Connections session for bank account linking
    * This uses Stripe's secure bank linking flow
    */
