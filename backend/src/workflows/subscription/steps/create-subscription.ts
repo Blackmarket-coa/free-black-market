@@ -8,6 +8,10 @@ import {
   consumerSubscriptionsEnabled,
   isUntilCanceledForProduct,
 } from "../grace-lifecycle"
+import {
+  decideCreateTerms,
+  type AutoRenewApproval,
+} from "../../../modules/subscription/utils/auto-renew"
 
 type StepInput = {
   cart_id: string
@@ -23,6 +27,12 @@ type StepInput = {
     type?: SubscriptionType
     delivery_day?: string
     delivery_instructions?: string
+    /**
+     * The customer's answer to the auto-renew question, recorded by
+     * POST /store/subscriptions under FF_CONSUMER_SUBSCRIPTIONS_V1. Absent for
+     * callers that never asked (the Blackout hosted checkout).
+     */
+    auto_renew?: AutoRenewApproval
   }
 }
 
@@ -47,18 +57,42 @@ export const createSubscriptionStep = createStep(
       container.resolve(SUBSCRIPTION_MODULE)
     const linkDefs: LinkDefinition[] = []
 
-    // D (F4): until-canceled — no fixed horizon — only for a product that opts
-    // in via metadata `subscription_until_canceled`, and only with
-    // FF_CONSUMER_SUBSCRIPTIONS_V1 on. Otherwise the subscription expires
-    // after `period` cycles exactly as before; flag off, the product is not
-    // even looked up.
-    const untilCanceled =
-      consumerSubscriptionsEnabled() &&
-      (await isUntilCanceledForProduct(container, product_id))
+    // Affirmative auto-renew approval (FF_CONSUMER_SUBSCRIPTIONS_V1; operator
+    // answer 2026-10-05, "renew upon approval"). Replaces the earlier rule
+    // that made every subscription for a product marked
+    // `subscription_until_canceled` renew until cancelled by default:
+    //
+    //   - approved AND product marked  → until cancelled, approval recorded
+    //     with its time and disclosure version;
+    //   - otherwise (declined, or a product not marked) → exactly one period,
+    //     never renewed;
+    //   - no answer recorded (a caller that never asks, e.g. the Blackout
+    //     hosted checkout) → never until cancelled; the fixed horizon it
+    //     always had.
+    //
+    // Flag off: the product is not looked up and every write below is what it
+    // always was.
+    const { auto_renew: approval, ...plainData } = subscription_data
+    let terms: Record<string, unknown> = {}
+    if (consumerSubscriptionsEnabled() && approval) {
+      const decision = decideCreateTerms({
+        approved: approval.approved === true,
+        product_allows_until_canceled: await isUntilCanceledForProduct(container, product_id),
+      })
+      terms =
+        decision.mode === "until_canceled"
+          ? {
+              until_canceled: true,
+              auto_renew_approved: true,
+              auto_renew_approved_at: new Date(approval.approved_at),
+              auto_renew_disclosure_version: approval.disclosure_version,
+            }
+          : { single_period: true, auto_renew_approved: false }
+    }
 
     const subscription = await subscriptionService.createSubscriptions({
-      ...subscription_data,
-      ...(untilCanceled ? { until_canceled: true } : {}),
+      ...plainData,
+      ...terms,
       customer_id,
       seller_id,
       product_id,

@@ -458,11 +458,15 @@ describe("(d) until-canceled creation", () => {
     return { ...ctx, createSubscriptions }
   }
 
-  it("flag ON + product opts in: until_canceled", async () => {
+  // Slice L (operator answer 2026-10-05, "renew upon approval"): the product
+  // marker alone no longer makes a subscription until-cancelled — the
+  // customer's affirmative approval is the other half
+  // (auto-renew-approval.unit.spec.ts covers the approved path).
+  it("flag ON + product opts in but no approval recorded: fixed horizon", async () => {
     process.env[FLAG] = "true"
     const { createSubscriptions, container } = withCreate({ subscription_until_canceled: true })
     await create(container)
-    expect(createSubscriptions.mock.calls[0][0]).toMatchObject({ until_canceled: true })
+    expect(createSubscriptions.mock.calls[0][0]).not.toHaveProperty("until_canceled")
   })
 
   it("flag ON + product does not opt in: fixed horizon", async () => {

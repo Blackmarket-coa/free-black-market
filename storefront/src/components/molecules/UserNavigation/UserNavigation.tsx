@@ -9,6 +9,7 @@ import {
 import { BugReportButton } from "@/components/molecules/BugReportButton/BugReportButton"
 import { useMatrixChat } from "@/providers/MatrixChatProvider"
 import { usePathname } from "next/navigation"
+import { phase1ModuleFlags } from "@/lib/feature-flags"
 
 const navigationItems = [
   {
@@ -40,6 +41,10 @@ const navigationItems = [
     label: "Coalition Credits",
     href: "/user/coalition-credits",
   },
+  // NEXT_PUBLIC_FF_CONSUMER_SUBSCRIPTIONS_V1 only; absent with the flag off.
+  ...(phase1ModuleFlags.consumerSubscriptions
+    ? [{ label: "Subscriptions", href: "/user/subscriptions" }]
+    : []),
 ]
 
 export const UserNavigation = () => {

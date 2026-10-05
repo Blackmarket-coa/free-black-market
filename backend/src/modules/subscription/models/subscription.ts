@@ -35,9 +35,11 @@ const Subscription = model.define("subscription", {
   subscription_date: model.dateTime(), // When subscription started
   last_order_date: model.dateTime(),   // Last order created
   next_order_date: model.dateTime().index().nullable(), // Next scheduled order
-  // When subscription ends. NULL only for an until-canceled subscription
-  // (FF_CONSUMER_SUBSCRIPTIONS_V1 + product metadata
-  // `subscription_until_canceled`); the expiry sweep skips NULL.
+  // When subscription ends. NULL only for an until-canceled subscription:
+  // FF_CONSUMER_SUBSCRIPTIONS_V1, the customer's affirmative auto-renew
+  // approval (`auto_renew_approved` below), AND a product whose metadata
+  // `subscription_until_canceled` says it MAY be sold that way. The expiry
+  // sweep skips NULL.
   expiration_date: model.dateTime().index().nullable(),
   paused_at: model.dateTime().nullable(), // When paused (if paused)
   canceled_at: model.dateTime().nullable(), // When canceled (if canceled)
@@ -48,6 +50,15 @@ const Subscription = model.define("subscription", {
   grace_ends_at: model.dateTime().index().nullable(),
   grace_period_days: model.number().nullable(),
   read_only_at: model.dateTime().nullable(),
+
+  // Affirmative auto-renew approval (FF_CONSUMER_SUBSCRIPTIONS_V1; operator
+  // answer 2026-10-05, "renew upon approval"). `auto_renew_approved` is the
+  // customer's current choice; `_at` and `_disclosure_version` describe the
+  // most recent approval — when it was given and which disclosure text
+  // (utils/auto-renew.ts AUTO_RENEW_DISCLOSURE_VERSION) the customer saw.
+  auto_renew_approved: model.boolean().default(false),
+  auto_renew_approved_at: model.dateTime().nullable(),
+  auto_renew_disclosure_version: model.text().nullable(),
   
   // Payment
   stripe_subscription_id: model.text().nullable(), // For Stripe-managed subscriptions

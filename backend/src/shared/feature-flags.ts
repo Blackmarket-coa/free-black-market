@@ -62,7 +62,10 @@ export const PHASE0_FEATURE_FLAGS = {
   // Consumer subscription lifecycle (docs/BLACK_MASK_LAUNCH_PLAN.md §5 F4):
   // a customer cancel or exhausted payment retries starts a grace period
   // (`past_due`), then `read_only` with a read/export entitlement — never
-  // deletion — plus until-canceled subscriptions for products that opt in.
+  // deletion — plus until-canceled subscriptions, only when the customer
+  // affirmatively approves auto-renewal at purchase for a product marked
+  // `subscription_until_canceled` (otherwise exactly one period, never
+  // renewed; operator answer 2026-10-05, "renew upon approval").
   // The grace length is a setting (SUBSCRIPTION_GRACE_PERIOD_DAYS, per-product
   // `subscription_grace_period_days`), never a constant; with this flag on and
   // no length configured, each transition keeps today's behaviour and logs.

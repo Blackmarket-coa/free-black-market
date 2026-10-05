@@ -45,3 +45,57 @@ export function isSubscriptionTransitionError(
     e.code === "subscription_transition_not_allowed"
   )
 }
+
+/**
+ * Why an auto-renew approval or withdrawal was refused. Store routes map every
+ * code to 409 with `type` = the code. Detected by `name`/`code` for the same
+ * serialisation reason as SubscriptionTransitionError.
+ *
+ *   - `auto_renew_disclosure_outdated`: the approval names a disclosure
+ *     version other than the current one — the customer must see the current
+ *     text and approve again.
+ *   - `auto_renew_not_offered`: the product is not marked as one that may be
+ *     sold until cancelled.
+ *   - `auto_renew_payment_method_required`: no card saved for off-session
+ *     renewals (the customer did not approve at purchase, so none was saved).
+ *   - `auto_renew_not_available`: the subscription is not in a shape that can
+ *     switch auto-renew on (already renewing, or its paid period has ended).
+ *   - `auto_renew_not_on`: there is no automatic renewal to withdraw.
+ */
+export type AutoRenewErrorCode =
+  | "auto_renew_disclosure_outdated"
+  | "auto_renew_not_offered"
+  | "auto_renew_payment_method_required"
+  | "auto_renew_not_available"
+  | "auto_renew_not_on"
+
+export class AutoRenewError extends Error {
+  readonly code: AutoRenewErrorCode
+  readonly subscription_id: string
+
+  constructor(code: AutoRenewErrorCode, subscriptionId: string, message: string) {
+    super(message)
+    this.name = "AutoRenewError"
+    this.code = code
+    this.subscription_id = subscriptionId
+  }
+}
+
+const AUTO_RENEW_CODES: ReadonlySet<string> = new Set<AutoRenewErrorCode>([
+  "auto_renew_disclosure_outdated",
+  "auto_renew_not_offered",
+  "auto_renew_payment_method_required",
+  "auto_renew_not_available",
+  "auto_renew_not_on",
+])
+
+export function isAutoRenewError(
+  error: unknown
+): error is { name: string; code: AutoRenewErrorCode; message: string } {
+  if (!error || typeof error !== "object") return false
+  const e = error as { name?: unknown; code?: unknown }
+  return (
+    e.name === "AutoRenewError" ||
+    (typeof e.code === "string" && AUTO_RENEW_CODES.has(e.code))
+  )
+}

@@ -22,6 +22,7 @@ import { Wishlist } from "@/types/wishlist"
 import { HttpTypes } from "@medusajs/types"
 import { ListingTypeInfo } from "./ListingTypeInfo"
 import { TicketPurchase } from "@/components/organisms/TicketPurchase/TicketPurchase"
+import { SubscribeCta } from "@/components/sections/Subscriptions/SubscribeCta"
 
 export const ProductDetails = async ({
   product,
@@ -60,6 +61,10 @@ export const ProductDetails = async ({
       />
       {/* Listing-type badge + type-appropriate buyer hint */}
       <ListingTypeInfo listingType={listingType} />
+      {/* Subscribe step entry: renders nothing unless
+          NEXT_PUBLIC_FF_CONSUMER_SUBSCRIPTIONS_V1 is on and the product is
+          marked subscribable. */}
+      <SubscribeCta product={product} />
       {listingType.detailSlot === "event" && (
         // Buyer path for event listings: date -> seat -> add ticket to cart.
         <section data-listing-slot="event">

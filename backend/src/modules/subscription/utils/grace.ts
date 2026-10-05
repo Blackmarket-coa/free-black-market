@@ -17,6 +17,13 @@
 
 export const GRACE_PERIOD_ENV = "SUBSCRIPTION_GRACE_PERIOD_DAYS"
 export const GRACE_PERIOD_PRODUCT_METADATA_KEY = "subscription_grace_period_days"
+/**
+ * Product-side marker: this product MAY be sold until cancelled. It is a
+ * permission, never a default — a subscription renews until cancelled only
+ * when the customer ALSO affirmatively approved auto-renewal at purchase
+ * (utils/auto-renew.ts; operator answer 2026-10-05, "renew upon approval").
+ * The storefront offers the subscribe flow only for products carrying it.
+ */
 export const UNTIL_CANCELED_PRODUCT_METADATA_KEY = "subscription_until_canceled"
 
 /** Why a subscription entered grace. Stored on metadata.grace_reason. */
@@ -101,8 +108,10 @@ export function isGraceExpired(
 }
 
 /**
- * Product metadata opts a product into until-canceled subscriptions. Literal
- * `true`, or the string "true" (admin-edited metadata is stringly typed).
+ * Whether product metadata marks the product as one that MAY be sold until
+ * cancelled (see UNTIL_CANCELED_PRODUCT_METADATA_KEY). Literal `true`, or the
+ * string "true" (admin-edited metadata is stringly typed). This alone never
+ * makes a subscription renew: the customer's approval is the other half.
  */
 export function isUntilCanceledProduct(
   metadata: Record<string, unknown> | null | undefined

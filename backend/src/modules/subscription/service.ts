@@ -6,9 +6,15 @@ import {
   SubscriptionInterval, 
   SubscriptionStatus
 } from "./types"
-import { SubscriptionTransitionError } from "./errors"
+import { AutoRenewError, SubscriptionTransitionError } from "./errors"
 import { addInterval } from "./utils/interval"
 import { graceEndsAt, type GraceReason } from "./utils/grace"
+import {
+  AUTO_RENEW_MODE_METADATA_KEY,
+  AUTO_RENEW_REAPPROVAL_DISCLOSURE_VERSION,
+  neverRenews,
+  paidThroughOf,
+} from "./utils/auto-renew"
 
 /**
  * Where a lifecycle action may start from. Enforced here, in the service,
@@ -27,6 +33,11 @@ const ALLOWED_FROM = {
   cancel_during_grace: [SubscriptionStatus.PAST_DUE],
   enter_read_only: [SubscriptionStatus.PAST_DUE],
   restore_from_grace: [SubscriptionStatus.PAST_DUE],
+  // Auto-renew approval (flagged callers only). Withdrawing keeps access to
+  // the end of the paid period; a paused seat may withdraw too. Approving
+  // (again) is for a running seat only.
+  withdraw_auto_renew: [SubscriptionStatus.ACTIVE, SubscriptionStatus.PAUSED],
+  approve_auto_renew: [SubscriptionStatus.ACTIVE],
 } as const
 
 type GuardedAction = keyof typeof ALLOWED_FROM
@@ -111,25 +122,43 @@ class SubscriptionModuleService extends MedusaService({
     const subscriptions = await Promise.all(
       input.map(async (subscription) => {
         const subscriptionDate = subscription.subscription_date || new Date()
-        const { until_canceled, ...rest } = subscription
+        const { until_canceled, single_period, ...rest } = subscription
+        // single_period (no auto-renew approval): exactly one period, stored as
+        // period 1, ending at the end of the first paid period, with NO next
+        // order scheduled — so the renewal job never selects it and the
+        // expiry sweep ends it. Absent, every value below is what it always was.
+        const period = single_period ? 1 : subscription.period
         const expirationDate = until_canceled
           ? null
           : this.getExpirationDate({
               subscription_date: subscriptionDate,
               interval: subscription.interval,
-              period: subscription.period
+              period
             })
 
         return await super.createSubscriptions({
           ...rest,
+          // Stamped so nothing can schedule a renewal for it later (resume,
+          // the renewal job — see `neverRenews`).
+          ...(single_period
+            ? {
+                period: 1,
+                metadata: {
+                  ...((rest.metadata as Record<string, unknown> | undefined) ?? {}),
+                  [AUTO_RENEW_MODE_METADATA_KEY]: "single_period",
+                },
+              }
+            : {}),
           subscription_date: subscriptionDate,
           last_order_date: subscriptionDate,
-          next_order_date: this.getNextOrderDate({
-            last_order_date: subscriptionDate,
-            expiration_date: expirationDate,
-            interval: subscription.interval,
-            period: subscription.period
-          }),
+          next_order_date: single_period
+            ? null
+            : this.getNextOrderDate({
+                last_order_date: subscriptionDate,
+                expiration_date: expirationDate,
+                interval: subscription.interval,
+                period: subscription.period
+              }),
           expiration_date: expirationDate
         })
       })
@@ -168,10 +197,15 @@ class SubscriptionModuleService extends MedusaService({
   async getDueSubscriptions(): Promise<SubscriptionData[]> {
     const now = new Date()
     
-    return this.listSubscriptions({
+    const due = await this.listSubscriptions({
       status: SubscriptionStatus.ACTIVE,
       next_order_date: { $lte: now }
     })
+    // Defence in depth: a subscription bought without auto-renew approval (or
+    // whose approval was withdrawn) is never due, whatever its
+    // next_order_date says. Only rows written under
+    // FF_CONSUMER_SUBSCRIPTIONS_V1 carry the marker; every other row passes.
+    return due.filter((row) => !neverRenews(row))
   }
 
   /**
@@ -201,13 +235,20 @@ class SubscriptionModuleService extends MedusaService({
     assertTransition(subscription, "resume")
     const now = new Date()
     
-    // Calculate new next order date from now
-    const nextOrderDate = this.getNextOrderDate({
-      last_order_date: now,
-      expiration_date: subscription.expiration_date,
-      interval: subscription.interval,
-      period: subscription.period
-    })
+    // Calculate new next order date from now — except for a subscription with
+    // no auto-renew approval (one period, or withdrawn): it had nothing
+    // scheduled before the pause and must have nothing after it. Without
+    // this, pause → resume scheduled an unapproved charge whenever
+    // `addInterval(now)` (setMonth overflow is not monotonic) landed before
+    // its expiration_date.
+    const nextOrderDate = neverRenews(subscription)
+      ? null
+      : this.getNextOrderDate({
+          last_order_date: now,
+          expiration_date: subscription.expiration_date,
+          interval: subscription.interval,
+          period: subscription.period
+        })
 
     const updated = await this.updateSubscriptions({
       selector: { id },
@@ -390,6 +431,128 @@ class SubscriptionModuleService extends MedusaService({
         grace_period_days: null,
         paused_at: null,
         metadata,
+      },
+    })
+    return updated[0]
+  }
+
+  // ===========================================================================
+  // Affirmative auto-renew approval (FF_CONSUMER_SUBSCRIPTIONS_V1 callers only:
+  // POST /store/subscriptions/:id). Guarded here, in the service, like every
+  // other lifecycle write. Whether the product may be sold until cancelled is
+  // an argument — this module cannot read product metadata.
+  // ===========================================================================
+
+  /**
+   * The customer withdraws auto-renew approval. The seat stays as it is
+   * until the end of the period already paid for, then ends: `expiration_date`
+   * becomes that period end (never earlier than now) and no next order is
+   * scheduled, so the renewal job never charges again and the expiry sweep
+   * ends it on time.
+   *
+   * Only an until-cancelled subscription (expiration NULL) has an automatic
+   * renewal to withdraw; a fixed-term one is refused with
+   * `auto_renew_not_on`.
+   */
+  async withdrawAutoRenew(id: string, now: Date = new Date()): Promise<SubscriptionData> {
+    const subscription = await this.retrieveSubscription(id)
+    assertTransition(subscription, "withdraw_auto_renew")
+    if (subscription.expiration_date !== null && subscription.expiration_date !== undefined) {
+      throw new AutoRenewError(
+        "auto_renew_not_on",
+        id,
+        `Subscription ${id} does not renew automatically; there is nothing to withdraw.`
+      )
+    }
+    const paidThrough = paidThroughOf(subscription)
+    const endsAt = paidThrough.getTime() > now.getTime() ? paidThrough : new Date(now)
+    const prevMetadata = (subscription.metadata as Record<string, unknown>) || {}
+
+    const updated = await this.updateSubscriptions({
+      selector: { id },
+      data: {
+        auto_renew_approved: false,
+        expiration_date: endsAt,
+        next_order_date: null,
+        metadata: {
+          ...prevMetadata,
+          auto_renew_withdrawn_at: now.toISOString(),
+          [AUTO_RENEW_MODE_METADATA_KEY]: "withdrawn",
+        },
+      },
+    })
+    return updated[0]
+  }
+
+  /**
+   * The customer approves auto-renewal again (after withdrawing, or after
+   * buying a single period). Requires, all refused with a specific code:
+   *
+   *   - the CURRENT re-approval disclosure version — an approval of stale
+   *     copy, or of the purchase-time wording (which promises a charge
+   *     "today"), is not an approval of what renews
+   *     (`auto_renew_disclosure_outdated`);
+   *   - a product that may be sold until cancelled (`auto_renew_not_offered`);
+   *   - a card saved for off-session renewals (`auto_renew_payment_method_required`)
+   *     — none is saved when the customer did not approve at purchase, and a
+   *     renewal promised against no card could only fail;
+   *   - a seat with nothing scheduled whose paid period has not yet ended
+   *     (`auto_renew_not_available`).
+   *
+   * On success: approved, stamped with the time and version, until cancelled
+   * (`expiration_date` NULL), next order at the end of the paid period.
+   */
+  async approveAutoRenew(
+    id: string,
+    args: { disclosure_version: string; product_allows_until_canceled: boolean; now?: Date }
+  ): Promise<SubscriptionData> {
+    const subscription = await this.retrieveSubscription(id)
+    assertTransition(subscription, "approve_auto_renew")
+    const now = args.now ?? new Date()
+
+    if (args.disclosure_version !== AUTO_RENEW_REAPPROVAL_DISCLOSURE_VERSION) {
+      throw new AutoRenewError(
+        "auto_renew_disclosure_outdated",
+        id,
+        `The auto-renewal terms have changed (current version ${AUTO_RENEW_REAPPROVAL_DISCLOSURE_VERSION}). ` +
+          `Review the current terms and approve again.`
+      )
+    }
+    if (!args.product_allows_until_canceled) {
+      throw new AutoRenewError(
+        "auto_renew_not_offered",
+        id,
+        `Automatic renewal is not offered for subscription ${id}'s product.`
+      )
+    }
+    const endsAt = subscription.expiration_date ? new Date(subscription.expiration_date) : null
+    if (subscription.next_order_date || !endsAt || endsAt.getTime() <= now.getTime()) {
+      throw new AutoRenewError(
+        "auto_renew_not_available",
+        id,
+        `Subscription ${id} cannot switch automatic renewal on: it is already renewing or its paid period has ended.`
+      )
+    }
+    if (!subscription.payment_method_id) {
+      throw new AutoRenewError(
+        "auto_renew_payment_method_required",
+        id,
+        `Subscription ${id} has no card saved for renewals.`
+      )
+    }
+
+    const updated = await this.updateSubscriptions({
+      selector: { id },
+      data: {
+        auto_renew_approved: true,
+        auto_renew_approved_at: now,
+        auto_renew_disclosure_version: args.disclosure_version,
+        expiration_date: null,
+        next_order_date: endsAt,
+        metadata: {
+          ...((subscription.metadata as Record<string, unknown> | null) || {}),
+          [AUTO_RENEW_MODE_METADATA_KEY]: "until_canceled",
+        },
       },
     })
     return updated[0]
