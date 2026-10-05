@@ -2,6 +2,7 @@ import { AuthenticatedMedusaRequest, MedusaResponse } from "@medusajs/framework/
 import { SUBSCRIPTION_MODULE } from "../../../../modules/subscription"
 import SubscriptionModuleService from "../../../../modules/subscription/service"
 import { requireSellerId } from "../../../../shared"
+import { forbidden } from "../../../../shared/community-read-access"
 
 // ===========================================
 // GET /vendor/subscriptions/:id
@@ -19,16 +20,12 @@ export async function GET(
     const { id } = req.params
     const subscriptionService = req.scope.resolve<SubscriptionModuleService>(SUBSCRIPTION_MODULE)
 
-    const subscription = await subscriptionService.retrieveSubscription(id)
-
-    if (!subscription) {
-      res.status(404).json({ message: "Subscription not found" })
-      return
-    }
-
-    // Verify ownership
-    if (subscription.seller_id !== sellerId) {
-      res.status(403).json({ message: "Access denied" })
+    // `listSubscriptions`, not `retrieveSubscription` (which throws a 404 on a
+    // missing id): missing and another seller's subscription get the same
+    // forbidden() 403, so the response is not an existence oracle over ids.
+    const [subscription] = await subscriptionService.listSubscriptions({ id }, { take: 1 })
+    if (!subscription || subscription.seller_id !== sellerId) {
+      forbidden(res)
       return
     }
 
