@@ -40,7 +40,13 @@ jest.mock("../steps/revoke-subscription-entitlements", () => ({
 jest.mock("../steps/emit-subscription-state", () => ({
   emitSubscriptionStateStep: () => stepCalls.push("emit-blackout"),
 }))
+// Loading the real core-flows against the stubbed SDK above fails; the
+// workflow only needs emitEventStep(...).config(...).
+jest.mock("@medusajs/medusa/core-flows", () => ({
+  emitEventStep: () => ({ config: () => stepCalls.push("emit-canceled") }),
+}))
 
+import { PHASE0_FEATURE_FLAGS } from "../../../shared/feature-flags"
 import { manageSubscriptionWorkflow } from "../workflows/manage-subscription"
 
 describe("manageSubscriptionWorkflow gates", () => {
@@ -67,6 +73,23 @@ describe("manageSubscriptionWorkflow gates", () => {
   it("a cancel that started or continued grace keeps access", () => {
     expect(revoke("cancel", "past_due")).toBe(false)
     expect(emit("cancel", "past_due")).toBe(false)
+  })
+
+  it("Black Mask hears `subscription.canceled` only when the cancel ended the subscription", () => {
+    const flag = PHASE0_FEATURE_FLAGS.BLACK_MASK_PROVISIONING_V1
+    const canceled = (action: string, status?: string) =>
+      predicates["emit-subscription-canceled-when"]({ input: { action }, subscription: { status } })
+    process.env[flag] = "true"
+    try {
+      expect(canceled("cancel", "canceled")).toBe(true)
+      // Grace keeps a paid-through member provisioned; grace-lifecycle.ts
+      // sends grace_started / read_only instead.
+      expect(canceled("cancel", "past_due")).toBe(false)
+      expect(canceled("pause", "paused")).toBe(false)
+    } finally {
+      delete process.env[flag]
+    }
+    expect(canceled("cancel", "canceled")).toBe(false)
   })
 
   it("pause and resume never revoke and always mirror to Blackout, as before", () => {

@@ -104,6 +104,12 @@ export type GraceLifecyclePayload = {
   seller_id: string | null
   grace_ends_at?: string | null
   read_only_at?: string | null
+  /**
+   * When the transition happened, read from the row (never the emit time) so
+   * a redelivered event carries the same value. The Black Mask provisioning
+   * channel sequences on it and skips an event without it.
+   */
+  occurred_at?: string | null
 }
 
 function iso(value: Date | string | null | undefined): string | null {
@@ -264,9 +270,11 @@ export async function startGraceForSubscription(
     }
   }
 
+  const graceStartedAt = updated.metadata?.["grace_started_at"]
   await emitLifecycleEvent(container, SUBSCRIPTION_GRACE_STARTED_EVENT, {
     ...payloadOf(updated),
     grace_ends_at: iso(updated.grace_ends_at),
+    occurred_at: typeof graceStartedAt === "string" ? graceStartedAt : now.toISOString(),
   })
 
   return {
@@ -308,9 +316,11 @@ export async function enterReadOnlyForSubscription(
 
   await emitSubscriptionState(container, updated, "cancel")
 
+  const readOnlyAt = iso(updated.read_only_at) ?? now.toISOString()
   await emitLifecycleEvent(container, SUBSCRIPTION_READ_ONLY_EVENT, {
     ...payloadOf(updated),
-    read_only_at: iso(updated.read_only_at) ?? now.toISOString(),
+    read_only_at: readOnlyAt,
+    occurred_at: readOnlyAt,
   })
 
   return updated

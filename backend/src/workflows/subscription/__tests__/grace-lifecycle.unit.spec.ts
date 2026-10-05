@@ -156,8 +156,11 @@ describe("(a) exhausting dunning", () => {
         product_id: "prod_1",
         seller_id: "sel_1",
         grace_ends_at: new Date(ends).toISOString(),
+        // The row's own grace_started_at, so a redelivery carries the same value.
+        occurred_at: (stored.metadata as Record<string, unknown>).grace_started_at,
       },
     })
+    expect(typeof (stored.metadata as Record<string, unknown>).grace_started_at).toBe("string")
   })
 
   it("flag ON + per-product override beats the platform default", async () => {
@@ -341,6 +344,7 @@ describe("(c) grace ends → read-only, never deletion", () => {
         product_id: "prod_1",
         seller_id: "sel_1",
         read_only_at: now.toISOString(),
+        occurred_at: now.toISOString(),
       },
     })
   })
