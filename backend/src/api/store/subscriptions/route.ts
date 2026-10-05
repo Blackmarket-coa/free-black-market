@@ -1,10 +1,34 @@
 import { z } from "zod"
 import { AuthenticatedMedusaRequest, MedusaResponse } from "@medusajs/framework/http"
+import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 import { SUBSCRIPTION_MODULE } from "../../../modules/subscription"
 import SubscriptionModuleService from "../../../modules/subscription/service"
 import { SubscriptionInterval, SubscriptionType } from "../../../modules/subscription/types"
 import { createSubscriptionWorkflow } from "../../../workflows/subscription"
 import { requireCustomerId } from "../../../shared"
+import { forbidden } from "../../../shared/community-read-access"
+
+/**
+ * The cart's owner, or null when the cart does not exist or the lookup
+ * fails. A failure denies rather than admits.
+ */
+async function cartCustomerId(
+  req: AuthenticatedMedusaRequest,
+  cartId: string
+): Promise<string | null> {
+  try {
+    const query = req.scope.resolve(ContainerRegistrationKeys.QUERY)
+    const { data } = await query.graph({
+      entity: "cart",
+      fields: ["id", "customer_id"],
+      filters: { id: cartId },
+    })
+    const cart = (data as Array<{ customer_id?: string | null }>)[0]
+    return cart?.customer_id ?? null
+  } catch {
+    return null
+  }
+}
 
 // ===========================================
 // VALIDATION SCHEMAS
@@ -61,6 +85,15 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
     if (!customerId) return
 
     const data = createSubscriptionSchema.parse(req.body)
+
+    // A1: the cart must be the caller's own. Previously any cart id was
+    // completed, and the subscription (and the order, and the charge) then
+    // belonged to whoever owned that cart. Missing cart and someone else's
+    // cart get the same 403 — one code, so cart ids cannot be probed.
+    if ((await cartCustomerId(req, data.cart_id)) !== customerId) {
+      forbidden(res)
+      return
+    }
 
     const { result } = await createSubscriptionWorkflow(req.scope).run({
       input: {

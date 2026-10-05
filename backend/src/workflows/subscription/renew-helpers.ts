@@ -2,8 +2,8 @@
  * Pure input-shaping helpers for the subscription renewal order path
  * (Creator-Commerce Slice A). Kept free of any container / I/O so they are
  * unit-testable without a database or Stripe — the workflow composes the
- * Medusa core-flows (createCart → payment collection → session → authorize →
- * completeCart) around these shapes.
+ * Medusa core-flows (createCart → payment collection → direct charge →
+ * system session → authorize → completeCart) around these shapes.
  */
 
 export type RenewalCartAddress = Record<string, unknown> & { id?: unknown }
@@ -90,32 +90,44 @@ export function buildRenewalCartInput(subscription: RenewalSubscription) {
 }
 
 /**
- * Build the off-session context passed to the payment provider so the saved
- * payment method is charged without customer interaction.
+ * The provider for the renewal order's bookkeeping payment session.
+ *
+ * The money for a live renewal is collected BEFORE the order exists, by a
+ * direct off-session Stripe PaymentIntent (`../renewal-charge.ts`, the
+ * vendor-plan pattern). The order still needs an authorized payment session
+ * for `completeCartWorkflow`, so it gets one on Medusa's built-in system
+ * provider, which every payment module registers as `pp_system_default`
+ * (@medusajs/payment 2.14.2 dist/loaders/providers.js registers
+ * `SystemPaymentProvider` with id "default"; its `authorizePayment` returns
+ * AUTHORIZED and touches no rail). The session data carries the PaymentIntent
+ * id so the order can be reconciled to the charge.
+ *
+ * Before this, the live path asked the Stripe provider for the session with
+ * `payment_method_id` and no `confirm`; the installed provider reads only
+ * `payment_method`/`confirm` (stripe-base.js:49-51) and authorizes by reading
+ * status (stripe-base.js:149-151), with capture defaulting to manual
+ * (stripe-base.js:31-34) — so no renewal could have collected.
  */
-export function buildRenewalPaymentContext(subscription: RenewalSubscription) {
-  return {
-    off_session: true,
-    subscription_id: subscription.id,
-    payment_method_id: subscription.payment_method_id ?? undefined,
-    stripe_subscription_id: subscription.stripe_subscription_id ?? undefined,
-  }
-}
+export const RENEWAL_RECORD_PROVIDER_ID = "pp_system_default"
 
 /**
- * Build the input for `createPaymentSessionsWorkflow` from the renewal cart's
- * payment collection and the subscription's saved payment context.
+ * Input for `createPaymentSessionsWorkflow` on the renewal cart: a system
+ * session that records, rather than performs, the charge.
  */
-export function buildRenewalPaymentSessionInput(args: {
+export function buildRenewalRecordSessionInput(args: {
   payment_collection_id: string
-  subscription: RenewalSubscription
-  provider_id?: string
+  subscription_id: string
+  payment_intent_id: string
+  idempotency_key: string
 }) {
   return {
     payment_collection_id: args.payment_collection_id,
-    provider_id: args.provider_id ?? SUBSCRIPTION_PAYMENT_PROVIDER_ID,
-    customer_id: args.subscription.customer_id ?? undefined,
-    context: buildRenewalPaymentContext(args.subscription),
-    data: buildRenewalPaymentContext(args.subscription),
+    provider_id: RENEWAL_RECORD_PROVIDER_ID,
+    data: {
+      collected_by: "subscription_renewal_payment_intent",
+      subscription_id: args.subscription_id,
+      stripe_payment_intent_id: args.payment_intent_id,
+      renewal_idempotency_key: args.idempotency_key,
+    },
   }
 }

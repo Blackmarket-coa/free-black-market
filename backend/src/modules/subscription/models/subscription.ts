@@ -35,9 +35,19 @@ const Subscription = model.define("subscription", {
   subscription_date: model.dateTime(), // When subscription started
   last_order_date: model.dateTime(),   // Last order created
   next_order_date: model.dateTime().index().nullable(), // Next scheduled order
-  expiration_date: model.dateTime().index(), // When subscription ends
+  // When subscription ends. NULL only for an until-canceled subscription
+  // (FF_CONSUMER_SUBSCRIPTIONS_V1 + product metadata
+  // `subscription_until_canceled`); the expiry sweep skips NULL.
+  expiration_date: model.dateTime().index().nullable(),
   paused_at: model.dateTime().nullable(), // When paused (if paused)
   canceled_at: model.dateTime().nullable(), // When canceled (if canceled)
+
+  // F4 lifecycle (FF_CONSUMER_SUBSCRIPTIONS_V1). `grace_period_days` is the
+  // length snapshotted when grace started, so a later change to the setting
+  // never alters a subscriber's terms mid-grace.
+  grace_ends_at: model.dateTime().index().nullable(),
+  grace_period_days: model.number().nullable(),
+  read_only_at: model.dateTime().nullable(),
   
   // Payment
   stripe_subscription_id: model.text().nullable(), // For Stripe-managed subscriptions

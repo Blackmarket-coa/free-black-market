@@ -4,6 +4,24 @@ import { SUBSCRIPTION_MODULE } from "../../../../modules/subscription"
 import SubscriptionModuleService from "../../../../modules/subscription/service"
 import { manageSubscriptionWorkflow } from "../../../../workflows/subscription"
 import { requireCustomerId } from "../../../../shared"
+import { forbidden } from "../../../../shared/community-read-access"
+import { isSubscriptionTransitionError } from "../../../../modules/subscription/errors"
+
+/**
+ * The subscription when it exists AND belongs to the caller; null otherwise.
+ * `listSubscriptions` rather than `retrieveSubscription`, which throws on a
+ * missing id — so missing and not-owned reach the same `forbidden()` (A2: no
+ * 404/403 split, which would map the id space).
+ */
+async function ownedSubscription(
+  service: SubscriptionModuleService,
+  id: string,
+  customerId: string
+) {
+  const [subscription] = await service.listSubscriptions({ id }, { take: 1 })
+  if (!subscription || subscription.customer_id !== customerId) return null
+  return subscription
+}
 
 // ===========================================
 // VALIDATION SCHEMAS
@@ -30,16 +48,9 @@ export async function GET(
     const { id } = req.params
     const subscriptionService = req.scope.resolve<SubscriptionModuleService>(SUBSCRIPTION_MODULE)
 
-    const subscription = await subscriptionService.retrieveSubscription(id)
-
+    const subscription = await ownedSubscription(subscriptionService, id, customerId)
     if (!subscription) {
-      res.status(404).json({ message: "Subscription not found" })
-      return
-    }
-
-    // Verify ownership
-    if (subscription.customer_id !== customerId) {
-      res.status(403).json({ message: "Access denied" })
+      forbidden(res)
       return
     }
 
@@ -67,14 +78,10 @@ export async function POST(
     
     const subscriptionService = req.scope.resolve<SubscriptionModuleService>(SUBSCRIPTION_MODULE)
 
-    // Verify ownership
-    const existing = await subscriptionService.retrieveSubscription(id)
+    // Verify ownership — missing and not-owned are the same 403.
+    const existing = await ownedSubscription(subscriptionService, id, customerId)
     if (!existing) {
-      res.status(404).json({ message: "Subscription not found" })
-      return
-    }
-    if (existing.customer_id !== customerId) {
-      res.status(403).json({ message: "Access denied" })
+      forbidden(res)
       return
     }
 
@@ -95,6 +102,15 @@ export async function POST(
   } catch (error) {
     if (error instanceof z.ZodError) {
       res.status(400).json({ message: "Validation failed", errors: error.issues })
+      return
+    }
+    // A3: e.g. resume of a subscription that is not paused. The service
+    // refuses the write; the caller gets a 409 with the reason.
+    if (isSubscriptionTransitionError(error)) {
+      res.status(409).json({
+        message: error.message,
+        type: "subscription_transition_not_allowed",
+      })
       return
     }
     throw error

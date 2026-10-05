@@ -1,7 +1,7 @@
 import {
   buildRenewalCartInput,
-  buildRenewalPaymentContext,
-  buildRenewalPaymentSessionInput,
+  buildRenewalRecordSessionInput,
+  RENEWAL_RECORD_PROVIDER_ID,
   SUBSCRIPTION_PAYMENT_PROVIDER_ID,
   type RenewalSubscription,
 } from "../renew-helpers"
@@ -101,45 +101,49 @@ describe("buildRenewalCartInput", () => {
   })
 })
 
-describe("buildRenewalPaymentContext", () => {
-  it("marks the charge off-session and carries the saved payment method", () => {
-    const ctx = buildRenewalPaymentContext(baseSubscription())
-    expect(ctx).toEqual({
-      off_session: true,
+/**
+ * The live renewal no longer asks the Medusa Stripe provider to charge: the
+ * old `buildRenewalPaymentContext` sent `payment_method_id` + `off_session`,
+ * keys the installed provider ignores (it reads `payment_method`/`confirm`,
+ * stripe-base.js:49-51), and its spec asserted the ignored key — a passing
+ * test that proved nothing about a charge. Money is now collected by the
+ * direct PaymentIntent in `renewal-charge.ts` (see renewal-charge.unit.spec.ts);
+ * the order gets a bookkeeping session on the system provider.
+ */
+describe("buildRenewalRecordSessionInput", () => {
+  it("records the direct charge on a system-provider session, never the Stripe provider", () => {
+    const input = buildRenewalRecordSessionInput({
+      payment_collection_id: "paycol_1",
       subscription_id: "sub_1",
-      payment_method_id: "pm_1",
-      stripe_subscription_id: "stripe_sub_1",
+      payment_intent_id: "pi_1",
+      idempotency_key: "subscription-renewal:sub_1:2026-11-01T00:00:00.000Z:a0",
     })
-  })
 
-  it("omits payment/stripe ids when absent", () => {
-    const ctx = buildRenewalPaymentContext({ id: "sub_2", customer_id: "cus_2" })
-    expect(ctx.off_session).toBe(true)
-    expect(ctx.payment_method_id).toBeUndefined()
-    expect(ctx.stripe_subscription_id).toBeUndefined()
-  })
-})
-
-describe("buildRenewalPaymentSessionInput", () => {
-  it("wires the payment collection, default provider, customer and off-session context", () => {
-    const input = buildRenewalPaymentSessionInput({
+    expect(RENEWAL_RECORD_PROVIDER_ID).toBe("pp_system_default")
+    expect(input.provider_id).toBe(RENEWAL_RECORD_PROVIDER_ID)
+    expect(input.provider_id).not.toBe(SUBSCRIPTION_PAYMENT_PROVIDER_ID)
+    expect(input).toEqual({
       payment_collection_id: "paycol_1",
-      subscription: baseSubscription(),
+      provider_id: "pp_system_default",
+      data: {
+        collected_by: "subscription_renewal_payment_intent",
+        subscription_id: "sub_1",
+        stripe_payment_intent_id: "pi_1",
+        renewal_idempotency_key:
+          "subscription-renewal:sub_1:2026-11-01T00:00:00.000Z:a0",
+      },
     })
-
-    expect(input.payment_collection_id).toBe("paycol_1")
-    expect(input.provider_id).toBe(SUBSCRIPTION_PAYMENT_PROVIDER_ID)
-    expect(input.customer_id).toBe("cus_1")
-    expect(input.context).toMatchObject({ off_session: true, payment_method_id: "pm_1" })
-    expect(input.data).toMatchObject({ off_session: true, subscription_id: "sub_1" })
   })
 
-  it("honors an explicit provider override", () => {
-    const input = buildRenewalPaymentSessionInput({
+  it("carries no off-session or payment-method keys a provider could act on", () => {
+    const input = buildRenewalRecordSessionInput({
       payment_collection_id: "paycol_1",
-      subscription: baseSubscription(),
-      provider_id: "pp_custom_custom",
-    })
-    expect(input.provider_id).toBe("pp_custom_custom")
+      subscription_id: "sub_1",
+      payment_intent_id: "pi_1",
+      idempotency_key: "k",
+    }) as { data: Record<string, unknown> }
+    for (const key of ["payment_method", "payment_method_id", "off_session", "confirm"]) {
+      expect(input.data).not.toHaveProperty(key)
+    }
   })
 })

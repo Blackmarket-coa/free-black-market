@@ -251,6 +251,24 @@ gates community capital circles, so they are not a near-term funding source.
 
 ## 11. Open decisions (verbatim from the spec)
 
+**Operator answers, 2026-10-05.**
+
+- No vendors are on the $29 / $99 / $249 plans, so F8 needs no subscriber migration.
+- The $10 all-access plan includes the additional plugins, features and modules,
+  built-in or enhanced, at 0% commission, with a **30-day trial**.
+- Add-ons a vendor bought are **kept by the buyer** whatever plan they move to.
+- The hosted vault (F1) is **a Black Market Coalition product**: a first-party
+  storefront listing sold by the BMC seller.
+- Auto-renewal disclosure copy: **whatever is most built out** in the repo.
+- Vault seats **renew upon approval**: read as renewing until cancelled only when
+  the customer affirmatively approves auto-renewal at purchase; otherwise the seat
+  ends at the paid period. To confirm.
+- Still open from §11 below: hosted-vault price, gating the paid launch on mobile,
+  mobile approach, vault database, grace length (built as a setting, BM-1), chat
+  indicators, dead drops vs switch first, bundling a seat into the $10 plan, the 3%
+  on Blackout creator transactions, the tracker-list licences, the revenue-model
+  additions; and F6's counsel review and cut-over date.
+
 - [ ] Hosted-vault price (the model assumes $5/month).
 - [ ] Gate the paid launch on mobile, or launch on extension, web and desktop
       first with stock Bitwarden apps for mobile.
@@ -267,7 +285,9 @@ gates community capital circles, so they are not a near-term funding source.
 - [ ] License the DuckDuckGo and Disconnect tracker lists commercially, or skip
       them.
 - [ ] Confirm recurring consumer subscriptions work on the FBM storefront
-      (F2: API exists, purchase UI does not).
+      (F2: API exists, purchase UI does not). *2026-10-05: safety fixes, a
+      collecting live renewal charge and the grace lifecycle built (BM-1); purchase
+      UI and a Stripe test-mode run still open.*
 - [ ] Add the Blackout funnel and app costs to the revenue model, with real
       starting cash and founder draw.
 
