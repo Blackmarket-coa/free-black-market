@@ -1,7 +1,9 @@
 import {
   VENDOR_ADDON_CATALOG,
   VENDOR_ADDON_KEY_SET,
+  addonCoveredByPlan,
   addonExpiryFrom,
+  addonOfferedForPurchase,
   addonUndercutsPlan,
   getAddonDefinition,
   listPurchasableAddons,
@@ -69,6 +71,77 @@ describe("add-on catalog", () => {
         listed[i - 1].display_order
       )
     }
+  })
+})
+
+describe("add-ons under the all-access plan (Black Mask F8, OI-9)", () => {
+  it("counts every pack as covered by all_access and none by free", () => {
+    for (const addon of VENDOR_ADDON_CATALOG) {
+      expect(addonCoveredByPlan(addon, "all_access")).toBe(true)
+      expect(addonCoveredByPlan(addon, "free")).toBe(false)
+    }
+  })
+
+  it("covers a pack only when the plan holds every one of its keys", () => {
+    // starter carries embed + vault (embed_pack's exact keys) and nothing
+    // from commerce_pack.
+    expect(addonCoveredByPlan(getAddonDefinition("embed_pack")!, "starter")).toBe(true)
+    expect(addonCoveredByPlan(getAddonDefinition("commerce_pack")!, "starter")).toBe(false)
+    // An unknown plan grants nothing, so it covers nothing (fail closed).
+    expect(addonCoveredByPlan(getAddonDefinition("embed_pack")!, "nope")).toBe(false)
+  })
+
+  it("offers every active pack to every plan while the flag is off", () => {
+    for (const plan of ["free", "starter", "scale", "all_access", "internal"]) {
+      expect(
+        VENDOR_ADDON_CATALOG.filter((a) => addonOfferedForPurchase(a, plan, false))
+      ).toEqual(VENDOR_ADDON_CATALOG.filter((a) => a.is_active))
+    }
+  })
+
+  it("keeps every pack purchasable for a free vendor with the flag on", () => {
+    expect(
+      VENDOR_ADDON_CATALOG.filter((a) => addonOfferedForPurchase(a, "free", true))
+    ).toEqual(VENDOR_ADDON_CATALOG.filter((a) => a.is_active))
+  })
+
+  it("offers an all_access vendor nothing to buy with the flag on", () => {
+    // They would pay for keys they already hold.
+    expect(
+      VENDOR_ADDON_CATALOG.filter((a) =>
+        addonOfferedForPurchase(a, "all_access", true)
+      )
+    ).toEqual([])
+  })
+
+  it("hides packs for all_access only — any other plan is offered every pack", () => {
+    // OI-9 scopes hiding to all_access. starter covers embed_pack, but a
+    // starter vendor (an operator-assigned retired tier) still sees it.
+    const active = VENDOR_ADDON_CATALOG.filter((a) => a.is_active)
+    for (const plan of ["free", "starter", "pro", "scale", "internal"]) {
+      expect(
+        VENDOR_ADDON_CATALOG.filter((a) => addonOfferedForPurchase(a, plan, true))
+      ).toEqual(active)
+    }
+  })
+
+  it("offers packs again to an all_access vendor with a move off the plan scheduled", () => {
+    // A cancellation (pending free) or a pending downgrade: they may buy a
+    // pack to keep past the plan's end.
+    const active = VENDOR_ADDON_CATALOG.filter((a) => a.is_active)
+    for (const pending of ["free", "starter"]) {
+      expect(
+        VENDOR_ADDON_CATALOG.filter((a) =>
+          addonOfferedForPurchase(a, "all_access", true, pending)
+        )
+      ).toEqual(active)
+    }
+    // Nothing pending (including while trialing): still nothing to buy.
+    expect(
+      VENDOR_ADDON_CATALOG.filter((a) =>
+        addonOfferedForPurchase(a, "all_access", true, null)
+      )
+    ).toEqual([])
   })
 })
 

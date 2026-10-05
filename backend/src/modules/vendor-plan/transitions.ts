@@ -7,6 +7,7 @@
  */
 
 import {
+  ALL_ACCESS_PLAN_CODE,
   DEFAULT_PLAN_CODE,
   featureKeysForPlan,
   getPlanDefinition,
@@ -184,6 +185,31 @@ export function applyPeriodRollover(args: {
   }
 
   return { current_period_start: start, current_period_end: end }
+}
+
+/**
+ * When a trial started at `now` by a move onto `plan_code` ends, or null when
+ * the move starts no trial.
+ *
+ * Every plan with `trial_days > 0` trials on each move onto it, as before —
+ * EXCEPT `all_access`, whose trial is once per seller (operator answer OI-8:
+ * the first $10 must actually be raised when the trial ends). Without that,
+ * free → all_access → cancel → all_access restarts a fresh 30-day trial each
+ * time: the cancellation applies at the trial's end (pass 1 of the renewal job
+ * runs before the pass that would bill), so the first charge would never be
+ * raised. `trial_already_used` is whether the seller has held `all_access`
+ * before; it is ignored for every other plan, which keeps their behaviour
+ * byte-for-byte.
+ */
+export function trialEndsAtFor(args: {
+  plan_code: string
+  now: Date
+  trial_already_used: boolean
+}): Date | null {
+  const def = getPlanDefinition(args.plan_code)
+  if (!def || def.trial_days <= 0) return null
+  if (def.code === ALL_ACCESS_PLAN_CODE && args.trial_already_used) return null
+  return new Date(args.now.getTime() + def.trial_days * 86_400_000)
 }
 
 /**

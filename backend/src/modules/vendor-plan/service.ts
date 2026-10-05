@@ -9,9 +9,9 @@ import {
   VendorPlanStatus,
 } from "./models";
 import {
+  ALL_ACCESS_PLAN_CODE,
   DEFAULT_PLAN_CODE,
   featureKeysForPlan,
-  getPlanDefinition,
   type VendorFeatureKey,
 } from "./catalog";
 import {
@@ -20,6 +20,7 @@ import {
   effectivePlanCode,
   isPendingChangeDue,
   reconcileFeatureKeys,
+  trialEndsAtFor,
   type AssignmentSnapshot,
   type PlanTransitionDecision,
 } from "./transitions";
@@ -54,6 +55,19 @@ export type ApplyTransitionInput = {
    * Matches `rollPeriod(seller_id, now)` in the same service.
    */
   now?: Date;
+  /**
+   * Extra facts to record on the transition's event row (e.g. the vendor's
+   * affirmative auto-renew consent from `POST /vendor/plan/change`). Merged
+   * into the UPGRADED / DOWNGRADED payload; never read back to decide money.
+   */
+  event_payload?: Record<string, unknown> | null;
+};
+
+/** What a plan change would do for this seller right now, without doing it. */
+export type PlanChangePreview = {
+  decision: PlanTransitionDecision;
+  /** When the move would end its trial, or null when it would start none. */
+  trial_ends_at: Date | null;
 };
 
 export type ApplyTransitionResult = {
@@ -217,6 +231,7 @@ class VendorPlanService extends MedusaService({
         from_plan_code: assignment.plan_code,
         to_plan_code: decision.to_plan_code,
         payload: {
+          ...(input.event_payload ?? {}),
           deferred: true,
           effective_at: decision.effective_at.toISOString(),
           reason: input.reason ?? decision.reason,
@@ -241,16 +256,30 @@ class VendorPlanService extends MedusaService({
           : VendorPlanEventType.UPGRADED,
       from_plan_code: assignment.plan_code,
       to_plan_code: decision.to_plan_code,
-      payload: { reason: input.reason ?? decision.reason },
+      payload: {
+        ...(input.event_payload ?? {}),
+        reason: input.reason ?? decision.reason,
+      },
     });
 
     return { assignment: updated, decision, replayed: false };
   }
 
-  /** Apply a scheduled downgrade whose effective date has arrived. */
+  /**
+   * Apply a scheduled downgrade whose effective date has arrived.
+   *
+   * `anchor_to_effective_at` (used by the renewal job only while
+   * `FF_ALL_ACCESS_PLAN_V1` is on) starts the new plan's first period at the
+   * recorded `pending_effective_at` instead of at `now`. That makes the period
+   * — and so the first charge's idempotency key — a function of the record,
+   * not of when the cron happened to run, so the job can raise that charge
+   * BEFORE applying the change and a retry derives the same key. Off, the
+   * period starts at `now` exactly as before.
+   */
   async applyPendingChange(
     seller_id: string,
     now: Date = new Date(),
+    opts: { anchor_to_effective_at?: boolean } = {},
   ): Promise<VendorPlanAssignmentType | null> {
     const assignment = await this.getAssignment(seller_id);
     if (!assignment) return null;
@@ -261,6 +290,10 @@ class VendorPlanService extends MedusaService({
       assignment,
       to_plan_code: toPlan,
       now,
+      period_anchor:
+        opts.anchor_to_effective_at && assignment.pending_effective_at
+          ? new Date(assignment.pending_effective_at as Date)
+          : null,
     });
 
     await this.recordEvent({
@@ -383,7 +416,90 @@ class VendorPlanService extends MedusaService({
     return updated;
   }
 
+  /**
+   * When a move onto `to_plan_code` made at `now` would end its trial, or null
+   * when it would start none. The single answer both `writeImmediateChange`
+   * and the renewal job use, so the job can tell in advance whether applying a
+   * pending change starts a trial (billed at the trial's end) or a paid
+   * period (billed now). See `trialEndsAtFor` on the once-per-seller rule.
+   */
+  async trialEndsAtForChange(
+    seller_id: string,
+    to_plan_code: string,
+    now: Date,
+  ): Promise<Date | null> {
+    const trial_already_used =
+      to_plan_code === ALL_ACCESS_PLAN_CODE
+        ? await this.hasHeldPlan(seller_id, to_plan_code)
+        : false;
+    return trialEndsAtFor({ plan_code: to_plan_code, now, trial_already_used });
+  }
+
+  /**
+   * What `applyPlanTransition` would decide for this seller and plan at `now`,
+   * and the trial the move would actually start — without writing anything.
+   * The panel's confirm step reads this (via `GET /vendor/plan/preview`) so the
+   * terms a vendor agrees to are the terms they get: a returning all_access
+   * vendor is not promised a trial they have used, and a deferred move says
+   * when it lands. A deferred move's trial is computed from its effective
+   * date, which is when `applyPendingChange` would start it.
+   */
+  async previewPlanChange(
+    seller_id: string,
+    to_plan_code: string,
+    now: Date = new Date(),
+  ): Promise<PlanChangePreview> {
+    const assignment = await this.ensureAssignment(seller_id);
+    const decision = decidePlanTransition({
+      current: this.toSnapshot(assignment),
+      to_plan_code,
+      now,
+    });
+    if (decision.kind === "rejected") {
+      return { decision, trial_ends_at: null };
+    }
+    const startsAt = decision.kind === "deferred" ? decision.effective_at : now;
+    const trial_ends_at = await this.trialEndsAtForChange(
+      seller_id,
+      to_plan_code,
+      startsAt,
+    );
+    return { decision, trial_ends_at };
+  }
+
   // ── Internals ─────────────────────────────────────────────────────────────
+
+  /**
+   * Has the seller ever actually been moved onto this plan? Read from the
+   * transition log (UPGRADED / DOWNGRADED rows naming it as the destination),
+   * not from `trial_ends_at`, which is shared by every plan's trial and is
+   * never cleared — a seller who once trialled `starter` has not used the
+   * all-access trial. Excluded:
+   * - idempotency-claim rows (RECONCILED): a claim is written before the
+   *   decision, including for a rejected move;
+   * - SCHEDULING rows (payload `deferred: true`): `applyPlanTransition` writes
+   *   a DOWNGRADED row naming the destination when it parks a deferred move,
+   *   before the seller holds the plan. Counting it took the trial away from a
+   *   seller whose first move onto all_access was deferred (or was scheduled
+   *   and then superseded). The row `applyPendingChange` writes when the move
+   *   lands carries no `deferred` flag, so a landed move still counts.
+   */
+  private async hasHeldPlan(
+    seller_id: string,
+    plan_code: string,
+  ): Promise<boolean> {
+    const rows = await this.listVendorPlanEvents({
+      seller_id,
+      to_plan_code: plan_code,
+    });
+    return rows.some(
+      (r) =>
+        (r.type === VendorPlanEventType.UPGRADED ||
+          r.type === VendorPlanEventType.DOWNGRADED) &&
+        (r.payload as { deferred?: unknown } | null | undefined)?.deferred !==
+          true,
+    );
+  }
 
   private toSnapshot(a: VendorPlanAssignmentType): AssignmentSnapshot {
     return {
@@ -401,11 +517,12 @@ class VendorPlanService extends MedusaService({
     to_plan_code: string;
     assigned_by?: VendorPlanAssignedBy;
     now: Date;
+    /** Start the first period here instead of at `now` (see applyPendingChange). */
+    period_anchor?: Date | null;
   }): Promise<VendorPlanAssignmentType> {
-    const def = getPlanDefinition(args.to_plan_code);
     const rolled = applyPeriodRollover({
       plan_code: args.to_plan_code,
-      current_period_end: null,
+      current_period_end: args.period_anchor ?? null,
       now: args.now,
     });
 
@@ -418,10 +535,13 @@ class VendorPlanService extends MedusaService({
     //
     // The first period ends when the trial does, so the renewal job raises the
     // first charge on exactly that day and rolls a normal period from there.
-    const trialEndsAt =
-      def && def.trial_days > 0
-        ? new Date(args.now.getTime() + def.trial_days * 86_400_000)
-        : null;
+    //
+    // `all_access` trials once per seller (OI-8); every other plan as before.
+    const trialEndsAt = await this.trialEndsAtForChange(
+      args.assignment.seller_id,
+      args.to_plan_code,
+      args.now,
+    );
 
     const [updated] = await this.updateVendorPlanAssignments([
       {

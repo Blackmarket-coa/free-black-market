@@ -7,7 +7,7 @@ import {
   type PlanLimit,
   type VendorPlanLimits,
 } from "../limits"
-import { VENDOR_PLAN_CATALOG } from "../catalog"
+import { VENDOR_PLAN_CATALOG, offeredPlans } from "../catalog"
 import {
   asGrowerTierName,
   growerTierIndex,
@@ -118,6 +118,55 @@ describe("plan limit table", () => {
         floorIndex(ladder[i - 1])
       )
     }
+  })
+})
+
+describe("all_access limits (Black Mask F8, OI-7)", () => {
+  it("never lets a higher offered plan allow less than a lower one, in either flag state", () => {
+    for (const allAccessOn of [false, true]) {
+      const ladder = offeredPlans(allAccessOn).map((p) => p.code)
+      for (let i = 1; i < ladder.length; i++) {
+        const lower = limitsForPlan(ladder[i - 1])
+        const higher = limitsForPlan(ladder[i])
+        for (const key of LIMIT_KEYS) {
+          const l = lower[key] as PlanLimit
+          const h = higher[key] as PlanLimit
+          if (isUnlimited(h)) continue
+          expect(isUnlimited(l)).toBe(false)
+          expect(h).toBeGreaterThanOrEqual(l as number)
+        }
+      }
+    }
+  })
+
+  it("has its own row rather than silently falling back to free", () => {
+    expect(plansWithLimits()).toContain("all_access")
+    expect(limitsForPlan("all_access")).not.toEqual(limitsForPlan("free"))
+  })
+
+  it("takes scale's rate, range and cost meters", () => {
+    const all = limitsForPlan("all_access")
+    const scale = limitsForPlan("scale")
+    expect(all.embed_requests_per_minute).toBe(scale.embed_requests_per_minute)
+    expect(all.analytics_range_days).toBe(scale.analytics_range_days)
+    // The two cost meters stay bounded: unlimited storage is an unbounded
+    // bill, and a null allowance would make overage never billable.
+    expect(all.vault_storage_bytes).toBe(scale.vault_storage_bytes)
+    expect(all.included_embed_requests).toBe(scale.included_embed_requests)
+    expect(all.vault_storage_bytes).not.toBeNull()
+    expect(all.included_embed_requests).not.toBeNull()
+  })
+
+  it("takes internal's unlimited counts for the configuration objects it unlocks", () => {
+    const all = limitsForPlan("all_access")
+    expect(all.embed_keys).toBeNull()
+    expect(all.connect_domains).toBeNull()
+    expect(all.webhook_subscriptions).toBeNull()
+    expect(all.vault_documents).toBeNull()
+  })
+
+  it("makes no grower tier claim (F7; L27 pending)", () => {
+    expect(limitsForPlan("all_access").grower_tier_floor).toBeNull()
   })
 })
 

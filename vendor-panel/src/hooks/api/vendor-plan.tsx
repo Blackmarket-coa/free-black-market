@@ -116,18 +116,92 @@ export const useHasPlanFeature = (featureKey: VendorPlanFeatureKey) => {
   return featureKeys.includes(featureKey)
 }
 
+/**
+ * `POST /vendor/plan/change` response. `deferred` means the change is parked
+ * until `plan.pending_effective_at` (a move to a cheaper plan keeps the period
+ * already paid for) — the panel must say "takes effect on <date>" rather than
+ * imply it already happened.
+ */
+export type VendorPlanChangeResponse = {
+  charge_status: string | null
+  plan: {
+    code: string
+    status: VendorPlanSummary["status"]
+    current_period_end: string | null
+    pending_plan_code: string | null
+    pending_effective_at: string | null
+  }
+  applied: boolean
+  deferred: boolean
+  replayed: boolean
+}
+
+/**
+ * `GET /vendor/plan/preview?plan_code=` — what confirming a change would do
+ * for THIS seller, read-only. The confirm step renders its terms from this
+ * rather than from the catalog row, so a returning vendor is not promised a
+ * trial they have used and a deferred move says when it lands.
+ */
+export type VendorPlanChangePreview = {
+  plan_code: string
+  display_name: string
+  price_amount: number
+  currency_code: string
+  interval: "month" | "year" | "none"
+  change: "upgrade" | "downgrade" | "lateral"
+  deferred: boolean
+  effective_at: string | null
+  trial_days: number
+  trial_ends_at: string | null
+  /** Integer cents charged when the vendor confirms. */
+  charge_now_amount: number
+  first_charge_at: string | null
+  renews: boolean
+  requires_auto_renew_consent: boolean
+}
+
+export const useVendorPlanChangePreview = (
+  planCode: string | null,
+  options?: Omit<
+    UseQueryOptions<VendorPlanChangePreview, FetchError>,
+    "queryFn" | "queryKey"
+  >
+) => {
+  return useQuery({
+    queryFn: () =>
+      fetchQuery("/vendor/plan/preview", {
+        method: "GET",
+        query: { plan_code: planCode ?? "" },
+      }) as Promise<VendorPlanChangePreview>,
+    queryKey: vendorPlanQueryKeys.detail(`preview:${planCode ?? ""}`),
+    enabled: !!planCode,
+    // Terms are per seller and per moment (trial used, period end): always
+    // fetched fresh when the confirm step opens.
+    staleTime: 0,
+    retry: false,
+    ...options,
+  })
+}
+
 export const useChangeVendorPlan = (
   options?: UseMutationOptions<
-    unknown,
+    VendorPlanChangeResponse,
     FetchError,
-    { plan_code: string; idempotency_key?: string }
+    {
+      plan_code: string
+      idempotency_key?: string
+      auto_renew_consent?: boolean
+    }
   >
 ) => {
   const queryClient = useQueryClient()
 
   return useMutation({
     mutationFn: (body) =>
-      fetchQuery("/vendor/plan/change", { method: "POST", body }),
+      fetchQuery("/vendor/plan/change", {
+        method: "POST",
+        body,
+      }) as Promise<VendorPlanChangeResponse>,
     onSuccess: (data, variables, context) => {
       // The gate's server-side cache is invalidated by the transition itself;
       // this clears the panel's copy so the UI updates in the same beat.

@@ -59,6 +59,15 @@ export const PHASE0_FEATURE_FLAGS = {
   // split, never the campaign escrow. Default off; L25 applies to any public
   // coalition fundraising page.
   SHARED_GOAL_COALITION_V1: "FF_SHARED_GOAL_COALITION_V1",
+  // Black Mask F8: the $10/month all-access vendor plan (0% platform fee,
+  // every vendor.* feature, 30-day trial). On, the self-serve ladder becomes
+  // free + all_access; starter/pro/scale stay DEFINED so any assignment still
+  // resolves its features and limits, but are no longer offered, listed on
+  // /store/fee-schedule, or selectable through POST /vendor/plan/change. Off,
+  // every surface offers exactly the free/starter/pro/scale ladder it did
+  // before. Default off. Do not set before the fee-first split (F6) is live:
+  // at 0% the platform still absorbs card processing on every sale.
+  ALL_ACCESS_PLAN_V1: "FF_ALL_ACCESS_PLAN_V1",
 } as const
 
 export type Phase0FeatureFlag = keyof typeof PHASE0_FEATURE_FLAGS

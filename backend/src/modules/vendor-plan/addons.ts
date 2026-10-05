@@ -1,6 +1,8 @@
 import {
+  ALL_ACCESS_PLAN_CODE,
   VENDOR_FEATURE_KEYS,
   VENDOR_PLAN_CATALOG,
+  featureKeysForPlan,
   type VendorFeatureKey,
 } from "./catalog"
 
@@ -171,6 +173,52 @@ export function listPurchasableAddons(): VendorAddonDefinition[] {
   return VENDOR_ADDON_CATALOG.filter((a) => a.is_active).sort(
     (a, b) => a.display_order - b.display_order
   )
+}
+
+/**
+ * Does this plan already grant every key the pack would? Then buying the pack
+ * pays for nothing. Reads the PLAN's keys only — never the seller's
+ * entitlement union, which includes the pack itself once owned.
+ */
+export function addonCoveredByPlan(
+  addon: VendorAddonDefinition,
+  planCode: string | null | undefined
+): boolean {
+  if (!addon.feature_keys.length) return false
+  const planKeys = new Set<string>(featureKeysForPlan(planCode))
+  return addon.feature_keys.every((k) => planKeys.has(k))
+}
+
+/**
+ * Whether a pack belongs on this seller's PURCHASE list (operator answer OI-9,
+ * 2026-10-05).
+ *
+ * Flag off: every active pack, exactly as before. Flag on
+ * (`FF_ALL_ACCESS_PLAN_V1`): hidden only for a seller on `all_access` whose
+ * plan covers the pack (every pack today) — they would pay for nothing.
+ * Scoped to all_access as OI-9 says: a seller on any other plan (free, or a
+ * retired tier an operator assigned) is offered every pack as before. And an
+ * all_access seller with a scheduled move OFF all_access (a cancellation or a
+ * downgrade pending) may buy again, so they can hold a pack past the plan's
+ * end. A trialing all_access seller with nothing pending is on the plan and is
+ * not offered packs it covers.
+ *
+ * This only decides what is OFFERED for sale. It never revokes, deactivates
+ * or refunds a pack the seller already bought: an owned pack keeps its
+ * entitlement rows to their expiry whatever plan the seller moves to, and the
+ * `/vendor/addons` route keeps listing an owned, active covered pack as owned.
+ */
+export function addonOfferedForPurchase(
+  addon: VendorAddonDefinition,
+  planCode: string | null | undefined,
+  allAccessOn: boolean,
+  pendingPlanCode: string | null = null
+): boolean {
+  if (!addon.is_active) return false
+  if (!allAccessOn) return true
+  if (planCode !== ALL_ACCESS_PLAN_CODE) return true
+  if (pendingPlanCode && pendingPlanCode !== ALL_ACCESS_PLAN_CODE) return true
+  return !addonCoveredByPlan(addon, planCode)
 }
 
 /**

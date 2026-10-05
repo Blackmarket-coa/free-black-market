@@ -1,5 +1,12 @@
 import { GET } from "../route"
 import { QUEST_DEFINITIONS } from "../../../../modules/vendor-quest/definitions"
+import { PHASE0_FEATURE_FLAGS } from "../../../../shared/feature-flags"
+
+const ALL_ACCESS_ENV = PHASE0_FEATURE_FLAGS.ALL_ACCESS_PLAN_V1
+
+afterEach(() => {
+  delete process.env[ALL_ACCESS_ENV]
+})
 
 /**
  * The public quest catalog, and the safety exemption on it.
@@ -96,5 +103,19 @@ describe("GET /store/quest-catalog", () => {
   it("still reports the gating for everything else", async () => {
     const body = await run()
     expect(body.access.plans.length).toBeGreaterThan(0)
+  })
+})
+
+describe("plans named on the quest catalog (FF_ALL_ACCESS_PLAN_V1)", () => {
+  const planCodes = async () =>
+    ((await run()).access.plans as Array<{ code: string }>).map((p) => p.code)
+
+  it("names exactly the pre-F8 plans with the flag off", async () => {
+    expect(await planCodes()).toEqual(["scale", "internal"])
+  })
+
+  it("names all_access instead of the retired scale tier with the flag on", async () => {
+    process.env[ALL_ACCESS_ENV] = "true"
+    expect(await planCodes()).toEqual(["all_access", "internal"])
   })
 })

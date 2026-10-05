@@ -2,7 +2,10 @@ import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 
 import { QUEST_DEFINITIONS } from "../../../modules/vendor-quest/definitions"
 import { VENDOR_ADDON_CATALOG } from "../../../modules/vendor-plan/addons"
-import { VENDOR_PLAN_CATALOG } from "../../../modules/vendor-plan/catalog"
+import {
+  advertisedPlans,
+  allAccessPlanEnabled,
+} from "../../../modules/vendor-plan/catalog"
 
 /**
  * GET /store/quest-catalog
@@ -73,7 +76,10 @@ export async function GET(_req: MedusaRequest, res: MedusaResponse) {
       : undefined,
   }))
 
-  const plans = VENDOR_PLAN_CATALOG.filter((plan) =>
+  // The catalog as it is currently sold (FF_ALL_ACCESS_PLAN_V1): off, exactly
+  // the rows listed before all_access existed; on, all_access in place of the
+  // retired tiers, so this page never points a vendor at a plan they cannot buy.
+  const plans = advertisedPlans(allAccessPlanEnabled()).filter((plan) =>
     plan.feature_keys.includes("vendor.quests")
   ).map((plan) => ({
     code: plan.code,

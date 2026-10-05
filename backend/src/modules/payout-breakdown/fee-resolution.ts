@@ -27,7 +27,10 @@
  * safely overwrite it. For the same reason the kind rule is not a plan row and
  * not an override of 0: `modules/vendor-plan/catalog.ts` only ever discounts a
  * sale, and `__tests__/catalog.unit.spec.ts` would be the wrong guard for a
- * rule about what is being charged.
+ * rule about what is being charged. A plan CAN carry 0 — the $10/month
+ * `all_access` plan (Black Mask F8) does — and that resolves here as
+ * `source: "plan"` at step 2, beneath any override: a rate a vendor bought,
+ * distinct from the step-0 `source: "transaction_kind"` rule.
  *
  * This function is unconditional. Whether a caller may classify a charge as a
  * donation at all is decided at the container composition point

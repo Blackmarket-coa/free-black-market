@@ -5,9 +5,12 @@ import {
 import { createLogger } from "../../../../shared/logger"
 import { requireSellerId } from "../../../../shared"
 import {
+  addonOfferedForPurchase,
   getAddonDefinition,
   listPurchasableAddons,
 } from "../../../../modules/vendor-plan/addons"
+import { allAccessPlanEnabled } from "../../../../modules/vendor-plan/catalog"
+import { addonPlanContextOrNull } from "../../../../shared/vendor-plan-code"
 import { getAddonOwnership } from "../../../../shared/vendor-addons"
 import {
   executeCharge,
@@ -55,6 +58,26 @@ export async function POST(
         .map((a) => a.code)
         .join(", ")}`,
     })
+  }
+
+  // FF_ALL_ACCESS_PLAN_V1 (OI-9): refuse to sell an all_access seller a pack
+  // their plan already covers — they would pay for keys they hold — unless a
+  // move off all_access is scheduled (see addonOfferedForPurchase). Packs they
+  // already own are untouched (this only blocks a NEW charge). A failed plan
+  // read falls back to the pre-flag behaviour and sells the pack.
+  if (allAccessPlanEnabled()) {
+    const ctx = await addonPlanContextOrNull(req.scope, sellerId)
+    if (
+      ctx !== null &&
+      !addonOfferedForPurchase(addon, ctx.plan_code, true, ctx.pending_plan_code)
+    ) {
+      return res.status(409).json({
+        type: "conflict",
+        code: "included_in_plan",
+        message:
+          "Your plan already includes everything in this add-on, so there is nothing to buy. Add-ons you already own stay active until they expire.",
+      })
+    }
   }
 
   if (!isVendorBillingConfigured()) {

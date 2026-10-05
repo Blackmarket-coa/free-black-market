@@ -4,7 +4,8 @@ import { ExecArgs } from "@medusajs/framework/types"
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 import {
   VENDOR_FEATURE_KEYS,
-  VENDOR_PLAN_CATALOG,
+  advertisedPlans,
+  allAccessPlanEnabled,
 } from "../modules/vendor-plan/catalog"
 import { VENDOR_ADDON_CATALOG } from "../modules/vendor-plan/addons"
 import {
@@ -72,9 +73,17 @@ function readGatedRoutes(source: string): GatedRoute[] {
   return routes
 }
 
+/**
+ * The plans this report describes: the ladder sold in the current
+ * FF_ALL_ACCESS_PLAN_V1 state plus the operator row, in catalog order. Flag
+ * off that is the pre-F8 catalog (no all_access); on, free/all_access/internal
+ * (the retired tiers stay defined but are not sold, so they do not "sell" a key).
+ */
+const reportedPlans = () => advertisedPlans(allAccessPlanEnabled())
+
 /** Plan codes granting a key, cheapest first — the catalog's own order. */
 function plansGranting(key: string): string[] {
-  return VENDOR_PLAN_CATALOG.filter((p) =>
+  return reportedPlans().filter((p) =>
     (p.feature_keys as readonly string[]).includes(key)
   ).map((p) => p.code)
 }
@@ -159,16 +168,16 @@ export default async function auditVendorPlanCoverage({ container }: ExecArgs) {
 
   lines.push("What each plan opens")
   lines.push("─".repeat(78))
-  for (const plan of VENDOR_PLAN_CATALOG) {
+  for (const plan of reportedPlans()) {
     const matchers = routes
       .filter((r) => (plan.feature_keys as readonly string[]).includes(r.featureKey))
       .map((r) => r.matcher)
     lines.push(
-      `  ${plan.code.padEnd(9)} ${String(plan.feature_keys.length).padStart(2)} keys → ${
+      `  ${plan.code.padEnd(10)} ${String(plan.feature_keys.length).padStart(2)} keys → ${
         matchers.length
       } routes`
     )
-    if (matchers.length) lines.push(`             ${[...new Set(matchers)].join(", ")}`)
+    if (matchers.length) lines.push(`              ${[...new Set(matchers)].join(", ")}`)
   }
   lines.push("")
 

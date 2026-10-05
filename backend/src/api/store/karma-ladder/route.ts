@@ -6,7 +6,10 @@ import {
   TIER_ORDER,
   type GrowerTierName,
 } from "../../../modules/progression/grower-karma"
-import { VENDOR_PLAN_CATALOG } from "../../../modules/vendor-plan/catalog"
+import {
+  advertisedPlans,
+  allAccessPlanEnabled,
+} from "../../../modules/vendor-plan/catalog"
 import { limitsForPlan } from "../../../modules/vendor-plan/limits"
 
 /**
@@ -68,7 +71,10 @@ export async function GET(_req: MedusaRequest, res: MedusaResponse) {
   // Which plans floor a seller to a tier they haven't earned. Publishing this
   // is the difference between a progression system and a disguised price list:
   // a vendor grinding toward Root deserves to know it is also purchasable.
-  const plan_floors = VENDOR_PLAN_CATALOG.map((plan) => ({
+  // Only plans currently sold (FF_ALL_ACCESS_PLAN_V1): a floor on a retired
+  // tier is not something a vendor can buy, so publishing it would be the
+  // disguised price list this section exists to avoid. Off, unchanged.
+  const plan_floors = advertisedPlans(allAccessPlanEnabled()).map((plan) => ({
     code: plan.code,
     display_name: plan.display_name,
     grower_tier_floor: limitsForPlan(plan.code).grower_tier_floor,
