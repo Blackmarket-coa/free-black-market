@@ -1442,6 +1442,17 @@ export default defineMiddlewares({
         requireFeatureFlagMiddleware("NONPROFIT_PARITY_V1"),
       ],
     },
+    // Black Mask provisioning channel (F3): the operator's delivery list and
+    // dead-letter replay. Operator-only and dark until
+    // FF_BLACK_MASK_PROVISIONING_V1 is set; the handlers repeat the flag
+    // check. The glob covers /admin/black-mask/deliveries/:id/replay.
+    {
+      matcher: "/admin/black-mask*",
+      middlewares: [
+        authenticate("user", ["bearer", "session"]),
+        requireFeatureFlagMiddleware("BLACK_MASK_PROVISIONING_V1"),
+      ],
+    },
     // Rental routes - admin
     {
       matcher: "/admin/products/:id/rental-config",

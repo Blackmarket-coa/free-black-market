@@ -59,6 +59,16 @@ export const PHASE0_FEATURE_FLAGS = {
   // split, never the campaign escrow. Default off; L25 applies to any public
   // coalition fundraising page.
   SHARED_GOAL_COALITION_V1: "FF_SHARED_GOAL_COALITION_V1",
+  // Black Mask provisioning webhook channel (F3,
+  // docs/BLACK_MASK_PROVISIONING_CONTRACT.md): a signed outbound notice to the
+  // Black Mask provisioning service when a vault order is placed, renewed,
+  // cancelled, fails payment or enters grace / read-only. Default off; with it
+  // off nothing is enqueued, nothing is sent, and /admin/black-mask/* is 404.
+  // It also needs BLACK_MASK_PROVISIONING_URL / _WEBHOOK_SECRET /
+  // _WEBHOOK_KEY_ID / _SELLER_ID; any one unset keeps the channel a no-op.
+  // Legal checkpoint L28 (the vault licence) gates the paid launch this flag
+  // serves; the flag surfaces it and does not resolve it.
+  BLACK_MASK_PROVISIONING_V1: "FF_BLACK_MASK_PROVISIONING_V1",
 } as const
 
 export type Phase0FeatureFlag = keyof typeof PHASE0_FEATURE_FLAGS
