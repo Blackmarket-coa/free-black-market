@@ -1,4 +1,5 @@
-import { EARNING_DESCRIPTIONS, TIER_UNLOCKS } from "../route"
+import { EARNING_DESCRIPTIONS, GET, TIER_UNLOCKS } from "../route"
+import { PHASE0_FEATURE_FLAGS } from "../../../../shared/feature-flags"
 import {
   GROWER_KARMA_DELTAS,
   GROWER_TIERS,
@@ -75,5 +76,43 @@ describe("published KARMA ladder", () => {
     for (const floor of floors) {
       expect(TIER_ORDER).toContain(floor)
     }
+  })
+})
+
+describe("published plan floors (FF_ALL_ACCESS_PLAN_V1)", () => {
+  const ENV = PHASE0_FEATURE_FLAGS.ALL_ACCESS_PLAN_V1
+
+  afterEach(() => {
+    delete process.env[ENV]
+  })
+
+  const floors = async () => {
+    const res = {
+      body: undefined as unknown as { plan_floors: Array<{ code: string; grower_tier_floor: string }> },
+      set() {
+        return res
+      },
+      json(payload: unknown) {
+        res.body = payload as typeof res.body
+        return res
+      },
+    }
+    await GET({} as never, res as never)
+    return res.body.plan_floors
+  }
+
+  it("publishes the pre-F8 floors with the flag off", async () => {
+    expect(await floors()).toEqual([
+      { code: "pro", display_name: "Pro", grower_tier_floor: "Root" },
+      { code: "scale", display_name: "Scale", grower_tier_floor: "Canopy" },
+    ])
+  })
+
+  it("publishes no floor once the flooring tiers are no longer sold", async () => {
+    // all_access makes no tier claim (F7; L27), and a floor on a plan nobody
+    // can buy is not something to advertise. The storefront hides the section
+    // when the list is empty.
+    process.env[ENV] = "true"
+    expect(await floors()).toEqual([])
   })
 })

@@ -4,8 +4,9 @@ import { createLogger } from "../../../../shared/logger"
 import { VENDOR_PLAN_MODULE } from "../../../../modules/vendor-plan"
 import type VendorPlanService from "../../../../modules/vendor-plan/service"
 import {
-  VENDOR_PLAN_CATALOG,
+  allAccessPlanEnabled,
   getPlanDefinition,
+  offeredPlans,
 } from "../../../../modules/vendor-plan/catalog"
 import { limitsForPlan } from "../../../../modules/vendor-plan/limits"
 import { ENTITLEMENT_MODULE } from "../../../../modules/entitlement"
@@ -76,11 +77,10 @@ export async function GET(
       // cap by hitting it — the panel can show "1 of 1 embed keys" instead.
       // `null` in any field means unlimited.
       limits: limitsForPlan(assignment.plan_code),
-      // Only self-serve plans. Operator-assigned ones (`internal`) are not
-      // something a vendor can select for themselves.
-      available_plans: VENDOR_PLAN_CATALOG.filter(
-        (p) => p.is_active && p.is_public
-      ).map((p) => ({
+      // Only the plans a vendor may select right now: the offered ladder for
+      // the FF_ALL_ACCESS_PLAN_V1 state (off: free/starter/pro/scale; on:
+      // free/all_access). Operator-assigned ones (`internal`) never appear.
+      available_plans: offeredPlans(allAccessPlanEnabled()).map((p) => ({
         code: p.code,
         display_name: p.display_name,
         description: p.description,

@@ -3,7 +3,11 @@ import { requireSellerId } from "../../../../shared"
 import { createLogger } from "../../../../shared/logger"
 import { VENDOR_PLAN_MODULE } from "../../../../modules/vendor-plan"
 import type VendorPlanService from "../../../../modules/vendor-plan/service"
-import { getPlanDefinition } from "../../../../modules/vendor-plan/catalog"
+import {
+  allAccessPlanEnabled,
+  getPlanDefinition,
+  isPlanOffered,
+} from "../../../../modules/vendor-plan/catalog"
 import { VendorPlanAssignedBy, VendorPlanStatus } from "../../../../modules/vendor-plan/models"
 import { VENDOR_BILLING_MODULE } from "../../../../modules/vendor-billing"
 import type VendorBillingService from "../../../../modules/vendor-billing/service"
@@ -18,6 +22,28 @@ const log = createLogger("api/vendor/plan/change")
 type ChangeBody = {
   plan_code?: string
   idempotency_key?: string
+  /**
+   * The vendor's affirmative approval that a priced plan renews every period
+   * until cancelled. Required (must be literally `true`) for a priced plan
+   * while FF_ALL_ACCESS_PLAN_V1 is on; ignored otherwise.
+   */
+  auto_renew_consent?: unknown
+}
+
+/**
+ * The key a vendor's idempotency key is stored under. Plan-event keys are
+ * unique across ALL sellers (`IDX_vendor_plan_event_idem` is on the key
+ * alone), so a client key used verbatim let one vendor's request claim
+ * another's: two vendors who sent the same key got one transition, and the
+ * second a silent `replayed: true` with no change. Prefixing the seller makes
+ * a replay mean "this seller already sent this", which is all it should mean.
+ */
+function scopedIdempotencyKey(
+  sellerId: string,
+  key: unknown
+): string | null {
+  if (typeof key !== "string" || !key.trim()) return null
+  return `vendor:${sellerId}:${key.trim()}`
 }
 
 /**
@@ -57,11 +83,31 @@ export async function POST(
   }
 
   // Operator-assigned plans are not self-selectable — otherwise any vendor
-  // could put themselves on the internal all-features plan.
-  if (!definition.is_public) {
+  // could put themselves on the internal all-features plan. Nor is a plan the
+  // current ladder does not offer: with FF_ALL_ACCESS_PLAN_V1 on, the retired
+  // starter/pro/scale tiers; with it off, all_access. Both refusals return the
+  // same body, so the response says nothing about which rows exist behind it.
+  if (!definition.is_public || !isPlanOffered(planCode)) {
     return res.status(403).json({
       type: "forbidden",
       message: `Plan "${planCode}" cannot be selected directly`,
+    })
+  }
+
+  // "Renew upon approval": with FF_ALL_ACCESS_PLAN_V1 on, a recurring plan is
+  // started only on the vendor's affirmative approval of its renewal, and that
+  // approval is recorded on the transition's event row. The panel's confirm
+  // step (which states price, trial and renewal) is what sends it. Flag off,
+  // the route is unchanged.
+  const requiresConsent =
+    allAccessPlanEnabled() &&
+    definition.price_amount > 0 &&
+    definition.interval !== "none"
+  if (requiresConsent && body.auto_renew_consent !== true) {
+    return res.status(400).json({
+      type: "invalid_data",
+      message:
+        "auto_renew_consent must be true: this plan renews every period until you cancel",
     })
   }
 
@@ -70,9 +116,17 @@ export async function POST(
     const result = await plans.applyPlanTransition({
       seller_id: sellerId,
       to_plan_code: planCode,
-      idempotency_key: body.idempotency_key ?? null,
+      idempotency_key: scopedIdempotencyKey(sellerId, body.idempotency_key),
       assigned_by: VendorPlanAssignedBy.SELF,
       reason: "self-serve plan change",
+      ...(requiresConsent
+        ? {
+            event_payload: {
+              auto_renew_consent: true,
+              auto_renew_consent_at: new Date().toISOString(),
+            },
+          }
+        : {}),
     })
 
     if (result.decision.kind === "rejected" && !result.replayed) {

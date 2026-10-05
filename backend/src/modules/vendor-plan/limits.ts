@@ -136,6 +136,37 @@ const PLAN_LIMITS: Record<string, VendorPlanLimits> = {
     included_embed_requests: 5_000_000,
     grower_tier_floor: "Canopy",
   },
+  /**
+   * Black Mask F8 ($10/month, every feature). Operator answer OI-7: the most
+   * generous public tier's values (scale's), except where `internal` is
+   * plainly unlimited for a feature this plan unlocks. Field by field:
+   *
+   * - embed_requests_per_minute 1,000 and analytics_range_days 365: scale's,
+   *   which `internal` also uses — there is nothing more generous to take.
+   * - embed_keys, connect_domains, webhook_subscriptions, vault_documents:
+   *   unlimited, as on `internal`. These count configuration objects behind
+   *   features all_access unlocks (vendor.embed, vendor.document_vault); they
+   *   cost nothing at the margin, so a cap would only make "all access" false.
+   * - vault_storage_bytes 50 GB and included_embed_requests 5,000,000:
+   *   scale's, NOT internal's unlimited. These are the two cost meters. Null
+   *   storage is an unbounded bill on a $10 plan, and a null monthly request
+   *   allowance is "never billable" (see the field doc), which would switch
+   *   overage off entirely rather than set a generous allowance.
+   * - grower_tier_floor null: F7 — KARMA carries no money, and flat payouts
+   *   are pending counsel (L27), so this plan makes no tier claim. With no
+   *   vendor on a paid plan today (OI-6) this moves no one's split.
+   */
+  all_access: {
+    embed_requests_per_minute: 1_000,
+    analytics_range_days: 365,
+    embed_keys: null,
+    connect_domains: null,
+    webhook_subscriptions: null,
+    vault_documents: null,
+    vault_storage_bytes: 50 * 1024 * 1024 * 1024,
+    included_embed_requests: 5_000_000,
+    grower_tier_floor: null,
+  },
   internal: {
     embed_requests_per_minute: 1_000,
     analytics_range_days: 365,

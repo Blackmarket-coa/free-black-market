@@ -15,6 +15,11 @@ export type FeeSchedulePlan = {
   interval: "month" | "year" | "none"
   platform_fee_percent: number
   is_default: boolean
+  /**
+   * Free-trial length on this plan. Optional so an older backend that does not
+   * send it still type-checks; absent reads as "no trial stated".
+   */
+  trial_days?: number
 }
 
 export type FeeSchedule = {

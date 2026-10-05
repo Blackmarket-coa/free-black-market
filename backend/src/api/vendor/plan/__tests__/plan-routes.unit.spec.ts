@@ -9,6 +9,14 @@ import {
   getPlanDefinition,
 } from "../../../../modules/vendor-plan/catalog"
 import { limitsForPlan } from "../../../../modules/vendor-plan/limits"
+import { PHASE0_FEATURE_FLAGS } from "../../../../shared/feature-flags"
+
+const ALL_ACCESS_ENV = PHASE0_FEATURE_FLAGS.ALL_ACCESS_PLAN_V1
+
+afterEach(() => {
+  // Flag specs mutate process.env; a leaked value flips later specs.
+  delete process.env[ALL_ACCESS_ENV]
+})
 
 /**
  * Route-handler harness per `api/vendor/__tests__/invoices-route.unit.spec.ts`.
@@ -415,5 +423,182 @@ describe("POST /vendor/plan/change", () => {
 
     expect(res.statusCode).toBe(200)
     expect(res.body.replayed).toBe(true)
+  })
+})
+
+describe("offered-set gating (FF_ALL_ACCESS_PLAN_V1)", () => {
+  /** The pre-F8 available_plans row, built field by field from the catalog. */
+  const availableRow = (code: string) => {
+    const p = getPlanDefinition(code)!
+    return {
+      code: p.code,
+      display_name: p.display_name,
+      description: p.description,
+      price_amount: p.price_amount,
+      currency_code: p.currency_code,
+      interval: p.interval,
+      trial_days: p.trial_days,
+      display_order: p.display_order,
+      feature_keys: p.feature_keys,
+      limits: limitsForPlan(p.code),
+      platform_fee_percent: p.platform_fee_percent,
+    }
+  }
+
+  it("plan/me offers exactly the pre-F8 ladder, byte for byte, with the flag off", async () => {
+    const { req } = makeReq()
+    const res = createRes()
+    await GET(req as never, res as never)
+
+    expect(res.body.available_plans).toEqual(
+      ["free", "starter", "pro", "scale"].map(availableRow)
+    )
+  })
+
+  it("plan/me offers free and all_access with the flag on", async () => {
+    process.env[ALL_ACCESS_ENV] = "true"
+    const { req } = makeReq()
+    const res = createRes()
+    await GET(req as never, res as never)
+
+    expect(res.body.available_plans).toEqual(
+      ["free", "all_access"].map(availableRow)
+    )
+    const all = (res.body.available_plans as Record<string, unknown>[])[1]
+    expect(all).toMatchObject({
+      price_amount: 1000,
+      interval: "month",
+      trial_days: 30,
+      platform_fee_percent: 0,
+    })
+    expect(all.limits).toEqual(limitsForPlan("all_access"))
+  })
+
+  it("plan/me still reports a retired plan a seller is on, with its features and limits", async () => {
+    // Retired tiers stay defined; only the offer changes.
+    process.env[ALL_ACCESS_ENV] = "true"
+    const { req } = makeReq({}, { planCode: "pro" })
+    const res = createRes()
+    await GET(req as never, res as never)
+
+    expect((res.body.plan as Record<string, unknown>).code).toBe("pro")
+    expect((res.body.plan as Record<string, unknown>).platform_fee_percent).toBe(2)
+    expect(res.body.limits).toEqual(limitsForPlan("pro"))
+  })
+
+  it("plan/change refuses a retired tier with the flag on, with the same 403 body as an operator plan", async () => {
+    process.env[ALL_ACCESS_ENV] = "true"
+    for (const code of ["starter", "pro", "scale"]) {
+      const { req, planService } = makeReq({ plan_code: code })
+      const res = createRes()
+      await CHANGE(req as never, res as never)
+
+      expect(res.statusCode).toBe(403)
+      expect(res.body).toEqual({
+        type: "forbidden",
+        message: `Plan "${code}" cannot be selected directly`,
+      })
+      expect(planService.applyPlanTransition).not.toHaveBeenCalled()
+    }
+
+    // Same shape as the is_public refusal, so the two are indistinguishable.
+    const { req } = makeReq({ plan_code: "internal" })
+    const res = createRes()
+    await CHANGE(req as never, res as never)
+    expect(res.statusCode).toBe(403)
+    expect(Object.keys(res.body).sort()).toEqual(["message", "type"])
+    expect(res.body.type).toBe("forbidden")
+  })
+
+  it("plan/change accepts all_access with the flag on", async () => {
+    process.env[ALL_ACCESS_ENV] = "true"
+    const { req, planService, billingCharges } = makeReq(
+      { plan_code: "all_access", auto_renew_consent: true },
+      {
+        transitionResult: {
+          assignment: {
+            plan_code: "all_access",
+            status: "trialing",
+            current_period_end: new Date("2026-11-04T00:00:00Z"),
+            pending_plan_code: null,
+            pending_effective_at: null,
+          },
+          decision: { kind: "immediate", change: "upgrade" },
+          replayed: false,
+        },
+      }
+    )
+    const res = createRes()
+    await CHANGE(req as never, res as never)
+
+    expect(res.statusCode).toBe(200)
+    expect(planService.applyPlanTransition).toHaveBeenCalledWith(
+      expect.objectContaining({ seller_id: "sel_1", to_plan_code: "all_access" })
+    )
+    // Trialing: nothing billed on signup.
+    expect(billingCharges).toHaveLength(0)
+  })
+
+  it("plan/change refuses all_access with the flag on but no auto-renew approval", async () => {
+    process.env[ALL_ACCESS_ENV] = "true"
+    const { req, planService } = makeReq({ plan_code: "all_access" })
+    const res = createRes()
+    await CHANGE(req as never, res as never)
+
+    expect(res.statusCode).toBe(400)
+    expect(res.body.type).toBe("invalid_data")
+    expect(planService.applyPlanTransition).not.toHaveBeenCalled()
+  })
+
+  it("plan/change passes the seller-scoped key and the recorded approval to the service", async () => {
+    process.env[ALL_ACCESS_ENV] = "true"
+    const { req, planService } = makeReq({
+      plan_code: "all_access",
+      idempotency_key: "panel:abc",
+      auto_renew_consent: true,
+    })
+    const res = createRes()
+    await CHANGE(req as never, res as never)
+
+    expect(planService.applyPlanTransition).toHaveBeenCalledWith(
+      expect.objectContaining({
+        idempotency_key: "vendor:sel_1:panel:abc",
+        event_payload: expect.objectContaining({ auto_renew_consent: true }),
+      })
+    )
+  })
+
+  it("plan/change with the flag off needs no approval and records none", async () => {
+    const { req, planService } = makeReq({ plan_code: "starter" })
+    const res = createRes()
+    await CHANGE(req as never, res as never)
+
+    expect(res.statusCode).toBe(200)
+    const input = (planService.applyPlanTransition.mock.calls[0] as unknown[])[0] as Record<string, unknown>
+    expect(input).not.toHaveProperty("event_payload")
+    expect(input.idempotency_key).toBeNull()
+  })
+
+  it("plan/change refuses all_access with the flag off, same body", async () => {
+    const { req, planService } = makeReq({ plan_code: "all_access" })
+    const res = createRes()
+    await CHANGE(req as never, res as never)
+
+    expect(res.statusCode).toBe(403)
+    expect(res.body).toEqual({
+      type: "forbidden",
+      message: 'Plan "all_access" cannot be selected directly',
+    })
+    expect(planService.applyPlanTransition).not.toHaveBeenCalled()
+  })
+
+  it("plan/change still accepts the paid tiers with the flag off", async () => {
+    for (const code of ["starter", "pro", "scale"]) {
+      const { req, planService } = makeReq({ plan_code: code })
+      const res = createRes()
+      await CHANGE(req as never, res as never)
+      expect(res.statusCode).toBe(200)
+      expect(planService.applyPlanTransition).toHaveBeenCalledTimes(1)
+    }
   })
 })
