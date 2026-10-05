@@ -471,3 +471,110 @@ export const bugReportAuthRateLimiter = createRateLimiter({
     return clientIp(req)
   },
 })
+
+// ============================================================
+// Hawala and wellness money-path limiters.
+//
+// These budgets were declared in nested `middlewares.ts` files under
+// `api/{store,vendor}/hawala` and `api/vendor/wellness`, which Medusa never
+// loaded (its MiddlewareFileLoader reads only `src/api/middlewares.ts`). They
+// are carried over here as declared — same window, same max — and wired
+// through `src/api/middlewares.ts` via each surface's `_middlewares.ts`.
+//
+// Two things changed from the dead originals, both deliberately:
+//   - Each limiter has its OWN keyPrefix. `standardRateLimiter` keys every
+//     route that uses it into one "standard:<ip>" bucket, so donation or
+//     contribution traffic could otherwise throttle deposits and vice versa.
+//   - The shared store (Redis when REDIS_URL is set) replaces an unbounded
+//     per-file in-process Map.
+// The key is the dead files' own: the authenticated actor (falling back to the
+// client IP) plus the request path, so each endpoint keeps its own bucket. The
+// framework's /store auth and Mercur's /vendor/* auth both run before any
+// project middleware, so the actor is already resolved when these run.
+// ============================================================
+
+/**
+ * `actor:<id>:<path>` when a caller is authenticated, else `ip:<ip>:<path>`.
+ * The path keeps one endpoint's traffic from spending another's budget, as the
+ * dead nested limiters did.
+ */
+export function actorPathRateLimitKey(req: MedusaRequest): string {
+  const ctx = (req as { auth_context?: { actor_id?: unknown } }).auth_context
+  const actor =
+    typeof ctx?.actor_id === "string" && ctx.actor_id.length > 0
+      ? `actor:${ctx.actor_id}`
+      : `ip:${clientIp(req)}`
+  return `${actor}:${req.path}`
+}
+
+/** Store wallet deposit and withdraw (ACH pull / push): 5 per minute. */
+export const storeHawalaMoneyRateLimiter = createRateLimiter({
+  windowMs: 60_000,
+  max: 5,
+  keyPrefix: "hawala-store-money",
+  keyGenerator: actorPathRateLimitKey,
+})
+
+/** Store pool investment: 10 per minute. */
+export const storeHawalaInvestRateLimiter = createRateLimiter({
+  windowMs: 60_000,
+  max: 10,
+  keyPrefix: "hawala-store-invest",
+  keyGenerator: actorPathRateLimitKey,
+})
+
+/** Store bank-account linking: 3 per hour. */
+export const storeHawalaBankAccountRateLimiter = createRateLimiter({
+  windowMs: 3_600_000,
+  max: 3,
+  keyPrefix: "hawala-store-bank-account",
+  keyGenerator: actorPathRateLimitKey,
+})
+
+/** Store hawala reads: 30 per minute per endpoint. */
+export const storeHawalaReadRateLimiter = createRateLimiter({
+  windowMs: 60_000,
+  max: 30,
+  keyPrefix: "hawala-store-read",
+  keyGenerator: actorPathRateLimitKey,
+})
+
+/** Vendor payouts, advances, payments and pool withdrawals: 5 per minute. */
+export const vendorHawalaMoneyRateLimiter = createRateLimiter({
+  windowMs: 60_000,
+  max: 5,
+  keyPrefix: "hawala-vendor-money",
+  keyGenerator: actorPathRateLimitKey,
+})
+
+/** Vendor pool creation: 10 per hour. */
+export const vendorHawalaPoolCreateRateLimiter = createRateLimiter({
+  windowMs: 3_600_000,
+  max: 10,
+  keyPrefix: "hawala-vendor-pool-create",
+  keyGenerator: actorPathRateLimitKey,
+})
+
+/** Vendor hawala reads: 30 per minute per endpoint. */
+export const vendorHawalaReadRateLimiter = createRateLimiter({
+  windowMs: 60_000,
+  max: 30,
+  keyPrefix: "hawala-vendor-read",
+  keyGenerator: actorPathRateLimitKey,
+})
+
+/** Wellness automation test sends (each one is a Blackout DM): 5 per minute. */
+export const vendorWellnessTestSendRateLimiter = createRateLimiter({
+  windowMs: 60_000,
+  max: 5,
+  keyPrefix: "wellness-test-send",
+  keyGenerator: actorPathRateLimitKey,
+})
+
+/** Vendor wellness reads: 60 per minute per endpoint. */
+export const vendorWellnessReadRateLimiter = createRateLimiter({
+  windowMs: 60_000,
+  max: 60,
+  keyPrefix: "wellness-read",
+  keyGenerator: actorPathRateLimitKey,
+})

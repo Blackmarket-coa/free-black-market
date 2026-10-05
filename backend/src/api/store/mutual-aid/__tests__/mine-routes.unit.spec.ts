@@ -1,7 +1,15 @@
 import { GET as MY_REQUESTS } from "../requests/mine/route"
 import { GET as MY_OFFERS } from "../offers/mine/route"
 import { MUTUAL_AID_MODULE } from "../../../../modules/mutual-aid"
-import aidMiddlewares from "../middlewares"
+import { defineMiddlewares } from "@medusajs/framework/http"
+import { mutualAidMiddlewareRoutes } from "../_middlewares"
+
+// The route set src/api/middlewares.ts spreads into its own defineMiddlewares
+// call (the nested file itself is never loaded by Medusa; the root import is
+// pinned by src/api/__tests__/nested-middlewares.unit.spec.ts, and the live
+// chain by src/api/__tests__/nested-middleware-auth.unit.spec.ts). Normalised
+// the same way, so `method` reads back as `methods`.
+const aidMiddlewares = defineMiddlewares({ routes: mutualAidMiddlewareRoutes })
 
 /**
  * `/store/mutual-aid/{requests,offers}/mine` — the only two non-public reads on

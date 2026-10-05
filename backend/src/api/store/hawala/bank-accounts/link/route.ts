@@ -100,7 +100,8 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
 
     res.status(201).json({ bank_account: bankAccount })
   } catch (error) {
-    // Logged, not echoed: a Stripe or database message is internal detail.
+    // Logged here, not echoed: a Stripe or database error message is internal
+    // detail, and the storefront now surfaces a `{ error }` string verbatim.
     log.error("Error completing bank account link:", error)
     res.status(500).json({ error: "Failed to link bank account" })
   }
