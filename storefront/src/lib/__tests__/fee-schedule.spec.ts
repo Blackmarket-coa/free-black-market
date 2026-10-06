@@ -3,7 +3,11 @@ import path from "path"
 
 import { describe, expect, it } from "vitest"
 
-import { FALLBACK_DEFAULT_FEE_PERCENT } from "../constants/fees"
+import {
+  FALLBACK_DEFAULT_FEE_PERCENT,
+  FALLBACK_PROCESSING_FIXED_CENTS,
+  FALLBACK_PROCESSING_PERCENT,
+} from "../constants/fees"
 
 /**
  * The storefront quotes a commission rate. Normally it comes from
@@ -66,5 +70,29 @@ describe("fee fallback parity with the backend", () => {
     )
     expect(freePlan).not.toBeNull()
     expect(Number(freePlan![1])).toBe(FALLBACK_DEFAULT_FEE_PERCENT)
+  })
+})
+
+describe("processing-estimate fallback parity with the backend (Black Mask F6)", () => {
+  // The estimate quoted when the schedule says fee-first but sends no
+  // figures must be the backend's own default payout config.
+  const serviceSource = readFileSync(
+    path.join(__dirname, "../../../../backend/src/modules/payout-breakdown/service.ts"),
+    "utf8"
+  )
+  const defaultConfig = (key: string): number => {
+    const block = serviceSource.match(/async getDefaultConfig\(\)[\s\S]*?createPayoutConfigs\(\{([\s\S]*?)\}\)/)
+    if (!block) throw new Error("Could not find getDefaultConfig's defaults in payout-breakdown/service.ts")
+    const match = block[1].match(new RegExp(`${key}:\\s*([\\d.]+)`))
+    if (!match) throw new Error(`Could not find ${key} in getDefaultConfig`)
+    return Number(match[1])
+  }
+
+  it("quotes the backend's default processing percent", () => {
+    expect(FALLBACK_PROCESSING_PERCENT).toBe(defaultConfig("payment_processing_percent"))
+  })
+
+  it("quotes the backend's default fixed processing cents", () => {
+    expect(FALLBACK_PROCESSING_FIXED_CENTS).toBe(defaultConfig("payment_processing_fixed"))
   })
 })

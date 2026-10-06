@@ -8,11 +8,18 @@ import PayoutBreakdownService from "../modules/payout-breakdown/service"
 import { CREATOR_ATTRIBUTION_MODULE } from "../modules/creator-attribution"
 import type CreatorAttributionService from "../modules/creator-attribution/service"
 import { emitBlackoutEvent } from "../lib/blackout-emit"
-import { resolveSellerPlatformFee } from "../shared/platform-fee"
+import { feeFirstSplitEnabled, resolveSellerPlatformFee } from "../shared/platform-fee"
+import {
+  DEFAULT_PROCESSING_FIXED_CENTS,
+  DEFAULT_PROCESSING_PERCENT,
+  computeFeeFirstSplit,
+  type FeeFirstSplit,
+} from "../modules/payout-breakdown/fee-first"
 import { resolveSellerPluginPayees } from "../shared/plugin-payees"
 import { disbursePluginDeveloperShare } from "../shared/plugin-revenue-payout"
 import { resolveSellerReferralPayee } from "../shared/referral-payees"
 import { disburseReferralShare } from "../shared/referral-revenue-payout"
+import { CARD_PROCESSING_LEG } from "../modules/hawala-ledger/card-processing"
 import {
   isConsignmentSplitLive,
   resolveOrderConsignment,
@@ -143,7 +150,31 @@ export default async function hawalaOrderPaymentSubscriber({
     // this composition point can read it across the module boundary.
     const platformFee = await resolveSellerPlatformFee(container, sellerId)
     const platformFeePercent = platformFee.percent
-    const platformFeeAmount = feeBaseAmount * (platformFeePercent / 100)
+
+    // Fee-first split (FF_FEE_FIRST_SPLIT_V1, Black Mask F6), decided HERE at
+    // the composition point. On: the card-processing estimate is taken on
+    // the WHOLE amount FBM's Stripe account charged (order.total, all of which
+    // sits in this one seller's leg — tax, delivery and tip included), comes
+    // off first, and the commission is taken on what is left — the same pure
+    // function, with the same inputs, that `calculateBreakdown` runs below,
+    // so the ledger COMMISSION is the stored breakdown's platform fee to the
+    // cent. Both use ONE fee base (`subtotal ?? total`), in integer cents.
+    // Off: `feeFirst` is null and every amount below is the pre-F6 expression,
+    // including the unrounded dollar fee (a known defect kept byte-identical
+    // rather than changed under a flag that is not set).
+    const feeFirst: (FeeFirstSplit & { configFallback: boolean }) | null = feeFirstSplitEnabled()
+      ? await orderFeeFirstSplit(payoutService, {
+          sellerId,
+          feeBaseCents: Math.round(Number(order.subtotal ?? order.total)),
+          chargedCents: Math.round(Number(order.total)),
+          feePercent: platformFeePercent,
+        })
+      : null
+    const feeFirstSeller = feeFirst?.sellers[0] ?? null
+    const platformFeeAmount = feeFirstSeller
+      ? feeFirstSeller.commissionCents / 100
+      : feeBaseAmount * (platformFeePercent / 100)
+    const processingFeeCents = feeFirstSeller?.processingCents ?? 0
 
     // Look up creator attribution (idempotent — created earlier by
     // attribute-order-on-placed subscriber, but we look it up rather than
@@ -183,7 +214,11 @@ export default async function hawalaOrderPaymentSubscriber({
       const referralSharePercent = Number(payoutConfig.referral_percent ?? 0)
 
       const breakdown = await payoutService.calculateBreakdown({
-        subtotal: Number(order.subtotal || order.total),
+        // Flag off: the pre-F6 base (`||`), unchanged. Fee-first: the ledger's
+        // base, so the two cannot diverge on a zero subtotal.
+        subtotal: feeFirst
+          ? Math.round(Number(order.subtotal ?? order.total))
+          : Number(order.subtotal || order.total),
         sellerId,
         orderId,
         currencyCode: order.currency_code,
@@ -211,6 +246,21 @@ export default async function hawalaOrderPaymentSubscriber({
         referralBySeller: referralSharePercent > 0
           ? { [sellerId]: await resolveSellerReferralPayee(container, sellerId) }
           : undefined,
+        // Fee-first only; absent with the flag off so the input is unchanged.
+        // The whole charge sits in this seller's leg, as it does in the ledger.
+        // The processing figures are the ones the ledger legs were built
+        // from (one config read), so the two cannot disagree.
+        ...(feeFirst
+          ? {
+              feeFirst: {
+                chargedCentsBySeller: { [sellerId]: feeFirst.chargedTotalCents },
+                processing: {
+                  percent: feeFirst.processingPercent,
+                  fixedCents: feeFirst.processingFixedCents,
+                },
+              },
+            }
+          : {}),
       })
       await payoutService.storeOrderBreakdown(
         orderId,
@@ -241,6 +291,7 @@ export default async function hawalaOrderPaymentSubscriber({
       config: ConsignmentConfig
       totalCents: number
       platformFeeCents: number
+      processingCents: number
     } | null = null
     if (isConsignmentSplitLive()) {
       const config = await lookupOrderConsignment(container, order, sellerId)
@@ -260,12 +311,17 @@ export default async function hawalaOrderPaymentSubscriber({
           log.warn(
             `[Hawala] Order ${orderId} has auto-invest configured; skipping consignment split`
           )
-        } else if (totalCents - platformFeeCents <= 0) {
+        } else if (totalCents - processingFeeCents - platformFeeCents <= 0) {
           log.warn(
             `[Hawala] Order ${orderId} has no positive seller-side amount; skipping consignment split`
           )
         } else {
-          consignmentPlan = { config, totalCents, platformFeeCents }
+          consignmentPlan = {
+            config,
+            totalCents,
+            platformFeeCents,
+            processingCents: processingFeeCents,
+          }
         }
       }
     }
@@ -293,6 +349,8 @@ export default async function hawalaOrderPaymentSubscriber({
           vendorSellerId: sellerId,
           totalCents: consignmentPlan.totalCents,
           platformFeeCents: consignmentPlan.platformFeeCents,
+          processingCents: consignmentPlan.processingCents,
+          processingMetadata: feeFirst ? processingMetadata(feeFirst) : undefined,
           config: consignmentPlan.config,
           idempotencyKey: `order-payment-${orderId}`,
         })
@@ -305,6 +363,14 @@ export default async function hawalaOrderPaymentSubscriber({
           producer_id: producerId,
           auto_invest_percentage: autoInvestPercentage,
           idempotency_key: `order-payment-${orderId}`,
+          // Fee-first only: the processing leg (escrow -> card-processing
+          // account). Absent with the flag off, so the call is unchanged.
+          ...(feeFirst
+            ? {
+                processing_fee_amount: processingFeeCents / 100,
+                processing_metadata: processingMetadata(feeFirst),
+              }
+            : {}),
           // Subscription renewals get an explicit ledger reference
           // (ECONOMIC_REVIEW H3): the renewal cart stamps
           // metadata.subscription_id + renewal=true, and this is the ONE
@@ -453,6 +519,9 @@ async function processConsignmentOrderPayment(
     vendorSellerId: string
     totalCents: number
     platformFeeCents: number
+    /** Fee-first only (0 otherwise): the processing leg, before the split. */
+    processingCents: number
+    processingMetadata?: Record<string, unknown>
     config: ConsignmentConfig
     idempotencyKey: string
   }
@@ -482,10 +551,34 @@ async function processConsignmentOrderPayment(
     idempotency_key: `${args.idempotencyKey}-fee`,
   })
 
-  // 3. Seller-side amount split escrow->consignor + escrow->vendor
+  // 2b. Fee-first only: the card-processing estimate, escrow -> its own
+  // account, under the same `-processing` key the plain path uses, so a
+  // redelivery across an FBM_CONSIGNMENT_SPLIT_LIVE flip cannot post it twice.
+  const processingEntries =
+    args.processingCents > 0
+      ? [
+          await hawalaService.createTransfer({
+            debit_account_id: escrowAccount.id,
+            credit_account_id: (await hawalaService.getOrCreateCardProcessingAccount()).id,
+            amount: args.processingCents / 100,
+            entry_type: "FEE",
+            description: "Card processing (estimate), taken off the sale before the platform fee",
+            order_id: args.orderId,
+            idempotency_key: `${args.idempotencyKey}-processing`,
+            // Linked to its purchase exactly as the plain path's leg is.
+            correlation_id: args.idempotencyKey,
+            parent_entry_id: purchaseEntry?.id,
+            metadata: { ...(args.processingMetadata ?? {}), leg: CARD_PROCESSING_LEG },
+          }),
+        ]
+      : []
+
+  // 3. Seller-side amount split escrow->consignor + escrow->vendor. With
+  // fee-first on, processing came off first, so the consignor's bps apply to
+  // what is left after processing and commission.
   const splitEntries = await hawalaService.processConsignmentSplit({
     orderId: args.orderId,
-    sellerAmountCents: args.totalCents - args.platformFeeCents,
+    sellerAmountCents: args.totalCents - args.processingCents - args.platformFeeCents,
     currencyCode: args.currencyCode,
     vendorSellerId: args.vendorSellerId,
     consignorSellerId: args.config.consignor_seller_id,
@@ -493,7 +586,82 @@ async function processConsignmentOrderPayment(
     idempotencyKey: args.idempotencyKey,
   })
 
-  return [purchaseEntry, feeEntry, ...splitEntries]
+  return [purchaseEntry, feeEntry, ...processingEntries, ...splitEntries]
+}
+
+/**
+ * The fee-first split for this single-seller order, from the payout config's
+ * processing estimate. The same `computeFeeFirstSplit` call (same seller, fee
+ * base, charge and rate) that `calculateBreakdown` makes when handed
+ * `feeFirst`, so ledger and stored breakdown agree to the cent.
+ */
+async function orderFeeFirstSplit(
+  payoutService: PayoutBreakdownService,
+  args: { sellerId: string; feeBaseCents: number; chargedCents: number; feePercent: number }
+): Promise<FeeFirstSplit & { configFallback: boolean }> {
+  const { percent, fixedCents, configFallback } = await readProcessingEstimate(payoutService)
+  const split = computeFeeFirstSplit({
+    sellers: [
+      {
+        sellerId: args.sellerId,
+        subtotalCents: args.feeBaseCents,
+        chargedCents: args.chargedCents,
+        feePercent: args.feePercent,
+      },
+    ],
+    processingPercent: percent,
+    processingFixedCents: fixedCents,
+  })
+  return { ...split, configFallback }
+}
+
+/**
+ * The processing estimate from payout_config, read ONCE per settlement. A
+ * failed read (or a row without usable figures) must not skip the whole
+ * settlement — with the flag off a config failure only drops the breakdown —
+ * so it falls back to the documented default (2.9% + 30¢, what
+ * `getDefaultConfig` seeds) and the processing leg is stamped
+ * `config_fallback: true`, so a later true-up can find it.
+ */
+async function readProcessingEstimate(
+  payoutService: PayoutBreakdownService
+): Promise<{ percent: number; fixedCents: number; configFallback: boolean }> {
+  try {
+    const config = await payoutService.getDefaultConfig()
+    const percent = Number(config.payment_processing_percent)
+    const fixedCents = Number(config.payment_processing_fixed)
+    if (
+      Number.isFinite(percent) && percent >= 0 && percent <= 100 &&
+      Number.isSafeInteger(fixedCents) && fixedCents >= 0
+    ) {
+      return { percent, fixedCents, configFallback: false }
+    }
+    log.warn(
+      `[Hawala] payout_config processing estimate unusable (${config.payment_processing_percent} / ` +
+        `${config.payment_processing_fixed}); using the documented default`
+    )
+  } catch (error) {
+    log.warn("[Hawala] Could not read payout_config for the processing estimate; using the documented default:", error)
+  }
+  return {
+    percent: DEFAULT_PROCESSING_PERCENT,
+    fixedCents: DEFAULT_PROCESSING_FIXED_CENTS,
+    configFallback: true,
+  }
+}
+
+/** Provenance stamped on the processing leg: what the estimate was built from. */
+function processingMetadata(
+  split: FeeFirstSplit & { configFallback?: boolean }
+): Record<string, unknown> {
+  return {
+    estimate: true,
+    processing_percent: split.processingPercent,
+    processing_fixed_cents: split.processingFixedCents,
+    charged_total_cents: split.chargedTotalCents,
+    processing_total_cents: split.processingTotalCents,
+    ...(split.configFallback ? { config_fallback: true } : {}),
+  }
 }
 
 export const config: SubscriberConfig = {

@@ -8,6 +8,13 @@ import { VENDOR_PANEL_URL } from "@/const"
 import { GITHUB_REPO_URL } from "@/lib/constants/links"
 import type { FeeSchedulePlan } from "@/lib/data/fee-schedule"
 import { sellPageCostAnswer } from "@/lib/helpers/fee-ladder-copy"
+import {
+  feeFirstExample,
+  formatUsdCents,
+  isFeeFirst,
+  processingCopy,
+  type ProcessingInfo,
+} from "@/lib/helpers/processing-copy"
 
 // Inline SVG icons
 const CheckCircleIcon = ({ className = "" }: { className?: string }) => (
@@ -93,9 +100,16 @@ type SellPageProps = {
   feePlans?: FeeSchedulePlan[]
   /** `/store/fee-schedule` default rate, for the calculator. */
   feePercent?: number
+  /**
+   * `/store/fee-schedule` processing model (Black Mask F6). Absent: every
+   * processing sentence on this page is today's; fee-first: card processing
+   * comes off the sale first (lib/helpers/processing-copy.ts).
+   */
+  processing?: ProcessingInfo
 }
 
-export default function SellPage({ feePlans = [], feePercent = 3 }: SellPageProps) {
+export default function SellPage({ feePlans = [], feePercent = 3, processing }: SellPageProps) {
+  const honey = isFeeFirst(processing) ? feeFirstExample(1500, feePercent, processing) : null
   const [email, setEmail] = useState("")
   const [storeName, setStoreName] = useState("")
   const [selectedCategories, setSelectedCategories] = useState<string[]>([])
@@ -180,8 +194,8 @@ export default function SellPage({ feePlans = [], feePercent = 3 }: SellPageProp
   const benefits = [
     {
       icon: CurrencyDollarIcon,
-      title: "Keep at least 97% of Every Transaction",
-      description: "A 3% coalition fee on the free plan, and lower on a paid plan. No listing fees, and no payment processing fees passed to you — we absorb those.",
+      title: processingCopy("sellBenefitTitle", processing, feePercent),
+      description: processingCopy("sellBenefitBody", processing, feePercent),
     },
     {
       icon: UserGroupIcon,
@@ -227,7 +241,7 @@ export default function SellPage({ feePlans = [], feePercent = 3 }: SellPageProp
   const faqs = [
     {
       question: "How much does it cost to join?",
-      answer: sellPageCostAnswer(feePlans),
+      answer: sellPageCostAnswer(feePlans, processing, feePercent),
     },
     {
       question: "Do I need a commercial kitchen?",
@@ -477,19 +491,36 @@ export default function SellPage({ feePlans = [], feePercent = 3 }: SellPageProp
                     <span>You offer a jar of honey for</span>
                     <span className="text-2xl font-bold">$15.00</span>
                   </div>
-                  <div className="flex justify-between items-center border-b border-green-700 pb-4">
-                    <span>Coalition fee (3%)</span>
-                    <span className="text-xl text-green-300">-$0.45</span>
-                  </div>
-                  <div className="flex justify-between items-center pt-2">
-                    <span className="text-xl">You receive</span>
-                    <span className="text-3xl font-bold text-green-300">$14.55</span>
-                  </div>
+                  {honey ? (
+                    <>
+                      <div className="flex justify-between items-center border-b border-green-700 pb-4">
+                        <span>Card processing (estimate)</span>
+                        <span className="text-xl text-green-300">-{formatUsdCents(honey.processingCents)}</span>
+                      </div>
+                      <div className="flex justify-between items-center border-b border-green-700 pb-4">
+                        <span>Coalition fee ({feePercent}% of the rest)</span>
+                        <span className="text-xl text-green-300">-{formatUsdCents(honey.commissionCents)}</span>
+                      </div>
+                      <div className="flex justify-between items-center pt-2">
+                        <span className="text-xl">You receive</span>
+                        <span className="text-3xl font-bold text-green-300">{formatUsdCents(honey.keepCents)}</span>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="flex justify-between items-center border-b border-green-700 pb-4">
+                        <span>Coalition fee (3%)</span>
+                        <span className="text-xl text-green-300">-$0.45</span>
+                      </div>
+                      <div className="flex justify-between items-center pt-2">
+                        <span className="text-xl">You receive</span>
+                        <span className="text-3xl font-bold text-green-300">$14.55</span>
+                      </div>
+                    </>
+                  )}
                 </div>
                 <p className="mt-6 text-green-200 text-sm">
-                  That&apos;s it. No payment processing fees, no hidden charges.
-                  Compare that to farmers markets (often 30-40% in fees and time) or
-                  grocery stores (where producers see only 10-20% of the retail price).
+                  {processingCopy("sellMathFootnote", processing, feePercent)}
                 </p>
               </div>
             </div>
@@ -498,7 +529,7 @@ export default function SellPage({ feePlans = [], feePercent = 3 }: SellPageProp
       </section>
 
       {/* Trust & Transparency Section */}
-      <FeeBreakdown feePercent={feePercent} />
+      <FeeBreakdown feePercent={feePercent} processing={processing} />
 
       {/* Trust & Transparency Section */}
       <section className="py-20 bg-gray-900 text-white">
@@ -515,14 +546,14 @@ export default function SellPage({ feePlans = [], feePercent = 3 }: SellPageProp
           <div className="grid md:grid-cols-2 gap-12 max-w-3xl mx-auto">
             <div className="text-center">
               <div className="text-6xl font-bold text-green-400 mb-2">97%</div>
-              <div className="text-xl mb-2">Goes to You</div>
+              <div className="text-xl mb-2">{processingCopy("sellRadicalYouLabel", processing, feePercent)}</div>
               <p className="text-gray-400">
-                The producer. The person who did the actual work.
+                {processingCopy("sellRadicalYouBody", processing, feePercent)}
               </p>
             </div>
             <div className="text-center">
               <div className="text-6xl font-bold text-green-400 mb-2">3%</div>
-              <div className="text-xl mb-2">Goes to the Coalition</div>
+              <div className="text-xl mb-2">{processingCopy("sellRadicalCoalitionLabel", processing, feePercent)}</div>
               <p className="text-gray-400">
                 Keeps the marketplace running, pays for development, and supports the community.
               </p>
@@ -531,9 +562,7 @@ export default function SellPage({ feePlans = [], feePercent = 3 }: SellPageProp
 
           <div className="mt-16 text-center">
             <p className="text-gray-300 max-w-2xl mx-auto">
-              That&apos;s the free plan. Paid plans are optional and lower the rate. No listing fees, and no payment processing fees passed to you.
-              Unlike venture-backed platforms that burn cash to gain market share then raise fees,
-              we&apos;re building something sustainable for our community.
+              {processingCopy("sellRadicalFooter", processing, feePercent)}
             </p>
           </div>
         </div>

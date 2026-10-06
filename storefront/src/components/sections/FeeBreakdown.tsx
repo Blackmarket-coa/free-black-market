@@ -2,6 +2,13 @@
 
 import { useState } from "react"
 
+import {
+  isFeeFirst,
+  processingCopy,
+  processingFigures,
+  type ProcessingInfo,
+} from "@/lib/helpers/processing-copy"
+
 type FeeParts = {
   commission: number
   processing: number
@@ -153,21 +160,41 @@ const competitorPlatforms: Platform[] = [
  * Build the platform list with our own row driven by `feePercent` — the rate
  * served by `/store/fee-schedule`, which reads the same catalog that charges
  * vendors. Callers that cannot reach the backend pass the documented fallback.
+ *
+ * `processing` is that response's processing model (Black Mask F6). Absent,
+ * our row is today's: processing absorbed, commission on the price. Fee-first,
+ * the card-processing estimate comes off the price first and the commission
+ * is taken on what is left — the same order the settlement uses.
  */
-export function buildPlatforms(feePercent: number): Platform[] {
+export function buildPlatforms(feePercent: number, processing?: ProcessingInfo): Platform[] {
   const rate = feePercent / 100
+  const feeFirst = isFeeFirst(processing)
+  const { percent: processingPercent, fixedCents } = processingFigures(processing)
   return [
     {
       name: "BMC",
       color: "#2D8B4E",
       icon: "🌿",
       calcFees: (price) => {
+        if (feeFirst) {
+          const cardProcessing = Math.min(price * (processingPercent / 100) + fixedCents / 100, price)
+          const commission = (price - cardProcessing) * rate
+          return {
+            commission,
+            processing: cardProcessing,
+            ads: 0,
+            fulfillment: 0,
+            listing: 0,
+            other: 0,
+            total: commission + cardProcessing,
+          }
+        }
         const commission = price * rate
         return { commission, processing: 0, ads: 0, fulfillment: 0, listing: 0, other: 0, total: commission }
       },
       breakdown: [
-        `${feePercent}% marketplace commission`,
-        "No payment processing fees passed to you",
+        feeFirst ? `${feePercent}% marketplace commission on what is left` : `${feePercent}% marketplace commission`,
+        processingCopy("feeBreakdownProcessingLine", processing, feePercent),
         "No listing fees",
         "No mandatory ads",
         "No monthly subscription required — paid plans are optional and lower the rate",
@@ -218,15 +245,17 @@ type FeeBreakdownProps = {
    * keep working, but pages should pass the value from `getFeeSchedule()`.
    */
   feePercent?: number
+  /** `/store/fee-schedule` `processing`; absent means today's absorbed model. */
+  processing?: ProcessingInfo
 }
 
-export default function FeeBreakdown({ feePercent = 3 }: FeeBreakdownProps) {
+export default function FeeBreakdown({ feePercent = 3, processing }: FeeBreakdownProps) {
   const [mode, setMode] = useState<"forward" | "target">("forward")
   const [salePrice, setSalePrice] = useState(50)
   const [targetTakeHome, setTargetTakeHome] = useState(50)
   const [selectedPlatform, setSelectedPlatform] = useState<string | null>(null)
 
-  const platforms = buildPlatforms(feePercent)
+  const platforms = buildPlatforms(feePercent, processing)
 
   const results = platforms
     .map((platform) => {

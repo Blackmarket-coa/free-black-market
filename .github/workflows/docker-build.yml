@@ -115,6 +115,10 @@ jobs:
             # unset until the operator clears the consumer auto-renewal
             # checkpoint — set only together with the API's FF_* of that name.
             echo "NEXT_PUBLIC_FF_CONSUMER_SUBSCRIPTIONS_V1=${{ vars.NEXT_PUBLIC_FF_CONSUMER_SUBSCRIPTIONS_V1 }}"
+            # FEE_FIRST_SPLIT_V1 (Black Mask F6 fee-first split): only the
+            # storefront's fallback when /store/fee-schedule is unreachable.
+            # Set only together with the API's FF_FEE_FIRST_SPLIT_V1.
+            echo "NEXT_PUBLIC_FF_FEE_FIRST_SPLIT_V1=${{ vars.NEXT_PUBLIC_FF_FEE_FIRST_SPLIT_V1 }}"
             echo SFARGS_EOF
           } >> "$GITHUB_OUTPUT"
 

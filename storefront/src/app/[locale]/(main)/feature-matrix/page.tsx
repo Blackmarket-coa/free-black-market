@@ -1,13 +1,17 @@
 import type { Metadata } from "next"
 import Link from "next/link"
-import { featureMatrixBuckets, featureMatrixItems } from "@/data/featureMatrix"
+import { featureMatrixBuckets, featureMatrixItemsFor } from "@/data/featureMatrix"
+import { getFeeSchedule } from "@/lib/data/fee-schedule"
 
 export const metadata: Metadata = {
   title: "Feature Matrix | Free Black Market",
   description: "Compare currently available and rollout capabilities across goods, services, and community programs.",
 }
 
-export default function FeatureMatrixPage() {
+export default async function FeatureMatrixPage() {
+  // The payouts row's processing sentence renders from /store/fee-schedule.
+  const { processing, default_fee_percent: feePercent } = await getFeeSchedule()
+  const featureMatrixItems = featureMatrixItemsFor(processing, feePercent)
   const availableNowCount = featureMatrixItems.filter((item) => item.status === "Available now").length
   const inRolloutCount = featureMatrixItems.filter((item) => item.status === "In rollout").length
 

@@ -5,6 +5,14 @@ import FeeBreakdown from "@/components/sections/FeeBreakdown"
 import { WhereYourMoneyGoes } from "@/components/molecules/PriceTransparency/PriceTransparency"
 import { getFeeSchedule } from "@/lib/data/fee-schedule"
 import { GITHUB_REPO_URL } from "@/lib/constants/links"
+import {
+  TRANSPARENCY_PROCESSING_NEVER_CHARGED,
+  feeFirstExample,
+  formatUsdCents,
+  isFeeFirst,
+  processingCopy,
+  type ProcessingInfo,
+} from "@/lib/helpers/processing-copy"
 
 export const metadata: Metadata = {
   title: "Fee Transparency | Free Black Market",
@@ -22,8 +30,15 @@ export const metadata: Metadata = {
  * charges vendors, so this page cannot quote a number we do not charge.
  */
 
-/** Things we do not charge for. Each is a real absence in the billing catalog. */
-const NEVER_CHARGED = [
+/**
+ * Things we do not charge for. Each is a real absence in the billing catalog.
+ *
+ * Built per request from the fee schedule's processing model (Black Mask F6):
+ * with fee-first on, card processing IS deducted, so the "passed through to
+ * you" row is dropped rather than reworded, and the shipping/tax row says the
+ * estimate is taken on the whole charge. Absent, this is today's list exactly.
+ */
+const neverCharged = (processing: ProcessingInfo) => [
   {
     label: "Listing fees",
     detail: "Publish as many products as you want. Nothing is charged per listing, per relist, or per photo.",
@@ -38,13 +53,10 @@ const NEVER_CHARGED = [
     detail:
       "The free plan is a real plan, not a trial. Paid plans buy a lower rate and extra tooling; they are never a condition of having a storefront.",
   },
+  ...(isFeeFirst(processing) ? [] : [TRANSPARENCY_PROCESSING_NEVER_CHARGED]),
   {
-    label: "Payment processing passed through to you",
-    detail: "Card processing is absorbed in the coalition fee rather than added on top of it.",
-  },
-  {
-    label: "Fees on shipping or tax",
-    detail: "The commission is taken on the item, not on postage you have already paid for or tax you are only collecting.",
+    label: processingCopy("transparencyShippingTaxLabel", processing),
+    detail: processingCopy("transparencyShippingTaxDetail", processing),
   },
   {
     label: "A fee to leave",
@@ -95,8 +107,8 @@ const COMMITMENTS = [
 ]
 
 /** What the fee funds. Vendors are entitled to know what they are buying. */
-const WHAT_THE_FEE_PAYS_FOR = [
-  "Hosting, payments infrastructure, and the card processing we absorb rather than pass on",
+const whatTheFeePaysFor = (processing: ProcessingInfo) => [
+  processingCopy("transparencyFeePaysForProcessing", processing),
   "Storefront, vendor dashboard, and the ordering, fulfilment, and messaging systems behind them",
   "Vendor verification review and dispute handling",
   "The shared ledger that settles value between coalition members",
@@ -115,8 +127,11 @@ function formatPlanPrice(amount: number, currency: string, interval: string) {
 
 export default async function TransparencyPage() {
   const schedule = await getFeeSchedule()
-  const { default_fee_percent: feePercent, plans } = schedule
+  const { default_fee_percent: feePercent, plans, processing } = schedule
   const producerPercent = Number((100 - feePercent).toFixed(2))
+  // Fee-first: the $100 example shows the estimate coming off first and the
+  // fee on what is left, with the settlement's rounding.
+  const example = isFeeFirst(processing) ? feeFirstExample(10_000, feePercent, processing) : null
 
   return (
     <div className="bg-white min-h-screen">
@@ -147,31 +162,62 @@ export default async function TransparencyPage() {
             No listing fee to get here, no subscription required to stay here, no ad
             spend to be seen here.
           </p>
-          <div className="grid sm:grid-cols-3 gap-3 mb-6">
-            <div className="rounded-lg border p-4">
-              <p className="text-sm text-gray-500">Sale</p>
-              <p className="text-2xl font-semibold">$100.00</p>
+          {example ? (
+            <div className="grid sm:grid-cols-4 gap-3 mb-6">
+              <div className="rounded-lg border p-4">
+                <p className="text-sm text-gray-500">Sale</p>
+                <p className="text-2xl font-semibold">$100.00</p>
+              </div>
+              <div className="rounded-lg border p-4">
+                <p className="text-sm text-gray-500">Card processing (estimate)</p>
+                <p className="text-2xl font-semibold">{formatUsdCents(example.processingCents)}</p>
+              </div>
+              <div className="rounded-lg border p-4">
+                <p className="text-sm text-gray-500">Coalition fee ({feePercent}% of the rest)</p>
+                <p className="text-2xl font-semibold">{formatUsdCents(example.commissionCents)}</p>
+              </div>
+              <div className="rounded-lg border p-4">
+                <p className="text-sm text-gray-500">You keep</p>
+                <p className="text-2xl font-semibold text-green-700">
+                  {formatUsdCents(example.keepCents)}
+                </p>
+              </div>
             </div>
-            <div className="rounded-lg border p-4">
-              <p className="text-sm text-gray-500">Coalition fee ({feePercent}%)</p>
-              <p className="text-2xl font-semibold">${feePercent.toFixed(2)}</p>
+          ) : (
+            <div className="grid sm:grid-cols-3 gap-3 mb-6">
+              <div className="rounded-lg border p-4">
+                <p className="text-sm text-gray-500">Sale</p>
+                <p className="text-2xl font-semibold">$100.00</p>
+              </div>
+              <div className="rounded-lg border p-4">
+                <p className="text-sm text-gray-500">Coalition fee ({feePercent}%)</p>
+                <p className="text-2xl font-semibold">${feePercent.toFixed(2)}</p>
+              </div>
+              <div className="rounded-lg border p-4">
+                <p className="text-sm text-gray-500">You keep</p>
+                <p className="text-2xl font-semibold text-green-700">
+                  ${producerPercent.toFixed(2)}
+                </p>
+              </div>
             </div>
-            <div className="rounded-lg border p-4">
-              <p className="text-sm text-gray-500">You keep</p>
-              <p className="text-2xl font-semibold text-green-700">
-                ${producerPercent.toFixed(2)}
-              </p>
-            </div>
-          </div>
-          <WhereYourMoneyGoes
-            producerPercent={producerPercent}
-            platformPercent={feePercent}
-          />
+          )}
+          {example ? (
+            <WhereYourMoneyGoes
+              producerPercent={example.keepCents / 100}
+              platformPercent={example.commissionCents / 100}
+              processingPercent={example.processingCents / 100}
+            />
+          ) : (
+            <WhereYourMoneyGoes
+              producerPercent={producerPercent}
+              platformPercent={feePercent}
+            />
+          )}
         </div>
       </section>
 
       {/* The calculator. Client component; rate injected from the backend. */}
-      <FeeBreakdown feePercent={feePercent} />
+      <FeeBreakdown feePercent={feePercent} processing={processing} />
 
       <section className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
         <p className="text-xs text-gray-500">
@@ -243,7 +289,7 @@ export default async function TransparencyPage() {
           aren&apos;t in it. This is ours.
         </p>
         <div className="grid gap-4 md:grid-cols-2">
-          {NEVER_CHARGED.map((item) => (
+          {neverCharged(processing).map((item) => (
             <div key={item.label} className="rounded-xl border p-5">
               <p className="font-semibold mb-1">{item.label}</p>
               <p className="text-sm text-gray-600">{item.detail}</p>
@@ -258,7 +304,7 @@ export default async function TransparencyPage() {
             What the {feePercent}% pays for
           </h2>
           <ul className="space-y-2 text-sm text-gray-700">
-            {WHAT_THE_FEE_PAYS_FOR.map((item) => (
+            {whatTheFeePaysFor(processing).map((item) => (
               <li key={item} className="flex gap-2">
                 <span className="text-green-700">•</span>
                 <span>{item}</span>
@@ -292,8 +338,7 @@ export default async function TransparencyPage() {
             Check it yourself
           </h2>
           <p className="text-sm text-green-900/80 mb-4 max-w-2xl">
-            The commission is booked as a ledger entry on every order and
-            reversed on every refund. The code that does it is public.
+            {processingCopy("transparencyCheckIt", processing)}
           </p>
           <div className="flex flex-wrap gap-3">
             <Link

@@ -153,3 +153,16 @@ export async function resolveSellerPlatformFeePercent(
   const { percent } = await resolveSellerPlatformFee(container, sellerId)
   return percent
 }
+
+/**
+ * Whether the fee-first split (`FF_FEE_FIRST_SPLIT_V1`, Black Mask F6) is on.
+ *
+ * Read here, at the composition point, for the reason `effectiveKind` reads
+ * `NONPROFIT_PARITY_V1` here: `payout-breakdown` is a module service and never
+ * reads env, so a caller holding a container decides and passes
+ * `BreakdownInput.feeFirst` (and the ledger amounts) explicitly. Only the
+ * literal string "true" enables it (`feature-flags.ts`).
+ */
+export function feeFirstSplitEnabled(): boolean {
+  return featureFlagState.isEnabled("FEE_FIRST_SPLIT_V1")
+}

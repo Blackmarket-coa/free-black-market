@@ -2,13 +2,17 @@ import type { Metadata } from "next"
 import Link from "next/link"
 
 import { GITHUB_REPO_URL } from "@/lib/constants/links"
+import { getFeeSchedule } from "@/lib/data/fee-schedule"
+import { processingCopy } from "@/lib/helpers/processing-copy"
 
 export const metadata: Metadata = {
   title: "Why We Exist | Free Black Market",
   description: "Learn why Free Black Market takes 3%, how community governance works, and the market problems this infrastructure solves.",
 }
 
-export default function WhyWeExistPage() {
+export default async function WhyWeExistPage() {
+  // Processing sentences render from /store/fee-schedule (Black Mask F6).
+  const { processing, default_fee_percent: feePercent } = await getFeeSchedule()
   return (
     <div className="bg-white min-h-screen">
       <section className="bg-slate-950 text-white py-20">
@@ -22,7 +26,7 @@ export default function WhyWeExistPage() {
       <section className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-12 grid gap-5 md:grid-cols-3">
         <article className="rounded-2xl border p-6">
           <h2 className="text-xl font-semibold mb-2">Why 3%</h2>
-          <p className="text-sm text-gray-700">A flat coalition fee keeps costs understandable. Vendors keep 97% of each sale — no listing, monthly, or payment processing fees passed to them. Settle through our internal ledger (Coalition Credits) and an internal payment processor, coming soon, to keep even more value inside the community.</p>
+          <p className="text-sm text-gray-700">{processingCopy("whyThreePercent", processing, feePercent)}</p>
           <Link href="/transparency" className="text-sm text-green-700 font-medium underline mt-3 inline-block">See the full fee breakdown</Link>
         </article>
         <article className="rounded-2xl border p-6">
@@ -64,7 +68,7 @@ export default function WhyWeExistPage() {
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 text-sm">
           <div className="rounded-2xl border p-5"><p className="font-semibold mb-1">Shoppers</p><p className="text-gray-700">Buy direct from verified makers at fair prices — no middlemen, no markups.</p></div>
           <div className="rounded-2xl border p-5"><p className="font-semibold mb-1">Producers &amp; agriculture</p><p className="text-gray-700">Growers and food producers reach neighbors through CSA shares and order cycles.</p></div>
-          <div className="rounded-2xl border p-5"><p className="font-semibold mb-1">Creators &amp; vendors</p><p className="text-gray-700">Own your storefront, audience, and referrals — and keep 97% of every sale.</p></div>
+          <div className="rounded-2xl border p-5"><p className="font-semibold mb-1">Creators &amp; vendors</p><p className="text-gray-700">{processingCopy("whyCreatorsCard", processing, feePercent)}</p></div>
           <div className="rounded-2xl border p-5"><p className="font-semibold mb-1">Mutual aid &amp; organizers</p><p className="text-gray-700">Run community programs and route giving transparently. Fiscal-sponsor routing is pending; donations are held until it is live.</p></div>
         </div>
       </section>
