@@ -74,8 +74,20 @@
  *     account exists (two once it does), never a write, and never creates
  *     the processing account.
  *
- * Write-off (an age or amount after which an open receivable is
- * platform-borne) is not decided and not built.
+ * Write-off by age (operator answer 2026-10-06: "by age", 180 days, the
+ * clock running from the refund that recorded the shortfall). Once a
+ * shortfall is CARD_PROCESSING_WRITE_OFF_DAYS old, whatever is still
+ * outstanding on it is forgiven: it leaves the receivable, so no recovery
+ * leg, payout backstop or vendor-payment backstop collects it again, and it
+ * is reported in `written_off` so the vendor's statement can say it was
+ * forgiven. No money moves and nothing is written — the processing account
+ * already funded the shortfall when it was recorded, so it simply keeps
+ * having borne it (the platform absorbs it). Like the rest of the
+ * receivable it is computed from the ledger's rows at read time, from the
+ * shortfall leg's own `created_at`; a shortfall with no `created_at` is never
+ * written off. A fresh shortfall a later refund re-records (`processRefund`)
+ * starts its own clock. The age is a code constant, not configuration:
+ * changing it re-reads every shortfall, so it is a reviewed change.
  */
 
 export const CARD_PROCESSING_ACCOUNT_TYPE = "PLATFORM_FEE"
@@ -83,6 +95,10 @@ export const CARD_PROCESSING_OWNER_ID = "processing"
 export const CARD_PROCESSING_LEG = "card_processing_estimate"
 export const CARD_PROCESSING_SHORTFALL_LEG = "card_processing_vendor_shortfall"
 export const CARD_PROCESSING_RECOVERY_LEG = "card_processing_vendor_recovery"
+
+/** Operator answer 2026-10-06: forgive an unrepaid shortfall after 180 days. */
+export const CARD_PROCESSING_WRITE_OFF_DAYS = 180
+const WRITE_OFF_MS = CARD_PROCESSING_WRITE_OFF_DAYS * 24 * 60 * 60 * 1000
 
 /**
  * Where a recovery leg's money came from: a later seller credit, or the
@@ -162,10 +178,25 @@ export type OpenCardProcessingShortfall = {
   next_seq: number
 }
 
+export type WrittenOffCardProcessingShortfall = {
+  shortfall_id: string
+  order_id: string | null
+  owed_cents: number
+  recovered_cents: number
+  /** Outstanding when it reached the write-off age: absorbed by the platform. */
+  forgiven_cents: number
+  created_at: unknown
+  /** `created_at` + CARD_PROCESSING_WRITE_OFF_DAYS, ISO-8601. */
+  written_off_at: string
+}
+
 export type CardProcessingReceivable = {
   total_cents: number
-  /** Open shortfalls, oldest first. */
+  /** Open shortfalls, oldest first. Never includes a written-off one. */
   open: OpenCardProcessingShortfall[]
+  /** Shortfalls forgiven by age, oldest first (only when `asOfMs` is given). */
+  written_off: WrittenOffCardProcessingShortfall[]
+  written_off_cents: number
   /** Cents already recovered (COMPLETED or in flight) per `source_entry_id`. */
   recovered_by_source_entry: Record<string, number>
 }
@@ -185,10 +216,16 @@ const createdMs = (e: ReceivableRow) => {
  * never collects the same cents twice; FAILED and REVERSED rows count for
  * nothing. Integer cents, each shortfall clamped at zero, oldest first (by
  * `created_at`; rows without one keep their listed order).
+ *
+ * With `asOfMs`, a shortfall whose `created_at` is at least
+ * CARD_PROCESSING_WRITE_OFF_DAYS before it is written off: its outstanding
+ * amount moves from `open` / `total_cents` to `written_off`. Without it
+ * nothing is written off (the pure function stays clock-free).
  */
 export function computeCardProcessingReceivable(
   sellerAccountId: string,
-  rows: { shortfalls: ReceivableRow[]; recoveries: ReceivableRow[] }
+  rows: { shortfalls: ReceivableRow[]; recoveries: ReceivableRow[] },
+  options: { asOfMs?: number } = {}
 ): CardProcessingReceivable {
   const shortfalls = rows.shortfalls
     .filter(
@@ -219,12 +256,29 @@ export function computeCardProcessingReceivable(
   }
 
   const open: OpenCardProcessingShortfall[] = []
+  const writtenOff: WrittenOffCardProcessingShortfall[] = []
   let total = 0
+  let writtenOffTotal = 0
+  const asOf = options.asOfMs
   for (const s of shortfalls) {
     const owed = toCentsInt(s.amount)
     const recovered = recoveredByShortfall.get(s.id) ?? 0
     const outstanding = Math.max(0, owed - recovered)
     if (outstanding <= 0) continue
+    const born = createdMs(s)
+    if (asOf !== undefined && Number.isFinite(asOf) && born > 0 && asOf - born >= WRITE_OFF_MS) {
+      writtenOffTotal += outstanding
+      writtenOff.push({
+        shortfall_id: s.id,
+        order_id: s.order_id ?? null,
+        owed_cents: owed,
+        recovered_cents: recovered,
+        forgiven_cents: outstanding,
+        created_at: s.created_at ?? null,
+        written_off_at: new Date(born + WRITE_OFF_MS).toISOString(),
+      })
+      continue
+    }
     total += outstanding
     open.push({
       shortfall_id: s.id,
@@ -236,5 +290,11 @@ export function computeCardProcessingReceivable(
       next_seq: rowsByShortfall.get(s.id) ?? 0,
     })
   }
-  return { total_cents: total, open, recovered_by_source_entry: recoveredBySource }
+  return {
+    total_cents: total,
+    open,
+    written_off: writtenOff,
+    written_off_cents: writtenOffTotal,
+    recovered_by_source_entry: recoveredBySource,
+  }
 }

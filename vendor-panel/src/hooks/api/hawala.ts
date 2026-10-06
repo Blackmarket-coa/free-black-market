@@ -176,6 +176,8 @@ export interface VendorDashboard {
   card_processing_owed?: {
     outstanding: number
     open: Array<{ order_id: string | null; amount: number; since: string | null }>
+    /** Forgiven after 180 days unrepaid; never collected. Absent from older APIs. */
+    forgiven?: Array<{ order_id: string | null; amount: number; since: string | null; forgiven_at: string }>
   }
   advance: {
     has_active: boolean

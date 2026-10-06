@@ -722,6 +722,8 @@ describe("shortfall recovery — from the vendor's next earnings", () => {
     expect(before.card_processing_owed).toEqual({
       outstanding: 1.46,
       open: [{ order_id: "order_1", amount: 1.46, since: shortfall.created_at }],
+      // Nothing is 180 days old here, so nothing is forgiven.
+      forgiven: [],
     })
 
     await place(w.container, "order_2")
@@ -764,7 +766,7 @@ describe("shortfall recovery — from the vendor's next earnings", () => {
 
     // The vendor's statement reads it plainly; the owed line is gone.
     const after = await w.ledger.service.getVendorDashboard("sel_1")
-    expect(after.card_processing_owed).toEqual({ outstanding: 0, open: [] })
+    expect(after.card_processing_owed).toEqual({ outstanding: 0, open: [], forgiven: [] })
     const debit = after.recent_transactions.find((t: { id: string }) => t.id === leg.id)!
     expect(debit).toMatchObject({ direction: "DEBIT", entry_type: "ADJUSTMENT", amount: 1.46 })
     expect(debit.description).toBe(

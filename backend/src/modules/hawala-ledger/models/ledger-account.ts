@@ -30,6 +30,12 @@ export const LedgerAccount = model.define("hawala_ledger_account", {
     // Time-bank balances (HRS rail). Hours are closed-loop, member-to-
     // member; the account holds the member's signed hours balance.
     "TIME_BANK",
+    // Money that came in through FBM's own Stripe account (SD-36,
+    // `../card-clearing.ts`). One SYSTEM account, the only one allowed below
+    // zero, and only for a PURCHASE into an order's escrow or a REFUND out of
+    // it. No migration: the column is plain TEXT
+    // (Migration20251229CreateHawalaLedger), like the entry-type additions.
+    "CARD_CLEARING",
   ]),
   
   // Currency (ISO 4217)

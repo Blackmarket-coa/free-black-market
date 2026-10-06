@@ -112,9 +112,9 @@ export const PHASE0_FEATURE_FLAGS = {
   // that receivable is recovered automatically from the vendor's next
   // earnings, and before any payout (`hawala-ledger/card-processing.ts`).
   // Recovery is NOT gated on this flag, so rolling it back never strands a
-  // receivable. Card orders still never reach the ledger (SD-36), so until
-  // that is fixed the processing, shortfall and recovery legs only run for
-  // wallet-funded orders.
+  // receivable. Card orders reach the ledger only with CARD_ORDER_LEDGER_V1
+  // (SD-36) also set; without it the processing, shortfall and recovery legs
+  // only run for wallet-funded orders.
   // CUT-OVER ORDER: deploy the storefront with NEXT_PUBLIC_FF_FEE_FIRST_SPLIT_V1
   // first (a fresh build has no cached /store/fee-schedule, and the twin
   // forces the fee-first wording even over a cached response without
@@ -137,6 +137,20 @@ export const PHASE0_FEATURE_FLAGS = {
   // (INVESTMENT_POOLS_V1, NONPROFIT_PARITY_V1) and are not gated here. The
   // storefront twin is NEXT_PUBLIC_FF_CUSTOMER_WALLET_V1; set both together.
   CUSTOMER_WALLET_V1: "FF_CUSTOMER_WALLET_V1",
+  // Card orders reach the hawala ledger (SD-36, operator answer 2026-10-06).
+  // Off (default): unchanged — every order's purchase leg debits the
+  // customer's USER_WALLET at `order.placed`, which fails at $0 and is
+  // swallowed, so a card order posts nothing. On: an order paid through FBM's
+  // own Stripe account is NOT settled at placement (the money is only
+  // authorised; the provider runs in manual capture) but on `payment.captured`
+  // once its payment collection is fully captured, with the purchase leg
+  // debiting the card-clearing account (hawala-ledger/card-clearing.ts) — no
+  // customer wallet is created or touched. A Stripe Connect direct charge
+  // posts nothing (the money is the partner's). Orders paid any other way
+  // keep the old path. Backend only; no storefront twin. ROLLBACK: an order
+  // placed while on and captured after the flag is turned off is not settled
+  // by either subscriber — see SD-36 in docs/AUDIT_DEBT.md.
+  CARD_ORDER_LEDGER_V1: "FF_CARD_ORDER_LEDGER_V1",
 } as const
 
 export type Phase0FeatureFlag = keyof typeof PHASE0_FEATURE_FLAGS

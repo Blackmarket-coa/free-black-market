@@ -1,6 +1,7 @@
 import { createLogger } from "../shared/logger"
 const log = createLogger("subscribers/hawala-order-payment")
 import { SubscriberArgs, SubscriberConfig } from "@medusajs/framework"
+import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 import { HAWALA_LEDGER_MODULE } from "../modules/hawala-ledger"
 import HawalaLedgerModuleService from "../modules/hawala-ledger/service"
 import { PAYOUT_BREAKDOWN_MODULE } from "../modules/payout-breakdown"
@@ -20,6 +21,9 @@ import { disbursePluginDeveloperShare } from "../shared/plugin-revenue-payout"
 import { resolveSellerReferralPayee } from "../shared/referral-payees"
 import { disburseReferralShare } from "../shared/referral-revenue-payout"
 import { CARD_PROCESSING_LEG } from "../modules/hawala-ledger/card-processing"
+import { CARD_FUNDING, isFbmCardProvider } from "../modules/hawala-ledger/card-clearing"
+import { featureFlagState } from "../shared/feature-flags"
+import { STRIPE_CONNECT_DIRECT_PROVIDER_ID } from "../modules/stripe-connect-direct/registration"
 import {
   isConsignmentSplitLive,
   resolveOrderConsignment,
@@ -62,11 +66,109 @@ export default async function hawalaOrderPaymentSubscriber({
   event,
   container,
 }: SubscriberArgs<{ id: string }>) {
+  const orderId = event.data.id
+
+  // SD-36 (FF_CARD_ORDER_LEDGER_V1, hawala-ledger/card-clearing.ts). With the
+  // flag off nothing here runs — no extra read — and settlement is exactly
+  // the old path. On: an order paid through FBM's own Stripe account is only
+  // AUTHORISED at placement (manual capture), so it settles on
+  // `payment.captured` instead (`hawala-card-capture.ts`); a Stripe Connect
+  // direct charge is the partner's money and never settles here. Anything
+  // else (no payment found, another provider, a failed read) keeps the old
+  // wallet path.
+  if (cardOrderLedgerEnabled()) {
+    const funding = await resolveOrderFunding(container, orderId)
+    if (funding === "fbm_card") {
+      log.info(`[Hawala] Order ${orderId} is a card order; it settles when Stripe captures the payment`)
+      return
+    }
+    if (funding === "connect_direct") {
+      log.info(`[Hawala] Order ${orderId} was charged on a partner's connected account; nothing settles through FBM's ledger`)
+      return
+    }
+  }
+
+  await settleOrderPayment(container, orderId, { funding: "wallet" })
+}
+
+export function cardOrderLedgerEnabled(): boolean {
+  return featureFlagState.isEnabled("CARD_ORDER_LEDGER_V1")
+}
+
+export type OrderFunding = "fbm_card" | "connect_direct" | "other"
+
+/**
+ * How an order was paid, from its payment collections' payments (sessions as
+ * a fallback, for a payment not yet created). Any FBM Stripe payment makes it
+ * a card order; any Stripe Connect direct payment makes it the partner's.
+ * "other" for anything else, including a failed read — the caller then keeps
+ * the pre-SD-36 path, which posts nothing for a card order anyway.
+ */
+export async function resolveOrderFunding(
+  container: SubscriberArgs<{ id: string }>["container"],
+  orderId: string
+): Promise<OrderFunding> {
+  try {
+    const query = container.resolve(ContainerRegistrationKeys.QUERY)
+    const { data } = await query.graph({
+      entity: "order",
+      fields: [
+        "id",
+        "payment_collections.payments.provider_id",
+        "payment_collections.payment_sessions.provider_id",
+        "payment_collections.payment_sessions.status",
+      ],
+      filters: { id: orderId },
+    })
+    const order = (data as Array<Record<string, unknown>>)[0]
+    const collections = (order?.payment_collections ?? []) as Array<{
+      payments?: Array<{ provider_id?: string | null } | null> | null
+      payment_sessions?: Array<{ provider_id?: string | null; status?: string | null } | null> | null
+    } | null>
+    const providers: string[] = []
+    for (const c of collections) {
+      for (const p of c?.payments ?? []) if (p?.provider_id) providers.push(p.provider_id)
+    }
+    if (providers.length === 0) {
+      for (const c of collections) {
+        for (const ps of c?.payment_sessions ?? []) {
+          if (ps?.provider_id && ps.status === "authorized") providers.push(ps.provider_id)
+        }
+      }
+    }
+    if (providers.some((p) => p === STRIPE_CONNECT_DIRECT_PROVIDER_ID)) return "connect_direct"
+    if (providers.some(isFbmCardProvider)) return "fbm_card"
+    return "other"
+  } catch (error) {
+    log.warn(`[Hawala] Could not read how order ${orderId} was paid; using the wallet path:`, error)
+    return "other"
+  }
+}
+
+/**
+ * Settle one order through the ledger: the breakdown record, then the
+ * purchase / fee / processing / seller legs. `funding` decides where the
+ * purchase leg comes from:
+ *
+ *   - "wallet" (the pre-SD-36 path, and the only one with the flag off): the
+ *     customer's USER_WALLET, created at $0 when missing.
+ *   - "card_clearing" (`payment.captured`, flag on): the card-clearing
+ *     account — money FBM's Stripe account received. No wallet is read,
+ *     created or touched. Refunds then return to clearing (the card),
+ *     because `processRefund` credits the purchase leg's debit account.
+ *
+ * Idempotent across both: the `-purchase` key is the same, so an order that
+ * already settled either way is skipped.
+ */
+export async function settleOrderPayment(
+  container: SubscriberArgs<{ id: string }>["container"],
+  orderId: string,
+  opts: { funding: "wallet" } | { funding: "card_clearing"; paymentId: string }
+) {
   const hawalaService = container.resolve<HawalaLedgerModuleService>(HAWALA_LEDGER_MODULE)
   const payoutService = container.resolve<PayoutBreakdownService>(PAYOUT_BREAKDOWN_MODULE)
   const orderModuleService = container.resolve("order")
 
-  const orderId = event.data.id
   log.info(`[Hawala] Processing payment for order: ${orderId}`)
 
   try {
@@ -87,20 +189,31 @@ export default async function hawalaOrderPaymentSubscriber({
       return
     }
 
-    let customerWallets = await hawalaService.listLedgerAccounts({
-      account_type: "USER_WALLET",
-      owner_type: "CUSTOMER",
-      owner_id: customerId,
-    })
-
-    if (customerWallets.length === 0) {
-      // Create wallet for customer
-      const wallet = await hawalaService.createAccount({
+    // Where the purchase leg comes from. A card order never reads, creates
+    // or touches a customer wallet (Posture A: no customer-held balance).
+    // The clearing account itself is looked up only once the order is known
+    // not to be settled already (below), so a redelivery creates nothing.
+    let purchaseAccountId: string | null = null
+    let purchaseMetadata: Record<string, unknown> | undefined
+    if (opts.funding === "card_clearing") {
+      purchaseMetadata = { funding: CARD_FUNDING, payment_id: opts.paymentId, customer_id: customerId }
+    } else {
+      let customerWallets = await hawalaService.listLedgerAccounts({
         account_type: "USER_WALLET",
         owner_type: "CUSTOMER",
         owner_id: customerId,
       })
-      customerWallets = [wallet]
+
+      if (customerWallets.length === 0) {
+        // Create wallet for customer
+        const wallet = await hawalaService.createAccount({
+          account_type: "USER_WALLET",
+          owner_type: "CUSTOMER",
+          owner_id: customerId,
+        })
+        customerWallets = [wallet]
+      }
+      purchaseAccountId = customerWallets[0].id
     }
 
     // Get seller ID (from marketplace context or default)
@@ -339,11 +452,15 @@ export default async function hawalaOrderPaymentSubscriber({
       log.info(`[Hawala] Order ${orderId} already settled; skipping re-settlement`)
       return
     }
+    if (purchaseAccountId === null) {
+      purchaseAccountId = (await hawalaService.getOrCreateCardClearingAccount()).id
+    }
 
     // Process order payment through ledger
     const entries = consignmentPlan
       ? await processConsignmentOrderPayment(hawalaService, {
-          customerAccountId: customerWallets[0].id,
+          customerAccountId: purchaseAccountId,
+          purchaseMetadata,
           orderId,
           currencyCode: String(order.currency_code || "USD").toUpperCase(),
           vendorSellerId: sellerId,
@@ -355,7 +472,8 @@ export default async function hawalaOrderPaymentSubscriber({
           idempotencyKey: `order-payment-${orderId}`,
         })
       : await hawalaService.processOrderPayment({
-          customer_account_id: customerWallets[0].id,
+          customer_account_id: purchaseAccountId,
+          ...(purchaseMetadata ? { purchase_metadata: purchaseMetadata } : {}),
           seller_account_id: sellerAccounts[0].id,
           order_id: orderId,
           total_amount: totalAmount,
@@ -514,6 +632,8 @@ async function processConsignmentOrderPayment(
   hawalaService: HawalaLedgerModuleService,
   args: {
     customerAccountId: string
+    /** Card orders (SD-36): stamped on the purchase leg. */
+    purchaseMetadata?: Record<string, unknown>
     orderId: string
     currencyCode: string
     vendorSellerId: string
@@ -539,6 +659,7 @@ async function processConsignmentOrderPayment(
     entry_type: "PURCHASE",
     order_id: args.orderId,
     idempotency_key: `${args.idempotencyKey}-purchase`,
+    ...(args.purchaseMetadata ? { metadata: args.purchaseMetadata } : {}),
   })
 
   // 2. Platform fee from escrow to platform

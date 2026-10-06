@@ -60,6 +60,11 @@ import {
   type CardProcessingRecoverySource,
 } from "./card-processing"
 import {
+  CARD_CLEARING_ACCOUNT_TYPE,
+  CARD_CLEARING_OWNER_ID,
+  assertCardClearingLeg,
+} from "./card-clearing"
+import {
   reconcileRecords,
   deriveCandidateBounds,
   validateCriteria,
@@ -179,6 +184,7 @@ class HawalaLedgerModuleService extends MedusaService({
       ESCROW: "ESC",
       CREATOR_EARNINGS: "CRE",
       CREATOR_REWARD_POOL: "CRP",
+      CARD_CLEARING: "CCL",
     }[accountType] || "GEN"
     
     const timestamp = Date.now().toString(36).toUpperCase()
@@ -229,6 +235,15 @@ class HawalaLedgerModuleService extends MedusaService({
     )
   }
 
+  /**
+   * The USD card-clearing account a card order's purchase leg debits
+   * (`./card-clearing.ts`, SD-36). The only account allowed below zero, and
+   * only for a PURCHASE into escrow or a REFUND out of it.
+   */
+  async getOrCreateCardClearingAccount() {
+    return this.getOrCreateSystemAccount(CARD_CLEARING_ACCOUNT_TYPE, CARD_CLEARING_OWNER_ID)
+  }
+
   // ==================== CARD-PROCESSING RECEIVABLE (F6) ====================
 
   /**
@@ -266,6 +281,8 @@ class HawalaLedgerModuleService extends MedusaService({
     const none = {
       total_cents: 0,
       open: [],
+      written_off: [],
+      written_off_cents: 0,
       recovered_by_source_entry: {},
       processing_account_id: null as string | null,
       has_shortfalls: false,
@@ -289,7 +306,9 @@ class HawalaLedgerModuleService extends MedusaService({
       entry_type: "ADJUSTMENT",
     })
     return {
-      ...computeCardProcessingReceivable(sellerAccountId, { shortfalls, recoveries }),
+      // Written off by age (180 days from the refund that recorded it,
+      // `./card-processing.ts`) as of now: forgiven, never collected again.
+      ...computeCardProcessingReceivable(sellerAccountId, { shortfalls, recoveries }, { asOfMs: Date.now() }),
       processing_account_id: processing.id,
       has_shortfalls: true,
     }
@@ -396,8 +415,9 @@ class HawalaLedgerModuleService extends MedusaService({
       if (amountCents <= 0) break
 
       // What the ledger knows, and no more: the processing amount is FBM's
-      // estimate, and the refunded order may have had no card charge (SD-36:
-      // only wallet-funded orders reach the ledger today).
+      // estimate, and the refunded order may have had no card charge (a
+      // wallet-funded order; card orders reach the ledger only with
+      // FF_CARD_ORDER_LEDGER_V1, SD-36).
       const refundedOrder = target.order_id ? `order ${target.order_id}` : "a refunded order"
       const why = `card processing on ${refundedOrder} is not returned on a refund, and your earnings did not cover it`
       let entry: any
@@ -1351,8 +1371,18 @@ class HawalaLedgerModuleService extends MedusaService({
       credit_account_id: data.credit_account_id,
     })
 
+    // Card clearing (SD-36, `./card-clearing.ts`): the one account allowed
+    // below zero, so every leg touching it must be a PURCHASE into an order's
+    // escrow or a REFUND out of it. Refused here, before any entry is
+    // written; a leg touching no clearing account is unaffected.
+    const { debitIsClearing, clearingAccountId } = assertCardClearingLeg(
+      { entry_type: data.entry_type, order_id: data.order_id ?? null },
+      debitAccount,
+      creditAccount
+    )
+
     // Check available balance for debit account
-    if (Number(debitAccount.available_balance) < data.amount) {
+    if (!debitIsClearing && Number(debitAccount.available_balance) < data.amount) {
       throw new Error(`Insufficient balance in account ${debitAccount.account_number}`)
     }
 
@@ -1407,22 +1437,39 @@ class HawalaLedgerModuleService extends MedusaService({
             // insufficient-balance failure on either leg still rolls the whole
             // thing back. Which leg runs first changes nothing observable.
             for (const leg of this.orderLegsForLocking(data)) {
-              await this.updateBalancesAtomic(trx, leg.accountId, leg.delta)
+              await this.updateBalancesAtomic(
+                trx,
+                leg.accountId,
+                leg.delta,
+                leg.accountId === clearingAccountId
+              )
             }
           })
         } else {
           await this.applyBalancePairWithCompensation(
             (delta) =>
-              this.updateBalancesAtomic(pgConnection, data.debit_account_id, delta),
+              this.updateBalancesAtomic(
+                pgConnection,
+                data.debit_account_id,
+                delta,
+                data.debit_account_id === clearingAccountId
+              ),
             (delta) =>
-              this.updateBalancesAtomic(pgConnection, data.credit_account_id, delta),
+              this.updateBalancesAtomic(
+                pgConnection,
+                data.credit_account_id,
+                delta,
+                data.credit_account_id === clearingAccountId
+              ),
             data
           )
         }
       } else {
         await this.applyBalancePairWithCompensation(
-          (delta) => this.updateBalances(data.debit_account_id, delta),
-          (delta) => this.updateBalances(data.credit_account_id, delta),
+          (delta) =>
+            this.updateBalances(data.debit_account_id, delta, 5, data.debit_account_id === clearingAccountId),
+          (delta) =>
+            this.updateBalances(data.credit_account_id, delta, 5, data.credit_account_id === clearingAccountId),
           data
         )
       }
@@ -1666,19 +1713,37 @@ class HawalaLedgerModuleService extends MedusaService({
   private async updateBalancesAtomic(
     pgConnection: any,
     accountId: string,
-    delta: number
+    delta: number,
+    // Only the clearing side of a leg `createTransfer` has already passed
+    // through `assertCardClearingLeg` (SD-36). The account's identity is
+    // re-checked in SQL on the row itself, so a mis-passed `true` still
+    // cannot let any other account go below zero.
+    allowNegativeCardClearing = false
   ): Promise<void> {
-    const result = await pgConnection.raw(
-      `UPDATE hawala_ledger_account
-         SET balance = balance + ?,
-             available_balance = available_balance + ?,
-             updated_at = NOW()
-       WHERE id = ?
-         AND deleted_at IS NULL
-         AND balance + ? >= 0
-         AND available_balance + ? >= 0`,
-      [delta, delta, accountId, delta, delta]
-    )
+    const result = allowNegativeCardClearing
+      ? await pgConnection.raw(
+          `UPDATE hawala_ledger_account
+             SET balance = balance + ?,
+                 available_balance = available_balance + ?,
+                 updated_at = NOW()
+           WHERE id = ?
+             AND deleted_at IS NULL
+             AND account_type = ?
+             AND owner_type = 'SYSTEM'
+             AND owner_id = ?`,
+          [delta, delta, accountId, CARD_CLEARING_ACCOUNT_TYPE, CARD_CLEARING_OWNER_ID]
+        )
+      : await pgConnection.raw(
+          `UPDATE hawala_ledger_account
+             SET balance = balance + ?,
+                 available_balance = available_balance + ?,
+                 updated_at = NOW()
+           WHERE id = ?
+             AND deleted_at IS NULL
+             AND balance + ? >= 0
+             AND available_balance + ? >= 0`,
+          [delta, delta, accountId, delta, delta]
+        )
 
     // knex/pg raw returns rowCount on the result object (or nested rowCount).
     const rowCount =
@@ -1693,7 +1758,12 @@ class HawalaLedgerModuleService extends MedusaService({
     }
   }
 
-  private async updateBalances(accountId: string, delta: number, maxRetries = 5) {
+  private async updateBalances(
+    accountId: string,
+    delta: number,
+    maxRetries = 5,
+    allowNegativeCardClearing = false
+  ) {
     let attempt = 0
     
     while (attempt < maxRetries) {
@@ -1706,8 +1776,15 @@ class HawalaLedgerModuleService extends MedusaService({
       const newBalance = currentBalance + delta
       const newAvailable = currentAvailable + delta
 
-      // Validate balance won't go negative for debits
-      if (newBalance < 0) {
+      // Validate balance won't go negative — except the card-clearing side of
+      // a leg `assertCardClearingLeg` passed (SD-36), re-checked on the
+      // account itself.
+      const mayGoNegative =
+        allowNegativeCardClearing &&
+        account.account_type === CARD_CLEARING_ACCOUNT_TYPE &&
+        account.owner_type === "SYSTEM" &&
+        account.owner_id === CARD_CLEARING_OWNER_ID
+      if (newBalance < 0 && !mayGoNegative) {
         throw new Error(
           `Insufficient balance in account ${accountId}. ` +
           `Available: ${currentBalance}, Requested: ${Math.abs(delta)}`
@@ -1851,6 +1928,11 @@ class HawalaLedgerModuleService extends MedusaService({
     processing_fee_amount?: number
     /** Provenance stamped on the processing leg (rate, fixed part, estimate). */
     processing_metadata?: Record<string, unknown>
+    /**
+     * Card orders only (SD-36): stamped on the purchase leg, whose debit is
+     * then the card-clearing account (`./card-clearing.ts`).
+     */
+    purchase_metadata?: Record<string, unknown>
   }) {
     const entries: any[] = []
 
@@ -1897,6 +1979,7 @@ class HawalaLedgerModuleService extends MedusaService({
       order_id: data.order_id,
       idempotency_key: `${data.idempotency_key}-purchase`,
       correlation_id: data.idempotency_key,
+      ...(data.purchase_metadata ? { metadata: data.purchase_metadata } : {}),
     })
     entries.push(purchaseEntry)
 
@@ -4758,6 +4841,17 @@ class HawalaLedgerModuleService extends MedusaService({
           order_id: o.order_id,
           amount: o.outstanding_cents / 100,
           since: o.created_at,
+        })),
+        // Forgiven after CARD_PROCESSING_WRITE_OFF_DAYS: shown so the vendor
+        // sees it is no longer owed, never collected. Only write-offs from
+        // the last 90 days — a notice, not a permanent statement line.
+        forgiven: cardProcessingOwed.written_off
+          .filter((w) => Date.now() - new Date(w.written_off_at).getTime() <= 90 * 24 * 60 * 60 * 1000)
+          .map((w) => ({
+          order_id: w.order_id,
+          amount: w.forgiven_cents / 100,
+          since: w.created_at,
+          forgiven_at: w.written_off_at,
         })),
       },
 
