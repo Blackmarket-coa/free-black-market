@@ -168,6 +168,15 @@ export interface VendorDashboard {
     description: string
     created_at: string
   }>
+  /**
+   * Card processing retained on refunded orders that the vendor's
+   * earnings could not cover at the time. Taken from the next sales, and
+   * before any payout. Absent from older API builds.
+   */
+  card_processing_owed?: {
+    outstanding: number
+    open: Array<{ order_id: string | null; amount: number; since: string | null }>
+  }
   advance: {
     has_active: boolean
     principal?: number
@@ -201,6 +210,10 @@ export interface VendorDashboard {
 
 export interface PayoutOptions {
   available_balance: number
+  /** What a payout can take now: available less card processing owed. Absent from older API builds. */
+  payable_balance?: number
+  /** Card processing owed, repaid before any payout. */
+  card_processing_owed?: number
   currency: string
   options: Array<{
     tier: string

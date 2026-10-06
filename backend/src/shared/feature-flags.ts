@@ -107,10 +107,14 @@ export const PHASE0_FEATURE_FLAGS = {
   // public sentence is exactly what it was. Default off; no vendors are live,
   // so the cut-over is the moment this is set. The rate never moves: this
   // changes the BASE the flat 3% is taken on, not the 3%.
-  // GATE: do not set until the operator has decided how a refund's vendor
-  // shortfall is recovered (netted against later payouts, or platform-borne).
-  // The refund always posts and records the gap as a vendor-shortfall leg
-  // (`hawala-ledger/card-processing.ts`); nothing yet acts on that record.
+  // Refund shortfall (decided 2026-10-06, operator answer item 20): the
+  // refund always posts and records the gap as a vendor-shortfall leg, and
+  // that receivable is recovered automatically from the vendor's next
+  // earnings, and before any payout (`hawala-ledger/card-processing.ts`).
+  // Recovery is NOT gated on this flag, so rolling it back never strands a
+  // receivable. Card orders still never reach the ledger (SD-36), so until
+  // that is fixed the processing, shortfall and recovery legs only run for
+  // wallet-funded orders.
   // CUT-OVER ORDER: deploy the storefront with NEXT_PUBLIC_FF_FEE_FIRST_SPLIT_V1
   // first (a fresh build has no cached /store/fee-schedule, and the twin
   // forces the fee-first wording even over a cached response without

@@ -7,9 +7,12 @@ import { HAWALA_LEDGER_MODULE } from "../../modules/hawala-ledger"
 import {
   CARD_PROCESSING_LEG,
   CARD_PROCESSING_OWNER_ID,
+  CARD_PROCESSING_RECOVERY_LEG,
   CARD_PROCESSING_SHORTFALL_LEG,
+  isCardProcessingRecoveryLeg,
   isCardProcessingShortfallLeg,
 } from "../../modules/hawala-ledger/card-processing"
+import HawalaLedgerModuleService from "../../modules/hawala-ledger/service"
 import { PAYOUT_BREAKDOWN_MODULE } from "../../modules/payout-breakdown"
 import { CREATOR_ATTRIBUTION_MODULE } from "../../modules/creator-attribution"
 import { VENDOR_PLAN_MODULE } from "../../modules/vendor-plan"
@@ -70,6 +73,8 @@ const order40 = (over: Partial<Order> = {}): Order => ({
 
 function makeWorld(opts: {
   order: Order
+  /** Further orders the order module can retrieve by id (later sales). */
+  orders?: Order[]
   planCode?: string
   sellerOpeningBalance?: number
   consignment?: { consignorSellerId: string; bps: number }
@@ -103,6 +108,56 @@ function makeWorld(opts: {
       acc.available_balance = Math.round(Number(acc.available_balance) * 1e8) / 1e8
     }
   }
+  // The ledger's unique index on idempotency_key (models/ledger-entry.ts):
+  // a second insert under a key throws a Postgres-shaped 23505, after a tick
+  // so two concurrent writers both pass createTransfer's pre-read and the
+  // index is what decides. Production has it; without it a race the index
+  // would refuse could post twice here.
+  const keyRejections: string[] = []
+  const insertEntry = shadow.createLedgerEntries as (d: Record<string, unknown>) => Promise<Row>
+  // Postgres stamps created_at on every row; a strictly increasing clock here
+  // so "posted before / after" reads the way it does in production.
+  let clock = 0
+  shadow.createLedgerEntries = async (data: Record<string, unknown>) => {
+    await new Promise<void>((r) => setTimeout(r, 0))
+    const key = data.idempotency_key
+    if (typeof key === "string" && ledger.entries.some((e) => e.idempotency_key === key)) {
+      keyRejections.push(key)
+      throw Object.assign(new Error(`duplicate key value violates unique constraint "IDX_ledger_entry_idempotency_key"`), {
+        code: "23505",
+      })
+    }
+    return insertEntry({ created_at: new Date(Date.UTC(2026, 9, 1) + ++clock * 1000), ...data })
+  }
+  // Payout persistence for requestPayout (in-memory rows). PAYOUT_TIERS is a
+  // class field the prototype-built service does not run; WEEKLY is the
+  // fee-free ACH tier the backstop specs use.
+  shadow.PAYOUT_TIERS = {
+    WEEKLY: { fee_rate: 0, name: "Weekly", speed: "Every Friday", method: "ACH_BATCH" },
+  }
+  const payoutRequests: Row[] = []
+  shadow.listPayoutConfigs = async () => []
+  // The vendor dashboard's other reads (no advances, no pools here).
+  shadow.listVendorAdvances = async () => []
+  shadow.listInvestmentPools = async () => []
+  // Vendor-to-vendor payment records (createVendorToVendorPayment).
+  const vendorPayments: Row[] = []
+  shadow.createVendorPayments = async (data: Record<string, unknown>) => {
+    const row = { id: `vp_${vendorPayments.length + 1}`, ...data } as Row
+    vendorPayments.push(row)
+    return row
+  }
+  shadow.createPayoutRequests = async (data: Record<string, unknown>) => {
+    const row = { id: `pr_${payoutRequests.length + 1}`, ...data } as Row
+    payoutRequests.push(row)
+    return row
+  }
+  shadow.updatePayoutRequests = async (data: Record<string, unknown> & { id: string }) => {
+    const row = payoutRequests.find((r) => r.id === data.id)
+    if (row) Object.assign(row, data)
+    return row
+  }
+  const allOrders = [opts.order, ...(opts.orders ?? [])]
   const payouts = makeBreakdownService({
     configThrowsFrom: opts.configThrowsFrom,
     processingUnusable: opts.processingUnusable,
@@ -131,7 +186,8 @@ function makeWorld(opts: {
   const resolve = jest.fn((key: string) => {
     if (key === HAWALA_LEDGER_MODULE) return ledger.service
     if (key === PAYOUT_BREAKDOWN_MODULE) return payouts.svc
-    if (key === Modules.ORDER) return { retrieveOrder: async () => opts.order }
+    if (key === Modules.ORDER)
+      return { retrieveOrder: async (id: string) => allOrders.find((o) => o.id === id) ?? opts.order }
     if (key === CREATOR_ATTRIBUTION_MODULE) return { listOrderAttributions: async () => [] }
     if (key === VENDOR_PLAN_MODULE) return { ensureAssignment, getEntitledFeatureKeys }
     if (key === ENTITLEMENT_MODULE) return { listActiveFeatureKeysForSeller: async () => [] }
@@ -140,7 +196,7 @@ function makeWorld(opts: {
     if (key === ContainerRegistrationKeys.QUERY) return { graph }
     throw new Error(`unexpected container key: ${key}`)
   })
-  return { ledger, payouts, ensureAssignment, graph, container: { resolve } as never }
+  return { ledger, payouts, ensureAssignment, graph, keyRejections, payoutRequests, vendorPayments, container: { resolve } as never }
 }
 
 const place = (container: never, orderId = "order_1") =>
@@ -624,5 +680,572 @@ describe("refund, order settled flag off — unchanged", () => {
     expect(w.ledger.entries.filter((e) => e.entry_type !== "REFUND").every((e) => e.status === "REVERSED")).toBe(true)
     expect(cents(account(w.ledger, "acc-earnings").balance)).toBe(0)
     expect(escrowNetCents(w.ledger)).toBe(0)
+  })
+})
+
+// ==================== F6 shortfall recovery (operator answer 2026-10-06) ====================
+
+const recoveryLegs = (l: PoolLedger) =>
+  l.entries.filter((e) => isCardProcessingRecoveryLeg(e as { entry_type?: string; metadata?: unknown }))
+const shortfallLegs = (l: PoolLedger) =>
+  l.entries.filter((e) => isCardProcessingShortfallLeg(e as { entry_type?: string; metadata?: unknown }))
+const sellerLeg = (l: PoolLedger, orderId: string) =>
+  l.entries.find((e) => e.idempotency_key === `order-payment-${orderId}-seller`)!
+const owedCents = async (l: PoolLedger, accountId = "acc-earnings") =>
+  (await l.service.getCardProcessingReceivable(accountId)).total_cents
+
+/**
+ * Order 1 ($40, fee-first) refunded to a vendor holding nothing else: the
+ * 1.46 the vendor could not absorb is recorded as a shortfall leg owed by
+ * acc-earnings (the shape asserted above).
+ */
+async function worldWithShortfall(extra: { orders?: Order[]; consignment?: { consignorSellerId: string; bps: number } } = {}) {
+  process.env[FLAG] = "true"
+  const w = makeWorld({ order: order40(), sellerOpeningBalance: 0, ...extra })
+  if (extra.consignment) {
+    w.ledger.accounts.push(
+      makeAccount("acc-consignor", { account_type: "SELLER_EARNINGS", owner_type: "SELLER", owner_id: extra.consignment.consignorSellerId, balance: 0, available_balance: 0 })
+    )
+  }
+  await place(w.container)
+  await refund(w.container)
+  expect(shortfallLegs(w.ledger).length).toBeGreaterThan(0)
+  return w
+}
+
+describe("shortfall recovery — from the vendor's next earnings", () => {
+  it("the next order repays the whole 1.46: one ADJUSTMENT leg, vendor -> card processing, no order_id, on the statement", async () => {
+    const w = await worldWithShortfall({ orders: [order40({ id: "order_2" })] })
+    const [shortfall] = shortfallLegs(w.ledger)
+    expect(await owedCents(w.ledger)).toBe(146)
+    const before = await w.ledger.service.getVendorDashboard("sel_1")
+    expect(before.card_processing_owed).toEqual({
+      outstanding: 1.46,
+      open: [{ order_id: "order_1", amount: 1.46, since: shortfall.created_at }],
+    })
+
+    await place(w.container, "order_2")
+
+    const legs = recoveryLegs(w.ledger)
+    expect(legs).toHaveLength(1)
+    const [leg] = legs
+    const proc = processingAccount(w.ledger)!
+    expect(leg).toMatchObject({
+      entry_type: "ADJUSTMENT",
+      status: "COMPLETED",
+      debit_account_id: "acc-earnings",
+      credit_account_id: proc.id,
+      reference_type: "ORDER",
+      reference_id: "order_1",
+      parent_entry_id: shortfall.id,
+      correlation_id: "order-payment-order_2",
+      idempotency_key: `cp-recovery-${shortfall.id}-0`,
+    })
+    expect(cents(leg.amount)).toBe(146)
+    // No order_id: a later refund of order 2 must not flip it to REVERSED.
+    expect(leg.order_id).toBeUndefined()
+    expect(leg.metadata).toMatchObject({
+      leg: CARD_PROCESSING_RECOVERY_LEG,
+      recovers_entry_id: shortfall.id,
+      owed_by_account_id: "acc-earnings",
+      recovered_from_order_id: "order_1",
+      source: "seller_credit",
+      source_entry_id: sellerLeg(w.ledger, "order_2").id,
+      source_order_id: "order_2",
+      seq: 0,
+    })
+    // The vendor keeps order 2's credit less what was owed; the processing
+    // account gets back what the shortfall used up; escrow still nets to 0.
+    expect(cents(sellerLeg(w.ledger, "order_2").amount)).toBe(3738)
+    expect(cents(account(w.ledger, "acc-earnings").balance)).toBe(3738 - 146)
+    expect(cents(proc.balance)).toBe(146 /* order 2's processing */ + 146 /* repaid */)
+    expect(escrowNetCents(w.ledger)).toBe(0)
+    expect(await owedCents(w.ledger)).toBe(0)
+
+    // The vendor's statement reads it plainly; the owed line is gone.
+    const after = await w.ledger.service.getVendorDashboard("sel_1")
+    expect(after.card_processing_owed).toEqual({ outstanding: 0, open: [] })
+    const debit = after.recent_transactions.find((t: { id: string }) => t.id === leg.id)!
+    expect(debit).toMatchObject({ direction: "DEBIT", entry_type: "ADJUSTMENT", amount: 1.46 })
+    expect(debit.description).toBe(
+      "Card processing repaid from order order_2: card processing on order order_1 is not returned on a refund, and your earnings did not cover it"
+    )
+    expect(debit.description).not.toMatch(/increase|penalty|Stripe/i)
+  })
+
+  it("partial over two orders: a $1 sale repays what it can, the next sale the rest, oldest-first, never below zero", async () => {
+    const w = await worldWithShortfall({
+      orders: [order40({ id: "order_2", total: 100, subtotal: 100 }), order40({ id: "order_3" })],
+    })
+    const [shortfall] = shortfallLegs(w.ledger)
+
+    await place(w.container, "order_2")
+    const small = cents(sellerLeg(w.ledger, "order_2").amount)
+    expect(small).toBeGreaterThan(0)
+    expect(small).toBeLessThan(146)
+    expect(recoveryLegs(w.ledger).map((e) => [cents(e.amount), e.idempotency_key])).toEqual([
+      [small, `cp-recovery-${shortfall.id}-0`],
+    ])
+    // All of the $1 sale's credit went to the receivable; nothing below zero.
+    expect(cents(account(w.ledger, "acc-earnings").balance)).toBe(0)
+    expect(await owedCents(w.ledger)).toBe(146 - small)
+
+    await place(w.container, "order_3")
+    expect(recoveryLegs(w.ledger).map((e) => [cents(e.amount), e.idempotency_key, (e.metadata as { source_order_id: string }).source_order_id])).toEqual([
+      [small, `cp-recovery-${shortfall.id}-0`, "order_2"],
+      [146 - small, `cp-recovery-${shortfall.id}-1`, "order_3"],
+    ])
+    expect(await owedCents(w.ledger)).toBe(0)
+    expect(cents(account(w.ledger, "acc-earnings").balance)).toBe(3738 - (146 - small))
+    expect(escrowNetCents(w.ledger)).toBe(0)
+  })
+
+  it("consignment: the consignor's shortfall is recovered from the consignor's own next credit, the vendor's from the vendor's", async () => {
+    process.env[CONSIGNMENT_SPLIT_FLAG] = "1"
+    const w = await worldWithShortfall({
+      consignment: { consignorSellerId: "sel_consignor", bps: 2500 },
+      orders: [order40({ id: "order_2" })],
+    })
+    const owedBy = Object.fromEntries(
+      shortfallLegs(w.ledger).map((e) => [(e.metadata as { owed_by_account_id: string }).owed_by_account_id, e])
+    )
+    expect(Object.keys(owedBy).sort()).toEqual(["acc-consignor", "acc-earnings"])
+
+    await place(w.container, "order_2")
+
+    const legs = recoveryLegs(w.ledger)
+    expect(legs).toHaveLength(2)
+    for (const leg of legs) {
+      const meta = leg.metadata as { recovers_entry_id: string; owed_by_account_id: string; source_entry_id: string }
+      // Each leg debits the account that owes, repays THAT account's shortfall,
+      // and is sourced from that account's own credit on order 2.
+      expect(leg.debit_account_id).toBe(meta.owed_by_account_id)
+      expect(owedBy[meta.owed_by_account_id].id).toBe(meta.recovers_entry_id)
+      expect(cents(leg.amount)).toBe(cents(owedBy[meta.owed_by_account_id].amount))
+      const source = w.ledger.entries.find((e) => e.id === meta.source_entry_id)!
+      expect(source.credit_account_id).toBe(meta.owed_by_account_id)
+      expect(source.idempotency_key).toMatch(/^order-payment-order_2-(consignor|vendor)$/)
+    }
+    expect(await owedCents(w.ledger, "acc-consignor")).toBe(0)
+    expect(await owedCents(w.ledger, "acc-earnings")).toBe(0)
+    expect(escrowNetCents(w.ledger)).toBe(0)
+  })
+
+  it("redelivery writes nothing twice: neither a redelivered order.placed nor a direct re-run of the settlement re-collects from a credit already used", async () => {
+    const w = await worldWithShortfall({ orders: [order40({ id: "order_2", total: 100, subtotal: 100 })] })
+    await place(w.container, "order_2")
+    const small = cents(sellerLeg(w.ledger, "order_2").amount)
+    expect(recoveryLegs(w.ledger).map((e) => cents(e.amount))).toEqual([small])
+    // Still owed after the $1 sale gave all it had.
+    expect(await owedCents(w.ledger)).toBe(146 - small)
+    const count = w.ledger.entries.length
+
+    await place(w.container, "order_2") // the subscriber skips a settled order
+    expect(w.ledger.entries).toHaveLength(count)
+
+    // Bypass the subscriber's guard: the settlement itself re-run under the
+    // same key, with the vendor now holding $10 from elsewhere. Every leg
+    // comes back as the existing row, and that seller credit has already
+    // given everything it had to the receivable, so the recovery posts
+    // nothing although 146 - small is still owed and there is balance to
+    // take it from (that is the payout backstop's job, not this credit's —
+    // a second leg here would also count toward order 2's refund cap twice).
+    const e = account(w.ledger, "acc-earnings")
+    e.balance = 10
+    e.available_balance = 10
+    await w.ledger.service.processOrderPayment({
+      customer_account_id: "acc-wallet",
+      seller_account_id: "acc-earnings",
+      order_id: "order_2",
+      total_amount: 1,
+      platform_fee_amount: Number(w.ledger.entries.find((e) => e.idempotency_key === "order-payment-order_2-fee")!.amount),
+      processing_fee_amount: Number(w.ledger.entries.find((e) => e.idempotency_key === "order-payment-order_2-processing")!.amount),
+      idempotency_key: "order-payment-order_2",
+    })
+    expect(w.ledger.entries).toHaveLength(count)
+    expect(await owedCents(w.ledger)).toBe(146 - small)
+    expect(cents(account(w.ledger, "acc-earnings").balance)).toBe(1000)
+  })
+})
+
+describe("shortfall recovery — payout backstop", () => {
+  /** A credit that never ran the next-earnings recovery (a crash before it, whose redelivery the subscriber skips, or a non-order credit). */
+  const creditOutsideSettlement = (w: ReturnType<typeof makeWorld>, dollars: number) => {
+    const e = account(w.ledger, "acc-earnings")
+    e.balance = Number(e.balance) + dollars
+    e.available_balance = Number(e.available_balance) + dollars
+  }
+
+  it("recovers what is owed BEFORE the WITHDRAWAL, then refuses only the excess", async () => {
+    const w = await worldWithShortfall()
+    creditOutsideSettlement(w, 20)
+
+    const options = await w.ledger.service.getPayoutOptions("sel_1")
+    expect(options).toMatchObject({ available_balance: 20, payable_balance: 18.54, card_processing_owed: 1.46 })
+    expect(options.options.find((o: { tier: string }) => o.tier === "WEEKLY")).toMatchObject({ net_amount: 18.54 })
+
+    // Asking for the whole balance: the 1.46 is repaid first, the balance is
+    // re-read, and the payout is refused — nothing is withdrawn.
+    await expect(
+      w.ledger.service.requestPayout({ vendor_id: "sel_1", amount: 20, payout_tier: "WEEKLY" })
+    ).rejects.toThrow(
+      "Insufficient balance: $18.54 is available to pay out after $1.46 of card processing owed was repaid from your balance"
+    )
+    const [leg] = recoveryLegs(w.ledger)
+    expect(leg).toMatchObject({ debit_account_id: "acc-earnings", status: "COMPLETED" })
+    expect(leg.metadata).toMatchObject({ source: "payout", recovered_from_order_id: "order_1" })
+    expect(leg.description).toBe(
+      "Card processing repaid from your balance before payout: card processing on order order_1 is not returned on a refund, and your earnings did not cover it"
+    )
+    expect(w.ledger.entries.some((e) => e.entry_type === "WITHDRAWAL")).toBe(false)
+    expect(w.payoutRequests).toHaveLength(0)
+    expect(await owedCents(w.ledger)).toBe(0)
+
+    // One cent over the net is still refused; the net itself goes through.
+    await expect(
+      w.ledger.service.requestPayout({ vendor_id: "sel_1", amount: 18.55, payout_tier: "WEEKLY" })
+    ).rejects.toThrow("Insufficient balance")
+    await w.ledger.service.requestPayout({ vendor_id: "sel_1", amount: 18.54, payout_tier: "WEEKLY" })
+    const withdrawal = w.ledger.entries.find((e) => e.entry_type === "WITHDRAWAL")!
+    expect(cents(withdrawal.amount)).toBe(1854)
+    expect(w.ledger.entries.indexOf(withdrawal)).toBeGreaterThan(w.ledger.entries.indexOf(leg))
+    expect(recoveryLegs(w.ledger)).toHaveLength(1)
+    expect(cents(account(w.ledger, "acc-earnings").balance)).toBe(0)
+  })
+
+  it("a balance smaller than what is owed: takes it all, still owes the rest, and no payout can leave", async () => {
+    const w = await worldWithShortfall()
+    creditOutsideSettlement(w, 1)
+    await expect(
+      w.ledger.service.requestPayout({ vendor_id: "sel_1", amount: 0.5, payout_tier: "WEEKLY" })
+    ).rejects.toThrow(
+      "Insufficient balance: $0.00 is available to pay out after $1.00 of card processing owed was repaid from your balance; $0.46 of card processing is still owed and is taken from your next sales"
+    )
+    expect(recoveryLegs(w.ledger).map((e) => cents(e.amount))).toEqual([100])
+    expect(await owedCents(w.ledger)).toBe(46)
+    expect(w.ledger.entries.some((e) => e.entry_type === "WITHDRAWAL")).toBe(false)
+  })
+
+  it("if the backstop's own leg cannot post, the payout is still limited to the balance net of what is owed", async () => {
+    const w = await worldWithShortfall()
+    creditOutsideSettlement(w, 20)
+    const shadow = w.ledger.service as unknown as Record<string, unknown>
+    shadow.recoverCardProcessingShortfallLocked_ = async () => {
+      throw new Error("recovery unavailable")
+    }
+    await expect(
+      w.ledger.service.requestPayout({ vendor_id: "sel_1", amount: 20, payout_tier: "WEEKLY" })
+    ).rejects.toThrow("Insufficient balance: $18.54 is available to pay out; $1.46 of card processing is still owed")
+    await w.ledger.service.requestPayout({ vendor_id: "sel_1", amount: 18.54, payout_tier: "WEEKLY" })
+    expect(cents(account(w.ledger, "acc-earnings").balance)).toBe(146)
+  })
+})
+
+describe("shortfall recovery — races, refunds, flags", () => {
+  it("two concurrent recoveries of the same receivable make ONE leg: the second loses on the unique key and re-reads", async () => {
+    const w = await worldWithShortfall()
+    const e = account(w.ledger, "acc-earnings")
+    e.balance = 20
+    e.available_balance = 20
+    const run = () =>
+      w.ledger.service.recoverCardProcessingShortfall({
+        sellerAccountId: "acc-earnings",
+        maxAmountCents: 2000,
+        source: "payout",
+      })
+    const [a, b] = await Promise.all([run(), run()])
+    // The race really happened: both writers reached the insert under the
+    // same seq, and the index refused one of them.
+    expect(w.keyRejections.filter((k) => k.startsWith("cp-recovery-"))).toHaveLength(1)
+    expect(a.length + b.length).toBe(1)
+    expect(recoveryLegs(w.ledger)).toHaveLength(1)
+    expect(cents(account(w.ledger, "acc-earnings").balance)).toBe(2000 - 146)
+    expect(await owedCents(w.ledger)).toBe(0)
+  })
+
+  it("two orders settling at once repay the 1.46 once between them", async () => {
+    const w = await worldWithShortfall({ orders: [order40({ id: "order_2" }), order40({ id: "order_3" })] })
+    await Promise.all([place(w.container, "order_2"), place(w.container, "order_3")])
+    expect(recoveryLegs(w.ledger).reduce((sum, e) => sum + cents(e.amount), 0)).toBe(146)
+    expect(await owedCents(w.ledger)).toBe(0)
+    expect(cents(account(w.ledger, "acc-earnings").balance)).toBe(2 * 3738 - 146)
+    expect(escrowNetCents(w.ledger)).toBe(0)
+  })
+
+  it("a refund of an order whose earnings repaid a receivable succeeds: the cap rises by what it repaid and the receivable is re-recorded", async () => {
+    const w = await worldWithShortfall({ orders: [order40({ id: "order_2" })] })
+    const [first] = shortfallLegs(w.ledger)
+    await place(w.container, "order_2")
+    const [recovery] = recoveryLegs(w.ledger)
+    expect(cents(account(w.ledger, "acc-earnings").balance)).toBe(3738 - 146)
+
+    await refund(w.container, undefined, "order_2")
+
+    const legs = w.ledger.entries
+      .filter((e) => (e.entry_type === "REFUND" || e.entry_type === "ADJUSTMENT") && String(e.idempotency_key).startsWith("order-refund-order_2"))
+      .map((e) => [e.entry_type, cents(e.amount), e.idempotency_key])
+    // Vendor holds 35.92 of the 38.84 balancing leg: the gap 2.92 is order
+    // 2's own 1.46 plus the 1.46 its earnings repaid toward order 1.
+    expect(legs).toEqual([
+      ["REFUND", 116, "order-refund-order_2-fee"],
+      ["REFUND", 3592, "order-refund-order_2-seller"],
+      ["ADJUSTMENT", 292, "order-refund-order_2-processing-shortfall"],
+      ["REFUND", 4000, "order-refund-order_2-customer"],
+    ])
+    const reopened = shortfallLegs(w.ledger).find((e) => e.idempotency_key === "order-refund-order_2-processing-shortfall")!
+    expect(reopened.metadata).toMatchObject({
+      owed_by_account_id: "acc-earnings",
+      processing_retained: 1.46,
+      repaid_from_this_order: 1.46,
+      reopens_entry_ids: [first.id],
+    })
+    // The recovery leg stays COMPLETED (no order_id, so the refund never
+    // listed it); the first shortfall still reads repaid; what is owed now
+    // is both orders' processing.
+    expect(w.ledger.entries.find((e) => e.id === recovery.id)?.status).toBe("COMPLETED")
+    expect(await owedCents(w.ledger)).toBe(292)
+    expect(cents(account(w.ledger, "acc-earnings").balance)).toBe(0)
+    expect(cents(account(w.ledger, "acc-wallet").balance)).toBe(100_000)
+    expect(escrowNetCents(w.ledger)).toBe(0)
+    expect(cents(processingAccount(w.ledger)!.balance)).toBe(0)
+  })
+
+  it("rolling the flag back with a receivable outstanding: a flag-off sale still repays it", async () => {
+    const w = await worldWithShortfall({ orders: [order40({ id: "order_2" })] })
+    delete process.env[FLAG]
+    await place(w.container, "order_2")
+    expect(orderLegs(w.ledger).filter(([, , k]) => String(k).startsWith("order-payment-order_2"))).toEqual([
+      ["PURCHASE", 4000, "order-payment-order_2-purchase"],
+      ["COMMISSION", 120, "order-payment-order_2-fee"],
+      ["TRANSFER", 3880, "order-payment-order_2-seller"],
+    ])
+    expect(recoveryLegs(w.ledger).map((e) => [cents(e.amount), (e.metadata as { source_order_id: string }).source_order_id])).toEqual([
+      [146, "order_2"],
+    ])
+    expect(await owedCents(w.ledger)).toBe(0)
+    expect(cents(account(w.ledger, "acc-earnings").balance)).toBe(3880 - 146)
+
+    // And a flag-off refund of that order is not refused for it either.
+    await refund(w.container, undefined, "order_2")
+    expect(w.ledger.entries.find((e) => e.idempotency_key === "order-refund-order_2-customer")).toBeDefined()
+    expect(await owedCents(w.ledger)).toBe(146)
+    expect(escrowNetCents(w.ledger)).toBe(0)
+  })
+
+  it("no shortfall anywhere: flag off, a sale, a refund and a payout make no extra leg, never create the processing account, and read it once each", async () => {
+    const w = makeWorld({ order: order40(), orders: [order40({ id: "order_2" })] })
+    const shadow = w.ledger.service as unknown as Record<string, unknown>
+    const listAccounts = shadow.listLedgerAccounts as (f: Record<string, unknown>) => Promise<Row[]>
+    const processingReads: number[] = []
+    shadow.listLedgerAccounts = async (f: Record<string, unknown>) => {
+      if (f.owner_id === CARD_PROCESSING_OWNER_ID) processingReads.push(1)
+      return listAccounts(f)
+    }
+    const lock = jest.spyOn(HawalaLedgerModuleService.prototype as never, "withSellerAccountLock_" as never)
+
+    await place(w.container)
+    expect(processingReads).toHaveLength(1)
+    expect(orderLegs(w.ledger).map(([t]) => t)).toEqual(["PURCHASE", "COMMISSION", "TRANSFER"])
+    await place(w.container, "order_2")
+    await refund(w.container, undefined, "order_2")
+    await w.ledger.service.requestPayout({ vendor_id: "sel_1", amount: 10, payout_tier: "WEEKLY" })
+
+    expect(processingAccount(w.ledger)).toBeUndefined()
+    expect(w.ledger.entries.some((e) => e.entry_type === "ADJUSTMENT")).toBe(false)
+    expect(processingReads).toHaveLength(4)
+    expect(lock).not.toHaveBeenCalled()
+    expect(w.ledger.entries.find((e) => e.entry_type === "WITHDRAWAL")?.idempotency_key).toBe("payout-pr_1-net")
+    lock.mockRestore()
+  })
+
+  it("flag on, nothing owed: the four fee-first legs and nothing else; the payout takes no lock", async () => {
+    process.env[FLAG] = "true"
+    const w = makeWorld({ order: order40() })
+    const lock = jest.spyOn(HawalaLedgerModuleService.prototype as never, "withSellerAccountLock_" as never)
+    await place(w.container)
+    await w.ledger.service.requestPayout({ vendor_id: "sel_1", amount: 37.38, payout_tier: "WEEKLY" })
+    expect(w.ledger.entries.map((e) => e.entry_type)).toEqual(["PURCHASE", "COMMISSION", "FEE", "TRANSFER", "WITHDRAWAL"])
+    expect(lock).not.toHaveBeenCalled()
+    lock.mockRestore()
+  })
+})
+
+describe("shortfall recovery — per-account serialization", () => {
+  it("with a pg connection, recovery and payout run under a transaction-scoped advisory lock on the seller account, bounded by lock_timeout", async () => {
+    const svc = Object.create(HawalaLedgerModuleService.prototype) as Record<string, unknown>
+    const sql: Array<[string, unknown[]]> = []
+    let inside = false
+    svc.resolvePgConnection = () => ({
+      raw: async () => {
+        throw new Error("the lock never runs a statement outside its transaction")
+      },
+      transaction: async (work: (trx: unknown) => Promise<unknown>) => {
+        inside = true
+        try {
+          return await work({
+            raw: async (text: string, bindings: unknown[] = []) => {
+              sql.push([text, bindings])
+              return { rowCount: 1 }
+            },
+          })
+        } finally {
+          inside = false
+        }
+      },
+    })
+    const lock = svc.withSellerAccountLock_ as (id: string, fn: () => Promise<string>) => Promise<string>
+    const ran = await lock.call(svc, "acc-earnings", async () => {
+      expect(inside).toBe(true)
+      return "ok"
+    })
+    expect(ran).toBe("ok")
+    expect(sql).toEqual([
+      ["SET LOCAL lock_timeout = '5s'", []],
+      ["SELECT pg_advisory_xact_lock(hashtext(?), hashtext(?))", ["hawala-seller-earnings", "acc-earnings"]],
+    ])
+  })
+
+  it("a payout with a receivable on record runs inside that lock", async () => {
+    const w = await worldWithShortfall()
+    const e = account(w.ledger, "acc-earnings")
+    e.balance = 20
+    e.available_balance = 20
+    const lock = jest.spyOn(HawalaLedgerModuleService.prototype as never, "withSellerAccountLock_" as never)
+    await w.ledger.service.requestPayout({ vendor_id: "sel_1", amount: 18.54, payout_tier: "WEEKLY" })
+    expect(lock).toHaveBeenCalledTimes(1)
+    expect((lock.mock.calls[0] as unknown[])[0]).toBe("acc-earnings")
+    lock.mockRestore()
+  })
+})
+
+describe("shortfall recovery — vendor-to-vendor payments (no way around the backstop)", () => {
+  const withPayee = (w: ReturnType<typeof makeWorld>) => {
+    w.ledger.accounts.push(
+      makeAccount("acc-payee", { account_type: "SELLER_EARNINGS", owner_type: "SELLER", owner_id: "sel_2", balance: 0, available_balance: 0 })
+    )
+  }
+  const holding = (w: ReturnType<typeof makeWorld>, dollars: number) => {
+    const e = account(w.ledger, "acc-earnings")
+    e.balance = Number(e.balance) + dollars
+    e.available_balance = Number(e.available_balance) + dollars
+  }
+  const pay = (w: ReturnType<typeof makeWorld>, amount: number) =>
+    w.ledger.service.createVendorToVendorPayment({
+      payer_vendor_id: "sel_1",
+      payee_vendor_id: "sel_2",
+      amount,
+      payment_type: "INVOICE",
+    })
+  const vendorPaymentLegs = (l: PoolLedger) => l.entries.filter((e) => e.entry_type === "VENDOR_PAYMENT")
+
+  it("a vendor who owes cannot pay the whole balance to a second seller account: what is owed is repaid first and only the excess is refused", async () => {
+    const w = await worldWithShortfall()
+    withPayee(w)
+    holding(w, 20)
+
+    await expect(pay(w, 20)).rejects.toThrow(
+      "Insufficient balance: $18.54 is available to pay after $1.46 of card processing owed was repaid from your balance"
+    )
+    const [leg] = recoveryLegs(w.ledger)
+    expect(leg).toMatchObject({ debit_account_id: "acc-earnings", status: "COMPLETED" })
+    expect(cents(leg.amount)).toBe(146)
+    expect(leg.metadata).toMatchObject({ source: "vendor_payment", recovered_from_order_id: "order_1" })
+    expect(leg.description).toBe(
+      "Card processing repaid from your balance before a vendor payment: card processing on order order_1 is not returned on a refund, and your earnings did not cover it"
+    )
+    expect(vendorPaymentLegs(w.ledger)).toHaveLength(0)
+    expect(w.vendorPayments).toHaveLength(0)
+    expect(cents(account(w.ledger, "acc-payee").balance)).toBe(0)
+    expect(await owedCents(w.ledger)).toBe(0)
+
+    // The net goes through, after the recovery, and nothing is taken twice.
+    await pay(w, 18.54)
+    const [moved] = vendorPaymentLegs(w.ledger)
+    expect(cents(moved.amount)).toBe(1854)
+    expect(w.ledger.entries.indexOf(moved)).toBeGreaterThan(w.ledger.entries.indexOf(leg))
+    expect(recoveryLegs(w.ledger)).toHaveLength(1)
+    expect(cents(account(w.ledger, "acc-earnings").balance)).toBe(0)
+    expect(cents(account(w.ledger, "acc-payee").balance)).toBe(1854)
+    expect(w.vendorPayments).toHaveLength(1)
+  })
+
+  it("if the recovery leg cannot post, the payment is still limited to the balance net of what is owed", async () => {
+    const w = await worldWithShortfall()
+    withPayee(w)
+    holding(w, 20)
+    const shadow = w.ledger.service as unknown as Record<string, unknown>
+    shadow.recoverCardProcessingShortfallLocked_ = async () => {
+      throw new Error("recovery unavailable")
+    }
+    await expect(pay(w, 20)).rejects.toThrow(
+      "Insufficient balance: $18.54 is available to pay; $1.46 of card processing is still owed"
+    )
+    await pay(w, 18.54)
+    expect(cents(account(w.ledger, "acc-earnings").balance)).toBe(146)
+    expect(await owedCents(w.ledger)).toBe(146)
+  })
+
+  it("nothing owed: a vendor payment of the whole balance is unchanged and takes no lock", async () => {
+    const w = makeWorld({ order: order40() })
+    withPayee(w)
+    holding(w, 20)
+    const lock = jest.spyOn(HawalaLedgerModuleService.prototype as never, "withSellerAccountLock_" as never)
+    await pay(w, 20)
+    expect(lock).not.toHaveBeenCalled()
+    expect(w.ledger.entries.map((e) => e.entry_type)).toEqual(["VENDOR_PAYMENT"])
+    expect(cents(account(w.ledger, "acc-payee").balance)).toBe(2000)
+    expect(processingAccount(w.ledger)).toBeUndefined()
+    lock.mockRestore()
+  })
+})
+
+describe("shortfall recovery — refund cap when the outflow backstop, not the settlement, repaid", () => {
+  it("next-earnings recovery missed order 2; the payout backstop then took the 1.46 from order 2's money: the refund of order 2 still succeeds", async () => {
+    const w = await worldWithShortfall({ orders: [order40({ id: "order_2" })] })
+    const shadow = w.ledger.service as unknown as Record<string, unknown>
+    // Point A misses order 2's credit (a swallowed lock timeout, say).
+    shadow.recoverFromSellerCredit_ = async () => undefined
+    await place(w.container, "order_2")
+    delete shadow.recoverFromSellerCredit_
+    expect(recoveryLegs(w.ledger)).toHaveLength(0)
+    expect(await owedCents(w.ledger)).toBe(146)
+
+    // The vendor asks for everything; the backstop repays first and refuses.
+    await expect(
+      w.ledger.service.requestPayout({ vendor_id: "sel_1", amount: 37.38, payout_tier: "WEEKLY" })
+    ).rejects.toThrow("Insufficient balance: $35.92 is available to pay out after $1.46")
+    expect(recoveryLegs(w.ledger).map((e) => (e.metadata as { source: string }).source)).toEqual(["payout"])
+
+    await refund(w.container, undefined, "order_2")
+
+    expect(w.ledger.entries.find((e) => e.idempotency_key === "order-refund-order_2-customer")).toBeDefined()
+    const reopened = shortfallLegs(w.ledger).find((e) => e.idempotency_key === "order-refund-order_2-processing-shortfall")!
+    expect(cents(reopened.amount)).toBe(292)
+    expect(reopened.metadata).toMatchObject({ repaid_from_this_order: 1.46 })
+    expect(await owedCents(w.ledger)).toBe(292)
+    expect(cents(account(w.ledger, "acc-earnings").balance)).toBe(0)
+    expect(escrowNetCents(w.ledger)).toBe(0)
+  })
+
+  it("a backstop recovery posted BEFORE the order's credit does not raise that order's cap", async () => {
+    const w = await worldWithShortfall({ orders: [order40({ id: "order_2" })] })
+    const e = account(w.ledger, "acc-earnings")
+    e.balance = 1.46
+    e.available_balance = 1.46
+    // The backstop repays the 1.46 from money that is not order 2's.
+    await expect(
+      w.ledger.service.requestPayout({ vendor_id: "sel_1", amount: 0.01, payout_tier: "WEEKLY" })
+    ).rejects.toThrow("Insufficient balance: $0.00 is available to pay out after $1.46")
+    expect(await owedCents(w.ledger)).toBe(0)
+
+    await place(w.container, "order_2")
+    expect(recoveryLegs(w.ledger)).toHaveLength(1)
+    // The vendor then cashes out 1.46 of order 2's credit.
+    await w.ledger.service.requestPayout({ vendor_id: "sel_1", amount: 1.46, payout_tier: "WEEKLY" })
+
+    // Gap 2.92 against order 2's own 1.46: the vendor was paid out, refused.
+    await expect(w.ledger.service.processRefund({ order_id: "order_2" })).rejects.toThrow(
+      /refused before any leg posted: the vendor's earnings fall \$2.92 short of the seller balancing leg, more than the \$1.46 card processing retained on the order \(the vendor/
+    )
   })
 })
