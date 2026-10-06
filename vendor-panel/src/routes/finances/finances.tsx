@@ -26,6 +26,7 @@ import {
   useAdvanceEligibility,
   useRequestAdvance,
 } from "../../hooks/api/hawala"
+import { CardProcessingOwed } from "./card-processing-owed"
 import { useCreateInvoice, useInvoiceAging, useInvoices, useRecordInvoicePayment, useUpdateInvoiceState } from "../../hooks/api/invoicing"
 import { phase1ModuleFlags } from "../../lib/phase0-feature-flags"
 
@@ -80,7 +81,11 @@ const PayoutSection = () => {
   if (isError || !payoutOptions) return <Text className="text-ui-fg-muted">Unable to load payout options</Text>
 
   const selectedOption = payoutOptions.options.find((o) => o.tier === selectedTier)
-  const amount = customAmount ? parseFloat(customAmount) : payoutOptions.available_balance
+  // Card processing owed is repaid before any payout, so the full-balance
+  // default is the balance net of it.
+  const payable = payoutOptions.payable_balance ?? payoutOptions.available_balance
+  const owed = payoutOptions.card_processing_owed ?? 0
+  const amount = customAmount ? parseFloat(customAmount) : payable
   const fee = amount * (selectedOption?.fee_rate || 0)
   const net = amount - fee
 
@@ -100,10 +105,19 @@ const PayoutSection = () => {
   return (
     <div className="space-y-6">
       <div className="bg-ui-bg-subtle rounded-lg p-4">
-        <Text className="text-ui-fg-muted mb-2">Available Balance</Text>
+        <Text className="text-ui-fg-muted mb-2">
+          {owed > 0 ? "Available to cash out" : "Available Balance"}
+        </Text>
         <Heading level="h2" className="text-3xl font-bold">
-          {formatCurrency(payoutOptions.available_balance, payoutOptions.currency)}
+          {formatCurrency(payable, payoutOptions.currency)}
         </Heading>
+        {owed > 0 && (
+          <Text className="text-sm text-ui-fg-muted mt-2">
+            Your balance is {formatCurrency(payoutOptions.available_balance, payoutOptions.currency)}.{" "}
+            {formatCurrency(owed, payoutOptions.currency)} of card processing you owe is repaid
+            from it before any payout.
+          </Text>
+        )}
       </div>
 
       <div className="space-y-4">
@@ -134,10 +148,10 @@ const PayoutSection = () => {
         <Label>Amount (optional - leave blank for full balance)</Label>
         <Input
           type="number"
-          placeholder={payoutOptions.available_balance.toString()}
+          placeholder={payable.toString()}
           value={customAmount}
           onChange={(e) => setCustomAmount(e.target.value)}
-          max={payoutOptions.available_balance}
+          max={payable}
         />
       </div>
 
@@ -636,6 +650,12 @@ export const FinancesPage = () => {
           </Text>
         </div>
       </div>
+
+      {dashboard.card_processing_owed && dashboard.card_processing_owed.outstanding > 0 && (
+        <div className="mb-8">
+          <CardProcessingOwed owed={dashboard.card_processing_owed} currency={dashboard.currency} />
+        </div>
+      )}
 
       {/* Payout Section */}
       <div className="mb-8">

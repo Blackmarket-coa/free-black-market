@@ -45,12 +45,19 @@ import {
   totalOwedMajorUnits,
 } from "./org-advance"
 import { splitConsignmentCents } from "../../lib/consignment"
+import { randomUUID } from "crypto"
 import {
   CARD_PROCESSING_ACCOUNT_TYPE,
   CARD_PROCESSING_LEG,
   CARD_PROCESSING_OWNER_ID,
+  CARD_PROCESSING_RECOVERY_LEG,
   CARD_PROCESSING_SHORTFALL_LEG,
+  computeCardProcessingReceivable,
   isCardProcessingLeg,
+  isCardProcessingRecoveryLeg,
+  isCardProcessingShortfallLeg,
+  type CardProcessingReceivable,
+  type CardProcessingRecoverySource,
 } from "./card-processing"
 import {
   reconcileRecords,
@@ -220,6 +227,332 @@ class HawalaLedgerModuleService extends MedusaService({
       CARD_PROCESSING_ACCOUNT_TYPE,
       CARD_PROCESSING_OWNER_ID
     )
+  }
+
+  // ==================== CARD-PROCESSING RECEIVABLE (F6) ====================
+
+  /**
+   * The card-processing account if it exists. Never creates it: this is the
+   * one lookup the money path makes when no shortfall can exist (the
+   * fee-first flag was never set, so no processing leg ever posted).
+   */
+  private async findCardProcessingAccount_() {
+    const [found] = await this.listLedgerAccounts({
+      account_type: CARD_PROCESSING_ACCOUNT_TYPE,
+      owner_type: "SYSTEM",
+      owner_id: CARD_PROCESSING_OWNER_ID,
+    })
+    if (
+      !found ||
+      found.owner_id !== CARD_PROCESSING_OWNER_ID ||
+      found.account_type !== CARD_PROCESSING_ACCOUNT_TYPE
+    ) {
+      return null
+    }
+    return found
+  }
+
+  /**
+   * What a seller account owes in card processing retained on a refunded
+   * order its earnings could not cover (`./card-processing.ts`), computed from entries and never stored:
+   * the shortfall legs owed by the account less the recovery legs that repay
+   * them. No processing account: zero, after one read and no write. A
+   * processing account but no shortfall owed by this account: zero, after
+   * one more read.
+   */
+  async getCardProcessingReceivable(sellerAccountId: string): Promise<
+    CardProcessingReceivable & { processing_account_id: string | null; has_shortfalls: boolean }
+  > {
+    const none = {
+      total_cents: 0,
+      open: [],
+      recovered_by_source_entry: {},
+      processing_account_id: null as string | null,
+      has_shortfalls: false,
+    }
+    const processing = await this.findCardProcessingAccount_()
+    if (!processing) return none
+    const shortfalls = (
+      await this.listLedgerEntries(
+        { debit_account_id: processing.id, entry_type: "ADJUSTMENT", status: "COMPLETED" },
+        { order: { created_at: "ASC" } }
+      )
+    ).filter(
+      (e) =>
+        isCardProcessingShortfallLeg(e) &&
+        (e.metadata as { owed_by_account_id?: unknown } | null)?.owed_by_account_id === sellerAccountId
+    )
+    if (shortfalls.length === 0) return { ...none, processing_account_id: processing.id }
+    const recoveries = await this.listLedgerEntries({
+      debit_account_id: sellerAccountId,
+      credit_account_id: processing.id,
+      entry_type: "ADJUSTMENT",
+    })
+    return {
+      ...computeCardProcessingReceivable(sellerAccountId, { shortfalls, recoveries }),
+      processing_account_id: processing.id,
+      has_shortfalls: true,
+    }
+  }
+
+  /**
+   * Serialize recovery and payout for ONE seller account: a transaction-
+   * scoped advisory lock (released at commit or rollback, so never leaked on
+   * a pooled connection), held across "compute what is owed, post the
+   * recovery, re-check, post the payout legs". Nothing is written through
+   * the lock's own transaction: the legs commit on their own (createTransfer
+   * opens its own transaction; entries are written through the ORM), so a
+   * rollback here can never undo a balance move behind a COMPLETED entry.
+   * `lock_timeout` bounds the wait, so callers queued behind a holder give
+   * their connection back instead of starving it; a timeout surfaces as an
+   * error (a settlement swallows it and the payout backstop recovers later;
+   * a payout is refused and can be retried). Without a pg connection (unit
+   * tests without DI) it runs unserialized: the recovery's idempotency key
+   * and the balance CAS still keep it from collecting twice or overdrawing.
+   *
+   * Known cost: a holder keeps this pooled connection while createTransfer
+   * takes a second one. `lock_timeout` bounds waiting on the LOCK, not on the
+   * pool, so as many concurrent holders on DIFFERENT accounts as the pool
+   * has connections would each wait out knex's acquire timeout. Only
+   * accounts with a shortfall on record take the lock. Threading this trx
+   * into createTransfer would avoid it, but would let a later throw in `fn`
+   * (a refused payout) roll back a recovery's balance move behind a
+   * COMPLETED entry, so it is deliberately not done.
+   */
+  private async withSellerAccountLock_<T>(accountId: string, fn: () => Promise<T>): Promise<T> {
+    const pg = this.resolvePgConnection() as
+      | {
+          transaction?: (
+            work: (trx: { raw: (sql: string, bindings?: unknown[]) => Promise<unknown> }) => Promise<T>
+          ) => Promise<T>
+        }
+      | undefined
+    if (!pg || typeof pg.transaction !== "function") return fn()
+    return pg.transaction(async (trx) => {
+      await trx.raw("SET LOCAL lock_timeout = '5s'")
+      await trx.raw("SELECT pg_advisory_xact_lock(hashtext(?), hashtext(?))", [
+        "hawala-seller-earnings",
+        accountId,
+      ])
+      return fn()
+    })
+  }
+
+  /**
+   * Recover what a seller account owes in card processing (oldest shortfall
+   * first, partial allowed), up to `maxAmountCents` from this source and
+   * never more than the account holds. One ADJUSTMENT leg per shortfall
+   * repaid: SELLER_EARNINGS -> the card-processing account, no `order_id`
+   * (a later refund of the source order must not flip it to REVERSED),
+   * keyed `cp-recovery-<shortfall id>-<seq>` where seq counts every recovery
+   * row already on that shortfall, FAILED ones included. The unique key is
+   * the optimistic lock: of two writers that read the same state, one insert
+   * wins, and the loser re-reads and moves on. USD accounts only (Posture A:
+   * a CCR SELLER_EARNINGS account is never touched). Not gated on
+   * FF_FEE_FIRST_SPLIT_V1 — it runs whenever a shortfall is outstanding.
+   * Returns the legs it posted.
+   */
+  async recoverCardProcessingShortfall(args: {
+    sellerAccountId: string
+    maxAmountCents: number
+    source: CardProcessingRecoverySource
+    sourceEntryId?: string
+    sourceOrderId?: string
+    correlationId?: string
+  }): Promise<any[]> {
+    const owed = await this.getCardProcessingReceivable(args.sellerAccountId)
+    if (!owed.has_shortfalls || owed.total_cents <= 0) return []
+    return this.withSellerAccountLock_(args.sellerAccountId, () =>
+      this.recoverCardProcessingShortfallLocked_(args)
+    )
+  }
+
+  private async recoverCardProcessingShortfallLocked_(args: {
+    sellerAccountId: string
+    maxAmountCents: number
+    source: CardProcessingRecoverySource
+    sourceEntryId?: string
+    sourceOrderId?: string
+    correlationId?: string
+  }): Promise<any[]> {
+    const posted: any[] = []
+    const attempt = randomUUID()
+    let postedCents = 0
+    let lost = 0
+    // Bounded: each pass either posts a leg (closing or shrinking the oldest
+    // shortfall, or exhausting the room) or counts a lost race.
+    for (let pass = 0; pass < 64; pass++) {
+      const owed = await this.getCardProcessingReceivable(args.sellerAccountId)
+      const target = owed.open[0]
+      if (!owed.processing_account_id || !target) break
+      const usedFromSource = args.sourceEntryId
+        ? owed.recovered_by_source_entry[args.sourceEntryId] ?? 0
+        : postedCents
+      const room = Math.floor(args.maxAmountCents) - usedFromSource
+      const account = await this.retrieveLedgerAccount(args.sellerAccountId)
+      if (!account || String(account.currency_code).toUpperCase() !== "USD") break
+      const availableCents = Math.max(0, Math.floor(Number(account.available_balance) * 100 + 1e-6))
+      const amountCents = Math.min(target.outstanding_cents, room, availableCents)
+      if (amountCents <= 0) break
+
+      // What the ledger knows, and no more: the processing amount is FBM's
+      // estimate, and the refunded order may have had no card charge (SD-36:
+      // only wallet-funded orders reach the ledger today).
+      const refundedOrder = target.order_id ? `order ${target.order_id}` : "a refunded order"
+      const why = `card processing on ${refundedOrder} is not returned on a refund, and your earnings did not cover it`
+      let entry: any
+      try {
+        entry = await this.createTransfer({
+          debit_account_id: args.sellerAccountId,
+          credit_account_id: owed.processing_account_id,
+          amount: amountCents / 100,
+          entry_type: "ADJUSTMENT",
+          reference_type: "ORDER",
+          ...(target.order_id ? { reference_id: target.order_id } : {}),
+          parent_entry_id: target.shortfall_id,
+          correlation_id: args.correlationId,
+          idempotency_key: `cp-recovery-${target.shortfall_id}-${target.next_seq}`,
+          description:
+            args.source === "payout"
+              ? `Card processing repaid from your balance before payout: ${why}`
+              : args.source === "vendor_payment"
+                ? `Card processing repaid from your balance before a vendor payment: ${why}`
+                : `Card processing repaid from order ${args.sourceOrderId ?? "earnings"}: ${why}`,
+          metadata: {
+            leg: CARD_PROCESSING_RECOVERY_LEG,
+            recovers_entry_id: target.shortfall_id,
+            owed_by_account_id: args.sellerAccountId,
+            recovered_from_order_id: target.order_id,
+            source: args.source,
+            ...(args.sourceEntryId ? { source_entry_id: args.sourceEntryId } : {}),
+            ...(args.sourceOrderId ? { source_order_id: args.sourceOrderId } : {}),
+            seq: target.next_seq,
+            attempt,
+          },
+        })
+      } catch (error) {
+        // A concurrent writer won this seq (the unique key), or the balance
+        // moved under this leg (createTransfer marked it FAILED, so the next
+        // pass uses the next seq). Re-read and go again, a bounded number of
+        // times.
+        if (++lost > 3) throw error
+        continue
+      }
+      const meta = (entry?.metadata ?? {}) as { attempt?: unknown }
+      if (meta.attempt !== attempt || entry?.status !== "COMPLETED") {
+        // createTransfer handed back another writer's row for this key.
+        if (++lost > 3) break
+        continue
+      }
+      posted.push(entry)
+      postedCents += amountCents
+    }
+    return posted
+  }
+
+  /**
+   * After a seller credit (the plain seller leg, or a consignment leg)
+   * landed: recover up to that credit from the same account. A failure is
+   * logged, never thrown — settlement must not fail on a recovery, and the
+   * payout backstop collects whatever is left.
+   */
+  private async recoverFromSellerCredit_(
+    credit: any,
+    args: { sellerAccountId: string; orderId: string; correlationId: string }
+  ): Promise<void> {
+    if (!credit || credit.status !== "COMPLETED") return
+    const creditCents = Math.floor(Number(credit.amount) * 100 + 1e-6)
+    if (!(creditCents > 0)) return
+    try {
+      await this.recoverCardProcessingShortfall({
+        sellerAccountId: args.sellerAccountId,
+        maxAmountCents: creditCents,
+        source: "seller_credit",
+        sourceEntryId: credit.id,
+        sourceOrderId: args.orderId,
+        correlationId: args.correlationId,
+      })
+    } catch (error) {
+      log.warn(
+        `[Hawala] Card-processing recovery after order ${args.orderId} did not post for ` +
+          `${args.sellerAccountId}: ${(error as Error)?.message ?? error}; the payout backstop collects it`
+      )
+    }
+  }
+
+  /**
+   * How much less a seller account holds than this order credited it,
+   * because card processing owed was recovered out of that money. Read by
+   * `processRefund`: a refund of the order needs that much more than the
+   * order's own retained processing. Per account the order credited:
+   *
+   *   - every COMPLETED recovery leg this order's own credit paid (`source`
+   *     seller_credit, `source_order_id` = the order), plus
+   *   - every COMPLETED outflow-backstop recovery (`source` payout or
+   *     vendor_payment) posted at or after this order's credit — the
+   *     backstop takes from the balance, which this order's credit was part
+   *     of, so a recovery the next-earnings point missed (a swallowed error,
+   *     or a refund racing the credit) still raises the cap — bounded by
+   *     what the order credited that account less the first part. (A row
+   *     without `created_at` counts; Postgres always stamps one.)
+   *
+   * Recoveries funded by OTHER orders' credits never count: that money was
+   * not this order's. A backstop recovery can count toward more than one
+   * order credited before it; that only ever widens a cap by money that
+   * really left the account to the processing account.
+   */
+  private async cardProcessingRepaidFromOrder_(
+    orderId: string,
+    credits: Array<{ accountId: string; amount: number; createdAt: unknown }>
+  ): Promise<{ total: number; reopens: string[] }> {
+    if (credits.length === 0) return { total: 0, reopens: [] }
+    const processing = await this.findCardProcessingAccount_()
+    if (!processing) return { total: 0, reopens: [] }
+    const ms = (v: unknown) => {
+      const t = v ? new Date(v as string).getTime() : NaN
+      return Number.isFinite(t) ? t : null
+    }
+    const byAccount = new Map<string, { creditCents: number; earliest: number | null; undated: boolean }>()
+    for (const c of credits) {
+      const cur = byAccount.get(c.accountId) ?? { creditCents: 0, earliest: null, undated: false }
+      cur.creditCents += Math.round(Number(c.amount) * 100)
+      const t = ms(c.createdAt)
+      if (t === null) cur.undated = true
+      else cur.earliest = cur.earliest === null ? t : Math.min(cur.earliest, t)
+      byAccount.set(c.accountId, cur)
+    }
+    let cents = 0
+    const reopens = new Set<string>()
+    for (const [accountId, credit] of byAccount) {
+      const legs = await this.listLedgerEntries({
+        debit_account_id: accountId,
+        credit_account_id: processing.id,
+        entry_type: "ADJUSTMENT",
+        status: "COMPLETED",
+      })
+      let fromOrder = 0
+      let afterCredit = 0
+      for (const leg of legs) {
+        if (!isCardProcessingRecoveryLeg(leg)) continue
+        const meta = (leg.metadata ?? {}) as Record<string, unknown>
+        const legCents = Math.round(Number(leg.amount) * 100)
+        let counted = false
+        if (meta.source === "seller_credit") {
+          if (meta.source_order_id !== orderId) continue
+          fromOrder += legCents
+          counted = true
+        } else {
+          const t = ms(leg.created_at)
+          if (credit.undated || t === null || credit.earliest === null || t >= credit.earliest) {
+            afterCredit += legCents
+            counted = true
+          }
+        }
+        if (counted && typeof meta.recovers_entry_id === "string") reopens.add(meta.recovers_entry_id)
+      }
+      cents += fromOrder + Math.min(afterCredit, Math.max(0, credit.creditCents - fromOrder))
+    }
+    return { total: cents / 100, reopens: [...reopens] }
   }
 
   /**
@@ -861,6 +1194,18 @@ class HawalaLedgerModuleService extends MedusaService({
           },
         })
       )
+    }
+    // Each party's card-processing receivable (a refund shortfall recorded
+    // against THAT party's account, `./card-processing.ts`) is recovered
+    // from that party's own credit here, consignor from consignor, vendor
+    // from vendor. Never throws; the payout backstop collects any rest.
+    for (const credit of entries) {
+      if (credit?.status !== "COMPLETED") continue
+      await this.recoverFromSellerCredit_(credit, {
+        sellerAccountId: credit.credit_account_id,
+        orderId: args.orderId,
+        correlationId: args.idempotencyKey,
+      })
     }
     return entries
   }
@@ -1619,6 +1964,20 @@ class HawalaLedgerModuleService extends MedusaService({
       }
     }
 
+    // 5. A card-processing receivable this seller owes (a refund shortfall,
+    // `./card-processing.ts`) is recovered from this credit: 100% of it up
+    // to what is owed, oldest shortfall first. Runs whatever the fee-first
+    // flag says; with nothing owed it is one read while no processing
+    // account exists, otherwise two, and never a write. Never
+    // throws, and its legs are not part of this settlement's return.
+    if (sellerEntry?.status === "COMPLETED") {
+      await this.recoverFromSellerCredit_(sellerEntry, {
+        sellerAccountId: data.seller_account_id,
+        orderId: data.order_id,
+        correlationId: data.idempotency_key,
+      })
+    }
+
     return entries
   }
 
@@ -1771,13 +2130,39 @@ class HawalaLedgerModuleService extends MedusaService({
     // leg takes all they hold up to the planned amount, and the gap is
     // recorded as a vendor-shortfall leg funded from the card-processing
     // account (`./card-processing.ts`, CARD_PROCESSING_SHORTFALL_LEG) — a
-    // receivable from that vendor whose recovery is an operator decision.
+    // receivable from that vendor, recovered from their next earnings and
+    // before any payout (`recoverCardProcessingShortfall`).
     // Planned BEFORE any leg posts. Only a gap larger than the processing
     // retained (the vendor was already paid out) is refused, before any leg,
     // which is the case a flag-off refund cannot post either.
+    //
+    // Recovery (operator answer 2026-10-06, `./card-processing.ts`): if this
+    // order's earnings already repaid an earlier shortfall, the vendor holds
+    // that much less than the order credited them, so the gap can exceed the
+    // order's own processing. That refund is not refused: the cap is raised
+    // by what this order's earnings repaid (at settlement, or through the
+    // outflow backstop after it, `cardProcessingRepaidFromOrder_`), and the
+    // excess is recorded as a fresh shortfall below — the earlier receivable
+    // re-recorded, funded by the processing balance the recovery put back.
+    // Looked up only when a processing account exists; none, and this is
+    // one read.
+    const repaidFromThisOrder =
+      sellerPlan.length > 0
+        ? await this.cardProcessingRepaidFromOrder_(
+            data.order_id,
+            sellerPlan
+              .filter((p) => p.amount > 0)
+              .map((p) => ({
+                accountId: p.leg.credit_account_id,
+                amount: Number(p.leg.amount),
+                createdAt: p.leg.created_at,
+              }))
+          )
+        : { total: 0, reopens: [] as string[] }
+    const repaidCap = roundCents(repaidFromThisOrder.total)
     const shortfallPlan: Array<{ leg: (typeof sellerEntries)[number]; i: number; amount: number }> = []
     let processingShortfall = 0
-    if (retainedProcessingEntries.length > 0) {
+    if (retainedProcessingEntries.length > 0 || repaidCap > 0) {
       const remainingByAccount = new Map<string, number>()
       for (const planned of sellerPlan) {
         if (planned.amount <= 0) continue
@@ -1799,11 +2184,15 @@ class HawalaLedgerModuleService extends MedusaService({
           processingShortfall = roundCents(processingShortfall + gap)
         }
       }
-      if (processingShortfall > processingRetained) {
+      if (processingShortfall > roundCents(processingRetained + repaidCap)) {
         throw new Error(
           `Refund for order ${data.order_id} refused before any leg posted: the vendor's earnings ` +
             `fall $${processingShortfall} short of the seller balancing leg, more than the ` +
-            `$${processingRetained} card processing retained on the order (the vendor was already paid out)`
+            `$${processingRetained} card processing retained on the order` +
+            (repaidCap > 0
+              ? ` plus the $${repaidCap} its earnings repaid toward card processing owed`
+              : "") +
+            ` (the vendor was already paid out)`
         )
       }
     }
@@ -1889,6 +2278,12 @@ class HawalaLedgerModuleService extends MedusaService({
           owed_by_account_id: leg.credit_account_id,
           receivable: true,
           processing_retained: processingRetained,
+          ...(repaidCap > 0
+            ? {
+                repaid_from_this_order: repaidCap,
+                reopens_entry_ids: repaidFromThisOrder.reopens,
+              }
+            : {}),
         },
       })
       refundEntries.push(shortfallEntry)
@@ -1896,7 +2291,8 @@ class HawalaLedgerModuleService extends MedusaService({
     if (processingShortfall > 0) {
       log.warn(
         `[Hawala] Refund for order ${data.order_id}: vendor earnings fell $${processingShortfall} ` +
-          `short of the retained card processing; recorded as owed by the vendor (operator decision pending)`
+          `short of the retained card processing; recorded as owed by the vendor and recovered ` +
+          `from their next earnings before payout`
       )
     }
 
@@ -1917,6 +2313,10 @@ class HawalaLedgerModuleService extends MedusaService({
     // leg, which stays COMPLETED because it was not reversed.
     for (const entry of originalEntries) {
       if (isCardProcessingLeg(entry)) continue
+      // A recovery leg carries no order_id, so it is never listed here; kept
+      // as a second guard — reversing one would reopen a repaid receivable
+      // with no money moving.
+      if (isCardProcessingRecoveryLeg(entry)) continue
       await this.updateLedgerEntries({
         id: entry.id,
         status: "REVERSED" as const,
@@ -3152,6 +3552,16 @@ class HawalaLedgerModuleService extends MedusaService({
     const account = accounts[0]
     const availableBalance = Number(account.available_balance)
 
+    // Card processing owed (`./card-processing.ts`) is taken before any
+    // payout, so what can be paid out is the balance net of it. Nothing owed:
+    // exactly the available balance, as before.
+    const owed = await this.getCardProcessingReceivable(account.id)
+    const cardProcessingOwed = owed.total_cents / 100
+    const payableBalance =
+      owed.total_cents > 0
+        ? Math.max(0, Math.floor(availableBalance * 100 + 1e-6) - owed.total_cents) / 100
+        : availableBalance
+
     // Get payout config
     const configs = await this.listPayoutConfigs({
       vendor_id: vendorId,
@@ -3160,8 +3570,8 @@ class HawalaLedgerModuleService extends MedusaService({
 
     // Build payout options
     const options = Object.entries(this.PAYOUT_TIERS).map(([tier, info]) => {
-      const fee = availableBalance * info.fee_rate
-      const netAmount = availableBalance - fee
+      const fee = payableBalance * info.fee_rate
+      const netAmount = payableBalance - fee
 
       return {
         tier,
@@ -3180,6 +3590,10 @@ class HawalaLedgerModuleService extends MedusaService({
 
     return {
       available_balance: availableBalance,
+      // What a payout can take now: the available balance less card
+      // processing owed (`card_processing_owed`), which is repaid first.
+      payable_balance: payableBalance,
+      card_processing_owed: cardProcessingOwed,
       currency: account.currency_code,
       options,
       default_tier: config?.default_payout_tier || "WEEKLY",
@@ -3230,10 +3644,98 @@ class HawalaLedgerModuleService extends MedusaService({
       throw new Error("Vendor account not found")
     }
 
-    const account = accounts[0]
+    // Card processing owed (a refund shortfall, `./card-processing.ts`) is
+    // recovered from the available balance BEFORE the balance check, under a
+    // per-account lock, and the balance is then re-read: a vendor can never
+    // cash out while owing (`createVendorToVendorPayment` runs the same
+    // backstop, so the balance cannot leave through a second seller account
+    // either). With no shortfall ever recorded against this account this is
+    // one read (two once the processing account exists), no lock, and the
+    // check below is unchanged.
+    const owed = await this.getCardProcessingReceivable(accounts[0].id)
+    return owed.has_shortfalls
+      ? this.withSellerAccountLock_(accounts[0].id, () =>
+          this.submitPayout_(data, tierConfig, accounts[0], true)
+        )
+      : this.submitPayout_(data, tierConfig, accounts[0], false)
+  }
 
-    // Validate balance
-    if (Number(account.available_balance) < data.amount) {
+  /**
+   * The outflow backstop, run under `withSellerAccountLock_` by every path
+   * that moves money OUT of a seller's SELLER_EARNINGS at the vendor's own
+   * request (`requestPayout`, `createVendorToVendorPayment`): recover what is
+   * owed in card processing from the available balance, then re-read the
+   * balance and what is still owed. The caller checks its amount against
+   * `available - stillOwed`, so a failed recovery never lets money leave
+   * while it is owed.
+   */
+  private async collectCardProcessingOwedLocked_(
+    accountAtRequest: { id: string; available_balance: unknown },
+    source: Exclude<CardProcessingRecoverySource, "seller_credit">
+  ): Promise<{
+    account: { id: string; available_balance: unknown }
+    collectedCents: number
+    stillOwedCents: number
+  }> {
+    let collectedCents = 0
+    try {
+      const legs = await this.recoverCardProcessingShortfallLocked_({
+        sellerAccountId: accountAtRequest.id,
+        maxAmountCents: Number.MAX_SAFE_INTEGER,
+        source,
+        correlationId: `card-processing-recovery-${accountAtRequest.id}`,
+      })
+      collectedCents = legs.reduce((sum, e) => sum + Math.round(Number(e.amount) * 100), 0)
+    } catch (error) {
+      log.warn(
+        `[Hawala] Card-processing recovery before a ${source === "payout" ? "payout" : "vendor payment"} ` +
+          `did not post for ${accountAtRequest.id}: ${(error as Error)?.message ?? error}; ` +
+          `the outflow is limited to the balance net of what is owed`
+      )
+    }
+    const account = (await this.retrieveLedgerAccount(accountAtRequest.id)) ?? accountAtRequest
+    const stillOwedCents = (await this.getCardProcessingReceivable(account.id)).total_cents
+    return { account, collectedCents, stillOwedCents }
+  }
+
+  private async submitPayout_(
+    data: {
+      vendor_id: string
+      amount: number
+      payout_tier: "INSTANT" | "SAME_DAY" | "NEXT_DAY" | "WEEKLY"
+      bank_account_id?: string
+    },
+    tierConfig: { fee_rate: number; name: string; speed: string; method: string },
+    accountAtRequest: { id: string; available_balance: unknown },
+    collectCardProcessing: boolean
+  ) {
+    let account: { id: string; available_balance: unknown } = accountAtRequest
+    let collectedCents = 0
+    let stillOwedCents = 0
+    if (collectCardProcessing) {
+      ;({ account, collectedCents, stillOwedCents } = await this.collectCardProcessingOwedLocked_(
+        accountAtRequest,
+        "payout"
+      ))
+    }
+
+    // Validate balance — net of anything still owed (only when the recovery
+    // above could not take it all, so the balance is then empty or the
+    // recovery failed and nothing may leave while it is owed).
+    const payable = Number(account.available_balance) - stillOwedCents / 100
+    if (payable < data.amount) {
+      if (collectedCents > 0 || stillOwedCents > 0) {
+        const dollars = (n: number) => (Math.max(0, n)).toFixed(2)
+        throw new Error(
+          `Insufficient balance: $${dollars(payable)} is available to pay out` +
+            (collectedCents > 0
+              ? ` after $${dollars(collectedCents / 100)} of card processing owed was repaid from your balance`
+              : "") +
+            (stillOwedCents > 0
+              ? `; $${dollars(stillOwedCents / 100)} of card processing is still owed and is taken from your next sales`
+              : "")
+        )
+      }
       throw new Error("Insufficient balance")
     }
 
@@ -4034,11 +4536,59 @@ class HawalaLedgerModuleService extends MedusaService({
     const payerAccount = payerAccounts[0]
     const payeeAccount = payeeAccounts[0]
 
+    // Card processing the payer owes (a refund shortfall,
+    // `./card-processing.ts`) is recovered before any money leaves their
+    // earnings, exactly as `requestPayout` does: otherwise the balance could
+    // be paid to a second seller account and cashed out from there while
+    // the receivable stays open. No shortfall ever recorded against the
+    // payer: one read (two once the processing account exists), no lock,
+    // and the check below is unchanged.
+    const owed = await this.getCardProcessingReceivable(payerAccount.id)
+    if (owed.has_shortfalls) {
+      return this.withSellerAccountLock_(payerAccount.id, async () => {
+        const { account, collectedCents, stillOwedCents } =
+          await this.collectCardProcessingOwedLocked_(payerAccount, "vendor_payment")
+        const payable = Number(account.available_balance) - stillOwedCents / 100
+        if (payable < data.amount) {
+          if (collectedCents > 0 || stillOwedCents > 0) {
+            const dollars = (n: number) => Math.max(0, n).toFixed(2)
+            throw new Error(
+              `Insufficient balance: $${dollars(payable)} is available to pay` +
+                (collectedCents > 0
+                  ? ` after $${dollars(collectedCents / 100)} of card processing owed was repaid from your balance`
+                  : "") +
+                (stillOwedCents > 0
+                  ? `; $${dollars(stillOwedCents / 100)} of card processing is still owed and is taken from your next sales`
+                  : "")
+            )
+          }
+          throw new Error("Insufficient balance")
+        }
+        return this.postVendorToVendorPayment_(data, account, payeeAccount)
+      })
+    }
+
     // Validate balance
     if (Number(payerAccount.available_balance) < data.amount) {
       throw new Error("Insufficient balance")
     }
 
+    return this.postVendorToVendorPayment_(data, payerAccount, payeeAccount)
+  }
+
+  private async postVendorToVendorPayment_(
+    data: {
+      payer_vendor_id: string
+      payee_vendor_id: string
+      amount: number
+      payment_type: string
+      invoice_number?: string
+      purchase_order_number?: string
+      reference_note?: string
+    },
+    payerAccount: { id: string },
+    payeeAccount: { id: string }
+  ) {
     // Create ledger transfer
     const entry = await this.createTransfer({
       debit_account_id: payerAccount.id,
@@ -4105,6 +4655,7 @@ class HawalaLedgerModuleService extends MedusaService({
       activeAdvances,
       payoutConfigs,
       pools,
+      cardProcessingOwed,
     ] = await Promise.all([
       // Get transaction history
       this.getTransactionHistory(account.id, { limit: 1000 }),
@@ -4128,6 +4679,8 @@ class HawalaLedgerModuleService extends MedusaService({
       this.listInvestmentPools({
         producer_id: vendorId,
       }),
+      // Card processing owed on refunded orders (`./card-processing.ts`)
+      this.getCardProcessingReceivable(account.id),
     ])
 
     // Calculate metrics
@@ -4194,6 +4747,18 @@ class HawalaLedgerModuleService extends MedusaService({
         repaid: Number(activeAdvances[0].total_repaid || 0),
       } : {
         has_active: false,
+      },
+
+      // Card processing retained on refunded orders that this vendor's
+      // earnings could not cover at the time: taken from the next sales, and
+      // before any payout. Computed from the ledger, never stored.
+      card_processing_owed: {
+        outstanding: cardProcessingOwed.total_cents / 100,
+        open: cardProcessingOwed.open.map((o) => ({
+          order_id: o.order_id,
+          amount: o.outstanding_cents / 100,
+          since: o.created_at,
+        })),
       },
 
       // Payout settings - simplified

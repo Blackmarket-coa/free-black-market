@@ -104,6 +104,14 @@ type HawalaService = {
     payout_tier: "INSTANT" | "SAME_DAY" | "NEXT_DAY" | "WEEKLY"
     bank_account_id?: string
   }) => Promise<{ id: string; status?: string }>
+  /**
+   * What a payout can take now (`payable_balance`: the available balance less
+   * `card_processing_owed`, which `requestPayout` repays first;
+   * hawala-ledger/card-processing.ts).
+   */
+  getPayoutOptions?: (
+    vendorId: string
+  ) => Promise<{ payable_balance?: number; card_processing_owed?: number }>
 }
 
 export class GrowerPayoutService {
@@ -337,15 +345,38 @@ export class GrowerPayoutService {
         ) / 100
       if (net <= 0) continue
 
+      // Card processing owed is repaid before any payout (requestPayout's
+      // backstop), and a request above the balance net of it is refused, so
+      // ask for at most what is payable: a grower who owes $1.46 is paid the
+      // month less $1.46, not deferred for the whole month.
+      let amount = net
       try {
+        const options = await this.hawala.getPayoutOptions?.(sellerId)
+        if (
+          options &&
+          Number(options.card_processing_owed) > 0 &&
+          typeof options.payable_balance === "number"
+        ) {
+          amount = Math.min(net, Math.floor(options.payable_balance * 100 + 1e-6) / 100)
+        }
+        if (amount <= 0) {
+          results.push({
+            seller_id: sellerId,
+            amount: 0,
+            currency: "USD",
+            status: "deferred",
+            reason: "card processing owed is repaid from this balance first; nothing is left to pay out",
+          })
+          continue
+        }
         const payout = await this.hawala.requestPayout({
           vendor_id: sellerId,
-          amount: net,
+          amount,
           payout_tier: payoutTier,
         })
         results.push({
           seller_id: sellerId,
-          amount: net,
+          amount,
           currency: "USD",
           status: "requested",
           payout_request_id: payout.id,
@@ -354,7 +385,7 @@ export class GrowerPayoutService {
         // Insufficient balance / no account → defer rather than fail the run.
         results.push({
           seller_id: sellerId,
-          amount: net,
+          amount,
           currency: "USD",
           status: "deferred",
           reason: err instanceof Error ? err.message : "payout_request_failed",

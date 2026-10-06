@@ -39,16 +39,57 @@
  * seller account it is owed by. That leg is the record of a receivable from
  * the vendor: the processing leg itself stays COMPLETED (Stripe did keep the
  * fee), and the processing account's balance reads as processing actually
- * borne by vendors. Whether the receivable is netted against the vendor's
- * future payouts (a later seller -> card-processing leg) or written off as
- * platform-borne is an OPERATOR decision this does not make; until it is
- * made, FF_FEE_FIRST_SPLIT_V1 must not be set (`shared/feature-flags.ts`).
+ * borne by vendors.
+ *
+ * The vendor-recovery leg (operator answer 2026-10-06, item 20: "recover from
+ * the vendor's next earnings automatically, shown on their statement"; item
+ * 22: consignors share processing pro rata, so a consignor's shortfall is
+ * the consignor's own). The receivable is recovered automatically, with no
+ * per-vendor opt-out, as the mirror image of the shortfall: entry_type
+ * ADJUSTMENT, the vendor's SELLER_EARNINGS account -> the card-processing
+ * account, `metadata.leg = CARD_PROCESSING_RECOVERY_LEG`, naming the
+ * shortfall it repays (`recovers_entry_id`) and where the money came from
+ * (`source`). It puts back the processing balance the shortfall used up.
+ *
+ *   - Next earnings: 100% of each later seller credit (the plain seller leg
+ *     and each consignment -consignor / -vendor leg, against that leg's own
+ *     account) goes to the oldest open shortfall first, partial recovery
+ *     allowed, never more than the credit and never below zero.
+ *   - Outflow backstop: `requestPayout` and `createVendorToVendorPayment`
+ *     recover what is owed from the available balance BEFORE their balance
+ *     check, then re-read, so a vendor can never cash out while owing,
+ *     directly or by paying the balance to a second seller account first;
+ *     `getPayoutOptions` reports the net payable.
+ *   - The receivable is computed from entries (shortfalls minus recoveries,
+ *     `computeCardProcessingReceivable`), never stored.
+ *   - No `order_id` on a recovery leg: a later refund of the order whose
+ *     earnings paid it marks every COMPLETED entry with that order_id
+ *     REVERSED, which would silently reopen the receivable with no money
+ *     moving. A refund of such an order is not refused either: its cap is
+ *     raised by what that order's earnings repaid, and the excess is
+ *     recorded as a fresh shortfall (`processRefund`).
+ *   - Not gated on FF_FEE_FIRST_SPLIT_V1: recovery runs whenever a shortfall
+ *     is outstanding, so rolling the flag back cannot strand a receivable.
+ *     With no shortfall the money path does one read while no processing
+ *     account exists (two once it does), never a write, and never creates
+ *     the processing account.
+ *
+ * Write-off (an age or amount after which an open receivable is
+ * platform-borne) is not decided and not built.
  */
 
 export const CARD_PROCESSING_ACCOUNT_TYPE = "PLATFORM_FEE"
 export const CARD_PROCESSING_OWNER_ID = "processing"
 export const CARD_PROCESSING_LEG = "card_processing_estimate"
 export const CARD_PROCESSING_SHORTFALL_LEG = "card_processing_vendor_shortfall"
+export const CARD_PROCESSING_RECOVERY_LEG = "card_processing_vendor_recovery"
+
+/**
+ * Where a recovery leg's money came from: a later seller credit, or the
+ * balance at an outflow the vendor asked for (a payout, a vendor-to-vendor
+ * payment).
+ */
+export type CardProcessingRecoverySource = "seller_credit" | "payout" | "vendor_payment"
 
 /** True for the fee-first processing leg of an order settlement. */
 export function isCardProcessingLeg(entry: {
@@ -64,7 +105,8 @@ export function isCardProcessingLeg(entry: {
 /**
  * True for the refund leg that records a vendor's processing shortfall: the
  * part of the retained processing their earnings could not absorb, owed by
- * `metadata.owed_by_account_id` (a receivable pending the operator decision).
+ * `metadata.owed_by_account_id` (a receivable, recovered by
+ * CARD_PROCESSING_RECOVERY_LEG legs).
  */
 export function isCardProcessingShortfallLeg(entry: {
   entry_type?: string | null
@@ -74,4 +116,125 @@ export function isCardProcessingShortfallLeg(entry: {
     entry.entry_type === "ADJUSTMENT" &&
     (entry.metadata as { leg?: unknown } | null | undefined)?.leg === CARD_PROCESSING_SHORTFALL_LEG
   )
+}
+
+/**
+ * True for a leg that repays (part of) a vendor-shortfall receivable: the
+ * vendor's SELLER_EARNINGS -> the card-processing account, naming the
+ * shortfall in `metadata.recovers_entry_id`.
+ */
+export function isCardProcessingRecoveryLeg(entry: {
+  entry_type?: string | null
+  metadata?: unknown
+}): boolean {
+  return (
+    entry.entry_type === "ADJUSTMENT" &&
+    (entry.metadata as { leg?: unknown } | null | undefined)?.leg === CARD_PROCESSING_RECOVERY_LEG
+  )
+}
+
+type ReceivableRow = {
+  id: string
+  amount?: unknown
+  status?: string | null
+  entry_type?: string | null
+  order_id?: string | null
+  created_at?: unknown
+  debit_account_id?: string | null
+  credit_account_id?: string | null
+  metadata?: unknown
+}
+
+export type OpenCardProcessingShortfall = {
+  shortfall_id: string
+  /** The refunded order the shortfall was recorded on. */
+  order_id: string | null
+  owed_cents: number
+  recovered_cents: number
+  outstanding_cents: number
+  created_at: unknown
+  /**
+   * Every recovery row on this shortfall, whatever its status. The next
+   * recovery's idempotency key uses it, so a FAILED attempt never hands its
+   * row back to a retry and two writers that read the same state collide on
+   * the ledger's unique key instead of both posting.
+   */
+  next_seq: number
+}
+
+export type CardProcessingReceivable = {
+  total_cents: number
+  /** Open shortfalls, oldest first. */
+  open: OpenCardProcessingShortfall[]
+  /** Cents already recovered (COMPLETED or in flight) per `source_entry_id`. */
+  recovered_by_source_entry: Record<string, number>
+}
+
+const toCentsInt = (n: unknown) => Math.round(Number(n ?? 0) * 100)
+const metaOf = (e: ReceivableRow) => (e.metadata ?? {}) as Record<string, unknown>
+const createdMs = (e: ReceivableRow) => {
+  const t = e.created_at ? new Date(e.created_at as string).getTime() : NaN
+  return Number.isFinite(t) ? t : 0
+}
+
+/**
+ * What a seller account owes in retained card processing, computed from the
+ * ledger's own rows (never stored): every COMPLETED shortfall leg owed by
+ * `sellerAccountId`, less the recovery legs that name it. A recovery counts
+ * once COMPLETED, and also while PENDING (in flight), so a concurrent writer
+ * never collects the same cents twice; FAILED and REVERSED rows count for
+ * nothing. Integer cents, each shortfall clamped at zero, oldest first (by
+ * `created_at`; rows without one keep their listed order).
+ */
+export function computeCardProcessingReceivable(
+  sellerAccountId: string,
+  rows: { shortfalls: ReceivableRow[]; recoveries: ReceivableRow[] }
+): CardProcessingReceivable {
+  const shortfalls = rows.shortfalls
+    .filter(
+      (e) =>
+        isCardProcessingShortfallLeg(e) &&
+        e.status === "COMPLETED" &&
+        metaOf(e).owed_by_account_id === sellerAccountId
+    )
+    .map((e, i) => ({ e, i }))
+    .sort((a, b) => createdMs(a.e) - createdMs(b.e) || a.i - b.i)
+    .map(({ e }) => e)
+
+  const recoveredByShortfall = new Map<string, number>()
+  const rowsByShortfall = new Map<string, number>()
+  const recoveredBySource: Record<string, number> = {}
+  for (const r of rows.recoveries) {
+    if (!isCardProcessingRecoveryLeg(r) || r.debit_account_id !== sellerAccountId) continue
+    const meta = metaOf(r)
+    const target = typeof meta.recovers_entry_id === "string" ? meta.recovers_entry_id : null
+    if (!target) continue
+    rowsByShortfall.set(target, (rowsByShortfall.get(target) ?? 0) + 1)
+    if (r.status !== "COMPLETED" && r.status !== "PENDING") continue
+    const c = toCentsInt(r.amount)
+    recoveredByShortfall.set(target, (recoveredByShortfall.get(target) ?? 0) + c)
+    if (typeof meta.source_entry_id === "string") {
+      recoveredBySource[meta.source_entry_id] = (recoveredBySource[meta.source_entry_id] ?? 0) + c
+    }
+  }
+
+  const open: OpenCardProcessingShortfall[] = []
+  let total = 0
+  for (const s of shortfalls) {
+    const owed = toCentsInt(s.amount)
+    const recovered = recoveredByShortfall.get(s.id) ?? 0
+    const outstanding = Math.max(0, owed - recovered)
+    if (outstanding <= 0) continue
+    total += outstanding
+    open.push({
+      shortfall_id: s.id,
+      order_id: s.order_id ?? null,
+      owed_cents: owed,
+      recovered_cents: recovered,
+      outstanding_cents: outstanding,
+      created_at: s.created_at ?? null,
+      next_seq: rowsByShortfall.get(s.id) ?? 0,
+    })
+  }
+  return { total_cents: total, open, recovered_by_source_entry: recoveredBySource }
 }
