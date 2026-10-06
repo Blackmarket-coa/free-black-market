@@ -578,7 +578,12 @@ describe("?action=complete: an explicit answer, honoured exactly", () => {
     })
     const row = w.svc.store.get("sub_1")!
     expect(row.next_order_date).toBeNull()
-    expect(row.metadata).toMatchObject({ auto_renew_mode: "single_period", blackout_tier: "vault-seat" })
+    // The buyer stamp the manage page's ownership check requires.
+    expect(row.metadata).toMatchObject({
+      auto_renew_mode: "single_period",
+      blackout_tier: "vault-seat",
+      blackout_user_id: "bo_user_1",
+    })
     expect(row).not.toHaveProperty("payment_method_id")
     // Stripe was never asked to keep the card.
     for (const call of createSessionsRun.mock.calls) {

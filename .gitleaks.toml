@@ -62,4 +62,10 @@ regexes = [
   '''supersecret''',
   # Marketplace webhook test fixtures
   '''fbm_whsec_[a-f0-9]+''',
+  # Blackout commerce-API test credential. Spec files using it are already
+  # covered by the path allowlist above; this covers shared fixture helpers
+  # beside them (e.g. manage-sessions/__tests__/manage-fakes.ts), which are
+  # not named *.spec.ts. The literal value only, not the helper's path --
+  # anything else committed in such a helper is still scanned.
+  '''test-commerce-api-key-[0-9]+''',
 ]

@@ -153,6 +153,9 @@ export const CUSTOMER_DATA_REGISTRY: CustomerDataEntry[] = [
   { entity: "wholesale_application", module: "vendor-rules", label: "Wholesale applications", action: "delete" },
   { entity: "analytics_event", module: "creator-attribution", label: "Site analytics events", action: "delete" },
   { entity: "attribution_click_event", module: "creator-attribution", label: "Referral click events", action: "delete" },
+  // A 15-minute bearer link to the Blackout subscription manage page: hashes
+  // and timestamps only, nothing anyone else depends on, useless once expired.
+  { entity: "blackout_manage_session", module: "marketplace-listing", label: "Blackout subscription manage links", action: "delete" },
 
   // Health-adjacent. Deleted outright and never anonymised-and-kept: an
   // "anonymised" wellness record is still a health record about one person.

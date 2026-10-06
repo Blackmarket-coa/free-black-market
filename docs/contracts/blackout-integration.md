@@ -11,7 +11,8 @@ wire schema).
 | `FREEBLACKMARKET_WEBHOOK_SECRET` | prod (boot fails without) | HMAC signing of §1–§3 webhooks |
 | `FREEBLACKMARKET_API_KEY` | prod (boot fails without) | bearer for the §5 commerce API |
 | `BLACKOUT_API_BASE` | for emitting | webhook destination, e.g. `https://api.theblackout.app` |
-| `FREEBLACKMARKET_BASE_URL` | optional | commerce API base advertised to Blackout |
+| `FREEBLACKMARKET_BASE_URL` | optional | commerce API base advertised to Blackout; also the origin the subscription manage page's actions must come from when a browser sends no Fetch Metadata |
+| `BLACKOUT_RETURN_ORIGINS` | optional | comma-separated origins a manage session's `return_url` ("Back to Blackout") may point to; anything else is ignored; unset accepts none |
 | `ENTITLEMENTS_SERVICE_TOKEN` | for §4 | static bearer Blackout uses to call entitlements |
 | `ENTITLEMENTS_BASE_URL` | optional | entitlements service base |
 | `FBM_BLACKOUT_INTEGRATION=1` | yes | master flag; routes 503 and emitter no-ops when unset |
@@ -205,6 +206,7 @@ and public `/v1/checkout/**` routes are untouched:
 | `GET /v1/catalog/listings` | `…/commerce/catalog/listings` |
 | `GET /v1/catalog/listings/{id}` | `…/commerce/catalog/listings/{id}` |
 | `POST /v1/checkout/sessions` | `…/commerce/checkout/sessions` (stateful; see **Blackout checkout (W1b)**) |
+| `POST /v1/subscriptions/manage-session` (Blackout `packages/api`) | `…/commerce/subscriptions/manage-sessions` (15-minute single-member link to the FBM-hosted manage page; see **Blackout subscription self-service**) |
 | `POST /v1/seller/listings` | `…/commerce/seller/listings` |
 | `POST /v1/seller/listings/{id}/publish` | `…/commerce/seller/listings/{id}/publish` |
 | `DELETE /v1/seller/listings/{id}` | `…/commerce/seller/listings/{id}` |
@@ -339,6 +341,141 @@ attempt; pause-on-max-retries then emits `lapsed`. Cancel/expire revoke the
 subscription-sourced grants (`revokeBySubscriptionId`) in the same motion as
 the `lapsed` webhook. A refunded/canceled subscription order cancels its
 subscription and revokes the bundle.
+
+## Blackout subscription self-service (manage session; operator answer 2026-10-06)
+
+A Blackout member has no storefront login (a create-on-miss customer carries
+only a synthetic `…@users.blackout.invalid` email), yet the approved
+auto-renewal disclosure tells them they can "turn off automatic renewal or
+cancel at any time under Account → Subscriptions". Blackout's Account →
+Subscriptions therefore opens an FBM-hosted page for that member.
+
+**Mint (server to server).**
+`POST {FREEBLACKMARKET_BASE_URL}/v1/integrations/blackout/commerce/subscriptions/manage-sessions`
+
+- Auth: the same `FREEBLACKMARKET_API_KEY` bearer and `requireCommerceApiKey`
+  gate as the checkout mint.
+- Body (JSON, strict): `{ "blackout_user_id": string, "return_url"?: string }`.
+  `blackout_user_id` is Blackout's authenticated user (`user.sub`), never a
+  client-supplied value. No `mxid`, customer id or subscription id is
+  accepted (any extra key is a 400). `return_url` is kept only when its
+  origin is listed in FBM's `BLACKOUT_RETURN_ORIGINS` (comma-separated);
+  otherwise it is ignored, not refused.
+- `201 { "url": string, "expires_at": ISO-8601 }`.
+- `404 { "code": "feature_disabled" }` when `FF_CONSUMER_SUBSCRIPTIONS_V1` or
+  `FBM_BLACKOUT_INTEGRATION` is off. `401` for a missing/wrong key.
+- `409 { "code": "identity_ambiguous" }` when more than one FBM customer
+  carries that `blackout_user_id` (FBM never picks one; an operator fixes the
+  data).
+- No matching customer is still `201`; the page then shows "No
+  subscriptions". FBM never creates a customer on this path and never resolves
+  one by mxid.
+
+**Session.** An opaque 32-byte random token (base64url) in the URL path; FBM
+stores only its sha256 (`blackout_manage_session.token_hash`). Not a JWT and
+never a customer session on `/store`. TTL 15 minutes, absolute. Minting again
+for the same `blackout_user_id` revokes every earlier session of that member
+(a partial unique index allows one unrevoked session per member). The bound
+customer is fixed at mint by a read-only lookup on
+`customer.metadata.blackout_user_id`.
+
+**Page.** `GET {FBM}/v1/integrations/blackout/commerce/subscriptions/manage-sessions/{token}/page`
+
+- Blackout opens it in a **new tab / system browser** with
+  `noopener,noreferrer`; it is never embedded (`frame-ancestors 'none'`,
+  `X-Frame-Options: DENY`). Also `Cache-Control: no-store`,
+  `Referrer-Policy: no-referrer`; the script runs under a per-response CSP
+  nonce. Blackout opens the URL as-is: it must not script the page, pre-fill
+  it, or POST its actions (a cross-site POST is refused).
+- Lists only the subscriptions that member bought through Blackout. A row is
+  shown, and acted on, only when it belongs to the bound customer AND its own
+  `metadata.blackout_user_id` names this member — the hosted checkout stamps
+  that on each subscription it creates. A row without the stamp (bought on
+  the storefront) is never listed or actionable here, even on the member's own
+  customer, and neither is a row another Blackout member bought (operator
+  scope decision 2026-10-06: Blackout-bought rows only). Every listed row and
+  every action is checked the same way.
+- Actions: `disable_auto_renew`, `approve_auto_renew` (the re-approval
+  disclosure from `backend/src/modules/subscription/utils/auto-renew-copy.ts`,
+  string-identical to the storefront's, version
+  `AUTO_RENEW_REAPPROVAL_DISCLOSURE_VERSION`; unticked; the button stays
+  disabled until ticked), `cancel`. No pause/resume. A legacy fixed-horizon
+  row (expiration set, never approved) offers cancel only — while renewals
+  are still scheduled it says it renews until its end date, and in its final
+  period it says no further charges are made. The price named in the
+  re-approval disclosure is what a renewal of that row charges (its template
+  cart's line-item price, read the way the renewal builds its cart), not the
+  listing's current price; when that cannot be read, re-approval is not
+  offered.
+- Each action is a `POST` to the same URL, JSON, from the page's own script:
+  `{ action, subscription_id, csrf, auto_renew_approved?: true,
+  auto_renew_disclosure_version? }`. Refused, writing nothing: `403
+  csrf_rejected` unless `Sec-Fetch-Site: same-origin` (or, with no Fetch
+  Metadata, an `Origin` equal to FBM's own origin), `Content-Type:
+  application/json`, and the session's CSRF nonce; `401 session_expired`;
+  `403` `forbidden()` for a subscription the session does not own (missing
+  and not-owned are the same body); `409 subscription_transition_not_allowed`
+  for a cancel of a row that is no longer active, paused or in grace; `409
+  auto_renew_not_available` for an `approve_auto_renew` on a row the page
+  shows no re-approval disclosure for (a legacy fixed-horizon row, or one
+  whose renewal price is unknown). Past
+  those, the action runs through the same dispatcher as `POST
+  /store/subscriptions/:id` (`backend/src/lib/subscription-manage.ts`), with
+  its semantics and refusal codes (`400` validation, `409
+  subscription_transition_not_allowed`, `409 auto_renew_*`).
+- An invalid, expired, revoked or replaced token: `401` HTML "This link has
+  expired. Open Subscriptions in Blackout again." Either flag off: `404`
+  HTML "unavailable" (and `404 feature_disabled` for a POST).
+- "Back to Blackout" links to the accepted `return_url`, when there is one.
+- The token is in the URL path, so an HTTP access log or proxy log in front
+  of FBM records it (FBM's application logs never do). Anyone holding a
+  logged URL could open the page until it expires; a browser on another site
+  still cannot POST its actions (the Fetch Metadata / Origin check). The
+  15-minute TTL and revocation on re-mint bound that exposure; operators
+  should keep access logs for these paths short-lived or redact the segment
+  after `manage-sessions/`.
+
+**What reaches Blackout.** A cancel that ends the subscription emits the
+existing `lapsed` webhook (a grace cancel keeps access and lapses when grace
+ends). Turning automatic renewal off or on sends no webhook today. Copy on the
+Blackout side must not overstate privacy: FBM sees the Blackout user id; the
+card processor sees the card.
+
+**Account link guard.** `POST …/link` refuses (`403`, the `forbidden()` body)
+to put a `blackout_user_id` on a customer that already carries a different
+one, or on a seller whose `seller_metadata.blackout_user_id` names a different
+member; both halves are read before either is written (a refusal on the read
+writes nothing), and each write repeats the check in its `WHERE`. The two
+writes are not one transaction: if the customer write commits and the seller
+write then loses a race to another member's link, the `403` leaves the
+customer linked to the caller's own id. Linking the same member again, or a
+customer/seller with none yet, works as before.
+
+**mxid fallback.** The hosted checkout (and the create-on-miss paths of
+`/link` and the reputation event) resolve a member by `blackout_user_id`, then
+by `metadata.mxid`. An mxid match already linked to another member is never
+re-stamped: it is treated as no match (logged once), and the create-on-miss
+path gives this member their own customer. An mxid match with no Blackout id,
+or this member's, is linked as before. When several customers share an mxid,
+the lookup (checkout and `/link` alike) is ordered: a customer carrying this
+member's id or none first, then the lowest id — never whichever row the
+database returns. Together with the per-row check above, a customer re-linked
+by mistake never exposes another member's rows or the customer's storefront
+purchases on this page.
+
+**These keys are server-owned.** The guard trusts `customer.metadata.mxid`
+and `customer.metadata.blackout_user_id` as written by FBM. Medusa's store
+API accepts free-form customer `metadata`, so `POST /store/customers` and
+`POST /store/customers/me` now refuse (`400 invalid_data`, nothing written) a
+body whose `metadata` names `blackout_user_id`, `mxid` or `mxid_source`, with
+any value. Before that refusal a storefront customer could plant another
+person's mxid on their own customer, and the mxid fallback would adopt it for
+that person's checkout — after which the purchase is that customer's on
+`/store/subscriptions` (this page still never lists it: the row carries the
+buyer's stamp, not the customer's). Values written that way before the
+refusal shipped are not detected by the guard, and an email-derived
+(`mxid_source: "derived"`) mxid is not proof of the Matrix account either;
+the guard does not close cross-user adoption on its own.
 
 **FBM-side go-live steps** (joint with Blackout's MONETIZATION_GO_LIVE):
 price + publish the Canopy plan listings seeded as drafts
