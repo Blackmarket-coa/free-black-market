@@ -1,6 +1,8 @@
 import { Metadata } from "next"
 import Link from "next/link"
 import { VENDOR_PANEL_URL } from "@/const"
+import { getFeeSchedule } from "@/lib/data/fee-schedule"
+import { processingCopy } from "@/lib/helpers/processing-copy"
 
 export const metadata: Metadata = {
   title: "Vendor Types & Features | Free Black Market",
@@ -27,7 +29,10 @@ const UserGroupIcon = ({ className = "" }: { className?: string }) => (
 )
 
 
-export default function VendorTypesPage() {
+export default async function VendorTypesPage() {
+  // Processing sentences render from /store/fee-schedule (Black Mask F6).
+  const { processing, default_fee_percent: feePercent } = await getFeeSchedule()
+
   /**
    * Where each playbook commonly leads — the vendor-progression graph, keyed by
    * display name.
@@ -68,7 +73,7 @@ export default function VendorTypesPage() {
         "Opt-in sliding-scale pricing",
         "Opt-in community credits payout",
         "Add more playbook roles later",
-        "Keep 97% of every sale",
+        processingCopy("vendorTypesKeepFeature", processing, feePercent),
       ],
       color: "from-amber-50 to-yellow-50",
       borderColor: "border-amber-200",
@@ -303,7 +308,7 @@ export default function VendorTypesPage() {
       category: "Revenue & Payments",
       icon: "💰",
       items: [
-        { name: "97% Revenue Share", description: "Keep 97% of every sale, just 3% coalition fee" },
+        { name: processingCopy("vendorTypesRevenueShareName", processing, feePercent), description: processingCopy("vendorTypesRevenueShare", processing, feePercent) },
         { name: "Direct Bank Payouts", description: "Weekly ACH by default; faster tiers available for a fee" },
         { name: "Set Your Own Prices", description: "Full control over your pricing strategy" },
         { name: "No Monthly Fees", description: "Zero subscriptions, listing fees, or hidden charges" },
@@ -384,7 +389,7 @@ export default function VendorTypesPage() {
       icon: "👁️",
       items: [
         { name: "Know Your Producer", description: "See who made your food and where it comes from" },
-        { name: "Pricing Transparency", description: "97% goes to creator, 3% to coalition - always" },
+        { name: "Pricing Transparency", description: processingCopy("vendorTypesPricingTransparency", processing, feePercent) },
         { name: "Certification Visibility", description: "See organic, fair trade, and other certifications" },
         { name: "Growing Practices", description: "Understand how your food was produced" },
         { name: "Reviews & Ratings", description: "Read authentic customer experiences" },
@@ -484,9 +489,9 @@ export default function VendorTypesPage() {
               <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-4">
                 <span className="text-4xl font-bold text-green-600">97%</span>
               </div>
-              <h3 className="text-xl font-bold text-gray-900 mb-2">To Creators</h3>
+              <h3 className="text-xl font-bold text-gray-900 mb-2">{processingCopy("vendorTypesToCreatorsLabel", processing, feePercent)}</h3>
               <p className="text-gray-600">
-                Ninety-seven cents of every dollar goes directly to the people who did the work.
+                {processingCopy("vendorTypesToCreators", processing, feePercent)}
               </p>
             </div>
 
@@ -496,7 +501,7 @@ export default function VendorTypesPage() {
               </div>
               <h3 className="text-xl font-bold text-gray-900 mb-2">Coalition Fee</h3>
               <p className="text-gray-600">
-                Just 3% covers everything: platform, payments, development, and community programs.
+                {processingCopy("vendorTypesCoalitionFee", processing, feePercent)}
               </p>
             </div>
 
@@ -506,7 +511,7 @@ export default function VendorTypesPage() {
               </div>
               <h3 className="text-xl font-bold text-gray-900 mb-2">Hidden Fees</h3>
               <p className="text-gray-600">
-                No required subscription, no listing fees, no payment processing fees. Optional paid plans lower the rate.
+                {processingCopy("vendorTypesHiddenFees", processing, feePercent)}
               </p>
             </div>
           </div>

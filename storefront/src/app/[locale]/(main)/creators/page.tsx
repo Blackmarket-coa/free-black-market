@@ -1,13 +1,21 @@
 import type { Metadata } from "next"
 import Link from "next/link"
 
-export const metadata: Metadata = {
-  title: "Creators & Vendor Marketing | Free Black Market",
-  description:
-    "Storefronts, referrals, and audience tools that help makers and creators get discovered and paid — while keeping 97% of every sale.",
+import { getFeeSchedule } from "@/lib/data/fee-schedule"
+import { processingCopy } from "@/lib/helpers/processing-copy"
+
+// Processing sentences render from /store/fee-schedule (Black Mask F6): today's
+// copy exactly while its `processing` field is absent.
+export async function generateMetadata(): Promise<Metadata> {
+  const { processing, default_fee_percent: feePercent } = await getFeeSchedule()
+  return {
+    title: "Creators & Vendor Marketing | Free Black Market",
+    description: processingCopy("creatorsMetaDescription", processing, feePercent),
+  }
 }
 
-export default function CreatorsPage() {
+export default async function CreatorsPage() {
+  const { processing, default_fee_percent: feePercent } = await getFeeSchedule()
   return (
     <div className="bg-white min-h-screen">
       <section className="bg-slate-950 text-white py-20">
@@ -17,9 +25,7 @@ export default function CreatorsPage() {
           </p>
           <h1 className="text-4xl md:text-5xl font-bold mt-2 mb-4">Get discovered. Get paid.</h1>
           <p className="text-lg text-slate-200 max-w-3xl">
-            Free Black Market gives makers and creators their own storefront, referral tools,
-            and audience features — so you can grow a following and sell directly, while keeping
-            97% of every sale.
+            {processingCopy("creatorsHero", processing, feePercent)}
           </p>
         </div>
       </section>
@@ -40,10 +46,9 @@ export default function CreatorsPage() {
           </p>
         </article>
         <article className="rounded-2xl border p-6">
-          <h2 className="text-xl font-semibold mb-2">Keep 97%</h2>
+          <h2 className="text-xl font-semibold mb-2">{processingCopy("creatorsKeepHeading", processing, feePercent)}</h2>
           <p className="text-sm text-gray-700">
-            A 3% coalition fee on the free plan — no listing fees, no required subscription, and no payment
-            processing fees passed to you. Value stays with the people who create it.
+            {processingCopy("creatorsKeepBody", processing, feePercent)}
           </p>
         </article>
       </section>

@@ -1,3 +1,5 @@
+import { PROCESSING_COPY, processingCopy, type ProcessingInfo } from "@/lib/helpers/processing-copy"
+
 export type FeatureMatrixStatus = "Available now" | "In rollout"
 export type FeatureMatrixBucket = "Goods" | "Services" | "Community Programs"
 
@@ -23,7 +25,7 @@ export const featureMatrixItems: FeatureMatrixItem[] = [
     capability: "Stripe direct payouts",
     status: "Available now",
     bucket: "Goods",
-    description: "Vendors connect payouts through onboarding and keep 97% of every sale.",
+    description: PROCESSING_COPY.featureMatrixPayouts.legacy,
     proofHref: "/sell",
     proofLabel: "See vendor onboarding",
   },
@@ -86,3 +88,19 @@ export const featureMatrixItems: FeatureMatrixItem[] = [
 ]
 
 export const featureMatrixBuckets: FeatureMatrixBucket[] = ["Goods", "Services", "Community Programs"]
+
+/**
+ * The matrix with its one processing sentence rendered from
+ * `/store/fee-schedule`'s processing model (Black Mask F6). Absent, this is
+ * `featureMatrixItems` exactly.
+ */
+export function featureMatrixItemsFor(
+  processing: ProcessingInfo,
+  feePercent = 3
+): FeatureMatrixItem[] {
+  return featureMatrixItems.map((item) =>
+    item.description === PROCESSING_COPY.featureMatrixPayouts.legacy
+      ? { ...item, description: processingCopy("featureMatrixPayouts", processing, feePercent) }
+      : item
+  )
+}

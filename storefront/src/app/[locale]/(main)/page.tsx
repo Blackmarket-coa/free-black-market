@@ -21,6 +21,13 @@ import { Suspense } from "react"
 import { listRegions } from "@/lib/data/regions"
 import { GITHUB_REPO_URL } from "@/lib/constants/links"
 import { toHreflang } from "@/lib/helpers/hreflang"
+import { getFeeSchedule } from "@/lib/data/fee-schedule"
+import {
+  feeFirstExample,
+  formatUsdCents,
+  isFeeFirst,
+  processingCopy,
+} from "@/lib/helpers/processing-copy"
 
 const vendorTypeCards = [
   { label: "Physical Goods", href: "/what-you-sell#physical-goods", emoji: "📦" },
@@ -67,8 +74,14 @@ export async function generateMetadata({
   }
 
   const title = "Home"
-  const description =
-    "One platform for producers, creators, organizers, and service providers. Sell goods, offer services, run subscriptions, host events, and track community impact while keeping 97% of every sale."
+  // Rendered from /store/fee-schedule's processing model (Black Mask F6):
+  // today's sentence exactly while it is absent.
+  const feeSchedule = await getFeeSchedule()
+  const description = processingCopy(
+    "homeMetaDescription",
+    feeSchedule.processing,
+    feeSchedule.default_fee_percent
+  )
   const ogImage = "/B2C_Storefront_Open_Graph.png"
   const canonical = `${baseUrl}/${locale}`
   const siteName =
@@ -130,6 +143,14 @@ export default async function Home({
   const siteName =
     process.env.NEXT_PUBLIC_SITE_NAME ||
     "Black Market Coalition"
+
+  // Every processing sentence below renders from the fee schedule's
+  // processing model (lib/helpers/processing-copy.ts): absent, today's copy
+  // exactly; fee-first, card processing comes off the sale first.
+  const feeSchedule = await getFeeSchedule()
+  const processing = feeSchedule.processing
+  const feePercent = feeSchedule.default_fee_percent
+  const example = isFeeFirst(processing) ? feeFirstExample(10_000, feePercent, processing) : null
 
   const marketplacePathways = [
     {
@@ -194,7 +215,7 @@ export default async function Home({
         variant="mission"
         image="/images/hero/Image.jpg"
         heading="Buy direct from real people. Sell on your own terms. Build community wealth."
-        paragraph="Free Black Market is community-owned commerce for goods, services, local food and CSA, creators, and mutual aid. Shoppers buy directly from makers whose identity and practices we verify — no middlemen, no markups. Vendors launch fast and keep 97% of every sale, with a flat 3% coalition fee and no listing, monthly, or processing fees passed to you."
+        paragraph={processingCopy("homeHeroParagraph", processing, feePercent)}
         buttons={[
           {
             label: "Explore the Marketplace",
@@ -280,7 +301,7 @@ export default async function Home({
         <div className="rounded-2xl border border-green-200 bg-green-50 p-6 md:p-8">
           <p className="text-sm font-semibold uppercase tracking-wide text-green-700 mb-2">For vendors</p>
           <h2 className="text-3xl font-semibold text-green-900 mb-2">Everything you can run through one storefront stack.</h2>
-          <p className="text-green-900/80 mb-4 max-w-2xl">Stop renting your business from extractive platforms. Own your customer relationship, sell across every model from one account, and keep 97% of what you earn — no listing, monthly, or processing fees.</p>
+          <p className="text-green-900/80 mb-4 max-w-2xl">{processingCopy("homeVendorStack", processing, feePercent)}</p>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 text-sm">
             <div><span className="font-semibold">Products:</span> physical goods, local food, and digital downloads.</div>
             <div><span className="font-semibold">Services:</span> bookings, custom requests, and provider messaging.</div>
@@ -322,16 +343,25 @@ export default async function Home({
 
       <section className="px-4 lg:px-8 w-full">
         <div className="rounded-2xl border p-6 md:p-8 bg-neutral-50">
-          <h2 className="text-2xl md:text-3xl font-semibold mb-2">The financials: you keep 97%</h2>
-          <p className="text-gray-700 mb-4">A 3% coalition fee on the free plan, lower on an optional paid plan. No listing fees, and no payment processing fees passed to you. Transparent ACH payouts with vendor-controlled fulfillment.</p>
-          <div className="grid sm:grid-cols-3 gap-3 mb-4">
-            <div className="rounded-lg bg-white p-4 border"><p className="text-sm text-gray-500">Sale</p><p className="text-xl font-semibold">$100.00</p></div>
-            <div className="rounded-lg bg-white p-4 border"><p className="text-sm text-gray-500">Coalition fee (3%)</p><p className="text-xl font-semibold">$3.00</p></div>
-            <div className="rounded-lg bg-white p-4 border"><p className="text-sm text-gray-500">You keep</p><p className="text-xl font-semibold text-green-700">$97.00</p></div>
-          </div>
+          <h2 className="text-2xl md:text-3xl font-semibold mb-2">{processingCopy("homeFinancialsHeading", processing, feePercent)}</h2>
+          <p className="text-gray-700 mb-4">{processingCopy("homeFinancialsBody", processing, feePercent)}</p>
+          {example ? (
+            <div className="grid sm:grid-cols-4 gap-3 mb-4">
+              <div className="rounded-lg bg-white p-4 border"><p className="text-sm text-gray-500">Sale</p><p className="text-xl font-semibold">$100.00</p></div>
+              <div className="rounded-lg bg-white p-4 border"><p className="text-sm text-gray-500">Card processing (estimate)</p><p className="text-xl font-semibold">{formatUsdCents(example.processingCents)}</p></div>
+              <div className="rounded-lg bg-white p-4 border"><p className="text-sm text-gray-500">Coalition fee ({feePercent}% of the rest)</p><p className="text-xl font-semibold">{formatUsdCents(example.commissionCents)}</p></div>
+              <div className="rounded-lg bg-white p-4 border"><p className="text-sm text-gray-500">You keep</p><p className="text-xl font-semibold text-green-700">{formatUsdCents(example.keepCents)}</p></div>
+            </div>
+          ) : (
+            <div className="grid sm:grid-cols-3 gap-3 mb-4">
+              <div className="rounded-lg bg-white p-4 border"><p className="text-sm text-gray-500">Sale</p><p className="text-xl font-semibold">$100.00</p></div>
+              <div className="rounded-lg bg-white p-4 border"><p className="text-sm text-gray-500">Coalition fee (3%)</p><p className="text-xl font-semibold">$3.00</p></div>
+              <div className="rounded-lg bg-white p-4 border"><p className="text-sm text-gray-500">You keep</p><p className="text-xl font-semibold text-green-700">$97.00</p></div>
+            </div>
+          )}
           <details className="mb-4 rounded-lg border bg-white p-4" data-event="pricing_breakdown_expanded">
             <summary className="cursor-pointer font-medium text-gray-900">How this compares to typical channels</summary>
-            <p className="text-sm text-gray-700 mt-2">Etsy, Shopify, Amazon, and delivery apps stack listing fees, monthly subscriptions, ad spend, and fulfillment charges — often 15–30% all-in. Our model stays simple: one transparent 3% coalition fee. Settle through our internal ledger (Coalition Credits) to move value between members with no card processing cost — an internal payment processor is coming soon.</p>
+            <p className="text-sm text-gray-700 mt-2">{processingCopy("homeComparison", processing, feePercent)}</p>
           </details>
           <div className="flex flex-wrap gap-4">
             <Link href="/transparency" className="text-green-700 font-medium underline">See the full fee breakdown and comparison</Link>

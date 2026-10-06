@@ -22,3 +22,15 @@
  * exactly the drift this work exists to prevent, hence the test.
  */
 export const FALLBACK_DEFAULT_FEE_PERCENT = 3
+
+/**
+ * The card-processing estimate quoted when `/store/fee-schedule` says the
+ * model is fee-first but could not send its figures (backend unreachable, or
+ * its config unreadable). Must equal the backend's default payout config
+ * (`payment_processing_percent` / `payment_processing_fixed` in
+ * `backend/src/modules/payout-breakdown/service.ts` `getDefaultConfig`);
+ * `src/lib/__tests__/fee-schedule.spec.ts` fails if they drift. Only ever
+ * shown labelled as an estimate.
+ */
+export const FALLBACK_PROCESSING_PERCENT = 2.9
+export const FALLBACK_PROCESSING_FIXED_CENTS = 30

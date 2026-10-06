@@ -4,6 +4,7 @@ import { VENDOR_PANEL_URL } from "@/const"
 import { phase1ModuleFlags } from "@/lib/feature-flags"
 import { getFeeSchedule } from "@/lib/data/fee-schedule"
 import { howItWorksFeeDescription } from "@/lib/helpers/fee-ladder-copy"
+import { processingCopy } from "@/lib/helpers/processing-copy"
 
 export const metadata: Metadata = {
   title: "How It Works | Free Black Market",
@@ -75,7 +76,13 @@ const GlobeIcon = ({ className = "" }: { className?: string }) => (
 export default async function HowItWorksPage() {
   // The paid-plan rates in the fee card come from the schedule the backend
   // offers, so a retired tier cannot linger in the copy.
-  const { plans: feePlans } = await getFeeSchedule()
+  // ...and every processing sentence renders from its processing model
+  // (Black Mask F6): today's copy exactly while that field is absent.
+  const {
+    plans: feePlans,
+    processing,
+    default_fee_percent: feePercent,
+  } = await getFeeSchedule()
   const buyerSteps = [
     {
       number: "1",
@@ -85,7 +92,7 @@ export default async function HowItWorksPage() {
     {
       number: "2",
       title: "See Transparent Pricing",
-      description: "Every listing shows exactly where your money goes. 97% to the creator, 3% to the coalition. No hidden fees.",
+      description: processingCopy("howItWorksBuyerTransparency", processing, feePercent),
     },
     {
       number: "3",
@@ -118,7 +125,7 @@ export default async function HowItWorksPage() {
     {
       number: "4",
       title: "Get Paid Fast",
-      description: "Receive at least 97% of every sale. FBM collects the payment and pays you by ACH, weekly by default.",
+      description: processingCopy("howItWorksGetPaid", processing, feePercent),
     },
   ]
 
@@ -126,7 +133,7 @@ export default async function HowItWorksPage() {
     {
       icon: CurrencyDollarIcon,
       title: "Just 3% Coalition Fee",
-      description: howItWorksFeeDescription(feePlans),
+      description: howItWorksFeeDescription(feePlans, processing, feePercent),
       color: "bg-green-100 text-green-600",
     },
     {
@@ -243,14 +250,12 @@ export default async function HowItWorksPage() {
                   <span className="text-4xl font-bold text-green-600">97%</span>
                 </div>
                 <div>
-                  <h3 className="text-xl font-bold text-gray-900">Goes to Creators</h3>
+                  <h3 className="text-xl font-bold text-gray-900">{processingCopy("howItWorksCreatorsLabel", processing, feePercent)}</h3>
                   <p className="text-gray-600">The people who did the work</p>
                 </div>
               </div>
               <p className="text-gray-600">
-                When you buy something on Free Black Market, 97 cents of every dollar
-                goes directly to the person who made it. No corporate headquarters taking
-                a cut. No shareholders to pay.
+                {processingCopy("howItWorksCreatorsCard", processing, feePercent)}
               </p>
             </div>
 
@@ -260,14 +265,12 @@ export default async function HowItWorksPage() {
                   <span className="text-4xl font-bold text-blue-600">3%</span>
                 </div>
                 <div>
-                  <h3 className="text-xl font-bold text-gray-900">Goes to the Coalition</h3>
+                  <h3 className="text-xl font-bold text-gray-900">{processingCopy("howItWorksCoalitionLabel", processing, feePercent)}</h3>
                   <p className="text-gray-600">Keeps everything running</p>
                 </div>
               </div>
               <p className="text-gray-600">
-                Just 3% covers everything: platform operations, payment processing,
-                development, and community support. No required subscription. No additional fees.
-                That&apos;s the whole story.
+                {processingCopy("howItWorksCoalitionCard", processing, feePercent)}
               </p>
             </div>
           </div>
@@ -655,9 +658,7 @@ export default async function HowItWorksPage() {
                 How do providers get paid?
               </h3>
               <p className="text-gray-600">
-                By ACH. When you make a sale, at least 97% is credited to you and paid out to your bank
-                account — weekly by default, with faster tiers available for a fee. No invoicing, no
-                waiting for thresholds, no complicated processes.
+                {processingCopy("howItWorksPaidFaq", processing, feePercent)}
               </p>
             </div>
 
@@ -666,9 +667,7 @@ export default async function HowItWorksPage() {
                 What does the 3% coalition fee cover?
               </h3>
               <p className="text-gray-600">
-                Everything. Platform hosting, development, payment processing, customer support,
-                and community programs. There are no hidden fees, no required subscription, no listing fees,
-                and no payment processing fees passed to providers.
+                {processingCopy("howItWorksCoverFaq", processing, feePercent)}
               </p>
             </div>
 

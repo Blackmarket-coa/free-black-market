@@ -21,6 +21,12 @@ import {
   computeReferralRevenueShare,
   type ReferralShareAllocation,
 } from "./referral-revenue-share"
+import {
+  computeFeeFirstSplit,
+  legacyPlatformFeeCents,
+  type FeeFirstSellerInput,
+  type FeeFirstSplit,
+} from "./fee-first"
 
 /**
  * Default fee labels for customer display
@@ -158,6 +164,38 @@ export interface BreakdownInput {
    * referral share for that seller — the behaviour before this existed.
    */
   referralBySeller?: Record<string, { referrer_seller_id: string } | null>
+  /**
+   * The fee-first split (docs/BLACK_MASK_LAUNCH_PLAN.md §5 F6), or nothing.
+   *
+   * Set ONLY by a composition point that has read `FF_FEE_FIRST_SPLIT_V1`
+   * (`shared/platform-fee.ts` `feeFirstSplitEnabled()`); this module service
+   * never reads env, following the `NONPROFIT_PARITY_V1` precedent there.
+   * Absent or null: the pre-F6 formula, byte for byte.
+   *
+   * Present: the card-processing estimate on FBM's charge comes off first and
+   * each seller's platform fee is taken on what is left
+   * (`fee-first.ts` `computeFeeFirstSplit`), a PAYMENT_PROCESSING line names
+   * who bore it, and the plugin / referral carve-outs are funded from the
+   * (smaller) fee as before.
+   *
+   * `chargedCentsBySeller` states each seller leg's share of the charge.
+   * Without it a single seller's leg is the subtotal plus delivery, tax, tip
+   * and pickup discount (where the order.placed settlement puts them), and on
+   * a multi-seller order each leg is its subtotal while order-level extras
+   * sit in no seller's leg, so their processing is platform-borne. The
+   * donation is never in the charge: it is a direct charge on the org's own
+   * account (see `fee-first.ts`).
+   */
+  feeFirst?: {
+    chargedCentsBySeller?: Record<string, number>
+    unattributedChargedCents?: number
+    /**
+     * The processing estimate the caller already settled the ledger with.
+     * Given, it is used instead of re-reading payout_config, so a ledger leg
+     * and the stored breakdown can never be built from two different reads.
+     */
+    processing?: { percent: number; fixedCents: number }
+  } | null
 }
 
 class PayoutBreakdownService extends MedusaService({
@@ -320,6 +358,8 @@ class PayoutBreakdownService extends MedusaService({
       gross: number
       fees: number
       net: number
+      /** Fee-first only: this seller's share of the processing estimate (inside `fees`). */
+      processing?: number
     }>
     /**
      * Who to pay, and how much, out of the platform fee. The caller performs
@@ -327,6 +367,8 @@ class PayoutBreakdownService extends MedusaService({
      */
     pluginShareAllocations: (PluginShareAllocation & { sellerId: string })[]
     referralShareAllocations: (ReferralShareAllocation & { sellerId: string })[]
+    /** Fee-first only: the split the fees above were taken from. */
+    feeFirstSplit?: FeeFirstSplit
   }> {
     const config = await this.getDefaultConfig()
     const items: BreakdownItem[] = []
@@ -336,6 +378,7 @@ class PayoutBreakdownService extends MedusaService({
       gross: number
       fees: number
       net: number
+      processing?: number
     }> = []
     
     const totalSubtotal = input.subtotal
@@ -360,12 +403,26 @@ class PayoutBreakdownService extends MedusaService({
     const creatorCommissionTotal = Math.max(0, Math.floor(input.creatorCommissionCents || 0))
     let creatorRemaining = creatorCommissionTotal
 
-    for (const seller of sellers) {
-      const platformFeePercent = await this.getEffectivePlatformFee(
-        seller.sellerId,
-        input.planFeePercentBySeller?.[seller.sellerId] ?? null
-      )
-      const platformFee = Math.round(seller.subtotal * (platformFeePercent / 100))
+    // Fee-first (F6): the split needs every seller's rate at once, because
+    // the processing estimate is per CHARGE and allocated across the legs.
+    const feeFirstSplit = input.feeFirst
+      ? await this.feeFirstSplitFor_(input, sellers, config)
+      : null
+
+    for (const [sellerIndex, seller] of sellers.entries()) {
+      const fromSplit = feeFirstSplit?.sellers[sellerIndex] ?? null
+      const processingForSeller = fromSplit?.processingCents ?? 0
+      // Flag off: `legacyPlatformFeeCents` is the pre-F6 expression verbatim,
+      // `Math.round(subtotal * (pct / 100))`.
+      const platformFee = fromSplit
+        ? fromSplit.commissionCents
+        : legacyPlatformFeeCents(
+            seller.subtotal,
+            await this.getEffectivePlatformFee(
+              seller.sellerId,
+              input.planFeePercentBySeller?.[seller.sellerId] ?? null
+            )
+          )
 
       // Check for additional community contribution from seller
       const sellerSettings = await this.getSellerSettings(seller.sellerId)
@@ -374,11 +431,24 @@ class PayoutBreakdownService extends MedusaService({
 
       // Allocate creator commission against this seller's slice (capped at
       // remaining gross after platform fee + community).
-      const sellerGrossAfterPlatform = Math.max(0, seller.subtotal - platformFee - communityFromSeller)
+      const sellerGrossAfterPlatform = Math.max(
+        0,
+        seller.subtotal - processingForSeller - platformFee - communityFromSeller
+      )
       const creatorForSeller = Math.min(creatorRemaining, sellerGrossAfterPlatform)
       creatorRemaining -= creatorForSeller
 
-      const producerAmount = seller.subtotal - platformFee - communityFromSeller - creatorForSeller
+      // `processingForSeller` is 0 unless fee-first is on, so this is the
+      // pre-F6 expression exactly when it is off.
+      const producerFromSubtotal =
+        seller.subtotal - processingForSeller - platformFee - communityFromSeller - creatorForSeller
+      // Fee-first: processing is taken on the seller's whole leg (delivery,
+      // tax and tip included) but this net is stated against the subtotal, so
+      // processing beyond the subtotal came out of those extras rather than
+      // the goods. The displayed net floors at 0 instead of going negative;
+      // the PAYMENT_PROCESSING line still carries the seller's whole share.
+      // Flag off: unchanged, unclamped.
+      const producerAmount = fromSplit ? Math.max(0, producerFromSubtotal) : producerFromSubtotal
 
       // Carved out of the platform fee, after it is computed and after the
       // producer's net is fixed — so a developer share can never change what
@@ -423,8 +493,9 @@ class PayoutBreakdownService extends MedusaService({
         sellerId: seller.sellerId,
         sellerName: seller.sellerName,
         gross: seller.subtotal,
-        fees: platformFee + creatorForSeller,
+        fees: processingForSeller + platformFee + creatorForSeller,
         net: producerAmount,
+        ...(fromSplit ? { processing: processingForSeller } : {}),
       })
     }
     
@@ -437,10 +508,14 @@ class PayoutBreakdownService extends MedusaService({
     // figure, not something FBM collects on the donation.
     const totalBeforeProcessing = totalSubtotal + (input.deliveryFee || 0) + 
       (input.tax || 0) + (input.tip || 0) + donation + (input.pickupDiscount || 0)
-    const paymentProcessing = Math.round(
-      totalBeforeProcessing * (config.payment_processing_percent / 100) + 
-      config.payment_processing_fixed
-    )
+    // Fee-first: the estimate on FBM's own charge (no donation in it) that was
+    // actually deducted above, rather than the display-only figure.
+    const paymentProcessing = feeFirstSplit
+      ? feeFirstSplit.processingTotalCents
+      : Math.round(
+          totalBeforeProcessing * (config.payment_processing_percent / 100) +
+          config.payment_processing_fixed
+        )
     
     // Community fund from platform
     const communityFund = Math.round(totalSubtotal * (config.community_fund_percent / 100))
@@ -468,6 +543,35 @@ class PayoutBreakdownService extends MedusaService({
         description: DEFAULT_FEE_LABELS[FeeType.PLATFORM_FEE].description,
         recipient: "Platform",
       })
+    }
+
+    // Fee-first: who bore the card-processing estimate. One line per bearer,
+    // so the stored breakdown says in so many words that the producer paid it
+    // (and, for money in no seller's leg, that the platform did). Never emitted
+    // with the flag off: there, processing is absorbed and not deducted from
+    // anyone, and a line would misstate that.
+    if (feeFirstSplit) {
+      const estimate = `${feeFirstSplit.processingPercent}% + ${feeFirstSplit.processingFixedCents}¢`
+      if (feeFirstSplit.sellerBorneProcessingCents > 0) {
+        items.push({
+          type: FeeType.PAYMENT_PROCESSING,
+          amount: feeFirstSplit.sellerBorneProcessingCents,
+          percent: Math.round((feeFirstSplit.sellerBorneProcessingCents / customerPaid) * 100),
+          label: DEFAULT_FEE_LABELS[FeeType.PAYMENT_PROCESSING].label,
+          description: `Estimated card processing (${estimate}) on the charge, taken off the sale before the platform fee; borne by the producer`,
+          recipient: "Card processor (borne by the producer)",
+        })
+      }
+      if (feeFirstSplit.platformBorneProcessingCents > 0) {
+        items.push({
+          type: FeeType.PAYMENT_PROCESSING,
+          amount: feeFirstSplit.platformBorneProcessingCents,
+          percent: Math.round((feeFirstSplit.platformBorneProcessingCents / customerPaid) * 100),
+          label: DEFAULT_FEE_LABELS[FeeType.PAYMENT_PROCESSING].label,
+          description: `Estimated card processing (${estimate}) on the part of the charge that sits in no producer's share; borne by the platform`,
+          recipient: "Card processor (borne by the platform)",
+        })
+      }
     }
 
     // Creator commission item (when an attributed creator referred this sale)
@@ -607,7 +711,56 @@ class PayoutBreakdownService extends MedusaService({
       sellerBreakdown: sellerTotals,
       pluginShareAllocations,
       referralShareAllocations,
+      ...(feeFirstSplit ? { feeFirstSplit } : {}),
     }
+  }
+
+  /**
+   * The fee-first split for this breakdown's sellers. Each seller's rate is
+   * resolved through the same `getEffectivePlatformFee` call the pre-F6 loop
+   * makes, with the same plan rate, so the chain (kind → override → plan →
+   * default) is untouched; only the BASE the rate is applied to changes.
+   */
+  private async feeFirstSplitFor_(
+    input: BreakdownInput,
+    sellers: Array<{ sellerId: string; subtotal: number }>,
+    config: { payment_processing_percent: number; payment_processing_fixed: number }
+  ): Promise<FeeFirstSplit> {
+    const options = input.feeFirst ?? {}
+    const extras =
+      (input.deliveryFee || 0) + (input.tax || 0) + (input.tip || 0) + (input.pickupDiscount || 0)
+    const explicit = options.chargedCentsBySeller
+
+    const rows: FeeFirstSellerInput[] = []
+    for (const seller of sellers) {
+      const feePercent = await this.getEffectivePlatformFee(
+        seller.sellerId,
+        input.planFeePercentBySeller?.[seller.sellerId] ?? null
+      )
+      const chargedCents = explicit
+        ? explicit[seller.sellerId] ?? seller.subtotal
+        : sellers.length === 1
+          ? seller.subtotal + extras
+          : seller.subtotal
+      rows.push({
+        sellerId: seller.sellerId,
+        subtotalCents: seller.subtotal,
+        chargedCents,
+        feePercent,
+      })
+    }
+
+    return computeFeeFirstSplit({
+      sellers: rows,
+      unattributedChargedCents: explicit
+        ? options.unattributedChargedCents ?? 0
+        : sellers.length === 1
+          ? options.unattributedChargedCents ?? 0
+          : Math.max(0, extras) + (options.unattributedChargedCents ?? 0),
+      processingPercent: options.processing?.percent ?? Number(config.payment_processing_percent),
+      processingFixedCents:
+        options.processing?.fixedCents ?? Number(config.payment_processing_fixed),
+    })
   }
   
   /**

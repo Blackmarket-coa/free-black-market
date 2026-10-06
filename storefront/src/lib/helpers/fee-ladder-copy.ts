@@ -1,4 +1,5 @@
 import type { FeeSchedulePlan } from "../data/fee-schedule"
+import { processingCopy, type ProcessingInfo } from "./processing-copy"
 
 /**
  * Plan-ladder prose rendered from `/store/fee-schedule` rather than hardcoded.
@@ -122,20 +123,32 @@ export function paidRatesClause(plans: readonly LadderPlan[]): string {
     : `optional paid plans bring it to ${rates}`
 }
 
-/** The sell page's "How much does it cost to join?" answer. */
-export function sellPageCostAnswer(plans: readonly LadderPlan[]): string {
+/**
+ * The sell page's "How much does it cost to join?" answer. `processing` is
+ * `/store/fee-schedule`'s processing model (Black Mask F6); absent, the lead
+ * sentence is today's exactly.
+ */
+export function sellPageCostAnswer(
+  plans: readonly LadderPlan[],
+  processing?: ProcessingInfo,
+  feePercent = 3
+): string {
   const trial = trialSentence(plans)
   return [
-    "Nothing upfront. On the free plan it is 3% to the coalition when you make a sale, with no listing fees, no payment processing fees and no hidden charges — if you don't sell, you don't pay.",
+    processingCopy("sellCostLead", processing, feePercent),
     paidPlansSentence(plans),
     ...(trial ? [trial] : []),
   ].join(" ")
 }
 
-/** How-it-works' "Just 3% Coalition Fee" card body. */
-export function howItWorksFeeDescription(plans: readonly LadderPlan[]): string {
+/** How-it-works' "Just 3% Coalition Fee" card body (processing model as above). */
+export function howItWorksFeeDescription(
+  plans: readonly LadderPlan[],
+  processing?: ProcessingInfo,
+  feePercent = 3
+): string {
   const rates = paidRatesClause(plans)
-  return `No required subscription. No listing fees. No payment processing fees passed to you. 3% when you make a sale on the free plan${
+  return `${processingCopy("howItWorksFeeLead", processing, feePercent)}${
     rates ? ` — ${rates}` : ""
   }.`
 }

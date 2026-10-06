@@ -26,6 +26,12 @@ interface WhereYourMoneyGoesProps {
   platformPercent: number
   deliveryPercent?: number
   communityPercent?: number
+  /**
+   * Fee-first only (Black Mask F6): the card-processing estimate's share,
+   * shown as its own segment so the bar still sums to the sale. 0 (the
+   * default) renders exactly as before.
+   */
+  processingPercent?: number
   producerName?: string
   className?: string
 }
@@ -35,6 +41,7 @@ export const WhereYourMoneyGoes = ({
   platformPercent,
   deliveryPercent = 0,
   communityPercent = 0,
+  processingPercent = 0,
   producerName,
   className = "",
 }: WhereYourMoneyGoesProps) => {
@@ -50,6 +57,13 @@ export const WhereYourMoneyGoes = ({
       >
         {/* Visual bar */}
         <div className="h-3 rounded-full overflow-hidden flex">
+          {processingPercent > 0 && (
+            <div
+              className="bg-gray-400 transition-all"
+              style={{ width: `${processingPercent}%` }}
+              title={`${processingPercent}% card processing (estimate)`}
+            />
+          )}
           <div
             className="bg-green-500 transition-all"
             style={{ width: `${producerPercent}%` }}
@@ -94,6 +108,15 @@ export const WhereYourMoneyGoes = ({
           <div className="absolute z-50 top-full left-0 mt-2 w-64 p-3 bg-white rounded-lg shadow-lg border">
             <h4 className="font-semibold text-gray-900 mb-2">Cost Breakdown</h4>
             <div className="space-y-2">
+              {processingPercent > 0 && (
+                <div className="flex items-center justify-between text-sm">
+                  <span className="flex items-center gap-2">
+                    <span className="w-3 h-3 rounded-full bg-gray-400" />
+                    Card processing (estimate)
+                  </span>
+                  <span className="font-medium">{processingPercent}%</span>
+                </div>
+              )}
               <div className="flex items-center justify-between text-sm">
                 <span className="flex items-center gap-2">
                   <span className="w-3 h-3 rounded-full bg-green-500" />
