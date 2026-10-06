@@ -1,7 +1,6 @@
 import { createLogger } from "../shared/logger"
 const log = createLogger("subscribers/hawala-order-payment")
 import { SubscriberArgs, SubscriberConfig } from "@medusajs/framework"
-import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 import { HAWALA_LEDGER_MODULE } from "../modules/hawala-ledger"
 import HawalaLedgerModuleService from "../modules/hawala-ledger/service"
 import { PAYOUT_BREAKDOWN_MODULE } from "../modules/payout-breakdown"
@@ -21,9 +20,14 @@ import { disbursePluginDeveloperShare } from "../shared/plugin-revenue-payout"
 import { resolveSellerReferralPayee } from "../shared/referral-payees"
 import { disburseReferralShare } from "../shared/referral-revenue-payout"
 import { CARD_PROCESSING_LEG } from "../modules/hawala-ledger/card-processing"
-import { CARD_FUNDING, isFbmCardProvider } from "../modules/hawala-ledger/card-clearing"
+import { CARD_FUNDING } from "../modules/hawala-ledger/card-clearing"
+import {
+  readCardSettlementOrder,
+  toCents,
+  type CardSettlementOrder,
+} from "../lib/card-order-settlement"
+import { reconcileCardOrder } from "../lib/card-order-reconcile"
 import { featureFlagState } from "../shared/feature-flags"
-import { STRIPE_CONNECT_DIRECT_PROVIDER_ID } from "../modules/stripe-connect-direct/registration"
 import {
   isConsignmentSplitLive,
   resolveOrderConsignment,
@@ -61,6 +65,11 @@ function centsToDollars(cents: number): number {
  * 
  * CURRENCY NOTE: Medusa amounts are in CENTS, Hawala ledger uses DOLLARS.
  * All amounts are converted via centsToDollars() before ledger operations.
+ * SD-39: that note is wrong for Medusa v2, which stores MAJOR units ($40.00
+ * is `40`), and the legacy read below never gets as far as using it (it
+ * throws on a nonexistent `customer` relation). It is kept for the flag-off
+ * path only; card orders (FF_CARD_ORDER_LEDGER_V1) read the order through
+ * `lib/card-order-settlement.ts`, proved on a real database.
  */
 export default async function hawalaOrderPaymentSubscriber({
   event,
@@ -70,20 +79,28 @@ export default async function hawalaOrderPaymentSubscriber({
 
   // SD-36 (FF_CARD_ORDER_LEDGER_V1, hawala-ledger/card-clearing.ts). With the
   // flag off nothing here runs — no extra read — and settlement is exactly
-  // the old path. On: an order paid through FBM's own Stripe account is only
-  // AUTHORISED at placement (manual capture), so it settles on
-  // `payment.captured` instead (`hawala-card-capture.ts`); a Stripe Connect
-  // direct charge is the partner's money and never settles here. Anything
-  // else (no payment found, another provider, a failed read) keeps the old
-  // wallet path.
+  // the old path. On: an order paid through FBM's own Stripe account settles
+  // from card clearing once THIS order's money is captured
+  // (`lib/card-order-settlement.ts`): right here when it already is (methods
+  // Stripe captures at authorisation), otherwise on `payment.captured`
+  // (`hawala-card-capture.ts`) or the reconciler job. A Stripe Connect direct
+  // charge is the partner's money and never settles here. Anything else (no
+  // payment found, another provider, a failed read) keeps the old path.
   if (cardOrderLedgerEnabled()) {
-    const funding = await resolveOrderFunding(container, orderId)
-    if (funding === "fbm_card") {
-      log.info(`[Hawala] Order ${orderId} is a card order; it settles when Stripe captures the payment`)
+    let order: CardSettlementOrder | null = null
+    try {
+      order = await readCardSettlementOrder(container, orderId)
+    } catch (error) {
+      log.warn(`[Hawala] Could not read how order ${orderId} was paid; using the wallet path:`, error)
+    }
+    if (order?.funding === "connect_direct") {
+      log.info(`[Hawala] Order ${orderId} was charged on a partner's connected account; nothing settles through FBM's ledger`)
       return
     }
-    if (funding === "connect_direct") {
-      log.info(`[Hawala] Order ${orderId} was charged on a partner's connected account; nothing settles through FBM's ledger`)
+    if (order?.funding === "fbm_card") {
+      // Through the one locked entry point for card orders; it settles now if
+      // this order's money is already captured, otherwise capture does.
+      await reconcileCardOrder(container, orderId)
       return
     }
   }
@@ -95,54 +112,69 @@ export function cardOrderLedgerEnabled(): boolean {
   return featureFlagState.isEnabled("CARD_ORDER_LEDGER_V1")
 }
 
-export type OrderFunding = "fbm_card" | "connect_direct" | "other"
-
 /**
- * How an order was paid, from its payment collections' payments (sessions as
- * a fallback, for a payment not yet created). Any FBM Stripe payment makes it
- * a card order; any Stripe Connect direct payment makes it the partner's.
- * "other" for anything else, including a failed read — the caller then keeps
- * the pre-SD-36 path, which posts nothing for a card order anyway.
+ * The figures the settlement body uses, from the legacy read — each the exact
+ * expression the pre-SD-39 body computed inline, so the flag-off path is
+ * unchanged. Amounts are treated as cents there; they are not (SD-39).
  */
-export async function resolveOrderFunding(
-  container: SubscriberArgs<{ id: string }>["container"],
-  orderId: string
-): Promise<OrderFunding> {
-  try {
-    const query = container.resolve(ContainerRegistrationKeys.QUERY)
-    const { data } = await query.graph({
-      entity: "order",
-      fields: [
-        "id",
-        "payment_collections.payments.provider_id",
-        "payment_collections.payment_sessions.provider_id",
-        "payment_collections.payment_sessions.status",
-      ],
-      filters: { id: orderId },
-    })
-    const order = (data as Array<Record<string, unknown>>)[0]
-    const collections = (order?.payment_collections ?? []) as Array<{
-      payments?: Array<{ provider_id?: string | null } | null> | null
-      payment_sessions?: Array<{ provider_id?: string | null; status?: string | null } | null> | null
-    } | null>
-    const providers: string[] = []
-    for (const c of collections) {
-      for (const p of c?.payments ?? []) if (p?.provider_id) providers.push(p.provider_id)
-    }
-    if (providers.length === 0) {
-      for (const c of collections) {
-        for (const ps of c?.payment_sessions ?? []) {
-          if (ps?.provider_id && ps.status === "authorized") providers.push(ps.provider_id)
-        }
-      }
-    }
-    if (providers.some((p) => p === STRIPE_CONNECT_DIRECT_PROVIDER_ID)) return "connect_direct"
-    if (providers.some(isFbmCardProvider)) return "fbm_card"
-    return "other"
-  } catch (error) {
-    log.warn(`[Hawala] Could not read how order ${orderId} was paid; using the wallet path:`, error)
-    return "other"
+function legacySettlementView(order: any): SettlementView | null {
+  if (!order) return null
+  return {
+    customerId: order.customer_id,
+    sellerId: (order as any).seller_id || "default-seller",
+    metadata: ((order as any).metadata ?? {}) as Record<string, unknown>,
+    totalAmount: centsToDollars(Number(order.total)),
+    feeBaseAmount: centsToDollars(Number(order.subtotal ?? order.total)),
+    feeBaseCents: Math.round(Number(order.subtotal ?? order.total)),
+    chargedCents: Math.round(Number(order.total)),
+    breakdownSubtotal: Number(order.subtotal || order.total),
+    currencyCode: order.currency_code,
+    // `|| null` exactly as before (the call below has always passed null);
+    // typed as the parameter's type, which it never matched at runtime.
+    producerId: ((order as any).producer_id || null) as string | undefined,
+    autoInvestPercentage: (order as any).auto_invest_percentage || 0,
+    consignmentOrder: order,
+    totalCents: Math.round(Number(order.total)),
   }
+}
+
+/** The same figures for a card order: major units, converted exactly once. */
+function cardSettlementView(order: CardSettlementOrder): SettlementView {
+  const totalCents = toCents(order.total)
+  const subtotalCents = toCents(order.subtotal)
+  return {
+    customerId: order.customer_id,
+    sellerId: order.seller_id,
+    metadata: order.metadata,
+    totalAmount: totalCents / 100,
+    feeBaseAmount: subtotalCents / 100,
+    feeBaseCents: subtotalCents,
+    chargedCents: totalCents,
+    breakdownSubtotal: subtotalCents,
+    currencyCode: order.currency_code,
+    producerId: undefined,
+    autoInvestPercentage: 0,
+    consignmentOrder: { id: order.id, items: order.items },
+    totalCents,
+  }
+}
+
+type SettlementView = {
+  customerId: string | null | undefined
+  sellerId: string | null
+  metadata: Record<string, unknown>
+  /** Ledger amounts are dollars (major units). */
+  totalAmount: number
+  feeBaseAmount: number
+  /** Integer cents for the fee-first split, breakdown and consignment fan-out. */
+  feeBaseCents: number
+  chargedCents: number
+  breakdownSubtotal: number
+  currencyCode: string
+  producerId: string | undefined
+  autoInvestPercentage: number
+  consignmentOrder: { id: string; items?: Array<{ product_id?: string | null } | null> | null }
+  totalCents: number
 }
 
 /**
@@ -163,27 +195,38 @@ export async function resolveOrderFunding(
 export async function settleOrderPayment(
   container: SubscriberArgs<{ id: string }>["container"],
   orderId: string,
-  opts: { funding: "wallet" } | { funding: "card_clearing"; paymentId: string }
+  opts: { funding: "wallet" } | { funding: "card_clearing"; order: CardSettlementOrder }
 ) {
   const hawalaService = container.resolve<HawalaLedgerModuleService>(HAWALA_LEDGER_MODULE)
   const payoutService = container.resolve<PayoutBreakdownService>(PAYOUT_BREAKDOWN_MODULE)
-  const orderModuleService = container.resolve("order")
 
   log.info(`[Hawala] Processing payment for order: ${orderId}`)
 
   try {
-    // Get order details
-    const order = await orderModuleService.retrieveOrder(orderId, {
-      relations: ["items", "customer"],
-    })
+    // Every order-derived figure the settlement uses, in one place.
+    //   - "wallet" (flag off, and non-card orders): the legacy read and its
+    //     arithmetic, byte for byte. SD-39: that read asks for a `customer`
+    //     relation the Order model does not have, so on a real database it
+    //     throws here and nothing below ever runs — kept as is, because
+    //     "fixing" it with the flag off would start debiting any funded
+    //     customer wallet for orders a card already paid.
+    //   - "card_clearing" (flag on): the order as `lib/card-order-settlement`
+    //     read it — major units turned into exact cents, Mercur's seller link.
+    const view = opts.funding === "card_clearing"
+      ? cardSettlementView(opts.order)
+      : legacySettlementView(
+          await container.resolve("order").retrieveOrder(orderId, {
+            relations: ["items", "customer"],
+          })
+        )
 
-    if (!order) {
+    if (!view) {
       log.info(`[Hawala] Order not found: ${orderId}`)
       return
     }
 
     // Get or create customer wallet
-    const customerId = order.customer_id
+    const customerId = view.customerId
     if (!customerId) {
       log.info(`[Hawala] No customer ID for order: ${orderId}`)
       return
@@ -196,7 +239,22 @@ export async function settleOrderPayment(
     let purchaseAccountId: string | null = null
     let purchaseMetadata: Record<string, unknown> | undefined
     if (opts.funding === "card_clearing") {
-      purchaseMetadata = { funding: CARD_FUNDING, payment_id: opts.paymentId, customer_id: customerId }
+      if (!view.sellerId) {
+        log.error(`[Hawala] Card order ${orderId} has no seller link; not settled`)
+        return
+      }
+      if (view.currencyCode.toLowerCase() !== "usd") {
+        // The clearing, escrow and seller accounts are USD; posting another
+        // currency's figure into them would misstate every balance.
+        log.error(`[Hawala] Card order ${orderId} is in ${view.currencyCode}; only USD settles through card clearing`)
+        return
+      }
+      purchaseMetadata = {
+        funding: CARD_FUNDING,
+        payment_id: opts.order.payment_id,
+        payment_collection_ids: opts.order.payment_collection_ids,
+        customer_id: customerId,
+      }
     } else {
       let customerWallets = await hawalaService.listLedgerAccounts({
         account_type: "USER_WALLET",
@@ -217,12 +275,12 @@ export async function settleOrderPayment(
     }
 
     // Get seller ID (from marketplace context or default)
-    const sellerId = (order as any).seller_id || "default-seller"
+    const sellerId = view.sellerId as string
 
     // Renewal orders carry the subscription stamp from the cloned template
     // cart (renew-helpers.buildRenewalCartInput). Used below to type the
     // ledger reference.
-    const orderMetadata = ((order as any).metadata ?? {}) as Record<string, unknown>
+    const orderMetadata = view.metadata
     const renewalSubscriptionId =
       orderMetadata.renewal === true &&
       typeof orderMetadata.subscription_id === "string" &&
@@ -248,7 +306,7 @@ export async function settleOrderPayment(
 
     // Calculate amounts using payout-breakdown service for accurate fees
     // IMPORTANT: order.total is in CENTS, convert to DOLLARS for ledger
-    const totalAmount = centsToDollars(Number(order.total))
+    const totalAmount = view.totalAmount
 
     // Get platform fee from payout config (respects seller-specific overrides).
     // The fee is charged on the SUBTOTAL, not order.total — matching the
@@ -257,7 +315,7 @@ export async function settleOrderPayment(
     // the customer's tax, delivery and tip, so the ledger and the displayed
     // breakdown disagreed for the same order. Tax/delivery/tip remain in the
     // seller leg pending a fuller multi-leg settlement.
-    const feeBaseAmount = centsToDollars(Number(order.subtotal ?? order.total))
+    const feeBaseAmount = view.feeBaseAmount
     // Via the shared helper, not the module service directly: the plan's rate
     // sits between the per-seller override and the platform default, and only
     // this composition point can read it across the module boundary.
@@ -278,8 +336,8 @@ export async function settleOrderPayment(
     const feeFirst: (FeeFirstSplit & { configFallback: boolean }) | null = feeFirstSplitEnabled()
       ? await orderFeeFirstSplit(payoutService, {
           sellerId,
-          feeBaseCents: Math.round(Number(order.subtotal ?? order.total)),
-          chargedCents: Math.round(Number(order.total)),
+          feeBaseCents: view.feeBaseCents,
+          chargedCents: view.chargedCents,
           feePercent: platformFeePercent,
         })
       : null
@@ -330,11 +388,11 @@ export async function settleOrderPayment(
         // Flag off: the pre-F6 base (`||`), unchanged. Fee-first: the ledger's
         // base, so the two cannot diverge on a zero subtotal.
         subtotal: feeFirst
-          ? Math.round(Number(order.subtotal ?? order.total))
-          : Number(order.subtotal || order.total),
+          ? view.feeBaseCents
+          : view.breakdownSubtotal,
         sellerId,
         orderId,
-        currencyCode: order.currency_code,
+        currencyCode: view.currencyCode,
         creatorCommissionCents,
         creatorSellerId,
         // The same plan rate the ledger leg above resolved through. Without it
@@ -379,7 +437,7 @@ export async function settleOrderPayment(
         orderId,
         customerId,
         breakdown,
-        order.currency_code
+        view.currencyCode
       )
 
       // The record of what is owed is now stored; the transfers themselves
@@ -390,8 +448,8 @@ export async function settleOrderPayment(
     }
 
     // Check for auto-invest settings
-    const producerId = (order as any).producer_id || null
-    const autoInvestPercentage = (order as any).auto_invest_percentage || 0
+    const producerId = view.producerId
+    const autoInvestPercentage = view.autoInvestPercentage
 
     // Consignment revenue split (dark by default). When
     // FBM_CONSIGNMENT_SPLIT_LIVE=1 and every line item sells the same
@@ -407,12 +465,12 @@ export async function settleOrderPayment(
       processingCents: number
     } | null = null
     if (isConsignmentSplitLive()) {
-      const config = await lookupOrderConsignment(container, order, sellerId)
+      const config = await lookupOrderConsignment(container, view.consignmentOrder, sellerId)
       if (config) {
         // Integer cents for the whole fan-out so escrow nets to exactly
         // zero (order.total is integer cents; the percentage fee can be
         // fractional, so it is rounded to a whole cent on this path).
-        const totalCents = Math.round(Number(order.total))
+        const totalCents = view.totalCents
         const platformFeeCents = Math.min(
           Math.max(Math.round(platformFeeAmount * 100), 0),
           totalCents
@@ -449,8 +507,27 @@ export async function settleOrderPayment(
       idempotency_key: `order-payment-${orderId}-purchase`,
     })
     if (priorPurchase.length > 0) {
-      log.info(`[Hawala] Order ${orderId} already settled; skipping re-settlement`)
-      return
+      // A card order's purchase leg always lands (clearing never refuses), so
+      // a later leg failing would otherwise leave the money in escrow with no
+      // seller leg forever. `reconcileCardOrder` (which holds the per-order
+      // lock and calls this) detects "purchase COMPLETED, no seller leg" and
+      // comes back here; then — and only on a COMPLETED purchase — fall
+      // through: every leg is keyed, so only what is missing posts. The
+      // wallet path is unchanged.
+      const sellerSide = opts.funding === "card_clearing"
+        ? await hawalaService.listLedgerEntries({ order_id: orderId, entry_type: "TRANSFER" })
+        : []
+      const sellerSideDone = sellerSide.some(
+        (e: { idempotency_key?: string | null; status?: string }) =>
+          e.status === "COMPLETED" &&
+          typeof e.idempotency_key === "string" &&
+          /^order-payment-.+-(seller|consignor|vendor)$/.test(e.idempotency_key)
+      )
+      if (opts.funding !== "card_clearing" || sellerSideDone || priorPurchase[0]?.status !== "COMPLETED") {
+        log.info(`[Hawala] Order ${orderId} already settled; skipping re-settlement`)
+        return
+      }
+      log.error(`[Hawala] Card order ${orderId} settled only in part; completing the missing legs`)
     }
     if (purchaseAccountId === null) {
       purchaseAccountId = (await hawalaService.getOrCreateCardClearingAccount()).id
@@ -462,7 +539,7 @@ export async function settleOrderPayment(
           customerAccountId: purchaseAccountId,
           purchaseMetadata,
           orderId,
-          currencyCode: String(order.currency_code || "USD").toUpperCase(),
+          currencyCode: String(view.currencyCode || "USD").toUpperCase(),
           vendorSellerId: sellerId,
           totalCents: consignmentPlan.totalCents,
           platformFeeCents: consignmentPlan.platformFeeCents,
@@ -513,7 +590,7 @@ export async function settleOrderPayment(
         await disbursePluginDeveloperShare(container, {
           orderId,
           sellerId,
-          currencyCode: order.currency_code,
+          currencyCode: view.currencyCode,
           allocations: settledBreakdown.pluginShareAllocations,
         })
       }
@@ -522,7 +599,7 @@ export async function settleOrderPayment(
       if (settledBreakdown.referralShareAllocations.length > 0) {
         await disburseReferralShare(container, {
           orderId,
-          currencyCode: order.currency_code,
+          currencyCode: view.currencyCode,
           allocation: settledBreakdown.referralShareAllocations[0],
         })
       }
@@ -538,8 +615,8 @@ export async function settleOrderPayment(
       {
         vendorId: sellerId,
         orderId,
-        amountMinorUnits: Math.round(Number(order.total)),
-        currency: String(order.currency_code || "USD").toUpperCase(),
+        amountMinorUnits: view.totalCents,
+        currency: String(view.currencyCode || "USD").toUpperCase(),
         ledgerTxId,
       },
       { eventId: `ledger.payment_received:${orderId}` }

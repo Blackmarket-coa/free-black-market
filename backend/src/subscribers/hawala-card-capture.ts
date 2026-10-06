@@ -1,29 +1,26 @@
 import { createLogger } from "../shared/logger"
 const log = createLogger("subscribers/hawala-card-capture")
 import { SubscriberArgs, SubscriberConfig } from "@medusajs/framework"
-import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 import { isFbmCardProvider } from "../modules/hawala-ledger/card-clearing"
-import { cardOrderLedgerEnabled, settleOrderPayment } from "./hawala-order-payment"
+import { ordersForPaymentCollection, readPayment } from "../lib/card-order-settlement"
+import { reconcileCardOrder } from "../lib/card-order-reconcile"
+import { cardOrderLedgerEnabled } from "./hawala-order-payment"
 
 /**
- * Settle a card order when Stripe captures it (SD-36,
+ * Settle card orders when Stripe captures their payment (SD-36,
  * `FF_CARD_ORDER_LEDGER_V1`, hawala-ledger/card-clearing.ts).
  *
- * FBM's Stripe provider runs in manual capture, so at `order.placed` a card
- * order's money is only authorised and the placement subscriber leaves it
- * alone. This is where it settles: the purchase leg debits the card-clearing
- * account (money that arrived through FBM's Stripe account), then the usual
- * fee / processing / seller legs — the same `settleOrderPayment` the
- * placement path runs, so the breakdown record, fee-first split, consignment
- * fan-out, recovery and Blackout event are all identical.
+ * The event carries only the payment id, and a payment belongs to a payment
+ * COLLECTION — which on a Mercur cart is shared by one order per seller. So
+ * every order whose money moved through that collection is reconciled on its
+ * own (`lib/card-order-reconcile.ts`, under a per-order lock) and settled once
+ * its own share is fully captured, through the same `settleOrderPayment` the
+ * placement path runs.
+ * Each order's `-purchase` key makes a redelivery, or a second capture event,
+ * a no-op. Only FBM's own Stripe registration; anything else is ignored.
  *
- * Settles once, when the payment COLLECTION is fully captured (a partial
- * capture waits for the rest; Medusa emits this event per capture). The
- * `-purchase` idempotency key makes a redelivery, or a second capture event
- * on an already-settled order, a no-op. Only FBM's own Stripe registration:
- * a Stripe Connect direct charge, or any other provider, is ignored.
- *
- * Flag off: returns before any read.
+ * Flag off: returns before any read. A failure here is logged, never thrown
+ * (it must not fail the capture); the reconciler job settles what was missed.
  */
 export default async function hawalaCardCaptureSubscriber({
   event,
@@ -33,58 +30,22 @@ export default async function hawalaCardCaptureSubscriber({
 
   const paymentId = event.data.id
   try {
-    const query = container.resolve(ContainerRegistrationKeys.QUERY)
-    const { data } = await query.graph({
-      entity: "payment",
-      fields: [
-        "id",
-        "provider_id",
-        "captured_at",
-        "payment_collection.id",
-        "payment_collection.amount",
-        "payment_collection.captured_amount",
-        "payment_collection.order.id",
-      ],
-      filters: { id: paymentId },
-    })
-    const payment = (data as Array<Record<string, unknown>>)[0] as
-      | {
-          id: string
-          provider_id?: string | null
-          payment_collection?: {
-            id?: string
-            amount?: unknown
-            captured_amount?: unknown
-            order?: { id?: string | null } | null
-          } | null
-        }
-      | undefined
-
+    const payment = await readPayment(container, paymentId)
     if (!payment) {
       log.warn(`[Hawala] Captured payment ${paymentId} not found; nothing settled`)
       return
     }
-    if (!isFbmCardProvider(payment.provider_id)) return
+    if (!isFbmCardProvider(payment.provider_id) || !payment.payment_collection_id) return
 
-    const orderId = payment.payment_collection?.order?.id
-    if (!orderId) {
+    const orderIds = await ordersForPaymentCollection(container, payment.payment_collection_id)
+    if (orderIds.length === 0) {
       log.info(`[Hawala] Captured payment ${paymentId} belongs to no order; nothing settled`)
       return
     }
-
-    const amount = Number(payment.payment_collection?.amount)
-    const captured = Number(payment.payment_collection?.captured_amount)
-    if (!Number.isFinite(amount) || !Number.isFinite(captured) || captured < amount) {
-      log.info(
-        `[Hawala] Order ${orderId}: payment collection captured ${payment.payment_collection?.captured_amount} ` +
-          `of ${payment.payment_collection?.amount}; settles once fully captured`
-      )
-      return
-    }
-
-    await settleOrderPayment(container, orderId, { funding: "card_clearing", paymentId })
+    // Each order through the one locked entry point for card orders: it
+    // settles an order once that order's own share is fully captured.
+    for (const orderId of orderIds) await reconcileCardOrder(container, orderId)
   } catch (error) {
-    // Same rule as placement: a ledger failure never fails the capture.
     log.error(`[Hawala] Error settling captured payment ${paymentId}:`, error)
   }
 }

@@ -62,6 +62,7 @@ import {
 import {
   CARD_CLEARING_ACCOUNT_TYPE,
   CARD_CLEARING_OWNER_ID,
+  CARD_FUNDING,
   assertCardClearingLeg,
 } from "./card-clearing"
 import {
@@ -1981,6 +1982,15 @@ class HawalaLedgerModuleService extends MedusaService({
       correlation_id: data.idempotency_key,
       ...(data.purchase_metadata ? { metadata: data.purchase_metadata } : {}),
     })
+    // A card purchase (SD-36): `createTransfer` hands back an existing row for
+    // its key whatever its status, and card clearing never refuses, so a
+    // FAILED purchase from an earlier attempt must not have fee and seller
+    // legs posted out of pooled escrow on top of it. Wallet orders unchanged.
+    if (data.purchase_metadata?.funding === CARD_FUNDING && purchaseEntry?.status !== "COMPLETED") {
+      throw new Error(
+        `Card purchase leg for order ${data.order_id} is ${purchaseEntry?.status ?? "missing"}; no further legs posted`
+      )
+    }
     entries.push(purchaseEntry)
 
     // 2. Platform fee from escrow to platform
@@ -2123,12 +2133,40 @@ class HawalaLedgerModuleService extends MedusaService({
     }
 
     const originalAmount = Number(purchaseEntry.amount)
-    const refundAmount = data.refund_amount || originalAmount
-    
+
+    // Card orders (SD-36, `./card-clearing.ts`) follow the money: Stripe
+    // refunds a card order in as many partial refunds as the operator issues,
+    // and each one posts here as its own delta (`lib/card-order-settlement`).
+    // So for a card order every earlier refund leg is counted, the amount is
+    // capped at what is still unrefunded, and the settlement legs are marked
+    // REVERSED only once the whole purchase is refunded — marking them on the
+    // first partial refund is what makes a second refund fail with "no
+    // completed payments" (SD-36 item 2). A wallet order is unchanged.
+    const cardFunded =
+      (purchaseEntry.metadata as { funding?: unknown } | null | undefined)?.funding === CARD_FUNDING
+    const refundedSoFar = cardFunded
+      ? originalEntries
+          .filter(
+            (e) =>
+              e.entry_type === "REFUND" &&
+              e.credit_account_id === purchaseEntry.debit_account_id
+          )
+          .reduce((sum, e) => sum + Math.round(Number(e.amount) * 100), 0) / 100
+      : 0
+    const remainingAmount = Math.round((originalAmount - refundedSoFar) * 100) / 100
+    const refundAmount = cardFunded
+      ? data.refund_amount || remainingAmount
+      : data.refund_amount || originalAmount
+
     // Validate refund amount
     if (refundAmount > originalAmount) {
       throw new Error(
         `Refund amount (${refundAmount}) exceeds original payment (${originalAmount})`
+      )
+    }
+    if (cardFunded && Math.round(refundAmount * 100) > Math.round(remainingAmount * 100)) {
+      throw new Error(
+        `Refund amount (${refundAmount}) exceeds what is still unrefunded on order ${data.order_id} (${remainingAmount})`
       )
     }
 
@@ -2139,7 +2177,22 @@ class HawalaLedgerModuleService extends MedusaService({
     // Fee portion (Platform → Escrow)
     const feeEntry = originalEntries.find(e => e.entry_type === "COMMISSION")
     const originalFee = feeEntry ? Number(feeEntry.amount) : 0
-    const feeRefund = roundCents(originalFee * refundRatio)
+    // A card order refunded in parts rounds each part's fee reversal on its
+    // own; the part that completes the refund reverses exactly what is left
+    // of the fee, so the platform account ends where it started.
+    const cardFinalRefund =
+      cardFunded && Math.round((refundedSoFar + refundAmount) * 100) >= Math.round(originalAmount * 100)
+    const feeReversedSoFar =
+      cardFunded && feeEntry
+        ? roundCents(
+            originalEntries
+              .filter((e) => e.entry_type === "REFUND" && e.debit_account_id === feeEntry.credit_account_id)
+              .reduce((sum, e) => sum + Number(e.amount), 0)
+          )
+        : 0
+    const feeRefund = cardFinalRefund
+      ? Math.max(0, roundCents(originalFee - feeReversedSoFar))
+      : roundCents(originalFee * refundRatio)
 
     // Seller-side legs: every TRANSFER out of escrow to a non-customer account.
     // The plain path writes one (escrow -> seller); a consignment split writes
@@ -2245,7 +2298,12 @@ class HawalaLedgerModuleService extends MedusaService({
     const repaidCap = roundCents(repaidFromThisOrder.total)
     const shortfallPlan: Array<{ leg: (typeof sellerEntries)[number]; i: number; amount: number }> = []
     let processingShortfall = 0
-    if (retainedProcessingEntries.length > 0 || repaidCap > 0) {
+    // A card order always runs this check (SD-36): Stripe has already
+    // refunded the customer, and a seller leg failing after the fee reversal
+    // posted would strand that reversal — each later refund total a fresh
+    // key, a fresh stranded leg. Checked first, the refund is refused before
+    // any leg posts and the next reconciliation retries it whole.
+    if (cardFunded || retainedProcessingEntries.length > 0 || repaidCap > 0) {
       const remainingByAccount = new Map<string, number>()
       for (const planned of sellerPlan) {
         if (planned.amount <= 0) continue
@@ -2267,7 +2325,16 @@ class HawalaLedgerModuleService extends MedusaService({
           processingShortfall = roundCents(processingShortfall + gap)
         }
       }
-      if (processingShortfall > roundCents(processingRetained + repaidCap)) {
+      // A card order refunded in parts records a shortfall on each part; the
+      // processing it can draw on is what the earlier parts have not.
+      const priorShortfall = cardFunded
+        ? roundCents(
+            originalEntries
+              .filter((e) => isCardProcessingShortfallLeg(e))
+              .reduce((sum, e) => sum + Number(e.amount), 0)
+          )
+        : 0
+      if (processingShortfall > roundCents(processingRetained + repaidCap - priorShortfall)) {
         throw new Error(
           `Refund for order ${data.order_id} refused before any leg posted: the vendor's earnings ` +
             `fall $${processingShortfall} short of the seller balancing leg, more than the ` +
@@ -2393,8 +2460,14 @@ class HawalaLedgerModuleService extends MedusaService({
     refundEntries.push(customerRefundEntry)
 
     // 4. Mark original entries as REVERSED — all but a retained processing
-    // leg, which stays COMPLETED because it was not reversed.
+    // leg, which stays COMPLETED because it was not reversed. A card order:
+    // only once fully refunded, and only its settlement legs (earlier refund
+    // and shortfall legs carry the same order_id and stay as they are).
     for (const entry of originalEntries) {
+      if (cardFunded) {
+        if (!cardFinalRefund) break
+        if (!(typeof entry.idempotency_key === "string" && entry.idempotency_key.startsWith("order-payment-"))) continue
+      }
       if (isCardProcessingLeg(entry)) continue
       // A recovery leg carries no order_id, so it is never listed here; kept
       // as a second guard — reversing one would reopen a repaid receivable

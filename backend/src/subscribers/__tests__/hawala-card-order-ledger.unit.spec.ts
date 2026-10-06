@@ -66,8 +66,6 @@ const order40: Order = {
 
 function makeWorld(opts: {
   providerId?: string
-  /** Collection amount vs captured, in the provider's units. */
-  collection?: { amount: number; captured: number }
   /** The order-funding read at placement throws. */
   orderGraphThrows?: boolean
   /** A funded customer wallet (the pre-SD-36 path, for "other" providers). */
@@ -117,34 +115,36 @@ function makeWorld(opts: {
 
   const payouts = makeBreakdownService({})
   const providerId = opts.providerId ?? "pp_stripe_stripe"
-  const collection = opts.collection ?? { amount: 40, captured: 40 }
-  const graph = jest.fn(async (q: { entity: string; filters?: { id?: string } }) => {
+  // The collection, in MAJOR units as Medusa stores it (the real-database
+  // spec, integration-tests/http/hawala-card-order-settlement.spec.ts, pins
+  // these query shapes). Mutable, so a test can capture and refund.
+  const collection = { id: "paycol_1", amount: 40, captured_amount: 0, refunded_amount: 0 }
+  const graph = jest.fn(async (q: { entity: string; filters?: Record<string, unknown> }) => {
     if (q.entity === "order") {
       if (opts.orderGraphThrows) throw new Error("graph unavailable")
       return {
         data: [
           {
             id: order40.id,
-            payment_collections: [{ payments: [{ provider_id: providerId }], payment_sessions: [] }],
+            customer_id: order40.customer_id,
+            currency_code: "usd",
+            metadata: {},
+            total: 40,
+            subtotal: 40,
+            items: [{ product_id: "prod_1" }],
+            seller: { id: order40.seller_id },
+            split_order_payment: null,
+            payment_collections: [{ ...collection, payments: [{ id: "pay_1", provider_id: providerId }] }],
           },
         ],
       }
     }
+    if (q.entity === "order_payment_collection") {
+      return { data: [{ order_id: order40.id, payment_collection_id: collection.id }] }
+    }
+    if (q.entity === "split_order_payment") return { data: [] }
     if (q.entity === "payment") {
-      return {
-        data: [
-          {
-            id: q.filters?.id,
-            provider_id: providerId,
-            payment_collection: {
-              id: "paycol_1",
-              amount: collection.amount,
-              captured_amount: collection.captured,
-              order: { id: order40.id },
-            },
-          },
-        ],
-      }
+      return { data: [{ id: q.filters?.id, provider_id: providerId, payment_collection_id: collection.id }] }
     }
     throw new Error(`unexpected graph entity ${q.entity}`)
   })
@@ -161,7 +161,13 @@ function makeWorld(opts: {
     if (key === ContainerRegistrationKeys.QUERY) return { graph }
     throw new Error(`unexpected container key: ${key}`)
   })
-  return { ledger, graph, container: { resolve } as never }
+  const captureAll = () => {
+    collection.captured_amount = collection.amount
+  }
+  const refundTotal = (major: number) => {
+    collection.refunded_amount = major
+  }
+  return { ledger, graph, collection, captureAll, refundTotal, container: { resolve } as never }
 }
 
 const place = (container: never) =>
@@ -223,12 +229,13 @@ describe("flag on — a card order settles from card clearing at capture", () =>
     process.env[CARD] = "true"
   })
 
-  it("placement posts nothing and creates no wallet; full capture posts purchase, fee and seller legs from clearing", async () => {
+  it("authorised at placement: nothing, no wallet; full capture posts purchase, fee and seller legs from clearing", async () => {
     const w = makeWorld({})
     await place(w.container)
     expect(w.ledger.entries).toEqual([])
     expect(wallets(w.ledger)).toEqual([])
 
+    w.captureAll()
     await capture(w.container)
     const clearing = clearingAccount(w.ledger)!
     expect(clearing).toMatchObject({ owner_type: "SYSTEM", owner_id: CARD_CLEARING_OWNER_ID, currency_code: "USD" })
@@ -244,8 +251,18 @@ describe("flag on — a card order settles from card clearing at capture", () =>
     expect(wallets(w.ledger)).toEqual([])
   })
 
+  it("already captured at placement (Mercur captures right after the order set is placed): settles at placement", async () => {
+    const w = makeWorld({})
+    w.captureAll()
+    await place(w.container)
+    expect(legs(w.ledger)[0]).toEqual(["PURCHASE", 4000, clearingAccount(w.ledger)!.id, "acc-escrow", "COMPLETED"])
+    await capture(w.container)
+    expect(w.ledger.entries.filter((e) => e.entry_type === "PURCHASE")).toHaveLength(1)
+  })
+
   it("a redelivered capture, or a second capture event on the order, posts nothing more", async () => {
     const w = makeWorld({})
+    w.captureAll()
     await capture(w.container)
     await capture(w.container)
     await capture(w.container, "pay_2")
@@ -254,15 +271,26 @@ describe("flag on — a card order settles from card clearing at capture", () =>
   })
 
   it("a partial capture waits for the rest", async () => {
-    const w = makeWorld({ collection: { amount: 40, captured: 25 } })
+    const w = makeWorld({})
+    w.collection.captured_amount = 25
     await capture(w.container)
     expect(w.ledger.entries).toEqual([])
     expect(clearingAccount(w.ledger)).toBeUndefined()
   })
 
+  it("cancelling with nothing refunded yet posts nothing: a card order follows the money, not the order event", async () => {
+    const w = makeWorld({})
+    w.captureAll()
+    await capture(w.container)
+    await refund(w.container)
+    expect(w.ledger.entries.filter((e) => e.entry_type === "REFUND")).toEqual([])
+  })
+
   it("a full refund goes back to clearing (the card), never into a wallet, and everything nets to zero", async () => {
     const w = makeWorld({})
+    w.captureAll()
     await capture(w.container)
+    w.refundTotal(40)
     await refund(w.container)
     const clearing = clearingAccount(w.ledger)!
     const customerRefund = w.ledger.entries.find(
@@ -306,6 +334,7 @@ describe("flag on — a card order settles from card clearing at capture", () =>
     await place(w.container)
     expect(w.ledger.entries).toEqual([])
     process.env[CARD] = "true"
+    w.captureAll()
     await capture(w.container)
     expect(legs(w.ledger)[0]).toEqual(["PURCHASE", 4000, clearingAccount(w.ledger)!.id, "acc-escrow", "COMPLETED"])
     expect(escrowNetCents(w.ledger)).toBe(0)
@@ -318,6 +347,7 @@ describe("flag on — a card order settles from card clearing at capture", () =>
     const w = makeWorld({ walletBalance: 100 })
     await place(w.container)
     process.env[CARD] = "true"
+    w.captureAll()
     await capture(w.container)
     expect(w.ledger.entries.filter((e) => e.entry_type === "PURCHASE")).toHaveLength(1)
     expect(clearingAccount(w.ledger)).toBeUndefined()
@@ -332,6 +362,7 @@ describe("with F6 on too: processing, a refund shortfall and its recovery now ru
 
   it("$40 card order: processing leg posts; a full refund leaves the vendor owing the processing, refunded to the card", async () => {
     const w = makeWorld({})
+    w.captureAll()
     await capture(w.container)
     const processing = w.ledger.accounts.find(
       (a) => a.account_type === "PLATFORM_FEE" && a.owner_id === CARD_PROCESSING_OWNER_ID
@@ -343,6 +374,7 @@ describe("with F6 on too: processing, a refund shortfall and its recovery now ru
       ["TRANSFER", 3738, "acc-escrow", "acc-earnings", "COMPLETED"],
     ])
 
+    w.refundTotal(40)
     await refund(w.container)
     const shortfall = w.ledger.entries.find(
       (e) => (e.metadata as { leg?: string } | null)?.leg === CARD_PROCESSING_SHORTFALL_LEG
@@ -383,6 +415,7 @@ describe("with F6 on too: processing, a refund shortfall and its recovery now ru
       metadata: { leg: CARD_PROCESSING_SHORTFALL_LEG, owed_by_account_id: "acc-earnings", receivable: true },
     } as Row)
 
+    w.captureAll()
     await capture(w.container)
     expect(w.ledger.entries.filter((e) => e.entry_type === "ADJUSTMENT")).toHaveLength(1)
     expect(balanceCents(w.ledger, "acc-earnings")).toBe(3738)

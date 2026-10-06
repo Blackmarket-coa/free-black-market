@@ -269,11 +269,16 @@ purchase-to-payout context), so that was never the fix.
 
 **What it does instead (flag on).** A single SYSTEM account,
 `CARD_CLEARING` / owner `stripe`, USD only, stands for money that came in
-through FBM's own Stripe account. A card order settles when Stripe captures
-the payment (FBM's provider runs in manual capture, so at placement the money
-is only authorised): the purchase leg is `CARD_CLEARING -> ESCROW`, then the
-usual fee, processing and seller legs out of escrow. A refund's customer leg
-is `ESCROW -> CARD_CLEARING`, back to the card.
+through FBM's own Stripe account. A card order settles once that order's
+own money is captured (never on authorisation alone): the purchase leg is
+`CARD_CLEARING -> ESCROW`, then the usual fee, processing and seller legs out
+of escrow. On a multi-seller cart each seller's order settles for its own
+share. A refund's customer leg is `ESCROW -> CARD_CLEARING`, back to the card,
+for exactly what was refunded on that order — as Medusa or Mercur record it.
+A refund or chargeback made directly in the Stripe dashboard never reaches
+Medusa (its Stripe webhooks handle payment intents only), so it never reaches
+the ledger either; that is an operational gap recorded in SD-36, not a
+balance anyone holds.
 
 **Why this stays inside the posture.**
 

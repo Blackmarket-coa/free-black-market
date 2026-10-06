@@ -3,6 +3,9 @@ const log = createLogger("subscribers/hawala-order-refund")
 import { SubscriberArgs, SubscriberConfig } from "@medusajs/framework"
 import { HAWALA_LEDGER_MODULE } from "../modules/hawala-ledger"
 import HawalaLedgerModuleService from "../modules/hawala-ledger/service"
+import { CARD_FUNDING } from "../modules/hawala-ledger/card-clearing"
+import { reconcileCardOrder } from "../lib/card-order-reconcile"
+import { cardOrderLedgerEnabled } from "./hawala-order-payment"
 
 /**
  * Subscriber that processes order refunds through the Hawala ledger
@@ -32,6 +35,21 @@ export default async function hawalaOrderRefundSubscriber({
   const reason = event.data.reason || "Order cancelled"
 
   log.info(`[Hawala] Processing refund for order: ${orderId}`)
+
+  // A card order (FF_CARD_ORDER_LEDGER_V1, SD-36) follows the money, not the
+  // order event: cancelling a captured order refunds its payment, and the
+  // ledger posts exactly what was refunded (`lib/card-order-reconcile.ts`).
+  // Posting a full refund here as well would refund it twice. Flag off, or
+  // an order not settled from card clearing: the old path below, unchanged.
+  if (cardOrderLedgerEnabled()) {
+    const [purchase] = await hawalaService.listLedgerEntries({
+      idempotency_key: `order-payment-${orderId}-purchase`,
+    })
+    if ((purchase?.metadata as { funding?: unknown } | null | undefined)?.funding === CARD_FUNDING) {
+      await reconcileCardOrder(container, orderId)
+      return
+    }
+  }
 
   try {
     const refundEntries = await hawalaService.processRefund({

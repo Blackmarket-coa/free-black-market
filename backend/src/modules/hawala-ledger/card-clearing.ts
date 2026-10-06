@@ -35,11 +35,15 @@
  * back to the purchase leg's debit account, so a card order's refund returns
  * to clearing (the card) and never credits a customer wallet.
  *
- * Settlement timing: FBM's Stripe provider runs in manual capture (no
- * `capture` option in medusa-config), so at `order.placed` card money is only
- * authorised. With the flag on, a card order settles on `payment.captured`
- * once its payment collection is fully captured — no vendor is credited for
- * money that was only authorised. See `subscribers/hawala-card-capture.ts`.
+ * Settlement timing: a card order settles once THAT ORDER's money is
+ * captured (`lib/card-order-settlement.ts`) — no vendor is credited for money
+ * that was only authorised. FBM's Stripe provider runs in manual capture, but
+ * Mercur's checkout captures the whole cart right after the order set is
+ * placed, and some Stripe methods capture at authorisation; so settlement
+ * happens wherever capture is first seen: at placement if already captured,
+ * on `payment.captured`, or in the reconciler job
+ * (`jobs/hawala-card-order-reconcile.ts`). Refunds follow the money the same
+ * way: each order's own refunded amount, posted as a delta.
  *
  * Which orders: only payments through FBM's own Stripe registration
  * (`pp_stripe_stripe` and the other `@medusajs/payment-stripe` methods,

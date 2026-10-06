@@ -137,19 +137,21 @@ export const PHASE0_FEATURE_FLAGS = {
   // (INVESTMENT_POOLS_V1, NONPROFIT_PARITY_V1) and are not gated here. The
   // storefront twin is NEXT_PUBLIC_FF_CUSTOMER_WALLET_V1; set both together.
   CUSTOMER_WALLET_V1: "FF_CUSTOMER_WALLET_V1",
-  // Card orders reach the hawala ledger (SD-36, operator answer 2026-10-06).
-  // Off (default): unchanged — every order's purchase leg debits the
-  // customer's USER_WALLET at `order.placed`, which fails at $0 and is
-  // swallowed, so a card order posts nothing. On: an order paid through FBM's
-  // own Stripe account is NOT settled at placement (the money is only
-  // authorised; the provider runs in manual capture) but on `payment.captured`
-  // once its payment collection is fully captured, with the purchase leg
-  // debiting the card-clearing account (hawala-ledger/card-clearing.ts) — no
-  // customer wallet is created or touched. A Stripe Connect direct charge
-  // posts nothing (the money is the partner's). Orders paid any other way
-  // keep the old path. Backend only; no storefront twin. ROLLBACK: an order
-  // placed while on and captured after the flag is turned off is not settled
-  // by either subscriber — see SD-36 in docs/AUDIT_DEBT.md.
+  // Card orders reach the hawala ledger (SD-36 / SD-39, operator answer
+  // 2026-10-06). Off (default): unchanged — the legacy settlement read throws
+  // on every order (SD-39), so nothing posts. On: an order paid through FBM's
+  // own Stripe account is read correctly (lib/card-order-settlement.ts) and
+  // settles once THAT order's money is captured — at placement if it already
+  // is, on `payment.captured`, or in the reconciler job — with the purchase
+  // leg debiting the card-clearing account (hawala-ledger/card-clearing.ts);
+  // each order's refunds post as deltas back to clearing. No customer wallet
+  // is created or touched. A Stripe Connect direct charge posts nothing (the
+  // money is the partner's). Orders paid any other way keep the old path.
+  // Backend only; no storefront twin. FIRST ENABLE back-settles every card
+  // order placed in the last 7 days whose money was captured (the
+  // reconciler's settle window); older card orders stay unsettled. Rollback
+  // and re-enable are safe the same way: anything captured within the window
+  // and missed is settled; refunds are checked for 180 days.
   CARD_ORDER_LEDGER_V1: "FF_CARD_ORDER_LEDGER_V1",
 } as const
 
