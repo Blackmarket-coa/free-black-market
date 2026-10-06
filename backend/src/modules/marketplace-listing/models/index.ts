@@ -14,3 +14,5 @@ export {
 
 export { default as BlackoutCheckoutSession } from "./blackout-checkout-session"
 export { BlackoutCheckoutSessionStatus } from "./blackout-checkout-session"
+
+export { default as BlackoutManageSession } from "./blackout-manage-session"

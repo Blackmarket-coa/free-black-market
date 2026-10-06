@@ -1,5 +1,8 @@
 import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils"
 import type { MedusaContainer } from "@medusajs/framework/types"
+import { createLogger } from "../shared/logger"
+
+const log = createLogger("lib/blackout-identity")
 
 /**
  * Identity resolution for the Blackout integration.
@@ -25,7 +28,7 @@ type PgConnection = {
   raw: (
     sql: string,
     bindings?: unknown[]
-  ) => Promise<{ rows?: Array<Record<string, unknown>> }>
+  ) => Promise<{ rows?: Array<Record<string, unknown>>; rowCount?: number }>
 }
 
 function pg(container: MedusaContainer): PgConnection | null {
@@ -156,6 +159,22 @@ export async function resolveSellerMxid(
  * email (`blackout+<sub>@users.blackout.invalid`, flagged
  * `metadata.synthetic_email`) so nothing routes real mail to it; a later
  * account link can overwrite it with a real address.
+ *
+ * The mxid fallback never re-stamps a customer already linked to another
+ * Blackout member. A customer matched by mxid that already carries a
+ * DIFFERENT `metadata.blackout_user_id` is treated as no match — logged
+ * once, and the create-on-miss path provisions this member their own
+ * customer — because re-stamping it would hand that member's subscriptions,
+ * grants and webhooks to the caller's id (the same rule as `POST …/link`).
+ * An mxid match carrying no Blackout id, or this member's, is patched as
+ * before.
+ *
+ * What this guard does NOT establish: that the mxid on an unlinked customer
+ * is really this member's. It trusts `metadata.mxid` / `blackout_user_id`
+ * as server-written. The store API can no longer write them
+ * (api/middlewares/server-owned-customer-metadata.ts); rows written through
+ * it before that refusal, and email-derived ("derived") mxids, are not
+ * verified here.
  */
 export async function resolveOrCreateCustomerForBlackoutUser(
   container: MedusaContainer,
@@ -164,45 +183,77 @@ export async function resolveOrCreateCustomerForBlackoutUser(
   const conn = pg(container)
   if (!conn) return null
 
-  const findBy = async (key: string, value: string): Promise<string | null> => {
+  /**
+   * One customer by a metadata key. Ordered, never "whichever Postgres
+   * returns": when several customers share an mxid (the guard below can
+   * leave two — the other member's, and the one provisioned for this
+   * member), a customer carrying this member's id, or none, comes first,
+   * then the lowest id. So a match carrying another member's id is only
+   * ever returned when every match does.
+   */
+  const findBy = async (
+    key: "blackout_user_id" | "mxid",
+    value: string
+  ): Promise<{ id: string; blackoutUserId: string | null } | null> => {
     try {
       const res = await conn.raw(
-        `SELECT id FROM customer WHERE metadata->>'${key}' = ? AND deleted_at IS NULL LIMIT 1`,
-        [value]
+        `SELECT id, metadata->>'blackout_user_id' AS blackout_user_id
+           FROM customer WHERE metadata->>'${key}' = ? AND deleted_at IS NULL
+          ORDER BY (COALESCE(metadata->>'blackout_user_id', '') IN ('', ?)) DESC, id
+          LIMIT 1`,
+        [value, args.blackoutUserId]
       )
-      return firstString(res?.rows, "id")
+      const id = firstString(res?.rows, "id")
+      return id ? { id, blackoutUserId: firstString(res?.rows, "blackout_user_id") } : null
     } catch {
       return null
     }
   }
 
-  const patchMetadata = async (customerId: string): Promise<void> => {
+  /**
+   * Patch this member's ids onto a customer. The WHERE refuses a customer
+   * that carries a different Blackout id, so a concurrent link to someone
+   * else between the read and this write is never overwritten. Returns false
+   * only when the write is known to have matched no row; a failed write is
+   * still best-effort (the customer itself is the requirement).
+   */
+  const patchMetadata = async (customerId: string): Promise<boolean> => {
     const patch: Record<string, string> = { blackout_user_id: args.blackoutUserId }
     if (args.mxid) patch.mxid = args.mxid
     try {
-      await conn.raw(
+      const res = await conn.raw(
         `UPDATE customer
            SET metadata = COALESCE(metadata, '{}'::jsonb) || ?::jsonb,
                updated_at = now()
-         WHERE id = ? AND deleted_at IS NULL`,
-        [JSON.stringify(patch), customerId]
+         WHERE id = ? AND deleted_at IS NULL
+           AND COALESCE(metadata->>'blackout_user_id', '') IN ('', ?)`,
+        [JSON.stringify(patch), customerId, args.blackoutUserId]
       )
+      return res?.rowCount !== 0
     } catch {
-      // metadata patch is best-effort; the customer itself is the requirement
+      return true
     }
   }
 
   const existingById = await findBy("blackout_user_id", args.blackoutUserId)
   if (existingById) {
-    if (args.mxid) await patchMetadata(existingById)
-    return { customerId: existingById, created: false }
+    if (args.mxid) await patchMetadata(existingById.id)
+    return { customerId: existingById.id, created: false }
   }
 
   if (args.mxid) {
     const existingByMxid = await findBy("mxid", args.mxid)
     if (existingByMxid) {
-      await patchMetadata(existingByMxid)
-      return { customerId: existingByMxid, created: false }
+      const other =
+        existingByMxid.blackoutUserId !== null &&
+        existingByMxid.blackoutUserId !== args.blackoutUserId
+      if (!other && (await patchMetadata(existingByMxid.id))) {
+        return { customerId: existingByMxid.id, created: false }
+      }
+      log.warn(
+        `Customer ${existingByMxid.id} matched by mxid already carries a different blackout_user_id; ` +
+          "not re-stamping it, provisioning a separate customer for this member"
+      )
     }
   }
 
@@ -256,6 +307,45 @@ export async function resolveCustomerIdByMxid(
   } catch {
     return null
   }
+}
+
+export type BlackoutCustomerResolution =
+  | { kind: "none" }
+  | { kind: "one"; customerId: string }
+  | { kind: "ambiguous" }
+
+/**
+ * The FBM customer carrying a Blackout user id, READ-ONLY, for a manage
+ * session (docs/contracts/blackout-integration.md, "Blackout subscription
+ * self-service").
+ *
+ * Unlike `resolveOrCreateCustomerForBlackoutUser` this never creates a
+ * customer, never falls back to `metadata.mxid` (an mxid says which Matrix
+ * account, not which Blackout member bought what), and never picks one
+ * of several: `customer.metadata.blackout_user_id` has no unique index, so two
+ * customers can carry the same id, and "the first one" would be
+ * nondeterministic — another person's subscriptions. More than one match is
+ * `ambiguous` and the caller refuses.
+ *
+ * Throws when the lookup itself fails (no connection, SQL error): "could not
+ * look" must not read as "no customer".
+ */
+export async function resolveCustomerForBlackoutUserReadOnly(
+  container: MedusaContainer,
+  blackoutUserId: string
+): Promise<BlackoutCustomerResolution> {
+  const conn = container.resolve(ContainerRegistrationKeys.PG_CONNECTION) as PgConnection
+  // LIMIT 2: enough to tell one from more than one.
+  const res = await conn.raw(
+    `SELECT id FROM customer WHERE metadata->>'blackout_user_id' = ? AND deleted_at IS NULL ORDER BY id LIMIT 2`,
+    [blackoutUserId]
+  )
+  const ids = (res?.rows ?? [])
+    .map((r) => r.id)
+    .filter((id): id is string => typeof id === "string" && id.length > 0)
+  if (ids.length === 0) return { kind: "none" }
+  if (ids.length > 1) return { kind: "ambiguous" }
+  return { kind: "one", customerId: ids[0] }
 }
 
 function sanitizeForEmail(value: string): string {

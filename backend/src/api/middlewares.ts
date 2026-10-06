@@ -29,6 +29,7 @@ import {
 } from "../shared/rate-limiter";
 import { preventPasswordReuseMiddleware } from "./middlewares/password-history";
 import { servePublishingKeys } from "./middlewares/publishing-keys";
+import { refuseServerOwnedCustomerMetadata } from "./middlewares/server-owned-customer-metadata";
 import { ensureSellerContext } from "./vendor/_middlewares";
 // Nested middleware route sets. Medusa's MiddlewareFileLoader reads ONLY this
 // file (it checks `<api dir>/middlewares.ts` and does not recurse), so a nested
@@ -940,6 +941,19 @@ export default defineMiddlewares({
     {
       matcher: "/store/customers",
       middlewares: [authRateLimiter, normalizeEmailMiddleware],
+    },
+    // Identity keys in customer metadata (blackout_user_id, mxid,
+    // mxid_source) are server-owned: Medusa's store validators accept any
+    // metadata, and the Blackout checkout's mxid fallback trusts them.
+    {
+      matcher: "/store/customers",
+      method: "POST",
+      middlewares: [refuseServerOwnedCustomerMetadata],
+    },
+    {
+      matcher: "/store/customers/me",
+      method: "POST",
+      middlewares: [refuseServerOwnedCustomerMetadata],
     },
     // Admin user routes
     {
