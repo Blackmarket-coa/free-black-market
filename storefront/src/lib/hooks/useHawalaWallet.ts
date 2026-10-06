@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react"
 import { hawalaRequest, type HawalaRequest } from "@/lib/data/hawala"
+import { customerWalletEnabled, isCustomerWalletPath } from "@/lib/customer-wallet"
 
 export interface WalletBalance {
   account_number: string
@@ -175,7 +176,16 @@ function newIdempotencyKey(): string {
  */
 // `any`, as `response.json()` was before: callers read the documented response
 // shapes field by field.
+//
+// With NEXT_PUBLIC_FF_CUSTOMER_WALLET_V1 off a customer-wallet path never
+// leaves the browser: it rejects with `feature_disabled` without calling the
+// server action (which would refuse it too). The wallet hooks below do not even
+// get this far — they skip their initial fetch — so this catches the actions
+// (createWallet, deposit, withdraw, bank linking).
 async function fetchWithAuth(path: string, options: Omit<HawalaRequest, "path"> = {}): Promise<any> {
+  if (isCustomerWalletPath(path) && !customerWalletEnabled()) {
+    throw new HawalaRequestError("feature_disabled", "The wallet is not available.", 404)
+  }
   const result = await hawalaRequest<unknown>({ path, ...options })
   if (!result.ok) {
     throw new HawalaRequestError(result.type, result.message, result.status)
@@ -202,7 +212,7 @@ export async function contributeToCarriedPool(poolId: string, amountCents: numbe
 export function useWallet() {
   const [wallet, setWallet] = useState<WalletAccount | null>(null)
   const [balance, setBalance] = useState<WalletBalance | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(customerWalletEnabled)
   const [error, setError] = useState<string | null>(null)
 
   const fetchWallet = useCallback(async () => {
@@ -220,7 +230,7 @@ export function useWallet() {
   }, [])
 
   useEffect(() => {
-    fetchWallet()
+    if (customerWalletEnabled()) fetchWallet()
   }, [fetchWallet])
 
   const createWallet = useCallback(async () => {
@@ -235,7 +245,7 @@ export function useWallet() {
 
 export function useTransactions(limit = 50) {
   const [transactions, setTransactions] = useState<Transaction[]>([])
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(customerWalletEnabled)
   const [error, setError] = useState<string | null>(null)
 
   const fetchTransactions = useCallback(async () => {
@@ -252,7 +262,7 @@ export function useTransactions(limit = 50) {
   }, [limit])
 
   useEffect(() => {
-    fetchTransactions()
+    if (customerWalletEnabled()) fetchTransactions()
   }, [fetchTransactions])
 
   return { transactions, loading, error, refetch: fetchTransactions }
@@ -260,7 +270,7 @@ export function useTransactions(limit = 50) {
 
 export function useBankAccounts() {
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([])
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(customerWalletEnabled)
   const [error, setError] = useState<string | null>(null)
 
   const fetchBankAccounts = useCallback(async () => {
@@ -277,7 +287,7 @@ export function useBankAccounts() {
   }, [])
 
   useEffect(() => {
-    fetchBankAccounts()
+    if (customerWalletEnabled()) fetchBankAccounts()
   }, [fetchBankAccounts])
 
   const startLinking = useCallback(async (email: string, returnUrl: string) => {

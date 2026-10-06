@@ -10,6 +10,7 @@ import {
   useWithdraw,
   useInvestments,
 } from "@/lib/hooks/useHawalaWallet"
+import { customerWalletEnabled } from "@/lib/customer-wallet"
 
 interface TabButtonProps {
   active: boolean
@@ -49,7 +50,18 @@ function formatDate(date: string) {
   })
 }
 
+/**
+ * The customer wallet (NEXT_PUBLIC_FF_CUSTOMER_WALLET_V1, the twin of the API's
+ * FF_CUSTOMER_WALLET_V1). Off, this renders nothing and mounts none of the
+ * wallet hooks, so nothing is fetched. The check sits outside the component
+ * that calls the hooks, so the hooks stay unconditional within it.
+ */
 export function WalletDashboard() {
+  if (!customerWalletEnabled()) return null
+  return <WalletDashboardContent />
+}
+
+function WalletDashboardContent() {
   const [activeTab, setActiveTab] = useState<"overview" | "transactions" | "deposit" | "withdraw" | "investments">("overview")
   const { wallet, balance, loading: walletLoading, error: walletError, createWallet } = useWallet()
   const { transactions, loading: txLoading } = useTransactions()

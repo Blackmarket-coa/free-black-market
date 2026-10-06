@@ -28,9 +28,11 @@ type StepInput = {
     delivery_day?: string
     delivery_instructions?: string
     /**
-     * The customer's answer to the auto-renew question, recorded by
-     * POST /store/subscriptions under FF_CONSUMER_SUBSCRIPTIONS_V1. Absent for
-     * callers that never asked (the Blackout hosted checkout).
+     * The customer's answer to the auto-renew question, recorded under
+     * FF_CONSUMER_SUBSCRIPTIONS_V1 by POST /store/subscriptions and by the
+     * Blackout hosted checkout (commerce/checkout/sessions/[token]/page) for
+     * recurring listings. Absent for callers that never ask, and always with
+     * the flag off.
      */
     auto_renew?: AutoRenewApproval
   }
@@ -66,9 +68,8 @@ export const createSubscriptionStep = createStep(
     //     with its time and disclosure version;
     //   - otherwise (declined, or a product not marked) → exactly one period,
     //     never renewed;
-    //   - no answer recorded (a caller that never asks, e.g. the Blackout
-    //     hosted checkout) → never until cancelled; the fixed horizon it
-    //     always had.
+    //   - no answer recorded (a caller that never asks) → never until
+    //     cancelled; the fixed horizon it always had.
     //
     // Flag off: the product is not looked up and every write below is what it
     // always was.

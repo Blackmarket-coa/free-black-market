@@ -37,4 +37,11 @@ export const phase1ModuleFlags = {
   // disclosure and online cancellation are a legal checkpoint the operator
   // clears first; set only together with the API's flag.
   consumerSubscriptions: enabled(process.env.NEXT_PUBLIC_FF_CONSUMER_SUBSCRIPTIONS_V1),
+  // Mirrors the API's FF_CUSTOMER_WALLET_V1: the customer wallet (balance,
+  // ACH deposit and withdrawal, bank-account linking, transactions) — /wallet,
+  // /user/coalition-credits, their nav entries and every wallet call through
+  // the hawala server action. A customer-held, ACH-funded balance is what
+  // Posture A rules out (docs/POSTURE_A_COMPLIANCE.md). Default off (operator
+  // answer 2026-10-06); set only together with the API's flag.
+  customerWallet: enabled(process.env.NEXT_PUBLIC_FF_CUSTOMER_WALLET_V1),
 }

@@ -1,5 +1,6 @@
 import { authenticate } from "@medusajs/framework/http"
 import type { MiddlewareRoute } from "@medusajs/framework/http"
+import { requireFeatureFlagMiddleware } from "../../../shared/runtime-module-gates"
 import {
   storeHawalaBankAccountRateLimiter,
   storeHawalaInvestRateLimiter,
@@ -35,36 +36,54 @@ import {
  *     surface still answers 404 feature_disabled to an anonymous caller rather
  *     than revealing itself with a 401. Two entries would leave the order to the
  *     route sorter.
- *   - No feature flag on wallet/deposit/withdraw/bank-accounts/transactions.
- *     Whether they should carry one is an operator decision, not this file's.
+ *
+ * The customer wallet flag (FF_CUSTOMER_WALLET_V1, default off; operator answer
+ * 2026-10-06). wallet, bank-accounts (and, by prefix, bank-accounts/link),
+ * transactions, deposit and withdraw are a customer-held, ACH-funded balance —
+ * the shape Posture A rules out (docs/POSTURE_A_COMPLIANCE.md). Off, each
+ * answers 404 `{ type: "feature_disabled" }` from requireFeatureFlagMiddleware.
+ * The flag sits FIRST in the same METHOD-LESS entry as the required customer:
+ *   - same entry, so it runs before authenticate in this array's order, not
+ *     the route sorter's; an anonymous, a seller and a customer caller all get
+ *     the identical 404, so the dark surface does not reveal itself with a 401;
+ *   - method-less, so Medusa's RoutesSorter puts it in the "global" bucket,
+ *     which it emits before every verb-specific entry. Every rate limiter below
+ *     is verb-specific, so none of them counts (or 429s) a request the flag
+ *     refuses. nested-middleware-auth.unit.spec.ts pins both through the real
+ *     loader and sorter.
+ * The framework's own OPTIONAL customer auth on all of /store still runs first;
+ * it refuses nothing and reveals nothing.
  *
  * Rate limits are the budgets the dead file declared (see shared/rate-limiter.ts).
  */
 const requireCustomer = authenticate("customer", ["bearer", "session"])
+const requireCustomerWallet = requireFeatureFlagMiddleware("CUSTOMER_WALLET_V1")
 
 export const storeHawalaMiddlewareRoutes: MiddlewareRoute[] = [
   {
     matcher: "/store/hawala/wallet",
-    middlewares: [requireCustomer],
+    middlewares: [requireCustomerWallet, requireCustomer],
   },
   {
+    // Method-less, so express mounts it with `app.use`: a prefix match that
+    // also covers POST /store/hawala/bank-accounts/link.
     matcher: "/store/hawala/bank-accounts",
-    middlewares: [requireCustomer],
+    middlewares: [requireCustomerWallet, requireCustomer],
   },
   {
     matcher: "/store/hawala/transactions",
-    middlewares: [requireCustomer],
+    middlewares: [requireCustomerWallet, requireCustomer],
   },
   {
     // Money path: ACH pull into the caller's USER_WALLET. The handler 401s via
     // requireCustomerId; the dead file only rate-limited it.
     matcher: "/store/hawala/deposit",
-    middlewares: [requireCustomer],
+    middlewares: [requireCustomerWallet, requireCustomer],
   },
   {
     // Money path: ACH push out of the caller's USER_WALLET. Same as deposit.
     matcher: "/store/hawala/withdraw",
-    middlewares: [requireCustomer],
+    middlewares: [requireCustomerWallet, requireCustomer],
   },
   {
     matcher: "/store/hawala/deposit",

@@ -34,7 +34,7 @@ import {
  *      only event that carries the customer email);
  *   5. the record lacks the stable timestamp its sequence comes from (e.g. a
  *      legacy renewal with no order, a cancel with no canceled_at, a
- *      grace_started / read_only event with no occurred_at). The sequence is
+ *      grace_started / read_only / expired event with no occurred_at). The sequence is
  *      never taken from updated_at: that moves on any later write, so a
  *      redelivered Medusa event would compute a new event_id and a duplicate
  *      row.
@@ -54,6 +54,7 @@ export const BLACK_MASK_MEDUSA_EVENTS = [
   "subscription.payment_failed",
   "subscription.grace_started",
   "subscription.read_only",
+  "subscription.expired",
 ] as const
 
 export type BlackMaskMedusaEvent = (typeof BLACK_MASK_MEDUSA_EVENTS)[number]
@@ -120,6 +121,7 @@ const SUBSCRIPTION_EVENTS: Partial<Record<BlackMaskMedusaEvent, BlackMaskEvent>>
   "subscription.payment_failed": "payment_failed",
   "subscription.grace_started": "grace_started",
   "subscription.read_only": "read_only",
+  "subscription.expired": "expired",
 }
 
 function str(value: unknown): string | null {
@@ -307,13 +309,20 @@ async function subscriptionPayload(
       sequence = typeof at === "string" ? sequenceFrom(at) : null
       break
     }
-    default: {
-      // grace_started / read_only are emitted by a sibling slice, which must
-      // put the transition time on the event as `occurred_at`. Without it
-      // there is no stable sequence and nothing is enqueued.
+    case "grace_started":
+    case "read_only":
+    case "expired": {
+      // The emitter puts the transition time on the event as `occurred_at`,
+      // read from the row so a redelivery carries the same value:
+      // grace-lifecycle.ts for grace_started / read_only, and
+      // subscription-expired.ts (the row's expiration_date) for expired.
+      // Without it there is no stable sequence and nothing is enqueued.
       const occurred = data.occurred_at
       sequence = typeof occurred === "string" || occurred instanceof Date ? sequenceFrom(occurred) : null
+      break
     }
+    default:
+      sequence = null
   }
   if (sequence === null) return { status: "skipped", reason: "no_sequence" }
 

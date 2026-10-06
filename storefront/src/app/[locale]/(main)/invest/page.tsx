@@ -2,6 +2,7 @@ import { Metadata } from "next"
 import { notFound } from "next/navigation"
 import { InvestmentPoolsSection } from "@/components/sections/InvestmentPools"
 import { phase1ModuleFlags } from "@/lib/feature-flags"
+import { customerWalletEnabled } from "@/lib/customer-wallet"
 import Link from "next/link"
 
 export const metadata: Metadata = {
@@ -104,21 +105,24 @@ export default function InvestPage() {
         </div>
       </div>
 
-      {/* CTA */}
-      <div className="py-12 bg-green-50">
-        <div className="container mx-auto px-4 text-center">
-          <h2 className="text-2xl font-bold mb-4">Ready to Get Started?</h2>
-          <p className="text-gray-600 mb-6">
-            Create your wallet to start investing in local producers today.
-          </p>
-          <Link
-            href="/wallet"
-            className="inline-block bg-green-600 text-white px-8 py-3 rounded-lg font-semibold hover:bg-green-700 transition-colors"
-          >
-            Open Wallet
-          </Link>
+      {/* CTA: links to /wallet, which is dark (not found) without the
+          customer wallet flag, so the CTA is too. */}
+      {customerWalletEnabled() && (
+        <div className="py-12 bg-green-50">
+          <div className="container mx-auto px-4 text-center">
+            <h2 className="text-2xl font-bold mb-4">Ready to Get Started?</h2>
+            <p className="text-gray-600 mb-6">
+              Create your wallet to start investing in local producers today.
+            </p>
+            <Link
+              href="/wallet"
+              className="inline-block bg-green-600 text-white px-8 py-3 rounded-lg font-semibold hover:bg-green-700 transition-colors"
+            >
+              Open Wallet
+            </Link>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   )
 }

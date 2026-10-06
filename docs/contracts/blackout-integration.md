@@ -265,6 +265,70 @@ Embed mode mirrors the public checkout page: `postMessage` events
 (`checkout.ready|completed|cancelled|error`, source `fbm-checkout`) to the
 `embedOrigin` captured at session creation, CSP `frame-ancestors` pinned to it.
 
+**Auto-renew approval (`FF_CONSUMER_SUBSCRIPTIONS_V1`, subscription-category
+listings only; operator answer 2026-10-05, "renew upon approval").** Flag off,
+or a one-off listing, steps 4–5 above are unchanged byte for byte. Flag on, for
+a recurring listing:
+
+- The page shows the storefront's checkbox label and disclosure text,
+  **unticked**, plus the one-period terms while unticked (copy:
+  `backend/src/modules/subscription/utils/auto-renew-copy.ts`, held
+  string-identical to `storefront/src/lib/subscriptions/auto-renew.ts` by a
+  test, disclosure version `AUTO_RENEW_DISCLOSURE_VERSION`). The checkbox is
+  offered only when the shadow product carries `subscription_until_canceled`
+  in its metadata. A recurring listing was sold as a renewing membership
+  before the flag, so the first time its page asks the question FBM merges
+  `subscription_until_canceled: true` onto the listing's own shadow product
+  (`ensureRecurringListingMarkedUntilCanceled`: once, read-then-merge, every
+  other metadata key kept; `ensureListingProduct` itself is unchanged). It
+  never marks a one-off listing, a product that is not that listing's shadow
+  product, or one whose metadata already has the key (an operator's explicit
+  `false` opts it out). The page's offer and the subscription create step
+  read the same marker. Without it (opted out, or the write failed) only the
+  one-period terms are shown and the only answer accepted is `false`. The
+  marker is a permission, not an approval: the member still has to tick the
+  box, and an unticked purchase is one period.
+- Ticking/unticking reloads the page with `?auto_renew_approved=true|false`;
+  the payment session is (re)started with `setup_future_usage: off_session`
+  **only** when approved, and its PaymentIntent metadata then carries
+  `fbm_auto_renew_disclosure_version` (the approval mark). An unpaid session
+  that does not fit the answer is replaced; one that may already be paid is
+  never replaced and locks the answer.
+- **The box renders ticked only on the page's own toggle navigation**
+  (`Sec-Fetch-Site: same-origin`; with no Fetch Metadata, a Referer on the
+  page's own host). A URL built anywhere else, an iframe `src` Blackout sets
+  included, renders **unticked** even with `?auto_renew_approved=true`, and
+  its payment session keeps no card. Blackout must not try to pre-answer the
+  question: open the page without `auto_renew_approved`. A browser that sends
+  neither header cannot approve (it fails closed, unticked).
+- Completion requires the answer: `?action=complete&auto_renew_approved=true|false`
+  (plus `auto_renew_disclosure_version=<version>` when `true`), or the same two
+  fields in the JSON POST body. Refusals, before anything is completed:
+  `400 auto_renew_answer_required` (missing/invalid), `409
+  auto_renew_disclosure_outdated`, `409 auto_renew_not_offered`, `409
+  auto_renew_answer_mismatch` (answer differs from the session the member paid
+  against; an approval is accepted only against a session carrying the
+  approval mark), `409 auto_renew_not_asked` (see flag flip below), `409
+  auto_renew_answer_conflict` (a completed session re-hit with a different
+  answer; the same answer returns the recorded ids). In embed mode a refusal
+  posts `checkout.error` with `payload.code`. A retry after the cart completed
+  but before the session was marked completed reads the answer back from the
+  completed cart's payment sessions and finishes the record.
+- **Flag flip with checkouts in flight.** Every session started before the
+  flag was on keeps the card and has no approval mark. An unpaid one is
+  replaced on its next render. A paid one is never read as an approval or a
+  decline: its completion is refused `409 auto_renew_not_asked` and logged
+  for an operator (void or refund, or complete by hand). A page rendered
+  before the flip carries no answer and gets `400 auto_renew_answer_required`.
+  Turn the flag on when no Blackout checkout is mid-payment.
+- Approved: the store route's terms (`decideCreateTerms` — until cancelled for
+  a marked product), approval + timestamp + disclosure version recorded, card
+  saved as `payment_method_id` (`saveAutoRenewPaymentMethod`). Declined:
+  exactly one period, no next order, never renews, no `payment_method_id`, and
+  the tier bundle's `expires_at` is the end of that period.
+- **Blackout-side impact:** a programmatic consumer of the JSON POST must send
+  `auto_renew_approved` once the flag is on, or it gets 400.
+
 **Lifecycle after purchase** — renewals: the hourly cron clones the template
 cart and charges the saved `payment_method_id` off-session
 (`FBM_SUBSCRIPTION_RENEWAL_LIVE=1`); each cycle extends the tier bundle to the

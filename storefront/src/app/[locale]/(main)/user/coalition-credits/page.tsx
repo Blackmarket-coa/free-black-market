@@ -1,10 +1,12 @@
 import type { Metadata } from "next"
+import { notFound } from "next/navigation"
 import { AccountLoadingState, LoginForm, UserNavigation } from "@/components/molecules"
 import { retrieveCustomerContext } from "@/lib/data/customer"
 import {
   getCoalitionCreditsWallet,
   listCoalitionCreditsTransactions,
 } from "@/lib/data/coalition-credits"
+import { customerWalletEnabled } from "@/lib/customer-wallet"
 
 export const metadata: Metadata = {
   title: "Coalition Credits",
@@ -14,7 +16,15 @@ export const metadata: Metadata = {
 
 const TRANSACTION_LIMIT = 25
 
+/**
+ * The customer's USER_WALLET balance and ledger entries, read from
+ * /store/hawala/wallet and /transactions. Both are customer-wallet routes
+ * (NEXT_PUBLIC_FF_CUSTOMER_WALLET_V1 / the API's FF_CUSTOMER_WALLET_V1): not
+ * found with the flag off, rather than showing a $0 balance the API never gave.
+ */
 export default async function CoalitionCreditsPage() {
+  if (!customerWalletEnabled()) return notFound()
+
   const { customer, isAuthenticated } = await retrieveCustomerContext()
 
   if (!customer) {

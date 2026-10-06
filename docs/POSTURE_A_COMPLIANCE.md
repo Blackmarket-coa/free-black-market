@@ -323,8 +323,13 @@ following models exist but are either inactive or restricted under Posture A:
   caller-chosen `roi_type` behind seller auth alone; `GET /store/hawala/pools`
   listed them; `POST /store/hawala/investments` debited a customer's
   `USER_WALLET` into one; and `/store/hawala/deposit` funds that wallet by
-  Stripe ACH. All four now sit behind `FF_INVESTMENT_POOLS_V1`
-  (`api/middlewares.ts`), default off. Flipping it is the activation this
+  Stripe ACH. The pool and investment routes sit behind
+  `FF_INVESTMENT_POOLS_V1` (`api/middlewares.ts`), default off. The customer
+  wallet routes (`/store/hawala/wallet`, `/deposit`, `/withdraw`,
+  `/bank-accounts`, `/bank-accounts/link`, `/transactions`) were not behind it,
+  despite this bullet saying so; since 2026-10-06 they sit behind their own
+  `FF_CUSTOMER_WALLET_V1` (storefront twin `NEXT_PUBLIC_FF_CUSTOMER_WALLET_V1`),
+  default off (ledger SD-35). Flipping it is the activation this
   bullet gates, and it is also a `REPO_CONSOLIDATION_REVIEW.md` §8 item
   (revenue-share cash-in). See `docs/TRANSMUTATION_STRATEGY.md` §7.2. Note the
   pool's `auto_invest_percentage` field is settable but read by nothing: the

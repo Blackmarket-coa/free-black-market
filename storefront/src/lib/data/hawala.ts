@@ -1,6 +1,7 @@
 "use server"
 
 import { fetchQuery } from "@/lib/config"
+import { customerWalletEnabled, isCustomerWalletPath } from "@/lib/customer-wallet"
 import { getAuthHeaders } from "@/lib/data/cookies"
 
 /**
@@ -103,6 +104,12 @@ export async function hawalaRequest<T>(
   const idempotencyKey = request?.idempotencyKey
   if (
     !path ||
+    // The customer wallet paths (wallet, deposit, withdraw, transactions,
+    // bank-accounts/**) leave the allowlist while
+    // NEXT_PUBLIC_FF_CUSTOMER_WALLET_V1 is off: refused like any other
+    // unsupported path, before the cookie jar is read or the backend called.
+    // The API refuses them again under its own FF_CUSTOMER_WALLET_V1.
+    (isCustomerWalletPath(path) && !customerWalletEnabled()) ||
     typeof method !== "string" ||
     !HAWALA_METHODS.has(method) ||
     !query ||

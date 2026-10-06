@@ -227,7 +227,8 @@ cleanly; Bitwarden's extension is Angular and Blackout's client is a Cinny
 **Gate the paid launch on mobile, or launch on extension, web vault and desktop
 first** and point mobile users at the stock Bitwarden apps (set to the Black
 Mask server) until Black Mask mobile ships. The second protects the launch date
-for a solo developer. Not decided.
+for a solo developer. **Decided 2026-10-05: hold the paid launch until Black Mask
+mobile ships** (§11, second round).
 
 ## 10. Legal checkpoints this plan adds
 
@@ -262,28 +263,61 @@ gates community capital circles, so they are not a near-term funding source.
 - Auto-renewal disclosure copy: **whatever is most built out** in the repo.
 - Vault seats **renew upon approval**: read as renewing until cancelled only when
   the customer affirmatively approves auto-renewal at purchase; otherwise the seat
-  ends at the paid period. To confirm.
+  ends at the paid period. **Confirmed in the second round below.**
 - Still open from §11 below: hosted-vault price, gating the paid launch on mobile,
   mobile approach, vault database, grace length (built as a setting, BM-1), chat
   indicators, dead drops vs switch first, bundling a seat into the $10 plan, the 3%
   on Blackout creator transactions, the tracker-list licences, the revenue-model
   additions; and F6's counsel review and cut-over date.
 
-- [ ] Hosted-vault price (the model assumes $5/month).
-- [ ] Gate the paid launch on mobile, or launch on extension, web and desktop
-      first with stock Bitwarden apps for mobile.
-- [ ] Mobile approach: fork the native Android and iOS apps (recommended) or
-      something else.
-- [ ] Vault database: Postgres or SQLite.
-- [ ] Grace period length after a lapsed payment.
-- [ ] Unread indicators or push notifications in the chat panel (none by
-      default).
-- [ ] Dead drops or the dead man's switch first, and the audience each is built
-      for.
-- [ ] Bundle a Black Mask seat into FBM's $10/month plan?
-- [ ] Confirm the 3% fee on Blackout creator transactions (a model assumption).
-- [ ] License the DuckDuckGo and Disconnect tracker lists commercially, or skip
-      them.
+**Operator answers, 2026-10-05 (second round).**
+
+- The auto-renewal disclosure (version `2026-10-05`) is **approved as written** by
+  the operator. It has not been reviewed by counsel.
+- The "renew upon approval" reading is **confirmed for customers and vendors**.
+- The Blackout hosted checkout **asks for the same approval** (ledger BM-5).
+- Black Mask gets an explicit **`expired`** provisioning event (BM-5).
+- Grace period: **14 days** (`SUBSCRIPTION_GRACE_PERIOD_DAYS=14`).
+- **F6 fee-first split:** no vendors are live, so there is no vendor notice or
+  migration, and the cut-over is the day `FF_FEE_FIRST_SPLIT_V1` is set. The card
+  processing estimate (2.9% + 30¢) comes off the total FBM charges first, then the
+  remainder is split. The estimate is used, with a later true-up against Stripe's
+  actual fee left as a follow-up. Processing is recorded in its own system
+  account. On a refund the vendor bears the processing Stripe keeps (BM-6).
+- Decision 8 (designated accounts): the reading in P1-17 is **confirmed**: each pool's
+  own ledger account is its designated account; no separate bank account.
+- 0% on carried-pool contributions: **revisit after counsel answers L24**; 0% stays
+  until then.
+- The customer wallet, deposit, withdraw, bank-account and transaction routes go
+  **behind a feature flag**, default off (SD-35).
+- The carried-over rate-limit budgets (SD-33) are **confirmed**.
+- Hosted-vault price: **$5/month**.
+- **Hold the paid launch until Black Mask mobile ships** (§9 decided).
+- Mobile: **fork the native Android and iOS apps**.
+- Bundling a Black Mask seat into the $10 plan: **wait**.
+- 3% on Blackout creator transactions: **confirmed**.
+- DuckDuckGo and Disconnect tracker lists: **skip** (L30 narrows to EasyPrivacy).
+- **Dead drops first**, before the dead man's switch.
+- Vault database: **Postgres**.
+- Chat panel: **add both** unread indicators and push notifications. Whether each
+  is on by default or opt-in is still to confirm: a push goes through Apple's or
+  Google's servers, which see when a message arrived even if they cannot read it.
+
+- [x] Hosted-vault price (the model assumes $5/month). **$5/month.**
+- [x] Gate the paid launch on mobile, or launch on extension, web and desktop
+      first with stock Bitwarden apps for mobile. **Hold until mobile ships.**
+- [x] Mobile approach: fork the native Android and iOS apps (recommended) or
+      something else. **Fork the native apps.**
+- [x] Vault database: Postgres or SQLite. **Postgres.**
+- [x] Grace period length after a lapsed payment. **14 days.**
+- [x] Unread indicators or push notifications in the chat panel (none by
+      default). **Add both**; default-on or opt-in to confirm.
+- [x] Dead drops or the dead man's switch first, and the audience each is built
+      for. **Dead drops first**; the audience is still to be written down.
+- [x] Bundle a Black Mask seat into FBM's $10/month plan? **Wait.**
+- [x] Confirm the 3% fee on Blackout creator transactions (a model assumption). **Confirmed.**
+- [x] License the DuckDuckGo and Disconnect tracker lists commercially, or skip
+      them. **Skip.**
 - [ ] Confirm recurring consumer subscriptions work on the FBM storefront
       (F2: API exists, purchase UI does not). *2026-10-05: safety fixes, a
       collecting live renewal charge and the grace lifecycle built (BM-1); purchase

@@ -28,6 +28,7 @@ export const BLACK_MASK_EVENTS = [
   "payment_failed",
   "grace_started",
   "read_only",
+  "expired",
 ] as const
 
 export type BlackMaskEvent = (typeof BLACK_MASK_EVENTS)[number]

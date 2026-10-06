@@ -1135,9 +1135,10 @@ export default defineMiddlewares({
         authenticate("customer", ["bearer", "session"]),
       ],
     },
-    // The nested route sets (see the imports). Store hawala: required customer
-    // on wallet / bank-accounts / transactions / deposit / withdraw, and the
-    // money-path rate limits; `/store/hawala/pools*` stays public and the
+    // The nested route sets (see the imports). Store hawala: FF_CUSTOMER_WALLET_V1
+    // first, then a required customer, on wallet / bank-accounts / transactions
+    // / deposit / withdraw (flag off: 404 feature_disabled to every caller,
+    // before auth or a limiter runs), and the money-path rate limits; `/store/hawala/pools*` stays public and the
     // contributions POST above stays guest-capable — optional customer auth on
     // /store comes from the framework itself. Vendor hawala and wellness: rate
     // limits only (Mercur already requires seller auth on /vendor/*). Store

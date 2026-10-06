@@ -51,6 +51,37 @@ export const SUBSCRIPTION_READ_ONLY_EVENT = "subscription.read_only"
  */
 export const READ_EXPORT_FEATURE_KEY = "features.subscription.read_export"
 
+/**
+ * Grant a subscription the single read/export entitlement (F4: "read-only
+ * access with export. Never quick deletion."). The one grant both ends of a
+ * subscription use, after their revoke: `enterReadOnlyForSubscription` (grace
+ * over) and, with FF_CONSUMER_SUBSCRIPTIONS_V1 on, every expiry site of
+ * process-subscription-renewals.
+ *
+ * Idempotent through `grant()`'s (source_subscription_id, feature_key,
+ * seller_id) guard: a re-run or redelivery reactivates the one row (a revoke
+ * just before it is a status change, never a delete) rather than adding a
+ * second. Throws what the entitlement service throws; callers log it and keep
+ * the status write that preceded it.
+ */
+export async function grantReadExportEntitlement(
+  entitlements: EntitlementModuleService,
+  subscription: {
+    id: string
+    customer_id?: string | null
+    seller_id?: string | null
+  }
+): Promise<void> {
+  await entitlements.grantFromSubscription({
+    subscription_id: subscription.id,
+    customer_id: subscription.customer_id ?? null,
+    seller_id: subscription.seller_id ?? null,
+    feature_key: READ_EXPORT_FEATURE_KEY,
+    kind: EntitlementKind.ACCESS_PASS,
+    expires_at: null,
+  })
+}
+
 /** `metadata.paused_reason` prefix written by the dunning loop on exhaustion. */
 const DUNNING_PAUSE_PREFIX = "payment_failed_after_"
 
@@ -302,14 +333,7 @@ export async function enterReadOnlyForSubscription(
   try {
     const entitlements = container.resolve<EntitlementModuleService>(ENTITLEMENT_MODULE)
     await entitlements.revokeBySubscriptionId(subscriptionId, "subscription_read_only")
-    await entitlements.grantFromSubscription({
-      subscription_id: subscriptionId,
-      customer_id: updated.customer_id ?? null,
-      seller_id: updated.seller_id ?? null,
-      feature_key: READ_EXPORT_FEATURE_KEY,
-      kind: EntitlementKind.ACCESS_PASS,
-      expires_at: null,
-    })
+    await grantReadExportEntitlement(entitlements, { ...updated, id: subscriptionId })
   } catch (error) {
     log.error(`[grace] entitlement swap failed for read-only ${subscriptionId}:`, error)
   }

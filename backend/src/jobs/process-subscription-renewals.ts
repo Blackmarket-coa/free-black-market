@@ -11,12 +11,14 @@ import { ENTITLEMENT_MODULE } from "../modules/entitlement"
 import type EntitlementModuleService from "../modules/entitlement/service"
 import {
   consumerSubscriptionsEnabled,
+  grantReadExportEntitlement,
   sweepGraceLifecycle,
 } from "../workflows/subscription/grace-lifecycle"
 import type { RenewalChargeRecord } from "../modules/subscription/service"
 import type { SubscriptionInterval } from "../modules/subscription/types"
 import { renewalPeriodStart } from "../modules/subscription/utils/renewal-charge"
 import { neverRenews } from "../modules/subscription/utils/auto-renew"
+import { emitSubscriptionExpired } from "../workflows/subscription/subscription-expired"
 
 /**
  * How far a grace end is held when the final grace charge collected (or may
@@ -30,11 +32,25 @@ const GRACE_COLLECTED_HOLD_MS = 60 * 60 * 1000
  * Gap E companion for the expire paths: an expired subscription must drop its
  * features.* grants so the entitlement read side agrees with the `expire`
  * webhook. Best-effort — a revocation failure must not abort the sweep.
+ *
+ * With FF_CONSUMER_SUBSCRIPTIONS_V1 on (F4: "read-only access with export.
+ * Never quick deletion."), the revoke is followed by the same read/export
+ * grant a READ_ONLY subscription gets (`grantReadExportEntitlement`, shared
+ * with `enterReadOnlyForSubscription`), so an expired seat keeps export the way
+ * the Black Mask contract tells the receiver to. Idempotent on a re-run or
+ * redelivery (the grant reactivates its one row). A grant failure is logged
+ * and never undoes the expiry, which is already written. Flag off, nothing is
+ * granted and this is what it always was.
  */
 async function revokeEntitlementsForExpired(
   container: MedusaContainer,
-  subscriptionId: string
+  subscription: {
+    id: string
+    customer_id?: string | null
+    seller_id?: string | null
+  }
 ) {
+  const subscriptionId = subscription.id
   try {
     const entitlementService = container.resolve<EntitlementModuleService>(
       ENTITLEMENT_MODULE
@@ -46,6 +62,19 @@ async function revokeEntitlementsForExpired(
   } catch (error) {
     log.error(
       `[Subscription Job] Failed to revoke entitlements for expired subscription ${subscriptionId}:`,
+      error
+    )
+  }
+
+  if (!consumerSubscriptionsEnabled()) return
+  try {
+    const entitlementService = container.resolve<EntitlementModuleService>(
+      ENTITLEMENT_MODULE
+    )
+    await grantReadExportEntitlement(entitlementService, subscription)
+  } catch (error) {
+    log.error(
+      `[Subscription Job] Failed to grant read/export to expired subscription ${subscriptionId} (the expiry stands):`,
       error
     )
   }
@@ -79,6 +108,14 @@ async function revokeEntitlementsForExpired(
  * approval, or withdrawn) is also expired at its paid-period end.
  * Flag off, none of these passes runs and every path above is unchanged. An
  * until-canceled subscription (expiration_date NULL) is never expired.
+ *
+ * With the flag on, every expiry site also grants the read/export entitlement
+ * after its revoke (`revokeEntitlementsForExpired`), as read-only does.
+ *
+ * Every expiry site publishes `subscription.expired` after the EXPIRED write
+ * (subscription-expired.ts: only while FF_BLACK_MASK_PROVISIONING_V1 is on,
+ * `occurred_at` from the row's expiration_date, failures swallowed so the
+ * write stands).
  */
 export default async function processSubscriptionRenewals(
   container: MedusaContainer
@@ -124,7 +161,8 @@ export default async function processSubscriptionRenewals(
             `[Subscription Job] Expiring subscription ${subscription.id}`
           )
           await subscriptionService.expireSubscription(subscription.id)
-          await revokeEntitlementsForExpired(container, subscription.id)
+          await revokeEntitlementsForExpired(container, subscription)
+          await emitSubscriptionExpired(container, subscription)
           trackSkip(await emitSubscriptionState(container, subscription, "expire"))
           continue
         }
@@ -203,7 +241,8 @@ export default async function processSubscriptionRenewals(
       )
       await subscriptionService.expireSubscription(expiredIds)
       for (const s of allSubscriptions.filter((x) => expiredIds.includes(x.id))) {
-        await revokeEntitlementsForExpired(container, s.id)
+        await revokeEntitlementsForExpired(container, s)
+        await emitSubscriptionExpired(container, s)
         trackSkip(await emitSubscriptionState(container, s, "expire"))
       }
     }
@@ -227,7 +266,8 @@ export default async function processSubscriptionRenewals(
         )
         await subscriptionService.expireSubscription(pausedEnded.map((s) => s.id))
         for (const s of pausedEnded) {
-          await revokeEntitlementsForExpired(container, s.id)
+          await revokeEntitlementsForExpired(container, s)
+          await emitSubscriptionExpired(container, s)
           trackSkip(await emitSubscriptionState(container, s, "expire"))
         }
       }

@@ -38,6 +38,7 @@ subscription when its `product_id` passes the same test.
 | `payment_failed` | `subscription.payment_failed`                                          | `subscription` | `subscription.metadata.dunning_last_attempt_at`           |
 | `grace_started`  | `subscription.grace_started` (emitted by the grace slice)              | `subscription` | the event's `occurred_at` (required)                      |
 | `read_only`      | `subscription.read_only` (emitted by the grace slice)                  | `subscription` | the event's `occurred_at` (required)                      |
+| `expired`        | `subscription.expired` (emitted by `process-subscription-renewals` after it writes the subscription `expired`, at each of its expiry sites, only while the flag is on; with `FF_CONSUMER_SUBSCRIPTIONS_V1` on, FBM grants `features.subscription.read_export` at the same sites after revoking `features.*`) | `subscription` | the event's `occurred_at` (required): the subscription's `expiration_date` |
 
 A renewal processed without a charge (legacy mode,
 `FBM_SUBSCRIPTION_RENEWAL_LIVE` unset) has no `order_id`, so FBM does not send
@@ -62,6 +63,46 @@ without its source timestamp is not sent: an `order.canceled` with no
 (`grace-lifecycle.ts`) puts the transition time on both events as
 `occurred_at`, read from the row (`metadata.grace_started_at`, `read_only_at`)
 so a redelivered event carries the same value.
+
+**`expired` means the paid term ended without renewal: end the vault seat.**
+FBM sends it when its hourly renewal job writes a vault subscription
+`expired`: an ACTIVE subscription past its `expiration_date` (whether or not a
+renewal was due), or, with `FF_CONSUMER_SUBSCRIPTIONS_V1` on, a PAUSED
+subscription that never renews and is past its `expiration_date`. When you
+receive it:
+
+- Stop the seat: no new writes, and the seat no longer counts as paid.
+- Do not delete the vault. Keep it **read-only with export**, exactly as after
+  `read_only` (F4: never quick deletion). FBM revokes every `features.*`
+  grant it holds for the subscription on expiry. With
+  `FF_CONSUMER_SUBSCRIPTIONS_V1` on, it then grants
+  `features.subscription.read_export` (kind `access_pass`, no expiry), the
+  same single entitlement a `read_only` subscription keeps, at every expiry
+  site (the per-subscription expire, the ACTIVE sweep and the PAUSED
+  never-renews sweep). The grant is idempotent on a re-run, and a grant that
+  fails is logged without undoing the expiry. Still treat this event as the
+  signal: the entitlement is FBM's own record and may lag it (a failed grant,
+  or `FF_CONSUMER_SUBSCRIPTIONS_V1` off, where expiry grants nothing).
+- `expired` is terminal for the subscription. FBM's lifecycle guards allow no
+  transition out of `expired` (resume revives a pause only), so a later seat
+  arrives as a new subscription with its own `placed`.
+
+`occurred_at` (and so `sequence`) is the subscription's `expiration_date`, read
+from the row, never the job's clock and never `updated_at`. Every redelivery of
+a published `expired` computes the same `event_id`. A publish that fails is not
+retried (§10). A subscription with no
+`expiration_date` (sold until cancelled) is never expired, and if one ever
+reached an expiry site, FBM would log it and send nothing. The renewal job
+renews, retries a failed charge and restores from grace only while the current
+time is at or before `expiration_date`, so `expired` sorts after every
+`renewed`, `payment_failed` and `grace_started` of the same subscription.
+
+**A seat whose customer withdrew auto-renew ends with `expired`.** Withdrawing
+(`disable_auto_renew`, ledger BM-4) sends nothing at the time it happens: the
+seat stays paid through the period already bought. At the end of that period
+the renewal job expires the subscription and you receive `expired`. That holds
+whether the seat was ACTIVE or PAUSED when the period ended. A seat bought for
+a single period without auto-renew approval ends the same way.
 
 **A customer cancel under the grace lifecycle is not `cancelled`.** With
 `FF_CONSUMER_SUBSCRIPTIONS_V1` on and a grace length configured, a cancel of a
@@ -243,15 +284,26 @@ Both routes are admin-authenticated and return 404 while the flag is off.
 - No reconciliation sweep yet. An enqueue that fails inside the subscriber is
   logged and swallowed so checkout is not broken, and nothing re-derives it
   later.
-- No deprovisioning notice when a vault subscription ends by **expiry** or by
-  **renewal failure** (`expireSubscription` / `failSubscription` in
-  `process-subscription-renewals`). Only an explicit cancel through
-  `manageSubscriptionWorkflow` emits `subscription.canceled`. Until a
-  follow-up emits and handles an expiry event, the receiver should also treat
-  a subscription whose last `period_end` has passed with no later `renewed`
-  as lapsed. This includes a seat whose customer withdrew auto-renew
-  (`disable_auto_renew`, ledger BM-4): withdrawing sends nothing, and the seat
-  then ends by expiry at the end of its paid period.
+- `expired` is published **at most once**. The renewal job writes the
+  subscription `expired` first and publishes afterwards. A publish that fails
+  is logged and swallowed, so the expiry write stands. A crash between the
+  write and the publish also loses the event. Either way, nothing re-sends
+  it: the row is then `expired`, and every expiry sweep reads only ACTIVE or
+  PAUSED rows. The stable `event_id` (§2) dedupes a redelivery of an event
+  that was published. It does not retry one that never was. Keep the lapsed
+  fallback in the renewal-failure bullet below for this case too: treat a
+  subscription whose last `period_end` has passed with no later `renewed` or
+  `expired` as lapsed.
+- No deprovisioning notice when a vault subscription ends by **renewal
+  failure without grace**. Expiry now sends `expired` (§2). A renewal failure
+  does not. In legacy mode (`FBM_SUBSCRIPTION_RENEWAL_LIVE` unset) a failed
+  renewal goes straight to `failSubscription` (status `failed`) and nothing is
+  sent. In live mode each failed attempt sends `payment_failed`. Once the
+  attempts run out with grace off or unconfigured, the dunning loop pauses the
+  subscription indefinitely and sends nothing more. (With grace configured
+  you receive `grace_started`, then `read_only`.) Until a follow-up covers
+  these, treat a subscription whose last `period_end` has passed with no
+  later `renewed` or `expired` as lapsed.
 - The two-drain claim is proven against an in-memory pg fake that is atomic
   by construction (it pins the SQL text). A real-Postgres concurrency test
   (`test:integration:modules`) is still to be written.

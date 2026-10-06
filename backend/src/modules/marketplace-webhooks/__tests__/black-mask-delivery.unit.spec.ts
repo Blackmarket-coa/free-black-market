@@ -3,6 +3,7 @@ import {
   BLACKSTAR_SUBSCRIPTION_ID,
 } from "../service"
 import {
+  BLACK_MASK_EVENTS,
   BLACK_MASK_FETCH_TIMEOUT_MS,
   BLACK_MASK_SUBSCRIPTION_ID,
   buildBlackMaskPayload,
@@ -208,13 +209,17 @@ describe("drainBlackMaskDeliveries (send)", () => {
   it("never looks up or sends an email on any event but `placed`", async () => {
     enable()
     const { svc } = makeHarness()
-    for (const [i, event] of (["renewed", "cancelled", "payment_failed", "grace_started", "read_only"] as const).entries()) {
+    // Every event but `placed`, read from the contract's own list so a new
+    // event (e.g. `expired`) is covered the day it is added.
+    const others = BLACK_MASK_EVENTS.filter((e) => e !== "placed")
+    expect(others).toContain("expired")
+    for (const [i, event] of others.entries()) {
       await svc.emitBlackMask(payload({ event, id: `sub_${i}` }))
     }
     const calls = mockFetch(ok202)
     const find = lookup({ email: "member@example.org" })
     const result = await svc.drainBlackMaskDeliveries({ lookupCustomer: find })
-    expect(result.sent).toBe(5)
+    expect(result.sent).toBe(others.length)
     expect(find).not.toHaveBeenCalled()
     for (const c of calls) expect(c.init.body).not.toMatch(/email/i)
   })

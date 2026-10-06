@@ -71,6 +71,7 @@ const SURFACES = ["/store/hawala", "/store/collective", "/store/mutual-aid", "/d
 
 const FF_POOLS = PHASE0_FEATURE_FLAGS.INVESTMENT_POOLS_V1
 const FF_PARITY = PHASE0_FEATURE_FLAGS.NONPROFIT_PARITY_V1
+const FF_WALLET = PHASE0_FEATURE_FLAGS.CUSTOMER_WALLET_V1
 
 function token(actorType: string, actorId: string): string {
   return jwt.sign(
@@ -258,6 +259,7 @@ beforeEach(() => {
 afterEach(() => {
   delete process.env[FF_POOLS]
   delete process.env[FF_PARITY]
+  delete process.env[FF_WALLET]
 })
 
 async function call(method: Verb, url: string, bearer?: string) {
@@ -374,6 +376,14 @@ describe("newly-live required customer auth (store hawala, collective, mutual-ai
   }
   const cases = EXPECTED
 
+  // The five store hawala wallet entries put FF_CUSTOMER_WALLET_V1 in front of
+  // the customer check (see the next describe). These cases are about the
+  // customer check, so the wallet is on for them; the collective and mutual-aid
+  // routes do not read it.
+  beforeEach(() => {
+    process.env[FF_WALLET] = "true"
+  })
+
   it("the route sets declare exactly the expected pairs, and each points at a real route file exporting that verb", () => {
     const key = (p: [string, Verb]) => `${p[1]} ${p[0]}`
     expect(derived.map(key).sort()).toEqual(EXPECTED.map(key).sort())
@@ -395,6 +405,130 @@ describe("newly-live required customer auth (store hawala, collective, mutual-ai
     const res = await call(verb, concretePath(matcher), token("customer", "cus_auth"))
     expect(res.status).toBe(200)
     expect(res.body).toEqual({ reached: expect.stringContaining(verb), actor: "cus_auth" })
+  })
+})
+
+// ===========================================================================
+describe("/store/hawala customer wallet: FF_CUSTOMER_WALLET_V1 first, then customer, then limiters", () => {
+  // Written out by hand: every customer-wallet route file and verb under
+  // /store/hawala. bank-accounts/link has no entry of its own; it is covered by
+  // the method-less (prefix) /bank-accounts entry, and this list proves it.
+  const WALLET: [string, Verb][] = [
+    ["/store/hawala/wallet", "GET"],
+    ["/store/hawala/wallet", "POST"],
+    ["/store/hawala/bank-accounts", "GET"],
+    ["/store/hawala/bank-accounts", "POST"],
+    ["/store/hawala/bank-accounts/link", "POST"],
+    ["/store/hawala/transactions", "GET"],
+    ["/store/hawala/deposit", "POST"],
+    ["/store/hawala/withdraw", "POST"],
+  ]
+  const DISABLED = {
+    status: 404,
+    body: { type: "feature_disabled", message: "Feature flag FF_CUSTOMER_WALLET_V1 is disabled" },
+  }
+
+  it("each wallet entry is method-less (the sorter's global bucket, ahead of every verb-specific limiter) and puts the flag FIRST", () => {
+    const gated = storeHawalaMiddlewareRoutes.filter((r) =>
+      (r.middlewares ?? []).some((m) => typeof m === "function" && m.name === "requireFeatureFlag")
+    )
+    expect(gated.map((r) => String(r.matcher)).sort()).toEqual([
+      "/store/hawala/bank-accounts",
+      "/store/hawala/deposit",
+      "/store/hawala/transactions",
+      "/store/hawala/wallet",
+      "/store/hawala/withdraw",
+    ])
+    for (const r of gated) {
+      expect({ matcher: r.matcher, verbs: verbsOf(r) ?? null }).toEqual({ matcher: r.matcher, verbs: null })
+      const [first, second] = r.middlewares ?? []
+      expect((first as { name?: string }).name).toBe("requireFeatureFlag")
+      expect(isAuthenticate(second)).toBe(true)
+    }
+    // Every wallet route is under one of those prefixes and points at a real
+    // route file that exports the verb.
+    for (const [matcher, verb] of WALLET) {
+      expect(gated.some((r) => matcher === r.matcher || matcher.startsWith(`${String(r.matcher)}/`))).toBe(true)
+      expect(exportedVerbs(routeFileForMatcher(matcher))).toContain(verb)
+    }
+    // ...and that is every route file under /store/hawala except the three
+    // surfaces that carry their own flags.
+    const ungated = routeFilesUnder("/store/hawala")
+      .map((r) => r.matcher)
+      .filter((m) => !WALLET.some(([w]) => w === m))
+      .sort()
+    expect(ungated).toEqual(["/store/hawala/investments", "/store/hawala/pools", "/store/hawala/pools/:id/contributions"])
+  })
+
+  it.each(WALLET)("%s %s with the flag off: the same 404 feature_disabled anonymous, as a seller and as a customer; the handler is not reached", async (matcher, verb) => {
+    const anon = await call(verb, concretePath(matcher))
+    const seller = await call(verb, concretePath(matcher), token("seller", "sel_w"))
+    const customer = await call(verb, concretePath(matcher), token("customer", "cus_w"))
+    expect(anon).toEqual(DISABLED)
+    expect(seller).toEqual(anon)
+    expect(customer).toEqual(anon)
+  })
+
+  it.each(WALLET)("%s %s with the flag off and every OTHER hawala flag on: still 404", async (matcher, verb) => {
+    process.env[FF_POOLS] = "true"
+    process.env[FF_PARITY] = "true"
+    expect(await call(verb, concretePath(matcher), token("customer", "cus_w"))).toEqual(DISABLED)
+  })
+
+  it.each(WALLET)("%s %s with the flag on: today's behaviour — 401 anonymous, reached as the customer", async (matcher, verb) => {
+    process.env[FF_WALLET] = "true"
+    expect(await call(verb, concretePath(matcher))).toEqual({ status: 401, body: { message: "Unauthorized" } })
+    const ok = await call(verb, concretePath(matcher), token("customer", "cus_w"))
+    expect(ok.status).toBe(200)
+    expect(ok.body).toEqual({ reached: `${verb} ${matcher}`, actor: "cus_w" })
+  })
+
+  it("only the literal string \"true\" opens it", async () => {
+    for (const v of ["1", "TRUE", "yes", ""]) {
+      process.env[FF_WALLET] = v
+      expect(await call("GET", "/store/hawala/wallet", token("customer", "cus_w"))).toEqual(DISABLED)
+    }
+  })
+
+  it("a refused request spends no rate-limit budget: the money, bank-link and read limiters all start full when the flag turns on", async () => {
+    const who = token("customer", "cus_wallet_budget")
+    // Each well past its budget (money 5/min, bank-account 3/h, read 30/min).
+    for (let i = 0; i < 8; i++) expect((await call("POST", "/store/hawala/deposit", who)).status).toBe(404)
+    for (let i = 0; i < 5; i++) expect((await call("POST", "/store/hawala/bank-accounts", who)).status).toBe(404)
+    for (let i = 0; i < 32; i++) expect((await call("GET", "/store/hawala/wallet", who)).status).toBe(404)
+
+    process.env[FF_WALLET] = "true"
+    const deposits: number[] = []
+    for (let i = 0; i < 6; i++) deposits.push((await call("POST", "/store/hawala/deposit", who)).status)
+    expect(deposits).toEqual([200, 200, 200, 200, 200, 429])
+    const links: number[] = []
+    for (let i = 0; i < 4; i++) links.push((await call("POST", "/store/hawala/bank-accounts", who)).status)
+    expect(links).toEqual([200, 200, 200, 429])
+    const reads: number[] = []
+    for (let i = 0; i < 31; i++) reads.push((await call("GET", "/store/hawala/wallet", who)).status)
+    expect(reads.slice(0, 30)).toEqual(Array(30).fill(200))
+    expect(reads[30]).toBe(429)
+  })
+
+  it("the wallet flag opens nothing else: pools and investments stay on FF_INVESTMENT_POOLS_V1, contributions on both of theirs", async () => {
+    process.env[FF_WALLET] = "true"
+    const pools = await call("GET", "/store/hawala/pools")
+    expect(pools.status).toBe(404)
+    expect(pools.body.message).toBe("Feature flag FF_INVESTMENT_POOLS_V1 is disabled")
+    const inv = await call("GET", "/store/hawala/investments", token("customer", "cus_w"))
+    expect(inv.status).toBe(404)
+    expect(inv.body.message).toBe("Feature flag FF_INVESTMENT_POOLS_V1 is disabled")
+    expect((await call("POST", "/store/hawala/pools/pool_1/contributions", token("customer", "cus_w"))).status).toBe(404)
+  })
+
+  it("with the wallet flag OFF the ungated hawala routes answer exactly as before (their own flags on)", async () => {
+    process.env[FF_POOLS] = "true"
+    process.env[FF_PARITY] = "true"
+    expect(await call("GET", "/store/hawala/pools")).toEqual({ status: 200, body: { reached: "GET /store/hawala/pools", actor: null } })
+    expect((await call("GET", "/store/hawala/investments")).status).toBe(401)
+    expect((await call("GET", "/store/hawala/investments", token("customer", "cus_i"))).body).toEqual({ reached: "GET /store/hawala/investments", actor: "cus_i" })
+    expect((await call("POST", "/store/hawala/investments", token("customer", "cus_i"))).body).toEqual({ reached: "POST /store/hawala/investments", actor: "cus_i" })
+    expect((await call("POST", "/store/hawala/pools/pool_1/contributions")).body).toEqual({ reached: "POST /store/hawala/pools/:id/contributions", actor: null })
   })
 })
 
@@ -620,6 +754,7 @@ describe("rate limiters: present where declared, with the declared budgets", () 
   it("the 6th deposit in a minute is refused for that customer only, and does not spend the shared 'standard' bucket", async () => {
     process.env[FF_POOLS] = "true"
     process.env[FF_PARITY] = "true"
+    process.env[FF_WALLET] = "true"
     const a = token("customer", "cus_rl_a")
     const statuses: number[] = []
     for (let i = 0; i < 6; i++) statuses.push((await call("POST", "/store/hawala/deposit", a)).status)

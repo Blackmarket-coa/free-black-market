@@ -11,7 +11,8 @@ import { useMatrixChat } from "@/providers/MatrixChatProvider"
 import { usePathname } from "next/navigation"
 import { phase1ModuleFlags } from "@/lib/feature-flags"
 
-const navigationItems = [
+// Exported for its spec. Built once at module load from the build-time flags.
+export const navigationItems = [
   {
     label: "Orders",
     href: "/user/orders",
@@ -37,10 +38,11 @@ const navigationItems = [
     label: "Wishlist",
     href: "/user/wishlist",
   },
-  {
-    label: "Coalition Credits",
-    href: "/user/coalition-credits",
-  },
+  // The customer wallet (NEXT_PUBLIC_FF_CUSTOMER_WALLET_V1) only; absent with
+  // the flag off, like the page it links to.
+  ...(phase1ModuleFlags.customerWallet
+    ? [{ label: "Coalition Credits", href: "/user/coalition-credits" }]
+    : []),
   // NEXT_PUBLIC_FF_CONSUMER_SUBSCRIPTIONS_V1 only; absent with the flag off.
   ...(phase1ModuleFlags.consumerSubscriptions
     ? [{ label: "Subscriptions", href: "/user/subscriptions" }]
