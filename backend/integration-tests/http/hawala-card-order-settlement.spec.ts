@@ -11,6 +11,7 @@ import hawalaCardCaptureSubscriber from "../../src/subscribers/hawala-card-captu
 import hawalaCardRefundSubscriber from "../../src/subscribers/hawala-card-refund"
 import hawalaOrderRefundSubscriber from "../../src/subscribers/hawala-order-refund"
 import hawalaCardOrderReconcileJob from "../../src/jobs/hawala-card-order-reconcile"
+import { reconcileCardOrder } from "../../src/lib/card-order-reconcile"
 
 jest.setTimeout(240 * 1000)
 
@@ -300,7 +301,6 @@ medusaIntegrationTestRunner({
         await split(o2.id, collectionId, 30)
         await captured(paymentId)
         await refund(paymentId, 20)
-        const { reconcileCardOrder } = await import("../../src/lib/card-order-reconcile")
         expect((await reconcileCardOrder(container(), o1.id)).outcome).toBe("unattributed_refund")
         expect((await reconcileCardOrder(container(), o2.id)).outcome).toBe("unattributed_refund")
         for (const id of [o1.id, o2.id]) {
@@ -323,7 +323,6 @@ medusaIntegrationTestRunner({
           entry_type: "WITHDRAWAL",
           idempotency_key: `test-payout-${order.id}`,
         })
-        const { reconcileCardOrder } = await import("../../src/lib/card-order-reconcile")
         await refund(paymentId, 10)
         expect((await reconcileCardOrder(container(), order.id)).outcome).toBe("refund_refused")
         await refund(paymentId, 15)
@@ -385,7 +384,6 @@ medusaIntegrationTestRunner({
           idempotency_key: `order-payment-${other.id}-purchase`,
           metadata: { funding: "card" },
         })
-        const { reconcileCardOrder } = await import("../../src/lib/card-order-reconcile")
         expect((await reconcileCardOrder(container(), other.id)).outcome).toBe("needs_attention")
         expect((await legs(other.id)).map((e) => e.entry_type)).toEqual(["PURCHASE"])
       })
@@ -396,7 +394,6 @@ medusaIntegrationTestRunner({
         const { paymentId } = await pay([order.id], 40, { capture: true })
         await placed(order.id)
         await refund(paymentId, 25)
-        const { reconcileCardOrder } = await import("../../src/lib/card-order-reconcile")
         await Promise.all([1, 2, 3, 4].map(() => reconcileCardOrder(container(), order.id)))
         const toCard = (await legs(order.id)).filter((e) => e.entry_type === "REFUND" && e.description?.includes("customer refund"))
         expect(toCard.map((e) => cents(e.amount))).toEqual([2500])
