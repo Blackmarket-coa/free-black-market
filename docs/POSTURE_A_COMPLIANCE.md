@@ -255,6 +255,56 @@ strict mode — latent only because CCR wallets were not yet in production use.
 the build if the guard's vocabulary, the model enum, and the caller literals
 drift apart again.
 
+#### Card clearing: how a card order enters the ledger (SD-36)
+
+`FF_CARD_ORDER_LEDGER_V1`, default off; `modules/hawala-ledger/card-clearing.ts`.
+
+**What was wrong.** Every order's purchase leg debited the customer's
+`USER_WALLET`. FBM's only payment provider is Stripe, so every order is a card
+order; the wallet was created at $0, the debit was refused, and the error was
+swallowed — no card order reached the ledger. Funding the wallet would have
+made it work, but a customer-held balance is exactly what the closed-loop
+rule in `posture-a-guard.ts` rules out (no balance-holding outside the
+purchase-to-payout context), so that was never the fix.
+
+**What it does instead (flag on).** A single SYSTEM account,
+`CARD_CLEARING` / owner `stripe`, USD only, stands for money that came in
+through FBM's own Stripe account. A card order settles once that order's
+own money is captured (never on authorisation alone): the purchase leg is
+`CARD_CLEARING -> ESCROW`, then the usual fee, processing and seller legs out
+of escrow. On a multi-seller cart each seller's order settles for its own
+share. A refund's customer leg is `ESCROW -> CARD_CLEARING`, back to the card,
+for exactly what was refunded on that order — as Medusa or Mercur record it.
+A refund or chargeback made directly in the Stripe dashboard never reaches
+Medusa (its Stripe webhooks handle payment intents only), so it never reaches
+the ledger either; that is an operational gap recorded in SD-36, not a
+balance anyone holds.
+
+**Why this stays inside the posture.**
+
+- No customer balance. A card order never reads, creates or credits a
+  customer wallet, and a refund returns to the card, not to a wallet. Card
+  orders previously left a $0 wallet behind; they no longer create one.
+- No new value. `CARD_CLEARING` is the only ledger account allowed below
+  zero (it reads as minus the card money received and not refunded), and
+  `createTransfer` refuses every leg touching it except a `PURCHASE` into the
+  order escrow or a `REFUND` out of it, each with an `order_id`. It cannot
+  pay a vendor, a wallet or a payout directly, and both sides of one leg can
+  never be clearing. The non-negative CAS on every other account is
+  unchanged, and the account's identity is re-checked in the SQL itself.
+- USD only. The account is USD; the cross-rail check already refuses a CCR
+  leg against it, and the clearing guard refuses any non-USD clearing account
+  besides.
+- Not FBM's money, not FBM's books. A Stripe Connect direct charge (rule 10)
+  posts nothing here.
+- No new reference type, no new entry type.
+
+**What it does not change.** Vendor payouts still terminate at Stripe ACH
+(the payout path is untouched); the ledger records the purchase-to-payout
+context that already existed on paper. Whether the operator needs counsel's
+view before setting the flag is the operator's call; this section records the
+design, not a legal conclusion.
+
 ### `playbook`
 
 - Each playbook recipe declares `allow_credits_payout: bool` (defaults true

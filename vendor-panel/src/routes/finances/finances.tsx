@@ -651,7 +651,9 @@ export const FinancesPage = () => {
         </div>
       </div>
 
-      {dashboard.card_processing_owed && dashboard.card_processing_owed.outstanding > 0 && (
+      {dashboard.card_processing_owed &&
+        (dashboard.card_processing_owed.outstanding > 0 ||
+          (dashboard.card_processing_owed.forgiven?.length ?? 0) > 0) && (
         <div className="mb-8">
           <CardProcessingOwed owed={dashboard.card_processing_owed} currency={dashboard.currency} />
         </div>

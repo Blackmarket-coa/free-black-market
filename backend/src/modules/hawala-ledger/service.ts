@@ -60,6 +60,12 @@ import {
   type CardProcessingRecoverySource,
 } from "./card-processing"
 import {
+  CARD_CLEARING_ACCOUNT_TYPE,
+  CARD_CLEARING_OWNER_ID,
+  CARD_FUNDING,
+  assertCardClearingLeg,
+} from "./card-clearing"
+import {
   reconcileRecords,
   deriveCandidateBounds,
   validateCriteria,
@@ -179,6 +185,7 @@ class HawalaLedgerModuleService extends MedusaService({
       ESCROW: "ESC",
       CREATOR_EARNINGS: "CRE",
       CREATOR_REWARD_POOL: "CRP",
+      CARD_CLEARING: "CCL",
     }[accountType] || "GEN"
     
     const timestamp = Date.now().toString(36).toUpperCase()
@@ -229,6 +236,15 @@ class HawalaLedgerModuleService extends MedusaService({
     )
   }
 
+  /**
+   * The USD card-clearing account a card order's purchase leg debits
+   * (`./card-clearing.ts`, SD-36). The only account allowed below zero, and
+   * only for a PURCHASE into escrow or a REFUND out of it.
+   */
+  async getOrCreateCardClearingAccount() {
+    return this.getOrCreateSystemAccount(CARD_CLEARING_ACCOUNT_TYPE, CARD_CLEARING_OWNER_ID)
+  }
+
   // ==================== CARD-PROCESSING RECEIVABLE (F6) ====================
 
   /**
@@ -266,6 +282,8 @@ class HawalaLedgerModuleService extends MedusaService({
     const none = {
       total_cents: 0,
       open: [],
+      written_off: [],
+      written_off_cents: 0,
       recovered_by_source_entry: {},
       processing_account_id: null as string | null,
       has_shortfalls: false,
@@ -289,7 +307,9 @@ class HawalaLedgerModuleService extends MedusaService({
       entry_type: "ADJUSTMENT",
     })
     return {
-      ...computeCardProcessingReceivable(sellerAccountId, { shortfalls, recoveries }),
+      // Written off by age (180 days from the refund that recorded it,
+      // `./card-processing.ts`) as of now: forgiven, never collected again.
+      ...computeCardProcessingReceivable(sellerAccountId, { shortfalls, recoveries }, { asOfMs: Date.now() }),
       processing_account_id: processing.id,
       has_shortfalls: true,
     }
@@ -396,8 +416,9 @@ class HawalaLedgerModuleService extends MedusaService({
       if (amountCents <= 0) break
 
       // What the ledger knows, and no more: the processing amount is FBM's
-      // estimate, and the refunded order may have had no card charge (SD-36:
-      // only wallet-funded orders reach the ledger today).
+      // estimate, and the refunded order may have had no card charge (a
+      // wallet-funded order; card orders reach the ledger only with
+      // FF_CARD_ORDER_LEDGER_V1, SD-36).
       const refundedOrder = target.order_id ? `order ${target.order_id}` : "a refunded order"
       const why = `card processing on ${refundedOrder} is not returned on a refund, and your earnings did not cover it`
       let entry: any
@@ -1351,8 +1372,18 @@ class HawalaLedgerModuleService extends MedusaService({
       credit_account_id: data.credit_account_id,
     })
 
+    // Card clearing (SD-36, `./card-clearing.ts`): the one account allowed
+    // below zero, so every leg touching it must be a PURCHASE into an order's
+    // escrow or a REFUND out of it. Refused here, before any entry is
+    // written; a leg touching no clearing account is unaffected.
+    const { debitIsClearing, clearingAccountId } = assertCardClearingLeg(
+      { entry_type: data.entry_type, order_id: data.order_id ?? null },
+      debitAccount,
+      creditAccount
+    )
+
     // Check available balance for debit account
-    if (Number(debitAccount.available_balance) < data.amount) {
+    if (!debitIsClearing && Number(debitAccount.available_balance) < data.amount) {
       throw new Error(`Insufficient balance in account ${debitAccount.account_number}`)
     }
 
@@ -1407,22 +1438,39 @@ class HawalaLedgerModuleService extends MedusaService({
             // insufficient-balance failure on either leg still rolls the whole
             // thing back. Which leg runs first changes nothing observable.
             for (const leg of this.orderLegsForLocking(data)) {
-              await this.updateBalancesAtomic(trx, leg.accountId, leg.delta)
+              await this.updateBalancesAtomic(
+                trx,
+                leg.accountId,
+                leg.delta,
+                leg.accountId === clearingAccountId
+              )
             }
           })
         } else {
           await this.applyBalancePairWithCompensation(
             (delta) =>
-              this.updateBalancesAtomic(pgConnection, data.debit_account_id, delta),
+              this.updateBalancesAtomic(
+                pgConnection,
+                data.debit_account_id,
+                delta,
+                data.debit_account_id === clearingAccountId
+              ),
             (delta) =>
-              this.updateBalancesAtomic(pgConnection, data.credit_account_id, delta),
+              this.updateBalancesAtomic(
+                pgConnection,
+                data.credit_account_id,
+                delta,
+                data.credit_account_id === clearingAccountId
+              ),
             data
           )
         }
       } else {
         await this.applyBalancePairWithCompensation(
-          (delta) => this.updateBalances(data.debit_account_id, delta),
-          (delta) => this.updateBalances(data.credit_account_id, delta),
+          (delta) =>
+            this.updateBalances(data.debit_account_id, delta, 5, data.debit_account_id === clearingAccountId),
+          (delta) =>
+            this.updateBalances(data.credit_account_id, delta, 5, data.credit_account_id === clearingAccountId),
           data
         )
       }
@@ -1666,19 +1714,37 @@ class HawalaLedgerModuleService extends MedusaService({
   private async updateBalancesAtomic(
     pgConnection: any,
     accountId: string,
-    delta: number
+    delta: number,
+    // Only the clearing side of a leg `createTransfer` has already passed
+    // through `assertCardClearingLeg` (SD-36). The account's identity is
+    // re-checked in SQL on the row itself, so a mis-passed `true` still
+    // cannot let any other account go below zero.
+    allowNegativeCardClearing = false
   ): Promise<void> {
-    const result = await pgConnection.raw(
-      `UPDATE hawala_ledger_account
-         SET balance = balance + ?,
-             available_balance = available_balance + ?,
-             updated_at = NOW()
-       WHERE id = ?
-         AND deleted_at IS NULL
-         AND balance + ? >= 0
-         AND available_balance + ? >= 0`,
-      [delta, delta, accountId, delta, delta]
-    )
+    const result = allowNegativeCardClearing
+      ? await pgConnection.raw(
+          `UPDATE hawala_ledger_account
+             SET balance = balance + ?,
+                 available_balance = available_balance + ?,
+                 updated_at = NOW()
+           WHERE id = ?
+             AND deleted_at IS NULL
+             AND account_type = ?
+             AND owner_type = 'SYSTEM'
+             AND owner_id = ?`,
+          [delta, delta, accountId, CARD_CLEARING_ACCOUNT_TYPE, CARD_CLEARING_OWNER_ID]
+        )
+      : await pgConnection.raw(
+          `UPDATE hawala_ledger_account
+             SET balance = balance + ?,
+                 available_balance = available_balance + ?,
+                 updated_at = NOW()
+           WHERE id = ?
+             AND deleted_at IS NULL
+             AND balance + ? >= 0
+             AND available_balance + ? >= 0`,
+          [delta, delta, accountId, delta, delta]
+        )
 
     // knex/pg raw returns rowCount on the result object (or nested rowCount).
     const rowCount =
@@ -1693,7 +1759,12 @@ class HawalaLedgerModuleService extends MedusaService({
     }
   }
 
-  private async updateBalances(accountId: string, delta: number, maxRetries = 5) {
+  private async updateBalances(
+    accountId: string,
+    delta: number,
+    maxRetries = 5,
+    allowNegativeCardClearing = false
+  ) {
     let attempt = 0
     
     while (attempt < maxRetries) {
@@ -1706,8 +1777,15 @@ class HawalaLedgerModuleService extends MedusaService({
       const newBalance = currentBalance + delta
       const newAvailable = currentAvailable + delta
 
-      // Validate balance won't go negative for debits
-      if (newBalance < 0) {
+      // Validate balance won't go negative — except the card-clearing side of
+      // a leg `assertCardClearingLeg` passed (SD-36), re-checked on the
+      // account itself.
+      const mayGoNegative =
+        allowNegativeCardClearing &&
+        account.account_type === CARD_CLEARING_ACCOUNT_TYPE &&
+        account.owner_type === "SYSTEM" &&
+        account.owner_id === CARD_CLEARING_OWNER_ID
+      if (newBalance < 0 && !mayGoNegative) {
         throw new Error(
           `Insufficient balance in account ${accountId}. ` +
           `Available: ${currentBalance}, Requested: ${Math.abs(delta)}`
@@ -1851,6 +1929,11 @@ class HawalaLedgerModuleService extends MedusaService({
     processing_fee_amount?: number
     /** Provenance stamped on the processing leg (rate, fixed part, estimate). */
     processing_metadata?: Record<string, unknown>
+    /**
+     * Card orders only (SD-36): stamped on the purchase leg, whose debit is
+     * then the card-clearing account (`./card-clearing.ts`).
+     */
+    purchase_metadata?: Record<string, unknown>
   }) {
     const entries: any[] = []
 
@@ -1897,7 +1980,17 @@ class HawalaLedgerModuleService extends MedusaService({
       order_id: data.order_id,
       idempotency_key: `${data.idempotency_key}-purchase`,
       correlation_id: data.idempotency_key,
+      ...(data.purchase_metadata ? { metadata: data.purchase_metadata } : {}),
     })
+    // A card purchase (SD-36): `createTransfer` hands back an existing row for
+    // its key whatever its status, and card clearing never refuses, so a
+    // FAILED purchase from an earlier attempt must not have fee and seller
+    // legs posted out of pooled escrow on top of it. Wallet orders unchanged.
+    if (data.purchase_metadata?.funding === CARD_FUNDING && purchaseEntry?.status !== "COMPLETED") {
+      throw new Error(
+        `Card purchase leg for order ${data.order_id} is ${purchaseEntry?.status ?? "missing"}; no further legs posted`
+      )
+    }
     entries.push(purchaseEntry)
 
     // 2. Platform fee from escrow to platform
@@ -2040,12 +2133,40 @@ class HawalaLedgerModuleService extends MedusaService({
     }
 
     const originalAmount = Number(purchaseEntry.amount)
-    const refundAmount = data.refund_amount || originalAmount
-    
+
+    // Card orders (SD-36, `./card-clearing.ts`) follow the money: Stripe
+    // refunds a card order in as many partial refunds as the operator issues,
+    // and each one posts here as its own delta (`lib/card-order-settlement`).
+    // So for a card order every earlier refund leg is counted, the amount is
+    // capped at what is still unrefunded, and the settlement legs are marked
+    // REVERSED only once the whole purchase is refunded — marking them on the
+    // first partial refund is what makes a second refund fail with "no
+    // completed payments" (SD-36 item 2). A wallet order is unchanged.
+    const cardFunded =
+      (purchaseEntry.metadata as { funding?: unknown } | null | undefined)?.funding === CARD_FUNDING
+    const refundedSoFar = cardFunded
+      ? originalEntries
+          .filter(
+            (e) =>
+              e.entry_type === "REFUND" &&
+              e.credit_account_id === purchaseEntry.debit_account_id
+          )
+          .reduce((sum, e) => sum + Math.round(Number(e.amount) * 100), 0) / 100
+      : 0
+    const remainingAmount = Math.round((originalAmount - refundedSoFar) * 100) / 100
+    const refundAmount = cardFunded
+      ? data.refund_amount || remainingAmount
+      : data.refund_amount || originalAmount
+
     // Validate refund amount
     if (refundAmount > originalAmount) {
       throw new Error(
         `Refund amount (${refundAmount}) exceeds original payment (${originalAmount})`
+      )
+    }
+    if (cardFunded && Math.round(refundAmount * 100) > Math.round(remainingAmount * 100)) {
+      throw new Error(
+        `Refund amount (${refundAmount}) exceeds what is still unrefunded on order ${data.order_id} (${remainingAmount})`
       )
     }
 
@@ -2056,7 +2177,22 @@ class HawalaLedgerModuleService extends MedusaService({
     // Fee portion (Platform → Escrow)
     const feeEntry = originalEntries.find(e => e.entry_type === "COMMISSION")
     const originalFee = feeEntry ? Number(feeEntry.amount) : 0
-    const feeRefund = roundCents(originalFee * refundRatio)
+    // A card order refunded in parts rounds each part's fee reversal on its
+    // own; the part that completes the refund reverses exactly what is left
+    // of the fee, so the platform account ends where it started.
+    const cardFinalRefund =
+      cardFunded && Math.round((refundedSoFar + refundAmount) * 100) >= Math.round(originalAmount * 100)
+    const feeReversedSoFar =
+      cardFunded && feeEntry
+        ? roundCents(
+            originalEntries
+              .filter((e) => e.entry_type === "REFUND" && e.debit_account_id === feeEntry.credit_account_id)
+              .reduce((sum, e) => sum + Number(e.amount), 0)
+          )
+        : 0
+    const feeRefund = cardFinalRefund
+      ? Math.max(0, roundCents(originalFee - feeReversedSoFar))
+      : roundCents(originalFee * refundRatio)
 
     // Seller-side legs: every TRANSFER out of escrow to a non-customer account.
     // The plain path writes one (escrow -> seller); a consignment split writes
@@ -2162,7 +2298,12 @@ class HawalaLedgerModuleService extends MedusaService({
     const repaidCap = roundCents(repaidFromThisOrder.total)
     const shortfallPlan: Array<{ leg: (typeof sellerEntries)[number]; i: number; amount: number }> = []
     let processingShortfall = 0
-    if (retainedProcessingEntries.length > 0 || repaidCap > 0) {
+    // A card order always runs this check (SD-36): Stripe has already
+    // refunded the customer, and a seller leg failing after the fee reversal
+    // posted would strand that reversal — each later refund total a fresh
+    // key, a fresh stranded leg. Checked first, the refund is refused before
+    // any leg posts and the next reconciliation retries it whole.
+    if (cardFunded || retainedProcessingEntries.length > 0 || repaidCap > 0) {
       const remainingByAccount = new Map<string, number>()
       for (const planned of sellerPlan) {
         if (planned.amount <= 0) continue
@@ -2184,7 +2325,16 @@ class HawalaLedgerModuleService extends MedusaService({
           processingShortfall = roundCents(processingShortfall + gap)
         }
       }
-      if (processingShortfall > roundCents(processingRetained + repaidCap)) {
+      // A card order refunded in parts records a shortfall on each part; the
+      // processing it can draw on is what the earlier parts have not.
+      const priorShortfall = cardFunded
+        ? roundCents(
+            originalEntries
+              .filter((e) => isCardProcessingShortfallLeg(e))
+              .reduce((sum, e) => sum + Number(e.amount), 0)
+          )
+        : 0
+      if (processingShortfall > roundCents(processingRetained + repaidCap - priorShortfall)) {
         throw new Error(
           `Refund for order ${data.order_id} refused before any leg posted: the vendor's earnings ` +
             `fall $${processingShortfall} short of the seller balancing leg, more than the ` +
@@ -2310,8 +2460,14 @@ class HawalaLedgerModuleService extends MedusaService({
     refundEntries.push(customerRefundEntry)
 
     // 4. Mark original entries as REVERSED — all but a retained processing
-    // leg, which stays COMPLETED because it was not reversed.
+    // leg, which stays COMPLETED because it was not reversed. A card order:
+    // only once fully refunded, and only its settlement legs (earlier refund
+    // and shortfall legs carry the same order_id and stay as they are).
     for (const entry of originalEntries) {
+      if (cardFunded) {
+        if (!cardFinalRefund) break
+        if (!(typeof entry.idempotency_key === "string" && entry.idempotency_key.startsWith("order-payment-"))) continue
+      }
       if (isCardProcessingLeg(entry)) continue
       // A recovery leg carries no order_id, so it is never listed here; kept
       // as a second guard — reversing one would reopen a repaid receivable
@@ -4758,6 +4914,17 @@ class HawalaLedgerModuleService extends MedusaService({
           order_id: o.order_id,
           amount: o.outstanding_cents / 100,
           since: o.created_at,
+        })),
+        // Forgiven after CARD_PROCESSING_WRITE_OFF_DAYS: shown so the vendor
+        // sees it is no longer owed, never collected. Only write-offs from
+        // the last 90 days — a notice, not a permanent statement line.
+        forgiven: cardProcessingOwed.written_off
+          .filter((w) => Date.now() - new Date(w.written_off_at).getTime() <= 90 * 24 * 60 * 60 * 1000)
+          .map((w) => ({
+          order_id: w.order_id,
+          amount: w.forgiven_cents / 100,
+          since: w.created_at,
+          forgiven_at: w.written_off_at,
         })),
       },
 

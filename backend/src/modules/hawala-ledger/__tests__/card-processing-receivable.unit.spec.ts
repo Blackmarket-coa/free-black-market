@@ -1,6 +1,7 @@
 import {
   CARD_PROCESSING_RECOVERY_LEG,
   CARD_PROCESSING_SHORTFALL_LEG,
+  CARD_PROCESSING_WRITE_OFF_DAYS,
   computeCardProcessingReceivable,
   isCardProcessingRecoveryLeg,
 } from "../card-processing"
@@ -78,5 +79,69 @@ describe("computeCardProcessingReceivable", () => {
     expect(isCardProcessingRecoveryLeg(recovery("a", 1, "COMPLETED"))).toBe(true)
     expect(isCardProcessingRecoveryLeg({ ...recovery("a", 1, "COMPLETED"), entry_type: "TRANSFER" })).toBe(false)
     expect(isCardProcessingRecoveryLeg(shortfall("a", 1))).toBe(false)
+  })
+})
+
+describe("write-off by age (operator answer 2026-10-06: 180 days from the refund)", () => {
+  const DAY = 24 * 60 * 60 * 1000
+  const refundedAt = Date.UTC(2026, 3, 1, 12, 0, 0)
+  const rows = {
+    shortfalls: [
+      shortfall("old", 146, { created_at: new Date(refundedAt).toISOString() }),
+      shortfall("new", 42, { created_at: new Date(refundedAt + 100 * DAY).toISOString() }),
+    ],
+    recoveries: [recovery("old", 46, "COMPLETED")],
+  }
+
+  it("is the documented 180 days", () => {
+    expect(CARD_PROCESSING_WRITE_OFF_DAYS).toBe(180)
+  })
+
+  it("without an as-of time nothing is written off (the pure function stays clock-free)", () => {
+    const r = computeCardProcessingReceivable("acc-seller", rows)
+    expect(r.total_cents).toBe(142)
+    expect(r.written_off).toEqual([])
+    expect(r.written_off_cents).toBe(0)
+  })
+
+  it("one millisecond short of 180 days it is still owed", () => {
+    const r = computeCardProcessingReceivable("acc-seller", rows, { asOfMs: refundedAt + 180 * DAY - 1 })
+    expect(r.open.map((o) => o.shortfall_id)).toEqual(["old", "new"])
+    expect(r.total_cents).toBe(142)
+  })
+
+  it("at 180 days what is still outstanding is forgiven: out of open and the total, into written_off", () => {
+    const r = computeCardProcessingReceivable("acc-seller", rows, { asOfMs: refundedAt + 180 * DAY })
+    expect(r.open.map((o) => o.shortfall_id)).toEqual(["new"])
+    expect(r.total_cents).toBe(42)
+    expect(r.written_off).toEqual([
+      {
+        shortfall_id: "old",
+        order_id: "order_old",
+        owed_cents: 146,
+        recovered_cents: 46,
+        forgiven_cents: 100,
+        created_at: new Date(refundedAt).toISOString(),
+        written_off_at: new Date(refundedAt + 180 * DAY).toISOString(),
+      },
+    ])
+    expect(r.written_off_cents).toBe(100)
+  })
+
+  it("a fully repaid shortfall is never 'forgiven', and one with no created_at is never written off", () => {
+    const r = computeCardProcessingReceivable(
+      "acc-seller",
+      {
+        shortfalls: [
+          shortfall("paid", 50, { created_at: new Date(refundedAt).toISOString() }),
+          shortfall("undated", 30),
+        ],
+        recoveries: [recovery("paid", 50, "COMPLETED")],
+      },
+      { asOfMs: refundedAt + 1000 * DAY }
+    )
+    expect(r.written_off).toEqual([])
+    expect(r.open.map((o) => o.shortfall_id)).toEqual(["undated"])
+    expect(r.total_cents).toBe(30)
   })
 })
