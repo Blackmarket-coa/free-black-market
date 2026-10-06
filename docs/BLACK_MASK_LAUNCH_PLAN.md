@@ -303,6 +303,17 @@ gates community capital circles, so they are not a near-term funding source.
   is on by default or opt-in is still to confirm: a push goes through Apple's or
   Google's servers, which see when a message arrived even if they cannot read it.
 
+**Operator answers, 2026-10-06 (third round).**
+
+- F6 refund shortfalls are **recovered from the vendor's next earnings**,
+  automatically, before any payout (ledger BM-7).
+- Blackout members manage their subscriptions on an **FBM-hosted page reached
+  from Blackout's Account → Subscriptions** (BM-8, blackout#947), so the
+  approved disclosure is true for them.
+- A **consignor shares card processing pro rata** under F6, as built (BM-6).
+- Chat panel: unread indicators **and push notifications are on by default**.
+  A push never carries message text, and the panel never calls push private.
+
 - [x] Hosted-vault price (the model assumes $5/month). **$5/month.**
 - [x] Gate the paid launch on mobile, or launch on extension, web and desktop
       first with stock Bitwarden apps for mobile. **Hold until mobile ships.**
@@ -311,7 +322,7 @@ gates community capital circles, so they are not a near-term funding source.
 - [x] Vault database: Postgres or SQLite. **Postgres.**
 - [x] Grace period length after a lapsed payment. **14 days.**
 - [x] Unread indicators or push notifications in the chat panel (none by
-      default). **Add both**; default-on or opt-in to confirm.
+      default). **Add both, on by default** (2026-10-06).
 - [x] Dead drops or the dead man's switch first, and the audience each is built
       for. **Dead drops first**; the audience is still to be written down.
 - [x] Bundle a Black Mask seat into FBM's $10/month plan? **Wait.**

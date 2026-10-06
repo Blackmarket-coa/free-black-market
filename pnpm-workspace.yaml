@@ -84,6 +84,10 @@ overrides:
   "@mikro-orm/knex": "6.6.14"
   "@mikro-orm/migrations": "6.6.14"
   "@mikro-orm/postgresql": "6.6.14"
+  # GHSA-68fv-2mgg-jv7q (CVE-2026-93749, HIGH): event-loop denial of service
+  # through indexed source-map section offsets. Fixed in 1.2.2, a patch on the
+  # same line. Trivy's prod-scoped gate went red on 2026-10-06 (SD-38).
+  "source-map-js@1": "^1.2.2"
 
 # pnpm 11 makes an unadjudicated build script a hard error, so each is a
 # decision. See backend/pnpm-workspace.yaml for the full rationale.

@@ -147,6 +147,37 @@ overrides:
   "protobufjs": ">=8.4.1"
   "rollup": ">=4.59.0"
   "zod": "4.2.0"
+  # GHSA-68fv-2mgg-jv7q (CVE-2026-93749, HIGH): event-loop denial of service
+  # through indexed source-map section offsets. Fixed in 1.2.2, a patch on the
+  # same line. Trivy's prod-scoped gate went red on 2026-10-06 (SD-38).
+  "source-map-js@1": "^1.2.2"
+  # GHSA-jqcg-44mw-7w3h (CVE-2026-90711, CRITICAL): IP spoofing via an
+  # IPv4-mapped IPv6 address matching a trusted subnet. proxy-addr is what
+  # Express consults under `trust proxy`, so this decides which client address
+  # the rate limits and audit rows see. Fixed in 2.0.8, a patch (SD-38).
+  "proxy-addr@2": "^2.0.8"
+  # GHSA-vc2v-76pw-4v95 (CVE-2026-87776, HIGH): memory leak (DoS) when a
+  # response closes before compression finishes. Fixed in 1.8.2 (SD-38).
+  "compression@1": "^1.8.2"
+  # GHSA-7mx3-vvmw-hjmv (CVE-2026-104852, HIGH): prototype pollution in
+  # mergeDeep. Fixed ONLY in 12.0.1 -- no 10.x or 11.x backport exists -- and
+  # it reaches production through @medusajs/utils -> @graphql-tools/{merge,
+  # schema} (11.0.0) and @graphql-codegen/* (10.11.0). A major bump on a
+  # transitive dep, so it was checked rather than assumed: the CJS runtime
+  # export surface of 10.11.0 and 11.0.0 is a strict subset of 12.0.3's (143
+  # names, 146 in 12; none removed).
+  #
+  # merge and schema are raised with it to the first releases that declare
+  # utils ^12.0.3 themselves. Both are inside the ranges @medusajs/utils 2.14.2
+  # declares (^9.0.7, ^10.0.6), so Medusa's runtime chain ends up on versions
+  # every package in it says it supports. @graphql-codegen/* (also reached via
+  # @medusajs/utils, for type generation) still declares ^11.2.0 even at its
+  # latest, so the utils pin is outside codegen's stated range -- the one
+  # place this relies on the export-surface check above (SD-38).
+  # Caret-bounded so a 13.x cannot arrive unreviewed.
+  "@graphql-tools/utils": "^12.0.3"
+  "@graphql-tools/merge@9": "^9.2.6"
+  "@graphql-tools/schema@10": "^10.1.3"
 
 # Dependency build scripts, explicitly adjudicated.
 #
