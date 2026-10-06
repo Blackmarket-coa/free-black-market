@@ -11,13 +11,17 @@ import { afterAll, beforeEach, describe, expect, it, vi } from "vitest"
  * the publishable key — so the env it reads at import is set first, and only
  * the network (`fetch`) and the cookie jar are stubbed.
  */
-const { getAuthHeaders } = vi.hoisted(() => {
+const { getAuthHeaders, flags } = vi.hoisted(() => {
   process.env.MEDUSA_BACKEND_URL = "https://api.test"
   process.env.NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY = "pk_test_hawala"
-  return { getAuthHeaders: vi.fn() }
+  return { getAuthHeaders: vi.fn(), flags: { customerWallet: true } }
 })
 
 vi.mock("@/lib/data/cookies", () => ({ getAuthHeaders }))
+// The build-time flags, as a mutable stand-in: the wallet is ON for the
+// transport tests and turned off in the describe that is about it. The real
+// env reader is covered in lib/__tests__/customer-wallet-flag.test.ts.
+vi.mock("@/lib/feature-flags", () => ({ phase1ModuleFlags: flags }))
 
 import { hawalaRequest } from "@/lib/data/hawala"
 
@@ -40,6 +44,7 @@ beforeEach(() => {
   vi.stubGlobal("fetch", fetchMock)
   vi.spyOn(console, "error").mockImplementation(() => {})
   getAuthHeaders.mockResolvedValue({ Authorization: "Bearer jwt_customer" })
+  flags.customerWallet = true
 })
 
 afterAll(() => {
@@ -181,5 +186,54 @@ describe("hawalaRequest", () => {
   it("turns a network failure into a result rather than a thrown (and, in production, masked) error", async () => {
     fetchMock.mockRejectedValue(new TypeError("fetch failed"))
     expect(await hawalaRequest({ path: "/store/hawala/wallet" })).toMatchObject({ ok: false, status: 503, type: "network_error" })
+  })
+})
+
+describe("hawalaRequest with NEXT_PUBLIC_FF_CUSTOMER_WALLET_V1 off", () => {
+  const WALLET: [string, "GET" | "POST"][] = [
+    ["/store/hawala/wallet", "GET"],
+    ["/store/hawala/wallet", "POST"],
+    ["/store/hawala/deposit", "POST"],
+    ["/store/hawala/withdraw", "POST"],
+    ["/store/hawala/transactions", "GET"],
+    ["/store/hawala/bank-accounts", "GET"],
+    ["/store/hawala/bank-accounts", "POST"],
+    ["/store/hawala/bank-accounts/link", "POST"],
+    ["/store/hawala/bank-accounts/ba_1", "GET"],
+    // Express matches routes case-insensitively, so these reach the same handlers.
+    ["/store/hawala/Wallet", "GET"],
+    ["/store/hawala/WITHDRAW", "POST"],
+    ["/store/hawala/Bank-Accounts/Link", "POST"],
+  ]
+
+  beforeEach(() => {
+    flags.customerWallet = false
+  })
+
+  it.each(WALLET)("refuses %s %s without reading the cookie jar or calling the backend", async (path, method) => {
+    const result = await hawalaRequest({ path, method })
+    expect(result).toEqual({ ok: false, status: 400, type: "invalid_request", message: "Unsupported hawala request" })
+    expect(getAuthHeaders).not.toHaveBeenCalled()
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ["/store/hawala/pools", "GET"],
+    ["/store/hawala/pools/pool_1/contributions", "POST"],
+    ["/store/hawala/investments", "GET"],
+    ["/store/hawala/investments", "POST"],
+  ] as [string, "GET" | "POST"][])("still sends %s %s — pools, contributions and investments carry their own flags", async (path, method) => {
+    fetchMock.mockResolvedValue(respond(200, { ok: 1 }))
+    expect(await hawalaRequest({ path, method })).toEqual({ ok: true, data: { ok: 1 } })
+    expect(sent().url).toBe(`https://api.test${path}`)
+  })
+
+  it("with the flag on the same wallet paths go out as before", async () => {
+    flags.customerWallet = true
+    for (const [path, method] of WALLET) {
+      fetchMock.mockResolvedValueOnce(respond(200, {}))
+      expect(await hawalaRequest({ path, method })).toEqual({ ok: true, data: {} })
+    }
+    expect(fetchMock).toHaveBeenCalledTimes(WALLET.length)
   })
 })

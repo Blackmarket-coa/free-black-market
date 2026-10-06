@@ -1,5 +1,6 @@
 import { createHmac } from "crypto"
 import {
+  BLACK_MASK_EVENTS,
   BLACK_MASK_MAX_ATTEMPTS,
   BLACK_MASK_RETRY_LADDER_MINUTES,
   blackMaskEventId,
@@ -9,6 +10,8 @@ import {
   buildBlackMaskPayload,
   buildBlackMaskWireBody,
   deliverableEmail,
+  isBlackMaskEvent,
+  isBlackMaskStoredPayload,
   isBlackMaskVaultLine,
   sequenceFrom,
   signBlackMaskBody,
@@ -67,6 +70,41 @@ describe("vault marker", () => {
 
   it("trims the plan code", () => {
     expect(blackMaskPlanCode({ black_mask_plan: " vault_annual " })).toBe("vault_annual")
+  })
+})
+
+describe("event set", () => {
+  it("is exactly the §2 table, `expired` included", () => {
+    expect([...BLACK_MASK_EVENTS]).toEqual([
+      "placed",
+      "renewed",
+      "cancelled",
+      "payment_failed",
+      "grace_started",
+      "read_only",
+      "expired",
+    ])
+    expect(isBlackMaskEvent("expired")).toBe(true)
+    expect(isBlackMaskEvent("expire")).toBe(false)
+    expect(isBlackMaskEvent("lapsed")).toBe(false)
+  })
+
+  it("an `expired` subscription payload is a stored payload keyed like the others, with no email", () => {
+    const p = buildBlackMaskPayload({
+      event: "expired",
+      subject: { type: "subscription", id: "sub_1" },
+      sequence: 1772323200000,
+      customerId: "cus_1",
+      plan: "vault_monthly",
+      seats: 1,
+      sellerId: SELLER,
+      periodEnd: "2026-03-01T00:00:00.000Z",
+    })
+    expect(p.event_id).toBe("bm:v1:subscription:sub_1:expired:1772323200000")
+    expect(p.occurred_at).toBe("2026-03-01T00:00:00.000Z")
+    expect(isBlackMaskStoredPayload(p)).toBe(true)
+    expect(isBlackMaskStoredPayload({ ...p, event: "lapsed" })).toBe(false)
+    expect(buildBlackMaskWireBody(p, "a@b.example")).not.toMatch(/email/i)
   })
 })
 

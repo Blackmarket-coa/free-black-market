@@ -1,5 +1,8 @@
 import { createLogger } from "../shared/logger"
-import type { MedusaContainer } from "@medusajs/framework/types"
+import type {
+  IProductModuleService,
+  MedusaContainer,
+} from "@medusajs/framework/types"
 import {
   ContainerRegistrationKeys,
   Modules,
@@ -8,6 +11,9 @@ import {
 import { createProductsWorkflow } from "@medusajs/medusa/core-flows"
 import { SELLER_MODULE } from "@mercurjs/b2c-core/modules/seller"
 import { MARKETPLACE_LISTING_MODULE } from "../modules/marketplace-listing"
+import { UNTIL_CANCELED_PRODUCT_METADATA_KEY } from "../modules/subscription/utils/grace"
+import { featureFlagState } from "../shared/feature-flags"
+import { mapListingRecurrence } from "./blackout-checkout"
 
 const log = createLogger("lib/blackout-listing-product")
 
@@ -252,4 +258,111 @@ export async function ensureListingProduct(
   await persistOnListing(container, listing.id, product.id, variantId)
 
   return { product_id: product.id, variant_id: variantId, created: true }
+}
+
+// ---------------------------------------------------------------------------
+// Until-cancelled marker for recurring listings (FF_CONSUMER_SUBSCRIPTIONS_V1)
+// ---------------------------------------------------------------------------
+
+/** Metadata keys `ensureListingProduct` writes on every shadow product. */
+const SHADOW_PRODUCT_METADATA_KEY = "blackout_shadow_product"
+const SHADOW_LISTING_METADATA_KEY = "creator_listing_id"
+
+export type UntilCanceledMarkOutcome =
+  /** The marker was merged onto the product's metadata by this call. */
+  | "marked"
+  /** The product already carries the key (true, or an operator's explicit opt-out): nothing written. */
+  | "already_set"
+  /** Flag off: nothing read, nothing written. */
+  | "flag_off"
+  /** One-off listing (mapListingRecurrence null): never marked. */
+  | "not_recurring"
+  /** The product is not this listing's shadow product: never marked. */
+  | "not_shadow_product"
+  /** The read or the write failed; logged, nothing assumed. */
+  | "failed"
+
+/**
+ * Mark a recurring listing's shadow product as one that MAY be sold until
+ * cancelled (`subscription_until_canceled: true`), once.
+ *
+ * Before FF_CONSUMER_SUBSCRIPTIONS_V1, a listing with category `subscription`
+ * was sold as a recurring membership that renewed. With the flag on, the
+ * hosted checkout offers the auto-renew checkbox, and the create step makes a
+ * subscription until-cancelled, only for a product carrying this marker
+ * (`isUntilCanceledForProduct` / `decideCreateTerms`) — and
+ * `ensureListingProduct` never set it, so every Blackout membership would sell
+ * for one period with no way to opt in. This writes the marker the first time
+ * a recurring listing's checkout asks the question, so the page's offer and
+ * the create step read the same product-side permission.
+ *
+ * It is a permission, never an approval: the member still has to tick the
+ * box, and without it the purchase is exactly one period.
+ *
+ * Writes only when ALL hold: the flag is on; the listing is recurring; the
+ * product is THIS listing's shadow product (`blackout_shadow_product` and a
+ * matching `creator_listing_id` — a listing pointed at an ordinary catalogue
+ * product never changes that product, which the storefront would then offer
+ * for subscription too); and the metadata has no
+ * `subscription_until_canceled` key at all. A key already present — `true`,
+ * or an operator's explicit `false` opting the product out — is left alone.
+ *
+ * Merge, never replace: the current metadata is read first and written back
+ * whole with the marker added, so `creator_listing_id` and
+ * `blackout_shadow_product` survive even a replace-semantics update. Medusa's
+ * product repository additionally merges the sent metadata onto the row's
+ * current metadata at write time (`mergeMetadata`), so a key another writer
+ * added between our read and our write is kept too. Two first renders racing
+ * both write the same object: the result is one marker, the same either way.
+ * Idempotent: once the key exists every later call reads and writes nothing.
+ *
+ * Never throws. A failure is logged and reported as `failed`; the caller's
+ * read of the marker then decides, so a failed write means no checkbox (the
+ * one-period purchase), never an unasked until-cancelled one.
+ */
+export async function ensureRecurringListingMarkedUntilCanceled(
+  container: MedusaContainer,
+  listing: { id: string; category?: string | null; interval?: string | null },
+  productId: string
+): Promise<UntilCanceledMarkOutcome> {
+  if (!featureFlagState.isEnabled("CONSUMER_SUBSCRIPTIONS_V1")) return "flag_off"
+  if (!mapListingRecurrence(listing)) return "not_recurring"
+
+  try {
+    const productService = container.resolve<IProductModuleService>(Modules.PRODUCT)
+    const product = await productService.retrieveProduct(productId, {
+      select: ["id", "metadata"],
+    })
+    const metadata: Record<string, unknown> = { ...(product.metadata ?? {}) }
+
+    if (Object.prototype.hasOwnProperty.call(metadata, UNTIL_CANCELED_PRODUCT_METADATA_KEY)) {
+      return "already_set"
+    }
+    if (
+      metadata[SHADOW_PRODUCT_METADATA_KEY] !== true ||
+      metadata[SHADOW_LISTING_METADATA_KEY] !== listing.id
+    ) {
+      log.warn(
+        `Product ${productId} is not the shadow product of recurring listing ${listing.id}; ` +
+          `not marking it ${UNTIL_CANCELED_PRODUCT_METADATA_KEY}`
+      )
+      return "not_shadow_product"
+    }
+
+    await productService.updateProducts(productId, {
+      metadata: { ...metadata, [UNTIL_CANCELED_PRODUCT_METADATA_KEY]: true },
+    })
+    log.info(
+      `Marked shadow product ${productId} of recurring listing ${listing.id} ` +
+        `${UNTIL_CANCELED_PRODUCT_METADATA_KEY}: true`
+    )
+    return "marked"
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    log.warn(
+      `Could not mark shadow product ${productId} of listing ${listing.id} ` +
+        `${UNTIL_CANCELED_PRODUCT_METADATA_KEY}: ${message}`
+    )
+    return "failed"
+  }
 }

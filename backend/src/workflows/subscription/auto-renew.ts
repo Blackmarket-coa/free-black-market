@@ -102,8 +102,9 @@ export type SavePaymentMethodResult =
  *
  * The storefront asks Stripe to keep the card (`setup_future_usage:
  * "off_session"`) on the payment session of an approved subscription cart only
- * (storefront/src/lib/subscriptions/auto-renew.ts), the pattern the Blackout
- * hosted checkout already uses (commerce/checkout/sessions/[token]/page).
+ * (storefront/src/lib/subscriptions/auto-renew.ts); so does the Blackout hosted
+ * checkout for a recurring listing under the flag
+ * (commerce/checkout/sessions/[token]/page), which calls this too.
  *
  * Best-effort: a failure is logged, never thrown — the order and subscription
  * exist, and a renewal with no card goes to dunning rather than renewing free.

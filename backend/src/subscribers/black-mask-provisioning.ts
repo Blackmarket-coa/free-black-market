@@ -11,8 +11,9 @@ import {
  * channel announces. The gating (FF_BLACK_MASK_PROVISIONING_V1, complete
  * config, vault subject) and the payload live in
  * lib/black-mask-provisioning.ts. `subscription.grace_started` and
- * `subscription.read_only` are emitted by the grace slice; subscribing to an
- * event nobody emits is harmless.
+ * `subscription.read_only` are emitted by the grace slice, and
+ * `subscription.expired` by process-subscription-renewals (only while the
+ * flag is on); subscribing to an event nobody emits is harmless.
  *
  * Errors are logged and swallowed so a provisioning hiccup never fails the
  * order or subscription flow that triggered it.

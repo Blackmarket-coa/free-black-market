@@ -1,5 +1,6 @@
 "use server"
 
+import { customerWalletEnabled } from "@/lib/customer-wallet"
 import { medusaFetch } from "../config"
 import { getAuthHeaders } from "./cookies"
 
@@ -26,7 +27,8 @@ export type CoalitionCreditsTransaction = {
 /**
  * Fetch the customer's Coalition Credits wallet (USER_WALLET account)
  * with balance details. Wraps `/store/hawala/wallet` so the storefront
- * can render a simple `{ wallet, balance }` shape.
+ * can render a simple `{ wallet, balance }` shape. Null, without a call,
+ * while NEXT_PUBLIC_FF_CUSTOMER_WALLET_V1 is off.
  */
 export const getCoalitionCreditsWallet = async (): Promise<{
   wallet: CoalitionCreditsWallet
@@ -37,6 +39,7 @@ export const getCoalitionCreditsWallet = async (): Promise<{
     currency_code: string
   }
 } | null> => {
+  if (!customerWalletEnabled()) return null
   const authHeaders = await getAuthHeaders()
   if (!authHeaders) return null
 
@@ -61,12 +64,14 @@ export const getCoalitionCreditsWallet = async (): Promise<{
 
 /**
  * Fetch the customer's recent ledger transactions. Backed by
- * `/store/hawala/transactions`.
+ * `/store/hawala/transactions`. Null, without a call, while
+ * NEXT_PUBLIC_FF_CUSTOMER_WALLET_V1 is off.
  */
 export const listCoalitionCreditsTransactions = async (params?: {
   limit?: number
   offset?: number
 }): Promise<{ transactions: CoalitionCreditsTransaction[] } | null> => {
+  if (!customerWalletEnabled()) return null
   const authHeaders = await getAuthHeaders()
   if (!authHeaders) return null
 

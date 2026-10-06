@@ -118,6 +118,21 @@ export const PHASE0_FEATURE_FLAGS = {
   // pages may say "we absorb processing" for up to the 1h fetch cache while
   // settlement is fee-first.
   FEE_FIRST_SPLIT_V1: "FF_FEE_FIRST_SPLIT_V1",
+  // The customer wallet (hawala-ledger USER_WALLET): GET/POST
+  // /store/hawala/wallet, /deposit (Stripe ACH pull into the wallet),
+  // /withdraw (ACH push out of it), /bank-accounts and /bank-accounts/link
+  // (Financial Connections linking), and /transactions. A customer-held,
+  // ACH-funded balance is the balance-holding outside a purchase→payout context
+  // that Posture A rules out (docs/POSTURE_A_COMPLIANCE.md), and that doc's
+  // InvestmentPool bullet has claimed since 2026-09-09 that `/store/hawala/
+  // deposit` sat behind a flag when it did not; this flag closes that claim.
+  // Default off (operator answer 2026-10-06): with it off every one of those
+  // routes answers 404 feature_disabled BEFORE auth or a rate limiter runs, so
+  // a signed-out and a signed-in caller get the same answer. The pools listing,
+  // investments and carried-pool contributions keep their own flags
+  // (INVESTMENT_POOLS_V1, NONPROFIT_PARITY_V1) and are not gated here. The
+  // storefront twin is NEXT_PUBLIC_FF_CUSTOMER_WALLET_V1; set both together.
+  CUSTOMER_WALLET_V1: "FF_CUSTOMER_WALLET_V1",
 } as const
 
 export type Phase0FeatureFlag = keyof typeof PHASE0_FEATURE_FLAGS

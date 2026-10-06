@@ -20,6 +20,13 @@
  * those sentences, adapting only the nouns, and adds the facts a customer
  * needs to approve a recurring charge: the price, the interval, when the next
  * charge happens, and how to stop it.
+ *
+ * The Blackout hosted checkout (rendered by the backend) shows the same
+ * checkbox label, disclosure and one-period terms from its own copy,
+ * backend/src/modules/subscription/utils/auto-renew-copy.ts; the backend spec
+ * modules/subscription/__tests__/auto-renew-copy.unit.spec.ts runs this file
+ * and fails unless both are string-identical. Change the text here → change it
+ * there in the same PR.
  */
 
 /**

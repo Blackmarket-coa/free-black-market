@@ -1,0 +1,40 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Free Black Market — Checkout</title>
+  <style>
+    body { font-family: system-ui, sans-serif; padding: 16px; max-width: 480px; margin: 0 auto; }
+    .row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #eee; }
+    button { padding: 12px 20px; border-radius: 6px; border: 0; cursor: pointer; font-size: 16px; width: 100%; }
+    .pay { background: #111; color: #fff; margin-top: 16px; }
+    .cancel { background: #f4f4f4; color: #111; margin-top: 8px; }
+    #payment-element { margin-top: 16px; }
+    .error { color: #b00020; margin-top: 12px; min-height: 1em; }
+</style>
+</head>
+<body>
+  <h1>Checkout</h1>
+  <div class="row"><span>Item</span><span>Vault seat</span></div>
+  <div class="row"><span>Total</span><span>5 USD</span></div>
+  
+  <form method="GET" action="?action=complete&amp;embed=1">
+    <button class="pay" type="submit">Confirm and pay 5 USD</button>
+  </form>
+  <form method="GET" action="?action=cancel&amp;embed=1">
+    <button class="cancel" type="submit">Cancel</button>
+  </form>
+  <script>
+    (function () {
+      var embed = true;
+      var origin = "https://theblackout.app";
+      if (embed && origin && window.parent && window.parent !== window) {
+        window.parent.postMessage(
+          { source: "fbm-checkout", type: "checkout.ready", payload: {"session_id":"bcs_1","cart_id":"cart_1"} },
+          origin
+        );
+      }
+    })();
+  </script>
+</body>
+</html>

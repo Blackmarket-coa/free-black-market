@@ -15,6 +15,10 @@ import {
   makeBlackMaskCustomerLookup,
 } from "../black-mask-provisioning"
 import subscriber, { config as subscriberConfig } from "../../subscribers/black-mask-provisioning"
+import {
+  SUBSCRIPTION_EXPIRED_EVENT,
+  subscriptionExpiredPayload,
+} from "../../workflows/subscription/subscription-expired"
 
 /**
  * Medusa event -> Black Mask outbox row, through the REAL
@@ -409,6 +413,59 @@ describe("subscription events", () => {
     ])
   })
 
+  it("subscription.expired enqueues `expired`, sequenced from occurred_at (the row's expiration_date); a redelivery is a no-op", async () => {
+    enable()
+    // After expireSubscription the row has next_order_date NULL, so
+    // period_end falls back to expiration_date.
+    const expired = { ...sub, next_order_date: null, expiration_date: "2026-03-01T00:00:00.000Z" }
+    const w = makeWorld({ subs: [expired], products: [VAULT] })
+    // The exact body the renewal job publishes, built from the row.
+    const body = subscriptionExpiredPayload(expired)
+    expect(body).toEqual({ subscription_id: "sub_1", occurred_at: "2026-03-01T00:00:00.000Z" })
+
+    const first = await enqueueBlackMaskProvisioning(w.container, SUBSCRIPTION_EXPIRED_EVENT, body)
+    const again = await enqueueBlackMaskProvisioning(w.container, SUBSCRIPTION_EXPIRED_EVENT, { ...body })
+    const seq = Date.parse("2026-03-01T00:00:00.000Z")
+    expect(first).toMatchObject({ status: "enqueued", event_id: `bm:v1:subscription:sub_1:expired:${seq}` })
+    expect(again).toMatchObject({ status: "enqueued", event_id: `bm:v1:subscription:sub_1:expired:${seq}` })
+    expect(w.rows).toHaveLength(1)
+    expect(w.rows[0]).toMatchObject({ subscription_id: BLACK_MASK_SUBSCRIPTION_ID, event: "black_mask.expired" })
+    expect(w.rows[0].payload).toEqual({
+      event: "expired",
+      event_id: `bm:v1:subscription:sub_1:expired:${seq}`,
+      sequence: seq,
+      occurred_at: "2026-03-01T00:00:00.000Z",
+      subject: { type: "subscription", id: "sub_1" },
+      customer_id: "cus_1",
+      plan: "vault_monthly",
+      seats: 1,
+      seller_id: SELLER,
+      period_end: "2026-03-01T00:00:00.000Z",
+    })
+  })
+
+  it("subscription.expired without occurred_at enqueues nothing (no updated_at or now() fallback)", async () => {
+    enable()
+    const w = makeWorld({ subs: [sub], products: [VAULT] })
+    expect(
+      await enqueueBlackMaskProvisioning(w.container, SUBSCRIPTION_EXPIRED_EVENT, { subscription_id: "sub_1" })
+    ).toEqual({ status: "skipped", reason: "no_sequence" })
+    expect(w.rows).toHaveLength(0)
+  })
+
+  it("subscription.expired with the flag off resolves nothing and writes nothing", async () => {
+    enable()
+    delete process.env[FLAG]
+    const w = makeWorld({ subs: [sub], products: [VAULT] })
+    expect(
+      await enqueueBlackMaskProvisioning(w.container, SUBSCRIPTION_EXPIRED_EVENT, {
+        subscription_id: "sub_1",
+        occurred_at: "2026-03-01T00:00:00.000Z",
+      })
+    ).toEqual({ status: "skipped", reason: "flag_off" })
+    expect(w.resolved).toEqual([])
+  })
+
   it("a subscription on a non-vault product writes nothing", async () => {
     enable()
     const w = makeWorld({ subs: [{ ...sub, product_id: "prod_x", canceled_at: "2026-02-15T00:00:00.000Z" }], products: [OTHER_SELLER_WITH_PLAN] })
@@ -421,7 +478,7 @@ describe("subscription events", () => {
 })
 
 describe("subscriber", () => {
-  it("listens to every announced event, including the grace slice's two", () => {
+  it("listens to every announced event, including the grace slice's two and the renewal job's expiry", () => {
     expect(subscriberConfig.event).toEqual([...BLACK_MASK_MEDUSA_EVENTS])
     expect(BLACK_MASK_MEDUSA_EVENTS).toEqual([
       "order.placed",
@@ -431,6 +488,7 @@ describe("subscriber", () => {
       "subscription.payment_failed",
       "subscription.grace_started",
       "subscription.read_only",
+      "subscription.expired",
     ])
   })
 
