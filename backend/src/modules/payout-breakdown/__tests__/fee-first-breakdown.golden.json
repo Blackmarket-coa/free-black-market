@@ -1,0 +1,386 @@
+{
+  "single seller $40 at the default": {
+    "items": [
+      {
+        "type": "PRODUCER_PRICE",
+        "amount": 3880,
+        "percent": 97,
+        "label": "To Producer",
+        "description": "Goes directly to the person who made/grew this"
+      },
+      {
+        "type": "PLATFORM_FEE",
+        "amount": 120,
+        "percent": 3,
+        "label": "Platform Fee",
+        "description": "Supports the marketplace and connects you with producers",
+        "recipient": "Platform"
+      }
+    ],
+    "totals": {
+      "customerPaid": 4000,
+      "toProducers": 3880,
+      "platformFees": 120,
+      "paymentProcessing": 146,
+      "delivery": 0,
+      "communityFund": 0,
+      "tax": 0,
+      "tip": 0,
+      "donation": 0,
+      "creatorCommission": 0,
+      "pluginDeveloperShare": 0,
+      "referralShare": 0
+    },
+    "sellerBreakdown": [
+      {
+        "sellerId": "sel_1",
+        "gross": 4000,
+        "fees": 120,
+        "net": 3880
+      }
+    ],
+    "pluginShareAllocations": [],
+    "referralShareAllocations": []
+  },
+  "single seller $5 on a 2% plan": {
+    "items": [
+      {
+        "type": "PRODUCER_PRICE",
+        "amount": 490,
+        "percent": 98,
+        "label": "To Producer",
+        "description": "Goes directly to the person who made/grew this"
+      },
+      {
+        "type": "PLATFORM_FEE",
+        "amount": 10,
+        "percent": 2,
+        "label": "Platform Fee",
+        "description": "Supports the marketplace and connects you with producers",
+        "recipient": "Platform"
+      }
+    ],
+    "totals": {
+      "customerPaid": 500,
+      "toProducers": 490,
+      "platformFees": 10,
+      "paymentProcessing": 45,
+      "delivery": 0,
+      "communityFund": 0,
+      "tax": 0,
+      "tip": 0,
+      "donation": 0,
+      "creatorCommission": 0,
+      "pluginDeveloperShare": 0,
+      "referralShare": 0
+    },
+    "sellerBreakdown": [
+      {
+        "sellerId": "sel_1",
+        "gross": 500,
+        "fees": 10,
+        "net": 490
+      }
+    ],
+    "pluginShareAllocations": [],
+    "referralShareAllocations": []
+  },
+  "multi-seller with per-seller plan rates": {
+    "items": [
+      {
+        "type": "PRODUCER_PRICE",
+        "amount": 3925,
+        "percent": 98,
+        "label": "To Producer",
+        "description": "Goes directly to the person who made/grew this",
+        "recipient": "2 Producers"
+      },
+      {
+        "type": "PLATFORM_FEE",
+        "amount": 75,
+        "percent": 2,
+        "label": "Platform Fee",
+        "description": "Supports the marketplace and connects you with producers",
+        "recipient": "Platform"
+      }
+    ],
+    "totals": {
+      "customerPaid": 4000,
+      "toProducers": 3925,
+      "platformFees": 75,
+      "paymentProcessing": 146,
+      "delivery": 0,
+      "communityFund": 0,
+      "tax": 0,
+      "tip": 0,
+      "donation": 0,
+      "creatorCommission": 0,
+      "pluginDeveloperShare": 0,
+      "referralShare": 0
+    },
+    "sellerBreakdown": [
+      {
+        "sellerId": "sel_1",
+        "sellerName": "A",
+        "gross": 2500,
+        "fees": 75,
+        "net": 2425
+      },
+      {
+        "sellerId": "sel_2",
+        "sellerName": "B",
+        "gross": 1500,
+        "fees": 0,
+        "net": 1500
+      }
+    ],
+    "pluginShareAllocations": [],
+    "referralShareAllocations": []
+  },
+  "plugin + referral carve-outs": {
+    "items": [
+      {
+        "type": "PRODUCER_PRICE",
+        "amount": 9700,
+        "percent": 97,
+        "label": "To Producer",
+        "description": "Goes directly to the person who made/grew this"
+      },
+      {
+        "type": "PLATFORM_FEE",
+        "amount": 300,
+        "percent": 3,
+        "label": "Platform Fee",
+        "description": "Supports the marketplace and connects you with producers",
+        "recipient": "Platform"
+      },
+      {
+        "type": "PLUGIN_DEVELOPER_FEE",
+        "amount": 100,
+        "percent": 1,
+        "label": "Plugin Developer",
+        "description": "Share paid to the developer of the plugin / theme / emoji pack",
+        "recipient": "analytics"
+      },
+      {
+        "type": "REFERRAL_FEE",
+        "amount": 100,
+        "percent": 1,
+        "label": "Referral",
+        "description": "Generic referral share for non-affiliate-program referrals",
+        "recipient": "Referrer"
+      }
+    ],
+    "totals": {
+      "customerPaid": 10000,
+      "toProducers": 9700,
+      "platformFees": 300,
+      "paymentProcessing": 320,
+      "delivery": 0,
+      "communityFund": 0,
+      "tax": 0,
+      "tip": 0,
+      "donation": 0,
+      "creatorCommission": 0,
+      "pluginDeveloperShare": 100,
+      "referralShare": 100
+    },
+    "sellerBreakdown": [
+      {
+        "sellerId": "sel_1",
+        "gross": 10000,
+        "fees": 300,
+        "net": 9700
+      }
+    ],
+    "pluginShareAllocations": [
+      {
+        "slug": "analytics",
+        "author_seller_id": "sel_dev",
+        "amount_cents": 100,
+        "sellerId": "sel_1"
+      }
+    ],
+    "referralShareAllocations": [
+      {
+        "referrer_seller_id": "sel_ref",
+        "referred_seller_id": "sel_1",
+        "amount_cents": 100,
+        "sellerId": "sel_1"
+      }
+    ]
+  },
+  "tax, delivery, tip, pickup discount and donation": {
+    "items": [
+      {
+        "type": "PRODUCER_PRICE",
+        "amount": 3880,
+        "percent": 66,
+        "label": "To Producer",
+        "description": "Goes directly to the person who made/grew this"
+      },
+      {
+        "type": "PLATFORM_FEE",
+        "amount": 120,
+        "percent": 2,
+        "label": "Platform Fee",
+        "description": "Supports the marketplace and connects you with producers",
+        "recipient": "Platform"
+      },
+      {
+        "type": "DELIVERY_FEE",
+        "amount": 500,
+        "percent": 8,
+        "label": "Delivery",
+        "description": "Delivery to your location"
+      },
+      {
+        "type": "PICKUP_DISCOUNT",
+        "amount": -100,
+        "percent": 2,
+        "label": "Pickup Discount",
+        "description": "Savings for picking up your order"
+      },
+      {
+        "type": "TAX",
+        "amount": 320,
+        "percent": 5,
+        "label": "Tax",
+        "description": "Sales tax (required by law)"
+      },
+      {
+        "type": "TIP",
+        "amount": 200,
+        "percent": 3,
+        "label": "Tip",
+        "description": "Your optional tip goes directly to the producer"
+      },
+      {
+        "type": "DONATION",
+        "amount": 1000,
+        "percent": 17,
+        "label": "Donation",
+        "description": "Goes to the named organisation, not the producer; 0% platform fee",
+        "recipient": "Org"
+      }
+    ],
+    "totals": {
+      "customerPaid": 5920,
+      "toProducers": 4080,
+      "platformFees": 120,
+      "paymentProcessing": 202,
+      "delivery": 500,
+      "communityFund": 0,
+      "tax": 320,
+      "tip": 200,
+      "donation": 1000,
+      "creatorCommission": 0,
+      "pluginDeveloperShare": 0,
+      "referralShare": 0
+    },
+    "sellerBreakdown": [
+      {
+        "sellerId": "sel_1",
+        "gross": 4000,
+        "fees": 120,
+        "net": 3880
+      }
+    ],
+    "pluginShareAllocations": [],
+    "referralShareAllocations": []
+  },
+  "creator commission and a community contribution": {
+    "items": [
+      {
+        "type": "PRODUCER_PRICE",
+        "amount": 3550,
+        "percent": 89,
+        "label": "To Producer",
+        "description": "Goes directly to the person who made/grew this"
+      },
+      {
+        "type": "PLATFORM_FEE",
+        "amount": 120,
+        "percent": 3,
+        "label": "Platform Fee",
+        "description": "Supports the marketplace and connects you with producers",
+        "recipient": "Platform"
+      },
+      {
+        "type": "CREATOR_COMMISSION",
+        "amount": 250,
+        "percent": 6,
+        "label": "Creator Commission",
+        "description": "Affiliate share paid to the creator who referred this sale",
+        "recipient": "Creator"
+      },
+      {
+        "type": "COMMUNITY_FUND",
+        "amount": 40,
+        "percent": 1,
+        "label": "Community Fund",
+        "description": "Reinvested in local food systems and producer support",
+        "recipient": "Community"
+      }
+    ],
+    "totals": {
+      "customerPaid": 4000,
+      "toProducers": 3550,
+      "platformFees": 120,
+      "paymentProcessing": 146,
+      "delivery": 0,
+      "communityFund": 40,
+      "tax": 0,
+      "tip": 0,
+      "donation": 0,
+      "creatorCommission": 250,
+      "pluginDeveloperShare": 0,
+      "referralShare": 0
+    },
+    "sellerBreakdown": [
+      {
+        "sellerId": "sel_1",
+        "gross": 4000,
+        "fees": 370,
+        "net": 3550
+      }
+    ],
+    "pluginShareAllocations": [],
+    "referralShareAllocations": []
+  },
+  "a negotiated 0 override": {
+    "items": [
+      {
+        "type": "PRODUCER_PRICE",
+        "amount": 3333,
+        "percent": 100,
+        "label": "To Producer",
+        "description": "Goes directly to the person who made/grew this"
+      }
+    ],
+    "totals": {
+      "customerPaid": 3333,
+      "toProducers": 3333,
+      "platformFees": 0,
+      "paymentProcessing": 127,
+      "delivery": 0,
+      "communityFund": 0,
+      "tax": 0,
+      "tip": 0,
+      "donation": 0,
+      "creatorCommission": 0,
+      "pluginDeveloperShare": 0,
+      "referralShare": 0
+    },
+    "sellerBreakdown": [
+      {
+        "sellerId": "sel_1",
+        "gross": 3333,
+        "fees": 0,
+        "net": 3333
+      }
+    ],
+    "pluginShareAllocations": [],
+    "referralShareAllocations": []
+  }
+}

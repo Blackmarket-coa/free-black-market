@@ -92,6 +92,32 @@ export const PHASE0_FEATURE_FLAGS = {
   // before. Default off. Do not set before the fee-first split (F6) is live:
   // at 0% the platform still absorbs card processing on every sale.
   ALL_ACCESS_PLAN_V1: "FF_ALL_ACCESS_PLAN_V1",
+  // Black Mask F6: the fee-first split (operator answer 2026-10-05 item 6,
+  // "processing fee comes out of total then is split"). On, the card-
+  // processing ESTIMATE (payout_config payment_processing_percent / _fixed,
+  // 2.9% + 30c by default) is taken on the whole amount FBM's own Stripe
+  // account charges for the order, deducted first, and the platform fee is
+  // taken on what is left (`payout-breakdown/fee-first.ts`). The ledger gets a
+  // processing leg ESCROW -> the dedicated card-processing account (a
+  // PLATFORM_FEE-type system account owned by `processing`, never SETTLEMENT
+  // nor the shared PLATFORM_FEE balance the plugin/referral disbursers draw
+  // on); on a refund that leg is not reversed and the vendor's balancing leg
+  // absorbs it. /store/fee-schedule publishes `processing` and the storefront
+  // stops saying FBM absorbs processing. Off, every amount, ledger leg and
+  // public sentence is exactly what it was. Default off; no vendors are live,
+  // so the cut-over is the moment this is set. The rate never moves: this
+  // changes the BASE the flat 3% is taken on, not the 3%.
+  // GATE: do not set until the operator has decided how a refund's vendor
+  // shortfall is recovered (netted against later payouts, or platform-borne).
+  // The refund always posts and records the gap as a vendor-shortfall leg
+  // (`hawala-ledger/card-processing.ts`); nothing yet acts on that record.
+  // CUT-OVER ORDER: deploy the storefront with NEXT_PUBLIC_FF_FEE_FIRST_SPLIT_V1
+  // first (a fresh build has no cached /store/fee-schedule, and the twin
+  // forces the fee-first wording even over a cached response without
+  // `processing`), THEN set this. Roll back in the reverse order. Otherwise
+  // pages may say "we absorb processing" for up to the 1h fetch cache while
+  // settlement is fee-first.
+  FEE_FIRST_SPLIT_V1: "FF_FEE_FIRST_SPLIT_V1",
   // The customer wallet (hawala-ledger USER_WALLET): GET/POST
   // /store/hawala/wallet, /deposit (Stripe ACH pull into the wallet),
   // /withdraw (ACH push out of it), /bank-accounts and /bank-accounts/link

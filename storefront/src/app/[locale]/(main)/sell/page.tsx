@@ -16,6 +16,7 @@ export default async function SellPage() {
     <SellPageClient
       feePlans={schedule.plans}
       feePercent={schedule.default_fee_percent}
+      processing={schedule.processing}
     />
   )
 }

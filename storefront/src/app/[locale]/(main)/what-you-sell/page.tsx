@@ -1,6 +1,9 @@
 import type { Metadata } from "next"
 import Link from "next/link"
 
+import { getFeeSchedule } from "@/lib/data/fee-schedule"
+import { processingCopy } from "@/lib/helpers/processing-copy"
+
 export const metadata: Metadata = {
   title: "What Are You Selling? | Free Black Market",
   description:
@@ -215,14 +218,16 @@ const freeSeedResources = [
   },
 ]
 
-export default function WhatYouSellPage() {
+export default async function WhatYouSellPage() {
+  // Processing sentences render from /store/fee-schedule (Black Mask F6).
+  const { processing, default_fee_percent: feePercent } = await getFeeSchedule()
   return (
     <div className="bg-white">
       <section className="bg-green-900 text-white py-20">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
           <p className="uppercase tracking-wide text-green-300 text-sm font-semibold">Vendor entry points</p>
           <h1 className="text-4xl md:text-5xl font-bold mt-2 mb-4">What Are You Selling?</h1>
-          <p className="text-lg text-green-100 max-w-3xl">Find the path that matches your business model and launch with the same 3% fee and 97% vendor payout.</p>
+          <p className="text-lg text-green-100 max-w-3xl">{processingCopy("whatYouSellIntro", processing, feePercent)}</p>
           <p className="text-base text-green-100/90 mt-3 max-w-3xl">Whether you are a food producer, educator, creative, organizer, or neighborhood collective, this page helps you choose a model and start with a realistic first offer.</p>
         </div>
       </section>

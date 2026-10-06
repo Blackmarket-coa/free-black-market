@@ -12,6 +12,12 @@ import {
   type PlatformFeeTransactionKind,
 } from "../../../modules/payout-breakdown/fee-resolution"
 import { featureFlagState } from "../../../shared/feature-flags"
+import { feeFirstSplitEnabled } from "../../../shared/platform-fee"
+import { PAYOUT_BREAKDOWN_MODULE } from "../../../modules/payout-breakdown"
+import type PayoutBreakdownService from "../../../modules/payout-breakdown/service"
+import { createLogger } from "../../../shared/logger"
+
+const log = createLogger("api/store/fee-schedule")
 
 /**
  * GET /store/fee-schedule
@@ -56,7 +62,41 @@ import { featureFlagState } from "../../../shared/feature-flags"
  * same chain that would charge them, so this page cannot quote a rule the
  * resolver does not apply. It states FBM's fee rule only; it says nothing
  * about any organisation's tax status (legal checkpoint L11).
+ *
+ * `processing` (only while `FF_FEE_FIRST_SPLIT_V1` is on, Black Mask F6)
+ * states how card processing is handled: `model: "fee_first"` — the estimate
+ * (`percent` + `fixed_cents`, read from the payout config that the settlement
+ * deducts) comes off the sale first and the platform fee is taken on what is
+ * left. It exists so the storefront's "we absorb processing" copy cannot
+ * outlive the change; flag off, the field is absent and the response is
+ * byte-identical (pinned in the spec), which the storefront reads as today's
+ * absorbed model. If the config cannot be read the model is still published
+ * (the flag, not the config, decides it) with null figures, so a page can say
+ * processing comes off first without quoting a number it could not check.
  */
+
+type PublishedProcessing = {
+  model: "fee_first"
+  percent: number | null
+  fixed_cents: number | null
+}
+
+async function publishedProcessing(req: MedusaRequest): Promise<PublishedProcessing> {
+  try {
+    const payouts = req.scope.resolve<PayoutBreakdownService>(PAYOUT_BREAKDOWN_MODULE)
+    const config = await payouts.getDefaultConfig()
+    const percent = Number(config.payment_processing_percent)
+    const fixed = Number(config.payment_processing_fixed)
+    return {
+      model: "fee_first",
+      percent: Number.isFinite(percent) ? percent : null,
+      fixed_cents: Number.isFinite(fixed) ? Math.round(fixed) : null,
+    }
+  } catch (error) {
+    log.warn("[fee-schedule] payout config unreadable; publishing fee_first without figures", error)
+    return { model: "fee_first", percent: null, fixed_cents: null }
+  }
+}
 
 /**
  * The zero-fee kinds the public schedule publishes. `tip` is in the resolver's
@@ -85,7 +125,7 @@ function publishedTransactionKinds(): Record<string, number> {
   )
 }
 
-export async function GET(_req: MedusaRequest, res: MedusaResponse) {
+export async function GET(req: MedusaRequest, res: MedusaResponse) {
   const allAccessOn = allAccessPlanEnabled()
   const plans = offeredPlans(allAccessOn)
     .filter((plan) => plan.platform_fee_percent !== null)
@@ -108,5 +148,6 @@ export async function GET(_req: MedusaRequest, res: MedusaResponse) {
     ...(featureFlagState.isEnabled("NONPROFIT_PARITY_V1")
       ? { transaction_kinds: publishedTransactionKinds() }
       : {}),
+    ...(feeFirstSplitEnabled() ? { processing: await publishedProcessing(req) } : {}),
   })
 }

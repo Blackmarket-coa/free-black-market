@@ -46,6 +46,13 @@ import {
 } from "./org-advance"
 import { splitConsignmentCents } from "../../lib/consignment"
 import {
+  CARD_PROCESSING_ACCOUNT_TYPE,
+  CARD_PROCESSING_LEG,
+  CARD_PROCESSING_OWNER_ID,
+  CARD_PROCESSING_SHORTFALL_LEG,
+  isCardProcessingLeg,
+} from "./card-processing"
+import {
   reconcileRecords,
   deriveCandidateBounds,
   validateCriteria,
@@ -175,16 +182,21 @@ class HawalaLedgerModuleService extends MedusaService({
 
   /**
    * Get or create system accounts (platform fee, reserve, settlement)
+   *
+   * `ownerId` defaults to "system", the singleton every existing caller
+   * means. The one other owner is the fee-first card-processing account
+   * (`getOrCreateCardProcessingAccount`), a PLATFORM_FEE-type account that
+   * must never be confused with the shared platform-fee balance.
    */
-  async getOrCreateSystemAccount(accountType: string) {
-    // Must pin owner_id: "system" — per-subject escrows (subcontract, campaign)
+  async getOrCreateSystemAccount(accountType: string, ownerId: string = "system") {
+    // Must pin owner_id — per-subject escrows (subcontract, campaign)
     // are also account_type ESCROW + owner_type SYSTEM but carry a subject id
     // as owner_id. Without this filter the singleton lookup could return one of
     // those and misroute an order payment/refund out of the wrong escrow.
     const existing = await this.listLedgerAccounts({
       account_type: accountType,
       owner_type: "SYSTEM",
-      owner_id: "system",
+      owner_id: ownerId,
     })
 
     if (existing.length > 0) {
@@ -194,8 +206,20 @@ class HawalaLedgerModuleService extends MedusaService({
     return this.createAccount({
       account_type: accountType,
       owner_type: "SYSTEM",
-      owner_id: "system",
+      owner_id: ownerId,
     })
+  }
+
+  /**
+   * The dedicated account the fee-first card-processing leg posts to
+   * (`./card-processing.ts`): PLATFORM_FEE-type, owner `processing`. Never
+   * SETTLEMENT, never the shared `system` PLATFORM_FEE balance.
+   */
+  async getOrCreateCardProcessingAccount() {
+    return this.getOrCreateSystemAccount(
+      CARD_PROCESSING_ACCOUNT_TYPE,
+      CARD_PROCESSING_OWNER_ID
+    )
   }
 
   /**
@@ -1472,6 +1496,16 @@ class HawalaLedgerModuleService extends MedusaService({
      */
     reference_type?: string
     reference_id?: string
+    /**
+     * Fee-first split only (`FF_FEE_FIRST_SPLIT_V1`, decided by the caller):
+     * the card-processing estimate in dollars, posted ESCROW -> the
+     * card-processing account (`./card-processing.ts`) before the seller leg,
+     * which shrinks by the same amount. Absent: no leg, and every amount is
+     * the pre-F6 expression exactly.
+     */
+    processing_fee_amount?: number
+    /** Provenance stamped on the processing leg (rate, fixed part, estimate). */
+    processing_metadata?: Record<string, unknown>
   }) {
     const entries: any[] = []
 
@@ -1480,7 +1514,17 @@ class HawalaLedgerModuleService extends MedusaService({
 
     // Calculate amounts
     const platformFee = data.platform_fee_amount
-    let sellerAmount = data.total_amount - platformFee
+    const processingFee = data.processing_fee_amount
+    // With a processing leg the seller side is computed in integer cents, so
+    // purchase = fee + processing + seller holds exactly; without one this is
+    // the pre-F6 float expression, unchanged.
+    let sellerAmount =
+      processingFee === undefined
+        ? data.total_amount - platformFee
+        : (Math.round(data.total_amount * 100) -
+            Math.round(platformFee * 100) -
+            Math.round(processingFee * 100)) /
+          100
     let investmentAmount = 0
 
     // Auto-invest if configured. With FF_NONPROFIT_PARITY_V1 on no pool
@@ -1523,6 +1567,25 @@ class HawalaLedgerModuleService extends MedusaService({
       parent_entry_id: purchaseEntry?.id,
     })
     entries.push(feeEntry)
+
+    // 2b. Fee-first only: the card-processing estimate, escrow -> its own
+    // account. Keyed from the record, so a redelivery cannot post it twice.
+    if (processingFee !== undefined && processingFee > 0) {
+      const processingAccount = await this.getOrCreateCardProcessingAccount()
+      const processingEntry = await this.createTransfer({
+        debit_account_id: escrowAccount.id,
+        credit_account_id: processingAccount.id,
+        amount: processingFee,
+        entry_type: "FEE",
+        description: "Card processing (estimate), taken off the sale before the platform fee",
+        order_id: data.order_id,
+        idempotency_key: `${data.idempotency_key}-processing`,
+        correlation_id: data.idempotency_key,
+        parent_entry_id: purchaseEntry?.id,
+        metadata: { ...(data.processing_metadata ?? {}), leg: CARD_PROCESSING_LEG },
+      })
+      entries.push(processingEntry)
+    }
 
     // 3. Seller earnings from escrow
     const sellerEntry = await this.createTransfer({
@@ -1652,12 +1715,98 @@ class HawalaLedgerModuleService extends MedusaService({
     // correctness if it is ever wired (B-money-8).
     const investmentEntries = originalEntries.filter(e => e.entry_type === "INVESTMENT")
 
+    // Fee-first card-processing legs (`./card-processing.ts`). NOT reversed:
+    // Stripe keeps its fee on a refunded charge and the vendor bears it
+    // (operator decision 2026-10-05 6e). Nothing below reverses a FEE entry,
+    // so the seller balancing leg (step 3) absorbs it and escrow still nets
+    // to zero; these are also left COMPLETED rather than marked REVERSED,
+    // because they were not. None exist on an order settled with
+    // FF_FEE_FIRST_SPLIT_V1 off, so every refund of such an order is
+    // unchanged.
+    const retainedProcessingEntries = originalEntries.filter(isCardProcessingLeg)
+    const processingRetained = roundCents(
+      retainedProcessingEntries.reduce((sum, e) => sum + Number(e.amount), 0)
+    )
+
     // Get system accounts
     const escrowAccount = await this.getOrCreateSystemAccount("ESCROW")
     const platformAccount = await this.getOrCreateSystemAccount("PLATFORM_FEE")
 
     const refundEntries: any[] = []
     const description = data.reason || `Refund for order ${data.order_id}`
+
+    // The investment and seller-side reversal amounts, computed before any
+    // leg posts (the same arithmetic, in the same order, as the legs below).
+    const investmentPlan = investmentEntries.map((inv, i) => ({
+      inv,
+      i,
+      amount: roundCents(Number(inv.amount) * refundRatio),
+    }))
+    let investmentRefundTotal = 0
+    for (const planned of investmentPlan) {
+      if (planned.amount <= 0) continue
+      investmentRefundTotal += planned.amount
+    }
+    const sellerRefund = roundCents(refundAmount - feeRefund - investmentRefundTotal)
+    const sellerPlan: Array<{ leg: (typeof sellerEntries)[number]; i: number; amount: number }> = []
+    if (sellerEntries.length > 0 && sellerRefund > 0) {
+      const sellerTotal = sellerEntries.reduce((sum, e) => sum + Number(e.amount), 0)
+      let allocated = 0
+      for (let i = 0; i < sellerEntries.length; i++) {
+        const leg = sellerEntries[i]
+        const isLast = i === sellerEntries.length - 1
+        const legRefund = isLast
+          ? roundCents(sellerRefund - allocated)
+          : roundCents((sellerRefund * Number(leg.amount)) / (sellerTotal || 1))
+        allocated += legRefund
+        sellerPlan.push({ leg, i, amount: legRefund })
+      }
+    }
+
+    // With processing retained (6e), the vendor's balancing leg exceeds what
+    // this order credited them, by up to the processing. A vendor whose
+    // earnings cannot cover it (commonly: this order is their only one since
+    // the last payout) must still be refunded, and must not keep earnings for
+    // a refunded order payable by ACH, so the refund is NOT refused: their
+    // leg takes all they hold up to the planned amount, and the gap is
+    // recorded as a vendor-shortfall leg funded from the card-processing
+    // account (`./card-processing.ts`, CARD_PROCESSING_SHORTFALL_LEG) — a
+    // receivable from that vendor whose recovery is an operator decision.
+    // Planned BEFORE any leg posts. Only a gap larger than the processing
+    // retained (the vendor was already paid out) is refused, before any leg,
+    // which is the case a flag-off refund cannot post either.
+    const shortfallPlan: Array<{ leg: (typeof sellerEntries)[number]; i: number; amount: number }> = []
+    let processingShortfall = 0
+    if (retainedProcessingEntries.length > 0) {
+      const remainingByAccount = new Map<string, number>()
+      for (const planned of sellerPlan) {
+        if (planned.amount <= 0) continue
+        const accountId = planned.leg.credit_account_id
+        if (!remainingByAccount.has(accountId)) {
+          const account = await this.retrieveLedgerAccount(accountId)
+          remainingByAccount.set(
+            accountId,
+            Math.max(0, roundCents(Number(account?.available_balance ?? 0)))
+          )
+        }
+        const available = remainingByAccount.get(accountId) ?? 0
+        const covered = roundCents(Math.min(planned.amount, available))
+        remainingByAccount.set(accountId, roundCents(available - covered))
+        const gap = roundCents(planned.amount - covered)
+        if (gap > 0) {
+          shortfallPlan.push({ leg: planned.leg, i: planned.i, amount: gap })
+          planned.amount = covered
+          processingShortfall = roundCents(processingShortfall + gap)
+        }
+      }
+      if (processingShortfall > processingRetained) {
+        throw new Error(
+          `Refund for order ${data.order_id} refused before any leg posted: the vendor's earnings ` +
+            `fall $${processingShortfall} short of the seller balancing leg, more than the ` +
+            `$${processingRetained} card processing retained on the order (the vendor was already paid out)`
+        )
+      }
+    }
 
     // 1. Reverse platform fee (Platform → Escrow)
     if (feeRefund > 0) {
@@ -1674,12 +1823,8 @@ class HawalaLedgerModuleService extends MedusaService({
     }
 
     // 2. Reverse auto-invest legs (Pool → Escrow)
-    let investmentRefundTotal = 0
-    for (let i = 0; i < investmentEntries.length; i++) {
-      const inv = investmentEntries[i]
-      const invRefund = roundCents(Number(inv.amount) * refundRatio)
+    for (const { inv, i, amount: invRefund } of investmentPlan) {
       if (invRefund <= 0) continue
-      investmentRefundTotal += invRefund
       const invRefundEntry = await this.createTransfer({
         debit_account_id: inv.credit_account_id, // producer pool ledger account
         credit_account_id: escrowAccount.id,
@@ -1699,35 +1844,60 @@ class HawalaLedgerModuleService extends MedusaService({
     // order was consignment-split there are two seller-side legs; split the
     // seller refund across them pro-rata to their original amounts, with the
     // last leg absorbing the remainder so the parts sum to sellerRefund exactly.
-    const sellerRefund = roundCents(refundAmount - feeRefund - investmentRefundTotal)
-    if (sellerEntries.length > 0 && sellerRefund > 0) {
-      const sellerTotal = sellerEntries.reduce((sum, e) => sum + Number(e.amount), 0)
-      let allocated = 0
-      for (let i = 0; i < sellerEntries.length; i++) {
-        const leg = sellerEntries[i]
-        const isLast = i === sellerEntries.length - 1
-        const legRefund = isLast
-          ? roundCents(sellerRefund - allocated)
-          : roundCents((sellerRefund * Number(leg.amount)) / (sellerTotal || 1))
-        allocated += legRefund
-        if (legRefund <= 0) continue
-        // Preserve the single-leg key (`-seller`) so existing refunds stay
-        // idempotent; multi-leg refunds key off the split leg (consignor/vendor).
-        const legTag =
-          sellerEntries.length > 1
-            ? `-${(leg.metadata as { split_leg?: string } | null)?.split_leg ?? i}`
-            : ""
-        const sellerRefundEntry = await this.createTransfer({
-          debit_account_id: leg.credit_account_id, // Seller / consignor / vendor account
-          credit_account_id: escrowAccount.id,
-          amount: legRefund,
-          entry_type: "REFUND",
-          order_id: data.order_id,
-          description: `${description} - seller portion${legTag}`,
-          idempotency_key: `${idempotencyKey}-seller${legTag}`,
-        })
-        refundEntries.push(sellerRefundEntry)
-      }
+    // (Amounts planned above, before any leg posted.) A retained processing
+    // leg is not in `feeRefund`, so it lands here: the vendor bears it.
+    for (const { leg, i, amount: legRefund } of sellerPlan) {
+      if (legRefund <= 0) continue
+      // Preserve the single-leg key (`-seller`) so existing refunds stay
+      // idempotent; multi-leg refunds key off the split leg (consignor/vendor).
+      const legTag =
+        sellerEntries.length > 1
+          ? `-${(leg.metadata as { split_leg?: string } | null)?.split_leg ?? i}`
+          : ""
+      const sellerRefundEntry = await this.createTransfer({
+        debit_account_id: leg.credit_account_id, // Seller / consignor / vendor account
+        credit_account_id: escrowAccount.id,
+        amount: legRefund,
+        entry_type: "REFUND",
+        order_id: data.order_id,
+        description: `${description} - seller portion${legTag}`,
+        idempotency_key: `${idempotencyKey}-seller${legTag}`,
+      })
+      refundEntries.push(sellerRefundEntry)
+    }
+
+    // 3b. Fee-first only: the vendor-shortfall legs planned above
+    // (card-processing account -> escrow), each naming the seller account the
+    // amount is owed by. The processing leg itself stays COMPLETED.
+    for (const { leg, i, amount } of shortfallPlan) {
+      const legTag =
+        sellerEntries.length > 1
+          ? `-${(leg.metadata as { split_leg?: string } | null)?.split_leg ?? i}`
+          : ""
+      const processingAccount = await this.getOrCreateCardProcessingAccount()
+      const shortfallEntry = await this.createTransfer({
+        debit_account_id: processingAccount.id,
+        credit_account_id: escrowAccount.id,
+        amount,
+        entry_type: "ADJUSTMENT",
+        order_id: data.order_id,
+        description: `${description} - card processing the vendor could not absorb${legTag} (owed by the vendor)`,
+        idempotency_key: `${idempotencyKey}-processing-shortfall${legTag}`,
+        correlation_id: idempotencyKey,
+        metadata: {
+          leg: CARD_PROCESSING_SHORTFALL_LEG,
+          owed_by_account_id: leg.credit_account_id,
+          receivable: true,
+          processing_retained: processingRetained,
+        },
+      })
+      refundEntries.push(shortfallEntry)
+    }
+    if (processingShortfall > 0) {
+      log.warn(
+        `[Hawala] Refund for order ${data.order_id}: vendor earnings fell $${processingShortfall} ` +
+          `short of the retained card processing; recorded as owed by the vendor (operator decision pending)`
+      )
     }
 
     // 4. Reverse customer payment (Escrow → Customer)
@@ -1743,8 +1913,10 @@ class HawalaLedgerModuleService extends MedusaService({
     })
     refundEntries.push(customerRefundEntry)
 
-    // 4. Mark original entries as REVERSED
+    // 4. Mark original entries as REVERSED — all but a retained processing
+    // leg, which stays COMPLETED because it was not reversed.
     for (const entry of originalEntries) {
+      if (isCardProcessingLeg(entry)) continue
       await this.updateLedgerEntries({
         id: entry.id,
         status: "REVERSED" as const,
@@ -1768,9 +1940,12 @@ class HawalaLedgerModuleService extends MedusaService({
         type: "REFUND",
         seller_refund: sellerRefund,
         fee_refund: feeRefund,
+        ...(retainedProcessingEntries.length > 0
+          ? { processing_retained: processingRetained, processing_shortfall: processingShortfall }
+          : {}),
         reason: data.reason,
         entries_created: refundEntries.length,
-        entries_reversed: originalEntries.length,
+        entries_reversed: originalEntries.length - retainedProcessingEntries.length,
       }
     )
 

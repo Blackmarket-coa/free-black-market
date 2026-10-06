@@ -37,6 +37,14 @@ export const phase1ModuleFlags = {
   // disclosure and online cancellation are a legal checkpoint the operator
   // clears first; set only together with the API's flag.
   consumerSubscriptions: enabled(process.env.NEXT_PUBLIC_FF_CONSUMER_SUBSCRIPTIONS_V1),
+  // Mirrors the API's FF_FEE_FIRST_SPLIT_V1 (Black Mask F6). Every page reads
+  // the processing model from /store/fee-schedule's `processing` field; this
+  // twin decides only when that field is missing — the request failed, or the
+  // response was cached before the API's flag was set (`getFeeSchedule`) — so
+  // neither an outage nor a stale cache can render "we absorb processing"
+  // while fee-first is live. Deploy with this set BEFORE setting the API's
+  // flag, and roll back in the reverse order.
+  feeFirstSplit: enabled(process.env.NEXT_PUBLIC_FF_FEE_FIRST_SPLIT_V1),
   // Mirrors the API's FF_CUSTOMER_WALLET_V1: the customer wallet (balance,
   // ACH deposit and withdrawal, bank-account linking, transactions) — /wallet,
   // /user/coalition-credits, their nav entries and every wallet call through

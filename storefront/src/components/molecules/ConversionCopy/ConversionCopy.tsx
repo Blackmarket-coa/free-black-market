@@ -13,6 +13,12 @@
 
 import Link from "next/link"
 
+import {
+  PROCESSING_COPY,
+  isFeeFirst,
+  type ProcessingInfo,
+} from "@/lib/helpers/processing-copy"
+
 // Inline SVG Icons (avoiding external dependency)
 const ShieldCheckIcon = ({ className = "w-6 h-6" }: { className?: string }) => (
   <svg className={className} fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
@@ -126,21 +132,35 @@ interface ProducerPriceExplanationProps {
   producerEarnings?: number
   platformFee?: number
   currency?: string
+  /**
+   * `/store/fee-schedule` processing model (Black Mask F6). Absent: today's
+   * sentence; fee-first: the fee is taken after card processing comes off.
+   */
+  processing?: ProcessingInfo
 }
 
 export const ProducerPriceExplanation = ({
   producerEarnings = 97,
   platformFee = 3,
   currency = "$",
-}: ProducerPriceExplanationProps) => (
-  <div className="text-sm text-gray-600 mt-2">
-    <span className="font-medium text-green-700">
-      {producerEarnings}% goes to the producer.
-    </span>
-    {" "}A flat {platformFee}% coalition fee keeps the marketplace running — no listing,
-    monthly, or payment processing fees passed to vendors.
-  </div>
-)
+  processing,
+}: ProducerPriceExplanationProps) =>
+  isFeeFirst(processing) ? (
+    <div className="text-sm text-gray-600 mt-2">
+      <span className="font-medium text-green-700">
+        {`${producerEarnings}% of what is left after card processing goes to the producer.`}
+      </span>
+      {` A flat ${platformFee}% ${PROCESSING_COPY.producerPriceExplanationTail.feeFirst(processing, platformFee)}`}
+    </div>
+  ) : (
+    <div className="text-sm text-gray-600 mt-2">
+      <span className="font-medium text-green-700">
+        {producerEarnings}% goes to the producer.
+      </span>
+      {" "}A flat {platformFee}% coalition fee keeps the marketplace running — no listing,
+      monthly, or payment processing fees passed to vendors.
+    </div>
+  )
 
 // ============================================
 // Checkout Copy
