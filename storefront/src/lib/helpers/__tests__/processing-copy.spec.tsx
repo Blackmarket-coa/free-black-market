@@ -152,7 +152,7 @@ describe("processingCopy with processing.model fee_first (flag on)", () => {
   })
 
   it("renders ProducerPriceExplanation and WhereYourMoneyGoes without an absorption claim", () => {
-    const text = renderToStaticMarkup(<ProducerPriceExplanation processing={FEE_FIRST} />).replace(/<[^>]+>/g, "")
+    const text = textOf(renderToStaticMarkup(<ProducerPriceExplanation processing={FEE_FIRST} />))
     assertNoAbsorptionClaim(text)
     expect(text).toContain("97% of what is left after card processing goes to the producer.")
     const bar = renderToStaticMarkup(
@@ -167,6 +167,21 @@ describe("processingCopy with processing.model fee_first (flag on)", () => {
     expect(row.description).toContain("after card processing")
   })
 })
+
+/**
+ * Visible text of server-rendered markup, for assertions only. Tags are
+ * removed until none remain: a single pass can leave a tag behind (e.g.
+ * `<<b>script>`), which CodeQL rightly flags as incomplete sanitization.
+ */
+function textOf(markup: string): string {
+  let previous: string
+  let text = markup
+  do {
+    previous = text
+    text = text.replace(/<[^>]*>/g, "")
+  } while (text !== previous)
+  return text
+}
 
 describe("feeFirstExample mirrors the settlement's arithmetic", () => {
   it.each([
