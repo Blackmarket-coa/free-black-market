@@ -119,6 +119,7 @@ import {
   PoolCarrierDistribution,
   PayoutHold,
   type PayoutHoldReason,
+  CardChargeState,
 } from "./models"
 
 /** An outflow refused because the seller's payouts are held (SD-40). */
@@ -159,6 +160,7 @@ class HawalaLedgerModuleService extends MedusaService({
   MonitorBreach,
   PoolCarrierDistribution,
   PayoutHold,
+  CardChargeState,
 }) {
   // ==================== ACCOUNT MANAGEMENT ====================
 
@@ -3941,7 +3943,13 @@ class HawalaLedgerModuleService extends MedusaService({
       total_owed: owed.total_cents / 100,
       payout_hold:
         holds.length > 0
-          ? { held: true, since: holds[0].placed_at, reason: holds[0].reason }
+          ? {
+              held: true,
+              since: holds[0].placed_at,
+              // A dispute names itself first: it is the hold the vendor can do
+              // something about (respond to it).
+              reason: holds.some((h) => h.reason === "card_dispute_open") ? "card_dispute_open" : holds[0].reason,
+            }
           : null,
       currency: account.currency_code,
       options,
@@ -4965,11 +4973,12 @@ class HawalaLedgerModuleService extends MedusaService({
   private async assertNoPayoutHold_(sellerId: string): Promise<void> {
     const holds = await this.listActivePayoutHolds(sellerId)
     if (holds.length === 0) return
-    throw new PayoutHeldError(
-      "Payouts are on hold: a refund on one of your orders that shared a checkout with other vendors " +
-        "has not yet been assigned to a vendor. The platform team assigns it, and payouts resume then.",
-      holds.map((h) => h.id)
-    )
+    const why = holds.some((h) => h.reason === "card_dispute_open")
+      ? "a card payment for one of your orders is disputed by the cardholder. Payouts resume when the " +
+        "dispute closes; if it is lost, it counts as a refund of that order."
+      : "a refund on one of your orders that shared a checkout with other vendors has not yet been " +
+        "assigned to a vendor. The platform team assigns it, and payouts resume then."
+    throw new PayoutHeldError(`Payouts are on hold: ${why}`, holds.map((h) => h.id))
   }
 
   /**
@@ -5011,8 +5020,11 @@ class HawalaLedgerModuleService extends MedusaService({
           metadata: { order_ids: args.order_ids },
         })
         log.warn(
-          `[Hawala] Payouts held for seller ${seller_id}: ${args.amount} refunded on shared collection ` +
-            `${args.payment_collection_id} is not assigned to any order`
+          reason === "card_dispute_open"
+            ? `[Hawala] Payouts held for seller ${seller_id}: ${args.amount} is disputed on collection ` +
+                `${args.payment_collection_id}`
+            : `[Hawala] Payouts held for seller ${seller_id}: ${args.amount} refunded on shared collection ` +
+                `${args.payment_collection_id} is not assigned to any order`
         )
       } catch (error) {
         // A concurrent placement won the partial unique index: it is held.

@@ -122,9 +122,9 @@ const PayoutSection = () => {
         )}
         {held && (
           <Text className="text-sm text-ui-fg-muted mt-2">
-            Payouts are on hold: a refund on an order of yours that shared a checkout with other
-            vendors has not yet been assigned to a vendor. The platform team assigns it, and
-            payouts resume then.
+            {payoutOptions.payout_hold?.reason === "card_dispute_open"
+              ? "Payouts are on hold: a card payment for one of your orders is disputed by the cardholder. Payouts resume when the dispute closes; if it is lost, it counts as a refund of that order."
+              : "Payouts are on hold: a refund on an order of yours that shared a checkout with other vendors has not yet been assigned to a vendor. The platform team assigns it, and payouts resume then."}
           </Text>
         )}
       </div>

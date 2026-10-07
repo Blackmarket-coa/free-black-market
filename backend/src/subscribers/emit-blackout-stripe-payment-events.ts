@@ -22,6 +22,7 @@ import { MARKETPLACE_LISTING_MODULE } from "../modules/marketplace-listing"
 import type MarketplaceListingService from "../modules/marketplace-listing/service"
 import { BlackoutCheckoutSessionStatus } from "../modules/marketplace-listing/models"
 import { SUBSCRIPTION_PAYMENT_PROVIDER_ID } from "../workflows/subscription/renew-helpers"
+import { verifyStripePaymentWebhook, type PaymentWebhookInput } from "../lib/stripe-payment-webhook"
 
 /**
  * Report Stripe payment failures and chargebacks on Blackout-checkout
@@ -57,7 +58,13 @@ export default async function emitBlackoutStripePaymentEvents({
   }
 
   try {
-    const stripeEvent = verifyStripePaymentWebhook(data)
+    const stripeEvent = verifyStripePaymentWebhook(
+      data,
+      // Only the provider the Blackout checkout pays through
+      // (`FBM_SUBSCRIPTION_PAYMENT_PROVIDER_ID`, default `pp_stripe_stripe`).
+      (providerId) => providerId === SUBSCRIPTION_PAYMENT_PROVIDER_ID,
+      "[emit-blackout-stripe-payment-events]"
+    )
     if (!stripeEvent) {
       return
     }
@@ -80,65 +87,6 @@ export default async function emitBlackoutStripePaymentEvents({
 
 export const config: SubscriberConfig = {
   event: PaymentWebhookEvents.WebhookReceived,
-}
-
-type PaymentWebhookInput = {
-  provider?: unknown
-  payload?: {
-    rawData?: unknown
-    headers?: Record<string, unknown> | null
-  } | null
-}
-
-/**
- * The raw request bytes Medusa's route captured (`req.rawBody`). A Redis event
- * bus round-trips a Buffer as `{ type: "Buffer", data }`, the same form
- * Medusa's own webhook subscriber revives.
- */
-function rawBodyOf(raw: unknown): Buffer | null {
-  if (Buffer.isBuffer(raw)) {
-    return raw
-  }
-  const serialized = raw as { type?: unknown; data?: unknown } | null
-  if (serialized?.type === "Buffer" && Array.isArray(serialized.data)) {
-    return Buffer.from(serialized.data as number[])
-  }
-  return null
-}
-
-/**
- * The verified Stripe event carried by a `payment.webhook_received`, or null
- * when it came through another provider, the webhook secret is unset, or the
- * signature does not verify. Only the provider the Blackout checkout pays
- * through (`FBM_SUBSCRIPTION_PAYMENT_PROVIDER_ID`, default `pp_stripe_stripe`)
- * is considered.
- */
-function verifyStripePaymentWebhook(
-  input: PaymentWebhookInput | null | undefined
-): Stripe.Event | null {
-  const provider = input?.provider
-  if (typeof provider !== "string" || `pp_${provider}` !== SUBSCRIPTION_PAYMENT_PROVIDER_ID) {
-    return null
-  }
-  const secret = process.env.STRIPE_WEBHOOK_SECRET
-  if (!secret) {
-    return null
-  }
-  const rawBody = rawBodyOf(input?.payload?.rawData)
-  const header = input?.payload?.headers?.["stripe-signature"]
-  const signature = Array.isArray(header) ? header[0] : header
-  if (!rawBody || typeof signature !== "string" || !signature) {
-    return null
-  }
-  try {
-    return Stripe.webhooks.constructEvent(rawBody, signature, secret)
-  } catch (err) {
-    log.warn(
-      "[emit-blackout-stripe-payment-events] Stripe signature did not verify:",
-      err instanceof Error ? err.message : err
-    )
-    return null
-  }
 }
 
 type CartPaymentRow = {

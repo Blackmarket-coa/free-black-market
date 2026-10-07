@@ -180,6 +180,27 @@ async function syncPayoutHolds(
         release_reason: "every refund on the collection is now recorded on a seller's order",
       })
     }
+    // An open card dispute (SD-43): every seller on the collection is held
+    // until it closes; a lost one then posts as a refund, a won one posts
+    // nothing.
+    if (order.dispute_open > 0) {
+      const { order_ids, seller_ids } = await sellersForPaymentCollection(container, collectionId)
+      await hawala.placePayoutHolds({
+        payment_collection_id: collectionId,
+        seller_ids,
+        amount: order.dispute_open,
+        currency_code: order.currency_code || "usd",
+        order_ids,
+        reason: "card_dispute_open",
+      })
+    } else {
+      await hawala.releasePayoutHolds({
+        payment_collection_id: collectionId,
+        released_by: "system",
+        release_reason: "no card dispute is open on the collection",
+        reason: "card_dispute_open",
+      })
+    }
   } catch (error) {
     log.error(`[Hawala] Card order ${order.id}: could not update payout holds on ${collectionId}:`, error)
   }

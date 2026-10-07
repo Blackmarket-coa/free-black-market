@@ -112,6 +112,8 @@ function makeWorld(opts: {
   shadow.listPayoutConfigs = async () => []
   shadow.listVendorAdvances = async () => []
   shadow.listInvestmentPools = async () => []
+  // No Stripe charge state recorded (SD-43): Medusa's figures stand alone.
+  shadow.listCardChargeStates = async () => []
 
   const payouts = makeBreakdownService({})
   const providerId = opts.providerId ?? "pp_stripe_stripe"

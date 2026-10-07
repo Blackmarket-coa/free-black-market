@@ -3,6 +3,7 @@ const log = createLogger("lib/card-order-settlement")
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 import { isFbmCardProvider } from "../modules/hawala-ledger/card-clearing"
 import { STRIPE_CONNECT_DIRECT_PROVIDER_ID } from "../modules/stripe-connect-direct/registration"
+import { HAWALA_LEDGER_MODULE } from "../modules/hawala-ledger"
 
 /**
  * How a card order's money is read for the hawala ledger (SD-36 / SD-39,
@@ -73,6 +74,11 @@ export type CardSettlementOrder = {
    * released only on `complete`.
    */
   refund_attribution: "complete" | "gap" | "unknown"
+  /**
+   * Held by an open card dispute on this order's collection (SD-43), major
+   * units; 0 when none. Nothing is posted for it while it is open.
+   */
+  dispute_open: number
   /** The FBM Stripe payment the purchase leg is stamped with, if any. */
   payment_id: string | null
 }
@@ -162,6 +168,29 @@ export async function readCardSettlementOrder(
       : "other"
   const cardPayment = payments.find((p) => isFbmCardProvider(p.provider_id))
 
+  // What Stripe says beyond Medusa (SD-43, `hawala-ledger/models/card-charge-state.ts`):
+  // refunds issued in the Stripe dashboard and disputes lost count as
+  // refunded on the collection; Stripe's `amount_refunded` already includes
+  // refunds made through Medusa, so the larger of the two figures is taken,
+  // never their sum. Open disputes are reported, not posted.
+  let stripeRefundedCents = 0
+  let disputeOpenCents = 0
+  const collectionIds = ownCollections.map((c) => c.id as string)
+  if (collectionIds.length > 0) {
+    const hawala = container.resolve(HAWALA_LEDGER_MODULE) as {
+      listCardChargeStates?: (
+        filters: Record<string, unknown>
+      ) => Promise<Array<{ refunded_cents?: unknown; dispute_lost_cents?: unknown; dispute_open_cents?: unknown }>>
+    }
+    const states = (await hawala.listCardChargeStates?.({ payment_collection_id: collectionIds })) ?? []
+    for (const st of states) {
+      stripeRefundedCents += (Number(st.refunded_cents) || 0) + (Number(st.dispute_lost_cents) || 0)
+      disputeOpenCents += Number(st.dispute_open_cents) || 0
+    }
+  }
+  const withStripe = (medusaMajor: number | null): number | null =>
+    stripeRefundedCents > 0 ? Math.max(toCents(medusaMajor ?? 0), stripeRefundedCents) / 100 : medusaMajor
+
   let captured: number | null = null
   let refunded: number | null = null
   let unattributedRefund: number | null = null
@@ -170,7 +199,7 @@ export async function readCardSettlementOrder(
     const collection = ownCollections[0]
     const cAmount = n(collection?.amount)
     const cCaptured = n(collection?.captured_amount)
-    const cRefunded = n(collection?.refunded_amount) ?? 0
+    const cRefunded = withStripe(n(collection?.refunded_amount)) ?? 0
     const collectionFullyCaptured = cCaptured !== null && cAmount !== null && toCents(cCaptured) >= toCents(cAmount)
     // Mercur captures the whole collection, then marks each split captured
     // at its authorized amount; read through that follow-up so the capture
@@ -205,7 +234,7 @@ export async function readCardSettlementOrder(
     const sharers = await ordersOnCollection(query, only.id as string)
     if (sharers.length === 1 && sharers[0] === orderId) {
       captured = n(only.captured_amount)
-      refunded = n(only.refunded_amount)
+      refunded = withStripe(n(only.refunded_amount))
     } else {
       log.warn(
         `[Hawala] Order ${orderId}: payment collection ${only.id} is shared with ${sharers.length - 1} other order(s) ` +
@@ -231,6 +260,7 @@ export async function readCardSettlementOrder(
     refunded,
     unattributed_refund: unattributedRefund,
     refund_attribution: refundAttribution,
+    dispute_open: disputeOpenCents / 100,
     payment_id: cardPayment?.id ?? null,
   }
 }
