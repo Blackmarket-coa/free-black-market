@@ -100,7 +100,7 @@ medusaIntegrationTestRunner({
 
         const owed = await hawala().getCardProcessingReceivable(earnings.id)
         expect(owed.total_cents).toBe(cents(owedLeg.amount))
-        expect(owed.by_kind_cents).toEqual({ card_processing: 0, refund: cents(owedLeg.amount) })
+        expect(owed.by_kind_cents).toEqual({ card_processing: 0, refund: cents(owedLeg.amount), dispute_fee: 0 })
         expect(owed.open[0]).toMatchObject({ kind: "refund", order_id: order.id, funding_account_id: (await receivable()).id })
 
         const options = await hawala().getPayoutOptions(seller.id)
@@ -126,7 +126,7 @@ medusaIntegrationTestRunner({
 
         await expect(
           hawala().requestPayout({ vendor_id: seller.id, amount: 1, payout_tier: "WEEKLY" })
-        ).rejects.toThrow(/still owed \(card processing or a refund after payout\)/)
+        ).rejects.toThrow(/still owed \(card processing, a refund after payout, or a chargeback fee\)/)
 
         const next = await makeOrder(seller.id, 40)
         await pay([next.id], 40, { capture: true })

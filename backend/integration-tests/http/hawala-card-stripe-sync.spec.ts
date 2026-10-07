@@ -5,6 +5,13 @@ import { cardOrderFixtures } from "./helpers/card-orders"
 import { syncCardChargeFromStripe, type ChargeLedgerState } from "../../src/lib/card-stripe-sync"
 import { PayoutHeldError } from "../../src/modules/hawala-ledger/service"
 import { resyncCardChargesFromStripe } from "../../src/jobs/hawala-card-stripe-resync"
+import { reconcileCardOrder } from "../../src/lib/card-order-reconcile"
+import {
+  VENDOR_DISPUTE_FEE_LEG,
+  VENDOR_RECEIVABLE_ACCOUNT_TYPE,
+  VENDOR_REFUND_RECOVERY_LEG,
+} from "../../src/modules/hawala-ledger/vendor-receivable"
+import { CARD_PROCESSING_ACCOUNT_TYPE, CARD_PROCESSING_OWNER_ID } from "../../src/modules/hawala-ledger/card-processing"
 
 jest.setTimeout(240 * 1000)
 
@@ -21,7 +28,7 @@ const CARD = PHASE0_FEATURE_FLAGS.CARD_ORDER_LEDGER_V1
 medusaIntegrationTestRunner({
   inApp: true,
   testSuite: ({ getContainer }) => {
-    const { container, cents, uid, makeSeller, makeOrder, pay, refund, split, hawala, legs, captured, placed } =
+    const { container, cents, uid, makeSeller, makeOrder, pay, refund, split, hawala, legs, captured, placed, sellerEarnings } =
       cardOrderFixtures(getContainer)
 
     beforeEach(() => {
@@ -48,6 +55,7 @@ medusaIntegrationTestRunner({
         refunded_cents: 0,
         dispute_lost_cents: 0,
         dispute_open_cents: 0,
+        dispute_fee_cents: 0,
         ...s,
       }
       return { chargeId: state.charge_id, fetchCharge: async () => state }
@@ -243,6 +251,134 @@ medusaIntegrationTestRunner({
         })
         expect(result.listed).toBe(false)
         expect(await holds(collectionId)).toEqual([])
+      })
+    })
+
+    describe("Stripe's dispute fee: owed by the vendor whose order was disputed (operator answer 2026-10-07)", () => {
+      const feeLegs = async (orderId: string) =>
+        (await hawala().listLedgerEntries({ reference_id: orderId, entry_type: "ADJUSTMENT" })).filter(
+          (e: { metadata?: { leg?: string } }) => e.metadata?.leg === VENDOR_DISPUTE_FEE_LEG
+        )
+      const owed = async (sellerId: string) => hawala().getCardProcessingReceivable((await sellerEarnings(sellerId)).id)
+
+      it("owed as soon as the dispute opens, once however often it is re-read, and still owed once the dispute is won", async () => {
+        const { seller, order, collectionId, pi } = await cardOrder()
+        const open = stripeSays(pi, 40, { dispute_open_cents: 4000, dispute_fee_cents: 1500 })
+        await syncCardChargeFromStripe(container(), open.chargeId, { fetchCharge: open.fetchCharge })
+        await syncCardChargeFromStripe(container(), open.chargeId, { fetchCharge: open.fetchCharge })
+
+        const [leg, ...more] = await feeLegs(order.id)
+        expect(more).toEqual([])
+        expect(cents(leg.amount)).toBe(1500)
+        expect(leg).toMatchObject({ status: "COMPLETED", entry_type: "ADJUSTMENT", reference_type: "ORDER" })
+        expect(leg.order_id ?? null).toBeNull()
+        const [receivableAcc] = await hawala().listLedgerAccounts({ account_type: VENDOR_RECEIVABLE_ACCOUNT_TYPE })
+        const [processingAcc] = await hawala().listLedgerAccounts({
+          account_type: CARD_PROCESSING_ACCOUNT_TYPE,
+          owner_type: "SYSTEM",
+          owner_id: CARD_PROCESSING_OWNER_ID,
+        })
+        expect(leg.debit_account_id).toBe(receivableAcc.id)
+        expect(leg.credit_account_id).toBe(processingAcc.id)
+        expect((await owed(seller.id)).by_kind_cents).toEqual({ card_processing: 0, refund: 0, dispute_fee: 1500 })
+        expect((await owed(seller.id)).open[0]).toMatchObject({ kind: "dispute_fee", order_id: order.id })
+
+        // Won: the hold lifts, nothing posts as a refund, the fee stays owed.
+        const won = stripeSays(pi, 40, { dispute_fee_cents: 1500 })
+        await syncCardChargeFromStripe(container(), won.chargeId, { fetchCharge: won.fetchCharge })
+        expect(await holds(collectionId)).toEqual([])
+        expect(await toCard(order.id)).toEqual([])
+        expect(await feeLegs(order.id)).toHaveLength(1)
+        expect((await owed(seller.id)).total_cents).toBe(1500)
+
+        // What can be paid out is the balance net of it.
+        const earningsCents = cents((await sellerEarnings(seller.id)).available_balance)
+        const options = await hawala().getPayoutOptions(seller.id)
+        expect(options).toMatchObject({ dispute_fee_owed: 15, total_owed: 15, payout_hold: null })
+        expect(cents(options.payable_balance)).toBe(earningsCents - 1500)
+      })
+
+      it("the vendor's next sale repays it first, back to the receivable", async () => {
+        const { seller, order, pi } = await cardOrder()
+        const d = stripeSays(pi, 40, { dispute_fee_cents: 1500 })
+        await syncCardChargeFromStripe(container(), d.chargeId, { fetchCharge: d.fetchCharge })
+        const earnings = await sellerEarnings(seller.id)
+        const before = cents(earnings.balance)
+
+        const next = await makeOrder(seller.id, 40)
+        await pay([next.id], 40, { capture: true })
+        await placed(next.id)
+        const credit = (await legs(next.id)).find((e) => e.entry_type === "TRANSFER")
+        const recovery = (
+          await hawala().listLedgerEntries({ debit_account_id: earnings.id, entry_type: "ADJUSTMENT" })
+        ).filter((e: { metadata?: { leg?: string } }) => e.metadata?.leg === VENDOR_REFUND_RECOVERY_LEG)
+        expect(recovery).toHaveLength(1)
+        expect(cents(recovery[0].amount)).toBe(1500)
+        expect(cents((await sellerEarnings(seller.id)).balance)).toBe(before + cents(credit.amount) - 1500)
+        expect((await owed(seller.id)).total_cents).toBe(0)
+        expect(order.id).toBeTruthy()
+      })
+
+      it("lost: the order is refunded in full and the fee stays owed — the refund never reverses it", async () => {
+        const { seller, order, pi } = await cardOrder()
+        const open = stripeSays(pi, 40, { dispute_open_cents: 4000, dispute_fee_cents: 1500 })
+        await syncCardChargeFromStripe(container(), open.chargeId, { fetchCharge: open.fetchCharge })
+        const lost = stripeSays(pi, 40, { dispute_lost_cents: 4000, dispute_fee_cents: 1500 })
+        await syncCardChargeFromStripe(container(), lost.chargeId, { fetchCharge: lost.fetchCharge })
+        expect(await toCard(order.id)).toEqual([4000])
+        expect((await legs(order.id)).find((e) => e.entry_type === "PURCHASE").status).toBe("REVERSED")
+        const [leg, ...more] = await feeLegs(order.id)
+        expect(more).toEqual([])
+        expect(leg.status).toBe("COMPLETED")
+        expect((await owed(seller.id)).by_kind_cents.dispute_fee).toBe(1500)
+      })
+
+      it("a dispute first seen already lost (no open phase) still posts its fee, though the order is then fully refunded", async () => {
+        const { seller, order, pi } = await cardOrder()
+        const lost = stripeSays(pi, 40, { dispute_lost_cents: 4000, dispute_fee_cents: 1500 })
+        await syncCardChargeFromStripe(container(), lost.chargeId, { fetchCharge: lost.fetchCharge })
+        expect(await toCard(order.id)).toEqual([4000])
+        expect(await feeLegs(order.id)).toHaveLength(1)
+        expect((await reconcileCardOrder(container(), order.id)).outcome).toBe("in_step")
+        expect(await feeLegs(order.id)).toHaveLength(1)
+        expect((await owed(seller.id)).by_kind_cents.dispute_fee).toBe(1500)
+      })
+
+      it("a dispute filed after the order was already refunded in full still posts its fee", async () => {
+        const { seller, order, pi } = await cardOrder()
+        const refunded = stripeSays(pi, 40, { refunded_cents: 4000 })
+        await syncCardChargeFromStripe(container(), refunded.chargeId, { fetchCharge: refunded.fetchCharge })
+        expect((await legs(order.id)).find((e) => e.entry_type === "PURCHASE").status).toBe("REVERSED")
+        expect(await feeLegs(order.id)).toEqual([])
+
+        const disputed = stripeSays(pi, 40, { refunded_cents: 4000, dispute_open_cents: 4000, dispute_fee_cents: 1500 })
+        await syncCardChargeFromStripe(container(), disputed.chargeId, { fetchCharge: disputed.fetchCharge })
+        expect(await feeLegs(order.id)).toHaveLength(1)
+        expect((await owed(seller.id)).by_kind_cents.dispute_fee).toBe(1500)
+      })
+
+      it("on a shared Mercur cart each seller owes a share in proportion to their order, summing to the fee", async () => {
+        const [s1, s2] = [await makeSeller(), await makeSeller()]
+        const [o1, o2] = [await makeOrder(s1.id, 40), await makeOrder(s2.id, 30)]
+        const { collectionId, paymentId } = await pay([o1.id, o2.id], 70, { capture: true })
+        await split(o1.id, collectionId, 40)
+        await split(o2.id, collectionId, 30)
+        await captured(paymentId)
+        const pi = await intentFor(paymentId)
+        const d = stripeSays(pi, 70, { dispute_open_cents: 7000, dispute_fee_cents: 1500 })
+        await syncCardChargeFromStripe(container(), d.chargeId, { fetchCharge: d.fetchCharge })
+        const shares = [cents((await feeLegs(o1.id))[0]?.amount), cents((await feeLegs(o2.id))[0]?.amount)]
+        expect(shares).toEqual([857, 643])
+        expect((await owed(s1.id)).by_kind_cents.dispute_fee).toBe(857)
+        expect((await owed(s2.id)).by_kind_cents.dispute_fee).toBe(643)
+      })
+
+      it("a charge with no dispute fee owes nothing", async () => {
+        const { seller, order, pi } = await cardOrder()
+        const r = stripeSays(pi, 40, { refunded_cents: 1000 })
+        await syncCardChargeFromStripe(container(), r.chargeId, { fetchCharge: r.fetchCharge })
+        expect(await feeLegs(order.id)).toEqual([])
+        expect((await owed(seller.id)).total_cents).toBe(0)
       })
     })
   },

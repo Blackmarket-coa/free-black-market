@@ -56,12 +56,40 @@
  *
  * A wallet-funded order (not card) is unchanged: its refund is still refused
  * when the vendor cannot cover it.
+ *
+ * The dispute fee (operator answer 2026-10-07: "the vendor whose order was
+ * disputed owes it", recovered like a refund they owe). Stripe takes a fee
+ * from FBM's balance when a cardholder disputes a charge, and never returns
+ * it, win or lose (outside Mexico; docs.stripe.com/disputes/how-disputes-work).
+ * That is money Stripe kept, like card processing, so it is recorded the way
+ * the ledger already records money Stripe keeps: into the card-processing
+ * account (`./card-processing.ts`). The vendor owes it, so the receivable
+ * funds it:
+ *
+ *   - Out of the receivable, a third shape: ADJUSTMENT, VENDOR_RECEIVABLE ->
+ *     the card-processing account (PLATFORM_FEE / SYSTEM / `processing`,
+ *     USD), stamped VENDOR_DISPUTE_FEE_LEG, naming the disputed charge
+ *     (`metadata.stripe_charge_id`) and the order (`reference_type` ORDER,
+ *     `reference_id`) — deliberately NOT `order_id`, so nothing that lists an
+ *     order's own legs (a refund, a settlement check) ever sees or reverses
+ *     it, the way a recovery leg carries none.
+ *   - Repaid like a refund receivable: SELLER_EARNINGS -> VENDOR_RECEIVABLE,
+ *     VENDOR_REFUND_RECOVERY_LEG, by the same recovery machinery, oldest
+ *     first, and forgiven at the same age.
  */
 
 export const VENDOR_RECEIVABLE_ACCOUNT_TYPE = "VENDOR_RECEIVABLE"
 export const VENDOR_RECEIVABLE_OWNER_ID = "vendor_refunds"
 export const VENDOR_REFUND_SHORTFALL_LEG = "vendor_refund_shortfall"
 export const VENDOR_REFUND_RECOVERY_LEG = "vendor_refund_recovery"
+export const VENDOR_DISPUTE_FEE_LEG = "vendor_dispute_fee"
+
+/**
+ * Where a dispute fee goes: the card-processing account. Spelled out here
+ * rather than imported, because `./card-processing.ts` imports this file; a
+ * unit test pins it to CARD_PROCESSING_ACCOUNT_TYPE / CARD_PROCESSING_OWNER_ID.
+ */
+export const DISPUTE_FEE_SINK = { account_type: "PLATFORM_FEE", owner_id: "processing" } as const
 
 export class VendorReceivableLegError extends Error {
   constructor(message: string, public readonly details: Record<string, unknown>) {
@@ -89,6 +117,11 @@ export function isVendorRefundShortfallLeg(entry: { entry_type?: string | null; 
   return entry.entry_type === "ADJUSTMENT" && legTag(entry.metadata) === VENDOR_REFUND_SHORTFALL_LEG
 }
 
+/** True for a leg that records a dispute fee a vendor owes. */
+export function isVendorDisputeFeeLeg(entry: { entry_type?: string | null; metadata?: unknown }): boolean {
+  return entry.entry_type === "ADJUSTMENT" && legTag(entry.metadata) === VENDOR_DISPUTE_FEE_LEG
+}
+
 /** True for a leg that repays (part of) a vendor refund receivable. */
 export function isVendorRefundRecoveryLeg(entry: { entry_type?: string | null; metadata?: unknown }): boolean {
   return entry.entry_type === "ADJUSTMENT" && legTag(entry.metadata) === VENDOR_REFUND_RECOVERY_LEG
@@ -103,10 +136,16 @@ export type VendorReceivableSide = "none" | "debit" | "credit"
 
 /**
  * Refuse every leg touching the receivable account that is not one of the
- * two allowed shapes. Called by `createTransfer` before anything is written.
+ * three allowed shapes. Called by `createTransfer` before anything is written.
  */
 export function assertVendorReceivableLeg(
-  leg: { entry_type: string; order_id?: string | null; metadata?: unknown },
+  leg: {
+    entry_type: string
+    order_id?: string | null
+    reference_type?: string | null
+    reference_id?: string | null
+    metadata?: unknown
+  },
   debit: AccountLike,
   credit: AccountLike
 ): { side: VendorReceivableSide; receivableAccountId: string | null } {
@@ -137,9 +176,25 @@ export function assertVendorReceivableLeg(
   }
   if (leg.entry_type !== "ADJUSTMENT") refuse("only an ADJUSTMENT may touch the vendor receivable")
 
+  if (debitIs && legTag(leg.metadata) === VENDOR_DISPUTE_FEE_LEG) {
+    if (leg.order_id) refuse("a dispute fee names its order by reference, never by order_id")
+    if (leg.reference_type !== "ORDER" || !leg.reference_id) refuse("a dispute fee must name its order")
+    const charge = (leg.metadata as { stripe_charge_id?: unknown } | null | undefined)?.stripe_charge_id
+    if (typeof charge !== "string" || !charge) refuse("a dispute fee must name the disputed charge")
+    if (
+      other.account_type !== DISPUTE_FEE_SINK.account_type ||
+      other.owner_type !== "SYSTEM" ||
+      other.owner_id !== DISPUTE_FEE_SINK.owner_id ||
+      String(other.currency_code ?? "").toUpperCase() !== "USD"
+    ) {
+      refuse("a dispute fee must go to the card-processing account")
+    }
+    return { side: "debit", receivableAccountId: receivable.id }
+  }
+
   if (debitIs) {
     if (legTag(leg.metadata) !== VENDOR_REFUND_SHORTFALL_LEG) {
-      refuse("money leaves the vendor receivable only as a refund shortfall")
+      refuse("money leaves the vendor receivable only as a refund shortfall or a dispute fee")
     }
     if (!leg.order_id) refuse("a refund shortfall must name its order")
     if (other.account_type !== "ESCROW" || other.owner_type !== "SYSTEM" || other.owner_id !== "system") {

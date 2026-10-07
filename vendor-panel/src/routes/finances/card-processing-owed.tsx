@@ -22,6 +22,9 @@ const sum = (items: Array<{ amount: number }>) => Math.round(items.reduce((s, i)
  *     claims Stripe kept a fee.
  *   - Refunds owed: an order refunded after the vendor's earnings for it were
  *     paid out (SD-40).
+ *   - Chargeback fees owed: the fee Stripe charges when a cardholder disputes
+ *     an order (operator answer 2026-10-07). Stripe keeps it whether the
+ *     dispute is won or lost, so the text never says the vendor lost.
  *
  * Both are taken from the next sales before any payout, and anything unrepaid
  * 180 days after the refund is forgiven (backend
@@ -34,16 +37,28 @@ export const CardProcessingOwed = ({ owed, currency }: { owed: Owed; currency: s
   const open = owed.open
   const processingOpen = open.filter((o) => kindOf(o) === "card_processing")
   const refundOpen = open.filter((o) => kindOf(o) === "refund")
+  const feeOpen = open.filter((o) => kindOf(o) === "dispute_fee")
   // `by_kind` when the API sends it; otherwise everything is card processing.
   const processingOwed = owed.by_kind ? owed.by_kind.card_processing : owed.outstanding
   const refundOwed = owed.by_kind ? owed.by_kind.refund : 0
+  const feeOwed = owed.by_kind?.dispute_fee ?? 0
   const processingForgiven = sum(forgiven.filter((f) => kindOf(f) === "card_processing"))
   const refundForgiven = sum(forgiven.filter((f) => kindOf(f) === "refund"))
-  if (!(processingOwed > 0) && !(refundOwed > 0) && !(processingForgiven > 0) && !(refundForgiven > 0)) return null
+  const feeForgiven = sum(forgiven.filter((f) => kindOf(f) === "dispute_fee"))
+  if (
+    !(processingOwed > 0) &&
+    !(refundOwed > 0) &&
+    !(feeOwed > 0) &&
+    !(processingForgiven > 0) &&
+    !(refundForgiven > 0) &&
+    !(feeForgiven > 0)
+  )
+    return null
   const ids = (items: Array<{ order_id: string | null }>) =>
     items.map((o) => o.order_id).filter((id): id is string => Boolean(id))
   const processingOrders = ids(processingOpen)
   const refundOrders = ids(refundOpen)
+  const feeOrders = ids(feeOpen)
   let first = true
   const gap = () => {
     const cls = first ? "" : " mt-3"
@@ -82,6 +97,21 @@ export const CardProcessingOwed = ({ owed, currency }: { owed: Owed; currency: s
           </Text>
         </div>
       ) : null}
+      {feeOwed > 0 ? (
+        <div className={gap()}>
+          <div className="flex justify-between items-center">
+            <Text className="font-semibold">Chargeback fees owed</Text>
+            <Text className="font-semibold">{formatCurrency(feeOwed, currency)}</Text>
+          </div>
+          <Text className="text-sm text-ui-fg-muted mt-2">
+            This is taken from your next sales, before any payout. Anything still owed 180 days after the chargeback is forgiven.
+          </Text>
+          <Text className="text-sm text-ui-fg-muted mt-1">
+            {`Why: a cardholder disputed ${feeOrders.length === 1 ? "an order" : "orders"} of yours with their bank. Stripe charges a fee for every dispute and keeps it whether the dispute is won or lost.`}
+            {feeOrders.length > 0 ? ` Disputed: ${feeOrders.join(", ")}.` : ""}
+          </Text>
+        </div>
+      ) : null}
       {processingForgiven > 0 ? (
         <Text className={`text-sm text-ui-fg-muted${gap()}`}>
           {`Forgiven: ${formatCurrency(processingForgiven, currency)} of card processing went unrepaid for 180 days after the refund, so you no longer owe it and it will not be taken from your sales.`}
@@ -90,6 +120,11 @@ export const CardProcessingOwed = ({ owed, currency }: { owed: Owed; currency: s
       {refundForgiven > 0 ? (
         <Text className={`text-sm text-ui-fg-muted${gap()}`}>
           {`Forgiven: ${formatCurrency(refundForgiven, currency)} of refunds went unrepaid for 180 days after the refund, so you no longer owe it and it will not be taken from your sales.`}
+        </Text>
+      ) : null}
+      {feeForgiven > 0 ? (
+        <Text className={`text-sm text-ui-fg-muted${gap()}`}>
+          {`Forgiven: ${formatCurrency(feeForgiven, currency)} of chargeback fees went unrepaid for 180 days after the chargeback, so you no longer owe it and it will not be taken from your sales.`}
         </Text>
       ) : null}
     </div>

@@ -12,6 +12,7 @@ import {
   type CardSettlementOrder,
 } from "./card-order-settlement"
 import { settleOrderPayment } from "../subscribers/hawala-order-payment"
+import { postDisputeFees } from "./card-dispute-fee"
 
 type Container = { resolve: (key: string) => any }
 
@@ -82,6 +83,9 @@ async function withCardOrderLock<T>(container: Container, orderId: string, fn: (
  *      held (SD-40, `models/payout-hold.ts`) until an admin assigns it
  *      (`POST /admin/hawala/card-refunds/:id/attribute`). Once every refund
  *      on the collection is accounted for, its holds are released.
+ *   5. Stripe's dispute fee on the order's charge (operator answer
+ *      2026-10-07): the vendor owes it, posted as a receivable
+ *      (`./card-dispute-fee.ts`) whatever became of the order.
  *
  * Never throws.
  */
@@ -123,6 +127,12 @@ async function reconcileLocked(container: Container, orderId: string): Promise<C
     // Settled some other way (a wallet, before the flag): its refunds keep
     // the old path.
     return { outcome: "not_card" }
+  }
+  // Stripe's dispute fee, owed by the vendor (operator answer 2026-10-07):
+  // owed whatever became of the order, so it posts before the early return
+  // for a fully refunded one (a lost dispute reverses the purchase).
+  if (purchase.status === "COMPLETED" || purchase.status === "REVERSED") {
+    await postDisputeFees(container, hawala, order)
   }
   if (purchase.status === "REVERSED") return { outcome: "in_step" }
   if (purchase.status !== "COMPLETED") {

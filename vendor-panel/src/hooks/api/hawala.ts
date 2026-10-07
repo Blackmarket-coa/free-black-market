@@ -178,7 +178,8 @@ export interface VendorDashboard {
    */
   card_processing_owed?: {
     outstanding: number
-    by_kind?: { card_processing: number; refund: number }
+    /** `dispute_fee` is absent from builds before chargeback fees were added. */
+    by_kind?: { card_processing: number; refund: number; dispute_fee?: number }
     open: Array<{ kind?: OwedKind; order_id: string | null; amount: number; since: string | null }>
     /** Forgiven after 180 days unrepaid; never collected. Absent from older APIs. */
     forgiven?: Array<{ kind?: OwedKind; order_id: string | null; amount: number; since: string | null; forgiven_at: string }>
@@ -215,7 +216,7 @@ export interface VendorDashboard {
 }
 
 /** What an owed amount is for (backend hawala-ledger/card-processing.ts). */
-export type OwedKind = "card_processing" | "refund"
+export type OwedKind = "card_processing" | "refund" | "dispute_fee"
 
 export interface PayoutOptions {
   available_balance: number
@@ -225,6 +226,8 @@ export interface PayoutOptions {
   card_processing_owed?: number
   /** Refunds issued after payout, owed and repaid before any payout. Absent from older API builds. */
   refund_owed?: number
+  /** Chargeback fees owed (Stripe's dispute fee), repaid before any payout. Absent from older API builds. */
+  dispute_fee_owed?: number
   /** Everything owed. Absent from older API builds. */
   total_owed?: number
   /**

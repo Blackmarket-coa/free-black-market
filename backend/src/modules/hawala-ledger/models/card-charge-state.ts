@@ -21,6 +21,10 @@ import { model } from "@medusajs/framework/utils"
  *     payment collection are held (`payout-hold.ts`, reason
  *     `card_dispute_open`) until it closes; nothing is posted while it is
  *     open, because a won dispute returns the money.
+ *   - `dispute_fee_cents`: the fees Stripe took on the charge's disputes, net,
+ *     as Stripe reports them on each dispute's balance transactions — owed by
+ *     the vendor(s) whose order was disputed (operator answer 2026-10-07),
+ *     win or lose, because Stripe does not return it.
  *
  * Integer cents, as Stripe reports them. A record, not money: nothing moves
  * here. No customer data.
@@ -37,6 +41,7 @@ export const CardChargeState = model
     refunded_cents: model.number().default(0),
     dispute_lost_cents: model.number().default(0),
     dispute_open_cents: model.number().default(0),
+    dispute_fee_cents: model.number().default(0),
     synced_at: model.dateTime(),
     metadata: model.json().nullable(),
   })

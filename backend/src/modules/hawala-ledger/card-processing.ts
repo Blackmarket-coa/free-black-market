@@ -91,6 +91,7 @@
  */
 
 import {
+  VENDOR_DISPUTE_FEE_LEG,
   VENDOR_REFUND_RECOVERY_LEG,
   VENDOR_REFUND_SHORTFALL_LEG,
 } from "./vendor-receivable"
@@ -164,13 +165,20 @@ export function isCardProcessingRecoveryLeg(entry: {
  *     vendor's earnings could not absorb (the card-processing account).
  *   - refund: a card refund that landed after the vendor's earnings for it
  *     were paid out (`./vendor-receivable.ts`, the VENDOR_RECEIVABLE account).
+ *   - dispute_fee: the fee Stripe took when a cardholder disputed the
+ *     vendor's order (operator answer 2026-10-07; `./vendor-receivable.ts`,
+ *     the VENDOR_RECEIVABLE account, repaid like a refund).
  */
-export type VendorReceivableKind = "card_processing" | "refund"
+export type VendorReceivableKind = "card_processing" | "refund" | "dispute_fee"
+
+/** A zero for every kind. */
+export const emptyByKind = (): Record<VendorReceivableKind, number> => ({ card_processing: 0, refund: 0, dispute_fee: 0 })
 
 /** The shortfall-leg tag and recovery-leg tag for each kind. */
 export const RECEIVABLE_LEGS: Record<VendorReceivableKind, { shortfall: string; recovery: string }> = {
   card_processing: { shortfall: CARD_PROCESSING_SHORTFALL_LEG, recovery: CARD_PROCESSING_RECOVERY_LEG },
   refund: { shortfall: VENDOR_REFUND_SHORTFALL_LEG, recovery: VENDOR_REFUND_RECOVERY_LEG },
+  dispute_fee: { shortfall: VENDOR_DISPUTE_FEE_LEG, recovery: VENDOR_REFUND_RECOVERY_LEG },
 }
 
 /** The kind of a shortfall leg, or null for any other entry. */
@@ -182,6 +190,7 @@ export function receivableShortfallKind(entry: {
   const leg = (entry.metadata as { leg?: unknown } | null | undefined)?.leg
   if (leg === CARD_PROCESSING_SHORTFALL_LEG) return "card_processing"
   if (leg === VENDOR_REFUND_SHORTFALL_LEG) return "refund"
+  if (leg === VENDOR_DISPUTE_FEE_LEG) return "dispute_fee"
   return null
 }
 
@@ -198,6 +207,7 @@ type ReceivableRow = {
   status?: string | null
   entry_type?: string | null
   order_id?: string | null
+  reference_id?: string | null
   created_at?: unknown
   debit_account_id?: string | null
   credit_account_id?: string | null
@@ -252,6 +262,9 @@ export type CardProcessingReceivable = {
 
 const toCentsInt = (n: unknown) => Math.round(Number(n ?? 0) * 100)
 const metaOf = (e: ReceivableRow) => (e.metadata ?? {}) as Record<string, unknown>
+/** The order a shortfall is on: its `order_id`, or — a dispute fee, which carries none — its reference. */
+const orderOf = (e: ReceivableRow): string | null =>
+  e.order_id ?? (receivableShortfallKind(e) === "dispute_fee" ? e.reference_id ?? null : null)
 const createdMs = (e: ReceivableRow) => {
   const t = e.created_at ? new Date(e.created_at as string).getTime() : NaN
   return Number.isFinite(t) ? t : 0
@@ -309,7 +322,7 @@ export function computeCardProcessingReceivable(
   const writtenOff: WrittenOffCardProcessingShortfall[] = []
   let total = 0
   let writtenOffTotal = 0
-  const byKind: Record<VendorReceivableKind, number> = { card_processing: 0, refund: 0 }
+  const byKind = emptyByKind()
   const asOf = options.asOfMs
   for (const s of shortfalls) {
     const owed = toCentsInt(s.amount)
@@ -323,7 +336,7 @@ export function computeCardProcessingReceivable(
       writtenOff.push({
         shortfall_id: s.id,
         kind,
-        order_id: s.order_id ?? null,
+        order_id: orderOf(s),
         owed_cents: owed,
         recovered_cents: recovered,
         forgiven_cents: outstanding,
@@ -338,7 +351,7 @@ export function computeCardProcessingReceivable(
       shortfall_id: s.id,
       kind,
       funding_account_id: String(s.debit_account_id ?? ""),
-      order_id: s.order_id ?? null,
+      order_id: orderOf(s),
       owed_cents: owed,
       recovered_cents: recovered,
       outstanding_cents: outstanding,

@@ -349,17 +349,30 @@ refund to the orders.
 
 - A record of a debt, not a balance anyone holds. The receivable account
   reads as minus what vendors owe; it can go below zero and never above it,
-  and that is enforced in the balance update itself. Only two leg shapes may
-  touch it: a refund shortfall into an order's escrow (naming the order) and
-  a recovery from a USD seller-earnings account. It pays nothing out.
+  and that is enforced in the balance update itself. Only three leg shapes
+  may touch it: a refund shortfall into an order's escrow (naming the order),
+  Stripe's dispute fee on an order into the card-processing account (naming
+  the order and the disputed charge; below), and a recovery from a USD
+  seller-earnings account. It pays nothing out.
 - Inside the refund-of-order and payout-of-order context. A receivable is
-  created only by a refund of a specific order, and repaid only out of the
-  same vendor's later order earnings or at their payout.
+  created only by a refund of a specific order or a dispute of a specific
+  order's card charge, and repaid only out of the same vendor's later order
+  earnings or at their payout.
 - USD only. CCR is never touched: the receivable account and every account
   it may move against are USD, and the cross-rail check stands.
 - A hold moves no money and holds no balance; it only refuses an outflow
   while it is ACTIVE.
 - Assigning a refund never calls Stripe: the customer was already refunded.
+
+**The dispute fee (SD-44; operator answer 2026-10-07: the vendor whose order
+was disputed owes it).** When a cardholder disputes a card charge, Stripe
+takes a dispute fee from FBM's own Stripe balance, and keeps it whether the
+dispute is won or lost. The ledger records it the way it records other money
+Stripe keeps from FBM's charges: into the card-processing account, funded by
+the vendor receivable as owed by the vendor (pro rata to each order on a
+shared cart), and repaid like a refund owed. It moves no CCR, holds no
+balance for anyone, and pays nothing out; it is a record, inside the
+purchase context of the disputed order, of what a vendor owes on it.
 
 This section records the design, not a legal conclusion.
 
