@@ -116,6 +116,12 @@ operator can give (who holds CCR wallets, and what governs issuance volume).
 > meets rule 4's "Stripe ACH to a US bank account" is for counsel to say before
 > the flag is set. This note records what the code does; it draws no conclusion
 > about rule 4.
+>
+> **Operator answer, 2026-10-07:** counsel's view is that a Connect transfer meets
+> rule 4. That is the operator's report of counsel's advice; the advice itself is
+> not in this repository, and this document still draws no conclusion of its own.
+> The operator also confirmed that `STRIPE_SECRET_API_KEY` (Mercur) and
+> `STRIPE_API_KEY` (the payment provider) are the same Stripe account.
 
 ### Inter-account movement
 
