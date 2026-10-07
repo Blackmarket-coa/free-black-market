@@ -111,7 +111,7 @@ type HawalaService = {
    */
   getPayoutOptions?: (
     vendorId: string
-  ) => Promise<{ payable_balance?: number; card_processing_owed?: number }>
+  ) => Promise<{ payable_balance?: number; card_processing_owed?: number; total_owed?: number }>
 }
 
 export class GrowerPayoutService {
@@ -302,10 +302,10 @@ export class GrowerPayoutService {
   /**
    * Monthly settlement. Aggregates each grower's net USD earnings for the period
    * and hands each to the EXISTING hawala payout pipeline via `requestPayout`,
-   * which debits SELLER_EARNINGS → SETTLEMENT and creates a PayoutRequest. The
-   * actual Stripe ACH push is performed downstream by the existing
-   * StripeAchService pipeline (gated by Stripe credentials), so there is no new
-   * external provider here.
+   * which debits SELLER_EARNINGS → SETTLEMENT and creates a PayoutRequest.
+   * Nothing sends that request yet: no code reads a PROCESSING PayoutRequest
+   * again (docs/AUDIT_DEBT.md SD-41; an FBM job sending them as Stripe Connect
+   * transfers is the operator's chosen fix). No external provider here.
    *
    * Balance-guarded + per-seller try/catch: a seller whose available balance is
    * below the computed net (e.g. funds not yet settled) is reported as deferred
@@ -354,7 +354,7 @@ export class GrowerPayoutService {
         const options = await this.hawala.getPayoutOptions?.(sellerId)
         if (
           options &&
-          Number(options.card_processing_owed) > 0 &&
+          Number(options.total_owed ?? options.card_processing_owed) > 0 &&
           typeof options.payable_balance === "number"
         ) {
           amount = Math.min(net, Math.floor(options.payable_balance * 100 + 1e-6) / 100)
@@ -365,7 +365,7 @@ export class GrowerPayoutService {
             amount: 0,
             currency: "USD",
             status: "deferred",
-            reason: "card processing owed is repaid from this balance first; nothing is left to pay out",
+            reason: "what the grower owes (card processing, or a refund after payout) is repaid from this balance first; nothing is left to pay out",
           })
           continue
         }

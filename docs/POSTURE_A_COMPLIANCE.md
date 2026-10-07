@@ -101,6 +101,15 @@ operator can give (who holds CCR wallets, and what governs issuance volume).
    (Mercury, Lili, Lower East Side People's FCU); FBM does not stand
    between the vendor and that partner.
 
+> **How vendors are actually paid today (SD-41, found 2026-10-06).** No FBM
+> code sends a vendor money: `requestPayout` records a payout request that
+> nothing ever sends. The one path that does is `@mercurjs/b2c-core`'s nightly
+> `daily-payouts` job, a Stripe Connect transfer per order to a seller who
+> has onboarded a Mercur payout account from the vendor panel. It reads
+> nothing in the hawala ledger. The operator has chosen to replace it with an
+> FBM job driven by the ledger (follow-up PR, behind a flag, off by default).
+> This note records what the code does; it draws no conclusion about rule 4.
+
 ### Inter-account movement
 
 7. **No buyer-to-buyer transfers.** A buyer with a refund credit cannot send
@@ -304,6 +313,40 @@ balance anyone holds.
 context that already existed on paper. Whether the operator needs counsel's
 view before setting the flag is the operator's call; this section records the
 design, not a legal conclusion.
+
+#### Vendor refund receivable and payout holds (SD-40)
+
+Same flag (`FF_CARD_ORDER_LEDGER_V1`); `modules/hawala-ledger/vendor-receivable.ts`,
+`modules/hawala-ledger/models/payout-hold.ts`.
+
+**What it does.** A card refund issued after the vendor's earnings for that
+order left the ledger now posts in full. Whatever the vendor's earnings cannot
+cover is funded first from the order's retained card processing, then from a
+SYSTEM account `VENDOR_RECEIVABLE` / owner `vendor_refunds` (USD), recorded as
+owed by that vendor. It is recovered from the vendor's next sales and from
+their balance before any payout or vendor-to-vendor payment. It is forgiven
+180 days after the refund. Separately, when part of a shared multi-vendor
+cart is refunded with no vendor's order recording it, every vendor on the cart
+is held (no payout, no vendor-to-vendor payment) until an admin assigns the
+refund to the orders.
+
+**How it is bounded.**
+
+- A record of a debt, not a balance anyone holds. The receivable account
+  reads as minus what vendors owe; it can go below zero and never above it,
+  and that is enforced in the balance update itself. Only two leg shapes may
+  touch it: a refund shortfall into an order's escrow (naming the order) and
+  a recovery from a USD seller-earnings account. It pays nothing out.
+- Inside the refund-of-order and payout-of-order context. A receivable is
+  created only by a refund of a specific order, and repaid only out of the
+  same vendor's later order earnings or at their payout.
+- USD only. CCR is never touched: the receivable account and every account
+  it may move against are USD, and the cross-rail check stands.
+- A hold moves no money and holds no balance; it only refuses an outflow
+  while it is ACTIVE.
+- Assigning a refund never calls Stripe: the customer was already refunded.
+
+This section records the design, not a legal conclusion.
 
 ### `playbook`
 

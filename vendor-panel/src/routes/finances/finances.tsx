@@ -81,10 +81,12 @@ const PayoutSection = () => {
   if (isError || !payoutOptions) return <Text className="text-ui-fg-muted">Unable to load payout options</Text>
 
   const selectedOption = payoutOptions.options.find((o) => o.tier === selectedTier)
-  // Card processing owed is repaid before any payout, so the full-balance
-  // default is the balance net of it.
+  // Everything owed (card processing, and refunds issued after payout) is
+  // repaid before any payout, so the full-balance default is the balance net
+  // of it; zero while payouts are held.
   const payable = payoutOptions.payable_balance ?? payoutOptions.available_balance
-  const owed = payoutOptions.card_processing_owed ?? 0
+  const owed = payoutOptions.total_owed ?? payoutOptions.card_processing_owed ?? 0
+  const held = Boolean(payoutOptions.payout_hold?.held)
   const amount = customAmount ? parseFloat(customAmount) : payable
   const fee = amount * (selectedOption?.fee_rate || 0)
   const net = amount - fee
@@ -106,7 +108,7 @@ const PayoutSection = () => {
     <div className="space-y-6">
       <div className="bg-ui-bg-subtle rounded-lg p-4">
         <Text className="text-ui-fg-muted mb-2">
-          {owed > 0 ? "Available to cash out" : "Available Balance"}
+          {owed > 0 || held ? "Available to cash out" : "Available Balance"}
         </Text>
         <Heading level="h2" className="text-3xl font-bold">
           {formatCurrency(payable, payoutOptions.currency)}
@@ -114,8 +116,15 @@ const PayoutSection = () => {
         {owed > 0 && (
           <Text className="text-sm text-ui-fg-muted mt-2">
             Your balance is {formatCurrency(payoutOptions.available_balance, payoutOptions.currency)}.{" "}
-            {formatCurrency(owed, payoutOptions.currency)} of card processing you owe is repaid
-            from it before any payout.
+            {formatCurrency(owed, payoutOptions.currency)} you owe (card processing, or a refund
+            issued after payout) is repaid from it before any payout.
+          </Text>
+        )}
+        {held && (
+          <Text className="text-sm text-ui-fg-muted mt-2">
+            Payouts are on hold: a refund on an order of yours that shared a checkout with other
+            vendors has not yet been assigned to a vendor. The platform team assigns it, and
+            payouts resume then.
           </Text>
         )}
       </div>
@@ -173,7 +182,7 @@ const PayoutSection = () => {
       <Button
         className="w-full"
         onClick={handlePayout}
-        disabled={amount <= 0 || requestPayout.isPending}
+        disabled={held || amount <= 0 || requestPayout.isPending}
       >
         {requestPayout.isPending ? (
           <Spinner className="animate-spin mr-2" />

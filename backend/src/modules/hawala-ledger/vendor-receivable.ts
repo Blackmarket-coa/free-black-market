@@ -1,0 +1,162 @@
+/**
+ * Vendor refund receivable: a card refund that lands after the vendor was
+ * paid out (SD-40; operator answer 2026-10-06: "the vendor owes it" —
+ * recovered from their next sales and before any payout, forgiven after 180
+ * days).
+ *
+ * The problem it closes. Stripe refunds a card order from FBM's own Stripe
+ * balance, whenever the operator issues it — including after the vendor's
+ * earnings for that order have left the ledger. The ledger refunds a card
+ * order by taking the vendor's balancing leg back from their earnings; with
+ * the earnings gone, that leg cannot post, and before this the whole refund
+ * was refused before any leg and retried by the reconciler forever. The
+ * customer had their money back; the ledger never said so, and nothing
+ * recorded that the vendor now owes it.
+ *
+ * Now the refund ALWAYS posts for a card order. Whatever the vendor's
+ * earnings cannot cover is funded in this order:
+ *
+ *   1. the order's retained card processing, as before (a
+ *      CARD_PROCESSING_SHORTFALL_LEG from the card-processing account,
+ *      `./card-processing.ts`), up to what that order retained;
+ *   2. the rest from the VENDOR_RECEIVABLE account: entry_type ADJUSTMENT,
+ *      VENDOR_RECEIVABLE -> ESCROW, `metadata.leg = VENDOR_REFUND_SHORTFALL_LEG`,
+ *      naming the seller account that owes it (`owed_by_account_id`).
+ *
+ * Both are receivables from the vendor and are recovered by the same
+ * machinery, oldest first, whichever kind (`recoverCardProcessingShortfall`):
+ * 100% of each later seller credit, then the outflow backstop before any
+ * payout or vendor-to-vendor payment. A recovery always repays the account
+ * that funded the shortfall, so a VENDOR_REFUND_RECOVERY_LEG is
+ * SELLER_EARNINGS -> VENDOR_RECEIVABLE. The 180-day write-off by age applies
+ * to both kinds (CARD_PROCESSING_WRITE_OFF_DAYS, from the refund).
+ *
+ * The account. Like card clearing (`./card-clearing.ts`), it is allowed
+ * below zero, because it stands for money the platform is owed rather than
+ * money it holds: its balance reads as minus what vendors owe in refunds
+ * (including what was written off, which the platform absorbed). The
+ * permission is narrow and enforced at the money-movement chokepoint
+ * (`createTransfer`), not by callers:
+ *
+ *   - Only `account_type` VENDOR_RECEIVABLE, owner SYSTEM / `vendor_refunds`,
+ *     USD only.
+ *   - Out of it (taking it further below zero): ADJUSTMENT into the order
+ *     escrow, naming its order, stamped VENDOR_REFUND_SHORTFALL_LEG.
+ *   - Into it (bringing it back toward zero): ADJUSTMENT from a USD
+ *     SELLER_EARNINGS account, stamped VENDOR_REFUND_RECOVERY_LEG. Never
+ *     above zero — the balance update itself refuses it (`balance + delta
+ *     <= 0`), so a recovery can never mint a positive balance here.
+ *   - Nothing else may touch it.
+ *
+ * Posture A: USD only, inside a refund-of-order context; the receivable is a
+ * record of what a vendor owes on a refunded order and is only ever repaid
+ * out of that vendor's later earnings. It holds no balance for anyone and
+ * pays nothing out. CCR is never touched (docs/POSTURE_A_COMPLIANCE.md,
+ * "Vendor refund receivable").
+ *
+ * A wallet-funded order (not card) is unchanged: its refund is still refused
+ * when the vendor cannot cover it.
+ */
+
+export const VENDOR_RECEIVABLE_ACCOUNT_TYPE = "VENDOR_RECEIVABLE"
+export const VENDOR_RECEIVABLE_OWNER_ID = "vendor_refunds"
+export const VENDOR_REFUND_SHORTFALL_LEG = "vendor_refund_shortfall"
+export const VENDOR_REFUND_RECOVERY_LEG = "vendor_refund_recovery"
+
+export class VendorReceivableLegError extends Error {
+  constructor(message: string, public readonly details: Record<string, unknown>) {
+    super(message)
+    this.name = "VendorReceivableLegError"
+  }
+}
+
+type AccountLike = {
+  id: string
+  account_type?: string | null
+  owner_type?: string | null
+  owner_id?: string | null
+  currency_code?: string | null
+}
+
+export function isVendorReceivableAccount(account: AccountLike | null | undefined): boolean {
+  return account?.account_type === VENDOR_RECEIVABLE_ACCOUNT_TYPE
+}
+
+const legTag = (metadata: unknown) => (metadata as { leg?: unknown } | null | undefined)?.leg
+
+/** True for a leg that records a refund a vendor's earnings could not cover. */
+export function isVendorRefundShortfallLeg(entry: { entry_type?: string | null; metadata?: unknown }): boolean {
+  return entry.entry_type === "ADJUSTMENT" && legTag(entry.metadata) === VENDOR_REFUND_SHORTFALL_LEG
+}
+
+/** True for a leg that repays (part of) a vendor refund receivable. */
+export function isVendorRefundRecoveryLeg(entry: { entry_type?: string | null; metadata?: unknown }): boolean {
+  return entry.entry_type === "ADJUSTMENT" && legTag(entry.metadata) === VENDOR_REFUND_RECOVERY_LEG
+}
+
+/**
+ * Which side of a leg is the receivable account, and so how its balance may
+ * move: `debit` may go further below zero, `credit` may come back toward
+ * zero but never above it. `none` for a leg that does not touch it.
+ */
+export type VendorReceivableSide = "none" | "debit" | "credit"
+
+/**
+ * Refuse every leg touching the receivable account that is not one of the
+ * two allowed shapes. Called by `createTransfer` before anything is written.
+ */
+export function assertVendorReceivableLeg(
+  leg: { entry_type: string; order_id?: string | null; metadata?: unknown },
+  debit: AccountLike,
+  credit: AccountLike
+): { side: VendorReceivableSide; receivableAccountId: string | null } {
+  const debitIs = isVendorReceivableAccount(debit)
+  const creditIs = isVendorReceivableAccount(credit)
+  if (!debitIs && !creditIs) return { side: "none", receivableAccountId: null }
+
+  const receivable = debitIs ? debit : credit
+  const other = debitIs ? credit : debit
+  const details = {
+    entry_type: leg.entry_type,
+    order_id: leg.order_id ?? null,
+    leg: legTag(leg.metadata) ?? null,
+    debit_account_id: debit.id,
+    credit_account_id: credit.id,
+  }
+  const refuse = (why: string): never => {
+    throw new VendorReceivableLegError(`Vendor-receivable leg refused: ${why}`, details)
+  }
+
+  if (debitIs && creditIs) refuse("both sides are the vendor receivable")
+  if (
+    receivable.owner_type !== "SYSTEM" ||
+    receivable.owner_id !== VENDOR_RECEIVABLE_OWNER_ID ||
+    String(receivable.currency_code ?? "").toUpperCase() !== "USD"
+  ) {
+    refuse("only the SYSTEM-owned USD vendor-receivable account may be used")
+  }
+  if (leg.entry_type !== "ADJUSTMENT") refuse("only an ADJUSTMENT may touch the vendor receivable")
+
+  if (debitIs) {
+    if (legTag(leg.metadata) !== VENDOR_REFUND_SHORTFALL_LEG) {
+      refuse("money leaves the vendor receivable only as a refund shortfall")
+    }
+    if (!leg.order_id) refuse("a refund shortfall must name its order")
+    if (other.account_type !== "ESCROW" || other.owner_type !== "SYSTEM" || other.owner_id !== "system") {
+      refuse("a refund shortfall must fund the order escrow")
+    }
+    return { side: "debit", receivableAccountId: receivable.id }
+  }
+
+  if (legTag(leg.metadata) !== VENDOR_REFUND_RECOVERY_LEG) {
+    refuse("money returns to the vendor receivable only as a recovery")
+  }
+  if (
+    other.account_type !== "SELLER_EARNINGS" ||
+    other.owner_type !== "SELLER" ||
+    String(other.currency_code ?? "").toUpperCase() !== "USD"
+  ) {
+    refuse("a recovery must come from a USD seller earnings account")
+  }
+  return { side: "credit", receivableAccountId: receivable.id }
+}

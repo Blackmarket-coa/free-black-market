@@ -50,12 +50,13 @@ import {
   CARD_PROCESSING_ACCOUNT_TYPE,
   CARD_PROCESSING_LEG,
   CARD_PROCESSING_OWNER_ID,
-  CARD_PROCESSING_RECOVERY_LEG,
   CARD_PROCESSING_SHORTFALL_LEG,
   computeCardProcessingReceivable,
   isCardProcessingLeg,
   isCardProcessingRecoveryLeg,
   isCardProcessingShortfallLeg,
+  RECEIVABLE_LEGS,
+  receivableShortfallKind,
   type CardProcessingReceivable,
   type CardProcessingRecoverySource,
 } from "./card-processing"
@@ -65,6 +66,13 @@ import {
   CARD_FUNDING,
   assertCardClearingLeg,
 } from "./card-clearing"
+import {
+  VENDOR_RECEIVABLE_ACCOUNT_TYPE,
+  VENDOR_RECEIVABLE_OWNER_ID,
+  VENDOR_REFUND_SHORTFALL_LEG,
+  assertVendorReceivableLeg,
+  type VendorReceivableSide,
+} from "./vendor-receivable"
 import {
   reconcileRecords,
   deriveCandidateBounds,
@@ -109,7 +117,17 @@ import {
   BalanceMonitor,
   MonitorBreach,
   PoolCarrierDistribution,
+  PayoutHold,
+  type PayoutHoldReason,
 } from "./models"
+
+/** An outflow refused because the seller's payouts are held (SD-40). */
+export class PayoutHeldError extends Error {
+  constructor(message: string, public readonly hold_ids: string[]) {
+    super(message)
+    this.name = "PayoutHeldError"
+  }
+}
 
 class HawalaLedgerModuleService extends MedusaService({
   LedgerAccount,
@@ -140,6 +158,7 @@ class HawalaLedgerModuleService extends MedusaService({
   BalanceMonitor,
   MonitorBreach,
   PoolCarrierDistribution,
+  PayoutHold,
 }) {
   // ==================== ACCOUNT MANAGEMENT ====================
 
@@ -186,6 +205,7 @@ class HawalaLedgerModuleService extends MedusaService({
       CREATOR_EARNINGS: "CRE",
       CREATOR_REWARD_POOL: "CRP",
       CARD_CLEARING: "CCL",
+      VENDOR_RECEIVABLE: "VRC",
     }[accountType] || "GEN"
     
     const timestamp = Date.now().toString(36).toUpperCase()
@@ -245,6 +265,14 @@ class HawalaLedgerModuleService extends MedusaService({
     return this.getOrCreateSystemAccount(CARD_CLEARING_ACCOUNT_TYPE, CARD_CLEARING_OWNER_ID)
   }
 
+  /**
+   * The USD account a card refund the vendor could not cover is funded from
+   * (`./vendor-receivable.ts`, SD-40): allowed below zero, never above.
+   */
+  async getOrCreateVendorReceivableAccount() {
+    return this.getOrCreateSystemAccount(VENDOR_RECEIVABLE_ACCOUNT_TYPE, VENDOR_RECEIVABLE_OWNER_ID)
+  }
+
   // ==================== CARD-PROCESSING RECEIVABLE (F6) ====================
 
   /**
@@ -268,19 +296,38 @@ class HawalaLedgerModuleService extends MedusaService({
     return found
   }
 
+  /** The vendor-receivable account if it exists. Never creates it. */
+  private async findVendorReceivableAccount_() {
+    const [found] = await this.listLedgerAccounts({
+      account_type: VENDOR_RECEIVABLE_ACCOUNT_TYPE,
+      owner_type: "SYSTEM",
+      owner_id: VENDOR_RECEIVABLE_OWNER_ID,
+    })
+    if (
+      !found ||
+      found.owner_id !== VENDOR_RECEIVABLE_OWNER_ID ||
+      found.account_type !== VENDOR_RECEIVABLE_ACCOUNT_TYPE
+    ) {
+      return null
+    }
+    return found
+  }
+
   /**
-   * What a seller account owes in card processing retained on a refunded
-   * order its earnings could not cover (`./card-processing.ts`), computed from entries and never stored:
-   * the shortfall legs owed by the account less the recovery legs that repay
-   * them. No processing account: zero, after one read and no write. A
-   * processing account but no shortfall owed by this account: zero, after
-   * one more read.
+   * What a seller account owes (`./card-processing.ts`, `./vendor-receivable.ts`),
+   * computed from entries and never stored: the shortfall legs owed by the
+   * account — card processing its earnings could not absorb on a refunded
+   * order, and card refunds that landed after it was paid out (SD-40) — less
+   * the recovery legs that repay them. Neither funding account exists: zero,
+   * after two reads and no write. One exists but no shortfall is owed by
+   * this account: zero, after one more read.
    */
   async getCardProcessingReceivable(sellerAccountId: string): Promise<
     CardProcessingReceivable & { processing_account_id: string | null; has_shortfalls: boolean }
   > {
     const none = {
       total_cents: 0,
+      by_kind_cents: { card_processing: 0, refund: 0 },
       open: [],
       written_off: [],
       written_off_cents: 0,
@@ -288,29 +335,33 @@ class HawalaLedgerModuleService extends MedusaService({
       processing_account_id: null as string | null,
       has_shortfalls: false,
     }
-    const processing = await this.findCardProcessingAccount_()
-    if (!processing) return none
+    const [processing, receivable] = await Promise.all([
+      this.findCardProcessingAccount_(),
+      this.findVendorReceivableAccount_(),
+    ])
+    const funding = [processing?.id, receivable?.id].filter((x): x is string => !!x)
+    if (funding.length === 0) return none
     const shortfalls = (
       await this.listLedgerEntries(
-        { debit_account_id: processing.id, entry_type: "ADJUSTMENT", status: "COMPLETED" },
+        { debit_account_id: funding, entry_type: "ADJUSTMENT", status: "COMPLETED" },
         { order: { created_at: "ASC" } }
       )
     ).filter(
       (e) =>
-        isCardProcessingShortfallLeg(e) &&
+        receivableShortfallKind(e) !== null &&
         (e.metadata as { owed_by_account_id?: unknown } | null)?.owed_by_account_id === sellerAccountId
     )
-    if (shortfalls.length === 0) return { ...none, processing_account_id: processing.id }
+    if (shortfalls.length === 0) return { ...none, processing_account_id: processing?.id ?? null }
     const recoveries = await this.listLedgerEntries({
       debit_account_id: sellerAccountId,
-      credit_account_id: processing.id,
+      credit_account_id: funding,
       entry_type: "ADJUSTMENT",
     })
     return {
       // Written off by age (180 days from the refund that recorded it,
       // `./card-processing.ts`) as of now: forgiven, never collected again.
       ...computeCardProcessingReceivable(sellerAccountId, { shortfalls, recoveries }, { asOfMs: Date.now() }),
-      processing_account_id: processing.id,
+      processing_account_id: processing?.id ?? null,
       has_shortfalls: true,
     }
   }
@@ -404,7 +455,7 @@ class HawalaLedgerModuleService extends MedusaService({
     for (let pass = 0; pass < 64; pass++) {
       const owed = await this.getCardProcessingReceivable(args.sellerAccountId)
       const target = owed.open[0]
-      if (!owed.processing_account_id || !target) break
+      if (!target || !target.funding_account_id) break
       const usedFromSource = args.sourceEntryId
         ? owed.recovered_by_source_entry[args.sourceEntryId] ?? 0
         : postedCents
@@ -418,29 +469,35 @@ class HawalaLedgerModuleService extends MedusaService({
       // What the ledger knows, and no more: the processing amount is FBM's
       // estimate, and the refunded order may have had no card charge (a
       // wallet-funded order; card orders reach the ledger only with
-      // FF_CARD_ORDER_LEDGER_V1, SD-36).
+      // FF_CARD_ORDER_LEDGER_V1, SD-36). A refund receivable (SD-40) is a
+      // card refund issued after that order's earnings were paid out.
       const refundedOrder = target.order_id ? `order ${target.order_id}` : "a refunded order"
-      const why = `card processing on ${refundedOrder} is not returned on a refund, and your earnings did not cover it`
+      const isRefund = target.kind === "refund"
+      const why = isRefund
+        ? `${refundedOrder} was refunded after your earnings for it were paid out`
+        : `card processing on ${refundedOrder} is not returned on a refund, and your earnings did not cover it`
+      const what = isRefund ? "A refund after payout" : "Card processing"
       let entry: any
       try {
         entry = await this.createTransfer({
           debit_account_id: args.sellerAccountId,
-          credit_account_id: owed.processing_account_id,
+          // Always back to the account that funded the shortfall.
+          credit_account_id: target.funding_account_id,
           amount: amountCents / 100,
           entry_type: "ADJUSTMENT",
           reference_type: "ORDER",
           ...(target.order_id ? { reference_id: target.order_id } : {}),
           parent_entry_id: target.shortfall_id,
           correlation_id: args.correlationId,
-          idempotency_key: `cp-recovery-${target.shortfall_id}-${target.next_seq}`,
+          idempotency_key: `${isRefund ? "vr" : "cp"}-recovery-${target.shortfall_id}-${target.next_seq}`,
           description:
             args.source === "payout"
-              ? `Card processing repaid from your balance before payout: ${why}`
+              ? `${what} repaid from your balance before payout: ${why}`
               : args.source === "vendor_payment"
-                ? `Card processing repaid from your balance before a vendor payment: ${why}`
-                : `Card processing repaid from order ${args.sourceOrderId ?? "earnings"}: ${why}`,
+                ? `${what} repaid from your balance before a vendor payment: ${why}`
+                : `${what} repaid from order ${args.sourceOrderId ?? "earnings"}: ${why}`,
           metadata: {
-            leg: CARD_PROCESSING_RECOVERY_LEG,
+            leg: RECEIVABLE_LEGS[target.kind].recovery,
             recovers_entry_id: target.shortfall_id,
             owed_by_account_id: args.sellerAccountId,
             recovered_from_order_id: target.order_id,
@@ -1382,8 +1439,24 @@ class HawalaLedgerModuleService extends MedusaService({
       creditAccount
     )
 
+    // Vendor refund receivable (SD-40, `./vendor-receivable.ts`): the other
+    // account allowed below zero, for exactly two leg shapes — a refund
+    // shortfall out of it into the order escrow, a recovery into it from
+    // seller earnings (never above zero). Refused here, before any entry.
+    const { side: receivableSide, receivableAccountId } = assertVendorReceivableLeg(
+      { entry_type: data.entry_type, order_id: data.order_id ?? null, metadata: data.metadata },
+      debitAccount,
+      creditAccount
+    )
+    const receivableSideOf = (accountId: string): VendorReceivableSide =>
+      accountId === receivableAccountId ? receivableSide : "none"
+
     // Check available balance for debit account
-    if (!debitIsClearing && Number(debitAccount.available_balance) < data.amount) {
+    if (
+      !debitIsClearing &&
+      receivableSide !== "debit" &&
+      Number(debitAccount.available_balance) < data.amount
+    ) {
       throw new Error(`Insufficient balance in account ${debitAccount.account_number}`)
     }
 
@@ -1442,7 +1515,8 @@ class HawalaLedgerModuleService extends MedusaService({
                 trx,
                 leg.accountId,
                 leg.delta,
-                leg.accountId === clearingAccountId
+                leg.accountId === clearingAccountId,
+                receivableSideOf(leg.accountId)
               )
             }
           })
@@ -1453,14 +1527,16 @@ class HawalaLedgerModuleService extends MedusaService({
                 pgConnection,
                 data.debit_account_id,
                 delta,
-                data.debit_account_id === clearingAccountId
+                data.debit_account_id === clearingAccountId,
+                receivableSideOf(data.debit_account_id)
               ),
             (delta) =>
               this.updateBalancesAtomic(
                 pgConnection,
                 data.credit_account_id,
                 delta,
-                data.credit_account_id === clearingAccountId
+                data.credit_account_id === clearingAccountId,
+                receivableSideOf(data.credit_account_id)
               ),
             data
           )
@@ -1468,9 +1544,21 @@ class HawalaLedgerModuleService extends MedusaService({
       } else {
         await this.applyBalancePairWithCompensation(
           (delta) =>
-            this.updateBalances(data.debit_account_id, delta, 5, data.debit_account_id === clearingAccountId),
+            this.updateBalances(
+              data.debit_account_id,
+              delta,
+              5,
+              data.debit_account_id === clearingAccountId,
+              receivableSideOf(data.debit_account_id)
+            ),
           (delta) =>
-            this.updateBalances(data.credit_account_id, delta, 5, data.credit_account_id === clearingAccountId),
+            this.updateBalances(
+              data.credit_account_id,
+              delta,
+              5,
+              data.credit_account_id === clearingAccountId,
+              receivableSideOf(data.credit_account_id)
+            ),
           data
         )
       }
@@ -1719,9 +1807,30 @@ class HawalaLedgerModuleService extends MedusaService({
     // through `assertCardClearingLeg` (SD-36). The account's identity is
     // re-checked in SQL on the row itself, so a mis-passed `true` still
     // cannot let any other account go below zero.
-    allowNegativeCardClearing = false
+    allowNegativeCardClearing = false,
+    // The receivable side of a leg `assertVendorReceivableLeg` passed
+    // (SD-40). Its one invariant is the mirror of everyone else's: it may sit
+    // below zero but never above it (a debit takes it further below, a
+    // recovery brings it back toward zero). Identity re-checked in SQL on
+    // the row, so a mis-passed side cannot touch any other account.
+    receivableSide: VendorReceivableSide = "none"
   ): Promise<void> {
-    const result = allowNegativeCardClearing
+    const result = receivableSide !== "none"
+      ? await pgConnection.raw(
+          `UPDATE hawala_ledger_account
+             SET balance = balance + ?,
+                 available_balance = available_balance + ?,
+                 updated_at = NOW()
+           WHERE id = ?
+             AND deleted_at IS NULL
+             AND account_type = ?
+             AND owner_type = 'SYSTEM'
+             AND owner_id = ?
+             AND balance + ? <= 0
+             AND available_balance + ? <= 0`,
+          [delta, delta, accountId, VENDOR_RECEIVABLE_ACCOUNT_TYPE, VENDOR_RECEIVABLE_OWNER_ID, delta, delta]
+        )
+      : allowNegativeCardClearing
       ? await pgConnection.raw(
           `UPDATE hawala_ledger_account
              SET balance = balance + ?,
@@ -1763,7 +1872,8 @@ class HawalaLedgerModuleService extends MedusaService({
     accountId: string,
     delta: number,
     maxRetries = 5,
-    allowNegativeCardClearing = false
+    allowNegativeCardClearing = false,
+    receivableSide: VendorReceivableSide = "none"
   ) {
     let attempt = 0
     
@@ -1785,7 +1895,20 @@ class HawalaLedgerModuleService extends MedusaService({
         account.account_type === CARD_CLEARING_ACCOUNT_TYPE &&
         account.owner_type === "SYSTEM" &&
         account.owner_id === CARD_CLEARING_OWNER_ID
-      if (newBalance < 0 && !mayGoNegative) {
+      // The vendor receivable (SD-40): below zero on its debit side; on its
+      // credit side never above zero.
+      const isReceivable =
+        receivableSide !== "none" &&
+        account.account_type === VENDOR_RECEIVABLE_ACCOUNT_TYPE &&
+        account.owner_type === "SYSTEM" &&
+        account.owner_id === VENDOR_RECEIVABLE_OWNER_ID
+      if (receivableSide !== "none" && !isReceivable) {
+        throw new Error(`Account ${accountId} is not the vendor receivable`)
+      }
+      if (isReceivable && newBalance > 0) {
+        throw new Error(`Vendor receivable ${accountId} may not go above zero`)
+      }
+      if (newBalance < 0 && !mayGoNegative && !isReceivable) {
         throw new Error(
           `Insufficient balance in account ${accountId}. ` +
           `Available: ${currentBalance}, Requested: ${Math.abs(delta)}`
@@ -2268,9 +2391,10 @@ class HawalaLedgerModuleService extends MedusaService({
     // account (`./card-processing.ts`, CARD_PROCESSING_SHORTFALL_LEG) — a
     // receivable from that vendor, recovered from their next earnings and
     // before any payout (`recoverCardProcessingShortfall`).
-    // Planned BEFORE any leg posts. Only a gap larger than the processing
-    // retained (the vendor was already paid out) is refused, before any leg,
-    // which is the case a flag-off refund cannot post either.
+    // Planned BEFORE any leg posts. A gap larger than the processing
+    // retained (the vendor was already paid out) is refused before any leg
+    // for a wallet order; for a card order the rest is recorded as a refund
+    // the vendor owes (SD-40, `./vendor-receivable.ts`), so it always posts.
     //
     // Recovery (operator answer 2026-10-06, `./card-processing.ts`): if this
     // order's earnings already repaid an earlier shortfall, the vendor holds
@@ -2298,11 +2422,17 @@ class HawalaLedgerModuleService extends MedusaService({
     const repaidCap = roundCents(repaidFromThisOrder.total)
     const shortfallPlan: Array<{ leg: (typeof sellerEntries)[number]; i: number; amount: number }> = []
     let processingShortfall = 0
+    // Card orders only (SD-40): what neither the vendor's earnings nor the
+    // order's retained processing covers — a refund after payout, owed by
+    // the vendor.
+    const refundShortfallPlan: Array<{ leg: (typeof sellerEntries)[number]; i: number; amount: number }> = []
+    let refundShortfall = 0
     // A card order always runs this check (SD-36): Stripe has already
     // refunded the customer, and a seller leg failing after the fee reversal
     // posted would strand that reversal — each later refund total a fresh
-    // key, a fresh stranded leg. Checked first, the refund is refused before
-    // any leg posts and the next reconciliation retries it whole.
+    // key, a fresh stranded leg. So every seller leg is planned at what the
+    // account holds, and the rest is funded as a shortfall (processing, then
+    // the vendor receivable, SD-40) before any leg posts.
     if (cardFunded || retainedProcessingEntries.length > 0 || repaidCap > 0) {
       const remainingByAccount = new Map<string, number>()
       for (const planned of sellerPlan) {
@@ -2334,7 +2464,26 @@ class HawalaLedgerModuleService extends MedusaService({
               .reduce((sum, e) => sum + Number(e.amount), 0)
           )
         : 0
-      if (processingShortfall > roundCents(processingRetained + repaidCap - priorShortfall)) {
+      const processingRoom = Math.max(0, roundCents(processingRetained + repaidCap - priorShortfall))
+      if (cardFunded && processingShortfall > processingRoom) {
+        // A card order (SD-40, `./vendor-receivable.ts`): Stripe has already
+        // refunded the customer, so the refund posts whatever the vendor
+        // holds. The retained processing funds the gap first, as above; the
+        // rest is a refund the vendor owes (they were paid out), funded from
+        // the vendor receivable and recovered from their next sales and
+        // before any payout. Split leg by leg, processing first, in the order
+        // the seller legs were planned.
+        let room = processingRoom
+        for (const planned of shortfallPlan.splice(0)) {
+          const fromProcessing = roundCents(Math.min(planned.amount, room))
+          room = roundCents(room - fromProcessing)
+          const owed = roundCents(planned.amount - fromProcessing)
+          if (fromProcessing > 0) shortfallPlan.push({ ...planned, amount: fromProcessing })
+          if (owed > 0) refundShortfallPlan.push({ ...planned, amount: owed })
+        }
+        refundShortfall = roundCents(refundShortfallPlan.reduce((sum, p) => sum + p.amount, 0))
+        processingShortfall = roundCents(processingShortfall - refundShortfall)
+      } else if (processingShortfall > processingRoom) {
         throw new Error(
           `Refund for order ${data.order_id} refused before any leg posted: the vendor's earnings ` +
             `fall $${processingShortfall} short of the seller balancing leg, more than the ` +
@@ -2438,6 +2587,38 @@ class HawalaLedgerModuleService extends MedusaService({
       })
       refundEntries.push(shortfallEntry)
     }
+    // 3c. Card orders only (SD-40): the refund the vendor owes because they
+    // were already paid out, vendor receivable -> escrow, naming the seller
+    // account that owes it.
+    for (const { leg, i, amount } of refundShortfallPlan) {
+      const legTag =
+        sellerEntries.length > 1
+          ? `-${(leg.metadata as { split_leg?: string } | null)?.split_leg ?? i}`
+          : ""
+      const receivableAccount = await this.getOrCreateVendorReceivableAccount()
+      const refundShortfallEntry = await this.createTransfer({
+        debit_account_id: receivableAccount.id,
+        credit_account_id: escrowAccount.id,
+        amount,
+        entry_type: "ADJUSTMENT",
+        order_id: data.order_id,
+        description: `${description} - refunded after the vendor was paid out${legTag} (owed by the vendor)`,
+        idempotency_key: `${idempotencyKey}-refund-shortfall${legTag}`,
+        correlation_id: idempotencyKey,
+        metadata: {
+          leg: VENDOR_REFUND_SHORTFALL_LEG,
+          owed_by_account_id: leg.credit_account_id,
+          receivable: true,
+        },
+      })
+      refundEntries.push(refundShortfallEntry)
+    }
+    if (refundShortfall > 0) {
+      log.warn(
+        `[Hawala] Refund for order ${data.order_id}: the vendor had been paid out; $${refundShortfall} ` +
+          `recorded as owed by the vendor, recovered from their next sales before any payout`
+      )
+    }
     if (processingShortfall > 0) {
       log.warn(
         `[Hawala] Refund for order ${data.order_id}: vendor earnings fell $${processingShortfall} ` +
@@ -2499,6 +2680,7 @@ class HawalaLedgerModuleService extends MedusaService({
         ...(retainedProcessingEntries.length > 0
           ? { processing_retained: processingRetained, processing_shortfall: processingShortfall }
           : {}),
+        ...(refundShortfall > 0 ? { refund_owed_by_vendor: refundShortfall } : {}),
         reason: data.reason,
         entries_created: refundEntries.length,
         entries_reversed: originalEntries.length - retainedProcessingEntries.length,
@@ -3708,15 +3890,20 @@ class HawalaLedgerModuleService extends MedusaService({
     const account = accounts[0]
     const availableBalance = Number(account.available_balance)
 
-    // Card processing owed (`./card-processing.ts`) is taken before any
-    // payout, so what can be paid out is the balance net of it. Nothing owed:
-    // exactly the available balance, as before.
+    // What the vendor owes (`./card-processing.ts`: card processing, and
+    // refunds issued after payout, SD-40) is taken before any payout, so what
+    // can be paid out is the balance net of it. Nothing owed: exactly the
+    // available balance, as before. Held (SD-40): nothing, until released.
     const owed = await this.getCardProcessingReceivable(account.id)
-    const cardProcessingOwed = owed.total_cents / 100
+    const cardProcessingOwed = owed.by_kind_cents.card_processing / 100
+    const refundOwed = owed.by_kind_cents.refund / 100
+    const holds = await this.listActivePayoutHolds(vendorId)
     const payableBalance =
-      owed.total_cents > 0
-        ? Math.max(0, Math.floor(availableBalance * 100 + 1e-6) - owed.total_cents) / 100
-        : availableBalance
+      holds.length > 0
+        ? 0
+        : owed.total_cents > 0
+          ? Math.max(0, Math.floor(availableBalance * 100 + 1e-6) - owed.total_cents) / 100
+          : availableBalance
 
     // Get payout config
     const configs = await this.listPayoutConfigs({
@@ -3746,10 +3933,16 @@ class HawalaLedgerModuleService extends MedusaService({
 
     return {
       available_balance: availableBalance,
-      // What a payout can take now: the available balance less card
-      // processing owed (`card_processing_owed`), which is repaid first.
+      // What a payout can take now: the available balance less what is owed
+      // (`total_owed`), which is repaid first; zero while held.
       payable_balance: payableBalance,
       card_processing_owed: cardProcessingOwed,
+      refund_owed: refundOwed,
+      total_owed: owed.total_cents / 100,
+      payout_hold:
+        holds.length > 0
+          ? { held: true, since: holds[0].placed_at, reason: holds[0].reason }
+          : null,
       currency: account.currency_code,
       options,
       default_tier: config?.default_payout_tier || "WEEKLY",
@@ -3799,6 +3992,10 @@ class HawalaLedgerModuleService extends MedusaService({
     if (accounts.length === 0) {
       throw new Error("Vendor account not found")
     }
+
+    // Held (SD-40): a refund on one of this vendor's shared carts is not yet
+    // assigned to any seller's order; nothing is paid out until it is.
+    await this.assertNoPayoutHold_(data.vendor_id)
 
     // Card processing owed (a refund shortfall, `./card-processing.ts`) is
     // recovered from the available balance BEFORE the balance check, under a
@@ -3885,10 +4082,10 @@ class HawalaLedgerModuleService extends MedusaService({
         throw new Error(
           `Insufficient balance: $${dollars(payable)} is available to pay out` +
             (collectedCents > 0
-              ? ` after $${dollars(collectedCents / 100)} of card processing owed was repaid from your balance`
+              ? ` after $${dollars(collectedCents / 100)} owed (card processing or a refund after payout) was repaid from your balance`
               : "") +
             (stillOwedCents > 0
-              ? `; $${dollars(stillOwedCents / 100)} of card processing is still owed and is taken from your next sales`
+              ? `; $${dollars(stillOwedCents / 100)} still owed (card processing or a refund after payout) is taken from your next sales`
               : "")
         )
       }
@@ -4657,6 +4854,110 @@ class HawalaLedgerModuleService extends MedusaService({
     return position
   }
 
+  // ==================== PAYOUT HOLDS (SD-40) ====================
+
+  /** ACTIVE payout holds on a seller (`./models/payout-hold.ts`). */
+  async listActivePayoutHolds(sellerId: string) {
+    return this.listPayoutHolds({ seller_id: sellerId, status: "ACTIVE" }, { order: { placed_at: "ASC" } })
+  }
+
+  /** Refuse an outflow from a held seller's earnings, naming why. */
+  private async assertNoPayoutHold_(sellerId: string): Promise<void> {
+    const holds = await this.listActivePayoutHolds(sellerId)
+    if (holds.length === 0) return
+    throw new PayoutHeldError(
+      "Payouts are on hold: a refund on one of your orders that shared a checkout with other vendors " +
+        "has not yet been assigned to a vendor. The platform team assigns it, and payouts resume then.",
+      holds.map((h) => h.id)
+    )
+  }
+
+  /**
+   * Hold every listed seller on a shared payment collection
+   * (`./models/payout-hold.ts`). Idempotent: one ACTIVE hold per (seller,
+   * collection, reason), under a partial unique index, so a concurrent or
+   * repeated placement is a no-op. Returns the holds that are ACTIVE for
+   * these sellers on this collection afterwards.
+   */
+  async placePayoutHolds(args: {
+    payment_collection_id: string
+    seller_ids: string[]
+    amount: number
+    currency_code: string
+    order_ids: string[]
+    reason?: PayoutHoldReason
+  }) {
+    const reason = args.reason ?? "unattributed_card_refund"
+    const sellers = [...new Set(args.seller_ids.filter(Boolean))]
+    const activeFor = (seller_id: string | string[]) =>
+      this.listPayoutHolds({
+        seller_id,
+        payment_collection_id: args.payment_collection_id,
+        reason,
+        status: "ACTIVE",
+      })
+    for (const seller_id of sellers) {
+      const [existing] = await activeFor(seller_id)
+      if (existing) continue
+      try {
+        await this.createPayoutHolds({
+          seller_id,
+          reason,
+          payment_collection_id: args.payment_collection_id,
+          amount: args.amount,
+          currency_code: args.currency_code,
+          status: "ACTIVE" as const,
+          placed_at: new Date(),
+          metadata: { order_ids: args.order_ids },
+        })
+        log.warn(
+          `[Hawala] Payouts held for seller ${seller_id}: ${args.amount} refunded on shared collection ` +
+            `${args.payment_collection_id} is not assigned to any order`
+        )
+      } catch (error) {
+        // A concurrent placement won the partial unique index: it is held.
+        const [raced] = await activeFor(seller_id)
+        if (!raced) throw error
+      }
+    }
+    return sellers.length > 0 ? activeFor(sellers) : []
+  }
+
+  /**
+   * Release every ACTIVE hold on a collection for `reason`. `released_by` is
+   * the admin actor who assigned the refund, or `system` when the gap closed
+   * on its own (a full refund, or Mercur recorded the refund on the splits).
+   * Returns the holds released.
+   */
+  async releasePayoutHolds(args: {
+    payment_collection_id: string
+    released_by: string
+    release_reason: string
+    reason?: PayoutHoldReason
+  }) {
+    const reason = args.reason ?? "unattributed_card_refund"
+    const active = await this.listPayoutHolds({
+      payment_collection_id: args.payment_collection_id,
+      reason,
+      status: "ACTIVE",
+    })
+    if (active.length === 0) return []
+    const now = new Date()
+    const released = await this.updatePayoutHolds(
+      active.map((h) => ({
+        id: h.id,
+        status: "RELEASED" as const,
+        released_at: now,
+        released_by: args.released_by,
+        release_reason: args.release_reason,
+      }))
+    )
+    log.info(
+      `[Hawala] Released ${active.length} payout hold(s) on collection ${args.payment_collection_id}: ${args.release_reason}`
+    )
+    return released
+  }
+
   // ==================== VENDOR-TO-VENDOR PAYMENTS ====================
 
   /**
@@ -4692,6 +4993,10 @@ class HawalaLedgerModuleService extends MedusaService({
     const payerAccount = payerAccounts[0]
     const payeeAccount = payeeAccounts[0]
 
+    // A held payer (SD-40): nothing leaves their earnings, or the hold could
+    // be escaped by paying the balance to a second seller account.
+    await this.assertNoPayoutHold_(data.payer_vendor_id)
+
     // Card processing the payer owes (a refund shortfall,
     // `./card-processing.ts`) is recovered before any money leaves their
     // earnings, exactly as `requestPayout` does: otherwise the balance could
@@ -4711,10 +5016,10 @@ class HawalaLedgerModuleService extends MedusaService({
             throw new Error(
               `Insufficient balance: $${dollars(payable)} is available to pay` +
                 (collectedCents > 0
-                  ? ` after $${dollars(collectedCents / 100)} of card processing owed was repaid from your balance`
+                  ? ` after $${dollars(collectedCents / 100)} owed (card processing or a refund after payout) was repaid from your balance`
                   : "") +
                 (stillOwedCents > 0
-                  ? `; $${dollars(stillOwedCents / 100)} of card processing is still owed and is taken from your next sales`
+                  ? `; $${dollars(stillOwedCents / 100)} still owed (card processing or a refund after payout) is taken from your next sales`
                   : "")
             )
           }
@@ -4905,12 +5210,19 @@ class HawalaLedgerModuleService extends MedusaService({
         has_active: false,
       },
 
-      // Card processing retained on refunded orders that this vendor's
-      // earnings could not cover at the time: taken from the next sales, and
-      // before any payout. Computed from the ledger, never stored.
+      // What this vendor owes: card processing retained on refunded orders
+      // their earnings could not cover at the time, and card refunds issued
+      // after they were paid out (SD-40, `kind: "refund"`). Taken from the
+      // next sales, and before any payout. Computed from the ledger, never
+      // stored. The field name predates refunds and is kept for the panel.
       card_processing_owed: {
         outstanding: cardProcessingOwed.total_cents / 100,
+        by_kind: {
+          card_processing: cardProcessingOwed.by_kind_cents.card_processing / 100,
+          refund: cardProcessingOwed.by_kind_cents.refund / 100,
+        },
         open: cardProcessingOwed.open.map((o) => ({
+          kind: o.kind,
           order_id: o.order_id,
           amount: o.outstanding_cents / 100,
           since: o.created_at,
@@ -4921,6 +5233,7 @@ class HawalaLedgerModuleService extends MedusaService({
         forgiven: cardProcessingOwed.written_off
           .filter((w) => Date.now() - new Date(w.written_off_at).getTime() <= 90 * 24 * 60 * 60 * 1000)
           .map((w) => ({
+          kind: w.kind,
           order_id: w.order_id,
           amount: w.forgiven_cents / 100,
           since: w.created_at,

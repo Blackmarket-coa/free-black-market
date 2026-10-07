@@ -169,15 +169,19 @@ export interface VendorDashboard {
     created_at: string
   }>
   /**
-   * Card processing retained on refunded orders that the vendor's
-   * earnings could not cover at the time. Taken from the next sales, and
-   * before any payout. Absent from older API builds.
+   * What the vendor owes: card processing retained on refunded orders that
+   * their earnings could not cover at the time, and card refunds issued
+   * after they were paid out (`kind: "refund"`). Taken from the next sales,
+   * and before any payout. Absent from older API builds; `kind` and
+   * `by_kind` are absent from builds before refunds were added (every item
+   * is then card processing).
    */
   card_processing_owed?: {
     outstanding: number
-    open: Array<{ order_id: string | null; amount: number; since: string | null }>
+    by_kind?: { card_processing: number; refund: number }
+    open: Array<{ kind?: OwedKind; order_id: string | null; amount: number; since: string | null }>
     /** Forgiven after 180 days unrepaid; never collected. Absent from older APIs. */
-    forgiven?: Array<{ order_id: string | null; amount: number; since: string | null; forgiven_at: string }>
+    forgiven?: Array<{ kind?: OwedKind; order_id: string | null; amount: number; since: string | null; forgiven_at: string }>
   }
   advance: {
     has_active: boolean
@@ -210,12 +214,24 @@ export interface VendorDashboard {
   }>
 }
 
+/** What an owed amount is for (backend hawala-ledger/card-processing.ts). */
+export type OwedKind = "card_processing" | "refund"
+
 export interface PayoutOptions {
   available_balance: number
-  /** What a payout can take now: available less card processing owed. Absent from older API builds. */
+  /** What a payout can take now: available less everything owed; zero while held. Absent from older API builds. */
   payable_balance?: number
   /** Card processing owed, repaid before any payout. */
   card_processing_owed?: number
+  /** Refunds issued after payout, owed and repaid before any payout. Absent from older API builds. */
+  refund_owed?: number
+  /** Everything owed. Absent from older API builds. */
+  total_owed?: number
+  /**
+   * Payouts held while a refund on a shared checkout is not yet assigned to
+   * a vendor. Absent from older API builds.
+   */
+  payout_hold?: { held: boolean; since: string; reason: string } | null
   currency: string
   options: Array<{
     tier: string

@@ -107,7 +107,10 @@ overrides:
   # GHSA-g89c-p67h-r497 / GHSA-2jg2-4ch7-h545 through it. Fixed in 0.35.4.
   # The floor was >=0.35.0, which permitted 0.35.4 but left the lockfile at
   # 0.35.3 — a permissive range is not a bump.
-  "sharp@^0.34.0": ">=0.35.4"
+  # GHSA-wq5f-xc86-pv6w (HIGH, 2026-10-06): sharp's bundled librsvg
+  # (CVE-2026-96889), fixed in 0.35.5. Caret-bounded now, so a bare ">=" can
+  # never drag in an unreviewed 0.36 / 1.x.
+  "sharp@^0.34.0": "^0.35.5"
   # GHSA-68fv-2mgg-jv7q (CVE-2026-93749, HIGH): event-loop denial of service
   # through indexed source-map section offsets. Fixed in 1.2.2, a patch on the
   # same line. Trivy's prod-scoped gate went red on 2026-10-06 (SD-38).
