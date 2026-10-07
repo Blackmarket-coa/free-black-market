@@ -284,10 +284,12 @@ own money is captured (never on authorisation alone): the purchase leg is
 of escrow. On a multi-seller cart each seller's order settles for its own
 share. A refund's customer leg is `ESCROW -> CARD_CLEARING`, back to the card,
 for exactly what was refunded on that order — as Medusa or Mercur record it.
-A refund or chargeback made directly in the Stripe dashboard never reaches
-Medusa (its Stripe webhooks handle payment intents only), so it never reaches
-the ledger either; that is an operational gap recorded in SD-36, not a
-balance anyone holds.
+A refund made directly in the Stripe dashboard, or a chargeback, reaches the
+ledger from Stripe's own charge and dispute events (SD-43): the charge is
+re-read from Stripe, a refund or a lost dispute posts as a refund of the
+order, back to card clearing, and an open dispute only holds the vendors'
+payouts until it closes. Nothing is refunded or moved at Stripe by this; it
+only reads.
 
 **Why this stays inside the posture.**
 

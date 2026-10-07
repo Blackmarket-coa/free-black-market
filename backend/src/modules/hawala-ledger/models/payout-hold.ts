@@ -24,7 +24,10 @@ import { model } from "@medusajs/framework/utils"
  * unattributed amount when the hold was placed, major units, for the admin
  * view. No customer data (no customer_id).
  */
-export const PAYOUT_HOLD_REASONS = ["unattributed_card_refund"] as const
+// `card_dispute_open` (SD-43): a dispute is open on a card charge that paid
+// for orders on the collection; held until it closes (won: nothing to post;
+// lost: posted as a refund of those orders).
+export const PAYOUT_HOLD_REASONS = ["unattributed_card_refund", "card_dispute_open"] as const
 export type PayoutHoldReason = (typeof PAYOUT_HOLD_REASONS)[number]
 
 export const PayoutHold = model
