@@ -107,8 +107,15 @@ operator can give (who holds CCR wallets, and what governs issuance volume).
 > `daily-payouts` job, a Stripe Connect transfer per order to a seller who
 > has onboarded a Mercur payout account from the vendor panel. It reads
 > nothing in the hawala ledger. The operator has chosen to replace it with an
-> FBM job driven by the ledger (follow-up PR, behind a flag, off by default).
-> This note records what the code does; it draws no conclusion about rule 4.
+> FBM job driven by the ledger, now built behind `FF_LEDGER_CONNECT_PAYOUTS_V1`
+> (off by default; `lib/ledger-connect-payouts.ts`). With it on, a vendor is paid
+> only from USD seller earnings, only after what they owe is recovered and while
+> no hold applies, and only to a Mercur payout account whose Stripe account is a
+> US account paying out in USD; the money goes as a Stripe Connect transfer to
+> that account, which pays out to the vendor's bank. Whether a Connect transfer
+> meets rule 4's "Stripe ACH to a US bank account" is for counsel to say before
+> the flag is set. This note records what the code does; it draws no conclusion
+> about rule 4.
 
 ### Inter-account movement
 

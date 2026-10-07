@@ -3973,6 +3973,8 @@ class HawalaLedgerModuleService extends MedusaService({
     amount: number
     payout_tier: "INSTANT" | "SAME_DAY" | "NEXT_DAY" | "WEEKLY"
     bank_account_id?: string
+    /** Stored on the PayoutRequest (e.g. which job scheduled it, SD-41). */
+    metadata?: Record<string, unknown>
   }) {
     const tierConfig = this.PAYOUT_TIERS[data.payout_tier]
     if (!tierConfig) {
@@ -4065,6 +4067,7 @@ class HawalaLedgerModuleService extends MedusaService({
       amount: number
       payout_tier: "INSTANT" | "SAME_DAY" | "NEXT_DAY" | "WEEKLY"
       bank_account_id?: string
+      metadata?: Record<string, unknown>
     },
     tierConfig: { fee_rate: number; name: string; speed: string; method: string },
     accountAtRequest: { id: string; available_balance: unknown },
@@ -4138,6 +4141,7 @@ class HawalaLedgerModuleService extends MedusaService({
       fee_rate: tierConfig.fee_rate,
       requested_at: new Date(),
       status: "PENDING" as const,
+      ...(data.metadata ? { metadata: data.metadata } : {}),
     })
 
     // Create ledger entries
@@ -4146,6 +4150,18 @@ class HawalaLedgerModuleService extends MedusaService({
     // 3. Credit settlement account for net amount
 
     const settlementAccount = await this.getOrCreateSystemAccount("SETTLEMENT")
+
+    // If the legs below fail (the balance moved under this request, a lost
+    // race), the request moved no money: mark it FAILED rather than leave a
+    // PENDING record that looks like a payout in flight (SD-41).
+    const failRequest = async (error: unknown) => {
+      await this.updatePayoutRequests({
+        id: payoutRequest.id,
+        status: "FAILED" as const,
+        failure_reason: `Ledger legs did not post: ${(error as Error)?.message ?? error}`.slice(0, 500),
+      }).catch(() => undefined)
+      throw error
+    }
 
     // Main transfer (vendor → settlement). The idempotency keys are new
     // (the legs previously carried none, so a retried request could move
@@ -4162,7 +4178,7 @@ class HawalaLedgerModuleService extends MedusaService({
       reference_id: payoutRequest.id,
       idempotency_key: `payout-${payoutRequest.id}-net`,
       correlation_id: `payout-${payoutRequest.id}`,
-    })
+    }).catch(failRequest)
 
     // Fee transfer (if applicable)
     if (feeAmount > 0) {
@@ -4187,6 +4203,90 @@ class HawalaLedgerModuleService extends MedusaService({
     })
 
     return payoutRequest
+  }
+
+  // ==================== SENDING PAYOUT REQUESTS (SD-41) ====================
+
+  /**
+   * Claim a PROCESSING payout request for sending: PROCESSING -> IN_TRANSIT in
+   * one conditional UPDATE, so of two senders (two job runs, two instances)
+   * exactly one wins, and a request is never sent twice. A request that stays
+   * IN_TRANSIT (the sender died after the claim) is never re-sent
+   * automatically: it may already have moved money, so it needs a person
+   * (`lib/ledger-connect-payouts.ts` reports it). Returns false when another
+   * sender holds it or it is no longer PROCESSING.
+   */
+  async claimPayoutRequestForSending(payoutRequestId: string): Promise<boolean> {
+    const pg = this.resolvePgConnection()
+    if (pg) {
+      const result = (await pg.raw(
+        `UPDATE hawala_payout_request
+            SET status = 'IN_TRANSIT', processed_at = NOW(), updated_at = NOW()
+          WHERE id = ? AND status = 'PROCESSING' AND deleted_at IS NULL
+        RETURNING id`,
+        [payoutRequestId]
+      )) as { rows?: unknown[] }
+      return (result?.rows?.length ?? 0) === 1
+    }
+    const [request] = await this.listPayoutRequests({ id: payoutRequestId })
+    if (!request || request.status !== "PROCESSING") return false
+    await this.updatePayoutRequests({ id: payoutRequestId, status: "IN_TRANSIT" as const, processed_at: new Date() })
+    return true
+  }
+
+  /** The transfer for a claimed request went out: COMPLETED, naming it. */
+  async completePayoutRequest(
+    payoutRequestId: string,
+    sent: { stripe_transfer_id: string | null; metadata?: Record<string, unknown> }
+  ) {
+    const [request] = await this.listPayoutRequests({ id: payoutRequestId })
+    if (!request) throw new Error(`Payout request ${payoutRequestId} not found`)
+    return this.updatePayoutRequests({
+      id: payoutRequestId,
+      status: "COMPLETED" as const,
+      completed_at: new Date(),
+      stripe_transfer_id: sent.stripe_transfer_id,
+      metadata: { ...((request.metadata as Record<string, unknown> | null) ?? {}), ...(sent.metadata ?? {}) },
+    })
+  }
+
+  /**
+   * The transfer for a claimed request was refused (Stripe said no; nothing
+   * moved): put the money back where it came from — SETTLEMENT -> the
+   * vendor's earnings for the net leg, PLATFORM_FEE -> the vendor's earnings
+   * for the fee leg — as ADJUSTMENT legs keyed on the request, so a retry
+   * posts nothing twice; then FAILED with the reason. The original legs stay
+   * COMPLETED: they did move money, and the reversal is its own record.
+   */
+  async failPayoutRequest(payoutRequestId: string, reason: string) {
+    const [request] = await this.listPayoutRequests({ id: payoutRequestId })
+    if (!request) throw new Error(`Payout request ${payoutRequestId} not found`)
+    const legs = await this.listLedgerEntries({
+      reference_type: "PAYOUT_REQUEST",
+      reference_id: payoutRequestId,
+      status: "COMPLETED",
+    })
+    for (const leg of legs) {
+      if (leg.entry_type !== "WITHDRAWAL" && leg.entry_type !== "FEE") continue
+      const tag = leg.entry_type === "WITHDRAWAL" ? "net" : "fee"
+      await this.createTransfer({
+        debit_account_id: leg.credit_account_id,
+        credit_account_id: leg.debit_account_id,
+        amount: Number(leg.amount),
+        entry_type: "ADJUSTMENT",
+        description: `Payout not sent, returned to your balance: ${reason}`,
+        reference_type: "PAYOUT_REQUEST",
+        reference_id: payoutRequestId,
+        idempotency_key: `payout-${payoutRequestId}-reversal-${tag}`,
+        correlation_id: `payout-${payoutRequestId}`,
+        parent_entry_id: leg.id,
+      })
+    }
+    return this.updatePayoutRequests({
+      id: payoutRequestId,
+      status: "FAILED" as const,
+      failure_reason: reason.slice(0, 500),
+    })
   }
 
   // ==================== VENDOR ADVANCES ====================

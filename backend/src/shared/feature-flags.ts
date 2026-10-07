@@ -153,6 +153,26 @@ export const PHASE0_FEATURE_FLAGS = {
   // and re-enable are safe the same way: anything captured within the window
   // and missed is settled; refunds are checked for 180 days.
   CARD_ORDER_LEDGER_V1: "FF_CARD_ORDER_LEDGER_V1",
+  // Vendors are paid from the hawala ledger (SD-41, operator decision
+  // 2026-10-06 "FBM ledger drives Connect"; lib/ledger-connect-payouts.ts).
+  // Off (default): unchanged — @mercurjs/b2c-core's nightly `daily-payouts`
+  // job runs as before (FBM's same-named job hands straight to it), paying
+  // each order to the seller's Stripe Connect account from Mercur's own
+  // figures. On: FBM's job replaces it. Each night, for every seller with an
+  // ACTIVE Mercur payout account on a US / USD Stripe account and no payout
+  // hold, it books orders Mercur already paid out of the ledger (so nothing
+  // is paid twice), requests a payout of what the ledger says is payable
+  // (after card processing and refunds owed are recovered), and sends every
+  // PROCESSING payout request — the vendor panel's too — as a Connect
+  // transfer through Mercur's payout module, at most once each. A refused
+  // transfer puts the money back on the ledger. Backend only; no twin.
+  // CUT-OVER: set CARD_ORDER_LEDGER_V1 first (otherwise card orders never
+  // reach SELLER_EARNINGS and nobody is paid), then this. ROLLBACK is a
+  // one-way door once a ledger transfer has gone out: with this off again,
+  // Mercur's job would pay every order without its own payout record, the
+  // ones the ledger already paid included, so FBM's job refuses to hand to
+  // Mercur's while any ledger-sent payout exists, and logs why.
+  LEDGER_CONNECT_PAYOUTS_V1: "FF_LEDGER_CONNECT_PAYOUTS_V1",
 } as const
 
 export type Phase0FeatureFlag = keyof typeof PHASE0_FEATURE_FLAGS
