@@ -4,6 +4,7 @@ import { PHASE0_FEATURE_FLAGS } from "../../src/shared/feature-flags"
 import { cardOrderFixtures } from "./helpers/card-orders"
 import { syncCardChargeFromStripe, type ChargeLedgerState } from "../../src/lib/card-stripe-sync"
 import { PayoutHeldError } from "../../src/modules/hawala-ledger/service"
+import { resyncCardChargesFromStripe } from "../../src/jobs/hawala-card-stripe-resync"
 
 jest.setTimeout(240 * 1000)
 
@@ -157,6 +158,92 @@ medusaIntegrationTestRunner({
         "flag_off"
       )
       expect(await toCard(order.id)).toEqual([])
+    })
+
+    describe("the hourly re-read (a webhook Stripe never delivered)", () => {
+      /** Stripe's current answer per charge; the job asks for whichever it re-reads. */
+      const stripeNow = (...states: Array<ReturnType<typeof stripeSays>>) => {
+        const byCharge = new Map<string, () => Promise<ChargeLedgerState>>()
+        for (const s of states) byCharge.set(s.chargeId, s.fetchCharge)
+        const asked: string[] = []
+        const fetchCharge = async (id: string) => {
+          asked.push(id)
+          const f = byCharge.get(id)
+          if (!f) throw new Error(`no such charge ${id}`)
+          return f()
+        }
+        return { fetchCharge, asked }
+      }
+
+      it("an open dispute whose close never arrived: re-read, the hold lifts once Stripe says it was won", async () => {
+        const { order, collectionId, pi } = await cardOrder()
+        const open = stripeSays(pi, 40, { dispute_open_cents: 4000 })
+        await syncCardChargeFromStripe(container(), open.chargeId, { fetchCharge: open.fetchCharge })
+        expect(await holds(collectionId)).toHaveLength(1)
+
+        // The dispute was won; the charge.dispute.closed event was lost.
+        const stripe = stripeNow(stripeSays(pi, 40))
+        const result = await resyncCardChargesFromStripe(container(), {
+          listRecentCharges: async () => [],
+          fetchCharge: stripe.fetchCharge,
+        })
+        expect(stripe.asked).toContain(open.chargeId)
+        expect(result.counts.synced).toBeGreaterThanOrEqual(1)
+        expect(await holds(collectionId)).toEqual([])
+        expect(await toCard(order.id)).toEqual([])
+      })
+
+      it("a dispute lost while its events were lost posts as a refund of the order", async () => {
+        const { order, collectionId, pi } = await cardOrder()
+        const open = stripeSays(pi, 40, { dispute_open_cents: 4000 })
+        await syncCardChargeFromStripe(container(), open.chargeId, { fetchCharge: open.fetchCharge })
+        const stripe = stripeNow(stripeSays(pi, 40, { dispute_lost_cents: 4000 }))
+        await resyncCardChargesFromStripe(container(), { listRecentCharges: async () => [], fetchCharge: stripe.fetchCharge })
+        expect(await toCard(order.id)).toEqual([4000])
+        expect(await holds(collectionId)).toEqual([])
+      })
+
+      it("a dashboard refund and a new dispute that never arrived as events are found from Stripe's own lists", async () => {
+        const refunded = await cardOrder()
+        const disputed = await cardOrder()
+        const r = stripeSays(refunded.pi, 40, { refunded_cents: 1500 })
+        const d = stripeSays(disputed.pi, 40, { dispute_open_cents: 4000 })
+        const stripe = stripeNow(r, d)
+        const since: Date[] = []
+        await resyncCardChargesFromStripe(container(), {
+          listRecentCharges: async (s) => {
+            since.push(s)
+            return [r.chargeId, d.chargeId, "ch_not_ours"]
+          },
+          fetchCharge: stripe.fetchCharge,
+          now: new Date("2026-10-07T12:00:00Z"),
+        })
+        expect(since[0].toISOString()).toBe("2026-10-04T12:00:00.000Z")
+        expect(await toCard(refunded.order.id)).toEqual([1500])
+        expect(await holds(disputed.collectionId)).toHaveLength(1)
+        // Run again: nothing more posts.
+        await resyncCardChargesFromStripe(container(), {
+          listRecentCharges: async () => [r.chargeId, d.chargeId],
+          fetchCharge: stripe.fetchCharge,
+        })
+        expect(await toCard(refunded.order.id)).toEqual([1500])
+        expect(await holds(disputed.collectionId)).toHaveLength(1)
+      })
+
+      it("when Stripe's lists cannot be read, open disputes on record are still re-read", async () => {
+        const { collectionId, pi } = await cardOrder()
+        const open = stripeSays(pi, 40, { dispute_open_cents: 4000 })
+        await syncCardChargeFromStripe(container(), open.chargeId, { fetchCharge: open.fetchCharge })
+        const stripe = stripeNow(stripeSays(pi, 40))
+        const result = await resyncCardChargesFromStripe(container(), {
+          listRecentCharges: async () => {
+            throw new Error("stripe unavailable")
+          },
+          fetchCharge: stripe.fetchCharge,
+        })
+        expect(result.listed).toBe(false)
+        expect(await holds(collectionId)).toEqual([])
+      })
     })
   },
 })
