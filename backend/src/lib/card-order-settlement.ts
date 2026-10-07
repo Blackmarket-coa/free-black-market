@@ -64,6 +64,15 @@ export type CardSettlementOrder = {
    * cart), major units; null when there is none or it cannot arise.
    */
   unattributed_refund: number | null
+  /**
+   * Whether every refund on this order's shared (Mercur) collection is
+   * accounted for by some order's split row (SD-40): `complete` — nothing
+   * refunded, refunded in full, or the splits record all of it; `gap` —
+   * `unattributed_refund` is the part no split records; `unknown` — not a
+   * split order, or the collection could not be read. Payout holds are
+   * released only on `complete`.
+   */
+  refund_attribution: "complete" | "gap" | "unknown"
   /** The FBM Stripe payment the purchase leg is stamped with, if any. */
   payment_id: string | null
 }
@@ -156,6 +165,7 @@ export async function readCardSettlementOrder(
   let captured: number | null = null
   let refunded: number | null = null
   let unattributedRefund: number | null = null
+  let refundAttribution: CardSettlementOrder["refund_attribution"] = "unknown"
   if (split) {
     const collection = ownCollections[0]
     const cAmount = n(collection?.amount)
@@ -173,6 +183,9 @@ export async function readCardSettlementOrder(
     // split accounts for cannot be put on a seller — reported, not guessed.
     if (cCaptured !== null && toCents(cCaptured) > 0 && toCents(cRefunded) >= toCents(cCaptured)) {
       refunded = captured
+      refundAttribution = "complete"
+    } else if (collection && toCents(cRefunded) === 0) {
+      refundAttribution = "complete"
     } else if (toCents(cRefunded) > 0 && split.payment_collection_id) {
       const { data: siblings } = await query.graph({
         entity: "split_order_payment",
@@ -185,6 +198,7 @@ export async function readCardSettlementOrder(
       )
       const gap = toCents(cRefunded) - recorded
       if (gap > 0) unattributedRefund = gap / 100
+      refundAttribution = gap > 0 ? "gap" : "complete"
     }
   } else if (ownCollections.length === 1) {
     const only = ownCollections[0]
@@ -216,6 +230,7 @@ export async function readCardSettlementOrder(
     captured,
     refunded,
     unattributed_refund: unattributedRefund,
+    refund_attribution: refundAttribution,
     payment_id: cardPayment?.id ?? null,
   }
 }
@@ -242,6 +257,28 @@ export async function ordersForPaymentCollection(container: Container, paymentCo
   for (const s of splits as Array<{ order?: { id?: string } | null }>) if (s.order?.id) ids.add(s.order.id)
   for (const id of await ordersOnCollection(query, paymentCollectionId)) ids.add(id)
   return [...ids]
+}
+
+/**
+ * The seller of every order whose money moved through a payment collection
+ * (SD-40: everyone a hold on that collection applies to).
+ */
+export async function sellersForPaymentCollection(
+  container: Container,
+  paymentCollectionId: string
+): Promise<{ order_ids: string[]; seller_ids: string[] }> {
+  const orderIds = await ordersForPaymentCollection(container, paymentCollectionId)
+  if (orderIds.length === 0) return { order_ids: [], seller_ids: [] }
+  const query = container.resolve(ContainerRegistrationKeys.QUERY)
+  const { data } = await query.graph({
+    entity: "order",
+    fields: ["id", "seller.id"],
+    filters: { id: orderIds },
+  })
+  const sellerIds = (data as Array<{ seller?: { id?: string } | null }>)
+    .map((o) => o.seller?.id)
+    .filter((x): x is string => !!x)
+  return { order_ids: orderIds, seller_ids: [...new Set(sellerIds)] }
 }
 
 /** The payment collection a payment belongs to, and its provider. */

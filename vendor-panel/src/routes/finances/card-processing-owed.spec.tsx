@@ -74,4 +74,49 @@ describe("CardProcessingOwed", () => {
     expect(out).toContain("Card processing owed $0.42")
     expect(out).toContain("Forgiven: $1.46")
   })
+
+  it("a refund after payout is its own line, with its own why, apart from card processing", () => {
+    const out = text(
+      renderToStaticMarkup(
+        <CardProcessingOwed
+          owed={{
+            outstanding: 10.46,
+            by_kind: { card_processing: 1.46, refund: 9 },
+            open: [
+              { kind: "card_processing", order_id: "order_1", amount: 1.46, since: null },
+              { kind: "refund", order_id: "order_2", amount: 9, since: null },
+            ],
+          }}
+          currency="USD"
+        />
+      )
+    )
+    expect(out).toContain("Card processing owed $1.46")
+    expect(out).toContain("Refunds owed $9.00")
+    expect(out).toContain(
+      "Why: an order of yours was refunded after your earnings for it had been paid out, so the refund was paid on your behalf. Refunded: order_2."
+    )
+    // The card-processing why names only its own order.
+    expect(out).toContain("did not cover it. Refunded: order_1.")
+    expect(out).not.toMatch(/increase|penalty|late|Stripe/i)
+  })
+
+  it("a forgiven refund says so, apart from forgiven card processing", () => {
+    const out = text(
+      renderToStaticMarkup(
+        <CardProcessingOwed
+          owed={{
+            outstanding: 0,
+            by_kind: { card_processing: 0, refund: 0 },
+            open: [],
+            forgiven: [{ kind: "refund", order_id: "order_2", amount: 9, since: null, forgiven_at: "2027-03-30T12:00:00.000Z" }],
+          }}
+          currency="USD"
+        />
+      )
+    )
+    expect(out).toBe(
+      "Forgiven: $9.00 of refunds went unrepaid for 180 days after the refund, so you no longer owe it and it will not be taken from your sales."
+    )
+  })
 })

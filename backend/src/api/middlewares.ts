@@ -1083,6 +1083,16 @@ export default defineMiddlewares({
       ],
     },
     {
+      // SD-40: payout holds and card-refund assignment exist only once card
+      // orders reach the ledger. The handlers repeat the check.
+      matcher: "/admin/hawala/card-refunds*",
+      middlewares: [requireFeatureFlagMiddleware("CARD_ORDER_LEDGER_V1")],
+    },
+    {
+      matcher: "/admin/hawala/payout-holds*",
+      middlewares: [requireFeatureFlagMiddleware("CARD_ORDER_LEDGER_V1")],
+    },
+    {
       matcher: "/admin/hawala/pools*",
       middlewares: [requireFeatureFlagMiddleware("INVESTMENT_POOLS_V1")],
     },

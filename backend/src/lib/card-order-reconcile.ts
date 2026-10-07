@@ -7,6 +7,7 @@ import { CARD_FUNDING } from "../modules/hawala-ledger/card-clearing"
 import {
   isFullyCaptured,
   readCardSettlementOrder,
+  sellersForPaymentCollection,
   toCents,
   type CardSettlementOrder,
 } from "./card-order-settlement"
@@ -77,7 +78,10 @@ async function withCardOrderLock<T>(container: Container, orderId: string, fn: (
  *   4. A refund on the order's payment collection that no order's own
  *      record accounts for (a Medusa-native refund or admin cancel on a
  *      Mercur cart) -> logged as an error, `unattributed_refund`; the money
- *      is not guessed onto a seller.
+ *      is not guessed onto a seller, and every seller on that collection is
+ *      held (SD-40, `models/payout-hold.ts`) until an admin assigns it
+ *      (`POST /admin/hawala/card-refunds/:id/attribute`). Once every refund
+ *      on the collection is accounted for, its holds are released.
  *
  * Never throws.
  */
@@ -140,9 +144,45 @@ async function reconcileLocked(container: Container, orderId: string): Promise<C
     completed = true
   }
 
+  await syncPayoutHolds(container, hawala, order)
   const refund = await postRefundDelta(hawala, order, purchase)
   if (refund) return refund
   return { outcome: settledNow ? "settled" : completed ? "completed_partial_settlement" : "in_step" }
+}
+
+/**
+ * Hold every seller on the collection while part of its refund is assigned
+ * to no order; release them once all of it is (SD-40). A failure here is
+ * logged, never thrown: the refund still must not be guessed, and the next
+ * run retries.
+ */
+async function syncPayoutHolds(
+  container: Container,
+  hawala: HawalaLedgerModuleService,
+  order: CardSettlementOrder
+): Promise<void> {
+  const collectionId = order.payment_collection_ids[0]
+  if (!collectionId) return
+  try {
+    if (order.refund_attribution === "gap" && order.unattributed_refund !== null && order.unattributed_refund > 0) {
+      const { order_ids, seller_ids } = await sellersForPaymentCollection(container, collectionId)
+      await hawala.placePayoutHolds({
+        payment_collection_id: collectionId,
+        seller_ids,
+        amount: order.unattributed_refund,
+        currency_code: order.currency_code || "usd",
+        order_ids,
+      })
+    } else if (order.refund_attribution === "complete") {
+      await hawala.releasePayoutHolds({
+        payment_collection_id: collectionId,
+        released_by: "system",
+        release_reason: "every refund on the collection is now recorded on a seller's order",
+      })
+    }
+  } catch (error) {
+    log.error(`[Hawala] Card order ${order.id}: could not update payout holds on ${collectionId}:`, error)
+  }
 }
 
 async function postRefundDelta(

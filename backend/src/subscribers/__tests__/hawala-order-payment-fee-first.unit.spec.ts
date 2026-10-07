@@ -140,6 +140,9 @@ function makeWorld(opts: {
   // The vendor dashboard's other reads (no advances, no pools here).
   shadow.listVendorAdvances = async () => []
   shadow.listInvestmentPools = async () => []
+  // No payout holds here (SD-40; holds are exercised on a real database in
+  // integration-tests/http/hawala-vendor-refund-receivable.spec.ts).
+  shadow.listPayoutHolds = async () => []
   // Vendor-to-vendor payment records (createVendorToVendorPayment).
   const vendorPayments: Row[] = []
   shadow.createVendorPayments = async (data: Record<string, unknown>) => {
@@ -721,7 +724,8 @@ describe("shortfall recovery — from the vendor's next earnings", () => {
     const before = await w.ledger.service.getVendorDashboard("sel_1")
     expect(before.card_processing_owed).toEqual({
       outstanding: 1.46,
-      open: [{ order_id: "order_1", amount: 1.46, since: shortfall.created_at }],
+      by_kind: { card_processing: 1.46, refund: 0 },
+      open: [{ kind: "card_processing", order_id: "order_1", amount: 1.46, since: shortfall.created_at }],
       // Nothing is 180 days old here, so nothing is forgiven.
       forgiven: [],
     })
@@ -766,7 +770,12 @@ describe("shortfall recovery — from the vendor's next earnings", () => {
 
     // The vendor's statement reads it plainly; the owed line is gone.
     const after = await w.ledger.service.getVendorDashboard("sel_1")
-    expect(after.card_processing_owed).toEqual({ outstanding: 0, open: [], forgiven: [] })
+    expect(after.card_processing_owed).toEqual({
+      outstanding: 0,
+      by_kind: { card_processing: 0, refund: 0 },
+      open: [],
+      forgiven: [],
+    })
     const debit = after.recent_transactions.find((t: { id: string }) => t.id === leg.id)!
     expect(debit).toMatchObject({ direction: "DEBIT", entry_type: "ADJUSTMENT", amount: 1.46 })
     expect(debit.description).toBe(
@@ -891,7 +900,7 @@ describe("shortfall recovery — payout backstop", () => {
     await expect(
       w.ledger.service.requestPayout({ vendor_id: "sel_1", amount: 20, payout_tier: "WEEKLY" })
     ).rejects.toThrow(
-      "Insufficient balance: $18.54 is available to pay out after $1.46 of card processing owed was repaid from your balance"
+      "Insufficient balance: $18.54 is available to pay out after $1.46 owed (card processing or a refund after payout) was repaid from your balance"
     )
     const [leg] = recoveryLegs(w.ledger)
     expect(leg).toMatchObject({ debit_account_id: "acc-earnings", status: "COMPLETED" })
@@ -921,7 +930,7 @@ describe("shortfall recovery — payout backstop", () => {
     await expect(
       w.ledger.service.requestPayout({ vendor_id: "sel_1", amount: 0.5, payout_tier: "WEEKLY" })
     ).rejects.toThrow(
-      "Insufficient balance: $0.00 is available to pay out after $1.00 of card processing owed was repaid from your balance; $0.46 of card processing is still owed and is taken from your next sales"
+      "Insufficient balance: $0.00 is available to pay out after $1.00 owed (card processing or a refund after payout) was repaid from your balance; $0.46 still owed (card processing or a refund after payout) is taken from your next sales"
     )
     expect(recoveryLegs(w.ledger).map((e) => cents(e.amount))).toEqual([100])
     expect(await owedCents(w.ledger)).toBe(46)
@@ -937,7 +946,7 @@ describe("shortfall recovery — payout backstop", () => {
     }
     await expect(
       w.ledger.service.requestPayout({ vendor_id: "sel_1", amount: 20, payout_tier: "WEEKLY" })
-    ).rejects.toThrow("Insufficient balance: $18.54 is available to pay out; $1.46 of card processing is still owed")
+    ).rejects.toThrow("Insufficient balance: $18.54 is available to pay out; $1.46 still owed (card processing or a refund after payout)")
     await w.ledger.service.requestPayout({ vendor_id: "sel_1", amount: 18.54, payout_tier: "WEEKLY" })
     expect(cents(account(w.ledger, "acc-earnings").balance)).toBe(146)
   })
@@ -1146,7 +1155,7 @@ describe("shortfall recovery — vendor-to-vendor payments (no way around the ba
     holding(w, 20)
 
     await expect(pay(w, 20)).rejects.toThrow(
-      "Insufficient balance: $18.54 is available to pay after $1.46 of card processing owed was repaid from your balance"
+      "Insufficient balance: $18.54 is available to pay after $1.46 owed (card processing or a refund after payout) was repaid from your balance"
     )
     const [leg] = recoveryLegs(w.ledger)
     expect(leg).toMatchObject({ debit_account_id: "acc-earnings", status: "COMPLETED" })
@@ -1180,7 +1189,7 @@ describe("shortfall recovery — vendor-to-vendor payments (no way around the ba
       throw new Error("recovery unavailable")
     }
     await expect(pay(w, 20)).rejects.toThrow(
-      "Insufficient balance: $18.54 is available to pay; $1.46 of card processing is still owed"
+      "Insufficient balance: $18.54 is available to pay; $1.46 still owed (card processing or a refund after payout)"
     )
     await pay(w, 18.54)
     expect(cents(account(w.ledger, "acc-earnings").balance)).toBe(146)

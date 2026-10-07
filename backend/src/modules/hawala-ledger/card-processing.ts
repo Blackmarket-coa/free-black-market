@@ -90,6 +90,11 @@
  * changing it re-reads every shortfall, so it is a reviewed change.
  */
 
+import {
+  VENDOR_REFUND_RECOVERY_LEG,
+  VENDOR_REFUND_SHORTFALL_LEG,
+} from "./vendor-receivable"
+
 export const CARD_PROCESSING_ACCOUNT_TYPE = "PLATFORM_FEE"
 export const CARD_PROCESSING_OWNER_ID = "processing"
 export const CARD_PROCESSING_LEG = "card_processing_estimate"
@@ -149,6 +154,44 @@ export function isCardProcessingRecoveryLeg(entry: {
   )
 }
 
+/**
+ * What a receivable is for (SD-40). Both kinds are owed by a vendor, recovered
+ * by the same machinery oldest first, and forgiven at the same age; they
+ * differ only in which account funded them, and so which account a recovery
+ * repays (`funding_account_id`).
+ *
+ *   - card_processing: retained card processing on a refunded order the
+ *     vendor's earnings could not absorb (the card-processing account).
+ *   - refund: a card refund that landed after the vendor's earnings for it
+ *     were paid out (`./vendor-receivable.ts`, the VENDOR_RECEIVABLE account).
+ */
+export type VendorReceivableKind = "card_processing" | "refund"
+
+/** The shortfall-leg tag and recovery-leg tag for each kind. */
+export const RECEIVABLE_LEGS: Record<VendorReceivableKind, { shortfall: string; recovery: string }> = {
+  card_processing: { shortfall: CARD_PROCESSING_SHORTFALL_LEG, recovery: CARD_PROCESSING_RECOVERY_LEG },
+  refund: { shortfall: VENDOR_REFUND_SHORTFALL_LEG, recovery: VENDOR_REFUND_RECOVERY_LEG },
+}
+
+/** The kind of a shortfall leg, or null for any other entry. */
+export function receivableShortfallKind(entry: {
+  entry_type?: string | null
+  metadata?: unknown
+}): VendorReceivableKind | null {
+  if (entry.entry_type !== "ADJUSTMENT") return null
+  const leg = (entry.metadata as { leg?: unknown } | null | undefined)?.leg
+  if (leg === CARD_PROCESSING_SHORTFALL_LEG) return "card_processing"
+  if (leg === VENDOR_REFUND_SHORTFALL_LEG) return "refund"
+  return null
+}
+
+/** True for a recovery leg of either kind. */
+export function isReceivableRecoveryLeg(entry: { entry_type?: string | null; metadata?: unknown }): boolean {
+  if (entry.entry_type !== "ADJUSTMENT") return false
+  const leg = (entry.metadata as { leg?: unknown } | null | undefined)?.leg
+  return leg === CARD_PROCESSING_RECOVERY_LEG || leg === VENDOR_REFUND_RECOVERY_LEG
+}
+
 type ReceivableRow = {
   id: string
   amount?: unknown
@@ -163,6 +206,9 @@ type ReceivableRow = {
 
 export type OpenCardProcessingShortfall = {
   shortfall_id: string
+  kind: VendorReceivableKind
+  /** The account that funded the shortfall: a recovery repays this one. */
+  funding_account_id: string
   /** The refunded order the shortfall was recorded on. */
   order_id: string | null
   owed_cents: number
@@ -180,6 +226,7 @@ export type OpenCardProcessingShortfall = {
 
 export type WrittenOffCardProcessingShortfall = {
   shortfall_id: string
+  kind: VendorReceivableKind
   order_id: string | null
   owed_cents: number
   recovered_cents: number
@@ -192,6 +239,8 @@ export type WrittenOffCardProcessingShortfall = {
 
 export type CardProcessingReceivable = {
   total_cents: number
+  /** `total_cents` split by kind (both kinds sum to it). */
+  by_kind_cents: Record<VendorReceivableKind, number>
   /** Open shortfalls, oldest first. Never includes a written-off one. */
   open: OpenCardProcessingShortfall[]
   /** Shortfalls forgiven by age, oldest first (only when `asOfMs` is given). */
@@ -209,8 +258,9 @@ const createdMs = (e: ReceivableRow) => {
 }
 
 /**
- * What a seller account owes in retained card processing, computed from the
- * ledger's own rows (never stored): every COMPLETED shortfall leg owed by
+ * What a seller account owes, computed from the ledger's own rows (never
+ * stored): every COMPLETED shortfall leg of either kind (retained card
+ * processing, or a card refund after payout — SD-40) owed by
  * `sellerAccountId`, less the recovery legs that name it. A recovery counts
  * once COMPLETED, and also while PENDING (in flight), so a concurrent writer
  * never collects the same cents twice; FAILED and REVERSED rows count for
@@ -230,7 +280,7 @@ export function computeCardProcessingReceivable(
   const shortfalls = rows.shortfalls
     .filter(
       (e) =>
-        isCardProcessingShortfallLeg(e) &&
+        receivableShortfallKind(e) !== null &&
         e.status === "COMPLETED" &&
         metaOf(e).owed_by_account_id === sellerAccountId
     )
@@ -242,7 +292,7 @@ export function computeCardProcessingReceivable(
   const rowsByShortfall = new Map<string, number>()
   const recoveredBySource: Record<string, number> = {}
   for (const r of rows.recoveries) {
-    if (!isCardProcessingRecoveryLeg(r) || r.debit_account_id !== sellerAccountId) continue
+    if (!isReceivableRecoveryLeg(r) || r.debit_account_id !== sellerAccountId) continue
     const meta = metaOf(r)
     const target = typeof meta.recovers_entry_id === "string" ? meta.recovers_entry_id : null
     if (!target) continue
@@ -259,6 +309,7 @@ export function computeCardProcessingReceivable(
   const writtenOff: WrittenOffCardProcessingShortfall[] = []
   let total = 0
   let writtenOffTotal = 0
+  const byKind: Record<VendorReceivableKind, number> = { card_processing: 0, refund: 0 }
   const asOf = options.asOfMs
   for (const s of shortfalls) {
     const owed = toCentsInt(s.amount)
@@ -266,10 +317,12 @@ export function computeCardProcessingReceivable(
     const outstanding = Math.max(0, owed - recovered)
     if (outstanding <= 0) continue
     const born = createdMs(s)
+    const kind = receivableShortfallKind(s) as VendorReceivableKind
     if (asOf !== undefined && Number.isFinite(asOf) && born > 0 && asOf - born >= WRITE_OFF_MS) {
       writtenOffTotal += outstanding
       writtenOff.push({
         shortfall_id: s.id,
+        kind,
         order_id: s.order_id ?? null,
         owed_cents: owed,
         recovered_cents: recovered,
@@ -280,8 +333,11 @@ export function computeCardProcessingReceivable(
       continue
     }
     total += outstanding
+    byKind[kind] += outstanding
     open.push({
       shortfall_id: s.id,
+      kind,
+      funding_account_id: String(s.debit_account_id ?? ""),
       order_id: s.order_id ?? null,
       owed_cents: owed,
       recovered_cents: recovered,
@@ -292,6 +348,7 @@ export function computeCardProcessingReceivable(
   }
   return {
     total_cents: total,
+    by_kind_cents: byKind,
     open,
     written_off: writtenOff,
     written_off_cents: writtenOffTotal,

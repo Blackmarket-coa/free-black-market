@@ -36,6 +36,12 @@ export const LedgerAccount = model.define("hawala_ledger_account", {
     // it. No migration: the column is plain TEXT
     // (Migration20251229CreateHawalaLedger), like the entry-type additions.
     "CARD_CLEARING",
+    // What vendors owe on card refunds that landed after their earnings were
+    // paid out (SD-40, `../vendor-receivable.ts`). One SYSTEM account, allowed
+    // below zero and never above it; only a refund shortfall into an order's
+    // escrow or a recovery from seller earnings may touch it. No migration,
+    // for the same reason as CARD_CLEARING.
+    "VENDOR_RECEIVABLE",
   ]),
   
   // Currency (ISO 4217)

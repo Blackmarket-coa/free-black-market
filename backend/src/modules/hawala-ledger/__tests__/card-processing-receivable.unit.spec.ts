@@ -47,10 +47,11 @@ describe("computeCardProcessingReceivable", () => {
       ],
     })
     expect(r.open).toEqual([
-      { shortfall_id: "a", order_id: "order_a", owed_cents: 146, recovered_cents: 120, outstanding_cents: 26, created_at: null, next_seq: 3 },
-      { shortfall_id: "b", order_id: "order_b", owed_cents: 42, recovered_cents: 0, outstanding_cents: 42, created_at: null, next_seq: 1 },
+      { shortfall_id: "a", kind: "card_processing", funding_account_id: "acc-processing", order_id: "order_a", owed_cents: 146, recovered_cents: 120, outstanding_cents: 26, created_at: null, next_seq: 3 },
+      { shortfall_id: "b", kind: "card_processing", funding_account_id: "acc-processing", order_id: "order_b", owed_cents: 42, recovered_cents: 0, outstanding_cents: 42, created_at: null, next_seq: 1 },
     ])
     expect(r.total_cents).toBe(68)
+    expect(r.by_kind_cents).toEqual({ card_processing: 68, refund: 0 })
     expect(r.recovered_by_source_entry).toEqual({ le_credit: 120 })
   })
 
@@ -117,6 +118,7 @@ describe("write-off by age (operator answer 2026-10-06: 180 days from the refund
     expect(r.written_off).toEqual([
       {
         shortfall_id: "old",
+        kind: "card_processing",
         order_id: "order_old",
         owed_cents: 146,
         recovered_cents: 46,
