@@ -65,6 +65,8 @@ export type ChargeLedgerState = {
   refunded_cents: number
   dispute_lost_cents: number
   dispute_open_cents: number
+  /** Stripe's dispute fees on the charge, net, in USD cents (`disputeFeeCents`). */
+  dispute_fee_cents?: number
 }
 
 export type ChargeFetcher = (chargeId: string) => Promise<ChargeLedgerState>
@@ -86,6 +88,36 @@ export function chargeIdOfStripeEvent(event: { type?: string; data?: { object?: 
   return null
 }
 
+type DisputeLike = {
+  balance_transactions?: Array<{ fee?: number | null; currency?: string | null } | null> | null
+}
+
+/**
+ * What Stripe kept in dispute fees on a charge: the sum of `fee` over every
+ * balance transaction of every dispute (Stripe lists the withdrawal, and any
+ * reinstatement, on the dispute itself; a returned fee shows as a negative
+ * fee, so the sum is net). USD balance transactions only — FBM's Stripe
+ * account settles in USD; anything else is not counted and the caller logs
+ * it. Never below zero. The separate "dispute countered fee" Stripe takes when
+ * a dispute is contested is NOT on the dispute's balance transactions and is
+ * not counted here (SD-44).
+ */
+export function disputeFeeCents(disputes: DisputeLike[]): { cents: number; uncounted: number } {
+  let cents = 0
+  let uncounted = 0
+  for (const d of disputes) {
+    for (const bt of d.balance_transactions ?? []) {
+      if (!bt || typeof bt.fee !== "number" || !Number.isFinite(bt.fee)) continue
+      if (String(bt.currency ?? "").toLowerCase() !== "usd") {
+        uncounted++
+        continue
+      }
+      cents += bt.fee
+    }
+  }
+  return { cents: Math.max(0, Math.round(cents)), uncounted }
+}
+
 /** Stripe, read with the same key FBM's Stripe payment provider uses. */
 export function stripeChargeFetcher(apiKey = process.env.STRIPE_API_KEY ?? ""): ChargeFetcher {
   return async (chargeId) => {
@@ -93,9 +125,15 @@ export function stripeChargeFetcher(apiKey = process.env.STRIPE_API_KEY ?? ""): 
     const charge = await stripe.charges.retrieve(chargeId)
     let lost = 0
     let open = 0
+    const disputes: DisputeLike[] = []
     for await (const dispute of stripe.disputes.list({ charge: chargeId, limit: 100 })) {
       if (dispute.status === "lost") lost += dispute.amount
       else if (OPEN_DISPUTE_STATUSES.has(dispute.status)) open += dispute.amount
+      disputes.push(dispute)
+    }
+    const fee = disputeFeeCents(disputes)
+    if (fee.uncounted > 0) {
+      log.warn(`[Hawala] Charge ${chargeId}: ${fee.uncounted} dispute balance transaction(s) not in USD; their fees are not counted`)
     }
     const pi = charge.payment_intent
     return {
@@ -106,6 +144,7 @@ export function stripeChargeFetcher(apiKey = process.env.STRIPE_API_KEY ?? ""): 
       refunded_cents: charge.amount_refunded,
       dispute_lost_cents: lost,
       dispute_open_cents: open,
+      dispute_fee_cents: fee.cents,
     }
   }
 }
@@ -178,6 +217,7 @@ export async function syncCardChargeFromStripe(
       refunded_cents: state.refunded_cents,
       dispute_lost_cents: state.dispute_lost_cents,
       dispute_open_cents: state.dispute_open_cents,
+      dispute_fee_cents: Math.max(0, Math.round(state.dispute_fee_cents ?? 0)),
       synced_at: new Date(),
     }
     const [existing] = await hawala.listCardChargeStates({ stripe_charge_id: state.charge_id })

@@ -51,7 +51,7 @@ describe("computeCardProcessingReceivable", () => {
       { shortfall_id: "b", kind: "card_processing", funding_account_id: "acc-processing", order_id: "order_b", owed_cents: 42, recovered_cents: 0, outstanding_cents: 42, created_at: null, next_seq: 1 },
     ])
     expect(r.total_cents).toBe(68)
-    expect(r.by_kind_cents).toEqual({ card_processing: 68, refund: 0 })
+    expect(r.by_kind_cents).toEqual({ card_processing: 68, refund: 0, dispute_fee: 0 })
     expect(r.recovered_by_source_entry).toEqual({ le_credit: 120 })
   })
 

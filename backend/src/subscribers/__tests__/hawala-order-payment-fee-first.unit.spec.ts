@@ -724,7 +724,7 @@ describe("shortfall recovery — from the vendor's next earnings", () => {
     const before = await w.ledger.service.getVendorDashboard("sel_1")
     expect(before.card_processing_owed).toEqual({
       outstanding: 1.46,
-      by_kind: { card_processing: 1.46, refund: 0 },
+      by_kind: { card_processing: 1.46, refund: 0, dispute_fee: 0 },
       open: [{ kind: "card_processing", order_id: "order_1", amount: 1.46, since: shortfall.created_at }],
       // Nothing is 180 days old here, so nothing is forgiven.
       forgiven: [],
@@ -772,7 +772,7 @@ describe("shortfall recovery — from the vendor's next earnings", () => {
     const after = await w.ledger.service.getVendorDashboard("sel_1")
     expect(after.card_processing_owed).toEqual({
       outstanding: 0,
-      by_kind: { card_processing: 0, refund: 0 },
+      by_kind: { card_processing: 0, refund: 0, dispute_fee: 0 },
       open: [],
       forgiven: [],
     })
@@ -900,7 +900,7 @@ describe("shortfall recovery — payout backstop", () => {
     await expect(
       w.ledger.service.requestPayout({ vendor_id: "sel_1", amount: 20, payout_tier: "WEEKLY" })
     ).rejects.toThrow(
-      "Insufficient balance: $18.54 is available to pay out after $1.46 owed (card processing or a refund after payout) was repaid from your balance"
+      "Insufficient balance: $18.54 is available to pay out after $1.46 owed (card processing, a refund after payout, or a chargeback fee) was repaid from your balance"
     )
     const [leg] = recoveryLegs(w.ledger)
     expect(leg).toMatchObject({ debit_account_id: "acc-earnings", status: "COMPLETED" })
@@ -930,7 +930,7 @@ describe("shortfall recovery — payout backstop", () => {
     await expect(
       w.ledger.service.requestPayout({ vendor_id: "sel_1", amount: 0.5, payout_tier: "WEEKLY" })
     ).rejects.toThrow(
-      "Insufficient balance: $0.00 is available to pay out after $1.00 owed (card processing or a refund after payout) was repaid from your balance; $0.46 still owed (card processing or a refund after payout) is taken from your next sales"
+      "Insufficient balance: $0.00 is available to pay out after $1.00 owed (card processing, a refund after payout, or a chargeback fee) was repaid from your balance; $0.46 still owed (card processing, a refund after payout, or a chargeback fee) is taken from your next sales"
     )
     expect(recoveryLegs(w.ledger).map((e) => cents(e.amount))).toEqual([100])
     expect(await owedCents(w.ledger)).toBe(46)
@@ -946,7 +946,7 @@ describe("shortfall recovery — payout backstop", () => {
     }
     await expect(
       w.ledger.service.requestPayout({ vendor_id: "sel_1", amount: 20, payout_tier: "WEEKLY" })
-    ).rejects.toThrow("Insufficient balance: $18.54 is available to pay out; $1.46 still owed (card processing or a refund after payout)")
+    ).rejects.toThrow("Insufficient balance: $18.54 is available to pay out; $1.46 still owed (card processing, a refund after payout, or a chargeback fee)")
     await w.ledger.service.requestPayout({ vendor_id: "sel_1", amount: 18.54, payout_tier: "WEEKLY" })
     expect(cents(account(w.ledger, "acc-earnings").balance)).toBe(146)
   })
@@ -1155,7 +1155,7 @@ describe("shortfall recovery — vendor-to-vendor payments (no way around the ba
     holding(w, 20)
 
     await expect(pay(w, 20)).rejects.toThrow(
-      "Insufficient balance: $18.54 is available to pay after $1.46 owed (card processing or a refund after payout) was repaid from your balance"
+      "Insufficient balance: $18.54 is available to pay after $1.46 owed (card processing, a refund after payout, or a chargeback fee) was repaid from your balance"
     )
     const [leg] = recoveryLegs(w.ledger)
     expect(leg).toMatchObject({ debit_account_id: "acc-earnings", status: "COMPLETED" })
@@ -1189,7 +1189,7 @@ describe("shortfall recovery — vendor-to-vendor payments (no way around the ba
       throw new Error("recovery unavailable")
     }
     await expect(pay(w, 20)).rejects.toThrow(
-      "Insufficient balance: $18.54 is available to pay; $1.46 still owed (card processing or a refund after payout)"
+      "Insufficient balance: $18.54 is available to pay; $1.46 still owed (card processing, a refund after payout, or a chargeback fee)"
     )
     await pay(w, 18.54)
     expect(cents(account(w.ledger, "acc-earnings").balance)).toBe(146)

@@ -29,6 +29,44 @@ describe("CardProcessingOwed", () => {
     expect(out).not.toMatch(/increase|penalty|late/i)
   })
 
+  it("chargeback fees: what is owed, why, and never that the vendor lost the dispute", () => {
+    const out = text(
+      renderToStaticMarkup(
+        <CardProcessingOwed
+          owed={{
+            outstanding: 15,
+            by_kind: { card_processing: 0, refund: 0, dispute_fee: 15 },
+            open: [{ kind: "dispute_fee", order_id: "order_9", amount: 15, since: null }],
+          }}
+          currency="USD"
+        />
+      )
+    )
+    expect(out).toContain("Chargeback fees owed $15.00")
+    expect(out).toContain("This is taken from your next sales, before any payout.")
+    expect(out).toContain("Anything still owed 180 days after the chargeback is forgiven.")
+    expect(out).toContain(
+      "Why: a cardholder disputed an order of yours with their bank. Stripe charges a fee for every dispute and keeps it whether the dispute is won or lost."
+    )
+    expect(out).toContain("Disputed: order_9.")
+    expect(out).not.toContain("Card processing owed")
+    expect(out).not.toContain("Refunds owed")
+    expect(out).not.toMatch(/you lost|penalty|late/i)
+  })
+
+  it("an older API with no dispute_fee in by_kind shows no chargeback line", () => {
+    const out = text(
+      renderToStaticMarkup(
+        <CardProcessingOwed
+          owed={{ outstanding: 1, by_kind: { card_processing: 1, refund: 0 }, open: [{ order_id: "o", amount: 1, since: null }] }}
+          currency="USD"
+        />
+      )
+    )
+    expect(out).toContain("Card processing owed $1.00")
+    expect(out).not.toContain("Chargeback")
+  })
+
   it("renders nothing when nothing is owed or forgiven", () => {
     expect(renderToStaticMarkup(<CardProcessingOwed owed={{ outstanding: 0, open: [] }} currency="USD" />)).toBe("")
     expect(

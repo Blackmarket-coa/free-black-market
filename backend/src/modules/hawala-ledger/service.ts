@@ -52,6 +52,7 @@ import {
   CARD_PROCESSING_OWNER_ID,
   CARD_PROCESSING_SHORTFALL_LEG,
   computeCardProcessingReceivable,
+  emptyByKind,
   isCardProcessingLeg,
   isCardProcessingRecoveryLeg,
   isCardProcessingShortfallLeg,
@@ -69,6 +70,7 @@ import {
 import {
   VENDOR_RECEIVABLE_ACCOUNT_TYPE,
   VENDOR_RECEIVABLE_OWNER_ID,
+  VENDOR_DISPUTE_FEE_LEG,
   VENDOR_REFUND_SHORTFALL_LEG,
   assertVendorReceivableLeg,
   type VendorReceivableSide,
@@ -329,7 +331,7 @@ class HawalaLedgerModuleService extends MedusaService({
   > {
     const none = {
       total_cents: 0,
-      by_kind_cents: { card_processing: 0, refund: 0 },
+      by_kind_cents: emptyByKind(),
       open: [],
       written_off: [],
       written_off_cents: 0,
@@ -475,10 +477,13 @@ class HawalaLedgerModuleService extends MedusaService({
       // card refund issued after that order's earnings were paid out.
       const refundedOrder = target.order_id ? `order ${target.order_id}` : "a refunded order"
       const isRefund = target.kind === "refund"
-      const why = isRefund
-        ? `${refundedOrder} was refunded after your earnings for it were paid out`
-        : `card processing on ${refundedOrder} is not returned on a refund, and your earnings did not cover it`
-      const what = isRefund ? "A refund after payout" : "Card processing"
+      const isDisputeFee = target.kind === "dispute_fee"
+      const why = isDisputeFee
+        ? `the cardholder disputed ${target.order_id ? `order ${target.order_id}` : "an order"}, and Stripe charged its dispute fee`
+        : isRefund
+          ? `${refundedOrder} was refunded after your earnings for it were paid out`
+          : `card processing on ${refundedOrder} is not returned on a refund, and your earnings did not cover it`
+      const what = isDisputeFee ? "A chargeback fee" : isRefund ? "A refund after payout" : "Card processing"
       let entry: any
       try {
         entry = await this.createTransfer({
@@ -491,7 +496,7 @@ class HawalaLedgerModuleService extends MedusaService({
           ...(target.order_id ? { reference_id: target.order_id } : {}),
           parent_entry_id: target.shortfall_id,
           correlation_id: args.correlationId,
-          idempotency_key: `${isRefund ? "vr" : "cp"}-recovery-${target.shortfall_id}-${target.next_seq}`,
+          idempotency_key: `${isDisputeFee ? "df" : isRefund ? "vr" : "cp"}-recovery-${target.shortfall_id}-${target.next_seq}`,
           description:
             args.source === "payout"
               ? `${what} repaid from your balance before payout: ${why}`
@@ -528,6 +533,60 @@ class HawalaLedgerModuleService extends MedusaService({
       postedCents += amountCents
     }
     return posted
+  }
+
+  /**
+   * Record that a seller account owes (part of) Stripe's dispute fee on a
+   * disputed card charge (operator answer 2026-10-07; `./vendor-receivable.ts`).
+   * One ADJUSTMENT, VENDOR_RECEIVABLE -> the card-processing account, naming
+   * the charge and the order by reference (never `order_id`), owed by
+   * `owedByAccountId` and recovered like a refund receivable. Keyed by the
+   * charge, the order, the seller leg and the cumulative cents this leg brings
+   * the order's share to (`toCents`), so a repeat posts nothing and a later,
+   * larger fee posts only the difference. USD only.
+   */
+  async recordDisputeFee(args: {
+    orderId: string
+    stripeChargeId: string
+    owedByAccountId: string
+    amountCents: number
+    toCents: number
+    splitTag?: string
+  }) {
+    const amountCents = Math.floor(args.amountCents)
+    if (!(amountCents > 0)) throw new Error("A dispute fee must be a positive amount")
+    const owedBy = await this.retrieveLedgerAccount(args.owedByAccountId)
+    if (
+      !owedBy ||
+      owedBy.account_type !== "SELLER_EARNINGS" ||
+      String(owedBy.currency_code).toUpperCase() !== "USD"
+    ) {
+      throw new Error(`A dispute fee is owed only by a USD seller earnings account (${args.owedByAccountId})`)
+    }
+    const [receivable, processing] = await Promise.all([
+      this.getOrCreateVendorReceivableAccount(),
+      this.getOrCreateCardProcessingAccount(),
+    ])
+    const tag = args.splitTag ? `-${args.splitTag}` : ""
+    return this.createTransfer({
+      debit_account_id: receivable.id,
+      credit_account_id: processing.id,
+      amount: amountCents / 100,
+      entry_type: "ADJUSTMENT",
+      reference_type: "ORDER",
+      reference_id: args.orderId,
+      idempotency_key: `dispute-fee-${args.stripeChargeId}-${args.orderId}${tag}-to-${args.toCents}`,
+      description: `Chargeback fee on order ${args.orderId}${tag} (charge ${args.stripeChargeId}): Stripe's dispute fee, owed by the vendor`,
+      metadata: {
+        leg: VENDOR_DISPUTE_FEE_LEG,
+        owed_by_account_id: args.owedByAccountId,
+        stripe_charge_id: args.stripeChargeId,
+        order_id: args.orderId,
+        ...(args.splitTag ? { split_leg: args.splitTag } : {}),
+        to_cents: args.toCents,
+        receivable: true,
+      },
+    })
   }
 
   /**
@@ -1446,7 +1505,13 @@ class HawalaLedgerModuleService extends MedusaService({
     // shortfall out of it into the order escrow, a recovery into it from
     // seller earnings (never above zero). Refused here, before any entry.
     const { side: receivableSide, receivableAccountId } = assertVendorReceivableLeg(
-      { entry_type: data.entry_type, order_id: data.order_id ?? null, metadata: data.metadata },
+      {
+        entry_type: data.entry_type,
+        order_id: data.order_id ?? null,
+        reference_type: data.reference_type ?? null,
+        reference_id: data.reference_id ?? null,
+        metadata: data.metadata,
+      },
       debitAccount,
       creditAccount
     )
@@ -3899,6 +3964,7 @@ class HawalaLedgerModuleService extends MedusaService({
     const owed = await this.getCardProcessingReceivable(account.id)
     const cardProcessingOwed = owed.by_kind_cents.card_processing / 100
     const refundOwed = owed.by_kind_cents.refund / 100
+    const disputeFeeOwed = owed.by_kind_cents.dispute_fee / 100
     const holds = await this.listActivePayoutHolds(vendorId)
     const payableBalance =
       holds.length > 0
@@ -3940,6 +4006,7 @@ class HawalaLedgerModuleService extends MedusaService({
       payable_balance: payableBalance,
       card_processing_owed: cardProcessingOwed,
       refund_owed: refundOwed,
+      dispute_fee_owed: disputeFeeOwed,
       total_owed: owed.total_cents / 100,
       payout_hold:
         holds.length > 0
@@ -4093,10 +4160,10 @@ class HawalaLedgerModuleService extends MedusaService({
         throw new Error(
           `Insufficient balance: $${dollars(payable)} is available to pay out` +
             (collectedCents > 0
-              ? ` after $${dollars(collectedCents / 100)} owed (card processing or a refund after payout) was repaid from your balance`
+              ? ` after $${dollars(collectedCents / 100)} owed (card processing, a refund after payout, or a chargeback fee) was repaid from your balance`
               : "") +
             (stillOwedCents > 0
-              ? `; $${dollars(stillOwedCents / 100)} still owed (card processing or a refund after payout) is taken from your next sales`
+              ? `; $${dollars(stillOwedCents / 100)} still owed (card processing, a refund after payout, or a chargeback fee) is taken from your next sales`
               : "")
         )
       }
@@ -5128,10 +5195,10 @@ class HawalaLedgerModuleService extends MedusaService({
             throw new Error(
               `Insufficient balance: $${dollars(payable)} is available to pay` +
                 (collectedCents > 0
-                  ? ` after $${dollars(collectedCents / 100)} owed (card processing or a refund after payout) was repaid from your balance`
+                  ? ` after $${dollars(collectedCents / 100)} owed (card processing, a refund after payout, or a chargeback fee) was repaid from your balance`
                   : "") +
                 (stillOwedCents > 0
-                  ? `; $${dollars(stillOwedCents / 100)} still owed (card processing or a refund after payout) is taken from your next sales`
+                  ? `; $${dollars(stillOwedCents / 100)} still owed (card processing, a refund after payout, or a chargeback fee) is taken from your next sales`
                   : "")
             )
           }
@@ -5332,6 +5399,7 @@ class HawalaLedgerModuleService extends MedusaService({
         by_kind: {
           card_processing: cardProcessingOwed.by_kind_cents.card_processing / 100,
           refund: cardProcessingOwed.by_kind_cents.refund / 100,
+          dispute_fee: cardProcessingOwed.by_kind_cents.dispute_fee / 100,
         },
         open: cardProcessingOwed.open.map((o) => ({
           kind: o.kind,
