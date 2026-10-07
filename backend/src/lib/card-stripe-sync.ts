@@ -110,6 +110,29 @@ export function stripeChargeFetcher(apiKey = process.env.STRIPE_API_KEY ?? ""): 
   }
 }
 
+/** Charges with a refund or dispute created at Stripe since a time; for the hourly re-read. */
+export type RecentChargeLister = (since: Date) => Promise<string[]>
+
+/**
+ * Every charge Stripe shows a refund or a dispute on since `since`, from FBM's
+ * own Stripe account (the payment provider's key). Catches what a lost webhook
+ * never delivered (`jobs/hawala-card-stripe-resync.ts`).
+ */
+export function stripeRecentChargeLister(apiKey = process.env.STRIPE_API_KEY ?? ""): RecentChargeLister {
+  return async (since) => {
+    const stripe = new Stripe(apiKey)
+    const created = { gte: Math.floor(since.getTime() / 1000) }
+    const ids = new Set<string>()
+    const add = (charge: string | { id: string } | null | undefined) => {
+      const id = typeof charge === "string" ? charge : charge?.id
+      if (id) ids.add(id)
+    }
+    for await (const dispute of stripe.disputes.list({ created, limit: 100 })) add(dispute.charge)
+    for await (const refund of stripe.refunds.list({ created, limit: 100 })) add(refund.charge)
+    return [...ids]
+  }
+}
+
 type PgLike = { raw: (sql: string, b?: unknown[]) => Promise<{ rows?: Array<Record<string, unknown>> }> }
 
 /** The Medusa payment a PaymentIntent paid: `@medusajs/payment-stripe` stores the intent as `data`. */
