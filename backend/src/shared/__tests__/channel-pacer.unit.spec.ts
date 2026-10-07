@@ -15,7 +15,17 @@ const policy: ChannelRatePolicy = {
   auth_backoff_ms: 100_000,
 }
 
-beforeEach(() => resetPacing())
+beforeEach(() => {
+  resetPacing()
+  // The pacer sleeps with setTimeout; fake timers let each test say exactly
+  // when a request is let through, instead of measuring wall-clock time — an
+  // upper bound on real elapsed time fails on a loaded CI runner (a 400ms
+  // wait measured 1309ms there) while proving nothing about the pacer.
+  jest.useFakeTimers()
+})
+afterEach(() => {
+  jest.useRealTimers()
+})
 
 /** A clock the test drives, so no test waits real seconds. */
 function fakeClock(start = 1_000_000) {
@@ -23,12 +33,22 @@ function fakeClock(start = 1_000_000) {
   return { now: () => t, advance: (ms: number) => (t += ms) }
 }
 
+/** Start a call and report whether it has been let through yet. */
+function track(promise: Promise<void>) {
+  const state = { done: false }
+  void promise.then(() => {
+    state.done = true
+  })
+  return state
+}
+
 describe("pace", () => {
   it("does not delay the first request", async () => {
     const clock = fakeClock()
-    const before = Date.now()
-    await pace("faire", policy, clock.now)
-    expect(Date.now() - before).toBeLessThan(50)
+    const call = track(pace("faire", policy, clock.now))
+    await jest.advanceTimersByTimeAsync(0)
+    expect(call.done).toBe(true)
+    expect(jest.getTimerCount()).toBe(0)
   })
 
   it("does not delay once the gap has already elapsed", async () => {
@@ -36,21 +56,22 @@ describe("pace", () => {
     await pace("faire", policy, clock.now)
     clock.advance(5_000)
 
-    const before = Date.now()
-    await pace("faire", policy, clock.now)
-    expect(Date.now() - before).toBeLessThan(50)
+    const call = track(pace("faire", policy, clock.now))
+    await jest.advanceTimersByTimeAsync(0)
+    expect(call.done).toBe(true)
+    expect(jest.getTimerCount()).toBe(0)
   })
 
-  it("waits out the remaining gap when a request comes too soon", async () => {
+  it("waits out exactly the remaining gap when a request comes too soon", async () => {
     const clock = fakeClock()
     await pace("faire", policy, clock.now)
     clock.advance(100) // 400ms still owed
 
-    const before = Date.now()
-    await pace("faire", policy, clock.now)
-    const waited = Date.now() - before
-    expect(waited).toBeGreaterThanOrEqual(350)
-    expect(waited).toBeLessThan(900)
+    const call = track(pace("faire", policy, clock.now))
+    await jest.advanceTimersByTimeAsync(399)
+    expect(call.done).toBe(false)
+    await jest.advanceTimersByTimeAsync(1)
+    expect(call.done).toBe(true)
   })
 
   it("queues concurrent callers instead of letting them fire together", async () => {
@@ -60,13 +81,17 @@ describe("pace", () => {
     const clock = fakeClock()
     await pace("faire", policy, clock.now)
 
-    const before = Date.now()
-    await Promise.all([
-      pace("faire", policy, clock.now),
-      pace("faire", policy, clock.now),
-    ])
+    const a = track(pace("faire", policy, clock.now))
+    const b = track(pace("faire", policy, clock.now))
     // Two more slots at 500ms each, measured from the first request.
-    expect(Date.now() - before).toBeGreaterThanOrEqual(900)
+    await jest.advanceTimersByTimeAsync(499)
+    expect([a.done, b.done]).toEqual([false, false])
+    await jest.advanceTimersByTimeAsync(1)
+    expect([a.done, b.done]).toEqual([true, false])
+    await jest.advanceTimersByTimeAsync(499)
+    expect(b.done).toBe(false)
+    await jest.advanceTimersByTimeAsync(1)
+    expect(b.done).toBe(true)
   })
 
   it("paces each channel independently", async () => {
@@ -75,16 +100,17 @@ describe("pace", () => {
     const clock = fakeClock()
     await pace("faire", policy, clock.now)
 
-    const before = Date.now()
-    await pace("another-channel", policy, clock.now)
-    expect(Date.now() - before).toBeLessThan(50)
+    const call = track(pace("another-channel", policy, clock.now))
+    await jest.advanceTimersByTimeAsync(0)
+    expect(call.done).toBe(true)
+    expect(jest.getTimerCount()).toBe(0)
   })
 
   it("survives a nonsense policy without hanging", async () => {
     const clock = fakeClock()
-    const before = Date.now()
-    await pace("faire", { ...policy, requests_per_minute: 0 }, clock.now)
+    const call = track(pace("faire", { ...policy, requests_per_minute: 0 }, clock.now))
+    await jest.advanceTimersByTimeAsync(0)
     // First request is never delayed regardless of spacing.
-    expect(Date.now() - before).toBeLessThan(50)
+    expect(call.done).toBe(true)
   })
 })
