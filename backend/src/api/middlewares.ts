@@ -1093,6 +1093,11 @@ export default defineMiddlewares({
       middlewares: [requireFeatureFlagMiddleware("CARD_ORDER_LEDGER_V1")],
     },
     {
+      // SD-44 (a): assigning dispute fees the automatic rule puts on no one.
+      matcher: "/admin/hawala/dispute-fees*",
+      middlewares: [requireFeatureFlagMiddleware("CARD_ORDER_LEDGER_V1")],
+    },
+    {
       matcher: "/admin/hawala/pools*",
       middlewares: [requireFeatureFlagMiddleware("INVESTMENT_POOLS_V1")],
     },

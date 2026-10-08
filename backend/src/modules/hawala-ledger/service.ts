@@ -559,6 +559,8 @@ class HawalaLedgerModuleService extends MedusaService({
     toCents: number
     seq: number
     splitTag?: string
+    /** The admin who assigned it, when an admin did (`lib/card-dispute-fee-assignment.ts`). */
+    assignedBy?: string
   }) {
     const amountCents = Math.floor(args.amountCents)
     if (!(amountCents > 0)) throw new Error("A dispute fee must be a positive amount")
@@ -595,6 +597,7 @@ class HawalaLedgerModuleService extends MedusaService({
         ...(args.splitTag ? { split_leg: args.splitTag } : {}),
         to_cents: args.toCents,
         seq: args.seq,
+        ...(args.assignedBy ? { assigned_by: args.assignedBy } : {}),
         attempt,
         receivable: true,
       },
