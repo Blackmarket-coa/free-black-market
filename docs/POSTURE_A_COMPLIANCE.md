@@ -373,7 +373,8 @@ charges: into the card-processing account, funded by the vendor receivable
 as owed by the vendor (pro rata to each order on a shared cart, and only
 when one chargeback covered the whole charge — a partial chargeback on a
 shared cart, or a cart where any order lacks a split row, is put on no
-vendor), and repaid like a refund owed.
+vendor automatically; an admin then assigns it to the order that was
+disputed, or leaves it with BMC, SD-45), and repaid like a refund owed.
 
 Every receivable leg — refund and processing shortfalls, their recoveries,
 and the dispute fee — can be written only by the ledger service's own

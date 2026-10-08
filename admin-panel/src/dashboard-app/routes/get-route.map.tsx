@@ -792,6 +792,19 @@ export function getRouteMap({
               ],
             },
             {
+              path: "/dispute-fees",
+              errorElement: <ErrorBoundary />,
+              handle: {
+                breadcrumb: () => "Chargeback fees",
+              },
+              children: [
+                {
+                  path: "",
+                  lazy: () => import("@routes/dispute-fees"),
+                },
+              ],
+            },
+            {
               path: "/vault",
               errorElement: <ErrorBoundary />,
               handle: {

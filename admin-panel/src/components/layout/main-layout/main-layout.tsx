@@ -255,6 +255,11 @@ const useCoreRoutes = (): Omit<INavItem, "pathname">[] => {
       to: "/vault",
     },
     {
+      icon: <CurrencyDollar />,
+      label: "Chargeback fees",
+      to: "/dispute-fees",
+    },
+    {
       icon: <Sun />,
       label: "Producers",
       to: "/producers",
