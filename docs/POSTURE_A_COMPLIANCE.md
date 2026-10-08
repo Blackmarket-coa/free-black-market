@@ -370,9 +370,15 @@ takes a dispute fee from FBM's own Stripe balance, and keeps it whether the
 dispute is won or lost. The ledger records it the way it records other money
 Stripe keeps from FBM's charges: into the card-processing account, funded by
 the vendor receivable as owed by the vendor (pro rata to each order on a
-shared cart), and repaid like a refund owed. It moves no CCR, holds no
-balance for anyone, and pays nothing out; it is a record, inside the
-purchase context of the disputed order, of what a vendor owes on it.
+shared cart, and only when the dispute covered the whole charge — a partial
+dispute on a shared cart is put on no vendor), and repaid like a refund
+owed. Only FBM's own dispute-fee path can write that leg: it needs an
+internal-only `createTransfer` field that no HTTP route forwards, so the
+admin manual-transfer route cannot use it to push the receivable down. It
+moves no CCR, holds no balance for anyone, and pays nothing out; it is a
+record, inside the purchase context of the disputed order, of what a vendor
+owes on it. The separate dispute *countered* fee is borne by BMC (operator
+answer 2026-10-07) and never charged to a vendor.
 
 This section records the design, not a legal conclusion.
 

@@ -10,6 +10,7 @@ import {
   VENDOR_DISPUTE_FEE_LEG,
   VENDOR_RECEIVABLE_ACCOUNT_TYPE,
   VENDOR_REFUND_RECOVERY_LEG,
+  VendorReceivableLegError,
 } from "../../src/modules/hawala-ledger/vendor-receivable"
 import { CARD_PROCESSING_ACCOUNT_TYPE, CARD_PROCESSING_OWNER_ID } from "../../src/modules/hawala-ledger/card-processing"
 
@@ -58,6 +59,8 @@ medusaIntegrationTestRunner({
         dispute_fee_cents: 0,
         ...s,
       }
+      // As Stripe reports it: what every dispute covered, whatever its outcome.
+      if (s.disputed_cents === undefined) state.disputed_cents = state.dispute_open_cents + state.dispute_lost_cents
       return { chargeId: state.charge_id, fetchCharge: async () => state }
     }
     const toCard = async (orderId: string) =>
@@ -371,6 +374,102 @@ medusaIntegrationTestRunner({
         expect(shares).toEqual([857, 643])
         expect((await owed(s1.id)).by_kind_cents.dispute_fee).toBe(857)
         expect((await owed(s2.id)).by_kind_cents.dispute_fee).toBe(643)
+      })
+
+      it("a fee that rises (a second dispute) posts only the difference; a lower figure later posts nothing", async () => {
+        const { seller, order, pi } = await cardOrder()
+        const first = stripeSays(pi, 40, { dispute_open_cents: 4000, dispute_fee_cents: 1500 })
+        await syncCardChargeFromStripe(container(), first.chargeId, { fetchCharge: first.fetchCharge })
+        const second = stripeSays(pi, 40, { dispute_open_cents: 4000, disputed_cents: 8000, dispute_fee_cents: 3000 })
+        await syncCardChargeFromStripe(container(), second.chargeId, { fetchCharge: second.fetchCharge })
+        const rows = await feeLegs(order.id)
+        expect(rows.map((e: { amount: unknown }) => cents(e.amount))).toEqual([1500, 1500])
+        expect(rows.map((e: { idempotency_key: string }) => e.idempotency_key.replace(/^.*-to-/, "to-")).sort()).toEqual([
+          "to-1500-0",
+          "to-3000-1",
+        ])
+        expect((await owed(seller.id)).by_kind_cents.dispute_fee).toBe(3000)
+        await syncCardChargeFromStripe(container(), first.chargeId, { fetchCharge: first.fetchCharge })
+        expect(await feeLegs(order.id)).toHaveLength(2)
+        expect((await owed(seller.id)).by_kind_cents.dispute_fee).toBe(3000)
+      })
+
+      it("an earlier attempt that FAILED is retried under the next sequence, not handed back", async () => {
+        const { seller, order, pi } = await cardOrder()
+        const d = stripeSays(pi, 40, { dispute_open_cents: 4000, dispute_fee_cents: 1500 })
+        // A first attempt whose balance move failed: its key is taken, FAILED.
+        const [receivableAcc] = await hawala().listLedgerAccounts({ account_type: VENDOR_RECEIVABLE_ACCOUNT_TYPE })
+        const receivable = receivableAcc ?? (await hawala().getOrCreateVendorReceivableAccount())
+        const processing = await hawala().getOrCreateCardProcessingAccount()
+        await hawala().createLedgerEntries({
+          debit_account_id: receivable.id,
+          credit_account_id: processing.id,
+          amount: 15,
+          currency_code: "USD",
+          entry_type: "ADJUSTMENT",
+          status: "FAILED",
+          reference_type: "ORDER",
+          reference_id: order.id,
+          idempotency_key: `dispute-fee-${d.chargeId}-${order.id}-to-1500-0`,
+          metadata: {
+            leg: VENDOR_DISPUTE_FEE_LEG,
+            stripe_charge_id: d.chargeId,
+            owed_by_account_id: (await sellerEarnings(seller.id)).id,
+          },
+        })
+        await syncCardChargeFromStripe(container(), d.chargeId, { fetchCharge: d.fetchCharge })
+        const completed = (await feeLegs(order.id)).filter((e: { status: string }) => e.status === "COMPLETED")
+        expect(completed).toHaveLength(1)
+        expect(completed[0].idempotency_key).toBe(`dispute-fee-${d.chargeId}-${order.id}-to-1500-1`)
+        expect((await owed(seller.id)).by_kind_cents.dispute_fee).toBe(1500)
+      })
+
+      it("a partial dispute on a shared cart is put on no seller (which order was disputed is unknown)", async () => {
+        const [s1, s2] = [await makeSeller(), await makeSeller()]
+        const [o1, o2] = [await makeOrder(s1.id, 40), await makeOrder(s2.id, 30)]
+        const { collectionId, paymentId } = await pay([o1.id, o2.id], 70, { capture: true })
+        await split(o1.id, collectionId, 40)
+        await split(o2.id, collectionId, 30)
+        await captured(paymentId)
+        const pi = await intentFor(paymentId)
+        const d = stripeSays(pi, 70, { dispute_open_cents: 3000, dispute_fee_cents: 1500 })
+        await syncCardChargeFromStripe(container(), d.chargeId, { fetchCharge: d.fetchCharge })
+        expect(await feeLegs(o1.id)).toEqual([])
+        expect(await feeLegs(o2.id)).toEqual([])
+        expect((await owed(s1.id)).total_cents).toBe(0)
+        expect((await owed(s2.id)).total_cents).toBe(0)
+      })
+
+      it("a shared collection with no split rows is put on no seller", async () => {
+        const [s1, s2] = [await makeSeller(), await makeSeller()]
+        const [o1, o2] = [await makeOrder(s1.id, 40), await makeOrder(s2.id, 30)]
+        const { paymentId } = await pay([o1.id, o2.id], 70, { capture: true })
+        await captured(paymentId)
+        const pi = await intentFor(paymentId)
+        const d = stripeSays(pi, 70, { dispute_open_cents: 7000, dispute_fee_cents: 1500 })
+        await syncCardChargeFromStripe(container(), d.chargeId, { fetchCharge: d.fetchCharge })
+        expect(await feeLegs(o1.id)).toEqual([])
+        expect(await feeLegs(o2.id)).toEqual([])
+      })
+
+      it("the fee shape cannot be written through caller-supplied metadata (what the admin manual-transfer route forwards)", async () => {
+        const { order } = await cardOrder()
+        const receivable = await hawala().getOrCreateVendorReceivableAccount()
+        const processing = await hawala().getOrCreateCardProcessingAccount()
+        await expect(
+          hawala().createTransfer({
+            debit_account_id: receivable.id,
+            credit_account_id: processing.id,
+            amount: 50000,
+            entry_type: "ADJUSTMENT",
+            reference_type: "ORDER",
+            reference_id: order.id,
+            idempotency_key: `forged-${order.id}`,
+            metadata: { leg: VENDOR_DISPUTE_FEE_LEG, stripe_charge_id: "ch_forged" },
+          })
+        ).rejects.toThrow(VendorReceivableLegError)
+        expect(cents((await hawala().retrieveLedgerAccount(processing.id)).balance)).toBe(cents(processing.balance))
+        expect(await feeLegs(order.id)).toEqual([])
       })
 
       it("a charge with no dispute fee owes nothing", async () => {

@@ -541,9 +541,13 @@ class HawalaLedgerModuleService extends MedusaService({
    * One ADJUSTMENT, VENDOR_RECEIVABLE -> the card-processing account, naming
    * the charge and the order by reference (never `order_id`), owed by
    * `owedByAccountId` and recovered like a refund receivable. Keyed by the
-   * charge, the order, the seller leg and the cumulative cents this leg brings
-   * the order's share to (`toCents`), so a repeat posts nothing and a later,
-   * larger fee posts only the difference. USD only.
+   * charge, the order, the seller leg, the cumulative cents this leg brings
+   * the order's share to (`toCents`) and `seq` — the number of fee rows
+   * already written for that charge, order and leg, FAILED ones included —
+   * so a repeat posts nothing, a later, larger fee posts only the
+   * difference, and a FAILED attempt never hands its dead row back to the
+   * retry (the recovery legs' `next_seq` pattern). Returns the entry only
+   * when THIS call's leg COMPLETED; anything else throws. USD only.
    */
   async recordDisputeFee(args: {
     orderId: string
@@ -551,6 +555,7 @@ class HawalaLedgerModuleService extends MedusaService({
     owedByAccountId: string
     amountCents: number
     toCents: number
+    seq: number
     splitTag?: string
   }) {
     const amountCents = Math.floor(args.amountCents)
@@ -568,14 +573,16 @@ class HawalaLedgerModuleService extends MedusaService({
       this.getOrCreateCardProcessingAccount(),
     ])
     const tag = args.splitTag ? `-${args.splitTag}` : ""
-    return this.createTransfer({
+    const attempt = randomUUID()
+    const entry = await this.createTransfer({
       debit_account_id: receivable.id,
       credit_account_id: processing.id,
       amount: amountCents / 100,
       entry_type: "ADJUSTMENT",
       reference_type: "ORDER",
       reference_id: args.orderId,
-      idempotency_key: `dispute-fee-${args.stripeChargeId}-${args.orderId}${tag}-to-${args.toCents}`,
+      vendor_dispute_fee: { order_id: args.orderId, stripe_charge_id: args.stripeChargeId },
+      idempotency_key: `dispute-fee-${args.stripeChargeId}-${args.orderId}${tag}-to-${args.toCents}-${args.seq}`,
       description: `Chargeback fee on order ${args.orderId}${tag} (charge ${args.stripeChargeId}): Stripe's dispute fee, owed by the vendor`,
       metadata: {
         leg: VENDOR_DISPUTE_FEE_LEG,
@@ -584,9 +591,19 @@ class HawalaLedgerModuleService extends MedusaService({
         order_id: args.orderId,
         ...(args.splitTag ? { split_leg: args.splitTag } : {}),
         to_cents: args.toCents,
+        seq: args.seq,
+        attempt,
         receivable: true,
       },
     })
+    const meta = (entry?.metadata ?? {}) as { attempt?: unknown }
+    if (entry?.status !== "COMPLETED" || meta.attempt !== attempt) {
+      throw new Error(
+        `Dispute fee on order ${args.orderId} (charge ${args.stripeChargeId}) did not post: ` +
+          `${entry?.status ?? "no entry"}${meta.attempt !== attempt ? " (another writer's row)" : ""}`
+      )
+    }
+    return entry
   }
 
   /**
@@ -1412,6 +1429,10 @@ class HawalaLedgerModuleService extends MedusaService({
     correlation_id?: string
     parent_entry_id?: string
     metadata?: Record<string, any>
+    // Internal only (`./vendor-receivable.ts`): the order and charge a
+    // dispute-fee leg is for. No HTTP route forwards it, which is what keeps
+    // that leg shape out of reach of caller-supplied metadata.
+    vendor_dispute_fee?: { order_id: string; stripe_charge_id: string }
     // Optional pg connection. When supplied, balance mutations use the
     // atomic CAS UPDATE (updateBalancesAtomic) instead of the legacy
     // read-modify-write updateBalances. Additive/non-breaking: callers
@@ -1511,6 +1532,7 @@ class HawalaLedgerModuleService extends MedusaService({
         reference_type: data.reference_type ?? null,
         reference_id: data.reference_id ?? null,
         metadata: data.metadata,
+        vendor_dispute_fee: data.vendor_dispute_fee ?? null,
       },
       debitAccount,
       creditAccount

@@ -76,6 +76,16 @@
  *   - Repaid like a refund receivable: SELLER_EARNINGS -> VENDOR_RECEIVABLE,
  *     VENDOR_REFUND_RECOVERY_LEG, by the same recovery machinery, oldest
  *     first, and forgiven at the same age.
+ *   - Only FBM's own code can write it. Because the leg carries no
+ *     `order_id`, the order and charge are named in a dedicated top-level
+ *     `createTransfer` field (`vendor_dispute_fee`) that no HTTP route
+ *     forwards. The admin manual-transfer route passes caller-supplied
+ *     metadata and references through to createTransfer, so a tag in metadata
+ *     alone would let a request mint an unbounded receivable into the
+ *     card-processing account. The other two shapes are unreachable from that
+ *     route for the same reason: each needs an `order_id` it does not forward.
+ *     A leg carrying the dispute-fee tag without that field is refused
+ *     whatever its accounts.
  */
 
 export const VENDOR_RECEIVABLE_ACCOUNT_TYPE = "VENDOR_RECEIVABLE"
@@ -145,13 +155,30 @@ export function assertVendorReceivableLeg(
     reference_type?: string | null
     reference_id?: string | null
     metadata?: unknown
+    /** The internal-only dispute-fee field (`createTransfer`'s `vendor_dispute_fee`). */
+    vendor_dispute_fee?: { order_id?: unknown; stripe_charge_id?: unknown } | null
   },
   debit: AccountLike,
   credit: AccountLike
 ): { side: VendorReceivableSide; receivableAccountId: string | null } {
   const debitIs = isVendorReceivableAccount(debit)
   const creditIs = isVendorReceivableAccount(credit)
-  if (!debitIs && !creditIs) return { side: "none", receivableAccountId: null }
+  if (legTag(leg.metadata) === VENDOR_DISPUTE_FEE_LEG && !leg.vendor_dispute_fee) {
+    throw new VendorReceivableLegError(
+      "Vendor-receivable leg refused: a dispute fee is written only by FBM's own dispute-fee path",
+      { entry_type: leg.entry_type, debit_account_id: debit.id, credit_account_id: credit.id }
+    )
+  }
+  if (!debitIs && !creditIs) {
+    if (leg.vendor_dispute_fee) {
+      throw new VendorReceivableLegError("Vendor-receivable leg refused: a dispute fee must come out of the vendor receivable", {
+        entry_type: leg.entry_type,
+        debit_account_id: debit.id,
+        credit_account_id: credit.id,
+      })
+    }
+    return { side: "none", receivableAccountId: null }
+  }
 
   const receivable = debitIs ? debit : credit
   const other = debitIs ? credit : debit
@@ -176,11 +203,18 @@ export function assertVendorReceivableLeg(
   }
   if (leg.entry_type !== "ADJUSTMENT") refuse("only an ADJUSTMENT may touch the vendor receivable")
 
+  if (leg.vendor_dispute_fee && !(debitIs && legTag(leg.metadata) === VENDOR_DISPUTE_FEE_LEG)) {
+    refuse("a dispute fee must leave the vendor receivable, tagged as one")
+  }
   if (debitIs && legTag(leg.metadata) === VENDOR_DISPUTE_FEE_LEG) {
     if (leg.order_id) refuse("a dispute fee names its order by reference, never by order_id")
     if (leg.reference_type !== "ORDER" || !leg.reference_id) refuse("a dispute fee must name its order")
     const charge = (leg.metadata as { stripe_charge_id?: unknown } | null | undefined)?.stripe_charge_id
     if (typeof charge !== "string" || !charge) refuse("a dispute fee must name the disputed charge")
+    const internal = leg.vendor_dispute_fee
+    if (!internal || internal.order_id !== leg.reference_id || internal.stripe_charge_id !== charge) {
+      refuse("the dispute fee's order and charge must match what the leg names")
+    }
     if (
       other.account_type !== DISPUTE_FEE_SINK.account_type ||
       other.owner_type !== "SYSTEM" ||

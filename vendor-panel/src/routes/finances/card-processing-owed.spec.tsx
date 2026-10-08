@@ -44,9 +44,9 @@ describe("CardProcessingOwed", () => {
     )
     expect(out).toContain("Chargeback fees owed $15.00")
     expect(out).toContain("This is taken from your next sales, before any payout.")
-    expect(out).toContain("Anything still owed 180 days after the chargeback is forgiven.")
+    expect(out).toContain("Anything still owed 180 days after the fee was recorded is forgiven.")
     expect(out).toContain(
-      "Why: a cardholder disputed an order of yours with their bank. Stripe charges a fee for every dispute and keeps it whether the dispute is won or lost."
+      "Why: a cardholder's bank opened a chargeback on an order of yours. Stripe charges a fee when a chargeback is opened and does not return it, even if the dispute is won."
     )
     expect(out).toContain("Disputed: order_9.")
     expect(out).not.toContain("Card processing owed")

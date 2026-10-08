@@ -44,7 +44,9 @@ const fee = {
   reference_type: "ORDER",
   reference_id: "order_1",
   metadata: { leg: VENDOR_DISPUTE_FEE_LEG, stripe_charge_id: "ch_1" },
+  vendor_dispute_fee: { order_id: "order_1", stripe_charge_id: "ch_1" },
 }
+const seller = { id: "acc-sel", account_type: "SELLER_EARNINGS", owner_type: "SELLER", owner_id: "sel_1", currency_code: "USD" }
 
 describe("the dispute-fee leg out of the vendor receivable", () => {
   it("its sink is the card-processing account (spelled out to avoid an import cycle)", () => {
@@ -63,9 +65,27 @@ describe("the dispute-fee leg out of the vendor receivable", () => {
     ["referencing something other than an order", { ...fee, reference_type: "MANUAL" }, processing, /must name its order/],
     ["naming no charge", { ...fee, metadata: { leg: VENDOR_DISPUTE_FEE_LEG } }, processing, /disputed charge/],
     ["as anything but an ADJUSTMENT", { ...fee, entry_type: "TRANSFER" }, processing, /only an ADJUSTMENT/],
+    ["without the internal-only field (caller-supplied metadata alone)", { ...fee, vendor_dispute_fee: undefined }, processing, /only by FBM's own dispute-fee path/],
+    ["for a different order than it names", { ...fee, vendor_dispute_fee: { order_id: "order_2", stripe_charge_id: "ch_1" } }, processing, /must match/],
+    ["for a different charge than it names", { ...fee, vendor_dispute_fee: { order_id: "order_1", stripe_charge_id: "ch_2" } }, processing, /must match/],
   ])("refuses it %s", (_why, leg, other, message) => {
     expect(() => assertVendorReceivableLeg(leg, receivable, other)).toThrow(VendorReceivableLegError)
     expect(() => assertVendorReceivableLeg(leg, receivable, other)).toThrow(message)
+  })
+
+  it("refuses the dispute-fee tag on a leg that does not touch the receivable, without the internal field", () => {
+    expect(() =>
+      assertVendorReceivableLeg({ ...fee, vendor_dispute_fee: undefined }, processing, seller)
+    ).toThrow(/only by FBM's own dispute-fee path/)
+  })
+
+  it("refuses the internal field on anything but a dispute-fee leg out of the receivable", () => {
+    expect(() =>
+      assertVendorReceivableLeg({ ...fee, metadata: { leg: "something_else" } }, processing, seller)
+    ).toThrow(/must come out of the vendor receivable/)
+    expect(() =>
+      assertVendorReceivableLeg({ ...fee, metadata: { leg: "vendor_refund_recovery" } }, seller, receivable)
+    ).toThrow(/must leave the vendor receivable, tagged as one/)
   })
 
   it("refuses a non-USD card-processing account", () => {
