@@ -2,7 +2,11 @@ import { renderToStaticMarkup } from "react-dom/server"
 import { describe, expect, it } from "vitest"
 import { CardProcessingOwed } from "./card-processing-owed"
 
-const text = (html: string) => html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim()
+// renderToStaticMarkup escapes text ("'" becomes "&#x27;"), so entities are
+// decoded before matching: assertions compare what the vendor reads.
+const decode = (s: string) =>
+  s.replace(/&#x27;|&#39;/g, "'").replace(/&quot;/g, '"').replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&")
+const text = (html: string) => decode(html.replace(/<[^>]+>/g, " ")).replace(/\s+/g, " ").trim()
 
 describe("CardProcessingOwed", () => {
   it("says what is owed, that it comes from the next sales before payout, and why", () => {

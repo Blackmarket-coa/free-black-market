@@ -25,10 +25,11 @@ import { model } from "@medusajs/framework/utils"
  *     as Stripe reports them on each dispute's balance transactions — owed by
  *     the vendor(s) whose order was disputed (operator answer 2026-10-07),
  *     win or lose, because Stripe does not return it.
- *   - `disputed_cents`: the amount every dispute on the charge covered,
- *     whatever its outcome. On a charge that paid several orders (a Mercur
- *     cart) the fee is put on those orders only when this covers the whole
- *     charge; a partial dispute says nothing about WHICH order was disputed.
+ *   - `disputed_cents`: the largest amount any one chargeback on the charge
+ *     covered, whatever its outcome (inquiries left out). On a charge that
+ *     paid several orders (a Mercur cart) the fee is put on those orders only
+ *     when this covers the whole charge; a partial chargeback says nothing
+ *     about WHICH order was disputed.
  *
  * Integer cents, as Stripe reports them. A record, not money: nothing moves
  * here. No customer data.

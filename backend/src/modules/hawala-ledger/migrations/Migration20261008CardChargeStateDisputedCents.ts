@@ -1,8 +1,9 @@
 import { Migration } from "@mikro-orm/migrations"
 
 /**
- * `hawala_card_charge_state.disputed_cents` (SD-44): the amount every dispute
- * on the charge covered, whatever its outcome. On a charge that paid several
+ * `hawala_card_charge_state.disputed_cents` (SD-44): the largest amount any
+ * one chargeback on the charge covered, whatever its outcome (inquiries left
+ * out). On a charge that paid several
  * orders (a Mercur cart), Stripe's dispute fee is put on those orders only
  * when the disputes covered the whole charge — a partial dispute does not say
  * which order was disputed (operator answer 2026-10-07: the vendor whose

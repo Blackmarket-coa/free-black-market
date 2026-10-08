@@ -28,9 +28,10 @@ const sum = (items: Array<{ amount: number }>) => Math.round(items.reduce((s, i)
  *     The 180 days run from when the fee was recorded (the leg's own
  *     `created_at`), which can trail the chargeback, so that is what it says.
  *
- * Both are taken from the next sales before any payout, and anything unrepaid
- * 180 days after the refund is forgiven (backend
- * CARD_PROCESSING_WRITE_OFF_DAYS): it leaves the amount owed and is listed as
+ * All three are taken from the next sales before any payout, and anything
+ * unrepaid 180 days after it was recorded is forgiven (backend
+ * CARD_PROCESSING_WRITE_OFF_DAYS; for card processing and refunds that is the
+ * refund, for a chargeback fee the fee): it leaves the amount owed and is listed as
  * forgiven, so a vendor who sees the total drop knows why. Nothing renders
  * when nothing is owed or forgiven.
  */

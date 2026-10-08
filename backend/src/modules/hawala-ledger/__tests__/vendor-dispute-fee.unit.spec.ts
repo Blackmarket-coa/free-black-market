@@ -3,16 +3,22 @@ import {
   VENDOR_DISPUTE_FEE_LEG,
   VENDOR_RECEIVABLE_ACCOUNT_TYPE,
   VENDOR_RECEIVABLE_OWNER_ID,
+  VENDOR_REFUND_RECOVERY_LEG,
+  VENDOR_REFUND_SHORTFALL_LEG,
+  RECEIVABLE_LEG_TAGS,
   VendorReceivableLegError,
+  assertReceivableLegTagAllowed,
   assertVendorReceivableLeg,
 } from "../vendor-receivable"
 import {
   CARD_PROCESSING_ACCOUNT_TYPE,
   CARD_PROCESSING_OWNER_ID,
+  CARD_PROCESSING_RECOVERY_LEG,
+  CARD_PROCESSING_SHORTFALL_LEG,
   computeCardProcessingReceivable,
   receivableShortfallKind,
 } from "../card-processing"
-import { disputeFeeCents } from "../../../lib/card-stripe-sync"
+import { disputeFeeCents, largestChargebackCents } from "../../../lib/card-stripe-sync"
 import { allocateCents } from "../../../lib/card-dispute-fee"
 
 /**
@@ -95,6 +101,32 @@ describe("the dispute-fee leg out of the vendor receivable", () => {
   })
 })
 
+describe("every receivable leg is internal-only (what the admin manual-transfer route forwards cannot write one)", () => {
+  it("the reserved tags are exactly the five receivable tags (two spelled out to avoid an import cycle)", () => {
+    expect([...RECEIVABLE_LEG_TAGS].sort()).toEqual(
+      [
+        CARD_PROCESSING_SHORTFALL_LEG,
+        CARD_PROCESSING_RECOVERY_LEG,
+        VENDOR_REFUND_SHORTFALL_LEG,
+        VENDOR_REFUND_RECOVERY_LEG,
+        VENDOR_DISPUTE_FEE_LEG,
+      ].sort()
+    )
+  })
+
+  it.each([...RECEIVABLE_LEG_TAGS])("refuses a %s leg without the internal marker, and admits it with", (tag) => {
+    const leg = { entry_type: "ADJUSTMENT", metadata: { leg: tag } }
+    expect(() => assertReceivableLegTagAllowed(leg)).toThrow(VendorReceivableLegError)
+    expect(() => assertReceivableLegTagAllowed({ ...leg, receivable_leg: false })).toThrow(VendorReceivableLegError)
+    expect(() => assertReceivableLegTagAllowed({ ...leg, receivable_leg: true })).not.toThrow()
+  })
+
+  it("is no business of any other leg", () => {
+    expect(() => assertReceivableLegTagAllowed({ entry_type: "TRANSFER" })).not.toThrow()
+    expect(() => assertReceivableLegTagAllowed({ entry_type: "FEE", metadata: { leg: "card_processing_estimate" } })).not.toThrow()
+  })
+})
+
 describe("a dispute fee counts as owed, by its own kind", () => {
   const row = (over: Record<string, unknown>) => ({
     id: "e1",
@@ -161,6 +193,21 @@ describe("disputeFeeCents: what Stripe kept, read off each dispute's balance tra
 
   it("is never below zero", () => {
     expect(disputeFeeCents([{ balance_transactions: [{ fee: -1500, currency: "usd" }] }]).cents).toBe(0)
+  })
+})
+
+describe("largestChargebackCents: whether one chargeback covered the whole charge", () => {
+  it("is the largest single chargeback, never a sum", () => {
+    expect(largestChargebackCents([{ status: "lost", amount: 4000 }, { status: "needs_response", amount: 3000 }])).toBe(4000)
+  })
+
+  it("leaves inquiries out", () => {
+    expect(largestChargebackCents([{ status: "warning_needs_response", amount: 7000 }, { status: "lost", amount: 3000 }])).toBe(3000)
+    expect(largestChargebackCents([{ status: "warning_closed", amount: 7000 }])).toBe(0)
+  })
+
+  it("counts a won chargeback (the fee was still taken)", () => {
+    expect(largestChargebackCents([{ status: "won", amount: 7000 }])).toBe(7000)
   })
 })
 

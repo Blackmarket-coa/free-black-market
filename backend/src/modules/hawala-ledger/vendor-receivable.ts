@@ -79,13 +79,19 @@
  *   - Only FBM's own code can write it. Because the leg carries no
  *     `order_id`, the order and charge are named in a dedicated top-level
  *     `createTransfer` field (`vendor_dispute_fee`) that no HTTP route
- *     forwards. The admin manual-transfer route passes caller-supplied
- *     metadata and references through to createTransfer, so a tag in metadata
- *     alone would let a request mint an unbounded receivable into the
- *     card-processing account. The other two shapes are unreachable from that
- *     route for the same reason: each needs an `order_id` it does not forward.
- *     A leg carrying the dispute-fee tag without that field is refused
- *     whatever its accounts.
+ *     forwards, and must match what the leg names.
+ *
+ * Every receivable leg is internal-only (`assertReceivableLegTagAllowed`).
+ * The admin manual-transfer route (`POST /admin/hawala/transfers`) passes
+ * caller-supplied metadata and references through to `createTransfer`, and
+ * a receivable is recognised by its `metadata.leg` tag. So with a tag alone,
+ * a request could have recorded a debt against any vendor — collected from
+ * their next earnings and payouts — or repaid one, or minted a dispute fee.
+ * Each of the five receivable tags (the two shortfall tags, the two recovery
+ * tags, the dispute fee) is therefore refused unless the caller passes the
+ * top-level `receivable_leg: true`, which only the ledger service's own
+ * shortfall, recovery and dispute-fee writers set and no HTTP route
+ * forwards. Found by the adversarial review of SD-44.
  */
 
 export const VENDOR_RECEIVABLE_ACCOUNT_TYPE = "VENDOR_RECEIVABLE"
@@ -100,6 +106,39 @@ export const VENDOR_DISPUTE_FEE_LEG = "vendor_dispute_fee"
  * unit test pins it to CARD_PROCESSING_ACCOUNT_TYPE / CARD_PROCESSING_OWNER_ID.
  */
 export const DISPUTE_FEE_SINK = { account_type: "PLATFORM_FEE", owner_id: "processing" } as const
+
+/**
+ * Every `metadata.leg` tag that records or repays a debt a vendor owes. The
+ * two card-processing tags are spelled out (the import-cycle reason above);
+ * a unit test pins them to `./card-processing.ts`.
+ */
+export const RECEIVABLE_LEG_TAGS: ReadonlySet<string> = new Set([
+  "card_processing_vendor_shortfall",
+  "card_processing_vendor_recovery",
+  VENDOR_REFUND_SHORTFALL_LEG,
+  VENDOR_REFUND_RECOVERY_LEG,
+  VENDOR_DISPUTE_FEE_LEG,
+])
+
+/**
+ * Refuse a receivable leg written by anything but the ledger service's own
+ * writers (`receivable_leg: true`, a top-level `createTransfer` field no HTTP
+ * route forwards). Called by `createTransfer` before anything is written,
+ * whatever the leg's accounts.
+ */
+export function assertReceivableLegTagAllowed(leg: {
+  entry_type?: string
+  metadata?: unknown
+  receivable_leg?: boolean | null
+}): void {
+  const tag = legTag(leg.metadata)
+  if (typeof tag === "string" && RECEIVABLE_LEG_TAGS.has(tag) && leg.receivable_leg !== true) {
+    throw new VendorReceivableLegError(
+      `Receivable leg refused: a "${tag}" leg is written only by the ledger's own refund, recovery and dispute-fee paths`,
+      { entry_type: leg.entry_type ?? null, leg: tag }
+    )
+  }
+}
 
 export class VendorReceivableLegError extends Error {
   constructor(message: string, public readonly details: Record<string, unknown>) {

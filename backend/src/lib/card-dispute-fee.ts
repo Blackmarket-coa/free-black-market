@@ -21,7 +21,7 @@ type Container = { resolve: (key: string) => any }
  *   1. Every charge on the order's payment collection with a fee recorded
  *      (`hawala_card_charge_state.dispute_fee_cents`, re-read from Stripe).
  *   2. The order's share: all of it on a single-order collection. On a
- *      Mercur cart only when the charge's disputes covered the WHOLE charge
+ *      Mercur cart only when one chargeback covered the WHOLE charge
  *      (`disputed_cents >= amount_cents`): every order on it was disputed,
  *      so each owes in proportion to its authorised amount on its split row
  *      (largest remainder, ties to the lower order id, so the shares always

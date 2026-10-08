@@ -440,7 +440,7 @@ medusaIntegrationTestRunner({
         expect((await owed(s2.id)).total_cents).toBe(0)
       })
 
-      it("a shared collection with no split rows is put on no seller", async () => {
+      it("a shared collection with no split rows never settles, so no fee is posted on it", async () => {
         const [s1, s2] = [await makeSeller(), await makeSeller()]
         const [o1, o2] = [await makeOrder(s1.id, 40), await makeOrder(s2.id, 30)]
         const { paymentId } = await pay([o1.id, o2.id], 70, { capture: true })
@@ -470,6 +470,41 @@ medusaIntegrationTestRunner({
         ).rejects.toThrow(VendorReceivableLegError)
         expect(cents((await hawala().retrieveLedgerAccount(processing.id)).balance)).toBe(cents(processing.balance))
         expect(await feeLegs(order.id)).toEqual([])
+      })
+
+      it("no receivable can be written through caller-supplied metadata: a forged processing debt, recovery or fee is refused", async () => {
+        const { seller, order, pi } = await cardOrder()
+        // A real dispute fee first, so the processing account holds money and
+        // a forged debt out of it would not simply fail for lack of balance.
+        const d = stripeSays(pi, 40, { dispute_open_cents: 4000, dispute_fee_cents: 1500 })
+        await syncCardChargeFromStripe(container(), d.chargeId, { fetchCharge: d.fetchCharge })
+        const earnings = await sellerEarnings(seller.id)
+        const processing = await hawala().getOrCreateCardProcessingAccount()
+        expect(cents(processing.available_balance)).toBeGreaterThanOrEqual(1500)
+        const receivable = await hawala().getOrCreateVendorReceivableAccount()
+        const escrow = await hawala().getOrCreateSystemAccount("ESCROW")
+        const before = await hawala().getCardProcessingReceivable(earnings.id)
+        const forged = [
+          // A card-processing debt against an innocent vendor, out of the processing account.
+          { debit_account_id: processing.id, credit_account_id: escrow.id, metadata: { leg: "card_processing_vendor_shortfall", owed_by_account_id: earnings.id } },
+          // A repayment the vendor never made.
+          { debit_account_id: earnings.id, credit_account_id: processing.id, metadata: { leg: "card_processing_vendor_recovery", recovers_entry_id: "x" } },
+          // A refund debt.
+          { debit_account_id: receivable.id, credit_account_id: escrow.id, metadata: { leg: "vendor_refund_shortfall", owed_by_account_id: earnings.id } },
+        ]
+        for (const f of forged) {
+          await expect(
+            hawala().createTransfer({
+              ...f,
+              amount: 0.01,
+              entry_type: "ADJUSTMENT",
+              reference_type: "ORDER",
+              reference_id: order.id,
+              idempotency_key: `forged-${f.metadata.leg}-${order.id}`,
+            })
+          ).rejects.toThrow(VendorReceivableLegError)
+        }
+        expect((await hawala().getCardProcessingReceivable(earnings.id)).total_cents).toBe(before.total_cents)
       })
 
       it("a charge with no dispute fee owes nothing", async () => {

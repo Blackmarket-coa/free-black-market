@@ -72,6 +72,7 @@ import {
   VENDOR_RECEIVABLE_OWNER_ID,
   VENDOR_DISPUTE_FEE_LEG,
   VENDOR_REFUND_SHORTFALL_LEG,
+  assertReceivableLegTagAllowed,
   assertVendorReceivableLeg,
   type VendorReceivableSide,
 } from "./vendor-receivable"
@@ -496,6 +497,7 @@ class HawalaLedgerModuleService extends MedusaService({
           ...(target.order_id ? { reference_id: target.order_id } : {}),
           parent_entry_id: target.shortfall_id,
           correlation_id: args.correlationId,
+          receivable_leg: true,
           idempotency_key: `${isDisputeFee ? "df" : isRefund ? "vr" : "cp"}-recovery-${target.shortfall_id}-${target.next_seq}`,
           description:
             args.source === "payout"
@@ -582,6 +584,7 @@ class HawalaLedgerModuleService extends MedusaService({
       reference_type: "ORDER",
       reference_id: args.orderId,
       vendor_dispute_fee: { order_id: args.orderId, stripe_charge_id: args.stripeChargeId },
+      receivable_leg: true,
       idempotency_key: `dispute-fee-${args.stripeChargeId}-${args.orderId}${tag}-to-${args.toCents}-${args.seq}`,
       description: `Chargeback fee on order ${args.orderId}${tag} (charge ${args.stripeChargeId}): Stripe's dispute fee, owed by the vendor`,
       metadata: {
@@ -1433,6 +1436,10 @@ class HawalaLedgerModuleService extends MedusaService({
     // dispute-fee leg is for. No HTTP route forwards it, which is what keeps
     // that leg shape out of reach of caller-supplied metadata.
     vendor_dispute_fee?: { order_id: string; stripe_charge_id: string }
+    // Internal only: set by the ledger's own receivable writers (refund
+    // shortfalls, recoveries, dispute fees). A leg tagged as a receivable
+    // without it is refused (`./vendor-receivable.ts`).
+    receivable_leg?: true
     // Optional pg connection. When supplied, balance mutations use the
     // atomic CAS UPDATE (updateBalancesAtomic) instead of the legacy
     // read-modify-write updateBalances. Additive/non-breaking: callers
@@ -1509,6 +1516,15 @@ class HawalaLedgerModuleService extends MedusaService({
       cart_id: (data.metadata as { cart_id?: string } | undefined)?.cart_id ?? null,
       debit_account_id: data.debit_account_id,
       credit_account_id: data.credit_account_id,
+    })
+
+    // Receivable legs are internal-only (`./vendor-receivable.ts`): a leg
+    // tagged as recording or repaying a vendor's debt is refused unless the
+    // ledger's own writer set `receivable_leg`. Before any entry.
+    assertReceivableLegTagAllowed({
+      entry_type: data.entry_type,
+      metadata: data.metadata,
+      receivable_leg: data.receivable_leg ?? null,
     })
 
     // Card clearing (SD-36, `./card-clearing.ts`): the one account allowed
@@ -2660,6 +2676,7 @@ class HawalaLedgerModuleService extends MedusaService({
         order_id: data.order_id,
         description: `${description} - card processing the vendor could not absorb${legTag} (owed by the vendor)`,
         idempotency_key: `${idempotencyKey}-processing-shortfall${legTag}`,
+        receivable_leg: true,
         correlation_id: idempotencyKey,
         metadata: {
           leg: CARD_PROCESSING_SHORTFALL_LEG,
@@ -2693,6 +2710,7 @@ class HawalaLedgerModuleService extends MedusaService({
         order_id: data.order_id,
         description: `${description} - refunded after the vendor was paid out${legTag} (owed by the vendor)`,
         idempotency_key: `${idempotencyKey}-refund-shortfall${legTag}`,
+        receivable_leg: true,
         correlation_id: idempotencyKey,
         metadata: {
           leg: VENDOR_REFUND_SHORTFALL_LEG,

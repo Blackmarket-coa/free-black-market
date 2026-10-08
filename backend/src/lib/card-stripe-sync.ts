@@ -67,7 +67,13 @@ export type ChargeLedgerState = {
   dispute_open_cents: number
   /** Stripe's dispute fees on the charge, net, in USD cents (`disputeFeeCents`). */
   dispute_fee_cents?: number
-  /** What every dispute on the charge covered, whatever its outcome, in cents. */
+  /**
+   * The largest amount any ONE chargeback on the charge covered, whatever its
+   * outcome, in cents; inquiries (`warning_*`) are left out. On a shared cart
+   * the fee is put on the orders only when this reaches the charge amount —
+   * a sum would let an inquiry, or two partial chargebacks, pass for a
+   * whole-charge one.
+   */
   disputed_cents?: number
 }
 
@@ -91,6 +97,8 @@ export function chargeIdOfStripeEvent(event: { type?: string; data?: { object?: 
 }
 
 type DisputeLike = {
+  status?: string | null
+  amount?: number | null
   balance_transactions?: Array<{ fee?: number | null; currency?: string | null } | null> | null
 }
 
@@ -121,6 +129,19 @@ export function disputeFeeCents(disputes: DisputeLike[]): { cents: number; uncou
   return { cents: Math.max(0, Math.round(cents)), uncounted }
 }
 
+/**
+ * The largest amount any one chargeback covered (`disputed_cents`):
+ * inquiries (`warning_*` statuses) are left out, and disputes are not summed.
+ */
+export function largestChargebackCents(disputes: Array<{ status?: string | null; amount?: number | null }>): number {
+  let largest = 0
+  for (const d of disputes) {
+    if (String(d.status ?? "").startsWith("warning_")) continue
+    if (typeof d.amount === "number" && Number.isFinite(d.amount)) largest = Math.max(largest, d.amount)
+  }
+  return Math.max(0, Math.round(largest))
+}
+
 /** Stripe, read with the same key FBM's Stripe payment provider uses. */
 export function stripeChargeFetcher(apiKey = process.env.STRIPE_API_KEY ?? ""): ChargeFetcher {
   return async (chargeId) => {
@@ -128,12 +149,10 @@ export function stripeChargeFetcher(apiKey = process.env.STRIPE_API_KEY ?? ""): 
     const charge = await stripe.charges.retrieve(chargeId)
     let lost = 0
     let open = 0
-    let disputed = 0
     const disputes: DisputeLike[] = []
     for await (const dispute of stripe.disputes.list({ charge: chargeId, limit: 100 })) {
       if (dispute.status === "lost") lost += dispute.amount
       else if (OPEN_DISPUTE_STATUSES.has(dispute.status)) open += dispute.amount
-      disputed += dispute.amount
       disputes.push(dispute)
     }
     const fee = disputeFeeCents(disputes)
@@ -150,7 +169,7 @@ export function stripeChargeFetcher(apiKey = process.env.STRIPE_API_KEY ?? ""): 
       dispute_lost_cents: lost,
       dispute_open_cents: open,
       dispute_fee_cents: fee.cents,
-      disputed_cents: disputed,
+      disputed_cents: largestChargebackCents(disputes),
     }
   }
 }
