@@ -22,13 +22,16 @@ const sum = (items: Array<{ amount: number }>) => Math.round(items.reduce((s, i)
  *     claims Stripe kept a fee.
  *   - Refunds owed: an order refunded after the vendor's earnings for it were
  *     paid out (SD-40).
- *   - Chargeback fees owed: the fee Stripe charges when a cardholder disputes
- *     an order (operator answer 2026-10-07). Stripe keeps it whether the
- *     dispute is won or lost, so the text never says the vendor lost.
+ *   - Chargeback fees owed: the fee Stripe charges when a cardholder's bank
+ *     opens a chargeback on an order (operator answer 2026-10-07). Stripe does
+ *     not return it even on a win, so the text never says the vendor lost.
+ *     The 180 days run from when the fee was recorded (the leg's own
+ *     `created_at`), which can trail the chargeback, so that is what it says.
  *
- * Both are taken from the next sales before any payout, and anything unrepaid
- * 180 days after the refund is forgiven (backend
- * CARD_PROCESSING_WRITE_OFF_DAYS): it leaves the amount owed and is listed as
+ * All three are taken from the next sales before any payout, and anything
+ * unrepaid 180 days after it was recorded is forgiven (backend
+ * CARD_PROCESSING_WRITE_OFF_DAYS; for card processing and refunds that is the
+ * refund, for a chargeback fee the fee): it leaves the amount owed and is listed as
  * forgiven, so a vendor who sees the total drop knows why. Nothing renders
  * when nothing is owed or forgiven.
  */
@@ -104,10 +107,10 @@ export const CardProcessingOwed = ({ owed, currency }: { owed: Owed; currency: s
             <Text className="font-semibold">{formatCurrency(feeOwed, currency)}</Text>
           </div>
           <Text className="text-sm text-ui-fg-muted mt-2">
-            This is taken from your next sales, before any payout. Anything still owed 180 days after the chargeback is forgiven.
+            This is taken from your next sales, before any payout. Anything still owed 180 days after the fee was recorded is forgiven.
           </Text>
           <Text className="text-sm text-ui-fg-muted mt-1">
-            {`Why: a cardholder disputed ${feeOrders.length === 1 ? "an order" : "orders"} of yours with their bank. Stripe charges a fee for every dispute and keeps it whether the dispute is won or lost.`}
+            {`Why: a cardholder's bank opened a chargeback on ${feeOrders.length === 1 ? "an order" : "orders"} of yours. Stripe charges a fee when a chargeback is opened and does not return it, even if the dispute is won.`}
             {feeOrders.length > 0 ? ` Disputed: ${feeOrders.join(", ")}.` : ""}
           </Text>
         </div>
@@ -124,7 +127,7 @@ export const CardProcessingOwed = ({ owed, currency }: { owed: Owed; currency: s
       ) : null}
       {feeForgiven > 0 ? (
         <Text className={`text-sm text-ui-fg-muted${gap()}`}>
-          {`Forgiven: ${formatCurrency(feeForgiven, currency)} of chargeback fees went unrepaid for 180 days after the chargeback, so you no longer owe it and it will not be taken from your sales.`}
+          {`Forgiven: ${formatCurrency(feeForgiven, currency)} of chargeback fees went unrepaid for 180 days after the fee was recorded, so you no longer owe it and it will not be taken from your sales.`}
         </Text>
       ) : null}
     </div>

@@ -3,16 +3,22 @@ import {
   VENDOR_DISPUTE_FEE_LEG,
   VENDOR_RECEIVABLE_ACCOUNT_TYPE,
   VENDOR_RECEIVABLE_OWNER_ID,
+  VENDOR_REFUND_RECOVERY_LEG,
+  VENDOR_REFUND_SHORTFALL_LEG,
+  RECEIVABLE_LEG_TAGS,
   VendorReceivableLegError,
+  assertReceivableLegTagAllowed,
   assertVendorReceivableLeg,
 } from "../vendor-receivable"
 import {
   CARD_PROCESSING_ACCOUNT_TYPE,
   CARD_PROCESSING_OWNER_ID,
+  CARD_PROCESSING_RECOVERY_LEG,
+  CARD_PROCESSING_SHORTFALL_LEG,
   computeCardProcessingReceivable,
   receivableShortfallKind,
 } from "../card-processing"
-import { disputeFeeCents } from "../../../lib/card-stripe-sync"
+import { disputeFeeCents, largestChargebackCents } from "../../../lib/card-stripe-sync"
 import { allocateCents } from "../../../lib/card-dispute-fee"
 
 /**
@@ -44,7 +50,9 @@ const fee = {
   reference_type: "ORDER",
   reference_id: "order_1",
   metadata: { leg: VENDOR_DISPUTE_FEE_LEG, stripe_charge_id: "ch_1" },
+  vendor_dispute_fee: { order_id: "order_1", stripe_charge_id: "ch_1" },
 }
+const seller = { id: "acc-sel", account_type: "SELLER_EARNINGS", owner_type: "SELLER", owner_id: "sel_1", currency_code: "USD" }
 
 describe("the dispute-fee leg out of the vendor receivable", () => {
   it("its sink is the card-processing account (spelled out to avoid an import cycle)", () => {
@@ -63,15 +71,59 @@ describe("the dispute-fee leg out of the vendor receivable", () => {
     ["referencing something other than an order", { ...fee, reference_type: "MANUAL" }, processing, /must name its order/],
     ["naming no charge", { ...fee, metadata: { leg: VENDOR_DISPUTE_FEE_LEG } }, processing, /disputed charge/],
     ["as anything but an ADJUSTMENT", { ...fee, entry_type: "TRANSFER" }, processing, /only an ADJUSTMENT/],
+    ["without the internal-only field (caller-supplied metadata alone)", { ...fee, vendor_dispute_fee: undefined }, processing, /only by FBM's own dispute-fee path/],
+    ["for a different order than it names", { ...fee, vendor_dispute_fee: { order_id: "order_2", stripe_charge_id: "ch_1" } }, processing, /must match/],
+    ["for a different charge than it names", { ...fee, vendor_dispute_fee: { order_id: "order_1", stripe_charge_id: "ch_2" } }, processing, /must match/],
   ])("refuses it %s", (_why, leg, other, message) => {
     expect(() => assertVendorReceivableLeg(leg, receivable, other)).toThrow(VendorReceivableLegError)
     expect(() => assertVendorReceivableLeg(leg, receivable, other)).toThrow(message)
+  })
+
+  it("refuses the dispute-fee tag on a leg that does not touch the receivable, without the internal field", () => {
+    expect(() =>
+      assertVendorReceivableLeg({ ...fee, vendor_dispute_fee: undefined }, processing, seller)
+    ).toThrow(/only by FBM's own dispute-fee path/)
+  })
+
+  it("refuses the internal field on anything but a dispute-fee leg out of the receivable", () => {
+    expect(() =>
+      assertVendorReceivableLeg({ ...fee, metadata: { leg: "something_else" } }, processing, seller)
+    ).toThrow(/must come out of the vendor receivable/)
+    expect(() =>
+      assertVendorReceivableLeg({ ...fee, metadata: { leg: "vendor_refund_recovery" } }, seller, receivable)
+    ).toThrow(/must leave the vendor receivable, tagged as one/)
   })
 
   it("refuses a non-USD card-processing account", () => {
     expect(() => assertVendorReceivableLeg(fee, receivable, { ...processing, currency_code: "CCR" })).toThrow(
       /card-processing account/
     )
+  })
+})
+
+describe("every receivable leg is internal-only (what the admin manual-transfer route forwards cannot write one)", () => {
+  it("the reserved tags are exactly the five receivable tags (two spelled out to avoid an import cycle)", () => {
+    expect([...RECEIVABLE_LEG_TAGS].sort()).toEqual(
+      [
+        CARD_PROCESSING_SHORTFALL_LEG,
+        CARD_PROCESSING_RECOVERY_LEG,
+        VENDOR_REFUND_SHORTFALL_LEG,
+        VENDOR_REFUND_RECOVERY_LEG,
+        VENDOR_DISPUTE_FEE_LEG,
+      ].sort()
+    )
+  })
+
+  it.each([...RECEIVABLE_LEG_TAGS])("refuses a %s leg without the internal marker, and admits it with", (tag) => {
+    const leg = { entry_type: "ADJUSTMENT", metadata: { leg: tag } }
+    expect(() => assertReceivableLegTagAllowed(leg)).toThrow(VendorReceivableLegError)
+    expect(() => assertReceivableLegTagAllowed({ ...leg, receivable_leg: false })).toThrow(VendorReceivableLegError)
+    expect(() => assertReceivableLegTagAllowed({ ...leg, receivable_leg: true })).not.toThrow()
+  })
+
+  it("is no business of any other leg", () => {
+    expect(() => assertReceivableLegTagAllowed({ entry_type: "TRANSFER" })).not.toThrow()
+    expect(() => assertReceivableLegTagAllowed({ entry_type: "FEE", metadata: { leg: "card_processing_estimate" } })).not.toThrow()
   })
 })
 
@@ -141,6 +193,21 @@ describe("disputeFeeCents: what Stripe kept, read off each dispute's balance tra
 
   it("is never below zero", () => {
     expect(disputeFeeCents([{ balance_transactions: [{ fee: -1500, currency: "usd" }] }]).cents).toBe(0)
+  })
+})
+
+describe("largestChargebackCents: whether one chargeback covered the whole charge", () => {
+  it("is the largest single chargeback, never a sum", () => {
+    expect(largestChargebackCents([{ status: "lost", amount: 4000 }, { status: "needs_response", amount: 3000 }])).toBe(4000)
+  })
+
+  it("leaves inquiries out", () => {
+    expect(largestChargebackCents([{ status: "warning_needs_response", amount: 7000 }, { status: "lost", amount: 3000 }])).toBe(3000)
+    expect(largestChargebackCents([{ status: "warning_closed", amount: 7000 }])).toBe(0)
+  })
+
+  it("counts a won chargeback (the fee was still taken)", () => {
+    expect(largestChargebackCents([{ status: "won", amount: 7000 }])).toBe(7000)
   })
 })
 

@@ -2,7 +2,11 @@ import { renderToStaticMarkup } from "react-dom/server"
 import { describe, expect, it } from "vitest"
 import { CardProcessingOwed } from "./card-processing-owed"
 
-const text = (html: string) => html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim()
+// renderToStaticMarkup escapes text ("'" becomes "&#x27;"), so entities are
+// decoded before matching: assertions compare what the vendor reads.
+const decode = (s: string) =>
+  s.replace(/&#x27;|&#39;/g, "'").replace(/&quot;/g, '"').replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&")
+const text = (html: string) => decode(html.replace(/<[^>]+>/g, " ")).replace(/\s+/g, " ").trim()
 
 describe("CardProcessingOwed", () => {
   it("says what is owed, that it comes from the next sales before payout, and why", () => {
@@ -44,9 +48,9 @@ describe("CardProcessingOwed", () => {
     )
     expect(out).toContain("Chargeback fees owed $15.00")
     expect(out).toContain("This is taken from your next sales, before any payout.")
-    expect(out).toContain("Anything still owed 180 days after the chargeback is forgiven.")
+    expect(out).toContain("Anything still owed 180 days after the fee was recorded is forgiven.")
     expect(out).toContain(
-      "Why: a cardholder disputed an order of yours with their bank. Stripe charges a fee for every dispute and keeps it whether the dispute is won or lost."
+      "Why: a cardholder's bank opened a chargeback on an order of yours. Stripe charges a fee when a chargeback is opened and does not return it, even if the dispute is won."
     )
     expect(out).toContain("Disputed: order_9.")
     expect(out).not.toContain("Card processing owed")

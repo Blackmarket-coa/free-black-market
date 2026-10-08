@@ -39,7 +39,13 @@
  * seller account it is owed by. That leg is the record of a receivable from
  * the vendor: the processing leg itself stays COMPLETED (Stripe did keep the
  * fee), and the processing account's balance reads as processing actually
- * borne by vendors.
+ * borne by vendors — plus, since SD-44, Stripe dispute fees recorded as owed
+ * by vendors (`./vendor-receivable.ts`, funded from the vendor receivable
+ * whether or not the vendor has repaid them yet, and forgiven ones
+ * included). It is not "processing alone" any more. A shortfall leg out of
+ * it is still capped per order by what that order retained (`processRefund`),
+ * not by the account's balance; the balance check is only a backstop, and
+ * dispute fees make that backstop looser, never the per-order cap.
  *
  * The vendor-recovery leg (operator answer 2026-10-06, item 20: "recover from
  * the vendor's next earnings automatically, shown on their statement"; item

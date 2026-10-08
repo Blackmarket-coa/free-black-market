@@ -20,21 +20,32 @@ type Container = { resolve: (key: string) => any }
  *
  *   1. Every charge on the order's payment collection with a fee recorded
  *      (`hawala_card_charge_state.dispute_fee_cents`, re-read from Stripe).
- *   2. The order's share: all of it on a single-order collection; on a
- *      Mercur cart, in proportion to each order's authorised amount on its
- *      split row (largest remainder, ties to the lower order id, so the
- *      shares always sum to the fee to the cent). A shared collection with
- *      no split rows cannot be attributed: logged, nothing posted.
+ *   2. The order's share: all of it on a single-order collection. On a
+ *      Mercur cart only when one chargeback covered the WHOLE charge
+ *      (`disputed_cents >= amount_cents`): every order on it was disputed,
+ *      so each owes in proportion to its authorised amount on its split row
+ *      (largest remainder, ties to the lower order id, so the shares always
+ *      sum to the fee to the cent). A partial dispute on a cart says nothing
+ *      about WHICH order was disputed, and the ruling is that the vendor
+ *      whose order was disputed owes it — so nothing is put on any seller,
+ *      and it is logged for a person (BMC bears it unless someone assigns
+ *      it; SD-44). A shared collection with no split rows cannot be
+ *      attributed either: logged, nothing posted.
  *   3. Within the order, owed by its seller earnings account(s): split the
  *      same way across a consignment's consignor / vendor legs.
  *   4. Posted as the difference between that share and what is already
- *      recorded for it, so repeats post nothing; a share that went DOWN is
- *      logged for a person, never reversed here.
+ *      recorded (COMPLETED, or PENDING — in flight, never posted twice), so
+ *      repeats post nothing; a share that went DOWN is logged for a person,
+ *      never reversed here. A FAILED attempt counts for nothing and is
+ *      retried under the next sequence number (`recordDisputeFee`).
  *
- * Never throws; returns the cents it posted.
+ * Never throws; returns the cents it posted. One charge failing does not
+ * stop the others.
  */
 
 const SELLER_SIDE_KEY = /^order-payment-(.+)-(seller|consignor|vendor)$/
+/** A fee leg still PENDING after this long never finished: logged for a person, never re-posted. */
+const STUCK_PENDING_MS = 10 * 60 * 1000
 
 /** Split `total` cents over integer weights: floor, then the largest remainders (ties by key). */
 export function allocateCents(total: number, weights: Array<{ key: string; weight: number }>): Map<string, number> {
@@ -61,7 +72,7 @@ async function orderWeights(
   container: Container,
   collectionId: string,
   orderId: string
-): Promise<Array<{ key: string; weight: number }> | null> {
+): Promise<{ weights: Array<{ key: string; weight: number }>; shared: boolean } | null> {
   const query = container.resolve(ContainerRegistrationKeys.QUERY)
   const { data: splits } = await query.graph({
     entity: "split_order_payment",
@@ -71,9 +82,15 @@ async function orderWeights(
   const rows = (splits as Array<{ authorized_amount?: unknown; order?: { id?: string } | null }>)
     .filter((s) => typeof s.order?.id === "string")
     .map((s) => ({ key: s.order!.id as string, weight: toCents(Number(s.authorized_amount) || 0) }))
-  if (rows.length > 0) return rows
   const sharers = await ordersForPaymentCollection(container, collectionId)
-  return sharers.length === 1 && sharers[0] === orderId ? [{ key: orderId, weight: 1 }] : null
+  if (rows.length > 0) {
+    // Every order on the collection must have a split row, or the shares
+    // would be computed over only part of the cart.
+    const withRows = new Set(rows.map((r) => r.key))
+    if (sharers.some((id) => !withRows.has(id))) return null
+    return { weights: rows, shared: rows.length > 1 }
+  }
+  return sharers.length === 1 && sharers[0] === orderId ? { weights: [{ key: orderId, weight: 1 }], shared: false } : null
 }
 
 export async function postDisputeFees(
@@ -90,8 +107,8 @@ export async function postDisputeFees(
     )
     if (charges.length === 0) return 0
 
-    const weights = await orderWeights(container, collectionId, order.id)
-    if (!weights) {
+    const attribution = await orderWeights(container, collectionId, order.id)
+    if (!attribution) {
       log.error(
         `[Hawala] Card order ${order.id}: a dispute fee on payment collection ${collectionId} cannot be attributed ` +
           `(the collection is shared with no split payment rows); not posted to any seller — needs a person`
@@ -122,41 +139,63 @@ export async function postDisputeFees(
             sellerLegs.map((l) => ({ key: l.tag, weight: l.cents }))
           )
 
-    const recorded = (await hawala.listLedgerEntries({ reference_id: order.id, entry_type: "ADJUSTMENT" })).filter(
-      (e) => isVendorDisputeFeeLeg(e) && (e.status === "COMPLETED" || e.status === "PENDING")
+    const feeRows = (await hawala.listLedgerEntries({ reference_id: order.id, entry_type: "ADJUSTMENT" })).filter((e) =>
+      isVendorDisputeFeeLeg(e)
     )
     for (const charge of charges) {
-      if (String(charge.currency_code).toLowerCase() !== "usd") {
-        log.error(`[Hawala] Card order ${order.id}: charge ${charge.stripe_charge_id} is not USD; its dispute fee is not posted`)
-        continue
-      }
-      const orderShare = allocateCents(Number(charge.dispute_fee_cents), weights).get(order.id) ?? 0
-      for (const [tag, target] of legShares(orderShare)) {
-        const leg = sellerLegs.find((l) => l.tag === tag)!
-        const splitTag = sellerLegs.length > 1 ? tag : undefined
-        const already = recorded
-          .filter((e) => {
-            const m = (e.metadata ?? {}) as { stripe_charge_id?: unknown; split_leg?: unknown }
-            return m.stripe_charge_id === charge.stripe_charge_id && (m.split_leg ?? undefined) === splitTag
-          })
-          .reduce((s, e) => s + toCents(Number(e.amount)), 0)
-        if (target < already) {
+      try {
+        if (String(charge.currency_code).toLowerCase() !== "usd") {
+          log.error(`[Hawala] Card order ${order.id}: charge ${charge.stripe_charge_id} is not USD; its dispute fee is not posted`)
+          continue
+        }
+        if (attribution.shared && Number(charge.disputed_cents) < Number(charge.amount_cents)) {
           log.error(
-            `[Hawala] Card order ${order.id}: Stripe now reports less dispute fee on ${charge.stripe_charge_id} ` +
-              `(${target} cents) than the ledger recorded (${already}); not reversed — needs a person`
+            `[Hawala] Card order ${order.id}: the dispute on charge ${charge.stripe_charge_id} covers ` +
+              `${Number(charge.disputed_cents)} of ${Number(charge.amount_cents)} cents of a shared cart, so which order was ` +
+              `disputed is unknown; its fee is not put on any seller — needs a person`
           )
           continue
         }
-        if (target === already) continue
-        await hawala.recordDisputeFee({
-          orderId: order.id,
-          stripeChargeId: charge.stripe_charge_id,
-          owedByAccountId: leg.accountId,
-          amountCents: target - already,
-          toCents: target,
-          splitTag,
-        })
-        postedCents += target - already
+        const orderShare = allocateCents(Number(charge.dispute_fee_cents), attribution.weights).get(order.id) ?? 0
+        for (const [tag, target] of legShares(orderShare)) {
+          const leg = sellerLegs.find((l) => l.tag === tag)!
+          const splitTag = sellerLegs.length > 1 ? tag : undefined
+          const rows = feeRows.filter((e) => {
+            const m = (e.metadata ?? {}) as { stripe_charge_id?: unknown; split_leg?: unknown }
+            return m.stripe_charge_id === charge.stripe_charge_id && (m.split_leg ?? undefined) === splitTag
+          })
+          const live = rows.filter((e) => e.status === "COMPLETED" || e.status === "PENDING")
+          for (const p of live.filter((e) => e.status === "PENDING")) {
+            const age = Date.now() - new Date(p.created_at as unknown as string).getTime()
+            if (age > STUCK_PENDING_MS) {
+              log.error(`[Hawala] Card order ${order.id}: dispute-fee leg ${p.id} has been PENDING for ${Math.round(age / 60000)} min — needs a person`)
+            }
+          }
+          const already = live.reduce((sum, e) => sum + toCents(Number(e.amount)), 0)
+          if (target < already) {
+            log.error(
+              `[Hawala] Card order ${order.id}: Stripe now reports less dispute fee on ${charge.stripe_charge_id} ` +
+                `(${target} cents) than the ledger recorded (${already}); not reversed — needs a person`
+            )
+            continue
+          }
+          if (target === already) continue
+          await hawala.recordDisputeFee({
+            orderId: order.id,
+            stripeChargeId: charge.stripe_charge_id,
+            owedByAccountId: leg.accountId,
+            amountCents: target - already,
+            toCents: target,
+            seq: rows.length,
+            splitTag,
+          })
+          postedCents += target - already
+        }
+      } catch (error) {
+        log.error(
+          `[Hawala] Card order ${order.id}: could not post the dispute fee on ${charge.stripe_charge_id} (retried on the next run):`,
+          error
+        )
       }
     }
   } catch (error) {

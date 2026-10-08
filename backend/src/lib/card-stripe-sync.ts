@@ -67,6 +67,14 @@ export type ChargeLedgerState = {
   dispute_open_cents: number
   /** Stripe's dispute fees on the charge, net, in USD cents (`disputeFeeCents`). */
   dispute_fee_cents?: number
+  /**
+   * The largest amount any ONE chargeback on the charge covered, whatever its
+   * outcome, in cents; inquiries (`warning_*`) are left out. On a shared cart
+   * the fee is put on the orders only when this reaches the charge amount —
+   * a sum would let an inquiry, or two partial chargebacks, pass for a
+   * whole-charge one.
+   */
+  disputed_cents?: number
 }
 
 export type ChargeFetcher = (chargeId: string) => Promise<ChargeLedgerState>
@@ -89,6 +97,8 @@ export function chargeIdOfStripeEvent(event: { type?: string; data?: { object?: 
 }
 
 type DisputeLike = {
+  status?: string | null
+  amount?: number | null
   balance_transactions?: Array<{ fee?: number | null; currency?: string | null } | null> | null
 }
 
@@ -99,8 +109,9 @@ type DisputeLike = {
  * fee, so the sum is net). USD balance transactions only — FBM's Stripe
  * account settles in USD; anything else is not counted and the caller logs
  * it. Never below zero. The separate "dispute countered fee" Stripe takes when
- * a dispute is contested is NOT on the dispute's balance transactions and is
- * not counted here (SD-44).
+ * a dispute is contested is NOT on the dispute's balance transactions, so it
+ * is never counted here — and must not be: BMC bears it, never a vendor
+ * (operator answer 2026-10-07, SD-44).
  */
 export function disputeFeeCents(disputes: DisputeLike[]): { cents: number; uncounted: number } {
   let cents = 0
@@ -116,6 +127,19 @@ export function disputeFeeCents(disputes: DisputeLike[]): { cents: number; uncou
     }
   }
   return { cents: Math.max(0, Math.round(cents)), uncounted }
+}
+
+/**
+ * The largest amount any one chargeback covered (`disputed_cents`):
+ * inquiries (`warning_*` statuses) are left out, and disputes are not summed.
+ */
+export function largestChargebackCents(disputes: Array<{ status?: string | null; amount?: number | null }>): number {
+  let largest = 0
+  for (const d of disputes) {
+    if (String(d.status ?? "").startsWith("warning_")) continue
+    if (typeof d.amount === "number" && Number.isFinite(d.amount)) largest = Math.max(largest, d.amount)
+  }
+  return Math.max(0, Math.round(largest))
 }
 
 /** Stripe, read with the same key FBM's Stripe payment provider uses. */
@@ -145,6 +169,7 @@ export function stripeChargeFetcher(apiKey = process.env.STRIPE_API_KEY ?? ""): 
       dispute_lost_cents: lost,
       dispute_open_cents: open,
       dispute_fee_cents: fee.cents,
+      disputed_cents: largestChargebackCents(disputes),
     }
   }
 }
@@ -218,6 +243,7 @@ export async function syncCardChargeFromStripe(
       dispute_lost_cents: state.dispute_lost_cents,
       dispute_open_cents: state.dispute_open_cents,
       dispute_fee_cents: Math.max(0, Math.round(state.dispute_fee_cents ?? 0)),
+      disputed_cents: Math.max(0, Math.round(state.disputed_cents ?? 0)),
       synced_at: new Date(),
     }
     const [existing] = await hawala.listCardChargeStates({ stripe_charge_id: state.charge_id })

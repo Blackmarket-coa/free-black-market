@@ -197,15 +197,19 @@ medusaIntegrationTestRunner({
         await pay([next.id], 40, { capture: true })
         await placed(next.id)
         expect(cents((await receivable()).balance)).toBe(0)
-        await expect(
-          hawala().createTransfer({
-            debit_account_id: earnings.id,
-            credit_account_id: account.id,
-            amount: 0.01,
-            entry_type: "ADJUSTMENT",
-            metadata: { leg: VENDOR_REFUND_RECOVERY_LEG, recovers_entry_id: "x" },
-          })
-        ).rejects.toThrow(/Insufficient balance/)
+        const overRepay = {
+          debit_account_id: earnings.id,
+          credit_account_id: account.id,
+          amount: 0.01,
+          entry_type: "ADJUSTMENT",
+          metadata: { leg: VENDOR_REFUND_RECOVERY_LEG, recovers_entry_id: "x" },
+        }
+        // Written by anything but the ledger's own recovery path (what the
+        // admin manual-transfer route forwards): refused before any balance.
+        await expect(hawala().createTransfer(overRepay)).rejects.toBeInstanceOf(VendorReceivableLegError)
+        // As the ledger's own recovery path writes it: the balance update
+        // itself refuses taking the receivable above zero.
+        await expect(hawala().createTransfer({ ...overRepay, receivable_leg: true })).rejects.toThrow(/Insufficient balance/)
         expect(cents((await receivable()).balance)).toBe(0)
       })
     })

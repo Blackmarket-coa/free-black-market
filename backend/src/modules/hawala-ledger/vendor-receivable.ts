@@ -76,6 +76,22 @@
  *   - Repaid like a refund receivable: SELLER_EARNINGS -> VENDOR_RECEIVABLE,
  *     VENDOR_REFUND_RECOVERY_LEG, by the same recovery machinery, oldest
  *     first, and forgiven at the same age.
+ *   - Only FBM's own code can write it. Because the leg carries no
+ *     `order_id`, the order and charge are named in a dedicated top-level
+ *     `createTransfer` field (`vendor_dispute_fee`) that no HTTP route
+ *     forwards, and must match what the leg names.
+ *
+ * Every receivable leg is internal-only (`assertReceivableLegTagAllowed`).
+ * The admin manual-transfer route (`POST /admin/hawala/transfers`) passes
+ * caller-supplied metadata and references through to `createTransfer`, and
+ * a receivable is recognised by its `metadata.leg` tag. So with a tag alone,
+ * a request could have recorded a debt against any vendor — collected from
+ * their next earnings and payouts — or repaid one, or minted a dispute fee.
+ * Each of the five receivable tags (the two shortfall tags, the two recovery
+ * tags, the dispute fee) is therefore refused unless the caller passes the
+ * top-level `receivable_leg: true`, which only the ledger service's own
+ * shortfall, recovery and dispute-fee writers set and no HTTP route
+ * forwards. Found by the adversarial review of SD-44.
  */
 
 export const VENDOR_RECEIVABLE_ACCOUNT_TYPE = "VENDOR_RECEIVABLE"
@@ -90,6 +106,39 @@ export const VENDOR_DISPUTE_FEE_LEG = "vendor_dispute_fee"
  * unit test pins it to CARD_PROCESSING_ACCOUNT_TYPE / CARD_PROCESSING_OWNER_ID.
  */
 export const DISPUTE_FEE_SINK = { account_type: "PLATFORM_FEE", owner_id: "processing" } as const
+
+/**
+ * Every `metadata.leg` tag that records or repays a debt a vendor owes. The
+ * two card-processing tags are spelled out (the import-cycle reason above);
+ * a unit test pins them to `./card-processing.ts`.
+ */
+export const RECEIVABLE_LEG_TAGS: ReadonlySet<string> = new Set([
+  "card_processing_vendor_shortfall",
+  "card_processing_vendor_recovery",
+  VENDOR_REFUND_SHORTFALL_LEG,
+  VENDOR_REFUND_RECOVERY_LEG,
+  VENDOR_DISPUTE_FEE_LEG,
+])
+
+/**
+ * Refuse a receivable leg written by anything but the ledger service's own
+ * writers (`receivable_leg: true`, a top-level `createTransfer` field no HTTP
+ * route forwards). Called by `createTransfer` before anything is written,
+ * whatever the leg's accounts.
+ */
+export function assertReceivableLegTagAllowed(leg: {
+  entry_type?: string
+  metadata?: unknown
+  receivable_leg?: boolean | null
+}): void {
+  const tag = legTag(leg.metadata)
+  if (typeof tag === "string" && RECEIVABLE_LEG_TAGS.has(tag) && leg.receivable_leg !== true) {
+    throw new VendorReceivableLegError(
+      `Receivable leg refused: a "${tag}" leg is written only by the ledger's own refund, recovery and dispute-fee paths`,
+      { entry_type: leg.entry_type ?? null, leg: tag }
+    )
+  }
+}
 
 export class VendorReceivableLegError extends Error {
   constructor(message: string, public readonly details: Record<string, unknown>) {
@@ -145,13 +194,30 @@ export function assertVendorReceivableLeg(
     reference_type?: string | null
     reference_id?: string | null
     metadata?: unknown
+    /** The internal-only dispute-fee field (`createTransfer`'s `vendor_dispute_fee`). */
+    vendor_dispute_fee?: { order_id?: unknown; stripe_charge_id?: unknown } | null
   },
   debit: AccountLike,
   credit: AccountLike
 ): { side: VendorReceivableSide; receivableAccountId: string | null } {
   const debitIs = isVendorReceivableAccount(debit)
   const creditIs = isVendorReceivableAccount(credit)
-  if (!debitIs && !creditIs) return { side: "none", receivableAccountId: null }
+  if (legTag(leg.metadata) === VENDOR_DISPUTE_FEE_LEG && !leg.vendor_dispute_fee) {
+    throw new VendorReceivableLegError(
+      "Vendor-receivable leg refused: a dispute fee is written only by FBM's own dispute-fee path",
+      { entry_type: leg.entry_type, debit_account_id: debit.id, credit_account_id: credit.id }
+    )
+  }
+  if (!debitIs && !creditIs) {
+    if (leg.vendor_dispute_fee) {
+      throw new VendorReceivableLegError("Vendor-receivable leg refused: a dispute fee must come out of the vendor receivable", {
+        entry_type: leg.entry_type,
+        debit_account_id: debit.id,
+        credit_account_id: credit.id,
+      })
+    }
+    return { side: "none", receivableAccountId: null }
+  }
 
   const receivable = debitIs ? debit : credit
   const other = debitIs ? credit : debit
@@ -176,11 +242,18 @@ export function assertVendorReceivableLeg(
   }
   if (leg.entry_type !== "ADJUSTMENT") refuse("only an ADJUSTMENT may touch the vendor receivable")
 
+  if (leg.vendor_dispute_fee && !(debitIs && legTag(leg.metadata) === VENDOR_DISPUTE_FEE_LEG)) {
+    refuse("a dispute fee must leave the vendor receivable, tagged as one")
+  }
   if (debitIs && legTag(leg.metadata) === VENDOR_DISPUTE_FEE_LEG) {
     if (leg.order_id) refuse("a dispute fee names its order by reference, never by order_id")
     if (leg.reference_type !== "ORDER" || !leg.reference_id) refuse("a dispute fee must name its order")
     const charge = (leg.metadata as { stripe_charge_id?: unknown } | null | undefined)?.stripe_charge_id
     if (typeof charge !== "string" || !charge) refuse("a dispute fee must name the disputed charge")
+    const internal = leg.vendor_dispute_fee
+    if (!internal || internal.order_id !== leg.reference_id || internal.stripe_charge_id !== charge) {
+      refuse("the dispute fee's order and charge must match what the leg names")
+    }
     if (
       other.account_type !== DISPUTE_FEE_SINK.account_type ||
       other.owner_type !== "SYSTEM" ||

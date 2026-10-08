@@ -365,14 +365,26 @@ refund to the orders.
 - Assigning a refund never calls Stripe: the customer was already refunded.
 
 **The dispute fee (SD-44; operator answer 2026-10-07: the vendor whose order
-was disputed owes it).** When a cardholder disputes a card charge, Stripe
-takes a dispute fee from FBM's own Stripe balance, and keeps it whether the
-dispute is won or lost. The ledger records it the way it records other money
-Stripe keeps from FBM's charges: into the card-processing account, funded by
-the vendor receivable as owed by the vendor (pro rata to each order on a
-shared cart), and repaid like a refund owed. It moves no CCR, holds no
-balance for anyone, and pays nothing out; it is a record, inside the
-purchase context of the disputed order, of what a vendor owes on it.
+was disputed owes it).** When a cardholder's bank opens a chargeback on a
+card charge (an inquiry carries no fee), Stripe takes a dispute fee from
+FBM's own Stripe balance and does not return it, even if the dispute is won.
+The ledger records it the way it records other money Stripe keeps from FBM's
+charges: into the card-processing account, funded by the vendor receivable
+as owed by the vendor (pro rata to each order on a shared cart, and only
+when one chargeback covered the whole charge — a partial chargeback on a
+shared cart, or a cart where any order lacks a split row, is put on no
+vendor), and repaid like a refund owed.
+
+Every receivable leg — refund and processing shortfalls, their recoveries,
+and the dispute fee — can be written only by the ledger service's own
+writers: `createTransfer` refuses a leg carrying any receivable tag unless
+an internal-only field is set that no HTTP route forwards. The admin
+manual-transfer route passes caller metadata through, so without this it
+could have recorded a debt against any vendor, or repaid or minted one. It
+moves no CCR, holds no balance for anyone, and pays nothing out; it is a
+record, inside the purchase context of the disputed order, of what a vendor
+owes on it. The separate dispute *countered* fee is borne by BMC (operator
+answer 2026-10-07) and never charged to a vendor.
 
 This section records the design, not a legal conclusion.
 
