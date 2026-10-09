@@ -1,7 +1,10 @@
 import {
   buildRenewalCartInput,
+  buildRenewalRecord,
   buildRenewalRecordSessionInput,
+  RENEWAL_RECORD_METADATA_KEY,
   RENEWAL_RECORD_PROVIDER_ID,
+  renewalRecordClaim,
   SUBSCRIPTION_PAYMENT_PROVIDER_ID,
   type RenewalSubscription,
 } from "../renew-helpers"
@@ -144,6 +147,46 @@ describe("buildRenewalRecordSessionInput", () => {
     }) as { data: Record<string, unknown> }
     for (const key of ["payment_method", "payment_method_id", "off_session", "confirm"]) {
       expect(input.data).not.toHaveProperty(key)
+    }
+  })
+})
+
+describe("renewalRecordClaim (SD-46)", () => {
+  const record = buildRenewalRecord({
+    subscription_id: "sub_1",
+    payment_intent_id: "pi_1",
+    idempotency_key: "subscription-renewal:sub_1:x",
+  })
+  const metadata = { [RENEWAL_RECORD_METADATA_KEY]: record }
+
+  it("reads the subscription and intent from a system payment's metadata record", () => {
+    expect(renewalRecordClaim(RENEWAL_RECORD_PROVIDER_ID, metadata)).toEqual({
+      subscription_id: "sub_1",
+      payment_intent_id: "pi_1",
+    })
+  })
+
+  it("is the same record the session carries, so the two cannot drift", () => {
+    const session = buildRenewalRecordSessionInput({
+      payment_collection_id: "pc_1",
+      subscription_id: "sub_1",
+      payment_intent_id: "pi_1",
+      idempotency_key: "subscription-renewal:sub_1:x",
+    })
+    expect(session.data).toEqual(record)
+  })
+
+  it("claims nothing for another provider, a record at the top level, or a malformed record", () => {
+    expect(renewalRecordClaim("pp_stripe_stripe", metadata)).toBeNull()
+    expect(renewalRecordClaim(RENEWAL_RECORD_PROVIDER_ID, record)).toBeNull()
+    expect(renewalRecordClaim(RENEWAL_RECORD_PROVIDER_ID, null)).toBeNull()
+    for (const bad of [
+      { ...record, collected_by: "someone_else" },
+      { ...record, subscription_id: "" },
+      { ...record, stripe_payment_intent_id: "ch_1" },
+      { ...record, stripe_payment_intent_id: 42 },
+    ]) {
+      expect(renewalRecordClaim(RENEWAL_RECORD_PROVIDER_ID, { [RENEWAL_RECORD_METADATA_KEY]: bad })).toBeNull()
     }
   })
 })

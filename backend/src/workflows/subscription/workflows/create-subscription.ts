@@ -1,9 +1,11 @@
 import { 
   createWorkflow,
+  transform,
   when,
   WorkflowResponse
 } from "@medusajs/framework/workflows-sdk"
 import { 
+  capturePaymentWorkflow,
   createRemoteLinkStep,
   completeCartWorkflow,
   useQueryGraphStep,
@@ -12,6 +14,11 @@ import { SubscriptionInterval, SubscriptionType } from "../../../modules/subscri
 import type { AutoRenewApproval } from "../../../modules/subscription/utils/auto-renew"
 import { createSubscriptionStep } from "../steps/create-subscription"
 import { emitSubscriptionStateStep } from "../steps/emit-subscription-state"
+import {
+  linkSubscriptionOrderSellerStep,
+  resolveSubscriptionSellerStep,
+  subscriptionPaymentToCaptureStep,
+} from "../steps/subscription-order-settlement"
 import subscriptionOrderLink from "../../../links/subscription-order"
 
 type WorkflowInput = {
@@ -35,11 +42,21 @@ type WorkflowInput = {
  * 2. Retrieves order details
  * 3. Creates subscription record
  * 4. Links subscription to order, cart, customer
+ *
+ * With FF_CONSUMER_SUBSCRIPTIONS_V1 (F5 / SD-46,
+ * `steps/subscription-order-settlement.ts`): the cart's one seller is
+ * resolved before any payment is authorized, the order is linked to that
+ * seller, and the card payment is captured before the subscription is
+ * created — so the sale reaches the seller and the ledger. Flag off, those
+ * steps do nothing.
  */
 export const createSubscriptionWorkflowId = "create-subscription-workflow"
 export const createSubscriptionWorkflow = createWorkflow(
   createSubscriptionWorkflowId,
   (input: WorkflowInput) => {
+    // F5: refuse, before payment, a cart no single seller can be credited with.
+    const resolvedSeller = resolveSubscriptionSellerStep({ cart_id: input.cart_id })
+
     // Complete the cart and create the initial order
     const { id } = completeCartWorkflow.runAsStep({
       input: {
@@ -64,6 +81,23 @@ export const createSubscriptionWorkflow = createWorkflow(
       options: {
         throwIfKeyNotFound: true
       }
+    })
+
+    linkSubscriptionOrderSellerStep({
+      order_id: id,
+      mode: "initial",
+      expected_seller_id: resolvedSeller.seller_id,
+    })
+
+    // F5: take the money the checkout authorized. A refused capture fails
+    // the checkout before any subscription exists; a capture followed by a
+    // later failure is refunded by completeCartWorkflow's own compensation
+    // (`compensatePaymentIfNeededStep` refunds a captured payment).
+    const toCapture = subscriptionPaymentToCaptureStep({ order_id: id, mode: "initial" })
+    when("capture-subscription-first-payment", { toCapture }, (data) => !!data.toCapture.payment_id).then(() => {
+      capturePaymentWorkflow.runAsStep({
+        input: transform({ toCapture }, (data) => ({ payment_id: data.toCapture.payment_id as string })),
+      })
     })
 
     // Check if subscription already exists for this order

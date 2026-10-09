@@ -7,6 +7,12 @@ import { HAWALA_LEDGER_MODULE } from "../modules/hawala-ledger"
 import type HawalaLedgerModuleService from "../modules/hawala-ledger/service"
 import { isFbmCardProvider } from "../modules/hawala-ledger/card-clearing"
 import { ordersForPaymentCollection } from "./card-order-settlement"
+import {
+  RENEWAL_RECORD_METADATA_KEY,
+  RENEWAL_RECORD_PROVIDER_ID,
+  renewalRecordClaim,
+} from "../workflows/subscription/renew-helpers"
+import subscriptionOrderLink from "../links/subscription-order"
 import { reconcileCardOrder, type CardOrderReconcileOutcome } from "./card-order-reconcile"
 
 /**
@@ -23,8 +29,10 @@ import { reconcileCardOrder, type CardOrderReconcileOutcome } from "./card-order
  *      repeated or out-of-order delivery cannot leave a stale figure) —
  *      `amount_refunded`, and every dispute on it, lost or still open;
  *   2. finds the Medusa payment that charge paid (its PaymentIntent is the
- *      payment's `data.id`, as `@medusajs/payment-stripe` stores it), and
- *      ignores anything not paid through FBM's own Stripe registration;
+ *      payment's `data.id`, as `@medusajs/payment-stripe` stores it — or, for
+ *      a subscription renewal FBM charged directly, the bookkeeping payment
+ *      naming that intent on an order linked to its subscription, SD-46), and
+ *      ignores anything not paid through FBM's own Stripe account;
  *   3. records the charge's state (`hawala-ledger/models/card-charge-state.ts`);
  *   4. reconciles every order on that payment collection through the one
  *      locked entry point (`lib/card-order-reconcile.ts`), which now reads
@@ -199,11 +207,10 @@ export function stripeRecentChargeLister(apiKey = process.env.STRIPE_API_KEY ?? 
 
 type PgLike = { raw: (sql: string, b?: unknown[]) => Promise<{ rows?: Array<Record<string, unknown>> }> }
 
+type IntentPayment = { id: string; payment_collection_id: string; provider_id: string; renewal_record: boolean }
+
 /** The Medusa payment a PaymentIntent paid: `@medusajs/payment-stripe` stores the intent as `data`. */
-async function paymentForIntent(
-  container: Container,
-  paymentIntentId: string
-): Promise<{ id: string; payment_collection_id: string; provider_id: string } | null> {
+async function paymentForIntent(container: Container, paymentIntentId: string): Promise<IntentPayment | null> {
   const pg = container.resolve(ContainerRegistrationKeys.PG_CONNECTION) as PgLike
   const result = await pg.raw(
     `SELECT id, payment_collection_id, provider_id
@@ -214,8 +221,52 @@ async function paymentForIntent(
     [paymentIntentId]
   )
   const row = result?.rows?.[0]
-  if (!row || typeof row.id !== "string" || typeof row.payment_collection_id !== "string") return null
-  return { id: row.id, payment_collection_id: row.payment_collection_id, provider_id: String(row.provider_id ?? "") }
+  if (row && typeof row.id === "string" && typeof row.payment_collection_id === "string") {
+    return { id: row.id, payment_collection_id: row.payment_collection_id, provider_id: String(row.provider_id ?? ""), renewal_record: false }
+  }
+  return renewalPaymentForIntent(container, pg, paymentIntentId)
+}
+
+/**
+ * A subscription renewal FBM charged with its own PaymentIntent (SD-46,
+ * `FF_CONSUMER_SUBSCRIPTIONS_V1`): the bookkeeping payment whose `metadata`
+ * record names that intent, accepted only on an order linked to the
+ * subscription the record names — so a payment carrying a copy of someone
+ * else's record is never picked.
+ */
+async function renewalPaymentForIntent(
+  container: Container,
+  pg: PgLike,
+  paymentIntentId: string
+): Promise<IntentPayment | null> {
+  if (!featureFlagState.isEnabled("CONSUMER_SUBSCRIPTIONS_V1")) return null
+  const result = await pg.raw(
+    `SELECT id, payment_collection_id, provider_id, metadata
+       FROM payment
+      WHERE provider_id = ? AND metadata->?->>'stripe_payment_intent_id' = ? AND deleted_at IS NULL
+      ORDER BY created_at DESC`,
+    [RENEWAL_RECORD_PROVIDER_ID, RENEWAL_RECORD_METADATA_KEY, paymentIntentId]
+  )
+  const query = container.resolve(ContainerRegistrationKeys.QUERY) as {
+    graph: (q: Record<string, unknown>) => Promise<{ data: unknown[] }>
+  }
+  for (const row of result?.rows ?? []) {
+    const claim = renewalRecordClaim(row.provider_id, row.metadata)
+    if (!claim || claim.payment_intent_id !== paymentIntentId) continue
+    if (typeof row.id !== "string" || typeof row.payment_collection_id !== "string") continue
+    const orderIds = await ordersForPaymentCollection(container, row.payment_collection_id)
+    if (orderIds.length === 0) continue
+    const { data } = await query.graph({
+      entity: subscriptionOrderLink.entryPoint,
+      fields: ["subscription_id", "order_id"],
+      filters: { order_id: orderIds, subscription_id: claim.subscription_id },
+    })
+    if (data.length > 0) {
+      return { id: row.id, payment_collection_id: row.payment_collection_id, provider_id: String(row.provider_id), renewal_record: true }
+    }
+    log.error(`[Hawala] Payment ${row.id} names renewal intent ${paymentIntentId} but its order is not linked to that subscription; ignored`)
+  }
+  return null
 }
 
 export async function syncCardChargeFromStripe(
@@ -229,7 +280,7 @@ export async function syncCardChargeFromStripe(
     if (!state.payment_intent_id) return { outcome: "not_found", charge_id: chargeId }
     const payment = await paymentForIntent(container, state.payment_intent_id)
     if (!payment) return { outcome: "not_found", charge_id: chargeId }
-    if (!isFbmCardProvider(payment.provider_id)) return { outcome: "not_fbm_card", charge_id: chargeId }
+    if (!payment.renewal_record && !isFbmCardProvider(payment.provider_id)) return { outcome: "not_fbm_card", charge_id: chargeId }
 
     const hawala = container.resolve(HAWALA_LEDGER_MODULE) as HawalaLedgerModuleService
     const row = {
