@@ -38,8 +38,8 @@ nothing here has been switched on. Ledger rows are in `docs/AUDIT_DEBT.md`.
 
 | Step | Status |
 |---|---|
-| B0 preconditions | BO-1 still open (instrumenting). Bot-token rotation and the theblackout.app federation page are operator tasks. The "ten" advisory PRs were 34 by 2026-10-09: **one list of 24 upstream advisories re-filed daily** because none merged. BLACKOUT_ADVISORY_STATUS |
-| B1 embed route, B2 framing | BLACKOUT_EMBED_STATUS |
+| B0 preconditions | BO-1 still open (instrumenting). Bot-token rotation and the theblackout.app federation page are operator tasks. The "ten" advisory PRs were 34 by 2026-10-09: **one list of 24 upstream advisories re-filed daily** because none merged. Triaged once in blackout#953, which supersedes #895 to #952 (not closed): 19 Synapse advisories ported by hand, 1 applicable but not ported (GHSA-gjgr, unauthenticated remote-media fetch; the fix is upstream's whole authenticated-media feature), 4 not applicable. In review. |
+| B1 embed route, B2 framing | **Built, not deployed** (blackout#954): `/embed` shows only canopies, dens and DMs, with unread indicators on. Framing is allowed only from the origins in `BLACK_MASK_FRAME_ANCESTORS`, which is empty by default, so nothing can frame it until that is set. The same PR makes every other route refuse framing; the live web client currently sends no framing headers at all. |
 | B3 to B6 | Not started: sign-in session length, account link, unlink, phishing check. |
 | B7 to B9 | Follow the paid launch; L31 needs counsel. |
 
