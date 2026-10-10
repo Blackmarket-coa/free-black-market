@@ -263,13 +263,21 @@ medusaIntegrationTestRunner({
         expect(errors.join("\n")).toMatch(/card_declined/)
         const subs = await container().resolve(SUBSCRIPTION_MODULE).listSubscriptions({ customer_id: customer.id })
         expect(subs).toEqual([])
-        const query = container().resolve(ContainerRegistrationKeys.QUERY)
-        const { data: links } = await query.graph({
-          entity: "order",
-          fields: ["id", "seller.id"],
-          filters: { customer_id: customer.id },
-        })
-        expect((links as any[]).filter((o) => o.seller?.id)).toEqual([])
+        // completeCartWorkflow's own compensation deletes the order outright,
+        // so the query graph can no longer show its links: read the link
+        // table itself. Nothing may still link this seller to an order.
+        expect(stripe.capturePayment).toHaveBeenCalledTimes(1)
+        expect(await container().resolve(Modules.ORDER).listOrders({ customer_id: customer.id })).toEqual([])
+        const pg = container().resolve(ContainerRegistrationKeys.PG_CONNECTION)
+        const { rows: table } = await pg.raw(
+          `SELECT table_name FROM information_schema.tables WHERE table_name = 'seller_seller_order_order'`
+        )
+        expect(table).toHaveLength(1)
+        const { rows: live } = await pg.raw(
+          `SELECT order_id FROM seller_seller_order_order WHERE seller_id = ? AND deleted_at IS NULL`,
+          [seller.id]
+        )
+        expect(live).toEqual([])
       })
 
       it("a failure after the capture refunds it", async () => {

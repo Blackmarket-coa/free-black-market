@@ -162,6 +162,17 @@ export const linkSubscriptionOrderSellerStep = createStep(
   }
 )
 
+/**
+ * The payment module's `updatePayment`. Its DTO declares only `id`, but the
+ * service writes the other fields it is given; `metadata` landing is proved
+ * on a real database by the renewal scenarios, which read the stamp back.
+ */
+type PaymentMetadataWriter = {
+  updatePayment: (d: { id: string; metadata: Record<string, unknown> | null }) => Promise<unknown>
+}
+const paymentWriter = (container: { resolve: (key: string) => unknown }) =>
+  container.resolve(Modules.PAYMENT) as unknown as PaymentMetadataWriter
+
 type StampInput = {
   order_id: string
   subscription_id: string
@@ -205,8 +216,7 @@ export const stampRenewalRecordStep = createStep(
       return done()
     }
     const payment = records[0]
-    const payments = container.resolve(Modules.PAYMENT) as { updatePayment: (d: Record<string, unknown>) => Promise<unknown> }
-    await payments.updatePayment({
+    await paymentWriter(container).updatePayment({
       id: payment.id,
       metadata: {
         ...(payment.metadata ?? {}),
@@ -221,8 +231,7 @@ export const stampRenewalRecordStep = createStep(
   },
   async (prior, { container }) => {
     if (!prior) return
-    const payments = container.resolve(Modules.PAYMENT) as { updatePayment: (d: Record<string, unknown>) => Promise<unknown> }
-    await payments.updatePayment({ id: prior.id, metadata: prior.metadata })
+    await paymentWriter(container).updatePayment({ id: prior.id, metadata: prior.metadata })
   }
 )
 
