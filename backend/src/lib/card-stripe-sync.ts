@@ -12,7 +12,6 @@ import {
   RENEWAL_RECORD_PROVIDER_ID,
   renewalRecordClaim,
 } from "../workflows/subscription/renew-helpers"
-import subscriptionOrderLink from "../links/subscription-order"
 import { reconcileCardOrder, type CardOrderReconcileOutcome } from "./card-order-reconcile"
 
 /**
@@ -228,6 +227,16 @@ async function paymentForIntent(container: Container, paymentIntentId: string): 
 }
 
 /**
+ * The subscription-order link's query entry point, loaded on first use with
+ * `require` (the `lib/blackout-cycle.ts` pattern): `defineLink` runs at module
+ * load and needs the module registry, so a static import would break every
+ * unit test that reaches this file. Only a renewal read gets here.
+ */
+function subscriptionOrderEntryPoint(): string {
+  return (require("../links/subscription-order") as { default: { entryPoint: string } }).default.entryPoint
+}
+
+/**
  * A subscription renewal FBM charged with its own PaymentIntent (SD-46,
  * `FF_CONSUMER_SUBSCRIPTIONS_V1`): the bookkeeping payment whose `metadata`
  * record names that intent, accepted only on an order linked to the
@@ -257,7 +266,7 @@ async function renewalPaymentForIntent(
     const orderIds = await ordersForPaymentCollection(container, row.payment_collection_id)
     if (orderIds.length === 0) continue
     const { data } = await query.graph({
-      entity: subscriptionOrderLink.entryPoint,
+      entity: subscriptionOrderEntryPoint(),
       fields: ["subscription_id", "order_id"],
       filters: { order_id: orderIds, subscription_id: claim.subscription_id },
     })

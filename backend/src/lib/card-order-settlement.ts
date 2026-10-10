@@ -6,7 +6,6 @@ import { STRIPE_CONNECT_DIRECT_PROVIDER_ID } from "../modules/stripe-connect-dir
 import { HAWALA_LEDGER_MODULE } from "../modules/hawala-ledger"
 import { featureFlagState } from "../shared/feature-flags"
 import { renewalRecordClaim } from "../workflows/subscription/renew-helpers"
-import subscriptionOrderLink from "../links/subscription-order"
 
 /**
  * How a card order's money is read for the hawala ledger (SD-36 / SD-39,
@@ -112,6 +111,16 @@ type RawCollection = {
 } | null
 
 /**
+ * The subscription-order link's query entry point, loaded on first use with
+ * `require` (the `lib/blackout-cycle.ts` pattern): `defineLink` runs at module
+ * load and needs the module registry, so a static import would break every
+ * unit test that reaches this file. Only a renewal read gets here.
+ */
+function subscriptionOrderEntryPoint(): string {
+  return (require("../links/subscription-order") as { default: { entryPoint: string } }).default.entryPoint
+}
+
+/**
  * The renewal-record payment among `payments` whose claimed subscription the
  * order is actually linked to (SD-46); null when there is none, or with
  * `FF_CONSUMER_SUBSCRIPTIONS_V1` off.
@@ -123,7 +132,7 @@ async function verifiedRenewalRecord(query: any, orderId: string, payments: RawP
     .filter((x): x is { p: RawPayment; claim: { subscription_id: string; payment_intent_id: string } } => !!x.claim)
   if (claimed.length === 0) return null
   const { data } = await query.graph({
-    entity: subscriptionOrderLink.entryPoint,
+    entity: subscriptionOrderEntryPoint(),
     fields: ["subscription_id", "order_id"],
     filters: { order_id: orderId },
   })
