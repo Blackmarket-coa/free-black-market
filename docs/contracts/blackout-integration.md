@@ -263,6 +263,18 @@ idempotently on first render:
    keyed to the order. The session row records `order_id` /
    `subscription_id`; re-visits render the completed state.
 
+**Seller settlement of one-off listings (`FF_DIGITAL_ORDER_SETTLEMENT_V1`,
+SD-48).** Flag off, step 5 is unchanged. Flag on, the digital-product order
+flow resolves the shadow product's Mercur seller before the card is authorized
+and refuses a purchase whose product has none (500 `checkout_failed`, or
+`checkout.error` on the page). Nothing is captured; the hold the member's card
+confirmation placed is left to lapse, as on any refused completion.
+`ensureListingProduct` links the shadow product to the listing's seller, and
+only logs if that link fails. The order is then linked to that seller and the
+card captured at completion, so the sale settles to the seller less the 3%
+(`FF_CARD_ORDER_LEDGER_V1`). Subscription listings already do the same under
+`FF_CONSUMER_SUBSCRIPTIONS_V1` (SD-46).
+
 Embed mode mirrors the public checkout page: `postMessage` events
 (`checkout.ready|completed|cancelled|error`, source `fbm-checkout`) to the
 `embedOrigin` captured at session creation, CSP `frame-ancestors` pinned to it.
