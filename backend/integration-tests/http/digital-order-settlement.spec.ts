@@ -1,5 +1,5 @@
 import { medusaIntegrationTestRunner } from "@medusajs/test-utils"
-import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils"
+import { ContainerRegistrationKeys, Modules, PaymentEvents } from "@medusajs/framework/utils"
 import { SELLER_MODULE } from "@mercurjs/b2c-core/modules/seller"
 import { PHASE0_FEATURE_FLAGS } from "../../src/shared/feature-flags"
 import { DIGITAL_PRODUCT_MODULE } from "../../src/modules/digital-product"
@@ -74,6 +74,26 @@ medusaIntegrationTestRunner({
       process.env[CARD] = "true"
       process.env[DIGITAL] = "true"
     })
+
+    /**
+     * Every capture-payment workflow run emits `payment.captured` (the payment
+     * module's own capture at authorization does not), so counting the event
+     * for a payment counts the captures this checkout ran. Medusa makes a
+     * second capture of a captured payment a no-op at the provider and in the
+     * order's transactions, so this is how a needless one is seen at all.
+     */
+    function captureEvents() {
+      const bus = container().resolve(Modules.EVENT_BUS)
+      const emit = bus.emit.bind(bus)
+      const seen: string[] = []
+      jest.spyOn(bus, "emit").mockImplementation(async (data: any, options?: any) => {
+        for (const e of Array.isArray(data) ? data : [data]) {
+          if ((e?.name ?? e?.eventName) === PaymentEvents.CAPTURED) seen.push(e?.data?.id)
+        }
+        return emit(data, options)
+      })
+      return seen
+    }
     afterEach(() => {
       jest.restoreAllMocks()
       delete process.env[CARD]
@@ -259,6 +279,7 @@ medusaIntegrationTestRunner({
         const seller = await makeSeller()
         const product = await makeProduct(seller.id, { digital: false })
         const { cart } = await makeCart([product])
+        const captures = captureEvents()
 
         const { result, errors } = await checkout(cart.id)
         expect(errors).toEqual([])
@@ -270,6 +291,7 @@ medusaIntegrationTestRunner({
         expect(payment.captured_at).toBeTruthy()
         expect(Number(order.payment_collections[0].captured_amount)).toBe(5)
         expect(stripe.capturePayment).toHaveBeenCalledTimes(1)
+        expect(captures).toEqual([payment.id])
 
         const { purchase, fee, sellerLeg } = await settled(orderId, payment.id)
         expect(cents(purchase.amount)).toBe(500)
@@ -320,10 +342,13 @@ medusaIntegrationTestRunner({
         const seller = await makeSeller()
         const product = await makeProduct(seller.id, { digital: false })
         const { cart } = await makeCart([product])
+        const captures = captureEvents()
 
         const { result, errors } = await checkout(cart.id)
         expect(errors).toEqual([])
         expect(stripe.capturePayment).not.toHaveBeenCalled()
+        // No capture workflow ran at all: the payment was already captured.
+        expect(captures).toEqual([])
         const order = await readOrder(result.order.id)
         expect(order.seller?.id).toBe(seller.id)
         expect(Number(order.payment_collections[0].captured_amount)).toBe(5)
