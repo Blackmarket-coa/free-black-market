@@ -15,6 +15,7 @@ import type { AutoRenewApproval } from "../../../modules/subscription/utils/auto
 import { createSubscriptionStep } from "../steps/create-subscription"
 import { emitSubscriptionStateStep } from "../steps/emit-subscription-state"
 import {
+  completedCartOrderStep,
   linkSubscriptionOrderSellerStep,
   resolveSubscriptionSellerStep,
   subscriptionPaymentToCaptureStep,
@@ -49,20 +50,73 @@ type WorkflowInput = {
  * seller, and the card payment is captured before the subscription is
  * created — so the sale reaches the seller and the ledger. Flag off, those
  * steps do nothing.
+ *
+ * A replay — the checkout run again on a cart already completed (Blackout's
+ * "retry finishes the record", a retried store call) — runs none of them,
+ * nor `completeCartWorkflow` itself: with the flag on,
+ * `completedCartOrderStep` finds the cart's order first and it is returned
+ * as its first completion left it. On a completed cart `completeCartWorkflow`
+ * creates nothing but still registers a compensation that refunds a captured
+ * payment, so a later failure — a seller re-linked since the sale, a
+ * transient read error — refunded the first payment of a subscription that
+ * stayed active (seen on a real database; SD-48).
  */
 export const createSubscriptionWorkflowId = "create-subscription-workflow"
 export const createSubscriptionWorkflow = createWorkflow(
   createSubscriptionWorkflowId,
   (input: WorkflowInput) => {
-    // F5: refuse, before payment, a cart no single seller can be credited with.
-    const resolvedSeller = resolveSubscriptionSellerStep({ cart_id: input.cart_id })
+    // The order of a cart already completed (flag off: null, unread).
+    const completed = completedCartOrderStep({ cart_id: input.cart_id })
 
-    // Complete the cart and create the initial order
-    const { id } = completeCartWorkflow.runAsStep({
-      input: {
-        id: input.cart_id
-      }
+    // Only a cart not yet completed is completed, linked and charged; a
+    // replay keeps out of completeCartWorkflow and its refund compensation.
+    const completion = when(
+      "complete-subscription-cart",
+      { completed },
+      (data) => !data.completed.order_id
+    ).then(() => {
+      // F5: refuse, before payment, a cart no single seller can be credited with.
+      const resolvedSeller = resolveSubscriptionSellerStep({ cart_id: input.cart_id })
+
+      // Complete the cart and create the initial order
+      const { id: createdOrderId } = completeCartWorkflow.runAsStep({
+        input: {
+          id: input.cart_id
+        }
+      })
+
+      linkSubscriptionOrderSellerStep({
+        order_id: createdOrderId,
+        mode: "initial",
+        expected_seller_id: resolvedSeller.seller_id,
+      })
+
+      const toCapture = subscriptionPaymentToCaptureStep({ order_id: createdOrderId, mode: "initial" })
+
+      return transform({ createdOrderId, toCapture }, (data) => ({
+        order_id: data.createdOrderId,
+        payment_id: data.toCapture.payment_id,
+      }))
     })
+
+    // A replay's order is the one already there; otherwise, the one just made.
+    const checkout = transform({ completed, completion }, (data) => ({
+      order_id: (data.completed.order_id ?? data.completion?.order_id) as string,
+      payment_id: data.completion?.payment_id ?? null,
+    }))
+
+    // F5: take the money the checkout authorized. A refused capture fails
+    // the checkout before any subscription exists; a capture followed by a
+    // later failure is refunded by completeCartWorkflow's own compensation
+    // (`compensatePaymentIfNeededStep` refunds a captured payment). Outside
+    // the block above because `when` blocks do not nest.
+    when("capture-subscription-first-payment", { checkout }, (data) => !!data.checkout.payment_id).then(() => {
+      capturePaymentWorkflow.runAsStep({
+        input: transform({ checkout }, (data) => ({ payment_id: data.checkout.payment_id as string })),
+      })
+    })
+
+    const id = transform({ checkout }, (data) => data.checkout.order_id)
 
     // Get the created order details
     const { data: orders } = useQueryGraphStep({
@@ -81,23 +135,6 @@ export const createSubscriptionWorkflow = createWorkflow(
       options: {
         throwIfKeyNotFound: true
       }
-    })
-
-    linkSubscriptionOrderSellerStep({
-      order_id: id,
-      mode: "initial",
-      expected_seller_id: resolvedSeller.seller_id,
-    })
-
-    // F5: take the money the checkout authorized. A refused capture fails
-    // the checkout before any subscription exists; a capture followed by a
-    // later failure is refunded by completeCartWorkflow's own compensation
-    // (`compensatePaymentIfNeededStep` refunds a captured payment).
-    const toCapture = subscriptionPaymentToCaptureStep({ order_id: id, mode: "initial" })
-    when("capture-subscription-first-payment", { toCapture }, (data) => !!data.toCapture.payment_id).then(() => {
-      capturePaymentWorkflow.runAsStep({
-        input: transform({ toCapture }, (data) => ({ payment_id: data.toCapture.payment_id as string })),
-      })
     })
 
     // Check if subscription already exists for this order

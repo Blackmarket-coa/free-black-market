@@ -1,6 +1,6 @@
 import { createLogger } from "../../../shared/logger"
 const log = createLogger("workflows/subscription/subscription-order-settlement")
-import { createStep, StepResponse } from "@medusajs/framework/workflows-sdk"
+import { createStep, StepResponse, type StepExecutionContext } from "@medusajs/framework/workflows-sdk"
 import { ContainerRegistrationKeys, MedusaError, Modules } from "@medusajs/framework/utils"
 import { SELLER_MODULE } from "@mercurjs/b2c-core/modules/seller"
 import { isFbmCardProvider } from "../../../modules/hawala-ledger/card-clearing"
@@ -44,10 +44,15 @@ import {
  * SD-48 (`FF_DIGITAL_ORDER_SETTLEMENT_V1`): the digital-product checkout
  * (`workflows/create-digital-product-order`) completes its cart through the
  * same `completeCartWorkflow` and had gaps 1 and 2. It runs the seller, link
- * and capture steps below — these steps, not copies — with
- * `sale: "digital_product"`, under its own flag. Each sale's steps read only
+ * and capture steps below — their functions, not copies — under its own step
+ * names with `sale: "digital_product"` fixed (the `*DigitalProduct*` steps at
+ * the end of this file), under its own flag. Each sale's steps read only
  * that sale's flag, so either flag can be set without the other, and the
  * subscription wording is F5's byte for byte. Only a subscription renews.
+ *
+ * A replay — either checkout run again on a cart it already completed — must
+ * not reach `completeCartWorkflow` or the money steps at all; see
+ * `completedCartOrderStep`.
  */
 
 type QueryLike = { graph: (q: Record<string, unknown>) => Promise<{ data: unknown[] }> }
@@ -84,6 +89,40 @@ const SALES: Record<SettlementSale, SaleTerms> = {
 const termsOf = (sale: SettlementSale | undefined): SaleTerms => SALES[sale ?? "subscription"]
 
 /**
+ * First, before any money step: the order this cart was already completed
+ * into, or null — read from the `order_cart` link, the same signal
+ * `completeCartWorkflow` uses to decide it has nothing to create.
+ *
+ * An order here means the checkout is a replay: a client retrying the store
+ * route, a refreshed checkout page, Blackout's "retry finishes the record".
+ * `completeCartWorkflow` is idempotent on such a cart — it creates nothing —
+ * but it still registers `compensatePaymentIfNeededStep`, whose compensation
+ * refunds the cart's payment whenever `captured_at` is set. So on a replay of
+ * a captured sale, anything that threw after it (a seller re-linked since the
+ * sale, which the link step refuses; a transient read error; FBM's own
+ * `validate` hook) refunded the whole sale while the order, its seller link
+ * and whatever it delivered stayed — seen on a real database (SD-48). The
+ * checkout therefore runs `completeCartWorkflow` and the seller, link and
+ * capture steps only when this is null; a replay returns the order as its
+ * first completion left it, linking, capturing, refusing and refunding
+ * nothing. Flag off, returns null before any read, and the checkout
+ * completes the cart exactly as it did.
+ */
+async function completedCartOrder(input: { cart_id: string; sale?: SettlementSale }, { container }: StepExecutionContext) {
+  const terms = termsOf(input.sale)
+  if (!terms.enabled()) return new StepResponse({ order_id: null as string | null })
+  const query = container.resolve(ContainerRegistrationKeys.QUERY) as QueryLike
+  const { data } = await query.graph({
+    entity: "order_cart",
+    fields: ["cart_id", "order_id"],
+    filters: { cart_id: input.cart_id },
+  })
+  const link = (data as Array<{ order_id?: string | null } | null>)[0]
+  return new StepResponse({ order_id: (link?.order_id ?? null) as string | null })
+}
+export const completedCartOrderStep = createStep("subscription-completed-cart-order", completedCartOrder)
+
+/**
  * The one seller every listed product belongs to (Mercur's product `seller`
  * link), or why there is not exactly one.
  */
@@ -113,28 +152,26 @@ async function soleSellerOf(
  * so nothing is charged for a sale no seller can be credited with. With
  * `sale: "digital_product"`, the same for a digital-product cart (SD-48).
  */
-export const resolveSubscriptionSellerStep = createStep(
-  "resolve-subscription-seller",
-  async (input: { cart_id: string; sale?: SettlementSale }, { container }) => {
-    const terms = termsOf(input.sale)
-    if (!terms.enabled()) return new StepResponse({ seller_id: null as string | null })
-    const query = container.resolve(ContainerRegistrationKeys.QUERY) as QueryLike
-    const { data } = await query.graph({
-      entity: "cart",
-      fields: ["id", "items.product_id"],
-      filters: { id: input.cart_id },
-    })
-    const cart = (data as Array<{ items?: Array<{ product_id?: string | null } | null> | null }>)[0]
-    const sole = await soleSellerOf(query, (cart?.items ?? []).map((i) => i?.product_id))
-    if (!sole.seller_id) {
-      throw new MedusaError(
-        MedusaError.Types.NOT_ALLOWED,
-        `${terms.soleSeller}, and this cart cannot be: ${"reason" in sole ? sole.reason : ""}.`
-      )
-    }
-    return new StepResponse({ seller_id: sole.seller_id as string | null })
+async function resolveSeller(input: { cart_id: string; sale?: SettlementSale }, { container }: StepExecutionContext) {
+  const terms = termsOf(input.sale)
+  if (!terms.enabled()) return new StepResponse({ seller_id: null as string | null })
+  const query = container.resolve(ContainerRegistrationKeys.QUERY) as QueryLike
+  const { data } = await query.graph({
+    entity: "cart",
+    fields: ["id", "items.product_id"],
+    filters: { id: input.cart_id },
+  })
+  const cart = (data as Array<{ items?: Array<{ product_id?: string | null } | null> | null }>)[0]
+  const sole = await soleSellerOf(query, (cart?.items ?? []).map((i) => i?.product_id))
+  if (!sole.seller_id) {
+    throw new MedusaError(
+      MedusaError.Types.NOT_ALLOWED,
+      `${terms.soleSeller}, and this cart cannot be: ${"reason" in sole ? sole.reason : ""}.`
+    )
   }
-)
+  return new StepResponse({ seller_id: sole.seller_id as string | null })
+}
+export const resolveSubscriptionSellerStep = createStep("resolve-subscription-seller", resolveSeller)
 
 type LinkInput = {
   order_id: string
@@ -161,55 +198,55 @@ const linkResult = (output: LinkOutput, created: LinkDef = null) => new StepResp
  * digital-product order) to its seller, as Mercur's split does for its own
  * orders.
  */
-export const linkSubscriptionOrderSellerStep = createStep(
-  "link-subscription-order-seller",
-  async (input: LinkInput, { container }) => {
-    const terms = termsOf(input.sale)
-    if (!terms.enabled()) return linkResult({ linked: false, seller_id: null })
-    const query = container.resolve(ContainerRegistrationKeys.QUERY) as QueryLike
-    const { data } = await query.graph({
-      entity: "order",
-      fields: ["id", "seller.id", "items.product_id"],
-      filters: { id: input.order_id },
-    })
-    const order = (data as Array<{
-      seller?: { id?: string } | null
-      items?: Array<{ product_id?: string | null } | null> | null
-    }>)[0]
-    const refuse = (message: string) => {
-      if (input.mode === "initial") throw new MedusaError(MedusaError.Types.NOT_ALLOWED, message)
-      log.error(`${terms.tag} ${message}`)
-      return linkResult({ linked: false, seller_id: null })
-    }
-    if (!order) return refuse(`${terms.label} order ${input.order_id} not found; no seller linked`)
-
-    const sole = await soleSellerOf(query, (order.items ?? []).map((i) => i?.product_id))
-    if (!sole.seller_id) {
-      return refuse(`${terms.label} order ${input.order_id} has no single seller (${"reason" in sole ? sole.reason : ""}); not linked, so the ledger will not settle it`)
-    }
-    if (input.mode === "initial" && input.expected_seller_id && sole.seller_id !== input.expected_seller_id) {
-      return refuse(`${terms.label} order ${input.order_id} is sold by ${sole.seller_id}, not ${input.expected_seller_id} as checked before payment`)
-    }
-    const current = order.seller?.id ?? null
-    if (current === sole.seller_id) return linkResult({ linked: false, seller_id: current })
-    if (current) {
-      return refuse(`${terms.label} order ${input.order_id} is linked to seller ${current}, but its products are sold by ${sole.seller_id}`)
-    }
-
-    const link = container.resolve(ContainerRegistrationKeys.LINK) as {
-      create: (d: unknown) => Promise<unknown>
-      dismiss: (d: unknown) => Promise<unknown>
-    }
-    const def = { [SELLER_MODULE]: { seller_id: sole.seller_id }, [Modules.ORDER]: { order_id: input.order_id } }
-    await link.create(def)
-    return linkResult({ linked: true, seller_id: sole.seller_id }, def)
-  },
-  async (def, { container }) => {
-    if (!def) return
-    const link = container.resolve(ContainerRegistrationKeys.LINK) as { dismiss: (d: unknown) => Promise<unknown> }
-    await link.dismiss(def)
+async function linkOrderSeller(input: LinkInput, { container }: StepExecutionContext) {
+  const terms = termsOf(input.sale)
+  if (!terms.enabled()) return linkResult({ linked: false, seller_id: null })
+  const query = container.resolve(ContainerRegistrationKeys.QUERY) as QueryLike
+  const { data } = await query.graph({
+    entity: "order",
+    fields: ["id", "seller.id", "items.product_id"],
+    filters: { id: input.order_id },
+  })
+  const order = (data as Array<{
+    seller?: { id?: string } | null
+    items?: Array<{ product_id?: string | null } | null> | null
+  }>)[0]
+  const refuse = (message: string) => {
+    if (input.mode === "initial") throw new MedusaError(MedusaError.Types.NOT_ALLOWED, message)
+    log.error(`${terms.tag} ${message}`)
+    return linkResult({ linked: false, seller_id: null })
   }
-)
+  if (!order) return refuse(`${terms.label} order ${input.order_id} not found; no seller linked`)
+
+  const sole = await soleSellerOf(query, (order.items ?? []).map((i) => i?.product_id))
+  if (!sole.seller_id) {
+    return refuse(`${terms.label} order ${input.order_id} has no single seller (${"reason" in sole ? sole.reason : ""}); not linked, so the ledger will not settle it`)
+  }
+  if (input.mode === "initial" && input.expected_seller_id && sole.seller_id !== input.expected_seller_id) {
+    return refuse(`${terms.label} order ${input.order_id} is sold by ${sole.seller_id}, not ${input.expected_seller_id} as checked before payment`)
+  }
+  const current = order.seller?.id ?? null
+  if (current === sole.seller_id) return linkResult({ linked: false, seller_id: current })
+  if (current) {
+    return refuse(`${terms.label} order ${input.order_id} is linked to seller ${current}, but its products are sold by ${sole.seller_id}`)
+  }
+
+  const link = container.resolve(ContainerRegistrationKeys.LINK) as {
+    create: (d: unknown) => Promise<unknown>
+    dismiss: (d: unknown) => Promise<unknown>
+  }
+  const def = { [SELLER_MODULE]: { seller_id: sole.seller_id }, [Modules.ORDER]: { order_id: input.order_id } }
+  await link.create(def)
+  return linkResult({ linked: true, seller_id: sole.seller_id }, def)
+}
+
+/** Compensation: dismiss the link the step created, if it created one. */
+async function unlinkOrderSeller(def: LinkDef, { container }: StepExecutionContext) {
+  if (!def) return
+  const link = container.resolve(ContainerRegistrationKeys.LINK) as { dismiss: (d: unknown) => Promise<unknown> }
+  await link.dismiss(def)
+}
+export const linkSubscriptionOrderSellerStep = createStep("link-subscription-order-seller", linkOrderSeller, unlinkOrderSeller)
 
 /**
  * The payment module's `updatePayment`. Its DTO declares only `id`, but the
@@ -316,45 +353,78 @@ type PaymentRow = {
  *
  * A digital-product order (`sale: "digital_product"`, SD-48) is `initial`.
  */
-export const subscriptionPaymentToCaptureStep = createStep(
-  "subscription-payment-to-capture",
-  async (input: CaptureInput, { container }) => {
-    const none = () => new StepResponse({ payment_id: null as string | null })
-    const terms = termsOf(input.sale)
-    if (!terms.enabled()) return none()
-    if (input.mode === "renewal" && input.renewal_charge_status !== "succeeded") {
-      if (input.renewal_charge_status === "processing") {
-        log.warn(`${terms.tag} Renewal order ${input.order_id}: its charge is still processing; not recorded as captured`)
-      }
-      return none()
+async function paymentToCapture(input: CaptureInput, { container }: StepExecutionContext) {
+  const none = () => new StepResponse({ payment_id: null as string | null })
+  const terms = termsOf(input.sale)
+  if (!terms.enabled()) return none()
+  if (input.mode === "renewal" && input.renewal_charge_status !== "succeeded") {
+    if (input.renewal_charge_status === "processing") {
+      log.warn(`${terms.tag} Renewal order ${input.order_id}: its charge is still processing; not recorded as captured`)
     }
-    const query = container.resolve(ContainerRegistrationKeys.QUERY) as QueryLike
-    const { data } = await query.graph({
-      entity: "order",
-      fields: [
-        "id",
-        "payment_collections.payments.id",
-        "payment_collections.payments.provider_id",
-        "payment_collections.payments.captured_at",
-        "payment_collections.payments.metadata",
-      ],
-      filters: { id: input.order_id },
-    })
-    const order = (data as Array<{ payment_collections?: Array<{ payments?: Array<PaymentRow | null> | null } | null> | null }>)[0]
-    const payments = (order?.payment_collections ?? [])
-      .flatMap((c) => c?.payments ?? [])
-      .filter((p): p is PaymentRow => !!p && !p.captured_at)
-    const candidates = payments.filter((p) =>
-      input.mode === "initial" ? isFbmCardProvider(p.provider_id) : !!renewalRecordClaim(p.provider_id, p.metadata)
-    )
-    if (candidates.length > 1) {
-      // One checkout, one payment session: more than one is not a shape this
-      // flow makes, and capturing the wrong one would charge twice.
-      const message = `${terms.label} order ${input.order_id} has ${candidates.length} uncaptured payments; none captured`
-      if (input.mode === "initial") throw new MedusaError(MedusaError.Types.UNEXPECTED_STATE, message)
-      log.error(`${terms.tag} ${message}`)
-      return none()
-    }
-    return new StepResponse({ payment_id: candidates[0]?.id ?? null })
+    return none()
   }
+  const query = container.resolve(ContainerRegistrationKeys.QUERY) as QueryLike
+  const { data } = await query.graph({
+    entity: "order",
+    fields: [
+      "id",
+      "payment_collections.payments.id",
+      "payment_collections.payments.provider_id",
+      "payment_collections.payments.captured_at",
+      "payment_collections.payments.metadata",
+    ],
+    filters: { id: input.order_id },
+  })
+  const order = (data as Array<{ payment_collections?: Array<{ payments?: Array<PaymentRow | null> | null } | null> | null }>)[0]
+  const payments = (order?.payment_collections ?? [])
+    .flatMap((c) => c?.payments ?? [])
+    .filter((p): p is PaymentRow => !!p && !p.captured_at)
+  const candidates = payments.filter((p) =>
+    input.mode === "initial" ? isFbmCardProvider(p.provider_id) : !!renewalRecordClaim(p.provider_id, p.metadata)
+  )
+  if (candidates.length > 1) {
+    // One checkout, one payment session: more than one is not a shape this
+    // flow makes, and capturing the wrong one would charge twice.
+    const message = `${terms.label} order ${input.order_id} has ${candidates.length} uncaptured payments; none captured`
+    if (input.mode === "initial") throw new MedusaError(MedusaError.Types.UNEXPECTED_STATE, message)
+    log.error(`${terms.tag} ${message}`)
+    return none()
+  }
+  return new StepResponse({ payment_id: candidates[0]?.id ?? null })
+}
+export const subscriptionPaymentToCaptureStep = createStep("subscription-payment-to-capture", paymentToCapture)
+
+/**
+ * SD-48: the replay check and the seller, link and capture steps for the
+ * digital-product checkout — the same functions as F5's, under that
+ * checkout's own step names and with its sale fixed, so they read only
+ * FF_DIGITAL_ORDER_SETTLEMENT_V1 and speak of a digital product order.
+ *
+ * Defined here rather than renamed in the workflow with `.config({ name })`:
+ * the checkout runs them inside a `when` block, and workflows-sdk 2.14.2
+ * gives a step renamed that way inside a `when` the handler made under its
+ * first name — whose compensation reads the step's result under that first
+ * name, finds none, and does nothing. The link step's compensation then left
+ * the seller link behind a refused capture (caught on a real database by
+ * `digital-order-settlement.spec.ts`, which reads the link table).
+ */
+export const digitalProductCompletedCartOrderStep = createStep(
+  "digital-product-completed-cart-order",
+  (input: { cart_id: string }, context: StepExecutionContext) =>
+    completedCartOrder({ ...input, sale: "digital_product" }, context)
+)
+export const resolveDigitalProductSellerStep = createStep(
+  "resolve-digital-product-seller",
+  (input: { cart_id: string }, context: StepExecutionContext) => resolveSeller({ ...input, sale: "digital_product" }, context)
+)
+export const linkDigitalProductOrderSellerStep = createStep(
+  "link-digital-product-order-seller",
+  (input: Omit<LinkInput, "sale">, context: StepExecutionContext) =>
+    linkOrderSeller({ ...input, sale: "digital_product" }, context),
+  unlinkOrderSeller
+)
+export const digitalProductPaymentToCaptureStep = createStep(
+  "digital-product-payment-to-capture",
+  (input: Omit<CaptureInput, "sale">, context: StepExecutionContext) =>
+    paymentToCapture({ ...input, sale: "digital_product" }, context)
 )

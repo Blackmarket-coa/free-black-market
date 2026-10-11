@@ -273,7 +273,10 @@ confirmation placed is left to lapse, as on any refused completion.
 only logs if that link fails. The order is then linked to that seller and the
 card captured at completion, so the sale settles to the seller less the 3%
 (`FF_CARD_ORDER_LEDGER_V1`). Subscription listings already do the same under
-`FF_CONSUMER_SUBSCRIPTIONS_V1` (SD-46).
+`FF_CONSUMER_SUBSCRIPTIONS_V1` (SD-46). With either flag on, a completion run
+again on a cart already completed (a retry, or the page finishing a record an
+earlier attempt left unmarked) returns that order as it is: nothing is
+captured, refused or refunded a second time (SD-48).
 
 Embed mode mirrors the public checkout page: `postMessage` events
 (`checkout.ready|completed|cancelled|error`, source `fbm-checkout`) to the

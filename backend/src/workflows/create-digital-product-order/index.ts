@@ -23,9 +23,10 @@ import createDigitalProductOrderStep, {
 import { DIGITAL_PRODUCT_MODULE } from "../../modules/digital-product"
 import digitalProductOrderOrderLink from "../../links/digital-product-order";
 import {
-  linkSubscriptionOrderSellerStep,
-  resolveSubscriptionSellerStep,
-  subscriptionPaymentToCaptureStep,
+  digitalProductCompletedCartOrderStep,
+  digitalProductPaymentToCaptureStep,
+  linkDigitalProductOrderSellerStep,
+  resolveDigitalProductSellerStep,
 } from "../subscription/steps/subscription-order-settlement"
 
 /**
@@ -75,9 +76,9 @@ type WorkflowInput = {
  * F5 — the order got no Mercur seller link (the card ledger refuses such an
  * order, so the seller was never credited and BMC's 3% never taken) and its
  * card payment, authorized only (`capture` is unset on FBM's Stripe provider),
- * was never captured. With the flag on, F5's own steps
- * (`subscription/steps/subscription-order-settlement.ts`, `sale:
- * "digital_product"`) resolve the cart's one seller before any payment is
+ * was never captured. With the flag on, F5's own step functions
+ * (`subscription/steps/subscription-order-settlement.ts`, as its
+ * `*DigitalProduct*` steps) resolve the cart's one seller before any payment is
  * authorized and refuse a cart with none or several, link the order to that
  * seller, and capture the card (Medusa's `capturePaymentWorkflow`, so the
  * order transaction and `payment.captured` follow) before the digital product
@@ -89,6 +90,16 @@ type WorkflowInput = {
  * The seller is resolved after the cart lock is taken, so the cart checked is
  * the cart completed (`completeCartWorkflow` skips its own lock when it runs
  * as a step here).
+ *
+ * A replay — this checkout run again on a cart already completed (a retried
+ * store call, a refreshed checkout page, Blackout's "retry finishes the
+ * record") — runs none of that, nor `completeCartWorkflow` itself: with the
+ * flag on, `digitalProductCompletedCartOrderStep` finds the cart's order
+ * first and the order is returned as its first completion left it. Run on a
+ * completed cart, `completeCartWorkflow` creates nothing but still registers
+ * a compensation that refunds a captured payment, so any later failure — a
+ * seller re-linked since the sale, a transient read error — refunded a sale
+ * whose order and delivery stayed (seen on a real database).
  */
 const createDigitalProductOrderWorkflow = createWorkflow(
   "create-digital-product-order",
@@ -99,17 +110,60 @@ const createDigitalProductOrderWorkflow = createWorkflow(
       ttl: 120,
     });
 
-    // SD-48: refuse, before payment, a cart no single seller can be credited with.
-    const resolvedSeller = resolveSubscriptionSellerStep({
-      cart_id: input.cart_id,
-      sale: "digital_product",
-    }).config({ name: "resolve-digital-product-seller" })
+    // SD-48: the order of a cart already completed (flag off: null, unread).
+    const completed = digitalProductCompletedCartOrderStep({ cart_id: input.cart_id })
 
-    const { id } = completeCartWorkflow.runAsStep({
-      input: {
-        id: input.cart_id
-      }
+    // Only a cart not yet completed is completed, linked and charged; a
+    // replay keeps out of completeCartWorkflow and its refund compensation.
+    const completion = when(
+      "complete-digital-product-cart",
+      { completed },
+      (data) => !data.completed.order_id
+    ).then(() => {
+      // SD-48: refuse, before payment, a cart no single seller can be credited with.
+      const resolvedSeller = resolveDigitalProductSellerStep({ cart_id: input.cart_id })
+
+      const { id: createdOrderId } = completeCartWorkflow.runAsStep({
+        input: {
+          id: input.cart_id
+        }
+      })
+
+      linkDigitalProductOrderSellerStep({
+        order_id: createdOrderId,
+        mode: "initial",
+        expected_seller_id: resolvedSeller.seller_id,
+      })
+
+      const toCapture = digitalProductPaymentToCaptureStep({
+        order_id: createdOrderId,
+        mode: "initial",
+      })
+
+      return transform({ createdOrderId, toCapture }, (data) => ({
+        order_id: data.createdOrderId,
+        payment_id: data.toCapture.payment_id,
+      }))
     })
+
+    // A replay's order is the one already there; otherwise, the one just made.
+    const checkout = transform({ completed, completion }, (data) => ({
+      order_id: (data.completed.order_id ?? data.completion?.order_id) as string,
+      payment_id: data.completion?.payment_id ?? null,
+    }))
+
+    // SD-48: take the money the checkout authorized, before the digital
+    // product order exists. A refused capture fails the checkout here; a
+    // failure after it is refunded by completeCartWorkflow's own compensation
+    // (`compensatePaymentIfNeededStep` refunds a captured payment). Outside the
+    // block above because `when` blocks do not nest.
+    when("capture-digital-product-order-payment", { checkout }, (data) => !!data.checkout.payment_id).then(() => {
+      capturePaymentWorkflow.runAsStep({
+        input: transform({ checkout }, (data) => ({ payment_id: data.checkout.payment_id as string })),
+      })
+    })
+
+    const id = transform({ checkout }, (data) => data.checkout.order_id)
 
     const { data: orders } = useQueryGraphStep({
       entity: "order",
@@ -127,28 +181,6 @@ const createDigitalProductOrderWorkflow = createWorkflow(
         throwIfKeyNotFound: true
       }
     }) as unknown as { data: DigitalProductOrderRow[] }
-
-    linkSubscriptionOrderSellerStep({
-      order_id: id,
-      mode: "initial",
-      expected_seller_id: resolvedSeller.seller_id,
-      sale: "digital_product",
-    }).config({ name: "link-digital-product-order-seller" })
-
-    // SD-48: take the money the checkout authorized, before the digital
-    // product order exists. A refused capture fails the checkout here; a
-    // failure after it is refunded by completeCartWorkflow's own compensation
-    // (`compensatePaymentIfNeededStep` refunds a captured payment).
-    const toCapture = subscriptionPaymentToCaptureStep({
-      order_id: id,
-      mode: "initial",
-      sale: "digital_product",
-    }).config({ name: "digital-product-payment-to-capture" })
-    when("capture-digital-product-order-payment", { toCapture }, (data) => !!data.toCapture.payment_id).then(() => {
-      capturePaymentWorkflow.runAsStep({
-        input: transform({ toCapture }, (data) => ({ payment_id: data.toCapture.payment_id as string })),
-      })
-    })
 
     const { data: existingLinks } = useQueryGraphStep({
       entity: digitalProductOrderOrderLink.entryPoint,
