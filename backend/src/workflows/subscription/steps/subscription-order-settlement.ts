@@ -382,6 +382,7 @@ type PaymentRow = {
   provider_id?: string | null
   captured_at?: Date | string | null
   metadata?: Record<string, unknown> | null
+  canceled_at?: Date | string | null
   payment_session_id?: string | null
 }
 
@@ -391,8 +392,8 @@ type CollectionRow = { id?: string | null; payments?: Array<PaymentRow | null> |
  * The payment sessions the collections still have. Read on their own: asked
  * for as `payments.payment_session.id`, the order query leaves out a payment
  * whose session is gone instead of answering null for it (seen on a real
- * database), so the leftover would vanish from the read rather than be
- * passed over by a rule anyone can see.
+ * database), which would drop such a payment from the read whether it is a
+ * leftover or the payment the checkout has to capture.
  */
 async function liveSessionIds(query: QueryLike, collectionIds: string[]): Promise<Set<string>> {
   if (collectionIds.length === 0) return new Set()
@@ -430,19 +431,25 @@ async function liveSessionIds(query: QueryLike, collectionIds: string[]): Promis
  * A digital-product order (`sale: "digital_product"`, SD-48) is `initial`
  * or `replay`.
  *
- * `initial` and `replay` look only at payments whose payment session still exists: the
- * cart's current session, the one `completeCartWorkflow` just authorized.
- * When a checkout fails after authorization, that workflow's compensation
- * cancels the payment but Medusa keeps it on the payment collection; a retry
- * pays with a new session (`createPaymentSessionsWorkflow` deletes the
- * collection's sessions first), so the cancelled payment is the earlier
- * attempt's and its session is gone. Counted, it made every retry of that
- * cart refuse ("2 uncaptured payments") and cancel the new authorization too
- * (SD-48, seen on a real database for both sales). A cancelled payment whose
- * session is still the cart's — a retry on the same session, which
- * `authorizePaymentSession` answers with the payment it already has — stays a
- * candidate, so the payment module refuses its capture and the checkout
- * fails; leaving it out would deliver with nothing captured.
+ * `initial` and `replay` pass over one kind of payment: a cancelled one whose
+ * payment session the collection no longer has. That is what a checkout
+ * that failed after authorization leaves once the buyer pays again:
+ * `completeCartWorkflow`'s compensation cancels the payment and Medusa keeps
+ * it on the payment collection, and the retry's new session
+ * (`createPaymentSessionsWorkflow` deletes the collection's sessions first)
+ * replaces its session. Counted, it made every retry of that cart refuse
+ * ("2 uncaptured payments") and cancel the new authorization too (SD-48,
+ * seen on a real database for both sales). Every other uncaptured FBM
+ * payment stays a candidate, so a payment that cannot be captured fails the
+ * checkout rather than letting it deliver uncaptured:
+ *
+ *   - a cancelled payment on the cart's current session — a retry on the
+ *     same session, which `authorizePaymentSession` answers with the payment
+ *     it already has — whose capture the payment module refuses;
+ *   - an authorized payment whose session was replaced while the checkout
+ *     ran: the store's payment-collection route lets a client open a new
+ *     session at any time, and Medusa then cancels the old intent at Stripe,
+ *     which refuses its capture (both seen on a real database, SD-48).
  */
 async function paymentToCapture(input: CaptureInput, { container }: StepExecutionContext) {
   const none = () => new StepResponse({ payment_id: null as string | null })
@@ -468,6 +475,7 @@ async function paymentToCapture(input: CaptureInput, { container }: StepExecutio
       "payment_collections.payments.provider_id",
       "payment_collections.payments.captured_at",
       "payment_collections.payments.metadata",
+      "payment_collections.payments.canceled_at",
       "payment_collections.payments.payment_session_id",
     ],
     filters: { id: input.order_id },
@@ -480,10 +488,12 @@ async function paymentToCapture(input: CaptureInput, { container }: StepExecutio
     candidates = payments.filter((p) => !!renewalRecordClaim(p.provider_id, p.metadata))
   } else {
     const card = payments.filter((p) => isFbmCardProvider(p.provider_id))
-    const live = card.length > 0
+    const live = card.some((p) => p.canceled_at)
       ? await liveSessionIds(query, collections.map((c) => c.id).filter((id): id is string => !!id))
       : new Set<string>()
-    candidates = card.filter((p) => !!p.payment_session_id && live.has(p.payment_session_id))
+    // An earlier attempt's leftover: cancelled, and its session since replaced.
+    const leftover = (p: PaymentRow) => !!p.canceled_at && !(p.payment_session_id && live.has(p.payment_session_id))
+    candidates = card.filter((p) => !leftover(p))
   }
   if (candidates.length > 1) {
     // One checkout, one payment session: more than one is not a shape this

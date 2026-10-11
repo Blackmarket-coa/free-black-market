@@ -266,14 +266,20 @@ describe("which payment a first completion captures (SD-48)", () => {
     return { container: { resolve }, graph }
   }
 
-  const leftover: Payment = { id: "pay_old", provider_id: "pp_stripe_stripe", payment_session_id: "payses_old" }
+  // What a checkout that failed after authorization leaves once the buyer pays again.
+  const leftover: Payment = {
+    id: "pay_old",
+    provider_id: "pp_stripe_stripe",
+    canceled_at: "2026-10-11T00:00:00Z",
+    payment_session_id: "payses_old",
+  }
   const current: Payment = { id: "pay_new", provider_id: "pp_stripe_stripe", payment_session_id: "payses_new" }
 
   describe.each([
     ["digital product sale", digitalToCapture, DIGITAL],
     ["subscription sale", toCapture, SUBS],
   ])("%s, its flag on", (_label, invoke, flag) => {
-    it("captures the payment on the cart's current session, not an earlier attempt's whose session is gone", async () => {
+    it("passes over an earlier attempt's payment, cancelled and its session gone, and captures the current one", async () => {
       process.env[flag] = "true"
       const { container, graph } = orderPayments([leftover, current], ["payses_new"])
       const res = await invoke({ order_id: "order_1", mode: "initial" }, { container })
@@ -297,6 +303,14 @@ describe("which payment a first completion captures (SD-48)", () => {
       const { container } = orderPayments([leftover, { ...current, captured_at: "2026-10-11T00:00:00Z" }], ["payses_new"])
       const res = await invoke({ order_id: "order_1", mode: "initial" }, { container })
       expect(res.output).toEqual({ payment_id: null })
+    })
+
+    it("an authorized payment whose session was replaced mid-checkout stays the one to capture, so its capture is refused, not skipped", async () => {
+      process.env[flag] = "true"
+      const held: Payment = { id: "pay_held", provider_id: "pp_stripe_stripe", payment_session_id: "payses_replaced" }
+      const { container } = orderPayments([held], ["payses_other"])
+      const res = await invoke({ order_id: "order_1", mode: "initial" }, { container })
+      expect(res.output).toEqual({ payment_id: "pay_held" })
     })
 
     it("two uncaptured payments on live sessions are refused, not guessed between", async () => {

@@ -305,6 +305,34 @@ medusaIntegrationTestRunner({
 
     const { lockAttempts, sellerChecks } = checkoutRaceProbes(container)
 
+    /**
+     * A new payment session on the cart's collection: what the storefront opens
+     * when the buyer pays again, and what the store's payment-collection route
+     * lets a client open at any time. Medusa deletes the old session first and
+     * cancels its intent at Stripe.
+     */
+    async function newPaymentSession(collectionId: string) {
+      const { createPaymentSessionsWorkflow } = require("@medusajs/medusa/core-flows")
+      await createPaymentSessionsWorkflow(container()).run({
+        input: { payment_collection_id: collectionId, provider_id: "pp_stripe_stripe", data: {} },
+      })
+    }
+
+    /** Stripe as it is: an intent cancelled since cannot be captured. */
+    function stripeRefusesCancelledIntents() {
+      const cancelled = new Set<string>()
+      stripe.cancelPayment.mockImplementation(async (input: any) => {
+        cancelled.add(input?.data?.id)
+        return { data: { ...(input?.data ?? {}), status: "canceled" } }
+      })
+      stripe.capturePayment.mockImplementation(async (input: any) => {
+        if (cancelled.has(input?.data?.id)) {
+          throw new Error("This PaymentIntent could not be captured because it has a status of canceled.")
+        }
+        return { data: { ...(input?.data ?? {}), status: "succeeded" } }
+      })
+    }
+
     /** Stripe takes its time over the capture, so a second checkout arrives while the first is mid-sale. */
     function slowCapture(ms = 800) {
       stripe.capturePayment.mockImplementation(async (input: any) => {
@@ -469,6 +497,35 @@ medusaIntegrationTestRunner({
         await locking.release(cart.id)
       })
 
+      it("a payment session replaced while the checkout runs does not let the order through uncaptured: the capture is refused, nothing delivered", async () => {
+        const seller = await makeSeller()
+        const product = await makeProduct(seller.id, { digital: true })
+        const { cart, customer, collection } = await makeCart([product], { deliver: true })
+        const created = jest.spyOn(container().resolve(DIGITAL_PRODUCT_MODULE), "createDigitalProductOrders")
+        stripeRefusesCancelledIntents()
+        // Once the card is authorized (the link step's read of the new order),
+        // a second request opens a new payment session on the cart's collection.
+        const query = container().resolve(ContainerRegistrationKeys.QUERY)
+        const graph = query.graph.bind(query)
+        let replaced = false
+        jest.spyOn(query, "graph").mockImplementation(async (q: any, ...rest: any[]) => {
+          if (!replaced && q?.entity === "order" && JSON.stringify(q.fields) === '["id","seller.id","items.product_id"]') {
+            replaced = true
+            await newPaymentSession(collection.id)
+          }
+          return graph(q, ...rest)
+        })
+
+        const { errors } = await checkout(cart.id)
+        expect(replaced).toBe(true)
+        expect(errors.join("\n")).toMatch(/status of canceled/)
+        expect(stripe.capturePayment).toHaveBeenCalledTimes(1)
+        expect(stripe.refundPayment).not.toHaveBeenCalled()
+        expect(created).not.toHaveBeenCalled()
+        expect(await container().resolve(Modules.ORDER).listOrders({ customer_id: customer.id })).toEqual([])
+        expect(await liveSellerOrderLinks(seller.id)).toEqual([])
+      })
+
       it("a product moved to another seller while the card was authorized is refused at the link: rolled back, nothing captured", async () => {
         const a = await makeSeller()
         const b = await makeSeller()
@@ -534,14 +591,6 @@ medusaIntegrationTestRunner({
       // payment session (createPaymentSessionsWorkflow deletes the old one), as
       // the storefront does when the buyer pays again; the cancelled payment
       // once counted as a second candidate and refused every retry.
-
-      /** A new payment session on the collection, as the storefront opens when the buyer pays again. */
-      async function newPaymentSession(collectionId: string) {
-        const { createPaymentSessionsWorkflow } = require("@medusajs/medusa/core-flows")
-        await createPaymentSessionsWorkflow(container()).run({
-          input: { payment_collection_id: collectionId, provider_id: "pp_stripe_stripe", data: {} },
-        })
-      }
 
       it("after a capture Stripe refused, a retry with a new payment session is linked, captured once, delivered once, and settles", async () => {
         const seller = await makeSeller()
