@@ -98,10 +98,11 @@ const termsOf = (sale: SettlementSale | undefined): SaleTerms => SALES[sale ?? "
  * `completeCartWorkflow` is idempotent on such a cart — it creates nothing —
  * but it still registers `compensatePaymentIfNeededStep`, whose compensation
  * refunds the cart's payment whenever `captured_at` is set. So on a replay of
- * a captured sale, anything that threw after it (a seller re-linked since the
- * sale, which the link step refuses; a transient read error; FBM's own
- * `validate` hook) refunded the whole sale while the order, its seller link
- * and whatever it delivered stayed — seen on a real database (SD-48). The
+ * a captured sale, anything that threw after it refunded the whole sale while
+ * the order, its seller link and whatever it delivered stayed: seen on a real
+ * database (SD-48) with the product re-linked to another seller since the
+ * sale (the link step refuses that) and with one transient read error. FBM's
+ * own `validate` hook runs after it too, on every completion. The
  * checkout therefore runs `completeCartWorkflow` and the seller, link and
  * capture steps only when this is null; a replay returns the order as its
  * first completion left it, linking, capturing, refusing and refunding
