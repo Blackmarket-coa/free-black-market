@@ -78,18 +78,29 @@ type WorkflowInput = {
  * card payment, authorized only (`capture` is unset on FBM's Stripe provider),
  * was never captured. With the flag on, F5's own step functions
  * (`subscription/steps/subscription-order-settlement.ts`, as its
- * `*DigitalProduct*` steps) resolve the cart's one seller before any payment is
- * authorized and refuse a cart with none or several, link the order to that
- * seller, and capture the card (Medusa's `capturePaymentWorkflow`, so the
- * order transaction and `payment.captured` follow) before the digital product
- * order is created. A refused capture fails the checkout with nothing left
- * behind; a failure after it is refunded by `completeCartWorkflow`'s own
- * compensation. Flag off, those steps return before any read and the capture
+ * `*DigitalProduct*` steps) resolve the cart's one seller before Medusa
+ * authorizes the payment session and refuse a cart with none or several (so
+ * nothing is captured; a card the buyer already confirmed at Stripe, as
+ * Blackout's page does before it calls complete, keeps that hold until it
+ * lapses), link the order to that seller, and capture the card (Medusa's
+ * `capturePaymentWorkflow`, so the order transaction and `payment.captured`
+ * follow) before the digital product order is created. A refused capture
+ * fails the checkout with nothing left behind. A failure after the capture
+ * deletes the order through `completeCartWorkflow`'s compensation, which then
+ * tries to refund the capture (`compensatePaymentIfNeededStep`) — best
+ * effort: a refund Stripe refuses is only logged by Medusa, the card stays
+ * charged with no order, and the failed run's `payment.captured` event is
+ * dropped with it, so the ledger never hears of the charge (SD-48 open
+ * item). Flag off, those steps return before any read and the capture
  * branch does not run: the workflow does exactly what it did.
  *
  * The seller is resolved after the cart lock is taken, so the cart checked is
- * the cart completed (`completeCartWorkflow` skips its own lock when it runs
- * as a step here).
+ * the cart completed: the lock is held from the first step to the last, and
+ * `completeCartWorkflow`, run as a step here, skips its own. The same lock
+ * keeps two checkouts of one cart at once (a double submit) apart: the second
+ * waits, then finds the first's order and returns it as a replay (seen on a
+ * real database, SD-48). Medusa's locking module here is its in-memory
+ * provider (none is configured), so this holds within one server process.
  *
  * A replay — this checkout run again on a cart already completed (a retried
  * store call, a refreshed checkout page, Blackout's "retry finishes the
@@ -154,9 +165,9 @@ const createDigitalProductOrderWorkflow = createWorkflow(
 
     // SD-48: take the money the checkout authorized, before the digital
     // product order exists. A refused capture fails the checkout here; a
-    // failure after it is refunded by completeCartWorkflow's own compensation
-    // (`compensatePaymentIfNeededStep` refunds a captured payment). Outside the
-    // block above because `when` blocks do not nest.
+    // failure after it leaves completeCartWorkflow's compensation to try a
+    // refund (`compensatePaymentIfNeededStep`), best effort only — see above.
+    // Outside the block above because `when` blocks do not nest.
     when("capture-digital-product-order-payment", { checkout }, (data) => !!data.checkout.payment_id).then(() => {
       capturePaymentWorkflow.runAsStep({
         input: transform({ checkout }, (data) => ({ payment_id: data.checkout.payment_id as string })),
