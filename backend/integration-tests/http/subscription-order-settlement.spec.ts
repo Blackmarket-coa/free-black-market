@@ -280,6 +280,27 @@ medusaIntegrationTestRunner({
         expect(await legs(orderId)).toEqual([])
       })
 
+      it("flag off: as before — a replay returns the same order, unlinked and uncaptured, with one subscription and no lock", async () => {
+        delete process.env[SUBS]
+        const seller = await makeSeller()
+        const product = await makeProduct(seller.id)
+        const { cart, customer } = await makeCart([product])
+        const acquire = jest.spyOn(container().resolve(Modules.LOCKING), "acquire")
+
+        const first = await checkout(cart.id)
+        const second = await checkout(cart.id)
+        expect([first.errors, second.errors]).toEqual([[], []])
+        expect(second.result.order.id).toBe(first.result.order.id)
+        expect(acquire).not.toHaveBeenCalled()
+        const order = await readOrder(first.result.order.id)
+        expect(order.seller ?? null).toBeNull()
+        expect(order.payment_collections[0].payments[0].captured_at).toBeFalsy()
+        expect(stripe.capturePayment).not.toHaveBeenCalled()
+        expect(await container().resolve(Modules.ORDER).listOrders({ customer_id: customer.id })).toHaveLength(1)
+        const subs = await container().resolve(SUBSCRIPTION_MODULE).listSubscriptions({ customer_id: customer.id })
+        expect(subs).toHaveLength(1)
+      })
+
       it("a cart whose products belong to two sellers is refused before the card is touched", async () => {
         const a = await makeProduct((await makeSeller()).id)
         const b = await makeProduct((await makeSeller()).id)
