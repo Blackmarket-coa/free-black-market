@@ -222,9 +222,39 @@ Observed:
   written, with or without the two columns.
 
 So on such a database nobody can hold an earned grower tier. Plan floors would
-raise a displayed tier, but no route applies one (P7). On a schema that has the
-two columns, other XP sources (vendor verification, quests) could accrue PRODUCER
-KARMA; sales still could not. Production's schema is not visible.
+raise a displayed tier, but no route applies one (P7). Production's schema is not
+visible.
+
+The grower tier counts every PRODUCER-track XP point, whatever its source
+(`backend/src/modules/progression/grower-karma.ts:212-216`). With the two columns
+added by hand, for a scale-plan seller (observed):
+
+- **Vendor verification accrues it.** The `vendor.verified` event carries the
+  seller id (`backend/src/api/admin/seller-metadata/[seller_id]/route.ts:116-122`),
+  and its subscriber credits 250 to the member the grower tier reads
+  (`backend/src/subscribers/progression-vendor-verified.ts:33-50`).
+- **So do wellness bookings.** Marking a booking completed through the vendor
+  route, which is live and resolves the seller id
+  (`backend/src/api/vendor/wellness/bookings/[id]/status/route.ts:36`), credited 1
+  and a first-session bonus of 20 (`:75-87`); wellness KARMA is PRODUCER-track XP
+  (`backend/src/modules/wellness/karma.ts:110-113`).
+- **Vendor-quest XP does not.** The quest routes are dark: without
+  `FF_VENDOR_QUESTS_V1` they answer 404 (`backend/src/api/middlewares.ts:1291-1295`).
+  They also key enrollments by the member id that `getSellerId` returns
+  (`backend/src/api/vendor/quests/enrollments/route.ts:52`, `:60`), and a stage's
+  XP goes to that id (`backend/src/modules/vendor-quest/service.ts:159`), where the
+  callback finds no seller and records nothing
+  (`backend/src/api/vendor/quests/_helpers.ts:38-52`). Handed the seller id, the
+  same callback recorded the XP. So quest XP would accrue only with the flag set,
+  on a plan that includes quests, and with that id fixed (SD-49).
+- **Sales do not** (SD-52). Each sale subscriber starts with an order read that
+  selects `items.quantity` and fails whatever the schema: the grower KARMA
+  subscriber above, and the wellness one
+  (`backend/src/subscribers/wellness-order-placed.ts:27-31`). With the columns
+  present, neither wrote an `xp_event`.
+
+`getGrowerTier` then read 321 for that seller: 250 for verification, 21 for the
+booking and 50 from the quest callback handed the seller id.
 
 ## 5. KARMA-linked value that is not tier-linked
 
@@ -347,8 +377,10 @@ framing", and commit `93bee66f` said the node split was left unchanged.
 8. **When to fix SD-49 to SD-52.** Each fix changes what growers see or earn
    before F7 has decided what they should see. Keyed by the seller id, and with
    SD-50 fixed, D3 and D4 would start showing each grower a split that follows
-   their KARMA and plan. With SD-50 fixed, KARMA from vendor verification and
-   quests would start accruing, and with SD-52 fixed too, KARMA from sales.
+   their KARMA and plan. With SD-50 fixed, PRODUCER KARMA would start accruing
+   from vendor verification and from wellness bookings, but not from vendor
+   quests, which are dark and give their XP to the member id (§4.2); with SD-52
+   fixed too, from sales.
    Decide whether they land before, with or after F7's copy change.
 
 ## 11. What the L27 review could look at
@@ -442,7 +474,7 @@ Facts only; no conclusion is drawn here.
   from this repository's migrations, CI's fixture environment); not on
   production.
 - Whether the other 49 route files that import `getSellerId` cope with a member id
-  (SD-49), and whether the other order reads that select `items.quantity` fail
+  (SD-49), beyond the vendor-quest XP award (§4.2), and whether the other order reads that select `items.quantity` fail
   (SD-52), was not checked.
 - Commit history before 2026-09-07 comes from the GitHub commits API; this clone
   is shallow.
