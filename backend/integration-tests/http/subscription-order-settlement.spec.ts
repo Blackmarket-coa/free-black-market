@@ -280,6 +280,95 @@ medusaIntegrationTestRunner({
         expect(live).toEqual([])
       })
 
+      describe("run again on a cart it already completed (a replay)", () => {
+        // completeCartWorkflow creates nothing on a completed cart but still
+        // registers a compensation that refunds a captured payment, so a
+        // replay must keep out of it: the order is returned as its first
+        // completion left it, and nothing is linked, captured or refunded.
+
+        /** The order's payments as the payment module records them. */
+        async function moneyOf(orderId: string) {
+          const order = await readOrder(orderId)
+          const payments = await container().resolve(Modules.PAYMENT).listPayments(
+            { payment_collection_id: order.payment_collections.map((c: any) => c.id) },
+            { relations: ["captures", "refunds"] }
+          )
+          return payments.map((p: any) => ({
+            captures: (p.captures ?? []).map((c: any) => Number(c.amount)),
+            refunds: (p.refunds ?? []).map((r: any) => Number(r.amount)),
+          }))
+        }
+
+        it("returns the same order: captured once, nothing refunded, one subscription", async () => {
+          const seller = await makeSeller()
+          const product = await makeProduct(seller.id)
+          const { cart, customer } = await makeCart([product])
+
+          const first = await checkout(cart.id)
+          expect(first.errors).toEqual([])
+          const second = await checkout(cart.id)
+          expect(second.errors).toEqual([])
+          expect(second.result.order.id).toBe(first.result.order.id)
+
+          expect(stripe.authorizePayment).toHaveBeenCalledTimes(1)
+          expect(stripe.capturePayment).toHaveBeenCalledTimes(1)
+          expect(stripe.refundPayment).not.toHaveBeenCalled()
+          expect(await moneyOf(first.result.order.id)).toEqual([{ captures: [5], refunds: [] }])
+          const subs = await container().resolve(SUBSCRIPTION_MODULE).listSubscriptions({ customer_id: customer.id })
+          expect(subs).toHaveLength(1)
+        })
+
+        it("after the product moved to another seller: refunds nothing, and the subscription stays active", async () => {
+          const a = await makeSeller()
+          const b = await makeSeller()
+          const product = await makeProduct(a.id)
+          const { cart, customer } = await makeCart([product])
+
+          const first = await checkout(cart.id)
+          expect(first.errors).toEqual([])
+          const link = container().resolve(ContainerRegistrationKeys.LINK)
+          await link.dismiss({ [SELLER_MODULE]: { seller_id: a.id }, [Modules.PRODUCT]: { product_id: product.id } })
+          await link.create({ [SELLER_MODULE]: { seller_id: b.id }, [Modules.PRODUCT]: { product_id: product.id } })
+
+          const second = await checkout(cart.id)
+          expect(second.errors).toEqual([])
+          expect(second.result.order.id).toBe(first.result.order.id)
+          expect(stripe.refundPayment).not.toHaveBeenCalled()
+          expect(await moneyOf(first.result.order.id)).toEqual([{ captures: [5], refunds: [] }])
+          expect((await readOrder(first.result.order.id)).seller?.id).toBe(a.id)
+          const subs = await container().resolve(SUBSCRIPTION_MODULE).listSubscriptions({ customer_id: customer.id })
+          expect(subs.map((x: any) => x.status)).toEqual(["active"])
+        })
+
+        it("a replay that fails after the order is found refunds nothing", async () => {
+          const seller = await makeSeller()
+          const product = await makeProduct(seller.id)
+          const { cart } = await makeCart([product])
+          const first = await checkout(cart.id)
+          expect(first.errors).toEqual([])
+
+          // The workflow's own read of the order (the first step after the
+          // cart's order is known) fails once, as a dropped connection would.
+          const query = container().resolve(ContainerRegistrationKeys.QUERY)
+          const graph = query.graph.bind(query)
+          let failed = false
+          const read = jest.spyOn(query, "graph").mockImplementation(async (q: any, ...rest: any[]) => {
+            if (!failed && q?.entity === "order" && (q.fields ?? []).includes("items.variant.product.seller.*")) {
+              failed = true
+              throw new Error("transient: connection terminated unexpectedly")
+            }
+            return graph(q, ...rest)
+          })
+          const second = await checkout(cart.id)
+          read.mockRestore()
+          expect(second.errors.join("\n")).toMatch(/transient: connection terminated unexpectedly/)
+
+          expect(stripe.refundPayment).not.toHaveBeenCalled()
+          expect(await moneyOf(first.result.order.id)).toEqual([{ captures: [5], refunds: [] }])
+          expect((await readOrder(first.result.order.id)).seller?.id).toBe(seller.id)
+        })
+      })
+
       it("a failure after the capture refunds it", async () => {
         const seller = await makeSeller()
         const product = await makeProduct(seller.id)

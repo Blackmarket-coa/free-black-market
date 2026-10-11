@@ -37,7 +37,7 @@ const SUBS = PHASE0_FEATURE_FLAGS.CONSUMER_SUBSCRIPTIONS_V1
 medusaIntegrationTestRunner({
   inApp: true,
   testSuite: ({ api, getContainer }) => {
-    const { container, cents, uid, makeSeller, legs, sellerEarnings, clearing, placed, captured } =
+    const { container, cents, uid, makeSeller, legs, sellerEarnings, clearing, placed, captured, refunded } =
       cardOrderFixtures(getContainer)
 
     type Stripe = {
@@ -274,6 +274,45 @@ medusaIntegrationTestRunner({
       }
     }
 
+    /** The order's payments as the payment module records them: what was captured, refunded or cancelled. */
+    async function moneyOf(orderId: string) {
+      const order = await readOrder(orderId)
+      const payments = await container().resolve(Modules.PAYMENT).listPayments(
+        { payment_collection_id: order.payment_collections.map((c: any) => c.id) },
+        { relations: ["captures", "refunds"] }
+      )
+      return payments.map((p: any) => ({
+        captures: (p.captures ?? []).map((c: any) => Number(c.amount)),
+        refunds: (p.refunds ?? []).map((r: any) => Number(r.amount)),
+        canceled: !!p.canceled_at,
+      }))
+    }
+
+    /** Move a product from one seller to another (or to none), as a seller change after the sale would. */
+    async function relinkProduct(productId: string, from: string, to: string | null) {
+      const link = container().resolve(ContainerRegistrationKeys.LINK)
+      await link.dismiss({ [SELLER_MODULE]: { seller_id: from }, [Modules.PRODUCT]: { product_id: productId } })
+      if (to) await link.create({ [SELLER_MODULE]: { seller_id: to }, [Modules.PRODUCT]: { product_id: productId } })
+    }
+
+    /**
+     * Make the next read of the checkout's own order (the workflow's
+     * `useQueryGraphStep`, the first step after the cart's order is known)
+     * fail once, as a dropped connection would.
+     */
+    function failNextOrderRead() {
+      const query = container().resolve(ContainerRegistrationKeys.QUERY)
+      const graph = query.graph.bind(query)
+      let failed = false
+      return jest.spyOn(query, "graph").mockImplementation(async (q: any, ...rest: any[]) => {
+        if (!failed && q?.entity === "order" && (q.fields ?? []).includes("items.variant.digital_product.*")) {
+          failed = true
+          throw new Error("transient: connection terminated unexpectedly")
+        }
+        return graph(q, ...rest)
+      })
+    }
+
     describe("a digital-product checkout, with FF_DIGITAL_ORDER_SETTLEMENT_V1", () => {
       it("a Blackout one-off listing's order is linked to its seller, captured, and settles to that seller less the 3%", async () => {
         const seller = await makeSeller()
@@ -437,6 +476,127 @@ medusaIntegrationTestRunner({
       })
     })
 
+    describe("a replay — the checkout run again on a cart it already completed — with FF_DIGITAL_ORDER_SETTLEMENT_V1", () => {
+      // completeCartWorkflow creates nothing on a completed cart but still
+      // registers a compensation that refunds a captured payment, so a replay
+      // must keep out of it: the order is returned as its first completion
+      // left it, and nothing is linked, captured, refused or refunded.
+
+      it("returns the same order: captured once, nothing refunded, one digital product order", async () => {
+        const seller = await makeSeller()
+        const product = await makeProduct(seller.id, { digital: true })
+        const { cart } = await makeCart([product], { deliver: true })
+        const created = jest.spyOn(container().resolve(DIGITAL_PRODUCT_MODULE), "createDigitalProductOrders")
+        const captures = captureEvents()
+
+        const first = await checkout(cart.id)
+        expect(first.errors).toEqual([])
+        const orderId = first.result.order.id as string
+        const second = await checkout(cart.id)
+        expect(second.errors).toEqual([])
+        expect(second.result.order.id).toBe(orderId)
+
+        expect(stripe.authorizePayment).toHaveBeenCalledTimes(1)
+        expect(stripe.capturePayment).toHaveBeenCalledTimes(1)
+        expect(stripe.refundPayment).not.toHaveBeenCalled()
+        expect(stripe.cancelPayment).not.toHaveBeenCalled()
+        expect(created).toHaveBeenCalledTimes(1)
+        const order = await readOrder(orderId)
+        expect(captures).toEqual([order.payment_collections[0].payments[0].id])
+        expect(order.seller?.id).toBe(seller.id)
+        expect(order.fulfillments).toHaveLength(1)
+        expect(await moneyOf(orderId)).toEqual([{ captures: [5], refunds: [], canceled: false }])
+        expect(await liveSellerOrderLinks(seller.id)).toEqual([{ order_id: orderId }])
+      })
+
+      it("after the product moved to another seller: returns the order and refunds nothing, and the ledger keeps the sale", async () => {
+        const a = await makeSeller()
+        const b = await makeSeller()
+        const product = await makeProduct(a.id, { digital: true })
+        const { cart } = await makeCart([product], { deliver: true })
+
+        const first = await checkout(cart.id)
+        expect(first.errors).toEqual([])
+        const orderId = first.result.order.id as string
+        const paymentId = (await readOrder(orderId)).payment_collections[0].payments[0].id as string
+        await settled(orderId, paymentId)
+        const before = (await legs(orderId)).map((e) => [e.entry_type, cents(e.amount), e.status])
+
+        await relinkProduct(product.id, a.id, b.id)
+        const second = await checkout(cart.id)
+        expect(second.errors).toEqual([])
+        expect(second.result.order.id).toBe(orderId)
+
+        expect(stripe.refundPayment).not.toHaveBeenCalled()
+        expect(await moneyOf(orderId)).toEqual([{ captures: [5], refunds: [], canceled: false }])
+        const order = await readOrder(orderId)
+        expect(order.seller?.id).toBe(a.id)
+        expect(order.digital_product_order?.id).toBe(first.result.digital_product_order.id)
+        expect(order.fulfillments).toHaveLength(1)
+        // What the refund subscriber would do: there is nothing to reverse.
+        await refunded(paymentId)
+        expect((await legs(orderId)).map((e) => [e.entry_type, cents(e.amount), e.status])).toEqual(before)
+      })
+
+      it("after the product lost its seller: returns the order instead of refusing the retry", async () => {
+        const seller = await makeSeller()
+        const product = await makeProduct(seller.id, { digital: false })
+        const { cart } = await makeCart([product])
+
+        const first = await checkout(cart.id)
+        expect(first.errors).toEqual([])
+        await relinkProduct(product.id, seller.id, null)
+
+        const second = await checkout(cart.id)
+        expect(second.errors).toEqual([])
+        expect(second.result.order.id).toBe(first.result.order.id)
+        expect(stripe.refundPayment).not.toHaveBeenCalled()
+        expect((await readOrder(first.result.order.id)).seller?.id).toBe(seller.id)
+      })
+
+      it("a replay that fails after the order is found refunds nothing, and leaves the order as it was", async () => {
+        const seller = await makeSeller()
+        const product = await makeProduct(seller.id, { digital: true })
+        const { cart } = await makeCart([product], { deliver: true })
+        const first = await checkout(cart.id)
+        expect(first.errors).toEqual([])
+        const orderId = first.result.order.id as string
+
+        const read = failNextOrderRead()
+        const second = await checkout(cart.id)
+        read.mockRestore()
+        expect(second.errors.join("\n")).toMatch(/transient: connection terminated unexpectedly/)
+
+        expect(stripe.refundPayment).not.toHaveBeenCalled()
+        expect(stripe.cancelPayment).not.toHaveBeenCalled()
+        expect(await moneyOf(orderId)).toEqual([{ captures: [5], refunds: [], canceled: false }])
+        const order = await readOrder(orderId)
+        expect(order.seller?.id).toBe(seller.id)
+        expect(order.digital_product_order?.id).toBe(first.result.digital_product_order.id)
+        expect(order.fulfillments).toHaveLength(1)
+        expect(await liveSellerOrderLinks(seller.id)).toEqual([{ order_id: orderId }])
+      })
+
+      it("over the store route, a retried POST after the product moved seller answers 200 with the same order and refunds nothing", async () => {
+        const pak = pakHeaders(await createPublishableKeyToken(getContainer))
+        const a = await makeSeller()
+        const b = await makeSeller()
+        const product = await makeProduct(a.id, { digital: true })
+        const { cart } = await makeCart([product], { deliver: true })
+
+        const first = await api.post(`/store/carts/${cart.id}/complete-digital`, {}, pak).catch((e: any) => e.response)
+        expect(first.status).toBe(200)
+        const orderId = first.data.order.id as string
+
+        await relinkProduct(product.id, a.id, b.id)
+        const second = await api.post(`/store/carts/${cart.id}/complete-digital`, {}, pak).catch((e: any) => e.response)
+        expect(second.status).toBe(200)
+        expect(second.data.order.id).toBe(orderId)
+        expect(stripe.refundPayment).not.toHaveBeenCalled()
+        expect(await moneyOf(orderId)).toEqual([{ captures: [5], refunds: [], canceled: false }])
+      })
+    })
+
     describe("flag off", () => {
       it("as before — no seller link, the payment only authorized, nothing settles — even with FF_CONSUMER_SUBSCRIPTIONS_V1 on", async () => {
         delete process.env[DIGITAL]
@@ -458,6 +618,24 @@ medusaIntegrationTestRunner({
         expect(stripe.capturePayment).not.toHaveBeenCalled()
         await placed(orderId)
         expect(await legs(orderId)).toEqual([])
+      })
+
+      it("as before — a replay returns the same order, still unlinked and uncaptured", async () => {
+        delete process.env[DIGITAL]
+        const seller = await makeSeller()
+        const product = await makeProduct(seller.id, { digital: true })
+        const { cart } = await makeCart([product], { deliver: true })
+        const created = jest.spyOn(container().resolve(DIGITAL_PRODUCT_MODULE), "createDigitalProductOrders")
+
+        const first = await checkout(cart.id)
+        const second = await checkout(cart.id)
+        expect([first.errors, second.errors]).toEqual([[], []])
+        expect(second.result.order.id).toBe(first.result.order.id)
+        expect(created).toHaveBeenCalledTimes(1)
+        expect(stripe.capturePayment).not.toHaveBeenCalled()
+        const order = await readOrder(first.result.order.id)
+        expect(order.seller ?? null).toBeNull()
+        expect(order.payment_collections[0].payments[0].captured_at).toBeFalsy()
       })
 
       it("as before — a two-seller cart still completes into one unlinked, uncaptured order", async () => {

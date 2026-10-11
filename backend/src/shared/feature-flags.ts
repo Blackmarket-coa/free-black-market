@@ -187,8 +187,12 @@ export const PHASE0_FEATURE_FLAGS = {
   // product order is created. A refused capture fails the checkout with
   // nothing left behind; a failure after the capture is refunded by
   // `completeCartWorkflow`'s own compensation (Stripe keeps its fee on a
-  // refund). The steps are F5's, shared (`workflows/subscription/steps/
-  // subscription-order-settlement.ts`). Settles only with
+  // refund). A replay — the checkout run again on a cart it already
+  // completed — returns that order as it is: it never re-enters
+  // `completeCartWorkflow`, whose compensation would refund the captured sale
+  // on any later failure, and nothing is linked, captured, refused or
+  // refunded. The steps are F5's functions, shared (`workflows/subscription/
+  // steps/subscription-order-settlement.ts`). Settles only with
   // CARD_ORDER_LEDGER_V1 also set. Backend only; no twin. BEFORE SETTING IT:
   // every product sold through this checkout needs a Mercur seller link —
   // admin-created digital products (`POST /admin/digital-products`) get none,
