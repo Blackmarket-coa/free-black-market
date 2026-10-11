@@ -246,10 +246,11 @@ added by hand, for a scale-plan seller (observed):
   callback finds no seller and records nothing
   (`backend/src/api/vendor/quests/_helpers.ts:38-52`). Handed the seller id, the
   same callback recorded the XP. So quest XP would accrue only with the flag set,
-  on a plan that includes quests, and with that id fixed (SD-49).
-- **Sales do not** (SD-52). Each sale subscriber starts with an order read that
-  selects `items.quantity` and fails whatever the schema: the grower KARMA
-  subscriber above, and the wellness one
+  on a plan that includes quests, and with the routes keyed by the seller id
+  (SD-49).
+- **Sales do not** (SD-52). Both subscribers that award KARMA for a sale start
+  with an order read that selects `items.quantity`, and it fails whatever the
+  schema: the grower KARMA subscriber above, and the wellness one
   (`backend/src/subscribers/wellness-order-placed.ts:27-31`). With the columns
   present, neither wrote an `xp_event`.
 
@@ -471,10 +472,10 @@ Facts only; no conclusion is drawn here.
 - D3's third fault (PURCHASE credits, §4.1) is a reading of the code, not a
   database run. Its first two faults, the writes on read, and SD-50 and SD-52 were
   observed, in throwaway probes run on the integration harness's database (built
-  from this repository's migrations, CI's fixture environment); not on
-  production.
+  from this repository's migrations, CI's fixture environment, the MikroORM patch
+  applied); not on production.
 - Whether the other 49 route files that import `getSellerId` cope with a member id
-  (SD-49), beyond the vendor-quest XP award (§4.2), and whether the other order reads that select `items.quantity` fail
-  (SD-52), was not checked.
+  (SD-49), beyond the vendor-quest XP award (§4.2), and whether the other order
+  reads that select `items.quantity` fail (SD-52), was not checked.
 - Commit history before 2026-09-07 comes from the GitHub commits API; this clone
   is shallow.
