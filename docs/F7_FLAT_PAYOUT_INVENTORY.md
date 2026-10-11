@@ -386,7 +386,8 @@ Facts only; no conclusion is drawn here.
   "add a seller agreement") is unchecked. The clause that authorises deductions
   reads: "You authorise us to accept payment on your behalf and to deduct our fees
   and any refunds or claim outcomes before disbursing the remainder to you."
-  (`:123`). A hub cut paid to a hub account (§10.1) would be read against it.
+  (`storefront/src/app/[locale]/(main)/legal/terms/page.tsx:123`). A hub cut paid
+  to a hub account (§10.1) would be read against it.
   Whether any grower has a contractual claim to the tiered share is the L27
   question.
 - **Consignment.** Dark; the split is product-metadata basis points of the
