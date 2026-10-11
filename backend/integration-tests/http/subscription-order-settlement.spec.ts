@@ -436,6 +436,140 @@ medusaIntegrationTestRunner({
         expect(live).toEqual([])
       })
 
+      describe("failed after the card was authorized, then tried again on the same cart", () => {
+        // The failed run's compensation cancels its payment, and Medusa keeps
+        // that payment on the cart's payment collection. A retry pays with a
+        // new payment session (createPaymentSessionsWorkflow deletes the old
+        // one); the cancelled payment once counted as a second candidate and
+        // refused every retry.
+
+        /** A new payment session on the collection, as the storefront opens when the buyer pays again. */
+        async function newPaymentSession(collectionId: string) {
+          const { createPaymentSessionsWorkflow } = require("@medusajs/medusa/core-flows")
+          await createPaymentSessionsWorkflow(container()).run({
+            input: { payment_collection_id: collectionId, provider_id: "pp_stripe_stripe", data: {} },
+          })
+        }
+
+        /** The order's payments: what was captured, refunded or cancelled. */
+        async function paymentsOf(orderId: string) {
+          const order = await readOrder(orderId)
+          const payments = await container().resolve(Modules.PAYMENT).listPayments(
+            { payment_collection_id: order.payment_collections.map((c: any) => c.id) },
+            { relations: ["captures", "refunds"] }
+          )
+          return payments.map((p: any) => ({
+            captures: (p.captures ?? []).map((c: any) => Number(c.amount)),
+            refunds: (p.refunds ?? []).map((r: any) => Number(r.amount)),
+            canceled: !!p.canceled_at,
+          }))
+        }
+
+        it("after a capture Stripe refused, a retry with a new payment session is linked, captured once, makes one subscription, and settles", async () => {
+          const seller = await makeSeller()
+          const product = await makeProduct(seller.id)
+          const { cart, customer, collection } = await makeCart([product])
+          stripe.capturePayment.mockImplementationOnce(async () => {
+            throw new Error("stripe: connection reset")
+          })
+
+          const first = await checkout(cart.id)
+          expect(first.errors.join("\n")).toMatch(/stripe: connection reset/)
+          await newPaymentSession(collection.id)
+          const second = await checkout(cart.id)
+          expect(second.errors).toEqual([])
+
+          const orders = await container().resolve(Modules.ORDER).listOrders({ customer_id: customer.id })
+          expect(orders.map((o: any) => o.id)).toEqual([second.result.order.id])
+          const order = await readOrder(second.result.order.id)
+          expect(order.seller?.id).toBe(seller.id)
+          const subs = await container().resolve(SUBSCRIPTION_MODULE).listSubscriptions({ customer_id: customer.id })
+          expect(subs.map((x: any) => x.status)).toEqual(["active"])
+          expect(second.result.subscription?.id).toBe(subs[0].id)
+          // The first attempt's payment stays cancelled; the new one is captured, once.
+          const money = await paymentsOf(order.id)
+          expect(money).toHaveLength(2)
+          expect(money).toEqual(
+            expect.arrayContaining([
+              { captures: [], refunds: [], canceled: true },
+              { captures: [5], refunds: [], canceled: false },
+            ])
+          )
+          expect(stripe.capturePayment).toHaveBeenCalledTimes(2)
+          expect(stripe.refundPayment).not.toHaveBeenCalled()
+
+          const paid = order.payment_collections[0].payments.find((p: any) => p.captured_at)
+          await placed(order.id)
+          await captured(paid.id)
+          const rows = await legs(order.id)
+          const purchase = rows.find((e) => e.entry_type === "PURCHASE")
+          const fee = rows.find((e) => e.entry_type === "COMMISSION")
+          const sellerLeg = rows.find((e) => e.entry_type === "TRANSFER")
+          expect(cents(purchase.amount)).toBe(500)
+          expect(cents(fee.amount) + cents(sellerLeg.amount)).toBe(500)
+          expect(sellerLeg.credit_account_id).toBe((await sellerEarnings(seller.id)).id)
+        })
+
+        it("after the link step's read failed once, a retry with a new payment session is linked, captured once and makes one subscription", async () => {
+          const seller = await makeSeller()
+          const product = await makeProduct(seller.id)
+          const { cart, customer, collection } = await makeCart([product])
+          // The link step's read of the new order fails once, as a dropped connection would.
+          const query = container().resolve(ContainerRegistrationKeys.QUERY)
+          const graph = query.graph.bind(query)
+          let failed = false
+          const read = jest.spyOn(query, "graph").mockImplementation(async (q: any, ...rest: any[]) => {
+            if (!failed && q?.entity === "order" && JSON.stringify(q.fields) === '["id","seller.id","items.product_id"]') {
+              failed = true
+              throw new Error("transient: connection terminated unexpectedly")
+            }
+            return graph(q, ...rest)
+          })
+
+          const first = await checkout(cart.id)
+          read.mockRestore()
+          expect(first.errors).toEqual(["link-subscription-order-seller: transient: connection terminated unexpectedly"])
+          await newPaymentSession(collection.id)
+          const second = await checkout(cart.id)
+          expect(second.errors).toEqual([])
+
+          expect(await container().resolve(Modules.ORDER).listOrders({ customer_id: customer.id })).toHaveLength(1)
+          expect((await readOrder(second.result.order.id)).seller?.id).toBe(seller.id)
+          expect(stripe.capturePayment).toHaveBeenCalledTimes(1)
+          expect(stripe.refundPayment).not.toHaveBeenCalled()
+          expect(await paymentsOf(second.result.order.id)).toEqual(
+            expect.arrayContaining([
+              { captures: [], refunds: [], canceled: true },
+              { captures: [5], refunds: [], canceled: false },
+            ])
+          )
+          const subs = await container().resolve(SUBSCRIPTION_MODULE).listSubscriptions({ customer_id: customer.id })
+          expect(subs).toHaveLength(1)
+        })
+
+        it("a retry on the same payment session, whose payment the failed run cancelled, is refused at the capture: no subscription, nothing taken", async () => {
+          const seller = await makeSeller()
+          const product = await makeProduct(seller.id)
+          const { cart, customer } = await makeCart([product])
+          stripe.capturePayment.mockImplementationOnce(async () => {
+            throw new Error("stripe: connection reset")
+          })
+
+          const first = await checkout(cart.id)
+          expect(first.errors.join("\n")).toMatch(/stripe: connection reset/)
+          // No new session: Medusa authorizes the session again by handing
+          // back the payment it already has, the one the failed run cancelled.
+          const second = await checkout(cart.id)
+          expect(second.errors).toEqual([
+            expect.stringMatching(/^capture-payment-workflow-as-step: The payment: pay_\w+ has been canceled\.$/),
+          ])
+          expect(stripe.capturePayment).toHaveBeenCalledTimes(1)
+          expect(stripe.refundPayment).not.toHaveBeenCalled()
+          expect(await container().resolve(Modules.ORDER).listOrders({ customer_id: customer.id })).toEqual([])
+          expect(await container().resolve(SUBSCRIPTION_MODULE).listSubscriptions({ customer_id: customer.id })).toEqual([])
+        })
+      })
+
       it("a failure after the capture is refunded when Stripe takes the refund", async () => {
         const seller = await makeSeller()
         const product = await makeProduct(seller.id)

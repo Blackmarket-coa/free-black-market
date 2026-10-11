@@ -364,6 +364,26 @@ type PaymentRow = {
   provider_id?: string | null
   captured_at?: Date | string | null
   metadata?: Record<string, unknown> | null
+  payment_session_id?: string | null
+}
+
+type CollectionRow = { id?: string | null; payments?: Array<PaymentRow | null> | null } | null
+
+/**
+ * The payment sessions the collections still have. Read on their own: asked
+ * for as `payments.payment_session.id`, the order query leaves out a payment
+ * whose session is gone instead of answering null for it (seen on a real
+ * database), so the leftover would vanish from the read rather than be
+ * passed over by a rule anyone can see.
+ */
+async function liveSessionIds(query: QueryLike, collectionIds: string[]): Promise<Set<string>> {
+  if (collectionIds.length === 0) return new Set()
+  const { data } = await query.graph({
+    entity: "payment_session",
+    fields: ["id"],
+    filters: { payment_collection_id: collectionIds },
+  })
+  return new Set((data as Array<{ id?: string | null } | null>).map((s) => s?.id).filter((id): id is string => !!id))
 }
 
 /**
@@ -381,6 +401,20 @@ type PaymentRow = {
  *     `processing` is left uncaptured — the money has not arrived.
  *
  * A digital-product order (`sale: "digital_product"`, SD-48) is `initial`.
+ *
+ * `initial` looks only at payments whose payment session still exists: the
+ * cart's current session, the one `completeCartWorkflow` just authorized.
+ * When a checkout fails after authorization, that workflow's compensation
+ * cancels the payment but Medusa keeps it on the payment collection; a retry
+ * pays with a new session (`createPaymentSessionsWorkflow` deletes the
+ * collection's sessions first), so the cancelled payment is the earlier
+ * attempt's and its session is gone. Counted, it made every retry of that
+ * cart refuse ("2 uncaptured payments") and cancel the new authorization too
+ * (SD-48, seen on a real database for both sales). A cancelled payment whose
+ * session is still the cart's — a retry on the same session, which
+ * `authorizePaymentSession` answers with the payment it already has — stays a
+ * candidate, so the payment module refuses its capture and the checkout
+ * fails; leaving it out would deliver with nothing captured.
  */
 async function paymentToCapture(input: CaptureInput, { container }: StepExecutionContext) {
   const none = () => new StepResponse({ payment_id: null as string | null })
@@ -397,20 +431,28 @@ async function paymentToCapture(input: CaptureInput, { container }: StepExecutio
     entity: "order",
     fields: [
       "id",
+      "payment_collections.id",
       "payment_collections.payments.id",
       "payment_collections.payments.provider_id",
       "payment_collections.payments.captured_at",
       "payment_collections.payments.metadata",
+      "payment_collections.payments.payment_session_id",
     ],
     filters: { id: input.order_id },
   })
-  const order = (data as Array<{ payment_collections?: Array<{ payments?: Array<PaymentRow | null> | null } | null> | null }>)[0]
-  const payments = (order?.payment_collections ?? [])
-    .flatMap((c) => c?.payments ?? [])
-    .filter((p): p is PaymentRow => !!p && !p.captured_at)
-  const candidates = payments.filter((p) =>
-    input.mode === "initial" ? isFbmCardProvider(p.provider_id) : !!renewalRecordClaim(p.provider_id, p.metadata)
-  )
+  const order = (data as Array<{ payment_collections?: CollectionRow[] | null }>)[0]
+  const collections = (order?.payment_collections ?? []).filter((c): c is NonNullable<CollectionRow> => !!c)
+  const payments = collections.flatMap((c) => c.payments ?? []).filter((p): p is PaymentRow => !!p && !p.captured_at)
+  let candidates: PaymentRow[]
+  if (input.mode === "renewal") {
+    candidates = payments.filter((p) => !!renewalRecordClaim(p.provider_id, p.metadata))
+  } else {
+    const card = payments.filter((p) => isFbmCardProvider(p.provider_id))
+    const live = card.length > 0
+      ? await liveSessionIds(query, collections.map((c) => c.id).filter((id): id is string => !!id))
+      : new Set<string>()
+    candidates = card.filter((p) => !!p.payment_session_id && live.has(p.payment_session_id))
+  }
   if (candidates.length > 1) {
     // One checkout, one payment session: more than one is not a shape this
     // flow makes, and capturing the wrong one would charge twice.

@@ -235,3 +235,76 @@ describe("the subscription checkout's cart lock (SD-48)", () => {
     expect(stub(subscriptionCheckoutLockStep).stepName).toBe("subscription-checkout-lock")
   })
 })
+
+describe("which payment a first completion captures (SD-48)", () => {
+  afterEach(() => {
+    delete process.env[DIGITAL]
+    delete process.env[SUBS]
+  })
+
+  type Payment = {
+    id: string
+    provider_id: string
+    captured_at?: string | null
+    canceled_at?: string | null
+    payment_session_id: string | null
+  }
+
+  /** An order on one payment collection holding `payments`, whose collection still has `sessions`. */
+  function orderPayments(payments: Payment[], sessions: string[]) {
+    const graph = jest.fn(async (q: { entity: string; filters?: Record<string, unknown> }) => {
+      if (q.entity === "order") {
+        return { data: [{ id: "order_1", payment_collections: [{ id: "paycol_1", payments }] }] }
+      }
+      if (q.entity === "payment_session") return { data: sessions.map((id) => ({ id })) }
+      return { data: [] }
+    })
+    const resolve = jest.fn((key: string) => {
+      if (key === ContainerRegistrationKeys.QUERY) return { graph }
+      throw new Error(`unexpected resolve ${key}`)
+    })
+    return { container: { resolve }, graph }
+  }
+
+  const leftover: Payment = { id: "pay_old", provider_id: "pp_stripe_stripe", payment_session_id: "payses_old" }
+  const current: Payment = { id: "pay_new", provider_id: "pp_stripe_stripe", payment_session_id: "payses_new" }
+
+  describe.each([
+    ["digital product sale", digitalToCapture, DIGITAL],
+    ["subscription sale", toCapture, SUBS],
+  ])("%s, its flag on", (_label, invoke, flag) => {
+    it("captures the payment on the cart's current session, not an earlier attempt's whose session is gone", async () => {
+      process.env[flag] = "true"
+      const { container, graph } = orderPayments([leftover, current], ["payses_new"])
+      const res = await invoke({ order_id: "order_1", mode: "initial" }, { container })
+      expect(res.output).toEqual({ payment_id: "pay_new" })
+      expect(graph).toHaveBeenCalledWith({
+        entity: "payment_session",
+        fields: ["id"],
+        filters: { payment_collection_id: ["paycol_1"] },
+      })
+    })
+
+    it("a payment on the current session stays the one to capture even if cancelled, so the payment module refuses it", async () => {
+      process.env[flag] = "true"
+      const { container } = orderPayments([{ ...current, canceled_at: "2026-10-11T00:00:00Z" }], ["payses_new"])
+      const res = await invoke({ order_id: "order_1", mode: "initial" }, { container })
+      expect(res.output).toEqual({ payment_id: "pay_new" })
+    })
+
+    it("nothing to capture when the current session's payment was captured at authorization", async () => {
+      process.env[flag] = "true"
+      const { container } = orderPayments([leftover, { ...current, captured_at: "2026-10-11T00:00:00Z" }], ["payses_new"])
+      const res = await invoke({ order_id: "order_1", mode: "initial" }, { container })
+      expect(res.output).toEqual({ payment_id: null })
+    })
+
+    it("two uncaptured payments on live sessions are refused, not guessed between", async () => {
+      process.env[flag] = "true"
+      const { container } = orderPayments([leftover, current], ["payses_old", "payses_new"])
+      await expect(invoke({ order_id: "order_1", mode: "initial" }, { container })).rejects.toThrow(
+        "order order_1 has 2 uncaptured payments; none captured"
+      )
+    })
+  })
+})
