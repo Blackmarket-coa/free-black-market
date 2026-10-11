@@ -133,11 +133,16 @@ ARG SECURITY_REFRESH=unset
 # `apk upgrade` is scoped to named Alpine-main packages rather than run bare,
 # deliberately.
 # nginx and its modules in this base image come from NGINX Packaging (F5), not
-# from Alpine main — `apk info` shows the maintainer on nginx 1.31.5-r1 as
+# from Alpine main — `apk info` shows the maintainer on nginx 1.31.6-r1 as
 # nginx-packaging@f5.com. A bare `apk upgrade` therefore upgrades nginx out of
 # whatever the `1.31-alpine` tag pins it to, which is the one thing the pinned
-# tag exists to prevent. libuuid is Alpine main (Natanael Copa), so upgrading it
+# tag exists to prevent. Every package on the list is Alpine main (checked
+# against Alpine's APKINDEX: an Alpine maintainer, never F5), so upgrading it
 # cannot touch the nginx line.
+# SD-47 records evidence against the bare-upgrade premise on this base: its
+# /etc/apk/repositories names no F5 repository, and /etc/apk/world pins
+# `nginx=1.31.6-r1` and each module with `=`. No real build has tested a bare
+# upgrade yet, so the list stays scoped until one does.
 #
 # SD-26: alpine 3.24.1 ships libuuid 2.42.1-r0, carrying seven fixed HIGH
 # util-linux advisories (CVE-2026-53612/53613/53614/76642/78408/78409/78410).
@@ -152,9 +157,19 @@ ARG SECURITY_REFRESH=unset
 # packages, so they join the scoped list; nginx itself is still never upgraded
 # here. The image scan runs only on pushes to main, so a package added here is
 # proven by that scan, not by a PR check.
+#
+# SD-47: tiff 4.7.1-r0 (libtiff) carries CVE-2026-4775, HIGH: a signed integer
+# overflow in putcontig8bitYCbCr44tile lets a crafted TIFF write out of bounds
+# on the heap. Alpine v3.24 main has 4.7.2-r0 (APKINDEX and secdb, not
+# inferred). It is in this image only because libgd needs it and F5's
+# image-filter module needs libgd. tiff is Alpine main (maintainer Michael
+# Mason) and absent from F5's repo, and 4.7.2-r0 keeps the same soname and
+# dependencies, so the upgrade replaces that one package. No nginx tag helps
+# yet: as of 2026-10-11 none had been pushed since the fixed tiff was built
+# on 2026-10-08.
 RUN echo "security-refresh=${SECURITY_REFRESH}" >/dev/null \
     && apk add --no-cache wget tini \
-    && apk upgrade --no-cache libuuid libexpat pcre2
+    && apk upgrade --no-cache libuuid libexpat pcre2 tiff
 
 COPY --from=build /app/dist /usr/share/nginx/html
 COPY nginx.conf /etc/nginx/conf.d/default.conf
