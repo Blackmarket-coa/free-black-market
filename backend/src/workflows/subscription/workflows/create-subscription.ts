@@ -56,15 +56,26 @@ type WorkflowInput = {
  * created — so the sale reaches the seller and the ledger. Flag off, those
  * steps do nothing.
  *
+ * A refused capture fails the checkout; Medusa keeps the cancelled payment
+ * on the cart's payment collection, so the capture step looks only at
+ * payments on the cart's current payment session, and a retry with a new
+ * session completes normally (SD-48; before, every retry was refused).
+ *
  * A replay — the checkout run again on a cart already completed (Blackout's
- * "retry finishes the record", a retried store call) — runs none of them,
- * nor `completeCartWorkflow` itself: with the flag on,
- * `completedCartOrderStep` finds the cart's order first and it is returned
- * as its first completion left it. On a completed cart `completeCartWorkflow`
- * creates nothing but still registers a compensation that refunds a captured
+ * "retry finishes the record", a retried store call) — never runs
+ * `completeCartWorkflow`: with the flag on, `completedCartOrderStep` finds
+ * the cart's order first. On a completed cart `completeCartWorkflow` creates
+ * nothing but still registers a compensation that refunds a captured
  * payment, so a later failure — a seller re-linked since the sale, a
  * transient read error — refunded the first payment of a subscription that
- * stayed active (seen on a real database; SD-48).
+ * stayed active (seen on a real database; SD-48). The link and capture steps
+ * still run on a replay, in their replay mode: a linked, captured order is
+ * left as it is; an order whose first completion stopped before its link or
+ * capture is linked to its products' one seller and captured before the
+ * subscription is created. A refused capture fails the retry, and nothing on
+ * this path refunds anything; an order with no single seller is neither
+ * linked nor captured, and its subscription is made as without the flag
+ * (SD-48 open item).
  *
  * Two checkouts of one cart at once (a double submit) are kept apart, flag
  * on, by a lock on the cart id held from the first step to the last

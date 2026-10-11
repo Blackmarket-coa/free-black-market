@@ -279,8 +279,16 @@ and the card captured at completion, so the sale settles to the seller less
 the 3% (`FF_CARD_ORDER_LEDGER_V1`). Subscription listings already do the same
 under `FF_CONSUMER_SUBSCRIPTIONS_V1` (SD-46). With either flag on, a completion
 run again on a cart already completed (a retry, or the page finishing a record
-an earlier attempt left unmarked) returns that order as it is, and links,
-captures, refuses and refunds nothing. Two completions of one cart at once wait
+an earlier attempt left unmarked) never re-enters Medusa's cart completion and
+refunds nothing. It returns an order already linked and captured as it is. An
+order the earlier attempt left unlinked or uncaptured (it stopped part-way) is
+linked to the product's seller and captured first, or, if the product has no
+seller, neither, as with the flag off; if Stripe refuses that capture, the
+completion fails (`checkout_failed`) before this page grants anything. A completion that failed after the card hold cannot be retried on
+the same checkout session: the page opens a payment session only for a cart
+that has none, so the retry meets the payment the failed attempt cancelled and
+is refused; the member starts a new checkout (SD-48 open item, read from this
+route, not run). Two completions of one cart at once wait
 for each other on a lock on the cart, and the second returns the first's order;
 the lock holds within one server process only (SD-48). For a one-off listing
 the capture now comes before this page grants the listing's `feature_keys`,

@@ -51,8 +51,10 @@ import {
  * subscription wording is F5's byte for byte. Only a subscription renews.
  *
  * A replay — either checkout run again on a cart it already completed — must
- * not reach `completeCartWorkflow` or the money steps at all; see
- * `completedCartOrderStep`.
+ * not reach `completeCartWorkflow` (see `completedCartOrderStep`); the link
+ * and capture steps run on it in their `replay` mode, which finishes an order
+ * its first completion left unlinked or uncaptured and leaves a finished one
+ * as it is.
  */
 
 type QueryLike = { graph: (q: Record<string, unknown>) => Promise<{ data: unknown[] }> }
@@ -103,11 +105,16 @@ const termsOf = (sale: SettlementSale | undefined): SaleTerms => SALES[sale ?? "
  * database (SD-48) with the product re-linked to another seller since the
  * sale (the link step refuses that) and with one transient read error. FBM's
  * own `validate` hook runs after it too, on every completion. The
- * checkout therefore runs `completeCartWorkflow` and the seller, link and
- * capture steps only when this is null; a replay returns the order as its
- * first completion left it, linking, capturing, refusing and refunding
- * nothing. Flag off, returns null before any read, and the checkout
- * completes the cart exactly as it did.
+ * checkout therefore runs `completeCartWorkflow` and the seller check only
+ * when this is null. A replay runs the link and capture steps in their
+ * `replay` mode instead: a linked, captured order is returned as it is, and
+ * one its first completion left unlinked or uncaptured (stopped right after
+ * `completeCartWorkflow`, or completed by Medusa's Stripe webhook) is linked
+ * and captured before anything is delivered — outside `completeCartWorkflow`,
+ * so nothing refunds anything. At first, a replay skipped those steps too and
+ * delivered such an order unlinked and uncaptured (seen on a real database,
+ * SD-48's second review). Flag off, returns null before any read, and the
+ * checkout completes the cart exactly as it did.
  */
 async function completedCartOrder(input: { cart_id: string; sale?: SettlementSale }, { container }: StepExecutionContext) {
   const terms = termsOf(input.sale)

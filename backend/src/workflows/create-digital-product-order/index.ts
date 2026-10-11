@@ -72,11 +72,11 @@ type WorkflowInput = {
 /**
  * SD-48 (`FF_DIGITAL_ORDER_SETTLEMENT_V1`): the sale reaches its seller and
  * the ledger. This workflow completes the cart with Medusa's
- * `completeCartWorkflow`, not Mercur's split, so — like a subscription before
- * F5 — the order got no Mercur seller link (the card ledger refuses such an
- * order, so the seller was never credited and BMC's 3% never taken) and its
- * card payment, authorized only (`capture` is unset on FBM's Stripe provider),
- * was never captured. With the flag on, F5's own step functions
+ * `completeCartWorkflow`, not Mercur's split, so — like a subscription
+ * before F5 — the order got no Mercur seller link (the card ledger refuses
+ * such an order, so the seller was never credited and BMC's 3% never taken)
+ * and its card payment, authorized only (`capture` is unset on FBM's Stripe
+ * provider), was never captured. With the flag on, F5's own step functions
  * (`subscription/steps/subscription-order-settlement.ts`, as its
  * `*DigitalProduct*` steps) resolve the cart's one seller before Medusa
  * authorizes the payment session and refuse a cart with none or several (so
@@ -85,14 +85,18 @@ type WorkflowInput = {
  * lapses), link the order to that seller, and capture the card (Medusa's
  * `capturePaymentWorkflow`, so the order transaction and `payment.captured`
  * follow) before the digital product order is created. A refused capture
- * fails the checkout with nothing left behind. A failure after the capture
- * deletes the order through `completeCartWorkflow`'s compensation, which then
- * tries to refund the capture (`compensatePaymentIfNeededStep`) — best
- * effort: a refund Stripe refuses is only logged by Medusa, the card stays
- * charged with no order, and the failed run's `payment.captured` event is
- * dropped with it, so the ledger never hears of the charge (SD-48 open
- * item). Flag off, those steps return before any read and the capture
- * branch does not run: the workflow does exactly what it did.
+ * fails the checkout: the authorization is cancelled and the order and its
+ * seller link are removed, but Medusa keeps the cancelled payment on the
+ * cart's payment collection, so the capture step looks only at payments on
+ * the cart's current payment session and a retry with a new session
+ * completes normally (SD-48). A failure after the capture deletes the order
+ * through `completeCartWorkflow`'s compensation, which then tries to refund
+ * the capture (`compensatePaymentIfNeededStep`) — best effort: a refund
+ * Stripe refuses is only logged by Medusa, the card stays charged with no
+ * order, and the failed run's `payment.captured` event is dropped with it,
+ * so the ledger never hears of the charge (SD-48 open item). Flag off, those
+ * steps return before any read and the capture branch does not run: the
+ * workflow does exactly what it did.
  *
  * The seller is resolved after the cart lock is taken, so the cart checked is
  * the cart completed: the lock is held from the first step to the last, and
@@ -104,13 +108,22 @@ type WorkflowInput = {
  *
  * A replay — this checkout run again on a cart already completed (a retried
  * store call, a refreshed checkout page, Blackout's "retry finishes the
- * record") — runs none of that, nor `completeCartWorkflow` itself: with the
- * flag on, `digitalProductCompletedCartOrderStep` finds the cart's order
- * first and the order is returned as its first completion left it. Run on a
- * completed cart, `completeCartWorkflow` creates nothing but still registers
- * a compensation that refunds a captured payment, so any later failure — a
- * seller re-linked since the sale, a transient read error — refunded a sale
- * whose order and delivery stayed (seen on a real database).
+ * record") — never runs `completeCartWorkflow`: with the flag on,
+ * `digitalProductCompletedCartOrderStep` finds the cart's order first. Run on
+ * a completed cart, `completeCartWorkflow` creates nothing but still
+ * registers a compensation that refunds a captured payment, so any later
+ * failure — a seller re-linked since the sale, a transient read error —
+ * refunded a sale whose order and delivery stayed (seen on a real database).
+ * The link and capture steps still run on a replay, in their replay mode: an
+ * order already linked keeps its seller and a captured one is left alone, so
+ * a replay of a finished sale changes nothing; an order whose first
+ * completion stopped before its link or capture (a restart mid-checkout, or
+ * Medusa's Stripe webhook completing the cart) is linked to its products'
+ * one seller and captured before the digital product order is created. A
+ * refused capture fails the retry before anything is delivered, and nothing
+ * on this path refunds anything. An order with no single seller is neither
+ * linked nor captured, and is delivered as without the flag (SD-48 open
+ * item).
  */
 const createDigitalProductOrderWorkflow = createWorkflow(
   "create-digital-product-order",
