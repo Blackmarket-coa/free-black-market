@@ -139,10 +139,12 @@ ARG SECURITY_REFRESH=unset
 # tag exists to prevent. Every package on the list is Alpine main (checked
 # against Alpine's APKINDEX: an Alpine maintainer, never F5), so upgrading it
 # cannot touch the nginx line.
-# SD-47 records evidence against the bare-upgrade premise on this base: its
-# /etc/apk/repositories names no F5 repository, and /etc/apk/world pins
-# `nginx=1.31.6-r1` and each module with `=`. No real build has tested a bare
-# upgrade yet, so the list stays scoped until one does.
+# SD-47 notes that on today's base /etc/apk/repositories names no F5
+# repository and /etc/apk/world pins `nginx=1.31.6-r1` and each module with
+# `=`, which suggests a bare upgrade might leave nginx alone on this tag. That
+# is untested by a real build and would not hold for every future base, so
+# the scoping above stands; whether to change it is an operator decision
+# recorded in docs/AUDIT_DEBT.md, not something one build settles.
 #
 # SD-26: alpine 3.24.1 ships libuuid 2.42.1-r0, carrying seven fixed HIGH
 # util-linux advisories (CVE-2026-53612/53613/53614/76642/78408/78409/78410).
