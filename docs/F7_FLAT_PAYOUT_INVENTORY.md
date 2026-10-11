@@ -25,8 +25,9 @@ environment flag that no workflow, compose file, env template or Dockerfile in
 this repository sets; production environments are not visible from here. **Dead**
 means no code calls it. **Observed** means run on a database that the integration
 test harness built from this repository's migrations, with CI's fixture
-environment, in a throwaway probe deleted afterwards; production's schema and
-data are not visible from here.
+environment and the repository's MikroORM patch applied as CI's install applies
+it (SD-52), in a throwaway probe deleted afterwards; production's schema and data
+are not visible from here.
 
 ## 1. The finding that changes F7's framing
 
