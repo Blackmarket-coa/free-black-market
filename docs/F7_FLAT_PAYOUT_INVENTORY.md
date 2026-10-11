@@ -434,7 +434,12 @@ Facts only; no conclusion is drawn here.
   earned tier: no character sheet can be created (SD-50), and no sale awards
   grower KARMA (SD-52). Plan floors would raise a displayed tier, but no route
   applies one (P7), and per OI-6 no vendor is on those plans. Production's schema
-  is not visible (§12).
+  is not visible (§12). If it has the two columns, vendor verification and
+  completed wellness bookings accrue PRODUCER KARMA there (§4.2), and
+  verification alone (250) reaches Root
+  (`backend/src/modules/progression/grower-karma.ts:57-63`). No endpoint would
+  show that tier: only D3 and D4 compute a grower's tier, and both look growers
+  up by the member id.
 - **The seller terms.** The Terms say sellers agree to "a separate seller
   agreement" (`storefront/src/app/[locale]/(main)/legal/terms/page.tsx:115`); no
   seller agreement is in this repository, and `PRE_LAUNCH_AUDIT.md:294` (LEG-1,
