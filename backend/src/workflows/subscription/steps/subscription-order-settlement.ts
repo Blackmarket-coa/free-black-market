@@ -123,6 +123,32 @@ async function completedCartOrder(input: { cart_id: string; sale?: SettlementSal
 export const completedCartOrderStep = createStep("subscription-completed-cart-order", completedCartOrder)
 
 /**
+ * What the subscription checkout locks for its whole run: the cart id — the
+ * key the digital checkout and Medusa's own cart workflows lock a cart under
+ * — or nothing with the flag off, when `acquireLockStep` takes no lock and
+ * the checkout runs as before. Read once, here, so the release frees exactly
+ * what the acquire took.
+ *
+ * Without it nothing kept two checkouts of one cart (a double submit) apart.
+ * `completeCartWorkflow` has a lock on the cart id, but run nested
+ * (`runAsStep`) its acquire and release steps return `StepResponse.skip()`,
+ * so this checkout held no lock at all: both runs found no order and both
+ * completed the cart. On a real database, depending on timing, that made two
+ * orders, two subscriptions and two captures recorded on one payment; or the
+ * run that lost the race to record the payment failed, after the payment
+ * module had sent a cancel to Stripe for the PaymentIntent the other run
+ * then captured; or that run's compensation refunded the other run's
+ * capture while the other run's subscription stayed active (SD-48). For the
+ * same reason, this lock on the same key never meets `completeCartWorkflow`'s
+ * own.
+ */
+export const subscriptionCheckoutLockStep = createStep(
+  "subscription-checkout-lock",
+  async (input: { cart_id: string }) =>
+    new StepResponse({ key: consumerSubscriptionsEnabled() ? [input.cart_id] : ([] as string[]) })
+)
+
+/**
  * The one seller every listed product belongs to (Mercur's product `seller`
  * link), or why there is not exactly one.
  */

@@ -5,6 +5,8 @@ import { SELLER_MODULE } from "@mercurjs/b2c-core/modules/seller"
 import { PHASE0_FEATURE_FLAGS } from "../../src/shared/feature-flags"
 import { SUBSCRIPTION_MODULE } from "../../src/modules/subscription"
 import { cardOrderFixtures } from "./helpers/card-orders"
+import { checkoutRaceProbes } from "./helpers/checkout-race"
+import { createPublishableKeyToken } from "./_publishable-key"
 import { syncCardChargeFromStripe, type ChargeLedgerState } from "../../src/lib/card-stripe-sync"
 import { readCardSettlementOrder } from "../../src/lib/card-order-settlement"
 import { reconcileCardOrder } from "../../src/lib/card-order-reconcile"
@@ -32,7 +34,7 @@ const SUBS = PHASE0_FEATURE_FLAGS.CONSUMER_SUBSCRIPTIONS_V1
 
 medusaIntegrationTestRunner({
   inApp: true,
-  testSuite: ({ getContainer }) => {
+  testSuite: ({ api, getContainer }) => {
     const { container, cents, uid, makeSeller, makeOrder, legs, sellerEarnings, clearing, placed, captured } =
       cardOrderFixtures(getContainer)
 
@@ -114,10 +116,18 @@ medusaIntegrationTestRunner({
       return channel as { id: string }
     }
 
-    /** A customer's cart holding the given products at $5.00, with a Stripe session opened on it. */
-    async function makeCart(products: Array<{ id: string; variants: Array<{ id: string }> }>, price = 5) {
+    /**
+     * A customer's cart holding the given products at $5.00, with a Stripe
+     * session opened on it. The customer is a new one unless given.
+     */
+    async function makeCart(
+      products: Array<{ id: string; variants: Array<{ id: string }> }>,
+      price = 5,
+      buyer?: { id: string; email: string }
+    ) {
       const id = uid()
-      const [customer] = await container().resolve(Modules.CUSTOMER).createCustomers([{ email: `buyer-${id}@example.com` }])
+      const customer =
+        buyer ?? (await container().resolve(Modules.CUSTOMER).createCustomers([{ email: `buyer-${id}@example.com` }]))[0]
       const [region] = await container().resolve(Modules.REGION).createRegions([{ name: `US ${id}`, currency_code: "usd" }])
       const [cart] = await container().resolve(Modules.CART).createCarts([
         {
@@ -190,6 +200,29 @@ medusaIntegrationTestRunner({
       return data[0] as any
     }
 
+    /** The order's payments as the payment module records them. */
+    async function moneyOf(orderId: string) {
+      const order = await readOrder(orderId)
+      const payments = await container().resolve(Modules.PAYMENT).listPayments(
+        { payment_collection_id: order.payment_collections.map((c: any) => c.id) },
+        { relations: ["captures", "refunds"] }
+      )
+      return payments.map((p: any) => ({
+        captures: (p.captures ?? []).map((c: any) => Number(c.amount)),
+        refunds: (p.refunds ?? []).map((r: any) => Number(r.amount)),
+      }))
+    }
+
+    const { lockAttempts, sellerChecks } = checkoutRaceProbes(container)
+
+    /** Stripe takes its time over the capture, so a second checkout arrives while the first is mid-sale. */
+    function slowCapture(ms = 800) {
+      stripe.capturePayment.mockImplementation(async (input: any) => {
+        await new Promise((r) => setTimeout(r, ms))
+        return { data: { ...(input?.data ?? {}), status: "succeeded" } }
+      })
+    }
+
     describe("the first order of a subscription", () => {
       it("is linked to its seller, its card payment captured, and it settles to that seller less the 3%", async () => {
         const seller = await makeSeller()
@@ -222,14 +255,16 @@ medusaIntegrationTestRunner({
         expect(sellerLeg.credit_account_id).toBe((await sellerEarnings(seller.id)).id)
       })
 
-      it("flag off: as before — no seller link, the payment only authorized, nothing settles", async () => {
+      it("flag off: as before — no lock, no seller link, the payment only authorized, nothing settles", async () => {
         delete process.env[SUBS]
         const seller = await makeSeller()
         const product = await makeProduct(seller.id)
         const { cart } = await makeCart([product])
+        const acquire = jest.spyOn(container().resolve(Modules.LOCKING), "acquire")
 
         const { result, errors } = await checkout(cart.id)
         expect(errors).toEqual([])
+        expect(acquire).not.toHaveBeenCalled()
         const orderId = result.order.id as string
         const order = await readOrder(orderId)
         expect(order.seller ?? null).toBeNull()
@@ -278,6 +313,11 @@ medusaIntegrationTestRunner({
           [seller.id]
         )
         expect(live).toEqual([])
+        // The checkout's compensation released the cart's lock: it can be
+        // taken at once (held, the attempt would be refused).
+        const locking = container().resolve(Modules.LOCKING)
+        await locking.acquire(cart.id, { expire: 5 })
+        await locking.release(cart.id)
       })
 
       describe("run again on a cart it already completed (a replay)", () => {
@@ -285,19 +325,6 @@ medusaIntegrationTestRunner({
         // registers a compensation that refunds a captured payment, so a
         // replay must keep out of it: the order is returned as its first
         // completion left it, and nothing is linked, captured or refunded.
-
-        /** The order's payments as the payment module records them. */
-        async function moneyOf(orderId: string) {
-          const order = await readOrder(orderId)
-          const payments = await container().resolve(Modules.PAYMENT).listPayments(
-            { payment_collection_id: order.payment_collections.map((c: any) => c.id) },
-            { relations: ["captures", "refunds"] }
-          )
-          return payments.map((p: any) => ({
-            captures: (p.captures ?? []).map((c: any) => Number(c.amount)),
-            refunds: (p.refunds ?? []).map((r: any) => Number(r.amount)),
-          }))
-        }
 
         it("returns the same order: captured once, nothing refunded, one subscription", async () => {
           const seller = await makeSeller()
@@ -369,6 +396,40 @@ medusaIntegrationTestRunner({
         })
       })
 
+      it("a product moved to another seller while the card was authorized is refused at the link: rolled back, nothing captured", async () => {
+        const a = await makeSeller()
+        const b = await makeSeller()
+        const product = await makeProduct(a.id)
+        const { cart, customer } = await makeCart([product])
+        // The seller check passed for A; while Stripe authorizes the card,
+        // the product moves to B, so the order cannot go to the seller checked.
+        const link = container().resolve(ContainerRegistrationKeys.LINK)
+        stripe.authorizePayment.mockImplementation(async (input: any) => {
+          await link.dismiss({ [SELLER_MODULE]: { seller_id: a.id }, [Modules.PRODUCT]: { product_id: product.id } })
+          await link.create({ [SELLER_MODULE]: { seller_id: b.id }, [Modules.PRODUCT]: { product_id: product.id } })
+          return { status: "authorized", data: { ...(input?.data ?? {}), status: "requires_capture" } }
+        })
+
+        const { errors } = await checkout(cart.id)
+        expect(errors).toEqual([
+          expect.stringMatching(
+            new RegExp(`^link-subscription-order-seller: Subscription order order_\\w+ is sold by ${b.id}, not ${a.id} as checked before payment$`)
+          ),
+        ])
+        // The authorization is released and nothing was taken.
+        expect(stripe.capturePayment).not.toHaveBeenCalled()
+        expect(stripe.refundPayment).not.toHaveBeenCalled()
+        expect(stripe.cancelPayment).toHaveBeenCalledTimes(1)
+        expect(await container().resolve(Modules.ORDER).listOrders({ customer_id: customer.id })).toEqual([])
+        expect(await container().resolve(SUBSCRIPTION_MODULE).listSubscriptions({ customer_id: customer.id })).toEqual([])
+        const pg = container().resolve(ContainerRegistrationKeys.PG_CONNECTION)
+        const { rows: live } = await pg.raw(
+          `SELECT order_id FROM seller_seller_order_order WHERE seller_id IN (?, ?) AND deleted_at IS NULL`,
+          [a.id, b.id]
+        )
+        expect(live).toEqual([])
+      })
+
       it("a failure after the capture refunds it", async () => {
         const seller = await makeSeller()
         const product = await makeProduct(seller.id)
@@ -383,6 +444,105 @@ medusaIntegrationTestRunner({
         expect(stripe.capturePayment).toHaveBeenCalledTimes(1)
         expect(stripe.refundPayment).toHaveBeenCalledTimes(1)
         expect(customer.id).toBeTruthy()
+      })
+    })
+
+    describe("two checkouts of one cart at the same time (a double submit)", () => {
+      // Before the checkout held the cart's lock, nothing kept the two apart
+      // (completeCartWorkflow skips its own lock when run nested): on this
+      // database they made two orders and two subscriptions with two captures
+      // on one payment, or the losing run's compensation refunded the
+      // winner's capture while its subscription stayed active.
+
+      it("the second waits for the first, then returns its order as a replay: one order, one capture, nothing refunded, one subscription", async () => {
+        const seller = await makeSeller()
+        const product = await makeProduct(seller.id)
+        const { cart, customer } = await makeCart([product])
+        slowCapture()
+        const lock = lockAttempts(cart.id)
+        const checks = sellerChecks(cart.id)
+
+        const [x, y] = await Promise.all([checkout(cart.id), checkout(cart.id)])
+        expect([x.errors, y.errors]).toEqual([[], []])
+        expect(y.result.order.id).toBe(x.result.order.id)
+        // One run was refused the lock while the other held it, each took it
+        // once (completeCartWorkflow, nested, takes none), and only the first
+        // checked the seller: the second took the replay path.
+        expect(lock.refused).toBeGreaterThan(0)
+        expect(lock.taken).toBe(2)
+        expect(checks.count).toBe(1)
+
+        expect(await container().resolve(Modules.ORDER).listOrders({ customer_id: customer.id })).toHaveLength(1)
+        expect(stripe.authorizePayment).toHaveBeenCalledTimes(1)
+        expect(stripe.capturePayment).toHaveBeenCalledTimes(1)
+        expect(stripe.refundPayment).not.toHaveBeenCalled()
+        expect(stripe.cancelPayment).not.toHaveBeenCalled()
+        expect(await moneyOf(x.result.order.id)).toEqual([{ captures: [5], refunds: [] }])
+        expect((await readOrder(x.result.order.id)).seller?.id).toBe(seller.id)
+        const subs = await container().resolve(SUBSCRIPTION_MODULE).listSubscriptions({ customer_id: customer.id })
+        expect(subs).toHaveLength(1)
+        // The first returns the subscription it made; the replay makes none.
+        expect([x.result.subscription?.id, y.result.subscription?.id].filter(Boolean)).toEqual([subs[0].id])
+      })
+
+      it("over the store route, two POSTs at once answer with the same order, captured once, and one subscription", async () => {
+        const pak = await createPublishableKeyToken(getContainer)
+        const email = `buyer-${uid()}@example.com`
+        const password = `${uid()}-${uid()}`
+        const registered = await api.post("/auth/customer/emailpass/register", { email, password })
+        const created = await api.post(
+          "/store/customers",
+          { email },
+          { headers: { authorization: `Bearer ${registered.data.token}`, "x-publishable-api-key": pak } }
+        )
+        const login = await api.post("/auth/customer/emailpass", { email, password })
+        const asCustomer = { headers: { authorization: `Bearer ${login.data.token}`, "x-publishable-api-key": pak } }
+
+        const seller = await makeSeller()
+        const product = await makeProduct(seller.id)
+        const { cart } = await makeCart([product], 5, created.data.customer)
+        slowCapture()
+        const body = { cart_id: cart.id, interval: "monthly", period: 1, type: "membership", auto_renew_approved: false }
+        const post = () => api.post("/store/subscriptions", body, asCustomer).catch((e: any) => e.response)
+
+        const [a, b] = await Promise.all([post(), post()])
+        expect([a.status, b.status]).toEqual([201, 201])
+        expect(b.data.order.id).toBe(a.data.order.id)
+        expect(stripe.capturePayment).toHaveBeenCalledTimes(1)
+        expect(stripe.refundPayment).not.toHaveBeenCalled()
+        expect(stripe.cancelPayment).not.toHaveBeenCalled()
+        expect(await moneyOf(a.data.order.id)).toEqual([{ captures: [5], refunds: [] }])
+        const subs = await container().resolve(SUBSCRIPTION_MODULE).listSubscriptions({ customer_id: created.data.customer.id })
+        expect(subs).toHaveLength(1)
+      })
+
+      it("a second checkout kept waiting past the lock's 30 seconds fails before any money step, and refunds nothing", async () => {
+        const seller = await makeSeller()
+        const product = await makeProduct(seller.id)
+        const { cart, customer } = await makeCart([product])
+        // A first checkout still running holds the cart's lock.
+        const locking = container().resolve(Modules.LOCKING)
+        await locking.acquire(cart.id, { expire: 120 })
+        try {
+          const started = Date.now()
+          const { errors } = await checkout(cart.id)
+          expect(Date.now() - started).toBeGreaterThanOrEqual(29_000)
+          expect(errors).toEqual([expect.stringMatching(/^acquire-lock-step: Failed to acquire lock for key "cart_/)])
+          expect(stripe.authorizePayment).not.toHaveBeenCalled()
+          expect(stripe.capturePayment).not.toHaveBeenCalled()
+          expect(stripe.refundPayment).not.toHaveBeenCalled()
+          expect(stripe.cancelPayment).not.toHaveBeenCalled()
+          expect(await container().resolve(Modules.ORDER).listOrders({ customer_id: customer.id })).toEqual([])
+          expect(await container().resolve(SUBSCRIPTION_MODULE).listSubscriptions({ customer_id: customer.id })).toEqual([])
+          // The checkout that gave up did not free the lock it never held.
+          await expect(locking.acquire(cart.id, { expire: 5 })).rejects.toThrow(/Failed to acquire lock/)
+        } finally {
+          await locking.release(cart.id)
+        }
+        // Once the first is done, the cart checks out as usual.
+        const retry = await checkout(cart.id)
+        expect(retry.errors).toEqual([])
+        expect(stripe.capturePayment).toHaveBeenCalledTimes(1)
       })
     })
 

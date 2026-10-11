@@ -21,6 +21,7 @@ import {
   linkSubscriptionOrderSellerStep,
   resolveDigitalProductSellerStep,
   resolveSubscriptionSellerStep,
+  subscriptionCheckoutLockStep,
   subscriptionPaymentToCaptureStep,
 } from "../steps/subscription-order-settlement"
 
@@ -203,5 +204,34 @@ describe("the F5 settlement steps, per sale", () => {
     await expect(resolveSeller({ cart_id: "cart_1" }, { container })).rejects.toThrow(
       "A subscription is sold by one seller, and this cart cannot be: its products belong to 2 sellers."
     )
+  })
+})
+
+describe("the subscription checkout's cart lock (SD-48)", () => {
+  const lockKey = invokeOf(subscriptionCheckoutLockStep)
+
+  afterEach(() => {
+    delete process.env[DIGITAL]
+    delete process.env[SUBS]
+  })
+
+  it.each([
+    ["both flags off", {}],
+    ["only FF_DIGITAL_ORDER_SETTLEMENT_V1 on", { [DIGITAL]: "true" }],
+  ])("%s: no key, so acquireLockStep takes no lock, and nothing is read", async (_label, env: Record<string, string>) => {
+    Object.assign(process.env, env)
+    const { container, resolve } = recordingContainer()
+    const res = await lockKey({ cart_id: "cart_1" }, { container })
+    expect(res.output).toEqual({ key: [] })
+    expect(resolve).not.toHaveBeenCalled()
+  })
+
+  it("FF_CONSUMER_SUBSCRIPTIONS_V1 on: the cart id, the key the digital checkout and Medusa's cart workflows lock a cart under", async () => {
+    process.env[SUBS] = "true"
+    const { container, resolve } = recordingContainer()
+    const res = await lockKey({ cart_id: "cart_1" }, { container })
+    expect(res.output).toEqual({ key: ["cart_1"] })
+    expect(resolve).not.toHaveBeenCalled()
+    expect(stub(subscriptionCheckoutLockStep).stepName).toBe("subscription-checkout-lock")
   })
 })
