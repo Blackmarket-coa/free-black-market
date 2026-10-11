@@ -4,10 +4,12 @@ import {
   when,
   WorkflowResponse
 } from "@medusajs/framework/workflows-sdk"
-import { 
+import {
+  acquireLockStep,
   capturePaymentWorkflow,
   createRemoteLinkStep,
   completeCartWorkflow,
+  releaseLockStep,
   useQueryGraphStep,
 } from "@medusajs/medusa/core-flows"
 import { SubscriptionInterval, SubscriptionType } from "../../../modules/subscription/types"
@@ -18,6 +20,7 @@ import {
   completedCartOrderStep,
   linkSubscriptionOrderSellerStep,
   resolveSubscriptionSellerStep,
+  subscriptionCheckoutLockStep,
   subscriptionPaymentToCaptureStep,
 } from "../steps/subscription-order-settlement"
 import subscriptionOrderLink from "../../../links/subscription-order"
@@ -60,11 +63,28 @@ type WorkflowInput = {
  * payment, so a later failure — a seller re-linked since the sale, a
  * transient read error — refunded the first payment of a subscription that
  * stayed active (seen on a real database; SD-48).
+ *
+ * Two checkouts of one cart at once (a double submit) are kept apart, flag
+ * on, by a lock on the cart id held from the first step to the last
+ * (`subscriptionCheckoutLockStep`): the second waits, then returns the
+ * first's order as a replay. Medusa's locking module here is its in-memory
+ * provider (no locking module is configured), so the lock holds within one
+ * server process only — the same limit `completeCartWorkflow`'s own lock has.
  */
 export const createSubscriptionWorkflowId = "create-subscription-workflow"
 export const createSubscriptionWorkflow = createWorkflow(
   createSubscriptionWorkflowId,
   (input: WorkflowInput) => {
+    // One checkout of a cart at a time, held to the end: a second waits
+    // here, then finds the first's order below and returns it as a replay
+    // (flag off: no key, no lock, as before).
+    const lock = subscriptionCheckoutLockStep({ cart_id: input.cart_id })
+    acquireLockStep({
+      key: lock.key,
+      timeout: 30,
+      ttl: 120,
+    })
+
     // The order of a cart already completed (flag off: null, unread).
     const completed = completedCartOrderStep({ cart_id: input.cart_id })
 
@@ -176,6 +196,10 @@ export const createSubscriptionWorkflow = createWorkflow(
       emitSubscriptionStateStep({ subscription, transition: "subscribe" })
 
       return subscription
+    })
+
+    releaseLockStep({
+      key: lock.key,
     })
 
     return new WorkflowResponse({

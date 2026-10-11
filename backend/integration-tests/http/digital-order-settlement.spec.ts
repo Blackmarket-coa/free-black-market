@@ -3,7 +3,9 @@ import { ContainerRegistrationKeys, Modules, PaymentEvents } from "@medusajs/fra
 import { SELLER_MODULE } from "@mercurjs/b2c-core/modules/seller"
 import { PHASE0_FEATURE_FLAGS } from "../../src/shared/feature-flags"
 import { DIGITAL_PRODUCT_MODULE } from "../../src/modules/digital-product"
+import { ensureListingProduct } from "../../src/lib/blackout-listing-product"
 import { cardOrderFixtures } from "./helpers/card-orders"
+import { checkoutRaceProbes } from "./helpers/checkout-race"
 import { createPublishableKeyToken, pakHeaders } from "./_publishable-key"
 
 jest.setTimeout(240 * 1000)
@@ -295,6 +297,16 @@ medusaIntegrationTestRunner({
       if (to) await link.create({ [SELLER_MODULE]: { seller_id: to }, [Modules.PRODUCT]: { product_id: productId } })
     }
 
+    const { lockAttempts, sellerChecks } = checkoutRaceProbes(container)
+
+    /** Stripe takes its time over the capture, so a second checkout arrives while the first is mid-sale. */
+    function slowCapture(ms = 800) {
+      stripe.capturePayment.mockImplementation(async (input: any) => {
+        await new Promise((r) => setTimeout(r, ms))
+        return { data: { ...(input?.data ?? {}), status: "succeeded" } }
+      })
+    }
+
     /**
      * Make the next read of the checkout's own order (the workflow's
      * `useQueryGraphStep`, the first step after the cart's order is known)
@@ -444,6 +456,40 @@ medusaIntegrationTestRunner({
         // table itself. Nothing may still link this seller to an order.
         expect(await container().resolve(Modules.ORDER).listOrders({ customer_id: customer.id })).toEqual([])
         expect(await liveSellerOrderLinks(seller.id)).toEqual([])
+        // The checkout's compensation released the cart's lock: it can be
+        // taken at once (held, the attempt would be refused).
+        const locking = container().resolve(Modules.LOCKING)
+        await locking.acquire(cart.id, { expire: 5 })
+        await locking.release(cart.id)
+      })
+
+      it("a product moved to another seller while the card was authorized is refused at the link: rolled back, nothing captured", async () => {
+        const a = await makeSeller()
+        const b = await makeSeller()
+        const product = await makeProduct(a.id, { digital: true })
+        const { cart, customer } = await makeCart([product], { deliver: true })
+        const created = jest.spyOn(container().resolve(DIGITAL_PRODUCT_MODULE), "createDigitalProductOrders")
+        // The seller check passed for A; while Stripe authorizes the card,
+        // the product moves to B, so the order cannot go to the seller checked.
+        stripe.authorizePayment.mockImplementation(async (input: any) => {
+          await relinkProduct(product.id, a.id, b.id)
+          return { status: "authorized", data: { ...(input?.data ?? {}), status: "requires_capture" } }
+        })
+
+        const { errors } = await checkout(cart.id)
+        expect(errors).toEqual([
+          expect.stringMatching(
+            new RegExp(`^link-digital-product-order-seller: Digital product order order_\\w+ is sold by ${b.id}, not ${a.id} as checked before payment$`)
+          ),
+        ])
+        // The authorization is released and nothing was taken.
+        expect(stripe.capturePayment).not.toHaveBeenCalled()
+        expect(stripe.refundPayment).not.toHaveBeenCalled()
+        expect(stripe.cancelPayment).toHaveBeenCalledTimes(1)
+        expect(created).not.toHaveBeenCalled()
+        expect(await container().resolve(Modules.ORDER).listOrders({ customer_id: customer.id })).toEqual([])
+        expect(await liveSellerOrderLinks(a.id)).toEqual([])
+        expect(await liveSellerOrderLinks(b.id)).toEqual([])
       })
 
       it("a failure after the capture refunds it, and leaves no order or seller link", async () => {
@@ -594,6 +640,159 @@ medusaIntegrationTestRunner({
         expect(second.data.order.id).toBe(orderId)
         expect(stripe.refundPayment).not.toHaveBeenCalled()
         expect(await moneyOf(orderId)).toEqual([{ captures: [5], refunds: [], canceled: false }])
+      })
+    })
+
+    describe("two checkouts of one cart at the same time (a double submit), with FF_DIGITAL_ORDER_SETTLEMENT_V1", () => {
+      // This checkout has held the cart's lock from its first step to its
+      // last since before SD-48 (completeCartWorkflow, nested, skips its own),
+      // so the second waits, then finds the first's order and returns it as
+      // a replay.
+
+      it("the second waits for the first, then returns its order as a replay: one order, one capture, nothing refunded, one digital product order", async () => {
+        const seller = await makeSeller()
+        const product = await makeProduct(seller.id, { digital: true })
+        const { cart, customer } = await makeCart([product], { deliver: true })
+        const created = jest.spyOn(container().resolve(DIGITAL_PRODUCT_MODULE), "createDigitalProductOrders")
+        slowCapture()
+        const lock = lockAttempts(cart.id)
+        const checks = sellerChecks(cart.id)
+
+        const [x, y] = await Promise.all([checkout(cart.id), checkout(cart.id)])
+        expect([x.errors, y.errors]).toEqual([[], []])
+        expect(y.result.order.id).toBe(x.result.order.id)
+        // One run was refused the lock while the other held it, each took it
+        // once, and only the first checked the seller: the second replayed.
+        expect(lock.refused).toBeGreaterThan(0)
+        expect(lock.taken).toBe(2)
+        expect(checks.count).toBe(1)
+
+        expect(await container().resolve(Modules.ORDER).listOrders({ customer_id: customer.id })).toHaveLength(1)
+        expect(stripe.authorizePayment).toHaveBeenCalledTimes(1)
+        expect(stripe.capturePayment).toHaveBeenCalledTimes(1)
+        expect(stripe.refundPayment).not.toHaveBeenCalled()
+        expect(stripe.cancelPayment).not.toHaveBeenCalled()
+        expect(created).toHaveBeenCalledTimes(1)
+        const order = await readOrder(x.result.order.id)
+        expect(order.seller?.id).toBe(seller.id)
+        expect(order.fulfillments).toHaveLength(1)
+        expect(await moneyOf(order.id)).toEqual([{ captures: [5], refunds: [], canceled: false }])
+        expect(await liveSellerOrderLinks(seller.id)).toEqual([{ order_id: order.id }])
+      })
+
+      it("over the store route, two POSTs at once answer 200 with the same order, captured once", async () => {
+        const pak = pakHeaders(await createPublishableKeyToken(getContainer))
+        const seller = await makeSeller()
+        const product = await makeProduct(seller.id, { digital: true })
+        const { cart, customer } = await makeCart([product], { deliver: true })
+        const created = jest.spyOn(container().resolve(DIGITAL_PRODUCT_MODULE), "createDigitalProductOrders")
+        slowCapture()
+        const post = () => api.post(`/store/carts/${cart.id}/complete-digital`, {}, pak).catch((e: any) => e.response)
+
+        const [a, b] = await Promise.all([post(), post()])
+        expect([a.status, b.status]).toEqual([200, 200])
+        expect(b.data.order.id).toBe(a.data.order.id)
+        expect(await container().resolve(Modules.ORDER).listOrders({ customer_id: customer.id })).toHaveLength(1)
+        expect(stripe.capturePayment).toHaveBeenCalledTimes(1)
+        expect(stripe.refundPayment).not.toHaveBeenCalled()
+        expect(stripe.cancelPayment).not.toHaveBeenCalled()
+        expect(created).toHaveBeenCalledTimes(1)
+        expect(await moneyOf(a.data.order.id)).toEqual([{ captures: [5], refunds: [], canceled: false }])
+      })
+
+      it("a second checkout kept waiting past the lock's 30 seconds fails before any money step, and refunds nothing", async () => {
+        const seller = await makeSeller()
+        const product = await makeProduct(seller.id, { digital: true })
+        const { cart, customer } = await makeCart([product], { deliver: true })
+        // A first checkout still running holds the cart's lock.
+        const locking = container().resolve(Modules.LOCKING)
+        await locking.acquire(cart.id, { expire: 120 })
+        try {
+          const started = Date.now()
+          const { errors } = await checkout(cart.id)
+          expect(Date.now() - started).toBeGreaterThanOrEqual(29_000)
+          expect(errors).toEqual([expect.stringMatching(/^acquire-lock-step: Failed to acquire lock for key "cart_/)])
+          expect(stripe.authorizePayment).not.toHaveBeenCalled()
+          expect(stripe.capturePayment).not.toHaveBeenCalled()
+          expect(stripe.refundPayment).not.toHaveBeenCalled()
+          expect(stripe.cancelPayment).not.toHaveBeenCalled()
+          expect(await container().resolve(Modules.ORDER).listOrders({ customer_id: customer.id })).toEqual([])
+          // The checkout that gave up did not free the lock it never held.
+          await expect(locking.acquire(cart.id, { expire: 5 })).rejects.toThrow(/Failed to acquire lock/)
+        } finally {
+          await locking.release(cart.id)
+        }
+        // Once the first is done, the cart checks out as usual.
+        const retry = await checkout(cart.id)
+        expect(retry.errors).toEqual([])
+        expect(stripe.capturePayment).toHaveBeenCalledTimes(1)
+      })
+    })
+
+    describe("a Blackout listing's shadow product and its seller link (ensureListingProduct)", () => {
+      /** The sellers a product is linked to, read from the link table itself. */
+      async function liveProductSellers(productId: string) {
+        const pg = container().resolve(ContainerRegistrationKeys.PG_CONNECTION)
+        const { rows: table } = await pg.raw(
+          `SELECT table_name FROM information_schema.tables WHERE table_name = 'seller_seller_product_product'`
+        )
+        expect(table).toHaveLength(1)
+        const { rows } = await pg.raw(
+          `SELECT seller_id FROM seller_seller_product_product WHERE product_id = ? AND deleted_at IS NULL`,
+          [productId]
+        )
+        return (rows as Array<{ seller_id: string }>).map((r) => r.seller_id)
+      }
+
+      it("a product that lost its seller link gets it back at the next render; a repeat changes nothing; another seller's product is left alone", async () => {
+        const a = await makeSeller()
+        const b = await makeSeller()
+        const orphan = await makeProduct(null, { digital: false })
+        const listing = {
+          id: `clist_${uid()}`,
+          seller_id: a.id,
+          title: "Signal",
+          price_cents: 500,
+          currency: "usd",
+          product_id: orphan.id,
+          variant_id: orphan.variants[0].id,
+        }
+        const link = container().resolve(ContainerRegistrationKeys.LINK)
+        const pair = (sellerId: string, productId: string) => ({
+          [SELLER_MODULE]: { seller_id: sellerId },
+          [Modules.PRODUCT]: { product_id: productId },
+        })
+
+        // A listing that already carries its ids still has its product linked.
+        await expect(ensureListingProduct(container(), listing)).resolves.toMatchObject({ product_id: orphan.id, created: false })
+        expect(await liveProductSellers(orphan.id)).toEqual([a.id])
+
+        // Repeating is harmless: the link module takes the same pair again
+        // without complaint, and there is still one link.
+        await expect(link.create(pair(a.id, orphan.id))).resolves.toBeDefined()
+        await ensureListingProduct(container(), listing)
+        expect(await liveProductSellers(orphan.id)).toEqual([a.id])
+
+        // A link dismissed since is restored.
+        await link.dismiss(pair(a.id, orphan.id))
+        expect(await liveProductSellers(orphan.id)).toEqual([])
+        await ensureListingProduct(container(), listing)
+        expect(await liveProductSellers(orphan.id)).toEqual([a.id])
+
+        // Another seller's product is never taken from them: the module refuses
+        // a second seller, and the render goes on.
+        const theirs = await makeProduct(b.id, { digital: false })
+        await expect(link.create(pair(a.id, theirs.id))).rejects.toThrow(/Cannot create multiple links/)
+        await expect(
+          ensureListingProduct(container(), { ...listing, product_id: theirs.id, variant_id: theirs.variants[0].id })
+        ).resolves.toMatchObject({ product_id: theirs.id })
+        expect(await liveProductSellers(theirs.id)).toEqual([b.id])
+
+        // The repaired product checks out to the listing's seller.
+        const { cart } = await makeCart([orphan])
+        const { result, errors } = await checkout(cart.id)
+        expect(errors).toEqual([])
+        expect((await readOrder(result.order.id)).seller?.id).toBe(a.id)
       })
     })
 
