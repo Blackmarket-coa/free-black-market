@@ -29,7 +29,7 @@ nothing here has been switched on. Ledger rows are in `docs/AUDIT_DEBT.md`.
 | F4 lifecycle | **Built, dark** (BM-1, BM-5): 14-day grace, then read-only with export. |
 | F5 commission on BMC's own sales | **Fix in review** (SD-46): "no code change" was wrong. Subscription orders had no seller link, the first payment was never captured, and renewals never reached the ledger. |
 | F6 fee-first split | **Built, dark** (BM-6, BM-7, SD-36 to SD-45): card ledger, refunds, chargebacks, dispute fees, ledger-driven Connect payouts. |
-| F7 flat payouts | **Not started.** Needs the flat share decided and counsel on L27. Tiers still pay 60% to 72%. |
+| F7 flat payouts | **Step 1 (inventory) done 2026-10-11:** `docs/F7_FLAT_PAYOUT_INVENTORY.md`. No ledger leg or payout reads a KARMA tier today: the 60% to 72% split is published on `/karma` and shown to growers as their earnings (SD-49), and the per-node hub cut that would move money has no caller. Needs the flat share decided (including whether a hub cut exists at all, and on what base) and counsel on L27. |
 | F8 $10 plan | **Built, dark** (BM-3), `FF_ALL_ACCESS_PLAN_V1`. |
 | F9, F10, F11 | **Held by decision**: app-store rules (L29), bundle ("wait"), USDC ("later"). |
 | F12 own-house guardrails | **Not started.** No `security.txt`, no Anubis or CrowdSec in any repo. |
