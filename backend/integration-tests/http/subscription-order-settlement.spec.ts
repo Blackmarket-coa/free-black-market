@@ -6,6 +6,7 @@ import { PHASE0_FEATURE_FLAGS } from "../../src/shared/feature-flags"
 import { SUBSCRIPTION_MODULE } from "../../src/modules/subscription"
 import { cardOrderFixtures } from "./helpers/card-orders"
 import { checkoutRaceProbes } from "./helpers/checkout-race"
+import { trackSubscribers } from "./helpers/drain-subscribers"
 import { createPublishableKeyToken } from "./_publishable-key"
 import { syncCardChargeFromStripe, type ChargeLedgerState } from "../../src/lib/card-stripe-sync"
 import { readCardSettlementOrder } from "../../src/lib/card-order-settlement"
@@ -50,8 +51,12 @@ medusaIntegrationTestRunner({
       cancelPayment: jest.SpyInstance
     }
     let stripe: Stripe
+    // Every subscriber a test's events set off must finish before the
+    // runner truncates the database (helpers/drain-subscribers.ts).
+    let drainSubscribers: () => Promise<void> = async () => {}
 
     beforeEach(() => {
+      drainSubscribers = trackSubscribers(container)
       const provider = container().resolve(Modules.PAYMENT).paymentProviderService_.retrieveProvider("pp_stripe_stripe")
       let n = 0
       stripe = {
@@ -76,7 +81,8 @@ medusaIntegrationTestRunner({
       process.env[CARD] = "true"
       process.env[SUBS] = "true"
     })
-    afterEach(() => {
+    afterEach(async () => {
+      await drainSubscribers()
       jest.restoreAllMocks()
       delete process.env[CARD]
       delete process.env[SUBS]

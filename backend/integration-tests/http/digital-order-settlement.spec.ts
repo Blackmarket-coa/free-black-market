@@ -6,6 +6,7 @@ import { DIGITAL_PRODUCT_MODULE } from "../../src/modules/digital-product"
 import { ensureListingProduct } from "../../src/lib/blackout-listing-product"
 import { cardOrderFixtures } from "./helpers/card-orders"
 import { checkoutRaceProbes } from "./helpers/checkout-race"
+import { trackSubscribers } from "./helpers/drain-subscribers"
 import { createPublishableKeyToken, pakHeaders } from "./_publishable-key"
 
 jest.setTimeout(240 * 1000)
@@ -50,8 +51,12 @@ medusaIntegrationTestRunner({
       cancelPayment: jest.SpyInstance
     }
     let stripe: Stripe
+    // Every subscriber a test's events set off must finish before the
+    // runner truncates the database (helpers/drain-subscribers.ts).
+    let drainSubscribers: () => Promise<void> = async () => {}
 
     beforeEach(() => {
+      drainSubscribers = trackSubscribers(container)
       const provider = container().resolve(Modules.PAYMENT).paymentProviderService_.retrieveProvider("pp_stripe_stripe")
       let n = 0
       stripe = {
@@ -96,7 +101,8 @@ medusaIntegrationTestRunner({
       })
       return seen
     }
-    afterEach(() => {
+    afterEach(async () => {
+      await drainSubscribers()
       jest.restoreAllMocks()
       delete process.env[CARD]
       delete process.env[DIGITAL]
