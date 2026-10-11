@@ -264,19 +264,28 @@ idempotently on first render:
    `subscription_id`; re-visits render the completed state.
 
 **Seller settlement of one-off listings (`FF_DIGITAL_ORDER_SETTLEMENT_V1`,
-SD-48).** Flag off, step 5 is unchanged. Flag on, the digital-product order
-flow resolves the shadow product's Mercur seller before the card is authorized
-and refuses a purchase whose product has none (500 `checkout_failed`, or
-`checkout.error` on the page). Nothing is captured; the hold the member's card
-confirmation placed is left to lapse, as on any refused completion.
-`ensureListingProduct` links the shadow product to the listing's seller, and
-only logs if that link fails. The order is then linked to that seller and the
-card captured at completion, so the sale settles to the seller less the 3%
-(`FF_CARD_ORDER_LEDGER_V1`). Subscription listings already do the same under
-`FF_CONSUMER_SUBSCRIPTIONS_V1` (SD-46). With either flag on, a completion run
-again on a cart already completed (a retry, or the page finishing a record an
-earlier attempt left unmarked) returns that order as it is: nothing is
-captured, refused or refunded a second time (SD-48).
+SD-48).** Flag off, step 5 is unchanged. Flag on: by the time completion
+starts, the page's card confirmation (`stripe.confirmPayment`) has already put
+a hold on the member's card at Stripe. The digital-product order flow then
+resolves the shadow product's Mercur seller before Medusa authorizes the
+payment session, and refuses a purchase whose product has none (500
+`checkout_failed`, or `checkout.error` on the page). Nothing is captured; the
+hold is left to lapse, as on any refused completion. `ensureListingProduct`
+links the shadow product to the listing's seller every time it hands the
+product back (each render and each completion), so a link that failed once is
+tried again; a link Medusa refuses, such as a product another seller already
+holds, is logged and left as it is. The order is then linked to that seller
+and the card captured at completion, so the sale settles to the seller less
+the 3% (`FF_CARD_ORDER_LEDGER_V1`). Subscription listings already do the same
+under `FF_CONSUMER_SUBSCRIPTIONS_V1` (SD-46). With either flag on, a completion
+run again on a cart already completed (a retry, or the page finishing a record
+an earlier attempt left unmarked) returns that order as it is, and links,
+captures, refuses and refunds nothing. Two completions of one cart at once wait
+for each other on a lock on the cart, and the second returns the first's order;
+the lock holds within one server process only (SD-48). For a one-off listing
+the capture now comes before this page grants the listing's `feature_keys`,
+and that grant runs after the order flow and only logs a failure, so a member
+can be charged without the FBM-side entitlement (SD-48 open item).
 
 Embed mode mirrors the public checkout page: `postMessage` events
 (`checkout.ready|completed|cancelled|error`, source `fbm-checkout`) to the

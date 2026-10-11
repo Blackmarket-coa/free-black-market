@@ -430,7 +430,7 @@ medusaIntegrationTestRunner({
         expect(live).toEqual([])
       })
 
-      it("a failure after the capture refunds it", async () => {
+      it("a failure after the capture is refunded when Stripe takes the refund", async () => {
         const seller = await makeSeller()
         const product = await makeProduct(seller.id)
         const { cart, customer } = await makeCart([product])

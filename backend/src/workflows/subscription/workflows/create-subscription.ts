@@ -49,7 +49,9 @@ type WorkflowInput = {
  *
  * With FF_CONSUMER_SUBSCRIPTIONS_V1 (F5 / SD-46,
  * `steps/subscription-order-settlement.ts`): the cart's one seller is
- * resolved before any payment is authorized, the order is linked to that
+ * resolved before Medusa authorizes the payment session (a card the buyer
+ * already confirmed at Stripe, as Blackout's page does before it completes,
+ * keeps that hold if the cart is refused), the order is linked to that
  * seller, and the card payment is captured before the subscription is
  * created — so the sale reaches the seller and the ledger. Flag off, those
  * steps do nothing.
@@ -126,10 +128,13 @@ export const createSubscriptionWorkflow = createWorkflow(
     }))
 
     // F5: take the money the checkout authorized. A refused capture fails
-    // the checkout before any subscription exists; a capture followed by a
-    // later failure is refunded by completeCartWorkflow's own compensation
-    // (`compensatePaymentIfNeededStep` refunds a captured payment). Outside
-    // the block above because `when` blocks do not nest.
+    // the checkout before any subscription exists. A later failure deletes
+    // the order through completeCartWorkflow's compensation, which then
+    // tries to refund the capture (`compensatePaymentIfNeededStep`) — best
+    // effort: a refund Stripe refuses is only logged by Medusa, the card
+    // stays charged with no order, and the failed run's `payment.captured`
+    // is dropped, so the ledger never hears of it (SD-48 open item).
+    // Outside the block above because `when` blocks do not nest.
     when("capture-subscription-first-payment", { checkout }, (data) => !!data.checkout.payment_id).then(() => {
       capturePaymentWorkflow.runAsStep({
         input: transform({ checkout }, (data) => ({ payment_id: data.checkout.payment_id as string })),

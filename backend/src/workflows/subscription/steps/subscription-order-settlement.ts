@@ -173,9 +173,11 @@ async function soleSellerOf(
 }
 
 /**
- * Before any payment is authorized: the subscription cart's one seller.
- * Refuses (flag on) a cart whose products do not all belong to one seller,
- * so nothing is charged for a sale no seller can be credited with. With
+ * Before Medusa authorizes the payment session: the subscription cart's one
+ * seller. Refuses (flag on) a cart whose products do not all belong to one
+ * seller, so nothing is captured for a sale no seller can be credited with.
+ * It cannot undo a hold the buyer already placed: Blackout's page confirms
+ * the card with Stripe before it completes, and that hold lapses. With
  * `sale: "digital_product"`, the same for a digital-product cart (SD-48).
  */
 async function resolveSeller(input: { cart_id: string; sale?: SettlementSale }, { container }: StepExecutionContext) {

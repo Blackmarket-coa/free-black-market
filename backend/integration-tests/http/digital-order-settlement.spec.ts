@@ -492,7 +492,7 @@ medusaIntegrationTestRunner({
         expect(await liveSellerOrderLinks(b.id)).toEqual([])
       })
 
-      it("a failure after the capture refunds it, and leaves no order or seller link", async () => {
+      it("a failure after the capture leaves no order or seller link, and the capture is refunded when Stripe takes the refund", async () => {
         const seller = await makeSeller()
         const product = await makeProduct(seller.id, { digital: true })
         const { cart, customer } = await makeCart([product], { deliver: true })
