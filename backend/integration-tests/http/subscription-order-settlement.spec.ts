@@ -373,6 +373,62 @@ medusaIntegrationTestRunner({
           expect(subs.map((x: any) => x.status)).toEqual(["active"])
         })
 
+        describe("of an order its first completion left unlinked and uncaptured", () => {
+          // What a first completion that stopped straight after
+          // completeCartWorkflow leaves (a restart or deploy mid-checkout;
+          // also Medusa's own Stripe webhook): an order with its card
+          // authorized and no seller link. Run plainly here, as that step does.
+          async function unfinishedCompletion(cartId: string) {
+            const { completeCartWorkflow } = require("@medusajs/medusa/core-flows")
+            const run = await completeCartWorkflow(container()).run({ input: { id: cartId }, throwOnError: false })
+            expect(run.errors ?? []).toEqual([])
+            const order = await readOrder(run.result.id)
+            expect(order.seller ?? null).toBeNull()
+            expect(order.payment_collections[0].payments[0].captured_at).toBeFalsy()
+            return run.result.id as string
+          }
+
+          it("the retry links it, captures it once, and only then makes the subscription", async () => {
+            const seller = await makeSeller()
+            const product = await makeProduct(seller.id)
+            const { cart, customer } = await makeCart([product])
+            const made = jest.spyOn(container().resolve(SUBSCRIPTION_MODULE), "createSubscriptions")
+            const orderId = await unfinishedCompletion(cart.id)
+
+            const retry = await checkout(cart.id)
+            expect(retry.errors).toEqual([])
+            expect(retry.result.order.id).toBe(orderId)
+            expect((await readOrder(orderId)).seller?.id).toBe(seller.id)
+            expect(stripe.capturePayment).toHaveBeenCalledTimes(1)
+            expect(made).toHaveBeenCalledTimes(1)
+            expect(stripe.capturePayment.mock.invocationCallOrder[0]).toBeLessThan(made.mock.invocationCallOrder[0])
+            expect(stripe.refundPayment).not.toHaveBeenCalled()
+            expect(await moneyOf(orderId)).toEqual([{ captures: [5], refunds: [] }])
+            const subs = await container().resolve(SUBSCRIPTION_MODULE).listSubscriptions({ customer_id: customer.id })
+            expect(subs.map((x: any) => x.status)).toEqual(["active"])
+          })
+
+          it("a capture Stripe refuses fails the retry before any subscription exists, refunds nothing, and leaves the order as it was", async () => {
+            const seller = await makeSeller()
+            const product = await makeProduct(seller.id)
+            const { cart, customer } = await makeCart([product])
+            const orderId = await unfinishedCompletion(cart.id)
+            stripe.capturePayment.mockImplementation(async () => {
+              throw new Error("card_declined")
+            })
+
+            const retry = await checkout(cart.id)
+            expect(retry.errors.join("\n")).toMatch(/card_declined/)
+            expect(stripe.capturePayment).toHaveBeenCalledTimes(1)
+            expect(stripe.refundPayment).not.toHaveBeenCalled()
+            expect(stripe.cancelPayment).not.toHaveBeenCalled()
+            expect(await container().resolve(SUBSCRIPTION_MODULE).listSubscriptions({ customer_id: customer.id })).toEqual([])
+            // The order stays, still authorized, and the retry's link is undone with it.
+            expect((await readOrder(orderId)).seller ?? null).toBeNull()
+            expect(await moneyOf(orderId)).toEqual([{ captures: [], refunds: [] }])
+          })
+        })
+
         it("a replay that fails after the order is found refunds nothing", async () => {
           const seller = await makeSeller()
           const product = await makeProduct(seller.id)

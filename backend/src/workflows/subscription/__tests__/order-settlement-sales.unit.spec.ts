@@ -308,3 +308,100 @@ describe("which payment a first completion captures (SD-48)", () => {
     })
   })
 })
+
+describe("a replay: the order a checkout run again on a completed cart found (SD-48)", () => {
+  afterEach(() => {
+    delete process.env[DIGITAL]
+    delete process.env[SUBS]
+  })
+
+  /** An order linked to `linkedTo` (or to nothing), whose products belong to `productSellers`. */
+  function orderWithSellers(linkedTo: string | null, productSellers: string[]) {
+    const products = productSellers.map((seller, i) => ({ id: `prod_${i}`, seller: { id: seller } }))
+    const graph = jest.fn(async (q: { entity: string }) => {
+      if (q.entity === "order") {
+        return {
+          data: [
+            {
+              id: "order_1",
+              seller: linkedTo ? { id: linkedTo } : null,
+              items: products.map((p) => ({ product_id: p.id })),
+            },
+          ],
+        }
+      }
+      if (q.entity === "product") return { data: products }
+      return { data: [] }
+    })
+    const link = { create: jest.fn(async () => undefined), dismiss: jest.fn(async () => undefined) }
+    const resolve = jest.fn((key: string) => {
+      if (key === ContainerRegistrationKeys.QUERY) return { graph }
+      if (key === ContainerRegistrationKeys.LINK) return link
+      throw new Error(`unexpected resolve ${key}`)
+    })
+    return { container: { resolve }, graph, link }
+  }
+
+  describe.each([
+    ["digital product sale", digitalLinkSeller, digitalToCapture, DIGITAL],
+    ["subscription sale", linkSeller, toCapture, SUBS],
+  ])("%s, its flag on", (_label, link, capture, flag) => {
+    it("an order already linked keeps its seller, even with its product sold by another now", async () => {
+      process.env[flag] = "true"
+      const { container, link: links } = orderWithSellers("sel_a", ["sel_b"])
+      const res = await link({ order_id: "order_1", mode: "replay" }, { container })
+      expect(res.output).toEqual({ linked: false, seller_id: "sel_a" })
+      expect(links.create).not.toHaveBeenCalled()
+    })
+
+    it("an order its first completion left unlinked is linked to its products' one seller", async () => {
+      process.env[flag] = "true"
+      const { container, link: links } = orderWithSellers(null, ["sel_a", "sel_a"])
+      const res = await link({ order_id: "order_1", mode: "replay" }, { container })
+      expect(res.output).toEqual({ linked: true, seller_id: "sel_a" })
+      expect(links.create).toHaveBeenCalledTimes(1)
+    })
+
+    it("an unlinked order with no single seller is left unlinked, not refused", async () => {
+      process.env[flag] = "true"
+      const { container, link: links } = orderWithSellers(null, ["sel_a", "sel_b"])
+      const res = await link({ order_id: "order_1", mode: "replay" }, { container })
+      expect(res.output).toEqual({ linked: false, seller_id: null })
+      expect(links.create).not.toHaveBeenCalled()
+    })
+
+    it("an order the link step left unlinked is not captured, and nothing is read", async () => {
+      process.env[flag] = "true"
+      const { container, graph } = orderWithSellers(null, [])
+      const res = await capture({ order_id: "order_1", mode: "replay", linked_seller_id: null }, { container })
+      expect(res.output).toEqual({ payment_id: null })
+      expect(graph).not.toHaveBeenCalled()
+    })
+  })
+
+  it.each([
+    ["digital product sale", digitalToCapture, DIGITAL],
+    ["subscription sale", toCapture, SUBS],
+  ])("%s: a linked order's uncaptured payment on the cart's session is captured, as at a first completion", async (_label, capture, flag) => {
+    process.env[flag] = "true"
+    const graph = jest.fn(async (q: { entity: string }) => {
+      if (q.entity === "order") {
+        return {
+          data: [
+            {
+              id: "order_1",
+              payment_collections: [
+                { id: "paycol_1", payments: [{ id: "pay_1", provider_id: "pp_stripe_stripe", payment_session_id: "payses_1" }] },
+              ],
+            },
+          ],
+        }
+      }
+      if (q.entity === "payment_session") return { data: [{ id: "payses_1" }] }
+      return { data: [] }
+    })
+    const container = { resolve: (key: string) => (key === ContainerRegistrationKeys.QUERY ? { graph } : undefined) }
+    const res = await capture({ order_id: "order_1", mode: "replay", linked_seller_id: "sel_a" }, { container })
+    expect(res.output).toEqual({ payment_id: "pay_1" })
+  })
+})

@@ -206,13 +206,19 @@ type LinkInput = {
   order_id: string
   /**
    * `initial`: the seller resolved before payment; anything else is refused,
-   * and the checkout rolls back. `renewal`: the cycle's money is already
+   * and the checkout rolls back. `replay` (SD-48): the order a checkout run
+   * again on a completed cart found — see `completedCartOrderStep`. An order
+   * already linked is left as it is, whatever its products' seller is now;
+   * an unlinked one (its first completion stopped before the link, or it was
+   * completed some other way) is linked to its products' one seller, or
+   * logged and left unlinked when there is none. Never thrown: nothing on a
+   * replay can undo the order. `renewal`: the cycle's money is already
    * collected, so a seller that cannot be determined is logged, not thrown —
    * the order then stays unsettled, which the ledger reports.
    */
-  mode: "initial" | "renewal"
+  mode: "initial" | "replay" | "renewal"
   expected_seller_id?: string | null
-  /** SD-48: `digital_product` (always `initial`); `subscription` when omitted. */
+  /** SD-48: `digital_product` (`initial` or `replay`); `subscription` when omitted. */
   sale?: SettlementSale
 }
 
@@ -246,6 +252,9 @@ async function linkOrderSeller(input: LinkInput, { container }: StepExecutionCon
     return linkResult({ linked: false, seller_id: null })
   }
   if (!order) return refuse(`${terms.label} order ${input.order_id} not found; no seller linked`)
+  // A replay keeps the seller its order was linked to (the sale is settled
+  // to it), even if the product has moved since.
+  if (input.mode === "replay" && order.seller?.id) return linkResult({ linked: false, seller_id: order.seller.id })
 
   const sole = await soleSellerOf(query, (order.items ?? []).map((i) => i?.product_id))
   if (!sole.seller_id) {
@@ -352,10 +361,12 @@ export const stampRenewalRecordStep = createStep(
 
 type CaptureInput = {
   order_id: string
-  mode: "initial" | "renewal"
+  mode: "initial" | "replay" | "renewal"
   /** `renewal`: the cycle's charge status from `chargeSubscriptionRenewalStep`. */
   renewal_charge_status?: string | null
-  /** SD-48: `digital_product` (always `initial`); `subscription` when omitted. */
+  /** `replay`: the seller the link step left the order linked to; null when it could not link it. */
+  linked_seller_id?: string | null
+  /** SD-48: `digital_product` (`initial` or `replay`); `subscription` when omitted. */
   sale?: SettlementSale
 }
 
@@ -400,9 +411,19 @@ async function liveSessionIds(query: QueryLike, collectionIds: string[]): Promis
  *     what Stripe already took, so the ledger settles it. A bank debit still
  *     `processing` is left uncaptured — the money has not arrived.
  *
- * A digital-product order (`sale: "digital_product"`, SD-48) is `initial`.
+ *   - `replay` (SD-48): as `initial`, for the order a checkout run again on
+ *     a completed cart found, once the link step has left it linked. An
+ *     order its first completion left uncaptured (stopped after
+ *     `completeCartWorkflow`, or completed some other way) is captured here,
+ *     before anything is delivered; one that could not be linked is not
+ *     captured — no seller could be credited — and is logged. Outside
+ *     `completeCartWorkflow`, so a refused capture fails the retry and
+ *     nothing refunds anything.
  *
- * `initial` looks only at payments whose payment session still exists: the
+ * A digital-product order (`sale: "digital_product"`, SD-48) is `initial`
+ * or `replay`.
+ *
+ * `initial` and `replay` look only at payments whose payment session still exists: the
  * cart's current session, the one `completeCartWorkflow` just authorized.
  * When a checkout fails after authorization, that workflow's compensation
  * cancels the payment but Medusa keeps it on the payment collection; a retry
@@ -424,6 +445,10 @@ async function paymentToCapture(input: CaptureInput, { container }: StepExecutio
     if (input.renewal_charge_status === "processing") {
       log.warn(`${terms.tag} Renewal order ${input.order_id}: its charge is still processing; not recorded as captured`)
     }
+    return none()
+  }
+  if (input.mode === "replay" && !input.linked_seller_id) {
+    log.error(`${terms.tag} ${terms.label} order ${input.order_id} has no seller link, so this checkout captures nothing for it`)
     return none()
   }
   const query = container.resolve(ContainerRegistrationKeys.QUERY) as QueryLike
@@ -457,7 +482,7 @@ async function paymentToCapture(input: CaptureInput, { container }: StepExecutio
     // One checkout, one payment session: more than one is not a shape this
     // flow makes, and capturing the wrong one would charge twice.
     const message = `${terms.label} order ${input.order_id} has ${candidates.length} uncaptured payments; none captured`
-    if (input.mode === "initial") throw new MedusaError(MedusaError.Types.UNEXPECTED_STATE, message)
+    if (input.mode !== "renewal") throw new MedusaError(MedusaError.Types.UNEXPECTED_STATE, message)
     log.error(`${terms.tag} ${message}`)
     return none()
   }

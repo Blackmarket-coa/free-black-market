@@ -750,6 +750,84 @@ medusaIntegrationTestRunner({
         expect(await liveSellerOrderLinks(seller.id)).toEqual([{ order_id: orderId }])
       })
 
+      describe("of an order its first completion left unlinked and uncaptured", () => {
+        // What a first completion that stopped straight after
+        // completeCartWorkflow leaves (a restart or deploy mid-checkout; also
+        // Medusa's own Stripe webhook, open item (g)): an order with its card
+        // authorized and no seller link. Run plainly here, as that step does.
+        async function unfinishedCompletion(cartId: string) {
+          const { completeCartWorkflow } = require("@medusajs/medusa/core-flows")
+          const run = await completeCartWorkflow(container()).run({ input: { id: cartId }, throwOnError: false })
+          expect(run.errors ?? []).toEqual([])
+          const order = await readOrder(run.result.id)
+          expect(order.seller ?? null).toBeNull()
+          expect(order.payment_collections[0].payments[0].captured_at).toBeFalsy()
+          return run.result.id as string
+        }
+
+        it("the retry links it, captures it once, and only then delivers it", async () => {
+          const seller = await makeSeller()
+          const product = await makeProduct(seller.id, { digital: true })
+          const { cart } = await makeCart([product], { deliver: true })
+          const created = jest.spyOn(container().resolve(DIGITAL_PRODUCT_MODULE), "createDigitalProductOrders")
+          const orderId = await unfinishedCompletion(cart.id)
+
+          const retry = await checkout(cart.id)
+          expect(retry.errors).toEqual([])
+          expect(retry.result.order.id).toBe(orderId)
+          const order = await readOrder(orderId)
+          expect(order.seller?.id).toBe(seller.id)
+          expect(await liveSellerOrderLinks(seller.id)).toEqual([{ order_id: orderId }])
+          expect(stripe.capturePayment).toHaveBeenCalledTimes(1)
+          expect(created).toHaveBeenCalledTimes(1)
+          expect(stripe.capturePayment.mock.invocationCallOrder[0]).toBeLessThan(created.mock.invocationCallOrder[0])
+          expect(order.digital_product_order?.id).toBe(retry.result.digital_product_order.id)
+          expect(order.fulfillments).toHaveLength(1)
+          expect(stripe.refundPayment).not.toHaveBeenCalled()
+          expect(await moneyOf(orderId)).toEqual([{ captures: [5], refunds: [], canceled: false }])
+        })
+
+        it("a capture Stripe refuses fails the retry before anything is delivered, refunds nothing, and leaves the order as it was", async () => {
+          const seller = await makeSeller()
+          const product = await makeProduct(seller.id, { digital: true })
+          const { cart } = await makeCart([product], { deliver: true })
+          const created = jest.spyOn(container().resolve(DIGITAL_PRODUCT_MODULE), "createDigitalProductOrders")
+          const orderId = await unfinishedCompletion(cart.id)
+          stripe.capturePayment.mockImplementation(async () => {
+            throw new Error("card_declined")
+          })
+
+          const retry = await checkout(cart.id)
+          expect(retry.errors.join("\n")).toMatch(/card_declined/)
+          expect(stripe.capturePayment).toHaveBeenCalledTimes(1)
+          expect(created).not.toHaveBeenCalled()
+          expect(stripe.refundPayment).not.toHaveBeenCalled()
+          expect(stripe.cancelPayment).not.toHaveBeenCalled()
+          // The order stays, still authorized, and the retry's link is undone with it.
+          const order = await readOrder(orderId)
+          expect(order.seller ?? null).toBeNull()
+          expect(order.fulfillments ?? []).toEqual([])
+          expect(await liveSellerOrderLinks(seller.id)).toEqual([])
+          expect(await moneyOf(orderId)).toEqual([{ captures: [], refunds: [], canceled: false }])
+        })
+
+        it("one whose product has no seller now is neither linked nor captured, and is delivered as without the flag (open item)", async () => {
+          const seller = await makeSeller()
+          const product = await makeProduct(seller.id, { digital: true })
+          const { cart } = await makeCart([product], { deliver: true })
+          const orderId = await unfinishedCompletion(cart.id)
+          await relinkProduct(product.id, seller.id, null)
+
+          const retry = await checkout(cart.id)
+          expect(retry.errors).toEqual([])
+          expect(stripe.capturePayment).not.toHaveBeenCalled()
+          const order = await readOrder(orderId)
+          expect(order.seller ?? null).toBeNull()
+          expect(await moneyOf(orderId)).toEqual([{ captures: [], refunds: [], canceled: false }])
+          expect(order.digital_product_order?.id).toBe(retry.result.digital_product_order.id)
+        })
+      })
+
       it("over the store route, a retried POST after the product moved seller answers 200 with the same order and refunds nothing", async () => {
         const pak = pakHeaders(await createPublishableKeyToken(getContainer))
         const a = await makeSeller()

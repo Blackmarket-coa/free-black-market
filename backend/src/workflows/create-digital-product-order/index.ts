@@ -124,8 +124,8 @@ const createDigitalProductOrderWorkflow = createWorkflow(
     // SD-48: the order of a cart already completed (flag off: null, unread).
     const completed = digitalProductCompletedCartOrderStep({ cart_id: input.cart_id })
 
-    // Only a cart not yet completed is completed, linked and charged; a
-    // replay keeps out of completeCartWorkflow and its refund compensation.
+    // Only a cart not yet completed is checked for its seller and completed;
+    // a replay keeps out of completeCartWorkflow and its refund compensation.
     const completion = when(
       "complete-digital-product-cart",
       { completed },
@@ -140,37 +140,50 @@ const createDigitalProductOrderWorkflow = createWorkflow(
         }
       })
 
-      linkDigitalProductOrderSellerStep({
-        order_id: createdOrderId,
-        mode: "initial",
-        expected_seller_id: resolvedSeller.seller_id,
-      })
-
-      const toCapture = digitalProductPaymentToCaptureStep({
-        order_id: createdOrderId,
-        mode: "initial",
-      })
-
-      return transform({ createdOrderId, toCapture }, (data) => ({
+      return transform({ createdOrderId, resolvedSeller }, (data) => ({
         order_id: data.createdOrderId,
-        payment_id: data.toCapture.payment_id,
+        seller_id: data.resolvedSeller.seller_id,
       }))
     })
 
     // A replay's order is the one already there; otherwise, the one just made.
     const checkout = transform({ completed, completion }, (data) => ({
       order_id: (data.completed.order_id ?? data.completion?.order_id) as string,
-      payment_id: data.completion?.payment_id ?? null,
+      mode: data.completed.order_id ? ("replay" as const) : ("initial" as const),
+      expected_seller_id: data.completion?.seller_id ?? null,
     }))
 
+    // SD-48: link the order to its seller — just made: the seller checked
+    // before payment, or the checkout rolls back; a replay's: left as it is
+    // when linked, else linked to its products' one seller (its first
+    // completion stopped before the link), never refused.
+    const linked = linkDigitalProductOrderSellerStep(
+      transform({ checkout }, (data) => ({
+        order_id: data.checkout.order_id,
+        mode: data.checkout.mode,
+        expected_seller_id: data.checkout.expected_seller_id,
+      }))
+    )
+
+    const toCapture = digitalProductPaymentToCaptureStep(
+      transform({ checkout, linked }, (data) => ({
+        order_id: data.checkout.order_id,
+        mode: data.checkout.mode,
+        linked_seller_id: data.linked.seller_id,
+      }))
+    )
+
     // SD-48: take the money the checkout authorized, before the digital
-    // product order exists. A refused capture fails the checkout here; a
-    // failure after it leaves completeCartWorkflow's compensation to try a
-    // refund (`compensatePaymentIfNeededStep`), best effort only — see above.
+    // product order exists — on a replay too, when the order's first
+    // completion left it uncaptured. A refused capture fails the checkout
+    // here, before anything is delivered. After a first completion, a later
+    // failure leaves completeCartWorkflow's compensation to try a refund
+    // (`compensatePaymentIfNeededStep`), best effort only — see above; a
+    // replay has no such compensation, so nothing refunds its capture.
     // Outside the block above because `when` blocks do not nest.
-    when("capture-digital-product-order-payment", { checkout }, (data) => !!data.checkout.payment_id).then(() => {
+    when("capture-digital-product-order-payment", { toCapture }, (data) => !!data.toCapture.payment_id).then(() => {
       capturePaymentWorkflow.runAsStep({
-        input: transform({ checkout }, (data) => ({ payment_id: data.checkout.payment_id as string })),
+        input: transform({ toCapture }, (data) => ({ payment_id: data.toCapture.payment_id as string })),
       })
     })
 
