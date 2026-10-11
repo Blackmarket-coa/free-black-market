@@ -145,7 +145,17 @@ Canopy (68%); a product linked to that seller; and an order for it this month:
 - D4 returned `karma` Seedling at 0.6, every earnings figure 0, and
   `grower.seller_id` set to the member id.
 
-Three faults, each enough on its own:
+Three faults. The first alone explains everything observed. The second and third
+each zero a different part of the money figures even for the right id: the order
+read gives the units sold and the per-product "your cut"
+(`current-period/route.ts:94-118`), and the ledger read gives the gross, the net,
+the monthly history and the year-to-date earnings (`:93`, `:132-168`, `:177`).
+Neither touches the tier or the split, which come only from `getGrowerTier`
+(`:44`, `:90`, `:180`). Called directly with the seller id, the route's handler
+returned Seedling and 60 on the schema as migrated, where the tier read throws
+(SD-50) and the route falls back, and Canopy and 68 once the two missing
+`character_sheet` columns were added; either way every money figure was 0 and no
+sale was listed (observed).
 
 1. **The member id is used as the seller id.** D3 takes its id from `getSellerId`
    (`current-period/route.ts:36`), which returns `auth_context.actor_id` ahead of
