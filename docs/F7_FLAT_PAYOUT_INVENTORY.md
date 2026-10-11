@@ -226,10 +226,11 @@ raise a displayed tier, but no route applies one (P7). Production's schema is no
 visible.
 
 The grower tier counts every PRODUCER-track XP point, whatever its source
-(`backend/src/modules/progression/grower-karma.ts:212-216`). With the two columns
-added by hand, for a scale-plan seller (observed):
+(`backend/src/modules/progression/grower-karma.ts:212-216`). Which sources accrue
+PRODUCER KARMA, with the two columns added by hand, for a scale-plan seller
+(observed):
 
-- **Vendor verification accrues it.** The `vendor.verified` event carries the
+- **Vendor verification does.** The `vendor.verified` event carries the
   seller id (`backend/src/api/admin/seller-metadata/[seller_id]/route.ts:116-122`),
   and its subscriber credits 250 to the member the grower tier reads
   (`backend/src/subscribers/progression-vendor-verified.ts:33-50`).
