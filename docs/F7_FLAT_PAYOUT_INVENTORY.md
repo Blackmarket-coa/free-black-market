@@ -13,8 +13,9 @@ written to do, not what they do. Two independent reviews ran them on a real
 database; their results were reproduced before this version was written. As run,
 the nursery payouts endpoint shows every seller Seedling, 60% and $0 (§4.1), and
 on a database built from the migrations no grower can earn a tier at all (§4.2).
-§1, P4, P6, P7, D1 to D4, D8, D9, §10, §11 and §12 changed; D11, X4 and §4.1 and
-§4.2 are new.
+§1, P4, P6, P7, D1 to D5, D8, D9, X1, X2, T6, §8, §10, §11 and §12 changed in
+substance; D11, X4, §4.1 and §4.2 are new; D6 and T2b now name their files in
+full.
 
 Every `file:line` below was checked by script at this branch's head, whose code is
 the same as `7b106a5b` (the branch changes only documents). **Live** means
@@ -215,9 +216,9 @@ KARMA; sales still could not. Production's schema is not visible.
 | # | Where | What | Reached? | F7 question |
 |---|---|---|---|---|
 | X1 | `POST /vendor/creator/credits/convert-xp`; `backend/src/lib/creator-credits.ts:13`, `:22`, `:29-31` | A seller's owner member converts spendable XP into Coalition Credits at 1,000 XP to 50 credits. Grower KARMA is PRODUCER-track XP and accrues to `spendable_xp` like any XP (`backend/src/modules/progression/service.ts:135-145`), so it converts too. Credits buy goods once `FBM_CCR_CHECKOUT_LIVE=1` and `FBM_CCR_CENTS_PER_CREDIT` are set (`backend/src/lib/ccr-checkout.ts:52`, `:71-74`). | Dark (`FBM_CREATOR_CREDITS_LIVE`; the route answers 404 without it, `convert-xp/route.ts:43-45`). On a migrations-built database no XP accrues to convert (§4.2). | Does "KARMA carries no money" cover this (§10.6)? |
-| X2 | `backend/src/modules/progression/rewards.ts:33-85` | XP buys one theme, one emoji pack, an access pass and two PDFs (`:35`, `:45`, `:55`, `:66`, `:76`) | Live | Entitlements, not money. |
+| X2 | `backend/src/modules/progression/rewards.ts:33-85` | XP buys one theme, one emoji pack, an access pass and two PDFs (`:35`, `:45`, `:55`, `:66`, `:76`) | Live. On a migrations-built database no XP accrues to spend (§4.2). | Entitlements, not money. |
 | X3 | `backend/src/modules/progression/thresholds.ts:47-63` | `producer.reduced-commission` was removed so that XP cannot buy a lower fee | Nothing to reach | Nothing to do. |
-| X4 | `backend/src/modules/progression/thresholds.ts:65-72`, `producer.featured-listing` | Producer level 3 unlocks a "Featured Listing Slot" ("feature a listing on the market home"). FBM sells something close to it: featured placement in the vendor directory for 7, 30 or 90 days (`backend/src/shared/promoted-listing.ts:42-66`). | Not enforced: nothing outside the file reads it (`thresholds.ts:40-44`) | Latent: if enforced, XP would earn what is otherwise bought. Does "KARMA carries no money" cover it (§10.6)? |
+| X4 | `backend/src/modules/progression/thresholds.ts:65-72`, `producer.featured-listing` | Producer level 3 unlocks a "Featured Listing Slot" ("feature a listing on the market home"). FBM sells something close to it: featured placement in the vendor directory for 7, 30 or 90 days (`backend/src/shared/promoted-listing.ts:42-66`). | Not enforced: no code outside the file reads it (`thresholds.ts:40-44`); only its unit spec names it | Latent: if enforced, XP would earn what is otherwise bought. Does "KARMA carries no money" cover it (§10.6)? |
 
 ## 6. Tests that pin current values
 
@@ -325,12 +326,14 @@ framing", and commit `93bee66f` said the node split was left unchanged.
 6. **XP to credits** (X1): does "KARMA carries no money" cover converting
    KARMA-earned XP into Coalition Credits? It is dark today. The same question
    applies to X4's featured-listing slot, which is not enforced.
-7. **Fallbacks that encode the old ladder:** 60 in D3 (`current-period/route.ts:90`), `?? 0.6`
-   (`grower-payout.ts:192`) and the 5% fee (`:47`).
+7. **Fallbacks that encode the old ladder:** 60 in D3
+   (`current-period/route.ts:90`), `?? 0.6` (`grower-payout.ts:192`) and the 5%
+   fee (`:47`).
 8. **When to fix SD-49 to SD-52.** Each fix changes what growers see or earn
    before F7 has decided what they should see. Keyed by the seller id, and with
    SD-50 fixed, D3 and D4 would start showing each grower a split that follows
-   their KARMA and plan; with SD-50 and SD-52 fixed, KARMA would start accruing.
+   their KARMA and plan. With SD-50 fixed, KARMA from vendor verification and
+   quests would start accruing, and with SD-52 fixed too, KARMA from sales.
    Decide whether they land before, with or after F7's copy change.
 
 ## 11. What the L27 review could look at
@@ -364,8 +367,12 @@ Facts only; no conclusion is drawn here.
   seller, with no sales listed (§4.1). That was observed on a migrations-built
   database. Its causes are in the code (a member id used as a seller id, and an
   order read Medusa 2.14.2 refuses), so production should behave the same, but
-  production was not observed. So, as far as this repository shows, the API has
-  never shown a grower a tier-scaled amount of their own sales. A grower who
+  production was not observed. The route, `getSellerId` and `getSellerOrders` have
+  not changed since 2026-07-11; the seller-context guard that rewrites the actor
+  was already registered on `/vendor/**`, and Medusa was pinned at 2.14.2 then as
+  now (GitHub history, not run on the July code). So, as far as this repository
+  shows, the API has never shown a grower a tier-scaled amount of their own sales.
+  A grower who
   opened the nursery Payouts screen against a live backend would have seen "Your
   split" at 60%, zeros, and the ladder from D7 (D5); the portals are not deployed
   by this repository (D10). Until 2026-08-10 the portal ladder showed 70% to 85%
@@ -386,8 +393,8 @@ Facts only; no conclusion is drawn here.
   "add a seller agreement") is unchecked. The clause that authorises deductions
   reads: "You authorise us to accept payment on your behalf and to deduct our fees
   and any refunds or claim outcomes before disbursing the remainder to you."
-  (`storefront/src/app/[locale]/(main)/legal/terms/page.tsx:123`). A hub cut paid
-  to a hub account (§10.1) would be read against it.
+  (`storefront/src/app/[locale]/(main)/legal/terms/page.tsx:123`). It is the
+  clause a new hub cut paid to a hub account (§10.1) would be checked against.
   Whether any grower has a contractual claim to the tiered share is the L27
   question.
 - **Consignment.** Dark; the split is product-metadata basis points of the
