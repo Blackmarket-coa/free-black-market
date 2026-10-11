@@ -173,6 +173,27 @@ export const PHASE0_FEATURE_FLAGS = {
   // ones the ledger already paid included, so FBM's job refuses to hand to
   // Mercur's while any ledger-sent payout exists, and logs why.
   LEDGER_CONNECT_PAYOUTS_V1: "FF_LEDGER_CONNECT_PAYOUTS_V1",
+  // A digital-product sale reaches its seller and the ledger (SD-48, the
+  // digital half of SD-46 / F5). `create-digital-product-order` — behind
+  // `/store/carts/:id/complete-digital`, `/v1/checkout/sessions/:id/page` and
+  // Blackout's one-off listing checkout — completes the cart with Medusa's
+  // `completeCartWorkflow`, not Mercur's split, so the order got no seller link
+  // (the card ledger refuses it, the seller is never credited, BMC's 3% is
+  // never taken) and its card payment was authorized and never captured. Off
+  // (default): unchanged, and every new step returns before any read. On: the
+  // cart's one seller is resolved before any payment is authorized and a cart
+  // with none or several is refused (nothing is charged); the order is linked
+  // to that seller and its FBM Stripe payment is captured before the digital
+  // product order is created. A refused capture fails the checkout with
+  // nothing left behind; a failure after the capture is refunded by
+  // `completeCartWorkflow`'s own compensation (Stripe keeps its fee on a
+  // refund). The steps are F5's, shared (`workflows/subscription/steps/
+  // subscription-order-settlement.ts`). Settles only with
+  // CARD_ORDER_LEDGER_V1 also set. Backend only; no twin. BEFORE SETTING IT:
+  // every product sold through this checkout needs a Mercur seller link —
+  // admin-created digital products (`POST /admin/digital-products`) get none,
+  // and are refused until linked (SD-48 has the query).
+  DIGITAL_ORDER_SETTLEMENT_V1: "FF_DIGITAL_ORDER_SETTLEMENT_V1",
 } as const
 
 export type Phase0FeatureFlag = keyof typeof PHASE0_FEATURE_FLAGS

@@ -4,6 +4,7 @@ import { createStep, StepResponse } from "@medusajs/framework/workflows-sdk"
 import { ContainerRegistrationKeys, MedusaError, Modules } from "@medusajs/framework/utils"
 import { SELLER_MODULE } from "@mercurjs/b2c-core/modules/seller"
 import { isFbmCardProvider } from "../../../modules/hawala-ledger/card-clearing"
+import { featureFlagState } from "../../../shared/feature-flags"
 import { consumerSubscriptionsEnabled } from "../grace-lifecycle"
 import {
   buildRenewalRecord,
@@ -39,9 +40,48 @@ import {
  *
  * Flag off, every step here returns before any read and the workflows behave
  * as before.
+ *
+ * SD-48 (`FF_DIGITAL_ORDER_SETTLEMENT_V1`): the digital-product checkout
+ * (`workflows/create-digital-product-order`) completes its cart through the
+ * same `completeCartWorkflow` and had gaps 1 and 2. It runs the seller, link
+ * and capture steps below — these steps, not copies — with
+ * `sale: "digital_product"`, under its own flag. Each sale's steps read only
+ * that sale's flag, so either flag can be set without the other, and the
+ * subscription wording is F5's byte for byte. Only a subscription renews.
  */
 
 type QueryLike = { graph: (q: Record<string, unknown>) => Promise<{ data: unknown[] }> }
+
+/** The checkout a settlement step serves; `subscription` when an input omits it. */
+export type SettlementSale = "subscription" | "digital_product"
+
+type SaleTerms = {
+  /** The flag the sale's steps are dark under, read before anything else. */
+  enabled: () => boolean
+  /** "<label> order <id> …" */
+  label: string
+  /** The refusal of a cart with no single seller, before its reason. */
+  soleSeller: string
+  /** Log prefix. */
+  tag: string
+}
+
+const SALES: Record<SettlementSale, SaleTerms> = {
+  subscription: {
+    enabled: () => consumerSubscriptionsEnabled(),
+    label: "Subscription",
+    soleSeller: "A subscription is sold by one seller",
+    tag: "[subscription]",
+  },
+  digital_product: {
+    enabled: () => featureFlagState.isEnabled("DIGITAL_ORDER_SETTLEMENT_V1"),
+    label: "Digital product",
+    soleSeller: "A digital product order is sold by one seller",
+    tag: "[digital-product]",
+  },
+}
+
+const termsOf = (sale: SettlementSale | undefined): SaleTerms => SALES[sale ?? "subscription"]
 
 /**
  * The one seller every listed product belongs to (Mercur's product `seller`
@@ -70,12 +110,14 @@ async function soleSellerOf(
 /**
  * Before any payment is authorized: the subscription cart's one seller.
  * Refuses (flag on) a cart whose products do not all belong to one seller,
- * so nothing is charged for a sale no seller can be credited with.
+ * so nothing is charged for a sale no seller can be credited with. With
+ * `sale: "digital_product"`, the same for a digital-product cart (SD-48).
  */
 export const resolveSubscriptionSellerStep = createStep(
   "resolve-subscription-seller",
-  async (input: { cart_id: string }, { container }) => {
-    if (!consumerSubscriptionsEnabled()) return new StepResponse({ seller_id: null as string | null })
+  async (input: { cart_id: string; sale?: SettlementSale }, { container }) => {
+    const terms = termsOf(input.sale)
+    if (!terms.enabled()) return new StepResponse({ seller_id: null as string | null })
     const query = container.resolve(ContainerRegistrationKeys.QUERY) as QueryLike
     const { data } = await query.graph({
       entity: "cart",
@@ -87,7 +129,7 @@ export const resolveSubscriptionSellerStep = createStep(
     if (!sole.seller_id) {
       throw new MedusaError(
         MedusaError.Types.NOT_ALLOWED,
-        `A subscription is sold by one seller, and this cart cannot be: ${"reason" in sole ? sole.reason : ""}.`
+        `${terms.soleSeller}, and this cart cannot be: ${"reason" in sole ? sole.reason : ""}.`
       )
     }
     return new StepResponse({ seller_id: sole.seller_id as string | null })
@@ -104,6 +146,8 @@ type LinkInput = {
    */
   mode: "initial" | "renewal"
   expected_seller_id?: string | null
+  /** SD-48: `digital_product` (always `initial`); `subscription` when omitted. */
+  sale?: SettlementSale
 }
 
 type LinkOutput = { linked: boolean; seller_id: string | null }
@@ -112,11 +156,16 @@ type LinkDef = Record<string, Record<string, string>> | null
 
 const linkResult = (output: LinkOutput, created: LinkDef = null) => new StepResponse<LinkOutput, LinkDef>(output, created)
 
-/** Link the subscription order to its seller, as Mercur's split does for its own orders. */
+/**
+ * Link the subscription order (or, with `sale: "digital_product"`, the
+ * digital-product order) to its seller, as Mercur's split does for its own
+ * orders.
+ */
 export const linkSubscriptionOrderSellerStep = createStep(
   "link-subscription-order-seller",
   async (input: LinkInput, { container }) => {
-    if (!consumerSubscriptionsEnabled()) return linkResult({ linked: false, seller_id: null })
+    const terms = termsOf(input.sale)
+    if (!terms.enabled()) return linkResult({ linked: false, seller_id: null })
     const query = container.resolve(ContainerRegistrationKeys.QUERY) as QueryLike
     const { data } = await query.graph({
       entity: "order",
@@ -129,22 +178,22 @@ export const linkSubscriptionOrderSellerStep = createStep(
     }>)[0]
     const refuse = (message: string) => {
       if (input.mode === "initial") throw new MedusaError(MedusaError.Types.NOT_ALLOWED, message)
-      log.error(`[subscription] ${message}`)
+      log.error(`${terms.tag} ${message}`)
       return linkResult({ linked: false, seller_id: null })
     }
-    if (!order) return refuse(`Subscription order ${input.order_id} not found; no seller linked`)
+    if (!order) return refuse(`${terms.label} order ${input.order_id} not found; no seller linked`)
 
     const sole = await soleSellerOf(query, (order.items ?? []).map((i) => i?.product_id))
     if (!sole.seller_id) {
-      return refuse(`Subscription order ${input.order_id} has no single seller (${"reason" in sole ? sole.reason : ""}); not linked, so the ledger will not settle it`)
+      return refuse(`${terms.label} order ${input.order_id} has no single seller (${"reason" in sole ? sole.reason : ""}); not linked, so the ledger will not settle it`)
     }
     if (input.mode === "initial" && input.expected_seller_id && sole.seller_id !== input.expected_seller_id) {
-      return refuse(`Subscription order ${input.order_id} is sold by ${sole.seller_id}, not ${input.expected_seller_id} as checked before payment`)
+      return refuse(`${terms.label} order ${input.order_id} is sold by ${sole.seller_id}, not ${input.expected_seller_id} as checked before payment`)
     }
     const current = order.seller?.id ?? null
     if (current === sole.seller_id) return linkResult({ linked: false, seller_id: current })
     if (current) {
-      return refuse(`Subscription order ${input.order_id} is linked to seller ${current}, but its products are sold by ${sole.seller_id}`)
+      return refuse(`${terms.label} order ${input.order_id} is linked to seller ${current}, but its products are sold by ${sole.seller_id}`)
     }
 
     const link = container.resolve(ContainerRegistrationKeys.LINK) as {
@@ -240,6 +289,8 @@ type CaptureInput = {
   mode: "initial" | "renewal"
   /** `renewal`: the cycle's charge status from `chargeSubscriptionRenewalStep`. */
   renewal_charge_status?: string | null
+  /** SD-48: `digital_product` (always `initial`); `subscription` when omitted. */
+  sale?: SettlementSale
 }
 
 type PaymentRow = {
@@ -262,15 +313,18 @@ type PaymentRow = {
  *     no money (the system provider touches no rail); it records on the order
  *     what Stripe already took, so the ledger settles it. A bank debit still
  *     `processing` is left uncaptured — the money has not arrived.
+ *
+ * A digital-product order (`sale: "digital_product"`, SD-48) is `initial`.
  */
 export const subscriptionPaymentToCaptureStep = createStep(
   "subscription-payment-to-capture",
   async (input: CaptureInput, { container }) => {
     const none = () => new StepResponse({ payment_id: null as string | null })
-    if (!consumerSubscriptionsEnabled()) return none()
+    const terms = termsOf(input.sale)
+    if (!terms.enabled()) return none()
     if (input.mode === "renewal" && input.renewal_charge_status !== "succeeded") {
       if (input.renewal_charge_status === "processing") {
-        log.warn(`[subscription] Renewal order ${input.order_id}: its charge is still processing; not recorded as captured`)
+        log.warn(`${terms.tag} Renewal order ${input.order_id}: its charge is still processing; not recorded as captured`)
       }
       return none()
     }
@@ -296,9 +350,9 @@ export const subscriptionPaymentToCaptureStep = createStep(
     if (candidates.length > 1) {
       // One checkout, one payment session: more than one is not a shape this
       // flow makes, and capturing the wrong one would charge twice.
-      const message = `Subscription order ${input.order_id} has ${candidates.length} uncaptured payments; none captured`
+      const message = `${terms.label} order ${input.order_id} has ${candidates.length} uncaptured payments; none captured`
       if (input.mode === "initial") throw new MedusaError(MedusaError.Types.UNEXPECTED_STATE, message)
-      log.error(`[subscription] ${message}`)
+      log.error(`${terms.tag} ${message}`)
       return none()
     }
     return new StepResponse({ payment_id: candidates[0]?.id ?? null })
