@@ -5,6 +5,8 @@ import { isFbmCardProvider } from "../modules/hawala-ledger/card-clearing"
 import { ordersForPaymentCollection, readPayment } from "../lib/card-order-settlement"
 import { reconcileCardOrder } from "../lib/card-order-reconcile"
 import { cardOrderLedgerEnabled } from "./hawala-order-payment"
+import { RENEWAL_RECORD_PROVIDER_ID } from "../workflows/subscription/renew-helpers"
+import { featureFlagState } from "../shared/feature-flags"
 
 /**
  * Settle card orders when Stripe captures their payment (SD-36,
@@ -17,7 +19,12 @@ import { cardOrderLedgerEnabled } from "./hawala-order-payment"
  * its own share is fully captured, through the same `settleOrderPayment` the
  * placement path runs.
  * Each order's `-purchase` key makes a redelivery, or a second capture event,
- * a no-op. Only FBM's own Stripe registration; anything else is ignored.
+ * a no-op. Only FBM's own Stripe registration; anything else is ignored —
+ * except, with FF_CONSUMER_SUBSCRIPTIONS_V1, a system-provider capture, which
+ * is how a subscription renewal FBM already charged is recorded (SD-46). The
+ * reconcile decides whether that order really is card money (the order must
+ * be linked to the subscription its payment names), so a manual payment's
+ * capture reconciles to "not a card order" and posts nothing.
  *
  * Flag off: returns before any read. A failure here is logged, never thrown
  * (it must not fail the capture); the reconciler job settles what was missed.
@@ -35,7 +42,8 @@ export default async function hawalaCardCaptureSubscriber({
       log.warn(`[Hawala] Captured payment ${paymentId} not found; nothing settled`)
       return
     }
-    if (!isFbmCardProvider(payment.provider_id) || !payment.payment_collection_id) return
+    const renewalRecord = payment.provider_id === RENEWAL_RECORD_PROVIDER_ID && featureFlagState.isEnabled("CONSUMER_SUBSCRIPTIONS_V1")
+    if ((!isFbmCardProvider(payment.provider_id) && !renewalRecord) || !payment.payment_collection_id) return
 
     const orderIds = await ordersForPaymentCollection(container, payment.payment_collection_id)
     if (orderIds.length === 0) {

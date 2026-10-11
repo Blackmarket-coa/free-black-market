@@ -13,6 +13,41 @@ Blackstar repo: `ROADMAP.md`.
 
 ---
 
+## 0. Status at 2026-10-09
+
+Checked against the code on each repo's default branch, not against earlier
+notes. "Built, dark" means merged behind a feature flag that is **not set**;
+nothing here has been switched on. Ledger rows are in `docs/AUDIT_DEBT.md`.
+
+**FBM (§5)**
+
+| Step | Status |
+|---|---|
+| F1 BMC listing | **Not done; operator data.** The code expects the BMC seller as `BLACK_MASK_SELLER_ID` (`lib/black-mask-provisioning.ts`); the seller account and the $5/month vault product still have to be created. |
+| F2 subscriptions end to end | **Built, dark** (BM-1, BM-4): purchase screen, renewal charge, grace lifecycle. A Stripe test-mode run is still owed. |
+| F3 provisioning webhook | **Built, dark** (BM-2, BM-5 `expired`), `FF_BLACK_MASK_PROVISIONING_V1`. |
+| F4 lifecycle | **Built, dark** (BM-1, BM-5): 14-day grace, then read-only with export. |
+| F5 commission on BMC's own sales | **Fix in review** (SD-46): "no code change" was wrong. Subscription orders had no seller link, the first payment was never captured, and renewals never reached the ledger. |
+| F6 fee-first split | **Built, dark** (BM-6, BM-7, SD-36 to SD-45): card ledger, refunds, chargebacks, dispute fees, ledger-driven Connect payouts. |
+| F7 flat payouts | **Not started.** Needs the flat share decided and counsel on L27. Tiers still pay 60% to 72%. |
+| F8 $10 plan | **Built, dark** (BM-3), `FF_ALL_ACCESS_PLAN_V1`. |
+| F9, F10, F11 | **Held by decision**: app-store rules (L29), bundle ("wait"), USDC ("later"). |
+| F12 own-house guardrails | **Not started.** No `security.txt`, no Anubis or CrowdSec in any repo. |
+
+**Blackout (§6)**
+
+| Step | Status |
+|---|---|
+| B0 preconditions | BO-1 still open (instrumenting). Bot-token rotation and the theblackout.app federation page are operator tasks. The "ten" advisory PRs were 34 by 2026-10-09: **one list of 24 upstream advisories re-filed daily** because none merged. Triaged once in blackout#953, which supersedes #895 to #952 (not closed): 19 Synapse advisories ported by hand, 1 applicable but not ported (GHSA-gjgr, unauthenticated remote-media fetch; the fix is upstream's whole authenticated-media feature), 4 not applicable. In review. |
+| B1 embed route, B2 framing | **Built, not deployed** (blackout#954): `/embed` shows only canopies, dens and DMs, with unread indicators on. Framing is allowed only from the origins in `BLACK_MASK_FRAME_ANCESTORS`, which is empty by default, so nothing can frame it until that is set. The same PR makes every other route refuse framing; the live web client currently sends no framing headers at all. |
+| B3 to B6 | Not started: sign-in session length, account link, unlink, phishing check. |
+| B7 to B9 | Follow the paid launch; L31 needs counsel. |
+
+**Blackstar (§7):** GitHub Actions still report 0 runs; enabling them (S2) is an operator setting. S1 and S3 are deferred.
+
+**Black Mask fork (§8):** all of Phase 0 to Phase 3 lives in the Black Mask
+repos, which are not among the three repositories this work can reach.
+
 ## 1. Summary
 
 Black Mask ships as a **hosted, managed password vault** with a **free privacy
@@ -85,10 +120,10 @@ depends on FBM being up**; only new sign-ups and renewals wait when FBM is down.
 | # | Step | Where it lands | Notes |
 |---|---|---|---|
 | F1 | **First-party BMC listing** for the hosted vault, sold by a BMC seller account on the storefront, paid through Stripe (already live on FBM). | Seller + product data; no new module. | The BMC seller is an ordinary seller so the 3% commission applies and nets to zero. Confirm how "first-party" is marked for reporting; `backend/src/shared/plugin-payees.ts` treats "no listing" as not first-party, which is the only first-party notion in code today. |
-| F2 | **Confirm recurring consumer subscriptions end to end on the storefront** before promising a date. | `backend/src/api/store/subscriptions/route.ts` exists (create from a cart with `interval` weekly…yearly, `type` csa_share / meal_plan / produce_box / membership / custom); `storefront/src/lib/data/` has **no subscription purchase call** and no storefront page calls `/store/subscriptions`. | So the API exists and the purchase UI does not. A `membership`-type monthly subscription is the natural fit for the vault seat. Unconfirmed until a test-mode run completes. |
+| F2 | **Confirm recurring consumer subscriptions end to end on the storefront** before promising a date. | `backend/src/api/store/subscriptions/route.ts` exists (create from a cart with `interval` weekly…yearly, `type` csa_share / meal_plan / produce_box / membership / custom); `storefront/src/lib/data/` has **no subscription purchase call** and no storefront page calls `/store/subscriptions`. | So the API exists and the purchase UI does not. A `membership`-type monthly subscription is the natural fit for the vault seat. Unconfirmed until a test-mode run completes. *2026-10-09: the purchase screen now exists (BM-4, `storefront/src/lib/data/subscriptions.ts`); the test-mode run is still owed.* |
 | F3 | **Signed provisioning webhook** on order placed / renewed / cancelled / payment failed, sent to the Black Mask provisioning service. | New outbound webhook, modelled on the existing FBM↔Blackout bridge (`backend/src/api/v1/integrations/blackout/link/route.ts` uses a service token / JWT; `lib/blackout-oauth.ts`). HMAC-signed body, idempotency key per order event, retries with backoff. | Payload carries the FBM customer id and plan, never vault secrets. The provisioning service (Black Mask side) creates or invites the vault account; sign-ups are otherwise off. |
 | F4 | **Lifecycle rules**: renewals extend; cancellation or failed payment starts a **grace period (length open)**, then read-only access with export. Never quick deletion. | Subscription status machine (`SubscriptionStatus` active / paused / canceled / expired / failed) → webhook events. | Grace length is an open decision; ship it as a setting, not a constant. |
-| F5 | **Commission kept on BMC's own sales.** | No code change: the flat 3% default applies to the BMC seller. | Pinned by `vendor-plan/__tests__/catalog.unit.spec.ts`; do not add a 0% override for the BMC seller. |
+| F5 | **Commission kept on BMC's own sales.** | The flat 3% default applies to the BMC seller; and (SD-46) the subscription order itself must reach the seller and the ledger. | Pinned by `vendor-plan/__tests__/catalog.unit.spec.ts`; do not add a 0% override for the BMC seller. *2026-10-09: "no code change" was wrong — subscription orders had no seller link, the first payment was never captured and renewals never reached the ledger, so no 3% was ever taken; fixed behind `FF_CONSUMER_SUBSCRIPTIONS_V1` (SD-46).* |
 | F6 | **Fee-first split**: processing fee off the gross first, then 97/3 on the remainder. | `backend/src/modules/payout-breakdown/service.ts` `calculateBreakdown` (fee base and `PAYMENT_PROCESSING` line), `backend/src/subscribers/hawala-order-payment.ts` (fee base). | Behind a flag; real-chain tests, not the two chain stubs (`payout-settings-route.unit.spec.ts`, `consignment-split.unit.spec.ts`), which re-implement the chain and prove nothing. On a $40 order BMC's commission is about 2.9% of gross. Interaction with the 0% donation rule (Phase 1 nonprofit parity, S3): a donation has no BMC share; the org's account bears processing natively on a direct charge. **Built dark 2026-10-06 (ledger BM-6)** behind `FF_FEE_FIRST_SPLIT_V1`: set the storefront twin first, then the API flag, and only then `FF_ALL_ACCESS_PLAN_V1`. Refund shortfalls are recovered from the vendor's next earnings (BM-7) and consignors share processing pro rata (operator, 2026-10-06); the ledger legs run on card orders only with `FF_CARD_ORDER_LEDGER_V1` also set (SD-36, built dark 2026-10-06: each order settles from a card-clearing account once its own money is captured, refunds follow each order's refunded amount; proved on a real database). Before that no order reached the ledger or the breakdown table at all (SD-39), so set `FF_CARD_ORDER_LEDGER_V1` before or with `FF_FEE_FIRST_SPLIT_V1`. An unrepaid shortfall is forgiven 180 days after the refund (operator, 2026-10-06). |
 | F7 | **Flat payouts migration** — remove money from KARMA tiers. | `progression/grower-karma.ts` `GROWER_TIERS.split_pct`; `payout-breakdown/grower-payout.ts` `GROWER_SPLIT_CONFIG`; `packages/bmc-portal-kit/src/tiers.ts` + `tiers.parity.spec.ts`; `api/store/karma-ladder/route.ts` (public ladder copy); every other tier-linked money path — inventory first: escrow, consignment splits, patronage, `vendor-plan/limits.ts`. | Steps: (1) inventory every read of `split_pct`/tier → money; (2) pick the flat share and confirm **how the 60–72% share is defined** (grower's share of post-platform-fee node net, per `grower-payout.ts` header) — the spec asks for exactly this confirmation; (3) migrate existing balances, pending orders and vendor terms with a dated cut-over; (4) keep tiers for reputation, quests and unlocks only; (5) counsel review (**L27**) before cut-over. Behind a flag until then. |
 | F8 | **$10/month all-access plan at 0% commission**, replacing the $29/$99/$249 ladder. | `backend/src/modules/vendor-plan/catalog.ts` and its invariant spec; `vendor-plan/limits.ts`; billing surfaces in vendor-panel. | Open Decision 5 is now answered. Work: add the plan, retire the three paid tiers with a migration path for current subscribers, update the public `/store/fee-schedule` page, and revisit the catalog spec's "ladder only discounts / internal null" semantics so 0% is a plan the ladder can express. The free vendor stays at 3%. |
@@ -332,7 +367,9 @@ gates community capital circles, so they are not a near-term funding source.
 - [ ] Confirm recurring consumer subscriptions work on the FBM storefront
       (F2: API exists, purchase UI does not). *2026-10-05: safety fixes, a
       collecting live renewal charge and the grace lifecycle built (BM-1); purchase
-      UI and a Stripe test-mode run still open.*
+      UI and a Stripe test-mode run still open.* *2026-10-09: purchase UI built
+      (BM-4); the sale now reaches the seller and the ledger (SD-46); the Stripe
+      test-mode run is still open.*
 - [ ] Add the Blackout funnel and app costs to the revenue model, with real
       starting cash and founder draw.
 

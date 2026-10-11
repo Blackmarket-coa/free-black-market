@@ -18,6 +18,12 @@ jest.mock("@medusajs/framework/workflows-sdk", () => ({
     constructor(public result: unknown) {}
   },
   transform: (data: unknown, fn: (d: unknown) => unknown) => ({ __transform: fn, __data: data }),
+  when: (name: string) => ({
+    then: (fn: () => unknown) => {
+      calls.push(`when:${name}`)
+      return fn()
+    },
+  }),
 }))
 
 jest.mock("@medusajs/medusa/core-flows", () => {
@@ -43,8 +49,19 @@ jest.mock("@medusajs/medusa/core-flows", () => {
     completeCartWorkflow: { runAsStep: () => (calls.push("completeCart"), { id: "order_new" }) },
     createRemoteLinkStep: () => calls.push("link"),
     emitEventStep: (args: { eventName: string }) => calls.push(`emit:${args.eventName}`),
+    capturePaymentWorkflow: { runAsStep: () => (calls.push("capturePayment"), {}) },
   }
 })
+
+const stampInputs: unknown[] = []
+const captureInputs: unknown[] = []
+jest.mock("../steps/subscription-order-settlement", () => ({
+  linkSubscriptionOrderSellerStep: (args: { mode: string }) => (calls.push(`link-seller:${args.mode}`), {}),
+  stampRenewalRecordStep: (input: unknown) => (calls.push("stamp-renewal-record"), stampInputs.push(input), {}),
+  subscriptionPaymentToCaptureStep: (input: unknown) => (
+    calls.push("payment-to-capture"), captureInputs.push(input), { payment_id: "pay_1" }
+  ),
+}))
 
 jest.mock("../steps/update-subscription", () => ({
   updateSubscriptionStep: (args: { action: string }) => {
@@ -107,6 +124,34 @@ describe("renewSubscriptionWorkflow composition", () => {
     expect(calls.filter((c) => c === "charge-subscription-renewal")).toHaveLength(1)
   })
 
+  it("live (F5 / SD-46): the renewal order is linked to its seller, stamped with the intent and captured before the period rolls", () => {
+    stampInputs.length = 0
+    captureInputs.length = 0
+    loadWorkflow(true).composerFn({ subscription_id: "sub_1" })
+
+    const order = (name: string) => calls.indexOf(name)
+    expect(order("completeCart")).toBeLessThan(order("link-seller:renewal"))
+    expect(order("link-seller:renewal")).toBeLessThan(order("stamp-renewal-record"))
+    expect(order("stamp-renewal-record")).toBeLessThan(order("payment-to-capture"))
+    expect(order("payment-to-capture")).toBeLessThan(order("capturePayment"))
+    expect(order("capturePayment")).toBeLessThan(order("update-subscription-step:record_order"))
+
+    const charge = { payment_intent_id: "pi_1", idempotency_key: "subscription-renewal:sub_1:x", status: "succeeded" }
+    const stamp = stampInputs[0] as { __transform: (d: unknown) => unknown }
+    expect(stamp.__transform({ order: { id: "order_new" }, charge, input: { subscription_id: "sub_1" } })).toEqual({
+      order_id: "order_new",
+      subscription_id: "sub_1",
+      payment_intent_id: "pi_1",
+      idempotency_key: "subscription-renewal:sub_1:x",
+    })
+    const capture = captureInputs[0] as { __transform: (d: unknown) => unknown }
+    expect(capture.__transform({ order: { id: "order_new" }, charge })).toEqual({
+      order_id: "order_new",
+      mode: "renewal",
+      renewal_charge_status: "succeeded",
+    })
+  })
+
   it("live: the charge is the renewal cart's total, and the session goes to the system provider", () => {
     loadWorkflow(true).composerFn({ subscription_id: "sub_1" })
 
@@ -143,6 +188,7 @@ describe("renewSubscriptionWorkflow composition", () => {
     expect(calls).not.toContain("charge-subscription-renewal")
     expect(calls).not.toContain("createCart")
     expect(calls).not.toContain("createPaymentSession")
+    expect(calls).not.toContain("link-seller:renewal")
     expect(calls).toEqual([
       "query:subscription",
       "update-subscription-step:record_order",

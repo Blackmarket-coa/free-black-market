@@ -4,6 +4,8 @@ import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 import { isFbmCardProvider } from "../modules/hawala-ledger/card-clearing"
 import { STRIPE_CONNECT_DIRECT_PROVIDER_ID } from "../modules/stripe-connect-direct/registration"
 import { HAWALA_LEDGER_MODULE } from "../modules/hawala-ledger"
+import { featureFlagState } from "../shared/feature-flags"
+import { renewalRecordClaim } from "../workflows/subscription/renew-helpers"
 
 /**
  * How a card order's money is read for the hawala ledger (SD-36 / SD-39,
@@ -34,6 +36,13 @@ import { HAWALA_LEDGER_MODULE } from "../modules/hawala-ledger"
  *   - A single-order checkout (`completeCartWorkflow`): no split row; the
  *     order's own payment collection, used only when no other order shares
  *     it, so a collection's money is never attributed to the wrong order.
+ *   - A subscription renewal (F5 / SD-46, `FF_CONSUMER_SUBSCRIPTIONS_V1`):
+ *     FBM collected the cycle with its own off-session PaymentIntent and the
+ *     order's `pp_system_default` payment carries the record of it in its
+ *     `metadata` (`workflows/subscription/renew-helpers.ts`). That is FBM
+ *     card money, read so only when the order is also linked to the
+ *     subscription the record names. Its refunds are Stripe's figure alone:
+ *     a refund recorded in Medusa on a system payment moves no money.
  *
  * Anything that cannot be attributed to one order with certainty yields
  * `null`, and nothing settles or refunds for it.
@@ -91,13 +100,51 @@ const n = (v: unknown): number | null => {
   return Number.isFinite(x) ? x : null
 }
 
+type RawPayment = { id?: string; provider_id?: string | null; metadata?: Record<string, unknown> | null }
+
 type RawCollection = {
   id?: string
   amount?: unknown
   captured_amount?: unknown
   refunded_amount?: unknown
-  payments?: Array<{ id?: string; provider_id?: string | null } | null> | null
+  payments?: Array<RawPayment | null> | null
 } | null
+
+/**
+ * The subscription-order link's query entry point, loaded on first use with
+ * `require` (the `lib/blackout-cycle.ts` pattern): `defineLink` runs at module
+ * load and needs the module registry, so a static import would break every
+ * unit test that reaches this file. Only a renewal read gets here.
+ */
+function subscriptionOrderEntryPoint(): string {
+  return (require("../links/subscription-order") as { default: { entryPoint: string } }).default.entryPoint
+}
+
+/**
+ * The renewal-record payment among `payments` whose claimed subscription the
+ * order is actually linked to (SD-46); null when there is none, or with
+ * `FF_CONSUMER_SUBSCRIPTIONS_V1` off.
+ */
+async function verifiedRenewalRecord(query: any, orderId: string, payments: RawPayment[]): Promise<RawPayment | null> {
+  if (!featureFlagState.isEnabled("CONSUMER_SUBSCRIPTIONS_V1")) return null
+  const claimed = payments
+    .map((p) => ({ p, claim: renewalRecordClaim(p.provider_id, p.metadata) }))
+    .filter((x): x is { p: RawPayment; claim: { subscription_id: string; payment_intent_id: string } } => !!x.claim)
+  if (claimed.length === 0) return null
+  const { data } = await query.graph({
+    entity: subscriptionOrderEntryPoint(),
+    fields: ["subscription_id", "order_id"],
+    filters: { order_id: orderId },
+  })
+  const linked = new Set((data as Array<{ subscription_id?: string }>).map((r) => r.subscription_id).filter(Boolean))
+  const verified = claimed.filter((x) => linked.has(x.claim.subscription_id))
+  if (verified.length !== claimed.length) {
+    log.error(
+      `[Hawala] Order ${orderId}: a payment claims a subscription renewal the order is not linked to; it is not read as card money`
+    )
+  }
+  return verified.length === 1 ? verified[0].p : null
+}
 
 /** Orders linked to a payment collection (core link), for the single-order check. */
 async function ordersOnCollection(query: any, paymentCollectionId: string): Promise<string[]> {
@@ -136,6 +183,7 @@ export async function readCardSettlementOrder(
       "payment_collections.refunded_amount",
       "payment_collections.payments.id",
       "payment_collections.payments.provider_id",
+      "payment_collections.payments.metadata",
     ],
     filters: { id: orderId },
   })
@@ -159,14 +207,18 @@ export async function readCardSettlementOrder(
   const ownCollections = split?.payment_collection_id
     ? collections.filter((c) => c.id === split.payment_collection_id)
     : collections
-  const payments = ownCollections.flatMap((c) => (c.payments ?? []).filter((p): p is { id?: string; provider_id?: string | null } => !!p))
+  const payments = ownCollections.flatMap((c) => (c.payments ?? []).filter((p): p is RawPayment => !!p))
   const providers = payments.map((p) => p.provider_id).filter((p): p is string => !!p)
+  const renewalRecord =
+    split || providers.some((p) => p === STRIPE_CONNECT_DIRECT_PROVIDER_ID || isFbmCardProvider(p))
+      ? null
+      : await verifiedRenewalRecord(query, orderId, payments)
   const funding: CardSettlementFunding = providers.some((p) => p === STRIPE_CONNECT_DIRECT_PROVIDER_ID)
     ? "connect_direct"
-    : providers.some(isFbmCardProvider)
+    : providers.some(isFbmCardProvider) || renewalRecord
       ? "fbm_card"
       : "other"
-  const cardPayment = payments.find((p) => isFbmCardProvider(p.provider_id))
+  const cardPayment = payments.find((p) => isFbmCardProvider(p.provider_id)) ?? renewalRecord ?? undefined
 
   // What Stripe says beyond Medusa (SD-43, `hawala-ledger/models/card-charge-state.ts`):
   // refunds issued in the Stripe dashboard and disputes lost count as
@@ -234,7 +286,7 @@ export async function readCardSettlementOrder(
     const sharers = await ordersOnCollection(query, only.id as string)
     if (sharers.length === 1 && sharers[0] === orderId) {
       captured = n(only.captured_amount)
-      refunded = withStripe(n(only.refunded_amount))
+      refunded = renewalRecord ? stripeRefundedCents / 100 : withStripe(n(only.refunded_amount))
     } else {
       log.warn(
         `[Hawala] Order ${orderId}: payment collection ${only.id} is shared with ${sharers.length - 1} other order(s) ` +

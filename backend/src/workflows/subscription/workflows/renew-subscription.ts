@@ -1,10 +1,12 @@
 import {
   createWorkflow,
   transform,
+  when,
   WorkflowResponse,
 } from "@medusajs/framework/workflows-sdk"
 import {
   authorizePaymentSessionStep,
+  capturePaymentWorkflow,
   completeCartWorkflow,
   createCartWorkflow,
   createPaymentCollectionForCartWorkflow,
@@ -17,6 +19,11 @@ import { Modules } from "@medusajs/framework/utils"
 import { updateSubscriptionStep } from "../steps/update-subscription"
 import { chargeSubscriptionRenewalStep } from "../steps/charge-subscription-renewal"
 import { grantSubscriptionEntitlementsStep } from "../steps/grant-subscription-entitlements"
+import {
+  linkSubscriptionOrderSellerStep,
+  stampRenewalRecordStep,
+  subscriptionPaymentToCaptureStep,
+} from "../steps/subscription-order-settlement"
 import { SUBSCRIPTION_MODULE } from "../../../modules/subscription"
 import {
   buildRenewalCartInput,
@@ -66,7 +73,11 @@ const SUBSCRIPTION_FIELDS = [
  *      (Previously this step asked the Medusa Stripe provider with keys it
  *      ignores and manual capture by default, so nothing was collected.)
  *   4. Completes the cart into an order and links it to the subscription
- *      (subscription↔order link, `isList` so each renewal appends)
+ *      (subscription↔order link, `isList` so each renewal appends). With
+ *      FF_CONSUMER_SUBSCRIPTIONS_V1 (F5 / SD-46) the order is also linked to
+ *      its seller, its bookkeeping payment is stamped with the PaymentIntent
+ *      and, once the charge has `succeeded`, marked captured (no rail is
+ *      touched), so the ledger settles the cycle like the first order.
  *   5. Advances the subscription dates and grants per-cycle entitlements with
  *      `source=SUBSCRIPTION` + `source_subscription_id` provenance, keyed by
  *      the new order id
@@ -173,6 +184,30 @@ export const renewSubscriptionWorkflow = createWorkflow(
         },
       ])
       createRemoteLinkStep(linkDefs)
+
+      // F5: the renewal order reaches its seller and the ledger. The money
+      // is already collected, so neither step refuses the renewal.
+      linkSubscriptionOrderSellerStep({ order_id: order.id, mode: "renewal" })
+      stampRenewalRecordStep(
+        transform({ order, charge, input }, (data) => ({
+          order_id: data.order.id as string,
+          subscription_id: data.input.subscription_id,
+          payment_intent_id: (data.charge.payment_intent_id ?? null) as string | null,
+          idempotency_key: data.charge.idempotency_key as string,
+        }))
+      )
+      const toCapture = subscriptionPaymentToCaptureStep(
+        transform({ order, charge }, (data) => ({
+          order_id: data.order.id as string,
+          mode: "renewal" as const,
+          renewal_charge_status: data.charge.status as string,
+        }))
+      )
+      when("record-renewal-capture", { toCapture }, (data) => !!data.toCapture.payment_id).then(() => {
+        capturePaymentWorkflow.runAsStep({
+          input: transform({ toCapture }, (data) => ({ payment_id: data.toCapture.payment_id as string })),
+        })
+      })
 
       // 5. Advance dates + grant entitlements keyed by the new order. The
       //    grant carries the rolled-forward `next_order_date` and the Blackout

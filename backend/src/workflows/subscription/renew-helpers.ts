@@ -99,8 +99,15 @@ export function buildRenewalCartInput(subscription: RenewalSubscription) {
  * provider, which every payment module registers as `pp_system_default`
  * (@medusajs/payment 2.14.2 dist/loaders/providers.js registers
  * `SystemPaymentProvider` with id "default"; its `authorizePayment` returns
- * AUTHORIZED and touches no rail). The session data carries the PaymentIntent
- * id so the order can be reconciled to the charge.
+ * AUTHORIZED and touches no rail).
+ *
+ * The session data names the PaymentIntent, but it does not survive:
+ * authorization writes the provider's answer over the session's and the new
+ * payment's `data`, and the system provider answers `{}` (as it does to
+ * capture and refund). So the record that ties the order to its charge is
+ * stamped on the PAYMENT's `metadata` once the order exists
+ * (`steps/subscription-order-settlement.ts`, SD-46), which no provider call
+ * rewrites and no store route can set.
  *
  * Before this, the live path asked the Stripe provider for the session with
  * `payment_method_id` and no `confirm`; the installed provider reads only
@@ -109,6 +116,26 @@ export function buildRenewalCartInput(subscription: RenewalSubscription) {
  * (stripe-base.js:31-34) — so no renewal could have collected.
  */
 export const RENEWAL_RECORD_PROVIDER_ID = "pp_system_default"
+
+/** The `collected_by` marker on a renewal charge record. */
+export const RENEWAL_RECORD_COLLECTED_BY = "subscription_renewal_payment_intent"
+
+/** Where the record sits in a renewal order's payment `metadata` (SD-46). */
+export const RENEWAL_RECORD_METADATA_KEY = "subscription_renewal"
+
+/** The record of the PaymentIntent that collected a renewal cycle. */
+export function buildRenewalRecord(args: {
+  subscription_id: string
+  payment_intent_id: string
+  idempotency_key: string
+}) {
+  return {
+    collected_by: RENEWAL_RECORD_COLLECTED_BY,
+    subscription_id: args.subscription_id,
+    stripe_payment_intent_id: args.payment_intent_id,
+    renewal_idempotency_key: args.idempotency_key,
+  }
+}
 
 /**
  * Input for `createPaymentSessionsWorkflow` on the renewal cart: a system
@@ -123,11 +150,31 @@ export function buildRenewalRecordSessionInput(args: {
   return {
     payment_collection_id: args.payment_collection_id,
     provider_id: RENEWAL_RECORD_PROVIDER_ID,
-    data: {
-      collected_by: "subscription_renewal_payment_intent",
-      subscription_id: args.subscription_id,
-      stripe_payment_intent_id: args.payment_intent_id,
-      renewal_idempotency_key: args.idempotency_key,
-    },
+    data: buildRenewalRecord(args),
   }
+}
+
+/**
+ * What a payment's provider and `metadata` claim about a renewal charge: the
+ * subscription it names and the PaymentIntent that collected it, or null when
+ * it carries no record shaped like `buildRenewalRecord`'s.
+ *
+ * Read as a claim, not proof. Only the renewal workflow writes payment
+ * metadata, but the system provider authorizes anything and a store client can
+ * pay on it wherever a region lists `pp_system_default` (the seed scripts do),
+ * so a reader that moves money on this also checks that the order is linked
+ * to the subscription named here — a link only the renewal workflow writes.
+ */
+export function renewalRecordClaim(
+  providerId: unknown,
+  metadata: unknown
+): { subscription_id: string; payment_intent_id: string } | null {
+  if (providerId !== RENEWAL_RECORD_PROVIDER_ID) return null
+  const d = (((metadata ?? {}) as Record<string, unknown>)[RENEWAL_RECORD_METADATA_KEY] ?? {}) as Record<string, unknown>
+  if (d.collected_by !== RENEWAL_RECORD_COLLECTED_BY) return null
+  const subscriptionId = d.subscription_id
+  const intentId = d.stripe_payment_intent_id
+  if (typeof subscriptionId !== "string" || subscriptionId.length === 0) return null
+  if (typeof intentId !== "string" || !intentId.startsWith("pi_")) return null
+  return { subscription_id: subscriptionId, payment_intent_id: intentId }
 }
