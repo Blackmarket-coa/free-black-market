@@ -33,6 +33,7 @@ jest.setTimeout(240 * 1000)
 
 const CARD = PHASE0_FEATURE_FLAGS.CARD_ORDER_LEDGER_V1
 const SUBS = PHASE0_FEATURE_FLAGS.CONSUMER_SUBSCRIPTIONS_V1
+const DIGITAL = PHASE0_FEATURE_FLAGS.DIGITAL_ORDER_SETTLEMENT_V1
 
 medusaIntegrationTestRunner({
   inApp: true,
@@ -86,6 +87,7 @@ medusaIntegrationTestRunner({
       jest.restoreAllMocks()
       delete process.env[CARD]
       delete process.env[SUBS]
+      delete process.env[DIGITAL]
     })
 
     /**
@@ -241,6 +243,42 @@ medusaIntegrationTestRunner({
     const { lockAttempts, sellerChecks } = checkoutRaceProbes(container)
 
     /**
+     * Every read the paid check makes (its own query, by the order id it was
+     * handed), so a scenario can see that a checkout went through it — and
+     * when, against the subscription it guards.
+     */
+    function paidChecks() {
+      const query = container().resolve(ContainerRegistrationKeys.QUERY)
+      const graph = query.graph.bind(query)
+      const reads = jest.fn()
+      jest.spyOn(query, "graph").mockImplementation(async (q: any, ...rest: any[]) => {
+        if (q?.entity === "order" && JSON.stringify(q.fields) === '["id","total","payment_collections.payments.id"]') {
+          reads(q.filters?.id)
+        }
+        return graph(q, ...rest)
+      })
+      return reads
+    }
+
+    /** A registered customer of the store, signed in: what POST /store/subscriptions needs. */
+    async function signedInCustomer() {
+      const pak = await createPublishableKeyToken(getContainer)
+      const email = `buyer-${uid()}@example.com`
+      const password = `${uid()}-${uid()}`
+      const registered = await api.post("/auth/customer/emailpass/register", { email, password })
+      const created = await api.post(
+        "/store/customers",
+        { email },
+        { headers: { authorization: `Bearer ${registered.data.token}`, "x-publishable-api-key": pak } }
+      )
+      const login = await api.post("/auth/customer/emailpass", { email, password })
+      return {
+        customer: created.data.customer as { id: string; email: string },
+        asCustomer: { headers: { authorization: `Bearer ${login.data.token}`, "x-publishable-api-key": pak } },
+      }
+    }
+
+    /**
      * A new payment session on the cart's collection: what the storefront opens
      * when the buyer pays again, and what the store's payment-collection route
      * lets a client open at any time. Medusa deletes the old session first and
@@ -316,11 +354,19 @@ medusaIntegrationTestRunner({
         const product = await makeProduct(seller.id)
         const { cart } = await makeCart([product])
         const acquire = jest.spyOn(container().resolve(Modules.LOCKING), "acquire")
+        const made = jest.spyOn(container().resolve(SUBSCRIPTION_MODULE), "createSubscriptions")
+        const paid = paidChecks()
 
         const { result, errors } = await checkout(cart.id)
         expect(errors).toEqual([])
         expect(acquire).not.toHaveBeenCalled()
         const orderId = result.order.id as string
+        // As before but for the paid check, which runs whatever the flag says
+        // (SD-53 (c)): the order's payment let it through, before the
+        // subscription was made.
+        expect(paid.mock.calls).toEqual([[orderId]])
+        expect(made).toHaveBeenCalledTimes(1)
+        expect(paid.mock.invocationCallOrder[0]).toBeLessThan(made.mock.invocationCallOrder[0])
         const order = await readOrder(orderId)
         expect(order.seller ?? null).toBeNull()
         expect(order.payment_collections[0].payments[0].captured_at).toBeFalsy()
@@ -335,11 +381,14 @@ medusaIntegrationTestRunner({
         const product = await makeProduct(seller.id)
         const { cart, customer } = await makeCart([product])
         const acquire = jest.spyOn(container().resolve(Modules.LOCKING), "acquire")
+        const paid = paidChecks()
 
         const first = await checkout(cart.id)
         const second = await checkout(cart.id)
         expect([first.errors, second.errors]).toEqual([[], []])
         expect(second.result.order.id).toBe(first.result.order.id)
+        // Both runs went through the paid check; the order's payment let both through.
+        expect(paid.mock.calls).toEqual([[first.result.order.id], [first.result.order.id]])
         expect(acquire).not.toHaveBeenCalled()
         const order = await readOrder(first.result.order.id)
         expect(order.seller ?? null).toBeNull()
@@ -348,6 +397,43 @@ medusaIntegrationTestRunner({
         expect(await container().resolve(Modules.ORDER).listOrders({ customer_id: customer.id })).toHaveLength(1)
         const subs = await container().resolve(SUBSCRIPTION_MODULE).listSubscriptions({ customer_id: customer.id })
         expect(subs).toHaveLength(1)
+      })
+
+      it("flag off: as before — over the store route's flag-off branch, a checkout answers 201 with its subscription, the payment only authorized", async () => {
+        delete process.env[SUBS]
+        const { customer, asCustomer } = await signedInCustomer()
+        const seller = await makeSeller()
+        const product = await makeProduct(seller.id)
+        const { cart } = await makeCart([product], 5, customer)
+        const paid = paidChecks()
+
+        const body = { cart_id: cart.id, interval: "monthly", period: 1, type: "membership" }
+        const response = await api.post("/store/subscriptions", body, asCustomer).catch((e: any) => e.response)
+        expect(response.status).toBe(201)
+        expect(response.data.subscription?.id).toBeTruthy()
+        expect(paid.mock.calls).toEqual([[response.data.order.id]])
+        const order = await readOrder(response.data.order.id)
+        expect(order.seller ?? null).toBeNull()
+        expect(order.payment_collections[0].payments[0].captured_at).toBeFalsy()
+        expect(stripe.capturePayment).not.toHaveBeenCalled()
+      })
+
+      it("flag off: a free subscription — nothing owed, so no payment — is still made", async () => {
+        delete process.env[SUBS]
+        const seller = await makeSeller()
+        const product = await makeProduct(seller.id)
+        const { cart, customer } = await makeCart([product], 0)
+        const paid = paidChecks()
+
+        const { result, errors } = await checkout(cart.id)
+        expect(errors).toEqual([])
+        expect(paid.mock.calls).toEqual([[result.order.id]])
+        expect(result.subscription?.id).toBeTruthy()
+        // Medusa completes a cart that owes nothing without authorizing anything.
+        expect(stripe.authorizePayment).not.toHaveBeenCalled()
+        expect(await moneyOf(result.order.id)).toEqual([])
+        const subs = await container().resolve(SUBSCRIPTION_MODULE).listSubscriptions({ customer_id: customer.id })
+        expect(subs.map((s: any) => s.id)).toEqual([result.subscription.id])
       })
 
       it("a cart whose products belong to two sellers is refused before the card is touched", async () => {
@@ -768,6 +854,65 @@ medusaIntegrationTestRunner({
         expect(stripe.capturePayment).not.toHaveBeenCalled()
         expect(stripe.refundPayment).not.toHaveBeenCalled()
       })
+    })
+
+    describe("a first completion Medusa's workflow engine leaves unfinished, with FF_CONSUMER_SUBSCRIPTIONS_V1 off (SD-53 (c))", () => {
+      afterEach(settleBeforeTeardown)
+
+      // The flag-off checkout is reachable: POST /store/subscriptions has a
+      // flag-off branch, and Blackout's page completes recurring listings
+      // through this workflow whatever the flag says. Before SD-53 (c) the
+      // paid check was dark with the flag: the stalled checkout failed at its
+      // own order read, and a retry, running completeCartWorkflow again, got
+      // the cart's order back and made an active subscription with no payment
+      // (seen on a real database). The seller and capture steps still read
+      // nothing with the flag off, and the checkout takes no lock.
+
+      it.each([
+        ["both flags off", {}],
+        ["FF_DIGITAL_ORDER_SETTLEMENT_V1 on", { [DIGITAL]: "true" }],
+      ] as Array<[string, Record<string, string>]>)(
+        "%s: the stalled checkout makes no subscription, and its retry is refused for the order left with no payment",
+        async (_flags, env) => {
+          delete process.env[SUBS]
+          Object.assign(process.env, env)
+          const seller = await makeSeller()
+          const product = await makeProduct(seller.id)
+          const { cart, customer, collection } = await makeCart([product])
+          const acquire = jest.spyOn(container().resolve(Modules.LOCKING), "acquire")
+          // Opening the cart's payment session called Stripe; nothing after it may.
+          for (const call of Object.values(stripe)) call.mockClear()
+          const stall = stallNextCartCompletion(container)
+
+          const first = await checkout(cart.id)
+          expect(stall.stalled()).toBe(true)
+          // completeCartWorkflow handed back no order. The seller and capture
+          // steps read nothing with the flag off, so the paid check refuses,
+          // before the checkout's own order read could run on an undefined id.
+          expect(first.errors).toEqual([
+            "subscription-order-paid: Subscription checkout: the cart's completion returned no order; nothing linked, captured or delivered",
+          ])
+          expect((await clearStalledWorkflows(container, 1000)).map((w) => w.workflow_id)).toEqual(["complete-cart"])
+          const orders = await container().resolve(Modules.ORDER).listOrders({ customer_id: customer.id })
+          expect(orders).toHaveLength(1)
+          expect((await container().resolve(Modules.CART).retrieveCart(cart.id)).completed_at).toBeTruthy()
+          expect(await container().resolve(Modules.PAYMENT).listPayments({ payment_collection_id: collection.id })).toEqual([])
+
+          // The retry gets that order back from completeCartWorkflow, which
+          // authorizes nothing on a completed cart, and is refused.
+          const retry = await checkout(cart.id)
+          expect(retry.errors).toEqual([
+            `subscription-order-paid: Subscription order ${orders[0].id} owes money and has no payment (its completion stopped before the card was authorized, or has not got there yet); nothing delivered`,
+          ])
+          expect(await container().resolve(SUBSCRIPTION_MODULE).listSubscriptions({ customer_id: customer.id })).toEqual([])
+          expect((await readOrder(orders[0].id)).seller?.id ?? null).toBeNull()
+          expect(await container().resolve(Modules.PAYMENT).listPayments({ payment_collection_id: collection.id })).toEqual([])
+          expect(acquire).not.toHaveBeenCalled()
+          for (const [name, call] of Object.entries(stripe)) {
+            expect([name, call.mock.calls.length]).toEqual([name, 0])
+          }
+        }
+      )
     })
 
     describe("two checkouts of one cart at the same time (a double submit)", () => {
