@@ -55,7 +55,7 @@ type WorkflowInput = {
  * keeps that hold if the cart is refused), the order is linked to that
  * seller, and the card payment is captured before the subscription is
  * created — so the sale reaches the seller and the ledger. Flag off, those
- * steps do nothing.
+ * steps do nothing; only the paid check below runs whatever the flag says.
  *
  * A refused capture fails the checkout; Medusa keeps the cancelled payment
  * on the cart's payment collection, so the capture step passes over a
@@ -82,11 +82,17 @@ type WorkflowInput = {
  * (SD-48 open item).
  *
  * Last before the subscription is made, an order that owes money and has no
- * payment is refused (`subscriptionOrderPaidStep`). That is what Medusa's
- * workflow engine leaves when it stops `completeCartWorkflow` after the
- * order and before the card is authorized (SD-53): that first checkout is
- * refused for want of an order id, and its retry, finding the order as a
- * replay, would otherwise make an unpaid subscription.
+ * payment is refused (`subscriptionOrderPaidStep`), with the flag on or off.
+ * That is what Medusa's workflow engine leaves when it stops
+ * `completeCartWorkflow` after the order and before the card is authorized
+ * (SD-53): that first checkout is refused for want of an order id, and its
+ * retry, finding the order (as a replay with the flag on; with it off,
+ * through `completeCartWorkflow`, which hands a completed cart's order back)
+ * would otherwise make an unpaid subscription — with the flag off it did, on
+ * a real database, until SD-53 (c) took the check out from under the flag.
+ * With the flag off this checkout takes no lock, so a second checkout of the
+ * same cart that arrives before the first's card is authorized is refused
+ * here too, and the first makes the subscription.
  *
  * Two checkouts of one cart at once (a double submit) are kept apart, flag
  * on, by a lock on the cart id held from the first step to the last
@@ -181,7 +187,7 @@ export const createSubscriptionWorkflow = createWorkflow(
 
     // SD-48: no subscription for an order that owes money and has no payment,
     // which is what a first completion Medusa's workflow engine left
-    // unfinished leaves behind for a retry to find (SD-53).
+    // unfinished leaves behind for a retry to find (SD-53). Flag on or off.
     subscriptionOrderPaidStep(transform({ checkout }, (data) => ({ order_id: data.checkout.order_id })))
 
     const id = transform({ checkout }, (data) => data.checkout.order_id)

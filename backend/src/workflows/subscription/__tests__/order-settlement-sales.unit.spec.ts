@@ -36,7 +36,10 @@ import {
  * `digital_product`), under FF_DIGITAL_ORDER_SETTLEMENT_V1. Each sale reads
  * only its own flag, and with it off the step returns before it resolves
  * anything from the container — no read, so the workflow behaves exactly as
- * before. The real-database
+ * before. The one exception is the paid check (`subscriptionOrderPaidStep`,
+ * `digitalProductOrderPaidStep`), which runs whatever the flags say (SD-53
+ * (c)): it is tested below under all four combinations of the two flags. The
+ * real-database
  * behaviour is in integration-tests/http/digital-order-settlement.spec.ts and
  * subscription-order-settlement.spec.ts.
  */
@@ -90,7 +93,11 @@ function recordingContainer(completedInto: string | null = null) {
   return { container: { resolve }, resolve, graph }
 }
 
-/** Each digital-product step, as the digital-product workflow calls it, with its nothing-to-do answer. */
+/**
+ * Each digital-product step that is dark with its flag off, as the
+ * digital-product workflow calls it, with its nothing-to-do answer. Not the
+ * paid check: that one runs whatever the flags say (below).
+ */
 const digitalCalls: Array<[string, Invoke, Record<string, unknown>, unknown]> = [
   ["completed cart's order", digitalCompletedOrder, { cart_id: "cart_1" }, { order_id: null }],
   ["resolve seller", digitalResolveSeller, { cart_id: "cart_1" }, { seller_id: null }],
@@ -101,7 +108,6 @@ const digitalCalls: Array<[string, Invoke, Record<string, unknown>, unknown]> = 
     { linked: false, seller_id: null },
   ],
   ["payment to capture", digitalToCapture, { order_id: "order_1", mode: "initial" }, { payment_id: null }],
-  ["order paid", digitalOrderPaid, { order_id: "order_1" }, { checked: false }],
 ]
 
 /** The same steps as the subscription workflow calls them (no `sale`). */
@@ -110,7 +116,14 @@ const subscriptionCalls: Array<[string, Invoke, Record<string, unknown>, unknown
   ["resolve seller", resolveSeller, { cart_id: "cart_1" }, { seller_id: null }],
   ["link seller", linkSeller, { order_id: "order_1", mode: "initial", expected_seller_id: null }, { linked: false, seller_id: null }],
   ["payment to capture", toCapture, { order_id: "order_1", mode: "initial" }, { payment_id: null }],
-  ["order paid", orderPaid, { order_id: "order_1" }, { checked: false }],
+]
+
+/** Every combination of the two settlement flags. */
+const FLAG_COMBINATIONS: Array<[string, Record<string, string>]> = [
+  ["both flags off", {}],
+  ["only FF_CONSUMER_SUBSCRIPTIONS_V1 on", { [SUBS]: "true" }],
+  ["only FF_DIGITAL_ORDER_SETTLEMENT_V1 on", { [DIGITAL]: "true" }],
+  ["both flags on", { [SUBS]: "true", [DIGITAL]: "true" }],
 ]
 
 describe("the F5 settlement steps, per sale", () => {
@@ -227,17 +240,17 @@ describe("a checkout handed no order: a completion Medusa's workflow engine left
   })
 
   // A query filtered on an undefined id is not filtered, so each step must
-  // refuse before it reads anything.
+  // refuse before it reads anything. The paid check refuses one whatever the
+  // flags say: see the next block.
   describe.each([
-    ["digital product sale", DIGITAL, "Digital product", digitalLinkSeller, digitalToCapture, digitalOrderPaid],
-    ["subscription sale", SUBS, "Subscription", linkSeller, toCapture, orderPaid],
-  ])("%s, its flag on", (_label, flag, label, link, capture, paid) => {
+    ["digital product sale", DIGITAL, "Digital product", digitalLinkSeller, digitalToCapture],
+    ["subscription sale", SUBS, "Subscription", linkSeller, toCapture],
+  ])("%s, its flag on", (_label, flag, label, link, capture) => {
     it.each([
       ["link seller", link, { mode: "initial", expected_seller_id: "sel_a" }],
       ["link seller on a replay", link, { mode: "replay" }],
       ["payment to capture", capture, { mode: "initial" }],
       ["payment to capture on a replay", capture, { mode: "replay", linked_seller_id: "sel_a" }],
-      ["order paid", paid, {}],
     ] as Array<[string, Invoke, Record<string, unknown>]>)("%s refuses before any read", async (_name, invoke, rest) => {
       process.env[flag] = "true"
       const { container, resolve } = recordingContainer()
@@ -251,13 +264,13 @@ describe("a checkout handed no order: a completion Medusa's workflow engine left
   })
 })
 
-describe("before anything is delivered: an order that owes money has a payment (SD-48, SD-53)", () => {
+describe("before anything is delivered: an order that owes money has a payment, whatever the flags say (SD-48, SD-53 (c))", () => {
   afterEach(() => {
     delete process.env[DIGITAL]
     delete process.env[SUBS]
   })
 
-  function paidOrder(order: { total: number; payments: Array<Record<string, unknown>> } | null) {
+  function paidOrder(order: { total: number | string; payments: Array<Record<string, unknown>> } | null) {
     const graph = jest.fn(async () => ({
       data: order ? [{ id: "order_1", total: order.total, payment_collections: [{ id: "paycol_1", payments: order.payments }] }] : [],
     }))
@@ -265,41 +278,69 @@ describe("before anything is delivered: an order that owes money has a payment (
       if (key === ContainerRegistrationKeys.QUERY) return { graph }
       throw new Error(`unexpected resolve ${key}`)
     })
-    return { container: { resolve }, graph }
+    return { container: { resolve }, resolve, graph }
   }
 
-  describe.each([
-    ["digital product sale", digitalOrderPaid, DIGITAL, "Digital product"],
-    ["subscription sale", orderPaid, SUBS, "Subscription"],
-  ])("%s, its flag on", (_label, invoke, flag, label) => {
-    it("refuses an order that owes money and has no payment: its first completion stopped before the card was authorized", async () => {
-      process.env[flag] = "true"
-      const { container, graph } = paidOrder({ total: 5, payments: [] })
-      await expect(invoke({ order_id: "order_1" }, { container })).rejects.toThrow(
-        `${label} order order_1 owes money and has no payment (its first completion stopped before the card was authorized); nothing delivered`
-      )
-      expect(graph).toHaveBeenCalledWith({
-        entity: "order",
-        fields: ["id", "total", "payment_collections.payments.id"],
-        filters: { id: "order_1" },
+  // With both flags off the checkouts do what they did before SD-48 — no
+  // seller link, no capture — but a stalled first completion's retry
+  // delivered an order nobody paid for (SD-53 (c)). So this check is the one
+  // step that never looks at a flag; each sale is run under all four.
+  describe.each(FLAG_COMBINATIONS)("%s", (_flags, env) => {
+    describe.each([
+      ["digital product sale", digitalOrderPaid, "Digital product"],
+      ["subscription sale", orderPaid, "Subscription"],
+    ])("%s", (_label, invoke, label) => {
+      beforeEach(() => {
+        Object.assign(process.env, env)
       })
-    })
 
-    it.each([
-      ["a captured FBM card payment", { total: 5, payments: [{ id: "pay_1", provider_id: "pp_stripe_stripe", captured_at: "2026-10-11" }] }],
-      ["a manual payment, which is not FBM card money", { total: 5, payments: [{ id: "pay_1", provider_id: "pp_system_default" }] }],
-      ["no payment for an order that owes nothing", { total: 0, payments: [] }],
-    ])("lets through %s", async (_name, order) => {
-      process.env[flag] = "true"
-      const { container } = paidOrder(order)
-      const res = await invoke({ order_id: "order_1" }, { container })
-      expect(res.output).toEqual({ checked: true })
-    })
+      it("refuses an order it was not handed, before any read", async () => {
+        const { container, resolve } = paidOrder({ total: 5, payments: [] })
+        for (const order_id of [undefined, null, ""]) {
+          await expect(invoke({ order_id }, { container })).rejects.toThrow(
+            `${label} checkout: the cart's completion returned no order; nothing linked, captured or delivered`
+          )
+        }
+        expect(resolve).not.toHaveBeenCalled()
+      })
 
-    it("refuses an order it cannot find", async () => {
-      process.env[flag] = "true"
-      const { container } = paidOrder(null)
-      await expect(invoke({ order_id: "order_1" }, { container })).rejects.toThrow(`${label} order order_1 not found; nothing delivered`)
+      it("reads the order, and refuses one that owes money and has no payment: its completion stopped before the card was authorized", async () => {
+        const { container, graph } = paidOrder({ total: 5, payments: [] })
+        await expect(invoke({ order_id: "order_1" }, { container })).rejects.toThrow(
+          `${label} order order_1 owes money and has no payment (its completion stopped before the card was authorized, or has not got there yet); nothing delivered`
+        )
+        expect(graph).toHaveBeenCalledTimes(1)
+        expect(graph).toHaveBeenCalledWith({
+          entity: "order",
+          fields: ["id", "total", "payment_collections.payments.id"],
+          filters: { id: "order_1" },
+        })
+      })
+
+      it("refuses one owing a fraction of a unit, as the query hands totals back", async () => {
+        const { container } = paidOrder({ total: "0.01", payments: [] })
+        await expect(invoke({ order_id: "order_1" }, { container })).rejects.toThrow(/owes money and has no payment/)
+      })
+
+      it.each([
+        ["an authorized FBM card payment, left uncaptured as with the flag off", { total: 5, payments: [{ id: "pay_1", provider_id: "pp_stripe_stripe" }] }],
+        ["a captured FBM card payment", { total: 5, payments: [{ id: "pay_1", provider_id: "pp_stripe_stripe", captured_at: "2026-10-11" }] }],
+        ["a manual payment, which is not FBM card money", { total: 5, payments: [{ id: "pay_1", provider_id: "pp_system_default" }] }],
+        // A known limit, not an endorsement (SD-53 open item (f)): the check
+        // asks that a payment exists, and a cancelled one counts.
+        ["a cancelled payment, which still counts as one", { total: 5, payments: [{ id: "pay_1", provider_id: "pp_stripe_stripe", canceled_at: "2026-10-11" }] }],
+        ["no payment for an order that owes nothing", { total: 0, payments: [] }],
+      ])("lets through %s", async (_name, order) => {
+        const { container, graph } = paidOrder(order)
+        const res = await invoke({ order_id: "order_1" }, { container })
+        expect(res.output).toEqual({ checked: true })
+        expect(graph).toHaveBeenCalledTimes(1)
+      })
+
+      it("refuses an order it cannot find", async () => {
+        const { container } = paidOrder(null)
+        await expect(invoke({ order_id: "order_1" }, { container })).rejects.toThrow(`${label} order order_1 not found; nothing delivered`)
+      })
     })
   })
 })

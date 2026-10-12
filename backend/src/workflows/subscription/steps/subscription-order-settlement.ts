@@ -38,8 +38,9 @@ import {
  *      ledger read it as "not a card order" and Stripe's refunds of it could
  *      not be found.
  *
- * Flag off, every step here returns before any read and the workflows behave
- * as before.
+ * Flag off, every step here but one returns before any read and the workflows
+ * behave as before. The one is the paid check (`orderPaid`), which runs
+ * whatever the flags say (SD-53 (c)); see its comment.
  *
  * SD-48 (`FF_DIGITAL_ORDER_SETTLEMENT_V1`): the digital-product checkout
  * (`workflows/create-digital-product-order`) completes its cart through the
@@ -60,6 +61,7 @@ import {
  * (`requireOrderId`), and the last step before delivery (`orderPaid`)
  * refuses an order that owes money and has no payment: both are what a
  * first completion Medusa's workflow engine left unfinished leaves (SD-53).
+ * The last one does so with the flags off too.
  */
 
 type QueryLike = { graph: (q: Record<string, unknown>) => Promise<{ data: unknown[] }> }
@@ -68,7 +70,7 @@ type QueryLike = { graph: (q: Record<string, unknown>) => Promise<{ data: unknow
 export type SettlementSale = "subscription" | "digital_product"
 
 type SaleTerms = {
-  /** The flag the sale's steps are dark under, read before anything else. */
+  /** The flag the sale's steps are dark under, read before anything else; the paid check does not read it. */
   enabled: () => boolean
   /** "<label> order <id> …" */
   label: string
@@ -547,23 +549,40 @@ type PaidInput = {
 /**
  * Last, before anything is delivered (`initial` and `replay`): an order that
  * owes money has a payment. One that owes and has none is refused, and the
- * checkout delivers nothing.
+ * checkout delivers nothing. The one step in this file that runs whatever
+ * its sale's flag says.
  *
  * Such an order is what an unfinished first completion leaves: Medusa
  * 2.14.2's workflow engine can stop `completeCartWorkflow` after it writes
  * the order, its cart link and the cart's completion and before it
  * authorizes the card (SD-53). That checkout fails (`requireOrderId`), but
- * the order stays, so a retry finds it as a replay. Without this check the
- * retry linked it and delivered it with no payment at all: the digital
- * product order made, or the subscription active (seen on a real database
- * for both sales). Every completed checkout of an amount owed has a payment,
- * so nothing else is refused here: an FBM card payment is captured above, a
- * partner's Connect direct charge or a manual/system payment is left as it
- * was, and an order that owes nothing is delivered.
+ * the order stays, so a retry finds it: as a replay with the flag on, and
+ * with the flag off through `completeCartWorkflow` itself, which hands back
+ * a completed cart's order and authorizes nothing. Without this check the
+ * retry delivered it with no payment at all: the digital product order
+ * made, or the subscription active (seen on a real database for both sales,
+ * with the flags on and off). Every completed checkout of an amount owed
+ * has a payment, so nothing else is refused here: an FBM card payment is
+ * captured above (flag on) or left authorized (flag off), a partner's
+ * Connect direct charge or a manual/system payment is left as it was, and
+ * an order that owes nothing is delivered.
+ *
+ * Why the flag does not gate it (SD-53 (c)): nothing it refuses was a sale.
+ * On a real database, every way an order reaches either checkout with the
+ * flags off — a card at Stripe, Medusa's system provider, a cart carrying a
+ * Coalition Credits reservation (which lowers nothing), Blackout's hosted
+ * page, Medusa's Stripe webhook completing the cart first — had a payment by
+ * this step whenever it owed money. The one other case is a second
+ * subscription checkout of the same cart at once (that checkout takes no
+ * lock with its flag off) arriving before the first's card is authorized:
+ * it is refused, and the first, which has the payment, delivers.
+ *
+ * Its limit (SD-53 (f)): any payment counts, a cancelled one included, so a
+ * stall after an earlier attempt on the cart failed past the authorization
+ * (whose cancelled payment Medusa keeps on the collection) is let through.
  */
 async function orderPaid(input: PaidInput, { container }: StepExecutionContext) {
   const terms = termsOf(input.sale)
-  if (!terms.enabled()) return new StepResponse({ checked: false })
   const orderId = requireOrderId(input.order_id, terms)
   const query = container.resolve(ContainerRegistrationKeys.QUERY) as QueryLike
   const { data } = await query.graph({
@@ -579,7 +598,7 @@ async function orderPaid(input: PaidInput, { container }: StepExecutionContext) 
   if (payments.length === 0 && MathBN.gt(order.total ?? 0, 0)) {
     throw new MedusaError(
       MedusaError.Types.NOT_ALLOWED,
-      `${terms.label} order ${orderId} owes money and has no payment (its first completion stopped before the card was authorized); nothing delivered`
+      `${terms.label} order ${orderId} owes money and has no payment (its completion stopped before the card was authorized, or has not got there yet); nothing delivered`
     )
   }
   return new StepResponse({ checked: true })
