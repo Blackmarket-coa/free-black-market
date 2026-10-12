@@ -7,6 +7,7 @@ import { ensureListingProduct } from "../../src/lib/blackout-listing-product"
 import { cardOrderFixtures } from "./helpers/card-orders"
 import { checkoutRaceProbes } from "./helpers/checkout-race"
 import { trackSubscribers } from "./helpers/drain-subscribers"
+import { clearStalledWorkflows, stallNextCartCompletion } from "./helpers/stalled-workflows"
 import { createPublishableKeyToken, pakHeaders } from "./_publishable-key"
 
 jest.setTimeout(240 * 1000)
@@ -103,10 +104,16 @@ medusaIntegrationTestRunner({
     }
     afterEach(async () => {
       await drainSubscribers()
+      // A workflow execution left unfinished fails this test here, instead
+      // of every later test in the runner's wait (helpers/stalled-workflows.ts).
+      const stalled = await clearStalledWorkflows(container)
       jest.restoreAllMocks()
       delete process.env[CARD]
       delete process.env[DIGITAL]
       delete process.env[SUBS]
+      if (stalled.length) {
+        throw new Error(`Workflow executions left unfinished: ${stalled.map((w) => `${w.workflow_id} (${w.state})`).join(", ")}`)
+      }
     })
 
     let channel: { id: string } | null = null
@@ -894,6 +901,42 @@ medusaIntegrationTestRunner({
         expect(second.data.order.id).toBe(orderId)
         expect(stripe.refundPayment).not.toHaveBeenCalled()
         expect(await moneyOf(orderId)).toEqual([{ captures: [5], refunds: [], canceled: false }])
+      })
+    })
+
+    describe("a first completion Medusa's workflow engine leaves unfinished (helpers/stalled-workflows.ts), with FF_DIGITAL_ORDER_SETTLEMENT_V1", () => {
+      it("the checkout acts on no order it was not handed, and a retry delivers nothing for the order left with no payment", async () => {
+        const seller = await makeSeller()
+        const product = await makeProduct(seller.id, { digital: true })
+        const { cart, customer, collection } = await makeCart([product], { deliver: true })
+        const created = jest.spyOn(container().resolve(DIGITAL_PRODUCT_MODULE), "createDigitalProductOrders")
+        const stall = stallNextCartCompletion(container)
+
+        const first = await checkout(cart.id)
+        expect(stall.stalled()).toBe(true)
+        // completeCartWorkflow handed back no order: the link step refuses
+        // rather than read by an undefined id (which matches some order).
+        expect(first.errors).toEqual([
+          "link-digital-product-order-seller: Digital product checkout: the cart's completion returned no order; nothing linked, captured or delivered",
+        ])
+        // What the engine left: Medusa's completion unfinished (its
+        // compensation never ends), the order and the cart's completion
+        // written, and no payment.
+        expect((await clearStalledWorkflows(container, 1000)).map((w) => w.workflow_id)).toEqual(["complete-cart"])
+        expect(await container().resolve(Modules.ORDER).listOrders({ customer_id: customer.id })).toHaveLength(1)
+        expect((await container().resolve(Modules.CART).retrieveCart(cart.id)).completed_at).toBeTruthy()
+        expect(await container().resolve(Modules.PAYMENT).listPayments({ payment_collection_id: collection.id })).toEqual([])
+
+        // A retry finds that order as a replay and refuses to deliver it.
+        const retry = await checkout(cart.id)
+        expect(retry.errors).toEqual([
+          expect.stringMatching(/^digital-product-order-paid: Digital product order order_\w+ owes money and has no payment .*; nothing delivered$/),
+        ])
+        expect(created).not.toHaveBeenCalled()
+        expect(await liveSellerOrderLinks(seller.id)).toEqual([])
+        expect(stripe.authorizePayment).not.toHaveBeenCalled()
+        expect(stripe.capturePayment).not.toHaveBeenCalled()
+        expect(stripe.refundPayment).not.toHaveBeenCalled()
       })
     })
 

@@ -21,6 +21,7 @@ import {
   linkSubscriptionOrderSellerStep,
   resolveSubscriptionSellerStep,
   subscriptionCheckoutLockStep,
+  subscriptionOrderPaidStep,
   subscriptionPaymentToCaptureStep,
 } from "../steps/subscription-order-settlement"
 import subscriptionOrderLink from "../../../links/subscription-order"
@@ -57,9 +58,12 @@ type WorkflowInput = {
  * steps do nothing.
  *
  * A refused capture fails the checkout; Medusa keeps the cancelled payment
- * on the cart's payment collection, so the capture step looks only at
- * payments on the cart's current payment session, and a retry with a new
- * session completes normally (SD-48; before, every retry was refused).
+ * on the cart's payment collection, so the capture step passes over a
+ * cancelled payment whose session is gone, and a retry with a new session
+ * completes normally (SD-48; before, every retry was refused). Every other
+ * uncaptured FBM card payment stays the one to capture, so a payment whose
+ * session was replaced mid-checkout is refused at the capture rather than
+ * skipped.
  *
  * A replay — the checkout run again on a cart already completed (Blackout's
  * "retry finishes the record", a retried store call) — never runs
@@ -76,6 +80,13 @@ type WorkflowInput = {
  * this path refunds anything; an order with no single seller is neither
  * linked nor captured, and its subscription is made as without the flag
  * (SD-48 open item).
+ *
+ * Last before the subscription is made, an order that owes money and has no
+ * payment is refused (`subscriptionOrderPaidStep`). That is what Medusa's
+ * workflow engine leaves when it stops `completeCartWorkflow` after the
+ * order and before the card is authorized (SD-53): that first checkout is
+ * refused for want of an order id, and its retry, finding the order as a
+ * replay, would otherwise make an unpaid subscription.
  *
  * Two checkouts of one cart at once (a double submit) are kept apart, flag
  * on, by a lock on the cart id held from the first step to the last
@@ -167,6 +178,11 @@ export const createSubscriptionWorkflow = createWorkflow(
         input: transform({ toCapture }, (data) => ({ payment_id: data.toCapture.payment_id as string })),
       })
     })
+
+    // SD-48: no subscription for an order that owes money and has no payment,
+    // which is what a first completion Medusa's workflow engine left
+    // unfinished leaves behind for a retry to find (SD-53).
+    subscriptionOrderPaidStep(transform({ checkout }, (data) => ({ order_id: data.checkout.order_id })))
 
     const id = transform({ checkout }, (data) => data.checkout.order_id)
 

@@ -7,6 +7,7 @@ import { SUBSCRIPTION_MODULE } from "../../src/modules/subscription"
 import { cardOrderFixtures } from "./helpers/card-orders"
 import { checkoutRaceProbes } from "./helpers/checkout-race"
 import { trackSubscribers } from "./helpers/drain-subscribers"
+import { clearStalledWorkflows, stallNextCartCompletion } from "./helpers/stalled-workflows"
 import { createPublishableKeyToken } from "./_publishable-key"
 import { syncCardChargeFromStripe, type ChargeLedgerState } from "../../src/lib/card-stripe-sync"
 import { readCardSettlementOrder } from "../../src/lib/card-order-settlement"
@@ -83,9 +84,15 @@ medusaIntegrationTestRunner({
     })
     afterEach(async () => {
       await drainSubscribers()
+      // A workflow execution left unfinished fails this test here, instead
+      // of every later test in the runner's wait (helpers/stalled-workflows.ts).
+      const stalled = await clearStalledWorkflows(container)
       jest.restoreAllMocks()
       delete process.env[CARD]
       delete process.env[SUBS]
+      if (stalled.length) {
+        throw new Error(`Workflow executions left unfinished: ${stalled.map((w) => `${w.workflow_id} (${w.state})`).join(", ")}`)
+      }
     })
 
     async function makeProduct(sellerId: string) {
@@ -708,6 +715,42 @@ medusaIntegrationTestRunner({
         expect(stripe.capturePayment).toHaveBeenCalledTimes(1)
         expect(stripe.refundPayment).toHaveBeenCalledTimes(1)
         expect(customer.id).toBeTruthy()
+      })
+    })
+
+    describe("a first completion Medusa's workflow engine leaves unfinished (helpers/stalled-workflows.ts)", () => {
+      it("the checkout acts on no order it was not handed, and a retry makes no subscription for the order left with no payment", async () => {
+        const seller = await makeSeller()
+        const product = await makeProduct(seller.id)
+        const { cart, customer, collection } = await makeCart([product])
+        const stall = stallNextCartCompletion(container)
+
+        const first = await checkout(cart.id)
+        expect(stall.stalled()).toBe(true)
+        // completeCartWorkflow handed back no order: the link step refuses
+        // rather than read by an undefined id (which matches some order).
+        expect(first.errors).toEqual([
+          "link-subscription-order-seller: Subscription checkout: the cart's completion returned no order; nothing linked, captured or delivered",
+        ])
+        // What the engine left: Medusa's completion unfinished (its
+        // compensation never ends), the order and the cart's completion
+        // written, and no payment.
+        expect((await clearStalledWorkflows(container, 1000)).map((w) => w.workflow_id)).toEqual(["complete-cart"])
+        const orders = await container().resolve(Modules.ORDER).listOrders({ customer_id: customer.id })
+        expect(orders).toHaveLength(1)
+        expect((await container().resolve(Modules.CART).retrieveCart(cart.id)).completed_at).toBeTruthy()
+        expect(await container().resolve(Modules.PAYMENT).listPayments({ payment_collection_id: collection.id })).toEqual([])
+
+        // A retry finds that order as a replay and refuses to make the subscription.
+        const retry = await checkout(cart.id)
+        expect(retry.errors).toEqual([
+          expect.stringMatching(/^subscription-order-paid: Subscription order order_\w+ owes money and has no payment .*; nothing delivered$/),
+        ])
+        expect(await container().resolve(SUBSCRIPTION_MODULE).listSubscriptions({ customer_id: customer.id })).toEqual([])
+        expect((await readOrder(orders[0].id)).seller?.id ?? null).toBeNull()
+        expect(stripe.authorizePayment).not.toHaveBeenCalled()
+        expect(stripe.capturePayment).not.toHaveBeenCalled()
+        expect(stripe.refundPayment).not.toHaveBeenCalled()
       })
     })
 

@@ -16,12 +16,14 @@ import { PHASE0_FEATURE_FLAGS } from "../../../shared/feature-flags"
 import {
   completedCartOrderStep,
   digitalProductCompletedCartOrderStep,
+  digitalProductOrderPaidStep,
   digitalProductPaymentToCaptureStep,
   linkDigitalProductOrderSellerStep,
   linkSubscriptionOrderSellerStep,
   resolveDigitalProductSellerStep,
   resolveSubscriptionSellerStep,
   subscriptionCheckoutLockStep,
+  subscriptionOrderPaidStep,
   subscriptionPaymentToCaptureStep,
 } from "../steps/subscription-order-settlement"
 
@@ -48,11 +50,13 @@ const completedOrder = invokeOf(completedCartOrderStep)
 const resolveSeller = invokeOf(resolveSubscriptionSellerStep)
 const linkSeller = invokeOf(linkSubscriptionOrderSellerStep)
 const toCapture = invokeOf(subscriptionPaymentToCaptureStep)
+const orderPaid = invokeOf(subscriptionOrderPaidStep)
 
 const digitalCompletedOrder = invokeOf(digitalProductCompletedCartOrderStep)
 const digitalResolveSeller = invokeOf(resolveDigitalProductSellerStep)
 const digitalLinkSeller = invokeOf(linkDigitalProductOrderSellerStep)
 const digitalToCapture = invokeOf(digitalProductPaymentToCaptureStep)
+const digitalOrderPaid = invokeOf(digitalProductOrderPaidStep)
 
 const DIGITAL = PHASE0_FEATURE_FLAGS.DIGITAL_ORDER_SETTLEMENT_V1
 const SUBS = PHASE0_FEATURE_FLAGS.CONSUMER_SUBSCRIPTIONS_V1
@@ -97,6 +101,7 @@ const digitalCalls: Array<[string, Invoke, Record<string, unknown>, unknown]> = 
     { linked: false, seller_id: null },
   ],
   ["payment to capture", digitalToCapture, { order_id: "order_1", mode: "initial" }, { payment_id: null }],
+  ["order paid", digitalOrderPaid, { order_id: "order_1" }, { checked: false }],
 ]
 
 /** The same steps as the subscription workflow calls them (no `sale`). */
@@ -105,6 +110,7 @@ const subscriptionCalls: Array<[string, Invoke, Record<string, unknown>, unknown
   ["resolve seller", resolveSeller, { cart_id: "cart_1" }, { seller_id: null }],
   ["link seller", linkSeller, { order_id: "order_1", mode: "initial", expected_seller_id: null }, { linked: false, seller_id: null }],
   ["payment to capture", toCapture, { order_id: "order_1", mode: "initial" }, { payment_id: null }],
+  ["order paid", orderPaid, { order_id: "order_1" }, { checked: false }],
 ]
 
 describe("the F5 settlement steps, per sale", () => {
@@ -152,22 +158,29 @@ describe("the F5 settlement steps, per sale", () => {
         resolveDigitalProductSellerStep,
         linkDigitalProductOrderSellerStep,
         digitalProductPaymentToCaptureStep,
+        digitalProductOrderPaidStep,
       ].map((step) => stub(step).stepName)
     ).toEqual([
       "digital-product-completed-cart-order",
       "resolve-digital-product-seller",
       "link-digital-product-order-seller",
       "digital-product-payment-to-capture",
+      "digital-product-order-paid",
     ])
     expect(
-      [completedCartOrderStep, resolveSubscriptionSellerStep, linkSubscriptionOrderSellerStep, subscriptionPaymentToCaptureStep].map(
-        (step) => stub(step).stepName
-      )
+      [
+        completedCartOrderStep,
+        resolveSubscriptionSellerStep,
+        linkSubscriptionOrderSellerStep,
+        subscriptionPaymentToCaptureStep,
+        subscriptionOrderPaidStep,
+      ].map((step) => stub(step).stepName)
     ).toEqual([
       "subscription-completed-cart-order",
       "resolve-subscription-seller",
       "link-subscription-order-seller",
       "subscription-payment-to-capture",
+      "subscription-order-paid",
     ])
     expect(stub(linkDigitalProductOrderSellerStep).compensateFn).toBeInstanceOf(Function)
     expect(stub(linkDigitalProductOrderSellerStep).compensateFn).toBe(stub(linkSubscriptionOrderSellerStep).compensateFn)
@@ -204,6 +217,90 @@ describe("the F5 settlement steps, per sale", () => {
     await expect(resolveSeller({ cart_id: "cart_1" }, { container })).rejects.toThrow(
       "A subscription is sold by one seller, and this cart cannot be: its products belong to 2 sellers."
     )
+  })
+})
+
+describe("a checkout handed no order: a completion Medusa's workflow engine left unfinished (SD-48, SD-53)", () => {
+  afterEach(() => {
+    delete process.env[DIGITAL]
+    delete process.env[SUBS]
+  })
+
+  // A query filtered on an undefined id is not filtered, so each step must
+  // refuse before it reads anything.
+  describe.each([
+    ["digital product sale", DIGITAL, "Digital product", digitalLinkSeller, digitalToCapture, digitalOrderPaid],
+    ["subscription sale", SUBS, "Subscription", linkSeller, toCapture, orderPaid],
+  ])("%s, its flag on", (_label, flag, label, link, capture, paid) => {
+    it.each([
+      ["link seller", link, { mode: "initial", expected_seller_id: "sel_a" }],
+      ["link seller on a replay", link, { mode: "replay" }],
+      ["payment to capture", capture, { mode: "initial" }],
+      ["payment to capture on a replay", capture, { mode: "replay", linked_seller_id: "sel_a" }],
+      ["order paid", paid, {}],
+    ] as Array<[string, Invoke, Record<string, unknown>]>)("%s refuses before any read", async (_name, invoke, rest) => {
+      process.env[flag] = "true"
+      const { container, resolve } = recordingContainer()
+      for (const order_id of [undefined, null, ""]) {
+        await expect(invoke({ ...rest, order_id }, { container })).rejects.toThrow(
+          `${label} checkout: the cart's completion returned no order; nothing linked, captured or delivered`
+        )
+      }
+      expect(resolve).not.toHaveBeenCalled()
+    })
+  })
+})
+
+describe("before anything is delivered: an order that owes money has a payment (SD-48, SD-53)", () => {
+  afterEach(() => {
+    delete process.env[DIGITAL]
+    delete process.env[SUBS]
+  })
+
+  function paidOrder(order: { total: number; payments: Array<Record<string, unknown>> } | null) {
+    const graph = jest.fn(async () => ({
+      data: order ? [{ id: "order_1", total: order.total, payment_collections: [{ id: "paycol_1", payments: order.payments }] }] : [],
+    }))
+    const resolve = jest.fn((key: string) => {
+      if (key === ContainerRegistrationKeys.QUERY) return { graph }
+      throw new Error(`unexpected resolve ${key}`)
+    })
+    return { container: { resolve }, graph }
+  }
+
+  describe.each([
+    ["digital product sale", digitalOrderPaid, DIGITAL, "Digital product"],
+    ["subscription sale", orderPaid, SUBS, "Subscription"],
+  ])("%s, its flag on", (_label, invoke, flag, label) => {
+    it("refuses an order that owes money and has no payment: its first completion stopped before the card was authorized", async () => {
+      process.env[flag] = "true"
+      const { container, graph } = paidOrder({ total: 5, payments: [] })
+      await expect(invoke({ order_id: "order_1" }, { container })).rejects.toThrow(
+        `${label} order order_1 owes money and has no payment (its first completion stopped before the card was authorized); nothing delivered`
+      )
+      expect(graph).toHaveBeenCalledWith({
+        entity: "order",
+        fields: ["id", "total", "payment_collections.payments.id"],
+        filters: { id: "order_1" },
+      })
+    })
+
+    it.each([
+      ["a captured FBM card payment", { total: 5, payments: [{ id: "pay_1", provider_id: "pp_stripe_stripe", captured_at: "2026-10-11" }] }],
+      ["a manual payment, which is not FBM card money", { total: 5, payments: [{ id: "pay_1", provider_id: "pp_system_default" }] }],
+      ["no payment for an order that owes nothing", { total: 0, payments: [] }],
+    ])("lets through %s", async (_name, order) => {
+      process.env[flag] = "true"
+      const { container } = paidOrder(order)
+      const res = await invoke({ order_id: "order_1" }, { container })
+      expect(res.output).toEqual({ checked: true })
+    })
+
+    it("refuses an order it cannot find", async () => {
+      process.env[flag] = "true"
+      const { container } = paidOrder(null)
+      await expect(invoke({ order_id: "order_1" }, { container })).rejects.toThrow(`${label} order order_1 not found; nothing delivered`)
+    })
   })
 })
 

@@ -284,7 +284,12 @@ refunds nothing. It returns an order already linked and captured as it is. An
 order the earlier attempt left unlinked or uncaptured (it stopped part-way) is
 linked to the product's seller and captured first, or, if the product has no
 seller, neither, as with the flag off; if Stripe refuses that capture, the
-completion fails (`checkout_failed`) before this page grants anything. A completion that failed after the card hold cannot be retried on
+completion fails (`checkout_failed`) before this page grants anything. An
+order the earlier attempt left with no payment at all (Medusa's workflow
+engine stopped it after the order and before the card hold, SD-53) is refused
+the same way, and nothing is granted. Every retry on that cart is refused
+again (seen in the workflow on a real database; the page route was read, not
+run), so the member has to start a new checkout. A completion that failed after the card hold cannot be retried on
 the same checkout session: the page opens a payment session only for a cart
 that has none, so the retry meets the payment the failed attempt cancelled and
 is refused; the member starts a new checkout (SD-48 open item, read from this

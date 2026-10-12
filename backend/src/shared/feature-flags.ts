@@ -201,7 +201,10 @@ export const PHASE0_FEATURE_FLAGS = {
   // captured is returned as it is; one its first completion left unlinked or
   // uncaptured is linked to its products' one seller and captured before
   // anything is delivered (a refused capture fails the retry; an order with no
-  // single seller is neither linked nor captured). The checkout holds the cart's
+  // single seller is neither linked nor captured), and one that owes money and
+  // has no payment at all, which Medusa's workflow engine can leave when it
+  // stops the first completion before the card is authorized, is refused
+  // (SD-53). The checkout holds the cart's
   // lock from first step to last (Medusa's in-memory provider: one server
   // process only). The steps are F5's functions, shared
   // (`workflows/subscription/steps/subscription-order-settlement.ts`). Settles

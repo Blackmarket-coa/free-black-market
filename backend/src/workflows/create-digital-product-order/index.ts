@@ -24,6 +24,7 @@ import { DIGITAL_PRODUCT_MODULE } from "../../modules/digital-product"
 import digitalProductOrderOrderLink from "../../links/digital-product-order";
 import {
   digitalProductCompletedCartOrderStep,
+  digitalProductOrderPaidStep,
   digitalProductPaymentToCaptureStep,
   linkDigitalProductOrderSellerStep,
   resolveDigitalProductSellerStep,
@@ -87,9 +88,11 @@ type WorkflowInput = {
  * follow) before the digital product order is created. A refused capture
  * fails the checkout: the authorization is cancelled and the order and its
  * seller link are removed, but Medusa keeps the cancelled payment on the
- * cart's payment collection, so the capture step looks only at payments on
- * the cart's current payment session and a retry with a new session
- * completes normally (SD-48). A failure after the capture deletes the order
+ * cart's payment collection, so the capture step passes over a cancelled
+ * payment whose session is gone and a retry with a new session completes
+ * normally (SD-48). Every other uncaptured FBM card payment stays the one to
+ * capture, so a payment whose session was replaced mid-checkout is refused
+ * at the capture rather than skipped. A failure after the capture deletes the order
  * through `completeCartWorkflow`'s compensation, which then tries to refund
  * the capture (`compensatePaymentIfNeededStep`) — best effort: a refund
  * Stripe refuses is only logged by Medusa, the card stays charged with no
@@ -124,6 +127,13 @@ type WorkflowInput = {
  * on this path refunds anything. An order with no single seller is neither
  * linked nor captured, and is delivered as without the flag (SD-48 open
  * item).
+ *
+ * Last before delivery, an order that owes money and has no payment is
+ * refused (`digitalProductOrderPaidStep`). That is what Medusa's workflow
+ * engine leaves when it stops `completeCartWorkflow` after the order and
+ * before the card is authorized (SD-53): that first checkout is refused for
+ * want of an order id, and its retry, finding the order as a replay, would
+ * otherwise deliver it unpaid.
  */
 const createDigitalProductOrderWorkflow = createWorkflow(
   "create-digital-product-order",
@@ -199,6 +209,11 @@ const createDigitalProductOrderWorkflow = createWorkflow(
         input: transform({ toCapture }, (data) => ({ payment_id: data.toCapture.payment_id as string })),
       })
     })
+
+    // SD-48: nothing is delivered for an order that owes money and has no
+    // payment, which is what a first completion Medusa's workflow engine left
+    // unfinished leaves behind for a retry to find (SD-53).
+    digitalProductOrderPaidStep(transform({ checkout }, (data) => ({ order_id: data.checkout.order_id })))
 
     const id = transform({ checkout }, (data) => data.checkout.order_id)
 

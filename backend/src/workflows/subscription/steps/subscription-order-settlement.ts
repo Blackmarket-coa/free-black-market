@@ -1,7 +1,7 @@
 import { createLogger } from "../../../shared/logger"
 const log = createLogger("workflows/subscription/subscription-order-settlement")
 import { createStep, StepResponse, type StepExecutionContext } from "@medusajs/framework/workflows-sdk"
-import { ContainerRegistrationKeys, MedusaError, Modules } from "@medusajs/framework/utils"
+import { ContainerRegistrationKeys, MathBN, MedusaError, Modules } from "@medusajs/framework/utils"
 import { SELLER_MODULE } from "@mercurjs/b2c-core/modules/seller"
 import { isFbmCardProvider } from "../../../modules/hawala-ledger/card-clearing"
 import { featureFlagState } from "../../../shared/feature-flags"
@@ -55,6 +55,11 @@ import {
  * and capture steps run on it in their `replay` mode, which finishes an order
  * its first completion left unlinked or uncaptured and leaves a finished one
  * as it is.
+ *
+ * Every step that reads an order refuses one it was not handed
+ * (`requireOrderId`), and the last step before delivery (`orderPaid`)
+ * refuses an order that owes money and has no payment: both are what a
+ * first completion Medusa's workflow engine left unfinished leaves (SD-53).
  */
 
 type QueryLike = { graph: (q: Record<string, unknown>) => Promise<{ data: unknown[] }> }
@@ -89,6 +94,30 @@ const SALES: Record<SettlementSale, SaleTerms> = {
 }
 
 const termsOf = (sale: SettlementSale | undefined): SaleTerms => SALES[sale ?? "subscription"]
+
+/**
+ * The order a step was handed, or a refusal before anything is read.
+ *
+ * `completeCartWorkflow` hands back no order id when Medusa 2.14.2's workflow
+ * engine leaves it unfinished (SD-53): the order, its cart link and the
+ * cart's completion are written, the card is never authorized, and the run
+ * stops without an error. A query filtered on an undefined id is not
+ * filtered at all, so a step reading by it gets some order all the same:
+ * seen on a real database, where the link step found the cart's new order
+ * that way and tried to write a seller link with no order id (Postgres:
+ * `column "true" does not exist`). Had another order matched first, the
+ * link and the capture would have acted on it. So nothing is read without
+ * an id.
+ */
+function requireOrderId(orderId: string | null | undefined, terms: SaleTerms): string {
+  if (!orderId) {
+    throw new MedusaError(
+      MedusaError.Types.UNEXPECTED_STATE,
+      `${terms.label} checkout: the cart's completion returned no order; nothing linked, captured or delivered`
+    )
+  }
+  return orderId
+}
 
 /**
  * First, before any money step: the order this cart was already completed
@@ -243,6 +272,7 @@ const linkResult = (output: LinkOutput, created: LinkDef = null) => new StepResp
 async function linkOrderSeller(input: LinkInput, { container }: StepExecutionContext) {
   const terms = termsOf(input.sale)
   if (!terms.enabled()) return linkResult({ linked: false, seller_id: null })
+  requireOrderId(input.order_id, terms)
   const query = container.resolve(ContainerRegistrationKeys.QUERY) as QueryLike
   const { data } = await query.graph({
     entity: "order",
@@ -455,6 +485,7 @@ async function paymentToCapture(input: CaptureInput, { container }: StepExecutio
   const none = () => new StepResponse({ payment_id: null as string | null })
   const terms = termsOf(input.sale)
   if (!terms.enabled()) return none()
+  requireOrderId(input.order_id, terms)
   if (input.mode === "renewal" && input.renewal_charge_status !== "succeeded") {
     if (input.renewal_charge_status === "processing") {
       log.warn(`${terms.tag} Renewal order ${input.order_id}: its charge is still processing; not recorded as captured`)
@@ -507,6 +538,54 @@ async function paymentToCapture(input: CaptureInput, { container }: StepExecutio
 }
 export const subscriptionPaymentToCaptureStep = createStep("subscription-payment-to-capture", paymentToCapture)
 
+type PaidInput = {
+  order_id: string
+  /** SD-48: `digital_product`; `subscription` when omitted. */
+  sale?: SettlementSale
+}
+
+/**
+ * Last, before anything is delivered (`initial` and `replay`): an order that
+ * owes money has a payment. One that owes and has none is refused, and the
+ * checkout delivers nothing.
+ *
+ * Such an order is what an unfinished first completion leaves: Medusa
+ * 2.14.2's workflow engine can stop `completeCartWorkflow` after it writes
+ * the order, its cart link and the cart's completion and before it
+ * authorizes the card (SD-53). That checkout fails (`requireOrderId`), but
+ * the order stays, so a retry finds it as a replay. Without this check the
+ * retry linked it and delivered it with no payment at all: the digital
+ * product order made, or the subscription active (seen on a real database
+ * for both sales). Every completed checkout of an amount owed has a payment,
+ * so nothing else is refused here: an FBM card payment is captured above, a
+ * partner's Connect direct charge or a manual/system payment is left as it
+ * was, and an order that owes nothing is delivered.
+ */
+async function orderPaid(input: PaidInput, { container }: StepExecutionContext) {
+  const terms = termsOf(input.sale)
+  if (!terms.enabled()) return new StepResponse({ checked: false })
+  const orderId = requireOrderId(input.order_id, terms)
+  const query = container.resolve(ContainerRegistrationKeys.QUERY) as QueryLike
+  const { data } = await query.graph({
+    entity: "order",
+    fields: ["id", "total", "payment_collections.payments.id"],
+    filters: { id: orderId },
+  })
+  const order = (data as Array<{ total?: number | string | null; payment_collections?: CollectionRow[] | null }>)[0]
+  if (!order) {
+    throw new MedusaError(MedusaError.Types.NOT_FOUND, `${terms.label} order ${orderId} not found; nothing delivered`)
+  }
+  const payments = (order.payment_collections ?? []).flatMap((c) => c?.payments ?? []).filter((p) => !!p)
+  if (payments.length === 0 && MathBN.gt(order.total ?? 0, 0)) {
+    throw new MedusaError(
+      MedusaError.Types.NOT_ALLOWED,
+      `${terms.label} order ${orderId} owes money and has no payment (its first completion stopped before the card was authorized); nothing delivered`
+    )
+  }
+  return new StepResponse({ checked: true })
+}
+export const subscriptionOrderPaidStep = createStep("subscription-order-paid", orderPaid)
+
 /**
  * SD-48: the replay check and the seller, link and capture steps for the
  * digital-product checkout — the same functions as F5's, under that
@@ -540,4 +619,8 @@ export const digitalProductPaymentToCaptureStep = createStep(
   "digital-product-payment-to-capture",
   (input: Omit<CaptureInput, "sale">, context: StepExecutionContext) =>
     paymentToCapture({ ...input, sale: "digital_product" }, context)
+)
+export const digitalProductOrderPaidStep = createStep(
+  "digital-product-order-paid",
+  (input: Omit<PaidInput, "sale">, context: StepExecutionContext) => orderPaid({ ...input, sale: "digital_product" }, context)
 )
