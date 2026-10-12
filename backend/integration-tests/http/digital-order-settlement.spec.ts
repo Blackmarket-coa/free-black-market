@@ -102,19 +102,31 @@ medusaIntegrationTestRunner({
       })
       return seen
     }
-    afterEach(async () => {
-      await drainSubscribers()
-      // A workflow execution left unfinished fails this test here, instead
-      // of every later test in the runner's wait (helpers/stalled-workflows.ts).
-      const stalled = await clearStalledWorkflows(container)
+    afterEach(() => {
       jest.restoreAllMocks()
       delete process.env[CARD]
       delete process.env[DIGITAL]
       delete process.env[SUBS]
+    })
+
+    /**
+     * Before the runner's teardown: every subscriber the test's events set off
+     * has finished (helpers/drain-subscribers.ts), and no workflow execution is
+     * left unfinished (helpers/stalled-workflows.ts); one that is fails this
+     * test instead of every later one. The runner declares its own afterEach
+     * (wait for executions, then truncate) in the block this suite is written
+     * into, before this suite's hooks, and Jest runs one block's afterEach hooks
+     * in the order they were declared, so a hook at this level would run after
+     * the truncate. Each describe below registers this one instead: an inner
+     * block's afterEach runs before an outer block's.
+     */
+    async function settleBeforeTeardown() {
+      await drainSubscribers()
+      const stalled = await clearStalledWorkflows(container)
       if (stalled.length) {
         throw new Error(`Workflow executions left unfinished: ${stalled.map((w) => `${w.workflow_id} (${w.state})`).join(", ")}`)
       }
-    })
+    }
 
     let channel: { id: string } | null = null
     beforeEach(() => {
@@ -367,6 +379,8 @@ medusaIntegrationTestRunner({
     }
 
     describe("a digital-product checkout, with FF_DIGITAL_ORDER_SETTLEMENT_V1", () => {
+      afterEach(settleBeforeTeardown)
+
       it("a Blackout one-off listing's order is linked to its seller, captured, and settles to that seller less the 3%", async () => {
         const seller = await makeSeller()
         const product = await makeProduct(seller.id, { digital: false })
@@ -593,6 +607,8 @@ medusaIntegrationTestRunner({
     })
 
     describe("a checkout that failed after the card was authorized, tried again on the same cart, with FF_DIGITAL_ORDER_SETTLEMENT_V1", () => {
+      afterEach(settleBeforeTeardown)
+
       // The failed run's compensation cancels its payment, and Medusa keeps
       // that payment on the cart's payment collection. A retry pays with a new
       // payment session (createPaymentSessionsWorkflow deletes the old one), as
@@ -706,6 +722,8 @@ medusaIntegrationTestRunner({
     })
 
     describe("a replay — the checkout run again on a cart it already completed — with FF_DIGITAL_ORDER_SETTLEMENT_V1", () => {
+      afterEach(settleBeforeTeardown)
+
       // completeCartWorkflow creates nothing on a completed cart but still
       // registers a compensation that refunds a captured payment, so a replay
       // must keep out of it: the order is returned as its first completion
@@ -905,6 +923,8 @@ medusaIntegrationTestRunner({
     })
 
     describe("a first completion Medusa's workflow engine leaves unfinished (helpers/stalled-workflows.ts), with FF_DIGITAL_ORDER_SETTLEMENT_V1", () => {
+      afterEach(settleBeforeTeardown)
+
       it("the checkout acts on no order it was not handed, and a retry delivers nothing for the order left with no payment", async () => {
         const seller = await makeSeller()
         const product = await makeProduct(seller.id, { digital: true })
@@ -941,6 +961,8 @@ medusaIntegrationTestRunner({
     })
 
     describe("two checkouts of one cart at the same time (a double submit), with FF_DIGITAL_ORDER_SETTLEMENT_V1", () => {
+      afterEach(settleBeforeTeardown)
+
       // This checkout has held the cart's lock from its first step to its
       // last since before SD-48 (completeCartWorkflow, nested, skips its own),
       // so the second waits, then finds the first's order and returns it as
@@ -1027,6 +1049,8 @@ medusaIntegrationTestRunner({
     })
 
     describe("a Blackout listing's shadow product and its seller link (ensureListingProduct)", () => {
+      afterEach(settleBeforeTeardown)
+
       /** The sellers a product is linked to, read from the link table itself. */
       async function liveProductSellers(productId: string) {
         const pg = container().resolve(ContainerRegistrationKeys.PG_CONNECTION)
@@ -1094,6 +1118,8 @@ medusaIntegrationTestRunner({
     })
 
     describe("flag off", () => {
+      afterEach(settleBeforeTeardown)
+
       it("as before — no seller link, the payment only authorized, nothing settles — even with FF_CONSUMER_SUBSCRIPTIONS_V1 on", async () => {
         delete process.env[DIGITAL]
         process.env[SUBS] = "true"

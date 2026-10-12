@@ -12,9 +12,13 @@ import { Modules } from "@medusajs/framework/utils"
  *
  * Call it in a beforeEach. It routes the bus's dispatch through a tracker:
  * each listener is still called synchronously, as EventEmitter does, and its
- * promise is kept. Await the returned drain at the start of the spec's
- * afterEach, which runs before the runner's teardown. It returns once every
- * subscriber has settled, including any events they emitted in turn.
+ * promise is kept. Await the returned drain from an afterEach registered
+ * inside the spec's describe blocks. The runner declares its own afterEach
+ * (wait for workflow executions, then truncate) in the outer block before
+ * the spec's hooks, and Jest runs one block's afterEach hooks in declaration
+ * order, so a hook beside it runs after the truncate; an inner block's runs
+ * first. It returns once every subscriber has settled, including any events
+ * they emitted in turn.
  */
 export function trackSubscribers(container: () => any): () => Promise<void> {
   const emitter = (container().resolve(Modules.EVENT_BUS) as any).eventEmitter_

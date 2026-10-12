@@ -37,9 +37,10 @@ type Stalled = { workflow_id: string; transaction_id: string; state: string }
  * unfinished executions before it truncates the database. Its timeout throws
  * from a timer callback and its loop never stops, so one execution left
  * unfinished made every later hook spin until Jest's hook timeout: on CI, 17
- * tests of one spec timed out one after another, over 70 minutes. Call this
- * at the end of the spec's afterEach, after the subscriber drain, and fail
- * the test when it returns anything.
+ * tests of one spec timed out one after another, over 70 minutes. Call this,
+ * after the subscriber drain, from an afterEach registered inside the spec's
+ * describe blocks, which runs before the runner's own (see
+ * drain-subscribers.ts), and fail the test when it returns anything.
  */
 export async function clearStalledWorkflows(container: () => any, waitMs = 10_000): Promise<Stalled[]> {
   const pg = container().resolve(ContainerRegistrationKeys.PG_CONNECTION)

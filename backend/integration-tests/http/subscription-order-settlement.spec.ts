@@ -82,18 +82,30 @@ medusaIntegrationTestRunner({
       process.env[CARD] = "true"
       process.env[SUBS] = "true"
     })
-    afterEach(async () => {
-      await drainSubscribers()
-      // A workflow execution left unfinished fails this test here, instead
-      // of every later test in the runner's wait (helpers/stalled-workflows.ts).
-      const stalled = await clearStalledWorkflows(container)
+    afterEach(() => {
       jest.restoreAllMocks()
       delete process.env[CARD]
       delete process.env[SUBS]
+    })
+
+    /**
+     * Before the runner's teardown: every subscriber the test's events set off
+     * has finished (helpers/drain-subscribers.ts), and no workflow execution is
+     * left unfinished (helpers/stalled-workflows.ts); one that is fails this
+     * test instead of every later one. The runner declares its own afterEach
+     * (wait for executions, then truncate) in the block this suite is written
+     * into, before this suite's hooks, and Jest runs one block's afterEach hooks
+     * in the order they were declared, so a hook at this level would run after
+     * the truncate. Each describe below registers this one instead: an inner
+     * block's afterEach runs before an outer block's.
+     */
+    async function settleBeforeTeardown() {
+      await drainSubscribers()
+      const stalled = await clearStalledWorkflows(container)
       if (stalled.length) {
         throw new Error(`Workflow executions left unfinished: ${stalled.map((w) => `${w.workflow_id} (${w.state})`).join(", ")}`)
       }
-    })
+    }
 
     async function makeProduct(sellerId: string) {
       const products = container().resolve(Modules.PRODUCT)
@@ -265,6 +277,8 @@ medusaIntegrationTestRunner({
     }
 
     describe("the first order of a subscription", () => {
+      afterEach(settleBeforeTeardown)
+
       it("is linked to its seller, its card payment captured, and it settles to that seller less the 3%", async () => {
         const seller = await makeSeller()
         const product = await makeProduct(seller.id)
@@ -719,6 +733,8 @@ medusaIntegrationTestRunner({
     })
 
     describe("a first completion Medusa's workflow engine leaves unfinished (helpers/stalled-workflows.ts)", () => {
+      afterEach(settleBeforeTeardown)
+
       it("the checkout acts on no order it was not handed, and a retry makes no subscription for the order left with no payment", async () => {
         const seller = await makeSeller()
         const product = await makeProduct(seller.id)
@@ -755,6 +771,8 @@ medusaIntegrationTestRunner({
     })
 
     describe("two checkouts of one cart at the same time (a double submit)", () => {
+      afterEach(settleBeforeTeardown)
+
       // Before the checkout held the cart's lock, nothing kept the two apart
       // (completeCartWorkflow skips its own lock when run nested): on this
       // database they made two orders and two subscriptions with two captures
@@ -854,6 +872,8 @@ medusaIntegrationTestRunner({
     })
 
     describe("a renewal of a subscription", () => {
+      afterEach(settleBeforeTeardown)
+
       const renewSubscriptionWorkflow = (c: any) =>
         require("../../src/workflows/subscription").renewSubscriptionWorkflow(c)
 
