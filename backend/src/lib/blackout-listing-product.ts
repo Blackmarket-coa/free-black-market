@@ -138,6 +138,17 @@ async function persistOnListing(
   })
 }
 
+/**
+ * Link the shadow product to the listing's seller. Safe to repeat: Medusa's
+ * link module upserts an existing seller–product pair (a dismissed one is
+ * restored), and refuses a product another seller already holds ("Cannot
+ * create multiple links"), which is logged and left as it is. Never throws.
+ *
+ * A seller-less shadow product is refused by every checkout that settles to
+ * the seller (FF_DIGITAL_ORDER_SETTLEMENT_V1, FF_CONSUMER_SUBSCRIPTIONS_V1;
+ * SD-48), so this runs on every path that hands a product back, not only
+ * after creating one: a link that failed once is retried at the next render.
+ */
 async function linkSeller(
   container: MedusaContainer,
   sellerId: string,
@@ -170,6 +181,7 @@ export async function ensureListingProduct(
   listing: ListingForProduct
 ): Promise<EnsuredListingProduct> {
   if (listing.product_id && listing.variant_id) {
+    await linkSeller(container, listing.seller_id, listing.product_id)
     return {
       product_id: listing.product_id,
       variant_id: listing.variant_id,
@@ -203,6 +215,8 @@ export async function ensureListingProduct(
         `Shadow product ${existing.id} for listing ${listing.id} has no variant`
       )
     }
+    // That run may also have died before linking the seller.
+    await linkSeller(container, listing.seller_id, existing.id)
     await persistOnListing(container, listing.id, existing.id, variantId)
     return { product_id: existing.id, variant_id: variantId, created: false }
   }

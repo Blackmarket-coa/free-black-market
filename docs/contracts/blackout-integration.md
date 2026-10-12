@@ -263,6 +263,43 @@ idempotently on first render:
    keyed to the order. The session row records `order_id` /
    `subscription_id`; re-visits render the completed state.
 
+**Seller settlement of one-off listings (`FF_DIGITAL_ORDER_SETTLEMENT_V1`,
+SD-48).** Flag off, step 5 is unchanged. Flag on: by the time completion
+starts, the page's card confirmation (`stripe.confirmPayment`) has already put
+a hold on the member's card at Stripe. The digital-product order flow then
+resolves the shadow product's Mercur seller before Medusa authorizes the
+payment session, and refuses a purchase whose product has none (500
+`checkout_failed`, or `checkout.error` on the page). Nothing is captured; the
+hold is left to lapse, as on any refused completion. `ensureListingProduct`
+links the shadow product to the listing's seller every time it hands the
+product back (each render and each completion), so a link that failed once is
+tried again; a link Medusa refuses, such as a product another seller already
+holds, is logged and left as it is. The order is then linked to that seller
+and the card captured at completion, so the sale settles to the seller less
+the 3% (`FF_CARD_ORDER_LEDGER_V1`). Subscription listings already do the same
+under `FF_CONSUMER_SUBSCRIPTIONS_V1` (SD-46). With either flag on, a completion
+run again on a cart already completed (a retry, or the page finishing a record
+an earlier attempt left unmarked) never re-enters Medusa's cart completion and
+refunds nothing. It returns an order already linked and captured as it is. An
+order the earlier attempt left unlinked or uncaptured (it stopped part-way) is
+linked to the product's seller and captured first, or, if the product has no
+seller, neither, as with the flag off; if Stripe refuses that capture, the
+completion fails (`checkout_failed`) before this page grants anything. An
+order the earlier attempt left with no payment at all (Medusa's workflow
+engine stopped it after the order and before the card hold, SD-53) is refused
+the same way, and nothing is granted. Every retry on that cart is refused
+again (seen in the workflow on a real database; the page route was read, not
+run), so the member has to start a new checkout. A completion that failed after the card hold cannot be retried on
+the same checkout session: the page opens a payment session only for a cart
+that has none, so the retry meets the payment the failed attempt cancelled and
+is refused; the member starts a new checkout (SD-48 open item, read from this
+route, not run). Two completions of one cart at once wait
+for each other on a lock on the cart, and the second returns the first's order;
+the lock holds within one server process only (SD-48). For a one-off listing
+the capture now comes before this page grants the listing's `feature_keys`,
+and that grant runs after the order flow and only logs a failure, so a member
+can be charged without the FBM-side entitlement (SD-48 open item).
+
 Embed mode mirrors the public checkout page: `postMessage` events
 (`checkout.ready|completed|cancelled|error`, source `fbm-checkout`) to the
 `embedOrigin` captured at session creation, CSP `frame-ancestors` pinned to it.

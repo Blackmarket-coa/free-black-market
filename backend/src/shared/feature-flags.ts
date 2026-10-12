@@ -173,6 +173,48 @@ export const PHASE0_FEATURE_FLAGS = {
   // ones the ledger already paid included, so FBM's job refuses to hand to
   // Mercur's while any ledger-sent payout exists, and logs why.
   LEDGER_CONNECT_PAYOUTS_V1: "FF_LEDGER_CONNECT_PAYOUTS_V1",
+  // A digital-product sale reaches its seller and the ledger (SD-48, the digital
+  // half of SD-46 / F5). `create-digital-product-order` — behind
+  // `/store/carts/:id/complete-digital`, `/v1/checkout/sessions/:id/page` and
+  // Blackout's one-off listing checkout — completes the cart with Medusa's
+  // `completeCartWorkflow`, not Mercur's split, so the order got no seller link
+  // (the card ledger refuses it, the seller is never credited, BMC's 3% is never
+  // taken) and its card payment was authorized and never captured. Off
+  // (default): unchanged, and every new step returns before any read. On: the
+  // cart's one seller is resolved before Medusa authorizes the payment session
+  // and a cart with none or several is refused, so nothing is captured (on
+  // Blackout's page the card is already authorized at Stripe by then, and that
+  // hold is left to lapse); the order is linked to that seller and its FBM
+  // Stripe payment is captured before the digital product order is created. A
+  // refused capture fails the checkout: the authorization is cancelled and the
+  // order and its seller link are removed, but Medusa keeps the cancelled
+  // payment on the cart's payment collection; a retry with a new payment session
+  // completes normally. A failure after the capture deletes the order through
+  // `completeCartWorkflow`'s compensation, which then tries to refund the
+  // capture — best effort only: if Stripe refuses the refund, Medusa logs it and
+  // goes on, the card stays charged with no order, and the failed run's
+  // `payment.captured` event is dropped, so the ledger has no record (SD-48 open
+  // item; Stripe also keeps its fee on a refund that works). A replay — the
+  // checkout run again on a cart it already completed — never re-enters
+  // `completeCartWorkflow`, whose compensation would try to refund the captured
+  // sale on any later failure, and refunds nothing: an order already linked and
+  // captured is returned as it is; one its first completion left unlinked or
+  // uncaptured is linked to its products' one seller and captured before
+  // anything is delivered (a refused capture fails the retry; an order with no
+  // single seller is neither linked nor captured), and one that owes money and
+  // has no payment at all, which Medusa's workflow engine can leave when it
+  // stops the first completion before the card is authorized, is refused
+  // (SD-53). The checkout holds the cart's
+  // lock from first step to last (Medusa's in-memory provider: one server
+  // process only). The steps are F5's functions, shared
+  // (`workflows/subscription/steps/subscription-order-settlement.ts`). Settles
+  // only with CARD_ORDER_LEDGER_V1 also set. Backend only; no twin. BEFORE
+  // SETTING IT: every product sold through this checkout needs a Mercur seller
+  // link — admin-created digital products (`POST /admin/digital-products`) get
+  // none, and are refused until linked (SD-48 has the query) — and neither of
+  // Stripe's payment_intent.amount_capturable_updated / payment_intent.succeeded
+  // events may be sent to Medusa's webhook while this is on (SD-48).
+  DIGITAL_ORDER_SETTLEMENT_V1: "FF_DIGITAL_ORDER_SETTLEMENT_V1",
 } as const
 
 export type Phase0FeatureFlag = keyof typeof PHASE0_FEATURE_FLAGS
