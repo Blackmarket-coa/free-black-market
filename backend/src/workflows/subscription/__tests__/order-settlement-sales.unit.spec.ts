@@ -270,7 +270,7 @@ describe("before anything is delivered: an order that owes money has a payment, 
     delete process.env[SUBS]
   })
 
-  function paidOrder(order: { total: number | string; payments: Array<Record<string, unknown>> } | null) {
+  function paidOrder(order: { total: number | string | null | undefined; payments: Array<Record<string, unknown>> } | null) {
     const graph = jest.fn(async () => ({
       data: order ? [{ id: "order_1", total: order.total, payment_collections: [{ id: "paycol_1", payments: order.payments }] }] : [],
     }))
@@ -340,6 +340,19 @@ describe("before anything is delivered: an order that owes money has a payment, 
       it("refuses an order it cannot find", async () => {
         const { container } = paidOrder(null)
         await expect(invoke({ order_id: "order_1" }, { container })).rejects.toThrow(`${label} order order_1 not found; nothing delivered`)
+      })
+
+      // A missing total must not read as "owes nothing" (a reviewer's finding
+      // on the first version, which took `total ?? 0`): with no payment it is
+      // refused, whatever the flags say.
+      it.each([
+        ["undefined", undefined],
+        ["null", null],
+      ])("refuses an order whose total came back %s, instead of reading it as zero", async (_name, total) => {
+        const { container } = paidOrder({ total, payments: [] })
+        await expect(invoke({ order_id: "order_1" }, { container })).rejects.toThrow(
+          `${label} order order_1 came back with no total, so whether it owes money is unknown; nothing delivered`
+        )
       })
     })
   })

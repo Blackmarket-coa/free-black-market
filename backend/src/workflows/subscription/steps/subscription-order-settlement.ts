@@ -575,7 +575,15 @@ type PaidInput = {
  * this step whenever it owed money. The one other case is a second
  * subscription checkout of the same cart at once (that checkout takes no
  * lock with its flag off) arriving before the first's card is authorized:
- * it is refused, and the first, which has the payment, delivers.
+ * it is refused, and the first, which has the payment, delivers. Its
+ * sibling, by reading: Medusa's Stripe webhook completing the same cart
+ * (it locks the cart id) while a recurring hosted-page checkout runs
+ * unlocked with the flag off; the page's run is refused the same way while
+ * the webhook's run pays the order, and the next page visit delivers. The
+ * digital checkout locks the cart id flag on or off, so it cannot meet it.
+ *
+ * A total the query hands back empty is refused outright rather than read
+ * as "owes nothing": an unknown amount is not a paid one.
  *
  * Its limit (SD-53 (f)): any payment counts, a cancelled one included, so a
  * stall after an earlier attempt on the cart failed past the authorization
@@ -595,7 +603,16 @@ async function orderPaid(input: PaidInput, { container }: StepExecutionContext) 
     throw new MedusaError(MedusaError.Types.NOT_FOUND, `${terms.label} order ${orderId} not found; nothing delivered`)
   }
   const payments = (order.payment_collections ?? []).flatMap((c) => c?.payments ?? []).filter((p) => !!p)
-  if (payments.length === 0 && MathBN.gt(order.total ?? 0, 0)) {
+  // A total the query did not hand back is not "owes nothing": refuse, as a
+  // missing order id is refused, rather than read it as 0 and let the order
+  // through unpaid.
+  if (order.total === undefined || order.total === null) {
+    throw new MedusaError(
+      MedusaError.Types.UNEXPECTED_STATE,
+      `${terms.label} order ${orderId} came back with no total, so whether it owes money is unknown; nothing delivered`
+    )
+  }
+  if (payments.length === 0 && MathBN.gt(order.total, 0)) {
     throw new MedusaError(
       MedusaError.Types.NOT_ALLOWED,
       `${terms.label} order ${orderId} owes money and has no payment (its completion stopped before the card was authorized, or has not got there yet); nothing delivered`
