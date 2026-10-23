@@ -36,6 +36,14 @@ overrides:
   # Caret-bounded rather than left bare so a future axios 2.x cannot arrive
   # unreviewed.
   "axios": "^1.20.0"
+  # GHSA-8r9p-f939-6h3c (CVE-2026-111755) and GHSA-q3jh-wrc6-jgq8
+  # (CVE-2026-111756), both HIGH, published 2026-10-20: on a cross-origin
+  # redirect follow-redirects can forward the credential headers it exists to
+  # strip -- array-form headers skip the stripping entirely, and a
+  # `sensitiveHeaders` name containing `^` or `|` never matches. Both arrived
+  # in 1.16.0 and are fixed in 1.16.1, a patch. Reached only through axios.
+  # Caret-bounded at the fix (SD-55).
+  "follow-redirects": "^1.16.1"
   # GHSA-7h2j-956f-4vf2 (CVE-2026-25547, HIGH): uncontrolled resource
   # consumption, fixed only in 5.0.1. This is the renamed 5.x line, a separate
   # package from `brace-expansion` above, so it needs its own pin.
@@ -46,12 +54,26 @@ overrides:
   # servers, the second in the Image Optimization API on crafted AVIF input.
   # Fixed in 15.5.24. Pinned exactly rather than caret-ranged, as before, so
   # the resolved version is the reviewed one.
-  "next": "15.5.24"
+  # GHSA-2464-fhr4-w9xw (CRITICAL, 2026-10-22): unauthenticated RCE in the
+  # Image Optimization API on SVG input, through an upstream image library.
+  # Its stated workaround is sharp >=0.35.5, which the "sharp@^0.34.0" pin
+  # below already enforces; 15.5.28 raises the 0.35 arm of next's own sharp
+  # range to ^0.35.5. GHSA-p3m5-59mp-jv5r (CVE-2026-94482, HIGH): a
+  # CPU-exhaustion DoS in App Router Server Actions, which the storefront
+  # uses. Both fixed in 15.5.28, the newest 15.5.x; still pinned exactly
+  # (SD-55).
+  "next": "15.5.28"
   "picomatch": ">=4.0.4"
   "postcss": ">=8.5.18"
   "esbuild": ">=0.28.1"
   "form-data": ">=4.0.6"
-  "vite": "^7.3.5"
+  # GHSA-587h-7wmj-h5pm (CVE-2026-112942, HIGH, 2026-10-20): a crafted path
+  # defeats launch-editor's existence check on Windows, which with
+  # GHSA-698v-4r3x-3vcv lets the dev server's open-in-editor endpoint run
+  # commands. Fixed in 7.3.7 on this line. vite here is test and type tooling
+  # (vitest, and @medusajs/types' optional peer), not the Next build (SD-17,
+  # SD-55).
+  "vite": "^7.3.7"
   "zod": "4.2.0"
   # brace-expansion: five HIGH DoS advisories across the 1.x/2.x/5.x lines
   # (GHSA-3jxr-9vmj-r5cp, -6j4f-fj2g-mc7p, -mh99-v99m-4gvg, -qhr7-859c-m2p7,
