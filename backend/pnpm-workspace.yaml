@@ -175,6 +175,15 @@ overrides:
   # GHSA-vc2v-76pw-4v95 (CVE-2026-87776, HIGH): memory leak (DoS) when a
   # response closes before compression finishes. Fixed in 1.8.2 (SD-38).
   "compression@1": "^1.8.2"
+  # GHSA-27r3-jxmh-p828 (CVE-2026-111181, HIGH, published 2026-10-23): a
+  # compressed request body followed by trailing bytes is a denial of service.
+  # Medusa builds every route's body-parsing stack from Express's json, text
+  # and urlencoded parsers, which are body-parser's, so it is reachable on
+  # any route that takes a body. Fixed in 1.20.9, inside the ~1.20.3 that
+  # express 4.22.1 declares; that also clears the LOW GHSA-v422-hmwv-36x6 (an
+  # invalid `limit` silently disables the size cap; fixed 1.20.6).
+  # Selector-scoped to the 1.x line and caret-bounded (SD-55).
+  "body-parser@1": "^1.20.9"
   # GHSA-7mx3-vvmw-hjmv (CVE-2026-104852, HIGH): prototype pollution in
   # mergeDeep. Fixed ONLY in 12.0.1 -- no 10.x or 11.x backport exists -- and
   # it reaches production through @medusajs/utils -> @graphql-tools/{merge,
