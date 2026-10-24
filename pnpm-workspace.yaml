@@ -43,6 +43,15 @@ overrides:
   # Caret-bounded rather than left bare so a future axios 2.x cannot arrive
   # unreviewed.
   "axios": "^1.20.0"
+  # GHSA-8r9p-f939-6h3c (CVE-2026-111755) and GHSA-q3jh-wrc6-jgq8
+  # (CVE-2026-111756), both HIGH, published 2026-10-20: on a cross-origin
+  # redirect follow-redirects can forward the credential headers it exists to
+  # strip -- array-form headers skip the stripping entirely, and a
+  # `sensitiveHeaders` name containing `^` or `|` never matches. Both arrived
+  # in 1.16.0 and are fixed in 1.16.1, a patch. Reached only through axios,
+  # a direct dependency of the four portals and portal-kit. Caret-bounded at
+  # the fix (SD-55).
+  "follow-redirects": "^1.16.1"
   # brace-expansion: five HIGH DoS advisories across the 1.x/2.x/5.x lines
   # (GHSA-3jxr-9vmj-r5cp, -6j4f-fj2g-mc7p, -mh99-v99m-4gvg, -qhr7-859c-m2p7,
   # -rgw5-rvv9-x895) plus the MODERATE -q2hr-2g5m-vwhr. The highest fix on each

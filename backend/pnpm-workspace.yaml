@@ -30,10 +30,22 @@ overrides:
   # GHSA-82x6-q7mm-w9cf / GHSA-v5mp-jgw5-2x6j: prototype pollution and a
   # parser DoS in toml, reaching production through @stellar/stellar-sdk
   # (stellar.toml resolution). Fixed in 4.2.0. A major bump on a
-  # transitive dep, so bounded rather than open-ended: 4.x stays
-  # CommonJS, while 5.x is unverified against the SDK and a bare ">="
-  # would drift there — the same trap documented for nanoid below.
-  "toml@3": "^4.2.0"
+  # transitive dep, so bounded rather than open-ended — the same trap
+  # documented for nanoid below.
+  #
+  # 2026-10-24: GHSA-4qx8-w7c3-pj3p, GHSA-9j65-hcg3-gc64 and
+  # GHSA-9qmh-m7c6-f92p (CVE-2026-114141, -114143, -114144; all HIGH,
+  # quadratic or unbounded CPU in toml.parse()) are fixed only in 5.0.1,
+  # with no 4.x backport. This comment used to call 5.x unverified against
+  # the SDK; it is now checked. 5.0.1 keeps 4.3.0's CommonJS entry (the same
+  # index.js) and parse(input, options) signature, and parses a SEP-1
+  # stellar.toml to the same object. It throws on an integer above 2^53,
+  # where 4.3.0 silently rounded it. The SDK (which asks for toml ^3.0.0)
+  # calls toml.parse only in StellarToml.Resolver, which Federation uses,
+  # and FBM's one SDK import, src/modules/hawala-ledger/stellar-settlement.ts
+  # (Keypair, Horizon, Networks, TransactionBuilder, Operation, Asset,
+  # Memo), reaches neither. Caret-bounded at the fix (SD-55).
+  "toml@3": "^5.0.1"
   "glob": ">=10.5.0"
   "qs": ">=6.14.2"
   "jws": ">=3.2.3"
@@ -52,6 +64,14 @@ overrides:
   # Caret-bounded rather than left bare so a future axios 2.x cannot arrive
   # unreviewed.
   "axios": "^1.20.0"
+  # GHSA-8r9p-f939-6h3c (CVE-2026-111755) and GHSA-q3jh-wrc6-jgq8
+  # (CVE-2026-111756), both HIGH, published 2026-10-20: on a cross-origin
+  # redirect follow-redirects can forward the credential headers it exists to
+  # strip -- array-form headers skip the stripping entirely, and a
+  # `sensitiveHeaders` name containing `^` or `|` never matches. Both arrived
+  # in 1.16.0 and are fixed in 1.16.1, a patch. Reached only through axios.
+  # Caret-bounded at the fix (SD-55).
+  "follow-redirects": "^1.16.1"
   # GHSA-7h2j-956f-4vf2 (CVE-2026-25547, HIGH): uncontrolled resource
   # consumption, fixed only in 5.0.1. This is the renamed 5.x line, a separate
   # package from `brace-expansion` above, so it needs its own pin.
@@ -102,7 +122,15 @@ overrides:
   "@grpc/grpc-js": "^1.14.5"
   "esbuild": ">=0.28.1"
   "form-data": ">=4.0.6"
-  "vite": "^6.4.3"
+  # GHSA-587h-7wmj-h5pm (CVE-2026-112942, HIGH, 2026-10-20): a crafted path
+  # defeats launch-editor's existence check on Windows, which with
+  # GHSA-698v-4r3x-3vcv lets the dev server's open-in-editor endpoint run
+  # commands. Fixed in 6.4.4, a patch on this line. vite arrives through
+  # Medusa's admin bundler and as an optional peer of @medusajs/framework and
+  # @medusajs/types; the admin build is disabled in medusa-config.ts (SD-17),
+  # so nothing here runs its dev server. Raised from ^6.4.3, which permitted
+  # the fix while the lockfile stayed on 6.4.3 (SD-55).
+  "vite": "^6.4.4"
   "@mikro-orm/core": "6.6.14"
   "@mikro-orm/cli": "6.6.14"
   "@mikro-orm/knex": "6.6.14"
@@ -122,7 +150,12 @@ overrides:
   # name. multer parses untrusted multipart bodies on upload routes, so all
   # three are reachable. Fixed in 2.3.0. Caret-bounded, not ">=": an
   # open-ended floor lets pnpm drift onto the next major.
-  "multer": "^2.3.0"
+  # GHSA-q7qp-rjg7-q26m (CVE-2026-113872, HIGH, published 2026-10-23): a
+  # fileFilter still pending when the request is torn down is a denial of
+  # service. Fixed in 2.5.0, which also clears the MODERATE
+  # GHSA-3pph-fpjx-jg34 (orphaned disk writes on aborted uploads, fixed
+  # 2.4.0). Raised from ^2.3.0 here and in package.json, as in SD-25 (SD-55).
+  "multer": "^2.5.0"
   # GHSA-2x7j-588g-ccc2 (HIGH): quadratic time in addressparser, so a crafted
   # address header is a remote DoS. Fixed in 9.1.0. Caret-bounded for the
   # reason above and because it was not theoretical here — ">=9.1.0" resolved
@@ -146,7 +179,18 @@ overrides:
   "path-to-regexp@8": "^8.4.0"
   "protobufjs": ">=8.4.1"
   "rollup": ">=4.59.0"
-  "zod": "4.2.0"
+  # One zod for Medusa and our own schemas. Medusa 2.14.2's @medusajs/deps,
+  # admin-sdk and dashboard declare zod exactly 4.2.0, and c57113a pinned
+  # that same copy here so Medusa's validators and our routes share it;
+  # with two copies a schema's ZodError would not be `instanceof` the
+  # other's class. Raised to 4.6.6 for GHSA-mrhx-c7xc-m3w5 (CVE-2023-54404,
+  # HIGH: memory exhaustion validating oversized constrained collections),
+  # still exact, so there is one copy at a reviewed version. That runs
+  # Medusa's zod-using packages on a version they do not declare, so it was
+  # checked: 4.6.6's runtime export surface is a strict superset of
+  # 4.2.0's, and Medusa calls only public builders, never zod internals
+  # (SD-55).
+  "zod": "4.6.6"
   # GHSA-68fv-2mgg-jv7q (CVE-2026-93749, HIGH): event-loop denial of service
   # through indexed source-map section offsets. Fixed in 1.2.2, a patch on the
   # same line. Trivy's prod-scoped gate went red on 2026-10-06 (SD-38).
@@ -159,6 +203,15 @@ overrides:
   # GHSA-vc2v-76pw-4v95 (CVE-2026-87776, HIGH): memory leak (DoS) when a
   # response closes before compression finishes. Fixed in 1.8.2 (SD-38).
   "compression@1": "^1.8.2"
+  # GHSA-27r3-jxmh-p828 (CVE-2026-111181, HIGH, published 2026-10-23): a
+  # compressed request body followed by trailing bytes is a denial of service.
+  # Medusa builds every route's body-parsing stack from Express's json, text
+  # and urlencoded parsers, which are body-parser's, so it is reachable on
+  # any route that takes a body. Fixed in 1.20.9, inside the ~1.20.3 that
+  # express 4.22.1 declares; that also clears the LOW GHSA-v422-hmwv-36x6 (an
+  # invalid `limit` silently disables the size cap; fixed 1.20.6).
+  # Selector-scoped to the 1.x line and caret-bounded (SD-55).
+  "body-parser@1": "^1.20.9"
   # GHSA-7mx3-vvmw-hjmv (CVE-2026-104852, HIGH): prototype pollution in
   # mergeDeep. Fixed ONLY in 12.0.1 -- no 10.x or 11.x backport exists -- and
   # it reaches production through @medusajs/utils -> @graphql-tools/{merge,

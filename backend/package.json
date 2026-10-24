@@ -73,7 +73,7 @@
     "jsonwebtoken": "^9.0.3",
     "medusajs-launch-utils": "^0.0.18",
     "minio": "^8.0.3",
-    "multer": "^2.3.0",
+    "multer": "^2.5.0",
     "nodemailer": "^10.0.9",
     "pg": "^8.13.0",
     "qrcode": "^1.5.4",
@@ -82,7 +82,7 @@
     "scrypt-kdf": "^2.0.1",
     "stripe": "^17.7.0",
     "ulid": "^2.3.0",
-    "zod": "^4.2.0"
+    "zod": "^4.6.6"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",
