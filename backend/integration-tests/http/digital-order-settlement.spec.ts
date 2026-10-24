@@ -199,8 +199,16 @@ medusaIntegrationTestRunner({
       } as any)
     }
 
-    /** A customer's cart holding the given products at $5.00 each, with a Stripe session opened on it. */
-    async function makeCart(products: Array<{ id: string; variants: Array<{ id: string }> }>, opts: { deliver?: boolean } = {}) {
+    /**
+     * A customer's cart holding the given products at $5.00 each (or `price`),
+     * with a Stripe session opened on it — none at all with `noPayment`, as a
+     * free order needs none.
+     */
+    async function makeCart(
+      products: Array<{ id: string; variants: Array<{ id: string }> }>,
+      opts: { deliver?: boolean; price?: number; noPayment?: boolean } = {}
+    ) {
+      const price = opts.price ?? 5
       const id = uid()
       const [customer] = await container().resolve(Modules.CUSTOMER).createCustomers([{ email: `buyer-${id}@example.com` }])
       const [region] = await container().resolve(Modules.REGION).createRegions([{ name: `US ${id}`, currency_code: "usd" }])
@@ -217,7 +225,7 @@ medusaIntegrationTestRunner({
             product_id: p.id,
             variant_id: p.variants[0].id,
             quantity: 1,
-            unit_price: 5,
+            unit_price: price,
             requires_shipping: false,
           })),
         },
@@ -226,7 +234,8 @@ medusaIntegrationTestRunner({
         const option = await deliveryOption()
         await carts.addShippingMethods({ cart_id: cart.id, name: "Download", amount: 0, shipping_option_id: option.id })
       }
-      const total = 5 * products.length
+      if (opts.noPayment) return { cart, customer, collection: null }
+      const total = price * products.length
       const payments = container().resolve(Modules.PAYMENT)
       const [collection] = await payments.createPaymentCollections([{ currency_code: "usd", amount: total }])
       await container().resolve(ContainerRegistrationKeys.LINK).create({
@@ -313,6 +322,24 @@ medusaIntegrationTestRunner({
         refunds: (p.refunds ?? []).map((r: any) => Number(r.amount)),
         canceled: !!p.canceled_at,
       }))
+    }
+
+    /**
+     * Every read the paid check makes (its own query, by the order id it was
+     * handed), so a scenario can see that a checkout went through it — and
+     * when, against the delivery it guards.
+     */
+    function paidChecks() {
+      const query = container().resolve(ContainerRegistrationKeys.QUERY)
+      const graph = query.graph.bind(query)
+      const reads = jest.fn()
+      jest.spyOn(query, "graph").mockImplementation(async (q: any, ...rest: any[]) => {
+        if (q?.entity === "order" && JSON.stringify(q.fields) === '["id","total","payment_collections.payments.id"]') {
+          reads(q.filters?.id)
+        }
+        return graph(q, ...rest)
+      })
+      return reads
     }
 
     /** Move a product from one seller to another (or to none), as a seller change after the sale would. */
@@ -960,6 +987,64 @@ medusaIntegrationTestRunner({
       })
     })
 
+    describe("a first completion Medusa's workflow engine leaves unfinished, with FF_DIGITAL_ORDER_SETTLEMENT_V1 off (SD-53 (c))", () => {
+      afterEach(settleBeforeTeardown)
+
+      // Before SD-53 (c) the paid check was dark with the flag: the stalled
+      // checkout failed at its own order read, and a retry, running
+      // completeCartWorkflow again, got the cart's order back and delivered
+      // it with no payment (seen on a real database). The seller and capture
+      // steps still read nothing with the flag off.
+
+      it.each([
+        ["both flags off", {}],
+        ["FF_CONSUMER_SUBSCRIPTIONS_V1 on", { [SUBS]: "true" }],
+      ] as Array<[string, Record<string, string>]>)(
+        "%s: the stalled checkout delivers nothing, and its retry is refused for the order left with no payment",
+        async (_flags, env) => {
+          delete process.env[DIGITAL]
+          Object.assign(process.env, env)
+          const seller = await makeSeller()
+          const product = await makeProduct(seller.id, { digital: true })
+          const { cart, customer, collection } = await makeCart([product], { deliver: true })
+          const created = jest.spyOn(container().resolve(DIGITAL_PRODUCT_MODULE), "createDigitalProductOrders")
+          // Opening the cart's payment session called Stripe; nothing after it may.
+          for (const call of Object.values(stripe)) call.mockClear()
+          const stall = stallNextCartCompletion(container)
+
+          const first = await checkout(cart.id)
+          expect(stall.stalled()).toBe(true)
+          // completeCartWorkflow handed back no order. The seller and capture
+          // steps read nothing with the flag off, so the paid check refuses,
+          // before the checkout's own order read could run on an undefined id.
+          expect(first.errors).toEqual([
+            "digital-product-order-paid: Digital product checkout: the cart's completion returned no order; nothing linked, captured or delivered",
+          ])
+          expect((await clearStalledWorkflows(container, 1000)).map((w) => w.workflow_id)).toEqual(["complete-cart"])
+          const orders = await container().resolve(Modules.ORDER).listOrders({ customer_id: customer.id })
+          expect(orders).toHaveLength(1)
+          expect((await container().resolve(Modules.CART).retrieveCart(cart.id)).completed_at).toBeTruthy()
+          expect(await container().resolve(Modules.PAYMENT).listPayments({ payment_collection_id: collection.id })).toEqual([])
+
+          // The retry gets that order back from completeCartWorkflow, which
+          // authorizes nothing on a completed cart, and is refused.
+          const retry = await checkout(cart.id)
+          expect(retry.errors).toEqual([
+            `digital-product-order-paid: Digital product order ${orders[0].id} owes money and has no payment (its completion stopped before the card was authorized, or has not got there yet); nothing delivered`,
+          ])
+          expect(created).not.toHaveBeenCalled()
+          const order = await readOrder(orders[0].id)
+          expect(order.digital_product_order ?? null).toBeNull()
+          expect(order.fulfillments ?? []).toEqual([])
+          expect(await liveSellerOrderLinks(seller.id)).toEqual([])
+          expect(await container().resolve(Modules.PAYMENT).listPayments({ payment_collection_id: collection.id })).toEqual([])
+          for (const [name, call] of Object.entries(stripe)) {
+            expect([name, call.mock.calls.length]).toEqual([name, 0])
+          }
+        }
+      )
+    })
+
     describe("two checkouts of one cart at the same time (a double submit), with FF_DIGITAL_ORDER_SETTLEMENT_V1", () => {
       afterEach(settleBeforeTeardown)
 
@@ -1120,17 +1205,26 @@ medusaIntegrationTestRunner({
     describe("flag off", () => {
       afterEach(settleBeforeTeardown)
 
+      // As before, but for the paid check, which runs whatever the flag says
+      // (SD-53 (c)): each scenario below also reads that the checkout went
+      // through it before anything was delivered, and was let through.
+
       it("as before — no seller link, the payment only authorized, nothing settles — even with FF_CONSUMER_SUBSCRIPTIONS_V1 on", async () => {
         delete process.env[DIGITAL]
         process.env[SUBS] = "true"
         const seller = await makeSeller()
         const product = await makeProduct(seller.id, { digital: true })
         const { cart } = await makeCart([product], { deliver: true })
+        const created = jest.spyOn(container().resolve(DIGITAL_PRODUCT_MODULE), "createDigitalProductOrders")
+        const paid = paidChecks()
 
         const { result, errors } = await checkout(cart.id)
         expect(errors).toEqual([])
         expect(Object.keys(result).sort()).toEqual(["digital_product_order", "order"])
         const orderId = result.order.id as string
+        expect(paid.mock.calls).toEqual([[orderId]])
+        expect(created).toHaveBeenCalledTimes(1)
+        expect(paid.mock.invocationCallOrder[0]).toBeLessThan(created.mock.invocationCallOrder[0])
         const order = await readOrder(orderId)
         expect(order.seller ?? null).toBeNull()
         expect(order.digital_product_order?.id).toBe(result.digital_product_order.id)
@@ -1148,16 +1242,57 @@ medusaIntegrationTestRunner({
         const product = await makeProduct(seller.id, { digital: true })
         const { cart } = await makeCart([product], { deliver: true })
         const created = jest.spyOn(container().resolve(DIGITAL_PRODUCT_MODULE), "createDigitalProductOrders")
+        const paid = paidChecks()
 
         const first = await checkout(cart.id)
         const second = await checkout(cart.id)
         expect([first.errors, second.errors]).toEqual([[], []])
         expect(second.result.order.id).toBe(first.result.order.id)
+        // Both runs went through the paid check; the order's payment let both through.
+        expect(paid.mock.calls).toEqual([[first.result.order.id], [first.result.order.id]])
         expect(created).toHaveBeenCalledTimes(1)
         expect(stripe.capturePayment).not.toHaveBeenCalled()
         const order = await readOrder(first.result.order.id)
         expect(order.seller ?? null).toBeNull()
         expect(order.payment_collections[0].payments[0].captured_at).toBeFalsy()
+      })
+
+      it("as before — over the store route, a checkout answers 200 with its order and digital product order, the payment only authorized", async () => {
+        delete process.env[DIGITAL]
+        const pak = pakHeaders(await createPublishableKeyToken(getContainer))
+        const seller = await makeSeller()
+        const product = await makeProduct(seller.id, { digital: true })
+        const { cart } = await makeCart([product], { deliver: true })
+        const paid = paidChecks()
+
+        const response = await api.post(`/store/carts/${cart.id}/complete-digital`, {}, pak).catch((e: any) => e.response)
+        expect(response.status).toBe(200)
+        expect(response.data.digital_product_order?.id).toBeTruthy()
+        expect(paid.mock.calls).toEqual([[response.data.order.id]])
+        const order = await readOrder(response.data.order.id)
+        expect(order.seller ?? null).toBeNull()
+        expect(order.fulfillments).toHaveLength(1)
+        expect(order.payment_collections[0].payments[0].captured_at).toBeFalsy()
+        expect(stripe.capturePayment).not.toHaveBeenCalled()
+      })
+
+      it("a free digital product — nothing owed, so no payment at all — is still delivered", async () => {
+        delete process.env[DIGITAL]
+        const seller = await makeSeller()
+        const product = await makeProduct(seller.id, { digital: true })
+        const { cart } = await makeCart([product], { deliver: true, price: 0, noPayment: true })
+        const paid = paidChecks()
+
+        const { result, errors } = await checkout(cart.id)
+        expect(errors).toEqual([])
+        expect(paid.mock.calls).toEqual([[result.order.id]])
+        expect(result.digital_product_order?.id).toBeTruthy()
+        const order = await readOrder(result.order.id)
+        expect(order.digital_product_order?.id).toBe(result.digital_product_order.id)
+        expect(order.fulfillments).toHaveLength(1)
+        // Medusa completes a cart that owes nothing without any payment.
+        expect(order.payment_collections ?? []).toEqual([])
+        expect(stripe.authorizePayment).not.toHaveBeenCalled()
       })
 
       it("as before — a two-seller cart still completes into one unlinked, uncaptured order", async () => {

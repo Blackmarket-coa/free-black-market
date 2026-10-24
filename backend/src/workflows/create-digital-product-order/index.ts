@@ -99,7 +99,8 @@ type WorkflowInput = {
  * order, and the failed run's `payment.captured` event is dropped with it,
  * so the ledger never hears of the charge (SD-48 open item). Flag off, those
  * steps return before any read and the capture branch does not run: the
- * workflow does exactly what it did.
+ * workflow does what it did, except that the paid check below runs whatever
+ * the flag says.
  *
  * The seller is resolved after the cart lock is taken, so the cart checked is
  * the cart completed: the lock is held from the first step to the last, and
@@ -129,11 +130,14 @@ type WorkflowInput = {
  * item).
  *
  * Last before delivery, an order that owes money and has no payment is
- * refused (`digitalProductOrderPaidStep`). That is what Medusa's workflow
- * engine leaves when it stops `completeCartWorkflow` after the order and
- * before the card is authorized (SD-53): that first checkout is refused for
- * want of an order id, and its retry, finding the order as a replay, would
- * otherwise deliver it unpaid.
+ * refused (`digitalProductOrderPaidStep`), with the flag on or off. That is
+ * what Medusa's workflow engine leaves when it stops `completeCartWorkflow`
+ * after the order and before the card is authorized (SD-53): that first
+ * checkout is refused for want of an order id, and its retry, finding the
+ * order (as a replay with the flag on; with it off, through
+ * `completeCartWorkflow`, which hands a completed cart's order back) would
+ * otherwise deliver it unpaid — with the flag off it did, on a real
+ * database, until SD-53 (c) took the check out from under the flag.
  */
 const createDigitalProductOrderWorkflow = createWorkflow(
   "create-digital-product-order",
@@ -212,7 +216,7 @@ const createDigitalProductOrderWorkflow = createWorkflow(
 
     // SD-48: nothing is delivered for an order that owes money and has no
     // payment, which is what a first completion Medusa's workflow engine left
-    // unfinished leaves behind for a retry to find (SD-53).
+    // unfinished leaves behind for a retry to find (SD-53). Flag on or off.
     digitalProductOrderPaidStep(transform({ checkout }, (data) => ({ order_id: data.checkout.order_id })))
 
     const id = transform({ checkout }, (data) => data.checkout.order_id)

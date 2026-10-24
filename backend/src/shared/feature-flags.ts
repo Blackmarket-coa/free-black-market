@@ -180,7 +180,9 @@ export const PHASE0_FEATURE_FLAGS = {
   // `completeCartWorkflow`, not Mercur's split, so the order got no seller link
   // (the card ledger refuses it, the seller is never credited, BMC's 3% is never
   // taken) and its card payment was authorized and never captured. Off
-  // (default): unchanged, and every new step returns before any read. On: the
+  // (default): unchanged, and every new step returns before any read but the
+  // paid check, which runs whatever this flag says (SD-53 (c)): an order that
+  // owes money and has no payment at all is refused, flag on or off. On: the
   // cart's one seller is resolved before Medusa authorizes the payment session
   // and a cart with none or several is refused, so nothing is captured (on
   // Blackout's page the card is already authorized at Stripe by then, and that
@@ -204,9 +206,9 @@ export const PHASE0_FEATURE_FLAGS = {
   // single seller is neither linked nor captured), and one that owes money and
   // has no payment at all, which Medusa's workflow engine can leave when it
   // stops the first completion before the card is authorized, is refused
-  // (SD-53). The checkout holds the cart's
-  // lock from first step to last (Medusa's in-memory provider: one server
-  // process only). The steps are F5's functions, shared
+  // (SD-53; that check alone does not wait for this flag). The checkout holds
+  // the cart's lock from first step to last (Medusa's in-memory provider: one
+  // server process only). The steps are F5's functions, shared
   // (`workflows/subscription/steps/subscription-order-settlement.ts`). Settles
   // only with CARD_ORDER_LEDGER_V1 also set. Backend only; no twin. BEFORE
   // SETTING IT: every product sold through this checkout needs a Mercur seller
