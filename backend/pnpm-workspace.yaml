@@ -30,10 +30,22 @@ overrides:
   # GHSA-82x6-q7mm-w9cf / GHSA-v5mp-jgw5-2x6j: prototype pollution and a
   # parser DoS in toml, reaching production through @stellar/stellar-sdk
   # (stellar.toml resolution). Fixed in 4.2.0. A major bump on a
-  # transitive dep, so bounded rather than open-ended: 4.x stays
-  # CommonJS, while 5.x is unverified against the SDK and a bare ">="
-  # would drift there — the same trap documented for nanoid below.
-  "toml@3": "^4.2.0"
+  # transitive dep, so bounded rather than open-ended — the same trap
+  # documented for nanoid below.
+  #
+  # 2026-10-24: GHSA-4qx8-w7c3-pj3p, GHSA-9j65-hcg3-gc64 and
+  # GHSA-9qmh-m7c6-f92p (CVE-2026-114141, -114143, -114144; all HIGH,
+  # quadratic or unbounded CPU in toml.parse()) are fixed only in 5.0.1,
+  # with no 4.x backport. This comment used to call 5.x unverified against
+  # the SDK; it is now checked. 5.0.1 keeps 4.3.0's CommonJS entry (the same
+  # index.js) and parse(input, options) signature, and parses a SEP-1
+  # stellar.toml to the same object. It throws on an integer above 2^53,
+  # where 4.3.0 silently rounded it. The SDK (which asks for toml ^3.0.0)
+  # calls toml.parse only in StellarToml.Resolver, which Federation uses,
+  # and FBM's one SDK import, src/modules/hawala-ledger/stellar-settlement.ts
+  # (Keypair, Horizon, Networks, TransactionBuilder, Operation, Asset,
+  # Memo), reaches neither. Caret-bounded at the fix (SD-55).
+  "toml@3": "^5.0.1"
   "glob": ">=10.5.0"
   "qs": ">=6.14.2"
   "jws": ">=3.2.3"
