@@ -28,6 +28,15 @@ overrides:
   # Caret-bounded rather than left bare so a future axios 2.x cannot arrive
   # unreviewed.
   "axios": "^1.20.0"
+  # GHSA-8r9p-f939-6h3c (CVE-2026-111755) and GHSA-q3jh-wrc6-jgq8
+  # (CVE-2026-111756), both HIGH, published 2026-10-20: on a cross-origin
+  # redirect follow-redirects can forward the credential headers it exists to
+  # strip -- array-form headers skip the stripping entirely, and a
+  # `sensitiveHeaders` name containing `^` or `|` never matches. Both arrived
+  # in 1.16.0 and are fixed in 1.16.1, a patch. Reached only through axios
+  # (medusajs-launch-utils), a production path here. Caret-bounded at the fix
+  # (SD-55).
+  "follow-redirects": "^1.16.1"
   "glob": ">=10.5.0"
   "qs": ">=6.14.2"
   "@remix-run/router": "1.23.2"

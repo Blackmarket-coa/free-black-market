@@ -52,6 +52,14 @@ overrides:
   # Caret-bounded rather than left bare so a future axios 2.x cannot arrive
   # unreviewed.
   "axios": "^1.20.0"
+  # GHSA-8r9p-f939-6h3c (CVE-2026-111755) and GHSA-q3jh-wrc6-jgq8
+  # (CVE-2026-111756), both HIGH, published 2026-10-20: on a cross-origin
+  # redirect follow-redirects can forward the credential headers it exists to
+  # strip -- array-form headers skip the stripping entirely, and a
+  # `sensitiveHeaders` name containing `^` or `|` never matches. Both arrived
+  # in 1.16.0 and are fixed in 1.16.1, a patch. Reached only through axios.
+  # Caret-bounded at the fix (SD-55).
+  "follow-redirects": "^1.16.1"
   # GHSA-7h2j-956f-4vf2 (CVE-2026-25547, HIGH): uncontrolled resource
   # consumption, fixed only in 5.0.1. This is the renamed 5.x line, a separate
   # package from `brace-expansion` above, so it needs its own pin.
@@ -102,7 +110,15 @@ overrides:
   "@grpc/grpc-js": "^1.14.5"
   "esbuild": ">=0.28.1"
   "form-data": ">=4.0.6"
-  "vite": "^6.4.3"
+  # GHSA-587h-7wmj-h5pm (CVE-2026-112942, HIGH, 2026-10-20): a crafted path
+  # defeats launch-editor's existence check on Windows, which with
+  # GHSA-698v-4r3x-3vcv lets the dev server's open-in-editor endpoint run
+  # commands. Fixed in 6.4.4, a patch on this line. vite arrives through
+  # Medusa's admin bundler and as an optional peer of @medusajs/framework and
+  # @medusajs/types; the admin build is disabled in medusa-config.ts (SD-17),
+  # so nothing here runs its dev server. Raised from ^6.4.3, which permitted
+  # the fix while the lockfile stayed on 6.4.3 (SD-55).
+  "vite": "^6.4.4"
   "@mikro-orm/core": "6.6.14"
   "@mikro-orm/cli": "6.6.14"
   "@mikro-orm/knex": "6.6.14"
