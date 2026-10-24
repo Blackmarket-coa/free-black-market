@@ -147,7 +147,7 @@ function parseWorkspaceOverrides(text) {
 }
 
 /**
- * Every `name@version` the lockfile resolved.
+ * Every `name@version` the lockfile resolved, without a snapshot's peer suffix.
  *
  * Read as text rather than parsed as YAML for the reason above, and because the
  * `packages:` / `snapshots:` keys are stable across lockfile versions 6 and 9
@@ -163,7 +163,7 @@ function readResolvedPackages(lockPath) {
     if (!m) continue
     const [, name, version] = m
     if (!resolved.has(name)) resolved.set(name, new Set())
-    resolved.get(name).add(version)
+    resolved.get(name).add(version.replace(/\(.*$/, ""))
   }
 
   return resolved
@@ -183,67 +183,93 @@ function overrideSelector(key) {
   return key.slice(at + 1)
 }
 
-/** Leading integer of a version or range, for coarse major comparison. */
-function majorOf(value) {
-  const m = String(value).match(/(\d+)/)
-  return m ? Number(m[1]) : null
+/**
+ * A resolved version as a sortable tuple: `1.2.3` -> [1, 2, 3, 1]. A
+ * prerelease sorts below its release (`1.2.3-rc.1` -> [1, 2, 3, 0]), and the
+ * peer suffix of a snapshot key (`1.2.3(react@18.3.1)`) is ignored. null for
+ * anything that is not a plain version.
+ */
+function parseVersion(text) {
+  const m = String(text).match(/^(\d+)\.(\d+)\.(\d+)(-[^(]+)?/)
+  return m ? [Number(m[1]), Number(m[2]), Number(m[3]), m[4] ? 0 : 1] : null
 }
 
-/** Second integer, when the value names one: `^0.34.0` -> 34. */
-function minorOf(value) {
-  const m = String(value).match(/(\d+)\.(\d+)/)
-  return m ? Number(m[2]) : null
+function compare(a, b) {
+  for (let i = 0; i < 4; i++) if (a[i] !== b[i]) return a[i] < b[i] ? -1 : 1
+  return 0
 }
 
 /**
- * Whether a resolved version satisfies the override.
- *
- * Intentionally a coarse major-version comparison rather than full semver: the
- * question this answers is "did the override bind at all", and the failure mode
- * it exists to catch is a whole package reverting to a major the override
- * forbids — which is what happens when the setting is silently dropped. A
- * precise range check would need a semver dependency and would fail closed on
- * exotic ranges, adding noise without catching more of the real problem.
+ * The versions a range admits, as `{ from, to }`: `to` is exclusive, and null
+ * when the range has no ceiling. Reads the forms these override blocks use —
+ * `3`, `3.1`, `3.1.4`, and each of those after `^`, `~` or `>=`, with semver's
+ * caret rules for 0.x — and returns null for anything else (`||`, `<`, a
+ * compound range, `npm:`, `link:`, a dist-tag), which the caller reports.
  */
-function violates(overrideValue, resolvedVersion, selector) {
-  const wantedMajor = majorOf(overrideValue)
-  const gotMajor = majorOf(resolvedVersion)
-  if (wantedMajor === null || gotMajor === null) return false
-
-  // A selector scopes the override to the versions it names, so anything
-  // outside that scope is simply not governed and cannot violate it.
-  //
-  // The precision has to follow the selector's own. `minimatch@3` names a
-  // major and governs all of 3.x. `sharp@^0.34.0` names a minor, and under
-  // 0.x semantics the minor IS the compatibility boundary — a dependent asking
-  // for ^0.33 is a different package line entirely. Comparing majors alone
-  // treats every 0.x as one scope and reports `sharp@0.33.5` as violating an
-  // override written for the 0.34 line, which is a false alarm on a real tree.
-  if (selector !== null) {
-    const selMajor = majorOf(selector)
-    if (selMajor !== null && gotMajor !== selMajor) return false
-
-    const selMinor = minorOf(selector)
-    if (selMinor !== null) {
-      const gotMinor = minorOf(resolvedVersion)
-      if (gotMinor !== null && gotMinor !== selMinor) return false
-    }
+function rangeOf(spec) {
+  const m = String(spec).trim().match(/^(\^|~|>=)?(\d+)(?:\.(\d+))?(?:\.(\d+))?$/)
+  if (!m) return null
+  const op = m[1] ?? ""
+  const [maj, min, pat] = [m[2], m[3], m[4]].map((s) => (s === undefined ? null : Number(s)))
+  const from = [maj, min ?? 0, pat ?? 0, 1]
+  if (op === ">=") return { from, to: null }
+  if (op === "^") {
+    if (maj > 0 || min === null) return { from, to: [maj + 1, 0, 0, 0] }
+    if (min > 0 || pat === null) return { from, to: [0, min + 1, 0, 0] }
+    return { from, to: [0, 0, pat + 1, 0] }
   }
-
-  if (gotMajor !== wantedMajor) return false
-
-  // Same major: compare the full tuple so `>=4.18.0` catches `4.17.21`.
-  const want = String(overrideValue).match(/(\d+)\.(\d+)\.(\d+)/)
-  const got = String(resolvedVersion).match(/(\d+)\.(\d+)\.(\d+)/)
-  if (!want || !got) return false
-
-  for (let i = 1; i <= 3; i++) {
-    const w = Number(want[i])
-    const g = Number(got[i])
-    if (g > w) return false
-    if (g < w) return true
+  // `~`, or a partial version: the last part given is the one that may move.
+  if (op === "~" || pat === null) {
+    return { from, to: min === null ? [maj + 1, 0, 0, 0] : [maj, min + 1, 0, 0] }
   }
-  return false
+  return { from, to: [maj, min, pat, 2] } // an exact version: that release alone
+}
+
+function within(version, range) {
+  return compare(version, range.from) >= 0 && (range.to === null || compare(version, range.to) < 0)
+}
+
+/**
+ * Whether one resolved version breaks one override, by the rule in the header.
+ * `siblings` are the selectors of the same package's other overrides.
+ *
+ * null means the value or selector is in a form `rangeOf` does not read, and
+ * the caller fails on it. Passing what it could not read is how the coarse
+ * major comparison this replaces left every override that changes major
+ * unasserted (SD-55 (h)). Failing is not noise: the forms these blocks use are
+ * few and all read, so a new form fails once, for whoever writes it. It needs
+ * no semver dependency either, for the reason `parseWorkspaceOverrides` gives.
+ */
+function violates(overrideValue, resolvedVersion, selector, siblings) {
+  const got = parseVersion(resolvedVersion)
+  if (!got) return false // not a registry version: nothing to compare
+
+  const removal = overrideValue === "-"
+  const want = removal ? null : rangeOf(overrideValue)
+  const sel = selector === null ? null : rangeOf(selector)
+  if ((!removal && !want) || (selector !== null && !sel)) return null
+
+  // Inside its own selector, an instance is this override's: pnpm rewrites
+  // every request whose range meets the selector, so nothing there can have
+  // come from a request it left alone.
+  if (sel && within(got, sel)) return removal || !within(got, want)
+
+  // Outside it, an instance another override of the same package scopes is
+  // that override's to judge.
+  if (siblings.some((s) => rangeOf(s) !== null && within(got, rangeOf(s)))) return false
+
+  if (removal) return sel === null
+  if (within(got, want)) return false
+  // A bare key rewrites every request for the package, so nothing may resolve
+  // outside its target.
+  if (sel === null) return true
+
+  // A scoped override answers for everything from the lower of its selector's
+  // and target's floors to the higher of their ceilings: the versions between
+  // a selector and a target on a later major are the ones the override skips.
+  const from = compare(sel.from, want.from) <= 0 ? sel.from : want.from
+  const to = sel.to === null || want.to === null ? null : compare(sel.to, want.to) >= 0 ? sel.to : want.to
+  return within(got, { from, to })
 }
 
 let hadError = false
@@ -276,9 +302,22 @@ for (const root of roots) {
   const declared = sources[0].overrides
   const resolvedPkgs = readResolvedPackages(lockPath)
   const violations = []
+  const unreadable = []
   let checked = 0
 
   for (const [key, value] of Object.entries(declared)) {
+    // `parent>child` scopes an override to one dependent's requests. Asserting
+    // it would need the edges between resolved packages, which this script
+    // does not read, so a key whose child is in the tree is refused rather
+    // than counted as absent.
+    const parentAt = key.search(/[^ |@]>/) // pnpm's own delimiter
+    if (parentAt !== -1) {
+      if (resolvedPkgs.has(overrideTargetName(key.slice(parentAt + 2)))) {
+        unreadable.push(`"${key}": ${value} cannot be asserted: this script does not read parent>child keys`)
+      }
+      continue
+    }
+
     const name = overrideTargetName(key)
     const selector = overrideSelector(key)
     const versions = resolvedPkgs.get(name)
@@ -288,17 +327,24 @@ for (const root of roots) {
     if (!versions) continue
 
     checked++
+    const siblings = Object.keys(declared)
+      .filter((k) => k !== key && overrideTargetName(k) === name)
+      .map(overrideSelector)
+      .filter((s) => s !== null)
     for (const version of versions) {
-      if (violates(value, version, selector)) {
-        violations.push(`${name}@${version} violates override "${key}": ${value}`)
+      const verdict = violates(value, version, selector, siblings)
+      if (verdict === null) {
+        unreadable.push(`"${key}": ${value} cannot be asserted: this script does not read that range`)
+        break
       }
+      if (verdict) violations.push(`${name}@${version} violates override "${key}": ${value}`)
     }
   }
 
-  if (violations.length) {
+  if (violations.length || unreadable.length) {
     hadError = true
     console.error(`✗ ${label} (${sources[0].where})`)
-    for (const v of violations) console.error(`    ${v}`)
+    for (const v of [...violations, ...unreadable]) console.error(`    ${v}`)
   } else {
     console.log(
       `✓ ${label}: ${checked}/${Object.keys(declared).length} overrides present in the tree, all satisfied (${sources[0].where})`
