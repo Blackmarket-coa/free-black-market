@@ -98,7 +98,11 @@ const log = createLogger(
  * exactly one period, never renewed, and the payment session is started
  * WITHOUT off-session setup, so the card is not kept at all. Flag off, or a
  * one-off listing: every byte of the page, the completion and the stored rows
- * is what it always was. See `AutoRenewAnswer` and `autoRenewMode`.
+ * is what it always was. See `AutoRenewAnswer` and `autoRenewMode`. (The two
+ * order flows the completion runs refuse an order that owes money and has no
+ * payment whatever the flags say, SD-53 (c): what an earlier attempt Medusa's
+ * workflow engine left unfinished leaves, or what a second completion of the
+ * same cart sees before the first's card is authorized.)
  */
 
 interface TokenPayload {

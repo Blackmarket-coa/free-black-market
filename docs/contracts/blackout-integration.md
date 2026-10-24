@@ -264,7 +264,15 @@ idempotently on first render:
    `subscription_id`; re-visits render the completed state.
 
 **Seller settlement of one-off listings (`FF_DIGITAL_ORDER_SETTLEMENT_V1`,
-SD-48).** Flag off, step 5 is unchanged. Flag on: by the time completion
+SD-48).** Flag off, step 5 is unchanged but for one check, which runs with
+either flag on or off and for subscription listings too: an order an earlier
+attempt left owing money with no payment at all (Medusa's workflow engine
+stopped it after the order and before the card hold, SD-53) is refused at
+completion (500 `checkout_failed`, or `checkout.error` on the page) and nothing
+is granted. Before SD-53 (c), with the flags off, the retry completed it unpaid
+(seen in both order flows on a real database; the page route was read, not
+run, for this case — it was run for an ordinary one-off and recurring
+completion). Flag on: by the time completion
 starts, the page's card confirmation (`stripe.confirmPayment`) has already put
 a hold on the member's card at Stripe. The digital-product order flow then
 resolves the shadow product's Mercur seller before Medusa authorizes the
