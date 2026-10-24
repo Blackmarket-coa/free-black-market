@@ -42,7 +42,7 @@ overrides:
   immutable: '>=5.1.8'
   minimatch@3: ^3.1.4
   minimatch@10: ^10.2.3
-  multer: ^2.3.0
+  multer: ^2.5.0
   nodemailer: ^10.0.9
   path-to-regexp@0: ^0.1.13
   path-to-regexp@8: ^8.4.0
@@ -182,8 +182,8 @@ importers:
         specifier: ^8.0.3
         version: 8.0.6
       multer:
-        specifier: ^2.3.0
-        version: 2.3.0
+        specifier: ^2.5.0
+        version: 2.5.0
       nodemailer:
         specifier: ^10.0.9
         version: 10.0.13
@@ -5341,10 +5341,6 @@ packages:
   concat-map@0.0.1:
     resolution: {integrity: sha512-/Srv4dswyQNBfohGpz9o6Yb3Gz3SrUDqBH5rTuhGR7ahtlbYKnVxw2bCFMRljaA7EXHaXZ8wsHdodFvbkhKmqg==}
 
-  concat-stream@2.0.0:
-    resolution: {integrity: sha512-MWufYdFw53ccGjCA+Ol7XJYpAlW6/prSMzuPOTRnJGcGzuhLn4Scrz7qf6o8bROZ514ltazcIFJZevcfbo0x7A==}
-    engines: {'0': node >= 6.0}
-
   configstore@5.0.1:
     resolution: {integrity: sha512-aMKprgk5YhBNyH25hj8wGt2+D52Sw1DRRIzqBwLp2Ya9mFmY8KPvvtvmna8SxVR9JMZ4kzMD68N22vlaRpkeFA==}
     engines: {node: '>=8'}
@@ -6953,8 +6949,8 @@ packages:
   msgpackr@1.11.8:
     resolution: {integrity: sha512-bC4UGzHhVvgDNS7kn9tV8fAucIYUBuGojcaLiz7v+P63Lmtm0Xeji8B/8tYKddALXxJLpwIeBmUN3u64C4YkRA==}
 
-  multer@2.3.0:
-    resolution: {integrity: sha512-cjNbm3sttszgZeGfJR124D+jFEfkXCVAsoPBmFn9X7UxmDSFHWqE2CoEj0vrmSpuAFnqWR1Szcm9QTsiHr60Xw==}
+  multer@2.5.0:
+    resolution: {integrity: sha512-BsqOzYGVq49JcW2IzoSAxeKYRevb+dGGPPWleOR8Lrlk4igwxu1/9pwSXlByhCb7MVZDrNJFC0IBP5/O5nLYRw==}
     engines: {node: '>= 10.16.0'}
 
   mute-stream@0.0.8:
@@ -8202,9 +8198,6 @@ packages:
 
   typedarray-to-buffer@3.1.5:
     resolution: {integrity: sha512-zdu8XMNEDepKKR+XYOXAVPtWui0ly0NtohUscw+UmaHiAWT8hrV1rr//H6V+0DvJ3OQ19S979M0laLfX8rm82Q==}
-
-  typedarray@0.0.6:
-    resolution: {integrity: sha512-/aCDEGatGvZ2BIk+HmLf4ifCJFwvKFNb9/JeZPMulfgFracn9QFcAf5GO8B/mweUjSoblS5In0cWhqpfs/5PQA==}
 
   typescript-eslint@8.61.0:
     resolution: {integrity: sha512-8y31Rd0eGTrDKqhy6vT0HtzhN+YLjQizwX3aA3hPXP/ynSfnrBXcQY5IzsP9/DM7+klX4IUncZZjkchP0z+rUw==}
@@ -11093,7 +11086,7 @@ snapshots:
       express: 4.22.1(supports-color@8.1.1)
       fs-exists-cached: 1.0.0
       jsonwebtoken: 9.0.3
-      multer: 2.3.0
+      multer: 2.5.0
       node-schedule: 2.1.1
       qs: 6.15.2
       request-ip: 3.3.0
@@ -15792,13 +15785,6 @@ snapshots:
 
   concat-map@0.0.1: {}
 
-  concat-stream@2.0.0:
-    dependencies:
-      buffer-from: 1.1.2
-      inherits: 2.0.4
-      readable-stream: 3.6.2
-      typedarray: 0.0.6
-
   configstore@5.0.1:
     dependencies:
       dot-prop: 5.3.0
@@ -17611,11 +17597,10 @@ snapshots:
     optionalDependencies:
       msgpackr-extract: 3.0.3
 
-  multer@2.3.0:
+  multer@2.5.0:
     dependencies:
       append-field: 1.0.0
       busboy: 1.6.0
-      concat-stream: 2.0.0
       type-is: 1.6.18
 
   mute-stream@0.0.8: {}
@@ -18949,8 +18934,6 @@ snapshots:
   typedarray-to-buffer@3.1.5:
     dependencies:
       is-typedarray: 1.0.0
-
-  typedarray@0.0.6: {}
 
   typescript-eslint@8.61.0(eslint@9.39.4(jiti@1.21.7)(supports-color@8.1.1))(supports-color@8.1.1)(typescript@5.9.3):
     dependencies:

@@ -138,7 +138,12 @@ overrides:
   # name. multer parses untrusted multipart bodies on upload routes, so all
   # three are reachable. Fixed in 2.3.0. Caret-bounded, not ">=": an
   # open-ended floor lets pnpm drift onto the next major.
-  "multer": "^2.3.0"
+  # GHSA-q7qp-rjg7-q26m (CVE-2026-113872, HIGH, published 2026-10-23): a
+  # fileFilter still pending when the request is torn down is a denial of
+  # service. Fixed in 2.5.0, which also clears the MODERATE
+  # GHSA-3pph-fpjx-jg34 (orphaned disk writes on aborted uploads, fixed
+  # 2.4.0). Raised from ^2.3.0 here and in package.json, as in SD-25 (SD-55).
+  "multer": "^2.5.0"
   # GHSA-2x7j-588g-ccc2 (HIGH): quadratic time in addressparser, so a crafted
   # address header is a remote DoS. Fixed in 9.1.0. Caret-bounded for the
   # reason above and because it was not theoretical here — ">=9.1.0" resolved
