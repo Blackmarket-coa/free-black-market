@@ -1,6 +1,6 @@
 {
   "license": "AGPL-3.0-only",
-  "packageManager": "pnpm@11.28.4",
+  "packageManager": "pnpm@11.28.8",
   "dependencies": {
     "@medusajs/js-sdk": "^2.13.1",
     "@mikro-orm/cli": "6.6.14",

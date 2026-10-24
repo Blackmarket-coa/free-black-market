@@ -169,9 +169,18 @@ ARG SECURITY_REFRESH=unset
 # dependencies, so the upgrade replaces that one package. No nginx tag helps
 # yet: as of 2026-10-11 none had been pushed since the fixed tiff was built
 # on 2026-10-08.
+#
+# SD-56: brotli-libs 1.2.0-r1 carries CVE-2026-111497, HIGH: an out-of-bounds
+# write in the Brotli decoder. Alpine v3.24 main has 1.2.1-r0 (APKINDEX, not
+# inferred). It is in this image for freetype (libgd's, so F5's image-filter
+# module's) and libcurl (the base image's curl). brotli-libs is Alpine main
+# (maintainer prspkt) and absent from F5's repo, and 1.2.1-r0 provides the
+# same three sonames and needs only musl, so the upgrade replaces that one
+# package. The base image on 2026-10-24 (alpine 3.24.3, nginx 1.31.8-r1)
+# still ships 1.2.0-r1.
 RUN echo "security-refresh=${SECURITY_REFRESH}" >/dev/null \
     && apk add --no-cache wget tini \
-    && apk upgrade --no-cache libuuid libexpat pcre2 tiff
+    && apk upgrade --no-cache libuuid libexpat pcre2 tiff brotli-libs
 
 COPY --from=build /app/dist /usr/share/nginx/html
 COPY nginx.conf /etc/nginx/conf.d/default.conf

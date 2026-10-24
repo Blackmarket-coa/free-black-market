@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "private": true,
   "description": "FBM mobile app - Capacitor shell around the Next.js storefront",
-  "packageManager": "pnpm@11.28.4",
+  "packageManager": "pnpm@11.28.8",
   "scripts": {
     "test": "node --test \"test/*.test.mjs\"",
     "version:set": "node scripts/set-version.mjs",
