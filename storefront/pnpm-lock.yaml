@@ -18,7 +18,7 @@ overrides:
   esbuild: '>=0.28.1'
   form-data: '>=4.0.6'
   vite: ^7.3.7
-  zod: 4.2.0
+  zod: 4.6.6
   brace-expansion@1: ^1.1.21
   brace-expansion@2: ^2.1.7
   brace-expansion@5: ^5.0.12
@@ -144,8 +144,8 @@ importers:
         specifier: ^11.1.1
         version: 11.1.1
       zod:
-        specifier: 4.2.0
-        version: 4.2.0
+        specifier: 4.6.6
+        version: 4.6.6
     devDependencies:
       '@chromatic-com/storybook':
         specifier: ^3.2.3
@@ -229,13 +229,13 @@ packages:
     resolution: {integrity: sha512-E6x4h5CPPPJ0za1r5HsLtHbeI+Tp3H+YFtcH8G3dSSPFE6w+PZINzB4NxLZmg1QqSeA5HTP3ZEzzsohp0o2GEw==}
     engines: {node: '>=18'}
     peerDependencies:
-      zod: 4.2.0
+      zod: 4.6.6
 
   '@ai-sdk/provider-utils@3.0.17':
     resolution: {integrity: sha512-TR3Gs4I3Tym4Ll+EPdzRdvo/rc8Js6c4nVhFLuvGLX/Y4V9ZcQMa/HTiYsHEgmYrf1zVi6Q145UEZUfleOwOjw==}
     engines: {node: '>=18'}
     peerDependencies:
-      zod: 4.2.0
+      zod: 4.6.6
 
   '@ai-sdk/provider@2.0.0':
     resolution: {integrity: sha512-6o7Y2SeO9vFKB8lArHXehNuusnpddKPk7xqL7T2/b+OvXMRIXUO1rR4wcv1hAFUAT9avGZshty3Wlua/XA7TvA==}
@@ -4101,7 +4101,7 @@ packages:
     resolution: {integrity: sha512-9eGcu+1PJgPg4pRNV4L7tLjRR3wdJC9CXQoNMvtqvYNOLZHFCzjHtVIOr2SIkoJJeu2+sOy3hyiSuTmy2MA40g==}
     engines: {node: '>=18'}
     peerDependencies:
-      zod: 4.2.0
+      zod: 4.6.6
 
   ajv-formats@2.1.1:
     resolution: {integrity: sha512-Wx0Kx52hxE7C18hkMEggYlEifqWZtYaRgouJor+WMdPnQyEK13vgEWyVNup7SoeeoLMsr4kf5h6dOW11I15MUA==}
@@ -7292,28 +7292,28 @@ packages:
   zod-to-json-schema@3.24.6:
     resolution: {integrity: sha512-h/z3PKvcTcTetyjl1fkj79MHNEjm+HpD6NXheWjzOekY7kV+lwDYnHw+ivHkijnCSMz1yJaWBD9vu/Fcmk+vEg==}
     peerDependencies:
-      zod: 4.2.0
+      zod: 4.6.6
 
-  zod@4.2.0:
-    resolution: {integrity: sha512-Bd5fw9wlIhtqCCxotZgdTOMwGm1a0u75wARVEY9HMs1X17trvA/lMi4+MGK5EUfYkXVTbX8UDiDKW4OgzHVUZw==}
+  zod@4.6.6:
+    resolution: {integrity: sha512-4UmzQUF5fxvfcYHlbjBmejU+w+hbDnWFx4aS8kBx7nPBHcO2SqPbpAG8snbdg+Xse4pRefR98hgjFgIMCI/UhA==}
 
 snapshots:
 
   '@adobe/css-tools@4.4.4': {}
 
-  '@ai-sdk/gateway@2.0.9(zod@4.2.0)':
+  '@ai-sdk/gateway@2.0.9(zod@4.6.6)':
     dependencies:
       '@ai-sdk/provider': 2.0.0
-      '@ai-sdk/provider-utils': 3.0.17(zod@4.2.0)
+      '@ai-sdk/provider-utils': 3.0.17(zod@4.6.6)
       '@vercel/oidc': 3.0.3
-      zod: 4.2.0
+      zod: 4.6.6
 
-  '@ai-sdk/provider-utils@3.0.17(zod@4.2.0)':
+  '@ai-sdk/provider-utils@3.0.17(zod@4.6.6)':
     dependencies:
       '@ai-sdk/provider': 2.0.0
       '@standard-schema/spec': 1.0.0
       eventsource-parser: 3.0.6
-      zod: 4.2.0
+      zod: 4.6.6
 
   '@ai-sdk/provider@2.0.0':
     dependencies:
@@ -11823,13 +11823,13 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  ai@5.0.93(zod@4.2.0):
+  ai@5.0.93(zod@4.6.6):
     dependencies:
-      '@ai-sdk/gateway': 2.0.9(zod@4.2.0)
+      '@ai-sdk/gateway': 2.0.9(zod@4.6.6)
       '@ai-sdk/provider': 2.0.0
-      '@ai-sdk/provider-utils': 3.0.17(zod@4.2.0)
+      '@ai-sdk/provider-utils': 3.0.17(zod@4.6.6)
       '@opentelemetry/api': 1.9.0
-      zod: 4.2.0
+      zod: 4.6.6
 
   ajv-formats@2.1.1:
     dependencies:
@@ -13335,10 +13335,10 @@ snapshots:
   instantsearch-ui-components@0.14.0(react@19.2.0):
     dependencies:
       '@babel/runtime': 7.28.4
-      ai: 5.0.93(zod@4.2.0)
+      ai: 5.0.93(zod@4.6.6)
       markdown-to-jsx: 7.7.17(react@19.2.0)
-      zod: 4.2.0
-      zod-to-json-schema: 3.24.6(zod@4.2.0)
+      zod: 4.6.6
+      zod-to-json-schema: 3.24.6(zod@4.6.6)
     transitivePeerDependencies:
       - react
 
@@ -13349,7 +13349,7 @@ snapshots:
       '@types/google.maps': 3.58.1
       '@types/hogan.js': 3.0.5
       '@types/qs': 6.14.0
-      ai: 5.0.93(zod@4.2.0)
+      ai: 5.0.93(zod@4.6.6)
       algoliasearch: 5.44.0
       algoliasearch-helper: 3.26.1(algoliasearch@5.44.0)
       hogan.js: 3.0.2
@@ -13359,8 +13359,8 @@ snapshots:
       qs: 6.15.2
       react: 19.2.0
       search-insights: 2.17.3
-      zod: 4.2.0
-      zod-to-json-schema: 3.24.6(zod@4.2.0)
+      zod: 4.6.6
+      zod-to-json-schema: 3.24.6(zod@4.6.6)
 
   internal-slot@1.1.0:
     dependencies:
@@ -14441,14 +14441,14 @@ snapshots:
   react-instantsearch-core@7.19.0(algoliasearch@5.44.0)(react@19.2.0):
     dependencies:
       '@babel/runtime': 7.28.4
-      ai: 5.0.93(zod@4.2.0)
+      ai: 5.0.93(zod@4.6.6)
       algoliasearch: 5.44.0
       algoliasearch-helper: 3.26.1(algoliasearch@5.44.0)
       instantsearch.js: 4.83.0(algoliasearch@5.44.0)
       react: 19.2.0
       use-sync-external-store: 1.6.0(react@19.2.0)
-      zod: 4.2.0
-      zod-to-json-schema: 3.24.6(zod@4.2.0)
+      zod: 4.6.6
+      zod-to-json-schema: 3.24.6(zod@4.6.6)
 
   react-instantsearch-nextjs@0.4.9(next@15.5.28(@babel/core@7.28.5(supports-color@8.1.1))(@opentelemetry/api@1.9.1)(@types/node@20.19.25)(react-dom@19.2.0(react@19.2.0))(react@19.2.0))(react-instantsearch@7.19.0(algoliasearch@5.44.0)(react-dom@19.2.0(react@19.2.0))(react@19.2.0)):
     dependencies:
@@ -15580,8 +15580,8 @@ snapshots:
 
   yocto-queue@1.2.2: {}
 
-  zod-to-json-schema@3.24.6(zod@4.2.0):
+  zod-to-json-schema@3.24.6(zod@4.6.6):
     dependencies:
-      zod: 4.2.0
+      zod: 4.6.6
 
-  zod@4.2.0: {}
+  zod@4.6.6: {}

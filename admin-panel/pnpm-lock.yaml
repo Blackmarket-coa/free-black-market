@@ -39,7 +39,7 @@ overrides:
   '@opentelemetry/propagator-jaeger': ^2.9.0
   body-parser@1: ^1.20.9
   '@remix-run/router': '>=1.23.2'
-  zod: 4.2.0
+  zod: 4.6.6
 
 importers:
 
@@ -154,8 +154,8 @@ importers:
         specifier: 6.30.2
         version: 6.30.2(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       zod:
-        specifier: 4.2.0
-        version: 4.2.0
+        specifier: 4.6.6
+        version: 4.6.6
     devDependencies:
       '@medusajs/admin-sdk':
         specifier: 2.14.2
@@ -165,7 +165,7 @@ importers:
         version: 2.14.2(picomatch@4.0.4)(supports-color@8.1.1)(vite@5.4.21(@types/node@20.19.25)(lightningcss@1.32.0))
       '@medusajs/framework':
         specifier: 2.14.2
-        version: 2.14.2(@medusajs/cli@2.14.2(@types/node@20.19.25)(debug@4.4.3(supports-color@8.1.1))(supports-color@8.1.1))(@types/node@20.19.25)(debug@4.4.3(supports-color@8.1.1))(supports-color@8.1.1)(vite@5.4.21(@types/node@20.19.25)(lightningcss@1.32.0))(zod@4.2.0)
+        version: 2.14.2(@medusajs/cli@2.14.2(@types/node@20.19.25)(debug@4.4.3(supports-color@8.1.1))(supports-color@8.1.1))(@types/node@20.19.25)(debug@4.4.3(supports-color@8.1.1))(supports-color@8.1.1)(vite@5.4.21(@types/node@20.19.25)(lightningcss@1.32.0))(zod@4.6.6)
       '@medusajs/types':
         specifier: 2.14.2
         version: 2.14.2(vite@5.4.21(@types/node@20.19.25)(lightningcss@1.32.0))
@@ -6660,10 +6660,10 @@ packages:
     resolution: {integrity: sha512-hmk+pkyKq7Q71PiWVSDUc3VfpzpvcRHZ3QPw9yEMVvmtCekaMeOHnbr3WbxfrgEnQTv6haGP4cmv0Ojmihzsxw==}
     engines: {node: '>=18.0.0'}
     peerDependencies:
-      zod: 4.2.0
+      zod: 4.6.6
 
-  zod@4.2.0:
-    resolution: {integrity: sha512-Bd5fw9wlIhtqCCxotZgdTOMwGm1a0u75wARVEY9HMs1X17trvA/lMi4+MGK5EUfYkXVTbX8UDiDKW4OgzHVUZw==}
+  zod@4.6.6:
+    resolution: {integrity: sha512-4UmzQUF5fxvfcYHlbjBmejU+w+hbDnWFx4aS8kBx7nPBHcO2SqPbpAG8snbdg+Xse4pRefR98hgjFgIMCI/UhA==}
 
 snapshots:
 
@@ -7467,7 +7467,7 @@ snapshots:
   '@medusajs/admin-sdk@2.14.2':
     dependencies:
       '@medusajs/admin-shared': 2.14.2
-      zod: 4.2.0
+      zod: 4.6.6
 
   '@medusajs/admin-shared@2.14.2': {}
 
@@ -7541,7 +7541,7 @@ snapshots:
       '@opentelemetry/sdk-trace-node': 2.7.1(@opentelemetry/api@1.9.1)
       awilix: 8.0.1
       pg: 8.20.0
-      zod: 4.2.0
+      zod: 4.6.6
     transitivePeerDependencies:
       - '@types/node'
       - better-sqlite3
@@ -7555,7 +7555,7 @@ snapshots:
       - supports-color
       - tedious
 
-  '@medusajs/framework@2.14.2(@medusajs/cli@2.14.2(@types/node@20.19.25)(debug@4.4.3(supports-color@8.1.1))(supports-color@8.1.1))(@types/node@20.19.25)(debug@4.4.3(supports-color@8.1.1))(supports-color@8.1.1)(vite@5.4.21(@types/node@20.19.25)(lightningcss@1.32.0))(zod@4.2.0)':
+  '@medusajs/framework@2.14.2(@medusajs/cli@2.14.2(@types/node@20.19.25)(debug@4.4.3(supports-color@8.1.1))(supports-color@8.1.1))(@types/node@20.19.25)(debug@4.4.3(supports-color@8.1.1))(supports-color@8.1.1)(vite@5.4.21(@types/node@20.19.25)(lightningcss@1.32.0))(zod@4.6.6)':
     dependencies:
       '@aws-sdk/client-dynamodb': 3.1058.0
       '@jercle/yargonaut': 1.1.5
@@ -7582,7 +7582,7 @@ snapshots:
       morgan: 1.10.1(supports-color@8.1.1)
       path-to-regexp: 8.4.2
       tsconfig-paths: 4.2.0
-      zod-validation-error: 5.0.0(zod@4.2.0)
+      zod-validation-error: 5.0.0(zod@4.6.6)
     optionalDependencies:
       vite: 5.4.21(@types/node@20.19.25)(lightningcss@1.32.0)
     transitivePeerDependencies:
@@ -13091,7 +13091,7 @@ snapshots:
   prettier-plugin-classnames@0.8.5(prettier@3.6.2):
     dependencies:
       prettier: 3.6.2
-      zod: 4.2.0
+      zod: 4.6.6
 
   prettier-plugin-tailwindcss@0.7.1(@trivago/prettier-plugin-sort-imports@5.2.2(prettier@3.6.2)(supports-color@8.1.1))(prettier@3.6.2):
     dependencies:
@@ -14341,8 +14341,8 @@ snapshots:
 
   yocto-queue@0.1.0: {}
 
-  zod-validation-error@5.0.0(zod@4.2.0):
+  zod-validation-error@5.0.0(zod@4.6.6):
     dependencies:
-      zod: 4.2.0
+      zod: 4.6.6
 
-  zod@4.2.0: {}
+  zod@4.6.6: {}

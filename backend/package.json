@@ -82,7 +82,7 @@
     "scrypt-kdf": "^2.0.1",
     "stripe": "^17.7.0",
     "ulid": "^2.3.0",
-    "zod": "^4.2.0"
+    "zod": "^4.6.6"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",
