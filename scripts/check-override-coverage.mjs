@@ -23,6 +23,51 @@
  * mechanism produced the lockfile: it compares intent to outcome, so it keeps
  * working across whatever the next migration turns out to be.
  *
+ * What an override forbids (SD-55 (h)):
+ *
+ *   "pkg": "<target>"        Every resolved pkg satisfies <target>. A bare key
+ *                            rewrites every request for pkg, so a version
+ *                            outside the target, on whatever major, is one the
+ *                            override did not reach.
+ *   "pkg@<sel>": "<target>"  Every resolved pkg from the lower of the two
+ *                            floors, <sel>'s and <target>'s, up to the higher
+ *                            of their ceilings satisfies <target>.
+ *   "pkg": "-"               No pkg is resolved; with a selector, none in it.
+ *
+ * A version inside another override's selector for the same package, and
+ * outside this one's, is that override's to judge. Exact pins are exact, and
+ * 0.x follows semver's caret rules, so "^0.35.5" admits the 0.35 line only.
+ *
+ * The scoped rule is written in versions because versions are all a lockfile
+ * shows. pnpm applies "pkg@<sel>" to every request whose range intersects
+ * <sel> (pnpm 11's `isIntersectingRange`), so the rule one wants is "every
+ * version a matching request produced satisfies <target>". But a v9 lockfile
+ * records which version each dependent resolved, not the range it asked for:
+ * only importers keep their specifiers, and a peer range is stored as the
+ * override rewrote it. So, for an override that lifts <sel> to a <target> on
+ * a later major, as "toml@3": "^5.0.1" lifts the Stellar SDK's ^3.0.0:
+ *
+ *   - Inside <sel> (toml 3.x), a version can only have come from a request
+ *     pnpm rewrites, so one that misses <target> means it did not bind.
+ *   - Between <sel> and <target>'s floor (4.x, 5.0.0), a version is either a
+ *     governed request resolved stale or below the fix, or a request for a
+ *     line the override skips. The lockfile cannot tell them apart, so it is
+ *     reported. A dependent that legitimately wants that line needs its own
+ *     "pkg@<line>" override, which then judges it.
+ *   - Outside both (2.x, 6.x), nothing the override produces resolves, and a
+ *     request it failed to rewrite lands there only if it was wider than
+ *     <sel>, and then above <target>, past the fix. Nothing there is judged:
+ *     storybook's own sharp 0.33.5 beside "sharp@^0.34.0" stays legal.
+ *
+ * What this cannot see, it reports rather than passes: a value or selector in
+ * a form `rangeOf` does not read, and a parent>child key whose child is in the
+ * tree (asserting one would need the edges between resolved packages, which
+ * this does not read). It also reads each version under its package's real
+ * name, while pnpm matches an override on the dependency's own key, so a
+ * version reached only through an `npm:` alias would be judged although no
+ * override reaches it; no overridden package was reached that way on
+ * 2026-10-24.
+ *
  * Usage:  node scripts/check-override-coverage.mjs [root ...]
  *         (defaults to every root that has a lockfile)
  */
