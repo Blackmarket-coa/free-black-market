@@ -3,7 +3,6 @@
   "packageManager": "pnpm@11.28.4",
   "dependencies": {
     "@medusajs/js-sdk": "^2.13.1",
-    "@medusajs/types": "^2.13.1",
     "@mikro-orm/cli": "6.6.14",
     "@mikro-orm/core": "6.6.14",
     "@mikro-orm/knex": "6.6.14",
@@ -11,6 +10,7 @@
     "@tanstack/react-query": "^5.90.20"
   },
   "devDependencies": {
+    "@medusajs/types": "^2.13.1",
     "@types/node": "^25.0.10",
     "eslint": "^9.39.4",
     "eslint-plugin-react-hooks": "^7.1.1",
