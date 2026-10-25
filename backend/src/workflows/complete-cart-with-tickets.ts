@@ -11,6 +11,7 @@ import { TICKET_BOOKING_MODULE } from "../modules/ticket-booking"
 import { Modules } from "@medusajs/framework/utils"
 import ticketPurchaseOrderLink from "../links/ticket-purchase-order"
 import { validateTicketOrderStep, ValidateTicketOrderStepInput } from "./steps/validate-ticket-order"
+import { requireCompletedCartOrderStep } from "./steps/require-completed-cart-order"
 
 /**
  * The refetched order row, narrowed where the query result enters the
@@ -52,6 +53,15 @@ export const completeCartWithTicketsWorkflow = createWorkflow(
         id: input.cart_id
       }
     })
+
+    // SD-53: Medusa's workflow engine can leave `completeCartWorkflow`
+    // unfinished after the order is written and before the card is
+    // authorized, handing back no order id. Refused here, before anything
+    // reads by that id (an undefined id filters nothing: the refetch below
+    // would answer with some order) or sells a seat for it; a retry gets
+    // the unpaid order back and is refused the same way. Unconditional, and
+    // shared by every FBM completion (steps/require-completed-cart-order).
+    requireCompletedCartOrderStep({ cart_id: input.cart_id, order_id: order.id })
 
     const { data: carts } = useQueryGraphStep({
       entity: "cart",

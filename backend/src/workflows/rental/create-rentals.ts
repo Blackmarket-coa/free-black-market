@@ -18,6 +18,7 @@ import {
   CreateRentalsForOrderInput,
   createRentalsForOrderStep
 } from "./steps/create-rentals-for-order"
+import { requireCompletedCartOrderStep } from "../steps/require-completed-cart-order"
 
 type CreateRentalsWorkflowInput = {
   cart_id: string
@@ -79,6 +80,13 @@ export const createRentalsWorkflow = createWorkflow(
     const order = completeCartWorkflow.runAsStep({
       input: { id: cart_id },
     })
+
+    // SD-53: a completion the workflow engine left unfinished hands back no
+    // order id. Refused here, before the order read below runs on an id that
+    // is not there or a rental is created for it; a retry gets the unpaid
+    // order back and is refused the same way. Unconditional, and shared by
+    // every FBM completion (steps/require-completed-cart-order).
+    requireCompletedCartOrderStep({ cart_id, order_id: order.id })
 
     const { data: orders } = useQueryGraphStep({
       entity: "order",

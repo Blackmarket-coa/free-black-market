@@ -14,6 +14,13 @@
  *    unchanged: their messages are intentional and the frontends depend on them.
  *  - In development/test, nothing is intercepted, so error output stays verbose.
  *
+ * One error is answered before the framework's handler sees it, in every
+ * environment: a cart completion that yielded no order (SD-53,
+ * `lib/cart-completion.ts`). Its `MedusaError` type is `unexpected_state`,
+ * which the framework answers with a 500 and, in production, the generic
+ * message; it is answered 409 with its stable code and the buyer's message
+ * instead, so every route that completes a cart refuses it the same way.
+ *
  * Wired as the `errorHandler` in `src/api/middlewares.ts`.
  */
 import { errorHandler as coreErrorHandler } from "@medusajs/framework/http"
@@ -22,6 +29,7 @@ import type {
   MedusaResponse,
   MedusaNextFunction,
 } from "@medusajs/framework/http"
+import { cartCompletionIncompleteResponse, isCartCompletionIncomplete } from "../lib/cart-completion"
 import { createLogger } from "./logger"
 import { captureException } from "./sentry"
 
@@ -50,6 +58,15 @@ export function sanitizedErrorHandler() {
     res: MedusaResponse,
     next: MedusaNextFunction,
   ): void => {
+    // SD-53: a refused cart completion, 409 `cart_completion_incomplete`. The
+    // step that threw it has logged the cart and execution ids at error
+    // level; the response carries the buyer's message and the code only.
+    if (isCartCompletionIncomplete(err)) {
+      const refusal = cartCompletionIncompleteResponse(err)
+      res.status(refusal.status).json(refusal.body)
+      return
+    }
+
     if (isProduction) {
       const originalJson = res.json.bind(res)
       ;(res as any).json = (body: ErrorBody) => {

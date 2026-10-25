@@ -29,6 +29,7 @@ import {
   linkDigitalProductOrderSellerStep,
   resolveDigitalProductSellerStep,
 } from "../subscription/steps/subscription-order-settlement"
+import { requireCompletedCartOrderStep } from "../steps/require-completed-cart-order"
 
 /**
  * The order fields this workflow reads, narrowed where the query result enters
@@ -166,6 +167,14 @@ const createDigitalProductOrderWorkflow = createWorkflow(
           id: input.cart_id
         }
       })
+
+      // SD-53: the completion must have yielded an order — an id handed
+      // back, its execution finished, the order readable under that id and
+      // paid if it owes money — or the checkout is refused here, flag on or
+      // off, before the link, capture and paid steps see an id that is not
+      // there. The shared step every FBM completion runs; the paid check
+      // below stays as the last word before delivery.
+      requireCompletedCartOrderStep({ cart_id: input.cart_id, order_id: createdOrderId })
 
       return transform({ createdOrderId, resolvedSeller }, (data) => ({
         order_id: data.createdOrderId,

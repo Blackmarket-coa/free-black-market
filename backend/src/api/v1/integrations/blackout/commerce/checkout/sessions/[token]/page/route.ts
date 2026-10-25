@@ -23,6 +23,10 @@ import {
 import { createSubscriptionWorkflow } from "../../../../../../../../../workflows/subscription";
 import { SUBSCRIPTION_PAYMENT_PROVIDER_ID } from "../../../../../../../../../workflows/subscription/renew-helpers";
 import createDigitalProductOrderWorkflow from "../../../../../../../../../workflows/create-digital-product-order";
+import {
+  cartCompletionIncompleteResponse,
+  isCartCompletionIncomplete,
+} from "../../../../../../../../../lib/cart-completion";
 import { ENTITLEMENT_MODULE } from "../../../../../../../../../modules/entitlement";
 import type EntitlementModuleService from "../../../../../../../../../modules/entitlement/service";
 import { EntitlementKind } from "../../../../../../../../../modules/entitlement/models";
@@ -952,6 +956,28 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
           );
         return;
       }
+      // SD-53: a completion that yielded no order is refused with its code
+      // and the buyer is told nothing was taken; the session stays open and
+      // nothing is granted.
+      if (isCartCompletionIncomplete(err)) {
+        const refusal = cartCompletionIncompleteResponse(err);
+        res
+          .status(refusal.status)
+          .type("text/html")
+          .send(
+            renderResult({
+              embed,
+              embedOrigin,
+              event: "checkout.error",
+              payload: {
+                message: refusal.body.message,
+                code: refusal.body.code,
+                session_id: record.id,
+              },
+            }),
+          );
+        return;
+      }
       const message = err instanceof Error ? err.message : "Checkout failed";
       log.error("Blackout checkout completion failed:", err);
       res
@@ -1138,6 +1164,13 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
   } catch (err) {
     if (err instanceof AutoRenewRefusal) {
       return res.status(err.status).json({ code: err.code, message: err.message });
+    }
+    // SD-53: a completion that yielded no order answers 409 with its code.
+    if (isCartCompletionIncomplete(err)) {
+      const refusal = cartCompletionIncompleteResponse(err);
+      return res
+        .status(refusal.status)
+        .json({ code: refusal.body.code, message: refusal.body.message });
     }
     const message = err instanceof Error ? err.message : "Checkout failed";
     log.error("Blackout checkout completion failed:", err);

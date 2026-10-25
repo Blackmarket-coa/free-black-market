@@ -30,6 +30,7 @@ import {
 import { preventPasswordReuseMiddleware } from "./middlewares/password-history";
 import { servePublishingKeys } from "./middlewares/publishing-keys";
 import { refuseServerOwnedCustomerMetadata } from "./middlewares/server-owned-customer-metadata";
+import { refuseUnfinishedCartCompletion } from "./middlewares/cart-completion-finished";
 import { ensureSellerContext } from "./vendor/_middlewares";
 // Nested middleware route sets. Medusa's MiddlewareFileLoader reads ONLY this
 // file (it checks `<api dir>/middlewares.ts` and does not recurse), so a nested
@@ -1538,6 +1539,15 @@ export default defineMiddlewares({
       matcher: "/store/carts/:id/line-items/rentals",
       method: "POST",
       middlewares: [validateAndTransformBody(PostCartItemsRentalsBody)],
+    },
+    // SD-53: the main checkout. Mercur's route answers with its order set
+    // even when Medusa's workflow engine has left the completion unfinished;
+    // that answer is replaced with 409 cart_completion_incomplete
+    // (src/api/middlewares/cart-completion-finished.ts).
+    {
+      matcher: "/store/carts/:id/complete",
+      method: "POST",
+      middlewares: [refuseUnfinishedCartCompletion],
     },
     // Ticket booking routes - admin venues
     {

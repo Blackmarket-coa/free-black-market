@@ -43,6 +43,12 @@ jest.mock("../../../links/ticket-purchase-order", () => ({
   default: { entryPoint: "ticket_purchase_order" },
 }))
 
+// SD-53: the shared completion guard is a step like the others; captured so
+// its place in the composition can be asserted.
+jest.mock("../require-completed-cart-order", () => ({
+  requireCompletedCartOrderStep: jest.fn(),
+}))
+
 import { Modules } from "@medusajs/framework/utils"
 import { transform, when } from "@medusajs/framework/workflows-sdk"
 import {
@@ -52,6 +58,7 @@ import {
 } from "@medusajs/medusa/core-flows"
 import { TICKET_BOOKING_MODULE } from "../../../modules/ticket-booking"
 import { createTicketPurchasesStep } from "../create-ticket-purchases"
+import { requireCompletedCartOrderStep } from "../require-completed-cart-order"
 import { validateTicketOrderStep } from "../validate-ticket-order"
 import { completeCartWithTicketsWorkflow } from "../../complete-cart-with-tickets"
 
@@ -79,6 +86,20 @@ describe("completeCartWithTicketsWorkflow", () => {
       fields: ["ticket_purchase.id"],
       filters: { order_id: "order_1" },
     })
+  })
+
+  it("requires the completion to have yielded an order before anything reads by its id (SD-53)", () => {
+    runComposer()
+
+    const guard = requireCompletedCartOrderStep as unknown as jest.Mock
+    expect(guard).toHaveBeenCalledTimes(1)
+    expect(guard).toHaveBeenCalledWith({ cart_id: "cart_1", order_id: "order_1" })
+    // Right after the completion, before the first query.
+    const completed = (completeCartWorkflow.runAsStep as unknown as jest.Mock).mock.invocationCallOrder[0]
+    const guarded = guard.mock.invocationCallOrder[0]
+    const firstRead = (useQueryGraphStep as unknown as jest.Mock).mock.invocationCallOrder[0]
+    expect(completed).toBeLessThan(guarded)
+    expect(guarded).toBeLessThan(firstRead)
   })
 
   it("only creates purchases when the order has no existing links", () => {

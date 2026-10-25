@@ -3,6 +3,10 @@ import jwt from "jsonwebtoken"
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 import { config } from "../../../../../../shared/config"
 import createDigitalProductOrderWorkflow from "../../../../../../workflows/create-digital-product-order"
+import {
+  cartCompletionIncompleteResponse,
+  isCartCompletionIncomplete,
+} from "../../../../../../lib/cart-completion"
 
 interface SessionTokenPayload {
   cart_id: string
@@ -86,6 +90,23 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         )
       return
     } catch (err) {
+      // SD-53: a completion that yielded no order is refused with its code,
+      // and the buyer is told nothing was taken; nothing was delivered.
+      if (isCartCompletionIncomplete(err)) {
+        const refusal = cartCompletionIncompleteResponse(err)
+        res
+          .status(refusal.status)
+          .type("text/html")
+          .send(
+            renderResult({
+              embed,
+              embedOrigin,
+              event: "checkout.error",
+              payload: { message: refusal.body.message, code: refusal.body.code },
+            })
+          )
+        return
+      }
       const message = err instanceof Error ? err.message : "Checkout failed"
       res
         .status(500)
@@ -151,6 +172,11 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     })
     return res.json({ type: "order", ...result })
   } catch (err) {
+    // SD-53: a completion that yielded no order answers 409 with its code.
+    if (isCartCompletionIncomplete(err)) {
+      const refusal = cartCompletionIncompleteResponse(err)
+      return res.status(refusal.status).json(refusal.body)
+    }
     const message = err instanceof Error ? err.message : "Checkout failed"
     return res.status(500).json({ message, type: "checkout_failed" })
   }
