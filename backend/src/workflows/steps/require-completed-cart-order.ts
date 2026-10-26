@@ -38,6 +38,9 @@ const UNFINISHED_STATES = [
   TransactionState.COMPENSATING,
 ]
 
+/** How many of the newest unfinished completions the fallback lookup reads. */
+const UNFINISHED_SCAN_LIMIT = 25
+
 type ExecutionRow = CompletionExecution & {
   context?: { data?: { payload?: { id?: string } | null } | null } | null
 }
@@ -73,9 +76,18 @@ async function findCompletionExecution(
     )
     if (rows[0]) return pick(rows[0])
   }
+  // Bounded: this runs on every completion whose nested row is gone, which
+  // is every one that finished (a finished run's row is deleted), and
+  // stalled rows stay until an operator clears them. This cart's own run is
+  // the newest unfinished one when its checkout has just run it; if it were
+  // ever missed, the order read-back below still decides.
   const unfinished = await engine.listWorkflowExecutions(
     { workflow_id: completeCartWorkflowId, state: UNFINISHED_STATES },
-    { select: ["id", "workflow_id", "transaction_id", "state", "context"], order: { created_at: "DESC" } }
+    {
+      select: ["id", "workflow_id", "transaction_id", "state", "context"],
+      order: { created_at: "DESC" },
+      take: UNFINISHED_SCAN_LIMIT,
+    }
   )
   const mine = unfinished.find((row) => row.context?.data?.payload?.id === cartId)
   return mine ? pick(mine) : null
