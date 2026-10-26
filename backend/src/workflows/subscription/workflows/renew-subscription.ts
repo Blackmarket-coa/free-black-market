@@ -25,6 +25,7 @@ import {
   subscriptionPaymentToCaptureStep,
 } from "../steps/subscription-order-settlement"
 import { SUBSCRIPTION_MODULE } from "../../../modules/subscription"
+import { requireCompletedCartOrderStep } from "../../steps/require-completed-cart-order"
 import {
   buildRenewalCartInput,
   buildRenewalRecordSessionInput,
@@ -172,6 +173,14 @@ export const renewSubscriptionWorkflow = createWorkflow(
       const order = completeCartWorkflow.runAsStep({
         input: { id: cart.id },
       })
+
+      // SD-53: a completion the workflow engine left unfinished hands back
+      // no order id. The cycle's charge is already collected (step 3), so
+      // the renewal stops here rather than link, stamp and grant against an
+      // id that is not there: the job logs the failure, and the recorded
+      // charge is not presented again on the retry (see the notes above).
+      // Unconditional, and shared by every FBM completion.
+      requireCompletedCartOrderStep({ cart_id: cart.id, order_id: order.id })
 
       const linkDefs = transform({ order, input }, (data) => [
         {

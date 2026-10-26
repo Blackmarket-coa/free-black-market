@@ -4,6 +4,7 @@ import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils"
 import { SELLER_MODULE } from "@mercurjs/b2c-core/modules/seller"
 import { PHASE0_FEATURE_FLAGS } from "../../src/shared/feature-flags"
 import { SUBSCRIPTION_MODULE } from "../../src/modules/subscription"
+import { CART_COMPLETION_INCOMPLETE_MESSAGE } from "../../src/lib/cart-completion"
 import { cardOrderFixtures } from "./helpers/card-orders"
 import { checkoutRaceProbes } from "./helpers/checkout-race"
 import { trackSubscribers } from "./helpers/drain-subscribers"
@@ -200,6 +201,12 @@ medusaIntegrationTestRunner({
       return {
         result: run.result as any,
         errors: ((run.errors ?? []) as any[]).map((e) => `${e.action}: ${e.error?.message}`),
+        // SD-53: a refused completion's stable code and reason, kept by the engine's serialization.
+        refusals: ((run.errors ?? []) as any[]).map((e) => ({
+          action: e.action,
+          code: e.error?.code ?? null,
+          reason: e.error?.reason ?? null,
+        })),
       }
     }
 
@@ -829,10 +836,13 @@ medusaIntegrationTestRunner({
 
         const first = await checkout(cart.id)
         expect(stall.stalled()).toBe(true)
-        // completeCartWorkflow handed back no order: the link step refuses
-        // rather than read by an undefined id (which matches some order).
-        expect(first.errors).toEqual([
-          "link-subscription-order-seller: Subscription checkout: the cart's completion returned no order; nothing linked, captured or delivered",
+        // completeCartWorkflow handed back no order: the shared guard refuses
+        // (SD-53, steps/require-completed-cart-order), before the link step
+        // could read by an undefined id (which matches some order). The
+        // buyer's message names no ids.
+        expect(first.errors).toEqual([`require-completed-cart-order: ${CART_COMPLETION_INCOMPLETE_MESSAGE}`])
+        expect(first.refusals).toEqual([
+          { action: "require-completed-cart-order", code: "cart_completion_incomplete", reason: "no_order_id" },
         ])
         // What the engine left: Medusa's completion unfinished (its
         // compensation never ends), the order and the cart's completion
@@ -843,10 +853,13 @@ medusaIntegrationTestRunner({
         expect((await container().resolve(Modules.CART).retrieveCart(cart.id)).completed_at).toBeTruthy()
         expect(await container().resolve(Modules.PAYMENT).listPayments({ payment_collection_id: collection.id })).toEqual([])
 
-        // A retry finds that order as a replay and refuses to make the subscription.
+        // A retry finds that order as a replay, which skips the completion
+        // and the step after it; the paid check refuses it with the same
+        // code and message (SD-53).
         const retry = await checkout(cart.id)
-        expect(retry.errors).toEqual([
-          expect.stringMatching(/^subscription-order-paid: Subscription order order_\w+ owes money and has no payment .*; nothing delivered$/),
+        expect(retry.errors).toEqual([`subscription-order-paid: ${CART_COMPLETION_INCOMPLETE_MESSAGE}`])
+        expect(retry.refusals).toEqual([
+          { action: "subscription-order-paid", code: "cart_completion_incomplete", reason: "order_unpaid" },
         ])
         expect(await container().resolve(SUBSCRIPTION_MODULE).listSubscriptions({ customer_id: customer.id })).toEqual([])
         expect((await readOrder(orders[0].id)).seller?.id ?? null).toBeNull()
@@ -886,11 +899,13 @@ medusaIntegrationTestRunner({
 
           const first = await checkout(cart.id)
           expect(stall.stalled()).toBe(true)
-          // completeCartWorkflow handed back no order. The seller and capture
-          // steps read nothing with the flag off, so the paid check refuses,
-          // before the checkout's own order read could run on an undefined id.
-          expect(first.errors).toEqual([
-            "subscription-order-paid: Subscription checkout: the cart's completion returned no order; nothing linked, captured or delivered",
+          // completeCartWorkflow handed back no order. The shared guard
+          // refuses whatever the flags say (SD-53), before the checkout's own
+          // order read could run on an undefined id; the paid check behind it
+          // (SD-53 (c)) stays the last word before the subscription is made.
+          expect(first.errors).toEqual([`require-completed-cart-order: ${CART_COMPLETION_INCOMPLETE_MESSAGE}`])
+          expect(first.refusals).toEqual([
+            { action: "require-completed-cart-order", code: "cart_completion_incomplete", reason: "no_order_id" },
           ])
           expect((await clearStalledWorkflows(container, 1000)).map((w) => w.workflow_id)).toEqual(["complete-cart"])
           const orders = await container().resolve(Modules.ORDER).listOrders({ customer_id: customer.id })
@@ -901,8 +916,9 @@ medusaIntegrationTestRunner({
           // The retry gets that order back from completeCartWorkflow, which
           // authorizes nothing on a completed cart, and is refused.
           const retry = await checkout(cart.id)
-          expect(retry.errors).toEqual([
-            `subscription-order-paid: Subscription order ${orders[0].id} owes money and has no payment (its completion stopped before the card was authorized, or has not got there yet); nothing delivered`,
+          expect(retry.errors).toEqual([`require-completed-cart-order: ${CART_COMPLETION_INCOMPLETE_MESSAGE}`])
+          expect(retry.refusals).toEqual([
+            { action: "require-completed-cart-order", code: "cart_completion_incomplete", reason: "order_unpaid" },
           ])
           expect(await container().resolve(SUBSCRIPTION_MODULE).listSubscriptions({ customer_id: customer.id })).toEqual([])
           expect((await readOrder(orders[0].id)).seller?.id ?? null).toBeNull()

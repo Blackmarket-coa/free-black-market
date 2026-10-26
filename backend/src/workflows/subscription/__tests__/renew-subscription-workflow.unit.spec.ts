@@ -74,6 +74,12 @@ jest.mock("../steps/grant-subscription-entitlements", () => ({
   grantSubscriptionEntitlementsStep: () => (calls.push("grant"), { granted_count: 1 }),
 }))
 
+// SD-53: the shared completion guard is a step like the others here.
+const guardInputs: unknown[] = []
+jest.mock("../../steps/require-completed-cart-order", () => ({
+  requireCompletedCartOrderStep: (input: unknown) => (calls.push("require-completed-cart-order"), guardInputs.push(input), {}),
+}))
+
 const chargeInputs: unknown[] = []
 jest.mock("../steps/charge-subscription-renewal", () => ({
   chargeSubscriptionRenewalStep: (input: unknown) => {
@@ -131,6 +137,12 @@ describe("renewSubscriptionWorkflow composition", () => {
 
     const order = (name: string) => calls.indexOf(name)
     expect(order("completeCart")).toBeLessThan(order("link-seller:renewal"))
+    // SD-53: the completion must have yielded an order before the renewal
+    // links, stamps or captures anything for it.
+    expect(calls.filter((c) => c === "require-completed-cart-order")).toHaveLength(1)
+    expect(order("completeCart")).toBe(order("require-completed-cart-order") - 1)
+    expect(order("require-completed-cart-order")).toBeLessThan(order("link-seller:renewal"))
+    expect(guardInputs[guardInputs.length - 1]).toEqual({ cart_id: expect.anything(), order_id: "order_new" })
     expect(order("link-seller:renewal")).toBeLessThan(order("stamp-renewal-record"))
     expect(order("stamp-renewal-record")).toBeLessThan(order("payment-to-capture"))
     expect(order("payment-to-capture")).toBeLessThan(order("capturePayment"))

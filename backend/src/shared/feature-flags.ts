@@ -182,7 +182,9 @@ export const PHASE0_FEATURE_FLAGS = {
   // taken) and its card payment was authorized and never captured. Off
   // (default): unchanged, and every new step returns before any read but the
   // paid check, which runs whatever this flag says (SD-53 (c)): an order that
-  // owes money and has no payment at all is refused, flag on or off. On: the
+  // owes money and has no payment at all is refused, flag on or off, with the
+  // answer every FBM cart completion shares (409 `cart_completion_incomplete`,
+  // lib/cart-completion.ts). On: the
   // cart's one seller is resolved before Medusa authorizes the payment session
   // and a cart with none or several is refused, so nothing is captured (on
   // Blackout's page the card is already authorized at Stripe by then, and that

@@ -1,11 +1,12 @@
 import { createLogger } from "../../../shared/logger"
 const log = createLogger("workflows/subscription/subscription-order-settlement")
 import { createStep, StepResponse, type StepExecutionContext } from "@medusajs/framework/workflows-sdk"
-import { ContainerRegistrationKeys, MathBN, MedusaError, Modules } from "@medusajs/framework/utils"
+import { ContainerRegistrationKeys, MedusaError, Modules } from "@medusajs/framework/utils"
 import { SELLER_MODULE } from "@mercurjs/b2c-core/modules/seller"
 import { isFbmCardProvider } from "../../../modules/hawala-ledger/card-clearing"
 import { featureFlagState } from "../../../shared/feature-flags"
 import { consumerSubscriptionsEnabled } from "../grace-lifecycle"
+import { CartCompletionIncompleteError, judgeCartCompletion } from "../../../lib/cart-completion"
 import {
   buildRenewalRecord,
   RENEWAL_RECORD_METADATA_KEY,
@@ -541,6 +542,8 @@ async function paymentToCapture(input: CaptureInput, { container }: StepExecutio
 export const subscriptionPaymentToCaptureStep = createStep("subscription-payment-to-capture", paymentToCapture)
 
 type PaidInput = {
+  /** The cart the checkout completed: named in the refusal and its log (SD-53). */
+  cart_id: string
   order_id: string
   /** SD-48: `digital_product`; `subscription` when omitted. */
   sale?: SettlementSale
@@ -550,15 +553,20 @@ type PaidInput = {
  * Last, before anything is delivered (`initial` and `replay`): an order that
  * owes money has a payment. One that owes and has none is refused, and the
  * checkout delivers nothing. The one step in this file that runs whatever
- * its sale's flag says.
+ * its sale's flag says. It decides with `judgeCartCompletion` and refuses
+ * with `CartCompletionIncompleteError` (lib/cart-completion.ts), the answer
+ * every FBM cart completion shares: 409 `cart_completion_incomplete`.
  *
  * Such an order is what an unfinished first completion leaves: Medusa
  * 2.14.2's workflow engine can stop `completeCartWorkflow` after it writes
  * the order, its cart link and the cart's completion and before it
- * authorizes the card (SD-53). That checkout fails (`requireOrderId`), but
- * the order stays, so a retry finds it: as a replay with the flag on, and
- * with the flag off through `completeCartWorkflow` itself, which hands back
- * a completed cart's order and authorizes nothing. Without this check the
+ * authorizes the card (SD-53). That checkout is refused right after the
+ * completion (`requireCompletedCartOrderStep`), but the order stays, so a
+ * retry finds it: as a replay with the flag on, which skips the completion
+ * and that step, so this check is the one that refuses it; and with the flag
+ * off through `completeCartWorkflow` itself, which hands back a completed
+ * cart's order and authorizes nothing, and is refused by that step first.
+ * Without this check the
  * retry delivered it with no payment at all: the digital product order
  * made, or the subscription active (seen on a real database for both sales,
  * with the flags on and off). Every completed checkout of an amount owed
@@ -589,34 +597,50 @@ type PaidInput = {
  * stall after an earlier attempt on the cart failed past the authorization
  * (whose cancelled payment Medusa keeps on the collection) is let through.
  */
-async function orderPaid(input: PaidInput, { container }: StepExecutionContext) {
+async function orderPaid(input: PaidInput, { container, workflowId, transactionId }: StepExecutionContext) {
   const terms = termsOf(input.sale)
-  const orderId = requireOrderId(input.order_id, terms)
-  const query = container.resolve(ContainerRegistrationKeys.QUERY) as QueryLike
-  const { data } = await query.graph({
-    entity: "order",
-    fields: ["id", "total", "payment_collections.payments.id"],
-    filters: { id: orderId },
-  })
-  const order = (data as Array<{ total?: number | string | null; payment_collections?: CollectionRow[] | null }>)[0]
-  if (!order) {
-    throw new MedusaError(MedusaError.Types.NOT_FOUND, `${terms.label} order ${orderId} not found; nothing delivered`)
+  const orderId = input.order_id || null
+  // No order id: refused before anything is read, as every step here refuses
+  // (a query filtered on an undefined id is not filtered).
+  let order: { id: string; total?: number | string | null; payments: number } | null = null
+  if (orderId) {
+    const query = container.resolve(ContainerRegistrationKeys.QUERY) as QueryLike
+    const { data } = await query.graph({
+      entity: "order",
+      fields: ["id", "total", "payment_collections.payments.id"],
+      filters: { id: orderId },
+    })
+    const row = (data as Array<{ id: string; total?: number | string | null; payment_collections?: CollectionRow[] | null }>)[0]
+    order = row
+      ? {
+          id: row.id,
+          total: row.total,
+          payments: (row.payment_collections ?? []).flatMap((c) => c?.payments ?? []).filter((p) => !!p).length,
+        }
+      : null
   }
-  const payments = (order.payment_collections ?? []).flatMap((c) => c?.payments ?? []).filter((p) => !!p)
-  // A total the query did not hand back is not "owes nothing": refuse, as a
-  // missing order id is refused, rather than read it as 0 and let the order
-  // through unpaid.
-  if (order.total === undefined || order.total === null) {
-    throw new MedusaError(
-      MedusaError.Types.UNEXPECTED_STATE,
-      `${terms.label} order ${orderId} came back with no total, so whether it owes money is unknown; nothing delivered`
-    )
-  }
-  if (payments.length === 0 && MathBN.gt(order.total, 0)) {
-    throw new MedusaError(
-      MedusaError.Types.NOT_ALLOWED,
-      `${terms.label} order ${orderId} owes money and has no payment (its completion stopped before the card was authorized, or has not got there yet); nothing delivered`
-    )
+  // SD-53: the same decision as the step right after every FBM cart
+  // completion (lib/cart-completion.ts), on what is here: an order handed
+  // back, there under that id, its total known (a total the query did not
+  // hand back is not "owes nothing"), and a payment whenever it owes money.
+  // So a replay of a completion the engine left unfinished — which skips the
+  // completion, and the step after it — is refused with the same code (409
+  // cart_completion_incomplete on the store routes) and the same message.
+  const verdict = judgeCartCompletion({ cart_id: input.cart_id, order_id: orderId, order })
+  if (!verdict.ok) {
+    const execution = transactionId ? `${workflowId}:${transactionId}` : null
+    log.error(`[cart-completion] ${terms.label} checkout refused at the paid check (${verdict.reason}): ${verdict.detail}; nothing delivered`, {
+      cart_id: input.cart_id,
+      order_id: orderId,
+      execution_id: execution,
+      sale: input.sale ?? "subscription",
+    })
+    throw new CartCompletionIncompleteError({
+      cart_id: input.cart_id,
+      order_id: orderId,
+      reason: verdict.reason,
+      detail: `${terms.label} checkout: ${verdict.detail}`,
+    })
   }
   return new StepResponse({ checked: true })
 }

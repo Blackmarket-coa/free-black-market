@@ -29,6 +29,7 @@ import {
   linkDigitalProductOrderSellerStep,
   resolveDigitalProductSellerStep,
 } from "../subscription/steps/subscription-order-settlement"
+import { requireCompletedCartOrderStep } from "../steps/require-completed-cart-order"
 
 /**
  * The order fields this workflow reads, narrowed where the query result enters
@@ -167,6 +168,14 @@ const createDigitalProductOrderWorkflow = createWorkflow(
         }
       })
 
+      // SD-53: the completion must have yielded an order — an id handed
+      // back, its execution finished, the order readable under that id and
+      // paid if it owes money — or the checkout is refused here, flag on or
+      // off, before the link, capture and paid steps see an id that is not
+      // there. The shared step every FBM completion runs; the paid check
+      // below stays as the last word before delivery.
+      requireCompletedCartOrderStep({ cart_id: input.cart_id, order_id: createdOrderId })
+
       return transform({ createdOrderId, resolvedSeller }, (data) => ({
         order_id: data.createdOrderId,
         seller_id: data.resolvedSeller.seller_id,
@@ -217,7 +226,9 @@ const createDigitalProductOrderWorkflow = createWorkflow(
     // SD-48: nothing is delivered for an order that owes money and has no
     // payment, which is what a first completion Medusa's workflow engine left
     // unfinished leaves behind for a retry to find (SD-53). Flag on or off.
-    digitalProductOrderPaidStep(transform({ checkout }, (data) => ({ order_id: data.checkout.order_id })))
+    digitalProductOrderPaidStep(
+      transform({ checkout, input }, (data) => ({ cart_id: data.input.cart_id, order_id: data.checkout.order_id }))
+    )
 
     const id = transform({ checkout }, (data) => data.checkout.order_id)
 

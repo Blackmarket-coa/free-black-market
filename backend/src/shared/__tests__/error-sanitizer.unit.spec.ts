@@ -90,4 +90,53 @@ describe("error-sanitizer", () => {
     expect(res.statusCode).toBe(500)
     expect(res.body.message).toBe(DB_LEAK)
   })
+
+  // SD-53: a cart completion that yielded no order. The workflow engine hands
+  // the route a serialized `unexpected_state` error carrying the code; the core
+  // handler would answer 500 (generic in production). It is answered 409 with
+  // the code and the buyer's message instead, in every environment, and the
+  // core handler never sees it.
+  describe.each(["production", "development"])("a refused cart completion, NODE_ENV=%s", (env) => {
+    const refused = {
+      name: "MedusaError",
+      type: "unexpected_state",
+      code: "cart_completion_incomplete",
+      message: "Your order could not be completed, and no payment was taken. If your card shows a pending authorization, it will be released. Please try again, or contact support if it happens again.",
+      reason: "order_unpaid",
+      cart_id: "cart_01STALLED",
+      detail: "cart cart_01STALLED: order order_01LEFT owes 5 and has no payment",
+      // What the mocked core handler would write, were it reached.
+      status: 500,
+      body: { code: "cart_completion_incomplete", type: "unexpected_state", message: "An internal server error occurred." },
+    }
+
+    it("answers 409 cart_completion_incomplete with the buyer's message and the reason, and no ids", () => {
+      const handler = loadHandler(env)
+      const res = makeRes()
+      handler(refused, makeReq(), res, jest.fn())
+
+      expect(res.statusCode).toBe(409)
+      expect(res.body).toEqual({
+        code: "cart_completion_incomplete",
+        type: "cart_completion_incomplete",
+        message: refused.message,
+        reason: "order_unpaid",
+      })
+      expect(JSON.stringify(res.body)).not.toContain("cart_01STALLED")
+      expect(JSON.stringify(res.body)).not.toContain("order_01LEFT")
+    })
+  })
+
+  it("answers any other unexpected_state error as the core handler does", () => {
+    const handler = loadHandler("production")
+    const res = makeRes()
+    handler(
+      { type: "unexpected_state", status: 500, body: { code: undefined, type: "unexpected_state", message: DB_LEAK } },
+      makeReq(),
+      res,
+      jest.fn(),
+    )
+    expect(res.statusCode).toBe(500)
+    expect(res.body.message).toBe("An internal server error occurred.")
+  })
 })
