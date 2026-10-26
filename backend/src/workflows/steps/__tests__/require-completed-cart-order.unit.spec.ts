@@ -147,7 +147,7 @@ describe("a completion that yielded an order", () => {
       ["order", { id: "order_1" }],
       ["order_cart", { cart_id: "cart_1" }],
     ])
-    expect(w.graph.mock.calls[0][0].fields).toEqual(["id", "total", "payment_collections.payments.id"])
+    expect(w.graph.mock.calls[0][0].fields).toEqual(["id", "total", "payment_collections.id", "payment_collections.payments.id"])
     expect(logError).not.toHaveBeenCalled()
   })
 

@@ -265,11 +265,16 @@ idempotently on first render:
 
 **Seller settlement of one-off listings (`FF_DIGITAL_ORDER_SETTLEMENT_V1`,
 SD-48).** Flag off, step 5 is unchanged but for one check, which runs with
-either flag on or off and for subscription listings too: an order an earlier
-attempt left owing money with no payment at all (Medusa's workflow engine
-stopped it after the order and before the card hold, SD-53) is refused at
-completion (500 `checkout_failed`, or `checkout.error` on the page) and nothing
-is granted. Before SD-53 (c), with the flags off, the retry completed it unpaid
+either flag on or off and for subscription listings too: a cart completion
+that yielded no order — Medusa's workflow engine stopped it after the order
+and before the card hold (SD-53), or an earlier attempt left the order owing
+money with no payment at all — is refused at completion with `409
+cart_completion_incomplete` (`{ code, message }`; the message tells the member
+no payment was taken and that a pending hold will be released; on the page,
+`checkout.error` with `payload.code: "cart_completion_incomplete"`) and
+nothing is granted. The same code answers every FBM checkout, over the store
+routes too (`backend/src/lib/cart-completion.ts`). Before SD-53 (c), with the
+flags off, the retry completed it unpaid
 (seen in both order flows on a real database; the page route was read, not
 run, for this case — it was run for an ordinary one-off and recurring
 completion). Flag on: by the time completion

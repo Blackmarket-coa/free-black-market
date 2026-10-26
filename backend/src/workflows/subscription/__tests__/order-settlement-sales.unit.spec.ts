@@ -12,6 +12,7 @@ jest.mock("@medusajs/framework/workflows-sdk", () => ({
 }))
 
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
+import { CART_COMPLETION_INCOMPLETE, CART_COMPLETION_INCOMPLETE_MESSAGE } from "../../../lib/cart-completion"
 import { PHASE0_FEATURE_FLAGS } from "../../../shared/feature-flags"
 import {
   completedCartOrderStep,
@@ -294,11 +295,22 @@ describe("before anything is delivered: an order that owes money has a payment, 
         Object.assign(process.env, env)
       })
 
+      // SD-53: every refusal is the one every FBM cart completion shares
+      // (lib/cart-completion.ts): its code, the buyer's message, and the
+      // reason; the ids are in the detail, never in the message.
+      const refusal = (reason: string, detail?: RegExp) => ({
+        code: CART_COMPLETION_INCOMPLETE,
+        message: CART_COMPLETION_INCOMPLETE_MESSAGE,
+        reason,
+        cart_id: "cart_1",
+        ...(detail ? { detail: expect.stringMatching(detail) } : {}),
+      })
+
       it("refuses an order it was not handed, before any read", async () => {
         const { container, resolve } = paidOrder({ total: 5, payments: [] })
         for (const order_id of [undefined, null, ""]) {
-          await expect(invoke({ order_id }, { container })).rejects.toThrow(
-            `${label} checkout: the cart's completion returned no order; nothing linked, captured or delivered`
+          await expect(invoke({ cart_id: "cart_1", order_id }, { container })).rejects.toMatchObject(
+            refusal("no_order_id", new RegExp(`^${label} checkout: cart cart_1: the cart's completion returned no order id$`))
           )
         }
         expect(resolve).not.toHaveBeenCalled()
@@ -306,8 +318,8 @@ describe("before anything is delivered: an order that owes money has a payment, 
 
       it("reads the order, and refuses one that owes money and has no payment: its completion stopped before the card was authorized", async () => {
         const { container, graph } = paidOrder({ total: 5, payments: [] })
-        await expect(invoke({ order_id: "order_1" }, { container })).rejects.toThrow(
-          `${label} order order_1 owes money and has no payment (its completion stopped before the card was authorized, or has not got there yet); nothing delivered`
+        await expect(invoke({ cart_id: "cart_1", order_id: "order_1" }, { container })).rejects.toMatchObject(
+          refusal("order_unpaid", new RegExp(`^${label} checkout: cart cart_1: order order_1 owes 5 and has no payment`))
         )
         expect(graph).toHaveBeenCalledTimes(1)
         expect(graph).toHaveBeenCalledWith({
@@ -319,7 +331,9 @@ describe("before anything is delivered: an order that owes money has a payment, 
 
       it("refuses one owing a fraction of a unit, as the query hands totals back", async () => {
         const { container } = paidOrder({ total: "0.01", payments: [] })
-        await expect(invoke({ order_id: "order_1" }, { container })).rejects.toThrow(/owes money and has no payment/)
+        await expect(invoke({ cart_id: "cart_1", order_id: "order_1" }, { container })).rejects.toMatchObject(
+          refusal("order_unpaid", /order order_1 owes 0\.01 and has no payment/)
+        )
       })
 
       it.each([
@@ -332,14 +346,16 @@ describe("before anything is delivered: an order that owes money has a payment, 
         ["no payment for an order that owes nothing", { total: 0, payments: [] }],
       ])("lets through %s", async (_name, order) => {
         const { container, graph } = paidOrder(order)
-        const res = await invoke({ order_id: "order_1" }, { container })
+        const res = await invoke({ cart_id: "cart_1", order_id: "order_1" }, { container })
         expect(res.output).toEqual({ checked: true })
         expect(graph).toHaveBeenCalledTimes(1)
       })
 
       it("refuses an order it cannot find", async () => {
         const { container } = paidOrder(null)
-        await expect(invoke({ order_id: "order_1" }, { container })).rejects.toThrow(`${label} order order_1 not found; nothing delivered`)
+        await expect(invoke({ cart_id: "cart_1", order_id: "order_1" }, { container })).rejects.toMatchObject(
+          refusal("order_not_found", /order order_1 cannot be read back/)
+        )
       })
 
       // A missing total must not read as "owes nothing" (a reviewer's finding
@@ -350,8 +366,8 @@ describe("before anything is delivered: an order that owes money has a payment, 
         ["null", null],
       ])("refuses an order whose total came back %s, instead of reading it as zero", async (_name, total) => {
         const { container } = paidOrder({ total, payments: [] })
-        await expect(invoke({ order_id: "order_1" }, { container })).rejects.toThrow(
-          `${label} order order_1 came back with no total, so whether it owes money is unknown; nothing delivered`
+        await expect(invoke({ cart_id: "cart_1", order_id: "order_1" }, { container })).rejects.toMatchObject(
+          refusal("order_total_unknown", /order order_1 came back with no total, so whether it owes money is unknown/)
         )
       })
     })

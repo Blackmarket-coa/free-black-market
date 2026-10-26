@@ -226,7 +226,9 @@ const createDigitalProductOrderWorkflow = createWorkflow(
     // SD-48: nothing is delivered for an order that owes money and has no
     // payment, which is what a first completion Medusa's workflow engine left
     // unfinished leaves behind for a retry to find (SD-53). Flag on or off.
-    digitalProductOrderPaidStep(transform({ checkout }, (data) => ({ order_id: data.checkout.order_id })))
+    digitalProductOrderPaidStep(
+      transform({ checkout, input }, (data) => ({ cart_id: data.input.cart_id, order_id: data.checkout.order_id }))
+    )
 
     const id = transform({ checkout }, (data) => data.checkout.order_id)
 

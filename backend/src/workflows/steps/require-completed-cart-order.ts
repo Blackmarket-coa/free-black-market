@@ -94,9 +94,11 @@ async function readBack(
   orderId: string
 ): Promise<Pick<CartCompletionEvidence, "order" | "linked_order_id">> {
   const [{ data: orders }, { data: links }] = await Promise.all([
+    // Not the paid step's field list: the settlement specs tell that step's
+    // read apart by it.
     query.graph({
       entity: "order",
-      fields: ["id", "total", "payment_collections.payments.id"],
+      fields: ["id", "total", "payment_collections.id", "payment_collections.payments.id"],
       filters: { id: orderId },
     }),
     query.graph({ entity: "order_cart", fields: ["cart_id", "order_id"], filters: { cart_id: cartId } }),

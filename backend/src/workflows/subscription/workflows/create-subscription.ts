@@ -197,7 +197,9 @@ export const createSubscriptionWorkflow = createWorkflow(
     // SD-48: no subscription for an order that owes money and has no payment,
     // which is what a first completion Medusa's workflow engine left
     // unfinished leaves behind for a retry to find (SD-53). Flag on or off.
-    subscriptionOrderPaidStep(transform({ checkout }, (data) => ({ order_id: data.checkout.order_id })))
+    subscriptionOrderPaidStep(
+      transform({ checkout, input }, (data) => ({ cart_id: data.input.cart_id, order_id: data.checkout.order_id }))
+    )
 
     const id = transform({ checkout }, (data) => data.checkout.order_id)
 
