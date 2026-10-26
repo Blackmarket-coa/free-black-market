@@ -4,6 +4,7 @@ import { SELLER_MODULE } from "@mercurjs/b2c-core/modules/seller"
 import { PHASE0_FEATURE_FLAGS } from "../../src/shared/feature-flags"
 import { DIGITAL_PRODUCT_MODULE } from "../../src/modules/digital-product"
 import { ensureListingProduct } from "../../src/lib/blackout-listing-product"
+import { CART_COMPLETION_INCOMPLETE_MESSAGE } from "../../src/lib/cart-completion"
 import { cardOrderFixtures } from "./helpers/card-orders"
 import { checkoutRaceProbes } from "./helpers/checkout-race"
 import { trackSubscribers } from "./helpers/drain-subscribers"
@@ -262,6 +263,12 @@ medusaIntegrationTestRunner({
       return {
         result: run.result as any,
         errors: ((run.errors ?? []) as any[]).map((e) => `${e.action}: ${e.error?.message}`),
+        // SD-53: a refused completion's stable code and reason, kept by the engine's serialization.
+        refusals: ((run.errors ?? []) as any[]).map((e) => ({
+          action: e.action,
+          code: e.error?.code ?? null,
+          reason: e.error?.reason ?? null,
+        })),
       }
     }
 
@@ -961,10 +968,13 @@ medusaIntegrationTestRunner({
 
         const first = await checkout(cart.id)
         expect(stall.stalled()).toBe(true)
-        // completeCartWorkflow handed back no order: the link step refuses
-        // rather than read by an undefined id (which matches some order).
-        expect(first.errors).toEqual([
-          "link-digital-product-order-seller: Digital product checkout: the cart's completion returned no order; nothing linked, captured or delivered",
+        // completeCartWorkflow handed back no order: the shared guard refuses
+        // (SD-53, steps/require-completed-cart-order), before the link step
+        // could read by an undefined id (which matches some order). The
+        // buyer's message names no ids.
+        expect(first.errors).toEqual([`require-completed-cart-order: ${CART_COMPLETION_INCOMPLETE_MESSAGE}`])
+        expect(first.refusals).toEqual([
+          { action: "require-completed-cart-order", code: "cart_completion_incomplete", reason: "no_order_id" },
         ])
         // What the engine left: Medusa's completion unfinished (its
         // compensation never ends), the order and the cart's completion
@@ -974,13 +984,58 @@ medusaIntegrationTestRunner({
         expect((await container().resolve(Modules.CART).retrieveCart(cart.id)).completed_at).toBeTruthy()
         expect(await container().resolve(Modules.PAYMENT).listPayments({ payment_collection_id: collection.id })).toEqual([])
 
-        // A retry finds that order as a replay and refuses to deliver it.
+        // A retry finds that order as a replay, which skips the completion
+        // and the step after it; the paid check refuses it with the same
+        // code and message (SD-53).
         const retry = await checkout(cart.id)
-        expect(retry.errors).toEqual([
-          expect.stringMatching(/^digital-product-order-paid: Digital product order order_\w+ owes money and has no payment .*; nothing delivered$/),
+        expect(retry.errors).toEqual([`digital-product-order-paid: ${CART_COMPLETION_INCOMPLETE_MESSAGE}`])
+        expect(retry.refusals).toEqual([
+          { action: "digital-product-order-paid", code: "cart_completion_incomplete", reason: "order_unpaid" },
         ])
         expect(created).not.toHaveBeenCalled()
         expect(await liveSellerOrderLinks(seller.id)).toEqual([])
+        expect(stripe.authorizePayment).not.toHaveBeenCalled()
+        expect(stripe.capturePayment).not.toHaveBeenCalled()
+        expect(stripe.refundPayment).not.toHaveBeenCalled()
+      })
+
+      it("over the store route, the stalled checkout and its retry are answered 409 cart_completion_incomplete with the buyer's message and no ids; nothing delivered", async () => {
+        const pak = pakHeaders(await createPublishableKeyToken(getContainer))
+        const seller = await makeSeller()
+        const product = await makeProduct(seller.id, { digital: true })
+        const { cart, customer, collection } = await makeCart([product], { deliver: true })
+        const created = jest.spyOn(container().resolve(DIGITAL_PRODUCT_MODULE), "createDigitalProductOrders")
+        const stall = stallNextCartCompletion(container)
+
+        const first = await api.post(`/store/carts/${cart.id}/complete-digital`, {}, pak).catch((e: any) => e.response)
+        expect(stall.stalled()).toBe(true)
+        expect(first.status).toBe(409)
+        expect(first.data).toEqual({
+          code: "cart_completion_incomplete",
+          type: "cart_completion_incomplete",
+          message: CART_COMPLETION_INCOMPLETE_MESSAGE,
+          reason: "no_order_id",
+        })
+        expect((await clearStalledWorkflows(container, 1000)).map((w) => w.workflow_id)).toEqual(["complete-cart"])
+        const orders = await container().resolve(Modules.ORDER).listOrders({ customer_id: customer.id })
+        expect(orders).toHaveLength(1)
+
+        const retry = await api.post(`/store/carts/${cart.id}/complete-digital`, {}, pak).catch((e: any) => e.response)
+        expect(retry.status).toBe(409)
+        expect(retry.data).toEqual({
+          code: "cart_completion_incomplete",
+          type: "cart_completion_incomplete",
+          message: CART_COMPLETION_INCOMPLETE_MESSAGE,
+          reason: "order_unpaid",
+        })
+        for (const body of [first.data, retry.data]) {
+          expect(JSON.stringify(body)).not.toContain(cart.id)
+          expect(JSON.stringify(body)).not.toContain(orders[0].id)
+        }
+        expect(created).not.toHaveBeenCalled()
+        expect(await container().resolve(Modules.ORDER).listOrders({ customer_id: customer.id })).toHaveLength(1)
+        expect(await liveSellerOrderLinks(seller.id)).toEqual([])
+        expect(await container().resolve(Modules.PAYMENT).listPayments({ payment_collection_id: collection.id })).toEqual([])
         expect(stripe.authorizePayment).not.toHaveBeenCalled()
         expect(stripe.capturePayment).not.toHaveBeenCalled()
         expect(stripe.refundPayment).not.toHaveBeenCalled()
@@ -1014,11 +1069,13 @@ medusaIntegrationTestRunner({
 
           const first = await checkout(cart.id)
           expect(stall.stalled()).toBe(true)
-          // completeCartWorkflow handed back no order. The seller and capture
-          // steps read nothing with the flag off, so the paid check refuses,
-          // before the checkout's own order read could run on an undefined id.
-          expect(first.errors).toEqual([
-            "digital-product-order-paid: Digital product checkout: the cart's completion returned no order; nothing linked, captured or delivered",
+          // completeCartWorkflow handed back no order. The shared guard
+          // refuses whatever the flags say (SD-53), before the checkout's own
+          // order read could run on an undefined id; the paid check behind it
+          // (SD-53 (c)) stays the last word before delivery.
+          expect(first.errors).toEqual([`require-completed-cart-order: ${CART_COMPLETION_INCOMPLETE_MESSAGE}`])
+          expect(first.refusals).toEqual([
+            { action: "require-completed-cart-order", code: "cart_completion_incomplete", reason: "no_order_id" },
           ])
           expect((await clearStalledWorkflows(container, 1000)).map((w) => w.workflow_id)).toEqual(["complete-cart"])
           const orders = await container().resolve(Modules.ORDER).listOrders({ customer_id: customer.id })
@@ -1029,8 +1086,9 @@ medusaIntegrationTestRunner({
           // The retry gets that order back from completeCartWorkflow, which
           // authorizes nothing on a completed cart, and is refused.
           const retry = await checkout(cart.id)
-          expect(retry.errors).toEqual([
-            `digital-product-order-paid: Digital product order ${orders[0].id} owes money and has no payment (its completion stopped before the card was authorized, or has not got there yet); nothing delivered`,
+          expect(retry.errors).toEqual([`require-completed-cart-order: ${CART_COMPLETION_INCOMPLETE_MESSAGE}`])
+          expect(retry.refusals).toEqual([
+            { action: "require-completed-cart-order", code: "cart_completion_incomplete", reason: "order_unpaid" },
           ])
           expect(created).not.toHaveBeenCalled()
           const order = await readOrder(orders[0].id)

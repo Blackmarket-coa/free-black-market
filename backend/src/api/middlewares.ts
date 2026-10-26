@@ -1540,9 +1540,10 @@ export default defineMiddlewares({
       method: "POST",
       middlewares: [validateAndTransformBody(PostCartItemsRentalsBody)],
     },
-    // SD-53: the main checkout. Mercur's route answers with its order set
-    // even when Medusa's workflow engine has left the completion unfinished;
-    // that answer is replaced with 409 cart_completion_incomplete
+    // SD-53: the main checkout. Mercur's route does not check that its run
+    // finished (a stalled one was answered 500); while the completion is
+    // still unfinished after a settle window, whatever it answered is
+    // replaced with 409 cart_completion_incomplete
     // (src/api/middlewares/cart-completion-finished.ts).
     {
       matcher: "/store/carts/:id/complete",

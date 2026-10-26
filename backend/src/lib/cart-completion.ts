@@ -25,7 +25,10 @@ import { MathBN, MedusaError, TransactionState } from "@medusajs/framework/utils
  * themselves. The step that gathers the evidence and throws is
  * `workflows/steps/require-completed-cart-order.ts`, called right after
  * `completeCartWorkflow.runAsStep` in every FBM workflow that completes a cart;
- * the middleware that refuses the same state on Mercur's
+ * the digital and subscription checkouts' paid step decides with it too, for
+ * the replay that skips the completion
+ * (`workflows/subscription/steps/subscription-order-settlement.ts`); the
+ * middleware that refuses the same state on Mercur's
  * `POST /store/carts/:id/complete` is `api/middlewares/cart-completion-finished.ts`.
  *
  * What the buyer is told holds on every path. Nothing is captured, delivered,
