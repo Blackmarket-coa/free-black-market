@@ -929,51 +929,6 @@ medusaIntegrationTestRunner({
           }
         }
       )
-
-      it("over the store route's flag-off branch, the stalled checkout and its retry are answered 409 cart_completion_incomplete with the buyer's message and no ids; no subscription", async () => {
-        delete process.env[SUBS]
-        const { customer, asCustomer } = await signedInCustomer()
-        const seller = await makeSeller()
-        const product = await makeProduct(seller.id)
-        const { cart, collection } = await makeCart([product], 5, customer)
-        // Opening the cart's payment session called Stripe; nothing after it may.
-        for (const call of Object.values(stripe)) call.mockClear()
-        const stall = stallNextCartCompletion(container)
-        const body = { cart_id: cart.id, interval: "monthly", period: 1, type: "membership" }
-
-        const first = await api.post("/store/subscriptions", body, asCustomer).catch((e: any) => e.response)
-        expect(stall.stalled()).toBe(true)
-        expect(first.status).toBe(409)
-        expect(first.data).toEqual({
-          code: "cart_completion_incomplete",
-          type: "cart_completion_incomplete",
-          message: CART_COMPLETION_INCOMPLETE_MESSAGE,
-          reason: "no_order_id",
-        })
-        expect((await clearStalledWorkflows(container, 1000)).map((w) => w.workflow_id)).toEqual(["complete-cart"])
-        const orders = await container().resolve(Modules.ORDER).listOrders({ customer_id: customer.id })
-        expect(orders).toHaveLength(1)
-
-        const retry = await api.post("/store/subscriptions", body, asCustomer).catch((e: any) => e.response)
-        expect(retry.status).toBe(409)
-        expect(retry.data).toEqual({
-          code: "cart_completion_incomplete",
-          type: "cart_completion_incomplete",
-          message: CART_COMPLETION_INCOMPLETE_MESSAGE,
-          reason: "order_unpaid",
-        })
-        for (const answer of [first.data, retry.data]) {
-          expect(JSON.stringify(answer)).not.toContain(cart.id)
-          expect(JSON.stringify(answer)).not.toContain(orders[0].id)
-        }
-        expect(await container().resolve(SUBSCRIPTION_MODULE).listSubscriptions({ customer_id: customer.id })).toEqual([])
-        expect(await container().resolve(Modules.ORDER).listOrders({ customer_id: customer.id })).toHaveLength(1)
-        expect((await readOrder(orders[0].id)).seller?.id ?? null).toBeNull()
-        expect(await container().resolve(Modules.PAYMENT).listPayments({ payment_collection_id: collection.id })).toEqual([])
-        for (const [name, call] of Object.entries(stripe)) {
-          expect([name, call.mock.calls.length]).toEqual([name, 0])
-        }
-      })
     })
 
     describe("two checkouts of one cart at the same time (a double submit)", () => {

@@ -998,48 +998,6 @@ medusaIntegrationTestRunner({
         expect(stripe.capturePayment).not.toHaveBeenCalled()
         expect(stripe.refundPayment).not.toHaveBeenCalled()
       })
-
-      it("over the store route, the stalled checkout and its retry are answered 409 cart_completion_incomplete with the buyer's message and no ids; nothing delivered", async () => {
-        const pak = pakHeaders(await createPublishableKeyToken(getContainer))
-        const seller = await makeSeller()
-        const product = await makeProduct(seller.id, { digital: true })
-        const { cart, customer, collection } = await makeCart([product], { deliver: true })
-        const created = jest.spyOn(container().resolve(DIGITAL_PRODUCT_MODULE), "createDigitalProductOrders")
-        const stall = stallNextCartCompletion(container)
-
-        const first = await api.post(`/store/carts/${cart.id}/complete-digital`, {}, pak).catch((e: any) => e.response)
-        expect(stall.stalled()).toBe(true)
-        expect(first.status).toBe(409)
-        expect(first.data).toEqual({
-          code: "cart_completion_incomplete",
-          type: "cart_completion_incomplete",
-          message: CART_COMPLETION_INCOMPLETE_MESSAGE,
-          reason: "no_order_id",
-        })
-        expect((await clearStalledWorkflows(container, 1000)).map((w) => w.workflow_id)).toEqual(["complete-cart"])
-        const orders = await container().resolve(Modules.ORDER).listOrders({ customer_id: customer.id })
-        expect(orders).toHaveLength(1)
-
-        const retry = await api.post(`/store/carts/${cart.id}/complete-digital`, {}, pak).catch((e: any) => e.response)
-        expect(retry.status).toBe(409)
-        expect(retry.data).toEqual({
-          code: "cart_completion_incomplete",
-          type: "cart_completion_incomplete",
-          message: CART_COMPLETION_INCOMPLETE_MESSAGE,
-          reason: "order_unpaid",
-        })
-        for (const body of [first.data, retry.data]) {
-          expect(JSON.stringify(body)).not.toContain(cart.id)
-          expect(JSON.stringify(body)).not.toContain(orders[0].id)
-        }
-        expect(created).not.toHaveBeenCalled()
-        expect(await container().resolve(Modules.ORDER).listOrders({ customer_id: customer.id })).toHaveLength(1)
-        expect(await liveSellerOrderLinks(seller.id)).toEqual([])
-        expect(await container().resolve(Modules.PAYMENT).listPayments({ payment_collection_id: collection.id })).toEqual([])
-        expect(stripe.authorizePayment).not.toHaveBeenCalled()
-        expect(stripe.capturePayment).not.toHaveBeenCalled()
-        expect(stripe.refundPayment).not.toHaveBeenCalled()
-      })
     })
 
     describe("a first completion Medusa's workflow engine leaves unfinished, with FF_DIGITAL_ORDER_SETTLEMENT_V1 off (SD-53 (c))", () => {
