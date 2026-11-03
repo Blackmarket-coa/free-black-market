@@ -6,6 +6,8 @@ canonical for its own scope:
 
 | Scope | Canonical document |
 | --- | --- |
+| Product north star — buyer/seller value, repeat utility, trust principles, and sequencing | `docs/FBM_PRODUCT_STRATEGY.md` |
+| --- | --- |
 | Consolidation decisions (D1–D8), the W1–W6 workstreams, legal gates | `docs/REPO_CONSOLIDATION_REVIEW.md` |
 | Commerce build priority — B2B and community pivot | `docs/COMMERCE_ROADMAP.md` |
 | CDFI lending, co-op formation, farmers-market compliance, mutual aid, co-op delivery, time banking — the market-connections cluster reconciled against the code | `docs/CDFI_COOP_ROADMAP.md` |
@@ -17,6 +19,8 @@ revision. That revision is `docs/COMMERCE_ROADMAP.md` (2026-09-02), which
 also reconciles the commerce backlog against the code.
 
 ## Near-term (0–3 months)
+
+Execution should be guided by `docs/FBM_PRODUCT_STRATEGY.md`: prioritize immediate buyer/seller painkillers (delivered-cost clarity, trustworthy product/seller information, local and shipping comparisons, fast vendor activation, sharing, and useful activity summaries). This is a product-priority lens; the domain roadmaps below remain authoritative for verified technical gaps and release gates.
 
 - **Make B2B transactable** — Tier 1 of `docs/COMMERCE_ROADMAP.md`: the
   priced quote object, net-terms enforcement (accounts receivable), and a
