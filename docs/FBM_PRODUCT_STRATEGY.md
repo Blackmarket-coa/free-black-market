@@ -1,5 +1,8 @@
 # FBM Product Strategy: Painkiller, Not a Vitamin
 
+> **2026-11-03 decision update:** [FBM Resource Exchange Mission and Implementation Charter](docs/FBM_RESOURCE_EXCHANGE_CHARTER.md) is authoritative for FBM's shift to goal-first resource allocation and composable sale, barter, gift, pooled-buy, lending and cooperative tools. Fixed decisions: flat 3% commission after processing-fee deduction; **no subscriptions** (one-time software purchases and transparent at-cost hosted usage); E2EE never paywalled; national/international quest scope; AGPL-3.0 compatibility; Capacitor app wrappers using synced web checkout. **Any monthly plan, subscription entitlement, KARMA-based fee variation, ideological mode or state-only quest rule below is historical and superseded, not approved future pricing or behavior.** Existing code/deployment status has **not** been re-audited by this documentation change. Flag contradictions for audit; do not claim implementation or remove production billing without an approved migration.
+
+
 **Status:** Canonical product direction  
 **Last updated:** 2026-11-03  
 **Tracking:** [GitHub issue #912](https://github.com/Blackmarket-coa/free-black-market/issues/912)
