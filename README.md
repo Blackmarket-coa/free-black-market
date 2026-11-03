@@ -68,6 +68,10 @@ FBM is useful to you if you want to:
 └── README.md
 ```
 
+## Product Direction
+
+FBM's product north star is **"Painkiller, Not a Vitamin"**: solve recurring buyer and seller problems with transparent costs, useful market intelligence, independent business tools, and community-connected commerce. The strategy is documented in [docs/FBM_PRODUCT_STRATEGY.md](docs/FBM_PRODUCT_STRATEGY.md) and tracked in [GitHub issue #912](https://github.com/Blackmarket-coa/free-black-market/issues/912). It is product direction, not a claim that every capability is shipped; see capability and readiness docs for implementation status.
+
 ## What's Actually Here
 
 - **Core commerce** (`backend`, `admin-panel`, `vendor-panel`, `storefront`):
@@ -271,6 +275,7 @@ Include exact commands and outcomes in your PR description.
 
 ## Where to Look Next
 
+- Product strategy (buyer/seller outcomes, product principles, habit loops, priorities): `docs/FBM_PRODUCT_STRATEGY.md`
 - Platform docs index: `docs/README.md`
 - Composition layer (playbooks, ledger, Refrain/Threshold/Blackstar): `docs/COMPOSITION_LAYER.md`
 - Compliance posture: `docs/POSTURE_A_COMPLIANCE.md`
