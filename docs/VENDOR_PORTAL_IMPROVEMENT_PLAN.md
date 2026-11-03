@@ -471,3 +471,35 @@ Status sync note: Week 0 setup checklist is marked complete to match the publish
 2. [x] Convert Ticket Seed List into sprint-sized stories with acceptance tests.
 3. [x] Stand up KPI dashboard with baseline instrumentation for pilot vendors.
 4. Run first end-to-end dry run: create product -> place order -> forward supplier -> record ledger events -> export reports.
+
+
+---
+
+## Product strategy alignment — 2026-11-03
+
+**Vendor promise:** Make it easier for an independent operator to launch, sell, fulfill, understand performance, and retain control of their business. The [FBM Product Strategy](FBM_PRODUCT_STRATEGY.md) is the product north star; this plan continues to describe operational implementation work.
+
+### Daily-use vendor workflow
+
+The primary dashboard should answer: **What needs attention today?** Prioritize actionable orders, shipment exceptions, inventory shortages, customer messages, payout/fee reconciliation, and opportunities to improve listings or reach buyers. Avoid vanity metrics without a clear action.
+
+### Priority outcomes and release criteria
+
+| Outcome | Proposed requirement | Evidence of success |
+| --- | --- | --- |
+| Launch with less friction | Minimal first-listing path, saved progress, understandable defaults, accessible help | Signup-to-first-live-listing conversion and time-to-first-listing |
+| Operate reliably | Unified actionable queue for orders, fulfillment, inventory, and exceptions | Task completion rate, fewer unresolved exceptions, order accuracy |
+| Understand the economics | Itemized payment processing, Coalition fee, refunds, payouts, and exportable records | Reconciliation accuracy and fewer fee-related support tickets |
+| Reach customers | Shareable listings, discovery visibility, marketing insights, and creator collaboration where supported | Qualified visits, repeat orders, attributable revenue |
+| Preserve independence | Export products, orders, and permitted customer/business records in documented formats | Successful export tests and reduced migration friction |
+| Find supply and partners | Surface relevant B2B requests and supplier opportunities after core operations are reliable | Qualified trade matches and repeat supplier relationships |
+
+**Fee communication:** Payment-processing fees are deducted from the sale before calculating the seller share; the **3% Coalition fee** covers basic platform costs. Any additional future offering must be separately described and must not be presented as an existing charge. Test fee examples against actual settlement logic before publishing them.
+
+### Implementation boundaries
+
+Keep onboarding, transaction operations, and reporting ahead of optional gamification or broad automation. Treat AI assistance, cross-channel imports, marketing intelligence, supplier matching, financing, and nonprofit workflows as separately gated capabilities; do not mark them delivered solely because they appear in this plan. Financial products and donation flows require applicable operational and compliance review. Respect tenant isolation and permissions for exports and customer data.
+
+### Measurement
+
+Track weekly active vendors performing a useful action, first-listing and first-sale time, order exception resolution, repeat revenue, fee comprehension, and export reliability. Pair each dashboard metric with a concrete vendor action. Existing milestones and checkboxes elsewhere in this document retain their recorded status; this section does not independently verify implementation.
