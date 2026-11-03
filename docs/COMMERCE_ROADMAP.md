@@ -424,3 +424,27 @@ in §8, no one reading the canonical gate list will honour them.
   roadmap item ships a module.
 - Consolidation decisions and W-workstreams stay in
   `docs/REPO_CONSOLIDATION_REVIEW.md`.
+
+
+---
+
+## Product-outcome prioritization overlay — 2026-11-03
+
+See [FBM Product Strategy](FBM_PRODUCT_STRATEGY.md). This overlay prioritizes **new user-facing work**; it does not change code-verified shipped status, supersede consolidation decisions, or waive legal/release gates recorded elsewhere in this roadmap.
+
+| Order | Buyer or seller pain | Next deliverable to validate | Exit evidence |
+| --- | --- | --- | --- |
+| P0 | Buyers cannot see true cost or compare offers confidently | Delivered-cost component model, comparison UI, explicit missing-data states | End-to-end comparison tests, accurate breakdowns |
+| P0 | Buyers cannot judge product and seller claims | Provenance/verification display with source and date | Claim-type separation and auditability |
+| P0 | Vendors struggle to start and operate | First-listing funnel and daily actionable operations dashboard | Activation, task completion, exception resolution |
+| P1 | Local/independent supply is hard to find | Location-aware discovery and shipping tradeoff display | Relevant results and delivery estimate accuracy |
+| P1 | Sharing rarely leads to collective action | Product sharing linked to existing demand-pool entry points | Share-to-demand-pool usage and conversion |
+| P1 | Vendors lack clear economics and reach | Fee/payout explanation, export, basic marketing performance | Reconciliation and repeat-revenue measures |
+| P2 | Fragmented purchasing and sourcing | Group purchase, B2B procurement and supplier matching | Fulfilled group orders and qualified trade matches |
+| P2 | Hard-to-use advanced infrastructure | Financing, nonprofit workflows, broader economic services | Separate compliance clearance and measured demand |
+
+**Ordering rule:** ship the smallest reliable workflow that removes a recurring cost, uncertainty, or administrative burden. Reuse existing modules and APIs where viable; avoid duplicate subsystems. A module's existence does not mean its customer journey is complete. Before implementation, verify the code and update the existing status inventory.
+
+**Guardrails:** Never fabricate savings, delivery, verification, environmental impact, or health claims. Compare full delivered costs with uncertainty visible. Keep sensitive affiliation disclosures voluntary and sourced; do not infer political beliefs. Maintain the current fee policy: processing fees come out before the seller share is calculated, and the 3% Coalition fee covers basic platform costs. Preserve existing compliance and settlement gates.
+
+**Outcome measures:** repeat buyer comparisons, comparison-to-purchase, verified savings with defensible baselines, on-time delivery, seller time-to-first-sale, weekly useful vendor actions, repeat vendor revenue, successful trade matches, and unresolved operational exceptions.
