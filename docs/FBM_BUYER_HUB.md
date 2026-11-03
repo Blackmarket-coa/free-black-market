@@ -500,3 +500,32 @@ progression, unfulfilled demand routing to mutual aid or vendor acquisition, bar
 first-class, visible ledger as the trust mechanic, recurring order-cycle relationships,
 inbound aggregation for cold-start liquidity — are the hypothesis being tested, not a
 footnote. Treat them as prioritized over feature-parity with any competitor.
+
+
+---
+
+## Product strategy alignment — 2026-11-03
+
+**North star:** The Buyer Hub must solve an everyday purchasing problem before asking buyers to adopt collective-commerce mechanics. See [FBM Product Strategy](FBM_PRODUCT_STRATEGY.md). This section is product direction, **not** a statement that the following capabilities have shipped.
+
+### Buyer jobs, ordered by immediate utility
+
+1. **Compare before buying:** show comparable products with item price, shipping, fees, estimated tax where available, expected delivery window, and a clearly labeled **estimated delivered total**. Never label an incomplete estimate as a final checkout price.
+2. **Decide whom to trust:** display seller-provided provenance and product attributes separately from independently verified information, with sources and verification dates.
+3. **Find practical alternatives:** enable local, lower-cost, faster, and lower-impact discovery, with transparent tradeoffs rather than a single opaque ranking.
+4. **Share and coordinate:** let buyers share a useful find and move toward a group purchase or demand pool without losing product context.
+5. **Track outcomes:** provide order/shipment status and useful price or availability changes, with notification controls.
+
+### Acceptance criteria for the first buyer-facing release
+
+- A buyer can compare at least two eligible offers using consistent cost components; missing shipping, tax, or delivery information is explicitly marked unknown.
+- The buyer can identify the source of each seller or product claim and distinguish a declaration from a verified attribute.
+- A buyer can find and share a product or offer, and can access existing demand-pool functionality without implying the planned unified Buyer Hub is live.
+- The interface explains when a local or lower-impact option costs more or arrives later.
+- Instrument comparison-to-purchase, comparison coverage, repeat comparison usage, and verified savings **only when a defensible baseline exists**.
+
+### Claims and data boundaries
+
+Do not infer political affiliation or other sensitive beliefs from purchases or seller behavior. Any values or affiliation disclosure must be voluntary, sourced, dated, and editable. Avoid “chemical-free” or unsubstantiated health/environmental claims. Product data, delivery estimates, and impact statements must carry provenance or a clear uncertainty label. Group-buy, escrow, and financing experiences must respect the existing entitlement and legal gates described above.
+
+**Sequencing:** first establish reliable comparison and trust information, then connect discovery and sharing to the existing demand-pool surfaces, and only then pursue a unified Buyer Hub and more sophisticated group-purchase experience. Existing code-backed status tables remain authoritative until reverified.
