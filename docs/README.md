@@ -5,6 +5,8 @@ This index organizes project docs by purpose. Start with the repo-root
 
 ## Platform Architecture & Economy
 
+- `docs/FBM_PRODUCT_STRATEGY.md` — canonical product north star: buyer and seller outcomes, pain points, recurring utility, product principles, trust/claims rules, success measures, and implementation sequence (tracked in GitHub issue #912)
+
 - `docs/COMPOSITION_LAYER.md` — how playbooks, listing-types, hawala ledger,
   Refrain, Threshold, and Blackstar share infrastructure and present distinct
   surfaces
@@ -90,6 +92,8 @@ This index organizes project docs by purpose. Start with the repo-root
   integration work orders
 
 ## Planning & Strategy
+
+- `docs/FBM_PRODUCT_STRATEGY.md` — product-level north star; use it to prioritize user value while keeping technical roadmaps and compliance gates authoritative for their own scope
 
 - `docs/REPO_CONSOLIDATION_REVIEW.md` — canonical 2026-08-28 seven-repo
   consolidation review: audit verdicts, decisions (ledger, identity,
