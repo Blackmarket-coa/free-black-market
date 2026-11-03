@@ -518,3 +518,35 @@ This track should run before or in parallel with larger platform modules.
 - Onboarding time-to-first-sale
 - Training completion rates and merchant retention
 - Promo campaign adoption and incremental GMV
+
+
+---
+
+## Cross-cutting product strategy acceptance plan — 2026-11-03
+
+The [canonical FBM Product Strategy](docs/FBM_PRODUCT_STRATEGY.md) adds a practical buyer-and-seller utility test to the farm-commerce workstreams in this plan. These are **proposed requirements**, not shipped-feature claims.
+
+### First-wave implementation slices
+
+| Slice | Minimum testable behavior | Acceptance tests / instrumentation |
+| --- | --- | --- |
+| B1. Delivered-cost comparison | Comparable offer totals with item price, shipping, fees, taxes when known, and delivery estimates | Missing values never appear as zero; totals reconcile with checkout where final inputs are available; comparison usage recorded |
+| B2. Trust and product information | Seller-provided and independently verified claims visibly separated; source/date where available | Unsupported claims not labeled verified; provenance accessible; corrections propagate |
+| B3. Local and shipping discovery | Relevant local offers and transparent cost/speed tradeoffs | Location consent respected; no fabricated delivery estimates; ranking rationale shown |
+| B4. Sharing to demand | Share product/offer context and link into existing demand-pool workflow | Shared links resolve; permissions and eligibility gates enforced; conversion measured |
+| V1. Fast vendor activation | Minimal signup-to-first-listing flow with autosave and clear recovery | Instrument each step; test completion and accessibility; preserve existing TTFLL release gates |
+| V2. Actionable vendor dashboard | Orders, exceptions, inventory, payouts, and next actions prioritized | Vendor can complete critical tasks; correct tenant boundaries; exceptions measurable |
+| V3. Fee clarity and portability | Accurate fee/payout breakdown and permitted business-data exports | Settlement examples reconcile; export is complete within documented scope; access controls tested |
+
+### Definition of done for each slice
+
+1. Identify the user pain and the existing code/module to reuse; record any missing backend, UI, data, or operational dependency.
+2. Write one end-to-end journey with success, failure, missing-data, and accessibility states.
+3. Add automated tests for pricing, claims, permissions, and transaction-sensitive paths where applicable.
+4. Instrument a **useful outcome**, not merely page views or registrations; define its baseline and denominator.
+5. Verify privacy, tenant isolation, data export permissions, and applicable legal gates before release.
+6. Update code-backed status documentation after deployment; **planned**, **in progress**, and **shipped** must remain distinct.
+
+**Commercial and claims rules:** Processing fees are deducted before seller-share calculation; the 3% Coalition fee covers basic platform costs. Do not invent savings, product verification, delivery promises, or impact. Sensitive affiliation disclosures must be voluntary and sourced, not inferred. Avoid “chemical-free” and unsupported health/environmental claims.
+
+**Priority tradeoff:** Do not delay a working buyer comparison or seller operations fix for speculative financing, elaborate progression mechanics, or new infrastructure when an existing module can satisfy the need. Keep the farm-specific operational work below as its own implementation track.
