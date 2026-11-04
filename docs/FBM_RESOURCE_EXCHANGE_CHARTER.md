@@ -1,5 +1,7 @@
 # FBM Resource Exchange Mission and Implementation Charter
 
+> **MVP scope (2026-11-03):** [FBM Resource Exchange MVP](FBM_RESOURCE_EXCHANGE_MVP.md) defines the first-session journey, four target exchange primitives, regional pilot, privacy and legal gates, release criteria, and metrics. This is a proposed acceptance contract, **not a claim of deployed functionality**.
+
 **Decision date:** 2026-11-03  
 **Status:** Approved product direction; implementation status unverified.  
 **Authority:** This charter supersedes conflicting earlier product/pricing direction. If implementation contradicts a decision, report the conflict; do not silently revise the decision. See [FBM Product Strategy](FBM_PRODUCT_STRATEGY.md).
