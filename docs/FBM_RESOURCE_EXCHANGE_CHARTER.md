@@ -1,5 +1,7 @@
 # FBM Resource Exchange Mission and Implementation Charter
 
+> **AI-first readiness process:** [Full-platform audit, repair and feature visibility plan](FBM_AI_FIRST_AUDIT_AND_REPAIR_PLAN.md) defines how to verify every journey, finish small repairs, hide and preserve incomplete capabilities, and escalate only necessary human decisions. This plan has **not yet been executed**.
+
 > **MVP scope (2026-11-03):** [FBM Resource Exchange MVP](FBM_RESOURCE_EXCHANGE_MVP.md) defines the first-session journey, four target exchange primitives, regional pilot, privacy and legal gates, release criteria, and metrics. This is a proposed acceptance contract, **not a claim of deployed functionality**.
 
 **Decision date:** 2026-11-03  
