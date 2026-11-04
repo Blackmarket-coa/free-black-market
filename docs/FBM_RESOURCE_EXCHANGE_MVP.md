@@ -1,5 +1,7 @@
 # FBM Minimum Viable Product — Resource Exchange Pilot
 
+> **AI-first readiness process:** [Full-platform audit, repair and feature visibility plan](FBM_AI_FIRST_AUDIT_AND_REPAIR_PLAN.md) defines how to verify every journey, finish small repairs, hide and preserve incomplete capabilities, and escalate only necessary human decisions. This plan has **not yet been executed**.
+
 **Date:** 2026-11-03  
 **Status:** Proposed MVP scope and acceptance contract; **not** an implementation or deployment claim.  
 **Authority:** [Resource Exchange Charter](FBM_RESOURCE_EXCHANGE_CHARTER.md) and [Product Strategy](FBM_PRODUCT_STRATEGY.md). Conflicting legacy pricing or feature claims are superseded by the charter.
