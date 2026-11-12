@@ -75,6 +75,12 @@ FBM is useful to you if you want to:
 
 ## Product Direction
 
+**The social safety net built with the community, for the community.**
+
+The [unified member portal plan](docs/FBM_UNIFIED_MEMBER_PORTAL_PLAN.md) defines the next experience: one signed-in online farmers market where a member can buy, sell, trade and participate in goods auctions. Character creation learns real-life goals/resources and automatically assembles a useful starter portal. Game view is standard; native enhancements, plugins, settings, modules and portal builds are functional equipment with one-time purchases and no subscriptions. Paid recommendations are optional; accepting a starter build causes no purchase.
+
+Reuse existing FBM implementations first, Blackout Coalition for the shared real-world map and coordination, and Blackstar for transport operations. Extend or wire verified partials before adding compatible OSS. The separate storefront/vendor/vertical apps listed below describe current code, not a requirement to preserve separate member portals.
+
 FBM's product north star is **"Painkiller, Not a Vitamin"**: solve recurring buyer and seller problems with transparent costs, useful market intelligence, independent business tools, and community-connected commerce. The strategy is documented in [docs/FBM_PRODUCT_STRATEGY.md](docs/FBM_PRODUCT_STRATEGY.md) and tracked in [GitHub issue #912](https://github.com/Blackmarket-coa/free-black-market/issues/912). It is product direction, not a claim that every capability is shipped; see capability and readiness docs for implementation status.
 
 ## What's Actually Here
@@ -280,6 +286,7 @@ Include exact commands and outcomes in your PR description.
 
 ## Where to Look Next
 
+- Unified member experience, character creation and automatic portal builds: [docs/FBM_UNIFIED_MEMBER_PORTAL_PLAN.md](docs/FBM_UNIFIED_MEMBER_PORTAL_PLAN.md)
 - Product strategy (buyer/seller outcomes, product principles, habit loops, priorities): `docs/FBM_PRODUCT_STRATEGY.md`
 - Platform docs index: `docs/README.md`
 - Composition layer (playbooks, ledger, Refrain/Threshold/Blackstar): `docs/COMPOSITION_LAYER.md`

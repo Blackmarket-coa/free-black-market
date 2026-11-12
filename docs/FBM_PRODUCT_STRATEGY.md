@@ -1,10 +1,12 @@
 # FBM Product Strategy: Painkiller, Not a Vitamin
 
-> **2026-11-03 decision update:** [FBM Resource Exchange Mission and Implementation Charter](docs/FBM_RESOURCE_EXCHANGE_CHARTER.md) is authoritative for FBM's shift to goal-first resource allocation and composable sale, barter, gift, pooled-buy, lending and cooperative tools. Fixed decisions: flat 3% commission after processing-fee deduction; **no subscriptions** (one-time software purchases and transparent at-cost hosted usage); E2EE never paywalled; national/international quest scope; AGPL-3.0 compatibility; Capacitor app wrappers using synced web checkout. **Any monthly plan, subscription entitlement, KARMA-based fee variation, ideological mode or state-only quest rule below is historical and superseded, not approved future pricing or behavior.** Existing code/deployment status has **not** been re-audited by this documentation change. Flag contradictions for audit; do not claim implementation or remove production billing without an approved migration.
+> **2026-11-12 experience decision:** [Unified member portal and character-build plan](FBM_UNIFIED_MEMBER_PORTAL_PLAN.md) is canonical for one signed-in buying/selling/trading/auction experience, a character-creation survey that automatically builds a simple working portal, standard game view, functional equipment with one-time purchases, and reuse of Blackout Coalition and Blackstar. This is implementation direction, not a shipped/deployed claim. Existing pricing, privacy and release gates remain in force.
+
+> **2026-11-03 decision update:** [FBM Resource Exchange Mission and Implementation Charter](FBM_RESOURCE_EXCHANGE_CHARTER.md) is authoritative for FBM's shift to goal-first resource allocation and composable sale, barter, gift, pooled-buy, lending and cooperative tools. Fixed decisions: flat 3% commission after processing-fee deduction; **no subscriptions** (one-time software purchases and transparent at-cost hosted usage); E2EE never paywalled; national/international quest scope; AGPL-3.0 compatibility; Capacitor app wrappers using synced web checkout. **Any monthly plan, subscription entitlement, KARMA-based fee variation, ideological mode or state-only quest rule below is historical and superseded, not approved future pricing or behavior.** Existing code/deployment status has **not** been re-audited by this documentation change. Flag contradictions for audit; do not claim implementation or remove production billing without an approved migration.
 
 
 **Status:** Canonical product direction  
-**Last updated:** 2026-11-03  
+**Last updated:** 2026-11-12  
 **Tracking:** [GitHub issue #912](https://github.com/Blackmarket-coa/free-black-market/issues/912)
 
 ## 1. Product thesis
@@ -16,6 +18,14 @@ Free Black Market (FBM) should be a **painkiller, not a vitamin**. It must solve
 The goal is not simply to move transactions from one marketplace to another. FBM should make independent economic participation practical, accessible, and rewarding.
 
 This document defines product direction. It does not assert that every described capability is implemented or production-ready. Use code, tests, operational evidence, and the relevant capability documentation to establish current status.
+
+## Unified member experience — 2026-11-12
+
+Buyer, seller, trader, organizer and transporter are activities of the same member. Character creation asks about real-life goals/resources/preferences, reveals an editable starter configuration and automatically builds the working portal. The result is one online farmers market with a personal base, market, stall, exchanges, Commons and Toolkit; there is no mandatory buy/sell mode switch.
+
+Game view is standard. Functional equipment is native enhancements, plugins, settings kits, modules and portal builds. Use free/owned starter tools and optional earned/one-time purchased upgrades; buying an enhancement neither changes commission nor grants an otherwise unauthorized capability. Keep customer/seller/team records and permissions distinct underneath the shared experience.
+
+Reuse ResourceQuiz, recommendations, playbooks, progression and entitlement/install mechanisms first. Coalition supplies the existing map and community coordination; Blackstar supplies transport operations. Map new requirements to inspected code before selecting OSS. The [implementation plan](FBM_UNIFIED_MEMBER_PORTAL_PLAN.md) defines source evidence, migration issues and acceptance criteria.
 
 ## 2. The users and the jobs FBM must do
 
@@ -170,7 +180,14 @@ Measure repeat utility and user outcomes, not registrations alone.
 
 Prioritize the first set of painkillers before attempting the entire economic ecosystem. Sequence is a product priority, not a statement of current implementation status.
 
-### First wave: immediate, repeatable value
+### First wave: character build to useful portal
+
+1. Deliver survey → reasoned starter preview → automatically configured unified portal → one real action as a single slice.
+2. Keep buying available during progressive seller setup; preserve correct actor/team permissions and existing records.
+3. Wire free/owned equipment to real tools before monetizing enhancements; publish explicit one-time pricing and safe reward/install recovery.
+4. Reuse Coalition map/coordination and Blackstar transport setup rather than building parallel systems.
+
+The following buyer/seller outcomes are delivered inside that shared experience, not as separate new portals:
 
 1. Full delivered-cost breakdown and transparent price comparison.
 2. Product and seller transparency, trust information, and clear claim provenance.
@@ -199,7 +216,8 @@ This strategy is the product-level north star. It does not replace domain-specif
 
 - [docs/COMMERCE_ROADMAP.md](COMMERCE_ROADMAP.md) remains canonical for verified commerce build priorities and code-reconciled gaps.
 - [FEATURE_BUILD_PLAN.md](../FEATURE_BUILD_PLAN.md) remains the operational feature build plan.
-- [docs/FBM_BUYER_HUB.md](FBM_BUYER_HUB.md) remains the buyer-hub specification.
+- [FBM_UNIFIED_MEMBER_PORTAL_PLAN.md](FBM_UNIFIED_MEMBER_PORTAL_PLAN.md) is canonical for the current experience and delivery sequence.
+- [docs/FBM_BUYER_HUB.md](FBM_BUYER_HUB.md) describes demand-side capabilities composed into the unified portal and embeds.
 - [docs/CREATOR_COMMERCE_ROADMAP.md](CREATOR_COMMERCE_ROADMAP.md) remains the creator-commerce plan.
 - [docs/ADDON_COMMITMENTS.md](ADDON_COMMITMENTS.md) remains authoritative for fee/add-on commitments.
 - [docs/POSTURE_A_COMPLIANCE.md](POSTURE_A_COMPLIANCE.md) and recorded legal gates remain mandatory for money-touching work.
