@@ -1,79 +1,65 @@
 # asset-graph
 
-The intake/declaration layer for FBM. Members declare what they have
-(land, tools, equipment, skills, time, capital, credentials, output
-capacity); project manifests match those declarations to compositions
-of the existing `playbook` and `listing-type` substrate.
+The intake/declaration layer for FBM. Members declare land, tools, equipment,
+skills, time, capital, credentials and output capacity. Project manifests
+compose the existing playbook and listing-type substrate.
 
-This module is v0: **schema and reference manifests, no live engine,
-no DB migration.** Persistence lands in v0.1.
+## Implementation status — 2026-11-12
+
+Substantive matching and persistence code exists. Earlier statements that this
+module has no engine or migration are superseded by the source inventory below.
+Code presence does not establish deployment, applied migrations, actual resource
+availability or a completed tool-library/repair-cafe service.
+
+| Area | Existing implementation | Remaining verification |
+| --- | --- | --- |
+| Catalogs | Asset kinds, manifest schema and reference manifests. | Confirm catalog seed in the intended database. |
+| Persistence | Models, migration and catalog-seeding script. | Applied schema, seed results and tenant/access boundaries. |
+| Matching | Constraint evaluation, slot matching and proposal generation in `matcher.ts`. | Real declarations, availability, match quality and complete user journey. |
+| Proposal workflow | `proposeMatches`, `acceptProposal`, `declineProposal` in `service.ts`; acceptance creates a project instance. | Authorized approval, conflicting availability and downstream operations. |
+| Project lifecycle | Publish, pause, reactivate and archive transitions. | UI behavior and lifecycle permissions in the running stack. |
+| Attestations | Verifiable-credential handling in `attestations/vc.ts` and service methods. | Issuer trust, keys, expiry/revocation and deployed security validation. |
+| Settlement | Intent validation/composition, idempotent records and reconciliation helpers. | Each rail's dependencies, flags and real settlement; a record alone is not payment. |
+
+Source: [service](service.ts), [matcher](matcher.ts),
+[lifecycle](instance-lifecycle.ts), [settlement](settlement.ts),
+[reconciler](reconciler.ts), [credential helpers](attestations/vc.ts),
+[migration](migrations/Migration20260512CreateAssetGraph.ts),
+[catalog seeder](../../scripts/seed-asset-graph.ts).
 
 ## Why it exists
 
-See `docs/ASSET_GRAPH.md` for the full thesis. Short version: BMC has a
-strong composition layer but every vertical is a new product build.
-With the asset graph, every vertical is a manifest — a declarative
-recipe that says "this kind of project needs these asset kinds, settles
-on these rails, uses this playbook and these listing-types, governs
-this way, lives on this surface." Adding a vertical becomes
-writing a manifest, not building a product.
+See [Asset Graph](../../../../docs/ASSET_GRAPH.md) for the design.
+A vertical can compose declared resources through a manifest rather than
+requiring a separate platform. The manifests are recipes, not proof of staffed
+services or owned assets.
 
-## Files
+The catalog includes tool-library, repair-cafe, yard-scrap-nursery,
+courier-collective, creator-bounty and childcare reference manifests.
+Before operating any of them, validate the required resources, qualified
+operators, scheduling, funding, permissions, maintenance and applicable terms.
 
-- `manifests/types.ts` — zod schemas + enums. The parser of truth.
-- `manifests/yard-scrap-nursery.ts` — reference manifest 1.
-- `manifests/tool-library.ts` — reference manifest 2.
-- `manifests/repair-cafe.ts` — reference manifest 3.
-- `manifests/index.ts` — catalog (code-as-source-of-truth).
-- `seed/asset-kinds.ts` — taxonomy seed.
-- `models/*.ts` — 7 model files for v0.1 persistence (schema only in v0).
-- `service.ts` — catalog accessors + wildcard slug matcher.
-- `__tests__/manifest-parse.unit.spec.ts` — parser sanity.
-- `__tests__/orthogonality.unit.spec.ts` — structural proof the schema
-  generalizes (pairwise diversity + catalog-wide enum coverage).
+## Files and conventions
 
-## Conventions
+- `manifests/types.ts`: schemas and enums.
+- `manifests/index.ts`: code-owned manifest catalog.
+- `seed/asset-kinds.ts`: taxonomy and wildcard kind matching.
+- `models/`: persisted declarations, kinds, proposals, instances, attestations and settlement records.
+- `__tests__/`: parsing, matching, lifecycle, declaration, settlement and related regression specifications.
 
-Code is the source of truth for the manifest catalog and the asset
-kind taxonomy. The corresponding `project_manifest` and `asset_kind`
-tables are seeded from those catalogs at boot (v0.1 lands the seeder),
-same pattern as `playbook` and `listing-type`. Adding a manifest is a
-PR-reviewable code change, not a DB write.
+The corresponding catalog tables are seeded from code. Adding a manifest is a
+reviewable code change; it does not automatically provision a service.
 
-The wildcard kind matcher (`tool.*` matches any subkind of tool) is in
-`seed/asset-kinds.ts:matchesKindSlug`. The tool-library and repair-cafe
-manifests use it (on `tool.*` and `skill.repair.*` respectively, which
-proves the mechanism doesn't ride on the `tool` category alone); the
-nursery does not. Removing wildcard support breaks both wildcard-using
-manifests, which is the right pressure.
+## Reuse and release gates
 
-## Reuse
+The module composes playbook/listing types, producer/seller records, verification,
+entitlements and settlement rails. It does not replace their access controls or
+legal/runtime gates.
 
-The asset graph is **additive**. It plugs into:
+For equipment sharing, explicitly verify request, approval, availability,
+handover, return, deposits/damage, disputes and maintenance. For repair events,
+verify fixer availability against venue/date and event participation. For every
+money/time-credit rail, verify the actual authorized downstream operation.
 
-- `playbook` (output recipe selected by `playbook_slug`)
-- `listing-type` (offerings composed by `listing_type_slugs`)
-- `hawala-ledger` (rails declared by `settlement_rails`;
-  `SettlementRecord` wraps ledger entries)
-- `vendor-verification` (producer-level verification ladder; in v0.1
-  workflow maps these into per-declaration `Attestation`s)
-- `entitlement` (membership gate for Commons-side access in v0.1)
-- `producer`, `seller-extension` (existing seller surfaces)
-- Threshold surface (where `surface: threshold` manifests live)
-
-See `docs/ASSET_GRAPH.md` for the full reuse table.
-
-## Status
-
-v0 ships the schema and three manifests. The persistence migration
-(`migrations/Migration20260512CreateAssetGraph.ts`) creates all seven
-tables, and the catalog seeder (`backend/src/scripts/seed-asset-graph.ts`)
-upserts asset kinds and project manifests from the in-code source of
-truth — both run as part of normal Medusa migrate + seed.
-
-The matching engine and sensitivity-tier cryptography land in v0.1.
-The `hours` rail and Karma asset-model placement in `hawala-ledger`
-are flagged as v0.1 dependencies before the tool library can run.
-The repair-café manifest needs the event-scheduling match path (fixer
-availability vs. event date vs. venue series) before it can run, also
-v0.1.
+Use the [implementation and cost-reduction inventory](../../../../docs/IMPLEMENTATION_STATUS_AND_COST_REDUCTION.md)
+to distinguish implemented code, default-off features and operational dependencies.
