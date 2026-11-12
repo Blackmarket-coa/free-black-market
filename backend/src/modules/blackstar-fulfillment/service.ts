@@ -48,6 +48,7 @@ export type ApplyEventInput = {
   event_id?: string | null
   event_type: string
   source_order_ref: string
+  source_fulfillment_ref?: string | null
   correlation_id?: string | null
   external_status: string
   fulfillment_node_id?: string | null
@@ -107,23 +108,45 @@ class BlackstarFulfillmentModuleService extends MedusaService({
       }
     }
 
-    // EVERY shipment row on the order, not the first one found.
-    //
-    // A second Blackstar fulfillment on one order creates a second
-    // blackstar_shipment keyed by (order_id, fulfillment_id). Contract v1
-    // events carry only `source_order_ref` — there is no per-parcel key on
-    // the wire — so the receiver used to match `[0]` and the second row could
-    // never receive an event: an orphan that stayed `pending` forever while
-    // its parcel was delivered. Until the wire format grows a per-fulfillment
-    // listing key (a Blackstar-side change), an order-scoped event is applied
-    // to every parcel on that order, which is what it actually asserts.
+    // New bridge events identify a parcel. Legacy events can safely identify
+    // one row only; never infer that delivering one parcel delivered its siblings.
     const rows = (await this.listBlackstarShipments({
       order_id: input.source_order_ref,
+      ...(input.source_fulfillment_ref
+        ? { fulfillment_id: input.source_fulfillment_ref }
+        : {}),
     })) as unknown as {
       id: string
       external_status?: string | null
       metadata?: Record<string, unknown> | null
     }[]
+
+    if (!input.source_fulfillment_ref && rows.length > 1) {
+      if (input.event_id) {
+        try {
+          await this.createBlackstarEventReceipts([{
+            event_id: input.event_id,
+            event_type: input.event_type,
+            source_order_ref: input.source_order_ref,
+            correlation_id: input.correlation_id ?? null,
+            outcome: "ambiguous_shipment",
+            requested_status: input.external_status,
+            resulting_status: null,
+            metadata: { shipment_ids: rows.map((row) => row.id) },
+          }])
+        } catch (error) {
+          // Only tolerate a concurrent insert when its receipt really exists.
+          const [seen] = await this.listBlackstarEventReceipts({ event_id: input.event_id })
+          if (!seen) throw error
+        }
+      }
+      return {
+        processed: true,
+        decision: { apply: false, reason: "ambiguous_shipment" },
+        shipment_id: null,
+        resulting_status: null,
+      }
+    }
 
     const targets = rows.length ? rows : [null]
     let firstShipmentId: string | null = null
@@ -168,6 +191,7 @@ class BlackstarFulfillmentModuleService extends MedusaService({
       } else {
         shipment = (await this.recordOrUpdateShipment({
           order_id: input.source_order_ref,
+          fulfillment_id: input.source_fulfillment_ref ?? null,
           fulfillment_node_id: input.fulfillment_node_id ?? null,
           ...(decision.apply ? { external_status: input.external_status } : {}),
           metadata,
@@ -195,7 +219,7 @@ class BlackstarFulfillmentModuleService extends MedusaService({
             outcome: decision.reason,
             requested_status: input.external_status,
             resulting_status: firstResulting,
-            metadata: rows.length > 1 ? { per_shipment: perRow } : null,
+            metadata: { source_fulfillment_ref: input.source_fulfillment_ref ?? null, per_shipment: perRow },
           },
         ])
       } catch {

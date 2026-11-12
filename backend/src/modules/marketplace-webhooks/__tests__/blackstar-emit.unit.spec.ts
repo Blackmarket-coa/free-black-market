@@ -67,6 +67,22 @@ describe("MarketplaceWebhooksService — Blackstar channel", () => {
     expect(rows[0].subscription_id).toBe(BLACKSTAR_SUBSCRIPTION_ID)
   })
 
+  it("enqueues and signs a parcel cancellation with both identity keys", async () => {
+    const { svc, rows } = makeService()
+    const payload = { source_order_ref: "ord_1", source_fulfillment_ref: "ful_1" }
+    await svc.emitBlackstar("fulfillment.cancelled", payload, { eventId: "cancel_ful_1" })
+    expect(rows).toHaveLength(1)
+    expect(rows[0].payload).toMatchObject({ event_type: "fulfillment.cancelled", payload })
+    const send = jest.spyOn(global, "fetch").mockResolvedValue({
+      ok: true, status: 202, text: async () => "{}",
+    } as Response)
+    expect(await svc.attemptDelivery(rows[0].id)).toBe(true)
+    const init = send.mock.calls[0][1]!
+    const headers = init.headers as Record<string, string>
+    expect(headers["X-FBM-Signature"]).toBe(createHmac("sha256", SECRET)
+      .update(`${headers["X-FBM-Timestamp"]}.${init.body}`).digest("hex"))
+  })
+
   it("is idempotent on a stable eventId", async () => {
     const { svc, rows } = makeService()
     const a = await svc.emitBlackstar("order.created", { source_order_ref: "o" }, { eventId: "evt_dup" })

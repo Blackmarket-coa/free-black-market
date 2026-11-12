@@ -169,8 +169,10 @@ id), so receivers can deduplicate at the receipt level:
 | Event | FBM emits when | Blackstar effect |
 | --- | --- | --- |
 | `order.created` | An order is placed whose shipping method resolves to the Blackstar provider | Idempotent pre-validation hook; creates nothing by itself |
-| `delivery.option.selected` | A fulfillment is created on the `blackstar` provider (subscriber on `order.fulfillment_created`) | Creates the shipment board listing, idempotently keyed by `payload.source_order_ref` |
-| `order.cancelled` | An order is cancelled **and** a `BlackstarShipment` exists for it; also on `order.fulfillment_canceled` once no live Blackstar shipment remains on the order (same `eventId`, `subscribers/blackstar-fulfillment-canceled.ts`) | Cancels the listing when its status is `open`, `claimed`, or `in_transit` |
+| `delivery.option.selected` | A fulfillment is created on the `blackstar` provider (subscriber on `order.fulfillment_created`) | Creates the shipment board listing, idempotently keyed by order and optional `payload.source_fulfillment_ref` |
+| `order.cancelled` | An order is cancelled **and** a `BlackstarShipment` exists for it; also on `order.fulfillment_canceled` once no live Blackstar shipment remains on the order (same `eventId`, `subscribers/blackstar-fulfillment-canceled.ts`) | Cancels every listing on the order whose status is `open`, `claimed`, or `in_transit` |
+
+Parcel extension: `source_fulfillment_ref` is optional, nonempty, at most 255 characters. Blackstar echoes it on every listing and relay lifecycle event. FBM enables outbound refs and `fulfillment.cancelled` with `FBM_BLACKSTAR_FULFILLMENT_REFS=1`. A parcel cancellation requires both refs and cancels only that job. See [parcel rollout](../FBM_BLACKSTAR_PARCEL_ROLLOUT.md) before enabling it.
 
 `delivery.option.selected` payload:
 
@@ -219,9 +221,12 @@ the contract cannot drift silently from FBM's side.
 
 ### Blackstar → FBM
 
-Each accepted event overwrites the matching shipment's status
-(`BlackstarShipment.external_status`, matched by
-`payload.source_order_ref` — required, 400 without it):
+Each accepted event passes the existing status guard for the matching
+shipment (`BlackstarShipment.external_status`), using both order and optional
+fulfillment reference. `payload.source_order_ref` is required (400 without it).
+An order-only legacy event with multiple local rows records
+`ambiguous_shipment` without changing any parcel. A malformed fulfillment
+reference returns 400 rather than falling back to order-wide matching:
 
 | Event | `external_status` |
 | --- | --- |
