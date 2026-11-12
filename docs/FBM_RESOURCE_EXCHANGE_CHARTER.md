@@ -1,10 +1,12 @@
 # FBM Resource Exchange Mission and Implementation Charter
 
+> **2026-11-12 experience decision:** [Unified member portal and character-build plan](FBM_UNIFIED_MEMBER_PORTAL_PLAN.md) is canonical for one signed-in buying/selling/trading/auction experience, a character-creation survey that automatically builds a simple working portal, standard game view, functional equipment with one-time purchases, and reuse of Blackout Coalition and Blackstar. This is implementation direction, not a shipped/deployed claim. Existing pricing, privacy and release gates remain in force.
+
 > **AI-first readiness process:** [Full-platform audit, repair and feature visibility plan](FBM_AI_FIRST_AUDIT_AND_REPAIR_PLAN.md) defines how to verify every journey, finish small repairs, hide and preserve incomplete capabilities, and escalate only necessary human decisions. This plan has **not yet been executed**.
 
 > **MVP scope (2026-11-03):** [FBM Resource Exchange MVP](FBM_RESOURCE_EXCHANGE_MVP.md) defines the first-session journey, four target exchange primitives, regional pilot, privacy and legal gates, release criteria, and metrics. This is a proposed acceptance contract, **not a claim of deployed functionality**.
 
-**Decision date:** 2026-11-03  
+**Decision dates:** 2026-11-03 (resource exchange/economics); 2026-11-12 (unified member experience)  
 **Status:** Approved product direction; implementation status unverified.  
 **Authority:** This charter supersedes conflicting earlier product/pricing direction. If implementation contradicts a decision, report the conflict; do not silently revise the decision. See [FBM Product Strategy](FBM_PRODUCT_STRATEGY.md).
 
@@ -12,7 +14,7 @@
 
 Free Black Market is evolving from a marketplace into a platform for **resource allocation, sharing and trading, built for working-class people**. Merchants and customers choose how to exchange: sale, barter, gift and mutual aid, pooled buying, lending, consignment, cooperative and nonprofit structures. There are **no ideological modes**. There is one composable set of exchange tools; people assemble the toolkit that meets their goals.
 
-A short, goal-first onboarding survey learns what someone wants to accomplish, builds a profile and toolkit, and connects them to compatible businesses and people. The long-term vision is independent local working-class cells, organized and federated through cooperative structures.
+The character-creation survey learns goals, available resources and practical constraints, previews a starter build, and automatically configures one member portal. Buying, selling, trading and auctions are activities in that portal rather than separate buyer/vendor identities. Game view is standard, with a complete compact accessible view. The long-term vision is independent local working-class cells, organized and federated through cooperative structures.
 
 ## Fixed decisions
 
@@ -23,16 +25,23 @@ A short, goal-first onboarding survey learns what someone wants to accomplish, b
 5. **Geographic scope:** cooperative quests and validation rules cover all US states and international jurisdictions, not just South Carolina. Applicable local laws still require jurisdiction-specific compliance.
 6. **License:** FBM is **AGPL-3.0**; verify outside-component license compatibility before incorporation.
 7. **Apps:** mobile and desktop use **Capacitor wrappers**, sending purchases to web checkout with synchronized cart and session state.
+8. **Unified experience:** one signed-in member portal and character; keep underlying customer/seller/team permissions, records and licensed equipment scopes distinct. Pending seller setup must not prevent buying or access to personal records.
+9. **First delivery:** character creation → automatically configured useful portal → one real next action. Reuse ResourceQuiz, resource recommendations, playbooks, active saved onboarding and existing modules before new abstractions.
+10. **Standard game view:** market/world navigation is the default, with direct shortcuts and a complete accessible compact view. Rich art is incremental; a decorative world does not replace working tools.
+11. **Functional equipment:** free/earned/one-time purchased enhancements, plugins, settings kits, modules and portal builds configure real capabilities. Ownership, installation, configuration and equipping are distinct. Paid recommendations never cause an automatic charge; equipment never changes commission or grants transport eligibility.
+12. **Reuse boundaries:** Blackout Coalition supplies the real-world map and its coordination records; Blackstar supplies existing transport operations; FBM retains commerce/agreements/inventory/entitlements. Link authoritative records instead of duplicating their domains. OSS fills verified gaps.
 
 These are product decisions, not evidence of deployed behavior. Flag any contradictory code, copy, pricing, or architecture.
 
-## Workstream 1 — Goal-first onboarding
+## Workstream 1 — Character creation and automatic portal building
 
 **Audit before building:** vendor archetypes, onboarding goals layer, product taxonomy, and Vendor Quest Engine (reported feature flag off; verify). Reuse rather than duplicate.
 
 - Ask **what the user has, needs, wants to do with others, and preferred settlement terms**; never ask for ideology or assign political labels.
 - Store offers and needs in a **controlled taxonomy** plus optional free text, so they can be matched.
-- First-value path: **one goal, three questions, matches or next steps in under 60 seconds**. Collect the rest of the profile progressively.
+- First-value path: a short adaptive character builder covering goals, resources and practical participation → reasoned portal preview → idempotent application → one real next action. Reuse known answers and support resume/rebuild. A useful initial result within 60 seconds is a measured target, not a mandate to skip the important build flow.
+- Choose a simple primary playbook plus compatible additional roles/tools; classes are changeable starter configurations. Buying-only and receiving-support builds are valid. Do not require a store name, paid tool or logistics enrollment to enter the market.
+- Offer optional paid equipment with a concrete benefit, preview and one-time price. The starter portal works with free/owned tools, and accepting it never purchases an upgrade.
 - Always end with **two or three concrete next steps** (e.g., list an item, join a pooled buy, contact a nearby organization); never an empty dashboard.
 - Reveal tools progressively based on goals and quests; permit skip and re-run.
 - Needs are **private by default**, selectively shared with explicit user control. Food, money, and other resource needs may expose sensitive circumstances.
@@ -52,8 +61,9 @@ A shop, co-op, or nonprofit is a **preset of exchange primitives plus governance
 | Lend / share | New | Damage, deposits, disputes, liability |
 | Consignment | Splits reportedly built but flagged off | Ledger correctness |
 | Patronage | Disbursement reportedly built but flagged off | Ledger correctness |
+| Goods auction | Newly prioritized; auction enum/doc placeholders are not a bid engine. Reuse catalog, inventory and checkout; evaluate Blackstar transport bid patterns separately | Atomic bids/close, reservation, winner payment, nonpayment/cancellation and scope checks |
 
-**First regional end-to-end pilot:** sale, gift, barter, and pooled buy. Only expand to lending, consignment, patronage, and broader geographies after real transactions and operational controls work. Keep legal-gated features off until cleared.
+**First regional end-to-end pilot:** character-built unified portal plus sale, gift, barter and pooled buy. Goods auctions are part of the target member market and a separately verified delivery package; they are not advertised as live before the bid-to-payment path works. Only expand to lending, consignment, patronage, and broader geographies after real transactions and operational controls work. Keep legal-gated features off until cleared.
 
 ## Workstream 3 — First session and useful return loop
 
@@ -112,11 +122,11 @@ Audit **all** vendor plans (reported up to $249/month), billing code, subscripti
 ## Execution protocol and definition of done
 
 1. **Audit first:** compare repository main, deployment revision, runtime flags, active pricing, actual fee arithmetic, APIs and privacy exposure. Record **built / deployed / enabled / blocked / unknown** separately. Earlier docs and starting-point references are hypotheses until checked.
-2. **Propose a short Workstream 1 + 2 plan** with the smallest end-to-end slice; **wait for approval before major code changes**.
+2. Use the approved [unified member portal plan](FBM_UNIFIED_MEMBER_PORTAL_PLAN.md) to deliver the smallest Workstream 1 + 2 slice. The product direction is decided; record unresolved migration, policy and deployment decisions at the relevant package rather than reopening the approved interface requirements.
 3. Build small deployable steps; verify behavior in the **running stack**, not tests alone.
 4. Report changes, evidence, unverified assumptions, legal blocks, and deployment gaps.
 
-**Done:** a new user answers the short survey, receives relevant matches or two to three actionable next steps in under one minute, and can complete a first **sale, gift, barter, or pooled buy** through FBM in the pilot region.
+**Done:** character creation generates a useful unified portal, the member sees real matches or honest next steps and can complete a first **sale, gift, barter or pooled buy** in the pilot region. Verify game/compact access, saved build state, correct equipment rights and no unintended charge. Track auctions and transport as separate capability-specific gates; do not imply they shipped because the portal shell exists.
 
 **Primary metrics:** survey completion; time to first match; time to first transaction or connection; four-week return; **weekly completed exchanges**. Optimize for real exchanges, not opens or engagement alone.
 

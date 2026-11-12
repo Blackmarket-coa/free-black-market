@@ -1,8 +1,10 @@
 # FBM Minimum Viable Product — Resource Exchange Pilot
 
+> **2026-11-12 experience decision:** [Unified member portal and character-build plan](FBM_UNIFIED_MEMBER_PORTAL_PLAN.md) is canonical for one signed-in buying/selling/trading/auction experience, a character-creation survey that automatically builds a simple working portal, standard game view, functional equipment with one-time purchases, and reuse of Blackout Coalition and Blackstar. This is implementation direction, not a shipped/deployed claim. Existing pricing, privacy and release gates remain in force.
+
 > **AI-first readiness process:** [Full-platform audit, repair and feature visibility plan](FBM_AI_FIRST_AUDIT_AND_REPAIR_PLAN.md) defines how to verify every journey, finish small repairs, hide and preserve incomplete capabilities, and escalate only necessary human decisions. This plan has **not yet been executed**.
 
-**Date:** 2026-11-03  
+**Date:** 2026-11-03; experience revised 2026-11-12  
 **Status:** Proposed MVP scope and acceptance contract; **not** an implementation or deployment claim.  
 **Authority:** [Resource Exchange Charter](FBM_RESOURCE_EXCHANGE_CHARTER.md) and [Product Strategy](FBM_PRODUCT_STRATEGY.md). Conflicting legacy pricing or feature claims are superseded by the charter.
 
@@ -16,19 +18,22 @@ The MVP is **not** a full federated economy, social network, finance platform, o
 
 ## 2. The first-session experience
 
-1. Landing choice: **“What are you trying to get done?”** (find something, offer something, work with others). No ideology labels.
-2. **One goal and three short questions**: (a) what do you need or have, (b) where/when and in what quantity, (c) which settlement options work (buy/sell, trade, gift, pool). Controlled taxonomy with optional free text; location sharing is opt-in and coarse by default.
-3. Display **relevant, permission-safe matches** or **2–3 actionable next steps** within 60 seconds under representative pilot conditions. If there are no matches, say so plainly and offer real next steps such as posting a need, creating a listing, or contacting an opted-in organization.
-4. A user may **skip or rerun** onboarding; profile enrichment and tool discovery happen after first value.
-5. A user can save a need/offer privately, selectively publish it, contact a consenting counterparty, and start an exchange.
+1. **Choose direction:** illustrated goals such as getting needs met, making/growing, offering services, trading or organizing. One main goal and optional additional goals; no ideology labels.
+2. **Choose starting resources:** adapt the existing ResourceQuiz for all members, using skills, time, kitchen, plants/land, tools, materials, transport and community. “None yet” is valid; owning transport does not enroll the person as an operator.
+3. **Choose practical participation:** ask only relevant time/availability, pickup/delivery, solo/group and jurisdiction questions. Keep private drafts and reuse known answers.
+4. **Reveal and apply the build:** show an editable character/starter-toolkit/portal preview with reasons. Automatically configure available free/owned tools; optional paid equipment is separately labeled and never charged by accepting the starter build.
+5. **Enter the same market:** open the generated member portal in standard game view with one real next action and real matches or honest empty states. Buying/selling/trading/bidding are actions, not separate logins. Keep a complete compact accessible view, shortcuts, resume and rebuild.
+
+Aim for a useful initial result within 60 seconds under measured pilot conditions. This is not a rigid three-question limit or permission to omit automatic portal building. Optional appearance and deeper branches may follow first value.
 
 ### Primary screens
 
-- **Goal-first welcome / short survey**
+- **Character creation:** adaptive goals/resources/participation survey with saved draft and starter-build reveal
 - **Match results** with why each result matches, location granularity, availability, and terms
 - **Need/offer editor** with privacy controls
 - **Exchange detail** with agreement, status, and dispute/help access
-- **My work dashboard**: outstanding needs/offers, orders, reminders, and next actions
+- **Unified member portal**: standard game world/panels with Market, My place, My stall, Exchanges, Commons and Toolkit; buying and selling share the same entry
+- **Build preview and equipment bench**: actual available tools, optional paid upgrades, safe apply/rebuild and real next action
 - **Simple organization profile**: opt-in offers/needs and contact method
 - **Admin/operator pilot console**: moderation, reported abuse, failed matches, exchange exceptions, and metrics
 
@@ -36,7 +41,7 @@ Use accessible mobile-first web interfaces first. Capacitor mobile/desktop wrapp
 
 ## 3. Minimum data and matching contract
 
-**Entities:** user/organization; consent and visibility settings; goal; taxonomy term; need; offer; location region (avoid exact location by default); quantity/unit; timing; acceptable settlement types; match; exchange/agreement; message/contact permission; order/fulfillment event; audit record.
+**Entities:** verified member identity with linked customer/seller/team contexts; versioned private survey draft; portal-build/loadout references; consent and visibility settings; goal; taxonomy term; need; offer; location region (avoid exact location by default); quantity/unit; timing; acceptable settlement types; match; exchange/agreement; message/contact permission; order/fulfillment event; audit record.
 
 **Match v1:** deterministic, explainable filters on taxonomy compatibility, settlement preference, quantity, availability, and approximate region. Rank by practical fit; do not infer political affiliation or sensitive beliefs. No AI model is necessary to launch. Free text may assist discovery but must not replace controlled taxonomy.
 
@@ -50,6 +55,7 @@ Use accessible mobile-first web interfaces first. Capacitor mobile/desktop wrapp
 | **Gift / mutual aid** | Opt-in gift listing/request, agreement, handoff/completion acknowledgment; no required payment | Consent, fraud prevention, abuse reporting, safe contact and handoff |
 | **Barter** | Two parties propose items/services and terms, accept, record fulfillment/dispute; avoid custodial funds | Legal review of organized barter exchange reporting including Form 1099-B **before enabling regulated exchange operation** |
 | **Pooled buy** | Join a genuine purchase pool, show target/terms/deadline, record commitments and fulfillment | Verify demand-pool and payment flow; no pooled investment or securities without clearance |
+| Goods auction | Target member-market capability; separate delivery package, not yet verified as a working bid/close/payment system | Atomic bids/close/reservations, winner checkout and recovery; reuse existing commerce and inspect Blackstar transport patterns |
 | Lending/sharing | **Deferred** | Damage, deposit, dispute, liability review |
 | Consignment/patronage | **Deferred** | Flag status and ledger correctness review |
 | Financing, cross-border, Stellar/USDC | **Deferred/off** | Legal, compliance, settlement review |
@@ -60,7 +66,7 @@ Use accessible mobile-first web interfaces first. Capacitor mobile/desktop wrapp
 
 ## 5. Everyday utility: keep it small
 
-**Include in MVP:** a weekly opt-in digest, simple order/need/offer status, one-tap confirmations, saved suppliers, basic export, and a single next-goal action tied to existing quests **only if enabled and verified**. These are the minimum housekeeping and goal-planning features.
+**Include in MVP:** the character-builder → automatic useful portal slice, standard game/compact access, free/owned functional starter equipment, and a weekly opt-in digest, simple order/need/offer status, one-tap confirmations, saved suppliers, basic export, and a single next-goal action tied to existing quests **only if enabled and verified**. These are the minimum housekeeping and goal-planning features.
 
 **Defer:** full accounting suite, AI research assistant, equipment booking/deposits, complex cooperative votes and patronage, extensive quest progression, chapter federation, and automated cross-platform integrations. Any later research tool must cite sources and avoid invented numbers.
 
@@ -78,7 +84,7 @@ An independent seller or organization can create a profile, list an offer, descr
 - No central chapter membership registry. Pilot chapters may use minimal local records; governance rooms and E2EE must not be claimed live without verification.
 - No investment pooling, financial yield promises, or cross-border settlement.
 - No proprietary dependencies added without AGPL-3.0 compatibility review.
-- No AI-dependent matching, social feed, gamified streaks, or broad feature parity with established marketplaces.
+- No AI-dependent matching, a new social-network backend, forced daily care/streaks or broad feature parity with established marketplaces. Standard game presentation and character-built functional equipment are included; extensive progression and rich rendering are incremental.
 - No unlimited lifetime hosted service obligations; use disclosed quotas/prepaid usage or actual at-cost pass-through.
 
 ## 8. Implementation sequence and release gates
@@ -91,11 +97,11 @@ An independent seller or organization can create a profile, list an offer, descr
 - Confirm AGPL-3.0 and dependency license compatibility.
 - Document legal/compliance owners and decisions for barter, pooled purchases, donations, refunds, tax reporting, and settlement.
 
-**Output:** evidence table, blockers, smallest reuse-first implementation proposal. **Stop for approval before major code changes.**
+**Output:** evidence table, blockers and the smallest implementation slice from the approved unified-portal plan. This documentation change does not execute migrations or deployments; resolve their concrete operational decisions at the relevant package.
 
 ### Phase 1 — First value
 
-Implement the three-question survey, private structured needs/offers, deterministic match results, 2–3 honest next steps, and basic organization/seller profiles. Seed verified supply. Test first-value timing and privacy.
+Deliver character survey → reasoned build preview → automatically configured unified member portal → one real task. Reuse ResourceQuiz/recommendations, playbooks, saved onboarding, progression and entitlement/install mechanisms. Preserve private structured needs/offers, deterministic matches, honest next steps, source-owned Coalition/Blackstar integrations, and correct customer/seller/team authorization. Seed verified supply; test build/resume/rebuild, game/compact access, first-value timing and privacy.
 
 ### Phase 2 — First exchanges
 
@@ -113,7 +119,10 @@ Improve matching and local discovery, chapter kits, research, equipment sharing,
 
 | Test | Pass condition |
 | --- | --- |
-| First value | New participant can select one goal, answer three questions, and see real matches or 2–3 honest actions **within 60 seconds** in a measured pilot test |
+| Character build / first value | Goals/resources/preferences produce an editable starter preview, automatically configured useful portal and one real action; measure the 60-second initial-value target without rushing the build flow |
+| Unified access | Same session can buy and start selling; seller pending/unavailable does not block shopping or personal records; team scopes remain enforced |
+| Functional equipment | Free/owned items open real tools; owned rights survive unequip/re-equip; optional paid suggestions have one-time prices and accepting a starter build never purchases them |
+| Standard presentation | Game view is the default; all core actions remain reachable by touch, keyboard, shortcuts and compact accessible view |
 | Skip/re-run | Survey can be skipped and repeated without loss of existing records |
 | Privacy | Needs private by default; selective sharing works; unauthorized/public API access and logs reveal no private need/contact/courier PII |
 | Matching | Deterministic relevant match explanations; no fabricated availability; empty-state next steps usable |
@@ -126,7 +135,7 @@ Improve matching and local discovery, chapter kits, research, equipment sharing,
 | Safety | Abuse reporting, rate limits, moderation, permission tests, accessible UI, no manipulative notifications |
 | Production evidence | Running-stack verification for each enabled primitive, not tests alone |
 
-**Done means** the first-session and four target exchange journeys work in the pilot region, with privacy and legal gates cleared. Any partially delivered or disabled primitive must be labeled **not yet complete**.
+**Done means** the character-built unified portal and four target pilot exchange journeys work in the pilot region, with privacy and legal gates cleared. Any partially delivered or disabled primitive must be labeled **not yet complete**.
 
 ## 10. Metrics and operating cadence
 

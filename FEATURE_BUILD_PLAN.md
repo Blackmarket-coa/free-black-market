@@ -1,5 +1,7 @@
 # Feature Build Plan: Farm Commerce Service Gaps
 
+> **2026-11-12 experience decision:** [Unified member portal and character-build plan](docs/FBM_UNIFIED_MEMBER_PORTAL_PLAN.md) is canonical for one signed-in buying/selling/trading/auction experience, a character-creation survey that automatically builds a simple working portal, standard game view, functional equipment with one-time purchases, and reuse of Blackout Coalition and Blackstar. This is implementation direction, not a shipped/deployed claim. Existing pricing, privacy and release gates remain in force.
+
 > **2026-11-03 decision update:** [FBM Resource Exchange Mission and Implementation Charter](docs/FBM_RESOURCE_EXCHANGE_CHARTER.md) is authoritative for FBM's shift to goal-first resource allocation and composable sale, barter, gift, pooled-buy, lending and cooperative tools. Fixed decisions: flat 3% commission after processing-fee deduction; **no subscriptions** (one-time software purchases and transparent at-cost hosted usage); E2EE never paywalled; national/international quest scope; AGPL-3.0 compatibility; Capacitor app wrappers using synced web checkout. **Any monthly plan, subscription entitlement, KARMA-based fee variation, ideological mode or state-only quest rule below is historical and superseded, not approved future pricing or behavior.** Existing code/deployment status has **not** been re-audited by this documentation change. Flag contradictions for audit; do not claim implementation or remove production billing without an approved migration.
 
 
@@ -21,7 +23,23 @@ This plan covers the missing capabilities identified in repository review and pr
 
 ---
 
-## Priority Override: Vendor Activation Fast-Track (TTFLL)
+## Current priority: character-built unified member portal
+
+The [canonical plan](docs/FBM_UNIFIED_MEMBER_PORTAL_PLAN.md) supplies the source audit and dependencies. Deliver these in small reviewable steps, reusing working implementations:
+
+- [ ] U1. Reconcile member/customer/seller/team identity, feature flags and existing billing/install authority.
+- [ ] U2. Reuse ResourceQuiz, resource recommendations and playbook roles for visual character creation.
+- [ ] U3. Preview and automatically apply a simple free/owned starter portal, with save/resume/rebuild and one real next action.
+- [ ] U4. Host buying, selling, trades, bids, records and equipment in one signed-in game/compact experience; port existing vendor tools without losing permissions or history.
+- [ ] U5. Add functional equipment/loadouts/portal builds; migrate paid enhancements to one-time ownership and make optional upgrade recommendations explicit.
+- [ ] U6. Reuse Coalition map/needs/resources/projects/tasks/chat via permission-safe adapters.
+- [ ] U7. Reuse Blackstar opt-in/eligibility/board/claims/bids/legs and existing FBM bridge; resolve operator session and coordinator award gaps.
+- [ ] U8. Extend existing direct-trade workflows and add goods-auction bid/close/reservation/payment behavior; do not equate transport bids with goods auctions.
+- [ ] U9. Validate runtime journeys and failure recovery before enabling or describing a capability as shipped.
+
+All boxes are intentionally uncompleted: this PR updates documentation only. TTFLL remains a seller-branch outcome, alongside time to a useful portal/first exchange; a buyer or support recipient must not be forced to create a store.
+
+## Historical seller activation track: apply within the member build
 
 If the immediate business priority is **"get vendors signed up and get at least 1 product/service live as fast as possible,"** then the north-star metric for execution is:
 
@@ -38,7 +56,7 @@ This track should run before or in parallel with larger platform modules.
 
 ### Activation Sprint A (1–2 weeks): launch-first onboarding
 
-**Status: ACTIVE (immediate execution)**
+**Status: historical seller-branch plan; reconciled into U1–U9 above.** Preserve/reuse the implemented LaunchWizard and QuickPath; do not duplicate them or require every member to publish a listing.
 
 #### Sprint A implementation board
 

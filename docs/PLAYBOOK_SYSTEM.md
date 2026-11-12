@@ -1,5 +1,7 @@
 # Playbook System
 
+> **2026-11-12 experience decision:** [Unified member portal and character-build plan](FBM_UNIFIED_MEMBER_PORTAL_PLAN.md) is canonical for one signed-in buying/selling/trading/auction experience, a character-creation survey that automatically builds a simple working portal, standard game view, functional equipment with one-time purchases, and reuse of Blackout Coalition and Blackstar. This is implementation direction, not a shipped/deployed claim. Existing pricing, privacy and release gates remain in force.
+
 A **playbook** is the social form of a vendor: who is selling, how they
 govern, and how surplus is shared. Each vendor picks a playbook at setup and
 that choice determines storefront identity, dashboard chrome, payout
@@ -9,6 +11,14 @@ structure, allowed listing-types, and the default values for the 14
 Playbook is the canonical concept that replaces `vendor-type`. The existing
 `vendor-type` provider remains as a deprecated re-export shim for one
 release to avoid breaking the 100+ call sites currently in vendor-panel.
+
+## Character-build integration — approved direction
+
+Playbooks are reusable starter configurations inside one member portal. Extend the existing resource quiz/recommendations, role union and saved onboarding into survey → editable portal preview → automatic functional setup. Users can buy, sell, trade and bid without a permanent class or buyer/vendor mode switch.
+
+The primary playbook determines presentation/defaults, not a variable commission or a grant of legal/operational authority. Existing feature defaults, licensed equipment, runtime flags and actor/team permissions must be reconciled before activation. Paid native features/plugins/settings/modules/portal builds form functional equipment with one-time purchases; optional upgrades never become automatic charges at starter-build acceptance.
+
+Use Coalition for existing map/coordination and Blackstar for transport operations. Transportation answers may offer an explicit delivery opt-in/setup quest; they do not automatically activate a carrier. The detailed migration/acceptance contract is in [FBM_UNIFIED_MEMBER_PORTAL_PLAN.md](FBM_UNIFIED_MEMBER_PORTAL_PLAN.md). The tables below describe existing recipe vocabulary and must not be interpreted as evidence every pathway is enabled.
 
 ## The eleven playbooks
 
@@ -28,7 +38,7 @@ release to avoid breaking the 100+ call sites currently in vendor-panel.
 
 A vendor picks a **primary** playbook plus, optionally, **additional roles**
 (e.g. a Stall that is also a Creator). The primary drives storefront identity,
-dashboard chrome, and commission; the feature modules a multi-role vendor sees
+dashboard chrome and defaults; the flat 3% commission is independent of playbook. The feature modules a multi-role vendor sees
 are the union of every selected role's defaults, persisted to
 `seller_metadata.enabled_extensions`.
 
@@ -140,8 +150,8 @@ platform features (Refrain bounties, volunteer time-banking, Blackstar
 delivery, collective campaigns / demand pools, consignment and
 unique-inventory listings).
 
-The quiz is a single multi-select screen — all thirteen options at once,
-pick any number (including none); every option adds points to the
+The current ResourceQuiz presents grouped resource choices and a reveal/override flow.
+Members may pick multiple resources (including none); every option adds points to the
 playbooks it suits, the highest score wins, and ties resolve to the
 simpler playbook (same `SIMPLICITY_RANK` as the 3-question picker). The
 result is only a recommendation — the reveal step lets the user override
