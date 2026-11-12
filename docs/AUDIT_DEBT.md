@@ -4,6 +4,14 @@ Deferred work captured from prior audits and direct repo inspection. **Items her
 
 Effort key: **S** ≤ 1 day · **M** 2–5 days · **L** > 1 week.
 
+## FBM / Blackstar parcel identity (2026-11-12)
+
+| # | Item | Resolution | Location |
+|---|------|------------|----------|
+| BS-P1 | Order-only delivery listings conflate separate fulfillments; cancelling one parcel cannot cancel its transport job | Implemented on review branch: optional `source_fulfillment_ref` across the bridge, parcel cancellation, and ambiguity guard for legacy order-only events. Enable outbound refs only after Blackstar's migration and receiver are deployed. | `backend/src/{lib/blackstar-delivery-payload.ts,modules/blackstar-fulfillment/service.ts,subscribers/*blackstar*}`; Blackstar inbound processor and listing lifecycle emitters |
+
+Audit correction: retail POS is already implemented by `POST /vendor/pos/orders`, `create-pos-order.ts`, inventory adjustment, and the vendor POS page. `/vendor/pos/checkout` is a separate vendor payment flow. Do not build a second POS because an inventory only checked that route.
+
 ## Deferred-workstreams pass (backend feature seams)
 
 Closed the four open backend feature seams tracked across the roadmaps

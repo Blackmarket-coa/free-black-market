@@ -87,6 +87,7 @@ export type StatusDecision = {
     | "out_of_order"
     | "terminal"
     | "unknown_status"
+    | "ambiguous_shipment"
 }
 
 /**

@@ -14,6 +14,7 @@ type BlackstarEnvelope = {
   correlation_id?: string
   payload?: {
     shipment_listing_id?: string
+    source_fulfillment_ref?: string | null
     source_order_ref?: string
     claimed_by_node_id?: string | null
     status?: string
@@ -105,6 +106,11 @@ export async function POST(req: MedusaRequest<BlackstarEnvelope>, res: MedusaRes
   const body = (req.body ?? {}) as BlackstarEnvelope
   const eventType = body.event_type ?? ""
   const payload = body.payload ?? {}
+  if (payload.source_fulfillment_ref != null &&
+      (typeof payload.source_fulfillment_ref !== "string" ||
+       !payload.source_fulfillment_ref.trim() || payload.source_fulfillment_ref.length > 255)) {
+    return res.status(400).json({ message: "payload.source_fulfillment_ref must be a nonempty string of at most 255 characters" })
+  }
   const correlationId = header("x-correlation-id") ?? body.correlation_id ?? null
 
   const externalStatus = STATUS_FOR_BLACKSTAR_EVENT[eventType]
@@ -123,6 +129,7 @@ export async function POST(req: MedusaRequest<BlackstarEnvelope>, res: MedusaRes
         correlation_id: correlationId,
         documented,
         metadata: {
+          source_fulfillment_ref: payload.source_fulfillment_ref ?? null,
           shipment_listing_id: payload.shipment_listing_id ?? null,
           shipment_leg_id: payload.shipment_leg_id ?? null,
           sequence: payload.sequence ?? null,
@@ -152,6 +159,7 @@ export async function POST(req: MedusaRequest<BlackstarEnvelope>, res: MedusaRes
     event_id: body.event_id ?? null,
     event_type: eventType,
     source_order_ref: payload.source_order_ref,
+    source_fulfillment_ref: payload.source_fulfillment_ref ?? null,
     correlation_id: correlationId,
     external_status: externalStatus,
     fulfillment_node_id: payload.claimed_by_node_id ?? null,

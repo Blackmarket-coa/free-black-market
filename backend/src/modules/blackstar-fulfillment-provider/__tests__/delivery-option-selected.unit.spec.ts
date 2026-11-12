@@ -429,6 +429,23 @@ describe("emit-blackstar-delivery-option-selected subscriber", () => {
     return { run, query, shipments, deliveries }
   }
 
+  it("sends a parcel key only when the rollout switch is enabled", async () => {
+    const prior = process.env.FBM_BLACKSTAR_FULFILLMENT_REFS
+    try {
+      delete process.env.FBM_BLACKSTAR_FULFILLMENT_REFS
+      const legacy = harness({})
+      await legacy.run()
+      expect(legacy.deliveries[0].payload.payload).not.toHaveProperty("source_fulfillment_ref")
+      process.env.FBM_BLACKSTAR_FULFILLMENT_REFS = "1"
+      const scoped = harness({})
+      await scoped.run()
+      expect(scoped.deliveries[0].payload.payload.source_fulfillment_ref).toBe("ful_1")
+    } finally {
+      if (prior === undefined) delete process.env.FBM_BLACKSTAR_FULFILLMENT_REFS
+      else process.env.FBM_BLACKSTAR_FULFILLMENT_REFS = prior
+    }
+  })
+
   it("listens for the fulfillment-created moment", () => {
     expect(subscriberConfig.event).toBe("order.fulfillment_created")
   })
@@ -546,4 +563,9 @@ describe("BlackstarFulfillmentProviderService.createFulfillment", () => {
       provider.createFulfillment(data, [], { id: "order_1" } as any, { id: "ful_1" } as any)
     ).resolves.toEqual({ data, labels: [] })
   })
+})
+
+it("carries an opted-in parcel reference", () => {
+  expect(buildDeliveryOptionSelectedPayload({ orderId: "ord_1", fulfillmentId: "ful_2" }))
+    .toMatchObject({ source_order_ref: "ord_1", source_fulfillment_ref: "ful_2" })
 })
