@@ -1,5 +1,20 @@
 # Audit Debt Tracker
 
+## 2026-11-12 source/CI inventory follow-up
+
+The [implementation and cost-reduction inventory](IMPLEMENTATION_STATUS_AND_COST_REDUCTION.md)
+records a scoped source review and recorded CI observations. This documentation
+pass did not change runtime code, enable flags, migrate billing or complete the
+full-platform audit.
+
+| ID | Finding | Disposition / closure evidence |
+| --- | --- | --- |
+| DOC-20261112-1 | Monthly vendor plans, renewal charging and plan-rate discounts conflict with one-time enhancement purchases, no subscriptions and flat 3% sales commission. | Open implementation migration. Inventory existing accounts/charges and verify versioned one-time entitlements, stopped renewals, unchanged sales rate and refund/access handling. |
+| DOC-20261112-2 | General pick/pack and weight-pricing POST handlers validate and echo their contracts; POS checkout records vendor-to-vendor payments. | Partial capabilities. Complete and exercise the promised operational journeys; keep share-box packing distinct. |
+| DOC-20261112-3 | Asset-graph README said no matching engine/migration although matching, lifecycle, persistence and reconciliation code exists. | Documentation corrected in this pass. Runtime, resource availability and settlement remain unverified. |
+| DOC-20261112-4 | Historical launch-ready statements and stale money-soak debt obscure current recorded results and open gates. | Historical readiness report marked as such; cite individual CI runs. Deployment parity, failing scans/load checks and unfinished workflows remain open. |
+
+
 Deferred work captured from prior audits and direct repo inspection. **Items here are intentionally not being fixed in the current production-readiness pass** — they are tracked so they can be ratcheted down in dedicated follow-up PRs without losing visibility.
 
 Effort key: **S** ≤ 1 day · **M** 2–5 days · **L** > 1 week.

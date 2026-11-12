@@ -4,8 +4,8 @@
 
 > **MVP scope (2026-11-03):** [FBM Resource Exchange MVP](FBM_RESOURCE_EXCHANGE_MVP.md) defines the first-session journey, four target exchange primitives, regional pilot, privacy and legal gates, release criteria, and metrics. This is a proposed acceptance contract, **not a claim of deployed functionality**.
 
-**Decision date:** 2026-11-03  
-**Status:** Approved product direction; implementation status unverified.  
+**Decision date:** 2026-11-03; enhancement-pricing clarification 2026-11-12  
+**Status:** Approved product direction; [source/CI inventory](IMPLEMENTATION_STATUS_AND_COST_REDUCTION.md) completed for selected capabilities; live implementation status unverified.  
 **Authority:** This charter supersedes conflicting earlier product/pricing direction. If implementation contradicts a decision, report the conflict; do not silently revise the decision. See [FBM Product Strategy](FBM_PRODUCT_STRATEGY.md).
 
 ## Mission
@@ -18,7 +18,7 @@ A short, goal-first onboarding survey learns what someone wants to accomplish, b
 
 1. **Commission:** flat **3%, never increased**. KARMA tiers never change commission or payouts.
 2. **Fee ordering:** subtract payment-processing fees from the sale total first; split the remainder between seller and the 3% Coalition commission. Verify actual settlement arithmetic before publishing examples.
-3. **Pricing:** remove all subscriptions. Software is a **one-time purchase**, owning that version; this replaces the former $10/month all-access plan and any vendor monthly tiers. Ongoing third-party/hosted costs are transparent at-cost pass-through; optional paid upgrades and support may be offered.
+3. **Pricing:** remove all subscriptions. Software and enhancement features are **one-time purchases, with no subscription**, owning the purchased version; this replaces the former $10/month all-access plan and any vendor monthly tiers. Ongoing third-party/hosted costs are transparent at-cost pass-through; optional paid upgrades and support may be offered.
 4. **Privacy:** E2EE is never paywalled.
 5. **Geographic scope:** cooperative quests and validation rules cover all US states and international jurisdictions, not just South Carolina. Applicable local laws still require jurisdiction-specific compliance.
 6. **License:** FBM is **AGPL-3.0**; verify outside-component license compatibility before incorporation.
@@ -49,7 +49,7 @@ A shop, co-op, or nonprofit is a **preset of exchange primitives plus governance
 | Barter | Generic barter module; adapters reportedly planned | Organized barter exchange reporting, including Form 1099-B, legal review |
 | Gift / mutual aid | Nonprofit and mutual-aid organization tooling | Fraud, abuse, privacy controls |
 | Pooled buy | Demand pools, bargaining groups, order cycles | Securities review if pooled money is investment |
-| Lend / share | New | Damage, deposits, disputes, liability |
+| Lend / share | Rental availability/cart routes and asset declaration/matching implementations exist; complete lending lifecycle unverified | Damage, deposits, disputes, liability |
 | Consignment | Splits reportedly built but flagged off | Ledger correctness |
 | Patronage | Disbursement reportedly built but flagged off | Ledger correctness |
 
@@ -89,6 +89,8 @@ Inspired by **CoopCycle's shared-software/local-autonomy model**. A chapter runs
 - Do not imply Blackout integration or federation is shipped without evidence.
 
 ## Workstream 5 — One-time pricing migration
+
+**2026-11-12 clarification:** Enhancement features are a one-time purchase, never a subscription. Buying an enhancement must not change the flat 3% Coalition sales commission. The current code still contains monthly vendor plans, recurring renewals and plan-based rate discounts; see the [pricing migration findings](IMPLEMENTATION_STATUS_AND_COST_REDUCTION.md#pricing-migration-and-default-off-features). These are implementation conflicts to resolve, not approved alternatives.
 
 Audit **all** vendor plans (reported up to $249/month), billing code, subscription entitlements, checkout, storefront copy, emails, and documentation. Remove subscriptions **as one coordinated, tested migration**, including treatment of existing customers, renewals, refunds, and entitlements.
 
