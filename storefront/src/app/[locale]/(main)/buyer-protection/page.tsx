@@ -126,7 +126,7 @@ export default function BuyerProtectionPage() {
               step: "4",
               title: "It gets resolved",
               detail:
-                "A refund, a replacement, or an explanation of why we can't act. If we can't resolve it, your card issuer's dispute rights are still available and usually run longer than our window.",
+                "We decide it: a refund for some or all of what you claimed, or that we can't act, with the reason recorded on your claim. If we can't resolve it, your card issuer's dispute rights are still available and usually run longer than our window.",
             },
           ].map((item) => (
             <li key={item.step} className="rounded-xl border p-5 flex gap-4">
