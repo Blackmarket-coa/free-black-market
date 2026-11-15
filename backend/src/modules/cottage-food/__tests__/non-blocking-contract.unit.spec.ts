@@ -21,6 +21,11 @@ const CART_VALIDATE_HOOK = join(
   __dirname,
   "../../../workflows/hooks/complete-cart-validate.ts"
 )
+// The guards that hook runs are listed here, not in the hook file (SD-54).
+const CART_VALIDATE_GUARDS = join(
+  __dirname,
+  "../../../workflows/hooks/complete-cart-guards.ts"
+)
 const ADD_TO_CART_HOOK = join(
   __dirname,
   "../../../workflows/hooks/add-to-cart-validation.ts"
@@ -54,8 +59,10 @@ describe("cottage-food never blocks a sale", () => {
   })
 
   it("is not referenced by the cart-completion validator", () => {
-    const src = readFileSync(CART_VALIDATE_HOOK, "utf8")
-    expect(src).not.toMatch(/cottage/i)
+    for (const file of [CART_VALIDATE_HOOK, CART_VALIDATE_GUARDS]) {
+      const src = readFileSync(file, "utf8")
+      expect(src).not.toMatch(/cottage/i)
+    }
   })
 
   it("is not referenced by the add-to-cart validator", () => {

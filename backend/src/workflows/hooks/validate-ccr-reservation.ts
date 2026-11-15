@@ -28,6 +28,8 @@ export async function validateCcrReservation(
   // `CompleteCartValidateArgs`). Until SD-54 this read `input.cart_id`,
   // which the hook never carries, so the guard returned here at every
   // checkout and a cart holding a reservation completed at its full total.
+  // A cart that has already completed never reaches this guard: the
+  // composition skips every guard on a re-run (`complete-cart-guards.ts`).
   const cartId = args?.input?.id
   if (!cartId || !context?.container) return
 

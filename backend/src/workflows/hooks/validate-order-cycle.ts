@@ -63,6 +63,9 @@ export async function validateOrderCycleOnCompleteCart(
 ): Promise<void> {
   // `{ input: { id }, cart }`, as Medusa calls the hook. Until SD-54 this read
   // `input.cart_id`, which the hook never carries, and so ran at no checkout.
+  // A cart that has already completed never reaches this guard: on a re-run
+  // the cycle's sold count already holds the cart's own sale, so the
+  // composition skips every guard there (`complete-cart-guards.ts`).
   const cartId = args?.input?.id
   if (!cartId || !context?.container) return
 

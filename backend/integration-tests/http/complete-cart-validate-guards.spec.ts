@@ -184,6 +184,21 @@ medusaIntegrationTestRunner({
     }
     const messages = (errors: Array<{ error?: { message?: string } }>) => errors.map((e) => e?.error?.message ?? "").join(" | ")
 
+    /**
+     * The first completion of a re-run test yielded an order. Medusa 2.14.2's
+     * engine can stop a completion after it wrote the order and before it
+     * authorized the payment, with no error and no order id handed back
+     * (SD-53, `lib/cart-completion.ts`); seen once here on a loaded machine,
+     * where the test then failed reading a payment that was never made. That
+     * is not what these tests are about, so it fails here, by name.
+     */
+    function expectFirstCompletion(first: { orderId?: string; errors: Array<{ error?: { message?: string } }> }) {
+      expect(messages(first.errors)).toBe("")
+      if (!first.orderId) {
+        throw new Error("The first completion handed back no order id: the SD-53 engine stall, not a guard result. Re-run the spec.")
+      }
+    }
+
     describe("completeCartWorkflow.hooks.validate on a real cart completion (SD-54)", () => {
       afterEach(settleBeforeTeardown)
 
@@ -239,6 +254,104 @@ medusaIntegrationTestRunner({
         expect(String(response.data?.message)).toMatch(/2 Coalition Credits reserved/)
         expect(await ordersOf(customer.id)).toEqual([])
         expect(await paymentsOf(collection.id)).toEqual([])
+      })
+
+      /**
+       * Medusa runs the validate hook on every run of `completeCartWorkflow`,
+       * before it looks at the cart's existing order (`createHook("validate")`
+       * comes before `when("create-order", ...)`), so a re-run on a cart that
+       * already completed runs the hook again: a retried checkout, the digital
+       * and subscription replays with their flag off, Medusa's payment
+       * webhook. Before SD-54 the CCR and order-cycle guards did not run, and
+       * a re-run handed the order back; it must still. With the guards running
+       * and no `cartAlreadyCompleted` check (`workflows/hooks/
+       * complete-cart-guards.ts`), the order-cycle guard refused these re-runs
+       * against state the first completion had changed, and the refusal ran
+       * the workflow's `compensatePaymentIfNeededStep` compensation, which
+       * refunds a captured payment (seen in review; the first two tests are
+       * adapted from the reviewer's reference commit). With the check removed,
+       * each re-run test below fails on the guard's refusal. The refund
+       * assertions do not discriminate on their own here: in review, with the
+       * system provider, the compensation was attempted and failed before it
+       * wrote a refund row (step state `failed`, no refunds), so it is the
+       * refusal that shows the check is missing.
+       */
+      it("a re-run on a completed cart whose own sale used up the cycle's stock hands back its order", async () => {
+        const { cart, customer, cycle } = await makeCart({ quantity: 2, cycle: { status: "open", available: 2, sold: 0 } })
+        const first = await completeCart(cart.id)
+        expectFirstCompletion(first)
+        await drainSubscribers()
+        // `order-cycle-order-placed` has recorded the sale: nothing is left.
+        const { rows } = await container().resolve(ContainerRegistrationKeys.PG_CONNECTION).raw(
+          `SELECT sold_quantity FROM order_cycle_product WHERE order_cycle_id = ?`,
+          [cycle!.id]
+        )
+        expect(rows).toEqual([{ sold_quantity: 2 }])
+
+        const again = await completeCart(cart.id)
+        expect(messages(again.errors)).toBe("")
+        expect(again.orderId).toBe(first.orderId)
+        expect((await ordersOf(customer.id)).map((o: { id: string }) => o.id)).toEqual([first.orderId])
+      })
+
+      it("a re-run on a completed, captured cart whose cycle has since dispatched hands back its order and refunds nothing", async () => {
+        const { cart, collection, cycle } = await makeCart({ quantity: 1, cycle: { status: "open", available: 10, sold: 0 } })
+        const first = await completeCart(cart.id)
+        expectFirstCompletion(first)
+        await drainSubscribers()
+        const payments = container().resolve(Modules.PAYMENT)
+        const [payment] = await paymentsOf(collection.id)
+        await payments.capturePayment({ payment_id: payment.id })
+        await container().resolve(ContainerRegistrationKeys.PG_CONNECTION).raw(
+          `UPDATE order_cycle SET status = 'dispatched' WHERE id = ?`,
+          [cycle!.id]
+        )
+
+        const again = await completeCart(cart.id)
+        await drainSubscribers()
+        expect(messages(again.errors)).toBe("")
+        expect(again.orderId).toBe(first.orderId)
+        expect(await payments.listRefunds({ payment_id: payment.id })).toEqual([])
+      })
+
+      /**
+       * The check covers every guard in the composition, not only the
+       * order-cycle one. A completed cart can carry what a guard refuses: on
+       * Mercur's main checkout, which runs none of these guards (SD-54, open),
+       * a cart holding a Coalition Credits reservation completes, and Medusa's
+       * payment webhook then runs `completeCartWorkflow` on it, because Mercur
+       * writes no `order_cart` link. That cart cannot be completed through
+       * Mercur here, so the reservation is written onto a cart after it
+       * completed, which is the state the webhook would read. A refusal there
+       * would refund the captured payment and leave the order standing.
+       */
+      it("a re-run on a completed, captured cart that carries a Coalition Credits reservation hands back its order and refunds nothing", async () => {
+        const { cart, collection } = await makeCart()
+        const first = await completeCart(cart.id)
+        expectFirstCompletion(first)
+        await drainSubscribers()
+        const payments = container().resolve(Modules.PAYMENT)
+        const [payment] = await paymentsOf(collection.id)
+        await payments.capturePayment({ payment_id: payment.id })
+        await container().resolve(Modules.CART).updateCarts(cart.id, { metadata: { [CCR_RESERVATION_METADATA_KEY]: 3 } })
+
+        const again = await completeCart(cart.id)
+        await drainSubscribers()
+        expect(messages(again.errors)).toBe("")
+        expect(again.orderId).toBe(first.orderId)
+        expect(await payments.listRefunds({ payment_id: payment.id })).toEqual([])
+      })
+
+      it("the check covers the guards this change did not touch: a completed cart with a malformed sliding-scale tier hands back its order", async () => {
+        const { cart } = await makeCart()
+        const first = await completeCart(cart.id)
+        expectFirstCompletion(first)
+        await drainSubscribers()
+        await container().resolve(Modules.CART).updateCarts(cart.id, { metadata: { tier: "not-a-tier" } })
+
+        const again = await completeCart(cart.id)
+        expect(messages(again.errors)).toBe("")
+        expect(again.orderId).toBe(first.orderId)
       })
     })
   },
