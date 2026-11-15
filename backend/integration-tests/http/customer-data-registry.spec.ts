@@ -1,5 +1,7 @@
+import { basename, join } from "path"
 import { medusaIntegrationTestRunner } from "@medusajs/test-utils"
-import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
+import { MigrationScriptsMigrator } from "@medusajs/framework/migrations"
+import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils"
 import { generateResetPasswordTokenWorkflow } from "@medusajs/medusa/core-flows"
 import { createPublishableKeyToken } from "./_publishable-key"
 import { safe } from "./helpers/seller-auth"
@@ -9,6 +11,8 @@ import {
   customerColumnOf,
 } from "../../src/lib/customer-data-registry"
 import { readCustomerDataAcrossRegistry } from "../../src/lib/customer-erasure"
+import { PASSWORD_HISTORY_MODULE } from "../../src/modules/password-history"
+import { clearDeletedCustomersLeftovers } from "../../src/migration-scripts/clear-deleted-customers-review-names-and-password-history"
 
 jest.setTimeout(240 * 1000)
 
@@ -35,7 +39,9 @@ jest.setTimeout(240 * 1000)
  * The P1-13 review found two more things a deletion left behind, both shown
  * here through the real routes: the old password hashes the reuse check keeps
  * per auth identity (written by a real password change), and the public name
- * on the person's reviews (read back through the public review route).
+ * on the person's reviews (read back through the public review route). Its
+ * follow-up found that fixing new deletions left every earlier one as it
+ * was; the one-off migration script that clears those is run here too.
  */
 
 // `food_order`'s anonymiseFields name four columns the table does not have
@@ -44,6 +50,12 @@ jest.setTimeout(240 * 1000)
 // whole UPDATE, so a deletion clears none of the order's address fields —
 // the case D11-1 was opened for. `recipient_name` is NOT NULL, so the fix is a
 // decision, not a rename.
+//
+// Until this list is empty, nothing in food_order's anonymiseFields is
+// cleared, including `customer_notes` and `customer_review`, which the P1-13
+// review follow-up added. The unit drift walk counts those two as decided
+// because they are configured; whoever empties this list makes them real,
+// and should then assert them cleared on a deletion here.
 const KNOWN_MISSING_ANONYMISE_FIELDS = [
   "food_order.customer_name",
   "food_order.customer_email",
@@ -70,6 +82,11 @@ const KNOWN_NOT_NULL_ANONYMISE = [
 // All thirteen now read by SQL (QUERY_CANNOT_ADDRESS in the registry), so the
 // list of entries the export cannot read is empty and must stay empty.
 const KNOWN_UNREADABLE_IN_EXPORT: string[] = []
+
+// Where `medusa db:migrate` finds the project's one-off scripts
+// (getResolvedPlugins: the project's own `src`, then `migration-scripts`).
+const MIGRATION_SCRIPTS = join(__dirname, "../../src/migration-scripts")
+const CLEANUP_SCRIPT = "clear-deleted-customers-review-names-and-password-history.ts"
 
 medusaIntegrationTestRunner({
   inApp: true,
@@ -318,6 +335,86 @@ medusaIntegrationTestRunner({
         // own note to the seller is not.
         expect(await standingOrderRow(myOrder)).toEqual({ customer_id: leaving.id, customer_notes: null, order_value: "1200" })
         expect(await standingOrderRow(theirOrder)).toEqual({ customer_id: staying.id, customer_notes: "Ring twice", order_value: "1200" })
+      })
+
+      it("the one-off cleanup clears what earlier deletions left: orphaned password history and the names on unlinked reviews", async () => {
+        // Built through the modules, not the routes: the cases above spend the
+        // whole 20-per-minute budget of POST /auth/* and POST /store/customers
+        // (authRateLimiter), and the route that writes a history row is shown
+        // above. The rows here are the same: the identity's current hash from
+        // emailpass, keyed by the identity, stamped "customer".
+        const auth = container().resolve(Modules.AUTH)
+        const customers = container().resolve(Modules.CUSTOMER)
+        const passwordHistory = container().resolve(PASSWORD_HISTORY_MODULE)
+        async function personWithOldPassword() {
+          const email = `registry-cleanup-${uid()}@example.com`
+          const registered = await auth.register("emailpass", { body: { email, password: `${uid()}-pw` } })
+          expect(registered.success).toBe(true)
+          const authIdentityId = (registered.authIdentity as { id: string }).id
+          // The hash the reuse check stores is the one emailpass holds now.
+          const [stored] = await auth.listProviderIdentities({ auth_identity_id: authIdentityId, provider: "emailpass" })
+          expect(stored.provider_metadata.password).toEqual(expect.any(String))
+          await passwordHistory.createPasswordHistoryEntries([
+            { auth_identity_id: authIdentityId, actor_type: "customer", password_hash: stored.provider_metadata.password },
+          ])
+          const customer = await customers.createCustomers({ email })
+          return { authIdentityId, customerId: customer.id as string }
+        }
+        const gone = await personWithOldPassword()
+        const live = await personWithOldPassword()
+        expect(await historyOf(gone.authIdentityId)).toEqual([{ actor_type: "customer" }])
+        expect(await historyOf(live.authIdentityId)).toEqual([{ actor_type: "customer" }])
+
+        // What a deletion did before the registry reached these tables. To
+        // the sign-in: the route's step 4, `deleteAuthIdentities`, and nothing
+        // to the history. The identity row is gone (a hard delete, which is
+        // what the cleanup's NOT EXISTS relies on); its history stays.
+        await auth.deleteAuthIdentities([gone.authIdentityId])
+        const identity = await pg().raw(`SELECT 1 FROM "auth_identity" WHERE "id" = ?`, [gone.authIdentityId])
+        expect(identity.rows).toEqual([])
+        expect(await historyOf(gone.authIdentityId)).toEqual([{ actor_type: "customer" }])
+
+        // To the review: the registry's old statement for embed_product_review,
+        // which unlinked customer_id and nothing else.
+        const product = `prod_registry_${uid().replace(/-/g, "")}`
+        const unlinked = await insertReview(gone.customerId, product, "Jordan R.")
+        await pg().raw(`UPDATE "embed_product_review" SET "customer_id" = NULL WHERE "customer_id" = ?`, [gone.customerId])
+        const linked = await insertReview(live.customerId, product, "Sam K.")
+        expect(await reviewRow(unlinked)).toEqual({ customer_id: null, customer_display_name: "Jordan R.", body: "Crisp and fresh.", rating: 5 })
+
+        // As `medusa db:migrate` runs it: Medusa's own migrator, over the
+        // project's src/migration-scripts (it also runs the folder's other
+        // one-off, purge-undelivered-feed-order-notifications.ts).
+        const migrator = new MigrationScriptsMigrator({ container: container() })
+        await migrator.ensureMigrationsTable()
+        const pendingBefore = (await migrator.getPendingMigrations([MIGRATION_SCRIPTS])).map((p) => basename(p))
+        expect(pendingBefore).toContain(CLEANUP_SCRIPT)
+        await migrator.run([MIGRATION_SCRIPTS])
+
+        expect(await historyOf(gone.authIdentityId)).toEqual([])
+        expect(await historyOf(live.authIdentityId)).toEqual([{ actor_type: "customer" }])
+        expect(await reviewRow(unlinked)).toEqual({ customer_id: null, customer_display_name: null, body: "Crisp and fresh.", rating: 5 })
+        expect(await reviewRow(linked)).toEqual({ customer_id: live.customerId, customer_display_name: "Sam K.", body: "Crisp and fresh.", rating: 5 })
+        const pak = await createPublishableKeyToken(getContainer)
+        const res = await safe(api.get(`/store/products/${product}/reviews`, { headers: { "x-publishable-api-key": pak } }))
+        expect(res.status).toBe(200)
+        const authors = Object.fromEntries(
+          (res.data.reviews as Array<{ id: string; author: string }>).map((r) => [r.id, r.author])
+        )
+        expect(authors).toEqual({ [unlinked]: "Verified buyer", [linked]: "Sam K." })
+
+        // Recorded, so the next deploy does not run it again.
+        const recorded = await pg().raw(
+          `SELECT "finished_at" IS NOT NULL AS "finished" FROM "script_migrations" WHERE "script_name" = ?`,
+          [CLEANUP_SCRIPT]
+        )
+        expect(recorded.rows).toEqual([{ finished: true }])
+        expect((await migrator.getPendingMigrations([MIGRATION_SCRIPTS])).map((p) => basename(p))).not.toContain(CLEANUP_SCRIPT)
+
+        // Idempotent if run by hand: a second run finds nothing, and the live
+        // identity keeps its history for the reuse check.
+        expect(await clearDeletedCustomersLeftovers(pg())).toEqual({ reviewNamesCleared: 0, passwordHistoryDeleted: 0 })
+        expect(await historyOf(live.authIdentityId)).toEqual([{ actor_type: "customer" }])
       })
     })
 

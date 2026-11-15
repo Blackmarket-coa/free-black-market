@@ -348,6 +348,10 @@ describe("customer data registry", () => {
    * How a person-named column is already decided by the registry itself:
    * it is its table's customer column, its entry clears it, or it describes
    * a row the entry deletes. Undefined when the registry does not decide it.
+   *
+   * "cleared" means configured, not achieved: food_order's UPDATE fails whole
+   * on Postgres (KNOWN_MISSING_ANONYMISE_FIELDS in the integration spec), so
+   * its customer_notes and customer_review count here and are not yet cleared.
    */
   function decided(ref: string): string | undefined {
     const entry = registryEntry(tableOf(ref))
@@ -651,8 +655,17 @@ describe("customer data registry", () => {
     })
   })
 
-  it("clears the customer's own words on the orders it keeps", () => {
+  it("clears the customer's notes on a standing order it keeps", () => {
+    // Cleared on Postgres by a deletion: integration-tests/http/customer-data-registry.spec.ts.
     expect(registryEntry("standing_order")?.anonymiseFields).toEqual(["customer_notes"])
+  })
+
+  it("configures the food order's customer notes and review to be cleared (inert until food_order's UPDATE works)", () => {
+    // Configured only. food_order's UPDATE fails whole on Postgres
+    // (KNOWN_MISSING_ANONYMISE_FIELDS in the integration spec), so a deletion
+    // clears neither of these today; the drift walk's decided() counts them,
+    // because it reads configuration. They become real when that list is
+    // empty.
     expect(registryEntry("food_order")?.anonymiseFields).toEqual(
       expect.arrayContaining(["customer_notes", "customer_review"])
     )

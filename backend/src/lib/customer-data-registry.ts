@@ -287,7 +287,9 @@ export const CUSTOMER_DATA_REGISTRY: CustomerDataEntry[] = [
   // page. Unlinking customer_id alone left it there (P1-13 review). The column
   // is nullable, and the review routes show "Verified buyer" in its place.
   // Nothing else on the row names the reviewer: `reviewer_seller_id` is a
-  // seller, and title and body are the review itself.
+  // seller, and title and body are the review itself. Reviews of customers
+  // deleted before this are cleared once, on the next `medusa db:migrate`, by
+  // migration-scripts/clear-deleted-customers-review-names-and-password-history.ts.
   { entity: "embed_product_review", module: "reviews", label: "Product reviews written", action: "anonymise", basis: "A review other shoppers rely on outlives the account that wrote it.", exportVia: "sql", anonymiseFields: ["customer_display_name"] },
   { entity: "order_attribution", module: "creator-attribution", label: "Purchase attribution to a creator", action: "anonymise", basis: "A creator's earned attribution must not be revoked by someone else closing their account." },
   // A direct-charge donation's record (docs/POSTURE_A_COMPLIANCE.md rule 10).
@@ -333,6 +335,9 @@ export const CUSTOMER_DATA_REGISTRY: CustomerDataEntry[] = [
   // signs in. A 'seller' row on the same identity is the same person's old
   // password, guarding an identity that no longer exists. If the route ever
   // unlinks a shared identity instead of deleting it, this entry must follow.
+  // The history of identities deleted before this is removed once, on the
+  // next `medusa db:migrate`, by
+  // migration-scripts/clear-deleted-customers-review-names-and-password-history.ts.
   //
   // Not exported: credential material (see `inExport`).
   {
