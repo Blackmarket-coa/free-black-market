@@ -483,6 +483,26 @@ export const vendorRegistrationRateLimiter = createRateLimiter({
   keyPrefix: "vendor-reg",
 })
 
+/**
+ * Wholesale account applications: 5 per hour per client IP.
+ *
+ * `POST /store/wholesale-application` needs only the public publishable key,
+ * stores an application row and emails `wholesale-application-received` to
+ * whatever address the body names. Until the email templates existed that
+ * send was dropped, so the route's only cost was a row; once it really sends,
+ * an unthrottled route lets anyone mail any address from FBM's sending domain,
+ * and a domain whose reputation drops takes the order confirmation down with
+ * it. Its own prefix, so applications and vendor sign-ups cannot spend each
+ * other's budget. The email itself carries no text from the request (see the
+ * template), so what a caller can do inside this budget is confirm an
+ * application, not write a message.
+ */
+export const wholesaleApplicationRateLimiter = createRateLimiter({
+  windowMs: 3600_000,
+  max: 5,
+  keyPrefix: "wholesale-application",
+})
+
 /** Bug report (anonymous): 5 submissions per hour per IP */
 export const bugReportAnonymousRateLimiter = createRateLimiter({
   windowMs: 3600_000,

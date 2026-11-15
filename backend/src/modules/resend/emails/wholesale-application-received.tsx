@@ -10,16 +10,18 @@ import {
   Body,
 } from "@react-email/components"
 
-/** Sent by `POST /store/wholesale-application` once the application is stored. */
-type WholesaleApplicationReceivedEmailProps = {
-  business_name?: string | null
-  contact_name?: string | null
-}
+/**
+ * Sent by `POST /store/wholesale-application` once the application is stored.
+ *
+ * Deliberately takes no props. That route is public and mails whatever
+ * address its body names, so anything this template rendered from the
+ * request (the business or contact name) would be text an anonymous caller
+ * chose, sent from FBM's domain to a stranger. A fixed confirmation is a
+ * receipt; a templated one is a relay.
+ */
+type WholesaleApplicationReceivedEmailProps = Record<string, never>
 
-function WholesaleApplicationReceivedEmailComponent({
-  business_name,
-  contact_name,
-}: WholesaleApplicationReceivedEmailProps) {
+function WholesaleApplicationReceivedEmailComponent(_props: WholesaleApplicationReceivedEmailProps) {
   return (
     <Html>
       <Head />
@@ -33,16 +35,14 @@ function WholesaleApplicationReceivedEmailComponent({
               </Heading>
             </Section>
 
+            <Text className="text-black text-[14px] leading-[24px]">Hello,</Text>
             <Text className="text-black text-[14px] leading-[24px]">
-              Hi{contact_name ? ` ${contact_name}` : ""},
-            </Text>
-            <Text className="text-black text-[14px] leading-[24px]">
-              Thanks for applying for a wholesale account
-              {business_name ? ` for ${business_name}` : ""}. Our team will review it and email
-              you at this address.
+              Thanks for applying for a Free Black Market wholesale account. Our team will review
+              your application and email you at this address.
             </Text>
             <Text className="text-[#666666] text-[12px] leading-[20px]">
-              You don't need to do anything else right now.
+              You don't need to do anything else right now. If you did not apply, you can ignore
+              this email.
             </Text>
           </Container>
         </Body>
@@ -51,13 +51,9 @@ function WholesaleApplicationReceivedEmailComponent({
   )
 }
 
-export const wholesaleApplicationReceivedEmail = (props: WholesaleApplicationReceivedEmailProps) => (
-  <WholesaleApplicationReceivedEmailComponent {...props} />
+// Whatever a caller passes is ignored: the component is rendered with no props.
+export const wholesaleApplicationReceivedEmail = (_props?: unknown) => (
+  <WholesaleApplicationReceivedEmailComponent />
 )
 
-const mock: WholesaleApplicationReceivedEmailProps = {
-  business_name: "Greenleaf Nursery",
-  contact_name: "Avery",
-}
-
-export default () => <WholesaleApplicationReceivedEmailComponent {...mock} />
+export default () => <WholesaleApplicationReceivedEmailComponent />

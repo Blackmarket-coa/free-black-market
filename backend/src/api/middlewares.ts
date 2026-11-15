@@ -30,6 +30,7 @@ import {
   supplierWebhookRateLimiter,
   trustProxyMiddleware,
   vendorRegistrationRateLimiter,
+  wholesaleApplicationRateLimiter,
 } from "../shared/rate-limiter";
 import { preventPasswordReuseMiddleware } from "./middlewares/password-history";
 import { servePublishingKeys } from "./middlewares/publishing-keys";
@@ -1631,6 +1632,14 @@ export default defineMiddlewares({
       matcher: "/store/ticket-products/:id/seats",
       method: "GET",
       middlewares: [validateAndTransformQuery(GetTicketProductSeatsSchema, {})],
+    },
+    // Wholesale application intake: public (publishable key only) and it
+    // emails the address in the body, so it is IP-limited like the other
+    // anonymous writes. See wholesaleApplicationRateLimiter.
+    {
+      matcher: "/store/wholesale-application",
+      method: "POST",
+      middlewares: [wholesaleApplicationRateLimiter],
     },
     // Bug report routes - rate limited; storefront is anonymous-friendly,
     // vendor/admin are keyed by actor.

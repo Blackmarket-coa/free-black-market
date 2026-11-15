@@ -4,12 +4,16 @@ import type VendorRulesService from "../../../modules/vendor-rules/service"
 import { WholesaleBuyerType } from "../../../modules/vendor-rules/models/wholesale-application"
 import { emitBlackoutEvent } from "../../../lib/blackout-emit"
 import { Modules } from "@medusajs/framework/utils"
+import type { INotificationModuleService } from "@medusajs/framework/types"
+import { EMAIL_TEMPLATES } from "../../../modules/resend/templates"
 
 /**
  * Plant Network — Wholesale account application intake (Section 5).
  *
- * Persists the application (vendor-rules module), notifies the Hub (Blackout +
- * email) and confirms to the applicant. Approval → assignment into the existing
+ * Persists the application (vendor-rules module), notifies the Hub (Blackout)
+ * and confirms to the applicant by email. Public, so it is IP rate limited in
+ * `src/api/middlewares.ts` (wholesaleApplicationRateLimiter), and the
+ * confirmation carries no text from the request. Approval → assignment into the existing
  * WHOLESALE VendorCustomerTier happens at
  * `api/admin/wholesale-application/[id]/approve`.
  */
@@ -78,12 +82,18 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       },
       { eventId: `wholesale_application.received:${application.id}` }
     )
-    const notification = req.scope.resolve(Modules.NOTIFICATION) as any
+    // Nothing from the request goes into this email. The route is public and
+    // the recipient is whatever address the body names, so echoing
+    // `business_name` or `contact_name` would let anyone send a message of
+    // their choosing ("your account is locked, verify at ...") from FBM's
+    // sending domain. The fixed confirmation is all the applicant needs; the
+    // Hub sees the details through the event above and the admin queue.
+    const notification = req.scope.resolve<INotificationModuleService>(Modules.NOTIFICATION)
     await notification.createNotifications({
       to: application.email,
       channel: "email",
-      template: "wholesale-application-received",
-      data: { business_name: application.business_name, contact_name: application.contact_name },
+      template: EMAIL_TEMPLATES.WHOLESALE_APPLICATION_RECEIVED,
+      data: {},
     })
   } catch {
     // notifications are best-effort; the application is already persisted
