@@ -33,6 +33,19 @@ export const REQUEST_TYPES = {
   ORDER_CLAIM: "order_claim",
 } as const
 
+/**
+ * `submitter_id` for a request filed without a session.
+ *
+ * `request.submitter_id` is NOT NULL and `createRequest` throws when neither a
+ * submitter nor a requester is given, so an intake that deliberately accepts
+ * anonymous filings (a rights-holder's infringement notice, say) has to name
+ * one. Customer, member and seller ids all carry a prefix (`cus_`, `mem_`,
+ * `sel_`), so this can never equal a real actor and never shows up in a
+ * customer's or seller's own request list, both of which filter by
+ * `submitter_id`.
+ */
+export const ANONYMOUS_SUBMITTER_ID = "anonymous"
+
 /** What a buyer can claim went wrong. */
 export const ORDER_CLAIM_REASONS = {
   NOT_RECEIVED: "not_received",

@@ -26,6 +26,7 @@ import {
   storeCustomerAccountRateLimiter,
   storeCustomerDataRightsRateLimiter,
   storeDeliveryProofRateLimiter,
+  storeReportRateLimiter,
   strictAuthRateLimiter,
   supplierWebhookRateLimiter,
   trustProxyMiddleware,
@@ -1647,6 +1648,14 @@ export default defineMiddlewares({
       matcher: "/store/bug-report",
       method: "POST",
       middlewares: [bugReportAnonymousRateLimiter],
+    },
+    // Seller reports are anonymous by design (a rights-holder filing a notice
+    // need not have an account), so they are capped per client IP. The
+    // storefront posts from the reporter's browser, so the IP is theirs.
+    {
+      matcher: "/store/seller-reports",
+      method: "POST",
+      middlewares: [trustProxyMiddleware, storeReportRateLimiter],
     },
     {
       matcher: "/vendor/bug-report",

@@ -756,7 +756,9 @@ describe("rate limiters: present where declared, with the declared budgets", () 
       .split(/\nexport const /)
       .filter((chunk) => /^\w+ = createRateLimiter\(/.test(chunk))
       .map((chunk) => chunk.match(/keyPrefix: "([^"]+)"/)?.[1])
-    expect(prefixes.length).toBe(25)
+    // 26th: storeReportRateLimiter, "store-report" (anonymous seller and
+    // listing reports; seller-reports/__tests__/rate-limit.unit.spec.ts).
+    expect(prefixes.length).toBe(26)
     expect(prefixes).not.toContain(undefined)
     expect(new Set(prefixes).size).toBe(prefixes.length)
   })
