@@ -1,9 +1,8 @@
 import { MedusaError } from "@medusajs/framework/utils"
-// The email templates are .tsx and the unit jest config only transforms .ts;
-// these tests exercise the send/retry transport, not rendering, so the shared
-// renderer registry (which imports every template) is mocked to keep the
-// service importable. Template coverage across both providers is
-// ./email-template-coverage.unit.spec.ts.
+// These tests exercise the send/retry transport, not rendering, so the shared
+// renderer registry (which imports every template) is mocked out. Template
+// coverage across both providers is ./email-template-coverage.unit.spec.ts;
+// rendering the real templates is ./email-render.unit.spec.ts.
 jest.mock("../emails/registry", () => ({ EMAIL_TEMPLATE_RENDERERS: {} }))
 
 import ResendNotificationProviderService from "../service"

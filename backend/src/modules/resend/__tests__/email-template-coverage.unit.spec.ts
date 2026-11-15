@@ -21,10 +21,10 @@
  * registers and that both email providers deliver every email template a
  * caller names. The providers' transports are mocked; no email is sent.
  *
- * The `.tsx` templates are not transformed by the unit jest config, so each
- * is replaced by a marker that records which file rendered — which is what
- * lets this check that template `x` is rendered by `emails/x.tsx` and not
- * merely by something.
+ * Each `.tsx` template is replaced by a marker that records which file
+ * rendered — which is what lets this check that template `x` is rendered by
+ * `emails/x.tsx` and not merely by something. The real templates are
+ * rendered in email-render.unit.spec.ts.
  */
 import * as fs from "fs"
 import * as path from "path"
@@ -47,13 +47,16 @@ const TEMPLATE_FILES = fs
 for (const base of TEMPLATE_FILES) {
   const source = fs.readFileSync(path.join(EMAILS_DIR, `${base}.tsx`), "utf8")
   const exportNames = [...source.matchAll(/^export const (\w+)\s*=/gm)].map((m) => m[1])
-  jest.doMock(
-    path.join(EMAILS_DIR, base),
-    () =>
-      Object.fromEntries(
-        exportNames.map((name) => [name, (props: unknown): Marker => ({ __template: base, props })])
-      ),
-    { virtual: true }
+  // The real `.tsx` path, not a virtual extension-less one. Since the jest
+  // config transforms `.tsx`, `./order-placed` resolves to the file, and the
+  // resolver's cache is shared by every spec in a worker: a virtual mock at
+  // the bare path was bypassed whenever email-render.unit.spec.ts had already
+  // resolved the real file in the same worker, so this spec passed or failed
+  // by run order.
+  jest.doMock(path.join(EMAILS_DIR, `${base}.tsx`), () =>
+    Object.fromEntries(
+      exportNames.map((name) => [name, (props: unknown): Marker => ({ __template: base, props })])
+    )
   )
 }
 

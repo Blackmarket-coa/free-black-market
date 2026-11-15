@@ -15,8 +15,8 @@
  * walks every `createNotifications` caller in `src/` and fails when one asks
  * the `email` channel for a template that is not here.
  *
- * Kept free of `.tsx` imports so callers (and unit tests, whose jest config
- * does not transform `.tsx`) can name a template without loading React.
+ * Kept free of `.tsx` imports so callers (and their unit tests) can name a
+ * template without loading React.
  */
 export const EMAIL_TEMPLATES = {
   ORDER_PLACED: "order-placed",

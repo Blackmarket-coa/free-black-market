@@ -59,7 +59,7 @@ describe("wellness automation send budget", () => {
   it("sends the email fallback 50 times in an hour for one seller, then skips without sending, across service instances", async () => {
     const a = service()
     const b = service()
-    const results = []
+    const results: Array<Awaited<ReturnType<InstanceType<typeof WellnessAutomationService>["sendDM"]>>> = []
     for (let i = 0; i < 25; i++) results.push(await a.svc.sendDM(dm("sel_budget")))
     for (let i = 0; i < 25; i++) results.push(await b.svc.sendDM(dm("sel_budget")))
     expect(results.every((r) => r.ok && r.channel === "email")).toBe(true)
