@@ -97,13 +97,17 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
     0
   )
 
-  // Per-product split breakdown for the current month.
+  // Per-product split breakdown for the current month, in cents.
+  // `unit_price` is Medusa's major units (SellerOrderItem): summing it as
+  // cents put gross_cents and your_cut_cents 100x low, and fractional, once
+  // getSellerOrders worked (SD-52 re-review). Only the units are fixed here;
+  // what "your cut" means is F7's (docs/F7_FLAT_PAYOUT_INVENTORY.md §10.8).
   const perProduct = new Map<string, { units: number; gross: number }>()
   for (const o of monthOrders) {
     for (const it of o.items) {
       const agg = perProduct.get(it.title) ?? { units: 0, gross: 0 }
       agg.units += it.quantity
-      agg.gross += it.unit_price * it.quantity
+      agg.gross += Math.round(it.unit_price * it.quantity * 100)
       perProduct.set(it.title, agg)
     }
   }

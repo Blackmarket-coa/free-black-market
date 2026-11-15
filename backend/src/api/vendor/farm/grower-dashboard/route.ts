@@ -2,6 +2,7 @@ import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 import { GrowerPayoutService } from "../../../../modules/payout-breakdown/grower-payout"
 import { GrowerKarmaService } from "../../../../modules/progression/grower-karma"
+import { NON_SALE_ORDER_FILTERS } from "../../../../shared/seller-orders"
 
 /**
  * Plant Network — Grower-node dashboard (Section 8).
@@ -80,10 +81,20 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       // `items.*`, never `items.quantity` (SD-52): Medusa 2.14.2 rewrites
       // `items.quantity` to `items.item.quantity`, a property OrderLineItem
       // does not have, so this read threw for every order with a line item.
+      //
+      // Sales in the period only: NON_SALE_ORDER_FILTERS leaves out cancelled
+      // and draft orders, and created_at bounds the read to the six months the
+      // response's `period` names. It had neither, so a cancelled or draft
+      // order counted as units and revenue, and so did every order ever
+      // (SD-52 re-review).
       const { data: orders } = await query.graph({
         entity: "order",
         fields: ["id", "items.*"],
-        filters: { items: { product_id: productIds } },
+        filters: {
+          items: { product_id: productIds },
+          ...NON_SALE_ORDER_FILTERS,
+          created_at: { $gte: sixMonthsAgo },
+        },
       })
       const perProduct = new Map<string, { units: number; revenue: number }>()
       for (const order of orders ?? []) {

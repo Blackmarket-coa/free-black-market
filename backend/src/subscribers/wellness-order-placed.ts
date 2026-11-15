@@ -7,10 +7,21 @@ import { WellnessAutomationService } from "../modules/wellness/automation-servic
 import type { EmitWellnessKarmaInput } from "../modules/wellness/karma"
 import { featureFlagState } from "../shared/feature-flags"
 import { LIVE_CLASS_STATUSES } from "../modules/wellness/class-registration"
+import { classMessageVars } from "../modules/wellness/class-messages"
+import { productSellerIds } from "../shared/product-sellers"
+import { orderSellerId } from "../lib/blackout-identity"
 
 const log = createLogger("subscribers/wellness-order-placed")
 
-type LiveClass = { id: string; seller_id: string; title: string; product_id: string | null }
+type LiveClass = {
+  id: string
+  seller_id: string
+  title: string
+  product_id: string | null
+  starts_at: Date | string
+  timezone?: string | null
+  location_detail?: string | null
+}
 
 /**
  * Sale KARMA, behind WELLNESS_SALE_KARMA_V1 (default off; see the flag's note
@@ -47,6 +58,17 @@ async function awardSaleKarma(
  *     welcome automation.
  * Both KARMA awards wait on WELLNESS_SALE_KARMA_V1 (operator-gated, SD-52).
  *
+ * Only the seller who sold a line can be handed its buyer. A class or tier
+ * counts for a line only when its `seller_id` is the seller the line's
+ * product is linked to (Mercur's `seller_product`, the link Mercur's split
+ * reads to put the line on its seller's order) and, when the order carries
+ * Mercur's seller link, that seller too. Product ids are public and the vendor
+ * routes stored whatever `product_id` they were sent, so before this (SD-52
+ * re-review) seller B could point a class or tier at seller A's product and
+ * every order for it seated A's buyer in B's class or made them B's member,
+ * gave B their email and customer id, and sent B's automation. A class or tier
+ * of any other seller on the product is skipped and logged.
+ *
  * Safe to redeliver: seats are counted per (class, order) and a member row
  * created for this order is recognised, so a second `order.placed` for the
  * same order takes no further seats and sends no second message.
@@ -73,7 +95,8 @@ export default async function wellnessOrderPlaced({
     // membership sale ever registered anyone. `items.*` carries the quantity.
     const { data: [order] } = await query.graph({
       entity: "order",
-      fields: ["id", "email", "customer_id", "items.*"],
+      // `seller.id` is Mercur's order→seller link (Order has no `seller_id`).
+      fields: ["id", "email", "customer_id", "seller.id", "items.*"],
       filters: { id: data.id },
     })
     if (!order) return
@@ -88,6 +111,27 @@ export default async function wellnessOrderPlaced({
     const productIds = [...new Set(lines.map((l) => l.productId))]
     if (!productIds.length) return
 
+    // Who sold each product on this order (see the docblock). A product with
+    // no seller link, or whose seller is not the order's, was sold by nobody
+    // this subscriber can attribute it to: no class or tier counts for it.
+    const productSeller = await productSellerIds(container, productIds)
+    const orderSeller = orderSellerId(order as { seller?: { id?: unknown } | null })
+    const soldBy = (productId: string | null | undefined): string | null => {
+      if (!productId) return null
+      const seller = productSeller.get(productId) ?? null
+      if (!seller || (orderSeller && orderSeller !== seller)) return null
+      return seller
+    }
+    const isSellersOwn = (kind: "class" | "membership tier", row: { id: string; seller_id: string; product_id: string | null }) => {
+      const seller = soldBy(row.product_id)
+      if (row.seller_id === seller) return true
+      log.warn(
+        `[wellness-order-placed] order ${order.id}: ${kind} ${row.id} of seller ${row.seller_id} is linked to product ` +
+          `${row.product_id}, ${seller ? `which seller ${seller} sold` : "which no seller of this order sold"}; ignored`
+      )
+      return false
+    }
+
     const svc = container.resolve(WELLNESS_MODULE) as WellnessModuleService
     const karma = new WellnessKarmaService(container)
     const automation = new WellnessAutomationService(container)
@@ -101,11 +145,11 @@ export default async function wellnessOrderPlaced({
     // registerForClass wrote it back to "open"). registerForClass refuses
     // those too; this keeps a dead session from making a live one ambiguous.
     const now = new Date()
-    const liveClasses = (await svc.listClassEvents({
+    const liveClasses = ((await svc.listClassEvents({
       product_id: productIds,
       status: [...LIVE_CLASS_STATUSES],
       ends_at: { $gt: now },
-    } as never)) as LiveClass[]
+    } as never)) as LiveClass[]).filter((c) => isSellersOwn("class", c))
     const liveByProduct = new Map<string, LiveClass[]>()
     for (const c of liveClasses) {
       if (!c.product_id) continue
@@ -157,11 +201,11 @@ export default async function wellnessOrderPlaced({
     if (unmatched.size) {
       const dead = (await svc.listClassEvents(
         { product_id: [...unmatched.keys()] } as never,
-        { select: ["id", "product_id", "status"], take: 20, order: { ends_at: "DESC" } }
-      )) as Array<{ id: string; product_id: string | null; status: string }>
+        { select: ["id", "seller_id", "product_id", "status"], take: 20, order: { ends_at: "DESC" } }
+      )) as Array<{ id: string; seller_id: string; product_id: string | null; status: string }>
       const deadByProduct = new Map<string, string[]>()
       for (const c of dead) {
-        if (!c.product_id) continue
+        if (!c.product_id || c.seller_id !== soldBy(c.product_id)) continue
         deadByProduct.set(c.product_id, [...(deadByProduct.get(c.product_id) ?? []), `${c.id} (${c.status})`])
       }
       for (const [productId, units] of unmatched) {
@@ -185,6 +229,7 @@ export default async function wellnessOrderPlaced({
       } as never)) as unknown[]
 
       let registered = 0
+      let waitlisted = 0
       let unseated = 0
       let soldOut = false
       for (let i = held.length; i < units; i++) {
@@ -208,7 +253,9 @@ export default async function wellnessOrderPlaced({
           unseated = units - i
           break
         }
-        if ((result.attendee as { status?: string } | null)?.status === "registered") registered++
+        const status = (result.attendee as { status?: string } | null)?.status
+        if (status === "registered") registered++
+        if (status === "waitlisted") waitlisted++
         if (result.sold_out) soldOut = true
       }
 
@@ -225,22 +272,35 @@ export default async function wellnessOrderPlaced({
             `could not be seated (class full, no waitlist); the buyer is not registered for them and has not been told`
         )
       }
+      if (waitlisted > 0) {
+        log.warn(
+          `[wellness-order-placed] order ${order.id}: ${waitlisted} of ${units} paid ticket(s) for class ${cls.id} ` +
+            `were waitlisted (class full); the buyer holds no seat for them and has not been told`
+        )
+      }
       // "You're registered" only to a buyer who now holds a seat. A waitlisted
-      // or unseated buyer used to be sent it too.
+      // or unseated buyer used to be sent it too. Date, time (the class's own
+      // zone) and link are filled: the body used to arrive with them literal.
       if (registered > 0) {
         await automation.runTrigger({
           seller_id: cls.seller_id,
           trigger: "class_registered",
-          vars: { name: email, session_type: cls.title },
+          vars: { name: email, ...classMessageVars(cls) },
           recipients: [{ email }],
         })
       }
     }
 
     // ---- Membership purchases ----
-    const tiers = (await svc.listMembershipTiers({
+    const tiers = ((await svc.listMembershipTiers({
       product_id: productIds,
-    } as never)) as Array<{ id: string; seller_id: string; name: string; credits_per_period: number }>
+    } as never)) as Array<{
+      id: string
+      seller_id: string
+      product_id: string | null
+      name: string
+      credits_per_period: number
+    }>).filter((t) => isSellersOwn("membership tier", t))
     for (const tier of tiers) {
       if (!email) continue
       // One membership per (seller, email): a unique index. A redelivered
