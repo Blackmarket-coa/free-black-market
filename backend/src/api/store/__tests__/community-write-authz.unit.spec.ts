@@ -688,11 +688,14 @@ describe("PUT /store/proposals/:id — the author, before voting opens", () => {
 
 const notFound = () => Object.assign(new Error("not found"), { type: "not_found" })
 
+// Query serves producers and orders. Couriers are deliberately *not* here:
+// they are read through the module (below), and a courier lookup that went
+// back to Query would land on an unseeded entity and fail the case.
 const deliveryRows = {
-  food_courier: [{ id: "cour_1", owner_id: "drv_courier" }],
   food_producer: [{ id: "prod_1", owner_id: "sel_producer" }],
   food_order: [{ id: "ord_1", customer_id: "cus_recipient" }],
 }
+const COURIERS: Row[] = [{ id: "cour_1", owner_id: "drv_courier" }]
 
 const pinDelivery = {
   id: "fd_1",
@@ -707,7 +710,7 @@ const pinDelivery = {
 // Couriers are read through the module: Query's `food_courier` entry point
 // resolves to a list method the service does not have.
 const listCouriers = async (filters: { id?: string }) =>
-  deliveryRows.food_courier.filter((row) => row.id === filters.id)
+  COURIERS.filter((row) => row.id === filters.id)
 
 const foodDistribution = (delivery: Row | null) => ({
   listCouriers: jest.fn(listCouriers),
@@ -1153,10 +1156,10 @@ describe("POST /store/food-producers/:id/orders — the order's customer comes f
   }
 
   it.each([
-    ["a seller", SELLER("sel_1"), undefined],
-    ["a driver", { id: "drv_1", type: "driver" as const }, undefined],
-    ["a customer", CUSTOMER("cus_me"), "cus_me"],
-  ])("files %s's order under customer %s, never the body's customer_id", async (_label, actor, expected) => {
+    ["a seller (unattributed)", SELLER("sel_1"), undefined],
+    ["a driver (unattributed)", { id: "drv_1", type: "driver" as const }, undefined],
+    ["a customer (their own id)", CUSTOMER("cus_me"), "cus_me"],
+  ])("%s: the order's customer_id comes from the token, never the body", async (_label, actor, expected) => {
     const service = svc()
     const res = await call(
       placeProducerOrder,
