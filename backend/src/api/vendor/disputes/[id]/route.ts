@@ -1,18 +1,30 @@
 import type { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { createLogger } from "../../../../shared/logger"
+import { requireSellerId } from "../../../../shared/auth-helpers"
 import { ORDER_DISPUTE_MODULE } from "../../../../modules/order-dispute"
 import type OrderDisputeService from "../../../../modules/order-dispute/service"
 import { DisputeStateError } from "../../../../modules/order-dispute/service"
+import {
+  toVendorDisputeEventView,
+  toVendorDisputeView,
+} from "../../../../modules/order-dispute/views"
 
 const log = createLogger("api/vendor/disputes/[id]")
 
-const getSellerId = (req: MedusaRequest) =>
-  (req as unknown as { auth_context?: { actor_id?: string } }).auth_context
-    ?.actor_id
-
+/**
+ * GET /vendor/disputes/:id — one claim against this vendor: the buyer's
+ * account, the vendor's own reply, the decision and its note, and the event
+ * log, as `toVendorDisputeView` allows (no admin or customer ids, no
+ * metadata).
+ *
+ * Both handlers resolve the seller with `requireSellerId` (member → seller).
+ * They compared `auth_context.actor_id`, a vendor login's member id, with
+ * the dispute's seller id, so every read and every reply answered 404.
+ * Another vendor's dispute is the same 404 as no dispute.
+ */
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
-  const sellerId = getSellerId(req)
-  if (!sellerId) return res.status(401).json({ message: "Unauthorized" })
+  const sellerId = await requireSellerId(req, res)
+  if (!sellerId) return
 
   const id = (req.params as { id?: string })?.id
   if (!id) return res.status(400).json({ message: "Missing id" })
@@ -25,12 +37,15 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     return res.status(404).json({ message: "Dispute not found" })
   }
 
-  const events = await service.listOrderDisputeEvents(
+  const events = (await service.listOrderDisputeEvents(
     { dispute_id: id },
     { order: { created_at: "ASC" } }
-  )
+  )) as unknown[]
 
-  return res.json({ dispute, events })
+  return res.json({
+    dispute: toVendorDisputeView(dispute),
+    events: events.map(toVendorDisputeEventView),
+  })
 }
 
 /**
@@ -41,8 +56,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
  * they are the subject of. Only an admin resolves.
  */
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
-  const sellerId = getSellerId(req)
-  if (!sellerId) return res.status(401).json({ message: "Unauthorized" })
+  const sellerId = await requireSellerId(req, res)
+  if (!sellerId) return
 
   const id = (req.params as { id?: string })?.id
   if (!id) return res.status(400).json({ message: "Missing id" })
@@ -61,11 +76,12 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       sellerId,
       response,
     })
-    return res.json({ dispute })
+    return res.json({ dispute: toVendorDisputeView(dispute) })
   } catch (err) {
     if (err instanceof DisputeStateError) {
-      // "not the vendor on this dispute" must not confirm the id exists.
-      if (/not the vendor/.test(err.message)) {
+      // "not the vendor on this dispute" must not confirm the id exists,
+      // and neither may "dispute not found" read differently from it.
+      if (/not the vendor|not found/.test(err.message)) {
         return res.status(404).json({ message: "Dispute not found" })
       }
       return res.status(409).json({ message: err.message })

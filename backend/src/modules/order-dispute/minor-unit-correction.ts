@@ -145,52 +145,116 @@ export function planMinorUnitCorrection(
   }
 }
 
+const USAGE =
+  "dry run (writes nothing): `npx medusa exec ./src/scripts/fix-order-dispute-minor-units.ts before=2026-11-20T15:00:00Z`; " +
+  "then, to write: `npx medusa exec ./src/scripts/fix-order-dispute-minor-units.ts apply before=2026-11-20T15:00:00Z`"
+
+const CUTOFF_PATTERN =
+  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(\.\d+)?)?(Z|([+-])(\d{2}):(\d{2}))$/
+
 /**
- * The cutoff the corrective script must be given, from its `medusa exec`
- * arguments: `before=<ISO 8601 timestamp with a zone>`, the time the
- * minor-unit intake fix went live. Only rows created before it are looked at.
+ * The cutoff the corrective script must be given: an ISO 8601 timestamp with
+ * a zone, the time the minor-unit intake fix went live. Only rows created
+ * before it are looked at.
  *
- * Why a bare word and not `--before=…`: `medusa exec` parses its arguments
- * with yargs in strict mode, so `--before=…` (or `--dry-run`) is refused as
- * an unknown argument, and anything after a `--` separator is dropped
- * before the script sees it (checked against the real CLI). Only bare words
- * arrive. The `--` spellings are accepted too, for a caller that passes
- * arguments directly.
- *
- * Refused, rather than guessed: no cutoff, an unreadable one, one with no
- * zone (`2026-11-20T15:00` is local time on whatever machine runs it), and
+ * Refused, rather than guessed: an unreadable value, one with no zone
+ * (`2026-11-20T15:00` is local time on whatever machine runs it), one that
+ * names a time that does not exist (`2026-02-30`, `T24:00`: JavaScript rolls
+ * those over to 2026-03-02 and the next midnight instead of refusing them;
+ * the typed date and time must read back unchanged in the typed zone), and
  * one in the future (that cannot be when the fix went live, and it would
  * leave the `amount_unit` mark as the only protection for rows written
  * since).
  */
-export function parseCutoffArg(
-  args: readonly string[] | undefined,
+export function parseCutoff(
+  value: string,
   now: Date = new Date()
 ): { ok: true; before: Date } | { ok: false; message: string } {
-  const usage =
-    "pass the time the minor-unit intake fix went live, e.g. " +
-    "`npx medusa exec ./src/scripts/fix-order-dispute-minor-units.ts dry-run before=2026-11-20T15:00:00Z`"
-  const raw = (args ?? []).find((a) => /^(--)?before=/.test(a))
-  if (raw === undefined) return { ok: false, message: `a cutoff is required: ${usage}` }
-
-  const value = raw.replace(/^(--)?before=/, "").trim()
-  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})$/.test(value)) {
+  const m = CUTOFF_PATTERN.exec(value)
+  if (!m) {
     return {
       ok: false,
-      message: `cutoff "${value}" is not an ISO 8601 timestamp with a zone (Z or ±hh:mm): ${usage}`,
+      message: `cutoff "${value}" is not an ISO 8601 timestamp with a zone (Z or ±hh:mm)`,
     }
   }
   const before = new Date(value)
   if (Number.isNaN(before.getTime())) {
-    return { ok: false, message: `cutoff "${value}" is not a real time: ${usage}` }
+    return { ok: false, message: `cutoff "${value}" is not a real time` }
   }
+
+  // Read the instant back in the zone it was typed in; every field must match.
+  const [, year, month, day, hour, minute, second, , zone, sign, zh, zm] = m
+  const offsetMinutes = zone === "Z" ? 0 : (sign === "-" ? -1 : 1) * (Number(zh) * 60 + Number(zm))
+  const local = new Date(before.getTime() + offsetMinutes * 60_000)
+  const readBack = [
+    local.getUTCFullYear(),
+    local.getUTCMonth() + 1,
+    local.getUTCDate(),
+    local.getUTCHours(),
+    local.getUTCMinutes(),
+    ...(second !== undefined ? [local.getUTCSeconds()] : []),
+  ]
+  const typed = [year, month, day, hour, minute, ...(second !== undefined ? [second] : [])].map(Number)
+  if (readBack.some((v, i) => v !== typed[i])) {
+    return {
+      ok: false,
+      message: `cutoff "${value}" names a date or time that does not exist (it would be read as ${before.toISOString()})`,
+    }
+  }
+
   if (before.getTime() > now.getTime()) {
-    return { ok: false, message: `cutoff ${before.toISOString()} is in the future: ${usage}` }
+    return { ok: false, message: `cutoff ${before.toISOString()} is in the future` }
   }
   return { ok: true, before }
 }
 
-/** `dry-run` (or `--dry-run`) among the `medusa exec` arguments. */
-export function isDryRunArg(args: readonly string[] | undefined): boolean {
-  return (args ?? []).some((a) => a === "dry-run" || a === "--dry-run")
+/**
+ * The corrective script's `medusa exec` arguments, all bare words:
+ *
+ * - `before=<ISO time with a zone>`, required, exactly once (`parseCutoff`);
+ * - `apply`, to write. Without it the run is a dry run that writes nothing;
+ * - `dry-run`, accepted as an explicit way of saying "do not write".
+ *
+ * Writing is opt-in. It used to be opt-out: the script wrote unless it saw
+ * exactly `dry-run`, and ignored every other word, so a mistyped
+ * `dryrun`, `dry_run` or `DRY-RUN` with a valid cutoff ran live, skipping
+ * the dry run the deploy note says to read first. Now a typo is refused by
+ * name, and leaving the word out entirely produces a dry run. A repeated
+ * `before=` is refused too (the first one used to win silently), as are
+ * `apply` and `dry-run` together.
+ *
+ * Why bare words and not `--apply`/`--before=…`: `medusa exec` parses its
+ * arguments with yargs in strict mode, so `--` options are refused as unknown
+ * before the script runs, and anything after a `--` separator is dropped
+ * (checked against the real CLI). Only bare words arrive, so only bare words
+ * are accepted here.
+ */
+export function parseScriptArgs(
+  args: readonly string[] | undefined,
+  now: Date = new Date()
+): { ok: true; before: Date; apply: boolean } | { ok: false; message: string } {
+  const refuse = (why: string) => ({ ok: false as const, message: `${why}. Usage: ${USAGE}` })
+  const cutoffs: string[] = []
+  let apply = 0
+  let dryRun = 0
+
+  for (const arg of args ?? []) {
+    if (arg === "apply") apply++
+    else if (arg === "dry-run") dryRun++
+    else if (arg.startsWith("before=")) cutoffs.push(arg.slice("before=".length).trim())
+    else {
+      return refuse(
+        `unknown argument "${arg}": the only arguments are dry-run, apply and one before=<ISO time>`
+      )
+    }
+  }
+
+  if (apply > 1 || dryRun > 1) return refuse("apply and dry-run may each be given once")
+  if (apply && dryRun) return refuse("apply and dry-run were both given; give one")
+  if (cutoffs.length === 0) return refuse("a cutoff is required: before=<the time the minor-unit intake fix went live>")
+  if (cutoffs.length > 1) return refuse(`before= was given ${cutoffs.length} times; give it once`)
+
+  const cutoff = parseCutoff(cutoffs[0], now)
+  if (!cutoff.ok) return refuse(cutoff.message)
+  return { ok: true, before: cutoff.before, apply: apply === 1 }
 }

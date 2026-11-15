@@ -42,6 +42,18 @@ export type DisputeActor = "buyer" | "seller" | "admin"
 
 export class DisputeStateError extends Error {}
 
+/**
+ * An award the decision cannot carry: not a whole, non-negative number of
+ * minor units, more than was claimed, money on a release, or nothing on a
+ * refund. A `DisputeStateError`, so a caller catching that still catches
+ * this, but `PATCH /admin/disputes/:id` answers it with 400
+ * `invalid_award_amount`, not 409: the request was wrong, the case did not
+ * change under it. That keeps 409 meaning one thing, "this case is no longer
+ * in the status you decided from", which is what the admin panel tells the
+ * operator when it gets one.
+ */
+export class DisputeAwardError extends DisputeStateError {}
+
 const TERMINAL: readonly DisputeStatus[] = [
   DisputeStatus.RESOLVED_REFUND,
   DisputeStatus.RESOLVED_RELEASE,
@@ -168,21 +180,40 @@ export function resolveClaimCents(args: {
 }
 
 /**
- * The refund a resolution actually awards.
+ * The refund a resolution actually awards, in minor units.
+ *
+ * `awardCents` absent or null means "no figure was given": a refund then
+ * awards the whole claim, mirroring how a claim with no figure means the
+ * whole order, and a release awards nothing. Any figure that is given must
+ * be a whole, non-negative number of minor units; anything else is refused,
+ * never coerced. The PATCH used to pass a non-number through as null, so a
+ * string "0" became a whole-claim refund, a negative became a 0 refund and
+ * a fraction was floored, each one a different figure from the one sent, and
+ * this is the figure an operator later pays out by hand.
  *
  * A `resolved_release` awards nothing by definition, so an award attached to
  * one is refused rather than quietly zeroed: it means the resolver picked the
- * wrong outcome, and silently discarding the number would hide that.
+ * wrong outcome, and silently discarding the number would hide that. The
+ * mirror case is refused too: a `resolved_refund` that awards nothing (an
+ * explicit 0, or a whole-claim refund of a 0 claim) is a release, and the
+ * buyer's claims API would otherwise call it "accepted" with nothing awarded.
  */
 export function resolveAwardCents(args: {
   status: DisputeStatus
   awardCents?: number | null
   claimCents: number
 }): number {
+  const raw = args.awardCents
+  const given = raw !== null && raw !== undefined
+  if (given && (typeof raw !== "number" || !Number.isSafeInteger(raw) || raw < 0)) {
+    throw new DisputeAwardError(
+      `award ${String(raw)} is not a whole, non-negative number of the currency's minor unit`
+    )
+  }
+
   if (args.status === DisputeStatus.RESOLVED_RELEASE) {
-    const award = Math.floor(Number(args.awardCents ?? 0))
-    if (Number.isFinite(award) && award > 0) {
-      throw new DisputeStateError(
+    if (given && raw > 0) {
+      throw new DisputeAwardError(
         "a release resolution awards nothing — use resolved_refund to award a refund"
       )
     }
@@ -192,15 +223,13 @@ export function resolveAwardCents(args: {
   if (args.status !== DisputeStatus.RESOLVED_REFUND) return 0
 
   const claim = Math.max(0, Math.floor(args.claimCents))
-  const raw = args.awardCents
-  // A refund with no figure awards the full claim, mirroring how a claim with
-  // no figure means the whole order.
-  if (raw === null || raw === undefined) return claim
-  const award = Math.floor(Number(raw))
-  if (!Number.isFinite(award) || award < 0) return 0
+  const award = given ? raw : claim
   if (award > claim) {
-    throw new DisputeStateError(
-      `award of ${award} exceeds the ${claim} claimed`
+    throw new DisputeAwardError(`award of ${award} exceeds the ${claim} claimed`)
+  }
+  if (award === 0) {
+    throw new DisputeAwardError(
+      "a refund resolution must award something — use resolved_release to award nothing"
     )
   }
   return award
@@ -213,7 +242,11 @@ export function resolveAwardCents(args: {
  * written reason, and the note is not private: the buyer reads it as
  * `reviewer_note` (`GET /store/order-claims`) or `resolution_note`
  * (`GET /store/orders/:id/dispute`), and the seller in the case file
- * (`GET /vendor/disputes/:id`). The admin panel asked for a note, but the
+ * (`GET /vendor/disputes/:id`, which resolves the vendor login's member to
+ * its seller with `requireSellerId`; it compared the member id with the
+ * dispute's seller id before, so no vendor could read a dispute at all).
+ * Those are API reads: no storefront page and no vendor-panel screen shows
+ * the note yet, and nothing emails it. The admin panel asked for a note, but the
  * PATCH accepted a decision without one, so the promise held only for
  * decisions made through that one screen. `PATCH /admin/disputes/:id`
  * refuses these without a note (`decisionNoteMissing`); the storefront's

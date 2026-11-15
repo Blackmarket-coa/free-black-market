@@ -1,5 +1,6 @@
 import {
   DEFAULT_FILING_WINDOW_DAYS,
+  DisputeAwardError,
   DisputeStateError,
   DisputeStatus,
   assertDisputeTransition,
@@ -139,6 +140,41 @@ describe("order dispute: award", () => {
         claimCents: 5_000,
       })
     ).toThrow(/release resolution awards nothing/)
+  })
+
+  /**
+   * It used to return 0 for a negative (a resolved_refund awarding nothing,
+   * silently) and floor a fraction. Each is now refused as a
+   * `DisputeAwardError`, which is a `DisputeStateError`.
+   */
+  it.each([
+    ["a negative", -500],
+    ["a fraction", 12.5],
+    ["NaN", Number.NaN],
+    ["an unsafe integer", 2 ** 53],
+    ["a string that reached the service", "1250" as unknown as number],
+  ])("refuses %s rather than coercing it, on a refund and on a release", (_label, awardCents) => {
+    for (const status of [DisputeStatus.RESOLVED_REFUND, DisputeStatus.RESOLVED_RELEASE]) {
+      const call = () => resolveAwardCents({ status, awardCents, claimCents: 5_000 })
+      expect(call).toThrow(DisputeAwardError)
+      expect(call).toThrow(DisputeStateError)
+      expect(call).toThrow(/not a whole, non-negative number/)
+    }
+  })
+
+  it("refuses a refund that awards nothing: that is a release", () => {
+    expect(() =>
+      resolveAwardCents({ status: DisputeStatus.RESOLVED_REFUND, awardCents: 0, claimCents: 5_000 })
+    ).toThrow(/use resolved_release/)
+    // A whole-claim refund of a 0 claim awards nothing too.
+    expect(() => resolveAwardCents({ status: DisputeStatus.RESOLVED_REFUND, claimCents: 0 })).toThrow(DisputeAwardError)
+    // A release with an explicit 0 is fine.
+    expect(resolveAwardCents({ status: DisputeStatus.RESOLVED_RELEASE, awardCents: 0, claimCents: 5_000 })).toBe(0)
+  })
+
+  it("awards exactly the whole claim when asked for it", () => {
+    expect(resolveAwardCents({ status: DisputeStatus.RESOLVED_REFUND, awardCents: 5_000, claimCents: 5_000 })).toBe(5_000)
+    expect(resolveAwardCents({ status: DisputeStatus.RESOLVED_REFUND, awardCents: 1, claimCents: 5_000 })).toBe(1)
   })
 })
 

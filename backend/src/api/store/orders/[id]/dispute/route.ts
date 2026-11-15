@@ -3,6 +3,7 @@ import { createLogger } from "../../../../../shared/logger"
 import { ORDER_DISPUTE_MODULE } from "../../../../../modules/order-dispute"
 import type OrderDisputeService from "../../../../../modules/order-dispute/service"
 import { DisputeReason } from "../../../../../modules/order-dispute/resolution"
+import { toBuyerDisputeView } from "../../../../../modules/order-dispute/views"
 import {
   isIntakeFailure,
   loadOwnOrderForDispute,
@@ -33,7 +34,12 @@ export function parseClaimAmount(
   return { ok: true, value: raw }
 }
 
-/** GET /store/orders/:id/dispute — every dispute on this order, any vendor. */
+/**
+ * GET /store/orders/:id/dispute — every dispute on this order, any vendor,
+ * as `toBuyerDisputeView` allows: the claim, its status and the decision
+ * with its note. It returned the raw rows, which carried the deciding
+ * admin's user id, the escrow id and the internal metadata.
+ */
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
   const customerId = getCustomerId(req)
   if (!customerId) return res.status(401).json({ message: "Unauthorized" })
@@ -48,9 +54,9 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
   if (isIntakeFailure(order)) return res.status(order.status).json(order.body)
 
   const service = req.scope.resolve<OrderDisputeService>(ORDER_DISPUTE_MODULE)
-  const disputes = await service.listOrderDisputes({ order_id: order.id })
+  const rows = (await service.listOrderDisputes({ order_id: order.id })) as unknown[]
 
-  return res.json({ disputes })
+  return res.json({ disputes: rows.map(toBuyerDisputeView) })
 }
 
 /**
@@ -118,7 +124,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     })
 
     if (!result.ok) return res.status(result.status).json(result.body)
-    return res.status(201).json({ dispute: result.dispute })
+    return res.status(201).json({ dispute: toBuyerDisputeView(result.dispute) })
   } catch (err) {
     log.error("[POST /store/orders/:id/dispute] failed", err)
     return res.status(500).json({ message: "Failed to raise dispute" })
