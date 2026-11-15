@@ -18,6 +18,7 @@ import {
   adminActionsFor,
   buyerSubmission,
   daysWaiting,
+  decisionErrorText,
   describeEvent,
   escrowTransitionFor,
   formatMajor,
@@ -152,7 +153,7 @@ const DecisionPanel = ({ dispute }: { dispute: AdminDispute }) => {
       await update.mutateAsync(d.body)
       toast.success("Taken under review")
     } catch (e) {
-      toast.error((e as Error).message)
+      toast.error(decisionErrorText(e, "take_up"))
     }
   }
 
@@ -172,8 +173,8 @@ const DecisionPanel = ({ dispute }: { dispute: AdminDispute }) => {
       await update.mutateAsync(draft.body)
       toast.success("Decision recorded")
     } catch (e) {
-      // The server's reason (already decided, award over the claim, …) says what to fix.
-      toast.error((e as Error).message)
+      // A 409 (decided or changed elsewhere) in words; any other refusal in the server's.
+      toast.error(decisionErrorText(e, "decide"))
     }
   }
 
@@ -192,7 +193,8 @@ const DecisionPanel = ({ dispute }: { dispute: AdminDispute }) => {
             Take it under review
           </Button>
           <Text size="small" className="text-ui-fg-subtle">
-            Marks it as yours. The seller can still reply while it is under review.
+            Marks it under review and logs that you took it up. It is not assigned to you: anyone can still decide
+            it. The seller can still reply while it is under review.
           </Text>
         </div>
       )}
