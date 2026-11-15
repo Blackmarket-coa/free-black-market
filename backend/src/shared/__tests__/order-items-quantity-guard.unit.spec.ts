@@ -39,11 +39,9 @@ const KNOWN_BROKEN: Record<string, string> = {
   // awarding grower KARMA for sales, which docs/F7_FLAT_PAYOUT_INVENTORY.md
   // §10 item 8 reserves to the operator.
   "modules/agriculture/plant-order-helpers.ts": "SD-52 / F7 §10 item 8 (operator-gated)",
-  // `items.total`: loadOwnOrderForDispute throws for every order with a line,
-  // so no buyer can open a dispute. Fixing it also means fixing the units
-  // (Medusa totals are major units; the dispute ceiling is cents) and the
-  // seller path (`items.product.seller_id`), so it is its own change.
-  "shared/order-dispute-intake.ts": "SD-52 follow-up: dispute intake (open P0)",
+  // `shared/order-dispute-intake.ts` used to be here (`items.total`, so no buyer
+  // could open a dispute); the admin disputes work fixed its read, units and
+  // seller path (SD-79), and this ratchet made the entry come out.
 }
 
 function sourceFiles(dir: string): string[] {
