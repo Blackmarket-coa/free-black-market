@@ -23,19 +23,26 @@ const ORDER: Row = {
   display_id: 1042,
   email: "buyer@example.com",
   currency_code: "usd",
-  total: 28,
-  item_total: 20,
-  tax_total: 0,
+  // 2 x $10 at 10% tax with $5 off, plus $8 shipping at 10%.
+  total: 25.3,
+  item_subtotal: 20,
+  item_total: 16.5,
+  tax_total: 2.3,
+  discount_total: 5.5,
+  discount_tax_total: 0.5,
+  credit_line_total: 0,
   items: [
     {
       id: "ordli_1",
       thumbnail: "https://img.example.com/honey.png",
       product_title: "Raw Wildflower Honey",
       variant_title: "16 oz",
-      total: 20,
+      quantity: 2,
+      subtotal: 20,
+      total: 16.5,
     },
   ],
-  shipping_methods: [{ id: "ordsm_1", name: "Standard Shipping", total: 8 }],
+  shipping_methods: [{ id: "ordsm_1", name: "Standard Shipping", subtotal: 8, total: 8.8 }],
   customer: { first_name: "Jordan" },
   shipping_address: { first_name: "Jordan", address_1: "1 Main St", phone: "555-0100" },
   billing_address: { address_1: "1 Main St" },
@@ -96,7 +103,17 @@ describe("order-placed subscriber", () => {
     // wildcards are too: on a real order, `items.total` selected by name
     // throws inside MikroORM (see the integration spec).
     expect(ORDER_CONFIRMATION_FIELDS).toEqual(
-      expect.arrayContaining(["currency_code", "total", "items.*", "shipping_methods.*"])
+      expect.arrayContaining([
+        "currency_code",
+        "total",
+        "item_subtotal",
+        "tax_total",
+        "discount_total",
+        "discount_tax_total",
+        "credit_line_total",
+        "items.*",
+        "shipping_methods.*",
+      ])
     )
 
     const [payload] = createNotifications.mock.calls[0] as unknown as [{ data: { order: Row } }]
@@ -104,19 +121,23 @@ describe("order-placed subscriber", () => {
       id: "order_1",
       display_id: 1042,
       currency_code: "usd",
-      total: 28,
-      item_total: 20,
-      tax_total: 0,
+      total: 25.3,
+      item_subtotal: 20,
+      // discount_total less its tax part: the pre-tax discount.
+      discount_subtotal: 5,
+      tax_total: 2.3,
+      credit_line_total: 0,
       items: [
         {
           id: "ordli_1",
           thumbnail: "https://img.example.com/honey.png",
           product_title: "Raw Wildflower Honey",
           variant_title: "16 oz",
-          total: 20,
+          quantity: 2,
+          subtotal: 20,
         },
       ],
-      shipping_methods: [{ id: "ordsm_1", name: "Standard Shipping", total: 8 }],
+      shipping_methods: [{ id: "ordsm_1", name: "Standard Shipping", subtotal: 8 }],
       customer: { first_name: "Jordan" },
       shipping_address: { first_name: "Jordan" },
     })
@@ -132,9 +153,12 @@ describe("order-placed subscriber", () => {
     const { container, createNotifications } = makeContainer([
       {
         ...ORDER,
-        total: big(28),
-        items: [{ id: "ordli_1", total: big(20) }],
-        shipping_methods: [{ id: "ordsm_1", name: "Standard Shipping", total: big(8) }],
+        total: big(25.3),
+        item_subtotal: big(20),
+        discount_total: big(5.5),
+        discount_tax_total: big(0.5),
+        items: [{ id: "ordli_1", quantity: big(2), subtotal: big(20) }],
+        shipping_methods: [{ id: "ordsm_1", name: "Standard Shipping", subtotal: big(8) }],
       },
     ])
 
@@ -142,9 +166,11 @@ describe("order-placed subscriber", () => {
 
     const [payload] = createNotifications.mock.calls[0] as unknown as [{ data: { order: Row } }]
     expect(payload.data.order).toMatchObject({
-      total: 28,
-      items: [{ id: "ordli_1", total: 20 }],
-      shipping_methods: [{ id: "ordsm_1", total: 8 }],
+      total: 25.3,
+      item_subtotal: 20,
+      discount_subtotal: 5,
+      items: [{ id: "ordli_1", quantity: 2, subtotal: 20 }],
+      shipping_methods: [{ id: "ordsm_1", subtotal: 8 }],
     })
   })
 

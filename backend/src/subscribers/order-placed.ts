@@ -30,6 +30,12 @@ import type { OrderPlacedEmailOrder } from "../modules/resend/emails/order-place
  * asking for `total` beside a hand-picked `items.<field>` list that omits
  * `unit_price`/`quantity` returns an order total that silently leaves the
  * items out. With the wildcards the order module computes every total.
+ *
+ * The root totals are the ones the summary adds up (modules/resend/
+ * order-summary.ts): subtotals before tax and discount, the pre-tax discount
+ * (as `discount_total - discount_tax_total`, because `discount_subtotal` is
+ * not one of the order module's selectable totals), tax, credit lines, total.
+ * Every one of them is in the order module's `shouldIncludeTotals` list.
  */
 export const ORDER_CONFIRMATION_FIELDS = [
   "id",
@@ -37,25 +43,57 @@ export const ORDER_CONFIRMATION_FIELDS = [
   "email",
   "currency_code",
   "total",
-  "item_total",
+  "item_subtotal",
   "tax_total",
+  "discount_total",
+  "discount_tax_total",
+  "credit_line_total",
   "items.*",
   "shipping_methods.*",
   "customer.first_name",
   "shipping_address.first_name",
 ]
 
-type ConfirmationOrderRow = OrderPlacedEmailOrder & { email?: string | null }
+/** What `query.graph` returns for those fields; totals arrive as BigNumber. */
+type ConfirmationOrderRow = {
+  id: string
+  display_id?: number | string | null
+  email?: string | null
+  currency_code: string
+  total?: unknown
+  item_subtotal?: unknown
+  tax_total?: unknown
+  discount_total?: unknown
+  discount_tax_total?: unknown
+  credit_line_total?: unknown
+  items?: Array<{
+    id: string
+    thumbnail?: string | null
+    product_title?: string | null
+    variant_title?: string | null
+    quantity?: unknown
+    subtotal?: unknown
+  } | null> | null
+  shipping_methods?: Array<{ id: string; name?: string | null; subtotal?: unknown } | null> | null
+  customer?: { first_name?: string | null } | null
+  shipping_address?: { first_name?: string | null } | null
+}
 
 /**
  * Totals come back from the order module as BigNumber instances. The template
- * formats numbers as currency and falls back to `toString()` for anything
- * else, which would print a bare "20" — so hand it plain numbers.
+ * formats numbers as currency, so hand it plain numbers.
  */
 function toAmount(value: unknown): number | null {
   if (value === null || value === undefined) return null
   const amount = Number(value)
   return Number.isFinite(amount) ? amount : null
+}
+
+/** The pre-tax discount: each line's `discount_total` is subtotal + tax part. */
+function discountSubtotal(order: ConfirmationOrderRow): number | null {
+  const total = toAmount(order.discount_total)
+  if (total === null) return null
+  return total - (toAmount(order.discount_tax_total) ?? 0)
 }
 
 /**
@@ -70,20 +108,25 @@ export function orderConfirmationPayload(order: ConfirmationOrderRow): { order: 
       display_id: order.display_id ?? null,
       currency_code: order.currency_code,
       total: toAmount(order.total),
-      item_total: toAmount(order.item_total),
+      item_subtotal: toAmount(order.item_subtotal),
+      discount_subtotal: discountSubtotal(order),
       tax_total: toAmount(order.tax_total),
-      items: (order.items ?? []).filter(Boolean).map((item) => ({
-        id: item.id,
-        thumbnail: item.thumbnail ?? null,
-        product_title: item.product_title ?? null,
-        variant_title: item.variant_title ?? null,
-        total: toAmount(item.total),
-      })),
-      shipping_methods: (order.shipping_methods ?? []).filter(Boolean).map((method) => ({
-        id: method.id,
-        name: method.name ?? null,
-        total: toAmount(method.total),
-      })),
+      credit_line_total: toAmount(order.credit_line_total),
+      items: (order.items ?? []).flatMap((item) =>
+        item
+          ? [{
+              id: item.id,
+              thumbnail: item.thumbnail ?? null,
+              product_title: item.product_title ?? null,
+              variant_title: item.variant_title ?? null,
+              quantity: toAmount(item.quantity),
+              subtotal: toAmount(item.subtotal),
+            }]
+          : []
+      ),
+      shipping_methods: (order.shipping_methods ?? []).flatMap((method) =>
+        method ? [{ id: method.id, name: method.name ?? null, subtotal: toAmount(method.subtotal) }] : []
+      ),
       customer: { first_name: order.customer?.first_name ?? null },
       shipping_address: { first_name: order.shipping_address?.first_name ?? null },
     },
@@ -105,7 +148,7 @@ export default async function handleOrderPlaced({
       fields: ORDER_CONFIRMATION_FIELDS,
       filters: { id: data.id },
     })
-    const order = rows?.[0] as ConfirmationOrderRow | undefined
+    const order = rows?.[0] as unknown as ConfirmationOrderRow | undefined
 
     if (!order) {
       log.warn(`[order-placed] Order ${data.id} not found; no confirmation sent`)
