@@ -430,6 +430,24 @@ export const embedIpRateLimiter = createRateLimiter({
   keyPrefix: "embed-ip",
 })
 
+/**
+ * Supplier status webhook (`POST /webhooks/suppliers/status`): 120 per minute
+ * per client IP, in its own bucket.
+ *
+ * The route is public; authenticity is the per-supplier HMAC it checks before
+ * reading anything (see `modules/supplier-forwarding/webhook-auth.ts`). This
+ * caps how hard one source can hammer it, signed or not. Its own keyPrefix,
+ * not `standardRateLimiter`'s shared "standard:<ip>" bucket, so a supplier
+ * pushing a batch of status changes cannot spend another endpoint's budget or
+ * be starved by one. 120 leaves room for a supplier reporting a few dozen
+ * orders through several statuses at once from one address.
+ */
+export const supplierWebhookRateLimiter = createRateLimiter({
+  windowMs: 60_000,
+  max: 120,
+  keyPrefix: "supplier-webhook",
+})
+
 /** Auth rate limiter: 20 attempts per minute (login, register, etc.) */
 export const authRateLimiter = createRateLimiter({
   windowMs: 60_000,

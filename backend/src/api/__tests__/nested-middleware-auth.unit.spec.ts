@@ -746,11 +746,13 @@ describe("rate limiters: present where declared, with the declared budgets", () 
     expect(budget("storeCustomerDataRightsRateLimiter")).toMatchObject({ windowMs: 300_000, max: 5 })
 
     // Every exported limiter's prefix (the @example in the file's docs is not one).
+    // 23rd: supplierWebhookRateLimiter, "supplier-webhook" (proved through the
+    // chain in supplier-webhook-middleware.unit.spec.ts).
     const prefixes = src
       .split(/\nexport const /)
       .filter((chunk) => /^\w+ = createRateLimiter\(/.test(chunk))
       .map((chunk) => chunk.match(/keyPrefix: "([^"]+)"/)?.[1])
-    expect(prefixes.length).toBe(22)
+    expect(prefixes.length).toBe(23)
     expect(prefixes).not.toContain(undefined)
     expect(new Set(prefixes).size).toBe(prefixes.length)
   })

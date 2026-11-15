@@ -65,6 +65,33 @@ GitHub repository for each submission.
 When neither App credentials nor a PAT are set, the routes return 503
 and the UI hides itself via `GET /store/bug-report/config`.
 
+## Supplier status webhook
+
+`POST /webhooks/suppliers/status` lets a supplier report the
+manual-fulfillment status of an order FBM forwarded to it
+(`backend/src/api/webhooks/suppliers/status/route.ts`, keys in
+`backend/src/modules/supplier-forwarding/webhook-auth.ts`).
+
+| Variable | Default | Required when | Description |
+| --- | --- | --- | --- |
+| `SUPPLIER_WEBHOOK_SECRET` | — | supplier status webhook on | Operator secret, at least 32 characters (`openssl rand -hex 32`). Never given to a supplier. Unset or shorter ⇒ the webhook answers `503` and reads nothing. |
+
+Each supplier gets its **own** key, derived from the secret and its
+`supplier_id` (the value on its supplier profile):
+
+```bash
+printf '%s' "$SUPPLIER_ID" | openssl dgst -sha256 -hmac "$SUPPLIER_WEBHOOK_SECRET" | awk '{print $NF}'
+```
+
+The supplier sends `x-fbm-signature: hex(HMAC-SHA256(<its key>, <exact request body>))`
+with a JSON body `{ order_id, supplier_id, status, notes?, metadata? }`. A
+supplier can only sign for its own `supplier_id`, and only for orders
+forwarded to it (`403` otherwise); `status` must be a legal next step in the
+manual-fulfillment state machine (`409` otherwise; repeating the current
+status is a `200` re-delivery that writes nothing). To cut one supplier off,
+set `is_active: false` on its profile. Rotating `SUPPLIER_WEBHOOK_SECRET`
+re-keys every supplier at once.
+
 ## Auth providers
 
 Gating lives in `backend/src/lib/build-auth-module.ts`: with none of these

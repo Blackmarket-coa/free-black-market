@@ -26,6 +26,7 @@ import {
   storeCustomerAccountRateLimiter,
   storeCustomerDataRightsRateLimiter,
   strictAuthRateLimiter,
+  supplierWebhookRateLimiter,
   trustProxyMiddleware,
   vendorRegistrationRateLimiter,
 } from "../shared/rate-limiter";
@@ -1620,6 +1621,16 @@ export default defineMiddlewares({
       matcher: "/webhooks/site-deploy",
       method: "POST",
       middlewares: [standardRateLimiter],
+    },
+    // Supplier status webhook. Public: the handler verifies a per-supplier
+    // HMAC over the raw body (503 while SUPPLIER_WEBHOOK_SECRET is unset), so
+    // the raw body must survive parsing, and binds the update to an order
+    // forwarded to that supplier. Its own rate-limit bucket.
+    {
+      matcher: "/webhooks/suppliers/status",
+      method: "POST",
+      bodyParser: { preserveRawBody: true },
+      middlewares: [supplierWebhookRateLimiter],
     },
   ],
   // Sanitizes 5xx error responses in production so internal detail

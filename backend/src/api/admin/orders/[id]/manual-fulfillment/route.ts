@@ -3,21 +3,13 @@ import { z } from "zod"
 import { SUPPLIER_FORWARDING_MODULE } from "../../../../../modules/supplier-forwarding"
 import SupplierForwardingModuleService from "../../../../../modules/supplier-forwarding/service"
 import { ManualFulfillmentStatus } from "../../../../../modules/supplier-forwarding/models"
+import { isAllowedManualFulfillmentTransition } from "../../../../../modules/supplier-forwarding/manual-fulfillment-transitions"
 
 const transitionSchema = z.object({
   supplier_id: z.string(),
   next_status: z.nativeEnum(ManualFulfillmentStatus),
   notes: z.string().optional(),
 })
-
-const allowedTransitions: Record<ManualFulfillmentStatus, ManualFulfillmentStatus[]> = {
-  [ManualFulfillmentStatus.PENDING]: [ManualFulfillmentStatus.ACKNOWLEDGED, ManualFulfillmentStatus.CANCELED],
-  [ManualFulfillmentStatus.ACKNOWLEDGED]: [ManualFulfillmentStatus.IN_PROGRESS, ManualFulfillmentStatus.CANCELED],
-  [ManualFulfillmentStatus.IN_PROGRESS]: [ManualFulfillmentStatus.SHIPPED, ManualFulfillmentStatus.CANCELED],
-  [ManualFulfillmentStatus.SHIPPED]: [ManualFulfillmentStatus.DELIVERED],
-  [ManualFulfillmentStatus.DELIVERED]: [],
-  [ManualFulfillmentStatus.CANCELED]: [],
-}
 
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
   const service = req.scope.resolve<SupplierForwardingModuleService>(SUPPLIER_FORWARDING_MODULE)
@@ -35,7 +27,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
   )
 
   const currentStatus = latest?.status || ManualFulfillmentStatus.PENDING
-  if (!allowedTransitions[currentStatus].includes(body.next_status)) {
+  if (!isAllowedManualFulfillmentTransition(currentStatus, body.next_status)) {
     return res.status(400).json({
       error: `Invalid status transition from ${currentStatus} to ${body.next_status}`,
     })
