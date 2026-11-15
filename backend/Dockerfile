@@ -52,6 +52,10 @@ FROM pnpm AS deps
 # it silently resolves the unpinned versions, which is how a CVE fix gets
 # undone inside an image while every gate stays green.
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+# `patchedDependencies` in pnpm-workspace.yaml points into patches/; pnpm
+# refuses to install when a listed patch file is absent, so it travels with
+# the workspace file (SD-57).
+COPY patches ./patches
 COPY restaurant-marketplace ./restaurant-marketplace
 # `--trust-lockfile` skips pnpm 11's per-entry supply-chain verification, which
 # contacts the registry once for every lockfile entry. Backend has ~1750, and

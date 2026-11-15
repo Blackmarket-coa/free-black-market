@@ -36,7 +36,13 @@ overrides:
   # in 1.16.0 and are fixed in 1.16.1, a patch. Reached only through axios
   # (medusajs-launch-utils), a production path here. Caret-bounded at the fix
   # (SD-55).
-  "follow-redirects": "^1.16.1"
+  #
+  # 2026-11-15: GHSA-mrwp-f3q8-3g9p (CVE-2026-116689, HIGH, published
+  # 2026-10-30): a sensitiveHeaders array built in another realm is discarded,
+  # so custom credential headers can follow a cross-origin redirect. Fixed in
+  # 1.16.2, a patch. The ^1.16.1 caret above already permitted 1.16.2 and the
+  # lockfile still held 1.16.1 -- the floor itself has to move (SD-57).
+  "follow-redirects": "^1.16.2"
   "glob": ">=10.5.0"
   "qs": ">=6.14.2"
   "@remix-run/router": "1.23.2"

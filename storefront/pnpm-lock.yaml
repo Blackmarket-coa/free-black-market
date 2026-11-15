@@ -9,7 +9,7 @@ overrides:
   glob: '>=10.5.0'
   qs: '>=6.14.2'
   axios: ^1.20.0
-  follow-redirects: ^1.16.1
+  follow-redirects: ^1.16.2
   '@isaacs/brace-expansion': ^5.0.1
   preact: '>=10.27.3'
   next: 15.5.28
@@ -4105,6 +4105,11 @@ packages:
 
   ajv-formats@2.1.1:
     resolution: {integrity: sha512-Wx0Kx52hxE7C18hkMEggYlEifqWZtYaRgouJor+WMdPnQyEK13vgEWyVNup7SoeeoLMsr4kf5h6dOW11I15MUA==}
+    peerDependencies:
+      ajv: ^8.0.0
+    peerDependenciesMeta:
+      ajv:
+        optional: true
 
   ajv-keywords@3.5.2:
     resolution: {integrity: sha512-5p6WTN0DdTGVQk6VjcEju19IgaHudalcfabD7yhDGeA6bcQnmL+CpveLJq/3hvfwd1aof6L386Ougkx6RfyMIQ==}
@@ -5095,8 +5100,8 @@ packages:
   flatted@3.4.4:
     resolution: {integrity: sha512-5+ybhBZANEJxaH3X5evAFatUxLfEHSr7n6kYJ+1Qd0mUqr4eu9gIf6GDbWHf8RJijHrjjO8G+la14SlL2SeS1Q==}
 
-  follow-redirects@1.16.1:
-    resolution: {integrity: sha512-FNvFGzoMLWmE6Yj9spb/zjd7yiNCHiAW9/Tg9CXrQ8wuu32HtlJOwWO11OJafl5FfY3DxTdQ0vj42zU1kvv5jg==}
+  follow-redirects@1.16.3:
+    resolution: {integrity: sha512-toOSoqN6d51Wjf1aOFJYcoVv1aND9rj/CwjLU0Vz40oDuSpWDayCeKe4JpL5NL0WdFvoOOCI3BRo69HahjbR1A==}
     engines: {node: '>=4.0'}
     peerDependencies:
       debug: '*'
@@ -12022,7 +12027,7 @@ snapshots:
 
   axios@1.20.0(debug@4.4.3(supports-color@8.1.1))(supports-color@8.1.1):
     dependencies:
-      follow-redirects: 1.16.1(debug@4.4.3(supports-color@8.1.1))
+      follow-redirects: 1.16.3(debug@4.4.3(supports-color@8.1.1))
       form-data: 4.0.6
       https-proxy-agent: 5.0.1(supports-color@8.1.1)
       proxy-from-env: 2.1.0
@@ -13065,7 +13070,7 @@ snapshots:
 
   flatted@3.4.4: {}
 
-  follow-redirects@1.16.1(debug@4.4.3(supports-color@8.1.1)):
+  follow-redirects@1.16.3(debug@4.4.3(supports-color@8.1.1)):
     optionalDependencies:
       debug: 4.4.3(supports-color@8.1.1)
 
