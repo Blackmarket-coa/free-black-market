@@ -116,8 +116,8 @@ const listOrdersQuerySchema = z.object({
  * every order, and a `food_order` carries `recipient_name`, `recipient_phone`,
  * `recipient_email`, `delivery_address_line_1/2` and `customer_notes`.
  *
- * The sibling `orders/:orderId` route already checked ownership; only this
- * list route was missed. It uses `actorOwnsResource` rather than
+ * The sibling `orders/:orderId` route checked ownership on PUT only; its GET
+ * was missed too and was closed on 2026-11-15 (SD-64) with the same check. It uses `actorOwnsResource` rather than
  * `actorMayManage` because the latter grandfathers a null `owner_id`, which on
  * a PII read would expose every legacy producer's orders to any account that
  * can sign up. See that helper's docblock.
