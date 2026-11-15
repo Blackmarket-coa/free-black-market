@@ -1,5 +1,6 @@
 import { medusaIntegrationTestRunner } from "@medusajs/test-utils"
 import jwt from "jsonwebtoken"
+import { Modules } from "@medusajs/framework/utils"
 
 import { createPublishableKeyToken, pakHeaders } from "./_publishable-key"
 import { createAuthenticatedSeller, safe } from "./helpers/seller-auth"
@@ -110,13 +111,16 @@ medusaIntegrationTestRunner({
     })
 
     describe("POST /store/product-reports", () => {
-      it("files an anonymous listing report into the admin request queue", async () => {
+      it("files an anonymous listing report against a real product into the admin request queue", async () => {
         // The route exists to accept reports from rights-holders with no
         // account here; the browser form sends no credentials at all.
+        const [product] = await getContainer()
+          .resolve(Modules.PRODUCT)
+          .createProducts([{ title: "Reported apron", handle: "reported-apron", status: "published" }])
         const res = await safe(
           api.post(
             "/store/product-reports",
-            { product_id: "prod_reported", reason: "trademark_copyright_dmca", comment },
+            { product_id: product.id, reason: "trademark_copyright_dmca", comment },
             pak
           )
         )
@@ -127,8 +131,20 @@ medusaIntegrationTestRunner({
         expect(queue[0]).toMatchObject({
           id: res.data.id,
           submitter_id: ANONYMOUS_SUBMITTER_ID,
-          data: { product_id: "prod_reported" },
+          data: { product_id: product.id, product_handle: "reported-apron" },
         })
+      })
+
+      it("refuses a report naming a product that does not exist, and files nothing", async () => {
+        const res = await safe(
+          api.post(
+            "/store/product-reports",
+            { product_id: "prod_made_up", reason: "trademark_copyright_dmca", comment },
+            pak
+          )
+        )
+        expect(res.status).toBe(404)
+        expect(await adminQueue("listing_report")).toHaveLength(0)
       })
     })
   },

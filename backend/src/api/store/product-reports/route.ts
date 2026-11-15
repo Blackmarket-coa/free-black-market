@@ -1,5 +1,6 @@
 import { z } from "zod"
 import type { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
+import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 
 import { REQUEST_MODULE } from "../../../modules/request"
 import type RequestModuleService from "../../../modules/request/service"
@@ -63,6 +64,21 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     })
   }
 
+  // The product must exist, as the seller route requires of its seller. The
+  // route is open to anonymous callers (a DMCA notice needs no account), so
+  // without this anyone could file reports into the admin queue against any
+  // string. Unknown ids get 404 and nothing is stored.
+  const query = req.scope.resolve(ContainerRegistrationKeys.QUERY)
+  const { data: products } = await query.graph({
+    entity: "product",
+    fields: ["id", "handle"],
+    filters: { id: parsed.data.product_id },
+  })
+  const product = (products as { id: string; handle?: string | null }[] | undefined)?.[0]
+  if (!product) {
+    return res.status(404).json({ message: "Product not found", type: "not_found" })
+  }
+
   const customerId =
     (req as MedusaRequest & { auth_context?: { actor_id?: string } }).auth_context
       ?.actor_id || undefined
@@ -72,7 +88,8 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
   const request = await requestService.createRequest({
     type: REPORT_REQUEST_TYPE,
     data: {
-      product_id: parsed.data.product_id,
+      product_id: product.id,
+      product_handle: product.handle ?? null,
       reason: parsed.data.reason,
       comment: parsed.data.comment,
       reporter_email: parsed.data.reporter_email ?? null,
