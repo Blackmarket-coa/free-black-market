@@ -2,6 +2,7 @@ import { z } from "zod"
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { FOOD_DISTRIBUTION_MODULE } from "../../../modules/food-distribution"
 import type FoodDistributionService from "../../../modules/food-distribution/service"
+import { requireSellerActor } from "../../../shared/community-write-access"
 
 // ===========================================
 // VALIDATION SCHEMAS
@@ -85,10 +86,18 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 
 // ===========================================
 // POST /delivery-zones
+//
+// Sellers only, and the zone is stamped with the creating seller in
+// `created_by_seller_id`, the column /vendor/delivery-zones authorizes edits
+// against. Before this any signed-in account could create a priced zone that
+// nobody owned.
 // ===========================================
 
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
   try {
+    const sellerId = await requireSellerActor(req, res)
+    if (!sellerId) return
+
     const data = createZoneSchema.parse(req.body)
     
     const foodDistribution = req.scope.resolve<FoodDistributionService>(FOOD_DISTRIBUTION_MODULE)
@@ -100,7 +109,10 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       return
     }
     
-    const zone = await foodDistribution.createDeliveryZones(data)
+    const zone = await foodDistribution.createDeliveryZones({
+      ...data,
+      created_by_seller_id: sellerId,
+    })
     
     res.status(201).json({ zone })
   } catch (error) {

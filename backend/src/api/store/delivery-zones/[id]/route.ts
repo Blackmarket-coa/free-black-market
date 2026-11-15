@@ -3,6 +3,8 @@ import { distanceMiles } from "../../../../lib/geo-distance"
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { FOOD_DISTRIBUTION_MODULE } from "../../../../modules/food-distribution"
 import type FoodDistributionService from "../../../../modules/food-distribution/service"
+import { forbidden } from "../../../../shared/community-read-access"
+import { requireSellerActor } from "../../../../shared/community-write-access"
 
 // ===========================================
 // VALIDATION SCHEMAS
@@ -67,12 +69,21 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 
 // ===========================================
 // PUT /delivery-zones/:id
+//
+// PUT and DELETE are the seller who created the zone, and nobody else — the
+// same rule as /vendor/delivery-zones/:id (C-5). A zone with no
+// `created_by_seller_id` predates ownership and is admin-managed, so it is not
+// writable here either. Zones are a public catalogue (GET lists them), so a
+// missing zone keeps its 404; existence is not a secret.
 // ===========================================
 
 export async function PUT(req: MedusaRequest, res: MedusaResponse) {
   const { id } = req.params
   
   try {
+    const sellerId = await requireSellerActor(req, res)
+    if (!sellerId) return
+
     const data = updateZoneSchema.parse(req.body)
     
     const foodDistribution = req.scope.resolve<FoodDistributionService>(FOOD_DISTRIBUTION_MODULE)
@@ -82,6 +93,9 @@ export async function PUT(req: MedusaRequest, res: MedusaResponse) {
     if (!existing) {
       res.status(404).json({ message: "Delivery zone not found" })
       return
+    }
+    if (!existing.created_by_seller_id || existing.created_by_seller_id !== sellerId) {
+      return forbidden(res)
     }
     
     const zone = await foodDistribution.updateDeliveryZones({
@@ -105,6 +119,9 @@ export async function PUT(req: MedusaRequest, res: MedusaResponse) {
 
 export async function DELETE(req: MedusaRequest, res: MedusaResponse) {
   const { id } = req.params
+
+  const sellerId = await requireSellerActor(req, res)
+  if (!sellerId) return
   
   const foodDistribution = req.scope.resolve<FoodDistributionService>(FOOD_DISTRIBUTION_MODULE)
   
@@ -113,6 +130,9 @@ export async function DELETE(req: MedusaRequest, res: MedusaResponse) {
   if (!existing) {
     res.status(404).json({ message: "Delivery zone not found" })
     return
+  }
+  if (!existing.created_by_seller_id || existing.created_by_seller_id !== sellerId) {
+    return forbidden(res)
   }
   
   // Soft delete by deactivating

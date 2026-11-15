@@ -1,7 +1,8 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
-
-const HARVEST_MODULE = "harvestModuleService"
+import { HARVEST_MODULE } from "../../../../../modules/harvest"
+import { forbidden } from "../../../../../shared/community-read-access"
+import { actorManagesGarden } from "../../../../../shared/community-write-access"
 
 interface HarvestServiceType {
   createHarvestAllocations: (data: Record<string, unknown>) => Promise<{ id: string }>
@@ -59,7 +60,8 @@ export async function GET(
 /**
  * POST /store/harvests/:id/allocations
  * 
- * Create allocations for a harvest
+ * Create allocations for a harvest. The harvest's garden's active organizers
+ * only; a harvest that does not exist is refused the same way.
  */
 export async function POST(
   req: MedusaRequest,
@@ -76,9 +78,8 @@ export async function POST(
     filters: { id },
   })
 
-  if (!harvest) {
-    res.status(404).json({ message: "Harvest not found" })
-    return
+  if (!harvest || !(await actorManagesGarden(req, harvest.garden_id as string))) {
+    return forbidden(res)
   }
 
   // Get allocation rules for this garden

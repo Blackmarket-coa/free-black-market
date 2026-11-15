@@ -2,6 +2,15 @@ import { z } from "zod"
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { FOOD_DISTRIBUTION_MODULE } from "../../../../../modules/food-distribution"
 import type FoodDistributionService from "../../../../../modules/food-distribution/service"
+import {
+  proofOfDeliveryError,
+  retrieveDeliveryOrNull,
+} from "../../../../../modules/food-distribution/proof-of-delivery"
+import { redactDelivery } from "../../../../../modules/food-distribution/public-view"
+import {
+  actorOwnsCourier,
+  forbidden,
+} from "../../../../../shared/community-read-access"
 
 // ===========================================
 // VALIDATION SCHEMAS
@@ -21,6 +30,13 @@ const proofOfDeliverySchema = z.object({
 // ===========================================
 // POST /food-deliveries/:id/proof
 // Submit proof of delivery
+//
+// The delivery's courier only: proof of delivery is the courier's statement
+// that they handed the goods over, and it closes the delivery and frees the
+// courier. A delivery that does not exist is refused the same way as one the
+// caller is not driving. A delivery created with a proof requirement accepts
+// only that proof, and a PIN requirement only the PIN on record
+// (`proofOfDeliveryError`); before this, submitting PHOTO skipped the PIN.
 // ===========================================
 
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
@@ -31,11 +47,9 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     
     const foodDistribution = req.scope.resolve<FoodDistributionService>(FOOD_DISTRIBUTION_MODULE)
     
-    // Check delivery exists
-    const delivery = await foodDistribution.retrieveFoodDelivery(id)
-    if (!delivery) {
-      res.status(404).json({ message: "Delivery not found" })
-      return
+    const delivery = await retrieveDeliveryOrNull(foodDistribution, id)
+    if (!delivery || !(await actorOwnsCourier(req, delivery.courier_id))) {
+      return forbidden(res)
     }
     
     // Check delivery is in correct state
@@ -48,12 +62,10 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       return
     }
     
-    // Validate PIN if required
-    if (delivery.proof_type === "PIN_CODE" && data.proof_type === "PIN_CODE") {
-      if (data.pin_code !== delivery.proof_pin_code) {
-        res.status(400).json({ message: "Invalid PIN code" })
-        return
-      }
+    const proofError = proofOfDeliveryError(delivery, data)
+    if (proofError) {
+      res.status(400).json({ message: proofError })
+      return
     }
     
     // Record proof of delivery
@@ -71,7 +83,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     }
     
     res.json({ 
-      delivery: updatedDelivery,
+      delivery: redactDelivery(updatedDelivery as unknown as Record<string, unknown>),
       message: "Proof of delivery recorded successfully",
     })
   } catch (error) {

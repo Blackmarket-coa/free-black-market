@@ -1,6 +1,8 @@
 import { z } from "zod"
 import {
   actorMayReadDelivery,
+  actorOwnsCourier,
+  actorOwnsProducer,
   forbidden,
 } from "../../../../shared/community-read-access"
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
@@ -8,6 +10,12 @@ import { FOOD_DISTRIBUTION_MODULE } from "../../../../modules/food-distribution"
 import type FoodDistributionService from "../../../../modules/food-distribution/service"
 import { DeliveryStatus } from "../../../../modules/food-distribution/models/delivery"
 import { redactDelivery } from "../../../../modules/food-distribution/public-view"
+import {
+  DELIVERED_STATUSES,
+  requiresProof,
+  retrieveDeliveryOrNull,
+} from "../../../../modules/food-distribution/proof-of-delivery"
+import { POST as submitProofOfDelivery } from "./proof/route"
 
 // ===========================================
 // VALIDATION SCHEMAS
@@ -54,15 +62,6 @@ const updateDeliverySchema = z.object({
   customer_feedback: z.string().max(500).optional(),
 })
 
-const proofOfDeliverySchema = z.object({
-  proof_type: z.enum(["SIGNATURE", "PHOTO", "PIN_CODE", "RECIPIENT_CONFIRMATION"]),
-  photo_url: z.string().url().optional(),
-  signature_url: z.string().url().optional(),
-  pin_code: z.string().max(10).optional(),
-  recipient_name: z.string().max(255).optional(),
-  notes: z.string().max(500).optional(),
-})
-
 // ===========================================
 // GET /food-deliveries/:id
 // ===========================================
@@ -96,6 +95,15 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 
 // ===========================================
 // PUT /food-deliveries/:id
+//
+// The delivery's principals only, each for their own part:
+//   - status / location: its courier or its producer;
+//   - customer_rating / customer_feedback: its recipient;
+//   - issue reporting: any of the three.
+// A delivery that does not exist is refused the same way as someone else's.
+// And a delivery created with a proof requirement cannot be put into a
+// delivered status here at all: that is what POST /:id/proof is for, and
+// setting DELIVERED here would skip the proof (and the PIN) entirely.
 // ===========================================
 
 export async function PUT(req: MedusaRequest, res: MedusaResponse) {
@@ -106,10 +114,32 @@ export async function PUT(req: MedusaRequest, res: MedusaResponse) {
     
     const foodDistribution = req.scope.resolve<FoodDistributionService>(FOOD_DISTRIBUTION_MODULE)
     
-    // Check delivery exists
-    const existing = await foodDistribution.retrieveFoodDelivery(id)
-    if (!existing) {
-      res.status(404).json({ message: "Delivery not found" })
+    const existing = await retrieveDeliveryOrNull(foodDistribution, id)
+    if (!existing || !(await actorMayReadDelivery(req, existing))) {
+      return forbidden(res)
+    }
+
+    const runsDelivery =
+      (await actorOwnsCourier(req, existing.courier_id)) ||
+      (await actorOwnsProducer(req, existing.producer_id))
+    // actorMayReadDelivery admits producer, courier or recipient, so a
+    // principal who runs neither side of it is the recipient.
+    const isRecipient = !runsDelivery
+
+    if (data.status && !runsDelivery) {
+      return forbidden(res)
+    }
+    if (data.customer_rating !== undefined && !isRecipient) {
+      return forbidden(res)
+    }
+    if (
+      data.status &&
+      DELIVERED_STATUSES.has(data.status) &&
+      requiresProof(existing)
+    ) {
+      res.status(409).json({
+        message: `This delivery requires ${existing.proof_type} proof; submit it to /proof`,
+      })
       return
     }
     
@@ -146,7 +176,11 @@ export async function PUT(req: MedusaRequest, res: MedusaResponse) {
       delivery = await foodDistribution.updateFoodDeliveries(updateData)
     }
     
-    res.json({ delivery })
+    // Redacted like GET: a courier must not read the PIN it is meant to be
+    // told by the recipient off its own location update.
+    res.json({
+      delivery: redactDelivery(delivery as unknown as Record<string, unknown>),
+    })
   } catch (error) {
     if (error instanceof z.ZodError) {
       res.status(400).json({ message: "Validation failed", errors: error.issues })
@@ -158,51 +192,17 @@ export async function PUT(req: MedusaRequest, res: MedusaResponse) {
 
 // ===========================================
 // POST /food-deliveries/:id/proof
+//
+// Only reachable when the URL contains "/proof" without routing to
+// ./proof/route.ts, which a query string does (`POST /:id?x=/proof`). It used
+// to carry its own copy of the proof handler without that file's state check,
+// and with the same PIN bypass; it now is that handler.
 // ===========================================
 
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
-  const { id } = req.params
-  
-  // Check if this is proof of delivery submission
   if (!req.url?.includes("/proof")) {
     res.status(404).json({ message: "Not found" })
     return
   }
-  
-  try {
-    const data = proofOfDeliverySchema.parse(req.body)
-    
-    const foodDistribution = req.scope.resolve<FoodDistributionService>(FOOD_DISTRIBUTION_MODULE)
-    
-    // Check delivery exists
-    const existing = await foodDistribution.retrieveFoodDelivery(id)
-    if (!existing) {
-      res.status(404).json({ message: "Delivery not found" })
-      return
-    }
-    
-    // Validate PIN if required
-    if (existing.proof_type === "PIN_CODE" && data.proof_type === "PIN_CODE") {
-      if (data.pin_code !== existing.proof_pin_code) {
-        res.status(400).json({ message: "Invalid PIN code" })
-        return
-      }
-    }
-    
-    const delivery = await foodDistribution.recordProofOfDelivery(id, data.proof_type, {
-      photoUrl: data.photo_url,
-      signatureUrl: data.signature_url,
-      pinCode: data.pin_code,
-      recipientName: data.recipient_name,
-      notes: data.notes,
-    })
-    
-    res.json({ delivery })
-  } catch (error) {
-    if (error instanceof z.ZodError) {
-      res.status(400).json({ message: "Validation failed", errors: error.issues })
-      return
-    }
-    throw error
-  }
+  return submitProofOfDelivery(req, res)
 }

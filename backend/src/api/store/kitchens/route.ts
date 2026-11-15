@@ -1,7 +1,9 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
+import { KITCHEN_MODULE } from "../../../modules/kitchen"
+import { requireSellerActor } from "../../../shared/community-write-access"
 
-export const KITCHEN_MODULE = "kitchenModuleService"
+export { KITCHEN_MODULE }
 
 interface KitchenServiceType {
   createKitchens: (data: Record<string, unknown>) => Promise<{ id: string }>
@@ -69,12 +71,21 @@ export async function GET(
 /**
  * POST /store/kitchens
  *
- * Create a new commercial community kitchen
+ * Create a new commercial community kitchen.
+ *
+ * Sellers only, and the kitchen is stamped with the creating vendor in
+ * `managing_org_id` (the model's "links to vendor if org-managed" column). A
+ * kitchen is a business that rents stations at an hourly rate; before this any
+ * signed-in account could create one, and none recorded who did, so no later
+ * route could ever tell its operator from a stranger.
  */
 export async function POST(
   req: MedusaRequest,
   res: MedusaResponse
 ) {
+  const sellerId = await requireSellerActor(req, res)
+  if (!sellerId) return
+
   const kitchenService = req.scope.resolve(KITCHEN_MODULE) as KitchenServiceType
   const body = req.body as Record<string, unknown>
 
@@ -134,6 +145,7 @@ export async function POST(
     website,
     cover_image_url,
     gallery_urls,
+    managing_org_id: sellerId,
   })
 
   res.status(201).json({ kitchen })
