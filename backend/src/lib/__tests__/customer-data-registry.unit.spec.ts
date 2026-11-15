@@ -85,11 +85,31 @@ describe("customer data registry", () => {
     // The other direction: a stale entry means deletion tries to clear a table
     // that is gone, and the registry stops describing the system.
     const live = new Set(discovered.map((d) => d.entity))
-    const stale = CUSTOMER_DATA_REGISTRY.filter((e) => !live.has(e.entity)).map(
+    // Framework-owned tables are not in src/modules; they are checked below.
+    const stale = CUSTOMER_DATA_REGISTRY.filter((e) => !e.framework && !live.has(e.entity)).map(
       (e) => e.entity
     )
 
     expect(stale).toEqual([])
+  })
+
+  it("names the customer column of every framework-owned table, and only of those", () => {
+    // Our models all link by customer_id (the walk above checks they declare
+    // one); a framework table links however its owner chose.
+    for (const e of CUSTOMER_DATA_REGISTRY) {
+      if (e.framework) expect(e.customerColumn).toMatch(/^[a-z_]+$/)
+      else expect(e.customerColumn).toBeUndefined()
+    }
+  })
+
+  it("covers Medusa's notification log, through receiver_id", () => {
+    // The order confirmation stores the buyer's address and first name and
+    // what they bought in it, one row per order.
+    expect(registryEntry("notification")).toMatchObject({
+      action: "delete",
+      customerColumn: "receiver_id",
+      framework: true,
+    })
   })
 
   it("states a basis for everything it keeps", () => {

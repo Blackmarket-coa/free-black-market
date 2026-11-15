@@ -22,6 +22,7 @@ const ORDER: Row = {
   id: "order_1",
   display_id: 1042,
   email: "buyer@example.com",
+  customer_id: "cus_1",
   currency_code: "usd",
   // 2 x $10 at 10% tax with $5 off, plus $8 shipping at 10%.
   total: 25.3,
@@ -81,6 +82,8 @@ describe("order-placed subscriber", () => {
       channel: "email",
       template: "order-placed",
       idempotency_key: "order-confirmation:order_1",
+      // So the customer-data registry can export and erase the stored row.
+      receiver_id: "cus_1",
     })
     // The template must be one both email providers can render.
     expect(EMAIL_TEMPLATE_NAMES).toContain(payload.template)
@@ -105,6 +108,7 @@ describe("order-placed subscriber", () => {
     expect(ORDER_CONFIRMATION_FIELDS).toEqual(
       expect.arrayContaining([
         "currency_code",
+        "customer_id",
         "total",
         "item_subtotal",
         "tax_total",

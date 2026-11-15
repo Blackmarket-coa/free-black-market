@@ -41,6 +41,7 @@ export const ORDER_CONFIRMATION_FIELDS = [
   "id",
   "display_id",
   "email",
+  "customer_id",
   "currency_code",
   "total",
   "item_subtotal",
@@ -59,6 +60,7 @@ type ConfirmationOrderRow = {
   id: string
   display_id?: number | string | null
   email?: string | null
+  customer_id?: string | null
   currency_code: string
   total?: unknown
   item_subtotal?: unknown
@@ -164,6 +166,10 @@ export default async function handleOrderPlaced({
       channel: "email",
       template: EMAIL_TEMPLATES.ORDER_PLACED,
       data: orderConfirmationPayload(order),
+      // Ties the stored row (the buyer's address, first name and items) to
+      // the customer, so the customer-data registry's `notification` entry
+      // can export and erase it.
+      receiver_id: order.customer_id ?? null,
       // A replayed order.placed must not email the buyer twice. Medusa skips a
       // key it has already sent and retries one whose last attempt failed.
       idempotency_key: `order-confirmation:${order.id}`,

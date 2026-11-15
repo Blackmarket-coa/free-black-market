@@ -56,9 +56,11 @@ describe("eraseCustomerAcrossRegistry", () => {
 
     // An unscoped statement here would erase every customer's rows at once.
     for (const [sql, bindings] of raw.mock.calls) {
-      expect(sql).toMatch(/WHERE "customer_id" = \?/)
+      expect(sql).toMatch(/WHERE "(customer_id|receiver_id)" = \?/)
       expect(bindings).toEqual(["cus_1"])
     }
+    // Medusa's notification log names its customer in receiver_id.
+    expect(statements).toContain('DELETE FROM "notification" WHERE "receiver_id" = ?')
   })
 
   it("clears the customer link on anonymise entities but keeps the row", async () => {
@@ -160,6 +162,13 @@ describe("readCustomerDataAcrossRegistry", () => {
     )
 
     expect(Object.keys(out)).toEqual(["volunteer_log"])
+  })
+
+  it("reads a framework table by its own customer column", async () => {
+    const graph = jest.fn(async (_q: { entity: string; filters: Record<string, unknown> }) => ({ data: [] }))
+    await readCustomerDataAcrossRegistry(makeContainer({ graph }) as never, "cus_1")
+    const notification = graph.mock.calls.map((c) => c[0]).find((q) => q.entity === "notification")
+    expect(notification?.filters).toEqual({ receiver_id: "cus_1" })
   })
 
   it("reports an unreadable entity in place rather than omitting it", async () => {
