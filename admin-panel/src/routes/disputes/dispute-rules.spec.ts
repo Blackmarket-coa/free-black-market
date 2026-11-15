@@ -351,6 +351,25 @@ describe("parity with backend/src/modules/order-dispute", () => {
     expect(exported(patchRoute)).toContain(method)
   })
 
+  /**
+   * The server refuses a closing decision without a note (400
+   * `note_required`); the panel explains that before sending. If the two
+   * lists drift, the panel either sends a decision the server refuses or
+   * stops asking for a reason the buyer and the seller then see missing.
+   */
+  it("asks for a note on exactly the decisions the backend refuses without one", () => {
+    const block = resolution.match(/export const DECISIONS_NEEDING_A_NOTE[^=]*=\s*\[([\s\S]*?)\]/)
+    if (!block) throw new Error("Could not find DECISIONS_NEEDING_A_NOTE in order-dispute/resolution.ts")
+    const needNote = [...block[1].matchAll(/DisputeStatus\.(\w+)/g)].map((m) => member(m[1])).sort()
+    expect(needNote.length).toBeGreaterThanOrEqual(3)
+    expect(patchRoute).toMatch(/decisionNoteMissing\(status, body\.note\)/)
+
+    const panelNeedsNote = DISPUTE_STATUSES.filter((to) =>
+      resolutionDraft(open, to, { note: "" }).problems.includes("Write a decision note saying why")
+    ).sort()
+    expect(panelNeedsNote).toEqual(needNote)
+  })
+
   it("offers only statuses the PATCH route handles", () => {
     const handled = new Set(
       [...patchRoute.matchAll(/status === DisputeStatus\.(\w+)/g)].map((m) => member(m[1]))

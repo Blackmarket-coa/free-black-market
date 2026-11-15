@@ -234,7 +234,7 @@ const DecisionPanel = ({ dispute }: { dispute: AdminDispute }) => {
           )}
           <div>
             <Label htmlFor="dispute-note" size="small">
-              Decision note (recorded on the dispute; not sent to anyone)
+              Decision note: the buyer and the seller can read this in their claim records; it is not emailed
             </Label>
             <Textarea id="dispute-note" value={note} onChange={(e) => setNote(e.target.value)} rows={4} />
           </div>

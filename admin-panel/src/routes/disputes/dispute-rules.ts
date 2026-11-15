@@ -178,10 +178,13 @@ export type ResolutionDraft = {
  * - A release awards nothing; an amount on one is refused, as the backend
  *   refuses it, because it means the wrong outcome was picked.
  * - Every decision that closes the case (refund, release, withdrawal) needs
- *   a note. The backend accepts one without; the screen does not, so every
- *   closed case carries its reason. The note is recorded on the dispute
- *   (`resolution_note`) and nothing sends it to the buyer or the seller
- *   today; the screen's label says so.
+ *   a note, and the backend refuses one without (400 `note_required`,
+ *   `DECISIONS_NEEDING_A_NOTE` in order-dispute/resolution.ts). The note is
+ *   not private: it is stored as `resolution_note`, which the buyer reads
+ *   from `GET /store/order-claims` (as `reviewer_note`) and
+ *   `GET /store/orders/:id/dispute`, and the seller from
+ *   `GET /vendor/disputes/:id`. Nothing emails it to either of them; the
+ *   screen's label says both.
  */
 export function resolutionDraft(
   dispute: Pick<AdminDispute, "status" | "claim_amount" | "currency_code">,
