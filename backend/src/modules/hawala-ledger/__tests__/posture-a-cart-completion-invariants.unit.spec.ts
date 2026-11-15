@@ -1,6 +1,9 @@
 import fs from "fs"
 import path from "path"
 
+import { CCR_RESERVATION_METADATA_KEY } from "../../../lib/ccr-checkout"
+import { validateCcrReservation } from "../../../workflows/hooks/validate-ccr-reservation"
+
 /**
  * Posture A and a refused cart completion (SD-53).
  *
@@ -19,7 +22,12 @@ import path from "path"
  *      still carries a reservation before any order exists
  *      (`workflows/hooks/validate-ccr-reservation.ts`). So a stall cannot be
  *      followed by a BURN, and a cart with credits on it never reaches the
- *      stall at all.
+ *      stall on a checkout built on `completeCartWorkflow`. (Until SD-54 the
+ *      guard read a field the hook never carries and refused nothing; and
+ *      Mercur's main checkout, `POST /store/carts/:id/complete`, never calls
+ *      the hook at all, so there a reserved cart completes at its full total
+ *      (by reading, not run; SD-54, open). No BURN follows either way, since
+ *      `settleCartCredits` has no caller.)
  *   2. The refusal itself touches no ledger: none of the three modules
  *      imports the hawala ledger or the CCR libraries.
  *
@@ -54,13 +62,26 @@ describe("Posture A: a refused cart completion cannot move Coalition Credits", (
     expect(callers).toEqual(["lib/ccr-cart-ledger.ts"])
   })
 
-  it("completeCartWorkflow refuses a cart that still carries a reservation, before any order exists", () => {
+  it("completeCartWorkflow refuses a cart that still carries a reservation, before any order exists", async () => {
     const hook = read("workflows/hooks/complete-cart-validate.ts")
     expect(hook).toContain("completeCartWorkflow.hooks.validate(")
     expect(hook).toContain("validateCcrReservation(")
-    const guard = read("workflows/hooks/validate-ccr-reservation.ts")
-    expect(guard).toContain("CCR_RESERVATION_METADATA_KEY")
-    expect(guard).toContain("MedusaError.Types.NOT_ALLOWED")
+    // SD-54: the source checks above stayed green while the guard read
+    // `input.cart_id`, a field Medusa never passes, and refused nothing. So
+    // the guard is also run here, with the argument Medusa 2.14.2 hands the
+    // hook (`{ input: { id }, cart }`), on a cart holding a reservation.
+    // integration-tests/http/complete-cart-validate-guards.spec.ts runs it
+    // through the real workflow.
+    const container = {
+      resolve: () => ({
+        graph: async ({ filters }: { filters: { id?: string } }) => ({
+          data: filters.id === "cart_1" ? [{ id: "cart_1", metadata: { [CCR_RESERVATION_METADATA_KEY]: 1 } }] : [],
+        }),
+      }),
+    }
+    await expect(
+      validateCcrReservation({ input: { id: "cart_1" }, cart: { id: "cart_1" } }, { container })
+    ).rejects.toMatchObject({ type: "not_allowed" })
   })
 
   it.each([

@@ -18,10 +18,20 @@ import { validateOrderCycleOnCompleteCart } from "./validate-order-cycle"
  * The order-cycle validator (D9-1/D9-3) joins them here rather than
  * self-registering, for the same reason, and because this is the only seam
  * where a check can run after the cart is final and before any money moves.
+ * It is the only seam on the checkouts built on `completeCartWorkflow`; FBM's
+ * main checkout, `POST /store/carts/:id/complete` (Mercur's
+ * `splitAndCompleteCartWorkflow`), never calls this hook, so none of these
+ * four guards runs there (SD-54, open).
+ *
+ * The CCR and order-cycle guards get the hook's argument uncast. Both used to
+ * be called through `as any` while reading `input.cart_id`, a field Medusa
+ * never passes, so neither ran at any checkout and nothing said so (SD-54;
+ * `complete-cart-validate-args.ts`). Uncast, a guard whose argument type
+ * shares no field with Medusa's no longer compiles.
  */
 completeCartWorkflow.hooks.validate(async (args, context) => {
   await validateSlidingScaleTier(args as any, context as any)
   await validateRentalOnCompleteCart(args as any, context as any)
-  await validateCcrReservation(args as any, context as any)
-  await validateOrderCycleOnCompleteCart(args as any, context as any)
+  await validateCcrReservation(args, context)
+  await validateOrderCycleOnCompleteCart(args, context)
 })

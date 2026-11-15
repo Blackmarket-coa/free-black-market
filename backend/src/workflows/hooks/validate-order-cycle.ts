@@ -1,4 +1,6 @@
-import { MedusaError } from "@medusajs/framework/utils"
+import { ContainerRegistrationKeys, MedusaError } from "@medusajs/framework/utils"
+
+import type { CompleteCartValidateArgs } from "./complete-cart-validate-args"
 
 /**
  * Refuse to complete a cart whose order-cycle items can no longer be sold
@@ -56,15 +58,17 @@ type CartItem = {
 const SELLABLE_STATUSES = new Set(["open"])
 
 export async function validateOrderCycleOnCompleteCart(
-  args: { input?: { cart_id?: string }; cart?: Record<string, unknown> },
+  args: CompleteCartValidateArgs,
   context: { container?: any }
 ): Promise<void> {
-  const cartId = args?.input?.cart_id
+  // `{ input: { id }, cart }`, as Medusa calls the hook. Until SD-54 this read
+  // `input.cart_id`, which the hook never carries, and so ran at no checkout.
+  const cartId = args?.input?.id
   if (!cartId || !context?.container) return
 
   let cart: Record<string, unknown> | undefined
   try {
-    const query = context.container.resolve("query")
+    const query = context.container.resolve(ContainerRegistrationKeys.QUERY)
     const { data } = await query.graph({
       entity: "cart",
       fields: ["id", "metadata", "items.variant_id", "items.quantity", "items.metadata"],

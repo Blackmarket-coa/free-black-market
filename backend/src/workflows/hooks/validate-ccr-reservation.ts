@@ -1,6 +1,7 @@
-import { MedusaError } from "@medusajs/framework/utils"
+import { ContainerRegistrationKeys, MedusaError } from "@medusajs/framework/utils"
 
 import { CCR_RESERVATION_METADATA_KEY } from "../../lib/ccr-checkout"
+import type { CompleteCartValidateArgs } from "./complete-cart-validate-args"
 
 /**
  * Refuse to complete a cart that still carries a Coalition Credits
@@ -20,15 +21,19 @@ import { CCR_RESERVATION_METADATA_KEY } from "../../lib/ccr-checkout"
  * tender, not an obstacle to it.
  */
 export async function validateCcrReservation(
-  args: { input?: { cart_id?: string }; cart?: Record<string, unknown> },
+  args: CompleteCartValidateArgs,
   context: { container?: any }
 ): Promise<void> {
-  const cartId = args?.input?.cart_id
+  // Medusa hands the hook `{ input: { id }, cart }` (see
+  // `CompleteCartValidateArgs`). Until SD-54 this read `input.cart_id`,
+  // which the hook never carries, so the guard returned here at every
+  // checkout and a cart holding a reservation completed at its full total.
+  const cartId = args?.input?.id
   if (!cartId || !context?.container) return
 
   let cart: Record<string, unknown> | undefined
   try {
-    const query = context.container.resolve("query")
+    const query = context.container.resolve(ContainerRegistrationKeys.QUERY)
     const { data } = await query.graph({
       entity: "cart",
       fields: ["id", "metadata"],
