@@ -1,13 +1,22 @@
 /**
  * Pure SQL builders + row mappers for the Phase 4A analytics dashboards.
- * Every function returns `{ sql, bindings }` with $n placeholders (Postgres),
- * filters on `deleted_at IS NULL`, and requires an explicit date window —
- * no I/O here so the shapes are unit-testable. Routes execute them via
- * `req.scope.resolve(ContainerRegistrationKeys.PG_CONNECTION).raw(sql, bindings)`
- * (the vendor/sales-report precedent).
+ * Every function returns `{ sql, bindings }` for knex's `raw`, filters on
+ * `deleted_at IS NULL`, and requires an explicit date window — no I/O here so
+ * the shapes are unit-testable. Routes execute them via
+ * `req.scope.resolve(ContainerRegistrationKeys.PG_CONNECTION).raw(sql, bindings)`.
+ *
+ * Placeholders are knex's `?`, in the order the bindings are listed, and a
+ * list of ids is ONE binding used as `= ANY(?)`. These builders used to emit
+ * Postgres `$1..$n`, which knex's `raw` does not bind: it counts `?` and
+ * throws "Expected N bindings, saw 0", so both dashboards answered 500 on
+ * every call that reached SQL. Their unit spec checked the strings and the
+ * bindings, never a query run (SD-74).
  */
 
-export type SqlQuery = { sql: string; bindings: Array<string | number | Date> }
+/** One binding: a scalar, or a list for `= ANY(?)`. */
+export type SqlBinding = string | number | Date | string[]
+
+export type SqlQuery = { sql: string; bindings: SqlBinding[] }
 
 export type DateWindow = { from: Date; to: Date }
 
@@ -34,7 +43,6 @@ export function productFunnelQuery(args: {
   window: DateWindow
 }): SqlQuery {
   const { productIds, window } = args
-  const placeholders = productIds.map((_, i) => `$${i + 3}`).join(", ")
   return {
     sql: `
       SELECT product_id,
@@ -42,11 +50,11 @@ export function productFunnelQuery(args: {
              COUNT(*) FILTER (WHERE event_name = 'add_to_cart')   AS add_to_carts
         FROM analytics_event
        WHERE deleted_at IS NULL
-         AND occurred_at >= $1 AND occurred_at <= $2
-         AND product_id IN (${placeholders})
+         AND occurred_at >= ? AND occurred_at <= ?
+         AND product_id = ANY(?)
          AND event_name IN ('product_view', 'add_to_cart')
        GROUP BY product_id`,
-    bindings: [window.from, window.to, ...productIds],
+    bindings: [window.from, window.to, productIds],
   }
 }
 
@@ -56,7 +64,6 @@ export function productByDayQuery(args: {
   window: DateWindow
 }): SqlQuery {
   const { productIds, window } = args
-  const placeholders = productIds.map((_, i) => `$${i + 3}`).join(", ")
   return {
     sql: `
       SELECT to_char(date_trunc('day', occurred_at), 'YYYY-MM-DD') AS date,
@@ -64,40 +71,55 @@ export function productByDayQuery(args: {
              COUNT(*) FILTER (WHERE event_name = 'add_to_cart')   AS add_to_carts
         FROM analytics_event
        WHERE deleted_at IS NULL
-         AND occurred_at >= $1 AND occurred_at <= $2
-         AND product_id IN (${placeholders})
+         AND occurred_at >= ? AND occurred_at <= ?
+         AND product_id = ANY(?)
          AND event_name IN ('product_view', 'add_to_cart')
        GROUP BY 1
        ORDER BY 1 ASC`,
-    bindings: [window.from, window.to, ...productIds],
+    bindings: [window.from, window.to, productIds],
   }
 }
 
 /**
- * Ground-truth orders/units per product from real order line items (the
- * sales-report join) — conversion is orders-per-view, not event-claimed.
+ * The order lines of placed orders, as Medusa 2 stores them: a line's
+ * quantity is on `order_item` (one row per order version), not on
+ * `order_line_item`, which has no `order_id`, `quantity` or `total` column.
+ * Joined at the order's current version, so an edited order counts once and at
+ * its latest quantity. Draft and canceled orders are not sales.
+ */
+export const PLACED_ORDER_LINES_SQL = `
+        FROM order_item oi
+        JOIN "order" o
+          ON o.id = oi.order_id
+         AND oi.version = o.version
+        JOIN order_line_item oli ON oli.id = oi.item_id
+       WHERE oi.deleted_at IS NULL
+         AND oli.deleted_at IS NULL
+         AND o.deleted_at IS NULL
+         AND o.canceled_at IS NULL
+         AND o.is_draft_order = false
+         AND o.status NOT IN ('draft', 'canceled')`
+
+/**
+ * Ground-truth orders/units per product from real order lines — conversion is
+ * orders-per-view, not event-claimed.
  */
 export function productOrdersQuery(args: {
   productIds: string[]
   window: DateWindow
 }): SqlQuery {
   const { productIds, window } = args
-  const placeholders = productIds.map((_, i) => `$${i + 3}`).join(", ")
   return {
     sql: `
       SELECT oli.product_id,
-             COUNT(DISTINCT o.id)              AS orders,
-             COALESCE(SUM(oli.quantity), 0)    AS units,
-             MAX(oli.title)                    AS title
-        FROM order_line_item oli
-        JOIN "order" o ON oli.order_id = o.id
-       WHERE oli.product_id IN (${placeholders})
-         AND o.created_at >= $1 AND o.created_at <= $2
-         AND o.canceled_at IS NULL
-         AND oli.deleted_at IS NULL
-         AND o.deleted_at IS NULL
+             COUNT(DISTINCT o.id)             AS orders,
+             COALESCE(SUM(oi.quantity), 0)    AS units,
+             MAX(oli.title)                   AS title
+        ${PLACED_ORDER_LINES_SQL}
+         AND o.created_at >= ? AND o.created_at <= ?
+         AND oli.product_id = ANY(?)
        GROUP BY oli.product_id`,
-    bindings: [window.from, window.to, ...productIds],
+    bindings: [window.from, window.to, productIds],
   }
 }
 
@@ -184,8 +206,8 @@ export function creatorTotalsQuery(args: {
       SELECT event_name, COUNT(*) AS count
         FROM analytics_event
        WHERE deleted_at IS NULL
-         AND occurred_at >= $1 AND occurred_at <= $2
-         AND creator_seller_id = $3
+         AND occurred_at >= ? AND occurred_at <= ?
+         AND creator_seller_id = ?
          AND event_name IN ('${CREATOR_EVENTS.join("', '")}')
        GROUP BY event_name`,
     bindings: [args.window.from, args.window.to, args.creatorSellerId],
@@ -204,8 +226,8 @@ export function creatorByDayQuery(args: {
              COUNT(*) FILTER (WHERE event_name IN ('creator_link_clicked', 'click_affiliate')) AS link_clicks
         FROM analytics_event
        WHERE deleted_at IS NULL
-         AND occurred_at >= $1 AND occurred_at <= $2
-         AND creator_seller_id = $3
+         AND occurred_at >= ? AND occurred_at <= ?
+         AND creator_seller_id = ?
          AND event_name IN ('${CREATOR_EVENTS.join("', '")}')
        GROUP BY 1
        ORDER BY 1 ASC`,
@@ -225,8 +247,8 @@ export function creatorByCampaignQuery(args: {
              COUNT(*) FILTER (WHERE event_name IN ('creator_link_clicked', 'click_affiliate')) AS link_clicks
         FROM analytics_event
        WHERE deleted_at IS NULL
-         AND occurred_at >= $1 AND occurred_at <= $2
-         AND creator_seller_id = $3
+         AND occurred_at >= ? AND occurred_at <= ?
+         AND creator_seller_id = ?
          AND event_name IN ('${CREATOR_EVENTS.join("', '")}')
        GROUP BY 1
        ORDER BY events DESC
@@ -246,8 +268,8 @@ export function creatorAttributionQuery(args: {
              COALESCE(SUM(commission_amount_cents), 0)   AS commission_cents
         FROM order_attribution
        WHERE deleted_at IS NULL
-         AND created_at >= $1 AND created_at <= $2
-         AND creator_seller_id = $3
+         AND created_at >= ? AND created_at <= ?
+         AND creator_seller_id = ?
          AND commission_status NOT IN ('reversed', 'disqualified')`,
     bindings: [args.window.from, args.window.to, args.creatorSellerId],
   }
