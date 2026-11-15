@@ -3,6 +3,7 @@ import { AccountLoadingState, LoginForm, UserNavigation } from "@/components/mol
 import { OrderReturnRequests } from "@/components/sections/OrderReturnRequests/OrderReturnRequests"
 import { retrieveCustomerContext } from "@/lib/data/customer"
 import { getReturns, retrieveReturnReasons } from "@/lib/data/orders"
+import { sortReturnRequestsNewestFirst } from "@/lib/helpers/return-requests"
 
 
 export const metadata: Metadata = {
@@ -39,12 +40,7 @@ export default async function ReturnsPage({
         <div className="md:col-span-3">
           <h1 className="heading-md uppercase">Returns</h1>
           <OrderReturnRequests
-            returns={order_return_requests.sort((a, b) => {
-              return (
-                new Date(b.line_items[0].created_at).getTime() -
-                new Date(a.line_items[0].created_at).getTime()
-              )
-            })}
+            returns={sortReturnRequestsNewestFirst(order_return_requests)}
             user={customer}
             page={page}
             currentReturn={returnId || ""}

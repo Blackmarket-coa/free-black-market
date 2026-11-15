@@ -37,7 +37,8 @@ export type ReturnRequest = {
   /** Medusa's return status: requested, partially_received, received, canceled. */
   status: string
   created_at?: string
-  order: ReturnOrder
+  /** The backend sends `seller: null` for an order no seller is linked to. */
+  order: Omit<ReturnOrder, "seller"> & { seller: SellerProps | null }
   line_items: ReturnLineItem[]
 }
 
