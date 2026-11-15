@@ -1,11 +1,13 @@
 import { z } from "zod"
 import {
   actorMayReadDelivery,
+  actorOwnsCourier,
   forbidden,
 } from "../../../../../shared/community-read-access"
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { FOOD_DISTRIBUTION_MODULE } from "../../../../../modules/food-distribution"
 import type FoodDistributionService from "../../../../../modules/food-distribution/service"
+import { retrieveDeliveryOrNull } from "../../../../../modules/food-distribution/proof-of-delivery"
 
 // ===========================================
 // VALIDATION SCHEMAS
@@ -102,6 +104,12 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 // ===========================================
 // POST /food-deliveries/:id/track
 // Update tracking data (for courier app)
+//
+// The delivery's courier only. This writes the position the recipient's
+// tracking view shows and the courier's own current location, so before this
+// any signed-in account could move someone else's courier on the map. The
+// producer and the recipient read the track; they do not write it. A missing
+// delivery is refused the same way as someone else's.
 // ===========================================
 
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
@@ -112,11 +120,9 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     
     const foodDistribution = req.scope.resolve<FoodDistributionService>(FOOD_DISTRIBUTION_MODULE)
     
-    // Check delivery exists
-    const delivery = await foodDistribution.retrieveFoodDelivery(id)
-    if (!delivery) {
-      res.status(404).json({ message: "Delivery not found" })
-      return
+    const delivery = await retrieveDeliveryOrNull(foodDistribution, id)
+    if (!delivery || !(await actorOwnsCourier(req, delivery.courier_id))) {
+      return forbidden(res)
     }
     
     // Add location to tracking

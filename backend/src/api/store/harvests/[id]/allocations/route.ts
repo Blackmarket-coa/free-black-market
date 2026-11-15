@@ -4,10 +4,29 @@ import { HARVEST_MODULE } from "../../../../../modules/harvest"
 import { forbidden } from "../../../../../shared/community-read-access"
 import { actorManagesGarden } from "../../../../../shared/community-write-access"
 
+type AllocationRuleRow = { pool_type: string; percentage: unknown; priority?: number | null }
+
 interface HarvestServiceType {
-  createHarvestAllocations: (data: Record<string, unknown>) => Promise<{ id: string }>
+  listAllocationRules: (filters: Record<string, unknown>) => Promise<AllocationRuleRow[]>
+  listHarvestAllocations: (
+    filters: Record<string, unknown>,
+    config?: { select?: string[] }
+  ) => Promise<Array<Record<string, unknown>>>
+  createHarvestAllocations: (
+    data: Record<string, unknown>[]
+  ) => Promise<Array<{ id: string }>>
   updateGardenHarvests: (data: Record<string, unknown>) => Promise<{ id: string }>
 }
+
+/** The pools a harvest is split into when the garden has configured none. */
+const DEFAULT_ALLOCATION_RULES: ReadonlyArray<{ pool_type: string; percentage: number }> = [
+  { pool_type: "investor", percentage: 20 },
+  { pool_type: "volunteer", percentage: 20 },
+  { pool_type: "plot_holder", percentage: 30 },
+  { pool_type: "communal", percentage: 15 },
+  { pool_type: "open_market", percentage: 10 },
+  { pool_type: "donation", percentage: 5 },
+]
 
 type PoolType = "investor" | "volunteer" | "plot_holder" | "communal" | "open_market" | "donation"
 
@@ -35,24 +54,29 @@ export async function GET(
   res: MedusaResponse
 ) {
   const { id } = req.params
-  const query = req.scope.resolve(ContainerRegistrationKeys.QUERY)
+  const harvestService = req.scope.resolve(HARVEST_MODULE) as HarvestServiceType
 
-  const { data: allocations } = await query.graph({
-    entity: "harvest_allocation",
-    fields: [
-      "id",
-      "pool_type",
-      "percentage",
-      "allocated_quantity",
-      "allocated_value",
-      "claimed_quantity",
-      "remaining_quantity",
-      "status",
-    ],
-    filters: {
-      harvest_id: id,
-    },
-  })
+  // This read asked Query for `harvest_allocation`, which is not an entity,
+  // and for `allocated_*` / `claimed_quantity` / `remaining_quantity`, which
+  // are not columns, so it threw on every call. It reads through the module:
+  // the service registers the model as `HarvestAllocation`, so Query's
+  // `garden_harvest_allocation` entry point resolves to a list method the
+  // service does not have. The fields stay off the donation recipient columns.
+  const allocations = await harvestService.listHarvestAllocations(
+    { harvest_id: id },
+    {
+      select: [
+        "id",
+        "pool_type",
+        "percentage",
+        "quantity",
+        "unit",
+        "estimated_value",
+        "status",
+        "claim_deadline",
+      ],
+    }
+  )
 
   res.json({ allocations })
 }
@@ -61,7 +85,16 @@ export async function GET(
  * POST /store/harvests/:id/allocations
  * 
  * Create allocations for a harvest. The harvest's garden's active organizers
- * only; a harvest that does not exist is refused the same way.
+ * only; a harvest that does not exist is refused the same way. A harvest is
+ * allocated once: a second call is a 409, not a second set of pools.
+ *
+ * This route had never worked against a migrated database. It read rules from
+ * `allocation_rule`, which is not a registered entity, so the organizer's
+ * request threw before writing;
+ * and the rows it would have written carried `allocated_quantity`,
+ * `claimed_quantity`, `remaining_quantity` and status `open`, none of which
+ * `garden_harvest_allocation` has, while omitting its required `quantity` and
+ * `unit`.
  */
 export async function POST(
   req: MedusaRequest,
@@ -74,7 +107,14 @@ export async function POST(
   // Get the harvest
   const { data: [harvest] } = await query.graph({
     entity: "garden_harvest",
-    fields: ["id", "garden_id", "total_quantity", "total_estimated_value"],
+    fields: [
+      "id",
+      "garden_id",
+      "total_quantity",
+      "unit",
+      "total_estimated_value",
+      "allocation_status",
+    ],
     filters: { id },
   })
 
@@ -82,47 +122,50 @@ export async function POST(
     return forbidden(res)
   }
 
-  // Get allocation rules for this garden
-  const { data: rules } = await query.graph({
-    entity: "allocation_rule",
-    fields: ["pool_type", "percentage"],
-    filters: {
-      garden_id: harvest.garden_id,
-      is_active: true,
-    },
+  if (harvest.allocation_status && harvest.allocation_status !== "pending") {
+    res.status(409).json({
+      message: "This harvest has already been allocated",
+      type: "duplicate_error",
+    })
+    return
+  }
+
+  // The garden's active allocation rules, through the module rather than
+  // Query. `garden_allocation_rule` is a Query entry point, but the service
+  // registers the model as `AllocationRule`, so Query's
+  // `listGardenAllocationRules` does not exist and the graph call throws.
+  const rules = await harvestService.listAllocationRules({
+    garden_id: harvest.garden_id,
+    is_active: true,
   })
 
   // Use default rules if none configured
-  const allocationRules = rules.length > 0 
-    ? rules as { pool_type: string; percentage: number }[]
-    : [
-        { pool_type: "investor", percentage: 20 },
-        { pool_type: "volunteer", percentage: 20 },
-        { pool_type: "plot_holder", percentage: 30 },
-        { pool_type: "communal", percentage: 15 },
-        { pool_type: "open_market", percentage: 10 },
-        { pool_type: "donation", percentage: 5 },
-      ]
+  const allocationRules: ReadonlyArray<AllocationRuleRow> =
+    rules.length > 0 ? rules : DEFAULT_ALLOCATION_RULES
 
-  const quantity = harvest.total_quantity as number
-  const estimatedValue = harvest.total_estimated_value as number
+  const quantity = Number(harvest.total_quantity ?? 0)
+  const estimatedValue =
+    harvest.total_estimated_value == null ? null : Number(harvest.total_estimated_value)
+  const unit = harvest.unit as string
 
-  // Create allocations
-  const allocations = await Promise.all(
-    allocationRules.map(rule => 
-      harvestService.createHarvestAllocations({
+  // Create allocations, in one call so a failure leaves no partial set.
+  const allocations = await harvestService.createHarvestAllocations(
+    allocationRules.map((rule) => {
+      const percentage = Number(rule.percentage)
+      return {
         harvest_id: id,
         garden_id: harvest.garden_id,
         pool_type: rule.pool_type,
-        percentage: rule.percentage,
-        allocated_quantity: (quantity * rule.percentage) / 100,
-        allocated_value: (estimatedValue * rule.percentage) / 100,
-        claimed_quantity: 0,
-        remaining_quantity: (quantity * rule.percentage) / 100,
-        status: "open",
+        percentage,
+        quantity: (quantity * percentage) / 100,
+        unit,
+        estimated_value:
+          estimatedValue == null ? null : (estimatedValue * percentage) / 100,
+        priority: typeof rule.priority === "number" ? rule.priority : 1,
+        status: "allocated",
         claim_deadline: getClaimDeadline(rule.pool_type as PoolType, new Date()),
-      })
-    )
+      }
+    })
   )
 
   // Update harvest allocation status

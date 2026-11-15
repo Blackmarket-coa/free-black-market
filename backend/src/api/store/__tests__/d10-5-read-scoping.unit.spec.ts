@@ -54,6 +54,15 @@ const makeReq = (opts: {
     : {}),
   scope: {
     resolve: (key: string) => {
+      // Couriers are read through the food-distribution module (Query has no
+      // working `food_courier` list method); it serves the seeded rows.
+      if (key === FOOD_DISTRIBUTION_MODULE) {
+        return {
+          listCouriers: async (filters: { id?: string }) =>
+            (opts.rows?.food_courier ?? []).filter((row) => row.id === filters.id),
+          ...((opts.modules?.[key] as Record<string, unknown> | undefined) ?? {}),
+        }
+      }
       if (opts.modules && key in opts.modules) return opts.modules[key]
       return {
         graph: async ({ entity }: { entity: string }) => ({

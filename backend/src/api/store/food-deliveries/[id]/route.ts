@@ -42,6 +42,19 @@ const DeliveryStatusEnum = z.enum([
   "CANCELLED",
 ])
 
+/**
+ * What a producer may set on its own delivery: the same set
+ * `/vendor/deliveries/:id` allows (`updateDeliveryStatusSchema` there). The
+ * rest of the lifecycle, including arriving at the destination and every
+ * delivered status, is the courier's.
+ */
+const PRODUCER_STATUSES: ReadonlySet<string> = new Set([
+  "ASSIGNED",
+  "WAITING_FOR_ORDER",
+  "ORDER_PICKED_UP",
+  "CANCELLED",
+])
+
 const updateDeliverySchema = z.object({
   status: DeliveryStatusEnum.optional(),
   
@@ -97,7 +110,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 // PUT /food-deliveries/:id
 //
 // The delivery's principals only, each for their own part:
-//   - status / location: its courier or its producer;
+//   - status / location: its courier; its producer only the hand-over
+//     statuses (PRODUCER_STATUSES) and no location;
 //   - customer_rating / customer_feedback: its recipient;
 //   - issue reporting: any of the three.
 // A delivery that does not exist is refused the same way as someone else's.
@@ -119,15 +133,28 @@ export async function PUT(req: MedusaRequest, res: MedusaResponse) {
       return forbidden(res)
     }
 
-    const runsDelivery =
-      (await actorOwnsCourier(req, existing.courier_id)) ||
-      (await actorOwnsProducer(req, existing.producer_id))
+    const isCourier = await actorOwnsCourier(req, existing.courier_id)
+    const isProducer =
+      !isCourier && (await actorOwnsProducer(req, existing.producer_id))
+    const runsDelivery = isCourier || isProducer
     // actorMayReadDelivery admits producer, courier or recipient, so a
     // principal who runs neither side of it is the recipient.
     const isRecipient = !runsDelivery
 
     if (data.status && !runsDelivery) {
       return forbidden(res)
+    }
+    // The producer hands the order over; the courier carries it. A producer
+    // gets the same status set /vendor/deliveries/:id allows it, and no
+    // location writes: the position on a delivery is the courier's, and the
+    // recipient tracks it.
+    if (isProducer) {
+      if (data.status && !PRODUCER_STATUSES.has(data.status)) {
+        return forbidden(res)
+      }
+      if (data.latitude !== undefined || data.longitude !== undefined) {
+        return forbidden(res)
+      }
     }
     if (data.customer_rating !== undefined && !isRecipient) {
       return forbidden(res)

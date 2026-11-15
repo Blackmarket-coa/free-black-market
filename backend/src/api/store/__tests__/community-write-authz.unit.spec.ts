@@ -12,6 +12,19 @@ import {
   PUT as updateDelivery,
 } from "../food-deliveries/[id]/route"
 import { POST as createRestaurantDelivery } from "../deliveries/route"
+import { POST as respondToTrade } from "../food-trades/[id]/route"
+import { POST as trackDelivery } from "../food-deliveries/[id]/track/route"
+import { POST as createFoodDelivery } from "../food-deliveries/route"
+import { POST as placeProducerOrder } from "../food-producers/[id]/orders/route"
+import { POST as joinGarden } from "../gardens/[id]/members/route"
+import { POST as claimHarvest } from "../harvests/[id]/claims/route"
+import { POST as signUpForWorkParty } from "../work-parties/[id]/signups/route"
+import { POST as logVolunteerHours } from "../volunteer-logs/route"
+import { POST as recordHarvest } from "../harvests/route"
+import { POST as createProposal } from "../proposals/route"
+import { POST as recordPlanting } from "../seasons/[id]/plantings/route"
+import { POST as createWorkParty } from "../work-parties/route"
+import { POST as castVote } from "../proposals/[id]/votes/route"
 import { POST as createZone } from "../delivery-zones/route"
 import { PUT as updateZone, DELETE as deleteZone } from "../delivery-zones/[id]/route"
 import { GARDEN_MODULE } from "../../../modules/garden"
@@ -36,11 +49,26 @@ jest.mock("../../../workflows/delivery/workflows/handle-delivery", () => ({
  *
  * Every case calls the real route handler. The fake container resolves only
  * the keys the routes are meant to use — the imported `*_MODULE` constants,
- * Query, and the two framework keys `requireSellerId` touches — and throws on
- * anything else, so a route that resolved a guessed key would fail here
- * rather than pass on a fallback. Query honours `filters`, so a membership
- * that exists but is pending, or of the wrong type, does not count.
+ * Query, and the two framework keys `requireSellerId` touches — and Query
+ * answers only for the entities a case seeds (an empty list counts as seeded).
+ * Anything else throws, *and* is recorded in `strayLookups`, which every case
+ * must leave empty. The record matters because the access helpers swallow
+ * lookup errors and deny: a throw alone would let a refusal case pass for the
+ * wrong reason, and a route that asked for an entity that does not exist
+ * (`allocation_rule`, say) would read as "no rows" and pass on its default.
+ * A Query fake cannot tell a real entity from a broken one, though, so the
+ * routes whose rows are what matters are also run against Postgres in
+ * `integration-tests/http/store-community-write-authz.spec.ts`.
+ * Query honours `filters`, so a membership that exists but is pending, or of
+ * the wrong type, does not count.
  */
+
+const strayLookups: string[] = []
+
+afterEach(() => {
+  const seen = strayLookups.splice(0)
+  expect(seen).toEqual([])
+})
 
 type TestRes = {
   statusCode: number
@@ -89,9 +117,13 @@ const makeReq = (opts: {
     }: {
       entity: string
       filters?: Record<string, unknown>
-    }) => ({
-      data: (opts.rows?.[entity] ?? []).filter((row) => matches(row, filters)),
-    }),
+    }) => {
+      if (!opts.rows || !Object.prototype.hasOwnProperty.call(opts.rows, entity)) {
+        strayLookups.push(`query entity: ${entity}`)
+        throw new Error(`unexpected query entity: ${entity}`)
+      }
+      return { data: opts.rows[entity].filter((row) => matches(row, filters)) }
+    },
   }
   return {
     params: opts.params ?? {},
@@ -109,6 +141,7 @@ const makeReq = (opts: {
         if (key === ContainerRegistrationKeys.PG_CONNECTION || key === Modules.AUTH) {
           return undefined
         }
+        strayLookups.push(`container key: ${key}`)
         throw new Error(`unexpected container key: ${key}`)
       },
     },
@@ -203,7 +236,11 @@ describe("PUT /store/gardens/:id — active organizers, allow-listed fields", ()
     ["an unauthenticated caller", makeReq({ params: { id: "gdn_1" } })],
     [
       "a signed-in stranger",
-      makeReq({ actor: CUSTOMER("cus_stranger"), params: { id: "gdn_1" } }),
+      makeReq({
+        actor: CUSTOMER("cus_stranger"),
+        params: { id: "gdn_1" },
+        rows: { garden_membership: [] },
+      }),
     ],
     [
       "a self-appointed (pending) organizer",
@@ -291,6 +328,7 @@ describe("POST /store/gardens/:id/plots", () => {
         actor: CUSTOMER("cus_stranger"),
         params: { id: "gdn_1" },
         body: { plot_number: "A1" },
+        rows: { garden_membership: [] },
         modules: { [GARDEN_MODULE]: service },
       })
     )
@@ -367,11 +405,21 @@ describe("POST /store/seasons", () => {
 })
 
 describe("POST /store/harvests/:id/allocations", () => {
-  const svc = () => ({
-    createHarvestAllocations: jest.fn(async (d: Row) => d),
+  const svc = (rules: Row[] = []) => ({
+    listAllocationRules: jest.fn(async (filters: Row) => rules.filter((r) => matches(r, filters))),
+    createHarvestAllocations: jest.fn(async (rows: Row[]) =>
+      rows.map((row, i) => ({ id: `alloc_${i}`, ...row }))
+    ),
     updateGardenHarvests: jest.fn(async (d: Row) => d),
   })
-  const harvest = { id: "hv_1", garden_id: "gdn_1", total_quantity: 100, total_estimated_value: 1000 }
+  const harvest = {
+    id: "hv_1",
+    garden_id: "gdn_1",
+    total_quantity: 100,
+    unit: "lbs",
+    total_estimated_value: 1000,
+    allocation_status: "pending",
+  }
 
   it("refuses a missing harvest the same way as someone else's", async () => {
     const service = svc()
@@ -380,11 +428,12 @@ describe("POST /store/harvests/:id/allocations", () => {
       makeReq({
         actor: CUSTOMER("cus_org"),
         params: { id: "hv_missing" },
-        rows: { garden_membership: [organizer("cus_org")] },
+        rows: { garden_harvest: [harvest], garden_membership: [organizer("cus_org")] },
         modules: { [HARVEST_MODULE]: service },
       })
     )
     expect(res.statusCode).toBe(403)
+    expect(service.createHarvestAllocations).not.toHaveBeenCalled()
   })
 
   it("refuses a non-organizer", async () => {
@@ -394,7 +443,7 @@ describe("POST /store/harvests/:id/allocations", () => {
       makeReq({
         actor: CUSTOMER("cus_stranger"),
         params: { id: "hv_1" },
-        rows: { garden_harvest: [harvest] },
+        rows: { garden_harvest: [harvest], garden_membership: [] },
         modules: { [HARVEST_MODULE]: service },
       })
     )
@@ -403,19 +452,101 @@ describe("POST /store/harvests/:id/allocations", () => {
     expect(service.updateGardenHarvests).not.toHaveBeenCalled()
   })
 
-  it("lets the garden's organizer allocate", async () => {
+  it("lets the garden's organizer allocate, in rows the allocation model accepts", async () => {
     const service = svc()
     const res = await call(
       allocateHarvest,
       makeReq({
         actor: CUSTOMER("cus_org"),
         params: { id: "hv_1" },
-        rows: { garden_harvest: [harvest], garden_membership: [organizer("cus_org")] },
+        rows: {
+          garden_harvest: [harvest],
+          garden_membership: [organizer("cus_org")],
+        },
         modules: { [HARVEST_MODULE]: service },
       })
     )
     expect(res.statusCode).toBe(201)
-    expect(service.createHarvestAllocations).toHaveBeenCalled()
+    expect(service.createHarvestAllocations).toHaveBeenCalledTimes(1)
+    const rows = service.createHarvestAllocations.mock.calls[0][0] as Row[]
+    // The six default pools, which sum to the whole harvest.
+    expect(rows.map((r) => r.pool_type)).toEqual([
+      "investor",
+      "volunteer",
+      "plot_holder",
+      "communal",
+      "open_market",
+      "donation",
+    ])
+    expect(rows.reduce((sum, r) => sum + (r.quantity as number), 0)).toBe(100)
+    expect(rows[2]).toEqual(
+      expect.objectContaining({
+        harvest_id: "hv_1",
+        garden_id: "gdn_1",
+        pool_type: "plot_holder",
+        percentage: 30,
+        quantity: 30,
+        unit: "lbs",
+        estimated_value: 300,
+        status: "allocated",
+      })
+    )
+    // garden_harvest_allocation has none of these columns.
+    for (const row of rows) {
+      for (const absent of ["allocated_quantity", "allocated_value", "claimed_quantity", "remaining_quantity"]) {
+        expect(row).not.toHaveProperty(absent)
+      }
+    }
+    expect(service.updateGardenHarvests).toHaveBeenCalledWith({
+      id: "hv_1",
+      allocation_status: "allocated",
+    })
+  })
+
+  it("uses the garden's own active rules when it has them", async () => {
+    const service = svc([
+      { garden_id: "gdn_1", is_active: true, pool_type: "communal", percentage: 60, priority: 1 },
+      { garden_id: "gdn_1", is_active: true, pool_type: "donation", percentage: 40, priority: 2 },
+      { garden_id: "gdn_1", is_active: false, pool_type: "investor", percentage: 100, priority: 1 },
+      { garden_id: "gdn_2", is_active: true, pool_type: "investor", percentage: 100, priority: 1 },
+    ])
+    const res = await call(
+      allocateHarvest,
+      makeReq({
+        actor: CUSTOMER("cus_org"),
+        params: { id: "hv_1" },
+        rows: {
+          garden_harvest: [harvest],
+          garden_membership: [organizer("cus_org")],
+        },
+        modules: { [HARVEST_MODULE]: service },
+      })
+    )
+    expect(res.statusCode).toBe(201)
+    const rows = service.createHarvestAllocations.mock.calls[0][0] as Row[]
+    expect(rows.map((r) => [r.pool_type, r.quantity, r.priority])).toEqual([
+      ["communal", 60, 1],
+      ["donation", 40, 2],
+    ])
+  })
+
+  it("refuses to allocate the same harvest twice", async () => {
+    const service = svc()
+    const res = await call(
+      allocateHarvest,
+      makeReq({
+        actor: CUSTOMER("cus_org"),
+        params: { id: "hv_1" },
+        rows: {
+          garden_harvest: [{ ...harvest, allocation_status: "allocated" }],
+          garden_membership: [organizer("cus_org")],
+        },
+        modules: { [HARVEST_MODULE]: service },
+      })
+    )
+    expect(res.statusCode).toBe(409)
+    expect(service.createHarvestAllocations).not.toHaveBeenCalled()
+    expect(service.updateGardenHarvests).not.toHaveBeenCalled()
   })
 })
 
@@ -573,7 +704,13 @@ const pinDelivery = {
   proof_pin_code: "4821",
 }
 
+// Couriers are read through the module: Query's `food_courier` entry point
+// resolves to a list method the service does not have.
+const listCouriers = async (filters: { id?: string }) =>
+  deliveryRows.food_courier.filter((row) => row.id === filters.id)
+
 const foodDistribution = (delivery: Row | null) => ({
+  listCouriers: jest.fn(listCouriers),
   retrieveFoodDelivery: jest.fn(async () => {
     if (!delivery) throw notFound()
     return delivery
@@ -731,6 +868,303 @@ describe("PUT /store/food-deliveries/:id — each principal for their own part",
       expect.objectContaining({ id: "fd_1", customer_rating: 5 })
     )
   })
+
+  it("limits the producer to the hand-over statuses /vendor allows it", async () => {
+    const noProof = { ...pinDelivery, status: "ASSIGNED", proof_type: "NONE", proof_pin_code: null }
+    for (const status of ["ARRIVED_AT_DESTINATION", "DELIVERED", "DELIVERED_TO_SAFE_PLACE", "EN_ROUTE_DELIVERY"]) {
+      const { service, req } = put(PRODUCER, { status }, noProof)
+      expect((await call(updateDelivery, req)).statusCode).toBe(403)
+      expect(service.updateDeliveryStatus).not.toHaveBeenCalled()
+    }
+
+    const handOver = put(PRODUCER, { status: "ORDER_PICKED_UP" }, noProof)
+    expect((await call(updateDelivery, handOver.req)).statusCode).toBe(200)
+    expect(handOver.service.updateDeliveryStatus).toHaveBeenCalledWith(
+      "fd_1",
+      "ORDER_PICKED_UP",
+      undefined,
+      undefined
+    )
+  })
+
+  it("does not let the producer write the courier's position", async () => {
+    const { service, req } = put(PRODUCER, { status: "WAITING_FOR_ORDER", latitude: 1, longitude: 2 })
+    expect((await call(updateDelivery, req)).statusCode).toBe(403)
+    expect(service.updateDeliveryStatus).not.toHaveBeenCalled()
+
+    const courier = put(COURIER, { status: "EN_ROUTE_DELIVERY", latitude: 1, longitude: 2 })
+    expect((await call(updateDelivery, courier.req)).statusCode).toBe(200)
+    expect(courier.service.updateDeliveryStatus).toHaveBeenCalledWith(
+      "fd_1",
+      "EN_ROUTE_DELIVERY",
+      { latitude: 1, longitude: 2 },
+      undefined
+    )
+  })
+})
+
+describe("POST /store/food-deliveries/:id/track — the courier's position is the courier's to write", () => {
+  const track = (actor: Actor | undefined, delivery: Row | null = pinDelivery) => {
+    const service = {
+      ...foodDistribution(delivery),
+      updateCourierLocation: jest.fn(async () => undefined),
+    }
+    const req = makeReq({
+      actor,
+      params: { id: "fd_1" },
+      body: { latitude: 37.8, longitude: -122.27 },
+      rows: deliveryRows,
+      modules: { [FOOD_DISTRIBUTION_MODULE]: service },
+    })
+    return { service, req }
+  }
+
+  it.each([
+    ["a signed-in stranger", CUSTOMER("cus_stranger")],
+    ["the recipient", RECIPIENT],
+    ["the producer", PRODUCER],
+  ])("refuses %s", async (_label, actor) => {
+    const { service, req } = track(actor)
+    expect((await call(trackDelivery, req)).statusCode).toBe(403)
+    expect(service.trackCourierLocation).not.toHaveBeenCalled()
+    expect(service.updateCourierLocation).not.toHaveBeenCalled()
+  })
+
+  it("refuses a missing delivery the same way as someone else's", async () => {
+    const { req } = track(COURIER, null)
+    expect((await call(trackDelivery, req)).statusCode).toBe(403)
+  })
+
+  it("records the courier's own position", async () => {
+    const { service, req } = track(COURIER)
+    const res = await call(trackDelivery, req)
+    expect(res.statusCode).toBe(200)
+    expect(service.trackCourierLocation).toHaveBeenCalledWith("fd_1", 37.8, -122.27, undefined, undefined)
+    expect(service.updateCourierLocation).toHaveBeenCalledWith("cour_1", 37.8, -122.27)
+  })
+})
+
+describe("POST /store/food-deliveries — the order's producer, once per order", () => {
+  const body = {
+    order_id: "ord_1",
+    pickup_address: "1 Kitchen Way",
+    delivery_address: "2 Home St",
+    recipient_name: "R",
+    proof_type: "PIN_CODE",
+    proof_pin_code: "1234",
+  }
+  const svc = (order: Row | null, existingDeliveries: Row[] = []) => ({
+    listCouriers: jest.fn(listCouriers),
+    retrieveFoodOrder: jest.fn(async () => {
+      if (!order) throw notFound()
+      return order
+    }),
+    listFoodDeliveries: jest.fn(async () => existingDeliveries),
+    createDeliveryForOrder: jest.fn(async (orderId: string, data: Row) => ({
+      id: "fd_new",
+      order_id: orderId,
+      ...data,
+    })),
+  })
+  const order = { id: "ord_1", producer_id: "prod_1", customer_id: "cus_recipient" }
+  const create = (actor: Actor | undefined, service: ReturnType<typeof svc>) =>
+    call(
+      createFoodDelivery,
+      makeReq({ actor, body, rows: deliveryRows, modules: { [FOOD_DISTRIBUTION_MODULE]: service } })
+    )
+
+  it.each([
+    ["a signed-in stranger", CUSTOMER("cus_stranger")],
+    ["the order's recipient", RECIPIENT],
+    ["a courier", COURIER],
+  ])("refuses %s", async (_label, actor) => {
+    const service = svc(order)
+    expect((await create(actor, service)).statusCode).toBe(403)
+    expect(service.createDeliveryForOrder).not.toHaveBeenCalled()
+  })
+
+  it("refuses a missing order the same way as someone else's", async () => {
+    const service = svc(null)
+    expect((await create(PRODUCER, service)).statusCode).toBe(403)
+    expect(service.createDeliveryForOrder).not.toHaveBeenCalled()
+  })
+
+  it("refuses a second delivery for the same order", async () => {
+    const service = svc(order, [{ id: "fd_existing" }])
+    expect((await create(PRODUCER, service)).statusCode).toBe(409)
+    expect(service.createDeliveryForOrder).not.toHaveBeenCalled()
+  })
+
+  it("lets the producer create it, and does not echo the PIN", async () => {
+    const service = svc(order)
+    const res = await create(PRODUCER, service)
+    expect(res.statusCode).toBe(201)
+    expect(service.createDeliveryForOrder).toHaveBeenCalledWith(
+      "ord_1",
+      expect.objectContaining({ proof_type: "PIN_CODE", proof_pin_code: "1234" })
+    )
+    expect(res.body.delivery).not.toHaveProperty("proof_pin_code")
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Trades
+// ---------------------------------------------------------------------------
+
+describe("POST /store/food-trades/:id — the producer the trade was offered to", () => {
+  const trade = {
+    id: "ord_trade",
+    producer_id: "prod_1",
+    customer_id: "cus_offerer",
+    transaction_type: "TRADE",
+    status: "PENDING",
+  }
+  const svc = (order: Row | null) => ({
+    retrieveFoodOrder: jest.fn(async () => {
+      if (!order) throw notFound()
+      return order
+    }),
+    updateFoodOrders: jest.fn(async (d: Row) => ({ ...order, ...d })),
+  })
+  const respond = (actor: Actor | undefined, service: ReturnType<typeof svc>) =>
+    call(
+      respondToTrade,
+      makeReq({
+        actor,
+        params: { id: "ord_trade" },
+        body: { accepted: true },
+        rows: deliveryRows,
+        modules: { [FOOD_DISTRIBUTION_MODULE]: service },
+      })
+    )
+
+  it.each([
+    ["a signed-in stranger", CUSTOMER("cus_stranger")],
+    ["the customer who offered it", CUSTOMER("cus_offerer")],
+    ["another seller", SELLER("sel_other")],
+  ])("refuses %s", async (_label, actor) => {
+    const service = svc(trade)
+    expect((await respond(actor, service)).statusCode).toBe(403)
+    expect(service.updateFoodOrders).not.toHaveBeenCalled()
+  })
+
+  it("refuses a missing trade the same way as someone else's", async () => {
+    const service = svc(null)
+    expect((await respond(PRODUCER, service)).statusCode).toBe(403)
+  })
+
+  it("lets the producer accept it", async () => {
+    const service = svc(trade)
+    const res = await respond(PRODUCER, service)
+    expect(res.statusCode).toBe(200)
+    expect(service.updateFoodOrders).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "ord_trade", status: "CONFIRMED", trade_accepted: true })
+    )
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Customer-identity writes: a seller or driver token cannot act as a customer
+// ---------------------------------------------------------------------------
+
+describe("customer-identity community writes refuse seller and driver tokens", () => {
+  /**
+   * Each of these writes a record under a customer id. They used to take that
+   * id from the token for a customer and from the body for anyone else, so a
+   * seller or driver token could vote, claim, log hours, join a garden or
+   * author a proposal as any customer.
+   *
+   * The refusal must come before the handler touches anything, so the seller
+   * and driver cases use a container that records every lookup and expect it
+   * to stay empty. The customer case uses one that throws on the first lookup:
+   * reaching it proves the customer got past the gate, without standing up
+   * every route's services.
+   */
+  const handlers: Array<[string, (req: never, res: never) => unknown, Record<string, string>]> = [
+    ["POST /store/gardens/:id/members", joinGarden, { id: "gdn_1" }],
+    ["POST /store/harvests/:id/claims", claimHarvest, { id: "hv_1" }],
+    ["POST /store/work-parties/:id/signups", signUpForWorkParty, { id: "wp_1" }],
+    ["POST /store/volunteer-logs", logVolunteerHours, {}],
+    ["POST /store/harvests", recordHarvest, {}],
+    ["POST /store/proposals", createProposal, {}],
+    ["POST /store/seasons/:id/plantings", recordPlanting, { id: "sea_1" }],
+    ["POST /store/work-parties", createWorkParty, {}],
+    ["POST /store/proposals/:id/votes", castVote, { id: "prop_1" }],
+  ]
+
+  const reqFor = (actor: Actor, params: Record<string, string>, onResolve: (key: string) => unknown) => ({
+    params,
+    body: { customer_id: "cus_victim", membership_id: "gm_victim", garden_id: "gdn_1" },
+    query: {},
+    url: "/",
+    auth_context: { actor_id: actor.id, actor_type: actor.type },
+    scope: { resolve: onResolve },
+  })
+
+  it.each(handlers)("%s refuses a seller or driver before any lookup", async (_label, handler, params) => {
+    for (const actor of [SELLER("sel_1"), { id: "drv_1", type: "driver" as const }]) {
+      const resolved: string[] = []
+      const res = createRes()
+      await handler(
+        reqFor(actor, params, (key) => {
+          resolved.push(key)
+          throw new Error(`resolved ${key}`)
+        }) as never,
+        res as never
+      )
+      expect(res.statusCode).toBe(403)
+      expect(res.body.type).toBe("not_allowed")
+      expect(resolved).toEqual([])
+    }
+  })
+
+  it.each(handlers)("%s lets a customer through to the handler", async (_label, handler, params) => {
+    const res = createRes()
+    await expect(
+      handler(
+        reqFor(CUSTOMER("cus_me"), params, (key) => {
+          throw new Error(`reached ${key}`)
+        }) as never,
+        res as never
+      )
+    ).rejects.toThrow(/^reached /)
+    expect(res.statusCode).not.toBe(403)
+  })
+})
+
+describe("POST /store/food-producers/:id/orders — the order's customer comes from the token", () => {
+  const svc = () => ({
+    retrieveFoodProducer: jest.fn(async () => ({
+      id: "prod_1",
+      operating_status: "ACCEPTING_ORDERS",
+      accepts_donations: true,
+      accepts_trades: true,
+      offers_delivery: true,
+      offers_pickup: true,
+      delivery_fee: 0,
+    })),
+    createFoodOrderWithItems: jest.fn(async (order: Row, items: Row[]) => ({ order: { id: "ord_new", ...order }, items })),
+  })
+  const body = {
+    transaction_type: "SALE",
+    fulfillment_type: "PICKUP",
+    customer_id: "cus_victim",
+    items: [{ name: "Tomatoes", quantity: 1, unit_price: 2 }],
+  }
+
+  it.each([
+    ["a seller", SELLER("sel_1"), undefined],
+    ["a driver", { id: "drv_1", type: "driver" as const }, undefined],
+    ["a customer", CUSTOMER("cus_me"), "cus_me"],
+  ])("files %s's order under customer %s, never the body's customer_id", async (_label, actor, expected) => {
+    const service = svc()
+    const res = await call(
+      placeProducerOrder,
+      makeReq({ actor, params: { id: "prod_1" }, body, modules: { [FOOD_DISTRIBUTION_MODULE]: service } })
+    )
+    expect(res.statusCode).toBe(201)
+    expect(service.createFoodOrderWithItems.mock.calls[0][0].customer_id).toBe(expected)
+  })
 })
 
 // ---------------------------------------------------------------------------
@@ -788,15 +1222,28 @@ describe("POST /store/deliveries — the caller's own cart", () => {
 // Delivery zones
 // ---------------------------------------------------------------------------
 
-describe("/store/delivery-zones writes — the seller who created the zone", () => {
+describe("/store/delivery-zones writes — the seller who created the zone, through /vendor's checks", () => {
+  const square = (lng: number, lat: number) => ({
+    type: "Polygon" as const,
+    coordinates: [[[lng, lat], [lng, lat + 1], [lng + 1, lat + 1], [lng + 1, lat], [lng, lat]]],
+  })
   const zone = (owner: string | null) => ({
     id: "zone_1",
     code: "EAST",
     name: "East",
+    boundary: square(0, 0),
+    center_latitude: 0.5,
+    center_longitude: 0.5,
+    base_delivery_fee: 500,
+    per_mile_fee: 0,
+    minimum_order: null,
+    service_hours: null,
+    active: true,
+    priority: 0,
     created_by_seller_id: owner,
   })
-  const svc = (existing: Row | null = zone("sel_owner")) => ({
-    listDeliveryZones: jest.fn(async () => []),
+  const svc = (existing: Row | null = zone("sel_owner"), activeZones: Row[] = []) => ({
+    listDeliveryZones: jest.fn(async (filters: Row) => ("active" in filters ? activeZones : [])),
     createDeliveryZones: jest.fn(async (d: Row) => ({ id: "zone_new", ...d })),
     retrieveDeliveryZone: jest.fn(async () => existing),
     updateDeliveryZones: jest.fn(async (d: Row) => d),
@@ -804,10 +1251,12 @@ describe("/store/delivery-zones writes — the seller who created the zone", () 
   const newZone = {
     name: "East",
     code: "EAST",
-    boundary: { type: "Polygon", coordinates: [[[0, 0], [0, 1], [1, 1], [0, 0]]] },
+    boundary: square(0, 0),
     center_latitude: 0.5,
     center_longitude: 0.5,
   }
+  // Far from (0, 0): no radius or bounding-box overlap with `newZone`.
+  const elsewhere = { ...zone("sel_other"), id: "zone_far", code: "FAR", boundary: square(40, 40), center_latitude: 40.5, center_longitude: 40.5 }
 
   it("POST refuses a customer", async () => {
     const service = svc()
@@ -819,20 +1268,36 @@ describe("/store/delivery-zones writes — the seller who created the zone", () 
     expect(service.createDeliveryZones).not.toHaveBeenCalled()
   })
 
-  it("POST stamps the calling seller as the zone's owner", async () => {
-    const service = svc()
+  it("POST stamps the calling seller as the zone's owner, and stores dollars as cents", async () => {
+    const service = svc(null, [elsewhere])
     const res = await call(
       createZone,
       makeReq({
         actor: SELLER("sel_owner"),
-        body: { ...newZone, created_by_seller_id: "sel_other" },
+        body: { ...newZone, base_delivery_fee: 5, per_mile_fee: 1.25, created_by_seller_id: "sel_other" },
         modules: { [FOOD_DISTRIBUTION_MODULE]: service },
       })
     )
     expect(res.statusCode).toBe(201)
     expect(service.createDeliveryZones).toHaveBeenCalledWith(
-      expect.objectContaining({ code: "EAST", created_by_seller_id: "sel_owner" })
+      expect.objectContaining({
+        code: "EAST",
+        created_by_seller_id: "sel_owner",
+        base_delivery_fee: 500,
+        per_mile_fee: 125,
+      })
     )
+  })
+
+  it("POST refuses a zone that overlaps an active one, as /vendor does", async () => {
+    const service = svc(null, [{ ...zone("sel_other"), id: "zone_rival", code: "RIVAL" }])
+    const res = await call(
+      createZone,
+      makeReq({ actor: SELLER("sel_owner"), body: newZone, modules: { [FOOD_DISTRIBUTION_MODULE]: service } })
+    )
+    expect(res.statusCode).toBe(409)
+    expect(res.body.code).toBe("DELIVERY_ZONE_CONFLICT")
+    expect(service.createDeliveryZones).not.toHaveBeenCalled()
   })
 
   it.each([
@@ -862,14 +1327,32 @@ describe("/store/delivery-zones writes — the seller who created the zone", () 
     expect(forDelete.updateDeliveryZones).not.toHaveBeenCalled()
   })
 
-  it("PUT and DELETE serve the owner", async () => {
-    const forPut = svc()
+  it("PUT refuses moving the owner's zone over another active zone", async () => {
+    const service = svc(zone("sel_owner"), [
+      zone("sel_owner"),
+      { ...elsewhere, id: "zone_rival", code: "RIVAL" },
+    ])
+    const res = await call(
+      updateZone,
+      makeReq({
+        actor: SELLER("sel_owner"),
+        params: { id: "zone_1" },
+        body: { boundary: square(40, 40), center_latitude: 40.5, center_longitude: 40.5 },
+        modules: { [FOOD_DISTRIBUTION_MODULE]: service },
+      })
+    )
+    expect(res.statusCode).toBe(409)
+    expect(service.updateDeliveryZones).not.toHaveBeenCalled()
+  })
+
+  it("PUT and DELETE serve the owner; PUT takes dollars and stores cents", async () => {
+    const forPut = svc(zone("sel_owner"), [zone("sel_owner"), elsewhere])
     const put = await call(
       updateZone,
       makeReq({
         actor: SELLER("sel_owner"),
         params: { id: "zone_1" },
-        body: { base_delivery_fee: 250 },
+        body: { base_delivery_fee: 2.5 },
         modules: { [FOOD_DISTRIBUTION_MODULE]: forPut },
       })
     )

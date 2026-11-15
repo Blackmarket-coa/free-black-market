@@ -180,13 +180,12 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
   try {
     const data = createOrderSchema.parse(req.body)
 
-    // SEC: for a logged-in customer, bind the order to the authenticated actor
-    // so one customer cannot place an order under another customer's id. Guest
-    // orders (no acting customer) keep the body value so anonymous orders work.
-    const actingCustomer = actingCustomerId(req)
-    if (actingCustomer) {
-      data.customer_id = actingCustomer
-    }
+    // SEC: the order's customer is the authenticated customer, never a body
+    // value. The SEC-2/3 matcher requires sign-in on this POST, so there is no
+    // anonymous caller to keep a body value for: the only callers without an
+    // acting customer are seller and driver tokens, and they used to be able
+    // to place an order under any customer's id. Theirs is unattributed.
+    data.customer_id = actingCustomerId(req) ?? undefined
     
     const foodDistribution = req.scope.resolve<FoodDistributionService>(FOOD_DISTRIBUTION_MODULE)
     

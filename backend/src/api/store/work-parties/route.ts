@@ -1,8 +1,9 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 import { actingCustomerId } from "../../../shared/actor-scope"
+import { forbidden } from "../../../shared/community-read-access"
 
-const VOLUNTEER_MODULE = "volunteerModuleService"
+import { VOLUNTEER_MODULE } from "../../../modules/volunteer"
 
 interface VolunteerServiceType {
   createWorkPartys: (data: Record<string, unknown>) => Promise<{ id: string }>
@@ -66,6 +67,15 @@ export async function POST(
   req: MedusaRequest,
   res: MedusaResponse
 ) {
+  // Customers only. This record is written under a customer id, and that id
+  // comes from the token. A seller or driver token used to fall through to
+  // the id in the body, which let any signed-in seller or driver act as any
+  // customer here.
+  const actingCustomer = actingCustomerId(req)
+  if (!actingCustomer) {
+    return forbidden(res)
+  }
+
   const volunteerService = req.scope.resolve(VOLUNTEER_MODULE) as unknown as VolunteerServiceType
 
   const {
@@ -82,14 +92,11 @@ export async function POST(
     location_notes,
     requirements,
     provides,
-    organizer_id,
   } = req.body as Record<string, unknown>
 
   // SEC: bind the work party's organizer to the authenticated customer so a
-  // logged-in customer cannot create one under someone else's id. Non-customer
-  // actors (seller/driver) fall back to the body value.
-  const actingCustomer = actingCustomerId(req)
-  const effectiveOrganizerId = (actingCustomer ?? organizer_id) as string
+  // logged-in customer cannot create one under someone else's id.
+  const effectiveOrganizerId = actingCustomer
 
   const workParty = await volunteerService.createWorkPartys({
     garden_id,

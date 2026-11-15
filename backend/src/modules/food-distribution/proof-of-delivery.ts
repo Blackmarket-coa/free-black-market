@@ -1,5 +1,5 @@
 import { timingSafeEqual } from "crypto"
-import { MedusaError } from "@medusajs/framework/utils"
+import { nullIfNotFound } from "../../shared/null-if-not-found"
 
 /**
  * The proof a delivery was created to require, and whether a submission meets it.
@@ -74,12 +74,5 @@ export async function retrieveDeliveryOrNull<T>(
   service: { retrieveFoodDelivery: (id: string) => Promise<T> },
   id: string
 ): Promise<T | null> {
-  try {
-    return await service.retrieveFoodDelivery(id)
-  } catch (error) {
-    if ((error as { type?: string })?.type === MedusaError.Types.NOT_FOUND) {
-      return null
-    }
-    throw error
-  }
+  return nullIfNotFound(service.retrieveFoodDelivery(id))
 }

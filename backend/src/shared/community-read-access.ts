@@ -1,5 +1,6 @@
 import type { MedusaRequest } from "@medusajs/framework/http"
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
+import { FOOD_DISTRIBUTION_MODULE } from "../modules/food-distribution"
 import { createLogger } from "./logger"
 
 const log = createLogger("shared/community-read-access")
@@ -161,6 +162,15 @@ export async function actorOwnsProducer(
 /**
  * True when the actor owns the courier named — the other principal on a
  * delivery, who has to be able to read the run they are driving.
+ *
+ * Read through the food-distribution module, not Query. The model is
+ * `food_courier` but the service registers it as `Courier`, so Query's
+ * `food_courier` entry point resolves to `listFoodCouriers`, which the service
+ * does not have: the graph call threw on every real request, and because this
+ * denies on failure, no courier could ever be matched. Every courier-scoped
+ * path (tracking, proof of delivery, status updates, a courier's run list)
+ * refused the courier it was written for. `food_producer` and `food_order`
+ * register under their own names, so the lookups beside this one are fine.
  */
 export async function actorOwnsCourier(
   req: MedusaRequest,
@@ -168,14 +178,17 @@ export async function actorOwnsCourier(
 ): Promise<boolean> {
   if (!actorId(req) || !courierId) return false
   try {
-    const query = req.scope.resolve(ContainerRegistrationKeys.QUERY)
-    const { data } = await query.graph({
-      entity: "food_courier",
-      fields: ["id", "owner_id"],
-      filters: { id: courierId },
-    })
-    const ownerId = (data?.[0] as { owner_id?: string | null } | undefined)?.owner_id
-    return actorIsAnyOf(req, ownerId)
+    const foodDistribution = req.scope.resolve(FOOD_DISTRIBUTION_MODULE) as {
+      listCouriers: (
+        filters: Record<string, unknown>,
+        config?: { select?: string[]; take?: number }
+      ) => Promise<Array<{ owner_id?: string | null }>>
+    }
+    const [courier] = await foodDistribution.listCouriers(
+      { id: courierId },
+      { select: ["id", "owner_id"], take: 1 }
+    )
+    return actorIsAnyOf(req, courier?.owner_id)
   } catch (error) {
     log.warn(
       `[community-read-access] courier ownership lookup failed for ${courierId}: ${

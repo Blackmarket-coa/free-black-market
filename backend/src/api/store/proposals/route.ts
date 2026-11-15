@@ -2,8 +2,9 @@ import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 import { z } from "zod"
 import { actingCustomerId } from "../../../shared/actor-scope"
+import { forbidden } from "../../../shared/community-read-access"
 
-const GOVERNANCE_MODULE = "governanceModuleService"
+import { GOVERNANCE_MODULE } from "../../../modules/governance"
 
 interface GovernanceServiceType {
   createGardenProposals: (data: Record<string, unknown>) => Promise<{ id: string }>
@@ -88,6 +89,15 @@ export async function POST(
   req: MedusaRequest,
   res: MedusaResponse
 ) {
+  // Customers only. This record is written under a customer id, and that id
+  // comes from the token. A seller or driver token used to fall through to
+  // the id in the body, which let any signed-in seller or driver act as any
+  // customer here.
+  const actingCustomer = actingCustomerId(req)
+  if (!actingCustomer) {
+    return forbidden(res)
+  }
+
   const governanceService = req.scope.resolve(GOVERNANCE_MODULE) as GovernanceServiceType
 
   const {
@@ -96,7 +106,6 @@ export async function POST(
     description,
     summary,
     proposal_type,
-    proposed_by_id,
     voting_start,
     voting_end,
     quorum_required,
@@ -107,10 +116,8 @@ export async function POST(
   } = req.body as Record<string, unknown>
 
   // SEC: bind the proposal's author to the authenticated customer so a
-  // logged-in customer cannot create a proposal as someone else. Non-customer
-  // actors (seller/driver) fall back to the body value.
-  const actingCustomer = actingCustomerId(req)
-  const effectiveProposedById = (actingCustomer ?? proposed_by_id) as string
+  // logged-in customer cannot create a proposal as someone else.
+  const effectiveProposedById = actingCustomer
 
   const proposal = await governanceService.createGardenProposals({
     garden_id,

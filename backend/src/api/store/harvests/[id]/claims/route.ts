@@ -6,7 +6,7 @@ import {
 } from "../../../../../shared/community-read-access"
 import { actingCustomerId } from "../../../../../shared/actor-scope"
 
-const HARVEST_MODULE = "harvestModuleService"
+import { HARVEST_MODULE } from "../../../../../modules/harvest"
 
 interface HarvestServiceType {
   createHarvestClaims: (data: Record<string, unknown>) => Promise<{ id: string }>
@@ -75,21 +75,28 @@ export async function POST(
   req: MedusaRequest,
   res: MedusaResponse
 ) {
+  // Customers only. This record is written under a customer id, and that id
+  // comes from the token. A seller or driver token used to fall through to
+  // the id in the body, which let any signed-in seller or driver act as any
+  // customer here.
+  const actingCustomer = actingCustomerId(req)
+  if (!actingCustomer) {
+    return forbidden(res)
+  }
+
   const { id } = req.params
   const harvestService = req.scope.resolve(HARVEST_MODULE) as HarvestServiceType
   const query = req.scope.resolve(ContainerRegistrationKeys.QUERY)
 
   const {
     allocation_id,
-    customer_id,
     membership_id,
     quantity_requested,
   } = req.body as Record<string, unknown>
 
   // SEC: a customer may only claim a share for themselves. Bind customer_id to
-  // the authenticated actor; non-customer actors fall back to the body value.
-  const actingCustomer = actingCustomerId(req)
-  const effectiveCustomerId = (actingCustomer ?? customer_id) as string
+  // the authenticated actor.
+  const effectiveCustomerId = actingCustomer
 
   // SEC: and a customer must not borrow another member's membership_id, so
   // reject a membership that belongs to someone else.

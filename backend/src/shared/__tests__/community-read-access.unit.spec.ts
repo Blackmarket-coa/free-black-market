@@ -28,13 +28,20 @@ const makeReq = (opts: {
     if (opts.graphThrows) throw new Error("module unavailable")
     return { data: opts.rows?.[entity] ?? [] }
   })
+  // Couriers are read through the food-distribution module (Query has no
+  // working `food_courier` list method); it serves the same seeded rows.
+  const listCouriers = jest.fn(async (filters: { id?: string }) => {
+    if (opts.graphThrows) throw new Error("module unavailable")
+    return (opts.rows?.food_courier ?? []).filter((row) => row.id === filters.id)
+  })
   return {
     graph,
+    listCouriers,
     req: {
       ...(opts.actorId
         ? { auth_context: { actor_id: opts.actorId, actor_type: opts.actorType ?? "customer" } }
         : {}),
-      scope: { resolve: () => ({ graph }) },
+      scope: { resolve: () => ({ graph, listCouriers }) },
     } as never,
   }
 }

@@ -4,6 +4,7 @@ import { createPublishableKeyToken } from "./_publishable-key"
 import { createAuthenticatedSeller, safe } from "./helpers/seller-auth"
 import { GARDEN_MODULE } from "../../src/modules/garden"
 import { FOOD_DISTRIBUTION_MODULE } from "../../src/modules/food-distribution"
+import { HARVEST_MODULE } from "../../src/modules/harvest"
 
 jest.setTimeout(180 * 1000)
 
@@ -16,9 +17,13 @@ jest.setTimeout(180 * 1000)
  * covers every route with a fake container. This one proves the parts a fake
  * cannot: that the organizer lookup's `membership_type` / `status` filters
  * bind against the real `garden_membership` table (a self-appointed pending
- * organizer stays out), and that a seller's token on a `/store` route resolves
+ * organizer stays out), that a seller's token on a `/store` route resolves
  * through the member table to the same `sel_` id `/vendor/delivery-zones`
- * stamps.
+ * stamps, and that the rows the harvest-allocation route writes are rows the
+ * real schema accepts. The food-network routes (trades, deliveries, tracking)
+ * are in `store-food-network-write-authz.spec.ts`: each spec boots its own app,
+ * and the customers those cases need would run this file past the 20-a-minute
+ * auth rate limit that account creation shares.
  */
 medusaIntegrationTestRunner({
   inApp: true,
@@ -132,6 +137,42 @@ medusaIntegrationTestRunner({
       expect(await readGarden(gardenId)).toEqual(
         expect.objectContaining({ name: "Renamed", status: "active", operating_account_id: null, total_plots: 1 })
       )
+
+      // Harvest allocations: the organizer's, once, in rows the schema takes.
+      // (POST /store/harvests writes columns garden_harvest does not have, so
+      // the harvest is recorded through the module.)
+      const harvest = await getContainer()
+        .resolve(HARVEST_MODULE)
+        .createGardenHarvests({
+          garden_id: gardenId,
+          season_id: "sea_any",
+          crop_type: "tomato",
+          harvested_at: new Date(),
+          total_quantity: 100,
+          unit: "lbs",
+          total_estimated_value: 1000,
+        })
+      const strangerAllocates = await safe(
+        api.post(`/store/harvests/${harvest.id}/allocations`, {}, stranger.headers)
+      )
+      expect(strangerAllocates.status).toBe(403)
+
+      const allocated = await safe(api.post(`/store/harvests/${harvest.id}/allocations`, {}, creator.headers))
+      expect(allocated.status).toBe(201)
+      const allocationRows: Array<Record<string, unknown>> = await getContainer()
+        .resolve(HARVEST_MODULE)
+        .listHarvestAllocations({ harvest_id: harvest.id })
+      expect(allocationRows).toHaveLength(6)
+      expect(allocationRows.reduce((sum, r) => sum + Number(r.quantity), 0)).toBe(100)
+      expect(new Set(allocationRows.map((r) => r.status))).toEqual(new Set(["allocated"]))
+      expect(new Set(allocationRows.map((r) => r.unit))).toEqual(new Set(["lbs"]))
+
+      const again = await safe(api.post(`/store/harvests/${harvest.id}/allocations`, {}, creator.headers))
+      expect(again.status).toBe(409)
+
+      const listed = await safe(api.get(`/store/harvests/${harvest.id}/allocations`, creator.headers))
+      expect(listed.status).toBe(200)
+      expect(listed.data.allocations).toHaveLength(6)
     })
 
     it("a delivery zone written through /store belongs to the seller who created it", async () => {
@@ -146,7 +187,8 @@ medusaIntegrationTestRunner({
         boundary: { type: "Polygon", coordinates: [[[0, 0], [0, 1], [1, 1], [1, 0], [0, 0]]] },
         center_latitude: 0.5,
         center_longitude: 0.5,
-        base_delivery_fee: 500,
+        // Dollars, as /vendor/delivery-zones takes them; stored as cents.
+        base_delivery_fee: 5,
       }
 
       const byCustomer = await safe(api.post("/store/delivery-zones", zone, customer.headers))
@@ -156,6 +198,18 @@ medusaIntegrationTestRunner({
       expect(created.status).toBe(201)
       const zoneId = created.data.zone.id as string
       expect(created.data.zone.created_by_seller_id).toBe(owner.seller.id)
+      expect(Number(created.data.zone.base_delivery_fee)).toBe(500)
+
+      // /vendor's overlap check applies on /store too.
+      const overlapping = await safe(
+        api.post(
+          "/store/delivery-zones",
+          { ...zone, code: `O-${Math.floor(Math.random() * 1e6)}` },
+          asSeller(rival.token, pak)
+        )
+      )
+      expect(overlapping.status).toBe(409)
+      expect(overlapping.data.code).toBe("DELIVERY_ZONE_CONFLICT")
 
       const reprice = await safe(
         api.put(`/store/delivery-zones/${zoneId}`, { base_delivery_fee: 0 }, asSeller(rival.token, pak))
@@ -174,11 +228,30 @@ medusaIntegrationTestRunner({
       expect(untouched.active).toBe(true)
 
       const ownReprice = await safe(
-        api.put(`/store/delivery-zones/${zoneId}`, { base_delivery_fee: 300 }, asSeller(owner.token, pak))
+        api.put(`/store/delivery-zones/${zoneId}`, { base_delivery_fee: 3 }, asSeller(owner.token, pak))
       )
       expect(ownReprice.status).toBe(200)
       const after = await foodDistribution.retrieveDeliveryZone(zoneId)
       expect(Number(after.base_delivery_fee)).toBe(300)
+
+      // A rename leaves the fee and the active flag alone.
+      const renamed = await safe(
+        api.put(`/store/delivery-zones/${zoneId}`, { name: "East side" }, asSeller(owner.token, pak))
+      )
+      expect(renamed.status).toBe(200)
+      const afterRename = await foodDistribution.retrieveDeliveryZone(zoneId)
+      expect(afterRename.name).toBe("East side")
+      expect(Number(afterRename.base_delivery_fee)).toBe(300)
+
+      // A seller token cannot write a customer-identity record as a customer.
+      const asCustomer = await safe(
+        api.post(
+          "/store/volunteer-logs",
+          { customer_id: customer.id, garden_id: "gdn_any", hours: 40 },
+          asSeller(owner.token, pak)
+        )
+      )
+      expect(asCustomer.status).toBe(403)
     })
   },
 })

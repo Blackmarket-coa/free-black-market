@@ -7,7 +7,8 @@ import {
   actorOwnsProducer,
   forbidden,
 } from "../../../shared/community-read-access"
-import { redactDeliveries } from "../../../modules/food-distribution/public-view"
+import { redactDeliveries, redactDelivery } from "../../../modules/food-distribution/public-view"
+import { nullIfNotFound } from "../../../shared/null-if-not-found"
 
 // ===========================================
 // VALIDATION SCHEMAS
@@ -154,6 +155,13 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 
 // ===========================================
 // POST /food-deliveries
+//
+// The producer whose order it is, once per order. The caller chooses the
+// delivery address, the fee and the proof requirement (NONE by default), and
+// the producer's order board acts on the order's first delivery, so before
+// this any signed-in account could attach a delivery of its own choosing to
+// any producer's order. A missing order is refused the same way as someone
+// else's; a second delivery for the same order is a 409.
 // ===========================================
 
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
@@ -161,6 +169,23 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     const data = createDeliverySchema.parse(req.body)
     
     const foodDistribution = req.scope.resolve<FoodDistributionService>(FOOD_DISTRIBUTION_MODULE)
+
+    const order = await nullIfNotFound(foodDistribution.retrieveFoodOrder(data.order_id))
+    if (!order || !(await actorOwnsProducer(req, order.producer_id))) {
+      return forbidden(res)
+    }
+
+    const existing = await foodDistribution.listFoodDeliveries(
+      { order_id: data.order_id },
+      { select: ["id"], take: 1 }
+    )
+    if (existing.length > 0) {
+      res.status(409).json({
+        message: "This order already has a delivery",
+        type: "duplicate_error",
+      })
+      return
+    }
     
     const delivery = await foodDistribution.createDeliveryForOrder(data.order_id, {
       priority: data.priority || "STANDARD",
@@ -189,7 +214,10 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       metadata: data.metadata,
     })
     
-    res.status(201).json({ delivery })
+    // Redacted like every other delivery response: the PIN is a credential.
+    res.status(201).json({
+      delivery: redactDelivery(delivery as unknown as Record<string, unknown>),
+    })
   } catch (error) {
     if (error instanceof z.ZodError) {
       res.status(400).json({ message: "Validation failed", errors: error.issues })

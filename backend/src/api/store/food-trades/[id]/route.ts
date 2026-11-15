@@ -8,6 +8,7 @@ import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { FOOD_DISTRIBUTION_MODULE } from "../../../../modules/food-distribution"
 import type FoodDistributionService from "../../../../modules/food-distribution/service"
 import { applyRecipientAnonymity } from "../../../../modules/food-distribution/public-view"
+import { nullIfNotFound } from "../../../../shared/null-if-not-found"
 
 // ===========================================
 // VALIDATION SCHEMAS
@@ -71,6 +72,11 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 // ===========================================
 // POST /food-trades/:id/respond
 // Producer responds to trade offer
+//
+// The producer the trade was offered to, and nobody else. Accepting confirms
+// the order and declining cancels it, so before this any signed-in account
+// could settle any producer's pending trade. A trade that does not exist is
+// refused the same way as someone else's (ids are enumerable).
 // ===========================================
 
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
@@ -81,11 +87,10 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     
     const foodDistribution = req.scope.resolve<FoodDistributionService>(FOOD_DISTRIBUTION_MODULE)
     
-    const order = await foodDistribution.retrieveFoodOrder(id)
+    const order = await nullIfNotFound(foodDistribution.retrieveFoodOrder(id))
     
-    if (!order) {
-      res.status(404).json({ message: "Trade not found" })
-      return
+    if (!order || !(await actorOwnsProducer(req, order.producer_id))) {
+      return forbidden(res)
     }
     
     if (order.transaction_type !== "TRADE") {

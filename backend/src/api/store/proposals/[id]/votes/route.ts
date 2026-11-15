@@ -1,8 +1,9 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 import { actingCustomerId } from "../../../../../shared/actor-scope"
+import { forbidden } from "../../../../../shared/community-read-access"
 
-const GOVERNANCE_MODULE = "governanceModuleService"
+import { GOVERNANCE_MODULE } from "../../../../../modules/governance"
 
 interface GovernanceServiceType {
   createGardenVotes: (data: Record<string, unknown>) => Promise<{ id: string }>
@@ -92,12 +93,20 @@ export async function POST(
   req: MedusaRequest,
   res: MedusaResponse
 ) {
+  // Customers only. This record is written under a customer id, and that id
+  // comes from the token. A seller or driver token used to fall through to
+  // the id in the body, which let any signed-in seller or driver act as any
+  // customer here.
+  const actingCustomer = actingCustomerId(req)
+  if (!actingCustomer) {
+    return forbidden(res)
+  }
+
   const { id } = req.params
   const governanceService = req.scope.resolve(GOVERNANCE_MODULE) as GovernanceServiceType
   const query = req.scope.resolve(ContainerRegistrationKeys.QUERY)
 
   const {
-    customer_id,
     membership_id,
     vote,
     comment,
@@ -107,10 +116,8 @@ export async function POST(
   // SEC: a customer may only vote as themselves. Ignore any body customer_id
   // for a logged-in customer and bind the vote to the authenticated actor —
   // otherwise the "already voted" dedupe (keyed on customer_id) and the vote
-  // record could both be forged under another member's id. Non-customer actors
-  // (seller/driver) fall back to the body value.
-  const actingCustomer = actingCustomerId(req)
-  const effectiveCustomerId = (actingCustomer ?? customer_id) as string
+  // record could both be forged under another member's id.
+  const effectiveCustomerId = actingCustomer
 
   // Get proposal
   const { data: [proposal] } = await query.graph({
