@@ -11,17 +11,18 @@ import { reconcileCardOrder, type CardOrderReconcileOutcome } from "./card-order
  * Assigning a refund on a shared Mercur cart to the sellers' orders (SD-40;
  * operator answer 2026-10-06: "hold their payouts" until an admin assigns it).
  *
- * A Medusa-native refund (or an admin cancel) against a Mercur cart's shared
- * payment collection refunds the customer without touching any seller's
- * split row, so the ledger cannot tell whose sale was refunded; the
- * reconciler posts nothing and holds every seller on the collection
- * (`lib/card-order-reconcile.ts`). An admin reads the collection here, says
- * how the unassigned amount divides between its orders, and this records it
- * exactly as Mercur's own split refund would (`refunded_amount` and `status`
- * on each split row, `refundSplitOrderPaymentWorkflow`'s validation rule) —
- * WITHOUT calling Stripe: the customer has already been refunded. The
- * reconciler then posts each order's refund delta to that order's seller,
- * and the holds are released.
+ * A Medusa-native refund (or, before SD-36 (8) refused it, an admin cancel)
+ * against a Mercur cart's shared payment collection refunds the customer
+ * without touching any seller's split row, so the ledger cannot tell whose
+ * sale was refunded; the reconciler posts nothing and holds every seller on
+ * the collection (`lib/card-order-reconcile.ts`). An admin reads the
+ * collection here, says how the unassigned amount divides between its orders,
+ * and this records it exactly as Mercur's own split refund would
+ * (`refunded_amount` and `status` on each split row,
+ * `refundSplitOrderPaymentWorkflow`'s validation rule) — WITHOUT calling
+ * Stripe: the customer has already been refunded. The reconciler then posts
+ * each order's refund delta to that order's seller, and the holds are
+ * released.
  *
  * The allocations must add up to the unassigned amount exactly, to the cent,
  * and no order may be refunded past what was captured for it. Serialized per

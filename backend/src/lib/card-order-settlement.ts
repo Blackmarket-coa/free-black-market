@@ -70,8 +70,9 @@ export type CardSettlementOrder = {
   refunded: number | null
   /**
    * Refunded on this order's shared payment collection but recorded on no
-   * order's split row (a Medusa-native refund or admin cancel on a Mercur
-   * cart), major units; null when there is none or it cannot arise.
+   * order's split row (a Medusa-native refund on a Mercur cart, or an admin
+   * cancel made before SD-36 (8) refused them), major units; null when there
+   * is none or it cannot arise.
    */
   unattributed_refund: number | null
   /**
