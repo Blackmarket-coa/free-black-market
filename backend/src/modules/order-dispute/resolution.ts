@@ -207,6 +207,31 @@ export function resolveAwardCents(args: {
 }
 
 /**
+ * The decisions that close a case, each of which must carry a written reason.
+ *
+ * `/buyer-protection` tells buyers that every decision is recorded with a
+ * written reason, and the note is not private: the buyer reads it as
+ * `reviewer_note` (`GET /store/order-claims`) or `resolution_note`
+ * (`GET /store/orders/:id/dispute`), and the seller in the case file
+ * (`GET /vendor/disputes/:id`). The admin panel asked for a note, but the
+ * PATCH accepted a decision without one, so the promise held only for
+ * decisions made through that one screen. `PATCH /admin/disputes/:id`
+ * refuses these without a note (`decisionNoteMissing`); the storefront's
+ * `buyer-protection-copy.spec.ts` keeps the page's promise tied to that check.
+ */
+export const DECISIONS_NEEDING_A_NOTE: readonly DisputeStatus[] = [
+  DisputeStatus.RESOLVED_REFUND,
+  DisputeStatus.RESOLVED_RELEASE,
+  DisputeStatus.WITHDRAWN,
+]
+
+/** True when `to` closes the case and `note` has no text in it. */
+export function decisionNoteMissing(to: DisputeStatus | string, note: unknown): boolean {
+  if (!(DECISIONS_NEEDING_A_NOTE as readonly string[]).includes(to)) return false
+  return typeof note !== "string" || note.trim() === ""
+}
+
+/**
  * Which escrow transition, if any, this resolution implies.
  *
  * Returns null when the order has no escrow agreement — the ordinary case

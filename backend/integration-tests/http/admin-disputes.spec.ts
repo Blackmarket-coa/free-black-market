@@ -7,6 +7,11 @@ import type OrderDisputeService from "../../src/modules/order-dispute/service"
 import { DisputeReason, DisputeStatus } from "../../src/modules/order-dispute/resolution"
 import { openDisputeForOrder } from "../../src/shared/order-dispute-intake"
 import { fixOrderDisputeMinorUnits } from "../../src/scripts/fix-order-dispute-minor-units"
+import backfillOrderClaims from "../../src/scripts/backfill-order-claims"
+import { REQUEST_MODULE } from "../../src/modules/request"
+import type RequestModuleService from "../../src/modules/request/service"
+import { REQUEST_TYPES } from "../../src/modules/request/validators"
+import { RequestStatus } from "../../src/modules/request/models"
 
 jest.setTimeout(240 * 1000)
 
@@ -455,6 +460,90 @@ medusaIntegrationTestRunner({
       expect(seen).not.toContain(row.id)
       const [after] = (await service().listOrderDisputes({ id: row.id })) as any[]
       expect(after).toMatchObject({ claim_amount: 25, award_amount: 0 })
+    })
+
+    it("refuses a closing decision without a note, and writes nothing", async () => {
+      const { headers } = await asAdmin()
+      const dispute = await openDispute()
+
+      for (const body of [
+        { status: "resolved_refund" },
+        { status: "resolved_refund", award_amount: 1000, note: "" },
+        { status: "resolved_release", note: "   " },
+        { status: "withdrawn" },
+      ]) {
+        const res = await call(api.patch(`/admin/disputes/${dispute.id}`, body, headers))
+        expect(res.status).toBe(400)
+        expect(res.data).toMatchObject({ type: "note_required" })
+      }
+
+      const file = await call(api.get(`/admin/disputes/${dispute.id}`, headers))
+      expect(file.data.dispute).toMatchObject({ status: "open", award_amount: 0, resolution_note: null, resolved_at: null })
+      expect(file.data.events.map((e: { kind: string }) => e.kind)).toEqual(["opened"])
+
+      // Taking it up closes nothing and needs no note.
+      const taken = await call(api.patch(`/admin/disputes/${dispute.id}`, { status: "under_review" }, headers))
+      expect(taken.status).toBe(200)
+    })
+
+    /**
+     * `scripts/backfill-order-claims.ts` goes through the same intake, which
+     * threw on every real order before the minor-unit fix, so any earlier
+     * run failed every row. The deploy note says to re-run it; this is what
+     * that re-run does, on a real database: it moves a pending legacy claim,
+     * and a claim it already moved (here, one whose request was left pending
+     * by a crash after the dispute was written) is found by
+     * `metadata.legacy_request_id` and not filed twice, while a claim with no
+     * dispute yet is still moved.
+     */
+    it("the legacy claims backfill moves pending claims through the fixed intake, once each", async () => {
+      const requests = container().resolve(REQUEST_MODULE) as RequestModuleService
+      const legacyClaim = async (orderId: string, customerId: string) => {
+        const created = await requests.createRequests({
+          type: REQUEST_TYPES.ORDER_CLAIM,
+          status: RequestStatus.PENDING,
+          submitter_id: customerId,
+          data: {
+            order_id: orderId,
+            reason: "not_received",
+            description: "Tracking stopped a week ago and nothing came.",
+            evidence_urls: [],
+            contacted_seller: true,
+          },
+        })
+        return created.id
+      }
+      const exec = () => backfillOrderClaims({ container: container(), args: [] } as any)
+      const disputeFor = async (requestId: string) =>
+        (await service().listOrderDisputes({ metadata: { legacy_request_id: requestId } } as any)) as any[]
+
+      const first = await sellerOrder([25.99])
+      const firstClaim = await legacyClaim(first.order.id, first.customerId)
+
+      expect(await exec()).toEqual({ moved: 1, skipped: 0, failed: 0 })
+      const [moved] = await disputeFor(firstClaim)
+      expect(moved).toMatchObject({
+        order_id: first.order.id,
+        seller_id: first.sellerId,
+        customer_id: first.customerId,
+        claim_amount: 2599,
+        status: "open",
+        metadata: { legacy_request_id: firstClaim, intake_source: "backfill:request", amount_unit: "minor" },
+      })
+      const [closed] = (await requests.listRequests({ id: firstClaim })) as any[]
+      expect(closed.status).toBe(RequestStatus.COMPLETED)
+      expect(closed.reviewer_note).toBe(
+        `Migrated to order_dispute ${moved.id} on ${new Date().toISOString().slice(0, 10)}.`
+      )
+
+      // A crash between writing the dispute and closing the request.
+      await requests.updateRequests({ id: firstClaim, status: RequestStatus.PENDING } as any)
+      const second = await sellerOrder([12.5])
+      const secondClaim = await legacyClaim(second.order.id, second.customerId)
+
+      expect(await exec()).toEqual({ moved: 1, skipped: 1, failed: 0 })
+      expect(await disputeFor(firstClaim)).toHaveLength(1)
+      expect((await disputeFor(secondClaim))[0]).toMatchObject({ order_id: second.order.id, claim_amount: 1250 })
     })
   },
 })
