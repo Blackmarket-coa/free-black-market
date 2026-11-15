@@ -1014,6 +1014,18 @@ medusaIntegrationTestRunner({
         const paymentId = (await readOrder(orderId)).payment_collections[0].payments[0].id as string
         expect(await capturedTicketOrdersWithoutSeat()).toEqual([{ order_id: orderId, payment_id: paymentId }])
         expect(await capturedPaymentsWithoutOrder()).toEqual([])
+
+        // A captured order with no ticket line (a poster, captured as Mercur's
+        // split captures one) holds no seat by design, and is not listed.
+        const poster = await makePlainProduct(seller.id)
+        const plain = await makeCart([{ product: poster, metadata: {} }])
+        const plainRun = await completeCartWorkflow(container()).run({ input: { id: plain.cart.id }, throwOnError: false })
+        expect(plainRun.errors ?? []).toEqual([])
+        const plainPaymentId = (await readOrder(plainRun.result.id)).payment_collections[0].payments[0].id as string
+        const { capturePaymentWorkflow } = require("@medusajs/medusa/core-flows")
+        await capturePaymentWorkflow(container()).run({ input: { payment_id: plainPaymentId } })
+        expect(await moneyOf(plain.collection.id)).toEqual([{ captures: [5], refunds: [], canceled: false }])
+        expect(await capturedTicketOrdersWithoutSeat()).toEqual([{ order_id: orderId, payment_id: paymentId }])
       })
 
       stallRetry.it("of an order its first completion left unlinked and uncaptured, a capture Stripe refuses fails the retry: the seat's purchase is undone, nothing refunded", async () => {
