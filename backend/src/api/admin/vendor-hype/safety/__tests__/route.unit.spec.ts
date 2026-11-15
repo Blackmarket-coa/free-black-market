@@ -1,4 +1,4 @@
-import { POST } from "./route"
+import { POST } from "../route"
 
 const createRes = () => {
   const res: any = { statusCode: 200, body: undefined }
@@ -16,7 +16,7 @@ const createRes = () => {
 describe("admin safety route", () => {
   it("rejects non-admin actor", async () => {
     const req: any = {
-      auth_context: { actor_type: "user" },
+      auth_context: { actor_type: "customer" },
       body: { supporter_id: "cust_1", daily_position_limit: 5, risk_level: "medium" },
       scope: { resolve: () => ({ upsertUserPredictionSafety: jest.fn() }) },
     }

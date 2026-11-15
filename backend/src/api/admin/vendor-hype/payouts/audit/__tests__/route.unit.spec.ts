@@ -1,4 +1,4 @@
-import { GET } from "./route"
+import { GET } from "../route"
 
 const createRes = () => {
   const res: any = { statusCode: 200, body: undefined }
@@ -16,7 +16,7 @@ const createRes = () => {
 describe("admin payout audit route", () => {
   it("rejects non-admin actor", async () => {
     const req: any = {
-      auth_context: { actor_type: "user" },
+      auth_context: { actor_type: "customer" },
       query: { execution_run_id: "run_1" },
       scope: { resolve: jest.fn() },
     }
@@ -47,7 +47,8 @@ describe("admin payout audit route", () => {
     ])
 
     const req: any = {
-      auth_context: { actor_type: "admin" },
+      // A real Medusa admin session: actor_type "user".
+      auth_context: { actor_type: "user" },
       query: { execution_run_id: "run_1" },
       scope: { resolve: () => ({ listPredictionPayoutEntries }) },
     }

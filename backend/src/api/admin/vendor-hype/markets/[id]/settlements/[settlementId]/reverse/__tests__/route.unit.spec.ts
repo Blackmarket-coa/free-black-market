@@ -1,4 +1,4 @@
-import { POST } from "./route"
+import { POST } from "../route"
 
 const createRes = () => {
   const res: any = { statusCode: 200, body: undefined }
@@ -18,7 +18,7 @@ describe("admin reverse settlement route", () => {
     const reverseSettlement = jest.fn()
     const req: any = {
       params: { id: "m_1", settlementId: "set_1" },
-      auth_context: { actor_type: "user" },
+      auth_context: { actor_type: "customer" },
       body: { reason: "correction needed" },
       scope: { resolve: () => ({ reverseSettlement }) },
     }

@@ -1,4 +1,4 @@
-import { GET } from "./route"
+import { GET } from "../route"
 
 const createRes = () => {
   const res: any = { statusCode: 200, body: undefined }

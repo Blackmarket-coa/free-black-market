@@ -1,4 +1,4 @@
-import { POST } from "./route"
+import { POST } from "../route"
 
 const createRes = () => {
   const res: any = { statusCode: 200, body: undefined }
@@ -19,7 +19,7 @@ describe("admin settle prediction market route", () => {
       params: { id: "m_1" },
       body: {},
       scope: { resolve: () => ({ emit: jest.fn() }) },
-      auth_context: { actor_id: "user_1", actor_type: "user" },
+      auth_context: { actor_id: "user_1", actor_type: "customer" },
     }
 
     const res = createRes()

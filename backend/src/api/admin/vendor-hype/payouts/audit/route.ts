@@ -9,7 +9,10 @@ const querySchema = z.object({
 
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
   const actorType = (req as any).auth_context?.actor_type
-  if (actorType && actorType !== "admin") {
+  // Medusa issues admin sessions as actor_type "user"; accepting only
+  // "admin" (as this did) refused every real admin. Same rule as the sibling
+  // vendor-hype admin routes.
+  if (actorType && actorType !== "user" && actorType !== "admin") {
     return res.status(403).json({ error: "Forbidden" })
   }
 

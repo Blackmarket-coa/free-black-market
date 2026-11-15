@@ -1,4 +1,4 @@
-import { POST } from "./route"
+import { POST } from "../route"
 
 const createRes = () => {
   const res: any = { statusCode: 200, body: undefined }

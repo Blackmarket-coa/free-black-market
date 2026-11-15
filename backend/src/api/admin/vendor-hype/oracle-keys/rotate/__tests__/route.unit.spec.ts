@@ -1,4 +1,4 @@
-import { POST } from "./route"
+import { POST } from "../route"
 
 const createRes = () => {
   const res: any = { statusCode: 200, body: undefined }
@@ -16,7 +16,7 @@ const createRes = () => {
 describe("admin oracle key rotate route", () => {
   it("rejects non-admin actor", async () => {
     const req: any = {
-      auth_context: { actor_type: "user" },
+      auth_context: { actor_type: "customer" },
       body: {
         old_key_id: "k1",
         new_key_id: "k2",

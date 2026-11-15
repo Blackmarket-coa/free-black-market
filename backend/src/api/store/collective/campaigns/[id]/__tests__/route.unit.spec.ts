@@ -1,4 +1,4 @@
-import { PATCH } from "./route"
+import { PATCH } from "../route"
 
 const createRes = () => {
   const res: any = { statusCode: 200, body: undefined }
