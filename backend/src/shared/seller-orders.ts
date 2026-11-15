@@ -7,7 +7,8 @@ import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
  * product ids through the seller→product link, then fetch orders containing
  * those products. Items on each order are pre-filtered to the seller's own
  * products so multi-vendor orders don't leak (or double-count) other sellers'
- * lines. Returns [] on any failure — dashboards must render without orders.
+ * lines. Cancelled and draft orders are left out (NON_SALE_ORDER_FILTERS).
+ * Returns [] on any failure — dashboards must render without orders.
  */
 
 export interface SellerOrderItem {
@@ -30,6 +31,34 @@ export interface SellerOrder {
   /** Sum of this seller's items only, in cents. */
   seller_total_cents: number
 }
+
+/**
+ * The order filters that leave out what is not a sale. Once this read worked
+ * (SD-52) it listed cancelled and draft orders, and cross-channel revenue
+ * (GET /vendor/revenue/channels) counted each as an FBM sale with the platform
+ * fee on it. Checked on Postgres through query.graph, condition by condition,
+ * in integration-tests/http/order-items-quantity-read.spec.ts:
+ *
+ * - `status` not "canceled" or "draft" (Medusa's OrderStatus values): the
+ *   direct mark of both. Medusa's and Mercur's cancels also set
+ *   `canceled_at` and a draft also has `is_draft_order`, so for orders they
+ *   write the two conditions below already suffice; this one catches a
+ *   status written without them;
+ * - `canceled_at: null`: Medusa's archive moves a cancelled order to status
+ *   "archived" and keeps its `canceled_at`, so the status alone keeps it;
+ * - `is_draft_order: false`: a draft has status "draft" and is_draft_order
+ *   true, and an archived draft keeps the flag (Medusa's own admin order list
+ *   filters on it). A draft is never cancelled, so `canceled_at` alone keeps
+ *   it.
+ *
+ * "pending", "completed", "requires_action" and an archived completed order
+ * are sales and stay.
+ */
+export const NON_SALE_ORDER_FILTERS = {
+  status: { $nin: ["canceled", "draft"] },
+  canceled_at: null,
+  is_draft_order: false,
+} as const
 
 /**
  * `since` bounds the order read in the database (created_at >= since). Without
@@ -75,6 +104,8 @@ export async function getSellerOrders(
       ],
       filters: {
         items: { product_id: productIds },
+        // Sales only (NON_SALE_ORDER_FILTERS), in the database.
+        ...NON_SALE_ORDER_FILTERS,
         ...(opts.since ? { created_at: { $gte: opts.since } } : {}),
       },
     })

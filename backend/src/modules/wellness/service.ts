@@ -10,6 +10,7 @@ import MembershipTier from "./models/membership-tier"
 import Member from "./models/member"
 import AutomationTemplate from "./models/automation-template"
 import type { AutomationTrigger } from "./models/automation-template"
+import { classRegistrationRefusal } from "./class-registration"
 
 /**
  * Default Blackout automation copy, seeded (disabled) on first read so the
@@ -268,6 +269,13 @@ class WellnessModuleService extends MedusaService({
    * Register an attendee for a class. Returns the attendee plus whether the
    * class just sold out (so the caller can emit the sold-out KARMA event).
    * Honors capacity → waitlist (when enabled).
+   *
+   * Refuses a class that is not live or has ended (`refused`, see
+   * `classRegistrationRefusal`), writing nothing: no attendee, and the class's
+   * status and seat count are left as they are. This is the guard for every
+   * caller (the order subscriber and the vendor's manual add); without it a
+   * ticket bought for a cancelled or past class reopened the class (`status`
+   * below) and seated the buyer (SD-52 review).
    */
   async registerForClass(input: {
     seller_id: string
@@ -279,6 +287,10 @@ class WellnessModuleService extends MedusaService({
     used_membership_credit?: boolean
   }) {
     const cls = (await this.retrieveClassEvent(input.class_event_id)) as Record<string, unknown>
+    const refused = classRegistrationRefusal(cls)
+    if (refused) {
+      return { attendee: null, sold_out: false, full: false, refused }
+    }
     const capacity = Number(cls.capacity ?? 0)
     const taken = Number(cls.seats_taken ?? 0)
     const hasRoom = capacity === 0 || taken < capacity
@@ -286,7 +298,7 @@ class WellnessModuleService extends MedusaService({
 
     const status = hasRoom ? "registered" : waitlistEnabled ? "waitlisted" : null
     if (!status) {
-      return { attendee: null, sold_out: false, full: true }
+      return { attendee: null, sold_out: false, full: true, refused: null }
     }
 
     const attendee = await this.createClassAttendees({
@@ -310,7 +322,7 @@ class WellnessModuleService extends MedusaService({
         status: soldOut ? "full" : "open",
       })
     }
-    return { attendee, sold_out: soldOut, full: false }
+    return { attendee, sold_out: soldOut, full: false, refused: null }
   }
 
   async markClassAttendance(attendeeId: string, status: string) {

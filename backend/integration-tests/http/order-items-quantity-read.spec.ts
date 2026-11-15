@@ -17,7 +17,8 @@ import emitBlackoutOrderPlaced from "../../src/subscribers/emit-blackout-order-p
 import emitBlackoutOrderUpdated from "../../src/subscribers/emit-blackout-order-updated"
 import emitBlackoutOrderRefundCancel from "../../src/subscribers/emit-blackout-order-refund-cancel"
 import wellnessOrderPlaced from "../../src/subscribers/wellness-order-placed"
-import { getSellerOrders } from "../../src/shared/seller-orders"
+import { NON_SALE_ORDER_FILTERS, getSellerOrders } from "../../src/shared/seller-orders"
+import { logger } from "../../src/shared/logger"
 import { collectCrossChannelRevenue } from "../../src/shared/cross-channel-revenue"
 import { itemCount, loadOrderForSellerPush } from "../../src/shared/native-push-seller"
 import { enqueueBlackMaskProvisioning } from "../../src/lib/black-mask-provisioning"
@@ -472,6 +473,222 @@ medusaIntegrationTestRunner({
       })
     })
 
+    describe("wellness order subscriber: which class a ticket seats (SD-52 review)", () => {
+      // Before this, order.placed called registerForClass for every class
+      // linked to the ticket's product, whatever its status or date, and
+      // registerForClass wrote status "open" back: a ticket reopened a
+      // cancelled class and seated the buyer, a finished class took a seat,
+      // and one drop-in ticket took a seat in every session sharing it.
+      let runTrigger: jest.SpyInstance
+      // Every createLogger() logger shares this prototype, so this sees the
+      // subscriber's warnings whatever LOG_LEVEL says.
+      let warn: jest.SpyInstance
+      beforeEach(() => {
+        runTrigger = jest.spyOn(WellnessAutomationService.prototype, "runTrigger").mockResolvedValue({ sent: 0, skipped: 0 })
+        warn = jest.spyOn(Object.getPrototypeOf(logger), "warn")
+      })
+      afterEach(() => {
+        runTrigger.mockRestore()
+        warn.mockRestore()
+      })
+      const registeredMessages = () =>
+        runTrigger.mock.calls.map((c) => c[0] as { trigger: string; vars: { session_type: string } }).filter((c) => c.trigger === "class_registered")
+      const warningsFor = (orderId: string) =>
+        warn.mock.calls.map((c) => String(c[0])).filter((m) => m.includes("[wellness-order-placed]") && m.includes(orderId))
+
+      const DAY = 86_400_000
+      type ClassSpec = { title: string; status?: string; startsInMs?: number; endsInMs?: number; capacity?: number }
+
+      /** A seller, one ticket product, and the given classes all linked to it. */
+      async function classesOnOneProduct(specs: ClassSpec[]) {
+        const seller = await makeSeller()
+        const product = await makeProduct(seller.id)
+        const wellness = container().resolve(WELLNESS_MODULE)
+        const classes: Array<{ id: string; title: string }> = []
+        for (const c of specs) {
+          classes.push(
+            await wellness.createClassEvents({
+              seller_id: seller.id,
+              product_id: product.id,
+              title: c.title,
+              starts_at: new Date(Date.now() + (c.startsInMs ?? DAY)),
+              ends_at: new Date(Date.now() + (c.endsInMs ?? DAY + 3_600_000)),
+              capacity: c.capacity ?? 5,
+              seats_taken: 0,
+              status: c.status ?? "open",
+            })
+          )
+        }
+        const customer = await makeCustomer()
+        return { seller, product, classes, customer, wellness }
+      }
+
+      async function buy(
+        sellerId: string,
+        customer: { id: string; email: string },
+        lines: Array<{ productId: string; tickets?: number; metadata?: Record<string, unknown> }>
+      ) {
+        const order = await makeOrder(
+          sellerId,
+          lines.map((l) => ({ productId: l.productId, quantity: l.tickets ?? 1, unitPrice: 25, title: "Drop-in", metadata: l.metadata })),
+          { customerId: customer.id, email: customer.email }
+        )
+        await wellnessOrderPlaced(placed(order.id))
+        return order
+      }
+
+      it("a ticket for a cancelled class seats nobody, leaves it cancelled, sends no 'registered' message, and is logged", async () => {
+        const { seller, classes, product, customer, wellness } = await classesOnOneProduct([{ title: "Cancelled", status: "cancelled" }])
+        const [cls] = classes
+
+        const order = await buy(seller.id, customer, [{ productId: product.id }])
+
+        expect(await wellness.listClassAttendees({ class_event_id: cls.id })).toEqual([])
+        expect(await wellness.retrieveClassEvent(cls.id)).toEqual(expect.objectContaining({ status: "cancelled", seats_taken: 0 }))
+        expect(registeredMessages()).toEqual([])
+        expect(warningsFor(order.id)).toEqual([expect.stringContaining(`${cls.id} (cancelled)`)])
+
+        // The service refuses it too, on its own, and writes nothing.
+        const direct = await wellness.registerForClass({ seller_id: seller.id, class_event_id: cls.id, email: customer.email })
+        expect(direct).toEqual({ attendee: null, sold_out: false, full: false, refused: "cancelled" })
+        expect(await wellness.listClassAttendees({ class_event_id: cls.id })).toEqual([])
+        expect(await wellness.retrieveClassEvent(cls.id)).toEqual(expect.objectContaining({ status: "cancelled", seats_taken: 0 }))
+      })
+
+      it("a ticket for a class that finished last month seats nobody and leaves its status as it was", async () => {
+        // Still "open": nothing marks a class completed when it ends.
+        const { seller, classes, product, customer, wellness } = await classesOnOneProduct([
+          { title: "Last month", status: "open", startsInMs: -31 * DAY, endsInMs: -31 * DAY + 3_600_000 },
+        ])
+        const [cls] = classes
+
+        const order = await buy(seller.id, customer, [{ productId: product.id }])
+
+        expect(await wellness.listClassAttendees({ class_event_id: cls.id })).toEqual([])
+        expect(await wellness.retrieveClassEvent(cls.id)).toEqual(expect.objectContaining({ status: "open", seats_taken: 0 }))
+        expect(registeredMessages()).toEqual([])
+        expect(warningsFor(order.id)).toEqual([expect.stringContaining(`${cls.id} (open)`)])
+
+        const direct = await wellness.registerForClass({ seller_id: seller.id, class_event_id: cls.id, email: customer.email })
+        expect(direct).toEqual(expect.objectContaining({ attendee: null, refused: "ended" }))
+        expect(await wellness.retrieveClassEvent(cls.id)).toEqual(expect.objectContaining({ status: "open", seats_taken: 0 }))
+      })
+
+      it("two live sessions on one product: a ticket that names neither seats nobody in either, and is logged", async () => {
+        const { seller, classes, product, customer, wellness } = await classesOnOneProduct([
+          { title: "Tuesday" },
+          { title: "Thursday", startsInMs: 3 * DAY, endsInMs: 3 * DAY + 3_600_000 },
+        ])
+
+        const order = await buy(seller.id, customer, [{ productId: product.id }])
+
+        for (const cls of classes) {
+          expect(await wellness.listClassAttendees({ class_event_id: cls.id })).toEqual([])
+          expect(await wellness.retrieveClassEvent(cls.id)).toEqual(expect.objectContaining({ status: "open", seats_taken: 0 }))
+        }
+        expect(registeredMessages()).toEqual([])
+        const warnings = warningsFor(order.id)
+        expect(warnings).toHaveLength(1)
+        expect(warnings[0]).toContain("2 live classes")
+        for (const cls of classes) expect(warnings[0]).toContain(cls.id)
+      })
+
+      it("one live session beside a cancelled and a finished one on the same product: the ticket seats the buyer in the live one", async () => {
+        const { seller, classes, product, customer, wellness } = await classesOnOneProduct([
+          { title: "Live" },
+          { title: "Cancelled", status: "cancelled" },
+          { title: "Finished", status: "open", startsInMs: -2 * DAY, endsInMs: -2 * DAY + 3_600_000 },
+        ])
+        const [live, cancelled, finished] = classes
+
+        const order = await buy(seller.id, customer, [{ productId: product.id }])
+
+        expect(await wellness.listClassAttendees({ class_event_id: live.id })).toEqual([
+          expect.objectContaining({ order_id: order.id, customer_email: customer.email, status: "registered" }),
+        ])
+        expect(await wellness.retrieveClassEvent(live.id)).toEqual(expect.objectContaining({ seats_taken: 1, status: "open" }))
+        expect(registeredMessages()).toEqual([expect.objectContaining({ vars: expect.objectContaining({ session_type: "Live" }) })])
+        for (const [cls, status] of [[cancelled, "cancelled"], [finished, "open"]] as const) {
+          expect(await wellness.listClassAttendees({ class_event_id: cls.id })).toEqual([])
+          expect(await wellness.retrieveClassEvent(cls.id)).toEqual(expect.objectContaining({ status, seats_taken: 0 }))
+        }
+        expect(warningsFor(order.id)).toEqual([])
+      })
+
+      it("metadata.class_event_id picks one of two live sessions: both tickets seat there, none in the other", async () => {
+        const { seller, classes, product, customer, wellness } = await classesOnOneProduct([
+          { title: "Tuesday" },
+          { title: "Thursday", startsInMs: 3 * DAY, endsInMs: 3 * DAY + 3_600_000 },
+        ])
+        const [tuesday, thursday] = classes
+
+        const order = await buy(seller.id, customer, [{ productId: product.id, tickets: 2, metadata: { class_event_id: thursday.id } }])
+
+        expect(await wellness.listClassAttendees({ class_event_id: thursday.id })).toHaveLength(2)
+        expect(await wellness.retrieveClassEvent(thursday.id)).toEqual(expect.objectContaining({ seats_taken: 2 }))
+        expect(await wellness.listClassAttendees({ class_event_id: tuesday.id })).toEqual([])
+        expect(await wellness.retrieveClassEvent(tuesday.id)).toEqual(expect.objectContaining({ seats_taken: 0 }))
+        expect(registeredMessages()).toEqual([expect.objectContaining({ vars: expect.objectContaining({ session_type: "Thursday" }) })])
+        expect(warningsFor(order.id)).toEqual([])
+      })
+
+      it("a class_event_id naming a cancelled session, or another product's live class, seats nobody", async () => {
+        const { seller, classes, product, customer, wellness } = await classesOnOneProduct([
+          { title: "Live" },
+          { title: "Cancelled", status: "cancelled" },
+        ])
+        const [live, cancelled] = classes
+        // Another product of the same seller, with its own live class.
+        const otherProduct = await makeProduct(seller.id)
+        const other = await wellness.createClassEvents({
+          seller_id: seller.id,
+          product_id: otherProduct.id,
+          title: "Other",
+          starts_at: new Date(Date.now() + DAY),
+          ends_at: new Date(Date.now() + DAY + 3_600_000),
+          capacity: 5,
+          seats_taken: 0,
+          status: "open",
+        })
+
+        const order = await buy(seller.id, customer, [
+          { productId: product.id, metadata: { class_event_id: cancelled.id } },
+          { productId: product.id, metadata: { class_event_id: other.id } },
+        ])
+
+        for (const cls of [live, cancelled, other]) {
+          expect(await wellness.listClassAttendees({ class_event_id: cls.id })).toEqual([])
+        }
+        expect(await wellness.retrieveClassEvent(cancelled.id)).toEqual(expect.objectContaining({ status: "cancelled", seats_taken: 0 }))
+        expect(registeredMessages()).toEqual([])
+        const warnings = warningsFor(order.id)
+        expect(warnings).toHaveLength(2)
+        expect(warnings.some((w) => w.includes(cancelled.id))).toBe(true)
+        expect(warnings.some((w) => w.includes(other.id))).toBe(true)
+      })
+
+      it("a class cancelled between the lookup and the registration: the service refuses, no seat, no 'registered' message, logged", async () => {
+        const { seller, classes, product, customer, wellness } = await classesOnOneProduct([{ title: "About to be cancelled" }])
+        const [cls] = classes
+        const register = wellness.registerForClass.bind(wellness)
+        const spy = jest.spyOn(wellness, "registerForClass").mockImplementationOnce(async (input: unknown) => {
+          await wellness.updateClassEvents({ id: cls.id, status: "cancelled" })
+          return register(input)
+        })
+        try {
+          const order = await buy(seller.id, customer, [{ productId: product.id }])
+
+          expect(spy).toHaveBeenCalledTimes(1)
+          expect(await wellness.listClassAttendees({ class_event_id: cls.id })).toEqual([])
+          expect(await wellness.retrieveClassEvent(cls.id)).toEqual(expect.objectContaining({ status: "cancelled", seats_taken: 0 }))
+          expect(registeredMessages()).toEqual([])
+          expect(warningsFor(order.id)).toEqual([expect.stringContaining("refused registration (cancelled)")])
+        } finally {
+          spy.mockRestore()
+        }
+      })
+    })
+
     describe("seller order lists", () => {
       it("getSellerOrders returns the seller's lines only, with quantities, and a total in cents", async () => {
         const seller = await makeSeller()
@@ -512,6 +729,86 @@ medusaIntegrationTestRunner({
 
         const revenue = await collectCrossChannelRevenue(container(), seller.id, { since })
         expect(revenue.lines).toEqual([expect.objectContaining({ channel: "fbm", orders: 1, gross_amount: 1000 })])
+      })
+
+      /**
+       * One seller, one product, and an order in each state a sale list must
+       * tell apart, made the way Medusa makes them: cancel and archive through
+       * the order module, a draft as the admin draft-order route creates it
+       * (status "draft", is_draft_order true).
+       */
+      async function ordersInEveryState() {
+        const seller = await makeSeller()
+        const product = await makeProduct(seller.id)
+        const orders = container().resolve(Modules.ORDER)
+        const line = (unitPrice: number) => [{ productId: product.id, quantity: 1, unitPrice }]
+        const draft = async (unitPrice: number) => {
+          const [o] = await orders.createOrders([
+            {
+              currency_code: "usd",
+              email: "buyer@example.com",
+              status: "draft",
+              is_draft_order: true,
+              items: [{ title: "Jam", product_id: product.id, quantity: 1, unit_price: unitPrice }],
+            },
+          ])
+          await link().create({ [SELLER_MODULE]: { seller_id: seller.id }, [Modules.ORDER]: { order_id: o.id } })
+          return o as { id: string }
+        }
+
+        const pending = await makeOrder(seller.id, line(10))
+        const archivedSale = await makeOrder(seller.id, line(20))
+        await orders.completeOrder(archivedSale.id)
+        await orders.archive(archivedSale.id)
+        const canceled = await makeOrder(seller.id, line(40))
+        await orders.cancel(canceled.id)
+        const archivedCanceled = await makeOrder(seller.id, line(50))
+        await orders.cancel(archivedCanceled.id)
+        await orders.archive(archivedCanceled.id)
+        const drafted = await draft(60)
+        const archivedDraft = await draft(70)
+        await orders.archive(archivedDraft.id)
+        // A status written by hand, with no canceled_at. Medusa's and Mercur's
+        // cancels both set canceled_at; this is the order only the status
+        // condition catches.
+        const statusOnlyCanceled = await makeOrder(seller.id, line(80))
+        await orders.updateOrders([{ id: statusOnlyCanceled.id, status: "canceled" }])
+
+        return { seller, pending, archivedSale, canceled, archivedCanceled, drafted, archivedDraft, statusOnlyCanceled }
+      }
+
+      it("getSellerOrders lists sales only: no cancelled or draft order, archived or not; cross-channel revenue counts only those", async () => {
+        const o = await ordersInEveryState()
+
+        const listed = (await getSellerOrders(container(), o.seller.id)).map((x) => x.id).sort()
+        expect(listed).toEqual([o.pending.id, o.archivedSale.id].sort())
+
+        // GET /vendor/revenue/channels: two FBM sales, $30.00, and the 3% fee
+        // on those alone (it was on all seven).
+        const revenue = await collectCrossChannelRevenue(container(), o.seller.id, { since: new Date(Date.now() - 86_400_000) })
+        expect(revenue.lines).toEqual([expect.objectContaining({ channel: "fbm", orders: 2, gross_amount: 3000, fee_amount: 90 })])
+      })
+
+      it("each non-sale condition filters in Postgres through query.graph, and none alone is enough", async () => {
+        const o = await ordersInEveryState()
+        const ids = [o.pending, o.archivedSale, o.canceled, o.archivedCanceled, o.drafted, o.archivedDraft, o.statusOnlyCanceled].map((x) => x.id)
+        const read = async (filters: Record<string, unknown>) =>
+          ((await query().graph({ entity: "order", fields: ["id"], filters: { id: ids, ...filters } })).data as Array<{ id: string }>)
+            .map((x) => x.id)
+            .sort()
+        const sorted = (...xs: Array<{ id: string }>) => xs.map((x) => x.id).sort()
+        const { status, canceled_at, is_draft_order } = NON_SALE_ORDER_FILTERS
+
+        // Status alone keeps what archive moved to "archived".
+        expect(await read({ status })).toEqual(sorted(o.pending, o.archivedSale, o.archivedCanceled, o.archivedDraft))
+        // canceled_at alone keeps drafts, which are never cancelled, and a
+        // hand-written "canceled" status.
+        expect(await read({ canceled_at })).toEqual(sorted(o.pending, o.archivedSale, o.drafted, o.archivedDraft, o.statusOnlyCanceled))
+        // is_draft_order alone keeps cancelled orders.
+        expect(await read({ is_draft_order })).toEqual(
+          sorted(o.pending, o.archivedSale, o.canceled, o.archivedCanceled, o.statusOnlyCanceled)
+        )
+        expect(await read({ ...NON_SALE_ORDER_FILTERS })).toEqual(sorted(o.pending, o.archivedSale))
       })
 
       it("the grower dashboard's sales block counts units and cents when handed the seller id", async () => {

@@ -4,6 +4,7 @@ import type BookingService from "../modules/booking/service"
 import { WELLNESS_MODULE } from "../modules/wellness"
 import type WellnessModuleService from "../modules/wellness/service"
 import { WellnessAutomationService } from "../modules/wellness/automation-service"
+import { LIVE_CLASS_STATUSES } from "../modules/wellness/class-registration"
 
 /**
  * Time-based wellness reminders — the part automations can't do event-driven.
@@ -54,7 +55,7 @@ export default async function wellnessRemindersJob(container: MedusaContainer) {
 
     // ---- Class reminders ----
     const classes = (await wellness.listClassEvents(
-      { starts_at: { $gte: now, $lt: in24h }, status: ["scheduled", "open", "full"] } as never
+      { starts_at: { $gte: now, $lt: in24h }, status: [...LIVE_CLASS_STATUSES] } as never
     )) as Array<{ id: string; seller_id: string; title: string; starts_at: Date }>
 
     for (const c of classes) {
