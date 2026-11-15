@@ -207,6 +207,22 @@ function getStore(): RateLimitStore {
 }
 
 /**
+ * Spend one unit of a named budget in the shared limiter store, outside any
+ * route: Redis when REDIS_URL is set (so every process and restart counts
+ * against one budget), else the same in-process store the middleware
+ * limiters fall back to. Resolves false once `max` is spent in the window.
+ *
+ * For budgets that belong to an actor rather than to a request, such as the
+ * wellness automation sends a seller can trigger from several routes, jobs
+ * and subscribers. Like the middleware limiters, it fails open when Redis is
+ * configured but unreachable.
+ */
+export async function consumeRateLimit(key: string, windowMs: number, max: number): Promise<boolean> {
+  const record = await getStore().increment(key, windowMs)
+  return record.count <= max
+}
+
+/**
  * Derive the client IP for rate-limit keying.
  *
  * Uses Express's `req.ip`, which is only derived from `X-Forwarded-For` when the

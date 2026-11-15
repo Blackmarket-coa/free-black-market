@@ -4,16 +4,20 @@
  * `progression/grower-karma.ts`'s GrowerKarmaService), NOT a MedusaService — it
  * orchestrates the wellness module, the Matrix service, and notifications.
  *
- * All sends are best-effort and rate limited: max 50 sends/hour per seller, and
- * bulk sends are spaced 500ms apart so we never fire a burst at the homeserver.
+ * All sends are best-effort and rate limited: max 50 sends/hour per seller,
+ * counted in the shared rate-limit store, and bulk sends are spaced 500ms
+ * apart so we never fire a burst at the homeserver.
  */
-import type { MedusaContainer } from "@medusajs/framework/types"
+import type { INotificationModuleService, MedusaContainer } from "@medusajs/framework/types"
+import { Modules } from "@medusajs/framework/utils"
 import { createLogger } from "../../shared/logger"
+import { consumeRateLimit } from "../../shared/rate-limiter"
 import { getChatProvider } from "../../shared/chat"
 import { BOOKING_MODULE } from "../booking"
 import type BookingService from "../booking/service"
 import { WELLNESS_MODULE } from "./index"
 import type WellnessModuleService from "./service"
+import { EMAIL_TEMPLATES } from "../resend/templates"
 
 const log = createLogger("modules/wellness/automation")
 
@@ -33,19 +37,25 @@ export function renderTemplate(
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
-// Per-seller send window (in-memory; mirrors the hawala rate-limiter idiom).
-const sendWindow = new Map<string, { count: number; resetAt: number }>()
+/**
+ * The per-seller hourly send budget. It used to be a Map in this module, so
+ * each process counted its own 50 and a restart reset it; it now lives in the
+ * shared rate-limit store (Redis when configured), so the budget is one per
+ * seller across processes and restarts. It matters more since the email
+ * fallback's template exists: a send that falls back to email really leaves.
+ */
+export const WELLNESS_SEND_BUDGET = {
+  keyPrefix: "wellness-send",
+  windowMs: 3_600_000,
+  max: MAX_SENDS_PER_HOUR,
+} as const
 
-function takeSendBudget(sellerId: string): boolean {
-  const now = Date.now()
-  let rec = sendWindow.get(sellerId)
-  if (!rec || rec.resetAt < now) {
-    rec = { count: 0, resetAt: now + 3_600_000 }
-    sendWindow.set(sellerId, rec)
-  }
-  if (rec.count >= MAX_SENDS_PER_HOUR) return false
-  rec.count++
-  return true
+function takeSendBudget(sellerId: string): Promise<boolean> {
+  return consumeRateLimit(
+    `${WELLNESS_SEND_BUDGET.keyPrefix}:${sellerId}`,
+    WELLNESS_SEND_BUDGET.windowMs,
+    WELLNESS_SEND_BUDGET.max
+  )
 }
 
 export interface SendDMResult {
@@ -77,7 +87,7 @@ export class WellnessAutomationService {
     channel?: "matrix" | "email"
     practitioner_name?: string | null
   }): Promise<SendDMResult> {
-    if (!takeSendBudget(params.seller_id)) {
+    if (!(await takeSendBudget(params.seller_id))) {
       log.warn(`[wellness automation] hourly send budget hit for ${params.seller_id}`)
       return { channel: "skipped", ok: false }
     }
@@ -116,13 +126,11 @@ export class WellnessAutomationService {
 
     // Email fallback.
     try {
-      const notification = this.container.resolve("notification") as unknown as {
-        createNotifications: (p: Record<string, unknown>) => Promise<unknown>
-      }
+      const notification = this.container.resolve<INotificationModuleService>(Modules.NOTIFICATION)
       await notification.createNotifications({
         to: params.recipient_email,
         channel: "email",
-        template: "wellness-automation",
+        template: EMAIL_TEMPLATES.WELLNESS_AUTOMATION,
         data: {
           body: params.body,
           recipient_name: params.recipient_name ?? null,
