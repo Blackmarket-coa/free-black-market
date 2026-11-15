@@ -3,14 +3,17 @@ import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils"
 import jwt from "jsonwebtoken"
 import { cardOrderFixtures } from "./helpers/card-orders"
 import { trackSubscribers } from "./helpers/drain-subscribers"
-import { SHARED_PAYMENT_CANCEL_REFUSED } from "../../src/lib/shared-payment-cancel"
+import { cancelOrderWorkflowId } from "@medusajs/medusa/core-flows"
+import { findOrdersSharingPayment, SHARED_PAYMENT_CANCEL_REFUSED } from "../../src/lib/shared-payment-cancel"
+import { REFUND_CAPTURED_PAYMENTS_WORKFLOW_ID } from "../../src/api/middlewares/shared-payment-order-cancel"
 
 jest.setTimeout(240 * 1000)
 
 /**
  * SD-36 (8) on a real migrated database, through the real HTTP stack: Medusa's
- * admin authentication, FBM's middleware on `POST /admin/orders/:id/cancel`,
- * and Medusa's own route and `cancelOrderWorkflow` behind it.
+ * admin authentication, FBM's middleware on `POST /admin/orders/:id/cancel`
+ * and on Medusa's workflow runner (`POST /admin/workflows-executions/:id/run`),
+ * and Medusa's own routes and `cancelOrderWorkflow` behind them.
  *
  * The cart is built the way Mercur's split-and-complete-cart leaves one: one
  * payment collection linked to every seller's order, a split row per order
@@ -53,6 +56,11 @@ medusaIntegrationTestRunner({
 
     const cancel = async (orderId: string) =>
       api.post(`/admin/orders/${orderId}/cancel`, {}, await asAdmin()).catch((e: any) => e.response)
+
+    const runWorkflow = async (workflowId: string, body: unknown) =>
+      api
+        .post(`/admin/workflows-executions/${workflowId}/run`, body, await asAdmin())
+        .catch((e: any) => e.response)
 
     /** Paid through the system provider and left on it, so Medusa's cancel can really refund or void. */
     async function paidCart(amounts: number[], opts: { capture: boolean }) {
@@ -215,7 +223,10 @@ medusaIntegrationTestRunner({
           expect((await payments.retrievePaymentCollection(collection.id)).status).toBe("canceled")
         } else {
           // An install without scripts/patch-mikro-orm.js: Medusa's cancel dies on its first read.
+          // The guard's own reads succeed here and find no other order, so the
+          // 500 is Medusa's, after the guard passed the request on.
           expect(res.status).toBe(500)
+          expect(await findOrdersSharingPayment(container(), o1.id)).toEqual([])
           expect(await statusOf(o1.id)).toBe("pending")
         }
       })
@@ -240,7 +251,82 @@ medusaIntegrationTestRunner({
           })
         } else {
           // Medusa's cancel as it runs today (see medusaCancelCanRead): it
-          // fails reading the order, before it touches money.
+          // fails reading the order, before it touches money. The guard's own
+          // reads succeed and find no other order, so the 500 is Medusa's.
+          expect(res.status).toBe(500)
+          expect(await findOrdersSharingPayment(container(), o1.id)).toEqual([])
+          expect(await statusOf(o1.id)).toBe("pending")
+          expect((await money(paymentId, collectionId)).refunded).toBe(0)
+        }
+      })
+    })
+
+    describe("POST /admin/workflows-executions/:workflow_id/run, Medusa's generic workflow runner", () => {
+      afterEach(() => drainSubscribers())
+
+      // Without this guard, either run on the $40 order refunded all $70 and
+      // answered 500 with both orders open (seen with Medusa's read crash
+      // patched out locally; on an install where that read crashes, the run
+      // fails before money moves, so these 409s are the guard's either way).
+      it.each([
+        [cancelOrderWorkflowId, "canceled"],
+        [REFUND_CAPTURED_PAYMENTS_WORKFLOW_ID, "refunded"],
+      ])("refuses %s on one seller's order of a captured $40 + $30 cart, and refunds nothing", async (workflowId, verb) => {
+        const { orders, collectionId, paymentId } = await paidCart([40, 30], { capture: true })
+        const [o1, o2] = orders
+        const before = await money(paymentId, collectionId)
+
+        const res = await runWorkflow(workflowId, { input: { order_id: o1.id } })
+
+        expect(res.status).toBe(409)
+        expect(res.data).toMatchObject({
+          code: SHARED_PAYMENT_CANCEL_REFUSED,
+          order_id: o1.id,
+          shared_payment_collections: [{ payment_collection_id: collectionId, other_order_ids: [o2.id] }],
+        })
+        expect(res.data.message).toContain(`cannot be ${verb} here`)
+        expect(await money(paymentId, collectionId)).toEqual(before)
+        expect(await statusOf(o1.id)).toBe("pending")
+        expect(await statusOf(o2.id)).toBe("pending")
+      })
+
+      it.each<[string, (orderIds: string[]) => unknown]>([
+        ["no order_id", () => ({ input: {} })],
+        ["no input", () => ({})],
+        ["order_id as an array", (orderIds) => ({ input: { order_id: orderIds } })],
+      ])("fails closed on a cancel-order run with %s: 400, nothing moved", async (_label, bodyFor) => {
+        const { orders, collectionId, paymentId } = await paidCart([40, 30], { capture: true })
+        const before = await money(paymentId, collectionId)
+
+        const res = await runWorkflow(cancelOrderWorkflowId, bodyFor(orders.map((o) => o.id)))
+
+        expect(res.status).toBe(400)
+        expect(res.data.type).toBe("invalid_data")
+        expect(await money(paymentId, collectionId)).toEqual(before)
+        for (const o of orders) expect(await statusOf(o.id)).toBe("pending")
+      })
+
+      it("hands a cancel-order run on a paid single-seller order to Medusa's runner unchanged", async () => {
+        const { orders, collectionId, paymentId } = await paidCart([40], { capture: true })
+        const [o1] = orders
+        const readable = await medusaCancelCanRead(o1.id)
+
+        const res = await runWorkflow(cancelOrderWorkflowId, { input: { order_id: o1.id } })
+
+        expect(res.status).not.toBe(409)
+        expect(res.status).not.toBe(400)
+        expect(res.data?.code).not.toBe(SHARED_PAYMENT_CANCEL_REFUSED)
+        expect(await findOrdersSharingPayment(container(), o1.id)).toEqual([])
+        if (readable) {
+          expect(res.status).toBe(200)
+          expect(await statusOf(o1.id)).toBe("canceled")
+          expect(await money(paymentId, collectionId)).toEqual({
+            refunded: 40,
+            payment_canceled: false,
+            collection_status: "canceled",
+          })
+        } else {
+          // Medusa's own read fails (see medusaCancelCanRead), before money moves.
           expect(res.status).toBe(500)
           expect(await statusOf(o1.id)).toBe("pending")
           expect((await money(paymentId, collectionId)).refunded).toBe(0)
@@ -255,6 +341,10 @@ medusaIntegrationTestRunner({
         const { orders } = await paidCart([40, 30], { capture: true })
         const res = await api.post(`/admin/orders/${orders[0].id}/cancel`, {}).catch((e: any) => e.response)
         expect(res.status).toBe(401)
+        const run = await api
+          .post(`/admin/workflows-executions/${cancelOrderWorkflowId}/run`, { input: { order_id: orders[0].id } })
+          .catch((e: any) => e.response)
+        expect(run.status).toBe(401)
         expect(await statusOf(orders[0].id)).toBe("pending")
       })
     })

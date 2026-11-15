@@ -4,8 +4,11 @@ import { ContainerRegistrationKeys, MedusaError } from "@medusajs/framework/util
  * Medusa's order cancel acts on a whole payment collection (SD-36 (8)).
  *
  * `cancelOrderWorkflow` (@medusajs/core-flows, the workflow behind
- * `POST /admin/orders/:id/cancel`) reads the order's `payment_collections`
- * and, for every payment on them, refunds captured-minus-refunded
+ * `POST /admin/orders/:id/cancel`, and which Medusa's generic runner
+ * `POST /admin/workflows-executions/cancel-order/run` can start by id; both
+ * routes are guarded in api/middlewares/shared-payment-order-cancel.ts) reads
+ * the order's `payment_collections` and, for every payment on them, refunds
+ * captured-minus-refunded
  * (`refundCapturedPaymentsWorkflow`), cancels it when nothing was captured
  * (`cancelPaymentStep`), and marks the collection `canceled`. It has no idea a
  * collection can belong to more than one order.
@@ -113,13 +116,24 @@ export async function findOrdersSharingPayment(
     .filter((c) => c.other_order_ids.length > 0)
 }
 
-/** What an admin is told when the cancel is refused. */
-export function sharedPaymentCancelMessage(orderId: string, shared: SharedPaymentCollection[]): string {
+/**
+ * What an admin is told when the cancel is refused. `refund` is for Medusa's
+ * `refund-captured-payments-workflow` run on its own (the refund half of the
+ * cancel), which the workflow runner route can start by id.
+ */
+export function sharedPaymentCancelMessage(
+  orderId: string,
+  shared: SharedPaymentCollection[],
+  action: "cancel" | "refund" = "cancel"
+): string {
   const others = [...new Set(shared.flatMap((c) => c.other_order_ids))].sort()
+  const refused = action === "cancel" ? "canceled" : "refunded"
+  const effect =
+    action === "cancel" ? "this cancel would refund or void that whole payment" : "this refund would refund that whole payment"
   return (
-    `Order ${orderId} cannot be canceled here: it was paid in one payment together with ` +
+    `Order ${orderId} cannot be ${refused} here: it was paid in one payment together with ` +
     `${others.length} other order${others.length === 1 ? "" : "s"} from the same cart (${others.join(", ")}), ` +
-    `and this cancel would refund or void that whole payment, the other sellers' money included. ` +
+    `and ${effect}, the other sellers' money included. ` +
     `Have the seller cancel it from the vendor panel instead, which refunds only this order's share. ` +
     `That needs the payment captured; if it is only authorized, capture it first.`
   )
@@ -141,7 +155,8 @@ export class SharedPaymentCancelRefusedError extends MedusaError {
  * Throws `SharedPaymentCancelRefusedError` when running Medusa's
  * `cancelOrderWorkflow` on this order would refund or void money that other
  * orders paid through the same collection. Call it before every FBM call of
- * that workflow.
+ * that workflow; `lib/__tests__/cancel-order-workflow-callers.unit.spec.ts`
+ * fails for a file under src/ that runs it without this guard.
  */
 export async function assertCancelLeavesSharedPaymentAlone(container: Resolver, orderId: string): Promise<void> {
   const shared = await findOrdersSharingPayment(container, orderId)

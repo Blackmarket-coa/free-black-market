@@ -38,7 +38,10 @@ import { servePublishingKeys } from "./middlewares/publishing-keys";
 import { refuseServerOwnedCustomerMetadata } from "./middlewares/server-owned-customer-metadata";
 import { refuseUnfinishedCartCompletion } from "./middlewares/cart-completion-finished";
 import { refuseCoreStoreReturnCreate } from "./middlewares/refuse-core-store-return";
-import { refuseSharedPaymentOrderCancel } from "./middlewares/shared-payment-order-cancel";
+import {
+  refuseSharedPaymentOrderCancel,
+  refuseSharedPaymentWorkflowRun,
+} from "./middlewares/shared-payment-order-cancel";
 import { ensureSellerContext } from "./vendor/_middlewares";
 // Nested middleware route sets. Medusa's MiddlewareFileLoader reads ONLY this
 // file (it checks `<api dir>/middlewares.ts` and does not recurse), so a nested
@@ -1626,6 +1629,16 @@ export default defineMiddlewares({
       matcher: "/admin/orders/:id/cancel",
       method: "POST",
       middlewares: [refuseSharedPaymentOrderCancel],
+    },
+    // SD-36 (8), the same refusal on Medusa's generic workflow runner, which
+    // can start `cancel-order` (or its refund half,
+    // `refund-captured-payments-workflow`) by id on any order. Every other
+    // workflow id passes; a run of those two that names no single order is
+    // refused with 400.
+    {
+      matcher: "/admin/workflows-executions/:workflow_id/run",
+      method: "POST",
+      middlewares: [refuseSharedPaymentWorkflowRun],
     },
     // Ticket booking routes - admin venues
     {
