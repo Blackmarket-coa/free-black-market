@@ -58,7 +58,8 @@ async function loadFbmSales(
   platformFeePercent: number
 ): Promise<ChannelRevenueInput[]> {
   try {
-    const orders = await getSellerOrders(container, sellerId)
+    // Bounded in the database; the filter below is kept as a guard.
+    const orders = await getSellerOrders(container, sellerId, { since })
 
     return orders
       .filter((o) => new Date(o.created_at) >= since)

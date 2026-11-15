@@ -6,10 +6,16 @@ import { WELLNESS_MODULE } from "../../src/modules/wellness"
 import { PROGRESSION_MODULE } from "../../src/modules/progression"
 import { MARKETPLACE_WEBHOOKS_MODULE } from "../../src/modules/marketplace-webhooks"
 import { BLACK_MASK_PLAN_METADATA_KEY } from "../../src/modules/marketplace-webhooks/black-mask"
+import { SELLER_EXTENSION_MODULE } from "../../src/modules/seller-extension"
+import { createSellerMetadataRecord } from "../../src/modules/seller-extension/metadata-service"
+import { WellnessAutomationService } from "../../src/modules/wellness/automation-service"
 import { PHASE0_FEATURE_FLAGS } from "../../src/shared/feature-flags"
+import { ORDER_LINE_ITEM_COLUMNS, ORDER_LINE_ITEM_RELATIONS } from "../../src/shared/order-line-item-fields"
 import cottageFoodRecordSale from "../../src/subscribers/cottage-food-record-sale"
 import cottageFoodReverseSale from "../../src/subscribers/cottage-food-reverse-sale"
 import emitBlackoutOrderPlaced from "../../src/subscribers/emit-blackout-order-placed"
+import emitBlackoutOrderUpdated from "../../src/subscribers/emit-blackout-order-updated"
+import emitBlackoutOrderRefundCancel from "../../src/subscribers/emit-blackout-order-refund-cancel"
 import wellnessOrderPlaced from "../../src/subscribers/wellness-order-placed"
 import { getSellerOrders } from "../../src/shared/seller-orders"
 import { collectCrossChannelRevenue } from "../../src/shared/cross-channel-revenue"
@@ -66,10 +72,19 @@ medusaIntegrationTestRunner({
       return product as { id: string }
     }
 
-    type Line = { productId: string; quantity: number; unitPrice: number; title?: string }
+    type Line = {
+      productId: string
+      quantity: number
+      unitPrice: number
+      title?: string
+      metadata?: Record<string, unknown>
+    }
 
-    /** A placed order of `lines` (unit prices in Medusa's major units), linked to `sellerId`. */
-    async function makeOrder(sellerId: string, lines: Line[], buyer: { customerId?: string; email?: string } = {}) {
+    /**
+     * A placed order of `lines` (unit prices in Medusa's major units), linked
+     * to `sellerId` as Mercur's split links it; `null` leaves it unlinked.
+     */
+    async function makeOrder(sellerId: string | null, lines: Line[], buyer: { customerId?: string; email?: string } = {}) {
       const [order] = await container()
         .resolve(Modules.ORDER)
         .createOrders([
@@ -82,10 +97,13 @@ medusaIntegrationTestRunner({
               product_id: l.productId,
               quantity: l.quantity,
               unit_price: l.unitPrice,
+              ...(l.metadata ? { metadata: l.metadata } : {}),
             })),
           },
         ])
-      await link().create({ [SELLER_MODULE]: { seller_id: sellerId }, [Modules.ORDER]: { order_id: order.id } })
+      if (sellerId) {
+        await link().create({ [SELLER_MODULE]: { seller_id: sellerId }, [Modules.ORDER]: { order_id: order.id } })
+      }
       return order as { id: string }
     }
 
@@ -97,6 +115,7 @@ medusaIntegrationTestRunner({
     }
 
     const placed = (orderId: string) => ({ event: { data: { id: orderId } }, container: container() }) as any
+    const evt = (name: string, data: Record<string, unknown>) => ({ event: { name, data }, container: container() }) as any
 
     /** Set env vars for one test; returns the restore. */
     function withEnv(vars: Record<string, string>) {
@@ -125,6 +144,50 @@ medusaIntegrationTestRunner({
 
         const { data } = await query().graph({ entity: "order", fields: ["id", "items.*"], filters: { id: order.id } })
         expect(data[0].items).toEqual([expect.objectContaining({ product_id: product.id, quantity: 3, unit_price: 12.5 })])
+      })
+
+      it("items.total throws the same way: the failure is any field OrderLineItem lacks, not quantity alone", async () => {
+        // shared/order-dispute-intake.ts selects items.total (open, SD-52 follow-up).
+        const seller = await makeSeller()
+        const product = await makeProduct(seller.id)
+        const order = await makeOrder(seller.id, [{ productId: product.id, quantity: 3, unitPrice: 12.5 }])
+
+        await expect(
+          query().graph({ entity: "order", fields: ["id", "items.total"], filters: { id: order.id } })
+        ).rejects.toThrow(/does not have property 'total'|reading 'kind'/)
+      })
+
+      it("every field the guard allows under items. reads on a real order, and the column list is the table's", async () => {
+        // The guard (shared/__tests__/order-items-quantity-guard.unit.spec.ts)
+        // allows exactly ORDER_READ_ITEM_FIELDS; this is the evidence for it.
+        const pg = container().resolve(ContainerRegistrationKeys.PG_CONNECTION)
+        const { rows } = await pg.raw(
+          `SELECT column_name FROM information_schema.columns WHERE table_name = 'order_line_item' AND table_schema = current_schema()`
+        )
+        // `totals_id` is on the table (Medusa's order Migration20240219102530)
+        // but OrderLineItem has no property for it, so it is not allowed; it is
+        // read below to show it fails the same way.
+        const NOT_LINE_PROPERTIES = ["totals_id"]
+        const columns = rows.map((r: { column_name: string }) => r.column_name)
+        expect(columns.filter((c: string) => !NOT_LINE_PROPERTIES.includes(c)).sort()).toEqual([...ORDER_LINE_ITEM_COLUMNS].sort())
+        expect(columns).toEqual(expect.arrayContaining(NOT_LINE_PROPERTIES))
+
+        const seller = await makeSeller()
+        const product = await makeProduct(seller.id)
+        const order = await makeOrder(seller.id, [{ productId: product.id, quantity: 3, unitPrice: 12.5 }])
+        await expect(
+          query().graph({ entity: "order", fields: ["id", "items.totals_id"], filters: { id: order.id } })
+        ).rejects.toThrow(/does not have property 'totals_id'|reading 'kind'/)
+        const failed: string[] = []
+        for (const field of [...ORDER_LINE_ITEM_COLUMNS, ...ORDER_LINE_ITEM_RELATIONS]) {
+          try {
+            const { data } = await query().graph({ entity: "order", fields: ["id", `items.${field}`], filters: { id: order.id } })
+            if (data?.[0]?.items?.length !== 1) failed.push(`${field}: no line`)
+          } catch (e) {
+            failed.push(`${field}: ${(e as Error).message}`)
+          }
+        }
+        expect(failed).toEqual([])
       })
     })
 
@@ -155,7 +218,7 @@ medusaIntegrationTestRunner({
       })
     })
 
-    describe("Blackout order-placed events", () => {
+    describe("Blackout order events", () => {
       let restore: () => void = () => {}
       beforeEach(() => {
         // The emitter is a no-op unless both are set; nothing is sent from a test.
@@ -163,41 +226,149 @@ medusaIntegrationTestRunner({
       })
       afterEach(() => restore())
 
-      it("enqueues order.created and purchase.succeeded with the line's quantity, in minor units", async () => {
+      const delivery = async (eventId: string) =>
+        ((await webhooks().listWebhookDeliveries({ event_id: eventId })) as Array<{ payload: Record<string, any> }>)[0]
+      const purchasesFor = async (orderId: string) =>
+        ((await webhooks().listWebhookDeliveries({ event: "purchase.succeeded" })) as Array<{ payload: Record<string, any> }>)
+          .filter((d) => d.payload?.metadata?.fbmOrderId === orderId)
+          .map((d) => d.payload)
+
+      /** A catalog line as the checkout-session page stamps it. */
+      const catalogLine = (productId: string): Line => ({
+        productId,
+        quantity: 1,
+        unitPrice: 4,
+        title: "Plugin licence",
+        metadata: { creator_listing_id: "lst_sd52", listing_id: "lst_sd52", entitlement_kind: "software_license" },
+      })
+
+      it("routes order.created to the order's seller and sends purchase.succeeded only for the Blackout purchase line", async () => {
         const seller = await makeSeller()
-        const product = await makeProduct(seller.id)
+        const jam = await makeProduct(seller.id)
+        const plugin = await makeProduct(seller.id)
         const customer = await makeCustomer({ blackout_user_id: "bo_user_sd52" })
-        const order = await makeOrder(seller.id, [{ productId: product.id, quantity: 3, unitPrice: 12.5 }], {
+        const order = await makeOrder(
+          seller.id,
+          [{ productId: jam.id, quantity: 3, unitPrice: 12.5 }, catalogLine(plugin.id)],
+          { customerId: customer.id, email: customer.email }
+        )
+
+        await emitBlackoutOrderPlaced(placed(order.id))
+
+        const created = await delivery(`order.created:${order.id}`)
+        expect(created?.payload).toEqual(
+          expect.objectContaining({
+            type: "order.created",
+            // The seller through Mercur's link, never "default-seller".
+            vendorId: seller.id,
+            orderId: order.id,
+            userId: "bo_user_sd52",
+            totalCents: 4150,
+          })
+        )
+        expect(created.payload.items).toHaveLength(2)
+        expect(created.payload.items).toEqual(
+          expect.arrayContaining([
+            { sku: null, title: "Jam", qty: 3, priceCents: 1250 },
+            { sku: null, title: "Plugin licence", qty: 1, priceCents: 400 },
+          ])
+        )
+
+        // The jar of jam is not a Blackout purchase: one event, for the licence.
+        const purchases = await purchasesFor(order.id)
+        expect(purchases).toHaveLength(1)
+        expect(purchases[0]).toEqual(
+          expect.objectContaining({
+            userId: "bo_user_sd52",
+            providerListingId: "lst_sd52",
+            kind: "software_license",
+            amountCents: 400,
+            metadata: expect.objectContaining({ fbmOrderId: order.id, digitalDelivery: true }),
+          })
+        )
+      })
+
+      it("a physical-only order from a Blackout-linked buyer sends order.created and no purchase.succeeded", async () => {
+        const seller = await makeSeller()
+        const jam = await makeProduct(seller.id)
+        const customer = await makeCustomer({ blackout_user_id: "bo_user_sd52_b" })
+        const order = await makeOrder(seller.id, [{ productId: jam.id, quantity: 3, unitPrice: 12.5 }], {
           customerId: customer.id,
           email: customer.email,
         })
 
         await emitBlackoutOrderPlaced(placed(order.id))
 
-        const [created] = await webhooks().listWebhookDeliveries({ event_id: `order.created:${order.id}` })
-        expect(created?.payload).toEqual(
-          expect.objectContaining({
-            type: "order.created",
-            orderId: order.id,
-            userId: "bo_user_sd52",
-            totalCents: 3750,
-            items: [{ sku: null, title: "Jam", qty: 3, priceCents: 1250 }],
-          })
+        expect((await delivery(`order.created:${order.id}`))?.payload).toEqual(
+          expect.objectContaining({ vendorId: seller.id, totalCents: 3750, items: [{ sku: null, title: "Jam", qty: 3, priceCents: 1250 }] })
         )
+        expect(await purchasesFor(order.id)).toEqual([])
+      })
 
-        const purchases = (await webhooks().listWebhookDeliveries({ event: "purchase.succeeded" })) as Array<{
-          payload: Record<string, any>
-        }>
-        const mine = purchases.filter((d) => d.payload?.metadata?.fbmOrderId === order.id)
-        expect(mine).toHaveLength(1)
-        expect(mine[0].payload).toEqual(
-          expect.objectContaining({ userId: "bo_user_sd52", providerListingId: product.id, amountCents: 3750 })
+      it("an order with no seller link sends no order.created; its Blackout purchase still goes out", async () => {
+        const seller = await makeSeller()
+        const plugin = await makeProduct(seller.id)
+        const customer = await makeCustomer({ blackout_user_id: "bo_user_sd52_c" })
+        const order = await makeOrder(null, [catalogLine(plugin.id)], { customerId: customer.id, email: customer.email })
+
+        await emitBlackoutOrderPlaced(placed(order.id))
+
+        expect(await delivery(`order.created:${order.id}`)).toBeUndefined()
+        expect(await purchasesFor(order.id)).toEqual([expect.objectContaining({ userId: "bo_user_sd52_c", kind: "software_license" })])
+      })
+
+      it("never names the seller's Blackout account as the buyer, now that the seller resolves", async () => {
+        const seller = await makeSeller()
+        await createSellerMetadataRecord(container().resolve(SELLER_EXTENSION_MODULE), {
+          seller_id: seller.id,
+          blackout_user_id: "bo_seller_sd52",
+        })
+        const plugin = await makeProduct(seller.id)
+        const buyer = await makeCustomer() // not linked to Blackout
+        const order = await makeOrder(seller.id, [catalogLine(plugin.id)], { customerId: buyer.id, email: buyer.email })
+
+        await emitBlackoutOrderPlaced(placed(order.id))
+
+        // No buyer id, so no purchase; order.created carries no userId at all.
+        expect(await purchasesFor(order.id)).toEqual([])
+        const created = await delivery(`order.created:${order.id}`)
+        expect(created?.payload).toEqual(expect.objectContaining({ vendorId: seller.id }))
+        expect(created.payload).not.toHaveProperty("userId")
+      })
+
+      it("order.updated and order.cancelled go to the order's seller, and are not sent for an unlinked order", async () => {
+        const seller = await makeSeller()
+        const jam = await makeProduct(seller.id)
+        const linked = await makeOrder(seller.id, [{ productId: jam.id, quantity: 1, unitPrice: 5 }])
+        const unlinked = await makeOrder(null, [{ productId: jam.id, quantity: 1, unitPrice: 5 }])
+
+        for (const o of [linked, unlinked]) {
+          await emitBlackoutOrderUpdated(evt("order.fulfillment_created", { order_id: o.id }))
+          await emitBlackoutOrderRefundCancel(evt("order.canceled", { id: o.id }))
+        }
+
+        expect((await delivery(`order.updated:${linked.id}:dispatched`))?.payload).toEqual(
+          expect.objectContaining({ type: "order.updated", vendorId: seller.id, orderId: linked.id, status: "dispatched" })
         )
+        expect((await delivery(`order.cancelled:${linked.id}`))?.payload).toEqual(
+          expect.objectContaining({ type: "order.cancelled", vendorId: seller.id, orderId: linked.id })
+        )
+        expect(await delivery(`order.updated:${unlinked.id}:dispatched`)).toBeUndefined()
+        expect(await delivery(`order.cancelled:${unlinked.id}`)).toBeUndefined()
       })
     })
 
     describe("wellness order subscriber", () => {
-      async function wellnessSale() {
+      // The automations (Matrix DM / email) are not under test; what is, is
+      // whether the subscriber asks for the "You're registered" message.
+      let runTrigger: jest.SpyInstance
+      beforeEach(() => {
+        runTrigger = jest.spyOn(WellnessAutomationService.prototype, "runTrigger").mockResolvedValue({ sent: 0, skipped: 0 })
+      })
+      afterEach(() => runTrigger.mockRestore())
+      const triggers = () => runTrigger.mock.calls.map((c) => (c[0] as { trigger: string }).trigger)
+
+      async function wellnessSale(opts: { capacity?: number; seatsTaken?: number; tickets?: number } = {}) {
         const seller = await makeSeller()
         // A seller member, so the KARMA subject resolves and a gate that leaked
         // would write an xp_event this test can see.
@@ -212,7 +383,8 @@ medusaIntegrationTestRunner({
           title: "Sound bath",
           starts_at: new Date(Date.now() + 86_400_000),
           ends_at: new Date(Date.now() + 90_000_000),
-          capacity: 1,
+          capacity: opts.capacity ?? 1,
+          seats_taken: opts.seatsTaken ?? 0,
           status: "open",
         })
         const tier = await wellness.createMembershipTiers({
@@ -225,7 +397,7 @@ medusaIntegrationTestRunner({
         const order = await makeOrder(
           seller.id,
           [
-            { productId: classProduct.id, quantity: 1, unitPrice: 30, title: "Sound bath" },
+            { productId: classProduct.id, quantity: opts.tickets ?? 1, unitPrice: 30, title: "Sound bath" },
             { productId: tierProduct.id, quantity: 1, unitPrice: 50, title: "Root" },
           ],
           { customerId: customer.id, email: customer.email }
@@ -253,6 +425,36 @@ medusaIntegrationTestRunner({
         ])
 
         expect(await xpEvents(member.id)).toEqual([])
+        expect(triggers().sort()).toEqual(["class_registered", "membership_welcome"])
+      })
+
+      it("a line of two tickets takes two seats, and redelivering order.placed takes none and adds no member", async () => {
+        const { cls, tier, customer, order, wellness } = await wellnessSale({ capacity: 3, tickets: 2 })
+
+        const attendees = await wellness.listClassAttendees({ class_event_id: cls.id })
+        expect(attendees).toHaveLength(2)
+        expect(attendees.every((a: { order_id: string; status: string }) => a.order_id === order.id && a.status === "registered")).toBe(true)
+        expect(await wellness.retrieveClassEvent(cls.id)).toEqual(expect.objectContaining({ seats_taken: 2, status: "open" }))
+        const [member] = await wellness.listMembers({ membership_tier_id: tier.id })
+        expect(member).toEqual(expect.objectContaining({ email: customer.email, metadata: { order_id: order.id } }))
+
+        runTrigger.mockClear()
+        await wellnessOrderPlaced(placed(order.id))
+
+        expect(await wellness.listClassAttendees({ class_event_id: cls.id })).toHaveLength(2)
+        expect(await wellness.retrieveClassEvent(cls.id)).toEqual(expect.objectContaining({ seats_taken: 2 }))
+        expect(await wellness.listMembers({ membership_tier_id: tier.id })).toHaveLength(1)
+        // No second "You're registered" and no second welcome.
+        expect(triggers()).toEqual([])
+      })
+
+      it("a ticket for a full class with no waitlist seats nobody and does not tell the buyer they are registered", async () => {
+        const { cls, order, wellness } = await wellnessSale({ capacity: 1, seatsTaken: 1 })
+
+        expect(await wellness.listClassAttendees({ class_event_id: cls.id, order_id: order.id })).toEqual([])
+        expect(await wellness.retrieveClassEvent(cls.id)).toEqual(expect.objectContaining({ seats_taken: 1 }))
+        // The membership on the same order still goes through.
+        expect(triggers()).toEqual(["membership_welcome"])
       })
 
       it("with FF_WELLNESS_SALE_KARMA_V1 on, the same sale records the two KARMA events (the gate is what stops them)", async () => {
@@ -294,6 +496,22 @@ medusaIntegrationTestRunner({
         // FBM line was missing for every vendor while the read threw.
         const revenue = await collectCrossChannelRevenue(container(), seller.id, { since: new Date(Date.now() - 86_400_000) })
         expect(revenue.lines).toEqual([expect.objectContaining({ channel: "fbm", orders: 1, gross_amount: 3750 })])
+      })
+
+      it("getSellerOrders bounds the read by since in the database; cross-channel revenue passes it", async () => {
+        const seller = await makeSeller()
+        const product = await makeProduct(seller.id)
+        const recent = await makeOrder(seller.id, [{ productId: product.id, quantity: 1, unitPrice: 10 }])
+        const old = await makeOrder(seller.id, [{ productId: product.id, quantity: 1, unitPrice: 20 }])
+        const pg = container().resolve(ContainerRegistrationKeys.PG_CONNECTION)
+        await pg.raw(`UPDATE "order" SET created_at = now() - interval '30 days' WHERE id = ?`, [old.id])
+        const since = new Date(Date.now() - 86_400_000)
+
+        expect((await getSellerOrders(container(), seller.id)).map((o) => o.id).sort()).toEqual([recent.id, old.id].sort())
+        expect((await getSellerOrders(container(), seller.id, { since })).map((o) => o.id)).toEqual([recent.id])
+
+        const revenue = await collectCrossChannelRevenue(container(), seller.id, { since })
+        expect(revenue.lines).toEqual([expect.objectContaining({ channel: "fbm", orders: 1, gross_amount: 1000 })])
       })
 
       it("the grower dashboard's sales block counts units and cents when handed the seller id", async () => {

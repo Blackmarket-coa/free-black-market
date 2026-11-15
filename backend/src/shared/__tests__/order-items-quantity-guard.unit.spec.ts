@@ -1,37 +1,49 @@
 import { readdirSync, readFileSync, statSync } from "fs"
 import { join, relative } from "path"
+import { ORDER_READ_ITEM_FIELDS } from "../order-line-item-fields"
 
 /**
- * SD-52: no order read may select `items.quantity`.
+ * SD-52: an order read may name only OrderLineItem's own fields as
+ * `items.<field>`.
  *
- * Medusa 2.14.2 rewrites an order read's `items.quantity` to
- * `items.item.quantity` (`@medusajs/order/dist/utils/transform-order.js`), a
- * property OrderLineItem does not have, and the MikroORM this repository runs
- * then throws for every order that has a line item. Callers caught it, so for
- * months the cottage-food meter, the Blackout order events, wellness
- * registration and the seller order lists did nothing and no test failed.
- * Select `items.*` (or only the line fields needed) instead; the real-database
- * proof is integration-tests/http/order-items-quantity-read.spec.ts.
+ * Medusa 2.14.2 rewrites every `items.<field>` on an order read to
+ * `items.item.<field>` (`@medusajs/order/dist/utils/transform-order.js`), and
+ * the read throws for any order with a line when OrderLineItem has no such
+ * field. `items.quantity` did that on every order for the cottage-food meter,
+ * the Blackout order events, wellness registration and the seller order lists,
+ * and `items.total` does it to buyer dispute intake; every caller caught it,
+ * so no test failed. Select `items.*` (it carries the quantity) or only the
+ * line's own columns. The allowed set and why is `shared/order-line-item-fields.ts`;
+ * the real-database proof is integration-tests/http/order-items-quantity-read.spec.ts.
  *
- * Cart reads are fine: a cart line item has its own `quantity` column.
+ * Cart reads are fine: a cart line item has its own `quantity` and totals.
  *
  * The scan finds every object literal under src/ that contains
- * `entity: "order"` and fails if that literal also names `items.quantity`.
- * Field lists held in a separate constant are not seen.
+ * `entity: "order"` and fails if that literal names a single-segment
+ * `"items.<field>"` string whose field is not in that set. NOT seen: field
+ * lists held in a separate constant, `remoteQueryObjectFromString` /
+ * `entryPoint` reads, and deeper paths (`items.product.seller_id`), which
+ * leave the order module and are not rewritten this way.
  */
 
 const SRC = join(__dirname, "..", "..")
 
 /**
- * Order reads deliberately left selecting `items.quantity`, each with the
+ * Order reads knowingly left naming a field OrderLineItem lacks, each with the
  * reason. An entry that no longer matches fails the last test, so fixing one
  * means removing it here.
  */
-const OPERATOR_GATED: Record<string, string> = {
-  // Its one live caller is subscribers/grower-karma-on-order-placed.ts: making
-  // this read work starts awarding grower KARMA for sales, which
-  // docs/F7_FLAT_PAYOUT_INVENTORY.md §10 item 8 reserves to the operator.
-  "modules/agriculture/plant-order-helpers.ts": "SD-52 / F7 §10 item 8",
+const KNOWN_BROKEN: Record<string, string> = {
+  // `items.quantity`. Its one live caller is
+  // subscribers/grower-karma-on-order-placed.ts: making this read work starts
+  // awarding grower KARMA for sales, which docs/F7_FLAT_PAYOUT_INVENTORY.md
+  // §10 item 8 reserves to the operator.
+  "modules/agriculture/plant-order-helpers.ts": "SD-52 / F7 §10 item 8 (operator-gated)",
+  // `items.total`: loadOwnOrderForDispute throws for every order with a line,
+  // so no buyer can open a dispute. Fixing it also means fixing the units
+  // (Medusa totals are major units; the dispute ceiling is cents) and the
+  // seller path (`items.product.seller_id`), so it is its own change.
+  "shared/order-dispute-intake.ts": "SD-52 follow-up: dispute intake (open P0)",
 }
 
 function sourceFiles(dir: string): string[] {
@@ -87,52 +99,58 @@ function enclosingObject(text: string, pos: number): [number, number] | null {
   return best
 }
 
-/** Each order-read object literal in `text` that selects `items.quantity`, by line. */
-function orderReadsSelectingItemsQuantity(text: string): number[] {
-  const lines: number[] = []
+/**
+ * Each order-read object literal in `text` that names an `items.<field>`
+ * OrderLineItem does not have, as `line:field`.
+ */
+function orderReadsNamingNonLineFields(text: string): string[] {
+  const out: string[] = []
   const entity = /entity:\s*["']order["']/g
   let m: RegExpExecArray | null
   while ((m = entity.exec(text))) {
     const span = enclosingObject(text, m.index)
     if (!span) continue
     const body = text.slice(span[0], span[1] + 1)
-    if (/["']items\.quantity["']/.test(body)) {
-      lines.push(text.slice(0, m.index).split("\n").length)
+    const line = text.slice(0, m.index).split("\n").length
+    for (const f of body.matchAll(/["']items\.([A-Za-z_*]+)["']/g)) {
+      if (!ORDER_READ_ITEM_FIELDS.has(f[1])) out.push(`${line}:${f[1]}`)
     }
   }
-  return lines
+  return out
 }
 
-describe("SD-52: order reads do not select items.quantity", () => {
-  it("the scan finds an order read that does, and passes cart reads and items.*", () => {
+describe("SD-52: order reads name only OrderLineItem fields under items.", () => {
+  it("the scan flags quantities and totals on an order read, and passes cart reads, line columns and items.*", () => {
     const bad = `await query.graph({\n  entity: "order",\n  fields: ["id", "items.quantity"],\n  filters: { id },\n})`
     const flippedOrder = `useQueryGraphStep({ fields: ["items.quantity"], entity: 'order' })`
-    const cart = `await query.graph({ entity: "cart", fields: ["id", "items.quantity"] })`
-    const good = `await query.graph({ entity: "order", fields: ["id", "items.*"] })`
+    const total = `query.graph({ entity: "order", fields: ["id", "items.total", "items.product.seller_id"] })`
+    const cart = `await query.graph({ entity: "cart", fields: ["id", "items.quantity", "items.total"] })`
+    const good = `await query.graph({ entity: "order", fields: ["id", "items.*", "items.unit_price", "items.metadata", "items.tax_lines.*"] })`
     const nested = `query.graph({ entity: "order", fields: ["id"], filters: { id } }); const x = { a: "items.quantity" }`
-    expect(orderReadsSelectingItemsQuantity(bad)).toEqual([2])
-    expect(orderReadsSelectingItemsQuantity(flippedOrder)).toEqual([1])
-    expect(orderReadsSelectingItemsQuantity(cart)).toEqual([])
-    expect(orderReadsSelectingItemsQuantity(good)).toEqual([])
-    expect(orderReadsSelectingItemsQuantity(nested)).toEqual([])
+    expect(orderReadsNamingNonLineFields(bad)).toEqual(["2:quantity"])
+    expect(orderReadsNamingNonLineFields(flippedOrder)).toEqual(["1:quantity"])
+    expect(orderReadsNamingNonLineFields(total)).toEqual(["1:total"])
+    expect(orderReadsNamingNonLineFields(cart)).toEqual([])
+    expect(orderReadsNamingNonLineFields(good)).toEqual([])
+    expect(orderReadsNamingNonLineFields(nested)).toEqual([])
   })
 
-  it("no order read under src/ selects items.quantity, apart from the operator-gated one", () => {
+  it("no order read under src/ names a field OrderLineItem lacks, apart from the known-broken ones", () => {
     const offenders: string[] = []
     for (const file of sourceFiles(SRC)) {
       const rel = relative(SRC, file).split("\\").join("/")
-      if (OPERATOR_GATED[rel]) continue
-      for (const line of orderReadsSelectingItemsQuantity(readFileSync(file, "utf8"))) {
-        offenders.push(`${rel}:${line}`)
+      if (KNOWN_BROKEN[rel]) continue
+      for (const hit of orderReadsNamingNonLineFields(readFileSync(file, "utf8"))) {
+        offenders.push(`${rel}:${hit}`)
       }
     }
     expect(offenders).toEqual([])
   })
 
-  it("every operator-gated entry still selects items.quantity (remove it here once fixed)", () => {
-    for (const rel of Object.keys(OPERATOR_GATED)) {
+  it("every known-broken entry still names one (remove it here once fixed)", () => {
+    for (const rel of Object.keys(KNOWN_BROKEN)) {
       const text = readFileSync(join(SRC, rel), "utf8")
-      expect({ rel, lines: orderReadsSelectingItemsQuantity(text).length > 0 }).toEqual({ rel, lines: true })
+      expect({ rel, broken: orderReadsNamingNonLineFields(text).length > 0 }).toEqual({ rel, broken: true })
     }
   })
 })

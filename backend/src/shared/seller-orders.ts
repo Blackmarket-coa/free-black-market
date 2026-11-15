@@ -31,9 +31,15 @@ export interface SellerOrder {
   seller_total_cents: number
 }
 
+/**
+ * `since` bounds the order read in the database (created_at >= since). Without
+ * it every order that ever held one of the seller's products is loaded, which
+ * the nursery dashboard and payouts routes still do (SD-52 follow-up).
+ */
 export async function getSellerOrders(
   container: MedusaContainer,
-  sellerId: string
+  sellerId: string,
+  opts: { since?: Date } = {}
 ): Promise<SellerOrder[]> {
   try {
     const query = container.resolve(ContainerRegistrationKeys.QUERY) as {
@@ -67,7 +73,10 @@ export async function getSellerOrders(
         "shipping_address.province",
         "items.*",
       ],
-      filters: { items: { product_id: productIds } },
+      filters: {
+        items: { product_id: productIds },
+        ...(opts.since ? { created_at: { $gte: opts.since } } : {}),
+      },
     })
 
     return (orders ?? []).map((o: any) => {
