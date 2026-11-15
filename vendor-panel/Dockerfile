@@ -198,9 +198,19 @@ ARG SECURITY_REFRESH=unset
 # same three sonames and needs only musl, so the upgrade replaces that one
 # package. The base image on 2026-10-24 (alpine 3.24.3, nginx 1.31.8-r1)
 # still ships 1.2.0-r1.
+#
+# SD-57: libxslt 1.1.43-r3 carries CVE-2026-125350, CVE-2026-87636 and
+# CVE-2026-9947, all HIGH (use-after-free and type confusion in XSLT
+# processing). Alpine v3.24 main has 1.1.43-r4, built 2026-11-10, and its
+# secdb lists all three as fixed there (APKINDEX and secdb, not inferred). It
+# is in this image for F5's nginx-module-xslt, which links libxslt.so.1 and
+# libexslt.so.0. libxslt is Alpine main (maintainer Natanael Copa) and absent
+# from F5's repo, and 1.1.43-r4 provides the same sonames and needs only musl
+# and libxml2, so the upgrade replaces that one package. The base image on
+# 2026-11-12 (alpine 3.24.4) still ships 1.1.43-r3.
 RUN echo "security-refresh=${SECURITY_REFRESH}" >/dev/null \
     && apk add --no-cache wget tini \
-    && apk upgrade --no-cache libuuid libexpat pcre2 tiff brotli-libs
+    && apk upgrade --no-cache libuuid libexpat pcre2 tiff brotli-libs libxslt
 
 COPY --from=build /app/dist /usr/share/nginx/html
 COPY nginx.conf /etc/nginx/conf.d/default.conf

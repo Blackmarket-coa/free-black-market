@@ -1,0 +1,15 @@
+diff --git a/index.js b/index.js
+index d45e67d91d38c91d05e68e8b338e4bc2de591dcc..6c6e933f1cc44affb654d30291f7791da4d77abc 100644
+--- a/index.js
++++ b/index.js
+@@ -1,6 +1,9 @@
+ 'use strict';
+ const strictUriEncode = require('strict-uri-encode');
+-const decodeComponent = require('decode-uri-component');
++// FBM patch (SD-57): decode-uri-component >=0.3 is ESM-only; require(esm)
++// returns the module namespace, so unwrap its default export.
++const decodeUriComponentModule = require('decode-uri-component');
++const decodeComponent = typeof decodeUriComponentModule === 'function' ? decodeUriComponentModule : decodeUriComponentModule.default;
+ const splitOnFirst = require('split-on-first');
+ const filterObject = require('filter-obj');
+ 

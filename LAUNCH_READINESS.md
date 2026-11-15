@@ -1,5 +1,7 @@
 # Launch Readiness & Financials
 
+> **Historical readiness report — updated context 2026-11-12:** The launch-ready verdict and pricing/revenue statements below are historical, not current release approval. Use the [implementation and cost-reduction inventory](docs/IMPLEMENTATION_STATUS_AND_COST_REDUCTION.md) with the [Resource Exchange Charter](docs/FBM_RESOURCE_EXCHANGE_CHARTER.md). Enhancement features are one-time purchases with **no subscription**; legacy billing/rate tiers still require migration. Recorded CI now includes a passing money-concurrency soak, but contract-only workflows, default-off money paths, failed scan/load checks and unverified live configuration remain. Preserve the original report as evidence rather than treating its old outstanding/passed items as current.
+
 **Date:** 2026-06-06
 **Branch:** `claude/fbm-launch-gaps-Ogc0k`
 **Scope:** Answers three questions against the founder launch checklist — *Are we ready? How do we get users? What does success look like financially?* — grounded in a full code audit of this repository, not the aspirational spec.
