@@ -639,6 +639,17 @@ export const storeCustomerDataRightsRateLimiter = createRateLimiter({
  * /store/food-deliveries/:id?x=/proof`, whose path has no `/proof`) share one
  * bucket, which `actorPathRateLimitKey` would split in two. Keyed per actor
  * so a stranger's refused requests cannot spend the courier's budget.
+ *
+ * The delivery is `req.params.id`, the decoded id the proof handler itself
+ * looks up, lower-cased. It used to be cut from the raw `req.path` with a
+ * case-sensitive pattern, but Express matches routes case-insensitively and
+ * percent-decodes params: `/store/food-deliveries/%66d_1/proof`, `fd%5F1`
+ * and `/STORE/food-deliveries/fd_1/proof` all reach the handler as `fd_1`,
+ * and each was a fresh bucket, so the courier had unlimited PIN guesses.
+ * Medusa registers method-scoped middleware with `app[method](matcher)`, so
+ * `req.params` is populated here. Without an id (the limiter mounted on a
+ * matcher with no `:id`) every request of that actor shares one bucket,
+ * which is stricter, never looser.
  */
 export function deliveryProofRateLimitKey(req: MedusaRequest): string {
   const ctx = (req as { auth_context?: { actor_id?: unknown } }).auth_context
@@ -646,7 +657,8 @@ export function deliveryProofRateLimitKey(req: MedusaRequest): string {
     typeof ctx?.actor_id === "string" && ctx.actor_id.length > 0
       ? `actor:${ctx.actor_id}`
       : `ip:${clientIp(req)}`
-  const delivery = /^\/store\/food-deliveries\/([^/?]+)/.exec(req.path)?.[1] ?? req.path
+  const id = (req as { params?: { id?: unknown } }).params?.id
+  const delivery = typeof id === "string" && id.length > 0 ? id.toLowerCase() : "*"
   return `${actor}:delivery-proof:${delivery}`
 }
 
@@ -655,11 +667,14 @@ export function deliveryProofRateLimitKey(req: MedusaRequest): string {
  *
  * The assigned courier is exactly who a delivery PIN guards against, and
  * nothing limited guessing: a 4-digit PIN was 10,000 scripted requests. With
- * PINs of 4 to 10 digits (`DELIVERY_PIN_PATTERN`) this allows 480 guesses a
- * day at most, so half the 4-digit space takes over ten days for a delivery
- * that is closed within hours. A courier who mistypes five times waits 15
- * minutes. Without a shared store (`REDIS_URL` unset or down, SD-62) the
- * budget is per process, so N instances allow N times this.
+ * PINs of 4 to 10 digits (`DELIVERY_PIN_PATTERN`) this allows the courier 480
+ * guesses a day per delivery, so half the 4-digit space takes over ten days
+ * for a delivery that is closed within hours. That bound holds only because
+ * the key is the decoded delivery id (`deliveryProofRateLimitKey`); keyed on
+ * the raw path, every re-spelling of the URL was another 480. A courier who
+ * mistypes five times waits 15 minutes. Without a shared store (`REDIS_URL`
+ * unset or down, SD-62) the budget is per process, so N instances allow N
+ * times this.
  */
 export const storeDeliveryProofRateLimiter = createRateLimiter({
   windowMs: 900_000,

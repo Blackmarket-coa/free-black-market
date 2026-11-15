@@ -1,5 +1,6 @@
 import { timingSafeEqual } from "crypto"
 import { nullIfNotFound } from "../../shared/null-if-not-found"
+import { isPlatformFileUrl, platformFileUrlBases } from "../../shared/platform-file-url"
 
 /**
  * The proof a delivery was created to require, and whether a submission meets it.
@@ -12,12 +13,27 @@ import { nullIfNotFound } from "../../shared/null-if-not-found"
  * `PUT /store/food-deliveries/:id` could set `DELIVERED` with no proof at all.
  *
  * The rule here: **a delivery that requires proof reaches a delivered state
- * only by presenting that proof**. A PIN requirement is met only by the PIN on
- * record; a PHOTO, SIGNATURE or RECIPIENT_CONFIRMATION requirement only by the
- * matching evidence (`photo_url`, `signature_url`, a non-blank
- * `recipient_name`). Naming the type alone used to be enough for those three,
- * so the courier the requirement constrains could close the delivery with
- * `{ proof_type: "PHOTO" }` and nothing else.
+ * only by meeting that requirement**. Only one of the four is proof in the
+ * sense of something the courier cannot produce alone:
+ *
+ * - PIN_CODE is met only by the PIN on record, which the recipient holds and
+ *   the courier is never shown (`DELIVERY_SECRETS`).
+ * - PHOTO and SIGNATURE are met by `photo_url` / `signature_url`, which must
+ *   be an https URL of a file in this platform's own storage
+ *   (`isPlatformFileUrl`). That proves where the file is, not what it shows:
+ *   the courier chooses the file. These are **courier-attested**, not
+ *   verified.
+ * - RECIPIENT_CONFIRMATION is met by a non-blank `recipient_name`, typed by
+ *   the courier, who can read the recipient's name off the delivery. It is a
+ *   **courier attestation that the recipient confirmed**, not a confirmation
+ *   by the recipient, and must not be described as proof. A real one needs
+ *   an act only the recipient can perform (their own token, or the PIN).
+ *
+ * Naming the type alone used to be enough for the last three, so the courier
+ * the requirement constrains could close the delivery with
+ * `{ proof_type: "PHOTO" }`; then with `{ proof_type: "PHOTO", photo_url:
+ * "x:y" }`, since any URL zod accepts (`javascript:`, `data:` too) passed and
+ * was stored and served back verbatim.
  */
 
 /**
@@ -55,6 +71,11 @@ function samePin(expected: string, submitted: string): boolean {
  * Null when `submitted` satisfies the delivery's requirement, else the reason
  * to refuse. A PIN requirement with no PIN on record is refused rather than
  * waved through: the requirement cannot be met, so it is not met.
+ *
+ * A `photo_url` or `signature_url` is checked whatever the requirement, even
+ * on a delivery that requires none: it is stored on the delivery and served
+ * to its producer, courier and recipient, so a `javascript:` or foreign URL
+ * is refused before it is written, not only when it is the evidence.
  */
 export function proofOfDeliveryError(
   delivery: DeliveryProofRequirement,
@@ -64,8 +85,16 @@ export function proofOfDeliveryError(
     photo_url?: string | null
     signature_url?: string | null
     recipient_name?: string | null
-  }
+  },
+  fileUrlBases: readonly string[] = platformFileUrlBases()
 ): string | null {
+  for (const field of ["photo_url", "signature_url"] as const) {
+    const url = submitted[field]
+    if (url != null && !isPlatformFileUrl(url, fileUrlBases)) {
+      return `${field} must be an https URL of a file uploaded to this platform`
+    }
+  }
+
   if (!requiresProof(delivery)) return null
 
   if (submitted.proof_type !== delivery.proof_type) {
@@ -81,10 +110,13 @@ export function proofOfDeliveryError(
       }
       return null
     }
+    // Courier-attested: the URL was checked above for where it points, and
+    // nothing checks what the file shows.
     case "PHOTO":
       return submitted.photo_url ? null : "PHOTO proof requires photo_url"
     case "SIGNATURE":
       return submitted.signature_url ? null : "SIGNATURE proof requires signature_url"
+    // Courier-attested: the courier types the name. Not proof (see above).
     case "RECIPIENT_CONFIRMATION":
       return submitted.recipient_name?.trim()
         ? null

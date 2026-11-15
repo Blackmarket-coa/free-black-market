@@ -149,6 +149,57 @@ medusaIntegrationTestRunner({
       expect(delivered.status).toBe(200)
       expect(delivered.data.delivery).not.toHaveProperty("proof_pin_code")
       expect((await foodDistribution.retrieveFoodDelivery(deliveryId)).status).toBe("DELIVERED")
+
+      // The PIN guess budget (5 per 15 minutes per courier per delivery) is
+      // keyed on the delivery the handler looks up. It was keyed on the raw
+      // path, and Express routes case-insensitively and decodes params, so a
+      // percent-encoded id or a re-cased prefix reached the PIN check with a
+      // fresh budget: a probe here spent the budget, then closed the delivery
+      // with the right PIN through `%xx`-encoded ids.
+      const guarded = await safe(
+        api.post(
+          "/store/food-deliveries",
+          { ...deliveryBody, order_id: (await order(TransactionType.SALE)).id, proof_pin_code: "7305" },
+          producerOwner.headers
+        )
+      )
+      expect(guarded.status).toBe(201)
+      const guardedId = guarded.data.delivery.id as string
+      await foodDistribution.updateFoodDeliveries({ id: guardedId, courier_id: courier.id })
+      const arrived = await safe(
+        api.put(`/store/food-deliveries/${guardedId}`, { status: "ARRIVED_AT_DESTINATION" }, courierOwner.headers)
+      )
+      expect(arrived.status).toBe(200)
+
+      const guesses: number[] = []
+      for (const pin of ["0001", "0002", "0003", "0004", "0005", "0006"]) {
+        guesses.push(
+          (
+            await safe(
+              api.post(`/store/food-deliveries/${guardedId}/proof`, { proof_type: "PIN_CODE", pin_code: pin }, courierOwner.headers)
+            )
+          ).status
+        )
+      }
+      expect(guesses).toEqual([400, 400, 400, 400, 400, 429])
+
+      // Delivery ids are bare ULIDs; any character can be percent-encoded,
+      // in either hex case, and each spelling decodes to the same id.
+      const pct = (c: string) => `%${c.charCodeAt(0).toString(16).padStart(2, "0")}`
+      const encodedFirst = `${pct(guardedId[0])}${guardedId.slice(1)}`
+      const encodedLast = `${guardedId.slice(0, -1)}${pct(guardedId[guardedId.length - 1]).toUpperCase()}`
+      const respellings = [
+        `/store/food-deliveries/${encodedFirst}/proof`,
+        `/store/food-deliveries/${encodedLast}/proof`,
+        `/STORE/food-deliveries/${guardedId}/proof`,
+        `/store/Food-Deliveries/${encodedLast}/proof`,
+        `/store/food-deliveries/${encodedFirst}?x=/proof`,
+      ]
+      for (const url of respellings) {
+        const attempt = await safe(api.post(url, { proof_type: "PIN_CODE", pin_code: "7305" }, courierOwner.headers))
+        expect([url, attempt.status]).toEqual([url, 429])
+      }
+      expect((await foodDistribution.retrieveFoodDelivery(guardedId)).status).toBe("ARRIVED_AT_DESTINATION")
     })
   },
 })

@@ -782,7 +782,33 @@ const COURIER: Actor = { id: "drv_courier", type: "driver" }
 const PRODUCER = SELLER("sel_producer")
 const RECIPIENT = CUSTOMER("cus_recipient")
 
+// Evidence URLs must name a file in the platform's own storage
+// (`isPlatformFileUrl`). The proof cases configure MinIO as production does,
+// with a public URL, so uploads live under UPLOADS.
+const UPLOADS = "https://media.fbm.test/medusa-media"
+const STORAGE_ENV: Record<string, string> = {
+  MINIO_ENDPOINT: "minio",
+  MINIO_ACCESS_KEY: "spec-access",
+  MINIO_SECRET_KEY: "spec-secret",
+  MINIO_BUCKET: "medusa-media",
+  MINIO_PUBLIC_URL: "https://media.fbm.test",
+}
+
 describe("POST /store/food-deliveries/:id/proof — the courier, with the required proof", () => {
+  const savedEnv: Record<string, string | undefined> = {}
+  beforeAll(() => {
+    for (const [key, value] of Object.entries(STORAGE_ENV)) {
+      savedEnv[key] = process.env[key]
+      process.env[key] = value
+    }
+  })
+  afterAll(() => {
+    for (const [key, value] of Object.entries(savedEnv)) {
+      if (value === undefined) delete process.env[key]
+      else process.env[key] = value
+    }
+  })
+
   const proof = (actor: Actor | undefined, body: Row, delivery: Row | null = pinDelivery) => {
     const service = foodDistribution(delivery)
     const req = makeReq({
@@ -820,7 +846,7 @@ describe("POST /store/food-deliveries/:id/proof — the courier, with the requir
   it("does not let the courier skip a PIN by submitting another proof type", async () => {
     const { service, req } = proof(COURIER, {
       proof_type: "PHOTO",
-      photo_url: "https://example.com/porch.jpg",
+      photo_url: `${UPLOADS}/proof/porch.jpg`,
     })
     const res = await call(submitProof, req)
     expect(res.statusCode).toBe(400)
@@ -847,8 +873,8 @@ describe("POST /store/food-deliveries/:id/proof — the courier, with the requir
   })
 
   it.each([
-    ["PHOTO", { photo_url: "https://example.com/porch.jpg" }, "PHOTO proof requires photo_url"],
-    ["SIGNATURE", { signature_url: "https://example.com/sig.png" }, "SIGNATURE proof requires signature_url"],
+    ["PHOTO", { photo_url: `${UPLOADS}/proof/porch.jpg` }, "PHOTO proof requires photo_url"],
+    ["SIGNATURE", { signature_url: `${UPLOADS}/proof/sig.png` }, "SIGNATURE proof requires signature_url"],
     ["RECIPIENT_CONFIRMATION", { recipient_name: "Ada" }, "RECIPIENT_CONFIRMATION proof requires recipient_name"],
   ])(
     "a %s requirement is met only with its evidence, not by naming the type",
@@ -873,10 +899,45 @@ describe("POST /store/food-deliveries/:id/proof — the courier, with the requir
     }
   )
 
+  // PHOTO, SIGNATURE and RECIPIENT_CONFIRMATION are courier-attested: the
+  // courier chooses the file and types the name. What can be enforced is
+  // that a URL names a file in this platform's storage, so it is not a
+  // `javascript:` link or someone else's host stored on the delivery and
+  // served back to its producer and recipient. zod's `.url()` passes all of
+  // these.
+  it.each([
+    ["any scheme", "x:y"],
+    ["javascript:", "javascript:alert(1)"],
+    ["data:", "data:text/html,<script>alert(1)</script>"],
+    ["file:", "file:///etc/passwd"],
+    ["plain http on the storage host", "http://media.fbm.test/medusa-media/proof/p.jpg"],
+    ["a foreign host", "https://example.com/porch.jpg"],
+    ["a look-alike host", "https://media.fbm.test.evil.example/medusa-media/proof/p.jpg"],
+    ["credentials before a foreign host", "https://media.fbm.test@evil.example/medusa-media/proof/p.jpg"],
+    ["another bucket on the storage host", "https://media.fbm.test/other-bucket/p.jpg"],
+    ["a dot-segment out of the bucket", "https://media.fbm.test/medusa-media/%2e%2e/other-bucket/p.jpg"],
+    ["the bucket itself, no file", "https://media.fbm.test/medusa-media/"],
+  ])("refuses evidence that is %s, on every requirement", async (_label, url) => {
+    const cases: Array<[Row, Row]> = [
+      [{ ...pinDelivery, proof_type: "PHOTO", proof_pin_code: null }, { proof_type: "PHOTO", photo_url: url }],
+      [{ ...pinDelivery, proof_type: "SIGNATURE", proof_pin_code: null }, { proof_type: "SIGNATURE", signature_url: url }],
+      // No requirement: the URL would still be stored and served.
+      [{ ...pinDelivery, proof_type: "NONE", proof_pin_code: null }, { proof_type: "PHOTO", photo_url: url }],
+      // The right PIN does not carry a bad URL in with it.
+      [pinDelivery, { proof_type: "PIN_CODE", pin_code: "4821", signature_url: url }],
+    ]
+    for (const [delivery, body] of cases) {
+      const { service, req } = proof(COURIER, body, delivery)
+      const res = await call(submitProof, req)
+      expect([delivery.proof_type, res.statusCode]).toEqual([delivery.proof_type, 400])
+      expect(service.recordProofOfDelivery).not.toHaveBeenCalled()
+    }
+  })
+
   it("accepts any proof type for a delivery created without a requirement", async () => {
     const { service, req } = proof(
       COURIER,
-      { proof_type: "PHOTO", photo_url: "https://example.com/p.jpg" },
+      { proof_type: "PHOTO", photo_url: `${UPLOADS}/proof/p.jpg` },
       { ...pinDelivery, proof_type: "NONE", proof_pin_code: null }
     )
     const res = await call(submitProof, req)
@@ -889,7 +950,7 @@ describe("POST /store/food-deliveries/:id/proof — the courier, with the requir
     stranger.req.url = "/store/food-deliveries/fd_1?x=/proof"
     expect((await call(submitProofTwin, stranger.req)).statusCode).toBe(403)
 
-    const skip = proof(COURIER, { proof_type: "PHOTO", photo_url: "https://example.com/p.jpg" })
+    const skip = proof(COURIER, { proof_type: "PHOTO", photo_url: `${UPLOADS}/proof/p.jpg` })
     skip.req.url = "/store/food-deliveries/fd_1?x=/proof"
     expect((await call(submitProofTwin, skip.req)).statusCode).toBe(400)
     expect(skip.service.recordProofOfDelivery).not.toHaveBeenCalled()
@@ -1084,6 +1145,9 @@ describe("POST /store/food-deliveries — the order's producer, once per order",
     ["an empty PIN", { proof_pin_code: "" }],
     ["a 3-digit PIN", { proof_pin_code: "123" }],
     ["a PIN that is not digits", { proof_pin_code: "abcd" }],
+    // Pin both anchors of DELIVERY_PIN_PATTERN: unanchored, these pass.
+    ["digits then letters", { proof_pin_code: "1234ab" }],
+    ["letters then digits", { proof_pin_code: "ab1234" }],
   ])("refuses a PIN_CODE delivery with %s, which could never be delivered", async (_label, pin) => {
     const service = svc(order)
     const { proof_pin_code: _omit, ...rest } = body
@@ -1266,12 +1330,17 @@ describe("POST /store/proposals/:id/votes — the voter's own active membership 
     roles: [],
     ...over,
   })
-  const governance = () => ({
-    createGardenVotes: jest.fn(async (d: Row) => ({ id: "vote_1", ...d })),
-    updateGardenProposals: jest.fn(async (d: Row) => d),
+  // castBallot writes the ballot and its tally increment in one transaction,
+  // and returns null when the unique ballot index refused it (Postgres:
+  // integration-tests/http/store-community-write-authz.spec.ts).
+  const governance = (castBallot: (b: Row) => Promise<Row | null> = async (b) => ({ id: "vote_1", ...b })) => ({
+    castBallot: jest.fn(castBallot),
   })
-  const vote = (memberships: Row[], body: Row = { membership_id: "gm_mine", vote: "for" }) => {
-    const service = governance()
+  const vote = (
+    memberships: Row[],
+    body: Row = { membership_id: "gm_mine", vote: "for" },
+    service = governance()
+  ) => {
     const req = makeReq({
       actor: CUSTOMER("cus_voter"),
       params: { id: "prop_1" },
@@ -1293,24 +1362,49 @@ describe("POST /store/proposals/:id/votes — the voter's own active membership 
     ["someone else's membership", [membership({ customer_id: "cus_other" })], undefined],
     ["a membership id that does not exist", [], undefined],
     ["no membership id at all", [membership()], { vote: "for" }],
+    // The fake Query matches `{ id: undefined }` against this row, so only
+    // the route's own string check refuses it, not an empty lookup.
+    ["no membership id, where a lookup by undefined would match", [membership({ id: undefined })], { vote: "for" }],
   ])("refuses %s", async (_label, memberships, body) => {
     const { service, req } = vote(memberships as Row[], body as Row | undefined)
     const res = await call(castVote, req)
     expect(res.statusCode).toBe(403)
-    expect(service.createGardenVotes).not.toHaveBeenCalled()
-    expect(service.updateGardenProposals).not.toHaveBeenCalled()
+    expect(service.castBallot).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ["a vote that is not for, against or abstain", { membership_id: "gm_mine", vote: "yes" }],
+    ["no vote at all", { membership_id: "gm_mine" }],
+    ["an unknown comment visibility", { membership_id: "gm_mine", vote: "for", comment: "c", comment_visibility: "Private" }],
+  ])("refuses %s with 400, before anything is written", async (_label, body) => {
+    const { service, req } = vote([membership()], body)
+    const res = await call(castVote, req)
+    expect(res.statusCode).toBe(400)
+    expect(service.castBallot).not.toHaveBeenCalled()
+  })
+
+  it("answers a ballot the unique index refused as already voted, not as a server error", async () => {
+    // Both requests of a concurrent pair pass the "already voted" read; the
+    // second insert hits IDX_garden_vote_proposal_customer_unique.
+    const { service, req } = vote([membership()], undefined, governance(async () => null))
+    const res = await call(castVote, req)
+    expect(res.statusCode).toBe(400)
+    expect(res.body.message).toBe("You have already voted on this proposal")
+    expect(service.castBallot).toHaveBeenCalledTimes(1)
   })
 
   it("counts the vote of an active member of the proposal's garden, under their own membership", async () => {
     const { service, req } = vote([membership()])
     const res = await call(castVote, req)
     expect(res.statusCode).toBe(201)
-    expect(service.createGardenVotes).toHaveBeenCalledWith(
+    expect(service.castBallot).toHaveBeenCalledWith(
       expect.objectContaining({
         proposal_id: "prop_1",
         garden_id: "gdn_A",
         customer_id: "cus_voter",
         membership_id: "gm_mine",
+        vote: "for",
+        comment_visibility: "public",
       })
     )
   })

@@ -4,11 +4,17 @@ import { actingCustomerId } from "../../../../../shared/actor-scope"
 import { forbidden } from "../../../../../shared/community-read-access"
 
 import { GOVERNANCE_MODULE } from "../../../../../modules/governance"
+import {
+  isBallotChoice,
+  type BallotInput,
+} from "../../../../../modules/governance/service"
 
 interface GovernanceServiceType {
-  createGardenVotes: (data: Record<string, unknown>) => Promise<{ id: string }>
-  updateGardenProposals: (data: Record<string, unknown>) => Promise<{ id: string }>
+  castBallot: (ballot: BallotInput) => Promise<{ id: string } | null>
 }
+
+const alreadyVoted = (res: MedusaResponse) =>
+  res.status(400).json({ message: "You have already voted on this proposal" })
 
 // Inline voting power calculation
 function calculateVotingPower(params: {
@@ -113,6 +119,19 @@ export async function POST(
     comment_visibility,
   } = req.body as Record<string, unknown>
 
+  // The choice picks the tally column the ballot is added to.
+  if (!isBallotChoice(vote)) {
+    res.status(400).json({ message: "vote must be one of: for, against, abstain" })
+    return
+  }
+  // Refused rather than defaulted: a mistyped "Private" must not publish the
+  // comment. (It used to reach the column's check constraint, a 500.)
+  const visibility = comment_visibility ?? "public"
+  if (visibility !== "public" && visibility !== "members_only" && visibility !== "private") {
+    res.status(400).json({ message: "comment_visibility must be one of: public, members_only, private" })
+    return
+  }
+
   // SEC: a customer may only vote as themselves. Ignore any body customer_id
   // for a logged-in customer and bind the vote to the authenticated actor —
   // otherwise the "already voted" dedupe (keyed on customer_id) and the vote
@@ -122,7 +141,7 @@ export async function POST(
   // Get proposal
   const { data: [proposal] } = await query.graph({
     entity: "garden_proposal",
-    fields: ["id", "garden_id", "status", "voting_end", "votes_for", "votes_against", "votes_abstain", "total_voting_power", "unique_voters"],
+    fields: ["id", "garden_id", "status", "voting_end"],
     filters: { id },
   })
 
@@ -141,7 +160,9 @@ export async function POST(
     return
   }
 
-  // Check if already voted
+  // Check if already voted. The answer for the ordinary case only: two
+  // concurrent requests both pass this read, and the unique index under
+  // `castBallot` is what refuses the second ballot.
   const { data: existingVotes } = await query.graph({
     entity: "garden_vote",
     fields: ["id"],
@@ -149,8 +170,7 @@ export async function POST(
   })
 
   if (existingVotes.length > 0) {
-    res.status(400).json({ message: "You have already voted on this proposal" })
-    return
+    return alreadyVoted(res)
   }
 
   // Get membership for voting power
@@ -200,11 +220,14 @@ export async function POST(
     weights: gardenSettings?.voting_weights || null,
   })
 
-  const voteRecord = await governanceService.createGardenVotes({
+  // The ballot and its tally increment, in one transaction (`castBallot`).
+  // The tally used to be written as absolute values computed from the
+  // proposal read above, so concurrent votes overwrote each other's counts.
+  const voteRecord = await governanceService.castBallot({
     proposal_id: id,
-    garden_id: proposal.garden_id,
+    garden_id: proposal.garden_id as string,
     customer_id: effectiveCustomerId,
-    membership_id: membership.id,
+    membership_id: membership.id as string,
     vote,
     voting_power,
     power_basis: {
@@ -212,29 +235,16 @@ export async function POST(
       labor_hours: (membership.volunteer_hours_balance as number) || 0,
       investment: (membership.investment_balance as number) || 0,
     },
-    comment,
-    comment_visibility: (comment_visibility as string) || "public",
+    comment: typeof comment === "string" ? comment : null,
+    comment_visibility: visibility,
     is_delegated: false,
     is_final: true,
     voted_at: new Date(),
   })
 
-  // Update proposal vote counts
-  const voteUpdates: Record<string, unknown> = {
-    id,
-    total_voting_power: (proposal.total_voting_power as number) + voting_power,
-    unique_voters: (proposal.unique_voters as number) + 1,
+  if (!voteRecord) {
+    return alreadyVoted(res)
   }
-
-  if (vote === "for") {
-    voteUpdates.votes_for = (proposal.votes_for as number) + voting_power
-  } else if (vote === "against") {
-    voteUpdates.votes_against = (proposal.votes_against as number) + voting_power
-  } else {
-    voteUpdates.votes_abstain = (proposal.votes_abstain as number) + voting_power
-  }
-
-  await governanceService.updateGardenProposals(voteUpdates)
 
   res.status(201).json({ vote: voteRecord })
 }

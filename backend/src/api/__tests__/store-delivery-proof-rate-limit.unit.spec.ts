@@ -89,7 +89,9 @@ beforeAll(async () => {
     method,
     handler: (req: Request, res: Response) => {
       const ctx = (req as Request & { auth_context?: { actor_id?: string } }).auth_context
-      res.status(200).json({ reached: `${method} ${matcher}`, actor: ctx?.actor_id ?? null })
+      res
+        .status(200)
+        .json({ reached: `${method} ${matcher}`, actor: ctx?.actor_id ?? null, id: req.params.id ?? null })
     },
   }))
 
@@ -198,6 +200,65 @@ describe("POST /store/food-deliveries/:id/proof is limited per courier per deliv
     expect((await call("POST", "/store/food-deliveries/fd_status/proof", courier)).status).toBe(429)
     expect(await statuses(10, "PUT", "/store/food-deliveries/fd_status", courier)).toEqual(Array(10).fill(200))
     expect(await statuses(10, "POST", "/store/food-deliveries/fd_status/track", courier)).toEqual(Array(10).fill(200))
+  })
+
+  it("keys on the delivery the handler sees, so re-encoding the id or re-casing the path is not a fresh budget", async () => {
+    // Express matches routes case-insensitively and percent-decodes params,
+    // so every URL below reaches a proof handler with params.id "fd_enc".
+    // The key used to be cut from the raw req.path, which these spell
+    // differently, so each one was a fresh 5-try budget: unlimited PIN
+    // guesses against one delivery.
+    const variants: [url: string, reaches: string][] = [
+      ["/store/food-deliveries/%66d_enc/proof", "POST /store/food-deliveries/:id/proof"],
+      ["/store/food-deliveries/f%64_enc/proof", "POST /store/food-deliveries/:id/proof"],
+      ["/store/food-deliveries/fd%5Fenc/proof", "POST /store/food-deliveries/:id/proof"],
+      ["/store/food-deliveries/fd%5fenc/proof", "POST /store/food-deliveries/:id/proof"],
+      ["/STORE/food-deliveries/fd_enc/proof", "POST /store/food-deliveries/:id/proof"],
+      ["/store/Food-Deliveries/fd_enc/proof", "POST /store/food-deliveries/:id/proof"],
+      ["/store/Food-Deliveries/fd%5Fenc/proof", "POST /store/food-deliveries/:id/proof"],
+      ["/store/food-deliveries/%66d_enc?x=/proof", "POST /store/food-deliveries/:id"],
+      ["/STORE/FOOD-DELIVERIES/%66d_enc?x=/proof", "POST /store/food-deliveries/:id"],
+    ]
+
+    // Each variant really is the same delivery to the router: a courier with
+    // an untouched budget reaches the handler with the decoded id.
+    for (const [i, [url, reaches]] of variants.entries()) {
+      const probe = await call("POST", url, token(`drv_enc_probe_${i}`))
+      expect([url, probe.status, probe.body.reached, probe.body.id]).toEqual([url, 200, reaches, "fd_enc"])
+    }
+
+    // The courier spends the budget on the plain URL...
+    const courier = token("drv_enc")
+    expect(await statuses(6, "POST", "/store/food-deliveries/fd_enc/proof", courier)).toEqual([
+      200, 200, 200, 200, 200, 429,
+    ])
+    // ...and no spelling of the same delivery buys another try.
+    for (const [url] of variants) {
+      expect([url, (await call("POST", url, courier)).status]).toEqual([url, 429])
+    }
+    // The id itself is compared without case too. No delivery lookup is
+    // case-insensitive today (`FD_ENC` finds nothing), so this only keeps the
+    // key from depending on that staying true.
+    expect((await call("POST", "/store/food-deliveries/FD_ENC/proof", courier)).status).toBe(429)
+  })
+
+  it("budgets per delivery by the decoded id, so a different delivery is still its own budget", async () => {
+    const courier = token("drv_enc_other")
+    await statuses(5, "POST", "/store/food-deliveries/fd_one/proof", courier)
+    expect((await call("POST", "/store/food-deliveries/fd%5Fone/proof", courier)).status).toBe(429)
+    expect((await call("POST", "/store/food-deliveries/fd%5Ftwo/proof", courier)).status).toBe(200)
+  })
+
+  it("without a route id, puts every request of the actor in one bucket rather than one per path", () => {
+    // Required here, not imported: the limiter store is chosen on first import.
+    const { deliveryProofRateLimitKey } = require("../../shared/rate-limiter") as {
+      deliveryProofRateLimitKey: (req: unknown) => string
+    }
+    const key = (path: string, params: Record<string, unknown> = {}) =>
+      deliveryProofRateLimitKey({ auth_context: { actor_id: "drv_key" }, path, params })
+    expect(key("/store/food-deliveries/fd_1/proof")).toBe("actor:drv_key:delivery-proof:*")
+    expect(key("/STORE/food-deliveries/fd_2/proof")).toBe("actor:drv_key:delivery-proof:*")
+    expect(key("/x", { id: "FD_1" })).toBe("actor:drv_key:delivery-proof:fd_1")
   })
 
   it("still requires a signed-in actor", async () => {
