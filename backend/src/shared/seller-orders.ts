@@ -14,6 +14,7 @@ export interface SellerOrderItem {
   product_id: string
   title: string
   quantity: number
+  /** Medusa's major units, as stored (12.5 is $12.50). */
   unit_price: number
 }
 
@@ -49,6 +50,10 @@ export async function getSellerOrders(
       .filter((x: string | undefined): x is string => !!x)
     if (productIds.length === 0) return []
 
+    // `items.*`, never `items.quantity` (SD-52): Medusa 2.14.2 rewrites
+    // `items.quantity` to `items.item.quantity`, a property OrderLineItem does
+    // not have, so this read threw for every order and the catch below
+    // returned [] to every caller.
     const { data: orders } = await query.graph({
       entity: "order",
       fields: [
@@ -60,10 +65,7 @@ export async function getSellerOrders(
         "shipping_address.first_name",
         "shipping_address.last_name",
         "shipping_address.province",
-        "items.product_id",
-        "items.title",
-        "items.quantity",
-        "items.unit_price",
+        "items.*",
       ],
       filters: { items: { product_id: productIds } },
     })
@@ -88,9 +90,9 @@ export async function getSellerOrders(
         buyer_name: `${first} ${last}`.trim() || (o.email ?? "Customer"),
         destination_state: String(o.shipping_address?.province ?? ""),
         items,
-        seller_total_cents: items.reduce(
-          (s, it) => s + it.unit_price * it.quantity,
-          0
+        // unit_price is major units; the total is cents.
+        seller_total_cents: Math.round(
+          items.reduce((s, it) => s + it.unit_price * it.quantity, 0) * 100
         ),
       }
     })

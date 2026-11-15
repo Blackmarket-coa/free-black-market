@@ -219,6 +219,20 @@ export const PHASE0_FEATURE_FLAGS = {
   // Stripe's payment_intent.amount_capturable_updated / payment_intent.succeeded
   // events may be sent to Medusa's webhook while this is on (SD-48).
   DIGITAL_ORDER_SETTLEMENT_V1: "FF_DIGITAL_ORDER_SETTLEMENT_V1",
+  // Wellness KARMA for a SALE (SD-52): `class_sold_out` and
+  // `membership_first_signup`, awarded by `subscribers/wellness-order-placed`
+  // when an order sells a class ticket or a membership. That subscriber's
+  // order read threw on every order until SD-52, so no sale has ever awarded
+  // wellness KARMA; fixing the read restores registration and membership
+  // creation, and this flag keeps the KARMA half where it was. Wellness KARMA
+  // is PRODUCER-track XP, which the grower tier counts
+  // (`progression/grower-karma.ts`), and docs/F7_FLAT_PAYOUT_INVENTORY.md §10
+  // item 8 reserves to the operator when sales start accruing it, relative to
+  // F7's copy change. Default off. Before setting it: SD-50 (no character
+  // sheet can be created on a migrations-built database, so the XP never
+  // reaches a total), and `membership_first_signup` is awarded on every
+  // membership sale, not only a seller's first.
+  WELLNESS_SALE_KARMA_V1: "FF_WELLNESS_SALE_KARMA_V1",
 } as const
 
 export type Phase0FeatureFlag = keyof typeof PHASE0_FEATURE_FLAGS

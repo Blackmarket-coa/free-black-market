@@ -4,16 +4,41 @@ import { WELLNESS_MODULE } from "../modules/wellness"
 import type WellnessModuleService from "../modules/wellness/service"
 import { WellnessKarmaService } from "../modules/wellness/karma"
 import { WellnessAutomationService } from "../modules/wellness/automation-service"
+import type { EmitWellnessKarmaInput } from "../modules/wellness/karma"
+import { featureFlagState } from "../shared/feature-flags"
 
 const log = createLogger("subscribers/wellness-order-placed")
+
+/**
+ * Sale KARMA, behind WELLNESS_SALE_KARMA_V1 (default off; see the flag's note
+ * in shared/feature-flags.ts). Off, nothing is awarded, which is what every
+ * order got before SD-52 fixed the read below. On, a KARMA failure is logged
+ * and does not stop the registration, membership or automation around it.
+ */
+async function awardSaleKarma(
+  karma: WellnessKarmaService,
+  orderId: string,
+  input: EmitWellnessKarmaInput
+): Promise<void> {
+  if (!featureFlagState.isEnabled("WELLNESS_SALE_KARMA_V1")) return
+  try {
+    await karma.emitWellnessKarmaEvent(input)
+  } catch (error) {
+    log.error(
+      `[wellness-order-placed] ${input.event_type} KARMA failed for order ${orderId}:`,
+      error
+    )
+  }
+}
 
 /**
  * Best-effort wellness side effects when an order is placed:
  *   - A class ticket purchase → register the buyer as a class attendee (linked
  *     to the order); award `class_sold_out` KARMA if it fills the class.
  *   - A membership purchase → create/activate the member, allocate the first
- *     period's credits, award `membership_first_signup` KARMA on the seller's
- *     first member, and fire the welcome automation.
+ *     period's credits, award `membership_first_signup` KARMA, and fire the
+ *     welcome automation.
+ * Both KARMA awards wait on WELLNESS_SALE_KARMA_V1 (operator-gated, SD-52).
  *
  * Fully isolated — never throws, never blocks order processing. No-ops for
  * ordinary (non-wellness) orders.
@@ -24,9 +49,13 @@ export default async function wellnessOrderPlaced({
 }: SubscriberArgs<{ id: string }>) {
   try {
     const query = container.resolve("query")
+    // Only the product ids are read. This used to select `items.quantity` as
+    // well, which nothing here uses and which Medusa 2.14.2 rewrites to a
+    // property OrderLineItem does not have: the read threw for every order,
+    // so no class ticket or membership sale ever registered anyone (SD-52).
     const { data: [order] } = await query.graph({
       entity: "order",
-      fields: ["id", "email", "customer_id", "items.product_id", "items.quantity"],
+      fields: ["id", "email", "customer_id", "items.product_id"],
       filters: { id: data.id },
     })
     if (!order) return
@@ -54,7 +83,7 @@ export default async function wellnessOrderPlaced({
         order_id: order.id as string,
       })
       if (result.sold_out) {
-        await karma.emitWellnessKarmaEvent({
+        await awardSaleKarma(karma, order.id as string, {
           seller_id: cls.seller_id,
           event_type: "class_sold_out",
           reference_id: `classsold:${cls.id}`,
@@ -86,7 +115,7 @@ export default async function wellnessOrderPlaced({
         credits_allocated_total: Number(tier.credits_per_period ?? 0),
       })) as { id: string }
 
-      await karma.emitWellnessKarmaEvent({
+      await awardSaleKarma(karma, order.id as string, {
         seller_id: tier.seller_id,
         event_type: "membership_first_signup",
         reference_id: `member:${member.id}`,

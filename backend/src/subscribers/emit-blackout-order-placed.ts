@@ -60,6 +60,11 @@ export default async function emitBlackoutOrderPlaced({
 
   try {
     const query = container.resolve("query") as any;
+    // `items.*`, never `items.quantity` (SD-52): Medusa 2.14.2 rewrites
+    // `items.quantity` to `items.item.quantity`, a property OrderLineItem does
+    // not have, so this read threw for every order and neither event below
+    // was ever enqueued. `items.*` returns id, title, quantity, unit_price,
+    // product_id, variant_id, variant_sku and metadata.
     const { data: orders } = await query.graph({
       entity: "order",
       fields: [
@@ -69,14 +74,7 @@ export default async function emitBlackoutOrderPlaced({
         "total",
         "metadata",
         "seller_id",
-        "items.id",
-        "items.title",
-        "items.quantity",
-        "items.unit_price",
-        "items.product_id",
-        "items.variant_id",
-        "items.variant_sku",
-        "items.metadata",
+        "items.*",
       ],
       filters: { id: orderId },
     });
@@ -188,6 +186,8 @@ export default async function emitBlackoutOrderPlaced({
     }
 
     // §3 order.created — one per order, routed to the vendor's orders room.
+    // Amounts are minor units, as on purchase.succeeded above: Medusa v2
+    // prices and totals are major units (12.5 is $12.50).
     await emitBlackoutEvent(
       container,
       "order.created",
@@ -199,9 +199,9 @@ export default async function emitBlackoutOrderPlaced({
           sku: it.variant_sku ?? null,
           title: it.title ?? "",
           qty: Number(it.quantity ?? 0),
-          priceCents: Math.round(Number(it.unit_price ?? 0)),
+          priceCents: Math.round(Number(it.unit_price ?? 0) * 100),
         })),
-        totalCents: Math.round(Number(order.total ?? 0)),
+        totalCents: Math.round(Number(order.total ?? 0) * 100),
         currency,
         ...(vendorMxid ? { vendorMxid } : {}),
       },

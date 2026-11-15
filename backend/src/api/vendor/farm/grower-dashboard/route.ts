@@ -77,9 +77,12 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       .filter((x: string | undefined): x is string => !!x)
 
     if (productIds.length > 0) {
+      // `items.*`, never `items.quantity` (SD-52): Medusa 2.14.2 rewrites
+      // `items.quantity` to `items.item.quantity`, a property OrderLineItem
+      // does not have, so this read threw for every order with a line item.
       const { data: orders } = await query.graph({
         entity: "order",
-        fields: ["id", "items.product_id", "items.quantity", "items.unit_price"],
+        fields: ["id", "items.*"],
         filters: { items: { product_id: productIds } },
       })
       const perProduct = new Map<string, { units: number; revenue: number }>()
@@ -87,7 +90,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         for (const it of order.items ?? []) {
           if (!it.product_id || !productIds.includes(it.product_id)) continue
           const qty = Number(it.quantity ?? 0)
-          const rev = Number(it.unit_price ?? 0) * qty
+          // unit_price is Medusa's major units; revenue here is cents.
+          const rev = Math.round(Number(it.unit_price ?? 0) * qty * 100)
           unitsSold += qty
           grossRevenueCents += rev
           const agg = perProduct.get(it.product_id) ?? { units: 0, revenue: 0 }

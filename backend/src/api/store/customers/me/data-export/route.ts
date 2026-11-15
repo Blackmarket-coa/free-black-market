@@ -60,6 +60,10 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 
   let orders: unknown[] = []
   try {
+    // `items.*`, never `items.quantity` (SD-52): Medusa 2.14.2 rewrites
+    // `items.quantity` to `items.item.quantity`, a property OrderLineItem does
+    // not have. The read threw for any customer with an order, and the catch
+    // below handed them an export with no order history in it.
     const { data } = await query.graph({
       entity: "order",
       fields: [
@@ -71,13 +75,24 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         "email",
         "total",
         "item_total",
-        "items.title",
-        "items.quantity",
-        "items.unit_price",
+        "items.*",
       ],
       filters: { customer_id: customerId } as any,
     })
-    orders = data ?? []
+    // Lines keep the three fields this export has always described; `items.*`
+    // also carries internal ids and a nested `detail` row.
+    orders = (data ?? []).map((order: Record<string, unknown>) =>
+      Array.isArray(order.items)
+        ? {
+            ...order,
+            items: (order.items as Array<Record<string, unknown>>).map((it) => ({
+              title: it.title,
+              quantity: it.quantity,
+              unit_price: it.unit_price,
+            })),
+          }
+        : order
+    )
   } catch (err) {
     log.warn(`data-export: order fetch failed for ${customerId}: ${(err as Error).message}`)
   }

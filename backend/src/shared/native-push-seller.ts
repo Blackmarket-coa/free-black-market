@@ -50,6 +50,10 @@ export async function loadOrderForSellerPush(
     const query = container.resolve("query") as {
       graph: (args: unknown) => Promise<{ data: OrderForSellerPush[] }>
     }
+    // `items.*`, never `items.quantity` (SD-52): Medusa 2.14.2 rewrites
+    // `items.quantity` to `items.item.quantity`, a property OrderLineItem does
+    // not have, so this read threw for every order with a line item and no
+    // seller was ever pushed.
     const { data } = await query.graph({
       entity: "order",
       fields: [
@@ -57,7 +61,7 @@ export async function loadOrderForSellerPush(
         "display_id",
         "total",
         "currency_code",
-        "items.quantity",
+        "items.*",
         "seller.id",
         "seller.name",
       ],
