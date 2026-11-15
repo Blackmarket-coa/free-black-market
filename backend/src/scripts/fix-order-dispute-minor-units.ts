@@ -3,6 +3,8 @@ import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 import { ORDER_DISPUTE_MODULE } from "../modules/order-dispute"
 import type OrderDisputeService from "../modules/order-dispute/service"
 import {
+  isDryRunArg,
+  parseCutoffArg,
   planMinorUnitCorrection,
   type StoredDisputeAmounts,
 } from "../modules/order-dispute/minor-unit-correction"
@@ -11,8 +13,16 @@ import { readOrderForDispute } from "../shared/order-dispute-intake"
 /**
  * Put stored dispute amounts into minor units.
  *
- *     npx medusa exec ./src/scripts/fix-order-dispute-minor-units.ts --dry-run
- *     npx medusa exec ./src/scripts/fix-order-dispute-minor-units.ts
+ *     npx medusa exec ./src/scripts/fix-order-dispute-minor-units.ts dry-run before=<ISO time>
+ *     npx medusa exec ./src/scripts/fix-order-dispute-minor-units.ts before=<ISO time>
+ *
+ * `before=` is required: the time the minor-unit intake fix went live, with a
+ * zone (`2026-11-20T15:00:00Z`). Only rows created before it are looked at,
+ * and the script refuses to start without one (`parseCutoffArg`). Bare
+ * words, not `--dry-run`/`--before=`: `medusa exec` refuses unknown `--`
+ * options, and drops everything after a `--` separator, so
+ * `… -- --dry-run --before=…` would reach the script as no arguments at
+ * all. Without the cutoff requirement that run would have been a live one.
  *
  * Run once, right after the intake fix deploys. The intake stored Medusa's
  * major-unit item totals, floored, as minor units: a $25.99 claim was 25, and
@@ -25,6 +35,12 @@ import { readOrderForDispute } from "../shared/order-dispute-intake"
  * skip the row) and on an `amount_corrected` event, actor `system`, in the
  * append-only log the case file shows. Rows it cannot decide are listed for
  * a person to look at, and left exactly as they are.
+ *
+ * Rows written since the fix are protected twice over, because their amounts
+ * can look exactly like an old row's (a buyer's typed claim of 25 on a
+ * $25.99 order): the query takes only rows created before the cutoff, and
+ * the planner skips any row marked `metadata.amount_unit = "minor"`, which
+ * `OrderDisputeService.open` now writes on every row.
  */
 
 const ACTOR_ID = "script:fix-order-dispute-minor-units"
@@ -38,27 +54,30 @@ type Row = StoredDisputeAmounts & {
 
 export type MinorUnitFixSummary = {
   corrected: string[]
-  skipped: number
+  skipped: { id: string; reason: string }[]
   review: { id: string; reason: string }[]
 }
 
 export async function fixOrderDisputeMinorUnits(
   container: MedusaContainer,
-  opts: { dryRun?: boolean } = {}
+  opts: { before: Date; dryRun?: boolean }
 ): Promise<MinorUnitFixSummary> {
+  if (!(opts?.before instanceof Date) || Number.isNaN(opts.before.getTime())) {
+    throw new Error("fixOrderDisputeMinorUnits needs a cutoff: the time the minor-unit intake fix went live")
+  }
   const disputes = container.resolve<OrderDisputeService>(ORDER_DISPUTE_MODULE)
-  const summary: MinorUnitFixSummary = { corrected: [], skipped: 0, review: [] }
+  const summary: MinorUnitFixSummary = { corrected: [], skipped: [], review: [] }
 
   for (let skip = 0; ; skip += PAGE) {
     const rows = (await disputes.listOrderDisputes(
-      {},
+      { created_at: { $lt: opts.before } },
       { order: { created_at: "ASC" }, skip, take: PAGE }
     )) as unknown as Row[]
     if (!rows.length) break
 
     for (const row of rows) {
       if (row.metadata && "amount_units_corrected" in row.metadata) {
-        summary.skipped += 1
+        summary.skipped.push({ id: row.id, reason: "already_corrected" })
         continue
       }
 
@@ -68,9 +87,9 @@ export async function fixOrderDisputeMinorUnits(
         continue
       }
 
-      const plan = planMinorUnitCorrection(row, order.lines)
+      const plan = planMinorUnitCorrection(row, order.lines, { before: opts.before })
       if (plan.action === "skip") {
-        summary.skipped += 1
+        summary.skipped.push({ id: row.id, reason: plan.reason })
         continue
       }
       if (plan.action === "review") {
@@ -118,12 +137,18 @@ export async function fixOrderDisputeMinorUnits(
 
 export default async function run({ container, args }: ExecArgs) {
   const logger = container.resolve(ContainerRegistrationKeys.LOGGER)
-  const dryRun = (args ?? []).includes("--dry-run")
-  const summary = await fixOrderDisputeMinorUnits(container, { dryRun })
+  const cutoff = parseCutoffArg(args)
+  if (!cutoff.ok) {
+    // Thrown, so `medusa exec` exits non-zero: nothing was looked at.
+    logger.error(`[fix-order-dispute-minor-units] refused: ${cutoff.message}`)
+    throw new Error(`fix-order-dispute-minor-units refused: ${cutoff.message}`)
+  }
+  const dryRun = isDryRunArg(args)
+  const summary = await fixOrderDisputeMinorUnits(container, { before: cutoff.before, dryRun })
 
   logger.info(
-    `[fix-order-dispute-minor-units]${dryRun ? " (dry run)" : ""} ` +
-      `corrected=${summary.corrected.length} skipped=${summary.skipped} review=${summary.review.length}`
+    `[fix-order-dispute-minor-units]${dryRun ? " (dry run)" : ""} rows created before ${cutoff.before.toISOString()}: ` +
+      `corrected=${summary.corrected.length} skipped=${summary.skipped.length} review=${summary.review.length}`
   )
   for (const id of summary.corrected) {
     logger.info(`[fix-order-dispute-minor-units] ${dryRun ? "would correct" : "corrected"} ${id}`)

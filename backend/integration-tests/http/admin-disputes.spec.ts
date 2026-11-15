@@ -89,7 +89,7 @@ medusaIntegrationTestRunner({
         .resolve(SELLER_MODULE)
         .createSellers({ name: `Grower ${uid()}`, handle: `grower-${uid()}` })
       const seller = Array.isArray(created) ? created[0] : created
-      const [product] = await c.resolve(Modules.PRODUCT).createProducts([{ title: "Tomatoes", status: "published" }])
+      const [product] = await c.resolve(Modules.PRODUCT).createProducts([{ title: "Tomatoes", handle: `tomatoes-${uid()}`, status: "published" }])
       const link = c.resolve(ContainerRegistrationKeys.LINK)
       if (opts.productLink !== false) {
         await link.create({ [SELLER_MODULE]: { seller_id: seller.id }, [Modules.PRODUCT]: { product_id: product.id } })
@@ -110,6 +110,19 @@ medusaIntegrationTestRunner({
       ])
       await link.create({ [SELLER_MODULE]: { seller_id: seller.id }, [Modules.ORDER]: { order_id: order.id } })
       return { order, sellerId: seller.id as string, customerId }
+    }
+
+    /**
+     * Make a row look like one the old intake wrote `hoursAgo` hours ago:
+     * no `amount_unit` mark (that intake wrote none) and an older
+     * `created_at`. Raw SQL: no service path writes a row without the mark.
+     */
+    async function markAsOldIntakeRow(id: string, hoursAgo: number) {
+      const pg = container().resolve(ContainerRegistrationKeys.PG_CONNECTION)
+      await pg.raw(
+        `UPDATE order_dispute SET metadata = metadata - 'amount_unit', created_at = now() - (? * interval '1 hour') WHERE id = ?`,
+        [hoursAgo, id]
+      )
     }
 
     it("is admin-only", async () => {
@@ -262,7 +275,8 @@ medusaIntegrationTestRunner({
         currency_code: "usd",
         claim_amount: 2598,
         award_amount: 0,
-        metadata: { contacted_seller: true, intake_source: "store/order-claims" },
+        // The intake's metadata, and the mark `open()` adds in the same insert.
+        metadata: { contacted_seller: true, intake_source: "store/order-claims", amount_unit: "minor" },
       })
 
       const decided = await call(
@@ -312,13 +326,17 @@ medusaIntegrationTestRunner({
         status: DisputeStatus.RESOLVED_REFUND,
         note: "Refund in full.",
       })
+      // An old row: written yesterday, before the fix (so before the cutoff),
+      // and without the `amount_unit` mark `open()` now adds to every row.
+      await markAsOldIntakeRow(legacy.id, 24)
+      const before = new Date(Date.now() - 60 * 60 * 1000)
       const read = async () => (await service().listOrderDisputes({ id: legacy.id }))[0] as any
 
-      const dry = await fixOrderDisputeMinorUnits(container(), { dryRun: true })
+      const dry = await fixOrderDisputeMinorUnits(container(), { before, dryRun: true })
       expect(dry.corrected).toContain(legacy.id)
       expect(await read()).toMatchObject({ claim_amount: 25, award_amount: 25 })
 
-      const applied = await fixOrderDisputeMinorUnits(container())
+      const applied = await fixOrderDisputeMinorUnits(container(), { before })
       expect(applied.corrected).toContain(legacy.id)
       const fixed = await read()
       expect(fixed).toMatchObject({ claim_amount: 2599, award_amount: 2599, status: "resolved_refund" })
@@ -333,7 +351,7 @@ medusaIntegrationTestRunner({
       expect(events.map((e) => e.kind)).toEqual(["opened", "resolved", "amount_corrected"])
       expect(events[2]).toMatchObject({ actor_type: "system", actor_id: "script:fix-order-dispute-minor-units" })
 
-      const again = await fixOrderDisputeMinorUnits(container())
+      const again = await fixOrderDisputeMinorUnits(container(), { before })
       expect(again.corrected).not.toContain(legacy.id)
       expect(await read()).toMatchObject({ claim_amount: 2599, award_amount: 2599 })
     })
@@ -373,6 +391,70 @@ medusaIntegrationTestRunner({
       const file = await call(api.get(`/admin/disputes/${dispute.id}`, headers))
       expect(file.data.dispute).toMatchObject({ status: "resolved_release", award_amount: 0, resolution_note: "Signed for." })
       expect(file.data.events.map((e: { kind: string }) => e.kind)).toEqual(["opened", "resolved"])
+    })
+
+    /**
+     * The review's case: after the fix, a buyer can type a claim of 25 on a
+     * $25.99 order (25 cents) through POST /store/orders/:id/dispute. Its
+     * amounts are exactly what the old intake stored for that order, so a
+     * script run on the planner's amount rules alone would make it $25.99 and
+     * its award with it. The cutoff here is after the row was written, so the
+     * `amount_unit` mark is the only thing between it and the multiplier.
+     */
+    it("the corrective script leaves a post-fix claim alone even when it equals the old floored figure", async () => {
+      const { user } = await asAdmin()
+      const { order, customerId } = await sellerOrder([25.99])
+      const filed = await openDisputeForOrder(container(), {
+        customerId,
+        orderId: order.id,
+        reason: DisputeReason.INCOMPLETE,
+        description: "One small item of several was missing.",
+        claimCents: 25,
+        metadata: { intake_source: "store/orders/[id]/dispute" },
+      })
+      expect(filed).toMatchObject({ ok: true, dispute: { claim_amount: 25 } })
+      if (!filed.ok) return
+      await service().resolve({
+        disputeId: filed.dispute.id,
+        adminId: user.id,
+        status: DisputeStatus.RESOLVED_REFUND,
+        note: "Refund the missing item.",
+      })
+      const before = new Date()
+
+      const summary = await fixOrderDisputeMinorUnits(container(), { before })
+
+      expect(summary.corrected).not.toContain(filed.dispute.id)
+      expect(summary.skipped).toContainEqual({ id: filed.dispute.id, reason: "marked_minor_units" })
+      const [row] = (await service().listOrderDisputes({ id: filed.dispute.id })) as any[]
+      expect(row).toMatchObject({ claim_amount: 25, award_amount: 25, metadata: { amount_unit: "minor" } })
+      expect(row.metadata.amount_units_corrected).toBeUndefined()
+      const events = (await service().listOrderDisputeEvents({ dispute_id: filed.dispute.id })) as any[]
+      expect(events.map((e) => e.kind).sort()).toEqual(["opened", "resolved"])
+    })
+
+    it("the corrective script does not even read a row created after its cutoff", async () => {
+      const { order, sellerId, customerId } = await sellerOrder([25.99])
+      const row = await service().open({
+        orderId: order.id,
+        sellerId,
+        customerId,
+        orderPlacedAt: new Date(),
+        orderTotalCents: 25,
+        currencyCode: "usd",
+        reason: DisputeReason.NOT_RECEIVED,
+        description: "Never arrived.",
+      })
+      // Unmarked, like an old row, but written now: after the cutoff.
+      await markAsOldIntakeRow(row.id, 0)
+      const before = new Date(Date.now() - 60 * 60 * 1000)
+
+      const summary = await fixOrderDisputeMinorUnits(container(), { before })
+
+      const seen = [...summary.corrected, ...summary.skipped.map((r) => r.id), ...summary.review.map((r) => r.id)]
+      expect(seen).not.toContain(row.id)
+      const [after] = (await service().listOrderDisputes({ id: row.id })) as any[]
+      expect(after).toMatchObject({ claim_amount: 25, award_amount: 0 })
     })
   },
 })

@@ -20,6 +20,19 @@ const getCustomerId = (req: MedusaRequest) => {
   return auth?.actor_type === "customer" ? auth.actor_id : undefined
 }
 
+/**
+ * `claim_amount` as sent: absent (or null) is "the whole order"; otherwise a
+ * non-negative safe integer of minor units. A string, a fraction, a negative
+ * or an unsafe integer is refused, never coerced.
+ */
+export function parseClaimAmount(
+  raw: unknown
+): { ok: true; value: number | null } | { ok: false } {
+  if (raw === undefined || raw === null) return { ok: true, value: null }
+  if (typeof raw !== "number" || !Number.isSafeInteger(raw) || raw < 0) return { ok: false }
+  return { ok: true, value: raw }
+}
+
 /** GET /store/orders/:id/dispute — every dispute on this order, any vendor. */
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
   const customerId = getCustomerId(req)
@@ -53,6 +66,14 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
  * orders settle through Stripe rather than escrow, so the refund (or the
  * escrow transition, where an escrow exists) follows the admin's decision
  * through the modules that own those things.
+ *
+ * Body: `description` (required), `reason`, `seller_id` (required on a
+ * multi-vendor order), and optionally `claim_amount`: an integer in the
+ * order currency's MINOR unit (2599 is $25.99), at most that seller's goods
+ * on the order; omitted or 0 claims all of them. Anything that is not a
+ * whole number of minor units is refused with 400 rather than floored:
+ * flooring 25.99 to 25 is how a $25.99 claim became $0.25 before, and a
+ * figure that has to be guessed at is not stored.
  */
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
   const customerId = getCustomerId(req)
@@ -70,6 +91,15 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       .json({ message: "Tell us what went wrong — a description is required." })
   }
 
+  const claimAmount = parseClaimAmount(body.claim_amount)
+  if (!claimAmount.ok) {
+    return res.status(400).json({
+      message:
+        "claim_amount must be a whole number of the currency's minor unit (2599 for $25.99), or left out to claim the whole order.",
+      type: "invalid_claim_amount",
+    })
+  }
+
   const rawReason =
     typeof body.reason === "string" ? body.reason.trim().toLowerCase() : ""
   const reason = Object.values(DisputeReason).includes(rawReason as DisputeReason)
@@ -83,8 +113,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       sellerId: typeof body.seller_id === "string" ? body.seller_id : null,
       reason,
       description,
-      claimCents:
-        typeof body.claim_amount === "number" ? body.claim_amount : null,
+      claimCents: claimAmount.value,
       metadata: { intake_source: "store/orders/[id]/dispute" },
     })
 

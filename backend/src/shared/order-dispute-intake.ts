@@ -320,14 +320,12 @@ export async function openDisputeForOrder(
       claimCents: args.claimCents ?? null,
       escrowAgreementId: await findOrderEscrowId(container, order.id),
       filingWindowDays: windowDays,
+      // In the same insert as the row, rather than a second write after it:
+      // a row that existed for a moment without its metadata had no
+      // `amount_unit` mark (see `OrderDisputeService.open`), and a backfill
+      // re-run keys on `legacy_request_id` in here.
+      metadata: args.metadata ?? null,
     })
-
-    if (args.metadata && Object.keys(args.metadata).length) {
-      await service.updateOrderDisputes({
-        id: dispute.id,
-        metadata: args.metadata,
-      })
-    }
 
     return { ok: true, dispute }
   } catch (err) {

@@ -1,6 +1,8 @@
 import { MedusaService } from "@medusajs/framework/utils"
 import { OrderDispute, OrderDisputeEvent } from "./models"
 import {
+  AMOUNT_UNIT_METADATA_KEY,
+  AMOUNT_UNIT_MINOR,
   DEFAULT_FILING_WINDOW_DAYS,
   DisputeReason,
   DisputeStateError,
@@ -31,6 +33,7 @@ export type DisputeRow = {
   resolved_at: Date | null
   resolved_by: string | null
   escrow_agreement_id: string | null
+  metadata?: Record<string, unknown> | null
 }
 
 /**
@@ -77,6 +80,11 @@ class OrderDisputeService extends MedusaService({
    * opposite directions by two admins. A different vendor on the same order is
    * a different argument and is allowed. The partial unique index on
    * `(order_id, seller_id)` is the backstop; this is the readable error.
+   *
+   * `orderTotalCents` and `claimCents` are minor units. The row is stamped
+   * `metadata.amount_unit = "minor"` (see `AMOUNT_UNIT_METADATA_KEY`), so a
+   * row written here can never be mistaken for one the old major-unit intake
+   * wrote, even when the amounts are the same.
    */
   async open(args: {
     orderId: string
@@ -90,6 +98,8 @@ class OrderDisputeService extends MedusaService({
     claimCents?: number | null
     escrowAgreementId?: string | null
     filingWindowDays?: number
+    /** Stored on the row as written, with `amount_unit: "minor"` added. */
+    metadata?: Record<string, unknown> | null
     now?: Date
   }): Promise<DisputeRow> {
     const now = args.now ?? new Date()
@@ -136,6 +146,14 @@ class OrderDisputeService extends MedusaService({
         claim_amount: claim,
         award_amount: 0,
         escrow_agreement_id: args.escrowAgreementId ?? null,
+        // Written in the same insert as the amounts, after the caller's keys
+        // so no caller can drop or change it: every row from here on says
+        // its amounts are minor units, which is what lets
+        // `scripts/fix-order-dispute-minor-units.ts` leave it alone.
+        metadata: {
+          ...(args.metadata ?? {}),
+          [AMOUNT_UNIT_METADATA_KEY]: AMOUNT_UNIT_MINOR,
+        },
       },
     ])
 

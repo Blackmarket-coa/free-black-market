@@ -265,6 +265,26 @@ export function toMinorUnits(amount: unknown, currencyCode: string | null | unde
   return Math.round(Number(scaled.toFixed(6)))
 }
 
+/**
+ * The mark every dispute row written since the minor-unit fix carries:
+ * `metadata.amount_unit = "minor"`, set by `OrderDisputeService.open`.
+ *
+ * A row the old intake wrote (claim = floor of the major-unit total) and a
+ * row written since, whose buyer typed a claim equal to that same floored
+ * figure, have identical amounts. Only this mark tells them apart, so the
+ * corrective script (`minor-unit-correction.ts`) never touches a marked row.
+ */
+export const AMOUNT_UNIT_METADATA_KEY = "amount_unit"
+export const AMOUNT_UNIT_MINOR = "minor"
+
+export function isMarkedMinorUnits(metadata: unknown): boolean {
+  return (
+    !!metadata &&
+    typeof metadata === "object" &&
+    (metadata as Record<string, unknown>)[AMOUNT_UNIT_METADATA_KEY] === AMOUNT_UNIT_MINOR
+  )
+}
+
 export type OrderLineForDispute = {
   seller_id?: string | null
   /** Minor units (see `toMinorUnits`). */

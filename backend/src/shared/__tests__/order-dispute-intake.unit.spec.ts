@@ -177,4 +177,30 @@ describe("openDisputeForOrder", () => {
     })
     expect(hawala.listEscrowAgreements).toHaveBeenCalledWith({ subject_type: "order", subject_id: "order_1" })
   })
+
+  it("hands the claim's metadata to open(), written with the row, not in a second write after it", async () => {
+    // `open()` stamps `amount_unit: "minor"` into this metadata in the same
+    // insert (checked on a real database in admin-disputes.spec.ts); a second
+    // write left a moment, or on failure for good, where the row had no mark.
+    const open = jest.fn().mockResolvedValue({ id: "odsp_1" })
+    const updateOrderDisputes = jest.fn()
+    const disputes = { liveForOrder: jest.fn().mockResolvedValue(null), open, updateOrderDisputes }
+    const { container } = containerWith(order({ items: [line(25.99)] }), {
+      [ORDER_DISPUTE_MODULE]: disputes,
+      [HAWALA_LEDGER_MODULE]: { listEscrowAgreements: jest.fn().mockResolvedValue([]) },
+    })
+
+    const metadata = { intake_source: "store/order-claims", contacted_seller: true, evidence_urls: [] }
+    await openDisputeForOrder(container, {
+      customerId: "cus_1",
+      orderId: "order_1",
+      reason: DisputeReason.NOT_RECEIVED,
+      description: "Never arrived.",
+      claimCents: 25,
+      metadata,
+    })
+
+    expect(open.mock.calls[0][0]).toMatchObject({ metadata, claimCents: 25, orderTotalCents: 2599 })
+    expect(updateOrderDisputes).not.toHaveBeenCalled()
+  })
 })
