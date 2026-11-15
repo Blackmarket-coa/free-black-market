@@ -14,14 +14,50 @@ import {
   Text,
   toast,
 } from "@medusajs/ui"
-import { useSalesReport } from "../../hooks/api/sales-report"
+import {
+  type SalesReportCurrencyTotal,
+  type SalesReportLineItem,
+  useSalesReport,
+} from "../../hooks/api/sales-report"
 import { backendUrl, getAuthToken } from "../../lib/client"
 
-const formatCurrency = (amount: number, currency = "USD") => {
-  return new Intl.NumberFormat("en-US", {
+/**
+ * The report's amounts are major units (12.5 is $12.50), as Medusa's order
+ * module stores them and as the panel's other money screens (getLocaleAmount)
+ * format them. This used to divide by 100, which was invisible while the
+ * endpoint answered 500 and showed every amount at 1/100 once it worked
+ * (SD-74 follow-up). en-US like the rest of this page.
+ */
+const formatCurrency = (amount: number, currencyCode: string) =>
+  new Intl.NumberFormat("en-US", {
     style: "currency",
-    currency,
-  }).format(amount / 100)
+    currency: currencyCode,
+  }).format(amount)
+
+/**
+ * A money card's value: one line per currency in the report, each in its own
+ * currency. Summary cards were formatted as USD whatever the orders were in,
+ * and the backend added amounts across currencies.
+ */
+const MoneyByCurrency = ({
+  totals,
+  amount,
+}: {
+  totals: SalesReportCurrencyTotal[]
+  amount: (total: SalesReportCurrencyTotal) => number
+}) => {
+  if (totals.length === 0) {
+    return <>—</>
+  }
+  return (
+    <>
+      {totals.map((total) => (
+        <span key={total.currency_code} className="block">
+          {formatCurrency(amount(total), total.currency_code)}
+        </span>
+      ))}
+    </>
+  )
 }
 
 const formatDate = (dateStr: string) => {
@@ -184,8 +220,11 @@ export const SalesReportPage = () => {
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
           <div className="bg-ui-bg-base border border-ui-border-base rounded-lg p-4">
             <Text className="text-ui-fg-muted text-sm">Total Revenue</Text>
-            <Text className="text-2xl font-bold">
-              {formatCurrency(summary.total_revenue)}
+            <Text as="div" className="text-2xl font-bold">
+              <MoneyByCurrency
+                totals={summary.by_currency ?? []}
+                amount={(total) => total.total_revenue}
+              />
             </Text>
           </div>
           <div className="bg-ui-bg-base border border-ui-border-base rounded-lg p-4">
@@ -200,8 +239,11 @@ export const SalesReportPage = () => {
           </div>
           <div className="bg-ui-bg-base border border-ui-border-base rounded-lg p-4">
             <Text className="text-ui-fg-muted text-sm">Avg Order Value</Text>
-            <Text className="text-2xl font-bold">
-              {formatCurrency(summary.avg_order_value)}
+            <Text as="div" className="text-2xl font-bold">
+              <MoneyByCurrency
+                totals={summary.by_currency ?? []}
+                amount={(total) => total.avg_order_value}
+              />
             </Text>
           </div>
         </div>
@@ -251,7 +293,7 @@ export const SalesReportPage = () => {
                 </tr>
               </thead>
               <tbody>
-                {lineItems.map((item: any) => (
+                {lineItems.map((item: SalesReportLineItem) => (
                   <tr
                     key={item.line_item_id}
                     className="border-b border-ui-border-base hover:bg-ui-bg-subtle-hover"

@@ -4,7 +4,7 @@ import { fetchQuery } from "../../lib/client"
 export type SalesReportLineItem = {
   line_item_id: string
   order_id: string
-  display_id: string | null
+  display_id: number | null
   order_date: string
   product_title: string
   variant_title: string | null
@@ -16,11 +16,26 @@ export type SalesReportLineItem = {
   product_id: string
 }
 
-export type SalesReportSummary = {
+/**
+ * One currency's money in the report. Amounts are major units (12.5 is
+ * $12.50), as Medusa's order module stores them.
+ */
+export type SalesReportCurrencyTotal = {
+  currency_code: string
   total_revenue: number
   total_orders: number
-  total_units_sold: number
   avg_order_value: number
+}
+
+export type SalesReportSummary = {
+  /** Null when the window holds more than one currency: see by_currency. */
+  total_revenue: number | null
+  total_orders: number
+  total_units_sold: number
+  /** Null when the window holds more than one currency: see by_currency. */
+  avg_order_value: number | null
+  /** Money per currency, sorted by code; empty when there are no sales. */
+  by_currency: SalesReportCurrencyTotal[]
 }
 
 export type SalesReportResponse = {

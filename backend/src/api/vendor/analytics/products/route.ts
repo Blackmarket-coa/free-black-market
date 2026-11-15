@@ -8,6 +8,7 @@ import {
   productByDayQuery,
   productFunnelQuery,
   productOrdersQuery,
+  productOrdersTotalQuery,
   rangeToWindow,
   type SqlQuery,
 } from "../../../../modules/creator-attribution/analytics-queries"
@@ -54,22 +55,32 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     }
 
     const pg = req.scope.resolve(ContainerRegistrationKeys.PG_CONNECTION)
-    const [events, orders, byDay] = await Promise.all([
+    const [events, orders, orderTotals, byDay] = await Promise.all([
       pg.raw(...toRawArgs(productFunnelQuery({ productIds, window }))),
       pg.raw(...toRawArgs(productOrdersQuery({ productIds, window }))),
+      pg.raw(...toRawArgs(productOrdersTotalQuery({ productIds, window }))),
       pg.raw(...toRawArgs(productByDayQuery({ productIds, window }))),
     ])
 
     const byProduct = mergeProductFunnel(events.rows ?? [], orders.rows ?? [])
+    // Views and adds to cart are one event per product, so they add up across
+    // products. Orders do not: an order holding two of the seller's products
+    // is one order, and adding the per-product counts made it two (and
+    // doubled the conversion). The funnel's orders and units come from their
+    // own query over all the seller's products.
+    const placed = (orderTotals.rows?.[0] ?? {}) as Record<string, unknown>
     const totals = byProduct.reduce(
       (acc, row) => {
         acc.views += row.views
         acc.add_to_carts += row.add_to_carts
-        acc.orders += row.orders
-        acc.units += row.units
         return acc
       },
-      { views: 0, add_to_carts: 0, orders: 0, units: 0 }
+      {
+        views: 0,
+        add_to_carts: 0,
+        orders: Number(placed.orders) || 0,
+        units: Number(placed.units) || 0,
+      }
     )
 
     return res.status(200).json({

@@ -9,6 +9,7 @@ import {
   productByDayQuery,
   productFunnelQuery,
   productOrdersQuery,
+  productOrdersTotalQuery,
   rangeToWindow,
 } from "../analytics-queries"
 
@@ -42,7 +43,7 @@ describe("product queries", () => {
   const ids = ["prod_1", "prod_2"]
 
   it("bind under knex's raw: dates, then the product ids as one ANY(?) list", () => {
-    for (const build of [productFunnelQuery, productByDayQuery, productOrdersQuery]) {
+    for (const build of [productFunnelQuery, productByDayQuery, productOrdersQuery, productOrdersTotalQuery]) {
       const q = build({ productIds: ids, window: WINDOW })
       expect(q.bindings).toEqual([WINDOW.from, WINDOW.to, ids])
       const native = bind(q)
@@ -61,6 +62,17 @@ describe("product queries", () => {
     expect(q.sql).not.toMatch(/oli\.(quantity|order_id|total)\b/)
     expect(q.sql).toContain("o.canceled_at IS NULL")
     expect(q.sql).toContain("o.is_draft_order = false")
+  })
+
+  it("the funnel total counts distinct orders across all the seller's products, not per product", () => {
+    // Adding up the per-product COUNT(DISTINCT o.id) counted an order once per
+    // product in it. The behaviour is pinned on Postgres by
+    // integration-tests/http/vendor-sales-analytics.spec.ts; this pins the shape.
+    const q = productOrdersTotalQuery({ productIds: ids, window: WINDOW })
+    expect(q.sql).toContain("COUNT(DISTINCT o.id)")
+    expect(q.sql).not.toMatch(/GROUP BY/i)
+    expect(q.sql).toContain("oi.version = o.version")
+    expect(q.sql).toContain("o.canceled_at IS NULL")
   })
 })
 
