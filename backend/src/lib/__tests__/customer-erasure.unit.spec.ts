@@ -94,6 +94,21 @@ describe("eraseCustomerAcrossRegistry", () => {
     expect(order).not.toMatch(/"customer_id" = NULL/)
   })
 
+  it("leaves a collective backing as it is: retained with its backer_id, nothing on it to clear", async () => {
+    // P1-13. The campaign's totals are summed from the row and a failed
+    // campaign's refund is paid to the wallet backer_id names, so the erasure
+    // reports it and issues no statement against it.
+    const raw = jest.fn(async (_sql: string, _bindings?: unknown[]) => ({ rowCount: 1 }))
+    const results = await eraseCustomerAcrossRegistry(makeContainer({ raw }) as never, "cus_1")
+
+    expect(results.find((r) => r.entity === "collective_backing")).toEqual({
+      entity: "collective_backing",
+      action: "retain",
+      rows: 0,
+    })
+    expect(raw.mock.calls.some((c) => String(c[0]).includes('"collective_backing"'))).toBe(false)
+  })
+
   it("keeps going after one entity fails, and reports which", async () => {
     // A deletion that half-runs and says nothing is how this became a problem.
     const raw = jest.fn(async (sql: string, _bindings?: unknown[]) => {
@@ -169,6 +184,39 @@ describe("readCustomerDataAcrossRegistry", () => {
     await readCustomerDataAcrossRegistry(makeContainer({ graph }) as never, "cus_1")
     const notification = graph.mock.calls.map((c) => c[0]).find((q) => q.entity === "notification")
     expect(notification?.filters).toEqual({ receiver_id: "cus_1" })
+  })
+
+  it("reads a collective backing by backer_id, in SQL, because Query cannot address it", async () => {
+    // Until the P1-13 follow-up a person's backings were missing from their
+    // export entirely: the table has no customer_id. Query calls a
+    // `listCollectiveBackings` the module does not have, so this one entry
+    // reads the table directly.
+    const graph = jest.fn(async (_q: { entity: string }) => ({ data: [] }))
+    const raw = jest.fn(async (sql: string, bindings?: unknown[]) =>
+      sql.includes('"collective_backing"') && bindings?.[0] === "cus_1"
+        ? { rows: [{ id: "cbck_1", backer_id: "cus_1" }] }
+        : { rows: [] }
+    )
+    const out = await readCustomerDataAcrossRegistry(makeContainer({ graph, raw }) as never, "cus_1")
+
+    expect(raw.mock.calls).toEqual([
+      ['SELECT * FROM "collective_backing" WHERE "backer_id" = ?', ["cus_1"]],
+    ])
+    expect(graph.mock.calls.some(([q]) => q.entity === "collective_backing")).toBe(false)
+    expect(out.collective_backing).toEqual([{ id: "cbck_1", backer_id: "cus_1" }])
+  })
+
+  it("reports a SQL-read entity in place when there is no database", async () => {
+    const graph = jest.fn(async (_q: { entity: string }) => ({ data: [] }))
+    const container = makeContainer({ graph })
+    const withoutPg = {
+      resolve: (key: string) => {
+        if (key === ContainerRegistrationKeys.PG_CONNECTION) throw new Error("not registered")
+        return container.resolve(key)
+      },
+    }
+    const out = await readCustomerDataAcrossRegistry(withoutPg as never, "cus_1")
+    expect(JSON.stringify(out.collective_backing)).toMatch(/could not be read: no database connection/)
   })
 
   it("reports an unreadable entity in place rather than omitting it", async () => {

@@ -1,0 +1,222 @@
+import { medusaIntegrationTestRunner } from "@medusajs/test-utils"
+import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
+import { createPublishableKeyToken } from "./_publishable-key"
+import { safe } from "./helpers/seller-auth"
+import {
+  CUSTOMER_DATA_REGISTRY,
+  customerColumnOf,
+} from "../../src/lib/customer-data-registry"
+import { readCustomerDataAcrossRegistry } from "../../src/lib/customer-erasure"
+
+jest.setTimeout(240 * 1000)
+
+/**
+ * The customer-data registry (D11-1) against a migrated database and the real
+ * `/store/customers/me` export and deletion endpoints.
+ *
+ * `collective_backing` names its customer `backer_id`, so until the P1-13
+ * follow-up it was in neither the export nor the deletion, and the drift test
+ * meant to catch exactly that looked only for `customer_id`. The unit specs
+ * show the registry now names the column; only a real database shows that the
+ * export finds the person's backing by it (by SQL: Query cannot address this
+ * module's tables, which this spec also measures) and that the deletion
+ * leaves the backing whole for the campaign's totals and refund.
+ *
+ * The schema cases check every entry, not only the new one. The drift test
+ * used to credit a model with the `customer_id` of its neighbour in the same
+ * file, which put two tables with no customer column in the registry, and a
+ * unit spec reading source cannot see what the migrations actually built.
+ *
+ * They found more than that, recorded below as ratchets and NOT fixed here:
+ * each is a separate decision, and the lists must shrink as each is made.
+ */
+
+// `food_order`'s anonymiseFields name four columns the table does not have
+// (the model calls them recipient_name / recipient_email / recipient_phone,
+// and safe_place_description is on food_delivery). Postgres rejects the
+// whole UPDATE, so a deletion clears none of the order's address fields —
+// the case D11-1 was opened for. `recipient_name` is NOT NULL, so the fix is a
+// decision, not a rename.
+const KNOWN_MISSING_ANONYMISE_FIELDS = [
+  "food_order.customer_name",
+  "food_order.customer_email",
+  "food_order.customer_phone",
+  "food_order.safe_place_description",
+]
+
+// `anonymise` entries whose customer column is NOT NULL: the UPDATE that
+// unlinks a person who has rows there fails, and the row keeps the link.
+const KNOWN_NOT_NULL_ANONYMISE = [
+  "garden_vote.customer_id",
+  "garden_proposal_comment.customer_id",
+  "quest_contribution.customer_id",
+  "quest_reward_grant.customer_id",
+  "buyer_impact.customer_id",
+]
+
+// Entities the export cannot read through Query, so a person's export carries
+// `{ _error: "could not be read: Method \"list<Entity>s\" does not exist on
+// \"<module>\"" }` in place of their rows. The same cause as
+// collective_backing: Query derives the method from the table name
+// (`garden_time_credit` -> `listGardenTimeCredits`), the module's
+// MedusaService key generates another (`TimeCredit` -> `listTimeCredits`).
+// The remedy the backing uses, `exportVia: "sql"`, is one line per entry; not
+// applied here because each is outside this change.
+const KNOWN_UNREADABLE_IN_EXPORT = [
+  "ar_invoice",
+  "hawala_investment",
+  "garden_proposal_comment",
+  "embed_product_review",
+  "garden_role_assignment",
+  "garden_harvest_claim",
+  "garden_time_credit",
+  "garden_work_party_signup",
+  "order_channel",
+  "wellness_member",
+  "wellness_client_profile",
+  "wellness_class_attendee",
+]
+
+medusaIntegrationTestRunner({
+  inApp: true,
+  env: {},
+  testSuite: ({ api, getContainer }) => {
+    const container = () => getContainer() as any
+    const pg = () => container().resolve(ContainerRegistrationKeys.PG_CONNECTION)
+    const uid = () => `${Date.now()}-${Math.floor(Math.random() * 1e6)}`
+
+    async function signedInCustomer(pak: string) {
+      const email = `registry-${uid()}@example.com`
+      const password = `${uid()}-pw`
+      const registered = await api.post("/auth/customer/emailpass/register", { email, password })
+      const created = await api.post(
+        "/store/customers",
+        { email },
+        { headers: { authorization: `Bearer ${registered.data.token}`, "x-publishable-api-key": pak } }
+      )
+      const login = await api.post("/auth/customer/emailpass", { email, password })
+      return {
+        id: created.data.customer.id as string,
+        headers: { headers: { authorization: `Bearer ${login.data.token}`, "x-publishable-api-key": pak } },
+      }
+    }
+
+    // Inserted directly: on a database built from the migrations neither
+    // `collective_campaign` nor `collective_backing` can take a row through
+    // the ORM, because their bigNumber `raw_*` companions were never migrated
+    // (module-schema-drift.spec.ts KNOWN_DRIFT). The backing route writes
+    // `backer_id: auth_context.actor_id` (campaigns/[id]/backings/route.ts),
+    // which is the signed-in customer's id used here.
+    async function insertBacking(backerId: string, amount: number) {
+      const id = `cbck_registry_${uid().replace(/-/g, "")}`
+      await pg().raw(
+        `INSERT INTO "collective_backing" ("id", "campaign_id", "backer_id", "mode", "amount", "status")
+         VALUES (?, ?, ?, 'PRE_ORDER', ?, 'PLEDGED')`,
+        [id, "ccmp_registry_test", backerId, amount]
+      )
+      return id
+    }
+
+    async function backingRow(id: string) {
+      const { rows } = await pg().raw(
+        `SELECT "backer_id", "amount"::text AS "amount", "status" FROM "collective_backing" WHERE "id" = ?`,
+        [id]
+      )
+      return rows[0] as { backer_id: string; amount: string; status: string } | undefined
+    }
+
+    describe("a collective backing in the customer's export and deletion", () => {
+      it("is exported to its backer only, and survives their deletion with its link and amount intact", async () => {
+        const pak = await createPublishableKeyToken(getContainer)
+        const backer = await signedInCustomer(pak)
+        const other = await signedInCustomer(pak)
+        const mine = await insertBacking(backer.id, 25)
+        const theirs = await insertBacking(other.id, 40)
+
+        // Export: the backer gets their own backing and not the other one.
+        const exported = await safe(api.get("/store/customers/me/data-export", backer.headers))
+        expect(exported.status).toBe(200)
+        const backings = (exported.data.community?.collective_backing ?? []) as Array<Record<string, unknown>>
+        // One row, whole: an unreadable table would show here as `_error`.
+        expect(backings).toEqual([
+          expect.objectContaining({ id: mine, backer_id: backer.id, campaign_id: "ccmp_registry_test" }),
+        ])
+
+        // Deletion: the backing stays exactly as it was. The campaign's totals
+        // are summed from it, and a failed campaign's escrow refund is paid to
+        // the wallet backer_id names.
+        const deleted = await safe(api.post("/store/customers/me/deletion", {}, backer.headers))
+        expect(deleted.status).toBe(200)
+        // food_order is the KNOWN_MISSING_ANONYMISE_FIELDS failure above, on
+        // every deletion. garden_role used to be here too.
+        expect(deleted.data.entities_failed).toEqual(["food_order"])
+
+        expect(await backingRow(mine)).toEqual({ backer_id: backer.id, amount: "25", status: "PLEDGED" })
+        expect(await backingRow(theirs)).toEqual({ backer_id: other.id, amount: "40", status: "PLEDGED" })
+      })
+    })
+
+    describe("every registry entry against the migrated schema", () => {
+      async function columnsOf(table: string) {
+        const { rows } = await pg().raw(
+          `SELECT "column_name", "is_nullable" FROM information_schema.columns
+            WHERE "table_schema" = current_schema() AND "table_name" = ?`,
+          [table]
+        )
+        return new Map(
+          (rows as Array<{ column_name: string; is_nullable: string }>).map((r) => [r.column_name, r.is_nullable])
+        )
+      }
+
+      it("names a table that exists and the customer column it has", async () => {
+        const problems: string[] = []
+        for (const entry of CUSTOMER_DATA_REGISTRY) {
+          const columns = await columnsOf(entry.entity)
+          if (columns.size === 0) problems.push(`${entry.entity}: no such table`)
+          else if (!columns.has(customerColumnOf(entry))) problems.push(`${entry.entity}.${customerColumnOf(entry)}`)
+        }
+        expect(problems).toEqual([])
+      })
+
+      it("reads every exported entity without an error (ratchet)", async () => {
+        // An unreadable entity is reported in the export as `_error`, in place
+        // of the person's rows.
+        const out = await readCustomerDataAcrossRegistry(container(), "cus_registry_nobody")
+        const unreadable = Object.entries(out).filter(([, rows]) =>
+          rows.some((r) => (r as { _error?: string })?._error)
+        )
+        expect(unreadable.map(([entity]) => entity)).toEqual(KNOWN_UNREADABLE_IN_EXPORT)
+        // collective_backing is read by SQL and is not among them.
+        expect(out.collective_backing).toBeUndefined()
+      })
+
+      it("names only fields its tables have (ratchet)", async () => {
+        const missing: string[] = []
+        for (const entry of CUSTOMER_DATA_REGISTRY) {
+          const columns = await columnsOf(entry.entity)
+          for (const field of entry.anonymiseFields ?? []) {
+            if (!columns.has(field)) missing.push(`${entry.entity}.${field}`)
+          }
+        }
+        expect(missing).toEqual(KNOWN_MISSING_ANONYMISE_FIELDS)
+      })
+
+      it("can clear every column it says it anonymises (ratchet)", async () => {
+        // Checked on the schema, not by running the erasure: an UPDATE that
+        // sets a NOT NULL column to NULL fails only on a row it matches.
+        const notNullable: string[] = []
+        for (const entry of CUSTOMER_DATA_REGISTRY) {
+          const columns = await columnsOf(entry.entity)
+          const cleared = [
+            ...(entry.action === "anonymise" ? [customerColumnOf(entry)] : []),
+            ...(entry.action === "delete" ? [] : entry.anonymiseFields ?? []),
+          ]
+          for (const column of cleared) {
+            if (columns.get(column) === "NO") notNullable.push(`${entry.entity}.${column}`)
+          }
+        }
+        expect(notNullable).toEqual(KNOWN_NOT_NULL_ANONYMISE)
+      })
+    })
+  },
+})

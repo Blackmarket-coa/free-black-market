@@ -49,6 +49,20 @@
  * long is a policy question the operator has to answer, and `/legal/privacy`
  * says "the period tax and accounting rules require" because that is the
  * honest state of it.
+ *
+ * ## What it still does not reach
+ *
+ * `UNREGISTERED_CUSTOMER_REFERENCES`, below: the columns that hold a customer
+ * id under another name (a voter, a proposer, a wallet owner) and are in
+ * neither the export nor the erasure. They were found on 2026-11-15 when the
+ * drift walk was widened past `customer_id` (P1-13 follow-up). Each carries
+ * a proposed disposition for someone to decide; none is applied.
+ *
+ * Two entries were removed then too: `garden_role` and
+ * `hawala_investment_pool` have no customer column. The old walk credited
+ * each with the `customer_id` of the next model in the same file, so the
+ * deletion tried `DELETE FROM garden_role WHERE customer_id = ?` on every
+ * request and failed on it.
  */
 
 export type ErasureAction = "delete" | "anonymise" | "retain"
@@ -74,10 +88,21 @@ export type CustomerDataEntry = {
    */
   inExport?: boolean
   /**
-   * The column holding the customer id, when it is not `customer_id`. Only a
-   * table a framework module owns needs this; ours all use `customer_id`.
+   * The column holding the customer id, when it is not `customer_id`. Erasure
+   * and export both build their filter from it (`customerColumnOf`), so a
+   * table that names its customer differently is reached through that name.
+   * A framework table names whatever its owner chose; one of ours that
+   * predates the convention (`collective_backing.backer_id`) names it here,
+   * and the registry spec fails if the model has no such column.
    */
   customerColumn?: string
+  /**
+   * How the export reads the table. Default `query`: `query.graph` on
+   * `entity`. `sql`: one parameterised SELECT on the table and customer
+   * column, the same identifiers the erasure already uses. Only for a table
+   * Query cannot address, and the entry says why.
+   */
+  exportVia?: "query" | "sql"
   /**
    * Set for a table that Medusa core or a plugin owns rather than
    * `src/modules/**`. The anti-drift walk in the registry spec reads only our
@@ -101,13 +126,48 @@ export const CUSTOMER_DATA_REGISTRY: CustomerDataEntry[] = [
   { entity: "subscription", module: "subscription", label: "Subscriptions", action: "retain", basis: TAX },
   { entity: "entitlement", module: "entitlement", label: "Purchased access and entitlements", action: "retain", basis: TAX },
   { entity: "hawala_investment", module: "hawala-ledger", label: "Investments", action: "retain", basis: LEDGER },
-  { entity: "hawala_investment_pool", module: "hawala-ledger", label: "Investment pool memberships", action: "retain", basis: LEDGER },
   { entity: "blackout_checkout_session", module: "marketplace-listing", label: "Checkout sessions", action: "retain", basis: TAX },
   { entity: "rental", module: "rental", label: "Rentals", action: "retain", basis: TAX },
   { entity: "standing_order", module: "vendor-rules", label: "Standing orders", action: "retain", basis: TAX },
   { entity: "batch_reservation", module: "harvest-batches", label: "Harvest batch reservations", action: "retain", basis: TAX },
   { entity: "share_box_subscription", module: "order-cycle", label: "Share box subscriptions", action: "retain", basis: TAX },
   { entity: "share_box", module: "order-cycle", label: "Share boxes received", action: "retain", basis: TAX },
+
+  // A campaign backing: money pledged into a collective campaign. It names its
+  // customer `backer_id` (written from the signed-in customer's actor id by
+  // POST /store/collective/campaigns/:id/backings), which is how it stayed
+  // out of both the export and the drift walk that looked only for
+  // `customer_id` (P1-13).
+  //
+  // Not `delete`: `addBacking` re-sums the campaign's backed totals, and the
+  // goal it was FUNDED against, from these rows, so removing one silently
+  // rewrites a figure every other backer relied on. Not `anonymise`: a
+  // failed campaign's escrow refund (`refundCampaignBackingEscrow`, from the
+  // campaign route's mark-failed path) is paid to the USER_WALLET that
+  // `backer_id` names, so clearing the link would strand a live refund — and
+  // the column is NOT NULL, so the UPDATE would fail anyway. Kept with its
+  // link, like every other `retain` row, pointing at a customer record the
+  // deletion has already anonymised. `metadata` is kept too: it carries the
+  // escrow and refund ledger-entry ids that refund reads. It is otherwise
+  // client-supplied, and no client in this repo sends any.
+  //
+  // Exported by SQL: Query addresses the table as `collective_backing` and so
+  // calls `listCollectiveBackings`, but the module's MedusaService key is
+  // `Backing`, which generates `listBackings`. On Postgres the read fails with
+  // `Method "listCollectiveBackings" does not exist on
+  // "collectiveCampaignModuleService"` (integration-tests/http/
+  // customer-data-registry.spec.ts), so a Query read would put an error in
+  // every export in place of the person's backings.
+  {
+    entity: "collective_backing",
+    module: "collective-campaign",
+    label: "Collective campaign backings",
+    action: "retain",
+    basis:
+      "Escrowed campaign payment: the campaign's backed totals are summed from these rows, and a failed campaign's refund is paid to the wallet this row names.",
+    customerColumn: "backer_id",
+    exportVia: "sql",
+  },
 
   // A transaction that also carries contact and location data.
   {
@@ -145,7 +205,6 @@ export const CUSTOMER_DATA_REGISTRY: CustomerDataEntry[] = [
 
   // ---- The person's own records: deleted ----
   { entity: "garden_membership", module: "garden", label: "Community garden memberships", action: "delete" },
-  { entity: "garden_role", module: "governance", label: "Garden roles held", action: "delete" },
   { entity: "garden_role_assignment", module: "governance", label: "Garden role assignments", action: "delete" },
   { entity: "garden_harvest_claim", module: "harvest", label: "Harvest shares claimed", action: "delete" },
   { entity: "garden_time_credit", module: "volunteer", label: "Time-bank credits", action: "delete" },
@@ -216,4 +275,141 @@ export const EXPORT_ENTITIES = CUSTOMER_DATA_REGISTRY.filter(
 
 export function registryEntry(entity: string): CustomerDataEntry | undefined {
   return CUSTOMER_DATA_REGISTRY.find((e) => e.entity === entity)
+}
+
+/**
+ * Customer references that neither the export nor the erasure reaches yet.
+ *
+ * Found on 2026-11-15 by widening the registry spec's walk from `customer_id`
+ * to every column named for a person (P1-13 follow-up). Each was checked
+ * against the code that writes it, cited in `holds`. "Dormant" means no code
+ * writes the column today, so it holds nothing yet but would hold a customer
+ * id once something does.
+ *
+ * Why listed rather than registered: most do not fit the registry's shape,
+ * which is one customer column per table filtered by equality. A wallet is a
+ * customer's only when `owner_type = 'CUSTOMER'`; a vote row carries both the
+ * voter and the person who delegated to them; a seller's tier holds customer
+ * ids in a JSON array; a wellness note is reached through the client profile
+ * it belongs to. And each disposition is a judgement under the rule at the top
+ * of this file, which is the decision this registry exists to make on
+ * purpose rather than by default. `proposed` is the starting point for that
+ * decision, not the decision.
+ *
+ * Neither endpoint reads this list. The registry spec does: a person-named
+ * column that is in neither the registry nor this list (nor the spec's own
+ * list of columns that turned out not to hold customer ids) fails the build,
+ * and so does an entry here once it is registered. The list can only shrink.
+ */
+export type UnregisteredCustomerReference = {
+  /** What the code writes there, and where. */
+  holds: string
+  /** Proposed, not applied. `remove-from-array` for a JSON list of ids. */
+  proposed: ErasureAction | "remove-from-array"
+  why: string
+}
+
+const OWN = "The person's own record; nothing shared depends on it."
+const SHARED = "A shared record other people relied on; the link to the person is not what makes it correct."
+const MONEY = "Moves or settles money; the row and its link are needed to reconcile or refund."
+const SECONDARY = "A second identifier on a row the registry already retains by customer_id; the retained row keeps a direct identifier the anonymised customer record no longer does."
+const VIA_PROFILE = "Reached only through a registered row that the deletion removes; the health record survives its parent and is still about one person."
+
+export const UNREGISTERED_CUSTOMER_REFERENCES: Record<string, UnregisteredCustomerReference> = {
+  // asset-graph: member ids are the /store actor id.
+  "asset_declaration.member_id": { holds: "the signed-in customer (store/asset-graph/declarations)", proposed: "delete", why: OWN },
+  "match_proposal.member_id": { holds: "the declaring customer, copied by asset-graph/matcher.ts", proposed: "delete", why: OWN },
+  "attestation.attestor_member_id": { holds: "a member id from the request payload (asset-graph/service.ts)", proposed: "anonymise", why: SHARED },
+  "settlement_record.from_member_id": { holds: "a member id (asset-graph/settlement.ts)", proposed: "retain", why: MONEY },
+  "settlement_record.to_member_id": { holds: "a member id (asset-graph/settlement.ts)", proposed: "retain", why: MONEY },
+  "project_instance.operator_member_id": { holds: "the proposing member (asset-graph/instance-lifecycle.ts)", proposed: "anonymise", why: SHARED },
+  "project_instance.member_ids": { holds: "every member's id, as a JSON array (asset-graph/instance-lifecycle.ts)", proposed: "remove-from-array", why: SHARED },
+
+  // bargaining and barter (Buyer Center).
+  "bargaining_group.organizer_id": { holds: "the signed-in customer (store/collective/bargaining-groups)", proposed: "anonymise", why: SHARED },
+  "bargaining_proposal.proposer_id": { holds: "a customer or seller id (bargaining/service.ts)", proposed: "anonymise", why: SHARED },
+  "bargaining_vote.voter_id": { holds: "the signed-in customer (store/collective/bargaining-groups/[id]/proposals/[proposalId]/vote)", proposed: "anonymise", why: SHARED },
+  "negotiation_thread.author_id": { holds: "the signed-in customer (store/collective/bargaining-groups/[id]/threads)", proposed: "anonymise", why: SHARED },
+  "barter_proposal.proposer_id": { holds: "the signed-in customer (store/collective/demand-pools/[id]/barter)", proposed: "anonymise", why: SHARED },
+  "barter_proposal.accepted_by": { holds: "the accepting customer (store/collective/demand-pools/[id]/barter/[proposalId]/accept)", proposed: "anonymise", why: SHARED },
+  "buyer_network.admin_id": { holds: "the signed-in customer (store/collective/buyer-networks)", proposed: "anonymise", why: `${SHARED} The column is NOT NULL, so this needs a handover rule or a migration first.` },
+
+  // demand-pool.
+  "demand_post.creator_id": { holds: "a customer (store/collective/demand-pools), a seller (v1/seller/launches) or the hub id", proposed: "anonymise", why: SHARED },
+  "demand_bounty.contributor_id": { holds: "a customer or seller; the bounty escrow is funded from this owner's wallet (services/collective-hawala.ts)", proposed: "retain", why: MONEY },
+  "demand_bounty.assignee_id": { holds: "the claiming customer (demand-pool/service.ts); escrow is released to it", proposed: "retain", why: MONEY },
+  "proposal_vote.voter_id": { holds: "the signed-in customer (store/collective/demand-pools/[id]/proposals/[proposalId]/vote)", proposed: "anonymise", why: SHARED },
+
+  // food-distribution: owner ids are whichever /store actor created the row.
+  "food_producer.owner_id": { holds: "the /store actor that registered it: customer, seller or driver (store/food-producers)", proposed: "anonymise", why: SHARED },
+  "food_courier.owner_id": { holds: "the /store actor that registered it (store/couriers)", proposed: "anonymise", why: SHARED },
+  "food_delivery_batch.owner_id": { holds: "the creating actor (store/delivery-batches via createDeliveryBatch)", proposed: "anonymise", why: SHARED },
+  "food_delivery_event.actor_id": { holds: "any actor, CUSTOMER among actor_type's values (food-distribution/service.ts)", proposed: "anonymise", why: SHARED },
+
+  // governance, garden, season, harvest, volunteer.
+  "garden_proposal.proposed_by_id": { holds: "the signed-in customer (store/proposals)", proposed: "anonymise", why: SHARED },
+  "garden_proposal.implemented_by_id": { holds: "dormant", proposed: "anonymise", why: SHARED },
+  "garden_proposal_comment.moderated_by_id": { holds: "dormant", proposed: "anonymise", why: SHARED },
+  "garden_role_assignment.assigned_by_id": { holds: "dormant", proposed: "anonymise", why: SHARED },
+  "garden_vote.delegated_from_id": { holds: "dormant; the vote row is registered by its voter's customer_id, not this", proposed: "anonymise", why: SHARED },
+  "garden_vote_delegation.delegator_id": { holds: "dormant", proposed: "delete", why: OWN },
+  "garden_vote_delegation.delegate_id": { holds: "dormant", proposed: "delete", why: OWN },
+  "garden_plot.assigned_to_id": { holds: "dormant (read by GET store/gardens/[id]/plots; nothing writes it)", proposed: "anonymise", why: SHARED },
+  "garden_growing_plan.created_by_id": { holds: "dormant", proposed: "anonymise", why: SHARED },
+  "garden_growing_plan.approved_by_id": { holds: "dormant", proposed: "anonymise", why: SHARED },
+  "garden_planting.planted_by_id": { holds: "the signed-in customer (store/seasons/[id]/plantings)", proposed: "anonymise", why: SHARED },
+  "garden_harvest.harvested_by_ids": { holds: "dormant JSON array of customer ids (model comment); store/harvests writes a harvested_by_id column that does not exist", proposed: "remove-from-array", why: SHARED },
+  "garden_work_party.organizer_id": { holds: "the signed-in customer (store/work-parties)", proposed: "anonymise", why: SHARED },
+  "garden_work_party.co_organizer_ids": { holds: "dormant JSON array", proposed: "remove-from-array", why: SHARED },
+  "volunteer_log.verified_by_id": { holds: "the verifier (workflows/volunteer/verify-hours; no route runs it today); the log is registered by its volunteer's customer_id", proposed: "anonymise", why: SHARED },
+
+  // hawala-ledger: owner_id is a customer only where owner_type = 'CUSTOMER'.
+  "hawala_ledger_account.owner_id": { holds: "a customer for owner_type CUSTOMER (USER_WALLET, hawala-ledger/service.ts); otherwise a seller or a system name", proposed: "retain", why: `${MONEY} Needs an owner_type filter the registry cannot express.` },
+  "hawala_bank_account.owner_id": { holds: "a customer for owner_type CUSTOMER (store/hawala/bank-accounts); the row also holds account_holder_name and Stripe ids", proposed: "delete", why: `${OWN} Retain with account_holder_name cleared instead if a withdrawal references it. Needs an owner_type filter.` },
+  "karma_event.member_id": { holds: "the customer (progression/karma-mirror.ts copies xp_event.customer_id)", proposed: "delete", why: `${OWN} Mirrors xp_event, which is delete.` },
+
+  // knowledge-base.
+  "kb_contribution.submitter_id": { holds: "the signed-in customer (store/knowledge-base/contributions)", proposed: "anonymise", why: SHARED },
+  "kb_article.author_id": { holds: "the contribution's submitter (knowledge-base/service.ts)", proposed: "anonymise", why: SHARED },
+
+  // kitchen.
+  "kitchen_space.assigned_member_id": { holds: "dormant", proposed: "anonymise", why: SHARED },
+
+  // mutual-aid.
+  "mutual_aid_offer.offerer_id": { holds: "the signed-in customer (store/mutual-aid/offers)", proposed: "delete", why: OWN },
+  "mutual_aid_request.requester_id": { holds: "the signed-in customer (store/mutual-aid/requests)", proposed: "delete", why: OWN },
+  "mutual_aid_request.matched_helper_id": { holds: "the helping customer (mutual-aid/service.ts)", proposed: "anonymise", why: SHARED },
+
+  // Secondary identifiers on rows the registry already retains.
+  "blackout_checkout_session.blackout_user_id": { holds: "the buyer's Blackout user id (integrations/blackout/commerce/checkout/sessions)", proposed: "retain", why: `${SECONDARY} Proposed: add to anonymiseFields.` },
+  "entitlement.customer_external_id": { holds: "the buyer's Blackout mxid (blackout checkout page route)", proposed: "retain", why: `${SECONDARY} Proposed: add to anonymiseFields.` },
+  "share_box.customer_external_id": { holds: "an external customer id (order-cycle/service.ts)", proposed: "retain", why: `${SECONDARY} Proposed: add to anonymiseFields.` },
+  "share_box_subscription.customer_external_id": { holds: "an external customer id (order-cycle/service.ts)", proposed: "retain", why: `${SECONDARY} Proposed: add to anonymiseFields.` },
+
+  // order-dispute.
+  "order_dispute_event.actor_id": { holds: "the customer, seller or admin acting (order-dispute/service.ts)", proposed: "retain", why: "The event trail of a dispute the registry retains under TAX; an export gap, not an erasure one." },
+
+  // progression.
+  "xp_attestation.subject_customer_id": { holds: "the attested customer (progression/service.ts)", proposed: "delete", why: `${OWN} Mirrors xp_event.` },
+  "xp_attestation.attester_customer_id": { holds: "the attesting customer (progression/service.ts)", proposed: "anonymise", why: "Someone else's XP depends on it." },
+
+  // request (Mercur): see SD-71 for the reporter email in `data`.
+  "request.submitter_id": { holds: "a customer (store/product-reports, store/seller-reports), a seller (vendor/requests) or an auth identity (seller registration)", proposed: "anonymise", why: `${SHARED} The reporter's email in data needs clearing too (SD-71).` },
+  "request.requester_id": { holds: "a customer (store/requests, the report routes) or a seller (vendor/requests)", proposed: "anonymise", why: SHARED },
+
+  // vendor-hype-operations-prediction.
+  "prediction_market.created_by": { holds: "the /store actor that opened it (store/vendor-hype/markets)", proposed: "anonymise", why: SHARED },
+  "prediction_position.supporter_id": { holds: "the signed-in supporter (store/vendor-hype/markets/[id]/positions)", proposed: "retain", why: `${MONEY} A staked position settles against this row.` },
+  "prediction_payout_entry.supporter_id": { holds: "the position's supporter (vendor-hype service)", proposed: "retain", why: MONEY },
+  "user_prediction_safety.supporter_id": { holds: "the supporter's own limits (vendor-hype service)", proposed: "delete", why: OWN },
+  "hype_profile.owner_id": { holds: "an id an admin types (admin/vendor-hype/profiles); an ORGANIZER profile may name a customer. Unverified", proposed: "anonymise", why: SHARED },
+
+  // vendor-rules.
+  "vendor_customer_tier.customer_ids": { holds: "customer ids in a seller's pricing tier, as a JSON array (vendor-rules/service.ts, vendor/customer-tiers)", proposed: "remove-from-array", why: "The tier is the seller's; the person's membership of it is theirs." },
+
+  // wellness: reached through rows the registry deletes.
+  "wellness_client_note.client_profile_id": { holds: "the wellness_client_profile the note is about (vendor/wellness/clients/[id]/notes)", proposed: "delete", why: VIA_PROFILE },
+  "wellness_client_note.author_member_id": { holds: "dormant (wellness/service.ts accepts it; no route passes it)", proposed: "anonymise", why: SHARED },
+  "wellness_intake_response.client_profile_id": { holds: "the wellness_client_profile that answered", proposed: "delete", why: VIA_PROFILE },
+  "wellness_intake_response.class_attendee_id": { holds: "the wellness_class_attendee that answered", proposed: "delete", why: VIA_PROFILE },
 }

@@ -31,10 +31,13 @@ const log = createLogger("lib/customer-erasure")
  * caller can tell the person what actually happened rather than "deleted:
  * true".
  *
- * ## Why `retain` rows keep their customer_id
+ * ## Why `retain` rows keep their customer link
  *
- * The customer record itself is anonymised rather than dropped, so a retained
- * invoice still joins to a customer row with no name, email or phone on it.
+ * Every statement filters on the entry's own customer column
+ * (`customerColumnOf`: `customer_id`, or e.g. `backer_id` on a campaign
+ * backing). The customer record itself is anonymised rather than dropped, so a
+ * retained invoice still joins to a customer row with no name, email or phone
+ * on it.
  * Clearing the foreign key as well would orphan the accounting record from the
  * order it belongs to and buy nothing: the identity is already gone.
  */
@@ -153,6 +156,11 @@ export async function eraseCustomerAcrossRegistry(
  *
  * Same registry, so the export cannot describe less than the deletion reaches —
  * the specific way these two drifted apart.
+ *
+ * An entry marked `exportVia: "sql"` is read with one parameterised SELECT on
+ * its table and customer column instead of `query.graph`, for a table Query
+ * cannot address (the entry says why). Every row is returned, soft-deleted
+ * ones included, since the erasure reaches those too.
  */
 export async function readCustomerDataAcrossRegistry(
   container: MedusaContainer,
@@ -169,14 +177,29 @@ export async function readCustomerDataAcrossRegistry(
     return out
   }
 
+  const readBySql = async (entry: CustomerDataEntry): Promise<unknown[] | undefined> => {
+    const pg = resolvePgConnection(container)
+    if (!pg) throw new Error("no database connection")
+    const result = (await pg.raw(
+      `SELECT * FROM ${quoteIdent(entry.entity)} WHERE ${quoteIdent(customerColumnOf(entry))} = ?`,
+      [customerId]
+    )) as { rows?: unknown[] } | undefined
+    return result?.rows
+  }
+
   for (const entry of CUSTOMER_DATA_REGISTRY) {
     if (entry.inExport === false) continue
     try {
-      const { data } = await query.graph({
-        entity: entry.entity,
-        fields: ["*"],
-        filters: { [customerColumnOf(entry)]: customerId },
-      })
+      const data =
+        entry.exportVia === "sql"
+          ? await readBySql(entry)
+          : (
+              await query.graph({
+                entity: entry.entity,
+                fields: ["*"],
+                filters: { [customerColumnOf(entry)]: customerId },
+              })
+            ).data
       if (Array.isArray(data) && data.length > 0) {
         out[entry.entity] = data
       }
