@@ -51,7 +51,13 @@ overrides:
   # in 1.16.0 and are fixed in 1.16.1, a patch. Reached only through axios,
   # a direct dependency of the four portals and portal-kit. Caret-bounded at
   # the fix (SD-55).
-  "follow-redirects": "^1.16.1"
+  #
+  # 2026-11-15: GHSA-mrwp-f3q8-3g9p (CVE-2026-116689, HIGH, published
+  # 2026-10-30): a sensitiveHeaders array built in another realm is discarded,
+  # so custom credential headers can follow a cross-origin redirect. Fixed in
+  # 1.16.2, a patch. The ^1.16.1 caret above already permitted 1.16.2 and the
+  # lockfile still held 1.16.1 -- the floor itself has to move (SD-57).
+  "follow-redirects": "^1.16.2"
   # brace-expansion: five HIGH DoS advisories across the 1.x/2.x/5.x lines
   # (GHSA-3jxr-9vmj-r5cp, -6j4f-fj2g-mc7p, -mh99-v99m-4gvg, -qhr7-859c-m2p7,
   # -rgw5-rvv9-x895) plus the MODERATE -q2hr-2g5m-vwhr. The highest fix on each

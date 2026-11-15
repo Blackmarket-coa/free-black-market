@@ -71,7 +71,28 @@ overrides:
   # `sensitiveHeaders` name containing `^` or `|` never matches. Both arrived
   # in 1.16.0 and are fixed in 1.16.1, a patch. Reached only through axios.
   # Caret-bounded at the fix (SD-55).
-  "follow-redirects": "^1.16.1"
+  #
+  # 2026-11-15: GHSA-mrwp-f3q8-3g9p (CVE-2026-116689, HIGH, published
+  # 2026-10-30): a sensitiveHeaders array built in another realm is discarded,
+  # so custom credential headers can follow a cross-origin redirect. Fixed in
+  # 1.16.2, a patch. The ^1.16.1 caret above already permitted 1.16.2 and the
+  # lockfile still held 1.16.1 -- the floor itself has to move (SD-57).
+  "follow-redirects": "^1.16.2"
+  # GHSA-qr28-fpjm-wq7f (CVE-2026-118664, HIGH, published 2026-10-29):
+  # quadratic replacement over percent-encoded runs (denial of service), fixed
+  # only in 0.5.1; GHSA-vcc3-ghjq-m6fr (CVE-2026-45822, MODERATE) is fixed in
+  # 0.5.0. The one path is minio > query-string@7.1.3, production here (the
+  # S3 file provider, src/modules/minio-file). Bounded to 0.5.x: a caret on
+  # 0.x already stops at the next minor.
+  #
+  # 0.3.0 onward is ESM-only, and query-string 7 does
+  # `const decodeComponent = require('decode-uri-component')` and calls the
+  # result. Node 22's require(esm) returns the namespace ({ default: fn }),
+  # so without help parse() would throw "decodeComponent is not a function".
+  # minio calls only stringify(), which never decodes, but the patch in
+  # patchedDependencies below unwraps .default so query-string works whole
+  # rather than relying on that (SD-57).
+  "decode-uri-component": "^0.5.1"
   # GHSA-7h2j-956f-4vf2 (CVE-2026-25547, HIGH): uncontrolled resource
   # consumption, fixed only in 5.0.1. This is the renamed 5.x line, a separate
   # package from `brace-expansion` above, so it needs its own pin.
@@ -248,3 +269,13 @@ allowBuilds:
   # Refused on purpose. Declared rather than omitted so the error above keeps
   # meaning "nobody has looked at this yet".
   "@medusajs/telemetry": false  # phone-home on install; nothing needs it to run
+
+# Source patches pnpm applies at install, hash-pinned in the lockfile. The
+# backend Dockerfile COPYs patches/ into the deps stage before `pnpm install`;
+# a patch that is missing there fails the image build rather than shipping
+# unpatched.
+#
+# query-string@7.1.3: unwrap the ESM-only decode-uri-component default export
+# (see the decode-uri-component override above; SD-57).
+patchedDependencies:
+  query-string@7.1.3: patches/query-string@7.1.3.patch
