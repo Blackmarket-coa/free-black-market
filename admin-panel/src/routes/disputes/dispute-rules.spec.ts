@@ -9,6 +9,7 @@ import {
   REASON_LABELS,
   STATUS_LABELS,
   adminActionsFor,
+  buyerSubmission,
   daysWaiting,
   describeEvent,
   escrowTransitionFor,
@@ -72,11 +73,11 @@ describe("resolutionDraft", () => {
     ])
   })
 
-  it("a decision that closes the case needs a note for the parties", () => {
+  it("a decision that closes the case needs a decision note", () => {
     for (const to of ["resolved_refund", "resolved_release", "withdrawn"] as const) {
       const d = resolutionDraft(open, to, { note: "   " })
       expect(d.body).toBeNull()
-      expect(d.problems).toContain("Write a note for the buyer and the seller saying why")
+      expect(d.problems).toContain("Write a decision note saying why")
     }
     expect(resolutionDraft(open, "withdrawn", { note: "Buyer emailed to withdraw." }).body).toEqual({
       status: "withdrawn",
@@ -130,6 +131,69 @@ describe("list filter", () => {
   it("passes one known status through", () => {
     expect(parseFilter("resolved_release")).toBe("resolved_release")
     expect(listQuery("resolved_release")).toEqual({ status: "resolved_release" })
+  })
+})
+
+describe("what the buyer submitted", () => {
+  it("reads the claim form's answers as the intake stores them", () => {
+    expect(
+      buyerSubmission({
+        claim_reason: "not_received",
+        contacted_seller: true,
+        evidence_urls: ["https://photos.example.com/box.jpg", "http://track.example.com/1Z999"],
+        intake_source: "store/order-claims",
+      })
+    ).toEqual({
+      contactedSeller: "yes",
+      evidence: ["https://photos.example.com/box.jpg", "http://track.example.com/1Z999"],
+      evidenceNotShown: 0,
+      source: "Storefront claim form",
+    })
+    expect(buyerSubmission({ contacted_seller: false, evidence_urls: [], intake_source: "backfill:request" })).toEqual({
+      contactedSeller: "no",
+      evidence: [],
+      evidenceNotShown: 0,
+      source: "Migrated from a legacy claim",
+    })
+  })
+
+  it("a claim filed without the form was never asked, which is not a no", () => {
+    expect(buyerSubmission({ intake_source: "store/orders/[id]/dispute" })).toEqual({
+      contactedSeller: "not_asked",
+      evidence: [],
+      evidenceNotShown: 0,
+      source: "Order dispute API",
+    })
+    expect(buyerSubmission(null).contactedSeller).toBe("not_asked")
+  })
+
+  it("never turns junk metadata into a link", () => {
+    const s = buyerSubmission({
+      contacted_seller: "yes",
+      evidence_urls: [
+        "javascript:alert(1)",
+        "data:text/html,<script>alert(1)</script>",
+        "//evil.example.com/x",
+        "not a url",
+        42,
+        { href: "https://x.example.com" },
+        " https://ok.example.com/p?q=1 ",
+      ],
+      intake_source: 7,
+    })
+    expect(s).toEqual({
+      contactedSeller: "not_asked",
+      evidence: ["https://ok.example.com/p?q=1"],
+      evidenceNotShown: 6,
+      source: null,
+    })
+    for (const junk of [undefined, "string", 5, ["array"], { evidence_urls: "https://x.example.com" }]) {
+      expect(buyerSubmission(junk)).toEqual({ contactedSeller: "not_asked", evidence: [], evidenceNotShown: 0, source: null })
+    }
+  })
+
+  it("shows an intake source it does not know by its own name", () => {
+    expect(buyerSubmission({ intake_source: "support-desk" }).source).toBe("support-desk")
   })
 })
 
@@ -248,6 +312,43 @@ describe("parity with backend/src/modules/order-dispute", () => {
       expect([...adminActionsFor(from)].sort()).toEqual(expected)
       expect([...ADMIN_TRANSITIONS[from]].sort()).toEqual(expected)
     }
+  })
+
+  /**
+   * How the panel actually calls the backend. A reviewer changed the
+   * mutation's method from PATCH to POST and every other test here still
+   * passed; tsc cannot see it either. In production that would hit a route
+   * the backend does not define, and no decision could be recorded.
+   */
+  it("the hooks call the paths and methods the backend routes export", () => {
+    const hooks = readFileSync(path.join(__dirname, "../../hooks/api/disputes.tsx"), "utf8")
+    const listRoute = backend("api/admin/disputes/route.ts")
+    const exported = (src: string) =>
+      new Set([...src.matchAll(/export async function (GET|POST|PATCH|PUT|DELETE)\b/g)].map((m) => m[1]))
+
+    const block = (name: string) => {
+      const m = hooks.match(new RegExp(`export const ${name} = [\\s\\S]*?\\n\\}\\n`))
+      if (!m) throw new Error(`Could not find ${name} in hooks/api/disputes.tsx`)
+
+      return m[0]
+    }
+
+    // The queue: GET /admin/disputes, filtered by the `status` the route reads.
+    expect(block("useDisputes")).toMatch(/fetch<\w+>\("\/admin\/disputes",\s*\{\s*query: params/)
+    expect(block("useDisputes")).not.toMatch(/method:/)
+    expect(exported(listRoute)).toContain("GET")
+    expect(listRoute).toMatch(/req\.query\.status/)
+
+    // The case file: GET /admin/disputes/:id.
+    expect(block("useDispute")).toMatch(/fetch<\w+>\(`\/admin\/disputes\/\$\{encodeURIComponent\(id\)\}`\)/)
+    expect(exported(patchRoute)).toContain("GET")
+
+    // A decision: the mutation's method must be one the [id] route exports.
+    const mutation = block("useUpdateDispute")
+    expect(mutation).toMatch(/fetch<\w+>\(`\/admin\/disputes\/\$\{encodeURIComponent\(id\)\}`/)
+    const method = mutation.match(/method: "(\w+)"/)?.[1]
+    expect(method).toBe("PATCH")
+    expect(exported(patchRoute)).toContain(method)
   })
 
   it("offers only statuses the PATCH route handles", () => {

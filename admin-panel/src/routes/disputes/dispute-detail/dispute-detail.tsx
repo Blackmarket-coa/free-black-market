@@ -11,10 +11,12 @@ import { useDispute, useUpdateDispute } from "@hooks/api/disputes"
 import { useOrder } from "@hooks/api/orders"
 import { useSeller } from "@hooks/api/sellers"
 import {
+  CONTACTED_SELLER_LABELS,
   REASON_LABELS,
   STATUS_COLORS,
   STATUS_LABELS,
   adminActionsFor,
+  buyerSubmission,
   daysWaiting,
   describeEvent,
   escrowTransitionFor,
@@ -56,6 +58,38 @@ const Field = ({ label, children }: { label: string; children: ReactNode }) => (
     <div className="text-ui-fg-base txt-small min-w-0 break-words">{children}</div>
   </div>
 )
+
+/** What the buyer sent with the claim besides the description (`buyerSubmission`). */
+const Submitted = ({ metadata }: { metadata: AdminDispute["metadata"] }) => {
+  const submitted = buyerSubmission(metadata)
+
+  return (
+    <>
+      <Field label="Contacted the seller first">{CONTACTED_SELLER_LABELS[submitted.contactedSeller]}</Field>
+      <Field label="Evidence">
+        {submitted.evidence.length === 0 ? (
+          "None attached"
+        ) : (
+          <ul className="flex flex-col gap-1">
+            {submitted.evidence.map((href, i) => (
+              <li key={`${i}-${href}`}>
+                <a href={href} target="_blank" rel="noopener noreferrer" className={`${linkClass} break-all`}>
+                  {href}
+                </a>
+              </li>
+            ))}
+          </ul>
+        )}
+        {submitted.evidenceNotShown > 0 && (
+          <Text size="xsmall" className="text-ui-fg-subtle mt-1">
+            {submitted.evidenceNotShown} more not shown: not a web address
+          </Text>
+        )}
+      </Field>
+      <Field label="Filed through">{submitted.source ?? "Not recorded"}</Field>
+    </>
+  )
+}
 
 const Parties = ({ dispute }: { dispute: AdminDispute }) => {
   const orderQuery = useOrder(dispute.order_id, { fields: ORDER_FIELDS }, { retry: false })
@@ -200,7 +234,7 @@ const DecisionPanel = ({ dispute }: { dispute: AdminDispute }) => {
           )}
           <div>
             <Label htmlFor="dispute-note" size="small">
-              Note to the buyer and the seller
+              Decision note (recorded on the dispute; not sent to anyone)
             </Label>
             <Textarea id="dispute-note" value={note} onChange={(e) => setNote(e.target.value)} rows={4} />
           </div>
@@ -241,7 +275,8 @@ const DecidedPanel = ({ dispute }: { dispute: AdminDispute }) => {
       </div>
       {dispute.status === "resolved_refund" && !escrow && (
         <Text size="small" className="text-ui-fg-subtle mt-2">
-          No money has moved. This order is not escrowed: make the refund through the order&apos;s payment.
+          No money has moved. No escrow agreement is recorded for this order; if it was paid normally, refund
+          through the order&apos;s payment.
         </Text>
       )}
       {escrow && (
@@ -345,12 +380,13 @@ export const DisputeDetail = () => {
             {dispute.escrow_agreement_id ? (
               <span className="font-mono">{dispute.escrow_agreement_id}</span>
             ) : (
-              "None: the order settled through the payment provider"
+              "No escrow agreement recorded"
             )}
           </Field>
           <Field label="Buyer's account">
             <span className="whitespace-pre-wrap">{dispute.description}</span>
           </Field>
+          <Submitted metadata={dispute.metadata} />
         </div>
       </Container>
 

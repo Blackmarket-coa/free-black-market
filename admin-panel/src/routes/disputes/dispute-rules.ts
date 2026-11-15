@@ -178,9 +178,10 @@ export type ResolutionDraft = {
  * - A release awards nothing; an amount on one is refused, as the backend
  *   refuses it, because it means the wrong outcome was picked.
  * - Every decision that closes the case (refund, release, withdrawal) needs
- *   a note. The backend accepts one without, but `/buyer-protection` tells
- *   buyers a claim is not closed silently, and the note is the written
- *   reason the parties are given.
+ *   a note. The backend accepts one without; the screen does not, so every
+ *   closed case carries its reason. The note is recorded on the dispute
+ *   (`resolution_note`) and nothing sends it to the buyer or the seller
+ *   today; the screen's label says so.
  */
 export function resolutionDraft(
   dispute: Pick<AdminDispute, "status" | "claim_amount" | "currency_code">,
@@ -225,7 +226,7 @@ export function resolutionDraft(
     }
   }
 
-  if (!note) problems.push("Write a note for the buyer and the seller saying why")
+  if (!note) problems.push("Write a decision note saying why")
 
   return {
     problems,
@@ -290,6 +291,72 @@ export function describeEvent(event: AdminDisputeEvent, currencyCode: string): s
       return `${actor} added a note`
     default:
       return `${actor}: ${event.kind.replace(/_/g, " ")}`
+  }
+}
+
+/**
+ * What the buyer sent with the claim, beyond the description, as the intake
+ * stores it on `dispute.metadata` (`backend/src/api/store/order-claims/
+ * route.ts`, keys from `order-dispute/claims-compat.ts`
+ * `CLAIM_METADATA_KEYS`).
+ *
+ * The metadata is a free JSON column, so nothing here trusts its shape:
+ * - `contacted_seller` is the claim form's checkbox. A claim filed another
+ *   way (the dispute API, a migrated legacy claim) was never asked, which is
+ *   not the same as "no".
+ * - `evidence_urls` are links the buyer gave (the API takes up to 10). Only
+ *   absolute http and https addresses are kept, so a `javascript:` or
+ *   `data:` value can never become a link an operator clicks; the rest are
+ *   counted, not shown.
+ * - `intake_source` says which door the claim came through.
+ */
+export type BuyerSubmission = {
+  contactedSeller: "yes" | "no" | "not_asked"
+  evidence: string[]
+  evidenceNotShown: number
+  source: string | null
+}
+
+const INTAKE_SOURCES: Record<string, string> = {
+  "store/order-claims": "Storefront claim form",
+  "store/orders/[id]/dispute": "Order dispute API",
+  "backfill:request": "Migrated from a legacy claim",
+}
+
+export const CONTACTED_SELLER_LABELS: Record<BuyerSubmission["contactedSeller"], string> = {
+  yes: "Yes",
+  no: "No",
+  not_asked: "Not asked (filed without the claim form)",
+}
+
+export function buyerSubmission(metadata: unknown): BuyerSubmission {
+  const md =
+    metadata && typeof metadata === "object" && !Array.isArray(metadata)
+      ? (metadata as Record<string, unknown>)
+      : {}
+
+  const contacted = md.contacted_seller
+  const contactedSeller = contacted === true ? "yes" : contacted === false ? "no" : "not_asked"
+
+  const raw = Array.isArray(md.evidence_urls) ? md.evidence_urls : []
+  const evidence: string[] = []
+  for (const entry of raw) {
+    if (typeof entry !== "string") continue
+    try {
+      const url = new URL(entry.trim())
+      if (url.protocol === "http:" || url.protocol === "https:") evidence.push(url.href)
+    } catch {
+      // Not an absolute address; counted below.
+    }
+  }
+
+  const source = typeof md.intake_source === "string" && md.intake_source.trim() ? md.intake_source.trim() : null
+
+  return {
+    contactedSeller,
+    evidence,
+    evidenceNotShown: raw.length - evidence.length,
+    source: source ? (INTAKE_SOURCES[source] ?? source) : null,
   }
 }
 
