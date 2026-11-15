@@ -56,6 +56,7 @@ export const BLACKSTAR_EVENT_TYPES = [
   "order.created",
   "delivery.option.selected",
   "order.cancelled",
+  "fulfillment.cancelled",
   "node.operator.approved",
 ] as const
 

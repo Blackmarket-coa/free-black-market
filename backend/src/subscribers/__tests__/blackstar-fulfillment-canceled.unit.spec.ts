@@ -175,3 +175,21 @@ describe("blackstar fulfillment canceled", () => {
     expect(emitBlackstarEvent).not.toHaveBeenCalled()
   })
 })
+
+it("cancels one transport job while its sibling stays live, including local-write retries", async () => {
+  process.env.FBM_BLACKSTAR_FULFILLMENT_REFS = "1"
+  try {
+    for (const status of ["pending", "cancelled"]) {
+      emitBlackstarEvent.mockClear()
+      const ctx = makeContainer([
+        { id: "bs_1", fulfillment_id: "ful_1", external_status: status },
+        { id: "bs_2", fulfillment_id: "ful_2", external_status: "in_transit" },
+      ])
+      await run(ctx)
+      expect(emitBlackstarEvent).toHaveBeenCalledTimes(1)
+      expect(emitBlackstarEvent).toHaveBeenCalledWith(ctx.container, "fulfillment.cancelled", {
+        source_order_ref: "order_1", source_fulfillment_ref: "ful_1",
+      }, { eventId: "blackstar:fulfillment.cancelled:order_1:ful_1", correlationId: "order_1" })
+    }
+  } finally { delete process.env.FBM_BLACKSTAR_FULFILLMENT_REFS }
+})

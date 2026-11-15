@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs"
+import { readdirSync, readFileSync } from "node:fs"
 import path from "node:path"
 
 import { InvoiceStatus } from "../modules/accounts-receivable/terms"
@@ -65,6 +65,38 @@ const checkConstraintValues = (
     )
   }
   return [...block[1].matchAll(/'([a-z0-9_]+)'/g)].map((m) => m[1])
+}
+
+/**
+ * The CHECK a database built from the migrations actually enforces: the one in
+ * the newest migration whose `up()` (re)defines the constraint. Reading only
+ * the migration that first created it goes stale the moment a later migration
+ * widens it, and the spec then fails on a value the database does permit —
+ * or, worse, passes against a vocabulary the database has since narrowed.
+ *
+ * Migrations run in filename order, which is lexicographic on the timestamp
+ * prefix, so the last file in that order wins. Only the `up()` body is read:
+ * a `down()` in the same file restores the previous vocabulary and must not
+ * be mistaken for the current one.
+ */
+const effectiveCheckConstraintValues = (
+  migrationsDir: string,
+  constraintName: string
+): { file: string; values: string[] } => {
+  const dir = path.resolve(__dirname, migrationsDir)
+  const files = readdirSync(dir)
+    .filter((name) => /^Migration.*\.ts$/.test(name))
+    .sort()
+  for (const file of [...files].reverse()) {
+    const up = readFileSync(path.join(dir, file), "utf8").split(/async\s+down\s*\(/)[0]
+    if (up.includes(`"${constraintName}"`) && /\bCHECK\b/.test(up)) {
+      return { file, values: checkConstraintValues(up, constraintName) }
+    }
+  }
+  throw new Error(
+    `No migration in ${migrationsDir} defines CHECK constraint ${constraintName}. ` +
+      `Update this test rather than deleting it.`
+  )
 }
 
 const sorted = (values: readonly string[]): string[] => [...values].sort()
@@ -148,11 +180,11 @@ describe("order-dispute: status and reason parity", () => {
 })
 
 describe("blackstar: event receipt outcome parity", () => {
-  const migration = readSource(
-    "../modules/blackstar-fulfillment/migrations/Migration20260902000400CreateBlackstarEventReceipt.ts"
-  )
-  const checkValues = checkConstraintValues(
-    migration,
+  // Created by Migration20260902000400CreateBlackstarEventReceipt and widened
+  // by Migration20261112000100AllowAmbiguousShipmentOutcome; read whichever is
+  // newest so the next widening does not need this spec edited.
+  const { values: checkValues } = effectiveCheckConstraintValues(
+    "../modules/blackstar-fulfillment/migrations",
     "CK_blackstar_event_receipt_outcome"
   )
 

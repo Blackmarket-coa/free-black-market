@@ -77,6 +77,7 @@ function normalizeRef(value: unknown): string | null {
 
 export function buildDeliveryOptionSelectedPayload(input: {
   orderId: string
+  fulfillmentId?: string | null
   fulfillmentNodeId?: string | null
   pickupPointId?: string | null
   vendingMachineId?: string | null
@@ -94,6 +95,7 @@ export function buildDeliveryOptionSelectedPayload(input: {
   return {
     delivery_option: "federated_delivery_network",
     source_order_ref: input.orderId,
+    ...(input.fulfillmentId ? { source_fulfillment_ref: input.fulfillmentId } : {}),
     claim_policy: "first_claim",
     job_type: "delivery",
     fulfillment_node_id: input.fulfillmentNodeId ?? null,

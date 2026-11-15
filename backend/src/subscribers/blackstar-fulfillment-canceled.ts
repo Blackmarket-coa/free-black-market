@@ -34,7 +34,8 @@ type ShipmentRow = {
  * `delivered` is left alone too: a local cancel cannot unmake a delivery, and
  * overwriting it would hide that the parcel arrived.
  *
- * Why the emit is conditional: contract v1 has no per-fulfillment cancel.
+ * Legacy compatibility (FBM_BLACKSTAR_FULFILLMENT_REFS off): contract v1
+ * has no per-fulfillment cancel.
  * Blackstar keeps one shipment board listing per `source_order_ref` and
  * cancels it on `order.cancelled` (only from open|claimed|in_transit —
  * `InboundEventProcessor::applyEvent`). So the event is sent only once every
@@ -93,6 +94,20 @@ export default async function blackstarFulfillmentCanceled({
         },
       ])
       cancelledIds.add(row.id)
+    }
+
+    // New receivers can cancel one transport job without stranding siblings.
+    // Retry even when the local row was already cancelled: queue delivery may
+    // have failed after the write. The stable event id deduplicates that retry.
+    if (process.env.FBM_BLACKSTAR_FULFILLMENT_REFS === "1" &&
+        targets.some((row) => cancelledIds.has(row.id) || row.external_status === "cancelled")) {
+      await emitBlackstarEvent(container, "fulfillment.cancelled", {
+        source_order_ref: orderId,
+        source_fulfillment_ref: fulfillmentId,
+      }, {
+        eventId: `blackstar:fulfillment.cancelled:${orderId}:${fulfillmentId}`,
+        correlationId: orderId,
+      })
     }
 
     const orderHasLiveShipment = rows.some(
