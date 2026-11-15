@@ -49,7 +49,7 @@ jest.mock("../require-completed-cart-order", () => ({
 
 // SD-48 (i): the shared settlement steps, as the ticket checkout calls them.
 jest.mock("../../subscription/steps/subscription-order-settlement", () => ({
-  ticketCheckoutLockStep: jest.fn(),
+  ticketCheckoutModeStep: jest.fn(),
   ticketCompletedCartOrderStep: jest.fn(),
   resolveTicketSellerStep: jest.fn(),
   linkTicketOrderSellerStep: jest.fn(),
@@ -82,7 +82,7 @@ import { validateTicketOrderStep } from "../validate-ticket-order"
 import {
   linkTicketOrderSellerStep,
   resolveTicketSellerStep,
-  ticketCheckoutLockStep,
+  ticketCheckoutModeStep,
   ticketCompletedCartOrderStep,
   ticketOrderPaidStep,
   ticketPaymentToCaptureStep,
@@ -98,8 +98,12 @@ const runComposer = () =>
   }).composerFn({ cart_id: "cart_1" })
 
 /** One checkout's world: the cart's order already there (a replay) or not, its ticket purchases, the payment to capture. */
-function world(opts: { completedInto?: string | null; ticketLinks?: unknown[]; paymentToCapture?: string | null } = {}) {
-  mock(ticketCheckoutLockStep).mockReturnValue({ timeout: 2, ttl: 10 })
+function world(
+  opts: { completedInto?: string | null; ticketLinks?: unknown[]; paymentToCapture?: string | null; settle?: boolean } = {}
+) {
+  mock(ticketCheckoutModeStep).mockReturnValue(
+    opts.settle ? { settle: true, timeout: 30, ttl: 120 } : { settle: false, timeout: 2, ttl: 10 }
+  )
   mock(ticketCompletedCartOrderStep).mockReturnValue({ order_id: opts.completedInto ?? null })
   mock(resolveTicketSellerStep).mockReturnValue({ seller_id: "sel_1" })
   mock(linkTicketOrderSellerStep).mockReturnValue({ linked: true, seller_id: "sel_1" })
@@ -127,11 +131,11 @@ describe("completeCartWithTicketsWorkflow", () => {
     world()
   })
 
-  it("takes the cart lock the lock step chooses for the flag, before anything else, and releases it last", () => {
+  it("takes the cart lock the mode step chooses for the flag, before anything else, and releases it last", () => {
     runComposer()
 
     expect(acquireLockStep).toHaveBeenCalledWith({ key: "cart_1", timeout: 2, ttl: 10 })
-    expect(order(ticketCheckoutLockStep)).toBeLessThan(order(acquireLockStep))
+    expect(order(ticketCheckoutModeStep)).toBeLessThan(order(acquireLockStep))
     expect(order(acquireLockStep)).toBeLessThan(order(ticketCompletedCartOrderStep))
     expect(releaseLockStep).toHaveBeenCalledWith({ key: "cart_1" })
     expect(order(createRemoteLinkStep)).toBeLessThan(order(releaseLockStep))
@@ -190,8 +194,24 @@ describe("completeCartWithTicketsWorkflow", () => {
       order(createTicketPurchasesStep),
     ]
     expect(sequence).toEqual([...sequence].sort((a, b) => a - b))
-    expect(validateTicketOrderStep).toHaveBeenCalledWith({ items: [], order_id: "order_1" })
+    expect(validateTicketOrderStep).toHaveBeenCalledWith({ items: [], order_id: "order_1", cancel_order_on_rollback: true })
     expect(createTicketPurchasesStep).toHaveBeenCalledWith({ order_id: "order_1", cart: { id: "cart_1", items: [] } })
+  })
+
+  it.each<[string, { completedInto?: string }]>([
+    ["a first checkout", {}],
+    ["a replay", { completedInto: "order_9" }],
+  ])("settling (flag on), %s: the seat check's compensation is told not to cancel the order; flag off it is, as before", (_label, opts) => {
+    world({ ...opts, settle: true })
+    runComposer()
+    const orderId = opts.completedInto ?? "order_1"
+    expect(acquireLockStep).toHaveBeenCalledWith({ key: "cart_1", timeout: 30, ttl: 120 })
+    expect(validateTicketOrderStep).toHaveBeenCalledWith({ items: [], order_id: orderId, cancel_order_on_rollback: false })
+
+    jest.clearAllMocks()
+    world({ ...opts, settle: false })
+    runComposer()
+    expect(validateTicketOrderStep).toHaveBeenCalledWith({ items: [], order_id: orderId, cancel_order_on_rollback: true })
   })
 
   it("captures nothing when the capture step picked no payment (flag off, or already captured)", () => {

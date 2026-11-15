@@ -16,7 +16,7 @@ import { requireCompletedCartOrderStep } from "./steps/require-completed-cart-or
 import {
   linkTicketOrderSellerStep,
   resolveTicketSellerStep,
-  ticketCheckoutLockStep,
+  ticketCheckoutModeStep,
   ticketCompletedCartOrderStep,
   ticketOrderPaidStep,
   ticketPaymentToCaptureStep,
@@ -76,14 +76,26 @@ export type CompleteCartWithTicketsWorkflowInput = {
  *     transaction and `payment.captured` follow) before any ticket purchase is
  *     created. A capture Stripe refuses fails the checkout: the seller link is
  *     dismissed, `completeCartWorkflow`'s compensation deletes the order and
- *     cancels the authorization (one Stripe cancel, nothing refunded), and no
- *     ticket purchase is created. `validateTicketOrderStep`'s compensation
- *     (Medusa's `cancelOrderWorkflow`) runs too, and on Medusa 2.14.2 with
- *     MikroORM 6.6.14 fails at its own order read (`reading 'kind'` in
- *     MikroORM's EntityLoader, a site `scripts/patch-mikro-orm.js` does not
- *     guard); the engine goes on with the rest. Seen on a real database; that
- *     failure is not this change's and happens with the flag off too, after
- *     any later step fails.
+ *     cancels the authorization (nothing refunded), and no ticket purchase is
+ *     created. A failure after the capture (the seat's purchase refused, as
+ *     when another cart took the seat after this one's seat check) deletes
+ *     the order the same way, and `completeCartWorkflow`'s compensation then
+ *     tries to refund the capture — best effort, SD-48 open item (b).
+ *
+ * With the flag on, the seat check (`validateTicketOrderStep`) is handed
+ * `cancel_order_on_rollback: false`, so its compensation does not run
+ * Medusa's `cancelOrderWorkflow`, which refunds captured payments, cancels
+ * uncaptured ones and emits `order.canceled`. On a first checkout
+ * `completeCartWorkflow`'s compensation already removes the order and voids or
+ * refunds its payment; a second undo would cancel the authorization, or
+ * refund the capture, a second time and announce the cancellation of an order
+ * that is being deleted (read from Medusa 2.14.2's `cancel-order.js`; on
+ * this stack it fails at its own first order read, SD-36 (8), so none of that
+ * was seen happen, and none of this checkout's behaviour rests on that
+ * failure). On a replay there is no completion to undo and the order is left
+ * for an operator, as SD-48 leaves one (open items (k), (o)):
+ * `cancelOrderWorkflow` would instead refund a replay's capture and cancel its
+ * order. With the flag off the seat check's compensation is what it was.
  *
  * A replay — this checkout run again on a cart already completed (a retried
  * POST, a double submit's second run) — never runs `completeCartWorkflow`
@@ -107,13 +119,14 @@ export type CompleteCartWithTicketsWorkflowInput = {
 export const completeCartWithTicketsWorkflow = createWorkflow(
   "complete-cart-with-tickets",
   (input: CompleteCartWithTicketsWorkflowInput) => {
-    // SD-48 (i): flag off, 2 s / 10 s as before; flag on, 30 s / 120 s, since
-    // the lock is now held across a Stripe capture.
-    const lock = ticketCheckoutLockStep()
+    // SD-48 (i): whether this checkout settles, read once. The cart lock:
+    // flag off, 2 s / 10 s as before; flag on, 30 s / 120 s, since the lock
+    // is now held across a Stripe capture.
+    const mode = ticketCheckoutModeStep()
     acquireLockStep({
       key: input.cart_id,
-      timeout: lock.timeout,
-      ttl: lock.ttl,
+      timeout: mode.timeout,
+      ttl: mode.ttl,
     })
 
     // SD-48 (i): the order of a cart already completed (flag off: null, unread).
@@ -160,8 +173,8 @@ export const completeCartWithTicketsWorkflow = createWorkflow(
 
     // SD-48 (i) / SD-53: flag on, an order that owes money and has no payment
     // is refused before anything else runs — a replay skips the guard above,
-    // and this keeps the seat check's cancel-order compensation and the seller
-    // link out of it. Flag off it reads nothing: the guard has already run.
+    // and this keeps the cart read, the seat check and the seller link out of
+    // it. Flag off it reads nothing: the guard has already run.
     ticketOrderPaidStep(
       transform({ checkout, input }, (data) => ({ cart_id: data.input.cart_id, order_id: data.checkout.order_id }))
     )
@@ -195,7 +208,8 @@ export const completeCartWithTicketsWorkflow = createWorkflow(
 
     // The seats, before any money is taken: a seat sold meanwhile fails the
     // checkout while the card is only authorized, so completeCartWorkflow's
-    // compensation cancels the hold instead of refunding a capture.
+    // compensation cancels the hold instead of refunding a capture. Settling,
+    // the step's compensation leaves the order alone (see above).
     when(
       "validate-ticket-order-condition",
       { existingLinks },
@@ -203,7 +217,8 @@ export const completeCartWithTicketsWorkflow = createWorkflow(
     ).then(() => {
       validateTicketOrderStep({
         items: carts[0].items,
-        order_id: orderId
+        order_id: orderId,
+        cancel_order_on_rollback: transform({ mode }, (data) => !data.mode.settle),
       } as unknown as ValidateTicketOrderStepInput)
     })
 

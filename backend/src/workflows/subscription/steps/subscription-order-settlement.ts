@@ -744,14 +744,24 @@ export const ticketOrderPaidStep = createStep(
 )
 
 /**
- * The ticket checkout's cart lock: before SD-48 (i) it waited 2 s for the
- * lock and held it 10 s, and with the flag off it still does. With the flag
- * on it also captures the card at Stripe while it holds the lock, so it takes
- * Medusa's own completion lock (and the digital checkout's): a 30 s wait and
- * a 120 s hold. A shorter hold could lapse mid-capture and let a second
- * checkout of the cart in; a shorter wait fails a double submit's second run
- * instead of letting it replay the first's order.
+ * The ticket checkout's mode, read once, first, from
+ * FF_TICKET_ORDER_SETTLEMENT_V1 (and nothing else):
+ *
+ *   - `settle`: whether this checkout settles (the steps above are live).
+ *     The workflow uses it to keep the seat check's compensation from
+ *     cancelling the order when the checkout settles (see
+ *     `complete-cart-with-tickets`);
+ *   - `timeout` / `ttl`, the cart lock: before SD-48 (i) it waited 2 s for
+ *     the lock and held it 10 s, and with the flag off it still does. With
+ *     the flag on it also captures the card at Stripe while it holds the
+ *     lock, so it takes Medusa's own completion lock (and the digital
+ *     checkout's): a 30 s wait and a 120 s hold. A shorter hold could lapse
+ *     mid-capture and let a second checkout of the cart in; a shorter wait
+ *     fails a double submit's second run instead of letting it replay the
+ *     first's order.
  */
-export const ticketCheckoutLockStep = createStep("ticket-checkout-lock", async () =>
-  new StepResponse(SALES.ticket.enabled() ? { timeout: 30, ttl: 120 } : { timeout: 2, ttl: 10 })
+export const ticketCheckoutModeStep = createStep("ticket-checkout-mode", async () =>
+  new StepResponse(
+    SALES.ticket.enabled() ? { settle: true, timeout: 30, ttl: 120 } : { settle: false, timeout: 2, ttl: 10 }
+  )
 )

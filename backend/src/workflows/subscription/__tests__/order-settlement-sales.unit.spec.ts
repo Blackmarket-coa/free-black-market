@@ -28,7 +28,7 @@ import {
   subscriptionPaymentToCaptureStep,
   linkTicketOrderSellerStep,
   resolveTicketSellerStep,
-  ticketCheckoutLockStep,
+  ticketCheckoutModeStep,
   ticketCompletedCartOrderStep,
   ticketOrderPaidStep,
   ticketPaymentToCaptureStep,
@@ -73,7 +73,7 @@ const ticketResolveSeller = invokeOf(resolveTicketSellerStep)
 const ticketLinkSeller = invokeOf(linkTicketOrderSellerStep)
 const ticketToCapture = invokeOf(ticketPaymentToCaptureStep)
 const ticketOrderPaid = invokeOf(ticketOrderPaidStep)
-const ticketLock = invokeOf(ticketCheckoutLockStep)
+const ticketMode = invokeOf(ticketCheckoutModeStep)
 
 const DIGITAL = PHASE0_FEATURE_FLAGS.DIGITAL_ORDER_SETTLEMENT_V1
 const SUBS = PHASE0_FEATURE_FLAGS.CONSUMER_SUBSCRIPTIONS_V1
@@ -622,14 +622,14 @@ describe("the ticket sale (SD-48 (i), FF_TICKET_ORDER_SETTLEMENT_V1)", () => {
     ["link seller", ticketLinkSeller, { order_id: "order_1", mode: "initial", expected_seller_id: null }, { linked: false, seller_id: null }],
     ["payment to capture", ticketToCapture, { order_id: "order_1", mode: "initial" }, { payment_id: null }],
     ["paid check", ticketOrderPaid, { cart_id: "cart_1", order_id: "order_1" }, { checked: false }],
-    ["cart lock", ticketLock, {}, { timeout: 2, ttl: 10 }],
+    ["checkout mode", ticketMode, {}, { settle: false, timeout: 2, ttl: 10 }],
   ]
 
   describe.each([
     ["every flag off", {}],
     ["the digital and subscription settlement flags on", { [DIGITAL]: "true", [SUBS]: "true" }],
   ])("its flag off, %s", (_label, env: Record<string, string>) => {
-    it.each(ticketCalls)("%s returns before any read, with what it did before (the lock: 2 s / 10 s)", async (_name, invoke, input, nothing) => {
+    it.each(ticketCalls)("%s returns before any read, with what it did before (the mode: not settling, the lock 2 s / 10 s)", async (_name, invoke, input, nothing) => {
       Object.assign(process.env, env)
       const { container, resolve } = recordingContainer("order_done")
       const res = await invoke(input, { container })
@@ -652,7 +652,7 @@ describe("the ticket sale (SD-48 (i), FF_TICKET_ORDER_SETTLEMENT_V1)", () => {
   it("are the shared functions under the ticket checkout's own names, sharing F5's link compensation", () => {
     expect(
       [
-        ticketCheckoutLockStep,
+        ticketCheckoutModeStep,
         ticketCompletedCartOrderStep,
         resolveTicketSellerStep,
         linkTicketOrderSellerStep,
@@ -660,7 +660,7 @@ describe("the ticket sale (SD-48 (i), FF_TICKET_ORDER_SETTLEMENT_V1)", () => {
         ticketOrderPaidStep,
       ].map((step) => stub(step).stepName)
     ).toEqual([
-      "ticket-checkout-lock",
+      "ticket-checkout-mode",
       "ticket-completed-cart-order",
       "resolve-ticket-seller",
       "link-ticket-order-seller",
@@ -675,10 +675,10 @@ describe("the ticket sale (SD-48 (i), FF_TICKET_ORDER_SETTLEMENT_V1)", () => {
       process.env[TICKETS] = "true"
     })
 
-    it("the cart lock is Medusa's own completion lock: a 30 s wait and a 120 s hold", async () => {
+    it("the checkout settles, and its cart lock is Medusa's own completion lock: a 30 s wait and a 120 s hold", async () => {
       const { container, resolve } = recordingContainer()
-      const res = await ticketLock({}, { container })
-      expect(res.output).toEqual({ timeout: 30, ttl: 120 })
+      const res = await ticketMode({}, { container })
+      expect(res.output).toEqual({ settle: true, timeout: 30, ttl: 120 })
       expect(resolve).not.toHaveBeenCalled()
     })
 

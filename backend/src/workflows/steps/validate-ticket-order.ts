@@ -21,6 +21,17 @@ export type ValidateTicketOrderStepInput = {
     }
   }[]
   order_id: string
+  /**
+   * Whether this step's compensation cancels the order with Medusa's
+   * `cancelOrderWorkflow` when a later step fails (default: it does, as it
+   * always has). The ticket checkout passes `false` when it settles
+   * (FF_TICKET_ORDER_SETTLEMENT_V1): `cancelOrderWorkflow` refunds a captured
+   * payment, cancels an uncaptured one and emits `order.canceled`, and the
+   * settling checkout already undoes a first completion through
+   * `completeCartWorkflow`'s own compensation, while it leaves a replay's
+   * order to an operator (SD-48 (k), (o)).
+   */
+  cancel_order_on_rollback?: boolean
 }
 
 // show_date arrives as a string on cart metadata but is stored as a DB `Date`
@@ -36,7 +47,7 @@ const showDateKey = (value: unknown): string => {
 
 export const validateTicketOrderStep = createStep(
   "validate-ticket-order",
-  async ({ items, order_id }: ValidateTicketOrderStepInput) => {
+  async ({ items, order_id, cancel_order_on_rollback }: ValidateTicketOrderStepInput) => {
     // Check for duplicate seats within the cart
     const seatDateCombinations = new Set<string>()
 
@@ -97,7 +108,9 @@ export const validateTicketOrderStep = createStep(
       }
     }
 
-    return new StepResponse({ validated: true }, order_id)
+    // `null`, not `undefined`, for no cancel: a StepResponse with no
+    // compensation input hands its output to the compensation instead.
+    return new StepResponse({ validated: true }, cancel_order_on_rollback === false ? null : order_id)
   },
   async (order_id, { container, context }) => {
     if (!order_id) return

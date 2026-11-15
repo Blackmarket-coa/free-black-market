@@ -51,7 +51,7 @@ const containerWithCollection = (others: string[] = []) => {
 const { invokeFn: invoke, compensateFn: compensate } =
   validateTicketOrderStep as unknown as {
     invokeFn: (input: any) => Promise<any>
-    compensateFn: (orderId: string | undefined, ctx: any) => Promise<void>
+    compensateFn: (orderId: string | null | undefined, ctx: any) => Promise<void>
   }
 
 // metadata.show_date is a string; purchases[].show_date is a DB `Date`. The step
@@ -219,5 +219,26 @@ describe("validateTicketOrderStep", () => {
     await compensate(undefined, { container: {}, context: {} })
 
     expect(cancelOrderWorkflow).not.toHaveBeenCalled()
+  })
+
+  // SD-48 (i): the settling ticket checkout (FF_TICKET_ORDER_SETTLEMENT_V1)
+  // passes `cancel_order_on_rollback: false`, so the compensation does not run
+  // cancelOrderWorkflow (a refund of a captured payment, a cancel of an
+  // uncaptured one, `order.canceled`).
+  it("cancel_order_on_rollback false: the compensation is handed null (not the output) and cancels nothing", async () => {
+    const result = await invoke({ items: [ticketItem()], order_id: "order_1", cancel_order_on_rollback: false })
+
+    expect(result.output).toEqual({ validated: true })
+    // null, not undefined: a StepResponse with no compensation input would
+    // hand the (truthy) output to the compensation instead.
+    expect(result.compensateInput).toBeNull()
+    await compensate(result.compensateInput, { container: { resolve: jest.fn() }, context: {} })
+    expect(cancelOrderWorkflow).not.toHaveBeenCalled()
+  })
+
+  it.each([[undefined], [true]])("cancel_order_on_rollback %s: the order id is handed to the compensation, as before", async (flag) => {
+    const result = await invoke({ items: [ticketItem()], order_id: "order_1", cancel_order_on_rollback: flag })
+
+    expect(result.compensateInput).toBe("order_1")
   })
 })

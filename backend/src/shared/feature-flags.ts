@@ -253,9 +253,14 @@ export const PHASE0_FEATURE_FLAGS = {
   // refused before the capture, so its authorization is cancelled, not
   // refunded. A refused capture fails the checkout: completeCartWorkflow's
   // compensation deletes the order and cancels the authorization, the seller
-  // link is dismissed, and no ticket purchase exists (the seat check's own
-  // compensation, Medusa's cancelOrderWorkflow, fails at its order read on
-  // this stack and the rest runs regardless; SD-48 (i) row). A
+  // link is dismissed, and no ticket purchase exists. A failure after the
+  // capture (a seat another cart took after this one's seat check) deletes
+  // the order the same way and refunds the capture, best effort (SD-48 (b)),
+  // where the flag-off loser's authorization is only cancelled; Stripe's fee on
+  // that capture is likely kept (SD-48 (b); not checked against FBM's
+  // account). With the flag on the seat check's own compensation
+  // (Medusa's cancelOrderWorkflow) is not run: completeCartWorkflow's undoes
+  // a first completion, and a replay's order is left for an operator. A
   // replay — the checkout run again on a cart already completed — never
   // re-enters `completeCartWorkflow` and so never registers its refund
   // compensation: a finished sale is returned as it is, one its first
