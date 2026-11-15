@@ -18,7 +18,9 @@
  *
  * So a script reads bare words (`apply`, `dry-run`, `name=value`), and anything
  * it does not recognise is refused rather than ignored: a misspelt `dryrun`
- * must not turn into a live run.
+ * must not turn into a live run. A script whose writes change what someone is
+ * owed or limited to is a dry run unless given `apply` ({@link APPLY_OR_DRY_RUN}),
+ * so a word that goes missing anyway leaves it previewing, not writing.
  */
 
 export type ScriptArgSpec = {
@@ -26,7 +28,23 @@ export type ScriptArgSpec = {
   flags?: readonly string[]
   /** `name=value` words, e.g. `default-plan` for `default-plan=free`. */
   options?: readonly string[]
+  /**
+   * Groups of flags that contradict each other, e.g. `["apply", "dry-run"]`.
+   * Giving more than one flag from a group is refused, so `apply dry-run`
+   * cannot be read either way.
+   */
+  exclusive?: readonly (readonly string[])[]
 }
+
+/**
+ * The words of a script that is a dry run unless it is told otherwise:
+ * `apply` writes, `dry-run` (or neither) previews, and both together are
+ * refused. Spread into a spec: `{ ...APPLY_OR_DRY_RUN, options: [...] }`.
+ */
+export const APPLY_OR_DRY_RUN = {
+  flags: ["apply", "dry-run"],
+  exclusive: [["apply", "dry-run"]],
+} as const satisfies ScriptArgSpec
 
 export type ScriptArgs = {
   flags: ReadonlySet<string>
@@ -66,7 +84,8 @@ export function wordsDroppedAfterSeparator(
  *
  * Refuses (never guesses at) anything outside the spec: a `--` separator whose
  * words were dropped, a `--flag` spelling the CLI would not have passed, an
- * unknown word, an option with no value or given twice.
+ * unknown word, an option with no value or given twice, and two flags from
+ * one `exclusive` group.
  */
 export function parseScriptArgs(
   args: readonly unknown[] | undefined,
@@ -79,7 +98,16 @@ export function parseScriptArgs(
 
   const dropped = wordsDroppedAfterSeparator(argv)
   if (dropped.length) {
-    const intended = dropped.map((w) => w.replace(/^-+/, "")).filter(Boolean)
+    // The words that did arrive belong in the corrected command too:
+    // `default-plan=free -- dry-run` should suggest `default-plan=free
+    // dry-run`, not a bare `dry-run` that is then refused for want of a plan.
+    const intended = [
+      ...new Set(
+        [...(args ?? []).map(String), ...dropped]
+          .map((w) => w.replace(/^-+/, ""))
+          .filter(Boolean)
+      ),
+    ]
     return {
       ok: false,
       message:
@@ -129,6 +157,16 @@ export function parseScriptArgs(
     }
 
     return { ok: false, message: `unknown argument "${word}"; ${usage}` }
+  }
+
+  for (const group of spec.exclusive ?? []) {
+    const given = group.filter((name) => flags.has(name))
+    if (given.length > 1) {
+      return {
+        ok: false,
+        message: `${given.map((w) => `"${w}"`).join(" and ")} contradict each other: give one; ${usage}`,
+      }
+    }
   }
 
   return { ok: true, flags, options }

@@ -73,11 +73,25 @@ Checked against `@medusajs/cli` 2.14.2, which parses with yargs in strict mode:
 | `exec ./x.ts --apply` | nothing: the CLI exits 1 with `Unknown argument: apply` before the script loads |
 | `exec ./x.ts -- --apply apply` | `[]`: everything after `--` is dropped, and the script runs as if nothing had been typed |
 
+`pnpm medusa exec` behaves the same: pnpm passes `--` through to the CLI, so the
+words after it are dropped there too.
+
 So take bare words (`apply`, `dry-run`, `name=value`), never `--flags`, and read
 them with `parseScriptArgs` from `src/shared/exec-args.ts`. It refuses an unknown
 word (a misspelt `dryrun` must not become a live run), a `--flag`, and a `--`
 separator (whose words are still visible in `process.argv`, which is how it
 tells), so a dropped or mistyped argument stops the script instead of changing
-what it does. A script that rewrites or deletes data should still be a dry run
-unless it is given a word that says otherwise, as `reencrypt-channel-credentials.ts`
-is (`apply`).
+what it does.
+
+A script that rewrites data, or whose writes change what a seller or buyer is
+owed or limited to, should also be a dry run unless it is given `apply`: spread
+`APPLY_OR_DRY_RUN` into its spec, which takes `apply` or `dry-run` and refuses
+both together. Then even a word lost some other way leaves it previewing.
+
+| Script | Writes only with | Arguments |
+|---|---|---|
+| `reencrypt-channel-credentials.ts` | `apply` | `apply` or `dry-run` |
+| `backfill-vendor-plan-assignments.ts` | `apply` | `default-plan=<code>` (required), `apply` or `dry-run`; `PLAN_BACKFILL_DRY_RUN=1` forces a dry run |
+| `fix-order-dispute-minor-units.ts` | `apply` | `before=<ISO time with a zone>` (required), `apply` or `dry-run` |
+| `backfill-promoted-listings.ts` | no word: writes unless `dry-run` | `dry-run`. Its grants are additive and idempotent (an open-ended entitlement for a seller already featured), and the `expire-promoted-listings` job tells operators to run it bare |
+| `ingest-irs-exempt-orgs.ts` | no word (behind `FF_NONPROFIT_PARITY_V1`) | source names: `pub78`, `revocation`, `eo_bmf`; none means all three |

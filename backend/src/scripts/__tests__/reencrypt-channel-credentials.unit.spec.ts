@@ -208,6 +208,19 @@ describe("reencryptChannelCredentials", () => {
       expect(updateChannelConnections).not.toHaveBeenCalled()
     })
 
+    it("takes `dry-run` to say so, and refuses `apply dry-run`", async () => {
+      const preview = makeContainer([row("a", "plaintext-token")])
+      await reencryptChannelCredentials({ container: preview.container, args: ["dry-run"] } as never)
+      expect(preview.updateChannelConnections).not.toHaveBeenCalled()
+      expect(logged(preview.logger)).toMatch(/dry run/)
+
+      const both = makeContainer([row("a", "plaintext-token")])
+      await expect(
+        reencryptChannelCredentials({ container: both.container, args: ["apply", "dry-run"] } as never)
+      ).rejects.toThrow(/"apply" and "dry-run" contradict each other/)
+      expect(both.updateChannelConnections).not.toHaveBeenCalled()
+    })
+
     it("tells a dry run how to apply, with the word that works", async () => {
       const { container, logger } = makeContainer([row("a", "plaintext-token")])
       await reencryptChannelCredentials({ container, args: [] } as never)

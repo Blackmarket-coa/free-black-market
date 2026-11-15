@@ -1,4 +1,5 @@
 import {
+  APPLY_OR_DRY_RUN,
   parseScriptArgs,
   scriptArgUsage,
   wordsDroppedAfterSeparator,
@@ -60,13 +61,23 @@ describe("parseScriptArgs", () => {
     expect(parsed.message).toContain("`… apply`")
   })
 
-  it("refuses a separator even after words that did arrive", () => {
+  it("refuses a separator even after words that did arrive, and keeps them in the suggestion", () => {
     const parsed = parseScriptArgs(
       ["default-plan=free"],
       { flags: ["dry-run"], options: ["default-plan"] },
       execArgv("default-plan=free", "--", "dry-run")
     )
     expect(parsed.ok).toBe(false)
+    if (parsed.ok) return
+    // Not `… dry-run`, which would then be refused for want of a plan.
+    expect(parsed.message).toContain("`… default-plan=free dry-run`")
+  })
+
+  it("suggests each intended word once", () => {
+    const parsed = parseScriptArgs([], { flags: ["apply"] }, execArgv("--", "--apply", "apply"))
+    expect(parsed.ok).toBe(false)
+    if (parsed.ok) return
+    expect(parsed.message).toContain("`… apply`;")
   })
 
   it("refuses a --flag spelling and names the bare word to use", () => {
@@ -94,6 +105,29 @@ describe("parseScriptArgs", () => {
     expect(
       parseScriptArgs(["default-plan=free", "default-plan=pro"], spec, execArgv()).ok
     ).toBe(false)
+  })
+})
+
+describe("APPLY_OR_DRY_RUN", () => {
+  it("reads `apply`, `dry-run` or neither, and refuses both", () => {
+    const read = (...words: string[]) => parseScriptArgs(words, APPLY_OR_DRY_RUN, execArgv(...words))
+    const none = read()
+    expect(none.ok && none.flags.size).toBe(0)
+    const apply = read("apply")
+    expect(apply.ok && apply.flags.has("apply")).toBe(true)
+    const dry = read("dry-run")
+    expect(dry.ok && dry.flags.has("dry-run")).toBe(true)
+    expect(read("apply", "dry-run")).toEqual({
+      ok: false,
+      message: '"apply" and "dry-run" contradict each other: give one; this script takes: apply, dry-run',
+    })
+    expect(read("dry-run", "apply").ok).toBe(false)
+  })
+
+  it("keeps the group when spread into a spec with options", () => {
+    const spec = { ...APPLY_OR_DRY_RUN, options: ["before"] }
+    expect(parseScriptArgs(["apply", "before=x"], spec, execArgv()).ok).toBe(true)
+    expect(parseScriptArgs(["apply", "dry-run", "before=x"], spec, execArgv()).ok).toBe(false)
   })
 })
 

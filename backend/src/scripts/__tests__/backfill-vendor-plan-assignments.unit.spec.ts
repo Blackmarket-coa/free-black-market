@@ -9,6 +9,10 @@ import { VendorPlanAssignedBy } from "../../modules/vendor-plan/models"
  * exec` drops everything after `--` (so the plan never arrived and the script
  * refused), and refuses `--default-plan=…` on its own as an unknown option.
  * Both checked against the real CLI on a migrated database.
+ *
+ * It is a dry run unless given `apply`: with enforcement live, the plan named
+ * here is what every unassigned seller is limited to from that moment, so a
+ * word that goes missing must leave it previewing.
  */
 
 function makeContainer(sellerIds: string[], assigned: string[] = []) {
@@ -69,10 +73,23 @@ describe("backfill-vendor-plan-assignments arguments", () => {
     expect(logged(logger)).toMatch(/1 assigned, 1 already had an assignment \(dry run\)/)
   })
 
-  it("assigns the named plan on `default-plan=free`, skipping sellers that have one", async () => {
-    const { container, plans } = makeContainer(["sel_1", "sel_2"], ["sel_2"])
+  it("previews on `default-plan=free` alone: a live run needs `apply`", async () => {
+    const { container, plans, logger } = makeContainer(["sel_1", "sel_2"], ["sel_2"])
 
     await backfillVendorPlanAssignments({ container, args: ["default-plan=free"] } as never)
+
+    expect(plans.createVendorPlanAssignments).not.toHaveBeenCalled()
+    expect(logged(logger)).toMatch(/1 assigned, 1 already had an assignment \(dry run\)/)
+    expect(logged(logger)).toContain("re-run with `default-plan=free apply`")
+  })
+
+  it("assigns the named plan on `default-plan=free apply`, skipping sellers that have one", async () => {
+    const { container, plans } = makeContainer(["sel_1", "sel_2"], ["sel_2"])
+
+    await backfillVendorPlanAssignments({
+      container,
+      args: ["default-plan=free", "apply"],
+    } as never)
 
     expect(plans.createVendorPlanAssignments).toHaveBeenCalledTimes(1)
     expect(plans.createVendorPlanAssignments.mock.calls[0][0]).toMatchObject({
@@ -115,9 +132,23 @@ describe("backfill-vendor-plan-assignments arguments", () => {
     // separator check this would have been a live run.
     const { container, plans } = makeContainer(["sel_1"])
 
+    const run = backfillVendorPlanAssignments({ container, args: ["default-plan=free"] } as never)
+    await expect(run).rejects.toThrow(/drops everything after "--"/)
+    // The suggested command keeps the plan that did arrive.
+    await expect(run).rejects.toThrow("`… default-plan=free dry-run`")
+    expect(plans.createVendorPlanAssignments).not.toHaveBeenCalled()
+  })
+
+  it("refuses `apply dry-run` rather than reading it either way", async () => {
+    const { container, graph, plans } = makeContainer(["sel_1"])
+
     await expect(
-      backfillVendorPlanAssignments({ container, args: ["default-plan=free"] } as never)
-    ).rejects.toThrow(/drops everything after "--"/)
+      backfillVendorPlanAssignments({
+        container,
+        args: ["default-plan=free", "apply", "dry-run"],
+      } as never)
+    ).rejects.toThrow(/"apply" and "dry-run" contradict each other/)
+    expect(graph).not.toHaveBeenCalled()
     expect(plans.createVendorPlanAssignments).not.toHaveBeenCalled()
   })
 
@@ -142,12 +173,16 @@ describe("backfill-vendor-plan-assignments arguments", () => {
     expect(plans.createVendorPlanAssignments).not.toHaveBeenCalled()
   })
 
-  it("keeps PLAN_BACKFILL_DRY_RUN=1 as a forced dry run", async () => {
+  it("keeps PLAN_BACKFILL_DRY_RUN=1 as a forced dry run, even with `apply`", async () => {
     process.env.PLAN_BACKFILL_DRY_RUN = "1"
-    const { container, plans } = makeContainer(["sel_1"])
+    const { container, plans, logger } = makeContainer(["sel_1"])
 
-    await backfillVendorPlanAssignments({ container, args: ["default-plan=free"] } as never)
+    await backfillVendorPlanAssignments({
+      container,
+      args: ["default-plan=free", "apply"],
+    } as never)
 
     expect(plans.createVendorPlanAssignments).not.toHaveBeenCalled()
+    expect(logged(logger)).toContain("forced by PLAN_BACKFILL_DRY_RUN=1")
   })
 })
