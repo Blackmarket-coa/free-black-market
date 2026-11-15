@@ -7,6 +7,7 @@ import { CART_COMPLETION_INCOMPLETE_MESSAGE } from "../../src/lib/cart-completio
 import { cardOrderFixtures } from "./helpers/card-orders"
 import { trackSubscribers } from "./helpers/drain-subscribers"
 import { clearStalledWorkflows, stallNextCartCompletion } from "./helpers/stalled-workflows"
+import { cartCompletionStallRetry } from "./helpers/cart-completion-stall"
 import { createPublishableKeyToken, pakHeaders } from "./_publishable-key"
 
 jest.setTimeout(240 * 1000)
@@ -26,7 +27,10 @@ jest.setTimeout(240 * 1000)
  * A ticket cart here is one seated ticket: a venue with one row, a Medusa
  * product with a `Date` option, the ticket product and variant linked to it,
  * and a cart line carrying the seat in its metadata — what the storefront's
- * seat picker puts in the cart.
+ * seat picker puts in the cart. Some scenarios add lines that are not one
+ * seat (a ticket line naming no seat, a plain product), which a store client
+ * can put in a cart the storefront sends here: every line carrying
+ * `metadata.show_date` is enough.
  *
  * The workflow is required after the app has booted, never imported at the
  * top: a link's `entryPoint` (read when the workflow is composed) is
@@ -57,8 +61,11 @@ medusaIntegrationTestRunner({
     // Every subscriber a test's events set off must finish before the
     // runner truncates the database (helpers/drain-subscribers.ts).
     let drainSubscribers: () => Promise<void> = async () => {}
+    let channel: { id: string } | null = null
 
-    beforeEach(() => {
+    /** What every test starts from; run again, after `disarm`, before each re-run of a scenario a stall cut short. */
+    function arrange() {
+      channel = null
       drainSubscribers = trackSubscribers(container)
       const provider = container().resolve(Modules.PAYMENT).paymentProviderService_.retrieveProvider("pp_stripe_stripe")
       let n = 0
@@ -83,14 +90,30 @@ medusaIntegrationTestRunner({
       }
       process.env[CARD] = "true"
       process.env[TICKETS] = "true"
-    })
-
-    afterEach(() => {
+    }
+    function disarm() {
       jest.restoreAllMocks()
       delete process.env[CARD]
       delete process.env[TICKETS]
       delete process.env[DIGITAL]
       delete process.env[SUBS]
+    }
+    beforeEach(arrange)
+    afterEach(disarm)
+
+    /**
+     * A natural SD-53 stall re-runs the scenario on a fresh cart
+     * (helpers/cart-completion-stall.ts). Every test here uses it but the one
+     * that stalls a completion on purpose, which uses Jest's own `it` and keeps
+     * asserting what the stall leaves.
+     */
+    const stallRetry = cartCompletionStallRetry({
+      container,
+      reset: async () => {
+        await drainSubscribers()
+        disarm()
+        arrange()
+      },
     })
 
     /**
@@ -121,10 +144,6 @@ medusaIntegrationTestRunner({
       return seen
     }
 
-    let channel: { id: string } | null = null
-    beforeEach(() => {
-      channel = null
-    })
     async function salesChannel() {
       if (!channel) {
         ;[channel] = await container().resolve(Modules.SALES_CHANNEL).createSalesChannels([{ name: `Storefront ${uid()}` }])
@@ -181,11 +200,35 @@ medusaIntegrationTestRunner({
       return { product, rowId: row.id, ticketVariantId: ticketVariant.id, ticketProductId: ticketProduct.id }
     }
 
+    /** A published product of `sellerId` that is not a ticket (a poster), in the sales channel. */
+    async function makePlainProduct(sellerId: string): Promise<Show["product"]> {
+      const id = uid()
+      const [product] = await container().resolve(Modules.PRODUCT).createProducts([
+        {
+          title: `Poster ${id}`,
+          handle: `poster-${id}`,
+          status: "published",
+          options: [{ title: "Size", values: ["one"] }],
+          variants: [{ title: `Poster ${id}`, manage_inventory: false, options: { Size: "one" } }],
+        },
+      ])
+      const link = container().resolve(ContainerRegistrationKeys.LINK)
+      await link.create([
+        { [Modules.PRODUCT]: { product_id: product.id }, [Modules.SALES_CHANNEL]: { sales_channel_id: (await salesChannel()).id } },
+        { [SELLER_MODULE]: { seller_id: sellerId }, [Modules.PRODUCT]: { product_id: product.id } },
+      ])
+      return product
+    }
+
+    /** A cart line that is not a seat of a show: any product, any line metadata a store client sets. */
+    type OtherLine = { product: Show["product"]; metadata: Record<string, unknown> }
+    const isShow = (line: Show | OtherLine): line is Show => "rowId" in line
+
     /**
-     * A customer's cart holding one seat of each show at $5.00, with a Stripe
-     * session opened on it.
+     * A customer's cart holding one seat of each show (and each other line
+     * as given) at $5.00 a line, with a Stripe session opened on it.
      */
-    async function makeCart(shows: Show[], seat = "7") {
+    async function makeCart(shows: Array<Show | OtherLine>, seat = "7") {
       const id = uid()
       const [customer] = await container().resolve(Modules.CUSTOMER).createCustomers([{ email: `fan-${id}@example.com` }])
       const [region] = await container().resolve(Modules.REGION).createRegions([{ name: `US ${id}`, currency_code: "usd" }])
@@ -204,7 +247,7 @@ medusaIntegrationTestRunner({
             quantity: 1,
             unit_price: 5,
             requires_shipping: false,
-            metadata: { venue_row_id: s.rowId, seat_number: seat, show_date: SHOW_DATE },
+            metadata: isShow(s) ? { venue_row_id: s.rowId, seat_number: seat, show_date: SHOW_DATE } : s.metadata,
           })),
         },
       ])
@@ -348,17 +391,26 @@ medusaIntegrationTestRunner({
     /**
      * Every read made through Query — what `useQueryGraphStep`, the shared
      * settlement steps and Medusa's own workflows all call — recorded before
-     * it runs, so a read that then fails is recorded too.
+     * it runs, so a read that then fails is recorded too. `failOnce`: the
+     * first read it matches throws, as a dropped connection would.
      */
-    function queryReads() {
+    function queryReads(failOnce?: (q: { entity: string; fields: string[] }) => boolean) {
       const query = container().resolve(ContainerRegistrationKeys.QUERY)
       const graph = query.graph.bind(query)
       const seen: Array<{ entity: string; fields: string[]; filters: any }> = []
+      let failed = false
       jest.spyOn(query, "graph").mockImplementation(async (q: any, ...rest: any[]) => {
-        seen.push({ entity: q?.entity, fields: q?.fields ?? [], filters: q?.filters })
+        const read = { entity: q?.entity, fields: q?.fields ?? [], filters: q?.filters }
+        seen.push(read)
+        if (failOnce && !failed && failOnce(read)) {
+          failed = true
+          throw new Error("transient: connection terminated unexpectedly")
+        }
         return graph(q, ...rest)
       })
       return {
+        /** Whether `failOnce` has failed a read. */
+        failed: () => failed,
         /**
          * The order ids Medusa's `cancelOrderWorkflow` was started on: its
          * first step is this read ("get-order"), so a run is recorded even
@@ -374,6 +426,9 @@ medusaIntegrationTestRunner({
                 q.fields.includes("payment_collections.payments.captures.raw_amount")
             )
             .map((q) => q.filters?.id),
+        /** The seat-line check's cart read (`requireSeatedTicketCartStep`). */
+        seatLineReads: () =>
+          seen.filter((q) => q.entity === "cart" && q.fields.includes("items.variant.ticket_product_variant.id")).length,
         /** The checkout's cart read that feeds the seat check (`validateTicketOrderStep`), right before it. */
         seatCheckReads: () =>
           seen.filter((q) => q.entity === "cart" && q.fields.includes("items.variant.ticket_product_variant.purchases.*")).length,
@@ -424,10 +479,18 @@ medusaIntegrationTestRunner({
       if (to) await link.create({ [SELLER_MODULE]: { seller_id: to }, [Modules.PRODUCT]: { product_id: productId } })
     }
 
+    const UNSEATED = "require-seated-ticket-cart: A ticket checkout sells one seat per line and nothing else, and this cart cannot be settled: "
+    /** The lines a seat-line refusal names, after its fixed words; it must be the checkout's only error. */
+    const unseatedLines = (errors: string[]) => {
+      expect(errors).toHaveLength(1)
+      expect(errors[0].slice(0, UNSEATED.length)).toBe(UNSEATED)
+      return errors[0].slice(UNSEATED.length)
+    }
+
     describe("a ticket checkout, with FF_TICKET_ORDER_SETTLEMENT_V1", () => {
       afterEach(settleBeforeTeardown)
 
-      it("the order is linked to its seller, captured before its ticket purchase exists, and settles to that seller less the 3%", async () => {
+      stallRetry.it("the order is linked to its seller, its ticket purchase made before the card is captured, and settles to that seller less the 3%", async () => {
         const seller = await makeSeller()
         const show = await makeShow(seller.id)
         const { cart } = await makeCart([show])
@@ -440,16 +503,18 @@ medusaIntegrationTestRunner({
         expect(errors).toEqual([])
         const orderId = result.order.id as string
         // What the spies other scenarios read the absence of do see, here:
-        // the seat check's cart read, the ticket-link read, the seller link.
+        // the seat-line check's and the seat check's cart reads, the
+        // ticket-link read, the seller link.
+        expect(reads.seatLineReads()).toBe(1)
         expect(reads.seatCheckReads()).toBe(1)
         expect(reads.ticketLinkReads()).toEqual([orderId])
         expect(sellerLinks).toEqual([orderId])
         expect(reads.cancelOrderStarts()).toEqual([])
 
-        // The card was captured, once, before the seat was sold.
+        // The seat was sold, then the card captured, once.
         expect(stripe.capturePayment).toHaveBeenCalledTimes(1)
         expect(created).toHaveBeenCalledTimes(1)
-        expect(stripe.capturePayment.mock.invocationCallOrder[0]).toBeLessThan(created.mock.invocationCallOrder[0])
+        expect(created.mock.invocationCallOrder[0]).toBeLessThan(stripe.capturePayment.mock.invocationCallOrder[0])
 
         const order = await readOrder(orderId)
         expect(order.seller?.id).toBe(seller.id)
@@ -468,7 +533,7 @@ medusaIntegrationTestRunner({
         expect(sellerLeg.credit_account_id).toBe((await sellerEarnings(seller.id)).id)
       })
 
-      it("a cart holding two sellers' tickets is refused before the card is touched", async () => {
+      stallRetry.it("a cart holding two sellers' tickets is refused before the card is touched", async () => {
         const a = await makeShow((await makeSeller()).id)
         const b = await makeShow((await makeSeller()).id)
         const { cart, customer } = await makeCart([a, b])
@@ -483,7 +548,7 @@ medusaIntegrationTestRunner({
         expect([...(await purchasesOf(a)), ...(await purchasesOf(b))]).toEqual([])
       })
 
-      it("a ticket product with no seller (an admin-created one without seller_id) is refused before the card is touched", async () => {
+      stallRetry.it("a ticket product with no seller (an admin-created one without seller_id) is refused before the card is touched", async () => {
         const show = await makeShow(null)
         const { cart, customer } = await makeCart([show])
 
@@ -495,7 +560,37 @@ medusaIntegrationTestRunner({
         expect(await liveOrders(customer.id)).toEqual([])
       })
 
-      it("a seat sold meanwhile is refused before the capture: the authorization is cancelled, nothing captured or refunded", async () => {
+      stallRetry.it("a ticket line naming no seat (only its show date) is refused before the card is touched: nothing authorized or captured, no order, no seller link", async () => {
+        const seller = await makeSeller()
+        const show = await makeShow(seller.id)
+        const { cart, customer } = await makeCart([{ product: show.product, metadata: { show_date: SHOW_DATE } }])
+
+        const { errors } = await checkout(cart.id)
+        expect(unseatedLines(errors)).toMatch(/^line \S+ names no venue_row_id, seat_number\.$/)
+        expect(stripe.authorizePayment).not.toHaveBeenCalled()
+        expect(stripe.capturePayment).not.toHaveBeenCalled()
+        expect(await liveOrders(customer.id)).toEqual([])
+        expect(await liveSellerOrderLinks(seller.id)).toEqual([])
+        expect(await purchasesOf(show)).toEqual([])
+      })
+
+      stallRetry.it("a cart holding a seat and a line that is not a ticket (a plain product of the same seller, carrying a show date) is refused before the card is touched", async () => {
+        const seller = await makeSeller()
+        const show = await makeShow(seller.id)
+        const poster = await makePlainProduct(seller.id)
+        const { cart, customer } = await makeCart([show, { product: poster, metadata: { show_date: SHOW_DATE } }])
+
+        const { errors } = await checkout(cart.id)
+        // Only the poster's line is named: the seat is one seat.
+        expect(unseatedLines(errors)).toMatch(/^line \S+ is not a ticket\.$/)
+        expect(stripe.authorizePayment).not.toHaveBeenCalled()
+        expect(stripe.capturePayment).not.toHaveBeenCalled()
+        expect(await liveOrders(customer.id)).toEqual([])
+        expect(await liveSellerOrderLinks(seller.id)).toEqual([])
+        expect(await purchasesOf(show)).toEqual([])
+      })
+
+      stallRetry.it("a seat sold meanwhile is refused before the capture: the authorization is cancelled, nothing captured or refunded", async () => {
         const seller = await makeSeller()
         const show = await makeShow(seller.id)
         const { cart, customer } = await makeCart([show])
@@ -522,7 +617,7 @@ medusaIntegrationTestRunner({
         expect((await purchasesOf(show)).map((p) => p.order_id)).toEqual(["order_someone_else"])
       })
 
-      it("a capture Stripe refuses fails the checkout: no live order, no seller link, no ticket purchase; the hold is cancelled and nothing refunded", async () => {
+      stallRetry.it("a capture Stripe refuses fails the checkout: the seat's purchase is deleted and the seat free again, no live order or seller link; the hold is cancelled and nothing refunded", async () => {
         const seller = await makeSeller()
         const show = await makeShow(seller.id)
         const { cart, customer, collection } = await makeCart([show])
@@ -544,7 +639,10 @@ medusaIntegrationTestRunner({
         // read an order on this stack.
         expect(reads.cancelOrderStarts()).toEqual([])
         expect(stripe.cancelPayment).toHaveBeenCalledTimes(1)
-        expect(created).not.toHaveBeenCalled()
+        // The seat was sold before the capture, and its purchase deleted by
+        // createTicketPurchasesStep's compensation when the capture failed.
+        expect(created).toHaveBeenCalledTimes(1)
+        expect(created.mock.invocationCallOrder[0]).toBeLessThan(stripe.capturePayment.mock.invocationCallOrder[0])
         expect(await purchasesOf(show)).toEqual([])
         expect(await liveOrders(customer.id)).toEqual([])
         expect(await liveSellerOrderLinks(seller.id)).toEqual([])
@@ -553,19 +651,26 @@ medusaIntegrationTestRunner({
         const locking = container().resolve(Modules.LOCKING)
         await locking.acquire(cart.id, { expire: 5 })
         await locking.release(cart.id)
+
+        // The seat is free again: another cart buys it.
+        stripe.capturePayment.mockImplementation(async (input: any) => ({ data: { ...(input?.data ?? {}), status: "succeeded" } }))
+        const next = await makeCart([show])
+        const sold = await checkout(next.cart.id)
+        expect(sold.errors).toEqual([])
+        expect((await purchasesOf(show)).map((p) => p.order_id)).toEqual([sold.result.order.id])
       })
 
-      it("a failure after the capture (the seat's purchase refused) leaves no live order, seller link or ticket purchase, and the capture is refunded when Stripe takes the refund", async () => {
+      stallRetry.it("a failure after the capture (the order's refetch, the one step after it, fails once) leaves no live order, seller link or ticket purchase, and the capture is refunded when Stripe takes the refund", async () => {
         const seller = await makeSeller()
         const show = await makeShow(seller.id)
         const { cart, customer, collection } = await makeCart([show])
-        jest.spyOn(container().resolve(TICKET_BOOKING_MODULE), "createTicketPurchases").mockImplementation(async () => {
-          throw new Error("duplicate key value violates unique constraint")
-        })
-        const reads = queryReads()
+        const created = jest.spyOn(container().resolve(TICKET_BOOKING_MODULE), "createTicketPurchases")
+        const reads = queryReads((q) => q.entity === "order" && q.fields.includes("discount_total"))
 
         const { errors } = await checkout(cart.id)
-        expect(errors).toEqual(["create-ticket-purchases: duplicate key value violates unique constraint"])
+        expect(reads.failed()).toBe(true)
+        expect(errors).toEqual(["refetch-order: transient: connection terminated unexpectedly"])
+        expect(created).toHaveBeenCalledTimes(1)
         expect(stripe.capturePayment).toHaveBeenCalledTimes(1)
         // completeCartWorkflow's compensatePaymentIfNeededStep: best effort
         // (SD-48 (b)). Stripe cancels are not counted: the stub takes a cancel
@@ -578,7 +683,7 @@ medusaIntegrationTestRunner({
         expect(await moneyOf(collection.id)).toEqual([expect.objectContaining({ captures: [5], refunds: [5] })])
       })
 
-      it("two carts for one seat at once (SD-48 (b)): both pass the seat check and both are captured; the seat's unique index refuses the second, whose capture is refunded and whose order and seller link are gone", async () => {
+      stallRetry.it("two carts for one seat at once (SD-48 (b)): both pass the seat check; the seat's unique index refuses the second before any money moves — one capture, nothing refunded, the loser's hold cancelled and its order and seller link gone", async () => {
         const seller = await makeSeller()
         const show = await makeShow(seller.id)
         const x = await makeCart([show])
@@ -595,20 +700,23 @@ medusaIntegrationTestRunner({
         expect(lostRun.errors).toEqual([expect.stringMatching(/^create-ticket-purchases: /)])
         const wonOrderId = runs[winner].result.order.id as string
 
-        // Both were captured; only the loser's capture was refunded (best
-        // effort, SD-48 (b)) — where with the flag off the loser's card was
-        // only authorized (the flag-off race below).
-        expect(stripe.capturePayment).toHaveBeenCalledTimes(2)
-        expect(stripe.refundPayment).toHaveBeenCalledTimes(1)
+        // The seat's purchase is made before the capture, so the loser was
+        // refused while its card was only authorized: completeCartWorkflow's
+        // compensation cancelled that hold, and nothing was captured or
+        // refunded for it. Capturing first, the loser was captured and then
+        // refunded, best effort (SD-48 (b)).
+        expect(stripe.capturePayment).toHaveBeenCalledTimes(1)
+        expect(stripe.refundPayment).not.toHaveBeenCalled()
+        expect(stripe.cancelPayment).toHaveBeenCalledTimes(1)
         expect(await moneyOf(won.collection.id)).toEqual([{ captures: [5], refunds: [], canceled: false }])
-        expect(await moneyOf(lost.collection.id)).toEqual([expect.objectContaining({ captures: [5], refunds: [5] })])
+        expect(await moneyOf(lost.collection.id)).toEqual([{ captures: [], refunds: [], canceled: true }])
         expect(reads.cancelOrderStarts()).toEqual([])
         expect((await purchasesOf(show)).map((p) => p.order_id)).toEqual([wonOrderId])
         expect(await liveOrders(lost.customer.id)).toEqual([])
         expect(await liveSellerOrderLinks(seller.id)).toEqual([{ order_id: wonOrderId }])
       })
 
-      it("a product moved to another seller while the card was authorized is refused at the link: rolled back, nothing captured", async () => {
+      stallRetry.it("a product moved to another seller while the card was authorized is refused at the link: rolled back, nothing captured", async () => {
         const a = await makeSeller()
         const b = await makeSeller()
         const show = await makeShow(a.id)
@@ -632,7 +740,7 @@ medusaIntegrationTestRunner({
         expect(await liveSellerOrderLinks(b.id)).toEqual([])
       })
 
-      it("the store route answers 200 with the order, linked and captured; and refuses a two-seller cart with 400, before the card is touched", async () => {
+      stallRetry.it("the store route answers 200 with the order, linked and captured; and refuses a two-seller cart and a seat-less ticket line with 400, before the card is touched", async () => {
         const pak = pakHeaders(await createPublishableKeyToken(getContainer))
         const seller = await makeSeller()
         const show = await makeShow(seller.id)
@@ -653,13 +761,20 @@ medusaIntegrationTestRunner({
         expect(refused.data.message).toMatch(/^A ticket order is sold by one seller/)
         expect(stripe.authorizePayment).toHaveBeenCalledTimes(1)
         expect(await liveOrders(two.customer.id)).toEqual([])
+
+        const seatless = await makeCart([{ product: show.product, metadata: { show_date: SHOW_DATE } }])
+        const unseated = await api.post(`/store/carts/${seatless.cart.id}/complete-tickets`, {}, pak).catch((e: any) => e.response)
+        expect(unseated.status).toBe(400)
+        expect(unseated.data.message).toMatch(/^A ticket checkout sells one seat per line and nothing else/)
+        expect(stripe.authorizePayment).toHaveBeenCalledTimes(1)
+        expect(await liveOrders(seatless.customer.id)).toEqual([])
       })
     })
 
     describe("a replay — the checkout run again on a cart it already completed — with FF_TICKET_ORDER_SETTLEMENT_V1", () => {
       afterEach(settleBeforeTeardown)
 
-      it("returns the same order: captured once, nothing refunded or cancelled, one ticket purchase", async () => {
+      stallRetry.it("returns the same order: captured once, nothing refunded or cancelled, one ticket purchase", async () => {
         const seller = await makeSeller()
         const show = await makeShow(seller.id)
         const { cart, collection } = await makeCart([show])
@@ -684,7 +799,7 @@ medusaIntegrationTestRunner({
         expect(await liveSellerOrderLinks(seller.id)).toEqual([{ order_id: orderId }])
       })
 
-      it("a replay that fails after the order is found refunds nothing, and leaves the order, its seat and its seller as they were", async () => {
+      stallRetry.it("a replay that fails after the order is found refunds nothing, and leaves the order, its seat and its seller as they were", async () => {
         const seller = await makeSeller()
         const show = await makeShow(seller.id)
         const { cart, collection } = await makeCart([show])
@@ -719,7 +834,7 @@ medusaIntegrationTestRunner({
         expect((await purchasesOf(show)).map((p) => p.order_id)).toEqual([orderId])
       })
 
-      it("of an order its first completion left unlinked and uncaptured: the retry links it, captures it once, and only then sells the seat", async () => {
+      stallRetry.it("of an order its first completion left unlinked and uncaptured: the retry links it, sells the seat, and only then captures it, once", async () => {
         const seller = await makeSeller()
         const show = await makeShow(seller.id)
         const { cart, collection } = await makeCart([show])
@@ -740,13 +855,13 @@ medusaIntegrationTestRunner({
         expect(order.seller?.id).toBe(seller.id)
         expect(stripe.capturePayment).toHaveBeenCalledTimes(1)
         expect(created).toHaveBeenCalledTimes(1)
-        expect(stripe.capturePayment.mock.invocationCallOrder[0]).toBeLessThan(created.mock.invocationCallOrder[0])
+        expect(created.mock.invocationCallOrder[0]).toBeLessThan(stripe.capturePayment.mock.invocationCallOrder[0])
         expect((await purchasesOf(show)).map((p) => p.order_id)).toEqual([orderId])
         expect(stripe.refundPayment).not.toHaveBeenCalled()
         expect(await moneyOf(collection.id)).toEqual([{ captures: [5], refunds: [], canceled: false }])
       })
 
-      it("of an order its first completion left unlinked and uncaptured, a capture Stripe refuses fails the retry before any seat is sold, and refunds nothing", async () => {
+      stallRetry.it("of an order its first completion left unlinked and uncaptured, a capture Stripe refuses fails the retry: the seat's purchase is undone, nothing refunded", async () => {
         const seller = await makeSeller()
         const show = await makeShow(seller.id)
         const { cart } = await makeCart([show])
@@ -763,7 +878,8 @@ medusaIntegrationTestRunner({
         const retry = await checkout(cart.id)
         expect(retry.errors).toEqual(["capture-payment-workflow-as-step: card_declined"])
         expect(stripe.capturePayment).toHaveBeenCalledTimes(1)
-        expect(created).not.toHaveBeenCalled()
+        // Sold before the capture, deleted by its compensation after it.
+        expect(created).toHaveBeenCalledTimes(1)
         expect(stripe.refundPayment).not.toHaveBeenCalled()
         expect(await purchasesOf(show)).toEqual([])
         // The retry's seller link is undone with it; the order stays for an
@@ -775,7 +891,7 @@ medusaIntegrationTestRunner({
         expect((await readOrder(orderId)).status).not.toBe("canceled")
       })
 
-      it("of an order its first completion left uncaptured, a retry captured and then refused at the seat's purchase keeps the capture and the order (SD-48 (k)); the next retry sells the seat without capturing again", async () => {
+      stallRetry.it("of an order its first completion left uncaptured, a retry refused at the seat's purchase captures nothing and keeps the order; the next retry sells the seat and captures once", async () => {
         const seller = await makeSeller()
         const show = await makeShow(seller.id)
         const { cart, collection } = await makeCart([show])
@@ -791,16 +907,17 @@ medusaIntegrationTestRunner({
 
         const retry = await checkout(cart.id)
         expect(retry.errors).toEqual(["create-ticket-purchases: ticket store down"])
-        expect(stripe.capturePayment).toHaveBeenCalledTimes(1)
-        // Nothing on a replay refunds or cancels: no completeCartWorkflow
-        // compensation, and the seat check's compensation was told not to
-        // run cancelOrderWorkflow (which would refund this capture).
+        // Refused before the capture: no money moved. Nothing on a replay
+        // refunds or cancels either (no completeCartWorkflow compensation, and
+        // the seat check's compensation was told not to run cancelOrderWorkflow).
+        expect(stripe.capturePayment).not.toHaveBeenCalled()
         expect(stripe.refundPayment).not.toHaveBeenCalled()
         expect(stripe.cancelPayment).not.toHaveBeenCalled()
         expect(reads.cancelOrderStarts()).toEqual([])
         expect((await readOrder(orderId)).status).not.toBe("canceled")
-        expect(await moneyOf(collection.id)).toEqual([{ captures: [5], refunds: [], canceled: false }])
+        expect(await moneyOf(collection.id)).toEqual([{ captures: [], refunds: [], canceled: false }])
         expect(await purchasesOf(show)).toEqual([])
+        expect(await liveSellerOrderLinks(seller.id)).toEqual([])
 
         const again = await checkout(cart.id)
         expect(again.errors).toEqual([])
@@ -809,6 +926,55 @@ medusaIntegrationTestRunner({
         expect((await purchasesOf(show)).map((p) => p.order_id)).toEqual([orderId])
         expect((await readOrder(orderId)).seller?.id).toBe(seller.id)
         expect(await moneyOf(collection.id)).toEqual([{ captures: [5], refunds: [], canceled: false }])
+      })
+
+      stallRetry.it("of an order the checkout completed with the flag off, holding a seat and a ticket line naming no seat: the replay is refused before anything is linked or captured, though the order's seat is sold", async () => {
+        const seller = await makeSeller()
+        const show = await makeShow(seller.id)
+        const { cart, collection } = await makeCart([show, { product: show.product, metadata: { show_date: SHOW_DATE } }])
+        delete process.env[TICKETS]
+        const first = await checkout(cart.id)
+        expect(first.errors).toEqual([])
+        const orderId = first.result.order.id as string
+        // Flag off, the seat-less line was passed over: one seat sold for two lines.
+        expect((await purchasesOf(show)).map((p) => p.order_id)).toEqual([orderId])
+        process.env[TICKETS] = "true"
+        const sellerLinks = sellerLinkCreates()
+
+        const replay = await checkout(cart.id)
+        // The order already has its ticket purchase, so the seat check is
+        // skipped on this replay; the seat-line check is not.
+        expect(unseatedLines(replay.errors)).toMatch(/^line \S+ names no venue_row_id, seat_number\.$/)
+        expect(sellerLinks).toEqual([])
+        expect(stripe.capturePayment).not.toHaveBeenCalled()
+        expect(stripe.refundPayment).not.toHaveBeenCalled()
+        expect(stripe.cancelPayment).not.toHaveBeenCalled()
+        expect(await moneyOf(collection.id)).toEqual([{ captures: [], refunds: [], canceled: false }])
+        expect((await readOrder(orderId)).status).not.toBe("canceled")
+        expect(await liveSellerOrderLinks(seller.id)).toEqual([])
+        expect((await purchasesOf(show)).map((p) => p.order_id)).toEqual([orderId])
+      })
+
+      stallRetry.it("of an order Medusa's own completion made from a seat-less ticket line: the replay is refused before anything is linked or captured, and the order left as it was", async () => {
+        const seller = await makeSeller()
+        const show = await makeShow(seller.id)
+        const { cart, collection } = await makeCart([{ product: show.product, metadata: { show_date: SHOW_DATE } }])
+        const { completeCartWorkflow } = require("@medusajs/medusa/core-flows")
+        const run = await completeCartWorkflow(container()).run({ input: { id: cart.id }, throwOnError: false })
+        expect(run.errors ?? []).toEqual([])
+        const orderId = run.result.id as string
+        const sellerLinks = sellerLinkCreates()
+
+        const replay = await checkout(cart.id)
+        expect(unseatedLines(replay.errors)).toMatch(/^line \S+ names no venue_row_id, seat_number\.$/)
+        expect(sellerLinks).toEqual([])
+        expect(stripe.capturePayment).not.toHaveBeenCalled()
+        expect(stripe.refundPayment).not.toHaveBeenCalled()
+        expect(stripe.cancelPayment).not.toHaveBeenCalled()
+        expect(await moneyOf(collection.id)).toEqual([{ captures: [], refunds: [], canceled: false }])
+        expect((await readOrder(orderId)).status).not.toBe("canceled")
+        expect(await liveSellerOrderLinks(seller.id)).toEqual([])
+        expect(await purchasesOf(show)).toEqual([])
       })
     })
 
@@ -833,8 +999,10 @@ medusaIntegrationTestRunner({
 
         // The retry finds that order as a replay, which skips the completion
         // and the guard after it; the ticket paid check refuses it, before the
-        // cart read, the seat check, the seller link or any money step: none
-        // of them ran, not merely none of them left a trace.
+        // seat check's cart read, the seat check, the seller link or any money
+        // step: none of them ran, not merely none of them left a trace. (The
+        // seat-line check reads the cart before it, and passes: the line is
+        // one seat.)
         const [stalledOrder] = await liveOrders(customer.id)
         const reads = queryReads()
         const sellerLinks = sellerLinkCreates()
@@ -860,7 +1028,7 @@ medusaIntegrationTestRunner({
     describe("two checkouts of one cart at the same time (a double submit), with FF_TICKET_ORDER_SETTLEMENT_V1", () => {
       afterEach(settleBeforeTeardown)
 
-      it("with a capture slower than the old 2 s wait, the second waits for the first and replays it: one order, one capture, one seat", async () => {
+      stallRetry.it("with a capture slower than the old 2 s wait, the second waits for the first and replays it: one order, one capture, one seat", async () => {
         const seller = await makeSeller()
         const show = await makeShow(seller.id)
         const { cart, customer, collection } = await makeCart([show])
@@ -890,7 +1058,7 @@ medusaIntegrationTestRunner({
     describe("flag off", () => {
       afterEach(settleBeforeTeardown)
 
-      it("as before — no seller link, the payment only authorized, the seat sold, nothing settles — even with the digital and subscription settlement flags on", async () => {
+      stallRetry.it("as before — no seller link, the payment only authorized, the seat sold, nothing settles — even with the digital and subscription settlement flags on", async () => {
         delete process.env[TICKETS]
         process.env[DIGITAL] = "true"
         process.env[SUBS] = "true"
@@ -917,7 +1085,7 @@ medusaIntegrationTestRunner({
         expect(await legs(orderId)).toEqual([])
       })
 
-      it("as before — a replay returns the same order with its one seat, still unlinked and uncaptured", async () => {
+      stallRetry.it("as before — a replay returns the same order with its one seat, still unlinked and uncaptured", async () => {
         delete process.env[TICKETS]
         const show = await makeShow((await makeSeller()).id)
         const { cart } = await makeCart([show])
@@ -933,7 +1101,7 @@ medusaIntegrationTestRunner({
         expect(order.payment_collections[0].payments[0].captured_at).toBeFalsy()
       })
 
-      it("as before — two carts for one seat at once: the seat's unique index refuses the second, which was only authorized, so nothing is captured or refunded; the seat check's compensation still starts cancelOrderWorkflow", async () => {
+      stallRetry.it("as before — two carts for one seat at once: the seat's unique index refuses the second, which was only authorized, so nothing is captured or refunded; the seat check's compensation still starts cancelOrderWorkflow", async () => {
         delete process.env[TICKETS]
         const show = await makeShow((await makeSeller()).id)
         const x = await makeCart([show])
@@ -964,7 +1132,31 @@ medusaIntegrationTestRunner({
         expect(reads.cancelOrderStarts()[0]).not.toBe(wonOrderId)
       })
 
-      it("as before — a two-seller cart still completes into one unlinked, uncaptured order, over the store route", async () => {
+      stallRetry.it("as before — a ticket line naming no seat and a line that is not a ticket complete into one order with no ticket purchase for them, its payment only authorized", async () => {
+        delete process.env[TICKETS]
+        const seller = await makeSeller()
+        const show = await makeShow(seller.id)
+        const poster = await makePlainProduct(seller.id)
+        const { cart, collection } = await makeCart([
+          { product: show.product, metadata: { show_date: SHOW_DATE } },
+          { product: poster, metadata: { show_date: SHOW_DATE } },
+        ])
+        const reads = queryReads()
+
+        const { result, errors } = await checkout(cart.id)
+        expect(errors).toEqual([])
+        const order = await readOrder(result.order.id)
+        expect(order.seller ?? null).toBeNull()
+        expect(order.ticket_purchases ?? []).toEqual([])
+        expect(await purchasesOf(show)).toEqual([])
+        expect(stripe.authorizePayment).toHaveBeenCalledTimes(1)
+        expect(stripe.capturePayment).not.toHaveBeenCalled()
+        expect(await moneyOf(collection.id)).toEqual([{ captures: [], refunds: [], canceled: false }])
+        // Flag off, the seat-line check read nothing (the flag-on checkout above reads it once).
+        expect(reads.seatLineReads()).toBe(0)
+      })
+
+      stallRetry.it("as before — a two-seller cart still completes into one unlinked, uncaptured order, over the store route", async () => {
         delete process.env[TICKETS]
         const pak = pakHeaders(await createPublishableKeyToken(getContainer))
         const { cart } = await makeCart([await makeShow((await makeSeller()).id), await makeShow((await makeSeller()).id)])

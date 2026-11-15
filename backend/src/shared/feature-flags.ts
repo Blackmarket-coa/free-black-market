@@ -244,21 +244,28 @@ export const PHASE0_FEATURE_FLAGS = {
   // 2 s / 10 s cart lock. On: the same settlement as
   // DIGITAL_ORDER_SETTLEMENT_V1, through the same shared steps
   // (`workflows/subscription/steps/subscription-order-settlement.ts`, sale
-  // `ticket`): the cart's one seller is resolved before Medusa authorizes the
-  // payment session and a cart with none or several is refused (400; the
-  // storefront's Stripe button confirms the card before it calls the route,
-  // so that hold is left to lapse, as on Blackout's page under SD-48); the
-  // order is linked to that seller, the seats are validated, and the card is
-  // captured before any ticket purchase is created. A seat already sold is
-  // refused before the capture, so its authorization is cancelled, not
-  // refunded. A refused capture fails the checkout: completeCartWorkflow's
-  // compensation deletes the order and cancels the authorization, the seller
-  // link is dismissed, and no ticket purchase exists. A failure after the
-  // capture (a seat another cart took after this one's seat check) deletes
-  // the order the same way and refunds the capture, best effort (SD-48 (b)),
-  // where the flag-off loser's authorization is only cancelled; Stripe's fee on
-  // that capture is likely kept (SD-48 (b); not checked against FBM's
-  // account). With the flag on the seat check's own compensation
+  // `ticket`): every line must be one seat — a ticket variant naming its
+  // venue row, seat number and show date, quantity 1 — or the cart is
+  // refused (400) before Medusa authorizes the payment session, on a replay
+  // before anything is linked or captured (the storefront sends here any
+  // cart whose lines all carry `metadata.show_date`, which a store client
+  // sets; `steps/require-seated-ticket-cart.ts`); the cart's one seller is
+  // resolved before Medusa authorizes the payment session and a cart with
+  // none or several is refused (400; the storefront's Stripe button confirms
+  // the card before it calls the route, so that hold is left to lapse, as on
+  // Blackout's page under SD-48); the seats are validated, the order is
+  // linked to that seller, the ticket purchases are created — the purchase's
+  // unique index is the seat's lock — and only then is the card captured. A
+  // seat already sold, or taken by another cart at the same moment (SD-48
+  // (b)), is refused before the capture, so its authorization is cancelled,
+  // not refunded. A refused capture fails the checkout: the ticket purchases
+  // are deleted by their compensation (the seats are free again),
+  // completeCartWorkflow's compensation deletes the order and cancels the
+  // authorization, and the seller link is dismissed. A failure after the
+  // capture (only the order's refetch is left by then) deletes the order and
+  // its purchases the same way and refunds the capture, best effort (SD-48
+  // (b)); Stripe's fee on that capture is likely kept (not checked against
+  // FBM's account). With the flag on the seat check's own compensation
   // (Medusa's cancelOrderWorkflow) is not run: completeCartWorkflow's undoes
   // a first completion, and a replay's order is left for an operator. A
   // replay — the checkout run again on a cart already completed — never

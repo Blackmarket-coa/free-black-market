@@ -2,6 +2,7 @@ import { MedusaError } from "@medusajs/framework/utils"
 import { createStep, StepResponse } from "@medusajs/framework/workflows-sdk"
 import { cancelOrderWorkflow } from "@medusajs/medusa/core-flows"
 import { assertCancelLeavesSharedPaymentAlone } from "../../lib/shared-payment-cancel"
+import { unseatedTicketCartError, unseatedTicketLines } from "./require-seated-ticket-cart"
 
 export type ValidateTicketOrderStepInput = {
   items: {
@@ -13,6 +14,7 @@ export type ValidateTicketOrderStepInput = {
       id: string
       product_id: string
       ticket_product_variant?: {
+        id?: string
         purchases?: {
           seat_number: string
           show_date: Date
@@ -32,6 +34,16 @@ export type ValidateTicketOrderStepInput = {
    * order to an operator (SD-48 (k), (o)).
    */
   cancel_order_on_rollback?: boolean
+  /**
+   * Whether every line must be one seat (default: no — a line that is not a
+   * ticket, or names no seat number, is passed over, as it always has been).
+   * The ticket checkout passes `true` when it settles
+   * (FF_TICKET_ORDER_SETTLEMENT_V1): such a line would be paid for, and
+   * captured, while `createTicketPurchasesStep` sells nothing for it. It is
+   * refused with `requireSeatedTicketCartStep`'s rule and words; that step
+   * refuses it first, and this is the second line of defence.
+   */
+  seats_only?: boolean
 }
 
 // show_date arrives as a string on cart metadata but is stored as a DB `Date`
@@ -47,7 +59,13 @@ const showDateKey = (value: unknown): string => {
 
 export const validateTicketOrderStep = createStep(
   "validate-ticket-order",
-  async ({ items, order_id, cancel_order_on_rollback }: ValidateTicketOrderStepInput) => {
+  async ({ items, order_id, cancel_order_on_rollback, seats_only }: ValidateTicketOrderStepInput) => {
+    // SD-48 (i) review: settling, every line must be one seat; none is passed over below.
+    if (seats_only) {
+      const unseated = unseatedTicketLines(items)
+      if (unseated.length) throw unseatedTicketCartError(unseated)
+    }
+
     // Check for duplicate seats within the cart
     const seatDateCombinations = new Set<string>()
 

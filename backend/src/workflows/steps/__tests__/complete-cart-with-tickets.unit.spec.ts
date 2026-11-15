@@ -57,6 +57,11 @@ jest.mock("../../subscription/steps/subscription-order-settlement", () => ({
   ticketOrderPaidStep: jest.fn(),
 }))
 
+// SD-48 (i) review: the seat-line check, flag-dark in its own module.
+jest.mock("../require-seated-ticket-cart", () => ({
+  requireSeatedTicketCartStep: jest.fn(),
+}))
+
 jest.mock("../create-ticket-purchases", () => ({
   createTicketPurchasesStep: jest.fn(),
 }))
@@ -78,6 +83,7 @@ import {
 import { TICKET_BOOKING_MODULE } from "../../../modules/ticket-booking"
 import { createTicketPurchasesStep } from "../create-ticket-purchases"
 import { requireCompletedCartOrderStep } from "../require-completed-cart-order"
+import { requireSeatedTicketCartStep } from "../require-seated-ticket-cart"
 import { validateTicketOrderStep } from "../validate-ticket-order"
 import {
   linkTicketOrderSellerStep,
@@ -160,6 +166,28 @@ describe("completeCartWithTicketsWorkflow", () => {
     expect(gate[2]({ completed: { order_id: "order_9" } })).toBe(false)
   })
 
+  it("checks every line is one seat after the lock and before the seller check and Medusa's completion (so before the card is authorized), and on a replay before the link and the capture", () => {
+    runComposer()
+
+    const seated = mock(requireSeatedTicketCartStep)
+    expect(seated).toHaveBeenCalledTimes(1)
+    expect(seated).toHaveBeenCalledWith({ cart_id: "cart_1" })
+    expect(order(acquireLockStep)).toBeLessThan(order(seated))
+    expect(order(seated)).toBeLessThan(order(resolveTicketSellerStep))
+    expect(order(seated)).toBeLessThan(order(completeCartWorkflow.runAsStep))
+
+    jest.clearAllMocks()
+    world({ completedInto: "order_9", ticketLinks: [{ ticket_purchase: { id: "tp_1" } }] })
+    runComposer()
+    // A replay of an order whose seats are already sold skips the seat check,
+    // not this one.
+    expect(validateTicketOrderStep).not.toHaveBeenCalled()
+    expect(seated).toHaveBeenCalledWith({ cart_id: "cart_1" })
+    expect(order(seated)).toBeLessThan(order(linkTicketOrderSellerStep))
+    expect(order(seated)).toBeLessThan(order(ticketPaymentToCaptureStep))
+    expect(order(seated)).toBeLessThan(order(capturePaymentWorkflow.runAsStep))
+  })
+
   it("links the order just made to the seller checked before payment, and asks for its payment in the initial mode", () => {
     runComposer()
 
@@ -181,7 +209,7 @@ describe("completeCartWithTicketsWorkflow", () => {
     expect(queryOf("ticket_purchase_order")!.filters).toEqual({ order_id: "order_9" })
   })
 
-  it("the paid check, the seat check, the seller link and the capture all come before any ticket purchase, in that order", () => {
+  it("the paid check, the seat check, the seller link, the payment's choice and the seats (purchases and their links) all come before the capture, in that order; only the refetch and the release after it", () => {
     runComposer()
 
     expect(capturePaymentWorkflow.runAsStep).toHaveBeenCalledWith({ input: { payment_id: "pay_1" } })
@@ -190,28 +218,34 @@ describe("completeCartWithTicketsWorkflow", () => {
       order(validateTicketOrderStep),
       order(linkTicketOrderSellerStep),
       order(ticketPaymentToCaptureStep),
-      order(capturePaymentWorkflow.runAsStep),
       order(createTicketPurchasesStep),
+      order(createRemoteLinkStep),
+      order(capturePaymentWorkflow.runAsStep),
+      // The order's refetch: the third and last query.
+      order(useQueryGraphStep, 2),
+      order(releaseLockStep),
     ]
+    expect(sequence.every((n) => typeof n === "number")).toBe(true)
     expect(sequence).toEqual([...sequence].sort((a, b) => a - b))
-    expect(validateTicketOrderStep).toHaveBeenCalledWith({ items: [], order_id: "order_1", cancel_order_on_rollback: true })
+    expect(queryOf("order")).toBe(mock(useQueryGraphStep).mock.calls[2][0])
+    expect(validateTicketOrderStep).toHaveBeenCalledWith({ items: [], order_id: "order_1", cancel_order_on_rollback: true, seats_only: false })
     expect(createTicketPurchasesStep).toHaveBeenCalledWith({ order_id: "order_1", cart: { id: "cart_1", items: [] } })
   })
 
   it.each<[string, { completedInto?: string }]>([
     ["a first checkout", {}],
     ["a replay", { completedInto: "order_9" }],
-  ])("settling (flag on), %s: the seat check's compensation is told not to cancel the order; flag off it is, as before", (_label, opts) => {
+  ])("settling (flag on), %s: the seat check's compensation is told not to cancel the order, and the check to refuse any line that is not one seat; flag off neither, as before", (_label, opts) => {
     world({ ...opts, settle: true })
     runComposer()
     const orderId = opts.completedInto ?? "order_1"
     expect(acquireLockStep).toHaveBeenCalledWith({ key: "cart_1", timeout: 30, ttl: 120 })
-    expect(validateTicketOrderStep).toHaveBeenCalledWith({ items: [], order_id: orderId, cancel_order_on_rollback: false })
+    expect(validateTicketOrderStep).toHaveBeenCalledWith({ items: [], order_id: orderId, cancel_order_on_rollback: false, seats_only: true })
 
     jest.clearAllMocks()
     world({ ...opts, settle: false })
     runComposer()
-    expect(validateTicketOrderStep).toHaveBeenCalledWith({ items: [], order_id: orderId, cancel_order_on_rollback: true })
+    expect(validateTicketOrderStep).toHaveBeenCalledWith({ items: [], order_id: orderId, cancel_order_on_rollback: true, seats_only: false })
   })
 
   it("captures nothing when the capture step picked no payment (flag off, or already captured)", () => {
@@ -242,6 +276,7 @@ describe("completeCartWithTicketsWorkflow", () => {
     expect(createRemoteLinkStep).not.toHaveBeenCalled()
     expect(linkTicketOrderSellerStep).toHaveBeenCalledTimes(1)
     expect(ticketPaymentToCaptureStep).toHaveBeenCalledTimes(1)
+    expect(capturePaymentWorkflow.runAsStep).toHaveBeenCalledWith({ input: { payment_id: "pay_1" } })
   })
 
   it("links each created ticket purchase to the order, and returns the refetched order", () => {

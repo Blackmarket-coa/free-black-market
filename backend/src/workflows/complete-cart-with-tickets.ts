@@ -13,6 +13,7 @@ import { Modules } from "@medusajs/framework/utils"
 import ticketPurchaseOrderLink from "../links/ticket-purchase-order"
 import { validateTicketOrderStep, ValidateTicketOrderStepInput } from "./steps/validate-ticket-order"
 import { requireCompletedCartOrderStep } from "./steps/require-completed-cart-order"
+import { requireSeatedTicketCartStep } from "./steps/require-seated-ticket-cart"
 import {
   linkTicketOrderSellerStep,
   resolveTicketSellerStep,
@@ -61,26 +62,40 @@ export type CompleteCartWithTicketsWorkflowInput = {
  * steps (`subscription/steps/subscription-order-settlement.ts`, as its
  * `*Ticket*` steps):
  *
+ *   - every line of the cart must be one seat — a ticket variant, its venue
+ *     row, seat number and show date, quantity 1 — or the checkout is refused
+ *     (`requireSeatedTicketCartStep`, 400), so the card is taken only for
+ *     seats it sells. Before Medusa authorizes the payment session on a first
+ *     checkout, and before the capture on a replay;
  *   - after the cart lock is taken and before Medusa authorizes the payment
  *     session, the cart's one seller is resolved, and a cart with none or
  *     several is refused (the store route answers 400), so Medusa records
  *     no payment and nothing is captured. The storefront's Stripe button
  *     confirms the card at Stripe before it calls the route, so the buyer's
  *     hold already exists and is left to lapse, as on Blackout's page (SD-48);
- *   - the order is linked to that seller (refused, and rolled back, if a
- *     product moved seller while the card was authorized);
- *   - the seats are validated before any money is taken, as before, so a
- *     seat sold meanwhile still cancels an authorization rather than refunding
- *     a capture;
- *   - the card is captured (Medusa's `capturePaymentWorkflow`, so the order
- *     transaction and `payment.captured` follow) before any ticket purchase is
- *     created. A capture Stripe refuses fails the checkout: the seller link is
- *     dismissed, `completeCartWorkflow`'s compensation deletes the order and
- *     cancels the authorization (nothing refunded), and no ticket purchase is
- *     created. A failure after the capture (the seat's purchase refused, as
- *     when another cart took the seat after this one's seat check) deletes
- *     the order the same way, and `completeCartWorkflow`'s compensation then
- *     tries to refund the capture — best effort, SD-48 open item (b).
+ *   - the seats are validated, as before, then the order is linked to that
+ *     seller (refused, and rolled back, if a product moved seller while the
+ *     card was authorized);
+ *   - the seats are sold — the ticket purchases created and linked to the
+ *     order — and only then is the card captured (Medusa's
+ *     `capturePaymentWorkflow`, so the order transaction and
+ *     `payment.captured` follow). Creating the purchase is the seat's lock:
+ *     its unique index (`ticket_purchase (ticket_product_id, venue_row_id,
+ *     seat_number, show_date) WHERE deleted_at IS NULL`) refuses a second
+ *     sale of the seat, so of two carts that pass the seat check for one seat
+ *     at once (SD-48 (b)) the second is refused while its card is only
+ *     authorized: `completeCartWorkflow`'s compensation deletes its order and
+ *     cancels the authorization, and nothing is captured or refunded. A
+ *     capture Stripe refuses fails the checkout the same way, and the
+ *     purchases are deleted by their own compensation, which frees the seats.
+ *
+ * Capturing first, as this checkout did at first, turned that race into a
+ * charge: the loser was captured, then refunded by `completeCartWorkflow`'s
+ * compensation — best effort, so a refund Stripe refused left the card
+ * charged with the order already deleted and no ledger record (SD-48 (b)).
+ * Only the order's refetch and the lock's release now follow the capture: a
+ * failure there on a first checkout still deletes the order and its
+ * purchases and tries to refund the capture, best effort.
  *
  * With the flag on, the seat check (`validateTicketOrderStep`) is handed
  * `cancel_order_on_rollback: false`, so its compensation does not run
@@ -95,7 +110,9 @@ export type CompleteCartWithTicketsWorkflowInput = {
  * failure). On a replay there is no completion to undo and the order is left
  * for an operator, as SD-48 leaves one (open items (k), (o)):
  * `cancelOrderWorkflow` would instead refund a replay's capture and cancel its
- * order. With the flag off the seat check's compensation is what it was.
+ * order. It is also handed `seats_only: true`, so a line that is not one seat
+ * is refused there too, not passed over. With the flag off the seat check is
+ * what it was.
  *
  * A replay — this checkout run again on a cart already completed (a retried
  * POST, a double submit's second run) — never runs `completeCartWorkflow`
@@ -105,11 +122,11 @@ export type CompleteCartWithTicketsWorkflowInput = {
  * failure would refund a sale whose seats stayed sold (SD-48 (1)). The link and
  * capture steps run on a replay in their replay mode: a finished sale is left
  * as it is, and an order its first completion left unlinked or uncaptured is
- * linked to its products' one seller and captured before its seats are
- * created. An order that owes money and has no payment — what Medusa's
+ * linked to its products' one seller, its seats sold if they are not, and
+ * then captured. An order that owes money and has no payment — what Medusa's
  * workflow engine leaves when it stops the first completion before the card
- * is authorized (SD-53) — is refused before anything else runs
- * (`ticketOrderPaidStep`).
+ * is authorized (SD-53) — is refused before anything but the seat-line check
+ * runs (`ticketOrderPaidStep`).
  *
  * Flag off, every new step returns before any read, the capture branch does
  * not run, the lock is the old 2 s wait and 10 s hold, and the checkout does
@@ -131,6 +148,12 @@ export const completeCartWithTicketsWorkflow = createWorkflow(
 
     // SD-48 (i): the order of a cart already completed (flag off: null, unread).
     const completed = ticketCompletedCartOrderStep({ cart_id: input.cart_id })
+
+    // SD-48 (i) review: refuse a cart holding any line that is not one seat
+    // (flag off: unread). Before the replay gate, so a first checkout is
+    // refused before Medusa authorizes the card and a replay before anything
+    // is linked or captured.
+    requireSeatedTicketCartStep({ cart_id: input.cart_id })
 
     // Only a cart not yet completed is checked for its seller and completed;
     // a replay keeps out of completeCartWorkflow and its refund compensation.
@@ -172,9 +195,10 @@ export const completeCartWithTicketsWorkflow = createWorkflow(
     const orderId = transform({ checkout }, (data) => data.checkout.order_id)
 
     // SD-48 (i) / SD-53: flag on, an order that owes money and has no payment
-    // is refused before anything else runs — a replay skips the guard above,
-    // and this keeps the cart read, the seat check and the seller link out of
-    // it. Flag off it reads nothing: the guard has already run.
+    // is refused before anything but the seat-line check runs — a replay
+    // skips the guard above, and this keeps the seat check's cart read, the
+    // seat check, the seller link and the seats out of it. Flag off it reads
+    // nothing: the guard has already run.
     ticketOrderPaidStep(
       transform({ checkout, input }, (data) => ({ cart_id: data.input.cart_id, order_id: data.checkout.order_id }))
     )
@@ -209,7 +233,8 @@ export const completeCartWithTicketsWorkflow = createWorkflow(
     // The seats, before any money is taken: a seat sold meanwhile fails the
     // checkout while the card is only authorized, so completeCartWorkflow's
     // compensation cancels the hold instead of refunding a capture. Settling,
-    // the step's compensation leaves the order alone (see above).
+    // the step's compensation leaves the order alone, and a line that is not
+    // one seat is refused rather than passed over (see above).
     when(
       "validate-ticket-order-condition",
       { existingLinks },
@@ -219,6 +244,7 @@ export const completeCartWithTicketsWorkflow = createWorkflow(
         items: carts[0].items,
         order_id: orderId,
         cancel_order_on_rollback: transform({ mode }, (data) => !data.mode.settle),
+        seats_only: transform({ mode }, (data) => data.mode.settle),
       } as unknown as ValidateTicketOrderStepInput)
     })
 
@@ -233,6 +259,9 @@ export const completeCartWithTicketsWorkflow = createWorkflow(
       }))
     )
 
+    // Which payment the capture below takes (flag off: none, unread). Read
+    // here, before any seat is sold: a refusal (more than one candidate)
+    // then leaves the seats alone.
     const toCapture = ticketPaymentToCaptureStep(
       transform({ checkout, linked }, (data) => ({
         order_id: data.checkout.order_id,
@@ -241,19 +270,9 @@ export const completeCartWithTicketsWorkflow = createWorkflow(
       }))
     )
 
-    // SD-48 (i): take the money the checkout authorized before any seat is
-    // sold — on a replay too, when the order's first completion left it
-    // uncaptured. A refused capture fails the checkout here. After a first
-    // completion, a later failure leaves completeCartWorkflow's compensation
-    // to try a refund (`compensatePaymentIfNeededStep`), best effort only
-    // (SD-48 open item (b)); a replay has no such compensation. Outside the
-    // blocks above and below because `when` blocks do not nest.
-    when("capture-ticket-order-payment", { toCapture }, (data) => !!data.toCapture.payment_id).then(() => {
-      capturePaymentWorkflow.runAsStep({
-        input: transform({ toCapture }, (data) => ({ payment_id: data.toCapture.payment_id as string })),
-      })
-    })
-
+    // The seats are sold. Settling, this is also the seat's lock (the
+    // purchase's unique index), taken before any money moves; a failure from
+    // here on deletes the purchases through this step's compensation.
     when(
       "create-ticket-purchases-condition",
       { existingLinks },
@@ -279,6 +298,22 @@ export const completeCartWithTicketsWorkflow = createWorkflow(
       })
 
       createRemoteLinkStep(linkData)
+    })
+
+    // SD-48 (i): take the money the checkout authorized, once its seats are
+    // sold — on a replay too, when the order's first completion left it
+    // uncaptured. A refused capture fails the checkout here: the purchases
+    // and the seller link are undone, and on a first checkout
+    // completeCartWorkflow's compensation deletes the order and cancels the
+    // authorization. Only the refetch and the release below follow it; a
+    // failure there on a first checkout leaves completeCartWorkflow's
+    // compensation to try a refund (`compensatePaymentIfNeededStep`), best
+    // effort only (SD-48 open item (b)); a replay has no such compensation.
+    // Outside the blocks above because `when` blocks do not nest.
+    when("capture-ticket-order-payment", { toCapture }, (data) => !!data.toCapture.payment_id).then(() => {
+      capturePaymentWorkflow.runAsStep({
+        input: transform({ toCapture }, (data) => ({ payment_id: data.toCapture.payment_id as string })),
+      })
     })
 
     const { data: refetchedOrder } = useQueryGraphStep({
