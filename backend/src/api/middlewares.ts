@@ -1649,11 +1649,17 @@ export default defineMiddlewares({
       method: "POST",
       middlewares: [bugReportAnonymousRateLimiter],
     },
-    // Seller reports are anonymous by design (a rights-holder filing a notice
-    // need not have an account), so they are capped per client IP. The
-    // storefront posts from the reporter's browser, so the IP is theirs.
+    // Seller and listing reports are anonymous by design (a rights-holder
+    // filing a notice need not have an account), so they are capped per client
+    // IP, one budget across both. The storefront posts from the reporter's
+    // browser, so the IP is theirs.
     {
       matcher: "/store/seller-reports",
+      method: "POST",
+      middlewares: [trustProxyMiddleware, storeReportRateLimiter],
+    },
+    {
+      matcher: "/store/product-reports",
       method: "POST",
       middlewares: [trustProxyMiddleware, storeReportRateLimiter],
     },

@@ -1,5 +1,7 @@
 import { POST, REPORT_REQUEST_TYPE } from "../route"
 import { REQUEST_MODULE } from "../../../../modules/request"
+import RequestModuleService from "../../../../modules/request/service"
+import { ANONYMOUS_SUBMITTER_ID } from "../../../../modules/request/validators"
 
 /**
  * Intake for a listing report.
@@ -9,6 +11,11 @@ import { REQUEST_MODULE } from "../../../../modules/request"
  * on. These tests pin the properties that make that not happen again — the
  * report is persisted, and a rejected report is rejected rather than silently
  * accepted.
+ *
+ * `createRequest` is the module's real method over a stub of the generated
+ * `createRequests`. This spec used to stub `createRequest` itself, which hid
+ * that the real one throws when given no submitter — so every anonymous
+ * report, the case this route exists for, was a 500 while this spec passed.
  */
 
 const createRes = () => {
@@ -30,13 +37,22 @@ const createRes = () => {
 }
 
 function makeReq(body: unknown, opts: { actorId?: string } = {}) {
+  // The rows the real `createRequest` hands to the generated `createRequests`.
   const created: Record<string, unknown>[] = []
   const requestService = {
     created,
-    createRequest: jest.fn(async (data: Record<string, unknown>) => {
-      created.push(data)
-      return { id: `req_${created.length}`, status: "pending" }
-    }),
+    createRequests: jest.fn(async (rows: Record<string, unknown>[]) =>
+      rows.map((row) => {
+        created.push(row)
+        return { ...row, id: `req_${created.length}` }
+      })
+    ),
+    createRequest: jest.fn((input: Parameters<RequestModuleService["createRequest"]>[0]) =>
+      RequestModuleService.prototype.createRequest.call(
+        requestService as unknown as RequestModuleService,
+        input
+      )
+    ),
   }
   const req = {
     body,
@@ -84,7 +100,10 @@ describe("POST /store/product-reports", () => {
     await POST(req as never, res as never)
 
     expect(res.statusCode).toBe(201)
-    expect(requestService.created[0]).toMatchObject({ requester_id: undefined })
+    expect(requestService.created[0]).toMatchObject({
+      submitter_id: ANONYMOUS_SUBMITTER_ID,
+      requester_id: undefined,
+    })
   })
 
   it("records the customer when one is signed in", async () => {
@@ -93,7 +112,10 @@ describe("POST /store/product-reports", () => {
 
     await POST(req as never, res as never)
 
-    expect(requestService.created[0]).toMatchObject({ requester_id: "cus_7" })
+    expect(requestService.created[0]).toMatchObject({
+      submitter_id: "cus_7",
+      requester_id: "cus_7",
+    })
   })
 
   it("carries the reporter's email through, since a DMCA notice needs a contact", async () => {

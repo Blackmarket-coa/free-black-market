@@ -3,6 +3,7 @@ import type { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 
 import { REQUEST_MODULE } from "../../../modules/request"
 import type RequestModuleService from "../../../modules/request/service"
+import { ANONYMOUS_SUBMITTER_ID } from "../../../modules/request/validators"
 import { createLogger } from "../../../shared/logger"
 
 const log = createLogger("api/store/product-reports")
@@ -77,6 +78,12 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       reporter_email: parsed.data.reporter_email ?? null,
       source: "storefront",
     },
+    // `request.submitter_id` is NOT NULL and `createRequest` throws when given
+    // neither id. Passing only `requester_id` made every report from a visitor
+    // with no session a 500, and the storefront form sends no credentials, so
+    // no listing report was ever filed. The unit spec stubbed `createRequest`
+    // and could not see it.
+    submitter_id: customerId ?? ANONYMOUS_SUBMITTER_ID,
     requester_id: customerId,
   })
 

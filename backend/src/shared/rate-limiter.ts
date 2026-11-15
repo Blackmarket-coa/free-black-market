@@ -542,16 +542,16 @@ export const bugReportAuthRateLimiter = createRateLimiter({
 })
 
 /**
- * Seller reports (anonymous): 10 per hour per client IP.
+ * Seller and listing reports (anonymous): 10 per hour per client IP, one
+ * budget shared by `POST /store/seller-reports` and `POST /store/product-reports`.
  *
- * `POST /store/seller-reports` takes a report from anyone, with no session,
- * and writes a row into the admin request queue; without a ceiling one client
- * could bury the real notices in it. IP-keyed is right here only because the
- * storefront submits from the reporter's browser rather than from a server
- * action, so the address is the reporter's and not the storefront's (SD-58 is
- * what an IP-keyed limiter does to traffic that all arrives from the
- * storefront). Its own keyPrefix, so bug reports and reports do not share a
- * budget.
+ * Both take a report from anyone, with no session, and write a row into the
+ * admin request queue; without a ceiling one client could bury the real
+ * notices in it. IP-keyed is right here only because the storefront submits
+ * both forms from the reporter's browser rather than from a server action, so
+ * the address is the reporter's and not the storefront's (SD-58 is what an
+ * IP-keyed limiter does to traffic that all arrives from the storefront). Its
+ * own keyPrefix, so bug reports and reports do not share a budget.
  */
 export const storeReportRateLimiter = createRateLimiter({
   windowMs: 3600_000,

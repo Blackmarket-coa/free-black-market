@@ -108,5 +108,28 @@ medusaIntegrationTestRunner({
         expect(await adminQueue(SELLER_REPORT_REQUEST_TYPE)).toHaveLength(0)
       })
     })
+
+    describe("POST /store/product-reports", () => {
+      it("files an anonymous listing report into the admin request queue", async () => {
+        // The route exists to accept reports from rights-holders with no
+        // account here; the browser form sends no credentials at all.
+        const res = await safe(
+          api.post(
+            "/store/product-reports",
+            { product_id: "prod_reported", reason: "trademark_copyright_dmca", comment },
+            pak
+          )
+        )
+
+        expect(res.status).toBe(201)
+        const queue = await adminQueue("listing_report")
+        expect(queue).toHaveLength(1)
+        expect(queue[0]).toMatchObject({
+          id: res.data.id,
+          submitter_id: ANONYMOUS_SUBMITTER_ID,
+          data: { product_id: "prod_reported" },
+        })
+      })
+    })
   },
 })
