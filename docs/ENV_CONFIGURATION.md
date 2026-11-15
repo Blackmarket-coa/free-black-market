@@ -47,6 +47,19 @@ a preference.
 | --- | --- | --- | --- |
 | `HAWALA_CCR_GUARD_MODE` | `strict` | never | `strict` refuses a violating transfer. `warn` (log only) and `off` exist for local development and tests and are **ignored when `NODE_ENV=production`**: the guard is always strict there, and a refused override is logged once at error level (LEG-7). Any unrecognised value is `strict`. |
 
+## Vendor hype prediction policy
+
+`backend/src/modules/vendor-hype-operations-prediction/policy-service.ts`
+admits a prediction market only in a mode its jurisdiction's profile allows
+(`docs/VENDOR_HYPE_OPERATIONS_PREDICTION_COMPLIANCE_POLICY_MATRIX.md` §1, an
+allow list). The US and every subdivision are `US-RESTRICTED` (non-cash only);
+any unmapped jurisdiction is `ROW-NONCASH`.
+
+| Variable | Default | Required when | Description |
+| --- | --- | --- | --- |
+| `VENDOR_HYPE_JURISDICTION_PROFILES` | — | counsel has approved a jurisdiction for a wider profile | JSON object of jurisdiction code to profile code, e.g. `{"US-NV":"US-REGULATED-CASH"}`. Codes are upper-cased; a subdivision inherits its country unless mapped itself. Fails closed: unparseable JSON is ignored whole, and an entry naming an unknown profile (or remapping a profile code) is dropped, each logged at error level. |
+| `VENDOR_HYPE_POLICY_VERSION` | `matrix-1.0.0@2026-01-01` | optional | Recorded on every market as the policy that admitted it. The caller can no longer supply it. |
+
 ## In-app bug reporter
 
 Added with the in-app "Report a bug" entry points in storefront, vendor

@@ -158,7 +158,10 @@ class VendorHypeOperationsPredictionService extends MedusaService({
       {
         ...input,
         mode,
-        policy_version: input.policy_version || policyDecision.policy_version,
+        // The version of the policy that actually admitted this market. It
+        // used to prefer a caller-supplied string, so a market creator could
+        // label a market with any policy version they liked.
+        policy_version: policyDecision.policy_version,
         state: PredictionMarketState.DRAFT,
       },
     ])
