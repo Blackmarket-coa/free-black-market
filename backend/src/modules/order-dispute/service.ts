@@ -261,8 +261,7 @@ class OrderDisputeService extends MedusaService({
     })
 
     const now = args.now ?? new Date()
-    await this.updateOrderDisputes({
-      id: dispute.id,
+    await this.writeIfStatusUnchanged(dispute, {
       status: args.status,
       award_amount: award,
       resolution_note: args.note ?? null,
@@ -308,8 +307,7 @@ class OrderDisputeService extends MedusaService({
       actor: args.actor,
     })
 
-    await this.updateOrderDisputes({
-      id: dispute.id,
+    await this.writeIfStatusUnchanged(dispute, {
       status: args.to,
       ...(args.note ? { resolution_note: args.note } : {}),
     })
@@ -326,6 +324,56 @@ class OrderDisputeService extends MedusaService({
     ])
 
     return this.require(dispute.id)
+  }
+
+  /**
+   * Write a status change only if the status is still the one it was decided
+   * from: one `UPDATE … WHERE id = ? AND status = ?`, atomic in Postgres.
+   *
+   * `resolve` and `transition` read the row, check the move, then write. Two
+   * admins deciding the same case at once both pass the check; with a plain
+   * update both writes landed and the last won, so a refund already paid by
+   * hand through Stripe could be overwritten by a release, with two
+   * "resolved" events in the log. Now the second write matches no row and
+   * is refused with the same `DisputeStateError` the route already answers
+   * with 409, before its event is written.
+   *
+   * Raw SQL because the generated `updateOrderDisputes` with a selector
+   * reads the matching rows and then updates them by id: the same race, one
+   * layer down. The column names below are this module's own, never input.
+   */
+  private async writeIfStatusUnchanged(
+    dispute: DisputeRow,
+    set: Partial<
+      Pick<
+        DisputeRow,
+        "status" | "award_amount" | "resolution_note" | "resolved_at" | "resolved_by"
+      >
+    >
+  ): Promise<void> {
+    const columns = Object.keys(set) as (keyof typeof set)[]
+    const manager = (
+      this as unknown as {
+        baseRepository_: {
+          getFreshManager(): {
+            execute(sql: string, params: unknown[], method: "all"): Promise<unknown[]>
+          }
+        }
+      }
+    ).baseRepository_.getFreshManager()
+
+    const rows = await manager.execute(
+      `UPDATE order_dispute SET ${columns.map((c) => `"${c}" = ?`).join(", ")}, updated_at = now() ` +
+        `WHERE id = ? AND status = ? AND deleted_at IS NULL RETURNING id`,
+      [...columns.map((c) => set[c] ?? null), dispute.id, dispute.status],
+      "all"
+    )
+
+    if (!Array.isArray(rows) || rows.length !== 1) {
+      throw new DisputeStateError(
+        `this dispute changed while it was being decided (it is no longer ${dispute.status}); reload it`
+      )
+    }
   }
 
   private async require(disputeId: string): Promise<DisputeRow> {
