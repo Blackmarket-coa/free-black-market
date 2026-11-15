@@ -33,6 +33,9 @@ describe("VendorHypeOperationsPredictionService", () => {
       listPredictionMarkets: jest.fn().mockResolvedValue([{ id: "m_1", state: PredictionMarketState.OPEN }]),
       listPredictionPositions: jest.fn().mockResolvedValueOnce([existingPosition]).mockResolvedValueOnce([]),
       ensureSupporterEligibility: jest.fn().mockResolvedValue({}),
+      // An entitled supporter: stands in for the server-side age record that
+      // does not exist yet (see isSupporterAgeVerified).
+      isSupporterAgeVerified: jest.fn().mockResolvedValue(true),
       createPredictionPositions: jest.fn(),
       markSupporterParticipation: jest.fn().mockResolvedValue(undefined),
     }
@@ -47,6 +50,40 @@ describe("VendorHypeOperationsPredictionService", () => {
 
     expect(result).toEqual(existingPosition)
     expect(ctx.createPredictionPositions).not.toHaveBeenCalled()
+  })
+
+  it.each(Object.values(PredictionMode))(
+    "holds no server-side age verification for anyone in %s mode, so the age gate fails closed",
+    async (mode) => {
+      await expect(
+        VendorHypeOperationsPredictionService.prototype.isSupporterAgeVerified.call({}, "sup_1", mode)
+      ).resolves.toBe(false)
+    }
+  )
+
+  it("refuses to place a position without a server-side age verification", async () => {
+    const ctx: any = {
+      listPredictionMarkets: jest
+        .fn()
+        .mockResolvedValue([{ id: "m_1", state: PredictionMarketState.OPEN, mode: PredictionMode.NON_CASH }]),
+      listPredictionPositions: jest.fn().mockResolvedValue([]),
+      ensureSupporterEligibility: jest.fn().mockResolvedValue({}),
+      isSupporterAgeVerified: VendorHypeOperationsPredictionService.prototype.isSupporterAgeVerified,
+      createPredictionPositions: jest.fn(),
+      markSupporterParticipation: jest.fn(),
+    }
+
+    await expect(
+      VendorHypeOperationsPredictionService.prototype.placePredictionPosition.call(ctx, {
+        market_id: "m_1",
+        supporter_id: "sup_1",
+        outcome_option_key: "YES",
+        stake_amount: 1,
+        idempotency_key: "idem_1",
+      })
+    ).rejects.toThrow("age_verification_required")
+    expect(ctx.createPredictionPositions).not.toHaveBeenCalled()
+    expect(ctx.markSupporterParticipation).not.toHaveBeenCalled()
   })
 
   it("denies blocked policy decision for regulated cash in US", () => {

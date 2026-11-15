@@ -14,8 +14,9 @@ const placePositionSchema = z.object({
   max_payout_amount: z.number().positive().optional(),
   idempotency_key: z.string().optional(),
   disclosure_acknowledged: z.boolean().default(false),
-  age_verified: z.boolean().default(false),
-  self_excluded: z.boolean().default(false),
+  // No `age_verified` / `self_excluded` here, deliberately: both used to be
+  // read from this body, so the caller attested its own eligibility. zod
+  // strips unknown keys, so a client that still sends them is ignored.
   metadata: z.record(z.string(), z.unknown()).optional(),
 })
 
@@ -36,13 +37,23 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     return res.status(403).json({ error: "Only customers can place positions" })
   }
 
-  if (!body.age_verified || body.self_excluded) {
-    return res.status(403).json({ error: "Eligibility check failed" })
-  }
-
   const [market] = await service.listPredictionMarkets({ id: req.params.id })
   if (!market) {
     return res.status(404).json({ error: "Market not found" })
+  }
+
+  // Eligibility comes from server-side records only. Self-exclusion and
+  // cooldown are enforced inside placePredictionPosition from
+  // user_prediction_safety (written by operators via
+  // /admin/vendor-hype/safety). The age gate has no server-side record yet, so
+  // isSupporterAgeVerified fails closed and this refuses every placement until
+  // one exists. See the method's comment before changing this.
+  if (!(await service.isSupporterAgeVerified(supporterId, market.mode as PredictionMode))) {
+    return res.status(403).json({
+      type: "policy_denied",
+      code: "PREDICTION_AGE_VERIFICATION_REQUIRED",
+      error: "Eligibility check failed",
+    })
   }
 
   if (market.mode === PredictionMode.NON_CASH && !body.disclosure_acknowledged) {
@@ -82,7 +93,6 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     metadata: {
       ...body.metadata,
       disclosure_acknowledged: body.disclosure_acknowledged,
-      age_verified: body.age_verified,
     },
   })
 

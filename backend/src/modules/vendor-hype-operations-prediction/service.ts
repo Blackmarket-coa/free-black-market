@@ -177,6 +177,31 @@ class VendorHypeOperationsPredictionService extends MedusaService({
     return updated
   }
 
+  /**
+   * Whether the platform itself holds an age verification for this supporter
+   * that meets the minimum age `mode` requires.
+   *
+   * `docs/VENDOR_HYPE_OPERATIONS_PREDICTION_COMPLIANCE_POLICY_MATRIX.md` makes
+   * the age gate mandatory in every mode (18+ non-cash and sweepstakes, 21+
+   * regulated cash, or a higher local minimum), and the product spec requires
+   * it to run before placement. The store route used to satisfy it with an
+   * `age_verified` boolean taken from the request body, which is the caller
+   * vouching for itself.
+   *
+   * No server-side age record exists anywhere in this backend: no model, no
+   * customer field, no verification provider. So this fails closed and returns
+   * false for everyone, which means no position can be placed until one does.
+   * When a record exists, read it here (it must be written by the platform or
+   * a verification provider, never by the supporter) and keep the `mode`
+   * minimum. Do not reintroduce a request-body flag.
+   */
+  async isSupporterAgeVerified(
+    _supporterId: string,
+    _mode: PredictionMode
+  ): Promise<boolean> {
+    return false
+  }
+
   async ensureSupporterEligibility(supporterId: string) {
     const [safety] = await this.listUserPredictionSafeties({ supporter_id: supporterId })
     if (!safety) {
@@ -256,6 +281,17 @@ class VendorHypeOperationsPredictionService extends MedusaService({
     }
     if (market.state !== PredictionMarketState.OPEN) {
       throw new Error("Positions can only be placed while a market is open")
+    }
+    // The age gate lives here as well as in the route so that no caller can
+    // place a position without it. Self-exclusion and cooldown are already
+    // enforced above by ensureSupporterEligibility, from user_prediction_safety.
+    if (
+      !(await this.isSupporterAgeVerified(
+        input.supporter_id,
+        market.mode as PredictionMode
+      ))
+    ) {
+      throw new Error("age_verification_required")
     }
 
     const [existing] = await this.listPredictionPositions({

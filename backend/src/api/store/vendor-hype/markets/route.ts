@@ -5,6 +5,11 @@ import {
   VENDOR_HYPE_OPERATIONS_PREDICTION_MODULE,
 } from "../../../../modules/vendor-hype-operations-prediction"
 import VendorHypeOperationsPredictionService from "../../../../modules/vendor-hype-operations-prediction/service"
+import {
+  actorId as resolveActorId,
+  actorIsAnyOf,
+  forbidden,
+} from "../../../../shared/community-read-access"
 
 const createMarketSchema = z.object({
   profile_id: z.string(),
@@ -39,13 +44,24 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
   // The route now requires an authenticated account (see the community-write
   // matchers in src/api/middlewares.ts). Fail closed rather than silently
   // attributing an unauthenticated create to "system".
-  const actorId = (req as any).auth_context?.actor_id
+  const actorId = resolveActorId(req)
   if (!actorId) {
     return res
       .status(401)
       .json({ message: "Authentication required", type: "unauthorized" })
   }
   const body = createMarketSchema.parse(req.body)
+
+  // Being signed in is not enough: a market is created under a hype profile,
+  // and only that profile's owner may do it
+  // (docs/VENDOR_HYPE_OPERATIONS_PREDICTION_BACKEND_ARCHITECTURE.md §4.2).
+  // The market is always created in DRAFT, and moving it on is an operator
+  // action at POST /admin/vendor-hype/markets/:id/state. A missing profile and
+  // someone else's profile get the same 403, so profile ids cannot be probed.
+  const [profile] = await service.listHypeProfiles({ id: body.profile_id })
+  if (!profile || !actorIsAnyOf(req, profile.owner_id)) {
+    return forbidden(res)
+  }
 
   const market = await service.createPredictionMarket({
     ...body,
