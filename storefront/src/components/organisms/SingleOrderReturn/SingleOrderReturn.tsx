@@ -4,7 +4,7 @@ import { Avatar, Badge, Card, Divider } from "@/components/atoms"
 import { CollapseIcon } from "@/icons"
 import { cn } from "@/lib/utils"
 import { Heading } from "@medusajs/ui"
-import { format } from "date-fns"
+import { format, isValid } from "date-fns"
 import { useEffect, useRef, useState } from "react"
 import { Chat } from "../Chat/Chat"
 import Image from "next/image"
@@ -16,8 +16,18 @@ import {
   ReturnLineItem,
   ReturnRequest,
 } from "@/types/order-return"
+import { returnRequestedAt } from "@/lib/helpers/return-requests"
 
-const steps = ["pending", "processing", "sent"]
+// Medusa's return statuses, in the order a return moves through them as the
+// seller receives the goods (`/store/return-request` passes them through). A
+// canceled return matches no step.
+const steps = ["requested", "partially_received", "received"]
+const statusLabel = (status: string) => status.replace(/_/g, " ")
+
+const formatRequestedDate = (value: string | undefined) => {
+  const date = value ? new Date(value) : null
+  return date && isValid(date) ? format(date, "MMM dd, yyyy") : "-"
+}
 
 export const SingleOrderReturn = ({
   item,
@@ -73,7 +83,7 @@ export const SingleOrderReturn = ({
         <div className="flex flex-col gap-2 items-center">
           <p className="label-sm text-secondary">
             Return requested date:{" "}
-            {format(item.line_items[0].created_at, "MMM dd, yyyy")}
+            {formatRequestedDate(returnRequestedAt(item))}
           </p>
         </div>
       </Card>
@@ -83,7 +93,7 @@ export const SingleOrderReturn = ({
           onClick={() => setIsOpen(!isOpen)}
         >
           <Heading level="h3" className="uppercase label-md !font-semibold">
-            {item.status}
+            {statusLabel(item.status)}
           </Heading>
           <p className="label-sm text-secondary flex gap-2">
             {item.line_items.length}{" "}
@@ -107,23 +117,32 @@ export const SingleOrderReturn = ({
         >
           <Divider />
           <div className="p-4 uppercase">
-            <StepProgressBar steps={steps} currentStep={currentStep} />
-          </div>
-          <Divider />
-          <div className="p-4 flex justify-between">
-            <div className="flex items-center gap-2">
-              <Avatar
-                src={item.order.seller.photo || "/talkjs-placeholder.jpg"}
-              />
-              <p className="label-lg text-primary">{item.order.seller.name}</p>
-            </div>
-            <Chat
-              user={user}
-              seller={item.order.seller}
-              buttonClassNames="uppercase"
-              order_id={item.order.id}
+            <StepProgressBar
+              steps={steps.map(statusLabel)}
+              currentStep={currentStep}
             />
           </div>
+          {item.order.seller && (
+            <>
+              <Divider />
+              <div className="p-4 flex justify-between">
+                <div className="flex items-center gap-2">
+                  <Avatar
+                    src={item.order.seller.photo || "/talkjs-placeholder.jpg"}
+                  />
+                  <p className="label-lg text-primary">
+                    {item.order.seller.name}
+                  </p>
+                </div>
+                <Chat
+                  user={user}
+                  seller={item.order.seller}
+                  buttonClassNames="uppercase"
+                  order_id={item.order.id}
+                />
+              </div>
+            </>
+          )}
           <Divider />
           <div className="p-4 flex justify-between w-full">
             <div className="flex flex-col gap-4 w-full">

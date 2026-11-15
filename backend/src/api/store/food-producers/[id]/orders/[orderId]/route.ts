@@ -3,7 +3,8 @@ import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { FOOD_DISTRIBUTION_MODULE } from "../../../../../../modules/food-distribution"
 import type FoodDistributionService from "../../../../../../modules/food-distribution/service"
 import { DeliveryStatus } from "../../../../../../modules/food-distribution/models/delivery"
-import { actorMayManage } from "../../../../../../shared/actor-scope"
+import { actorMayManage, actorOwnsResource } from "../../../../../../shared/actor-scope"
+import { forbidden } from "../../../../../../shared/community-read-access"
 
 // ===========================================
 // VALIDATION SCHEMAS
@@ -35,6 +36,19 @@ const updateProducerSchema = z.object({
 // Get order details for producer
 // ===========================================
 
+/**
+ * Owner-only (SEC-2 residual). `api/middlewares.ts` gates the
+ * `/store/food-producers` prefix on write verbs only, so this GET is
+ * unauthenticated, and it returned the whole `food_order` — recipient name,
+ * phone, email and delivery address — plus its items and delivery to anyone
+ * who could name a producer id (public, from `GET /store/food-producers`) and
+ * an order id. The list route was closed under D10-1; this sibling was not.
+ *
+ * Ownership is checked before the order is looked up, so a non-owner cannot
+ * learn which order ids exist, and with `actorOwnsResource` (no grandfathering
+ * of a null `owner_id`), as the list route does, because this is a PII read.
+ * Refusals use `forbidden()`: 403 for "not signed in" and "not yours" alike.
+ */
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
   const { id: producerId, orderId } = req.params
   
@@ -44,6 +58,11 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
   const producer = await foodDistribution.retrieveFoodProducer(producerId)
   if (!producer) {
     res.status(404).json({ message: "Producer not found" })
+    return
+  }
+
+  if (!actorOwnsResource(req, (producer as { owner_id?: string | null }).owner_id)) {
+    forbidden(res)
     return
   }
   

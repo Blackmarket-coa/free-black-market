@@ -1,6 +1,8 @@
 import { MedusaService } from "@medusajs/framework/utils"
 import { OrderDispute, OrderDisputeEvent } from "./models"
 import {
+  AMOUNT_UNIT_METADATA_KEY,
+  AMOUNT_UNIT_MINOR,
   DEFAULT_FILING_WINDOW_DAYS,
   DisputeReason,
   DisputeStateError,
@@ -31,6 +33,7 @@ export type DisputeRow = {
   resolved_at: Date | null
   resolved_by: string | null
   escrow_agreement_id: string | null
+  metadata?: Record<string, unknown> | null
 }
 
 /**
@@ -77,6 +80,11 @@ class OrderDisputeService extends MedusaService({
    * opposite directions by two admins. A different vendor on the same order is
    * a different argument and is allowed. The partial unique index on
    * `(order_id, seller_id)` is the backstop; this is the readable error.
+   *
+   * `orderTotalCents` and `claimCents` are minor units. The row is stamped
+   * `metadata.amount_unit = "minor"` (see `AMOUNT_UNIT_METADATA_KEY`), so a
+   * row written here can never be mistaken for one the old major-unit intake
+   * wrote, even when the amounts are the same.
    */
   async open(args: {
     orderId: string
@@ -90,6 +98,8 @@ class OrderDisputeService extends MedusaService({
     claimCents?: number | null
     escrowAgreementId?: string | null
     filingWindowDays?: number
+    /** Stored on the row as written, with `amount_unit: "minor"` added. */
+    metadata?: Record<string, unknown> | null
     now?: Date
   }): Promise<DisputeRow> {
     const now = args.now ?? new Date()
@@ -136,6 +146,14 @@ class OrderDisputeService extends MedusaService({
         claim_amount: claim,
         award_amount: 0,
         escrow_agreement_id: args.escrowAgreementId ?? null,
+        // Written in the same insert as the amounts, after the caller's keys
+        // so no caller can drop or change it: every row from here on says
+        // its amounts are minor units, which is what lets
+        // `scripts/fix-order-dispute-minor-units.ts` leave it alone.
+        metadata: {
+          ...(args.metadata ?? {}),
+          [AMOUNT_UNIT_METADATA_KEY]: AMOUNT_UNIT_MINOR,
+        },
       },
     ])
 
@@ -261,8 +279,7 @@ class OrderDisputeService extends MedusaService({
     })
 
     const now = args.now ?? new Date()
-    await this.updateOrderDisputes({
-      id: dispute.id,
+    await this.writeIfStatusUnchanged(dispute, {
       status: args.status,
       award_amount: award,
       resolution_note: args.note ?? null,
@@ -308,8 +325,7 @@ class OrderDisputeService extends MedusaService({
       actor: args.actor,
     })
 
-    await this.updateOrderDisputes({
-      id: dispute.id,
+    await this.writeIfStatusUnchanged(dispute, {
       status: args.to,
       ...(args.note ? { resolution_note: args.note } : {}),
     })
@@ -326,6 +342,56 @@ class OrderDisputeService extends MedusaService({
     ])
 
     return this.require(dispute.id)
+  }
+
+  /**
+   * Write a status change only if the status is still the one it was decided
+   * from: one `UPDATE … WHERE id = ? AND status = ?`, atomic in Postgres.
+   *
+   * `resolve` and `transition` read the row, check the move, then write. Two
+   * admins deciding the same case at once both pass the check; with a plain
+   * update both writes landed and the last won, so a refund already paid by
+   * hand through Stripe could be overwritten by a release, with two
+   * "resolved" events in the log. Now the second write matches no row and
+   * is refused with the same `DisputeStateError` the route already answers
+   * with 409, before its event is written.
+   *
+   * Raw SQL because the generated `updateOrderDisputes` with a selector
+   * reads the matching rows and then updates them by id: the same race, one
+   * layer down. The column names below are this module's own, never input.
+   */
+  private async writeIfStatusUnchanged(
+    dispute: DisputeRow,
+    set: Partial<
+      Pick<
+        DisputeRow,
+        "status" | "award_amount" | "resolution_note" | "resolved_at" | "resolved_by"
+      >
+    >
+  ): Promise<void> {
+    const columns = Object.keys(set) as (keyof typeof set)[]
+    const manager = (
+      this as unknown as {
+        baseRepository_: {
+          getFreshManager(): {
+            execute(sql: string, params: unknown[], method: "all"): Promise<unknown[]>
+          }
+        }
+      }
+    ).baseRepository_.getFreshManager()
+
+    const rows = await manager.execute(
+      `UPDATE order_dispute SET ${columns.map((c) => `"${c}" = ?`).join(", ")}, updated_at = now() ` +
+        `WHERE id = ? AND status = ? AND deleted_at IS NULL RETURNING id`,
+      [...columns.map((c) => set[c] ?? null), dispute.id, dispute.status],
+      "all"
+    )
+
+    if (!Array.isArray(rows) || rows.length !== 1) {
+      throw new DisputeStateError(
+        `this dispute changed while it was being decided (it is no longer ${dispute.status}); reload it`
+      )
+    }
   }
 
   private async require(disputeId: string): Promise<DisputeRow> {

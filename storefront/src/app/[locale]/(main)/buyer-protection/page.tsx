@@ -17,6 +17,22 @@ export const metadata: Metadata = {
  * "held until delivery is confirmed"; escrow is real but is wired to collective
  * buys, campaigns, bounties and subcontracts — not ordinary checkout. That copy
  * has been corrected, and this page states what actually protects a buyer.
+ *
+ * The same rule holds for the claim steps below, which
+ * `lib/__tests__/buyer-protection-copy.spec.ts` checks against the code:
+ * - The claim form (`OrderClaimSection`) has no upload, so step 2 does not
+ *   invite attachments.
+ * - Nothing yet tells a buyer what happened to their claim: no notification
+ *   is sent on a decision, and `listOrderClaims` has no caller, so no page
+ *   shows a claim's status. Step 3 therefore promises a review and a
+ *   recorded reason, not a reply. Put "we'll come back to you" back when one
+ *   of those exists.
+ * - Nothing tells an operator a claim arrived either: it lands in the admin
+ *   Disputes queue and waits to be opened. So step 3 says the claim goes
+ *   into a review queue, not that "a person reads it".
+ * - "Every decision is recorded with a written reason" holds because
+ *   `PATCH /admin/disputes/:id` refuses a closing decision without a note
+ *   (400); the spec fails if that check goes.
  */
 
 const COVERED = [
@@ -98,13 +114,13 @@ export default function BuyerProtectionPage() {
             {
               step: "2",
               title: "Open a claim",
-              detail: `From the same order page, within ${CLAIM_WINDOW_DAYS} days of the order. Tell us what happened and attach anything that helps — a photo, a tracking screenshot.`,
+              detail: `From the same order page, within ${CLAIM_WINDOW_DAYS} days of the order. Tell us what happened in a few sentences — dates and tracking details help. The form doesn't take photos or files yet.`,
             },
             {
               step: "3",
               title: "We review it",
               detail:
-                "A person reads it, looks at the order and the seller's record, and contacts the seller. We'll come back to you rather than closing it silently.",
+                "Your claim goes into our review queue with the order and the seller's record. Claims are reviewed in the order they arrive, and every decision is recorded with a written reason. Updates on a claim aren't sent automatically yet.",
             },
             {
               step: "4",

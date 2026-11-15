@@ -2,7 +2,7 @@ import { createLogger } from "../../../../shared/logger"
 const log = createLogger("api/vendor/analytics/creator")
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
-import type { VendorRequest } from "../../types"
+import { requireSellerId } from "../../../../shared/auth-helpers"
 import {
   creatorAttributionQuery,
   creatorByCampaignQuery,
@@ -10,6 +10,7 @@ import {
   creatorTotalsQuery,
   mapCreatorTotals,
   rangeToWindow,
+  type SqlQuery,
 } from "../../../../modules/creator-attribution/analytics-queries"
 
 /**
@@ -21,11 +22,13 @@ import {
  * order_attribution, plus by-day and by-campaign breakdowns.
  */
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
-  const sellerId =
-    (req as VendorRequest)._seller_id || (req as VendorRequest).auth_context?.actor_id
-  if (!sellerId) {
-    return res.status(401).json({ message: "Unauthorized", type: "unauthorized" })
-  }
+  // The seller this request acts for. A vendor login's token carries a
+  // member id (mem_*), and `_seller_id` is set only for a sel_* token, so
+  // reading `_seller_id || actor_id` scoped every member's dashboard to an id
+  // no seller has: it answered 200 with zeros (SD-74). requireSellerId maps a
+  // member to its seller and answers the request itself when there is none.
+  const sellerId = await requireSellerId(req, res)
+  if (!sellerId) return
 
   const window = rangeToWindow((req.query as Record<string, unknown>).range)
 
@@ -60,9 +63,6 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
   }
 }
 
-function toRawArgs(q: {
-  sql: string
-  bindings: Array<string | number | Date>
-}): [string, Array<string | number | Date>] {
+function toRawArgs(q: SqlQuery): [string, SqlQuery["bindings"]] {
   return [q.sql, q.bindings]
 }

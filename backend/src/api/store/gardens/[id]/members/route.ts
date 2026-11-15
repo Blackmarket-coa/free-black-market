@@ -7,7 +7,7 @@ import {
 } from "../../../../../shared/community-read-access"
 import { actingCustomerId } from "../../../../../shared/actor-scope"
 
-const GARDEN_MODULE = "gardenModuleService"
+import { GARDEN_MODULE } from "../../../../../modules/garden"
 
 interface GardenServiceType {
   createGardenMemberships: (data: Record<string, unknown>) => Promise<{ id: string }>
@@ -80,20 +80,26 @@ export async function POST(
   req: MedusaRequest,
   res: MedusaResponse
 ) {
+  // Customers only. This record is written under a customer id, and that id
+  // comes from the token. A seller or driver token used to fall through to
+  // the id in the body, which let any signed-in seller or driver act as any
+  // customer here.
+  const actingCustomer = actingCustomerId(req)
+  if (!actingCustomer) {
+    return forbidden(res)
+  }
+
   const { id } = req.params
   const gardenService = req.scope.resolve(GARDEN_MODULE) as GardenServiceType
 
   const {
-    customer_id,
     membership_type,
     initial_investment,
   } = req.body as Record<string, unknown>
 
   // SEC: bind the new membership's owner to the authenticated customer so a
-  // logged-in customer cannot join a garden as someone else. Non-customer
-  // actors (seller/driver) fall back to the body value.
-  const actingCustomer = actingCustomerId(req)
-  const effectiveCustomerId = (actingCustomer ?? customer_id) as string
+  // logged-in customer cannot join a garden as someone else.
+  const effectiveCustomerId = actingCustomer
 
   const membership = await gardenService.createGardenMemberships({
     garden_id: id,

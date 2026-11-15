@@ -1,8 +1,16 @@
 import { AuthenticatedMedusaRequest, MedusaResponse } from "@medusajs/framework"
 import { createLogger } from "../../../../../../shared/logger"
 import { sellerId, wellnessService, fail, body } from "../../../_helpers"
+import type { ClassRegistrationRefusal } from "../../../../../../modules/wellness/class-registration"
 
 const log = createLogger("api/vendor/wellness/classes/[id]/attendees")
+
+const CLASS_REFUSAL_MESSAGES: Record<ClassRegistrationRefusal, string> = {
+  cancelled: "Class is cancelled",
+  completed: "Class is completed",
+  not_live: "Class is not open for registration",
+  ended: "Class has already ended",
+}
 
 async function ownsClass(req: AuthenticatedMedusaRequest, seller: string, id: string) {
   const rows = (await wellnessService(req).listClassEvents(
@@ -45,6 +53,11 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
       name: b.name ?? null,
       customer_id: b.customer_id ?? null,
     })
+    // A cancelled, completed or finished class takes no attendee and keeps
+    // its status (registerForClass refuses it).
+    if (result.refused) {
+      return res.status(409).json({ message: CLASS_REFUSAL_MESSAGES[result.refused], reason: result.refused })
+    }
     if (result.full) return res.status(409).json({ message: "Class is full" })
     return res.status(201).json(result)
   } catch (e) {

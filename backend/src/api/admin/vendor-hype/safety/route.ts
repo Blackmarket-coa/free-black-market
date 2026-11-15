@@ -14,7 +14,9 @@ const schema = z.object({
 
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
   const actorType = (req as any).auth_context?.actor_type
-  if (actorType && actorType !== "admin" && actorType !== "user") {
+  // A missing actor_type is refused too: the old `actorType && ...` guard let an
+  // empty auth context through (SEC-5 residual). Medusa admin sessions are "user".
+  if (actorType !== "admin" && actorType !== "user") {
     return res.status(403).json({ error: "Forbidden" })
   }
 

@@ -1,12 +1,10 @@
-// Mirrors ../../resend/__tests__/service.unit.spec.ts: the email templates are
-// .tsx and the unit jest config only transforms .ts, so the five templates this
-// service imports from ../resend/emails are virtually mocked. These tests
-// exercise the transport contract and send/error paths, not rendering.
-jest.mock("../../resend/emails/order-placed", () => ({ orderPlacedEmail: () => null }), { virtual: true })
-jest.mock("../../resend/emails/user-invited", () => ({ userInvitedEmail: () => null }), { virtual: true })
-jest.mock("../../resend/emails/password-reset", () => ({ passwordResetEmail: () => null }), { virtual: true })
-jest.mock("../../resend/emails/vendor-accepted", () => ({ vendorAcceptedEmail: () => null }), { virtual: true })
-jest.mock("../../resend/emails/customer-accepted", () => ({ customerAcceptedEmail: () => null }), { virtual: true })
+import { MedusaError } from "@medusajs/framework/utils"
+// Mirrors ../../resend/__tests__/service.unit.spec.ts: the shared renderer
+// registry this service imports from ../resend/emails is mocked out. These
+// tests exercise the transport contract and send/error paths, not rendering;
+// template coverage across both providers is
+// ../../resend/__tests__/email-template-coverage.unit.spec.ts.
+jest.mock("../../resend/emails/registry", () => ({ EMAIL_TEMPLATE_RENDERERS: {} }))
 
 // The transport is mocked for the behavioural tests below. The mock fns are
 // created inside the factory and read back off the mocked module, which avoids
@@ -152,11 +150,15 @@ describe("SMTPNotificationProviderService.send", () => {
     expect(logger.error).toHaveBeenCalledWith(expect.stringContaining("SMTP AUTHENTICATION FAILED"))
   })
 
-  it("returns empty and never touches the transport for an unknown template", async () => {
+  it("refuses an unknown template with INVALID_DATA and never touches the transport", async () => {
+    // Returning `{}` here made Medusa mark the notification SUCCESS: a dropped
+    // email that looked delivered.
     const logger = makeLogger()
     const svc = new SMTPNotificationProviderService({ logger }, baseOptions)
 
-    await expect(svc.send({ ...notification, template: "does-not-exist" })).resolves.toEqual({})
+    const sent = svc.send({ ...notification, template: "does-not-exist" })
+    await expect(sent).rejects.toThrow(/Couldn't find an email template for does-not-exist/)
+    await expect(sent).rejects.toMatchObject({ type: MedusaError.Types.INVALID_DATA })
 
     expect(sendMail).not.toHaveBeenCalled()
     expect(logger.error).toHaveBeenCalledWith(expect.stringContaining("Couldn't find an email template"))

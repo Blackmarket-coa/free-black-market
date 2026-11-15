@@ -5,6 +5,7 @@ import type OrderDisputeService from "../../../../modules/order-dispute/service"
 import { DisputeStateError } from "../../../../modules/order-dispute/service"
 import {
   DisputeStatus,
+  decisionNoteMissing,
   escrowTransitionFor,
 } from "../../../../modules/order-dispute/resolution"
 
@@ -43,6 +44,13 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
  * Saying that plainly is the point. Returning a fabricated "funds released"
  * for an order that holds none would be worse than useless to whoever has to
  * actually pay the buyer back.
+ *
+ * A decision that closes the case (resolved_refund, resolved_release,
+ * withdrawn) needs a `note` with text in it, or it is refused with 400
+ * before anything is read or written. The note is the reason the buyer and
+ * the seller read in their own records, and `/buyer-protection` promises
+ * one for every decision; until this check only the admin panel asked for
+ * it, so any other caller could close a case with no reason at all.
  */
 export async function PATCH(req: MedusaRequest, res: MedusaResponse) {
   const id = (req.params as { id?: string })?.id
@@ -51,6 +59,15 @@ export async function PATCH(req: MedusaRequest, res: MedusaResponse) {
   const body = (req.body ?? {}) as Record<string, unknown>
   const status =
     typeof body.status === "string" ? body.status.trim().toLowerCase() : ""
+
+  const note = typeof body.note === "string" ? body.note.trim() : ""
+  if (decisionNoteMissing(status, body.note)) {
+    return res.status(400).json({
+      message:
+        "A decision that closes the case needs a note saying why: the buyer and the seller read it in their claim records.",
+      type: "note_required",
+    })
+  }
 
   const service = req.scope.resolve<OrderDisputeService>(ORDER_DISPUTE_MODULE)
   const adminId = getAdminId(req)
@@ -74,7 +91,7 @@ export async function PATCH(req: MedusaRequest, res: MedusaResponse) {
         status,
         awardCents:
           typeof body.award_amount === "number" ? body.award_amount : null,
-        note: typeof body.note === "string" ? body.note : undefined,
+        note,
       })
 
       return res.json({
@@ -92,7 +109,7 @@ export async function PATCH(req: MedusaRequest, res: MedusaResponse) {
         disputeId: id,
         actor: "admin",
         actorId: adminId,
-        note: typeof body.note === "string" ? body.note : undefined,
+        note,
       })
       return res.json({ dispute, escrow_transition: null })
     }

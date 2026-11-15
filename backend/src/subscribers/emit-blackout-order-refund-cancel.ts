@@ -3,6 +3,7 @@ const log = createLogger("subscribers/emit-blackout-order-refund-cancel")
 import { SubscriberArgs, type SubscriberConfig } from "@medusajs/medusa"
 import { emitBlackoutEvent } from "../lib/blackout-emit"
 import {
+  orderSellerId,
   resolveBlackoutUserId,
   resolveCustomerMxid,
   resolveSellerMxid,
@@ -17,6 +18,10 @@ import { mapEntitlementKindToBlackout } from "../modules/marketplace-webhooks/mo
  *
  * Runs alongside `revoke-entitlements-on-refund` (which mutates entitlement
  * state); this one only emits. Idempotent via stable eventIds.
+ *
+ * `order.cancelled` goes to the vendor's room: the order's seller through
+ * Mercur's link (`seller.id`). An order with no seller link sends no
+ * `order.cancelled`; the other events do not depend on the seller.
  */
 export default async function emitBlackoutOrderRefundCancel({
   event,
@@ -34,7 +39,9 @@ export default async function emitBlackoutOrderRefundCancel({
         "customer_id",
         "currency_code",
         "metadata",
-        "seller_id",
+        // `seller.id` (Mercur's link), not `seller_id`, which Order does not
+        // have: it read as absent and order.cancelled went to "default-seller".
+        "seller.id",
         "items.id",
         "items.product_id",
         "items.variant_id",
@@ -47,27 +54,34 @@ export default async function emitBlackoutOrderRefundCancel({
     if (!order) return
 
     const metadata = (order.metadata || {}) as Record<string, unknown>
-    const sellerId = (order as any).seller_id || "default-seller"
+    const sellerId = orderSellerId(order)
+    // The buyer's id only, as before: the seller fallback inside
+    // resolveBlackoutUserId never ran while `seller_id` read as absent, and a
+    // refund revokes from the buyer, never from the vendor's own account.
     const userId = await resolveBlackoutUserId(container, {
       customerId: order.customer_id ?? null,
-      sellerId: (order as any).seller_id ?? null,
+      sellerId: null,
       orderMetadata: metadata,
     })
 
     if (isCancel) {
-      const vendorMxid = await resolveSellerMxid(container, sellerId)
-      await emitBlackoutEvent(
-        container,
-        "order.cancelled",
-        {
-          vendorId: sellerId,
-          ...(userId ? { userId } : {}),
-          orderId,
-          reason: (metadata.cancel_reason as string) ?? undefined,
-          ...(vendorMxid ? { vendorMxid } : {}),
-        },
-        { eventId: `order.cancelled:${orderId}` }
-      )
+      if (!sellerId) {
+        log.warn(`[emit-blackout-order-refund-cancel] order ${orderId} has no seller link; order.cancelled not sent`)
+      } else {
+        const vendorMxid = await resolveSellerMxid(container, sellerId)
+        await emitBlackoutEvent(
+          container,
+          "order.cancelled",
+          {
+            vendorId: sellerId,
+            ...(userId ? { userId } : {}),
+            orderId,
+            reason: (metadata.cancel_reason as string) ?? undefined,
+            ...(vendorMxid ? { vendorMxid } : {}),
+          },
+          { eventId: `order.cancelled:${orderId}` }
+        )
+      }
     } else if (userId) {
       for (const it of (order.items || []) as any[]) {
         const kind = mapEntitlementKindToBlackout(

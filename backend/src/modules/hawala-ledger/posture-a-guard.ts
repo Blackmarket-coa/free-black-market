@@ -98,10 +98,36 @@ export type TransferGuardInput = {
 
 export type GuardMode = "strict" | "warn" | "off"
 
+let refusedProductionOverride = false
+
+/**
+ * The guard's mode. `strict` (refuse) unless `HAWALA_CCR_GUARD_MODE` asks for
+ * `warn` or `off` — and that request is honoured ONLY outside production.
+ *
+ * LEG-7: this used to read the variable unconditionally, so one environment
+ * variable could switch the service-layer Posture A guard to log-only or to
+ * nothing on the live ledger, and it was documented nowhere. The guard is the
+ * legal boundary docs/POSTURE_A_COMPLIANCE.md describes, and it sits in the
+ * service layer precisely so nothing upstream can bypass it; an env switch in
+ * production undoes that. With NODE_ENV=production (the backend image sets
+ * it) the mode is always `strict`, and a refused override is logged once at
+ * error level so an operator who set it finds out why it had no effect.
+ * `warn` and `off` remain for development and tests.
+ */
 export const resolveGuardMode = (): GuardMode => {
   const raw = (process.env.HAWALA_CCR_GUARD_MODE || "strict").toLowerCase()
-  if (raw === "warn" || raw === "off") return raw
-  return "strict"
+  const requested: GuardMode = raw === "warn" || raw === "off" ? raw : "strict"
+  if (requested !== "strict" && process.env.NODE_ENV === "production") {
+    if (!refusedProductionOverride) {
+      refusedProductionOverride = true
+      log.error(
+        `[hawala-ledger] HAWALA_CCR_GUARD_MODE=${raw} ignored: the Posture A ` +
+          "guard is always strict in production. See docs/POSTURE_A_COMPLIANCE.md."
+      )
+    }
+    return "strict"
+  }
+  return requested
 }
 
 /**

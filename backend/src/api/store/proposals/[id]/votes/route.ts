@@ -1,8 +1,9 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 import { actingCustomerId } from "../../../../../shared/actor-scope"
+import { forbidden } from "../../../../../shared/community-read-access"
 
-const GOVERNANCE_MODULE = "governanceModuleService"
+import { GOVERNANCE_MODULE } from "../../../../../modules/governance"
 
 interface GovernanceServiceType {
   createGardenVotes: (data: Record<string, unknown>) => Promise<{ id: string }>
@@ -92,12 +93,20 @@ export async function POST(
   req: MedusaRequest,
   res: MedusaResponse
 ) {
+  // Customers only. This record is written under a customer id, and that id
+  // comes from the token. A seller or driver token used to fall through to
+  // the id in the body, which let any signed-in seller or driver act as any
+  // customer here.
+  const actingCustomer = actingCustomerId(req)
+  if (!actingCustomer) {
+    return forbidden(res)
+  }
+
   const { id } = req.params
   const governanceService = req.scope.resolve(GOVERNANCE_MODULE) as GovernanceServiceType
   const query = req.scope.resolve(ContainerRegistrationKeys.QUERY)
 
   const {
-    customer_id,
     membership_id,
     vote,
     comment,
@@ -107,10 +116,8 @@ export async function POST(
   // SEC: a customer may only vote as themselves. Ignore any body customer_id
   // for a logged-in customer and bind the vote to the authenticated actor —
   // otherwise the "already voted" dedupe (keyed on customer_id) and the vote
-  // record could both be forged under another member's id. Non-customer actors
-  // (seller/driver) fall back to the body value.
-  const actingCustomer = actingCustomerId(req)
-  const effectiveCustomerId = (actingCustomer ?? customer_id) as string
+  // record could both be forged under another member's id.
+  const effectiveCustomerId = actingCustomer
 
   // Get proposal
   const { data: [proposal] } = await query.graph({
@@ -147,22 +154,30 @@ export async function POST(
   }
 
   // Get membership for voting power
+  //
+  // SEC: the membership supplies the voting power, so it must be the caller's
+  // own, active, and in *this proposal's* garden. Before, only the owner was
+  // checked: a customer could vote on garden A's proposal with the labour and
+  // investment balances of their membership in garden B (a probe wrote
+  // voting_power 526 for a stranger to A), and a caller with no membership at
+  // all voted at base power 1. Every one of those is refused the same way, so
+  // the response says nothing about which memberships exist.
+  if (typeof membership_id !== "string" || !membership_id) {
+    return forbidden(res)
+  }
   const { data: [membership] } = await query.graph({
     entity: "garden_membership",
-    fields: ["id", "customer_id", "voting_power", "volunteer_hours_balance", "investment_balance", "roles"],
-    filters: { id: membership_id as string },
+    fields: ["id", "customer_id", "garden_id", "status", "voting_power", "volunteer_hours_balance", "investment_balance", "roles"],
+    filters: { id: membership_id },
   })
 
-  // SEC: the membership supplies the voting power, so a customer must not be
-  // able to borrow another member's membership_id. Reject a mismatch.
   if (
-    actingCustomer &&
-    membership &&
-    membership.customer_id &&
-    membership.customer_id !== actingCustomer
+    !membership ||
+    membership.customer_id !== actingCustomer ||
+    membership.garden_id !== proposal.garden_id ||
+    membership.status !== "active"
   ) {
-    res.status(403).json({ message: "That membership is not yours" })
-    return
+    return forbidden(res)
   }
 
   // Get garden for governance model
@@ -179,8 +194,8 @@ export async function POST(
   const voting_power = calculateVotingPower({
     governance_model: garden.governance_model as string,
     base_votes: 1,
-    labor_hours: (membership?.volunteer_hours_balance as number) || 0,
-    investment_amount: (membership?.investment_balance as number) || 0,
+    labor_hours: (membership.volunteer_hours_balance as number) || 0,
+    investment_amount: (membership.investment_balance as number) || 0,
     role_bonus: 0,
     weights: gardenSettings?.voting_weights || null,
   })
@@ -189,13 +204,13 @@ export async function POST(
     proposal_id: id,
     garden_id: proposal.garden_id,
     customer_id: effectiveCustomerId,
-    membership_id,
+    membership_id: membership.id,
     vote,
     voting_power,
     power_basis: {
       base: 1,
-      labor_hours: (membership?.volunteer_hours_balance as number) || 0,
-      investment: (membership?.investment_balance as number) || 0,
+      labor_hours: (membership.volunteer_hours_balance as number) || 0,
+      investment: (membership.investment_balance as number) || 0,
     },
     comment,
     comment_visibility: (comment_visibility as string) || "public",

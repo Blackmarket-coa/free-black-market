@@ -1,3 +1,6 @@
+import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
+import type { CompleteCartWorkflowInput } from "@medusajs/medusa/core-flows"
+
 import { validateOrderCycleOnCompleteCart } from "../validate-order-cycle"
 import { ORDER_CYCLE_MODULE } from "../../../modules/order-cycle"
 
@@ -7,9 +10,34 @@ import { ORDER_CYCLE_MODULE } from "../../../modules/order-cycle"
  * The cases that matter are the two the audit named as unfixed — a cart tagged
  * with a cycle that closed hours ago, and a cart built when stock was free and
  * completed after it went. Both used to pass silently and record a sale.
+ *
+ * SD-54: this spec used to hand the guard `{ input: { cart_id } }`, the shape
+ * the guard read, while Medusa 2.14.2 calls `completeCartWorkflow.hooks.validate`
+ * with `{ input: { id }, cart }` (`@medusajs/core-flows`
+ * `cart/workflows/complete-cart.js`). The guard returned early at every real
+ * checkout and this suite stayed green. `ARGS` is now typed with Medusa's own
+ * `CompleteCartWorkflowInput`, so a fixture in any other shape does not
+ * compile, and the query mock records which cart was read.
+ * `integration-tests/http/complete-cart-validate-guards.spec.ts` runs the
+ * guard through the real workflow.
  */
 
+/**
+ * The argument Medusa passes the hook: `{ input, cart }`, `input` being the
+ * workflow's own input, typed with Medusa's own `CompleteCartWorkflowInput`
+ * (`{ id }`). (The hook's declared handler type wraps `input` in the
+ * composition-time `WorkflowData` proxy, which a plain object cannot satisfy;
+ * at run time it is the plain input.)
+ */
+type MedusaValidateArgs = { input: CompleteCartWorkflowInput; cart: unknown }
+
 const OPEN = { status: "open", name: "Week 12" }
+
+/** Every `query.graph` call the guard made, across tests (cleared before each). */
+const graphCalls: Array<{ entity: string; filters: Record<string, unknown> }> = []
+beforeEach(() => {
+  graphCalls.length = 0
+})
 
 const makeCtx = (opts: {
   cart?: Record<string, unknown>
@@ -20,9 +48,13 @@ const makeCtx = (opts: {
 }) => ({
   container: {
     resolve: (key: string) => {
-      if (key === "query") {
+      if (key === ContainerRegistrationKeys.QUERY) {
         return {
-          graph: async () => ({ data: opts.cart ? [opts.cart] : [] }),
+          graph: async (q: { entity: string; filters: Record<string, unknown> }) => {
+            graphCalls.push({ entity: q.entity, filters: q.filters })
+            // Answers only for the cart the guard was asked about.
+            return { data: opts.cart && q.filters?.id === opts.cart.id ? [opts.cart] : [] }
+          },
         }
       }
       if (key === ORDER_CYCLE_MODULE) {
@@ -42,7 +74,8 @@ const makeCtx = (opts: {
   },
 })
 
-const ARGS = { input: { cart_id: "cart_1" } }
+/** As Medusa calls the hook: the workflow's input `{ id }`, and the cart it read. */
+const ARGS: MedusaValidateArgs = { input: { id: "cart_1" }, cart: { id: "cart_1" } }
 
 const cartWith = (items: Array<Record<string, unknown>>, metadata = {}) => ({
   id: "cart_1",
@@ -50,8 +83,7 @@ const cartWith = (items: Array<Record<string, unknown>>, metadata = {}) => ({
   items,
 })
 
-const run = (ctx: ReturnType<typeof makeCtx>) =>
-  validateOrderCycleOnCompleteCart(ARGS as never, ctx as never)
+const run = (ctx: ReturnType<typeof makeCtx>) => validateOrderCycleOnCompleteCart(ARGS, ctx)
 
 describe("validateOrderCycleOnCompleteCart", () => {
   it("resolves the module by the key the module actually registers", () => {
@@ -59,6 +91,20 @@ describe("validateOrderCycleOnCompleteCart", () => {
     // If that key drifts from the module's own constant the guard silently
     // resolves nothing and stops guarding, so the two are pinned together.
     expect(ORDER_CYCLE_MODULE).toBe("orderCycleModuleService")
+  })
+
+  it("reads the cart Medusa names in the hook's input.id", async () => {
+    await expect(
+      run(
+        makeCtx({
+          cart: cartWith([
+            { variant_id: "v1", quantity: 1, metadata: { order_cycle_id: "oc_1" } },
+          ]),
+          cycle: { status: "closed", name: "Week 11" },
+        })
+      )
+    ).rejects.toThrow(/no longer taking orders/i)
+    expect(graphCalls).toEqual([{ entity: "cart", filters: { id: "cart_1" } }])
   })
 
   it("ignores a cart with no order-cycle items", async () => {
@@ -205,7 +251,7 @@ describe("validateOrderCycleOnCompleteCart", () => {
 
   it("does nothing without a cart id or container", async () => {
     await expect(
-      validateOrderCycleOnCompleteCart({ input: {} } as never, {} as never)
+      validateOrderCycleOnCompleteCart({ input: {} }, {})
     ).resolves.toBeUndefined()
   })
 })

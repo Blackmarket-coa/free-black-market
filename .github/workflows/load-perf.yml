@@ -32,23 +32,45 @@ jobs:
           NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY: pk_perf_publishable_placeholder
         run: |
           docker compose up -d --build backend storefront
+          # Fail here, with the service's logs, when the stack never becomes
+          # healthy. The loop used to fall through after five minutes either
+          # way, so a stack that never came up was reported as a k6 threshold
+          # failure (or, with the old check, as nothing at all).
           for svc in backend storefront; do
+            status=starting
             for i in $(seq 1 60); do
               status=$(docker inspect --format '{{.State.Health.Status}}' "free-black-market-$svc-1" 2>/dev/null || echo "starting")
               if [ "$status" = "healthy" ]; then break; fi
               echo "waiting for $svc ($i/60) — current status: $status"
               sleep 5
             done
+            if [ "$status" != "healthy" ]; then
+              echo "::error::$svc never became healthy (last status: $status)"
+              docker compose logs --tail 200 "$svc"
+              exit 1
+            fi
           done
 
+      # k6 runs from the official image with the runner's network. The previous
+      # grafana/k6-action@v0.3.1 is a Docker container action: inside it,
+      # localhost:3000 is the action's own container, not the runner where
+      # compose published the storefront, so every request since the first
+      # run (2026-05-07) was "connection refused". The duration is passed as
+      # PERF_DURATION, not K6_DURATION: k6 reads K6_DURATION as its own
+      # --duration override, which replaced the ramping scenario with a single
+      # one-VU "default" scenario. Image pinned by digest (1.8.2, 2026-10-24).
       - name: Run k6 scenario
-        uses: grafana/k6-action@v0.3.1
         env:
-          K6_DURATION: ${{ inputs.duration || '1m' }}
+          PERF_DURATION: ${{ inputs.duration || '1m' }}
           BASE_URL: http://localhost:3000
-        with:
-          filename: perf/k6/storefront-browse.js
-          flags: --summary-export=perf/k6/summary.json
+        run: |
+          # Run as the runner's uid: the image's own user cannot write the
+          # summary into the checked-out tree (first run: "permission denied").
+          docker run --rm --network host --user "$(id -u):$(id -g)" \
+            -e PERF_DURATION -e BASE_URL \
+            -v "$PWD/perf/k6:/scripts" \
+            grafana/k6:1.8.2@sha256:00fdcebafbc86cb0137d429529b1caa401a02e09025f02fc74866fa6e2b004d8 \
+            run --summary-export=/scripts/summary.json /scripts/storefront-browse.js
 
       - name: Upload k6 summary
         if: always()

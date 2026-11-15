@@ -1,6 +1,8 @@
+import { knex } from "@medusajs/framework/mikro-orm/knex"
 import {
   creatorAttributionQuery,
   creatorByCampaignQuery,
+  creatorByDayQuery,
   creatorTotalsQuery,
   mapCreatorTotals,
   mergeProductFunnel,
@@ -25,22 +27,40 @@ describe("rangeToWindow", () => {
   })
 })
 
+/**
+ * Routes run these through knex's `raw`, which binds `?` placeholders and
+ * throws "Expected N bindings, saw M" when the count is off. Running every
+ * builder through knex's own binding pass is the check the old spec lacked:
+ * it asserted the `$3, $4` text, so it pinned the defect that made both
+ * dashboards answer 500 (SD-74). No database: `toSQL()` only binds.
+ */
+const pg = knex({ client: "pg" })
+const bind = (q: { sql: string; bindings: unknown[] }) =>
+  pg.raw(q.sql, q.bindings as never).toSQL().toNative()
+
 describe("product queries", () => {
   const ids = ["prod_1", "prod_2"]
 
-  it("parameterizes product ids after the date bindings", () => {
+  it("bind under knex's raw: dates, then the product ids as one ANY(?) list", () => {
     for (const build of [productFunnelQuery, productByDayQuery, productOrdersQuery]) {
       const q = build({ productIds: ids, window: WINDOW })
-      expect(q.bindings).toEqual([WINDOW.from, WINDOW.to, "prod_1", "prod_2"])
-      expect(q.sql).toContain("IN ($3, $4)")
+      expect(q.bindings).toEqual([WINDOW.from, WINDOW.to, ids])
+      const native = bind(q)
+      expect(native.bindings).toEqual([WINDOW.from, WINDOW.to, ids])
+      expect(native.sql).toMatch(/>= \$1 AND [a-z_.]+ <= \$2/)
+      expect(native.sql).toContain("= ANY($3)")
       expect(q.sql).toContain("deleted_at IS NULL")
     }
   })
 
-  it("orders query joins real orders and excludes canceled", () => {
+  it("orders query reads quantities from order_item at the order's version, and counts only placed orders", () => {
     const q = productOrdersQuery({ productIds: ids, window: WINDOW })
-    expect(q.sql).toContain('JOIN "order" o')
+    expect(q.sql).toContain("FROM order_item oi")
+    expect(q.sql).toContain("oi.version = o.version")
+    expect(q.sql).toContain("SUM(oi.quantity)")
+    expect(q.sql).not.toMatch(/oli\.(quantity|order_id|total)\b/)
     expect(q.sql).toContain("o.canceled_at IS NULL")
+    expect(q.sql).toContain("o.is_draft_order = false")
   })
 })
 
@@ -82,6 +102,14 @@ describe("mergeProductFunnel", () => {
 })
 
 describe("creator queries", () => {
+  it("bind under knex's raw", () => {
+    for (const build of [creatorTotalsQuery, creatorByDayQuery, creatorByCampaignQuery, creatorAttributionQuery]) {
+      const native = bind(build({ creatorSellerId: "seller_1", window: WINDOW }))
+      expect(native.bindings).toEqual([WINDOW.from, WINDOW.to, "seller_1"])
+      expect(native.sql).toContain("creator_seller_id = $3")
+    }
+  })
+
   it("scope by creator id with date bindings", () => {
     for (const build of [creatorTotalsQuery, creatorByCampaignQuery, creatorAttributionQuery]) {
       const q = build({ creatorSellerId: "seller_1", window: WINDOW })

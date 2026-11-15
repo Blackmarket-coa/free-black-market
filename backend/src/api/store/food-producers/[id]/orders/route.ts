@@ -116,8 +116,8 @@ const listOrdersQuerySchema = z.object({
  * every order, and a `food_order` carries `recipient_name`, `recipient_phone`,
  * `recipient_email`, `delivery_address_line_1/2` and `customer_notes`.
  *
- * The sibling `orders/:orderId` route already checked ownership; only this
- * list route was missed. It uses `actorOwnsResource` rather than
+ * The sibling `orders/:orderId` route checked ownership on PUT only; its GET
+ * was missed too and was closed on 2026-11-15 (SD-64) with the same check. It uses `actorOwnsResource` rather than
  * `actorMayManage` because the latter grandfathers a null `owner_id`, which on
  * a PII read would expose every legacy producer's orders to any account that
  * can sign up. See that helper's docblock.
@@ -180,13 +180,12 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
   try {
     const data = createOrderSchema.parse(req.body)
 
-    // SEC: for a logged-in customer, bind the order to the authenticated actor
-    // so one customer cannot place an order under another customer's id. Guest
-    // orders (no acting customer) keep the body value so anonymous orders work.
-    const actingCustomer = actingCustomerId(req)
-    if (actingCustomer) {
-      data.customer_id = actingCustomer
-    }
+    // SEC: the order's customer is the authenticated customer, never a body
+    // value. The SEC-2/3 matcher requires sign-in on this POST, so there is no
+    // anonymous caller to keep a body value for: the only callers without an
+    // acting customer are seller and driver tokens, and they used to be able
+    // to place an order under any customer's id. Theirs is unattributed.
+    data.customer_id = actingCustomerId(req) ?? undefined
     
     const foodDistribution = req.scope.resolve<FoodDistributionService>(FOOD_DISTRIBUTION_MODULE)
     

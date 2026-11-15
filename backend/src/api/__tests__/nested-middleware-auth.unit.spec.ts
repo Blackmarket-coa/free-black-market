@@ -740,13 +740,25 @@ describe("rate limiters: present where declared, with the declared budgets", () 
     expect(budget("vendorHawalaReadRateLimiter")).toMatchObject({ windowMs: 60_000, max: 30 })
     expect(budget("vendorWellnessTestSendRateLimiter")).toMatchObject({ windowMs: 60_000, max: 5 })
     expect(budget("vendorWellnessReadRateLimiter")).toMatchObject({ windowMs: 60_000, max: 60 })
+    // Issue #97: the signed-in account surface and its data-rights endpoints
+    // (store-customer-rate-limits.unit.spec.ts proves them through the chain).
+    expect(budget("storeCustomerAccountRateLimiter")).toMatchObject({ windowMs: 60_000, max: 120 })
+    expect(budget("storeCustomerDataRightsRateLimiter")).toMatchObject({ windowMs: 300_000, max: 5 })
 
     // Every exported limiter's prefix (the @example in the file's docs is not one).
+    // 23rd: supplierWebhookRateLimiter, "supplier-webhook" (proved through the
+    // chain in supplier-webhook-middleware.unit.spec.ts).
+    // 24th: storeDeliveryProofRateLimiter, "store-delivery-proof", keyed per
+    // delivery rather than per path (store-delivery-proof-rate-limit.unit.spec.ts).
+    // 25th: wholesaleApplicationRateLimiter, "wholesale-application"
+    // (store-wholesale-application-rate-limit.unit.spec.ts).
     const prefixes = src
       .split(/\nexport const /)
       .filter((chunk) => /^\w+ = createRateLimiter\(/.test(chunk))
       .map((chunk) => chunk.match(/keyPrefix: "([^"]+)"/)?.[1])
-    expect(prefixes.length).toBe(20)
+    // 26th: storeReportRateLimiter, "store-report" (anonymous seller and
+    // listing reports; seller-reports/__tests__/rate-limit.unit.spec.ts).
+    expect(prefixes.length).toBe(26)
     expect(prefixes).not.toContain(undefined)
     expect(new Set(prefixes).size).toBe(prefixes.length)
   })

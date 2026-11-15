@@ -15,9 +15,38 @@ jest.mock("@medusajs/medusa/core-flows", () => ({
   cancelOrderWorkflow: jest.fn(),
 }))
 
-import { MedusaError } from "@medusajs/framework/utils"
+import { ContainerRegistrationKeys, MedusaError } from "@medusajs/framework/utils"
 import { cancelOrderWorkflow } from "@medusajs/medusa/core-flows"
 import { validateTicketOrderStep } from "../validate-ticket-order"
+import { SharedPaymentCancelRefusedError } from "../../../lib/shared-payment-cancel"
+
+/**
+ * A container whose Query answers the shared-payment guard
+ * (lib/shared-payment-cancel.ts): `order_1` on collection `pay_col_1`, with
+ * `others` also linked to it.
+ */
+const containerWithCollection = (others: string[] = []) => {
+  const graph = jest.fn(async ({ entity, filters }: { entity: string; filters: Record<string, unknown> }) => {
+    if (entity === "order_payment_collection" && filters.order_id) {
+      return { data: [{ order_id: filters.order_id, payment_collection_id: "pay_col_1" }] }
+    }
+    if (entity === "order_payment_collection") {
+      return {
+        data: ["order_1", ...others].map((order_id) => ({ order_id, payment_collection_id: "pay_col_1" })),
+      }
+    }
+    return { data: [] }
+  })
+  return {
+    graph,
+    container: {
+      resolve: jest.fn((key: string) => {
+        if (key === ContainerRegistrationKeys.QUERY) return { graph }
+        throw new Error(`unexpected resolve(${key})`)
+      }),
+    },
+  }
+}
 
 const { invokeFn: invoke, compensateFn: compensate } =
   validateTicketOrderStep as unknown as {
@@ -154,17 +183,36 @@ describe("validateTicketOrderStep", () => {
   it("compensation cancels the created order", async () => {
     const run = jest.fn()
     ;(cancelOrderWorkflow as unknown as jest.Mock).mockReturnValue({ run })
-    const container = { resolve: jest.fn() }
+    const { container, graph } = containerWithCollection()
     const context = { transactionId: "tx_1" }
 
     await compensate("order_1", { container, context })
 
+    // The shared-payment guard read the order's collection before the cancel ran.
+    expect(graph).toHaveBeenCalledWith(
+      expect.objectContaining({ entity: "order_payment_collection", filters: { order_id: "order_1" } })
+    )
     expect(cancelOrderWorkflow).toHaveBeenCalledWith(container)
     expect(run).toHaveBeenCalledWith({
       input: { order_id: "order_1" },
       context,
       container,
     })
+  })
+
+  it("compensation refuses, and does not cancel, when the order's payment collection is shared (SD-36 (8))", async () => {
+    const run = jest.fn()
+    ;(cancelOrderWorkflow as unknown as jest.Mock).mockReturnValue({ run })
+    const { container } = containerWithCollection(["order_2"])
+
+    const err = await compensate("order_1", { container, context: {} }).catch((e: unknown) => e)
+
+    expect(err).toBeInstanceOf(SharedPaymentCancelRefusedError)
+    expect((err as SharedPaymentCancelRefusedError).shared_payment_collections).toEqual([
+      { payment_collection_id: "pay_col_1", other_order_ids: ["order_2"] },
+    ])
+    expect(cancelOrderWorkflow).not.toHaveBeenCalled()
+    expect(run).not.toHaveBeenCalled()
   })
 
   it("compensation no-ops when no order id was recorded", async () => {

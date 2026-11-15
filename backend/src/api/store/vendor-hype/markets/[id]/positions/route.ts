@@ -14,10 +14,32 @@ const placePositionSchema = z.object({
   max_payout_amount: z.number().positive().optional(),
   idempotency_key: z.string().optional(),
   disclosure_acknowledged: z.boolean().default(false),
-  age_verified: z.boolean().default(false),
-  self_excluded: z.boolean().default(false),
+  // No `age_verified` / `self_excluded` here, deliberately: both used to be
+  // read from this body, so the caller attested its own eligibility. zod
+  // strips unknown keys, so a client that still sends them is ignored.
+  // `metadata` is free-form, so it cannot be spread onto the row as is: see
+  // clientMetadata below.
   metadata: z.record(z.string(), z.unknown()).optional(),
 })
+
+/**
+ * Keys that state an eligibility or consent fact about the supporter. The
+ * platform decides these. The client never does, even inside free-form
+ * metadata.
+ */
+const ELIGIBILITY_CLAIM_KEYS = new Set(["age_verified", "self_excluded", "disclosure_acknowledged"])
+
+/**
+ * The caller's free-form metadata, nested under `client_metadata` so it can
+ * never sit beside the keys the server writes on the position, and with any
+ * eligibility claim dropped. Spreading `body.metadata` onto the row let a
+ * client store `age_verified: true` there one level down from the field the
+ * schema had removed.
+ */
+const clientMetadata = (metadata: Record<string, unknown> | undefined) =>
+  Object.fromEntries(
+    Object.entries(metadata ?? {}).filter(([key]) => !ELIGIBILITY_CLAIM_KEYS.has(key))
+  )
 
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
   const service = req.scope.resolve<VendorHypeOperationsPredictionService>(
@@ -36,13 +58,23 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     return res.status(403).json({ error: "Only customers can place positions" })
   }
 
-  if (!body.age_verified || body.self_excluded) {
-    return res.status(403).json({ error: "Eligibility check failed" })
-  }
-
   const [market] = await service.listPredictionMarkets({ id: req.params.id })
   if (!market) {
     return res.status(404).json({ error: "Market not found" })
+  }
+
+  // Eligibility comes from server-side records only. Self-exclusion and
+  // cooldown are enforced inside placePredictionPosition from
+  // user_prediction_safety (written by operators via
+  // /admin/vendor-hype/safety). The age gate has no server-side record yet, so
+  // isSupporterAgeVerified fails closed and this refuses every placement until
+  // one exists. See the method's comment before changing this.
+  if (!(await service.isSupporterAgeVerified(supporterId, market.mode as PredictionMode))) {
+    return res.status(403).json({
+      type: "policy_denied",
+      code: "PREDICTION_AGE_VERIFICATION_REQUIRED",
+      error: "Eligibility check failed",
+    })
   }
 
   if (market.mode === PredictionMode.NON_CASH && !body.disclosure_acknowledged) {
@@ -80,9 +112,9 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     max_payout_amount: body.max_payout_amount,
     idempotency_key: idempotencyKey,
     metadata: {
-      ...body.metadata,
+      // The validated request field, checked above for non-cash markets.
       disclosure_acknowledged: body.disclosure_acknowledged,
-      age_verified: body.age_verified,
+      client_metadata: clientMetadata(body.metadata),
     },
   })
 

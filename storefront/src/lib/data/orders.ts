@@ -72,13 +72,14 @@ export const createReturnRequest = async (data: ReturnRequestPayload) => {
 export const getReturns = async () => {
   const headers = (await getAuthHeaders()) ?? undefined
 
+  // Not cached: a return the buyer has just filed must show on /user/returns
+  // straight away, and nothing revalidates a cached copy when one is filed.
   return medusaFetch<{
     order_return_requests: ReturnRequest[]
   }>(`/store/return-request`, {
     method: "GET",
     headers,
-    cache: "force-cache",
-    query: { fields: "*line_items.reason_id" },
+    cache: "no-cache",
   })
     .then((res) => res)
     .catch((err) => {

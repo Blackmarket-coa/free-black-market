@@ -129,6 +129,24 @@ export async function resolveSellerIdByBlackoutUserId(
   }
 }
 
+/**
+ * The seller an order belongs to, from an order read that selected
+ * `seller.id` (Mercur's seller↔order link; `native-push-seller` and
+ * `card-order-settlement` read it the same way).
+ *
+ * Not `seller_id`: the Order entity has no such property, and a read that
+ * names it returns the order without it and without an error. Every §3
+ * vendor-room event used to fall back to `vendorId: "default-seller"` for that
+ * reason. Returns null when the order has no seller link; callers skip the
+ * vendor-room event rather than send it to a room no vendor is in.
+ */
+export function orderSellerId(
+  order: { seller?: { id?: unknown } | null } | null | undefined
+): string | null {
+  const id = order?.seller?.id
+  return typeof id === "string" && id.length > 0 ? id : null
+}
+
 /** Resolve a vendor's Matrix MXID (for §3 `vendorMxid`) from `seller_metadata`. */
 export async function resolveSellerMxid(
   container: MedusaContainer,

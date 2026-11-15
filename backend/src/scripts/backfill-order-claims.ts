@@ -1,4 +1,5 @@
 import type { ExecArgs } from "@medusajs/framework/types"
+import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 import { REQUEST_MODULE } from "../modules/request"
 import type RequestModuleService from "../modules/request/service"
 import { REQUEST_TYPES } from "../modules/request/validators"
@@ -39,9 +40,23 @@ import { openDisputeForOrder } from "../shared/order-dispute-intake"
  * were filed; failing them now on a window they already passed would punish
  * buyers for the migration. Passed through as a very long window rather than
  * bypassed, so the intake path is still the one path.
+ *
+ * **Re-run it after the minor-unit intake fix deploys.** Until that fix the
+ * intake asked `query.graph` for `items.total` without a top-level `total`,
+ * which throws on every real order (see `ORDER_FIELDS_FOR_DISPUTE` in
+ * `shared/order-dispute-intake.ts`), so any earlier run counted every row
+ * as failed and left every legacy claim pending in `request`. Rows it did
+ * move are skipped by `legacy_request_id`. Read the `moved`/`failed` line:
+ * a failure it logs as `ambiguous_vendor` is a legacy claim on an order
+ * with more than one seller (the old claim form never named one), which
+ * needs a person to file it against the right seller.
  */
-export default async function backfillOrderClaims({ container }: ExecArgs) {
-  const logger = container.resolve("logger")
+export type BackfillOrderClaimsSummary = { moved: number; skipped: number; failed: number }
+
+export default async function backfillOrderClaims({
+  container,
+}: ExecArgs): Promise<BackfillOrderClaimsSummary> {
+  const logger = container.resolve(ContainerRegistrationKeys.LOGGER)
   const requests = container.resolve<RequestModuleService>(REQUEST_MODULE)
   const disputes = container.resolve<OrderDisputeService>(ORDER_DISPUTE_MODULE)
 
@@ -112,7 +127,11 @@ export default async function backfillOrderClaims({ container }: ExecArgs) {
       await requests.updateRequests({
         id: legacy.id,
         status: RequestStatus.COMPLETED,
-        reviewer_note: `Migrated to order_dispute ${result.dispute.id} on 2026-09-03.`,
+        // The day it actually moved: this script has to be re-run after
+        // the intake fix, so the repoint's date would be wrong here.
+        reviewer_note: `Migrated to order_dispute ${result.dispute.id} on ${new Date()
+          .toISOString()
+          .slice(0, 10)}.`,
       })
 
       moved += 1
@@ -130,4 +149,5 @@ export default async function backfillOrderClaims({ container }: ExecArgs) {
     `[backfill-order-claims] moved=${moved} skipped=${skipped} failed=${failed}. ` +
       `Legacy request rows are marked completed, not deleted.`
   )
+  return { moved, skipped, failed }
 }

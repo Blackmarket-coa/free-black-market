@@ -12,6 +12,7 @@ import {
   type DisputeReason,
   sellerShareCents,
   sellersOnOrder,
+  toMinorUnits,
 } from "../modules/order-dispute/resolution"
 
 /**
@@ -37,7 +38,21 @@ export type OrderForDispute = {
   customer_id: string | null
   created_at: string | Date
   currency_code: string | null
+  /** `total` is in the currency's minor unit, like every `order_dispute` figure. */
   items: { seller_id: string | null; total: number }[]
+}
+
+/**
+ * The order as the intake reads it, before any ownership check, with line
+ * totals still in Medusa's MAJOR units. `fix-order-dispute-minor-units.ts`
+ * needs the major figures to work out what the old intake stored.
+ */
+export type OrderReadForDispute = {
+  id: string
+  customer_id: string | null
+  created_at: string | Date
+  currency_code: string | null
+  lines: { seller_id: string | null; total_major: unknown }[]
 }
 
 export type IntakeFailure = {
@@ -57,54 +72,102 @@ const fail = (status: number, body: Record<string, unknown>): IntakeFailure => (
 })
 
 /**
- * Load an order and prove the caller bought it.
+ * What the intake asks `query.graph` for. Each of these was checked against a
+ * real migrated database, because the first version asked for two things
+ * that do not exist and every claim failed before it was stored:
  *
- * "No such order" and "not yours" return the same 404: distinguishing them
- * would confirm to a stranger that an order id exists.
+ * - `total` (top level) is what makes the order module compute totals at
+ *   all: `shouldIncludeTotals` looks only at top-level field names. Asking
+ *   for `items.total` without it sends `total` to MikroORM as a column, and
+ *   the read throws "Entity 'OrderLineItem' does not have property 'total'".
+ *   With it, every item comes back with its computed `total`.
+ * - `items.product.seller.id`: Mercur links sellers to products through a
+ *   link table. There is no `product.seller_id` column; asking for one is
+ *   silently dropped, so no line had a seller and every claim was refused
+ *   as "no vendor".
+ * - `seller.id`: Mercur splits a cart into one order per seller and links
+ *   each order to its seller. Used for a line whose product link is gone
+ *   (a deleted product, a custom line), which still belongs to the seller
+ *   whose order it is.
  */
-export async function loadOwnOrderForDispute(
+export const ORDER_FIELDS_FOR_DISPUTE = [
+  "id",
+  "customer_id",
+  "created_at",
+  "currency_code",
+  "total",
+  "items.*",
+  "items.product.seller.id",
+  "seller.id",
+]
+
+type RawOrder = {
+  id: string
+  customer_id: string | null
+  created_at: string | Date
+  currency_code: string | null
+  seller?: { id?: string | null } | null
+  items?: {
+    total?: unknown
+    product?: { seller?: { id?: string | null } | null } | null
+  }[]
+}
+
+/** Read an order's lines and who sold each one. No ownership check. */
+export async function readOrderForDispute(
   container: MedusaContainer,
-  args: { orderId: string; customerId: string }
-): Promise<OrderForDispute | IntakeFailure> {
+  orderId: string
+): Promise<OrderReadForDispute | null> {
   const query = container.resolve(ContainerRegistrationKeys.QUERY)
   const { data } = await query.graph({
     entity: "order",
-    fields: [
-      "id",
-      "customer_id",
-      "created_at",
-      "currency_code",
-      "items.total",
-      "items.product.seller_id",
-    ],
-    filters: { id: args.orderId },
+    fields: ORDER_FIELDS_FOR_DISPUTE,
+    filters: { id: orderId },
   })
 
-  const raw = data?.[0] as
-    | {
-        id: string
-        customer_id: string | null
-        created_at: string | Date
-        currency_code: string | null
-        items?: {
-          total?: number | string | null
-          product?: { seller_id?: string | null } | null
-        }[]
-      }
-    | undefined
+  const raw = data?.[0] as RawOrder | undefined
+  if (!raw) return null
 
-  if (!raw || raw.customer_id !== args.customerId) {
-    return fail(404, { message: "Order not found", type: "not_found" })
-  }
-
+  const orderSeller = raw.seller?.id || null
   return {
     id: raw.id,
     customer_id: raw.customer_id,
     created_at: raw.created_at,
     currency_code: raw.currency_code,
-    items: (raw.items ?? []).map((i) => ({
-      seller_id: i.product?.seller_id ?? null,
-      total: Math.floor(Number(i.total) || 0),
+    lines: (raw.items ?? []).map((i) => ({
+      seller_id: i.product?.seller?.id || orderSeller,
+      total_major: i.total,
+    })),
+  }
+}
+
+/**
+ * Load an order and prove the caller bought it.
+ *
+ * "No such order" and "not yours" return the same 404: distinguishing them
+ * would confirm to a stranger that an order id exists.
+ *
+ * Line totals come back in minor units (`toMinorUnits`): Medusa's are major,
+ * and the ceiling worked out from these is stored as `claim_amount`.
+ */
+export async function loadOwnOrderForDispute(
+  container: MedusaContainer,
+  args: { orderId: string; customerId: string }
+): Promise<OrderForDispute | IntakeFailure> {
+  const order = await readOrderForDispute(container, args.orderId)
+
+  if (!order || order.customer_id !== args.customerId) {
+    return fail(404, { message: "Order not found", type: "not_found" })
+  }
+
+  return {
+    id: order.id,
+    customer_id: order.customer_id,
+    created_at: order.created_at,
+    currency_code: order.currency_code,
+    items: order.lines.map((l) => ({
+      seller_id: l.seller_id,
+      total: toMinorUnits(l.total_major, order.currency_code),
     })),
   }
 }
@@ -257,14 +320,12 @@ export async function openDisputeForOrder(
       claimCents: args.claimCents ?? null,
       escrowAgreementId: await findOrderEscrowId(container, order.id),
       filingWindowDays: windowDays,
+      // In the same insert as the row, rather than a second write after it:
+      // a row that existed for a moment without its metadata had no
+      // `amount_unit` mark (see `OrderDisputeService.open`), and a backfill
+      // re-run keys on `legacy_request_id` in here.
+      metadata: args.metadata ?? null,
     })
-
-    if (args.metadata && Object.keys(args.metadata).length) {
-      await service.updateOrderDisputes({
-        id: dispute.id,
-        metadata: args.metadata,
-      })
-    }
 
     return { ok: true, dispute }
   } catch (err) {

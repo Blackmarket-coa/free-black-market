@@ -207,6 +207,31 @@ export function resolveAwardCents(args: {
 }
 
 /**
+ * The decisions that close a case, each of which must carry a written reason.
+ *
+ * `/buyer-protection` tells buyers that every decision is recorded with a
+ * written reason, and the note is not private: the buyer reads it as
+ * `reviewer_note` (`GET /store/order-claims`) or `resolution_note`
+ * (`GET /store/orders/:id/dispute`), and the seller in the case file
+ * (`GET /vendor/disputes/:id`). The admin panel asked for a note, but the
+ * PATCH accepted a decision without one, so the promise held only for
+ * decisions made through that one screen. `PATCH /admin/disputes/:id`
+ * refuses these without a note (`decisionNoteMissing`); the storefront's
+ * `buyer-protection-copy.spec.ts` keeps the page's promise tied to that check.
+ */
+export const DECISIONS_NEEDING_A_NOTE: readonly DisputeStatus[] = [
+  DisputeStatus.RESOLVED_REFUND,
+  DisputeStatus.RESOLVED_RELEASE,
+  DisputeStatus.WITHDRAWN,
+]
+
+/** True when `to` closes the case and `note` has no text in it. */
+export function decisionNoteMissing(to: DisputeStatus | string, note: unknown): boolean {
+  if (!(DECISIONS_NEEDING_A_NOTE as readonly string[]).includes(to)) return false
+  return typeof note !== "string" || note.trim() === ""
+}
+
+/**
  * Which escrow transition, if any, this resolution implies.
  *
  * Returns null when the order has no escrow agreement — the ordinary case
@@ -223,8 +248,71 @@ export function escrowTransitionFor(
   return null
 }
 
+/**
+ * Digits in a currency's minor unit: 2 for USD, 0 for JPY, 3 for KWD.
+ *
+ * Read from Intl, the same lookup the admin panel's Disputes screen formats
+ * with (`admin-panel/src/routes/disputes/dispute-rules.ts`, `minorDigits`),
+ * so a figure stored here reads back there as the amount that was meant. A
+ * missing or unknown code counts as two digits.
+ */
+export function currencyMinorDigits(currencyCode: string | null | undefined): number {
+  try {
+    return (
+      new Intl.NumberFormat("en-US", {
+        style: "currency",
+        currency: String(currencyCode ?? "usd").toUpperCase(),
+      }).resolvedOptions().maximumFractionDigits ?? 2
+    )
+  } catch {
+    return 2
+  }
+}
+
+/**
+ * A Medusa amount as an integer in the currency's minor unit.
+ *
+ * Medusa v2 keeps money in MAJOR units: an item total of 25.99 is $25.99,
+ * usually handed back as a BigNumber (which `Number()` reads through its
+ * `valueOf`). `order_dispute` stores minor units. The intake used to floor
+ * the major figure and store that, so a $25.99 claim became 25 and every
+ * screen that followed the declared unit showed it as $0.25.
+ *
+ * Rounded to the nearest minor unit; the `toFixed` step drops binary noise
+ * first, so 25.99 × 100 (2598.9999999999995) is 2599 and a half-cent from
+ * tax rounds up rather than down. Anything unreadable is 0, which the
+ * callers already treat as "nothing to claim" for that line.
+ */
+export function toMinorUnits(amount: unknown, currencyCode: string | null | undefined): number {
+  const major = Number(amount)
+  if (!Number.isFinite(major)) return 0
+  const scaled = major * 10 ** currencyMinorDigits(currencyCode)
+  return Math.round(Number(scaled.toFixed(6)))
+}
+
+/**
+ * The mark every dispute row written since the minor-unit fix carries:
+ * `metadata.amount_unit = "minor"`, set by `OrderDisputeService.open`.
+ *
+ * A row the old intake wrote (claim = floor of the major-unit total) and a
+ * row written since, whose buyer typed a claim equal to that same floored
+ * figure, have identical amounts. Only this mark tells them apart, so the
+ * corrective script (`minor-unit-correction.ts`) never touches a marked row.
+ */
+export const AMOUNT_UNIT_METADATA_KEY = "amount_unit"
+export const AMOUNT_UNIT_MINOR = "minor"
+
+export function isMarkedMinorUnits(metadata: unknown): boolean {
+  return (
+    !!metadata &&
+    typeof metadata === "object" &&
+    (metadata as Record<string, unknown>)[AMOUNT_UNIT_METADATA_KEY] === AMOUNT_UNIT_MINOR
+  )
+}
+
 export type OrderLineForDispute = {
   seller_id?: string | null
+  /** Minor units (see `toMinorUnits`). */
   total?: number | string | null
 }
 
@@ -248,7 +336,8 @@ export function sellersOnOrder(
 }
 
 /**
- * What ONE seller's goods on an order came to, in minor units.
+ * What ONE seller's goods on an order came to, in minor units. The lines
+ * must already be in minor units: this sums, it does not convert.
  *
  * This is the ceiling a claim against that seller may reach. Clamping to the
  * whole order total — as the first version did — let a claim against Vendor A

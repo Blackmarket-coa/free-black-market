@@ -76,6 +76,17 @@ describe("getReturns", () => {
     })
   })
 
+  // backend/src/api/store/return-request/route.ts serves this path; its
+  // integration spec (store-return-request.spec.ts) drives the real route.
+  it("reads GET /store/return-request uncached, so a just-filed return shows", async () => {
+    medusaFetch.mockResolvedValue({ order_return_requests: [] })
+    await getReturns()
+    expect(medusaFetch).toHaveBeenCalledWith(
+      "/store/return-request",
+      expect.objectContaining({ method: "GET", cache: "no-cache" })
+    )
+  })
+
   it("falls back to an empty list on error", async () => {
     medusaFetch.mockRejectedValue(new Error("fail"))
     await expect(getReturns()).resolves.toEqual({ order_return_requests: [] })
@@ -123,6 +134,21 @@ describe("retrieveOrder / retrieveOrderSet / createReturnRequest", () => {
         line_items: [],
       })
     ).resolves.toEqual({ order_return_request: { id: "ret_1" } })
+  })
+
+  it("createReturnRequest POSTs the request body to /store/return-request", async () => {
+    medusaFetch.mockResolvedValue({ order_return_request: { id: "ret_1" } })
+    const body = {
+      order_id: "order_1",
+      customer_note: "",
+      shipping_option_id: "so_1",
+      line_items: [{ line_item_id: "ordli_1", quantity: 1, reason_id: "rr_1" }],
+    }
+    await createReturnRequest(body)
+    expect(medusaFetch).toHaveBeenCalledWith(
+      "/store/return-request",
+      expect.objectContaining({ method: "POST", body })
+    )
   })
 })
 

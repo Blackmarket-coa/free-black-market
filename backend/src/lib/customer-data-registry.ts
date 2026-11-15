@@ -73,6 +73,18 @@ export type CustomerDataEntry = {
    * Default true — if we hold it about them, they can have it.
    */
   inExport?: boolean
+  /**
+   * The column holding the customer id, when it is not `customer_id`. Only a
+   * table a framework module owns needs this; ours all use `customer_id`.
+   */
+  customerColumn?: string
+  /**
+   * Set for a table that Medusa core or a plugin owns rather than
+   * `src/modules/**`. The anti-drift walk in the registry spec reads only our
+   * models, so it cannot discover these and does not report them as stale;
+   * each is listed by hand, with the column that ties its rows to the person.
+   */
+  framework?: true
 }
 
 const TAX = "Tax and accounting records, retained for the statutory period."
@@ -162,7 +174,30 @@ export const CUSTOMER_DATA_REGISTRY: CustomerDataEntry[] = [
   { entity: "wellness_member", module: "wellness", label: "Wellness membership", action: "delete" },
   { entity: "wellness_client_profile", module: "wellness", label: "Wellness client profile", action: "delete" },
   { entity: "wellness_class_attendee", module: "wellness", label: "Wellness class attendance", action: "delete" },
+
+  // ---- Framework-owned tables that hold a person's data ----
+  //
+  // Medusa's notification log: one row per notification, holding the
+  // recipient address (`to`) and the template data, which for the order
+  // confirmation is the buyer's first name and what they bought. A delivery
+  // record nothing else depends on, so it goes. Rows are tied to the person
+  // through `receiver_id`, which `subscribers/order-placed.ts` sets to the
+  // order's customer. Rows written without one (guest orders, other callers)
+  // are not reached by this entry.
+  {
+    entity: "notification",
+    module: "notification (Medusa core)",
+    label: "Emails and notifications sent to you",
+    action: "delete",
+    customerColumn: "receiver_id",
+    framework: true,
+  },
 ]
+
+/** The column a registry entry's rows name their customer in. */
+export function customerColumnOf(entry: CustomerDataEntry): string {
+  return entry.customerColumn ?? "customer_id"
+}
 
 /** Entities whose rows are removed entirely on a deletion request. */
 export const DELETE_ENTITIES = CUSTOMER_DATA_REGISTRY.filter(

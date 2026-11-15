@@ -25,8 +25,10 @@ integration hooks.
 | `BLACKOUT_CLIENT_ID` | — | `FBM_BLACKOUT_INTEGRATION=1` in production | Reused from the existing Blackout integration scaffold. OAuth client_credentials. |
 | `BLACKOUT_CLIENT_SECRET` | — | `FBM_BLACKOUT_INTEGRATION=1` in production | Same. Validated as a min-32-char secret with banned-prefix check. |
 | `FBM_BLACKOUT_TOKEN_TTL_SECONDS` | `3600` | optional | TTL of the JWT issued by the OAuth token endpoint. |
-| `FBM_BLACKSTAR_INTEGRATION` | `0` | always | `1` registers the `blackstar` fulfillment provider and enables the inbound shipment webhook. `0` keeps the provider unregistered. |
-| `FBM_BLACKSTAR_API_KEY` | — | `FBM_BLACKSTAR_INTEGRATION=1` in production | Shared secret expected on the `x-fbm-integration-key` header for Blackstar shipment webhooks. Min 32 chars. |
+| `FBM_BLACKSTAR_INTEGRATION` | `0` | always | `1` registers the `blackstar` fulfillment provider and enables the inbound events route (`/v1/integrations/blackstar/events`). `0` keeps the provider unregistered. `scripts/assert-env.mjs` checks the three `BLACKSTAR_*` values below when it is `1` (the old `FBM_BLACKSTAR_API_KEY` is read by nothing and no longer required). |
+| `BLACKSTAR_API_BASE` | — | `FBM_BLACKSTAR_INTEGRATION=1` in production | Blackstar's API base URL; the destination of FBM's outbound lifecycle events. |
+| `BLACKSTAR_WEBHOOK_SECRET` | — | `FBM_BLACKSTAR_INTEGRATION=1` in production | Signs FBM's outbound events (the value Blackstar reads as `FBM_WEBHOOK_SECRET`). Min 32 chars. Without it or `BLACKSTAR_API_BASE`, nothing is sent. |
+| `BLACKSTAR_OUTBOUND_SECRET` | — | `FBM_BLACKSTAR_INTEGRATION=1` in production, unless `BLACKSTAR_REQUIRE_KEY_ID=1` | Verifies Blackstar's inbound events on `/v1/integrations/blackstar/events` (the value Blackstar signs with as `FBM_OUTBOUND_SECRET`). Min 32 chars. With `BLACKSTAR_REQUIRE_KEY_ID=1`, per-partner credentials replace it. |
 | `FBM_DEFAULT_REFERRAL_PERCENT` | — | optional | Default referral commission (0-100) used when active `PayoutConfig` does not set one. |
 | `FBM_DEFAULT_PLUGIN_DEVELOPER_PERCENT` | — | optional | Default plugin / theme / emoji-pack developer share (0-100). |
 | `FBM_ENTITLEMENT_DEFAULT_DURATION_DAYS` | (perpetual) | optional | Default lifetime for entitlements granted without an explicit duration. |
@@ -35,6 +37,30 @@ integration hooks.
 | `MARKETPLACE_SIGNING_PRIVATE_KEY_PEM` | — | extension signing on (paired with KEY_ID, validated both ways) | Ed25519 private key PEM (`openssl genpkey -algorithm ed25519`) that signs published extension bundles (W3, `docs/contracts/extension-manifest.md`). Unset ⇒ publish 500s `signing_failed` (draft-reverting) and both key endpoints 503. |
 | `MARKETPLACE_SIGNING_KEY_ID` | — | extension signing on | Stable key identifier (e.g. `fbm-2026-q3`) surfaced in envelopes, `/v1/marketplace/signing-keys`, and `/.well-known/freeblackmarket-publishing-keys.json`. |
 | `FBM_PLATFORM_VERSION` | `1.0.0` | optional | Host platform version the plugin install compat gate checks `min/max_host_version` bounds against (`plugin-registry/compat.ts`). |
+
+## Posture A guard
+
+The service-layer guard in `backend/src/modules/hawala-ledger/posture-a-guard.ts`
+refuses any Coalition Credits (CCR) transfer without a goods-or-services
+purchase context (`docs/POSTURE_A_COMPLIANCE.md`). It is a legal boundary, not
+a preference.
+
+| Variable | Default | Required when | Description |
+| --- | --- | --- | --- |
+| `HAWALA_CCR_GUARD_MODE` | `strict` | never | `strict` refuses a violating transfer. `warn` (log only) and `off` exist for local development and tests and are **ignored when `NODE_ENV=production`**: the guard is always strict there, and a refused override is logged once at error level (LEG-7). Any unrecognised value is `strict`. |
+
+## Vendor hype prediction policy
+
+`backend/src/modules/vendor-hype-operations-prediction/policy-service.ts`
+admits a prediction market only in a mode its jurisdiction's profile allows
+(`docs/VENDOR_HYPE_OPERATIONS_PREDICTION_COMPLIANCE_POLICY_MATRIX.md` §1, an
+allow list). The US and every subdivision are `US-RESTRICTED` (non-cash only);
+any unmapped jurisdiction is `ROW-NONCASH`.
+
+| Variable | Default | Required when | Description |
+| --- | --- | --- | --- |
+| `VENDOR_HYPE_JURISDICTION_PROFILES` | — | counsel has approved a jurisdiction for a wider profile | JSON object of jurisdiction code to profile code, e.g. `{"US-NV":"US-REGULATED-CASH"}`. Codes are upper-cased; a subdivision inherits its country unless mapped itself. Fails closed: unparseable JSON is ignored whole, and an entry naming an unknown profile (or remapping a profile code) is dropped, each logged at error level. |
+| `VENDOR_HYPE_POLICY_VERSION` | `matrix-1.0.0@2026-01-01` | optional | Recorded on every market as the policy that admitted it. The caller can no longer supply it. |
 
 ## In-app bug reporter
 
@@ -53,6 +79,33 @@ GitHub repository for each submission.
 
 When neither App credentials nor a PAT are set, the routes return 503
 and the UI hides itself via `GET /store/bug-report/config`.
+
+## Supplier status webhook
+
+`POST /webhooks/suppliers/status` lets a supplier report the
+manual-fulfillment status of an order FBM forwarded to it
+(`backend/src/api/webhooks/suppliers/status/route.ts`, keys in
+`backend/src/modules/supplier-forwarding/webhook-auth.ts`).
+
+| Variable | Default | Required when | Description |
+| --- | --- | --- | --- |
+| `SUPPLIER_WEBHOOK_SECRET` | — | supplier status webhook on | Operator secret, at least 32 characters (`openssl rand -hex 32`). Never given to a supplier. Unset or shorter ⇒ the webhook answers `503` and reads nothing. |
+
+Each supplier gets its **own** key, derived from the secret and its
+`supplier_id` (the value on its supplier profile):
+
+```bash
+printf '%s' "$SUPPLIER_ID" | openssl dgst -sha256 -hmac "$SUPPLIER_WEBHOOK_SECRET" | awk '{print $NF}'
+```
+
+The supplier sends `x-fbm-signature: hex(HMAC-SHA256(<its key>, <exact request body>))`
+with a JSON body `{ order_id, supplier_id, status, notes?, metadata? }`. A
+supplier can only sign for its own `supplier_id`, and only for orders
+forwarded to it (`403` otherwise); `status` must be a legal next step in the
+manual-fulfillment state machine (`409` otherwise; repeating the current
+status is a `200` re-delivery that writes nothing). To cut one supplier off,
+set `is_active: false` on its profile. Rotating `SUPPLIER_WEBHOOK_SECRET`
+re-keys every supplier at once.
 
 ## Auth providers
 

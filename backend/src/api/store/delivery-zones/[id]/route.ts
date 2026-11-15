@@ -1,45 +1,18 @@
 import { z } from "zod"
 import { distanceMiles } from "../../../../lib/geo-distance"
+import type { AuthenticatedMedusaRequest } from "@medusajs/framework/http"
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { FOOD_DISTRIBUTION_MODULE } from "../../../../modules/food-distribution"
 import type FoodDistributionService from "../../../../modules/food-distribution/service"
+import { forbidden } from "../../../../shared/community-read-access"
+import { requireSellerActor } from "../../../../shared/community-write-access"
+import { POST as updateVendorZone } from "../../../vendor/delivery-zones/[id]/route"
 
 // ===========================================
 // VALIDATION SCHEMAS
 // ===========================================
 
-const updateZoneSchema = z.object({
-  name: z.string().min(1).max(100).optional(),
-  
-  // GeoJSON polygon boundary
-  boundary: z.object({
-    type: z.literal("Polygon"),
-    coordinates: z.array(z.array(z.tuple([z.number(), z.number()]))),
-  }).optional(),
-  
-  // Center point
-  center_latitude: z.number().min(-90).max(90).optional(),
-  center_longitude: z.number().min(-180).max(180).optional(),
-  
-  // Pricing
-  base_delivery_fee: z.number().min(0).optional(),
-  per_mile_fee: z.number().min(0).optional(),
-  minimum_order: z.number().min(0).optional(),
-  
-  // Service hours
-  service_hours: z.record(z.string(), z.object({
-    open: z.string().regex(/^\d{2}:\d{2}$/),
-    close: z.string().regex(/^\d{2}:\d{2}$/),
-  })).optional(),
-  
-  // Status
-  active: z.boolean().optional(),
-  priority: z.number().int().min(0).optional(),
-  
-  // Stats
-  avg_delivery_time_minutes: z.number().min(0).optional(),
-  active_couriers: z.number().int().min(0).optional(),
-})
+// Updates validate with /vendor's schema (api/delivery-zones/contracts.ts).
 
 const checkCoverageSchema = z.object({
   latitude: z.number().min(-90).max(90),
@@ -67,44 +40,43 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 
 // ===========================================
 // PUT /delivery-zones/:id
+//
+// PUT and DELETE are the seller who created the zone, and nobody else — the
+// same rule as /vendor/delivery-zones/:id (C-5). A zone with no
+// `created_by_seller_id` predates ownership and is admin-managed, so it is not
+// writable here either. Zones are a public catalogue (GET lists them), so a
+// missing zone keeps its 404; existence is not a secret.
+//
+// PUT is /vendor/delivery-zones/:id's update handler, not a copy of it: that
+// handler checks the owner, re-runs the overlap check on the merged zone (409
+// DELIVERY_ZONE_CONFLICT) and converts the fees it is sent in dollars to the
+// cents it stores. A second seller path here without those let a seller move
+// an active zone over another, or re-price one in the wrong unit. Customers
+// and drivers get the shared 403 before it is reached.
 // ===========================================
 
 export async function PUT(req: MedusaRequest, res: MedusaResponse) {
-  const { id } = req.params
-  
-  try {
-    const data = updateZoneSchema.parse(req.body)
-    
-    const foodDistribution = req.scope.resolve<FoodDistributionService>(FOOD_DISTRIBUTION_MODULE)
-    
-    // Check zone exists
-    const existing = await foodDistribution.retrieveDeliveryZone(id)
-    if (!existing) {
-      res.status(404).json({ message: "Delivery zone not found" })
-      return
-    }
-    
-    const zone = await foodDistribution.updateDeliveryZones({
-      id,
-      ...data,
-    })
-    
-    res.json({ zone })
-  } catch (error) {
-    if (error instanceof z.ZodError) {
-      res.status(400).json({ message: "Validation failed", errors: error.issues })
-      return
-    }
-    throw error
-  }
+  const sellerId = await requireSellerActor(req, res)
+  if (!sellerId) return
+  return updateVendorZone(
+    req as unknown as AuthenticatedMedusaRequest<Record<string, unknown>, { id: string }>,
+    res
+  )
 }
 
 // ===========================================
 // DELETE /delivery-zones/:id
+//
+// Deactivates rather than deletes (the /vendor twin hard-deletes). Turning a
+// zone off cannot overlap anything and carries no fee, so neither of the
+// checks PUT delegates for applies; the owner check is the whole of it.
 // ===========================================
 
 export async function DELETE(req: MedusaRequest, res: MedusaResponse) {
   const { id } = req.params
+
+  const sellerId = await requireSellerActor(req, res)
+  if (!sellerId) return
   
   const foodDistribution = req.scope.resolve<FoodDistributionService>(FOOD_DISTRIBUTION_MODULE)
   
@@ -113,6 +85,9 @@ export async function DELETE(req: MedusaRequest, res: MedusaResponse) {
   if (!existing) {
     res.status(404).json({ message: "Delivery zone not found" })
     return
+  }
+  if (!existing.created_by_seller_id || existing.created_by_seller_id !== sellerId) {
+    return forbidden(res)
   }
   
   // Soft delete by deactivating

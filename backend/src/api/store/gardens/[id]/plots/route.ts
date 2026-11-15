@@ -1,7 +1,8 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
-
-const GARDEN_MODULE = "gardenModuleService"
+import { GARDEN_MODULE } from "../../../../../modules/garden"
+import { forbidden } from "../../../../../shared/community-read-access"
+import { actorManagesGarden } from "../../../../../shared/community-write-access"
 
 interface GardenServiceType {
   createGardenPlots: (data: Record<string, unknown>) => Promise<{ id: string }>
@@ -44,13 +45,18 @@ export async function GET(
 /**
  * POST /store/gardens/:id/plots
  * 
- * Create a new plot in a garden
+ * Create a new plot in a garden. The garden's active organizers only.
  */
 export async function POST(
   req: MedusaRequest,
   res: MedusaResponse
 ) {
   const { id } = req.params
+
+  if (!(await actorManagesGarden(req, id))) {
+    return forbidden(res)
+  }
+
   const gardenService = req.scope.resolve(GARDEN_MODULE) as GardenServiceType
 
   const {

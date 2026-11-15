@@ -514,7 +514,12 @@ What they actually assert, and nothing more:
    `reference_id`.
 2. Non-CCR currencies pass through; issuer entry types (`ISSUE`, `BURN`,
    `CREDIT_PAYOUT_MINT`, `CREDIT_REFUND_BURN`) pass through.
-3. `warn` and `off` guard modes do not throw.
+3. `warn` and `off` guard modes do not throw — and `HAWALA_CCR_GUARD_MODE`
+   cannot select them in production: with `NODE_ENV=production`, `off`,
+   `warn` (any case) resolve to `strict` and the default-mode
+   `assertPurchaseContext` still refuses (LEG-7, 2026-11-15). Before that the
+   variable could switch the live guard to log-only or to nothing. Outside
+   production `warn` and `off` still work, for development and tests.
 4. The constant sets (`PURCHASE_CONTEXT_REFERENCE_TYPES`, `ISSUER_ENTRY_TYPES`,
    `CCR_CURRENCY_CODE`) hold their documented values.
 

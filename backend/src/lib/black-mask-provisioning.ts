@@ -211,16 +211,13 @@ async function orderPayload(
   if (!orderId) return { status: "skipped", reason: "missing_subject" }
 
   const query = container.resolve<GraphQuery>(ContainerRegistrationKeys.QUERY)
+  // `items.*`, never `items.quantity` (SD-52): Medusa 2.14.2 rewrites
+  // `items.quantity` to `items.item.quantity`, a property OrderLineItem does
+  // not have, so with the flag on this read threw for every vault order and
+  // nothing was enqueued.
   const { data: orders } = await query.graph({
     entity: "order",
-    fields: [
-      "id",
-      "customer_id",
-      "created_at",
-      "canceled_at",
-      "items.product_id",
-      "items.quantity",
-    ],
+    fields: ["id", "customer_id", "created_at", "canceled_at", "items.*"],
     filters: { id: orderId },
   })
   const order = (orders ?? [])[0] as OrderRow | undefined

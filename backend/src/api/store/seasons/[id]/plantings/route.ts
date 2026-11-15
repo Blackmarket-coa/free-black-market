@@ -1,8 +1,9 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 import { actingCustomerId } from "../../../../../shared/actor-scope"
+import { forbidden } from "../../../../../shared/community-read-access"
 
-const SEASON_MODULE = "seasonModuleService"
+import { SEASON_MODULE } from "../../../../../modules/season"
 
 interface SeasonServiceType {
   createGardenPlantings: (data: Record<string, unknown>) => Promise<{ id: string }>
@@ -53,6 +54,15 @@ export async function POST(
   req: MedusaRequest,
   res: MedusaResponse
 ) {
+  // Customers only. This record is written under a customer id, and that id
+  // comes from the token. A seller or driver token used to fall through to
+  // the id in the body, which let any signed-in seller or driver act as any
+  // customer here.
+  const actingCustomer = actingCustomerId(req)
+  if (!actingCustomer) {
+    return forbidden(res)
+  }
+
   const { id } = req.params
   const seasonService = req.scope.resolve(SEASON_MODULE) as SeasonServiceType
 
@@ -69,7 +79,6 @@ export async function POST(
     crop_type,
     variety,
     category,
-    planted_by_id,
     planted_date,
     expected_harvest_date,
     quantity_planted,
@@ -81,10 +90,8 @@ export async function POST(
   } = req.body as Record<string, unknown>
 
   // SEC: bind the planting's recorder to the authenticated customer so a
-  // logged-in customer cannot record a planting as someone else. Non-customer
-  // actors (seller/driver) fall back to the body value.
-  const actingCustomer = actingCustomerId(req)
-  const effectivePlantedById = (actingCustomer ?? planted_by_id) as string
+  // logged-in customer cannot record a planting as someone else.
+  const effectivePlantedById = actingCustomer
 
   const planting = await seasonService.createGardenPlantings({
     season_id: id,

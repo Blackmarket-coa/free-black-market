@@ -792,6 +792,23 @@ export function getRouteMap({
               ],
             },
             {
+              path: "/disputes",
+              errorElement: <ErrorBoundary />,
+              handle: {
+                breadcrumb: () => "Disputes",
+              },
+              children: [
+                {
+                  path: "",
+                  lazy: () => import("@routes/disputes/dispute-list"),
+                },
+                {
+                  path: ":id",
+                  lazy: () => import("@routes/disputes/dispute-detail"),
+                },
+              ],
+            },
+            {
               path: "/dispute-fees",
               errorElement: <ErrorBoundary />,
               handle: {

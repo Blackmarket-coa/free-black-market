@@ -43,7 +43,7 @@ and `BLACKOUT_API_BASE` are set (`features.freeblackmarketEmit()`).
 
 | Type | Status | Emit point |
 |---|---|---|
-| `purchase.succeeded` | wired | `subscribers/emit-blackout-order-placed` (per line item) |
+| `purchase.succeeded` | wired | `subscribers/emit-blackout-order-placed`, per Blackout purchase line: a line whose metadata names an `entitlement_kind` or a catalog listing (`creator_listing_id` / `listing_id`, stamped by the checkout-session page). Ordinary marketplace lines on the same order send none (`isBlackoutPurchaseLine`) |
 | `purchase.refunded` | wired | `subscribers/emit-blackout-order-refund-cancel` |
 | `purchase.failed` | wired | `subscribers/emit-blackout-stripe-payment-events` on a signature-verified Stripe `payment_intent.payment_failed`, Blackout-checkout carts only, and only while nothing can have been granted (checkout not completed, payment session not authorized/captured, no earlier completed checkout of the same listing by the same member); `eventId` `purchase.failed:<checkout_session_id>`, metadata carries `fbmCheckoutSessionId` / `fbmCartId` (no order exists yet) |
 | `purchase.chargebacked` | wired | `subscribers/emit-blackout-stripe-payment-events` on a signature-verified Stripe `charge.dispute.funds_withdrawn`, or `charge.dispute.created` past the inquiry stage (`warning_*` statuses skipped), for a Blackout-checkout order; `eventId` `purchase.chargebacked:<order_id>`. Report-only: FBM's own dispute/ledger records are not touched |
@@ -53,9 +53,9 @@ and `BLACKOUT_API_BASE` are set (`features.freeblackmarketEmit()`).
 | `referral.attributed` | wired | `subscribers/attribute-order-on-placed` (after commission attribution) |
 | `ambassador.commission_paid` | stub | `lib/blackout-stub-emitters` (no ambassador payout flow yet) |
 | `quest.reward_settled` | wired | `api/store/collective/demand-pools/[id]/bounties/[bountyId]/milestones` (milestone payout) |
-| `order.created` | wired | `subscribers/emit-blackout-order-placed` |
-| `order.updated` | wired | `subscribers/emit-blackout-order-updated` (dispatched/delivered) |
-| `order.cancelled` | wired | `subscribers/emit-blackout-order-refund-cancel` |
+| `order.created` | wired | `subscribers/emit-blackout-order-placed`; `vendorId` is the order's seller through Mercur's seller↔order link (`seller.id`). An order with no seller link sends none |
+| `order.updated` | wired | `subscribers/emit-blackout-order-updated` (dispatched/delivered); `vendorId` as for `order.created` |
+| `order.cancelled` | wired | `subscribers/emit-blackout-order-refund-cancel`; `vendorId` as for `order.created` |
 | `inventory.low` | wired¹ | `jobs/inventory-reconciliation` (threshold scan) |
 | `ledger.payment_received` | wired | `subscribers/hawala-order-payment` |
 | `ledger.escrow_released` | wired | `api/v1/admin/marketplace/subcontracts/[id]/resolve` |

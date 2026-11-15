@@ -1,15 +1,9 @@
-// The email templates are .tsx and the unit jest config only transforms .ts;
-// these tests exercise the send/retry transport, not rendering, so the template
-// modules are virtually mocked to keep the service importable.
-jest.mock("../emails/order-placed", () => ({ orderPlacedEmail: () => null }), { virtual: true })
-jest.mock("../emails/user-invited", () => ({ userInvitedEmail: () => null }), { virtual: true })
-jest.mock("../emails/password-reset", () => ({ passwordResetEmail: () => null }), { virtual: true })
-jest.mock("../emails/vendor-accepted", () => ({ vendorAcceptedEmail: () => null }), { virtual: true })
-jest.mock("../emails/customer-accepted", () => ({ customerAcceptedEmail: () => null }), { virtual: true })
-jest.mock("../emails/booking-confirmation", () => ({ bookingConfirmationEmail: () => null }), { virtual: true })
-jest.mock("../emails/review-request", () => ({ reviewRequestEmail: () => null }), { virtual: true })
-jest.mock("../emails/embed-chat-message", () => ({ embedChatMessageEmail: () => null }), { virtual: true })
-jest.mock("../emails/seller-email-verification", () => ({ sellerEmailVerificationEmail: () => null }), { virtual: true })
+import { MedusaError } from "@medusajs/framework/utils"
+// These tests exercise the send/retry transport, not rendering, so the shared
+// renderer registry (which imports every template) is mocked out. Template
+// coverage across both providers is ./email-template-coverage.unit.spec.ts;
+// rendering the real templates is ./email-render.unit.spec.ts.
+jest.mock("../emails/registry", () => ({ EMAIL_TEMPLATE_RENDERERS: {} }))
 
 import ResendNotificationProviderService from "../service"
 
@@ -107,12 +101,14 @@ describe("ResendNotificationProviderService.send", () => {
     expect(send).toHaveBeenCalledTimes(2)
   })
 
-  it("returns empty without sending when the template is unknown", async () => {
+  it("refuses an unknown template with INVALID_DATA instead of reporting it sent", async () => {
+    // Returning `{}` here made Medusa mark the notification SUCCESS: a dropped
+    // email that looked delivered.
     const { svc, send } = makeService()
 
-    await expect(
-      svc.send({ ...notification, template: "does-not-exist" })
-    ).resolves.toEqual({})
+    const sent = svc.send({ ...notification, template: "does-not-exist" })
+    await expect(sent).rejects.toThrow(/Couldn't find an email template for does-not-exist/)
+    await expect(sent).rejects.toMatchObject({ type: MedusaError.Types.INVALID_DATA })
     expect(send).not.toHaveBeenCalled()
   })
 })

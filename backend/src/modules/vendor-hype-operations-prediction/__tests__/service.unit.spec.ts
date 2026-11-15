@@ -1,4 +1,5 @@
-import VendorHypeOperationsPredictionService from "../service"
+import { MedusaError } from "@medusajs/framework/utils"
+import VendorHypeOperationsPredictionService, { MARKET_STATE_TRANSITIONS } from "../service"
 import {
   OracleSigningKeyStatus,
   PredictionMarketState,
@@ -27,12 +28,76 @@ describe("VendorHypeOperationsPredictionService", () => {
     ).rejects.toThrow("Invalid prediction market transition")
   })
 
+  // The real lifecycle map, not a stub: these pin what the operator route can
+  // and cannot do.
+  const transitionCtx = (state: PredictionMarketState | null) => ({
+    MARKET_STATE_TRANSITIONS,
+    listPredictionMarkets: jest.fn().mockResolvedValue(state ? [{ id: "m_1", state }] : []),
+    updatePredictionMarkets: jest.fn().mockResolvedValue(undefined),
+  })
+  const transition = (ctx: ReturnType<typeof transitionCtx>, id: string, next: PredictionMarketState) =>
+    VendorHypeOperationsPredictionService.prototype.transitionPredictionMarketState.call(
+      ctx as never,
+      id,
+      next
+    )
+
+  it("never moves a market to SETTLED, even from IN_REVIEW where the lifecycle allows it", async () => {
+    // The lifecycle does list in_review -> settled; settlement is the only
+    // thing that may perform it, because only settlement writes the
+    // settlement record and payouts.
+    expect(MARKET_STATE_TRANSITIONS[PredictionMarketState.IN_REVIEW]).toContain(
+      PredictionMarketState.SETTLED
+    )
+    const ctx = transitionCtx(PredictionMarketState.IN_REVIEW)
+
+    const err = await transition(ctx, "m_1", PredictionMarketState.SETTLED).catch((e: unknown) => e)
+
+    expect(err).toBeInstanceOf(MedusaError)
+    expect((err as MedusaError).type).toBe(MedusaError.Types.NOT_ALLOWED)
+    expect(ctx.updatePredictionMarkets).not.toHaveBeenCalled()
+  })
+
+  it("types an unknown market NOT_FOUND, so the HTTP layer answers 404", async () => {
+    const ctx = transitionCtx(null)
+
+    const err = await transition(ctx, "m_missing", PredictionMarketState.SCHEDULED).catch((e: unknown) => e)
+
+    expect(err).toBeInstanceOf(MedusaError)
+    expect((err as MedusaError).type).toBe(MedusaError.Types.NOT_FOUND)
+  })
+
+  it("types an illegal transition NOT_ALLOWED, so the HTTP layer answers 400", async () => {
+    const ctx = transitionCtx(PredictionMarketState.DRAFT)
+
+    const err = await transition(ctx, "m_1", PredictionMarketState.OPEN).catch((e: unknown) => e)
+
+    expect(err).toBeInstanceOf(MedusaError)
+    expect((err as MedusaError).type).toBe(MedusaError.Types.NOT_ALLOWED)
+    expect(ctx.updatePredictionMarkets).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    [PredictionMarketState.DRAFT, PredictionMarketState.SCHEDULED],
+    [PredictionMarketState.LOCKED, PredictionMarketState.IN_REVIEW],
+    [PredictionMarketState.IN_REVIEW, PredictionMarketState.VOIDED],
+  ])("still performs the operator transition %s -> %s", async (from, to) => {
+    const ctx = transitionCtx(from)
+
+    await transition(ctx, "m_1", to)
+
+    expect(ctx.updatePredictionMarkets).toHaveBeenCalledWith({ id: "m_1", state: to })
+  })
+
   it("returns existing position for same idempotency key", async () => {
     const existingPosition = { id: "pos_1" }
     const ctx: any = {
       listPredictionMarkets: jest.fn().mockResolvedValue([{ id: "m_1", state: PredictionMarketState.OPEN }]),
       listPredictionPositions: jest.fn().mockResolvedValueOnce([existingPosition]).mockResolvedValueOnce([]),
       ensureSupporterEligibility: jest.fn().mockResolvedValue({}),
+      // An entitled supporter: stands in for the server-side age record that
+      // does not exist yet (see isSupporterAgeVerified).
+      isSupporterAgeVerified: jest.fn().mockResolvedValue(true),
       createPredictionPositions: jest.fn(),
       markSupporterParticipation: jest.fn().mockResolvedValue(undefined),
     }
@@ -47,6 +112,43 @@ describe("VendorHypeOperationsPredictionService", () => {
 
     expect(result).toEqual(existingPosition)
     expect(ctx.createPredictionPositions).not.toHaveBeenCalled()
+  })
+
+  it.each(Object.values(PredictionMode))(
+    "holds no server-side age verification for anyone in %s mode, so the age gate fails closed",
+    async (mode) => {
+      await expect(
+        VendorHypeOperationsPredictionService.prototype.isSupporterAgeVerified.call({}, "sup_1", mode)
+      ).resolves.toBe(false)
+    }
+  )
+
+  it("refuses to place a position without a server-side age verification", async () => {
+    const ctx: any = {
+      listPredictionMarkets: jest
+        .fn()
+        .mockResolvedValue([{ id: "m_1", state: PredictionMarketState.OPEN, mode: PredictionMode.NON_CASH }]),
+      listPredictionPositions: jest.fn().mockResolvedValue([]),
+      ensureSupporterEligibility: jest.fn().mockResolvedValue({}),
+      isSupporterAgeVerified: VendorHypeOperationsPredictionService.prototype.isSupporterAgeVerified,
+      createPredictionPositions: jest.fn(),
+      markSupporterParticipation: jest.fn(),
+    }
+
+    await expect(
+      VendorHypeOperationsPredictionService.prototype.placePredictionPosition.call(ctx, {
+        market_id: "m_1",
+        supporter_id: "sup_1",
+        outcome_option_key: "YES",
+        stake_amount: 1,
+        idempotency_key: "idem_1",
+      })
+    ).rejects.toThrow("age_verification_required")
+    expect(ctx.createPredictionPositions).not.toHaveBeenCalled()
+    expect(ctx.markSupporterParticipation).not.toHaveBeenCalled()
+    // ensureSupporterEligibility inserts a user_prediction_safety row for a
+    // first-time supporter, so it must not run for a call the gate refuses.
+    expect(ctx.ensureSupporterEligibility).not.toHaveBeenCalled()
   })
 
   it("denies blocked policy decision for regulated cash in US", () => {

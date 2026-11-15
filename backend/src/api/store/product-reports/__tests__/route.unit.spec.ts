@@ -1,5 +1,8 @@
+import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 import { POST, REPORT_REQUEST_TYPE } from "../route"
 import { REQUEST_MODULE } from "../../../../modules/request"
+import RequestModuleService from "../../../../modules/request/service"
+import { ANONYMOUS_SUBMITTER_ID } from "../../../../modules/request/validators"
 
 /**
  * Intake for a listing report.
@@ -9,6 +12,11 @@ import { REQUEST_MODULE } from "../../../../modules/request"
  * on. These tests pin the properties that make that not happen again — the
  * report is persisted, and a rejected report is rejected rather than silently
  * accepted.
+ *
+ * `createRequest` is the module's real method over a stub of the generated
+ * `createRequests`. This spec used to stub `createRequest` itself, which hid
+ * that the real one throws when given no submitter — so every anonymous
+ * report, the case this route exists for, was a 500 while this spec passed.
  */
 
 const createRes = () => {
@@ -29,13 +37,31 @@ const createRes = () => {
   }
 }
 
-function makeReq(body: unknown, opts: { actorId?: string } = {}) {
+const PRODUCTS = [{ id: "prod_1", handle: "linen-apron" }]
+
+function makeReq(body: unknown, opts: { actorId?: string; products?: typeof PRODUCTS } = {}) {
+  // The rows the real `createRequest` hands to the generated `createRequests`.
   const created: Record<string, unknown>[] = []
   const requestService = {
     created,
-    createRequest: jest.fn(async (data: Record<string, unknown>) => {
-      created.push(data)
-      return { id: `req_${created.length}`, status: "pending" }
+    createRequests: jest.fn(async (rows: Record<string, unknown>[]) =>
+      rows.map((row) => {
+        created.push(row)
+        return { ...row, id: `req_${created.length}` }
+      })
+    ),
+    createRequest: jest.fn((input: Parameters<RequestModuleService["createRequest"]>[0]) =>
+      RequestModuleService.prototype.createRequest.call(
+        requestService as unknown as RequestModuleService,
+        input
+      )
+    ),
+  }
+  const products = opts.products ?? PRODUCTS
+  const query = {
+    graph: jest.fn(async ({ entity, filters }: { entity: string; filters: { id: string } }) => {
+      if (entity !== "product") throw new Error(`unexpected entity: ${entity}`)
+      return { data: products.filter((p) => p.id === filters.id) }
     }),
   }
   const req = {
@@ -44,6 +70,7 @@ function makeReq(body: unknown, opts: { actorId?: string } = {}) {
     scope: {
       resolve: (key: string) => {
         if (key === REQUEST_MODULE) return requestService
+        if (key === ContainerRegistrationKeys.QUERY) return query
         throw new Error(`unexpected resolve: ${key}`)
       },
     },
@@ -70,9 +97,23 @@ describe("POST /store/product-reports", () => {
       type: REPORT_REQUEST_TYPE,
       data: expect.objectContaining({
         product_id: "prod_1",
+        product_handle: "linen-apron",
         reason: "trademark_copyright_dmca",
       }),
     })
+  })
+
+  it("refuses a report against a product that does not exist, and stores nothing", async () => {
+    // Anonymous callers can reach this route, so an unchecked id would let
+    // anyone fill the admin queue with reports against arbitrary strings.
+    const { req, requestService } = makeReq({ ...validBody, product_id: "prod_made_up" })
+    const res = createRes()
+
+    await POST(req as never, res as never)
+
+    expect(res.statusCode).toBe(404)
+    expect(res.body).toMatchObject({ type: "not_found" })
+    expect(requestService.createRequest).not.toHaveBeenCalled()
   })
 
   it("accepts a report from a visitor with no session", async () => {
@@ -84,7 +125,10 @@ describe("POST /store/product-reports", () => {
     await POST(req as never, res as never)
 
     expect(res.statusCode).toBe(201)
-    expect(requestService.created[0]).toMatchObject({ requester_id: undefined })
+    expect(requestService.created[0]).toMatchObject({
+      submitter_id: ANONYMOUS_SUBMITTER_ID,
+      requester_id: undefined,
+    })
   })
 
   it("records the customer when one is signed in", async () => {
@@ -93,7 +137,10 @@ describe("POST /store/product-reports", () => {
 
     await POST(req as never, res as never)
 
-    expect(requestService.created[0]).toMatchObject({ requester_id: "cus_7" })
+    expect(requestService.created[0]).toMatchObject({
+      submitter_id: "cus_7",
+      requester_id: "cus_7",
+    })
   })
 
   it("carries the reporter's email through, since a DMCA notice needs a contact", async () => {

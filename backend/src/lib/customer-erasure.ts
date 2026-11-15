@@ -3,6 +3,7 @@ import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 
 import {
   CUSTOMER_DATA_REGISTRY,
+  customerColumnOf,
   type CustomerDataEntry,
 } from "./customer-data-registry"
 import { createLogger } from "../shared/logger"
@@ -103,15 +104,16 @@ export async function eraseCustomerAcrossRegistry(
   for (const entry of CUSTOMER_DATA_REGISTRY) {
     try {
       const table = quoteIdent(entry.entity)
+      const customer = quoteIdent(customerColumnOf(entry))
       let sql: string
 
       if (entry.action === "delete") {
-        sql = `DELETE FROM ${table} WHERE "customer_id" = ?`
+        sql = `DELETE FROM ${table} WHERE ${customer} = ?`
       } else {
         const sets: string[] = []
         // An `anonymise` row loses the link to the person; a `retain` row keeps
         // it, because the customer record it points at is itself anonymised.
-        if (entry.action === "anonymise") sets.push(`"customer_id" = NULL`)
+        if (entry.action === "anonymise") sets.push(`${customer} = NULL`)
         for (const field of entry.anonymiseFields ?? []) {
           sets.push(`${quoteIdent(field)} = NULL`)
         }
@@ -120,7 +122,7 @@ export async function eraseCustomerAcrossRegistry(
           results.push({ entity: entry.entity, action: entry.action, rows: 0 })
           continue
         }
-        sql = `UPDATE ${table} SET ${sets.join(", ")} WHERE "customer_id" = ?`
+        sql = `UPDATE ${table} SET ${sets.join(", ")} WHERE ${customer} = ?`
       }
 
       const result = await pg.raw(sql, [customerId])
@@ -173,7 +175,7 @@ export async function readCustomerDataAcrossRegistry(
       const { data } = await query.graph({
         entity: entry.entity,
         fields: ["*"],
-        filters: { customer_id: customerId },
+        filters: { [customerColumnOf(entry)]: customerId },
       })
       if (Array.isArray(data) && data.length > 0) {
         out[entry.entity] = data

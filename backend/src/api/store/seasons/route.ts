@@ -1,7 +1,8 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
-
-const SEASON_MODULE = "seasonModuleService"
+import { SEASON_MODULE } from "../../../modules/season"
+import { forbidden } from "../../../shared/community-read-access"
+import { actorManagesGarden } from "../../../shared/community-write-access"
 
 interface SeasonServiceType {
   createGardenSeasons: (data: Record<string, unknown>) => Promise<{ id: string }>
@@ -45,7 +46,7 @@ export async function GET(
 /**
  * POST /store/seasons
  * 
- * Create a new growing season
+ * Create a new growing season. The named garden's active organizers only.
  */
 export async function POST(
   req: MedusaRequest,
@@ -53,8 +54,16 @@ export async function POST(
 ) {
   const seasonService = req.scope.resolve(SEASON_MODULE) as SeasonServiceType
 
+  const { garden_id } = (req.body ?? {}) as Record<string, unknown>
+  if (typeof garden_id !== "string" || garden_id.length === 0) {
+    res.status(400).json({ message: "garden_id is required" })
+    return
+  }
+  if (!(await actorManagesGarden(req, garden_id))) {
+    return forbidden(res)
+  }
+
   const {
-    garden_id,
     name,
     season_type,
     year,

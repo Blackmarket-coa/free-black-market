@@ -5,8 +5,11 @@
  * order total — on a multi-vendor order, charging the whole basket against one
  * home baker's annual cap would be flatly wrong.
  *
- * Line-item prices in this codebase are integer cents (see the order.total
- * handling in the hawala subscribers), so no unit conversion happens here.
+ * Medusa v2 line-item prices are major units (12.5 is $12.50), as the hawala
+ * subscribers read `order.total` (`toCents` in lib/card-order-settlement.ts).
+ * The cottage-food ledger and its caps are cents, so each line is converted
+ * here. Until SD-52 this helper said prices were already cents; it never
+ * mattered, because the order read below threw on every order.
  */
 
 type QueryLike = {
@@ -33,15 +36,13 @@ export async function resolveSellerTotalsForOrder(
 ): Promise<SellerOrderTotal[]> {
   const query = container.resolve("query") as QueryLike
 
+  // `items.*`, never `items.quantity` (SD-52): Medusa 2.14.2 rewrites
+  // `items.quantity` to `items.item.quantity`, a property OrderLineItem does
+  // not have, and the read throws for every order with a line item. `items.*`
+  // returns each line with its quantity.
   const { data: orders } = await query.graph({
     entity: "order",
-    fields: [
-      "id",
-      "items.id",
-      "items.quantity",
-      "items.unit_price",
-      "items.product_id",
-    ],
+    fields: ["id", "items.*"],
     filters: { id: orderId },
   })
 
@@ -89,7 +90,7 @@ export async function resolveSellerTotalsForOrder(
       gross_cents: 0,
       quantity: 0,
     }
-    entry.gross_cents += Math.round(unitPrice * quantity)
+    entry.gross_cents += Math.round(unitPrice * quantity * 100)
     entry.quantity += quantity
     totals.set(sellerId, entry)
   }

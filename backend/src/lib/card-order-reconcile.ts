@@ -77,10 +77,11 @@ async function withCardOrderLock<T>(container: Container, orderId: string, fn: (
  *      any leg if the seller cannot cover it, so a refusal leaves nothing
  *      half-posted and the next run retries the whole delta.
  *   4. A refund on the order's payment collection that no order's own
- *      record accounts for (a Medusa-native refund or admin cancel on a
- *      Mercur cart) -> logged as an error, `unattributed_refund`; the money
- *      is not guessed onto a seller, and every seller on that collection is
- *      held (SD-40, `models/payout-hold.ts`) until an admin assigns it
+ *      record accounts for (a Medusa-native refund on a Mercur cart, or an
+ *      admin cancel made before SD-36 (8) refused them) -> logged as an
+ *      error, `unattributed_refund`; the money is not guessed onto a seller,
+ *      and every seller on that collection is held (SD-40,
+ *      `models/payout-hold.ts`) until an admin assigns it
  *      (`POST /admin/hawala/card-refunds/:id/attribute`). Once every refund
  *      on the collection is accounted for, its holds are released.
  *   5. Stripe's dispute fee on the order's charge (operator answer

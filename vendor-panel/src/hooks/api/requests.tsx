@@ -124,15 +124,40 @@ export const useUpdateRequest = (
 // originally built against has no handler in the current MercurJS core, so
 // these hooks read from `/vendor/returns` and normalize the `return`/`returns`
 // payload back onto the `order_return_request` shape the UI consumes.
-export const normalizeReturnDetailResponse = (data?: { return?: any }) => ({
-  order_return_request: data?.return,
+//
+// Mercur's shapes are not flat (b2c-core 1.5.0, read on a real database by
+// backend/integration-tests/http/store-return-request.spec.ts, which pins
+// them with the fields these hooks send):
+// - the list queries the seller–return LINK, so each row is
+//   `{ return_id?, return: {...} }` with the return nested under `return`;
+// - the detail runs a list query and answers `return` as an ARRAY.
+// Passed through unchanged, every table cell read `-`, row ids were empty
+// and the drawer had nothing to show. Both are unwrapped here; a flat
+// return is passed as it is, and a link row whose return is gone is dropped.
+const unwrapReturnRow = (row: unknown): unknown => {
+  if (row && typeof row === "object" && "return" in row) {
+    return (row as { return?: unknown }).return ?? null
+  }
+  return row
+}
+
+// `T` is what the UI reads off a return; it stays loosely typed (as the
+// callers were) because the panel renders whatever `fields` it asked for.
+export const normalizeReturnDetailResponse = <T = any>(data?: {
+  return?: unknown
+}) => ({
+  order_return_request: (Array.isArray(data?.return)
+    ? data?.return[0]
+    : data?.return) as T | undefined,
 })
 
-export const normalizeReturnListResponse = (data?: {
-  returns?: any
+export const normalizeReturnListResponse = <T = any>(data?: {
+  returns?: unknown[]
   count?: number
 }) => ({
-  order_return_request: data?.returns,
+  order_return_request: data?.returns
+    ?.map(unwrapReturnRow)
+    .filter((row): row is T => row != null),
   count: data?.count || 0,
 })
 

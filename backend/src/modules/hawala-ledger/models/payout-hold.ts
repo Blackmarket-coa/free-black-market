@@ -6,12 +6,13 @@ import { model } from "@medusajs/framework/utils"
  *
  * A Mercur cart is one payment collection shared by one order per seller.
  * When part of it is refunded in a way no seller's own record accounts for
- * (a Medusa-native refund or an admin cancel against the shared collection),
- * the ledger cannot tell whose sale was refunded, and guessing would take
- * money from the wrong vendor. So nothing is posted, and every seller with an
- * order on that collection is held: no payout and no vendor-to-vendor payment
- * leaves their earnings while the hold is ACTIVE (`requestPayout`,
- * `createVendorToVendorPayment`, `getPayoutOptions`).
+ * (a Medusa-native refund against the shared collection, or an admin cancel
+ * made before SD-36 (8) refused them), the ledger cannot tell whose sale was
+ * refunded, and guessing would take money from the wrong vendor. So nothing
+ * is posted, and every seller with an order on that collection is held: no
+ * payout and no vendor-to-vendor payment leaves their earnings while the hold
+ * is ACTIVE (`requestPayout`, `createVendorToVendorPayment`,
+ * `getPayoutOptions`).
  *
  * Placed by the card-order reconciler (`lib/card-order-reconcile.ts`) when
  * it finds the gap; released when the gap is gone — an admin assigns the

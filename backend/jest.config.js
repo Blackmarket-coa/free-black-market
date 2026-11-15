@@ -11,9 +11,21 @@ module.exports = {
         },
       },
     ],
+    // The React Email templates (src/modules/resend/emails/*.tsx), so a spec
+    // can render the real thing (email-render.unit.spec.ts). Same runtime as
+    // tsconfig's "jsx": "react-jsx".
+    "^.+\\.tsx$": [
+      "@swc/jest",
+      {
+        jsc: {
+          parser: { syntax: "typescript", tsx: true, decorators: true },
+          transform: { react: { runtime: "automatic" } },
+        },
+      },
+    ],
   },
   testEnvironment: "node",
-  moduleFileExtensions: ["js", "ts", "json"],
+  moduleFileExtensions: ["js", "ts", "tsx", "json"],
   modulePathIgnorePatterns: [
     "dist/",
     "<rootDir>/.medusa/",
@@ -31,6 +43,13 @@ if (process.env.TEST_TYPE === "integration:http") {
   // beforeAll; the 5s Jest default trips on cold CI runners. Jest applies
   // testTimeout to hooks too.
   module.exports.testTimeout = 120000;
+  // The runner's wait between tests never ends on a workflow execution left
+  // unfinished (SD-53 (d)); bound it, under that hook timeout, before any
+  // spec loads it.
+  module.exports.setupFiles = [
+    ...module.exports.setupFiles,
+    "./integration-tests/http/helpers/install-runner-wait-bound.ts",
+  ];
 } else if (process.env.TEST_TYPE === "integration:modules") {
   // Require `.spec.` like the other two modes do. Matching every .ts under a
   // module's __tests__ dir also matched shared helper files, and Jest fails a

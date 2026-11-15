@@ -11,39 +11,12 @@ import {
   CreateEmailOptions, 
   Resend
 } from "resend";
-import { orderPlacedEmail } from "./emails/order-placed";
-import { userInvitedEmail } from "./emails/user-invited";
-import { passwordResetEmail } from "./emails/password-reset";
-import { vendorAcceptedEmail } from "./emails/vendor-accepted";
-import { customerAcceptedEmail } from "./emails/customer-accepted";
-import { bookingConfirmationEmail } from "./emails/booking-confirmation";
-import { reviewRequestEmail } from "./emails/review-request";
-import { embedChatMessageEmail } from "./emails/embed-chat-message";
-import { sellerEmailVerificationEmail } from "./emails/seller-email-verification";
-
-enum Templates {
-  ORDER_PLACED = "order-placed",
-  USER_INVITED = "user-invited",
-  PASSWORD_RESET = "password-reset",
-  VENDOR_ACCEPTED = "vendor-accepted",
-  CUSTOMER_ACCEPTED = "customer-accepted",
-  BOOKING_CONFIRMATION = "booking-confirmation",
-  REVIEW_REQUEST = "review-request",
-  EMBED_CHAT_MESSAGE = "embed-chat-message",
-  SELLER_EMAIL_VERIFICATION = "seller-email-verification",
-}
-
-const templates: {[key in Templates]?: (props: unknown) => React.ReactNode} = {
-  [Templates.ORDER_PLACED]: orderPlacedEmail,
-  [Templates.USER_INVITED]: userInvitedEmail,
-  [Templates.PASSWORD_RESET]: passwordResetEmail,
-  [Templates.VENDOR_ACCEPTED]: vendorAcceptedEmail,
-  [Templates.CUSTOMER_ACCEPTED]: customerAcceptedEmail,
-  [Templates.BOOKING_CONFIRMATION]: bookingConfirmationEmail,
-  [Templates.REVIEW_REQUEST]: reviewRequestEmail,
-  [Templates.EMBED_CHAT_MESSAGE]: embedChatMessageEmail,
-  [Templates.SELLER_EMAIL_VERIFICATION]: sellerEmailVerificationEmail,
-}
+import {
+  EMAIL_TEMPLATE_NAMES,
+  EMAIL_TEMPLATE_SUBJECTS,
+  isEmailTemplateName,
+} from "./templates";
+import { EMAIL_TEMPLATE_RENDERERS } from "./emails/registry";
 
 /**
  * Resend error names that indicate a transient failure worth retrying. Anything
@@ -182,59 +155,49 @@ class ResendNotificationProviderService extends AbstractNotificationProviderServ
   }
 
 
-  getTemplate(template: Templates) {
+  // The template list and renderers are shared with the smtp provider
+  // (./templates.ts, ./emails/registry.ts): either one may be the `email`
+  // channel, so neither may know a template the other does not.
+  getTemplate(template: string) {
     if (this.options.html_templates?.[template]) {
       return this.options.html_templates[template].content
     }
-    const allowedTemplates = Object.keys(templates)
-
-    if (!allowedTemplates.includes(template)) {
+    if (!isEmailTemplateName(template)) {
       return null
     }
 
-    return templates[template]
+    return EMAIL_TEMPLATE_RENDERERS[template]
   }
 
-  getTemplateSubject(template: Templates) {
+  getTemplateSubject(template: string) {
     if (this.options.html_templates?.[template]?.subject) {
       return this.options.html_templates[template].subject
     }
-    switch(template) {
-      case Templates.ORDER_PLACED:
-        return "Order Confirmation"
-      case Templates.USER_INVITED:
-        return "You're Invited!"
-      case Templates.PASSWORD_RESET:
-        return "Reset Your Password"
-      case Templates.VENDOR_ACCEPTED:
-        return "Your Free Black Market vendor access is ready"
-      case Templates.CUSTOMER_ACCEPTED:
-        return "Your account has been approved"
-      case Templates.BOOKING_CONFIRMATION:
-        return "Your booking is confirmed"
-      case Templates.REVIEW_REQUEST:
-        return "How was your order? Leave a review"
-      case Templates.EMBED_CHAT_MESSAGE:
-        return "New message from your website"
-      default:
-        return "New Email"
-    }
+    return isEmailTemplateName(template) ? EMAIL_TEMPLATE_SUBJECTS[template] : "New Email"
   }
 
   async send(
     notification: ProviderSendNotificationDTO
   ): Promise<ProviderSendNotificationResultsDTO> {
-    const template = this.getTemplate(notification.template as Templates)
+    const template = this.getTemplate(notification.template)
 
     if (!template) {
-      this.logger.error(`Couldn't find an email template for ${notification.template}. The valid options are ${Object.values(Templates)}`)
-      return {}
+      // Refused, not dropped. This used to log and return `{}`, which Medusa's
+      // notification module records as SUCCESS with no external id, so a
+      // misspelt or missing template looked delivered and reached nobody.
+      // That silent drop is how six templates went unsent for months. A
+      // throw makes the row FAILURE and reaches the caller's catch.
+      const message =
+        `Couldn't find an email template for ${notification.template}. ` +
+        `The valid options are ${EMAIL_TEMPLATE_NAMES.join(", ")}`
+      this.logger.error(message)
+      throw new MedusaError(MedusaError.Types.INVALID_DATA, message)
     }
 
     const commonOptions = {
       from: this.options.from,
       to: [notification.to],
-      subject: this.getTemplateSubject(notification.template as Templates),
+      subject: this.getTemplateSubject(notification.template),
     }
 
     let emailOptions: CreateEmailOptions

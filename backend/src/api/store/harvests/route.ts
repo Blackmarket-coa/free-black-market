@@ -1,8 +1,9 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 import { actingCustomerId } from "../../../shared/actor-scope"
+import { forbidden } from "../../../shared/community-read-access"
 
-const HARVEST_MODULE = "harvestModuleService"
+import { HARVEST_MODULE } from "../../../modules/harvest"
 
 interface HarvestServiceType {
   createGardenHarvests: (data: Record<string, unknown>) => Promise<{ id: string }>
@@ -80,6 +81,15 @@ export async function POST(
   req: MedusaRequest,
   res: MedusaResponse
 ) {
+  // Customers only. This record is written under a customer id, and that id
+  // comes from the token. A seller or driver token used to fall through to
+  // the id in the body, which let any signed-in seller or driver act as any
+  // customer here.
+  const actingCustomer = actingCustomerId(req)
+  if (!actingCustomer) {
+    return forbidden(res)
+  }
+
   const harvestService = req.scope.resolve(HARVEST_MODULE) as HarvestServiceType
 
   const {
@@ -92,17 +102,14 @@ export async function POST(
     unit,
     quality_grade,
     price_per_unit,
-    harvested_by_id,
     notes,
     storage_location,
     photos,
   } = req.body as Record<string, unknown>
 
   // SEC: a customer may only record a harvest under their own id. Bind
-  // harvested_by_id to the authenticated actor; non-customer actors
-  // (seller/driver) fall back to the body value.
-  const actingCustomer = actingCustomerId(req)
-  const effectiveHarvestedById = (actingCustomer ?? harvested_by_id) as string
+  // harvested_by_id to the authenticated actor.
+  const effectiveHarvestedById = actingCustomer
 
   // Calculate estimated value
   const estimated_value = estimateHarvestValue(

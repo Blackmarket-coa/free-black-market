@@ -4,6 +4,7 @@ import {
   CCR_CURRENCY_CODE,
   PURCHASE_CONTEXT_REFERENCE_TYPES,
   ISSUER_ENTRY_TYPES,
+  resolveGuardMode,
 } from "../posture-a-guard"
 
 /**
@@ -154,6 +155,47 @@ describe("posture-a-guard: warn / off modes", () => {
 
   it("off mode is a no-op (used only during local dev)", () => {
     expect(() => assertPurchaseContext(base, "off")).not.toThrow()
+  })
+})
+
+describe("posture-a-guard: HAWALA_CCR_GUARD_MODE cannot relax the guard in production (LEG-7)", () => {
+  const base = {
+    currency_code: CCR_CURRENCY_CODE,
+    entry_type: "TRANSFER",
+    debit_account_id: "acct_a",
+    credit_account_id: "acct_b",
+  }
+  const saved = { mode: process.env.HAWALA_CCR_GUARD_MODE, env: process.env.NODE_ENV }
+  afterEach(() => {
+    if (saved.mode === undefined) delete process.env.HAWALA_CCR_GUARD_MODE
+    else process.env.HAWALA_CCR_GUARD_MODE = saved.mode
+    process.env.NODE_ENV = saved.env
+  })
+
+  it.each(["off", "warn", "OFF", "Warn"])("production ignores HAWALA_CCR_GUARD_MODE=%s and stays strict", (value) => {
+    const spy = jest.spyOn(console, "error").mockImplementation(() => {})
+    process.env.NODE_ENV = "production"
+    process.env.HAWALA_CCR_GUARD_MODE = value
+    expect(resolveGuardMode()).toBe("strict")
+    // The default-mode path every caller uses: still refuses.
+    expect(() => assertPurchaseContext(base)).toThrow(ClosedLoopViolationError)
+    spy.mockRestore()
+  })
+
+  it("is strict by default and for an unrecognised value, in any environment", () => {
+    process.env.NODE_ENV = "development"
+    delete process.env.HAWALA_CCR_GUARD_MODE
+    expect(resolveGuardMode()).toBe("strict")
+    process.env.HAWALA_CCR_GUARD_MODE = "lenient"
+    expect(resolveGuardMode()).toBe("strict")
+  })
+
+  it("still honours warn and off outside production, for development and tests", () => {
+    process.env.NODE_ENV = "development"
+    process.env.HAWALA_CCR_GUARD_MODE = "warn"
+    expect(resolveGuardMode()).toBe("warn")
+    process.env.HAWALA_CCR_GUARD_MODE = "off"
+    expect(resolveGuardMode()).toBe("off")
   })
 })
 

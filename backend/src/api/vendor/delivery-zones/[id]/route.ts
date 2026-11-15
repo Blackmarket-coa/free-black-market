@@ -85,7 +85,13 @@ export async function POST(
             ? Number(existing.minimum_order) / 100
             : undefined
           : data.minimum_order ?? undefined,
-      service_hours: data.service_hours ?? (existing.service_hours as Record<string, { open: string; close: string }> | undefined),
+      // A zone saved without hours has `service_hours: null`, which the create
+      // schema's optional (not nullable) field rejects, so every update to such
+      // a zone used to fail validation with a 400. Absent is what null means.
+      service_hours:
+        data.service_hours ??
+        (existing.service_hours as Record<string, { open: string; close: string }> | null) ??
+        undefined,
       active: data.active ?? existing.active,
       priority: data.priority ?? existing.priority,
     })

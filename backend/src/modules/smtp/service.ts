@@ -10,27 +10,12 @@ import {
 import * as nodemailer from "nodemailer"
 import { Transporter } from "nodemailer"
 import { render } from "@react-email/components"
-import { orderPlacedEmail } from "../resend/emails/order-placed"
-import { userInvitedEmail } from "../resend/emails/user-invited"
-import { passwordResetEmail } from "../resend/emails/password-reset"
-import { vendorAcceptedEmail } from "../resend/emails/vendor-accepted"
-import { customerAcceptedEmail } from "../resend/emails/customer-accepted"
-
-enum Templates {
-  ORDER_PLACED = "order-placed",
-  USER_INVITED = "user-invited",
-  PASSWORD_RESET = "password-reset",
-  VENDOR_ACCEPTED = "vendor-accepted",
-  CUSTOMER_ACCEPTED = "customer-accepted",
-}
-
-const templates: {[key in Templates]?: (props: unknown) => React.ReactNode} = {
-  [Templates.ORDER_PLACED]: orderPlacedEmail,
-  [Templates.USER_INVITED]: userInvitedEmail,
-  [Templates.PASSWORD_RESET]: passwordResetEmail,
-  [Templates.VENDOR_ACCEPTED]: vendorAcceptedEmail,
-  [Templates.CUSTOMER_ACCEPTED]: customerAcceptedEmail,
-}
+import {
+  EMAIL_TEMPLATE_NAMES,
+  EMAIL_TEMPLATE_SUBJECTS,
+  isEmailTemplateName,
+} from "../resend/templates"
+import { EMAIL_TEMPLATE_RENDERERS } from "../resend/emails/registry"
 
 type SMTPOptions = {
   host: string
@@ -123,47 +108,43 @@ class SMTPNotificationProviderService extends AbstractNotificationProviderServic
     }
   }
 
-  getTemplate(template: Templates) {
+  // The template list and renderers are shared with the resend provider
+  // (../resend/templates.ts, ../resend/emails/registry.ts): either one may be
+  // the `email` channel, so neither may know a template the other does not.
+  getTemplate(template: string) {
     if (this.options.html_templates?.[template]) {
       return this.options.html_templates[template].content
     }
-    const allowedTemplates = Object.keys(templates)
-
-    if (!allowedTemplates.includes(template)) {
+    if (!isEmailTemplateName(template)) {
       return null
     }
 
-    return templates[template]
+    return EMAIL_TEMPLATE_RENDERERS[template]
   }
 
-  getTemplateSubject(template: Templates) {
+  getTemplateSubject(template: string) {
     if (this.options.html_templates?.[template]?.subject) {
       return this.options.html_templates[template].subject
     }
-    switch(template) {
-      case Templates.ORDER_PLACED:
-        return "Order Confirmation"
-      case Templates.USER_INVITED:
-        return "You're Invited!"
-      case Templates.PASSWORD_RESET:
-        return "Reset Your Password"
-      case Templates.VENDOR_ACCEPTED:
-        return "Your Free Black Market vendor access is ready"
-      case Templates.CUSTOMER_ACCEPTED:
-        return "Your account has been approved"
-      default:
-        return "New Email"
-    }
+    return isEmailTemplateName(template) ? EMAIL_TEMPLATE_SUBJECTS[template] : "New Email"
   }
 
   async send(
     notification: ProviderSendNotificationDTO
   ): Promise<ProviderSendNotificationResultsDTO> {
-    const template = this.getTemplate(notification.template as Templates)
+    const template = this.getTemplate(notification.template)
 
     if (!template) {
-      this.logger.error(`Couldn't find an email template for ${notification.template}. The valid options are ${Object.values(Templates)}`)
-      return {}
+      // Refused, not dropped. This used to log and return `{}`, which Medusa's
+      // notification module records as SUCCESS with no external id, so a
+      // misspelt or missing template looked delivered and reached nobody.
+      // That silent drop is how six templates went unsent for months. A
+      // throw makes the row FAILURE and reaches the caller's catch.
+      const message =
+        `Couldn't find an email template for ${notification.template}. ` +
+        `The valid options are ${EMAIL_TEMPLATE_NAMES.join(", ")}`
+      this.logger.error(message)
+      throw new MedusaError(MedusaError.Types.INVALID_DATA, message)
     }
 
     let html: string
@@ -178,7 +159,7 @@ class SMTPNotificationProviderService extends AbstractNotificationProviderServic
     const mailOptions = {
       from: this.options.from,
       to: notification.to,
-      subject: this.getTemplateSubject(notification.template as Templates),
+      subject: this.getTemplateSubject(notification.template),
       html: html,
     }
 

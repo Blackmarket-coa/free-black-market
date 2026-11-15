@@ -23,14 +23,25 @@ import {
   embedKeyRateLimiter,
   publicCatalogRateLimiter,
   standardRateLimiter,
+  storeCustomerAccountRateLimiter,
+  storeCustomerDataRightsRateLimiter,
+  storeDeliveryProofRateLimiter,
+  storeReportRateLimiter,
   strictAuthRateLimiter,
+  supplierWebhookRateLimiter,
   trustProxyMiddleware,
   vendorRegistrationRateLimiter,
+  wholesaleApplicationRateLimiter,
 } from "../shared/rate-limiter";
 import { preventPasswordReuseMiddleware } from "./middlewares/password-history";
 import { servePublishingKeys } from "./middlewares/publishing-keys";
 import { refuseServerOwnedCustomerMetadata } from "./middlewares/server-owned-customer-metadata";
 import { refuseUnfinishedCartCompletion } from "./middlewares/cart-completion-finished";
+import { refuseCoreStoreReturnCreate } from "./middlewares/refuse-core-store-return";
+import {
+  refuseSharedPaymentOrderCancel,
+  refuseSharedPaymentWorkflowRun,
+} from "./middlewares/shared-payment-order-cancel";
 import { ensureSellerContext } from "./vendor/_middlewares";
 // Nested middleware route sets. Medusa's MiddlewareFileLoader reads ONLY this
 // file (it checks `<api dir>/middlewares.ts` and does not recurse), so a nested
@@ -753,6 +764,21 @@ export default defineMiddlewares({
       matcher: "/store/order-claims",
       middlewares: [authenticate("customer", ["bearer", "session"])],
     },
+    {
+      // Buyer return requests, likewise against the customer's own orders.
+      // Mercur's b2c-core registers auth for `/store/return-request/*` only,
+      // which does not cover the bare path the route serves.
+      matcher: "/store/return-request",
+      middlewares: [authenticate("customer", ["bearer", "session"])],
+    },
+    {
+      // Core's POST /store/returns takes a publishable key and any order id,
+      // and writes a return its seller cannot see. Buyers use the route above.
+      // See middlewares/refuse-core-store-return.ts.
+      matcher: "/store/returns",
+      method: "POST",
+      middlewares: [refuseCoreStoreReturnCreate],
+    },
     // ============================================================
     // CSRF: reject forged cross-site, cookie-authenticated writes
     // ============================================================
@@ -938,10 +964,54 @@ export default defineMiddlewares({
       method: "POST",
       middlewares: [preventPasswordReuseMiddleware],
     },
-    // Store customer routes
+    // Store customer routes.
+    //
+    // Issue #97: the rate limiter here used to be method-less, and Medusa
+    // registers a method-less entry with `app.use`, which prefix-matches. So
+    // the 20-per-minute IP-keyed auth budget also covered every
+    // /store/customers/me/** read, and because the storefront calls those
+    // server-side, all shoppers shared it. Registration keeps the auth budget
+    // (POST, exact path); a signed-in customer's own account gets an
+    // actor-keyed budget, and the data-rights endpoints a strict one. Email
+    // normalisation stays method-less, as it was.
     {
       matcher: "/store/customers",
-      middlewares: [authRateLimiter, normalizeEmailMiddleware],
+      middlewares: [normalizeEmailMiddleware],
+    },
+    {
+      matcher: "/store/customers",
+      method: "POST",
+      middlewares: [authRateLimiter],
+    },
+    {
+      matcher: "/store/customers/me",
+      middlewares: [storeCustomerAccountRateLimiter],
+    },
+    {
+      matcher: "/store/customers/me/data-export",
+      method: "GET",
+      middlewares: [storeCustomerDataRightsRateLimiter],
+    },
+    {
+      matcher: "/store/customers/me/deletion",
+      method: "POST",
+      middlewares: [storeCustomerDataRightsRateLimiter],
+    },
+    // Proof of delivery: the PIN guess budget (storeDeliveryProofRateLimiter).
+    // `POST /:id` is listed because the ?x=/proof twin in
+    // food-deliveries/[id]/route.ts reaches the same handler; its only other
+    // answer is 404. The community-write authenticate above is sorted ahead
+    // of these, so the bucket is keyed by the courier's actor id;
+    // store-delivery-proof-rate-limit.unit.spec.ts pins that order.
+    {
+      matcher: "/store/food-deliveries/:id/proof",
+      method: "POST",
+      middlewares: [storeDeliveryProofRateLimiter],
+    },
+    {
+      matcher: "/store/food-deliveries/:id",
+      method: "POST",
+      middlewares: [storeDeliveryProofRateLimiter],
     },
     // Identity keys in customer metadata (blackout_user_id, mxid,
     // mxid_source) are server-owned: Medusa's store validators accept any
@@ -1550,6 +1620,26 @@ export default defineMiddlewares({
       method: "POST",
       middlewares: [refuseUnfinishedCartCompletion],
     },
+    // SD-36 (8): Medusa's admin cancel refunds or voids the order's whole
+    // payment collection, and on a Mercur multi-seller cart that collection is
+    // every seller's. Refused with 409 when another order shares it
+    // (src/api/middlewares/shared-payment-order-cancel.ts); an order whose
+    // collection is its own reaches Medusa's route unchanged.
+    {
+      matcher: "/admin/orders/:id/cancel",
+      method: "POST",
+      middlewares: [refuseSharedPaymentOrderCancel],
+    },
+    // SD-36 (8), the same refusal on Medusa's generic workflow runner, which
+    // can start `cancel-order` (or its refund half,
+    // `refund-captured-payments-workflow`) by id on any order. Every other
+    // workflow id passes; a run of those two that names no single order is
+    // refused with 400.
+    {
+      matcher: "/admin/workflows-executions/:workflow_id/run",
+      method: "POST",
+      middlewares: [refuseSharedPaymentWorkflowRun],
+    },
     // Ticket booking routes - admin venues
     {
       matcher: "/admin/venues",
@@ -1568,12 +1658,34 @@ export default defineMiddlewares({
       method: "GET",
       middlewares: [validateAndTransformQuery(GetTicketProductSeatsSchema, {})],
     },
+    // Wholesale application intake: public (publishable key only) and it
+    // emails the address in the body, so it is IP-limited like the other
+    // anonymous writes. See wholesaleApplicationRateLimiter.
+    {
+      matcher: "/store/wholesale-application",
+      method: "POST",
+      middlewares: [wholesaleApplicationRateLimiter],
+    },
     // Bug report routes - rate limited; storefront is anonymous-friendly,
     // vendor/admin are keyed by actor.
     {
       matcher: "/store/bug-report",
       method: "POST",
       middlewares: [bugReportAnonymousRateLimiter],
+    },
+    // Seller and listing reports are anonymous by design (a rights-holder
+    // filing a notice need not have an account), so they are capped per client
+    // IP, one budget across both. The storefront posts from the reporter's
+    // browser, so the IP is theirs.
+    {
+      matcher: "/store/seller-reports",
+      method: "POST",
+      middlewares: [trustProxyMiddleware, storeReportRateLimiter],
+    },
+    {
+      matcher: "/store/product-reports",
+      method: "POST",
+      middlewares: [trustProxyMiddleware, storeReportRateLimiter],
     },
     {
       matcher: "/vendor/bug-report",
@@ -1590,6 +1702,16 @@ export default defineMiddlewares({
       matcher: "/webhooks/site-deploy",
       method: "POST",
       middlewares: [standardRateLimiter],
+    },
+    // Supplier status webhook. Public: the handler verifies a per-supplier
+    // HMAC over the raw body (503 while SUPPLIER_WEBHOOK_SECRET is unset), so
+    // the raw body must survive parsing, and binds the update to an order
+    // forwarded to that supplier. Its own rate-limit bucket.
+    {
+      matcher: "/webhooks/suppliers/status",
+      method: "POST",
+      bodyParser: { preserveRawBody: true },
+      middlewares: [supplierWebhookRateLimiter],
     },
   ],
   // Sanitizes 5xx error responses in production so internal detail

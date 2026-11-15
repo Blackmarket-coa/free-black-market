@@ -1,5 +1,6 @@
 import { medusaIntegrationTestRunner } from "@medusajs/test-utils"
-import { ContainerRegistrationKeys, Modules, PaymentEvents } from "@medusajs/framework/utils"
+import { ContainerRegistrationKeys, Modules, PaymentEvents, TransactionState } from "@medusajs/framework/utils"
+import { completeCartWorkflowId } from "@medusajs/medusa/core-flows"
 import { SELLER_MODULE } from "@mercurjs/b2c-core/modules/seller"
 import { PHASE0_FEATURE_FLAGS } from "../../src/shared/feature-flags"
 import { DIGITAL_PRODUCT_MODULE } from "../../src/modules/digital-product"
@@ -9,6 +10,8 @@ import { cardOrderFixtures } from "./helpers/card-orders"
 import { checkoutRaceProbes } from "./helpers/checkout-race"
 import { trackSubscribers } from "./helpers/drain-subscribers"
 import { clearStalledWorkflows, stallNextCartCompletion } from "./helpers/stalled-workflows"
+import { cartCompletionStallRetry, SD53_STALL_MARKER } from "./helpers/cart-completion-stall"
+import { RUNNER_WAIT_BOUND_ENV } from "./helpers/bound-runner-wait"
 import { createPublishableKeyToken, pakHeaders } from "./_publishable-key"
 
 jest.setTimeout(240 * 1000)
@@ -41,7 +44,7 @@ const SUBS = PHASE0_FEATURE_FLAGS.CONSUMER_SUBSCRIPTIONS_V1
 
 medusaIntegrationTestRunner({
   inApp: true,
-  testSuite: ({ api, getContainer }) => {
+  testSuite: ({ api, getContainer, utils }) => {
     const { container, cents, uid, makeSeller, legs, sellerEarnings, clearing, placed, captured, refunded } =
       cardOrderFixtures(getContainer)
 
@@ -56,8 +59,11 @@ medusaIntegrationTestRunner({
     // Every subscriber a test's events set off must finish before the
     // runner truncates the database (helpers/drain-subscribers.ts).
     let drainSubscribers: () => Promise<void> = async () => {}
+    let channel: { id: string } | null = null
 
-    beforeEach(() => {
+    /** What every test starts from; run again, after `disarm`, before each re-run of a scenario a stall cut short. */
+    function arrange() {
+      channel = null
       drainSubscribers = trackSubscribers(container)
       const provider = container().resolve(Modules.PAYMENT).paymentProviderService_.retrieveProvider("pp_stripe_stripe")
       let n = 0
@@ -82,6 +88,29 @@ medusaIntegrationTestRunner({
       }
       process.env[CARD] = "true"
       process.env[DIGITAL] = "true"
+    }
+    function disarm() {
+      jest.restoreAllMocks()
+      delete process.env[CARD]
+      delete process.env[DIGITAL]
+      delete process.env[SUBS]
+    }
+    beforeEach(arrange)
+    afterEach(disarm)
+
+    /**
+     * A natural SD-53 stall re-runs the scenario on a fresh cart
+     * (helpers/cart-completion-stall.ts). Every test here uses it but those
+     * that stall a completion on purpose, which use Jest's own `it` and keep
+     * asserting what the stall leaves.
+     */
+    const stallRetry = cartCompletionStallRetry({
+      container,
+      reset: async () => {
+        await drainSubscribers()
+        disarm()
+        arrange()
+      },
     })
 
     /**
@@ -103,12 +132,6 @@ medusaIntegrationTestRunner({
       })
       return seen
     }
-    afterEach(() => {
-      jest.restoreAllMocks()
-      delete process.env[CARD]
-      delete process.env[DIGITAL]
-      delete process.env[SUBS]
-    })
 
     /**
      * Before the runner's teardown: every subscriber the test's events set off
@@ -129,10 +152,6 @@ medusaIntegrationTestRunner({
       }
     }
 
-    let channel: { id: string } | null = null
-    beforeEach(() => {
-      channel = null
-    })
     async function salesChannel() {
       if (!channel) {
         ;[channel] = await container().resolve(Modules.SALES_CHANNEL).createSalesChannels([{ name: `Storefront ${uid()}` }])
@@ -415,7 +434,7 @@ medusaIntegrationTestRunner({
     describe("a digital-product checkout, with FF_DIGITAL_ORDER_SETTLEMENT_V1", () => {
       afterEach(settleBeforeTeardown)
 
-      it("a Blackout one-off listing's order is linked to its seller, captured, and settles to that seller less the 3%", async () => {
+      stallRetry.it("a Blackout one-off listing's order is linked to its seller, captured, and settles to that seller less the 3%", async () => {
         const seller = await makeSeller()
         const product = await makeProduct(seller.id, { digital: false })
         const { cart } = await makeCart([product])
@@ -441,7 +460,7 @@ medusaIntegrationTestRunner({
         expect(sellerLeg.credit_account_id).toBe((await sellerEarnings(seller.id)).id)
       })
 
-      it("a digital product's order is captured before its digital product order exists, linked, fulfilled, and settles", async () => {
+      stallRetry.it("a digital product's order is captured before its digital product order exists, linked, fulfilled, and settles", async () => {
         const seller = await makeSeller()
         const product = await makeProduct(seller.id, { digital: true })
         const { cart } = await makeCart([product], { deliver: true })
@@ -471,7 +490,7 @@ medusaIntegrationTestRunner({
         expect(sellerLeg.credit_account_id).toBe((await sellerEarnings(seller.id)).id)
       })
 
-      it("a payment Stripe already captured at authorization is not captured again, and still settles", async () => {
+      stallRetry.it("a payment Stripe already captured at authorization is not captured again, and still settles", async () => {
         // An intent created with `capture_method: automatic` (session data a
         // store client can set) is `succeeded` once confirmed; the payment
         // module records that capture itself.
@@ -498,7 +517,7 @@ medusaIntegrationTestRunner({
         expect(sellerLeg.credit_account_id).toBe((await sellerEarnings(seller.id)).id)
       })
 
-      it("a cart whose products belong to two sellers is refused before the card is touched", async () => {
+      stallRetry.it("a cart whose products belong to two sellers is refused before the card is touched", async () => {
         const a = await makeProduct((await makeSeller()).id, { digital: false })
         const b = await makeProduct((await makeSeller()).id, { digital: false })
         const { cart, customer } = await makeCart([a, b])
@@ -512,7 +531,7 @@ medusaIntegrationTestRunner({
         expect(await container().resolve(Modules.ORDER).listOrders({ customer_id: customer.id })).toEqual([])
       })
 
-      it("a product with no seller (an admin-created digital product) is refused before the card is touched", async () => {
+      stallRetry.it("a product with no seller (an admin-created digital product) is refused before the card is touched", async () => {
         const product = await makeProduct(null, { digital: true })
         const { cart, customer } = await makeCart([product], { deliver: true })
 
@@ -524,7 +543,7 @@ medusaIntegrationTestRunner({
         expect(await container().resolve(Modules.ORDER).listOrders({ customer_id: customer.id })).toEqual([])
       })
 
-      it("a capture Stripe refuses fails the checkout: no order, no seller link, no digital product order left behind", async () => {
+      stallRetry.it("a capture Stripe refuses fails the checkout: no order, no seller link, no digital product order left behind", async () => {
         const seller = await makeSeller()
         const product = await makeProduct(seller.id, { digital: true })
         const { cart, customer } = await makeCart([product], { deliver: true })
@@ -552,7 +571,7 @@ medusaIntegrationTestRunner({
         await locking.release(cart.id)
       })
 
-      it("a payment session replaced while the checkout runs does not let the order through uncaptured: the capture is refused, nothing delivered", async () => {
+      stallRetry.it("a payment session replaced while the checkout runs does not let the order through uncaptured: the capture is refused, nothing delivered", async () => {
         const seller = await makeSeller()
         const product = await makeProduct(seller.id, { digital: true })
         const { cart, customer, collection } = await makeCart([product], { deliver: true })
@@ -581,7 +600,7 @@ medusaIntegrationTestRunner({
         expect(await liveSellerOrderLinks(seller.id)).toEqual([])
       })
 
-      it("a product moved to another seller while the card was authorized is refused at the link: rolled back, nothing captured", async () => {
+      stallRetry.it("a product moved to another seller while the card was authorized is refused at the link: rolled back, nothing captured", async () => {
         const a = await makeSeller()
         const b = await makeSeller()
         const product = await makeProduct(a.id, { digital: true })
@@ -610,7 +629,7 @@ medusaIntegrationTestRunner({
         expect(await liveSellerOrderLinks(b.id)).toEqual([])
       })
 
-      it("a failure after the capture leaves no order or seller link, and the capture is refunded when Stripe takes the refund", async () => {
+      stallRetry.it("a failure after the capture leaves no order or seller link, and the capture is refunded when Stripe takes the refund", async () => {
         const seller = await makeSeller()
         const product = await makeProduct(seller.id, { digital: true })
         const { cart, customer } = await makeCart([product], { deliver: true })
@@ -626,7 +645,7 @@ medusaIntegrationTestRunner({
         expect(await liveSellerOrderLinks(seller.id)).toEqual([])
       })
 
-      it("the store route refuses a two-seller cart with 400, before the card is touched", async () => {
+      stallRetry.it("the store route refuses a two-seller cart with 400, before the card is touched", async () => {
         const pak = pakHeaders(await createPublishableKeyToken(getContainer))
         const a = await makeProduct((await makeSeller()).id, { digital: false })
         const b = await makeProduct((await makeSeller()).id, { digital: false })
@@ -649,7 +668,7 @@ medusaIntegrationTestRunner({
       // the storefront does when the buyer pays again; the cancelled payment
       // once counted as a second candidate and refused every retry.
 
-      it("after a capture Stripe refused, a retry with a new payment session is linked, captured once, delivered once, and settles", async () => {
+      stallRetry.it("after a capture Stripe refused, a retry with a new payment session is linked, captured once, delivered once, and settles", async () => {
         const seller = await makeSeller()
         const product = await makeProduct(seller.id, { digital: true })
         const { cart, customer, collection } = await makeCart([product], { deliver: true })
@@ -691,7 +710,7 @@ medusaIntegrationTestRunner({
         expect(sellerLeg.credit_account_id).toBe((await sellerEarnings(seller.id)).id)
       })
 
-      it("after the link step's read failed once, a retry with a new payment session is linked, captured once and delivered once", async () => {
+      stallRetry.it("after the link step's read failed once, a retry with a new payment session is linked, captured once and delivered once", async () => {
         const seller = await makeSeller()
         const product = await makeProduct(seller.id, { digital: true })
         const { cart, customer, collection } = await makeCart([product], { deliver: true })
@@ -730,7 +749,7 @@ medusaIntegrationTestRunner({
         )
       })
 
-      it("a retry on the same payment session, whose payment the failed run cancelled, is refused at the capture: nothing delivered or taken", async () => {
+      stallRetry.it("a retry on the same payment session, whose payment the failed run cancelled, is refused at the capture: nothing delivered or taken", async () => {
         const seller = await makeSeller()
         const product = await makeProduct(seller.id, { digital: true })
         const { cart, customer } = await makeCart([product], { deliver: true })
@@ -763,7 +782,7 @@ medusaIntegrationTestRunner({
       // must keep out of it: the order is returned as its first completion
       // left it, and nothing is linked, captured, refused or refunded.
 
-      it("returns the same order: captured once, nothing refunded, one digital product order", async () => {
+      stallRetry.it("returns the same order: captured once, nothing refunded, one digital product order", async () => {
         const seller = await makeSeller()
         const product = await makeProduct(seller.id, { digital: true })
         const { cart } = await makeCart([product], { deliver: true })
@@ -790,7 +809,7 @@ medusaIntegrationTestRunner({
         expect(await liveSellerOrderLinks(seller.id)).toEqual([{ order_id: orderId }])
       })
 
-      it("after the product moved to another seller: returns the order and refunds nothing, and the ledger keeps the sale", async () => {
+      stallRetry.it("after the product moved to another seller: returns the order and refunds nothing, and the ledger keeps the sale", async () => {
         const a = await makeSeller()
         const b = await makeSeller()
         const product = await makeProduct(a.id, { digital: true })
@@ -819,7 +838,7 @@ medusaIntegrationTestRunner({
         expect((await legs(orderId)).map((e) => [e.entry_type, cents(e.amount), e.status])).toEqual(before)
       })
 
-      it("after the product lost its seller: returns the order instead of refusing the retry", async () => {
+      stallRetry.it("after the product lost its seller: returns the order instead of refusing the retry", async () => {
         const seller = await makeSeller()
         const product = await makeProduct(seller.id, { digital: false })
         const { cart } = await makeCart([product])
@@ -835,7 +854,7 @@ medusaIntegrationTestRunner({
         expect((await readOrder(first.result.order.id)).seller?.id).toBe(seller.id)
       })
 
-      it("a replay that fails after the order is found refunds nothing, and leaves the order as it was", async () => {
+      stallRetry.it("a replay that fails after the order is found refunds nothing, and leaves the order as it was", async () => {
         const seller = await makeSeller()
         const product = await makeProduct(seller.id, { digital: true })
         const { cart } = await makeCart([product], { deliver: true })
@@ -873,7 +892,7 @@ medusaIntegrationTestRunner({
           return run.result.id as string
         }
 
-        it("the retry links it, captures it once, and only then delivers it", async () => {
+        stallRetry.it("the retry links it, captures it once, and only then delivers it", async () => {
           const seller = await makeSeller()
           const product = await makeProduct(seller.id, { digital: true })
           const { cart } = await makeCart([product], { deliver: true })
@@ -895,7 +914,7 @@ medusaIntegrationTestRunner({
           expect(await moneyOf(orderId)).toEqual([{ captures: [5], refunds: [], canceled: false }])
         })
 
-        it("a capture Stripe refuses fails the retry before anything is delivered, refunds nothing, and leaves the order as it was", async () => {
+        stallRetry.it("a capture Stripe refuses fails the retry before anything is delivered, refunds nothing, and leaves the order as it was", async () => {
           const seller = await makeSeller()
           const product = await makeProduct(seller.id, { digital: true })
           const { cart } = await makeCart([product], { deliver: true })
@@ -919,7 +938,7 @@ medusaIntegrationTestRunner({
           expect(await moneyOf(orderId)).toEqual([{ captures: [], refunds: [], canceled: false }])
         })
 
-        it("one whose product has no seller now is neither linked nor captured, and is delivered as without the flag (open item)", async () => {
+        stallRetry.it("one whose product has no seller now is neither linked nor captured, and is delivered as without the flag (open item)", async () => {
           const seller = await makeSeller()
           const product = await makeProduct(seller.id, { digital: true })
           const { cart } = await makeCart([product], { deliver: true })
@@ -936,7 +955,7 @@ medusaIntegrationTestRunner({
         })
       })
 
-      it("over the store route, a retried POST after the product moved seller answers 200 with the same order and refunds nothing", async () => {
+      stallRetry.it("over the store route, a retried POST after the product moved seller answers 200 with the same order and refunds nothing", async () => {
         const pak = pakHeaders(await createPublishableKeyToken(getContainer))
         const a = await makeSeller()
         const b = await makeSeller()
@@ -1069,7 +1088,7 @@ medusaIntegrationTestRunner({
       // so the second waits, then finds the first's order and returns it as
       // a replay.
 
-      it("the second waits for the first, then returns its order as a replay: one order, one capture, nothing refunded, one digital product order", async () => {
+      stallRetry.it("the second waits for the first, then returns its order as a replay: one order, one capture, nothing refunded, one digital product order", async () => {
         const seller = await makeSeller()
         const product = await makeProduct(seller.id, { digital: true })
         const { cart, customer } = await makeCart([product], { deliver: true })
@@ -1100,7 +1119,7 @@ medusaIntegrationTestRunner({
         expect(await liveSellerOrderLinks(seller.id)).toEqual([{ order_id: order.id }])
       })
 
-      it("over the store route, two POSTs at once answer 200 with the same order, captured once", async () => {
+      stallRetry.it("over the store route, two POSTs at once answer 200 with the same order, captured once", async () => {
         const pak = pakHeaders(await createPublishableKeyToken(getContainer))
         const seller = await makeSeller()
         const product = await makeProduct(seller.id, { digital: true })
@@ -1120,7 +1139,7 @@ medusaIntegrationTestRunner({
         expect(await moneyOf(a.data.order.id)).toEqual([{ captures: [5], refunds: [], canceled: false }])
       })
 
-      it("a second checkout kept waiting past the lock's 30 seconds fails before any money step, and refunds nothing", async () => {
+      stallRetry.it("a second checkout kept waiting past the lock's 30 seconds fails before any money step, and refunds nothing", async () => {
         const seller = await makeSeller()
         const product = await makeProduct(seller.id, { digital: true })
         const { cart, customer } = await makeCart([product], { deliver: true })
@@ -1166,7 +1185,7 @@ medusaIntegrationTestRunner({
         return (rows as Array<{ seller_id: string }>).map((r) => r.seller_id)
       }
 
-      it("a product that lost its seller link gets it back at the next render; a repeat changes nothing; another seller's product is left alone", async () => {
+      stallRetry.it("a product that lost its seller link gets it back at the next render; a repeat changes nothing; another seller's product is left alone", async () => {
         const a = await makeSeller()
         const b = await makeSeller()
         const orphan = await makeProduct(null, { digital: false })
@@ -1225,7 +1244,7 @@ medusaIntegrationTestRunner({
       // (SD-53 (c)): each scenario below also reads that the checkout went
       // through it before anything was delivered, and was let through.
 
-      it("as before — no seller link, the payment only authorized, nothing settles — even with FF_CONSUMER_SUBSCRIPTIONS_V1 on", async () => {
+      stallRetry.it("as before — no seller link, the payment only authorized, nothing settles — even with FF_CONSUMER_SUBSCRIPTIONS_V1 on", async () => {
         delete process.env[DIGITAL]
         process.env[SUBS] = "true"
         const seller = await makeSeller()
@@ -1252,7 +1271,7 @@ medusaIntegrationTestRunner({
         expect(await legs(orderId)).toEqual([])
       })
 
-      it("as before — a replay returns the same order, still unlinked and uncaptured", async () => {
+      stallRetry.it("as before — a replay returns the same order, still unlinked and uncaptured", async () => {
         delete process.env[DIGITAL]
         const seller = await makeSeller()
         const product = await makeProduct(seller.id, { digital: true })
@@ -1273,7 +1292,7 @@ medusaIntegrationTestRunner({
         expect(order.payment_collections[0].payments[0].captured_at).toBeFalsy()
       })
 
-      it("as before — over the store route, a checkout answers 200 with its order and digital product order, the payment only authorized", async () => {
+      stallRetry.it("as before — over the store route, a checkout answers 200 with its order and digital product order, the payment only authorized", async () => {
         delete process.env[DIGITAL]
         const pak = pakHeaders(await createPublishableKeyToken(getContainer))
         const seller = await makeSeller()
@@ -1292,7 +1311,7 @@ medusaIntegrationTestRunner({
         expect(stripe.capturePayment).not.toHaveBeenCalled()
       })
 
-      it("a free digital product — nothing owed, so no payment at all — is still delivered", async () => {
+      stallRetry.it("a free digital product — nothing owed, so no payment at all — is still delivered", async () => {
         delete process.env[DIGITAL]
         const seller = await makeSeller()
         const product = await makeProduct(seller.id, { digital: true })
@@ -1311,7 +1330,7 @@ medusaIntegrationTestRunner({
         expect(stripe.authorizePayment).not.toHaveBeenCalled()
       })
 
-      it("as before — a two-seller cart still completes into one unlinked, uncaptured order", async () => {
+      stallRetry.it("as before — a two-seller cart still completes into one unlinked, uncaptured order", async () => {
         delete process.env[DIGITAL]
         const a = await makeProduct((await makeSeller()).id, { digital: false })
         const b = await makeProduct((await makeSeller()).id, { digital: false })
@@ -1323,6 +1342,200 @@ medusaIntegrationTestRunner({
         expect(order.seller ?? null).toBeNull()
         expect(order.payment_collections[0].payments[0].captured_at).toBeFalsy()
         expect(stripe.capturePayment).not.toHaveBeenCalled()
+      })
+    })
+
+    describe("SD-53 (d): a stall in a scenario that is not about it (helpers/cart-completion-stall.ts), and the runner's wait between tests (helpers/bound-runner-wait.ts)", () => {
+      afterEach(settleBeforeTeardown)
+
+      // These stall completions on purpose, so they use Jest's own `it`. Each
+      // builds the helper with its log captured and stalls induced on the
+      // first attempts named; a natural stall on another attempt adds one
+      // attempt and one line, never one without the other, which the
+      // assertions allow for.
+      function retryWith(induceStalls: number) {
+        const lines: string[] = []
+        const retry = cartCompletionStallRetry({
+          container,
+          induceStalls,
+          log: (line) => lines.push(line),
+          reset: async () => {
+            await drainSubscribers()
+            disarm()
+            arrange()
+          },
+        })
+        return { retry, lines }
+      }
+
+      type Attempt = { cart: string; errors: string[] }
+      /** A paid checkout of a fresh cart, linked and captured: the scenario re-run. */
+      async function paidCheckout(seen: Attempt[]) {
+        const seller = await makeSeller()
+        const product = await makeProduct(seller.id, { digital: false })
+        const { cart } = await makeCart([product])
+        const { result, errors } = await checkout(cart.id)
+        seen.push({ cart: cart.id, errors })
+        expect(errors).toEqual([])
+        const order = await readOrder(result.order.id)
+        expect(order.seller?.id).toBe(seller.id)
+        expect(order.payment_collections[0].payments[0].captured_at).toBeTruthy()
+      }
+
+      it("a stall on the first attempt is logged once and its scenario run again on a fresh cart, which passes", async () => {
+        const { retry, lines } = retryWith(1)
+        const seen: Attempt[] = []
+        const { attempts, stalls } = await retry.run(() => paidCheckout(seen))
+
+        // The first attempt stalled, was refused as every FBM path refuses
+        // it, and left Medusa's completion unfinished, which is how the
+        // helper knew.
+        expect(seen[0].errors).toEqual([`require-completed-cart-order: ${CART_COMPLETION_INCOMPLETE_MESSAGE}`])
+        expect(stalls[0].map((e) => [e.workflow_id, e.state])).toEqual([
+          [completeCartWorkflowId, TransactionState.WAITING_TO_COMPENSATE],
+        ])
+        // The one that counted ran clean, on its own cart.
+        expect(attempts).toBeGreaterThanOrEqual(2)
+        expect(seen).toHaveLength(attempts)
+        expect(new Set(seen.map((a) => a.cart)).size).toBe(attempts)
+        expect(seen[attempts - 1].errors).toEqual([])
+        // One greppable line per stall, naming the spec, the test and the attempt.
+        expect(lines).toHaveLength(attempts - 1)
+        expect(lines[0]).toMatch(
+          new RegExp(
+            `^${SD53_STALL_MARKER} digital-order-settlement\\.spec\\.ts ".*a stall on the first attempt is logged once.*" ` +
+              `attempt=1 of=3 outcome=retrying executions=complete-cart:\\S+\\(waiting_to_compensate\\) failure=".+"$`
+          )
+        )
+        // The stalled execution was ended: nothing is left for the runner's wait.
+        expect(await clearStalledWorkflows(container, 0)).toEqual([])
+      })
+
+      it("a stall of a completion run on its own, not nested in a checkout, is told apart by the row it leaves not_started", async () => {
+        const { retry, lines } = retryWith(1)
+        const { completeCartWorkflow } = require("@medusajs/medusa/core-flows")
+        const seen: Array<{ order: string | undefined; errors: number }> = []
+        const { attempts, stalls } = await retry.run(async () => {
+          const product = await makeProduct((await makeSeller()).id, { digital: false })
+          const { cart } = await makeCart([product])
+          const run = await completeCartWorkflow(container()).run({ input: { id: cart.id }, throwOnError: false })
+          const orderId = run.result?.id as string | undefined
+          seen.push({ order: orderId, errors: (run.errors ?? []).length })
+          expect(run.errors ?? []).toEqual([])
+          expect(orderId).toBeTruthy()
+          const order = await readOrder(orderId as string)
+          expect(order.payment_collections[0].payments).toHaveLength(1)
+        })
+
+        // Run on its own, the stalled completion hands back no order id and
+        // no error (the replay specs' first completions then read an order
+        // back by that undefined id, which filters nothing, and failed on its
+        // missing payment, on CI and here): only the engine's row, which the
+        // in-memory engine never moves past `not_started` for it, says it did
+        // not finish.
+        expect(seen[0]).toEqual({ order: undefined, errors: 0 })
+        expect(stalls[0].map((e) => [e.workflow_id, e.state])).toEqual([[completeCartWorkflowId, TransactionState.NOT_STARTED]])
+        expect(attempts).toBeGreaterThanOrEqual(2)
+        expect(seen[attempts - 1].order).toBeTruthy()
+        expect(lines).toHaveLength(attempts - 1)
+        expect(lines[0]).toMatch(/ attempt=1 of=3 outcome=retrying executions=complete-cart:\S+\(not_started\) /)
+      })
+
+      it("a stall on every attempt fails the scenario after two retries, naming SD-53", async () => {
+        const { retry, lines } = retryWith(3)
+        const seen: Attempt[] = []
+        await expect(retry.run(() => paidCheckout(seen))).rejects.toThrow(
+          /^SD-53: Medusa's workflow engine left the cart completion unfinished on every attempt \(3\) of this scenario, each on a fresh cart: complete-cart:/
+        )
+        expect(seen).toHaveLength(3)
+        expect(new Set(seen.map((a) => a.cart)).size).toBe(3)
+        expect(lines.map((line) => / attempt=(\d) of=3 outcome=(\w+) /.exec(line)?.slice(1))).toEqual([
+          ["1", "retrying"],
+          ["2", "retrying"],
+          ["3", "exhausted"],
+        ])
+        expect(await clearStalledWorkflows(container, 0)).toEqual([])
+      })
+
+      it("a scenario that fails before any completion is not retried: its own error stands", async () => {
+        const { retry, lines } = retryWith(0)
+        const own = new Error("the scenario's own failure")
+        let attempts = 0
+        const error = await retry
+          .run(async () => {
+            attempts++
+            const a = await makeProduct((await makeSeller()).id, { digital: false })
+            const b = await makeProduct((await makeSeller()).id, { digital: false })
+            const { cart } = await makeCart([a, b])
+            const { errors } = await checkout(cart.id)
+            expect(errors).toEqual([expect.stringMatching(/^resolve-digital-product-seller: /)])
+            throw own
+          })
+          .catch((e: unknown) => e)
+        expect(error).toBe(own)
+        expect(attempts).toBe(1)
+        expect(lines).toEqual([])
+      })
+
+      it("a completion that fails and is rolled back is not a stall: its own error stands", async () => {
+        const { retry, lines } = retryWith(0)
+        const own = new Error("the scenario's own failure")
+        let attempts = 0
+        const error = await retry
+          .run(async () => {
+            attempts++
+            const seller = await makeSeller()
+            const product = await makeProduct(seller.id, { digital: false })
+            const { cart } = await makeCart([product])
+            stripe.capturePayment.mockImplementation(async () => {
+              throw new Error("card_declined")
+            })
+            const { errors } = await checkout(cart.id)
+            expect(errors.join("\n")).toMatch(/card_declined/)
+            throw own
+          })
+          .catch((e: unknown) => e)
+        // Medusa's completion ran and was compensated, so it ended: the
+        // scenario's own failure is what the test reports.
+        expect(error).toBe(own)
+        expect(lines).toHaveLength(attempts - 1)
+      })
+
+      it("the runner's wait between tests gives up on a stalled execution, ends it and fails naming SD-53, instead of waiting forever", async () => {
+        const seller = await makeSeller()
+        const product = await makeProduct(seller.id, { digital: false })
+        const { cart } = await makeCart([product])
+        const stall = stallNextCartCompletion(container)
+        await checkout(cart.id)
+        expect(stall.stalled()).toBe(true)
+
+        // The runner's own wait, as its afterEach and beforeEach call it
+        // (test-utils' module export, which the integration:http setup file
+        // replaced), with the bound shortened.
+        process.env[RUNNER_WAIT_BOUND_ENV] = "1500"
+        let timer: NodeJS.Timeout | undefined
+        let outcome: unknown
+        try {
+          outcome = await Promise.race([
+            utils.waitWorkflowExecutions().then(
+              () => "returned",
+              (e: unknown) => e
+            ),
+            new Promise((resolve) => {
+              timer = setTimeout(() => resolve("still waiting after 20 seconds"), 20_000)
+            }),
+          ])
+        } finally {
+          clearTimeout(timer)
+          delete process.env[RUNNER_WAIT_BOUND_ENV]
+        }
+        expect(outcome).toBeInstanceOf(Error)
+        expect((outcome as Error).message).toMatch(
+          /^SD-53: workflow executions still unfinished 1500ms after the test, marked failed so the next test can run .*complete-cart \(waiting_to_compensate\)/
+        )
+        // Ended, so the next wait returns at once.
+        expect(await clearStalledWorkflows(container, 0)).toEqual([])
+        await utils.waitWorkflowExecutions()
       })
     })
   },

@@ -3,9 +3,11 @@ import { SellerProps } from "./seller"
 
 /**
  * Shared types for the order-return flow. The marketplace's return-request
- * endpoints (`/store/return-request`) return custom shapes that have no Medusa
- * SDK equivalent, so they are modelled here from the fields the UI actually
- * consumes. Standard order/line-item/reason data reuses `HttpTypes.Store*`.
+ * endpoint (`/store/return-request`, backend
+ * `src/api/store/return-request/`) serves Medusa returns in a custom
+ * `order_return_request` shape that has no Medusa SDK equivalent, so it is
+ * modelled here from the fields the UI actually consumes. Standard
+ * order/line-item/reason data reuses `HttpTypes.Store*`.
  */
 
 /** An order enriched with the marketplace seller + its order-set reference. */
@@ -25,16 +27,18 @@ export type SelectedReturnItem = {
 export type ReturnLineItem = {
   line_item_id: string
   created_at: string
-  reason_id?: string
+  reason_id?: string | null
   quantity?: number
 }
 
 /** A return request as returned by `getReturns` / `createReturnRequest`. */
 export type ReturnRequest = {
   id: string
+  /** Medusa's return status: requested, partially_received, received, canceled. */
   status: string
   created_at?: string
-  order: ReturnOrder
+  /** The backend sends `seller: null` for an order no seller is linked to. */
+  order: Omit<ReturnOrder, "seller"> & { seller: SellerProps | null }
   line_items: ReturnLineItem[]
 }
 
