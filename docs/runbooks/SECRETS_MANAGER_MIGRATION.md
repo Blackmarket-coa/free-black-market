@@ -108,8 +108,10 @@ docker compose -f docker-compose.staging.yml restart <service>
 # Confirm the service comes up healthy.
 curl -fsS https://<staging-host>/healthz
 
-# Confirm the env validator passes.
-docker compose -f docker-compose.staging.yml exec <service> node scripts/assert-env.mjs
+# Confirm the env check passes (backend or storefront: --app=<backend|storefront>).
+# scripts/assert-env.mjs is not in the images, so `exec <service> node
+# scripts/assert-env.mjs` fails with MODULE_NOT_FOUND; mount it into a one-off
+# container as in FBM_MIGRATION_TO_PRIMARY_SERVER.md step 7.
 ```
 
 Then exercise one operation per category that requires the secret:

@@ -8,10 +8,27 @@ templates live in:
 - `vendor-panel/.env.template`
 - `admin-panel/.env.template`
 
-Production validation rules are enforced by `scripts/assert-env.mjs`,
-which is invoked at startup via `backend/medusa-config.ts` and
-`storefront/instrumentation.ts`. Failing values cause the app to refuse
-to boot.
+Production validation happens in two kinds of place, and they are not the
+same rule set (checked 2026-11-15, SD-78):
+
+- **Boot guards** refuse to start in production (`NODE_ENV=production`):
+  - backend `backend/medusa-config.ts`: `JWT_SECRET`, `COOKIE_SECRET`,
+    `MEDUSA_ADMIN_PASSWORD`.
+  - backend `backend/src/shared/config.ts` `loadConfig()`, evaluated when
+    Medusa loads `src/api/middlewares.ts` at start: `JWT_SECRET`,
+    `COOKIE_SECRET`, `FREEBLACKMARKET_WEBHOOK_SECRET`,
+    `FREEBLACKMARKET_API_KEY`, `CREATOR_ATTRIBUTION_IP_SALT`, and the
+    Blackstar bridge rules below.
+  - storefront `storefront/src/lib/config/assertEnv.ts`, called from
+    `storefront/instrumentation.ts`.
+- **`scripts/assert-env.mjs`** is a pre-deploy check, not a boot guard.
+  Nothing runs it at startup or in CI, and it is not in the backend image
+  (built with context `backend/`, so `/app/scripts` is `backend/scripts`).
+  Its conditional rules (Blackout, Matrix, MAS, extension signing) are
+  enforced only when someone runs it, from a repo checkout:
+  `node --env-file=.env.production scripts/assert-env.mjs --app=backend`.
+  Against a running stack, bind-mount it: see step 7 of
+  `docs/runbooks/FBM_MIGRATION_TO_PRIMARY_SERVER.md`.
 
 ## BMC marketplace layer
 
@@ -25,9 +42,9 @@ integration hooks.
 | `BLACKOUT_CLIENT_ID` | — | `FBM_BLACKOUT_INTEGRATION=1` in production | Reused from the existing Blackout integration scaffold. OAuth client_credentials. |
 | `BLACKOUT_CLIENT_SECRET` | — | `FBM_BLACKOUT_INTEGRATION=1` in production | Same. Validated as a min-32-char secret with banned-prefix check. |
 | `FBM_BLACKOUT_TOKEN_TTL_SECONDS` | `3600` | optional | TTL of the JWT issued by the OAuth token endpoint. |
-| `FBM_BLACKSTAR_INTEGRATION` | `0` | always | `1` registers the `blackstar` fulfillment provider and enables the inbound events route (`/v1/integrations/blackstar/events`). `0` keeps the provider unregistered. `scripts/assert-env.mjs` checks the three `BLACKSTAR_*` values below when it is `1` (the old `FBM_BLACKSTAR_API_KEY` is read by nothing and no longer required). |
-| `BLACKSTAR_API_BASE` | — | `FBM_BLACKSTAR_INTEGRATION=1` in production | Blackstar's API base URL; the destination of FBM's outbound lifecycle events. |
-| `BLACKSTAR_WEBHOOK_SECRET` | — | `FBM_BLACKSTAR_INTEGRATION=1` in production | Signs FBM's outbound events (the value Blackstar reads as `FBM_WEBHOOK_SECRET`). Min 32 chars. Without it or `BLACKSTAR_API_BASE`, nothing is sent. |
+| `FBM_BLACKSTAR_INTEGRATION` | `0` | always | `1` registers the `blackstar` fulfillment provider and enables the inbound events route (`/v1/integrations/blackstar/events`). `0` keeps the provider unregistered. It does **not** switch the outbound channel: that is live whenever `BLACKSTAR_API_BASE` and `BLACKSTAR_WEBHOOK_SECRET` are both set. The boot guard (`src/shared/config.ts`) and `scripts/assert-env.mjs` check the `BLACKSTAR_*` values below as each row says (the old `FBM_BLACKSTAR_API_KEY` is read by nothing and no longer required). |
+| `BLACKSTAR_API_BASE` | — | in production, when `FBM_BLACKSTAR_INTEGRATION=1` or `BLACKSTAR_WEBHOOK_SECRET` is set | Blackstar's API base URL; the destination of FBM's outbound lifecycle events, including `node.operator.approved`, which carries a newly minted per-node secret. Must be `https://` with a host. |
+| `BLACKSTAR_WEBHOOK_SECRET` | — | in production, when `FBM_BLACKSTAR_INTEGRATION=1` or `BLACKSTAR_API_BASE` is set | Signs FBM's outbound events (the value Blackstar reads as `FBM_WEBHOOK_SECRET`). Min 32 chars. Without it or `BLACKSTAR_API_BASE`, nothing is sent; with one and not the other, production refuses to boot. |
 | `BLACKSTAR_OUTBOUND_SECRET` | — | `FBM_BLACKSTAR_INTEGRATION=1` in production, unless `BLACKSTAR_REQUIRE_KEY_ID=1` | Verifies Blackstar's inbound events on `/v1/integrations/blackstar/events` (the value Blackstar signs with as `FBM_OUTBOUND_SECRET`). Min 32 chars. With `BLACKSTAR_REQUIRE_KEY_ID=1`, per-partner credentials replace it. |
 | `FBM_DEFAULT_REFERRAL_PERCENT` | — | optional | Default referral commission (0-100) used when active `PayoutConfig` does not set one. |
 | `FBM_DEFAULT_PLUGIN_DEVELOPER_PERCENT` | — | optional | Default plugin / theme / emoji-pack developer share (0-100). |
@@ -145,7 +162,10 @@ The above is layered on top of the existing template:
 
 1. Append to the matching `.env.template` with a one-line description.
 2. If production-critical, add a rule to `scripts/assert-env.mjs` (use
-   `CONDITIONAL_RULES` for opt-in integrations).
+   `CONDITIONAL_RULES` for opt-in integrations). That alone does not stop a
+   boot: if a bad value must refuse to start, add it to the production block
+   of `backend/src/shared/config.ts` too (or `medusa-config.ts` for values
+   the framework itself reads).
 3. Document it here under the relevant section.
 4. Reference it in `docs/contracts/marketplace-layer.md` if it gates an
    API surface.

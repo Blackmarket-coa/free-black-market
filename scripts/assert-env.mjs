@@ -1,12 +1,19 @@
 #!/usr/bin/env node
-// Shared environment validator. Used by:
-//   - backend/medusa-config.ts (production startup guard)
-//   - storefront/instrumentation.ts (production startup guard)
-//   - .github/workflows/ci.yml (lint-time check that no banned literal slips into a real env)
+// Pre-deploy environment check. Run it from a repo checkout, against the env a
+// deploy is about to use:
+//   node --env-file=.env.production scripts/assert-env.mjs --app=backend
+//   pnpm --dir backend assert-env        (checks the shell's own env)
 //
-// Run as a CLI:
-//   node scripts/assert-env.mjs --app=backend
-//   node scripts/assert-env.mjs --app=storefront
+// What it is NOT (checked 2026-11-15; SD-78):
+//   - Not a boot guard. Nothing imports or runs it at startup or in CI.
+//     medusa-config.ts and storefront/src/lib/config/assertEnv.ts copy some of
+//     its base rules; the conditional rules below are enforced at boot only
+//     where backend/src/shared/config.ts repeats them (the Blackstar ones do).
+//   - Not in the backend image. The image is built with context backend/, so
+//     /app/scripts is backend/scripts and this file is absent:
+//     `docker compose exec backend node scripts/assert-env.mjs` fails with
+//     MODULE_NOT_FOUND. Use `docker compose run` with it bind-mounted instead
+//     (docs/runbooks/FBM_MIGRATION_TO_PRIMARY_SERVER.md step 7).
 //
 // Or import as a module:
 //   import { assertProductionEnv } from "../scripts/assert-env.mjs"
@@ -27,6 +34,16 @@ const BANNED_LITERALS = new Set([
 ])
 
 const MIN_SECRET_LENGTH = 32
+
+// Shared by the three blocks that switch the Blackstar outbound channel on
+// (the flag, or either value set); one object per rule so a key checked by
+// more than one active block reports once.
+const BLACKSTAR_OUTBOUND_RULES = [
+  // https with a host: node.operator.approved carries a per-node secret in its
+  // body, and a value with no scheme fails URL parsing on every delivery.
+  { key: "BLACKSTAR_API_BASE", required: true, banPrefixes: ["CHANGE_ME"], pattern: /^https:\/\/[^\s/]+/ },
+  { key: "BLACKSTAR_WEBHOOK_SECRET", required: true, minLength: MIN_SECRET_LENGTH, banPrefixes: ["CHANGE_ME"] },
+]
 
 // Conditional rules — applied only when a gating env var matches a value.
 // Used for opt-in integrations whose secrets only need validation when on.
@@ -59,12 +76,23 @@ const CONDITIONAL_RULES = {
       //     is sent.
       //   - inbound (Blackstar -> FBM), /v1/integrations/blackstar/events:
       //     BLACKSTAR_OUTBOUND_SECRET verifies, unless BLACKSTAR_REQUIRE_KEY_ID=1
-      //     moves verification to per-partner credentials (next block).
+      //     moves verification to per-partner credentials (the `unless`
+      //     block below).
+      // The outbound channel does not read the flag: either value set means
+      // it is being configured, so both are checked (the two presence blocks
+      // below), and the flag forces them too. backend/src/shared/config.ts
+      // repeats these rules at boot; config-blackstar-boot.unit.spec.ts fails
+      // when the two disagree.
       when: { key: "FBM_BLACKSTAR_INTEGRATION", equals: "1" },
-      rules: [
-        { key: "BLACKSTAR_API_BASE", required: true, banPrefixes: ["CHANGE_ME"] },
-        { key: "BLACKSTAR_WEBHOOK_SECRET", required: true, minLength: MIN_SECRET_LENGTH, banPrefixes: ["CHANGE_ME"] },
-      ],
+      rules: BLACKSTAR_OUTBOUND_RULES,
+    },
+    {
+      when: { key: "BLACKSTAR_API_BASE", present: true },
+      rules: BLACKSTAR_OUTBOUND_RULES,
+    },
+    {
+      when: { key: "BLACKSTAR_WEBHOOK_SECRET", present: true },
+      rules: BLACKSTAR_OUTBOUND_RULES,
     },
     {
       when: { key: "FBM_BLACKSTAR_INTEGRATION", equals: "1" },
@@ -164,7 +192,7 @@ export function assertProductionEnv(app, env = process.env) {
   const activeConditional = conditional
     .filter(({ when, unless }) => gateMatches(when) && !(unless && gateMatches(unless)))
     .flatMap(({ rules }) => rules)
-  const rules = [...baseRules, ...activeConditional]
+  const rules = [...new Set([...baseRules, ...activeConditional])]
 
   const errors = []
 

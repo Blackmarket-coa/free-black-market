@@ -126,8 +126,18 @@ Cloudflare's TTL on tunnel-routed records is short, so propagation completes wit
 # On primary: take the stack out of idle and run a real boot.
 docker compose -f docker-compose.prod.yml up -d backend storefront admin-panel vendor-panel
 
-# Run the env validator (it runs at startup but verify no banned values).
-docker compose -f docker-compose.prod.yml exec backend node scripts/assert-env.mjs
+# Run the wider pre-deploy env check. The boot guards (medusa-config.ts,
+# src/shared/config.ts) already refused to start on the values they check;
+# scripts/assert-env.mjs checks more, but it is not in the image
+# (`exec backend node scripts/assert-env.mjs` fails with MODULE_NOT_FOUND).
+# Mount it into a one-off backend container, which gets the service's env.
+# NODE_ENV is forced: docker-compose.yml defaults it to development unless
+# .env.production was sourced into this shell, and the check skips non-production.
+# Run from the repo root.
+docker compose -f docker-compose.yml -f docker-compose.prod.yml run --rm --no-deps \
+  -e NODE_ENV=production \
+  -v "$PWD/scripts/assert-env.mjs:/tmp/assert-env.mjs:ro" \
+  --entrypoint node backend /tmp/assert-env.mjs --app=backend
 
 # Confirm migrations have been applied (the dump was a snapshot of the
 # Railway schema; the primary should not need additional migrations).

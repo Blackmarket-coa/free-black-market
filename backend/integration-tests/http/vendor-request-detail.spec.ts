@@ -80,5 +80,67 @@ medusaIntegrationTestRunner({
       expect(afterDecision.status).toBe(409)
       expect((await service.retrieveRequest(request.id)).data).toMatchObject({ name: "Ferments & Pickles" })
     })
+
+    it("merges an edit into the stored data: keys the edit leaves out are kept, none can be removed", async () => {
+      const owner = await createAuthenticatedSeller({ api, getContainer })
+
+      // vendor-panel create-category-form.tsx: name, handle, the rest of the
+      // form (description), is_active, is_internal, rank (undefined at the top
+      // level, so dropped from the JSON) and parent_category_id.
+      const filed = await safe(
+        api.post(
+          "/vendor/requests",
+          {
+            request: {
+              type: "product_category",
+              data: {
+                name: "Ferments",
+                handle: "ferments",
+                description: "Lacto ferments",
+                is_active: "active",
+                is_internal: true,
+                parent_category_id: null,
+              },
+            },
+          },
+          authHeader(owner.token)
+        )
+      )
+      expect(filed.status).toBe(201)
+      const id = (filed.data.request as { id: string }).id
+
+      // vendor-panel edit-category-form.tsx sends only name and handle.
+      const edited = await safe(
+        api.post(
+          `/vendor/requests/${id}`,
+          { request: { type: "product_category", data: { name: "Ferments & Pickles", handle: "ferments" } } },
+          authHeader(owner.token)
+        )
+      )
+      expect(edited.status).toBe(200)
+
+      const merged = {
+        name: "Ferments & Pickles",
+        handle: "ferments",
+        description: "Lacto ferments",
+        is_active: "active",
+        is_internal: true,
+        parent_category_id: null,
+      }
+      expect(edited.data.request.data).toEqual(merged)
+      const service = getContainer().resolve(REQUEST_MODULE)
+      expect((await service.retrieveRequest(id)).data).toEqual(merged)
+
+      // Leaving a key out keeps it; null overwrites it but the key stays.
+      const nulled = await safe(
+        api.post(
+          `/vendor/requests/${id}`,
+          { request: { type: "product_category", data: { description: null } } },
+          authHeader(owner.token)
+        )
+      )
+      expect(nulled.status).toBe(200)
+      expect((await service.retrieveRequest(id)).data).toEqual({ ...merged, description: null })
+    })
   },
 })
