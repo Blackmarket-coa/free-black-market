@@ -17,7 +17,11 @@ import {
   ReturnRequest,
 } from "@/types/order-return"
 
-const steps = ["pending", "processing", "sent"]
+// Medusa's return statuses, in the order a return moves through them as the
+// seller receives the goods (`/store/return-request` passes them through). A
+// canceled return matches no step.
+const steps = ["requested", "partially_received", "received"]
+const statusLabel = (status: string) => status.replace(/_/g, " ")
 
 export const SingleOrderReturn = ({
   item,
@@ -83,7 +87,7 @@ export const SingleOrderReturn = ({
           onClick={() => setIsOpen(!isOpen)}
         >
           <Heading level="h3" className="uppercase label-md !font-semibold">
-            {item.status}
+            {statusLabel(item.status)}
           </Heading>
           <p className="label-sm text-secondary flex gap-2">
             {item.line_items.length}{" "}
@@ -107,7 +111,10 @@ export const SingleOrderReturn = ({
         >
           <Divider />
           <div className="p-4 uppercase">
-            <StepProgressBar steps={steps} currentStep={currentStep} />
+            <StepProgressBar
+              steps={steps.map(statusLabel)}
+              currentStep={currentStep}
+            />
           </div>
           <Divider />
           <div className="p-4 flex justify-between">

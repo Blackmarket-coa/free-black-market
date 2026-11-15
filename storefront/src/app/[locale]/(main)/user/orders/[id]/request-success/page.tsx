@@ -15,10 +15,15 @@ export const metadata: Metadata = {
 
 export default async function RequestSuccessPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>
+  searchParams: Promise<{ return?: string }>
 }) {
   const { id } = await params
+  // `id` is the order; the returns flow passes the new return's id so the
+  // link below opens that request on /user/returns.
+  const { return: returnId } = await searchParams
 
   const { customer, isAuthenticated } = await retrieveCustomerContext()
 
@@ -40,10 +45,12 @@ export default async function RequestSuccessPage({
         <div className="md:col-span-3 text-center">
           <h1 className="heading-md uppercase">Return requested</h1>
           <p className="label-md text-secondary w-96 mx-auto my-8">
-            Your return request has been submitted. Once the seller confirms it,
-            you will receive a confirmation email.
+            Your return request has been sent to the seller. You can follow it
+            on your Returns page.
           </p>
-          <LocalizedClientLink href={`/user/returns${id && `?return=${id}`}`}>
+          <LocalizedClientLink
+            href={`/user/returns${returnId ? `?return=${returnId}` : ""}`}
+          >
             <Button className="label-md uppercase px-12 py-3">
               Return details
             </Button>

@@ -81,7 +81,11 @@ export const OrderReturnSection = ({
       return logger.info("Error creating return request")
     }
 
-    router.push(`/user/orders/${order_return_request.id}/request-success`)
+    // The success page is keyed by the ORDER (it loads it); the return id
+    // rides along so its "Return details" link opens this request.
+    router.push(
+      `/user/orders/${order.id}/request-success?return=${order_return_request.id}`
+    )
   }
 
   return (

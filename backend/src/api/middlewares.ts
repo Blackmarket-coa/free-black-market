@@ -756,6 +756,13 @@ export default defineMiddlewares({
       matcher: "/store/order-claims",
       middlewares: [authenticate("customer", ["bearer", "session"])],
     },
+    {
+      // Buyer return requests, likewise against the customer's own orders.
+      // Mercur's b2c-core registers auth for `/store/return-request/*` only,
+      // which does not cover the bare path the route serves.
+      matcher: "/store/return-request",
+      middlewares: [authenticate("customer", ["bearer", "session"])],
+    },
     // ============================================================
     // CSRF: reject forged cross-site, cookie-authenticated writes
     // ============================================================
