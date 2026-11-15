@@ -1,9 +1,12 @@
 import { medusaIntegrationTestRunner } from "@medusajs/test-utils"
 import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils"
 import jwt from "jsonwebtoken"
+import { SELLER_MODULE } from "@mercurjs/b2c-core/modules/seller"
 import { ORDER_DISPUTE_MODULE } from "../../src/modules/order-dispute"
 import type OrderDisputeService from "../../src/modules/order-dispute/service"
 import { DisputeReason, DisputeStatus } from "../../src/modules/order-dispute/resolution"
+import { openDisputeForOrder } from "../../src/shared/order-dispute-intake"
+import { fixOrderDisputeMinorUnits } from "../../src/scripts/fix-order-dispute-minor-units"
 
 jest.setTimeout(240 * 1000)
 
@@ -19,9 +22,14 @@ jest.setTimeout(240 * 1000)
  * refusals the panel explains before sending (a second decision, an award
  * over the claim, an award on a release).
  *
- * Disputes are opened through the module service rather than the storefront
- * intake: what is under test is the admin side, and the intake needs a real
- * seller-attributed order that has nothing to do with it.
+ * Most cases open disputes through the module service with a hand-fed
+ * minor-unit claim, to test the admin side on its own. The intake cases go
+ * through `openDisputeForOrder`, the path both storefront routes take, on a
+ * real order with a Mercur-linked seller: the screen shows exactly what the
+ * intake stores, and a claim the panel reads as minor units must be stored
+ * as minor units. They were added when the review found the intake stored
+ * Medusa's major-unit totals floored ($25.99 as 25); running them showed it
+ * could not store anything at all (see `ORDER_FIELDS_FOR_DISPUTE`).
  */
 medusaIntegrationTestRunner({
   inApp: true,
@@ -68,6 +76,40 @@ medusaIntegrationTestRunner({
         ])
       }
       return dispute
+    }
+
+    /**
+     * A real order whose lines are a real product linked to a real Mercur
+     * seller, and (as Mercur's cart split does) the order linked to that
+     * seller too. Unit prices are Medusa major units.
+     */
+    async function sellerOrder(unitPrices: number[], opts: { productLink?: boolean } = {}) {
+      const c = container()
+      const created = await c
+        .resolve(SELLER_MODULE)
+        .createSellers({ name: `Grower ${uid()}`, handle: `grower-${uid()}` })
+      const seller = Array.isArray(created) ? created[0] : created
+      const [product] = await c.resolve(Modules.PRODUCT).createProducts([{ title: "Tomatoes", status: "published" }])
+      const link = c.resolve(ContainerRegistrationKeys.LINK)
+      if (opts.productLink !== false) {
+        await link.create({ [SELLER_MODULE]: { seller_id: seller.id }, [Modules.PRODUCT]: { product_id: product.id } })
+      }
+      const customerId = `cus_${uid()}`
+      const [order] = await c.resolve(Modules.ORDER).createOrders([
+        {
+          currency_code: "usd",
+          customer_id: customerId,
+          email: "buyer@example.com",
+          items: unitPrices.map((unit_price) => ({
+            title: "Tomatoes",
+            quantity: 1,
+            unit_price,
+            ...(opts.productLink !== false ? { product_id: product.id } : {}),
+          })),
+        },
+      ])
+      await link.create({ [SELLER_MODULE]: { seller_id: seller.id }, [Modules.ORDER]: { order_id: order.id } })
+      return { order, sellerId: seller.id as string, customerId }
     }
 
     it("is admin-only", async () => {
@@ -194,6 +236,143 @@ medusaIntegrationTestRunner({
       const file = await call(api.get(`/admin/disputes/${dispute.id}`, headers))
       expect(file.data.dispute).toMatchObject({ status: "open", award_amount: 0, resolution_note: null })
       expect(file.data.events.map((e: { kind: string }) => e.kind)).toEqual(["opened"])
+    })
+
+    it("a claim filed through the real intake is stored, shown and decided in minor units", async () => {
+      const { headers } = await asAdmin()
+      // Two $12.99 lines: $25.98, which flooring each line used to make 24.
+      const { order, sellerId, customerId } = await sellerOrder([12.99, 12.99])
+
+      const filed = await openDisputeForOrder(container(), {
+        customerId,
+        orderId: order.id,
+        reason: DisputeReason.NOT_RECEIVED,
+        description: "Neither box arrived.",
+        metadata: { contacted_seller: true, evidence_urls: [], intake_source: "store/order-claims" },
+      })
+      expect(filed).toMatchObject({ ok: true })
+      if (!filed.ok) return
+
+      const file = await call(api.get(`/admin/disputes/${filed.dispute.id}`, headers))
+      expect(file.status).toBe(200)
+      expect(file.data.dispute).toMatchObject({
+        order_id: order.id,
+        seller_id: sellerId,
+        customer_id: customerId,
+        currency_code: "usd",
+        claim_amount: 2598,
+        award_amount: 0,
+        metadata: { contacted_seller: true, intake_source: "store/order-claims" },
+      })
+
+      const decided = await call(
+        api.patch(`/admin/disputes/${filed.dispute.id}`, { status: "resolved_refund", note: "Never shipped." }, headers)
+      )
+      expect(decided.status).toBe(200)
+      expect(decided.data.dispute.award_amount).toBe(2598)
+
+      // Someone else's order is the same 404 as no order.
+      const stranger = await openDisputeForOrder(container(), {
+        customerId: `cus_${uid()}`,
+        orderId: order.id,
+        reason: DisputeReason.OTHER,
+        description: "Not mine.",
+      })
+      expect(stranger).toMatchObject({ ok: false, status: 404 })
+    })
+
+    it("a line with no product link is the order's seller's, as Mercur splits orders per seller", async () => {
+      const { order, sellerId, customerId } = await sellerOrder([25.99], { productLink: false })
+      const filed = await openDisputeForOrder(container(), {
+        customerId,
+        orderId: order.id,
+        reason: DisputeReason.DAMAGED,
+        description: "Arrived crushed.",
+      })
+      expect(filed).toMatchObject({ ok: true, dispute: { seller_id: sellerId, claim_amount: 2599 } })
+    })
+
+    it("the corrective script puts an old floored claim and its award into minor units, once", async () => {
+      const { user } = await asAdmin()
+      const { order, sellerId, customerId } = await sellerOrder([25.99])
+      // What the old intake stored for this order: floor(25.99) = 25.
+      const legacy = await service().open({
+        orderId: order.id,
+        sellerId,
+        customerId,
+        orderPlacedAt: new Date(),
+        orderTotalCents: 25,
+        currencyCode: "usd",
+        reason: DisputeReason.NOT_RECEIVED,
+        description: "Never arrived.",
+      })
+      await service().resolve({
+        disputeId: legacy.id,
+        adminId: user.id,
+        status: DisputeStatus.RESOLVED_REFUND,
+        note: "Refund in full.",
+      })
+      const read = async () => (await service().listOrderDisputes({ id: legacy.id }))[0] as any
+
+      const dry = await fixOrderDisputeMinorUnits(container(), { dryRun: true })
+      expect(dry.corrected).toContain(legacy.id)
+      expect(await read()).toMatchObject({ claim_amount: 25, award_amount: 25 })
+
+      const applied = await fixOrderDisputeMinorUnits(container())
+      expect(applied.corrected).toContain(legacy.id)
+      const fixed = await read()
+      expect(fixed).toMatchObject({ claim_amount: 2599, award_amount: 2599, status: "resolved_refund" })
+      expect(fixed.metadata.amount_units_corrected).toMatchObject({
+        claim_amount: { from: 25, to: 2599 },
+        award_amount: { from: 25, to: 2599 },
+      })
+      const events = (await service().listOrderDisputeEvents(
+        { dispute_id: legacy.id },
+        { order: { created_at: "ASC" } }
+      )) as any[]
+      expect(events.map((e) => e.kind)).toEqual(["opened", "resolved", "amount_corrected"])
+      expect(events[2]).toMatchObject({ actor_type: "system", actor_id: "script:fix-order-dispute-minor-units" })
+
+      const again = await fixOrderDisputeMinorUnits(container())
+      expect(again.corrected).not.toContain(legacy.id)
+      expect(await read()).toMatchObject({ claim_amount: 2599, award_amount: 2599 })
+    })
+
+    it("a decision made from a stale read is refused and overwrites nothing", async () => {
+      const { headers, user } = await asAdmin()
+      const dispute = await openDispute()
+      const stale = (await service().listOrderDisputes({ id: dispute.id }))[0]
+
+      // Admin A releases it.
+      await service().resolve({
+        disputeId: dispute.id,
+        adminId: user.id,
+        status: DisputeStatus.RESOLVED_RELEASE,
+        note: "Signed for.",
+      })
+
+      // Admin B's request read the case before A's write landed: replay
+      // that interleaving by handing B's read the row as it was.
+      const spy = jest.spyOn(service() as any, "require")
+      try {
+        spy.mockResolvedValueOnce(stale)
+        const refund = await call(
+          api.patch(`/admin/disputes/${dispute.id}`, { status: "resolved_refund", note: "Refund." }, headers)
+        )
+        expect(refund.status).toBe(409)
+
+        spy.mockResolvedValueOnce(stale)
+        const withdraw = await call(
+          api.patch(`/admin/disputes/${dispute.id}`, { status: "withdrawn", note: "Dropped." }, headers)
+        )
+        expect(withdraw.status).toBe(409)
+      } finally {
+        spy.mockRestore()
+      }
+
+      const file = await call(api.get(`/admin/disputes/${dispute.id}`, headers))
+      expect(file.data.dispute).toMatchObject({ status: "resolved_release", award_amount: 0, resolution_note: "Signed for." })
+      expect(file.data.events.map((e: { kind: string }) => e.kind)).toEqual(["opened", "resolved"])
     })
   },
 })
