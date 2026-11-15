@@ -36,6 +36,17 @@ integration hooks.
 | `MARKETPLACE_SIGNING_KEY_ID` | — | extension signing on | Stable key identifier (e.g. `fbm-2026-q3`) surfaced in envelopes, `/v1/marketplace/signing-keys`, and `/.well-known/freeblackmarket-publishing-keys.json`. |
 | `FBM_PLATFORM_VERSION` | `1.0.0` | optional | Host platform version the plugin install compat gate checks `min/max_host_version` bounds against (`plugin-registry/compat.ts`). |
 
+## Posture A guard
+
+The service-layer guard in `backend/src/modules/hawala-ledger/posture-a-guard.ts`
+refuses any Coalition Credits (CCR) transfer without a goods-or-services
+purchase context (`docs/POSTURE_A_COMPLIANCE.md`). It is a legal boundary, not
+a preference.
+
+| Variable | Default | Required when | Description |
+| --- | --- | --- | --- |
+| `HAWALA_CCR_GUARD_MODE` | `strict` | never | `strict` refuses a violating transfer. `warn` (log only) and `off` exist for local development and tests and are **ignored when `NODE_ENV=production`**: the guard is always strict there, and a refused override is logged once at error level (LEG-7). Any unrecognised value is `strict`. |
+
 ## In-app bug reporter
 
 Added with the in-app "Report a bug" entry points in storefront, vendor
