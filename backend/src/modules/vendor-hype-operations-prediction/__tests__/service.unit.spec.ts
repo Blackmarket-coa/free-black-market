@@ -1,5 +1,6 @@
 import { MedusaError } from "@medusajs/framework/utils"
 import VendorHypeOperationsPredictionService, { MARKET_STATE_TRANSITIONS } from "../service"
+import { PREDICTION_MODE_NOT_PERMITTED, PredictionPolicyService } from "../policy-service"
 import {
   OracleSigningKeyStatus,
   PredictionMarketState,
@@ -28,11 +29,19 @@ describe("VendorHypeOperationsPredictionService", () => {
     ).rejects.toThrow("Invalid prediction market transition")
   })
 
-  // The real lifecycle map, not a stub: these pin what the operator route can
-  // and cannot do.
-  const transitionCtx = (state: PredictionMarketState | null) => ({
+  // The real lifecycle map and the real policy, not stubs: these pin what the
+  // operator route can and cannot do. The market is one the policy admits
+  // (non-cash in the US) unless a test says otherwise.
+  const transitionCtx = (
+    state: PredictionMarketState | null,
+    market: { mode: PredictionMode; jurisdiction_code: string } = {
+      mode: PredictionMode.NON_CASH,
+      jurisdiction_code: "US",
+    }
+  ) => ({
     MARKET_STATE_TRANSITIONS,
-    listPredictionMarkets: jest.fn().mockResolvedValue(state ? [{ id: "m_1", state }] : []),
+    policyService: new PredictionPolicyService(),
+    listPredictionMarkets: jest.fn().mockResolvedValue(state ? [{ id: "m_1", state, ...market }] : []),
     updatePredictionMarkets: jest.fn().mockResolvedValue(undefined),
   })
   const transition = (ctx: ReturnType<typeof transitionCtx>, id: string, next: PredictionMarketState) =>
@@ -89,10 +98,166 @@ describe("VendorHypeOperationsPredictionService", () => {
     expect(ctx.updatePredictionMarkets).toHaveBeenCalledWith({ id: "m_1", state: to })
   })
 
+  // SD-76 follow-up: only creation consulted the policy, so a market admitted
+  // under the old block list (sweepstakes in the US, before 316f01b) could
+  // still be published and opened.
+  const legacySweepstakes = { mode: PredictionMode.SWEEPSTAKES, jurisdiction_code: "US" }
+
+  it.each([
+    [PredictionMarketState.DRAFT, PredictionMarketState.SCHEDULED],
+    [PredictionMarketState.SCHEDULED, PredictionMarketState.OPEN],
+  ])(
+    "refuses %s -> %s for a market the policy in force no longer admits, with a coded FORBIDDEN",
+    async (from, to) => {
+      const ctx = transitionCtx(from, legacySweepstakes)
+
+      const err = await transition(ctx, "m_1", to).catch((e: unknown) => e)
+
+      expect(err).toBeInstanceOf(MedusaError)
+      expect((err as MedusaError).type).toBe(MedusaError.Types.FORBIDDEN)
+      expect((err as MedusaError).code).toBe(PREDICTION_MODE_NOT_PERMITTED)
+      expect((err as MedusaError).message).toBe(
+        "sweepstakes markets are not permitted for US (profile US-RESTRICTED)"
+      )
+      expect(ctx.updatePredictionMarkets).not.toHaveBeenCalled()
+    }
+  )
+
+  it.each([PredictionMarketState.DRAFT, PredictionMarketState.SCHEDULED, PredictionMarketState.OPEN])(
+    "still lets an operator void such a market from %s",
+    async (from) => {
+      const ctx = transitionCtx(from, legacySweepstakes)
+
+      await transition(ctx, "m_1", PredictionMarketState.VOIDED)
+
+      expect(ctx.updatePredictionMarkets).toHaveBeenCalledWith({ id: "m_1", state: PredictionMarketState.VOIDED })
+    }
+  )
+
+  it("refuses an illegal transition on the state machine before it consults the policy", async () => {
+    const ctx = transitionCtx(PredictionMarketState.DRAFT, legacySweepstakes)
+
+    const err = await transition(ctx, "m_1", PredictionMarketState.OPEN).catch((e: unknown) => e)
+
+    expect((err as MedusaError).type).toBe(MedusaError.Types.NOT_ALLOWED)
+  })
+
+  it("refuses a position on an open market the policy no longer admits, before the age gate writes anything", async () => {
+    const ctx: any = {
+      policyService: new PredictionPolicyService(),
+      listPredictionMarkets: jest
+        .fn()
+        .mockResolvedValue([{ id: "m_1", state: PredictionMarketState.OPEN, ...legacySweepstakes }]),
+      listPredictionPositions: jest.fn().mockResolvedValue([]),
+      ensureSupporterEligibility: jest.fn().mockResolvedValue({}),
+      // An age-verified supporter, so only the policy can refuse.
+      isSupporterAgeVerified: jest.fn().mockResolvedValue(true),
+      createPredictionPositions: jest.fn(),
+      markSupporterParticipation: jest.fn(),
+    }
+
+    const err = await VendorHypeOperationsPredictionService.prototype.placePredictionPosition
+      .call(ctx, {
+        market_id: "m_1",
+        supporter_id: "sup_1",
+        outcome_option_key: "YES",
+        stake_amount: 1,
+        idempotency_key: "idem_1",
+      })
+      .catch((e: unknown) => e)
+
+    expect((err as MedusaError).type).toBe(MedusaError.Types.FORBIDDEN)
+    expect((err as MedusaError).code).toBe(PREDICTION_MODE_NOT_PERMITTED)
+    expect(ctx.isSupporterAgeVerified).not.toHaveBeenCalled()
+    expect(ctx.ensureSupporterEligibility).not.toHaveBeenCalled()
+    expect(ctx.createPredictionPositions).not.toHaveBeenCalled()
+  })
+
+  describe("createPredictionMarket", () => {
+    const createInput = {
+      profile_id: "hp_1",
+      title: "Ships 500 boxes by June",
+      jurisdiction_code: "ROW",
+      oracle_config_id: "oracle_1",
+      starts_at: new Date("2026-12-01T00:00:00.000Z"),
+      locks_at: new Date("2026-12-10T00:00:00.000Z"),
+      created_by: "cus_owner",
+    }
+    const createCtx = () => {
+      const policyService = new PredictionPolicyService()
+      return {
+        policyService,
+        createPredictionMarkets: jest.fn(async (rows: Array<Record<string, unknown>>) =>
+          rows.map((row) => ({ id: "pm_1", ...row }))
+        ),
+      }
+    }
+    const create = (ctx: ReturnType<typeof createCtx>, input: Record<string, unknown>) =>
+      VendorHypeOperationsPredictionService.prototype.createPredictionMarket.call(
+        ctx as never,
+        // A JS caller, or a route that forwards its body, can still send keys
+        // the input type no longer declares.
+        input as never
+      )
+
+    it("stores the deciding policy's version even when the caller passes one", async () => {
+      const ctx = createCtx()
+
+      await create(ctx, { ...createInput, policy_version: "attacker_v9" })
+
+      const [[rows]] = ctx.createPredictionMarkets.mock.calls
+      const decision = ctx.policyService.evaluateMode(PredictionMode.NON_CASH, "ROW")
+      expect(rows[0].policy_version).toBe(decision.policy_version)
+      expect(rows[0].policy_version).not.toBe("attacker_v9")
+    })
+
+    it("stores the decision with the market, over any policy_decision the caller put in metadata", async () => {
+      const ctx = createCtx()
+
+      await create(ctx, {
+        ...createInput,
+        metadata: { campaign: "spring", policy_decision: { profile: "US-REGULATED-CASH", matched: "US-NV" } },
+      })
+
+      const [[rows]] = ctx.createPredictionMarkets.mock.calls
+      expect(rows[0].metadata).toEqual({
+        campaign: "spring",
+        policy_decision: {
+          policy_version: ctx.policyService.policyVersion,
+          mode: PredictionMode.NON_CASH,
+          jurisdiction_code: "ROW",
+          matched: null,
+          profile: "ROW-NONCASH",
+          allowed_modes: [PredictionMode.NON_CASH],
+        },
+      })
+      expect(rows[0].state).toBe(PredictionMarketState.DRAFT)
+    })
+
+    it.each([
+      [PredictionMode.SWEEPSTAKES, "US-CA"],
+      [PredictionMode.REGULATED_CASH, "US"],
+      [PredictionMode.SWEEPSTAKES, "ZZ"],
+    ])("refuses %s in %s with a coded FORBIDDEN (it was a plain Error, a 500), writing nothing", async (mode, code) => {
+      const ctx = createCtx()
+
+      const err = await create(ctx, { ...createInput, mode, jurisdiction_code: code }).catch((e: unknown) => e)
+
+      expect(MedusaError.isMedusaError(err as MedusaError)).toBe(true)
+      expect((err as MedusaError).type).toBe(MedusaError.Types.FORBIDDEN)
+      expect((err as MedusaError).code).toBe(PREDICTION_MODE_NOT_PERMITTED)
+      expect((err as MedusaError).message).toMatch(new RegExp(`^${mode} markets are not permitted for `))
+      expect(ctx.createPredictionMarkets).not.toHaveBeenCalled()
+    })
+  })
+
   it("returns existing position for same idempotency key", async () => {
     const existingPosition = { id: "pos_1" }
     const ctx: any = {
-      listPredictionMarkets: jest.fn().mockResolvedValue([{ id: "m_1", state: PredictionMarketState.OPEN }]),
+      policyService: new PredictionPolicyService(),
+      listPredictionMarkets: jest.fn().mockResolvedValue([
+        { id: "m_1", state: PredictionMarketState.OPEN, mode: PredictionMode.NON_CASH, jurisdiction_code: "US" },
+      ]),
       listPredictionPositions: jest.fn().mockResolvedValueOnce([existingPosition]).mockResolvedValueOnce([]),
       ensureSupporterEligibility: jest.fn().mockResolvedValue({}),
       // An entitled supporter: stands in for the server-side age record that
@@ -125,9 +290,10 @@ describe("VendorHypeOperationsPredictionService", () => {
 
   it("refuses to place a position without a server-side age verification", async () => {
     const ctx: any = {
-      listPredictionMarkets: jest
-        .fn()
-        .mockResolvedValue([{ id: "m_1", state: PredictionMarketState.OPEN, mode: PredictionMode.NON_CASH }]),
+      policyService: new PredictionPolicyService(),
+      listPredictionMarkets: jest.fn().mockResolvedValue([
+        { id: "m_1", state: PredictionMarketState.OPEN, mode: PredictionMode.NON_CASH, jurisdiction_code: "US" },
+      ]),
       listPredictionPositions: jest.fn().mockResolvedValue([]),
       ensureSupporterEligibility: jest.fn().mockResolvedValue({}),
       isSupporterAgeVerified: VendorHypeOperationsPredictionService.prototype.isSupporterAgeVerified,

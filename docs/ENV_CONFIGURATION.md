@@ -95,12 +95,29 @@ a preference.
 admits a prediction market only in a mode its jurisdiction's profile allows
 (`docs/VENDOR_HYPE_OPERATIONS_PREDICTION_COMPLIANCE_POLICY_MATRIX.md` §1, an
 allow list). The US and every subdivision are `US-RESTRICTED` (non-cash only);
-any unmapped jurisdiction is `ROW-NONCASH`.
+any unmapped jurisdiction is `ROW-NONCASH`. The policy in force is checked when
+a market is created, again when an operator publishes it (`scheduled`) or opens
+it (`open`), and again when a position is placed, so a market admitted under
+older rules cannot go live; voiding is never refused. Every refusal answers
+**403** `{ "type": "policy_denied", "code": "PREDICTION_MODE_NOT_PERMITTED",
+"message": <reason>, "policy_version": <version> }`.
+
+Each decision records a `policy_version` derived from the rules, not
+configured: `matrix-<matrix version>@<effective date>+map:<hash>`, where the
+hash is the first 12 hex characters of the SHA-256 of the effective
+jurisdiction-to-profile mapping in canonical form (`canonicalPolicyRules`).
+With no mapping set it is `matrix-1.0.0@2026-01-01+map:c78f8f076443`; any
+change to `VENDOR_HYPE_JURISDICTION_PROFILES` changes it. The backend logs the
+version and the full effective mapping at `info` ("Prediction policy in
+force") when the module starts, and each market stores its decision (profile,
+the code it matched, the allowed modes, the version) in
+`metadata.policy_decision`, so a decision can be replayed without the
+deployment's env. Market creators cannot set either.
 
 | Variable | Default | Required when | Description |
 | --- | --- | --- | --- |
-| `VENDOR_HYPE_JURISDICTION_PROFILES` | — | counsel has approved a jurisdiction for a wider profile | JSON object of jurisdiction code to profile code, e.g. `{"US-NV":"US-REGULATED-CASH"}`. Codes are upper-cased; a subdivision inherits its country unless mapped itself. Fails closed: unparseable JSON is ignored whole, and an entry naming an unknown profile (or remapping a profile code) is dropped, each logged at error level. |
-| `VENDOR_HYPE_POLICY_VERSION` | `matrix-1.0.0@2026-01-01` | optional | Recorded on every market as the policy that admitted it. The caller can no longer supply it. |
+| `VENDOR_HYPE_JURISDICTION_PROFILES` | — | counsel has approved a jurisdiction for a wider profile | JSON object of jurisdiction code to profile code, e.g. `{"US-NV":"US-REGULATED-CASH"}`. Codes are upper-cased; a subdivision inherits its country unless mapped itself. Fails closed: unparseable JSON is ignored whole, and an entry naming an unknown profile (or remapping a profile code) is dropped, each logged at error level. A valid entry under the wrong key still widens that key (`US` for `US-NV` widens every state): check the effective mapping in the startup log. Changing it changes the recorded `policy_version`. |
+| `VENDOR_HYPE_POLICY_VERSION` | — | optional | A label **appended** to the derived version as `+label:<value>` (for example a counsel ticket), 1-64 characters of `A-Z a-z 0-9 . _ -`; anything else is ignored and logged at error level. It can no longer replace the version: it used to, so any string could relabel the rules without changing them. |
 
 ## In-app bug reporter
 

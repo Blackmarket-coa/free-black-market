@@ -4,6 +4,7 @@ import jwt from "jsonwebtoken"
 import {
   HypeProfileType,
   PredictionMarketState,
+  PredictionMode,
   VENDOR_HYPE_OPERATIONS_PREDICTION_MODULE,
 } from "../../src/modules/vendor-hype-operations-prediction"
 import type VendorHypeOperationsPredictionService from "../../src/modules/vendor-hype-operations-prediction/service"
@@ -226,6 +227,122 @@ medusaIntegrationTestRunner({
       expect(res.status).toBe(403)
       expect(res.data.code).toBe("PREDICTION_AGE_VERIFICATION_REQUIRED")
       expect(await service().listPredictionPositions({ market_id: market.id })).toHaveLength(0)
+    })
+
+    // SD-76 follow-up. A policy refusal at creation used to be a plain Error,
+    // which the framework answers 500 "An unknown error occurred." (and, in
+    // production, reports to Sentry), so the creator never saw the reason.
+    it("refuses a mode the jurisdiction's profile does not allow with a coded 403, and writes nothing", async () => {
+      const owner = withBearer(pak, tokenFor("customer", ownerId))
+      for (const [mode, jurisdiction_code] of [
+        [PredictionMode.SWEEPSTAKES, "US-CA"],
+        [PredictionMode.SWEEPSTAKES, "US"],
+        [PredictionMode.REGULATED_CASH, "US-NV"],
+      ]) {
+        const res = await api
+          .post("/store/vendor-hype/markets", { ...marketBody(profileId), mode, jurisdiction_code }, owner)
+          .catch((e) => e.response)
+        expect(res.status).toBe(403)
+        expect(res.data).toEqual(
+          expect.objectContaining({
+            type: "policy_denied",
+            code: "PREDICTION_MODE_NOT_PERMITTED",
+            message: `${mode} markets are not permitted for US (profile US-RESTRICTED)`,
+          })
+        )
+      }
+      expect(await service().listPredictionMarkets({ profile_id: profileId })).toHaveLength(0)
+    })
+
+    it("records the rules that admitted a market, not a label the caller sends", async () => {
+      const res = await api.post(
+        "/store/vendor-hype/markets",
+        {
+          ...marketBody(profileId),
+          policy_version: "attacker_v9",
+          metadata: { campaign: "spring", policy_decision: { profile: "US-REGULATED-CASH" } },
+        },
+        withBearer(pak, tokenFor("customer", ownerId))
+      )
+      expect(res.status).toBe(201)
+
+      const [stored] = await service().listPredictionMarkets({ id: res.data.market.id })
+      const current = service().getPolicyDecision(PredictionMode.NON_CASH, "ROW")
+      expect(stored.policy_version).toMatch(/^matrix-1\.0\.0@2026-01-01\+map:[0-9a-f]{12}$/)
+      expect(stored.policy_version).toBe(current.policy_version)
+      // The decision is stored with the market so it can be replayed: no
+      // mapping matched ROW, so the unmapped default decided.
+      expect(stored.metadata).toEqual({
+        campaign: "spring",
+        policy_decision: {
+          policy_version: current.policy_version,
+          mode: PredictionMode.NON_CASH,
+          jurisdiction_code: "ROW",
+          matched: null,
+          profile: "ROW-NONCASH",
+          allowed_modes: [PredictionMode.NON_CASH],
+        },
+      })
+    })
+
+    // Markets admitted under the old block list (sweepstakes in the US was
+    // allowed before 316f01b) were never re-checked: an operator could still
+    // publish and open one. The row is inserted directly, as such a row was.
+    it("re-checks the current policy before a market is published, opened or bet on, and still lets an operator void it", async () => {
+      const operator = withBearer({ headers: {} }, tokenFor("user", "user_hype_operator"))
+      const legacy = async (state: PredictionMarketState) => {
+        const [row] = await service().createPredictionMarkets([
+          {
+            profile_id: profileId,
+            title: "Legacy sweepstakes",
+            mode: PredictionMode.SWEEPSTAKES,
+            jurisdiction_code: "US",
+            policy_version: "phase_b_v1",
+            oracle_config_id: "oracle_1",
+            starts_at: new Date(Date.now() + 60_000),
+            locks_at: new Date(Date.now() + 7 * 86_400_000),
+            created_by: ownerId,
+            state,
+          },
+        ])
+        return row
+      }
+      const setState = (id: string, state: PredictionMarketState) =>
+        api.post(`/admin/vendor-hype/markets/${id}/state`, { state }, operator).catch((e) => e.response)
+      const stateOf = async (id: string) => (await service().listPredictionMarkets({ id }))[0].state
+
+      const draft = await legacy(PredictionMarketState.DRAFT)
+      const publish = await setState(draft.id, PredictionMarketState.SCHEDULED)
+      expect(publish.status).toBe(403)
+      expect(publish.data).toEqual(
+        expect.objectContaining({ type: "policy_denied", code: "PREDICTION_MODE_NOT_PERMITTED" })
+      )
+      expect(await stateOf(draft.id)).toBe(PredictionMarketState.DRAFT)
+
+      const scheduled = await legacy(PredictionMarketState.SCHEDULED)
+      expect((await setState(scheduled.id, PredictionMarketState.OPEN)).status).toBe(403)
+      expect(await stateOf(scheduled.id)).toBe(PredictionMarketState.SCHEDULED)
+
+      // Voiding is how an operator retires such a market, so it stays open to them.
+      expect((await setState(draft.id, PredictionMarketState.VOIDED)).status).toBe(200)
+      expect(await stateOf(draft.id)).toBe(PredictionMarketState.VOIDED)
+
+      // Placement re-checks too, in the service, ahead of the age gate. The
+      // route refuses every placement on the age gate first today (SD-67),
+      // so this calls the registered module directly.
+      const open = await legacy(PredictionMarketState.OPEN)
+      const refused = await service()
+        .placePredictionPosition({
+          market_id: open.id,
+          supporter_id: strangerId,
+          outcome_option_key: "YES",
+          stake_amount: 1,
+          idempotency_key: "idem_legacy",
+        })
+        .catch((e: unknown) => e)
+      expect(refused).toEqual(expect.objectContaining({ code: "PREDICTION_MODE_NOT_PERMITTED" }))
+      expect(await service().listPredictionPositions({ market_id: open.id })).toHaveLength(0)
+      expect(await service().listUserPredictionSafeties({ supporter_id: strangerId })).toHaveLength(0)
     })
   },
 })

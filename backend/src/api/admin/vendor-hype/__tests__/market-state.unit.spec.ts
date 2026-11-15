@@ -4,6 +4,9 @@ import { MedusaError } from "@medusajs/framework/utils"
 import { POST } from "../markets/[id]/state/route"
 import {
   PredictionMarketState,
+  PredictionMode,
+  PredictionPolicyRefusal,
+  PredictionPolicyService,
   VENDOR_HYPE_OPERATIONS_PREDICTION_MODULE,
 } from "../../../../modules/vendor-hype-operations-prediction"
 
@@ -117,6 +120,23 @@ describe("POST /admin/vendor-hype/markets/:id/state", () => {
     await expect(
       POST(makeReq(admin, transitionPredictionMarketState) as never, res as never)
     ).rejects.toBe(error)
+  })
+
+  it("answers a policy refusal 403 policy_denied with the reason (SD-76 follow-up)", async () => {
+    // Publishing or opening a market its jurisdiction no longer permits.
+    const decision = new PredictionPolicyService().evaluateMode(PredictionMode.SWEEPSTAKES, "US")
+    const transitionPredictionMarketState = jest.fn().mockRejectedValue(new PredictionPolicyRefusal(decision))
+    const res = createRes()
+
+    await POST(makeReq(admin, transitionPredictionMarketState) as never, res as never)
+
+    expect(res.statusCode).toBe(403)
+    expect(res.body).toEqual({
+      type: "policy_denied",
+      code: "PREDICTION_MODE_NOT_PERMITTED",
+      message: "sweepstakes markets are not permitted for US (profile US-RESTRICTED)",
+      policy_version: decision.policy_version,
+    })
   })
 
   it("is no longer served under /store", () => {

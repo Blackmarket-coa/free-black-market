@@ -4,7 +4,9 @@ import {
 } from "@medusajs/framework/http"
 import { z } from "zod"
 import {
+  isPredictionPolicyRefusal,
   PredictionMarketState,
+  predictionPolicyDeniedResponse,
   VENDOR_HYPE_OPERATIONS_PREDICTION_MODULE,
 } from "../../../../../../modules/vendor-hype-operations-prediction"
 import VendorHypeOperationsPredictionService from "../../../../../../modules/vendor-hype-operations-prediction/service"
@@ -35,6 +37,10 @@ const stateSchema = z.object({
  * service's typed errors become 404 for an unknown market and 400 for an
  * illegal transition, through the framework's error handler. A 5xx is
  * reported to Sentry, and an operator's typo is not a server error.
+ *
+ * Publishing or opening a market whose mode its jurisdiction no longer
+ * permits (one admitted under older rules) is refused 403 `policy_denied` /
+ * PREDICTION_MODE_NOT_PERMITTED with the reason; voiding it is not.
  */
 export async function POST(
   req: AuthenticatedMedusaRequest,
@@ -60,9 +66,17 @@ export async function POST(
     VENDOR_HYPE_OPERATIONS_PREDICTION_MODULE
   )
 
-  const market = await service.transitionPredictionMarketState(
-    req.params.id,
-    parsed.data.state
-  )
-  res.json({ market })
+  try {
+    const market = await service.transitionPredictionMarketState(
+      req.params.id,
+      parsed.data.state
+    )
+    res.json({ market })
+  } catch (error) {
+    if (isPredictionPolicyRefusal(error)) {
+      const refusal = predictionPolicyDeniedResponse(error)
+      return res.status(refusal.status).json(refusal.body)
+    }
+    throw error
+  }
 }
