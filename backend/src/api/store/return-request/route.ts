@@ -85,16 +85,17 @@ export async function POST(
     })
   }
 
-  // Core validates the rest — items on the order, quantities within what was
-  // fulfilled and not already returned, reasons that exist — and its
-  // MedusaErrors reach the client as 400s through the error handler.
+  // The workflow validates the rest under a lock on the order: quantities
+  // within what is still returnable (fulfilled, less what is requested,
+  // received, dismissed or written off), and through core, items on the order
+  // and reasons that exist. Its MedusaErrors reach the client as 400s through
+  // the error handler. `customer_note` is not stored; see helpers.ts.
   const { result } = await createBuyerReturnRequestWorkflow(req.scope).run({
     input: {
       order_id: order.id,
       seller_id: order.seller.id,
       customer_id: customerId,
       return_shipping_option_id: body.shipping_option_id,
-      note: body.customer_note,
       items: body.line_items.map((item) => ({
         id: item.line_item_id,
         quantity: item.quantity,

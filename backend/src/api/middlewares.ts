@@ -34,6 +34,7 @@ import { preventPasswordReuseMiddleware } from "./middlewares/password-history";
 import { servePublishingKeys } from "./middlewares/publishing-keys";
 import { refuseServerOwnedCustomerMetadata } from "./middlewares/server-owned-customer-metadata";
 import { refuseUnfinishedCartCompletion } from "./middlewares/cart-completion-finished";
+import { refuseCoreStoreReturnCreate } from "./middlewares/refuse-core-store-return";
 import { ensureSellerContext } from "./vendor/_middlewares";
 // Nested middleware route sets. Medusa's MiddlewareFileLoader reads ONLY this
 // file (it checks `<api dir>/middlewares.ts` and does not recurse), so a nested
@@ -762,6 +763,14 @@ export default defineMiddlewares({
       // which does not cover the bare path the route serves.
       matcher: "/store/return-request",
       middlewares: [authenticate("customer", ["bearer", "session"])],
+    },
+    {
+      // Core's POST /store/returns takes a publishable key and any order id,
+      // and writes a return its seller cannot see. Buyers use the route above.
+      // See middlewares/refuse-core-store-return.ts.
+      matcher: "/store/returns",
+      method: "POST",
+      middlewares: [refuseCoreStoreReturnCreate],
     },
     // ============================================================
     // CSRF: reject forged cross-site, cookie-authenticated writes

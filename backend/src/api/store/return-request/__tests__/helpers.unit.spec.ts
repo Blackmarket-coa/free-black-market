@@ -1,9 +1,11 @@
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 import {
+  isBuyerVisibleReturn,
   isSellersReturnOption,
   returnRequestBodySchema,
   toStoreReturnRequest,
   type OrderForReturn,
+  type ReturnRow,
 } from "../helpers"
 
 /**
@@ -85,6 +87,37 @@ describe("toStoreReturnRequest", () => {
   })
 })
 
+describe("isBuyerVisibleReturn", () => {
+  const request: ReturnRow = {
+    id: "return_1",
+    order_id: "order_1",
+    status: "requested",
+    claim_id: null,
+    exchange_id: null,
+    items: [{ item_id: "ordli_1", quantity: 1 }],
+  }
+
+  it("shows a request in each status a buyer's return moves through", () => {
+    for (const status of ["requested", "partially_received", "received", "canceled"]) {
+      expect(isBuyerVisibleReturn({ ...request, status })).toBe(true)
+    }
+  })
+
+  it("hides a return still being drafted (`open`), even one with items", () => {
+    expect(isBuyerVisibleReturn({ ...request, status: "open" })).toBe(false)
+  })
+
+  it("hides a return with no items, which the page cannot date or list", () => {
+    expect(isBuyerVisibleReturn({ ...request, items: [] })).toBe(false)
+    expect(isBuyerVisibleReturn({ ...request, items: null })).toBe(false)
+  })
+
+  it("hides the return leg of a claim or an exchange", () => {
+    expect(isBuyerVisibleReturn({ ...request, claim_id: "claim_1" })).toBe(false)
+    expect(isBuyerVisibleReturn({ ...request, exchange_id: "exchange_1" })).toBe(false)
+  })
+})
+
 describe("returnRequestBodySchema", () => {
   // Exactly what OrderReturnSection.handleSubmit sends.
   const body = {
@@ -155,6 +188,26 @@ describe("isSellersReturnOption", () => {
       ],
     })
     await expect(isSellersReturnOption(container, order, "so_outbound")).resolves.toBe(false)
+  })
+
+  it("refuses a return option withheld from the store, as the store's option list does", async () => {
+    const { container } = containerWith({
+      so_return: [
+        { attribute: "is_return", operator: "eq", value: "true" },
+        { attribute: "enabled_in_store", operator: "eq", value: "false" },
+      ],
+    })
+    await expect(isSellersReturnOption(container, order, "so_return")).resolves.toBe(false)
+  })
+
+  it("accepts a return option enabled in the store", async () => {
+    const { container } = containerWith({
+      so_return: [
+        { attribute: "is_return", operator: "eq", value: "true" },
+        { attribute: "enabled_in_store", operator: "eq", value: "true" },
+      ],
+    })
+    await expect(isSellersReturnOption(container, order, "so_return")).resolves.toBe(true)
   })
 
   it("refuses another seller's option without reading it", async () => {

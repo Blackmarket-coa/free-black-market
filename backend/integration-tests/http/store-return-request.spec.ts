@@ -1,6 +1,6 @@
 import { medusaIntegrationTestRunner } from "@medusajs/test-utils"
 import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils"
-import { createShippingOptionsWorkflow } from "@medusajs/medusa/core-flows"
+import { beginReturnOrderWorkflow, createShippingOptionsWorkflow } from "@medusajs/medusa/core-flows"
 import { SELLER_MODULE } from "@mercurjs/b2c-core/modules/seller"
 import { createPublishableKeyToken } from "./_publishable-key"
 import jwt from "jsonwebtoken"
@@ -162,7 +162,29 @@ medusaIntegrationTestRunner({
     }
 
     const returnsFor = (orderId: string) =>
-      container().resolve(Modules.ORDER).listReturns({ order_id: orderId }) as Promise<{ id: string }[]>
+      container().resolve(Modules.ORDER).listReturns({ order_id: orderId }) as Promise<
+        { id: string; status: string }[]
+      >
+
+    /** The order item's quantity counters (the order module's `order_item` row). */
+    async function itemCounters(orderId: string, itemId: string) {
+      const [order] = await container()
+        .resolve(Modules.ORDER)
+        .listOrders({ id: orderId }, { relations: ["items"] })
+      const item = order.items.find((i: { id: string }) => i.id === itemId)
+      const detail = item.detail ?? item
+      return {
+        return_requested: Number(detail.return_requested_quantity ?? 0),
+        return_received: Number(detail.return_received_quantity ?? 0),
+      }
+    }
+
+    const requestBody = (orderId: string, optionId: string, itemId: string, quantity: number, reasonId: string) => ({
+      order_id: orderId,
+      customer_note: "",
+      shipping_option_id: optionId,
+      line_items: [{ line_item_id: itemId, quantity, reason_id: reasonId }],
+    })
 
     describe("POST/GET /store/return-request", () => {
       it("files a buyer's return against their own order, lists it back, and shows it to the seller", async () => {
@@ -222,6 +244,42 @@ medusaIntegrationTestRunner({
         expect(vendorIds).toContain(request.id)
         const vendorDetail = await safe(api.get(`/vendor/returns/${request.id}`, authHeader(vendor.token)))
         expect(vendorDetail.status).toBe(200)
+
+        // The shapes the vendor panel actually receives, read with the panel's
+        // own `fields` (vendor-panel/src/hooks/api/requests.tsx). Mercur's list
+        // answers link rows, the return nested under `return`; its detail
+        // answers `return` as an array. The panel's normalisers unwrap both,
+        // and their spec pins these shapes.
+        const panelList = await safe(
+          api.get("/vendor/returns", {
+            ...authHeader(vendor.token),
+            params: { fields: "id,status,created_at,*order,*order.customer,*items", limit: 10, offset: 0 },
+          })
+        )
+        expect(panelList.status).toBe(200)
+        const panelRow = (panelList.data.returns as { id?: string; return?: Record<string, any> }[]).find(
+          (r) => r.return?.id === request.id
+        )
+        expect(panelRow?.id).toBeUndefined()
+        expect(panelRow?.return).toEqual(
+          expect.objectContaining({
+            id: request.id,
+            status: "requested",
+            order: expect.objectContaining({ id: order.id, customer: expect.objectContaining({ id: customer.id }) }),
+            items: [expect.objectContaining({ item_id: itemId, quantity: 1 })],
+          })
+        )
+        const panelDetail = await safe(
+          api.get(`/vendor/returns/${request.id}`, {
+            ...authHeader(vendor.token),
+            params: { fields: "*order,*order.customer,*items" },
+          })
+        )
+        expect(panelDetail.status).toBe(200)
+        expect(Array.isArray(panelDetail.data.return)).toBe(true)
+        expect(panelDetail.data.return[0]).toEqual(
+          expect.objectContaining({ id: request.id, order: expect.objectContaining({ id: order.id }) })
+        )
       })
 
       it("refuses another customer's order with 403, and lists none of its returns", async () => {
@@ -278,6 +336,129 @@ medusaIntegrationTestRunner({
         )
         expect(refused.status).toBe(400)
         expect(await returnsFor(order.id)).toEqual([])
+      })
+
+      it("lists only the buyer's requests: an operator's open return with no items is left out", async () => {
+        const seller = await plainSeller()
+        const { customer, asCustomer } = await tokenCustomer()
+        const option = await returnShippingOption(seller.id)
+        const { order, itemId } = await fulfilledOrder(customer, seller.id)
+        const reason = await returnReason()
+
+        const filed = await safe(
+          api.post("/store/return-request", requestBody(order.id, option.id, itemId, 1, reason.id), asCustomer)
+        )
+        expect(filed.status).toBe(201)
+
+        // What an operator leaves behind by starting a return and not
+        // confirming it: status `open`, no items yet.
+        await beginReturnOrderWorkflow(container()).run({ input: { order_id: order.id } })
+        const all = await returnsFor(order.id)
+        expect(all.map((r) => r.status).sort()).toEqual(["open", "requested"])
+
+        const listed = await safe(api.get("/store/return-request", asCustomer))
+        expect(listed.status).toBe(200)
+        expect(listed.data.order_return_requests.map((r: { id: string }) => r.id)).toEqual([
+          filed.data.order_return_request.id,
+        ])
+        for (const row of listed.data.order_return_requests) {
+          expect(row.line_items.length).toBeGreaterThan(0)
+        }
+      })
+
+      it("files one return when two requests for the same units arrive at once", async () => {
+        const seller = await plainSeller()
+        const { customer, asCustomer } = await tokenCustomer()
+        const option = await returnShippingOption(seller.id)
+        const { order, itemId } = await fulfilledOrder(customer, seller.id)
+        const reason = await returnReason()
+        const body = requestBody(order.id, option.id, itemId, 2, reason.id)
+
+        const answers = await Promise.all([
+          safe(api.post("/store/return-request", body, asCustomer)),
+          safe(api.post("/store/return-request", body, asCustomer)),
+        ])
+        expect(answers.map((a) => a.status).sort()).toEqual([201, 400])
+        expect(await returnsFor(order.id)).toHaveLength(1)
+        // The order's counter agrees with the one return it carries.
+        expect(await itemCounters(order.id, itemId)).toEqual({ return_requested: 2, return_received: 0 })
+      })
+
+      it("refuses to return units the seller has already received back", async () => {
+        const vendor = await createAuthenticatedSeller({ api, getContainer })
+        const { customer, asCustomer } = await tokenCustomer()
+        const option = await returnShippingOption(vendor.seller.id)
+        const { order, itemId } = await fulfilledOrder(customer, vendor.seller.id)
+        const reason = await returnReason()
+
+        const first = await safe(
+          api.post("/store/return-request", requestBody(order.id, option.id, itemId, 2, reason.id), asCustomer)
+        )
+        expect(first.status).toBe(201)
+        const returnId = first.data.order_return_request.id
+
+        // The seller receives both units through Mercur's vendor routes:
+        // begin the receipt, receive the items, confirm.
+        const asVendor = authHeader(vendor.token)
+        expect((await safe(api.post(`/vendor/returns/${returnId}/receive`, {}, asVendor))).status).toBe(200)
+        expect(
+          (
+            await safe(
+              api.post(`/vendor/returns/${returnId}/receive-items`, { items: [{ id: itemId, quantity: 2 }] }, asVendor)
+            )
+          ).status
+        ).toBe(200)
+        expect((await safe(api.post(`/vendor/returns/${returnId}/receive/confirm`, {}, asVendor))).status).toBe(200)
+        // Core moved the units from requested to received, which by its own
+        // count (fulfilled - requested) makes them returnable again.
+        expect(await itemCounters(order.id, itemId)).toEqual({ return_requested: 0, return_received: 2 })
+
+        const listed = await safe(api.get("/store/return-request", asCustomer))
+        expect(listed.data.order_return_requests.map((r: { status: string }) => r.status)).toEqual(["received"])
+
+        const again = await safe(
+          api.post("/store/return-request", requestBody(order.id, option.id, itemId, 2, reason.id), asCustomer)
+        )
+        expect(again.status).toBe(400)
+        const oneMore = await safe(
+          api.post("/store/return-request", requestBody(order.id, option.id, itemId, 1, reason.id), asCustomer)
+        )
+        expect(oneMore.status).toBe(400)
+        expect(await returnsFor(order.id)).toHaveLength(1)
+      })
+
+      it("refuses core's POST /store/returns, which takes no customer and links no seller", async () => {
+        const seller = await plainSeller()
+        const { customer, pak, asCustomer } = await tokenCustomer()
+        const option = await returnShippingOption(seller.id)
+        const { order, itemId } = await fulfilledOrder(customer, seller.id)
+        const reason = await returnReason()
+
+        // A valid core body, holding nothing but the publishable key.
+        const anonymous = await safe(
+          api.post(
+            "/store/returns",
+            { order_id: order.id, items: [{ id: itemId, quantity: 2 }], return_shipping: { option_id: option.id } },
+            { headers: { "x-publishable-api-key": pak } }
+          )
+        )
+        expect(anonymous.status).toBe(410)
+        // Signed in makes no difference: core's route still checks no ownership.
+        const signedIn = await safe(
+          api.post(
+            "/store/returns",
+            { order_id: order.id, items: [{ id: itemId, quantity: 2 }], return_shipping: { option_id: option.id } },
+            asCustomer
+          )
+        )
+        expect(signedIn.status).toBe(410)
+        expect(await returnsFor(order.id)).toEqual([])
+
+        // The returnable quantity is intact for the buyer's own request.
+        const filed = await safe(
+          api.post("/store/return-request", requestBody(order.id, option.id, itemId, 2, reason.id), asCustomer)
+        )
+        expect(filed.status).toBe(201)
       })
 
       it("requires a signed-in customer", async () => {

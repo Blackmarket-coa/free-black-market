@@ -26,11 +26,19 @@ import { z } from "zod"
  * query the order module rewrites it to `items.item.quantity`, a property the
  * line item does not have, and MikroORM fails the whole read (seen as a 500
  * here before it was removed). The returned quantity is the return item's.
+ *
+ * Not every Medusa return on an order is a buyer's request. An operator's
+ * return begun and never confirmed sits in status `open` with no items, and
+ * claims and exchanges carry returns of their own. The returns page renders
+ * each row by its first line, so GET serves only `isBuyerVisibleReturn` rows.
  */
 
 export const returnRequestBodySchema = z
   .object({
     order_id: z.string().min(1),
+    // Accepted because the storefront sends it, and NOT stored: core's
+    // createAndCompleteReturnOrderWorkflow does not forward a note to the
+    // return it creates, and the storefront collects none (it sends "").
     customer_note: z.string().max(2000).nullish(),
     shipping_option_id: z.string().min(1),
     line_items: z
@@ -94,6 +102,8 @@ export type ReturnRow = {
   id: string
   order_id: string
   status: string
+  claim_id?: string | null
+  exchange_id?: string | null
   created_at?: string | Date | null
   items?:
     | {
@@ -122,6 +132,8 @@ const RETURN_FIELDS = [
   "id",
   "order_id",
   "status",
+  "claim_id",
+  "exchange_id",
   "created_at",
   "items.item_id",
   "items.quantity",
@@ -147,6 +159,33 @@ const ORDER_FIELDS = [
 
 const toTime = (value: string | Date | null | undefined): number =>
   value ? new Date(value).getTime() : 0
+
+/**
+ * The return statuses a buyer's request moves through. `open` is missing on
+ * purpose: it is a return still being drafted (an operator's, begun and not
+ * confirmed), which has nothing to show and may never be sent.
+ */
+export const BUYER_VISIBLE_RETURN_STATUSES = [
+  "requested",
+  "partially_received",
+  "received",
+  "canceled",
+] as const
+
+/**
+ * Whether a return belongs on the buyer's returns page: a request in one of
+ * `BUYER_VISIBLE_RETURN_STATUSES`, with at least one item (the page dates
+ * and lists a request by its lines), and not the return leg of a claim or an
+ * exchange, which the buyer follows through that claim or exchange.
+ */
+export function isBuyerVisibleReturn(ret: ReturnRow): boolean {
+  return (
+    (BUYER_VISIBLE_RETURN_STATUSES as readonly string[]).includes(ret.status) &&
+    !ret.claim_id &&
+    !ret.exchange_id &&
+    (ret.items?.length ?? 0) > 0
+  )
+}
 
 /**
  * Join a return with its order into the storefront's shape. Pure: the
@@ -210,11 +249,15 @@ export async function listCustomerReturnRequests(
   const { data: returnRows } = await query.graph({
     entity: "return",
     fields: RETURN_FIELDS,
-    filters: opts.returnId
-      ? { id: opts.returnId, order_id: orderIds }
-      : { order_id: orderIds },
+    filters: {
+      ...(opts.returnId ? { id: opts.returnId } : {}),
+      order_id: orderIds,
+      status: [...BUYER_VISIBLE_RETURN_STATUSES],
+    },
   })
-  const returns = returnRows as unknown as ReturnRow[]
+  const returns = (returnRows as unknown as ReturnRow[]).filter(
+    isBuyerVisibleReturn
+  )
   if (!returns.length) return []
 
   const { data: orderRows } = await query.graph({
@@ -255,7 +298,11 @@ export async function loadOrderForReturn(
 /**
  * Whether the option is a return option the order's seller offers — the
  * same set `/store/shipping-options/return` (Mercur) shows the buyer: the
- * seller's linked options, narrowed to those carrying the `is_return` rule.
+ * seller's linked options, narrowed to those carrying the `is_return` rule
+ * and not withheld from the store. That route lists through core's
+ * `listShippingOptionsForCartWorkflow`, whose rule context carries
+ * `enabled_in_store: "true"`, so an option whose `enabled_in_store` rule says
+ * otherwise (an operator-only return method) is never offered to a buyer.
  */
 export async function isSellersReturnOption(
   container: MedusaContainer,
@@ -276,10 +323,13 @@ export async function isSellersReturnOption(
       rules?: { attribute: string; operator: string; value: unknown }[] | null
     }[]
   )[0]
-  return (option?.rules ?? []).some(
-    (rule) =>
-      rule.attribute === "is_return" &&
-      rule.operator === "eq" &&
-      String(rule.value) === "true"
+  const rules = option?.rules ?? []
+  const isTrue = (rule: { operator: string; value: unknown }) =>
+    rule.operator === "eq" && String(rule.value) === "true"
+  return (
+    rules.some((rule) => rule.attribute === "is_return" && isTrue(rule)) &&
+    rules
+      .filter((rule) => rule.attribute === "enabled_in_store")
+      .every(isTrue)
   )
 }
