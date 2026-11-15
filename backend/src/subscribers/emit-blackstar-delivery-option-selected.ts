@@ -14,7 +14,7 @@ import type BlackstarFulfillmentModuleService from "../modules/blackstar-fulfill
  * The contract's `delivery.option.selected` moment: a fulfillment was created
  * on the Blackstar provider. Records the local BlackstarShipment row, then
  * emits the event Blackstar builds its shipment board listing from
- * (idempotently, on `source_order_ref`).
+ * (idempotently, on order and optional fulfillment reference).
  *
  * This used to happen inside the provider's `createFulfillment`, where it
  * could not work: Medusa constructs a fulfillment provider with the
@@ -97,6 +97,7 @@ export default async function emitBlackstarDeliveryOptionSelected({
       "delivery.option.selected",
       buildDeliveryOptionSelectedPayload({
         orderId,
+        fulfillmentId: process.env.FBM_BLACKSTAR_FULFILLMENT_REFS === "1" ? fulfillmentId : null,
         fulfillmentNodeId,
         pickupPointId,
         vendingMachineId,

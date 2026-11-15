@@ -209,3 +209,25 @@ describe("blackstar events receiver — events that write no status", () => {
     expect(res.body.status).toBe("processed")
   })
 })
+
+
+it("passes the parcel identity to the production service", async () => {
+  const service = makeService()
+  const res = createRes()
+  await POST(makeReq(service, {
+    event_type: "shipment.delivered",
+    payload: { source_order_ref: "order_1", source_fulfillment_ref: "ful_2" },
+  }) as never, res as never)
+  expect(service.applyBlackstarEvent).toHaveBeenCalledWith(expect.objectContaining({ source_fulfillment_ref: "ful_2" }))
+})
+
+it.each(["", " ", 12, {}, "a".repeat(256)])("rejects malformed parcel keys (%p)", async (ref) => {
+  const service = makeService()
+  const res = createRes()
+  await POST(makeReq(service, {
+    event_type: "shipment.delivered",
+    payload: { source_order_ref: "order_1", source_fulfillment_ref: ref },
+  }) as never, res as never)
+  expect(res.statusCode).toBe(400)
+  expect(service.applyBlackstarEvent).not.toHaveBeenCalled()
+})

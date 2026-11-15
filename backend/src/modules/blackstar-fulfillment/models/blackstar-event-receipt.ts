@@ -35,7 +35,7 @@ const BlackstarEventReceipt = model
     source_order_ref: model.text().nullable(),
     correlation_id: model.text().nullable(),
 
-    /** applied | same_status | out_of_order | terminal | unknown_status | ignored */
+    /** applied | same_status | out_of_order | terminal | unknown_status | ignored | ambiguous_shipment */
     outcome: model.text(),
     /** The status this event asked for, whether or not it was written. */
     requested_status: model.text().nullable(),
