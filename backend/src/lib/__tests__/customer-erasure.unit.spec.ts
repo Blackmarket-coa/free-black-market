@@ -4,7 +4,7 @@ import {
   eraseCustomerAcrossRegistry,
   readCustomerDataAcrossRegistry,
 } from "../customer-erasure"
-import { CUSTOMER_DATA_REGISTRY, registryEntry } from "../customer-data-registry"
+import { CUSTOMER_DATA_REGISTRY, QUERY_CANNOT_ADDRESS, registryEntry } from "../customer-data-registry"
 
 /**
  * The executor behind D11-1.
@@ -189,8 +189,8 @@ describe("readCustomerDataAcrossRegistry", () => {
   it("reads a collective backing by backer_id, in SQL, because Query cannot address it", async () => {
     // Until the P1-13 follow-up a person's backings were missing from their
     // export entirely: the table has no customer_id. Query calls a
-    // `listCollectiveBackings` the module does not have, so this one entry
-    // reads the table directly.
+    // `listCollectiveBackings` the module does not have, so the entry reads
+    // the table directly.
     const graph = jest.fn(async (_q: { entity: string }) => ({ data: [] }))
     const raw = jest.fn(async (sql: string, bindings?: unknown[]) =>
       sql.includes('"collective_backing"') && bindings?.[0] === "cus_1"
@@ -199,11 +199,32 @@ describe("readCustomerDataAcrossRegistry", () => {
     )
     const out = await readCustomerDataAcrossRegistry(makeContainer({ graph, raw }) as never, "cus_1")
 
-    expect(raw.mock.calls).toEqual([
+    expect(raw.mock.calls.filter(([sql]) => sql.includes('"collective_backing"'))).toEqual([
       ['SELECT * FROM "collective_backing" WHERE "backer_id" = ?', ["cus_1"]],
     ])
     expect(graph.mock.calls.some(([q]) => q.entity === "collective_backing")).toBe(false)
     expect(out.collective_backing).toEqual([{ id: "cbck_1", backer_id: "cus_1" }])
+  })
+
+  it("reads every table Query cannot address by SQL on its own customer column, and nothing else", async () => {
+    // The P1-13 review: twelve more entries put `_error` in every export on
+    // Postgres for the same reason as the backing. Each is one SELECT scoped
+    // to the person; every other entry still goes through Query.
+    const graph = jest.fn(async (_q: { entity: string }) => ({ data: [] }))
+    const raw = jest.fn(async (_sql: string, _bindings?: unknown[]) => ({ rows: [] }))
+    await readCustomerDataAcrossRegistry(makeContainer({ graph, raw }) as never, "cus_1")
+
+    const sqlEntries = CUSTOMER_DATA_REGISTRY.filter((e) => e.exportVia === "sql")
+    expect(sqlEntries.map((e) => e.entity).sort()).toEqual(Object.keys(QUERY_CANNOT_ADDRESS).sort())
+    expect(raw.mock.calls).toEqual(
+      sqlEntries.map((e) => [
+        `SELECT * FROM "${e.entity}" WHERE "${e.customerColumn ?? "customer_id"}" = ?`,
+        ["cus_1"],
+      ])
+    )
+    const graphed = graph.mock.calls.map(([q]) => q.entity)
+    expect(graphed.filter((entity) => entity in QUERY_CANNOT_ADDRESS)).toEqual([])
+    expect(graphed).toHaveLength(CUSTOMER_DATA_REGISTRY.filter((e) => e.inExport !== false).length - sqlEntries.length)
   })
 
   it("reports a SQL-read entity in place when there is no database", async () => {

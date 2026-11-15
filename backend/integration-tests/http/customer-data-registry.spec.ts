@@ -4,6 +4,7 @@ import { createPublishableKeyToken } from "./_publishable-key"
 import { safe } from "./helpers/seller-auth"
 import {
   CUSTOMER_DATA_REGISTRY,
+  QUERY_CANNOT_ADDRESS,
   customerColumnOf,
 } from "../../src/lib/customer-data-registry"
 import { readCustomerDataAcrossRegistry } from "../../src/lib/customer-erasure"
@@ -54,28 +55,15 @@ const KNOWN_NOT_NULL_ANONYMISE = [
   "buyer_impact.customer_id",
 ]
 
-// Entities the export cannot read through Query, so a person's export carries
+// Before the P1-13 review, twelve entries besides the backing could not be
+// read through Query, so every person's export carried
 // `{ _error: "could not be read: Method \"list<Entity>s\" does not exist on
-// \"<module>\"" }` in place of their rows. The same cause as
-// collective_backing: Query derives the method from the table name
-// (`garden_time_credit` -> `listGardenTimeCredits`), the module's
+// \"<module>\"" }` in place of their rows: Query derives the method from the
+// table name (`garden_time_credit` -> `listGardenTimeCredits`), the module's
 // MedusaService key generates another (`TimeCredit` -> `listTimeCredits`).
-// The remedy the backing uses, `exportVia: "sql"`, is one line per entry; not
-// applied here because each is outside this change.
-const KNOWN_UNREADABLE_IN_EXPORT = [
-  "ar_invoice",
-  "hawala_investment",
-  "garden_proposal_comment",
-  "embed_product_review",
-  "garden_role_assignment",
-  "garden_harvest_claim",
-  "garden_time_credit",
-  "garden_work_party_signup",
-  "order_channel",
-  "wellness_member",
-  "wellness_client_profile",
-  "wellness_class_attendee",
-]
+// All thirteen now read by SQL (QUERY_CANNOT_ADDRESS in the registry), so the
+// list of entries the export cannot read is empty and must stay empty.
+const KNOWN_UNREADABLE_IN_EXPORT: string[] = []
 
 medusaIntegrationTestRunner({
   inApp: true,
@@ -156,6 +144,42 @@ medusaIntegrationTestRunner({
       })
     })
 
+    describe("a wellness client profile, one of the twelve Query could not read", () => {
+      // Health-adjacent, so the registry deletes it. Before the P1-13 review
+      // the export showed `_error` in its place for everyone; the deletion
+      // already reached it by SQL.
+      async function insertProfile(customerId: string) {
+        const id = `wcp_registry_${uid().replace(/-/g, "")}`
+        await pg().raw(
+          `INSERT INTO "wellness_client_profile" ("id", "seller_id", "customer_id", "email", "pronouns")
+           VALUES (?, 'sel_registry_test', ?, ?, 'they/them')`,
+          [id, customerId, `${id}@example.com`]
+        )
+        return id
+      }
+      const profileExists = async (id: string) =>
+        ((await pg().raw(`SELECT 1 FROM "wellness_client_profile" WHERE "id" = ?`, [id])).rows as unknown[]).length === 1
+
+      it("is exported to its customer only, and deleted with their account", async () => {
+        const pak = await createPublishableKeyToken(getContainer)
+        const client = await signedInCustomer(pak)
+        const other = await signedInCustomer(pak)
+        const mine = await insertProfile(client.id)
+        const theirs = await insertProfile(other.id)
+
+        const exported = await safe(api.get("/store/customers/me/data-export", client.headers))
+        expect(exported.status).toBe(200)
+        expect(exported.data.community?.wellness_client_profile).toEqual([
+          expect.objectContaining({ id: mine, customer_id: client.id, pronouns: "they/them" }),
+        ])
+
+        const deleted = await safe(api.post("/store/customers/me/deletion", {}, client.headers))
+        expect(deleted.status).toBe(200)
+        expect(await profileExists(mine)).toBe(false)
+        expect(await profileExists(theirs)).toBe(true)
+      })
+    })
+
     describe("every registry entry against the migrated schema", () => {
       async function columnsOf(table: string) {
         const { rows } = await pg().raw(
@@ -178,16 +202,20 @@ medusaIntegrationTestRunner({
         expect(problems).toEqual([])
       })
 
-      it("reads every exported entity without an error (ratchet)", async () => {
+      it("reads every exported entity without an error", async () => {
         // An unreadable entity is reported in the export as `_error`, in place
-        // of the person's rows.
+        // of the person's rows. Every entry is read here, by Query or by SQL,
+        // including Mercur's order_set (Query) and the thirteen SQL reads.
         const out = await readCustomerDataAcrossRegistry(container(), "cus_registry_nobody")
         const unreadable = Object.entries(out).filter(([, rows]) =>
           rows.some((r) => (r as { _error?: string })?._error)
         )
-        expect(unreadable.map(([entity]) => entity)).toEqual(KNOWN_UNREADABLE_IN_EXPORT)
-        // collective_backing is read by SQL and is not among them.
-        expect(out.collective_backing).toBeUndefined()
+        expect(unreadable.map(([entity, rows]) => `${entity}: ${JSON.stringify(rows)}`)).toEqual(
+          KNOWN_UNREADABLE_IN_EXPORT
+        )
+        // Nobody's data: every read succeeded and found nothing.
+        expect(out).toEqual({})
+        expect(Object.keys(QUERY_CANNOT_ADDRESS)).toContain("collective_backing")
       })
 
       it("names only fields its tables have (ratchet)", async () => {
