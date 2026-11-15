@@ -748,11 +748,13 @@ describe("rate limiters: present where declared, with the declared budgets", () 
     // Every exported limiter's prefix (the @example in the file's docs is not one).
     // 23rd: supplierWebhookRateLimiter, "supplier-webhook" (proved through the
     // chain in supplier-webhook-middleware.unit.spec.ts).
+    // 24th: storeDeliveryProofRateLimiter, "store-delivery-proof", keyed per
+    // delivery rather than per path (store-delivery-proof-rate-limit.unit.spec.ts).
     const prefixes = src
       .split(/\nexport const /)
       .filter((chunk) => /^\w+ = createRateLimiter\(/.test(chunk))
       .map((chunk) => chunk.match(/keyPrefix: "([^"]+)"/)?.[1])
-    expect(prefixes.length).toBe(23)
+    expect(prefixes.length).toBe(24)
     expect(prefixes).not.toContain(undefined)
     expect(new Set(prefixes).size).toBe(prefixes.length)
   })

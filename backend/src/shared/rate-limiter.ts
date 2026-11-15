@@ -578,6 +578,42 @@ export const storeCustomerDataRightsRateLimiter = createRateLimiter({
   keyGenerator: actorPathRateLimitKey,
 })
 
+/**
+ * The delivery a proof-of-delivery request is about, keyed per actor:
+ * `actor:<id>:delivery-proof:<delivery id>`. Both URLs that reach the proof
+ * handler (`POST /store/food-deliveries/:id/proof`, and `POST
+ * /store/food-deliveries/:id?x=/proof`, whose path has no `/proof`) share one
+ * bucket, which `actorPathRateLimitKey` would split in two. Keyed per actor
+ * so a stranger's refused requests cannot spend the courier's budget.
+ */
+export function deliveryProofRateLimitKey(req: MedusaRequest): string {
+  const ctx = (req as { auth_context?: { actor_id?: unknown } }).auth_context
+  const actor =
+    typeof ctx?.actor_id === "string" && ctx.actor_id.length > 0
+      ? `actor:${ctx.actor_id}`
+      : `ip:${clientIp(req)}`
+  const delivery = /^\/store\/food-deliveries\/([^/?]+)/.exec(req.path)?.[1] ?? req.path
+  return `${actor}:delivery-proof:${delivery}`
+}
+
+/**
+ * Proof of delivery: 5 attempts per 15 minutes per actor per delivery.
+ *
+ * The assigned courier is exactly who a delivery PIN guards against, and
+ * nothing limited guessing: a 4-digit PIN was 10,000 scripted requests. With
+ * PINs of 4 to 10 digits (`DELIVERY_PIN_PATTERN`) this allows 480 guesses a
+ * day at most, so half the 4-digit space takes over ten days for a delivery
+ * that is closed within hours. A courier who mistypes five times waits 15
+ * minutes. Without a shared store (`REDIS_URL` unset or down, SD-62) the
+ * budget is per process, so N instances allow N times this.
+ */
+export const storeDeliveryProofRateLimiter = createRateLimiter({
+  windowMs: 900_000,
+  max: 5,
+  keyPrefix: "store-delivery-proof",
+  keyGenerator: deliveryProofRateLimitKey,
+})
+
 /** Store wallet deposit and withdraw (ACH pull / push): 5 per minute. */
 export const storeHawalaMoneyRateLimiter = createRateLimiter({
   windowMs: 60_000,

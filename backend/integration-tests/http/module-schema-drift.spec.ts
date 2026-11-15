@@ -28,6 +28,9 @@ jest.setTimeout(300 * 1000)
 // makes every insert into that table fail on a migrated database (SD-50 proved
 // it for character_sheet), so each line here is a write path that cannot work
 // on a database built from the migrations.
+// Shrunk by SD-69 (garden's Migration20261115AddRawBigNumberColumns):
+// garden_membership, garden_plot and garden_soil_zone are whole again, leaving
+// 35 tables and 87 columns in 13 modules.
 const KNOWN_DRIFT: Record<string, string[]> = {
   bargaining_group: ["raw_total_budget"],
   bargaining_member: ["raw_budget"],
@@ -48,9 +51,6 @@ const KNOWN_DRIFT: Record<string, string[]> = {
   donation_disbursement: ["raw_amount"],
   engagement_snapshot: ["raw_comments", "raw_likes", "raw_qualified_views", "raw_saves", "raw_shares", "raw_views", "raw_watch_time_seconds"],
   enterprise_fee: ["raw_amount"],
-  garden_membership: ["raw_harvest_credits_balance", "raw_investment_balance", "raw_volunteer_hours_balance", "raw_voting_power"],
-  garden_plot: ["raw_season_fee"],
-  garden_soil_zone: ["raw_organic_matter_percent", "raw_ph_level"],
   hype_profile: ["raw_capital_need_amount"],
   kitchen: ["raw_deposit_required", "raw_hourly_rate", "raw_monthly_membership_fee"],
   kitchen_equipment: ["raw_current_value", "raw_purchase_price"],

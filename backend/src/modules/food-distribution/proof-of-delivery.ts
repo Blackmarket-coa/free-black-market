@@ -12,9 +12,21 @@ import { nullIfNotFound } from "../../shared/null-if-not-found"
  * `PUT /store/food-deliveries/:id` could set `DELIVERED` with no proof at all.
  *
  * The rule here: **a delivery that requires proof reaches a delivered state
- * only by presenting that proof**, and a PIN requirement is met only by the
- * PIN on record.
+ * only by presenting that proof**. A PIN requirement is met only by the PIN on
+ * record; a PHOTO, SIGNATURE or RECIPIENT_CONFIRMATION requirement only by the
+ * matching evidence (`photo_url`, `signature_url`, a non-blank
+ * `recipient_name`). Naming the type alone used to be enough for those three,
+ * so the courier the requirement constrains could close the delivery with
+ * `{ proof_type: "PHOTO" }` and nothing else.
  */
+
+/**
+ * A PIN a producer may set when creating a PIN_CODE delivery: 4 to 10 digits.
+ * Shorter PINs are guessable in a handful of tries, and a PIN_CODE delivery
+ * created with no PIN can never be delivered (nothing writes the PIN later,
+ * and `proofOfDeliveryError` refuses a requirement with no PIN on record).
+ */
+export const DELIVERY_PIN_PATTERN = /^\d{4,10}$/
 
 /** Statuses that mean the goods reached someone. */
 export const DELIVERED_STATUSES: ReadonlySet<string> = new Set([
@@ -46,7 +58,13 @@ function samePin(expected: string, submitted: string): boolean {
  */
 export function proofOfDeliveryError(
   delivery: DeliveryProofRequirement,
-  submitted: { proof_type: string; pin_code?: string | null }
+  submitted: {
+    proof_type: string
+    pin_code?: string | null
+    photo_url?: string | null
+    signature_url?: string | null
+    recipient_name?: string | null
+  }
 ): string | null {
   if (!requiresProof(delivery)) return null
 
@@ -54,15 +72,27 @@ export function proofOfDeliveryError(
     return `This delivery requires ${delivery.proof_type} proof`
   }
 
-  if (delivery.proof_type === "PIN_CODE") {
-    const expected = delivery.proof_pin_code
-    const given = submitted.pin_code
-    if (!expected || !given || !samePin(expected, given)) {
-      return "Invalid PIN code"
+  switch (delivery.proof_type) {
+    case "PIN_CODE": {
+      const expected = delivery.proof_pin_code
+      const given = submitted.pin_code
+      if (!expected || !given || !samePin(expected, given)) {
+        return "Invalid PIN code"
+      }
+      return null
     }
+    case "PHOTO":
+      return submitted.photo_url ? null : "PHOTO proof requires photo_url"
+    case "SIGNATURE":
+      return submitted.signature_url ? null : "SIGNATURE proof requires signature_url"
+    case "RECIPIENT_CONFIRMATION":
+      return submitted.recipient_name?.trim()
+        ? null
+        : "RECIPIENT_CONFIRMATION proof requires recipient_name"
+    default:
+      // A requirement this code does not know how to check is not met.
+      return `This delivery requires ${delivery.proof_type} proof, which cannot be accepted here`
   }
-
-  return null
 }
 
 /**

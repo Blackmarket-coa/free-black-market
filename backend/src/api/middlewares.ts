@@ -25,6 +25,7 @@ import {
   standardRateLimiter,
   storeCustomerAccountRateLimiter,
   storeCustomerDataRightsRateLimiter,
+  storeDeliveryProofRateLimiter,
   strictAuthRateLimiter,
   supplierWebhookRateLimiter,
   trustProxyMiddleware,
@@ -989,6 +990,22 @@ export default defineMiddlewares({
       matcher: "/store/customers/me/deletion",
       method: "POST",
       middlewares: [storeCustomerDataRightsRateLimiter],
+    },
+    // Proof of delivery: the PIN guess budget (storeDeliveryProofRateLimiter).
+    // `POST /:id` is listed because the ?x=/proof twin in
+    // food-deliveries/[id]/route.ts reaches the same handler; its only other
+    // answer is 404. The community-write authenticate above is sorted ahead
+    // of these, so the bucket is keyed by the courier's actor id;
+    // store-delivery-proof-rate-limit.unit.spec.ts pins that order.
+    {
+      matcher: "/store/food-deliveries/:id/proof",
+      method: "POST",
+      middlewares: [storeDeliveryProofRateLimiter],
+    },
+    {
+      matcher: "/store/food-deliveries/:id",
+      method: "POST",
+      middlewares: [storeDeliveryProofRateLimiter],
     },
     // Identity keys in customer metadata (blackout_user_id, mxid,
     // mxid_source) are server-owned: Medusa's store validators accept any

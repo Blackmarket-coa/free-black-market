@@ -412,6 +412,16 @@ describe("POST /store/harvests/:id/allocations", () => {
     ),
     updateGardenHarvests: jest.fn(async (d: Row) => d),
   })
+  // The pg connection the route claims the harvest through. `claims` is what
+  // Postgres answers the conditional UPDATE with: false is the request that
+  // lost a race (the row was no longer pending when its UPDATE ran).
+  const CLAIM = /UPDATE garden_harvest\s+SET allocation_status = 'allocated'/
+  const RELEASE = /UPDATE garden_harvest SET allocation_status = 'pending'/
+  const pg = (claims = true) => ({
+    raw: jest.fn(async (sql: string, _bindings: unknown[]) => ({
+      rows: CLAIM.test(sql) && claims ? [{ id: "hv_1" }] : [],
+    })),
+  })
   const harvest = {
     id: "hv_1",
     garden_id: "gdn_1",
@@ -454,6 +464,7 @@ describe("POST /store/harvests/:id/allocations", () => {
 
   it("lets the garden's organizer allocate, in rows the allocation model accepts", async () => {
     const service = svc()
+    const conn = pg()
     const res = await call(
       allocateHarvest,
       makeReq({
@@ -463,7 +474,7 @@ describe("POST /store/harvests/:id/allocations", () => {
           garden_harvest: [harvest],
           garden_membership: [organizer("cus_org")],
         },
-        modules: { [HARVEST_MODULE]: service },
+        modules: { [HARVEST_MODULE]: service, [ContainerRegistrationKeys.PG_CONNECTION]: conn },
       })
     )
     expect(res.statusCode).toBe(201)
@@ -497,10 +508,14 @@ describe("POST /store/harvests/:id/allocations", () => {
         expect(row).not.toHaveProperty(absent)
       }
     }
-    expect(service.updateGardenHarvests).toHaveBeenCalledWith({
-      id: "hv_1",
-      allocation_status: "allocated",
-    })
+    // The harvest is claimed (pending -> allocated) in one statement, before
+    // any pool is written.
+    expect(conn.raw).toHaveBeenCalledTimes(1)
+    expect(conn.raw.mock.calls[0][0]).toMatch(CLAIM)
+    expect(conn.raw.mock.calls[0][1]).toEqual(["hv_1"])
+    expect(conn.raw.mock.invocationCallOrder[0]).toBeLessThan(
+      service.createHarvestAllocations.mock.invocationCallOrder[0]
+    )
   })
 
   it("uses the garden's own active rules when it has them", async () => {
@@ -519,7 +534,7 @@ describe("POST /store/harvests/:id/allocations", () => {
           garden_harvest: [harvest],
           garden_membership: [organizer("cus_org")],
         },
-        modules: { [HARVEST_MODULE]: service },
+        modules: { [HARVEST_MODULE]: service, [ContainerRegistrationKeys.PG_CONNECTION]: pg() },
       })
     )
     expect(res.statusCode).toBe(201)
@@ -547,6 +562,45 @@ describe("POST /store/harvests/:id/allocations", () => {
     expect(res.statusCode).toBe(409)
     expect(service.createHarvestAllocations).not.toHaveBeenCalled()
     expect(service.updateGardenHarvests).not.toHaveBeenCalled()
+  })
+
+  it("refuses the request that loses a race: the claim decides, not the earlier read", async () => {
+    // Both of two simultaneous requests read the harvest as pending; only one
+    // UPDATE ... WHERE allocation_status = 'pending' gets the row.
+    const service = svc()
+    const conn = pg(false)
+    const res = await call(
+      allocateHarvest,
+      makeReq({
+        actor: CUSTOMER("cus_org"),
+        params: { id: "hv_1" },
+        rows: { garden_harvest: [harvest], garden_membership: [organizer("cus_org")] },
+        modules: { [HARVEST_MODULE]: service, [ContainerRegistrationKeys.PG_CONNECTION]: conn },
+      })
+    )
+    expect(res.statusCode).toBe(409)
+    expect(conn.raw).toHaveBeenCalledTimes(1)
+    expect(service.createHarvestAllocations).not.toHaveBeenCalled()
+  })
+
+  it("hands the harvest back to pending when writing the pools fails", async () => {
+    const service = svc()
+    service.createHarvestAllocations.mockRejectedValueOnce(new Error("db down"))
+    const conn = pg()
+    await expect(
+      call(
+        allocateHarvest,
+        makeReq({
+          actor: CUSTOMER("cus_org"),
+          params: { id: "hv_1" },
+          rows: { garden_harvest: [harvest], garden_membership: [organizer("cus_org")] },
+          modules: { [HARVEST_MODULE]: service, [ContainerRegistrationKeys.PG_CONNECTION]: conn },
+        })
+      )
+    ).rejects.toThrow("db down")
+    expect(conn.raw).toHaveBeenCalledTimes(2)
+    expect(conn.raw.mock.calls[1][0]).toMatch(RELEASE)
+    expect(conn.raw.mock.calls[1][1]).toEqual(["hv_1", "hv_1"])
   })
 })
 
@@ -792,6 +846,33 @@ describe("POST /store/food-deliveries/:id/proof — the courier, with the requir
     expect(res.body.delivery).not.toHaveProperty("proof_pin_code")
   })
 
+  it.each([
+    ["PHOTO", { photo_url: "https://example.com/porch.jpg" }, "PHOTO proof requires photo_url"],
+    ["SIGNATURE", { signature_url: "https://example.com/sig.png" }, "SIGNATURE proof requires signature_url"],
+    ["RECIPIENT_CONFIRMATION", { recipient_name: "Ada" }, "RECIPIENT_CONFIRMATION proof requires recipient_name"],
+  ])(
+    "a %s requirement is met only with its evidence, not by naming the type",
+    async (type, evidence, reason) => {
+      const required = { ...pinDelivery, proof_type: type, proof_pin_code: null }
+
+      const bare = proof(COURIER, { proof_type: type }, required)
+      const refused = await call(submitProof, bare.req)
+      expect(refused.statusCode).toBe(400)
+      expect(refused.body.message).toBe(reason)
+      expect(bare.service.recordProofOfDelivery).not.toHaveBeenCalled()
+
+      if (type === "RECIPIENT_CONFIRMATION") {
+        const blank = proof(COURIER, { proof_type: type, recipient_name: "   " }, required)
+        expect((await call(submitProof, blank.req)).statusCode).toBe(400)
+        expect(blank.service.recordProofOfDelivery).not.toHaveBeenCalled()
+      }
+
+      const met = proof(COURIER, { proof_type: type, ...evidence }, required)
+      expect((await call(submitProof, met.req)).statusCode).toBe(200)
+      expect(met.service.recordProofOfDelivery).toHaveBeenCalledWith("fd_1", type, expect.anything())
+    }
+  )
+
   it("accepts any proof type for a delivery created without a requirement", async () => {
     const { service, req } = proof(
       COURIER,
@@ -998,6 +1079,28 @@ describe("POST /store/food-deliveries — the order's producer, once per order",
     expect(service.createDeliveryForOrder).not.toHaveBeenCalled()
   })
 
+  it.each([
+    ["no PIN", {}],
+    ["an empty PIN", { proof_pin_code: "" }],
+    ["a 3-digit PIN", { proof_pin_code: "123" }],
+    ["a PIN that is not digits", { proof_pin_code: "abcd" }],
+  ])("refuses a PIN_CODE delivery with %s, which could never be delivered", async (_label, pin) => {
+    const service = svc(order)
+    const { proof_pin_code: _omit, ...rest } = body
+    const res = await call(
+      createFoodDelivery,
+      makeReq({
+        actor: PRODUCER,
+        body: { ...rest, ...pin },
+        rows: deliveryRows,
+        modules: { [FOOD_DISTRIBUTION_MODULE]: service },
+      })
+    )
+    expect(res.statusCode).toBe(400)
+    expect(JSON.stringify(res.body.errors)).toContain("proof_pin_code")
+    expect(service.createDeliveryForOrder).not.toHaveBeenCalled()
+  })
+
   it("lets the producer create it, and does not echo the PIN", async () => {
     const service = svc(order)
     const res = await create(PRODUCER, service)
@@ -1132,6 +1235,84 @@ describe("customer-identity community writes refuse seller and driver tokens", (
       )
     ).rejects.toThrow(/^reached /)
     expect(res.statusCode).not.toBe(403)
+  })
+})
+
+describe("POST /store/proposals/:id/votes — the voter's own active membership in this garden", () => {
+  /**
+   * The membership supplies the voting power. Only its owner used to be
+   * checked, so a stranger to garden A voted on A's proposal with the balances
+   * of their membership in garden B (a probe wrote voting_power 526), and a
+   * caller with no membership voted at base power 1.
+   */
+  const proposal = {
+    id: "prop_1",
+    garden_id: "gdn_A",
+    status: "active",
+    voting_end: new Date(Date.now() + 86_400_000).toISOString(),
+    votes_for: 0,
+    votes_against: 0,
+    votes_abstain: 0,
+    total_voting_power: 0,
+    unique_voters: 0,
+  }
+  const membership = (over: Row = {}) => ({
+    id: "gm_mine",
+    customer_id: "cus_voter",
+    garden_id: "gdn_A",
+    status: "active",
+    volunteer_hours_balance: 500,
+    investment_balance: 100000,
+    roles: [],
+    ...over,
+  })
+  const governance = () => ({
+    createGardenVotes: jest.fn(async (d: Row) => ({ id: "vote_1", ...d })),
+    updateGardenProposals: jest.fn(async (d: Row) => d),
+  })
+  const vote = (memberships: Row[], body: Row = { membership_id: "gm_mine", vote: "for" }) => {
+    const service = governance()
+    const req = makeReq({
+      actor: CUSTOMER("cus_voter"),
+      params: { id: "prop_1" },
+      body,
+      rows: {
+        garden_proposal: [proposal],
+        garden_vote: [],
+        garden_membership: memberships,
+        garden: [{ id: "gdn_A", governance_model: "hybrid", settings: null }],
+      },
+      modules: { [GOVERNANCE_MODULE]: service },
+    })
+    return { service, req }
+  }
+
+  it.each([
+    ["a membership in another garden", [membership({ garden_id: "gdn_B" })], undefined],
+    ["a membership that is not active", [membership({ status: "pending" })], undefined],
+    ["someone else's membership", [membership({ customer_id: "cus_other" })], undefined],
+    ["a membership id that does not exist", [], undefined],
+    ["no membership id at all", [membership()], { vote: "for" }],
+  ])("refuses %s", async (_label, memberships, body) => {
+    const { service, req } = vote(memberships as Row[], body as Row | undefined)
+    const res = await call(castVote, req)
+    expect(res.statusCode).toBe(403)
+    expect(service.createGardenVotes).not.toHaveBeenCalled()
+    expect(service.updateGardenProposals).not.toHaveBeenCalled()
+  })
+
+  it("counts the vote of an active member of the proposal's garden, under their own membership", async () => {
+    const { service, req } = vote([membership()])
+    const res = await call(castVote, req)
+    expect(res.statusCode).toBe(201)
+    expect(service.createGardenVotes).toHaveBeenCalledWith(
+      expect.objectContaining({
+        proposal_id: "prop_1",
+        garden_id: "gdn_A",
+        customer_id: "cus_voter",
+        membership_id: "gm_mine",
+      })
+    )
   })
 })
 

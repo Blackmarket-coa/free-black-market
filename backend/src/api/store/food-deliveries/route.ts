@@ -8,6 +8,7 @@ import {
   forbidden,
 } from "../../../shared/community-read-access"
 import { redactDeliveries, redactDelivery } from "../../../modules/food-distribution/public-view"
+import { DELIVERY_PIN_PATTERN } from "../../../modules/food-distribution/proof-of-delivery"
 import { nullIfNotFound } from "../../../shared/null-if-not-found"
 
 // ===========================================
@@ -74,6 +75,17 @@ const createDeliverySchema = z.object({
   delivery_fee: z.number().min(0).optional(),
   
   metadata: z.record(z.string(), z.any()).optional(),
+}).superRefine((data, ctx) => {
+  // A PIN_CODE delivery with no usable PIN could never be delivered: nothing
+  // writes the PIN afterwards and /proof refuses a requirement with no PIN on
+  // record. Refuse it here instead, with a PIN long enough to mean something.
+  if (data.proof_type === "PIN_CODE" && !DELIVERY_PIN_PATTERN.test(data.proof_pin_code ?? "")) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["proof_pin_code"],
+      message: "A PIN_CODE delivery needs proof_pin_code of 4 to 10 digits",
+    })
+  }
 })
 
 const listDeliveriesQuerySchema = z.object({

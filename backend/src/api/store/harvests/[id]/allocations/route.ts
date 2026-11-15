@@ -15,7 +15,42 @@ interface HarvestServiceType {
   createHarvestAllocations: (
     data: Record<string, unknown>[]
   ) => Promise<Array<{ id: string }>>
-  updateGardenHarvests: (data: Record<string, unknown>) => Promise<{ id: string }>
+}
+
+/** The slice of the knex connection this route uses. */
+type PgConnection = {
+  raw: (sql: string, bindings: unknown[]) => Promise<{ rows: Array<{ id: string }> }>
+}
+
+/**
+ * Claim the harvest for allocation in one statement: pending -> allocated,
+ * true only for the request that moved it. Postgres re-checks the WHERE after
+ * a concurrent writer commits, so of two simultaneous organizer requests
+ * exactly one gets the row; reading `allocation_status` and then writing it
+ * let both through, and the harvest was offered to claimants twice.
+ */
+async function claimHarvestForAllocation(conn: PgConnection, id: string): Promise<boolean> {
+  const { rows } = await conn.raw(
+    `UPDATE garden_harvest
+        SET allocation_status = 'allocated', updated_at = now()
+      WHERE id = ? AND deleted_at IS NULL
+        AND (allocation_status = 'pending' OR allocation_status IS NULL)
+      RETURNING id`,
+    [id]
+  )
+  return rows.length === 1
+}
+
+async function releaseHarvestClaim(conn: PgConnection, id: string): Promise<void> {
+  await conn.raw(
+    `UPDATE garden_harvest SET allocation_status = 'pending', updated_at = now()
+      WHERE id = ? AND allocation_status = 'allocated'
+        AND NOT EXISTS (
+          SELECT 1 FROM garden_harvest_allocation
+           WHERE harvest_id = ? AND deleted_at IS NULL
+        )`,
+    [id, id]
+  )
 }
 
 /** The pools a harvest is split into when the garden has configured none. */
@@ -122,12 +157,14 @@ export async function POST(
     return forbidden(res)
   }
 
-  if (harvest.allocation_status && harvest.allocation_status !== "pending") {
+  const alreadyAllocated = () =>
     res.status(409).json({
       message: "This harvest has already been allocated",
       type: "duplicate_error",
     })
-    return
+
+  if (harvest.allocation_status && harvest.allocation_status !== "pending") {
+    return alreadyAllocated()
   }
 
   // The garden's active allocation rules, through the module rather than
@@ -148,31 +185,37 @@ export async function POST(
     harvest.total_estimated_value == null ? null : Number(harvest.total_estimated_value)
   const unit = harvest.unit as string
 
-  // Create allocations, in one call so a failure leaves no partial set.
-  const allocations = await harvestService.createHarvestAllocations(
-    allocationRules.map((rule) => {
-      const percentage = Number(rule.percentage)
-      return {
-        harvest_id: id,
-        garden_id: harvest.garden_id,
-        pool_type: rule.pool_type,
-        percentage,
-        quantity: (quantity * percentage) / 100,
-        unit,
-        estimated_value:
-          estimatedValue == null ? null : (estimatedValue * percentage) / 100,
-        priority: typeof rule.priority === "number" ? rule.priority : 1,
-        status: "allocated",
-        claim_deadline: getClaimDeadline(rule.pool_type as PoolType, new Date()),
-      }
-    })
-  )
+  const conn = req.scope.resolve(ContainerRegistrationKeys.PG_CONNECTION) as PgConnection
+  if (!(await claimHarvestForAllocation(conn, id))) {
+    return alreadyAllocated()
+  }
 
-  // Update harvest allocation status
-  await harvestService.updateGardenHarvests({
-    id,
-    allocation_status: "allocated",
-  })
+  // Create allocations, in one call so a failure leaves no partial set. If it
+  // fails, hand the harvest back to pending so the organizer can retry.
+  let allocations: Array<{ id: string }>
+  try {
+    allocations = await harvestService.createHarvestAllocations(
+      allocationRules.map((rule) => {
+        const percentage = Number(rule.percentage)
+        return {
+          harvest_id: id,
+          garden_id: harvest.garden_id,
+          pool_type: rule.pool_type,
+          percentage,
+          quantity: (quantity * percentage) / 100,
+          unit,
+          estimated_value:
+            estimatedValue == null ? null : (estimatedValue * percentage) / 100,
+          priority: typeof rule.priority === "number" ? rule.priority : 1,
+          status: "allocated",
+          claim_deadline: getClaimDeadline(rule.pool_type as PoolType, new Date()),
+        }
+      })
+    )
+  } catch (error) {
+    await releaseHarvestClaim(conn, id)
+    throw error
+  }
 
   res.status(201).json({ allocations })
 }

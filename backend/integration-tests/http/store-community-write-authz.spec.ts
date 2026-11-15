@@ -173,6 +173,32 @@ medusaIntegrationTestRunner({
       const listed = await safe(api.get(`/store/harvests/${harvest.id}/allocations`, creator.headers))
       expect(listed.status).toBe(200)
       expect(listed.data.allocations).toHaveLength(6)
+
+      // Allocate-once holds under concurrency: of simultaneous organizer
+      // requests on a fresh harvest, exactly one claims it (the conditional
+      // UPDATE decides), so its quantity is offered to claimants once. Reading
+      // allocation_status and then writing it let several through.
+      const raced = await getContainer()
+        .resolve(HARVEST_MODULE)
+        .createGardenHarvests({
+          garden_id: gardenId,
+          season_id: "sea_any",
+          crop_type: "kale",
+          harvested_at: new Date(),
+          total_quantity: 60,
+          unit: "lbs",
+        })
+      const racers = await Promise.all(
+        Array.from({ length: 6 }, () =>
+          safe(api.post(`/store/harvests/${raced.id}/allocations`, {}, creator.headers))
+        )
+      )
+      expect(racers.map((r) => r.status).sort()).toEqual([201, 409, 409, 409, 409, 409])
+      const racedRows: Array<Record<string, unknown>> = await getContainer()
+        .resolve(HARVEST_MODULE)
+        .listHarvestAllocations({ harvest_id: raced.id })
+      expect(racedRows).toHaveLength(6)
+      expect(racedRows.reduce((sum, r) => sum + Number(r.quantity), 0)).toBe(60)
     })
 
     it("a delivery zone written through /store belongs to the seller who created it", async () => {
