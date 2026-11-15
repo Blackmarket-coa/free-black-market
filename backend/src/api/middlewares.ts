@@ -38,6 +38,7 @@ import { servePublishingKeys } from "./middlewares/publishing-keys";
 import { refuseServerOwnedCustomerMetadata } from "./middlewares/server-owned-customer-metadata";
 import { refuseUnfinishedCartCompletion } from "./middlewares/cart-completion-finished";
 import { refuseCoreStoreReturnCreate } from "./middlewares/refuse-core-store-return";
+import { refuseSharedPaymentOrderCancel } from "./middlewares/shared-payment-order-cancel";
 import { ensureSellerContext } from "./vendor/_middlewares";
 // Nested middleware route sets. Medusa's MiddlewareFileLoader reads ONLY this
 // file (it checks `<api dir>/middlewares.ts` and does not recurse), so a nested
@@ -1615,6 +1616,16 @@ export default defineMiddlewares({
       matcher: "/store/carts/:id/complete",
       method: "POST",
       middlewares: [refuseUnfinishedCartCompletion],
+    },
+    // SD-36 (8): Medusa's admin cancel refunds or voids the order's whole
+    // payment collection, and on a Mercur multi-seller cart that collection is
+    // every seller's. Refused with 409 when another order shares it
+    // (src/api/middlewares/shared-payment-order-cancel.ts); an order whose
+    // collection is its own reaches Medusa's route unchanged.
+    {
+      matcher: "/admin/orders/:id/cancel",
+      method: "POST",
+      middlewares: [refuseSharedPaymentOrderCancel],
     },
     // Ticket booking routes - admin venues
     {

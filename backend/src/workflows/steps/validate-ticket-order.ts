@@ -1,6 +1,7 @@
 import { MedusaError } from "@medusajs/framework/utils"
 import { createStep, StepResponse } from "@medusajs/framework/workflows-sdk"
 import { cancelOrderWorkflow } from "@medusajs/medusa/core-flows"
+import { assertCancelLeavesSharedPaymentAlone } from "../../lib/shared-payment-cancel"
 
 export type ValidateTicketOrderStepInput = {
   items: {
@@ -100,6 +101,14 @@ export const validateTicketOrderStep = createStep(
   },
   async (order_id, { container, context }) => {
     if (!order_id) return
+
+    // SD-36 (8): Medusa's cancel refunds or voids the order's whole payment
+    // collection. This order comes from Medusa's own completeCartWorkflow, one
+    // order per cart, so its collection is its own; were it ever shared with
+    // another order (a Mercur split cart), refuse rather than refund the
+    // other sellers' money. The refusal is a compensation failure, recorded on
+    // the transaction like any other.
+    await assertCancelLeavesSharedPaymentAlone(container, order_id)
 
     // Awaited so a compensation failure propagates (and the engine can retry)
     // instead of surfacing as an unhandled rejection while reporting success.

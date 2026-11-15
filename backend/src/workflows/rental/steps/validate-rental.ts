@@ -7,6 +7,7 @@ import { RentalConfiguration } from "../../../modules/rental/models/rental-confi
 import hasCartOverlap from "../../../utils/has-cart-overlap"
 import validateRentalDates from "../../../utils/validate-rental-dates"
 import { cancelOrderWorkflow } from "@medusajs/medusa/core-flows"
+import { assertCancelLeavesSharedPaymentAlone } from "../../../lib/shared-payment-cancel"
 
 export type ValidateRentalInput = {
   rental_items: {
@@ -112,7 +113,16 @@ export const validateRentalStep = createStep(
   async (order_id, { container, context }) => {
     if (!order_id) return
 
-    cancelOrderWorkflow(container).run({
+    // SD-36 (8): Medusa's cancel refunds or voids the order's whole payment
+    // collection. This order comes from Medusa's own completeCartWorkflow, one
+    // order per cart, so its collection is its own; were it ever shared with
+    // another order (a Mercur split cart), refuse rather than refund the
+    // other sellers' money. Awaited, as validate-ticket-order's is, so a
+    // refusal or a failed cancel is a compensation failure on the transaction
+    // rather than an unhandled rejection.
+    await assertCancelLeavesSharedPaymentAlone(container, order_id)
+
+    await cancelOrderWorkflow(container).run({
       input: {
         order_id,
       },
