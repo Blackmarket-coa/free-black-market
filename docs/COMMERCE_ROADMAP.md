@@ -1,5 +1,7 @@
 # Commerce Roadmap — B2B and community pivot
 
+> **2026-11-12 experience decision:** [Unified member portal and character-build plan](FBM_UNIFIED_MEMBER_PORTAL_PLAN.md) is canonical for one signed-in buying/selling/trading/auction experience, a character-creation survey that automatically builds a simple working portal, standard game view, functional equipment with one-time purchases, and reuse of Blackout Coalition and Blackstar. This is implementation direction, not a shipped/deployed claim. Existing pricing, privacy and release gates remain in force.
+
 > **2026-11-03 decision update:** [FBM Resource Exchange Mission and Implementation Charter](FBM_RESOURCE_EXCHANGE_CHARTER.md) is authoritative for FBM's shift to goal-first resource allocation and composable sale, barter, gift, pooled-buy, lending and cooperative tools. Fixed decisions: flat 3% commission after processing-fee deduction; **no subscriptions** (one-time software purchases and transparent at-cost hosted usage); E2EE never paywalled; national/international quest scope; AGPL-3.0 compatibility; Capacitor app wrappers using synced web checkout. **Any monthly plan, subscription entitlement, KARMA-based fee variation, ideological mode or state-only quest rule below is historical and superseded, not approved future pricing or behavior.** Existing code/deployment status has **not** been re-audited by this documentation change. Flag contradictions for audit; do not claim implementation or remove production billing without an approved migration.
 
 
@@ -27,6 +29,14 @@ again would duplicate working code and, in two cases, reverse a standing
 decision.
 
 ---
+
+## Current delivery overlay — 2026-11-12
+
+The [unified member plan](FBM_UNIFIED_MEMBER_PORTAL_PLAN.md) governs the next user-visible slice: character creation builds a simple functioning portal where buying/selling/trading/auction activity shares one signed-in experience. Reuse existing commerce, playbooks, progression, entitlement and plugin install code; preserve actor/team boundaries and financial history.
+
+Demand-side and seller tools below become modules of that portal. Coalition supplies the existing map/community coordination, Blackstar the transport operations. Newly prioritized goods auctions remain distinct from Blackstar work bidding. The source audit records built versus unverified/disabled behavior and identity/install/status gaps; do not reopen already solved domains or infer deployment from old prose.
+
+Older priority tiers below remain domain-level evidence. The new experience priority supersedes separate-portal and optional-game assumptions while retaining pricing/privacy/operational gates.
 
 ## 1. Corrections — the consolidated state against the code
 

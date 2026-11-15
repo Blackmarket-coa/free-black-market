@@ -1,25 +1,17 @@
 # FBM Buyer Hub — Product Specification
 
+> **2026-11-12 experience decision:** [Unified member portal and character-build plan](FBM_UNIFIED_MEMBER_PORTAL_PLAN.md) is canonical for one signed-in buying/selling/trading/auction experience, a character-creation survey that automatically builds a simple working portal, standard game view, functional equipment with one-time purchases, and reuse of Blackout Coalition and Blackstar. This is implementation direction, not a shipped/deployed claim. Existing pricing, privacy and release gates remain in force.
+
 > **2026-11-03 decision update:** [FBM Resource Exchange Mission and Implementation Charter](FBM_RESOURCE_EXCHANGE_CHARTER.md) is authoritative for FBM's shift to goal-first resource allocation and composable sale, barter, gift, pooled-buy, lending and cooperative tools. Fixed decisions: flat 3% commission after processing-fee deduction; **no subscriptions** (one-time software purchases and transparent at-cost hosted usage); E2EE never paywalled; national/international quest scope; AGPL-3.0 compatibility; Capacitor app wrappers using synced web checkout. **Any monthly plan, subscription entitlement, KARMA-based fee variation, ideological mode or state-only quest rule below is historical and superseded, not approved future pricing or behavior.** Existing code/deployment status has **not** been re-audited by this documentation change. Flag contradictions for audit; do not claim implementation or remove production billing without an approved migration.
 
 
 ## Purpose
 
-Extend the existing demand-side cluster into a standalone cross-platform hub for buyers,
-mutual aid participants, and demand-driven commerce: one place to post a buy order, launch
-or join a group buy, request mutual aid, post a bounty for something hard to find, or
-browse recurring order cycles from trusted vendors.
+Compose the existing demand-side cluster into the unified signed-in member portal and supported embeds: post a need/buy order, join a group buy, request help, post a bounty or browse ordering windows in the same experience used for selling and trading.
 
-This is the demand-side mirror of the vendor hub: same two-surface principle (a hosted hub
-experience plus an embeddable widget), same shared entitlement/identity backbone, same
-cooperative-economics constraint — transparent, never extractive.
+The earlier standalone buyer-hub/mirror-vendor-hub presentation is superseded. Buying/Selling/Trades/Bids are activity filters, not separate portals. Keep the shared entitlement/identity backbone and correct domain authorization underneath.
 
-> **Unmet dependency.** The source brief cross-references
-> `fbm-vendor-hub-creation-prompt.md` as the definition of the shared
-> entitlement/identity/progression contract. **That document does not exist** in this
-> repository or in its history. This spec is therefore written self-contained, against the
-> infrastructure that demonstrably exists (§3). If the vendor-hub document is later
-> written, reconcile §3 against it rather than assuming agreement.
+The [unified member plan](FBM_UNIFIED_MEMBER_PORTAL_PLAN.md) now defines character creation, automatic portal setup, functional equipment and the shared experience contract. Do not block implementation on the formerly referenced missing vendor-hub prompt. The inventory below remains source/deployment evidence to verify, not a claim this composed experience already exists.
 
 ## Status at a glance
 

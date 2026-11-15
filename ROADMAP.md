@@ -1,5 +1,7 @@
 # Roadmap
 
+> **2026-11-12 experience decision:** [Unified member portal and character-build plan](docs/FBM_UNIFIED_MEMBER_PORTAL_PLAN.md) is canonical for one signed-in buying/selling/trading/auction experience, a character-creation survey that automatically builds a simple working portal, standard game view, functional equipment with one-time purchases, and reuse of Blackout Coalition and Blackstar. This is implementation direction, not a shipped/deployed claim. Existing pricing, privacy and release gates remain in force.
+
 > **AI-first readiness process:** [Full-platform audit, repair and feature visibility plan](docs/FBM_AI_FIRST_AUDIT_AND_REPAIR_PLAN.md) defines how to verify every journey, finish small repairs, hide and preserve incomplete capabilities, and escalate only necessary human decisions. This plan has **not yet been executed**.
 
 > **MVP scope (2026-11-03):** [FBM Resource Exchange MVP](docs/FBM_RESOURCE_EXCHANGE_MVP.md) defines the first-session journey, four target exchange primitives, regional pilot, privacy and legal gates, release criteria, and metrics. This is a proposed acceptance contract, **not a claim of deployed functionality**.
@@ -24,6 +26,16 @@ canonical for its own scope:
 disconnected" and asked that its ordering be folded in at the next roadmap
 revision. That revision is `docs/COMMERCE_ROADMAP.md` (2026-09-02), which
 also reconciles the commerce backlog against the code.
+
+## Immediate experience priority — 2026-11-12
+
+1. Reconcile runtime capability/identity/pricing state against the pinned source audit.
+2. Ship character survey → automatic unified portal → one real task as one working slice; standard game view and compact access are part of the initial experience.
+3. Merge buying/selling UI while retaining domain permissions, orders and licensed tool scopes; migrate existing vendor tools progressively.
+4. Deliver functional equipment, one-time purchases, earned tool choices and contextually optional upgrade discovery.
+5. Wire existing Coalition map/coordination and Blackstar operator/fulfillment paths. Verify goods auctions separately from transport bids.
+
+The [ordered implementation backlog](docs/FBM_UNIFIED_MEMBER_PORTAL_PLAN.md#9-ordered-implementation-backlog) governs this slice. The older tracks below retain domain work but do not authorize separate buyer/vendor portals or a survey that ends at a generic dashboard. No deadline or deployment completion is asserted here.
 
 ## Near-term (0–3 months)
 

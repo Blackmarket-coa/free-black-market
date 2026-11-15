@@ -1,5 +1,7 @@
 # Listing-Types
 
+> **2026-11-12 experience decision:** [Unified member portal and character-build plan](FBM_UNIFIED_MEMBER_PORTAL_PLAN.md) is canonical for one signed-in buying/selling/trading/auction experience, a character-creation survey that automatically builds a simple working portal, standard game view, functional equipment with one-time purchases, and reuse of Blackout Coalition and Blackstar. This is implementation direction, not a shipped/deployed claim. Existing pricing, privacy and release gates remain in force.
+
 A **listing-type** describes the shape of an offering on the FBM
 storefront. Listing-types are orthogonal to playbooks: a playbook is who
 the vendor is, a listing-type is what is on the shelf. Each playbook
@@ -119,6 +121,14 @@ during the funding window.
 - Used by Cycle (pre-season CSA capitalization), Workshop (cooperative
   capitalization), Atelier (project launches).
 
+## Goods auctions — newly prioritized, not implemented
+
+Auctions are a target activity in the unified member market. The former v3 deferral is superseded as product direction. An AUCTION pricing enum and Blackstar transport bid/award APIs do not provide a working goods-auction engine.
+
+Reuse catalog, real inventory, member identity, checkout/orders and fulfillment. Add auction-specific timed state, atomic concurrent bid handling, disclosed reserve/increment/close rules, exclusive winner reservation, authorized payment, nonpayment/cancellation recovery and receipts. A win never silently authorizes charging a card. Sale/trade/auction cannot allocate the same unit twice.
+
+The implementation must reconcile listing-type/schema/presentation/workflow constraints rather than advertising a new discriminator before handlers exist. See the [canonical plan](FBM_UNIFIED_MEMBER_PORTAL_PLAN.md) for the separate auction package and acceptance contract. This doc update does not add an auction enum, route or runtime behavior.
+
 ## v2 deferral list
 
 These ship in subsequent branches:
@@ -147,9 +157,6 @@ These ship in subsequent branches:
 
 ## v3 deferral list
 
-- **`auction`** — reserve, time-bound bidding, automatic checkout on
-  close. Niche; needs real-time bid handler (Redis pub/sub). Reserve
-  cautiously to categories that don't pressure-test cooperative trust.
 - **`live_goods`** — plant nurseries, livestock. Requires `usda_class`,
   `perishability`, `requires_in_person_pickup`. Animal sales need per-
   region allow-list and explicit policy gate at vendor onboarding.
