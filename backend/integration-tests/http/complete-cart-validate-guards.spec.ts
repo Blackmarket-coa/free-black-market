@@ -316,14 +316,16 @@ medusaIntegrationTestRunner({
 
       /**
        * The check covers every guard in the composition, not only the
-       * order-cycle one. A completed cart can carry what a guard refuses: on
-       * Mercur's main checkout, which runs none of these guards (SD-54, open),
-       * a cart holding a Coalition Credits reservation completes, and Medusa's
-       * payment webhook then runs `completeCartWorkflow` on it, because Mercur
-       * writes no `order_cart` link. That cart cannot be completed through
-       * Mercur here, so the reservation is written onto a cart after it
-       * completed, which is the state the webhook would read. A refusal there
-       * would refund the captured payment and leave the order standing.
+       * order-cycle one: a cart completed by Medusa's workflow (so it has an
+       * `order_cart` link) gets its order back on a re-run, whatever metadata
+       * is written onto it afterwards, here a Coalition Credits reservation.
+       *
+       * This is NOT the state Medusa's payment webhook reads on a cart that
+       * Mercur's main checkout completed. That cart has no `order_cart` link,
+       * so with this check Medusa's workflow skips the guards and goes into
+       * order creation, where its own steps (validateShippingStep, in a scratch
+       * run) refuse it and the refund compensation runs. The check only moves
+       * that refusal; it does not protect that path (SD-72 (b)).
        */
       it("a re-run on a completed, captured cart that carries a Coalition Credits reservation hands back its order and refunds nothing", async () => {
         const { cart, collection } = await makeCart()
