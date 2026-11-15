@@ -174,6 +174,86 @@ function resolveTemplateExpression(expr: string): string | null {
   return null
 }
 
+/**
+ * The keys of the notification object(s) in a call's arguments, with anything
+ * nested deeper blanked out: `{ to, channel: "email", data: { ...order } }`
+ * becomes `{ to, channel: "email", data:              }`. The objects are the
+ * shallowest `{...}` in the arguments, so an array of notifications works too.
+ * Reading keys at this level is what lets a spread or a shorthand `template`
+ * be seen as a key rather than confused with one inside `data`.
+ */
+function topLevelKeys(args: string): string {
+  const depthAt: number[] = []
+  let depth = 0
+  for (let i = 0; i < args.length; i++) {
+    const c = args[i]
+    if (c === '"' || c === "'" || c === "`") {
+      let j = i + 1
+      while (j < args.length && args[j] !== c) {
+        if (args[j] === "\\") j++
+        j++
+      }
+      for (let k = i; k <= j && k < args.length; k++) depthAt[k] = depth
+      i = j
+      continue
+    }
+    if (c === "{" || c === "[" || c === "(") {
+      depth++
+      depthAt[i] = depth
+      continue
+    }
+    if (c === "}" || c === "]" || c === ")") {
+      depthAt[i] = depth
+      depth--
+      continue
+    }
+    depthAt[i] = depth
+  }
+  let objectDepth = Infinity
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === "{" && depthAt[i] < objectDepth) objectDepth = depthAt[i]
+  }
+  if (objectDepth === Infinity) return ""
+  let out = ""
+  for (let i = 0; i < args.length; i++) {
+    out += depthAt[i] === objectDepth || args[i] === "\n" ? args[i] : " "
+  }
+  return out
+}
+
+/**
+ * What one call's arguments say about its channel and template. Anything the
+ * walk cannot read as a literal (or an `EMAIL_TEMPLATES.X` constant) lands in
+ * `nonLiteralTemplate`, which fails the email check below: a computed
+ * expression, a shorthand `template` property, a spread that could carry the
+ * template, or an email call with no `template` key at all. Reading only
+ * `template:` keys used to skip the last three silently.
+ */
+function parseCallArguments(args: string): Omit<CallSite, "file"> {
+  const keys = topLevelKeys(args)
+  const channels = [...keys.matchAll(/\bchannel\s*:\s*(["'`])([^"'`]+)\1/g)].map((x) => x[2])
+  const channelKeys = [...keys.matchAll(/\bchannel\s*[:,}\n]/g)].length
+  const templateExprs = [...keys.matchAll(/\btemplate\s*:\s*([^,\n}]+)/g)].map((x) => x[1].trim())
+  const templates: string[] = []
+  const nonLiteralTemplate: string[] = []
+  for (const expr of templateExprs) {
+    const value = resolveTemplateExpression(expr)
+    if (value === null) nonLiteralTemplate.push(expr)
+    else templates.push(value)
+  }
+  if (/(?:^|[{,])\s*template\s*(?=[,}]|$)/m.test(keys)) nonLiteralTemplate.push("shorthand `template`")
+  if (/(?:^|[{,])\s*\.\.\./m.test(keys)) nonLiteralTemplate.push("a spread (`...`)")
+  if (channels.includes("email") && templateExprs.length === 0 && nonLiteralTemplate.length === 0) {
+    nonLiteralTemplate.push("no `template` key")
+  }
+  return {
+    channels,
+    templates,
+    nonLiteralChannel: channelKeys !== channels.length || channelKeys === 0,
+    nonLiteralTemplate,
+  }
+}
+
 function findCallSites(): CallSite[] {
   const sites: CallSite[] = []
   for (const file of walk(SRC)) {
@@ -182,23 +262,7 @@ function findCallSites(): CallSite[] {
     const code = stripComments(raw)
     for (const m of code.matchAll(/\.createNotifications\s*\(/g)) {
       const args = callArguments(code, (m.index ?? 0) + m[0].length - 1)
-      const channels = [...args.matchAll(/\bchannel\s*:\s*(["'`])([^"'`]+)\1/g)].map((x) => x[2])
-      const channelKeys = [...args.matchAll(/\bchannel\s*:/g)].length
-      const templateExprs = [...args.matchAll(/\btemplate\s*:\s*([^,\n}]+)/g)].map((x) => x[1].trim())
-      const templates: string[] = []
-      const nonLiteralTemplate: string[] = []
-      for (const expr of templateExprs) {
-        const value = resolveTemplateExpression(expr)
-        if (value === null) nonLiteralTemplate.push(expr)
-        else templates.push(value)
-      }
-      sites.push({
-        file: path.relative(BACKEND, file),
-        channels,
-        templates,
-        nonLiteralChannel: channelKeys !== channels.length || channelKeys === 0,
-        nonLiteralTemplate,
-      })
+      sites.push({ file: path.relative(BACKEND, file), ...parseCallArguments(args) })
     }
   }
   return sites
@@ -283,6 +347,48 @@ describe("notification callers", () => {
         .map((t) => `${s.file}: template "${t}"`)
     )
     expect(unknown).toEqual([])
+  })
+})
+
+describe("the call-site parser reads what a caller can write", () => {
+  const parse = (args: string) => parseCallArguments(args)
+
+  it("reads a literal template and a constant", () => {
+    expect(parse(`{ to, channel: "email", template: "order-placed", data: {} }`)).toMatchObject({
+      channels: ["email"],
+      templates: ["order-placed"],
+      nonLiteralTemplate: [],
+      nonLiteralChannel: false,
+    })
+    expect(parse(`{ to, channel: "email", template: EMAIL_TEMPLATES.ORDER_PLACED, data }`).nonLiteralTemplate).toEqual([])
+  })
+
+  it("does not mistake a spread or a template key inside data for the notification's own", () => {
+    const site = parse(`{ to, channel: "email", template: "order-placed", data: { ...order, template: x } }`)
+    expect(site.templates).toEqual(["order-placed"])
+    expect(site.nonLiteralTemplate).toEqual([])
+  })
+
+  it("reads each notification in an array", () => {
+    const site = parse(`[{ to: a, channel: "email", template: "order-placed" }, { to: b, channel: "feed", template: "admin-ui" }]`)
+    expect(site.channels).toEqual(["email", "feed"])
+    expect(site.templates).toEqual(["order-placed", "admin-ui"])
+  })
+
+  it.each([
+    ["a variable", `{ to, channel: "email", template: name, data: {} }`, "name"],
+    ["a shorthand property", `{ to, channel: "email", template, data: {} }`, "shorthand `template`"],
+    ["a shorthand property last", `{ to, channel: "email", template }`, "shorthand `template`"],
+    ["a spread", `{ ...base, to, channel: "email", data: {} }`, "a spread (`...`)"],
+    ["no template key", `{ to, channel: "email", data: {} }`, "no `template` key"],
+  ])("flags %s as unreadable instead of skipping it", (_label, args, reason) => {
+    expect(parse(args).nonLiteralTemplate).toContain(reason)
+  })
+
+  it("flags a channel it cannot read", () => {
+    expect(parse(`{ to, channel, template: "order-placed" }`).nonLiteralChannel).toBe(true)
+    expect(parse(`{ to, channel: kind, template: "order-placed" }`).nonLiteralChannel).toBe(true)
+    expect(parse(`notifications`).nonLiteralChannel).toBe(true)
   })
 })
 
