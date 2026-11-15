@@ -8,6 +8,7 @@ import {
   CurrencyDollar,
   DocumentText,
   EllipsisHorizontal,
+  ExclamationCircle,
   MagnifyingGlass,
   MinusMini,
   OpenRectArrowOut,
@@ -253,6 +254,11 @@ const useCoreRoutes = (): Omit<INavItem, "pathname">[] => {
       icon: <DocumentText />,
       label: "Document Vault",
       to: "/vault",
+    },
+    {
+      icon: <ExclamationCircle />,
+      label: "Disputes",
+      to: "/disputes",
     },
     {
       icon: <CurrencyDollar />,
