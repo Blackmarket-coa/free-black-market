@@ -209,7 +209,11 @@ describe("completeCartWithTicketsWorkflow", () => {
     expect(queryOf("ticket_purchase_order")!.filters).toEqual({ order_id: "order_9" })
   })
 
-  it("the paid check, the seat check, the seller link, the payment's choice and the seats (purchases and their links) all come before the capture, in that order; only the refetch and the release after it", () => {
+  it.each<[string, { completedInto?: string }]>([
+    ["a first checkout", {}],
+    ["a replay", { completedInto: "order_9" }],
+  ])("%s: the paid check, the seat check, the seller link, the payment's choice, the seats (purchases and their links) and the order's refetch all come before the capture, in that order; only the release after it", (_label, opts) => {
+    world(opts)
     runComposer()
 
     expect(capturePaymentWorkflow.runAsStep).toHaveBeenCalledWith({ input: { payment_id: "pay_1" } })
@@ -220,16 +224,20 @@ describe("completeCartWithTicketsWorkflow", () => {
       order(ticketPaymentToCaptureStep),
       order(createTicketPurchasesStep),
       order(createRemoteLinkStep),
-      order(capturePaymentWorkflow.runAsStep),
-      // The order's refetch: the third and last query.
+      // The order's refetch: the third and last query. Before the capture, so
+      // the capture is the last step that can fail (SD-48 (i) second review).
       order(useQueryGraphStep, 2),
+      order(capturePaymentWorkflow.runAsStep),
       order(releaseLockStep),
     ]
     expect(sequence.every((n) => typeof n === "number")).toBe(true)
     expect(sequence).toEqual([...sequence].sort((a, b) => a - b))
     expect(queryOf("order")).toBe(mock(useQueryGraphStep).mock.calls[2][0])
-    expect(validateTicketOrderStep).toHaveBeenCalledWith({ items: [], order_id: "order_1", cancel_order_on_rollback: true, seats_only: false })
-    expect(createTicketPurchasesStep).toHaveBeenCalledWith({ order_id: "order_1", cart: { id: "cart_1", items: [] } })
+    expect(mock(useQueryGraphStep).mock.results[2].value.config).toHaveBeenCalledWith({ name: "refetch-order" })
+    const orderId = opts.completedInto ?? "order_1"
+    expect(queryOf("order")!.filters).toEqual({ id: orderId })
+    expect(validateTicketOrderStep).toHaveBeenCalledWith({ items: [], order_id: orderId, cancel_order_on_rollback: true, seats_only: false })
+    expect(createTicketPurchasesStep).toHaveBeenCalledWith({ order_id: orderId, cart: { id: "cart_1", items: [] } })
   })
 
   it.each<[string, { completedInto?: string }]>([

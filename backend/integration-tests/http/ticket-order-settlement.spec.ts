@@ -343,6 +343,58 @@ medusaIntegrationTestRunner({
       }))
     }
 
+    /**
+     * Captured FBM card payments, not refunded, on a live order holding a
+     * ticket line and no live ticket purchase: a buyer charged for a seat
+     * they do not hold. What a failure after Stripe's capture leaves on a
+     * replay, where nothing refunds (SD-48 (i) second review). The query the
+     * ledger row gives, run here as written.
+     */
+    const CAPTURED_TICKET_ORDERS_WITHOUT_SEAT = `
+      SELECT DISTINCT o.id AS order_id, p.id AS payment_id
+      FROM "order" o
+      JOIN order_payment_collection opc ON opc.order_id = o.id AND opc.deleted_at IS NULL
+      JOIN payment p ON p.payment_collection_id = opc.payment_collection_id AND p.deleted_at IS NULL
+      JOIN order_item oi ON oi.order_id = o.id AND oi.deleted_at IS NULL
+      JOIN order_line_item li ON li.id = oi.item_id AND li.deleted_at IS NULL
+      JOIN ticket_product_variant tpv ON tpv.product_variant_id = li.variant_id AND tpv.deleted_at IS NULL
+      LEFT JOIN refund r ON r.payment_id = p.id AND r.deleted_at IS NULL
+      WHERE o.deleted_at IS NULL
+        AND p.provider_id = 'pp_stripe_stripe'
+        AND p.captured_at IS NOT NULL
+        AND r.id IS NULL
+        AND NOT EXISTS (SELECT 1 FROM ticket_purchase tp WHERE tp.order_id = o.id AND tp.deleted_at IS NULL)`
+    async function capturedTicketOrdersWithoutSeat() {
+      const { rows } = await container().resolve(ContainerRegistrationKeys.PG_CONNECTION).raw(CAPTURED_TICKET_ORDERS_WITHOUT_SEAT)
+      return rows as Array<{ order_id: string; payment_id: string }>
+    }
+
+    /**
+     * SD-48 (b)'s query, as its ledger row gives it: captured FBM card
+     * payments with no live order and no refund. Run beside the one above to
+     * show it does not find a replay's charge, whose order is still live.
+     */
+    async function capturedPaymentsWithoutOrder() {
+      const { rows } = await container().resolve(ContainerRegistrationKeys.PG_CONNECTION).raw(
+        `SELECT p.id, p.amount, p.captured_at FROM payment p LEFT JOIN order_payment_collection opc ON opc.payment_collection_id = p.payment_collection_id AND opc.deleted_at IS NULL LEFT JOIN refund r ON r.payment_id = p.id AND r.deleted_at IS NULL WHERE p.provider_id = 'pp_stripe_stripe' AND p.captured_at IS NOT NULL AND p.deleted_at IS NULL AND opc.order_id IS NULL AND r.id IS NULL`
+      )
+      return rows as Array<{ id: string }>
+    }
+
+    /**
+     * Medusa's order module refuses the next order-transaction write once:
+     * the step `capturePaymentWorkflow` runs after Stripe's capture
+     * (`addOrderTransactionStep`), the place the checkout can still fail once
+     * the money has moved. Returns the spy, to order its call after the capture.
+     */
+    function failNextOrderTransaction() {
+      return jest
+        .spyOn(container().resolve(Modules.ORDER), "addOrderTransactions")
+        .mockImplementationOnce(async () => {
+          throw new Error("transient: connection terminated unexpectedly")
+        })
+    }
+
     /** What the order.placed and payment.captured subscribers do, then the order's ledger legs. */
     async function settled(orderId: string, paymentId: string) {
       await placed(orderId)
@@ -531,6 +583,8 @@ medusaIntegrationTestRunner({
         expect(cents(fee.amount)).toBe(15)
         expect(cents(sellerLeg.amount)).toBe(485)
         expect(sellerLeg.credit_account_id).toBe((await sellerEarnings(seller.id)).id)
+        // A settled sale holds its seat: the query for a charge with no seat lists nothing.
+        expect(await capturedTicketOrdersWithoutSeat()).toEqual([])
       })
 
       stallRetry.it("a cart holding two sellers' tickets is refused before the card is touched", async () => {
@@ -660,7 +714,7 @@ medusaIntegrationTestRunner({
         expect((await purchasesOf(show)).map((p) => p.order_id)).toEqual([sold.result.order.id])
       })
 
-      stallRetry.it("a failure after the capture (the order's refetch, the one step after it, fails once) leaves no live order, seller link or ticket purchase, and the capture is refunded when Stripe takes the refund", async () => {
+      stallRetry.it("the order's refetch, failing once, fails the checkout before the capture: nothing captured or refunded, the hold cancelled, no live order, seller link or ticket purchase", async () => {
         const seller = await makeSeller()
         const show = await makeShow(seller.id)
         const { cart, customer, collection } = await makeCart([show])
@@ -670,8 +724,34 @@ medusaIntegrationTestRunner({
         const { errors } = await checkout(cart.id)
         expect(reads.failed()).toBe(true)
         expect(errors).toEqual(["refetch-order: transient: connection terminated unexpectedly"])
+        // The seat was sold and its purchase deleted by its compensation;
+        // the card was never captured, so completeCartWorkflow's
+        // compensation released the hold instead of refunding a capture.
+        expect(created).toHaveBeenCalledTimes(1)
+        expect(stripe.capturePayment).not.toHaveBeenCalled()
+        expect(stripe.refundPayment).not.toHaveBeenCalled()
+        expect(stripe.cancelPayment).toHaveBeenCalledTimes(1)
+        expect(reads.cancelOrderStarts()).toEqual([])
+        expect(await liveOrders(customer.id)).toEqual([])
+        expect(await liveSellerOrderLinks(seller.id)).toEqual([])
+        expect(await purchasesOf(show)).toEqual([])
+        expect(await moneyOf(collection.id)).toEqual([{ captures: [], refunds: [], canceled: true }])
+      })
+
+      stallRetry.it("a failure after Stripe's capture (capturePaymentWorkflow's order-transaction write fails once) leaves no live order, seller link or ticket purchase, and the capture is refunded when Stripe takes the refund", async () => {
+        const seller = await makeSeller()
+        const show = await makeShow(seller.id)
+        const { cart, customer, collection } = await makeCart([show])
+        const created = jest.spyOn(container().resolve(TICKET_BOOKING_MODULE), "createTicketPurchases")
+        const transactions = failNextOrderTransaction()
+        const reads = queryReads()
+
+        const { errors } = await checkout(cart.id)
+        expect(errors).toEqual(["capture-payment-workflow-as-step: transient: connection terminated unexpectedly"])
         expect(created).toHaveBeenCalledTimes(1)
         expect(stripe.capturePayment).toHaveBeenCalledTimes(1)
+        expect(transactions).toHaveBeenCalledTimes(1)
+        expect(stripe.capturePayment.mock.invocationCallOrder[0]).toBeLessThan(transactions.mock.invocationCallOrder[0])
         // completeCartWorkflow's compensatePaymentIfNeededStep: best effort
         // (SD-48 (b)). Stripe cancels are not counted: the stub takes a cancel
         // of the captured PaymentIntent that real Stripe refuses.
@@ -681,6 +761,7 @@ medusaIntegrationTestRunner({
         expect(await liveSellerOrderLinks(seller.id)).toEqual([])
         expect(await purchasesOf(show)).toEqual([])
         expect(await moneyOf(collection.id)).toEqual([expect.objectContaining({ captures: [5], refunds: [5] })])
+        expect(await capturedTicketOrdersWithoutSeat()).toEqual([])
       })
 
       stallRetry.it("two carts for one seat at once (SD-48 (b)): both pass the seat check; the seat's unique index refuses the second before any money moves — one capture, nothing refunded, the loser's hold cancelled and its order and seller link gone", async () => {
@@ -697,7 +778,15 @@ medusaIntegrationTestRunner({
         expect(winner).toBeGreaterThanOrEqual(0)
         const [won, lost] = winner === 0 ? [x, y] : [y, x]
         const lostRun = runs[1 - winner]
-        expect(lostRun.errors).toEqual([expect.stringMatching(/^create-ticket-purchases: /)])
+        // The module's own refusal of a second live purchase of the seat (its
+        // partial unique index), not any other failure of the step.
+        expect(lostRun.errors).toEqual([
+          expect.stringMatching(
+            new RegExp(
+              `^create-ticket-purchases: Ticket purchase with ticket_product_id: ${show.ticketProductId}, venue_row_id: ${show.rowId}, seat_number: 7, show_date: .+, already exists\\.$`
+            )
+          ),
+        ])
         const wonOrderId = runs[winner].result.order.id as string
 
         // The seat's purchase is made before the capture, so the loser was
@@ -859,6 +948,72 @@ medusaIntegrationTestRunner({
         expect((await purchasesOf(show)).map((p) => p.order_id)).toEqual([orderId])
         expect(stripe.refundPayment).not.toHaveBeenCalled()
         expect(await moneyOf(collection.id)).toEqual([{ captures: [5], refunds: [], canceled: false }])
+        expect(await capturedTicketOrdersWithoutSeat()).toEqual([])
+      })
+
+      stallRetry.it("of an order its first completion left unlinked and uncaptured, the order's refetch failing once fails the retry before the capture: nothing captured, refunded or cancelled, the order kept; the next retry sells the seat and captures once", async () => {
+        const seller = await makeSeller()
+        const show = await makeShow(seller.id)
+        const { cart, collection } = await makeCart([show])
+        const created = jest.spyOn(container().resolve(TICKET_BOOKING_MODULE), "createTicketPurchases")
+        const { completeCartWorkflow } = require("@medusajs/medusa/core-flows")
+        const run = await completeCartWorkflow(container()).run({ input: { id: cart.id }, throwOnError: false })
+        expect(run.errors ?? []).toEqual([])
+        const orderId = run.result.id as string
+        const reads = queryReads((q) => q.entity === "order" && q.fields.includes("discount_total"))
+
+        const retry = await checkout(cart.id)
+        expect(reads.failed()).toBe(true)
+        expect(retry.errors).toEqual(["refetch-order: transient: connection terminated unexpectedly"])
+        // The seat was sold, then its purchase deleted by its compensation
+        // and the seller link undone; the card was never captured. Read after
+        // the capture, this refetch's failure left the buyer charged with no
+        // seat and nothing refunded: a replay has no completeCartWorkflow
+        // compensation.
+        expect(created).toHaveBeenCalledTimes(1)
+        expect(stripe.capturePayment).not.toHaveBeenCalled()
+        expect(stripe.refundPayment).not.toHaveBeenCalled()
+        expect(stripe.cancelPayment).not.toHaveBeenCalled()
+        expect(reads.cancelOrderStarts()).toEqual([])
+        expect(await moneyOf(collection.id)).toEqual([{ captures: [], refunds: [], canceled: false }])
+        expect(await purchasesOf(show)).toEqual([])
+        expect(await liveSellerOrderLinks(seller.id)).toEqual([])
+        expect((await readOrder(orderId)).status).not.toBe("canceled")
+        expect(await capturedTicketOrdersWithoutSeat()).toEqual([])
+
+        const again = await checkout(cart.id)
+        expect(again.errors).toEqual([])
+        expect(again.result.order.id).toBe(orderId)
+        expect(stripe.capturePayment).toHaveBeenCalledTimes(1)
+        expect((await purchasesOf(show)).map((p) => p.order_id)).toEqual([orderId])
+        expect((await readOrder(orderId)).seller?.id).toBe(seller.id)
+        expect(await moneyOf(collection.id)).toEqual([{ captures: [5], refunds: [], canceled: false }])
+      })
+
+      stallRetry.it("of an order its first completion left unlinked and uncaptured, a failure after Stripe's capture (capturePaymentWorkflow's order-transaction write fails once) keeps the capture and undoes the seat and the seller link, refunding nothing: the window left, which the query for a charge with no seat finds and SD-48 (b)'s does not", async () => {
+        const seller = await makeSeller()
+        const show = await makeShow(seller.id)
+        const { cart, collection } = await makeCart([show])
+        const { completeCartWorkflow } = require("@medusajs/medusa/core-flows")
+        const run = await completeCartWorkflow(container()).run({ input: { id: cart.id }, throwOnError: false })
+        expect(run.errors ?? []).toEqual([])
+        const orderId = run.result.id as string
+        const transactions = failNextOrderTransaction()
+
+        const retry = await checkout(cart.id)
+        expect(retry.errors).toEqual(["capture-payment-workflow-as-step: transient: connection terminated unexpectedly"])
+        expect(stripe.capturePayment).toHaveBeenCalledTimes(1)
+        expect(stripe.capturePayment.mock.invocationCallOrder[0]).toBeLessThan(transactions.mock.invocationCallOrder[0])
+        expect(stripe.refundPayment).not.toHaveBeenCalled()
+        expect(stripe.cancelPayment).not.toHaveBeenCalled()
+        const [payment] = await moneyOf(collection.id)
+        expect(payment).toEqual({ captures: [5], refunds: [], canceled: false })
+        expect(await purchasesOf(show)).toEqual([])
+        expect(await liveSellerOrderLinks(seller.id)).toEqual([])
+        expect((await readOrder(orderId)).status).not.toBe("canceled")
+        const paymentId = (await readOrder(orderId)).payment_collections[0].payments[0].id as string
+        expect(await capturedTicketOrdersWithoutSeat()).toEqual([{ order_id: orderId, payment_id: paymentId }])
+        expect(await capturedPaymentsWithoutOrder()).toEqual([])
       })
 
       stallRetry.it("of an order its first completion left unlinked and uncaptured, a capture Stripe refuses fails the retry: the seat's purchase is undone, nothing refunded", async () => {

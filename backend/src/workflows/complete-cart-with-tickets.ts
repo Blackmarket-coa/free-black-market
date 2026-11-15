@@ -93,9 +93,13 @@ export type CompleteCartWithTicketsWorkflowInput = {
  * charge: the loser was captured, then refunded by `completeCartWorkflow`'s
  * compensation — best effort, so a refund Stripe refused left the card
  * charged with the order already deleted and no ledger record (SD-48 (b)).
- * Only the order's refetch and the lock's release now follow the capture: a
- * failure there on a first checkout still deletes the order and its
- * purchases and tries to refund the capture, best effort.
+ * The order's refetch, too, comes before the capture, so the capture is the
+ * last step that can fail. Only `capturePaymentWorkflow`'s own steps after
+ * Stripe's capture (its order read, the order transaction, the event) and the
+ * lock's release follow it. A failure there undoes the seats and the seller
+ * link and keeps the capture: a first checkout's order is deleted and the
+ * capture refunded, best effort; a replay's order stays live, captured with no
+ * seat, and nothing refunds (see the capture below).
  *
  * With the flag on, the seat check (`validateTicketOrderStep`) is handed
  * `cancel_order_on_rollback: false`, so its compensation does not run
@@ -300,22 +304,17 @@ export const completeCartWithTicketsWorkflow = createWorkflow(
       createRemoteLinkStep(linkData)
     })
 
-    // SD-48 (i): take the money the checkout authorized, once its seats are
-    // sold — on a replay too, when the order's first completion left it
-    // uncaptured. A refused capture fails the checkout here: the purchases
-    // and the seller link are undone, and on a first checkout
-    // completeCartWorkflow's compensation deletes the order and cancels the
-    // authorization. Only the refetch and the release below follow it; a
-    // failure there on a first checkout leaves completeCartWorkflow's
-    // compensation to try a refund (`compensatePaymentIfNeededStep`), best
-    // effort only (SD-48 open item (b)); a replay has no such compensation.
-    // Outside the blocks above because `when` blocks do not nest.
-    when("capture-ticket-order-payment", { toCapture }, (data) => !!data.toCapture.payment_id).then(() => {
-      capturePaymentWorkflow.runAsStep({
-        input: transform({ toCapture }, (data) => ({ payment_id: data.toCapture.payment_id as string })),
-      })
-    })
-
+    // The order the route answers with, read before the capture so that the
+    // capture is the checkout's last step that can fail (SD-48 (i) second
+    // review). A refetch that failed after the capture undid the seats and
+    // the seller link: on a first checkout the capture was then refunded,
+    // best effort (SD-48 (b)), and on a replay — which has no
+    // completeCartWorkflow compensation — not at all, leaving the buyer
+    // charged for a seat given back. Settling, the payload therefore shows the
+    // payment collection as it was before the capture; nothing first-party
+    // reads more than `order.id` from it (the storefront's
+    // `placeTicketOrder`). Flag off nothing is captured, so the payload is
+    // what it always was.
     const { data: refetchedOrder } = useQueryGraphStep({
       entity: "order",
       fields: [
@@ -340,6 +339,28 @@ export const completeCartWithTicketsWorkflow = createWorkflow(
     }).config({ name: "refetch-order" }) as unknown as {
       data: CompletedTicketOrderRow[]
     }
+
+    // SD-48 (i): take the money the checkout authorized, once its seats are
+    // sold and the order read — on a replay too, when the order's first
+    // completion left it uncaptured. A refused capture fails the checkout
+    // here: the purchases and the seller link are undone, and on a first
+    // checkout completeCartWorkflow's compensation deletes the order and
+    // cancels the authorization. What still follows Stripe's capture is
+    // capturePaymentWorkflow's own later steps (its read of the order, the
+    // order transaction, `payment.captured`) and the lock's release. A
+    // failure there undoes the seats and the seller link as well, and the
+    // capture stays: on a first checkout completeCartWorkflow's compensation
+    // deletes the order and tries a refund (`compensatePaymentIfNeededStep`),
+    // best effort only (SD-48 open item (b)); on a replay nothing refunds and
+    // the order stays live, captured with no seat (`capturedTicketOrdersWithoutSeat`
+    // in integration-tests/http/ticket-order-settlement.spec.ts is the query
+    // that finds it). Outside the blocks above because `when` blocks do not
+    // nest.
+    when("capture-ticket-order-payment", { toCapture }, (data) => !!data.toCapture.payment_id).then(() => {
+      capturePaymentWorkflow.runAsStep({
+        input: transform({ toCapture }, (data) => ({ payment_id: data.toCapture.payment_id as string })),
+      })
+    })
 
     releaseLockStep({
       key: input.cart_id,
