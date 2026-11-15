@@ -88,3 +88,9 @@ export const PLACEHOLDER_PATTERN = /\[\[[A-Z0-9_]+\]\]/
  * dangling link behind.
  */
 export const PRIVACY_POLICY_PATH = "/legal/privacy"
+
+/**
+ * Storefront path of the returns and refunds policy, for surfaces that point a
+ * buyer at it (the product page's Shipping & Returns section among them).
+ */
+export const REFUNDS_POLICY_PATH = "/legal/refunds"
