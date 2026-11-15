@@ -171,6 +171,28 @@ export const BLACKOUT_DEAD_DROP_KINDS: BlackoutPurchaseKind[] = [
 ]
 
 /**
+ * Whether an order line is a Blackout purchase, i.e. one `purchase.succeeded`
+ * should be emitted for: it names an `entitlement_kind`, or it was bought
+ * from a Blackout catalog listing (`creator_listing_id` / `listing_id`, which
+ * the checkout-session page stamps on the cart line).
+ *
+ * Anything else is an ordinary marketplace line. Without this check a jar of
+ * jam bought by a Blackout-linked customer went out as `kind: "vault_item"`
+ * (the {@link mapEntitlementKindToBlackout} default, a dead-drop kind) with
+ * `digitalDelivery: true` (SD-52 follow-up).
+ */
+export function isBlackoutPurchaseLine(
+  metadata: Record<string, unknown> | null | undefined
+): boolean {
+  if (!metadata) return false
+  const named = (key: string) => {
+    const v = metadata[key]
+    return typeof v === "string" && v.length > 0
+  }
+  return named("entitlement_kind") || named("creator_listing_id") || named("listing_id")
+}
+
+/**
  * Map an internal FBM EntitlementKind (digital|access_pass|plugin|theme|
  * emoji_pack|service|other) onto the closest Blackout §2 purchase `kind`.
  * Defaults to `vault_item` (a dead-drop kind) for generic digital goods.
