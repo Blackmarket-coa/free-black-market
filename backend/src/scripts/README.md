@@ -61,3 +61,23 @@ Then, pass the arguments in the `exec` command after the file path:
 ```bash
 npx medusa exec ./src/scripts/my-script.ts arg1 arg2
 ```
+
+### Only bare words reach the script
+
+Checked against `@medusajs/cli` 2.14.2, which parses with yargs in strict mode:
+
+| You type | `args` the script receives |
+|---|---|
+| `exec ./x.ts apply default-plan=free` | `["apply", "default-plan=free"]` |
+| `exec ./x.ts 123` | `[123]`: a number, not a string |
+| `exec ./x.ts --apply` | nothing: the CLI exits 1 with `Unknown argument: apply` before the script loads |
+| `exec ./x.ts -- --apply apply` | `[]`: everything after `--` is dropped, and the script runs as if nothing had been typed |
+
+So take bare words (`apply`, `dry-run`, `name=value`), never `--flags`, and read
+them with `parseScriptArgs` from `src/shared/exec-args.ts`. It refuses an unknown
+word (a misspelt `dryrun` must not become a live run), a `--flag`, and a `--`
+separator (whose words are still visible in `process.argv`, which is how it
+tells), so a dropped or mistyped argument stops the script instead of changing
+what it does. A script that rewrites or deletes data should still be a dry run
+unless it is given a word that says otherwise, as `reencrypt-channel-credentials.ts`
+is (`apply`).

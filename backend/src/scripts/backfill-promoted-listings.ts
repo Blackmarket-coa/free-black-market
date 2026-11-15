@@ -1,5 +1,6 @@
 import { ExecArgs } from "@medusajs/framework/types"
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
+import { parseScriptArgs } from "../shared/exec-args"
 import { grantPromotion } from "../shared/promoted-listing-service"
 import { getPromotionState } from "../shared/promoted-listing-service"
 
@@ -22,15 +23,29 @@ import { getPromotionState } from "../shared/promoted-listing-service"
  * been agreed indefinitely. An operator can shorten any of them afterwards with
  * `POST /admin/sellers/:id/promotion`.
  *
+ *   npx medusa exec ./src/scripts/backfill-promoted-listings.ts dry-run
  *   npx medusa exec ./src/scripts/backfill-promoted-listings.ts
- *   npx medusa exec ./src/scripts/backfill-promoted-listings.ts --dry-run
+ *
+ * `dry-run` is a bare word. This used to document `--dry-run`, which `medusa
+ * exec` refuses as an unknown option before the script loads, so there was no
+ * way to preview it. With no argument it writes, as before: the grants only add
+ * a record behind placement a seller already has, and a second run skips them.
+ * A `--` separator is refused, not ignored: `medusa exec` drops the words after
+ * it, so `… -- dry-run` would otherwise have been a live run
+ * (`shared/exec-args.ts`).
  */
 export default async function backfillPromotedListings({
   container,
   args,
 }: ExecArgs) {
   const logger = container.resolve(ContainerRegistrationKeys.LOGGER)
-  const dryRun = (args ?? []).includes("--dry-run")
+  const parsed = parseScriptArgs(args, { flags: ["dry-run"] })
+  if (!parsed.ok) {
+    // Thrown, so `medusa exec` exits non-zero: nothing was read or written.
+    logger.error(`[backfill-promoted-listings] refused: ${parsed.message}`)
+    throw new Error(`backfill-promoted-listings refused: ${parsed.message}`)
+  }
+  const dryRun = parsed.flags.has("dry-run")
 
   const query = container.resolve(ContainerRegistrationKeys.QUERY)
   const { data: rows } = await query.graph({

@@ -1,4 +1,6 @@
 import { ExecArgs } from "@medusajs/framework/types"
+import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
+import { parseScriptArgs } from "../shared/exec-args"
 import { CHANNEL_CONNECTOR_MODULE } from "../modules/channel-connector/module-key"
 import type ChannelConnectorService from "../modules/channel-connector/service"
 import type { ConnectionRow } from "../modules/channel-connector/service"
@@ -24,14 +26,25 @@ import { channelCredentialCipher } from "../modules/channel-connector/lib/creden
  * an operator actually wants most of the time.
  *
  *   pnpm medusa exec ./src/scripts/reencrypt-channel-credentials.ts
- *   pnpm medusa exec ./src/scripts/reencrypt-channel-credentials.ts -- --apply
+ *   pnpm medusa exec ./src/scripts/reencrypt-channel-credentials.ts apply
+ *
+ * `apply` is a bare word. This used to document `-- --apply`, which could never
+ * apply: `medusa exec` drops everything after `--`, and refuses `--apply` on its
+ * own as an unknown option (`shared/exec-args.ts`). Any other argument, or a
+ * `--` separator, is refused rather than read as a dry run.
  */
 export default async function reencryptChannelCredentials({
   container,
   args,
 }: ExecArgs) {
-  const logger = container.resolve("logger")
-  const apply = (args ?? []).includes("--apply")
+  const logger = container.resolve(ContainerRegistrationKeys.LOGGER)
+  const parsed = parseScriptArgs(args, { flags: ["apply"] })
+  if (!parsed.ok) {
+    // Thrown, so `medusa exec` exits non-zero: nothing was read or written.
+    logger.error(`[reencrypt-channel-credentials] refused: ${parsed.message}`)
+    throw new Error(`reencrypt-channel-credentials refused: ${parsed.message}`)
+  }
+  const apply = parsed.flags.has("apply")
 
   const service = container.resolve<ChannelConnectorService>(
     CHANNEL_CONNECTOR_MODULE
@@ -84,7 +97,7 @@ export default async function reencryptChannelCredentials({
 
   if (!apply) {
     logger.info(
-      "[reencrypt-channel-credentials] dry run — re-run with `-- --apply` to encrypt these in place"
+      "[reencrypt-channel-credentials] dry run — re-run with `apply` to encrypt these in place"
     )
     return
   }
