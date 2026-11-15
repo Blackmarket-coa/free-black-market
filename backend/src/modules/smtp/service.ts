@@ -135,8 +135,16 @@ class SMTPNotificationProviderService extends AbstractNotificationProviderServic
     const template = this.getTemplate(notification.template)
 
     if (!template) {
-      this.logger.error(`Couldn't find an email template for ${notification.template}. The valid options are ${EMAIL_TEMPLATE_NAMES}`)
-      return {}
+      // Refused, not dropped. This used to log and return `{}`, which Medusa's
+      // notification module records as SUCCESS with no external id, so a
+      // misspelt or missing template looked delivered and reached nobody.
+      // That silent drop is how six templates went unsent for months. A
+      // throw makes the row FAILURE and reaches the caller's catch.
+      const message =
+        `Couldn't find an email template for ${notification.template}. ` +
+        `The valid options are ${EMAIL_TEMPLATE_NAMES.join(", ")}`
+      this.logger.error(message)
+      throw new MedusaError(MedusaError.Types.INVALID_DATA, message)
     }
 
     let html: string

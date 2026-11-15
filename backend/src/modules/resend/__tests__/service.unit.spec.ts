@@ -1,3 +1,4 @@
+import { MedusaError } from "@medusajs/framework/utils"
 // The email templates are .tsx and the unit jest config only transforms .ts;
 // these tests exercise the send/retry transport, not rendering, so the shared
 // renderer registry (which imports every template) is mocked to keep the
@@ -101,12 +102,14 @@ describe("ResendNotificationProviderService.send", () => {
     expect(send).toHaveBeenCalledTimes(2)
   })
 
-  it("returns empty without sending when the template is unknown", async () => {
+  it("refuses an unknown template with INVALID_DATA instead of reporting it sent", async () => {
+    // Returning `{}` here made Medusa mark the notification SUCCESS: a dropped
+    // email that looked delivered.
     const { svc, send } = makeService()
 
-    await expect(
-      svc.send({ ...notification, template: "does-not-exist" })
-    ).resolves.toEqual({})
+    const sent = svc.send({ ...notification, template: "does-not-exist" })
+    await expect(sent).rejects.toThrow(/Couldn't find an email template for does-not-exist/)
+    await expect(sent).rejects.toMatchObject({ type: MedusaError.Types.INVALID_DATA })
     expect(send).not.toHaveBeenCalled()
   })
 })

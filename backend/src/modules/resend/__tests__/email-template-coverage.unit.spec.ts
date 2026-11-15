@@ -9,8 +9,10 @@
  *     had (`digital-order-template`, `seller-invitation`,
  *     `wholesale-application-received`, `wholesale-application-approved`,
  *     `wellness-automation`, `plant-demand-activated`). An unknown template
- *     is not refused: `send()` logs, returns `{}`, Medusa records the
- *     notification as sent, and nobody receives it.
+ *     was not refused: `send()` logged, returned `{}`, Medusa recorded the
+ *     notification as sent, and nobody received it. Both providers now
+ *     throw INVALID_DATA instead (their own specs), and this walk keeps
+ *     every caller in `src/` on a template they know.
  *   - smtp, which wins when `SMTP_HOST` is set, had five of resend's nine
  *     templates, so four more were dropped only on smtp deployments.
  *
@@ -309,7 +311,7 @@ describe.each(providers)("$name provider delivers every template a caller sends"
 
     const result = await svc.send({ to: "someone@example.com", channel: "email", template, data } as never)
 
-    // `{}` is what an unknown template returns — the silent drop.
+    // An id, not `{}` (the old silent drop) and not a throw (an unknown template now).
     expect(result).toEqual({ id: name === "resend" ? "email_1" : "msg_1" })
     if (name === "resend") {
       expect(resendSend).toHaveBeenCalledTimes(1)
