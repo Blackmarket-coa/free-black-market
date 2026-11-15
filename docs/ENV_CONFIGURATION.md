@@ -8,26 +8,49 @@ templates live in:
 - `vendor-panel/.env.template`
 - `admin-panel/.env.template`
 
-Production validation happens in two kinds of place, and they are not the
-same rule set (checked 2026-11-15, SD-78):
+Production validation is split across several places, and they do not share
+one rule set (checked 2026-11-15, SD-78):
 
-- **Boot guards** refuse to start in production (`NODE_ENV=production`):
-  - backend `backend/medusa-config.ts`: `JWT_SECRET`, `COOKIE_SECRET`,
+- **Boot guards** refuse to start in production (`NODE_ENV=production`).
+  Only the backend has one that runs:
+  - `backend/medusa-config.ts`: `JWT_SECRET`, `COOKIE_SECRET`,
     `MEDUSA_ADMIN_PASSWORD`.
-  - backend `backend/src/shared/config.ts` `loadConfig()`, evaluated when
-    Medusa loads `src/api/middlewares.ts` at start: `JWT_SECRET`,
-    `COOKIE_SECRET`, `FREEBLACKMARKET_WEBHOOK_SECRET`,
-    `FREEBLACKMARKET_API_KEY`, `CREATOR_ATTRIBUTION_IP_SALT`, and the
-    Blackstar bridge rules below.
-  - storefront `storefront/src/lib/config/assertEnv.ts`, called from
-    `storefront/instrumentation.ts`.
+  - `backend/src/shared/config.ts` `loadConfig()`, evaluated when Medusa
+    loads `src/api/middlewares.ts` at start: `JWT_SECRET`, `COOKIE_SECRET`,
+    `FREEBLACKMARKET_WEBHOOK_SECRET`, `FREEBLACKMARKET_API_KEY`,
+    `CREATOR_ATTRIBUTION_IP_SALT`, and the Blackstar bridge rules below.
+  - The backend's `NODE_ENV` comes from `docker-compose.yml`'s
+    `${NODE_ENV:-development}`, interpolated from the shell, so a stack
+    brought up without `.env.production` sourced runs in development with
+    these guards off (`scripts/deploy-fedora.sh` sources it).
+- **The storefront guard does not run.**
+  `storefront/src/lib/config/assertEnv.ts` exists and is meant to be called
+  from `storefront/instrumentation.ts`, but Next 15 looks for
+  `instrumentation.*` only beside the app directory, which for the
+  storefront is `storefront/src/` (the app is `src/app`). The root-level
+  file is never built: a `next build` with the storefront's Next 15.5.28 and
+  this layout emits no `.next/server/instrumentation.js`, and does once the
+  file is in `src/`. So `REVALIDATE_SECRET`, `NEXT_PUBLIC_STRIPE_KEY` and
+  `NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY` are not checked at start, and the
+  server-side Sentry init in the same file does not run either (open in
+  `docs/AUDIT_DEBT.md`).
 - **`scripts/assert-env.mjs`** is a pre-deploy check, not a boot guard.
   Nothing runs it at startup or in CI, and it is not in the backend image
   (built with context `backend/`, so `/app/scripts` is `backend/scripts`).
   Its conditional rules (Blackout, Matrix, MAS, extension signing) are
-  enforced only when someone runs it, from a repo checkout:
-  `node --env-file=.env.production scripts/assert-env.mjs --app=backend`.
-  Against a running stack, bind-mount it: see step 7 of
+  enforced only when someone runs it. Against an env file, from a repo
+  checkout:
+
+  ```bash
+  env -i PATH="$PATH" node --env-file=.env.production scripts/assert-env.mjs --app=backend
+  ```
+
+  `env -i` matters: Node lets a variable already in the shell win over the
+  file, so without it a shell's own `NODE_ENV` or `JWT_SECRET` is what gets
+  checked. The file must set `NODE_ENV=production` itself (the example
+  does): the script exits 2 with "nothing was checked" when `NODE_ENV` is
+  anything else, and 1 when a value fails. Against a running stack, copy it
+  into the backend container and run it there: step 7 of
   `docs/runbooks/FBM_MIGRATION_TO_PRIMARY_SERVER.md`.
 
 ## BMC marketplace layer
@@ -43,7 +66,7 @@ integration hooks.
 | `BLACKOUT_CLIENT_SECRET` | — | `FBM_BLACKOUT_INTEGRATION=1` in production | Same. Validated as a min-32-char secret with banned-prefix check. |
 | `FBM_BLACKOUT_TOKEN_TTL_SECONDS` | `3600` | optional | TTL of the JWT issued by the OAuth token endpoint. |
 | `FBM_BLACKSTAR_INTEGRATION` | `0` | always | `1` registers the `blackstar` fulfillment provider and enables the inbound events route (`/v1/integrations/blackstar/events`). `0` keeps the provider unregistered. It does **not** switch the outbound channel: that is live whenever `BLACKSTAR_API_BASE` and `BLACKSTAR_WEBHOOK_SECRET` are both set. The boot guard (`src/shared/config.ts`) and `scripts/assert-env.mjs` check the `BLACKSTAR_*` values below as each row says (the old `FBM_BLACKSTAR_API_KEY` is read by nothing and no longer required). |
-| `BLACKSTAR_API_BASE` | — | in production, when `FBM_BLACKSTAR_INTEGRATION=1` or `BLACKSTAR_WEBHOOK_SECRET` is set | Blackstar's API base URL; the destination of FBM's outbound lifecycle events, including `node.operator.approved`, which carries a newly minted per-node secret. Must be `https://` with a host. |
+| `BLACKSTAR_API_BASE` | — | in production, when `FBM_BLACKSTAR_INTEGRATION=1` or `BLACKSTAR_WEBHOOK_SECRET` is set | Blackstar's API base URL; the destination of FBM's outbound lifecycle events, including `node.operator.approved`, which carries a newly minted per-node secret. Must parse as an `https://` URL with a host, with no whitespace, query or fragment (the delivery path is appended to it). |
 | `BLACKSTAR_WEBHOOK_SECRET` | — | in production, when `FBM_BLACKSTAR_INTEGRATION=1` or `BLACKSTAR_API_BASE` is set | Signs FBM's outbound events (the value Blackstar reads as `FBM_WEBHOOK_SECRET`). Min 32 chars. Without it or `BLACKSTAR_API_BASE`, nothing is sent; with one and not the other, production refuses to boot. |
 | `BLACKSTAR_OUTBOUND_SECRET` | — | `FBM_BLACKSTAR_INTEGRATION=1` in production, unless `BLACKSTAR_REQUIRE_KEY_ID=1` | Verifies Blackstar's inbound events on `/v1/integrations/blackstar/events` (the value Blackstar signs with as `FBM_OUTBOUND_SECRET`). Min 32 chars. With `BLACKSTAR_REQUIRE_KEY_ID=1`, per-partner credentials replace it. |
 | `FBM_DEFAULT_REFERRAL_PERCENT` | — | optional | Default referral commission (0-100) used when active `PayoutConfig` does not set one. |

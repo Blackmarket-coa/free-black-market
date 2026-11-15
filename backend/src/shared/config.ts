@@ -144,11 +144,30 @@ const BANNED_SECRET_LITERALS = new Set([
   "localadmin1234",
 ])
 const MIN_SECRET_LENGTH = 32
-// https only, with a host: node.operator.approved carries a newly minted
-// per-node secret in its body (shared/provision-node-operator.ts), so the
-// destination must be TLS, and a value with no scheme makes every delivery
-// fail URL parsing and retry until it is DEAD.
-export const BLACKSTAR_API_BASE_PATTERN = /^https:\/\/[^\s/]+/
+export const BLACKSTAR_API_BASE_RULE =
+  "must be an https:// URL with a host, and no whitespace, query or fragment"
+
+/**
+ * Whether BLACKSTAR_API_BASE is a usable https base URL.
+ *
+ * https only: node.operator.approved carries a newly minted per-node secret in
+ * its body (shared/provision-node-operator.ts), so the destination must be TLS.
+ * It has to parse with a host, because a value that does not (no scheme,
+ * `https://b c`, `https://host:notaport`) makes every delivery fail URL
+ * parsing and retry until it is DEAD. And marketplace-webhooks appends a path
+ * to it as a string (`${apiBase}/api/webhooks/...`), so a query or fragment
+ * would swallow that path and whitespace would end up inside it. The same
+ * check is `isHttpsBaseUrl` in scripts/assert-env.mjs.
+ */
+export function isHttpsBaseUrl(value: string): boolean {
+  if (/[\s?#]/.test(value)) return false
+  try {
+    const url = new URL(value)
+    return url.protocol === "https:" && url.hostname !== ""
+  } catch {
+    return false
+  }
+}
 
 function secretError(key: string, value: string): string | null {
   if (value === "") return `${key} is required in production`
@@ -185,8 +204,8 @@ export function blackstarProductionEnvErrors(env: NodeJS.ProcessEnv): string[] {
       errors.push("BLACKSTAR_API_BASE is required in production")
     } else if (apiBase.startsWith("CHANGE_ME")) {
       errors.push("BLACKSTAR_API_BASE starts with a banned placeholder prefix")
-    } else if (!BLACKSTAR_API_BASE_PATTERN.test(apiBase)) {
-      errors.push("BLACKSTAR_API_BASE must be an https:// URL")
+    } else if (!isHttpsBaseUrl(apiBase)) {
+      errors.push(`BLACKSTAR_API_BASE ${BLACKSTAR_API_BASE_RULE}`)
     }
     const webhook = secretError("BLACKSTAR_WEBHOOK_SECRET", value("BLACKSTAR_WEBHOOK_SECRET"))
     if (webhook) errors.push(webhook)

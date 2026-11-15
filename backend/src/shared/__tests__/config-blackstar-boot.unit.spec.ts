@@ -116,6 +116,14 @@ const CASES: [string, Extra, string[]][] = [
   ["http:// destination", { ...VALID_PAIR, BLACKSTAR_API_BASE: "http://blackstar.example" }, ["BLACKSTAR_API_BASE"]],
   ["destination with no scheme", { ...VALID_PAIR, BLACKSTAR_API_BASE: "blackstar.example" }, ["BLACKSTAR_API_BASE"]],
   ["destination with no host", { ...VALID_PAIR, BLACKSTAR_API_BASE: "https://" }, ["BLACKSTAR_API_BASE"]],
+  ["destination with a space in the host", { ...VALID_PAIR, BLACKSTAR_API_BASE: "https://b c" }, ["BLACKSTAR_API_BASE"]],
+  [
+    "destination with a non-numeric port",
+    { ...VALID_PAIR, BLACKSTAR_API_BASE: "https://b.example:notaport" },
+    ["BLACKSTAR_API_BASE"],
+  ],
+  ["destination with a query", { ...VALID_PAIR, BLACKSTAR_API_BASE: "https://b.example?x=1" }, ["BLACKSTAR_API_BASE"]],
+  ["https destination with a port and a path", { ...VALID_PAIR, BLACKSTAR_API_BASE: "https://b.example:8443/bridge/" }, []],
   [
     "placeholder destination",
     { ...VALID_PAIR, BLACKSTAR_API_BASE: "CHANGE_ME_https://api.blackstar.example" },

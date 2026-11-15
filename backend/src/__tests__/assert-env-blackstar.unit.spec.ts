@@ -1,4 +1,6 @@
 import { spawnSync } from "child_process"
+import fs from "fs"
+import os from "os"
 import path from "path"
 
 /**
@@ -145,6 +147,10 @@ describe("assert-env: the Blackstar outbound pair, whatever the flag says", () =
     ["blackstar.example", "no scheme: fetch cannot parse it, every delivery goes DEAD"],
     ["https://", "no host"],
     [" ", "blank"],
+    ["https://b c", "space in the host: starts with https:// and still cannot be parsed"],
+    ["https://blackstar.example:notaport", "non-numeric port: cannot be parsed"],
+    ["https://blackstar.example?x=1", "query: the appended delivery path would land in it"],
+    ["https://blackstar.example#f", "fragment: the appended delivery path would never be sent"],
   ])("refuses BLACKSTAR_API_BASE=%j (%s)", (apiBase) => {
     const { code, out } = gate({
       FBM_BLACKSTAR_INTEGRATION: "1",
@@ -153,12 +159,99 @@ describe("assert-env: the Blackstar outbound pair, whatever the flag says", () =
       BLACKSTAR_OUTBOUND_SECRET: SECRET("o"),
     })
     expect(code).toBe(1)
-    expect(out).toContain("BLACKSTAR_API_BASE does not match expected format")
+    expect(out).toContain("BLACKSTAR_API_BASE must be an https:// URL with a host")
+  })
+
+  it("passes an https destination with a port and a path", () => {
+    const { code, out } = gate({
+      BLACKSTAR_API_BASE: "https://api.blackstar.example:8443/bridge/",
+      BLACKSTAR_WEBHOOK_SECRET: SECRET("w"),
+    })
+    expect(out).toContain("production env OK")
+    expect(code).toBe(0)
   })
 
   it("names each key once when the flag and the presence rules both apply", () => {
     const { out } = gate({ FBM_BLACKSTAR_INTEGRATION: "1", BLACKSTAR_API_BASE: "http://b.example" })
     expect(out.match(/BLACKSTAR_API_BASE/g)).toHaveLength(1)
     expect(out.match(/BLACKSTAR_WEBHOOK_SECRET/g)).toHaveLength(1)
+  })
+})
+
+
+describe("assert-env CLI: refuses, rather than skips, an env that is not production", () => {
+  // assertProductionEnv() passes anything outside production (right for an
+  // importer). The CLI used to inherit that, so the documented
+  // `node --env-file=.env.production scripts/assert-env.mjs --app=backend`
+  // printed "production env OK" whenever the shell already had a NODE_ENV:
+  // Node lets an existing variable win over the file.
+  const BAD_BLACKSTAR = { BLACKSTAR_API_BASE: "http://b.example", BLACKSTAR_WEBHOOK_SECRET: "changeme" }
+
+  function cli(args: string[], env: Record<string, string>) {
+    const run = spawnSync(process.execPath, [...args, SCRIPT, "--app=backend"], {
+      env: { PATH: process.env.PATH ?? "", ...env },
+      encoding: "utf8",
+    })
+    return { code: run.status, out: `${run.stdout}${run.stderr}` }
+  }
+
+  it.each([
+    ["development", { NODE_ENV: "development" }],
+    ["test", { NODE_ENV: "test" }],
+    ["unset", {}],
+  ])("exits 2 and says nothing was checked when NODE_ENV is %s", (_label, nodeEnv: Record<string, string>) => {
+    const { NODE_ENV: _drop, ...rest } = BASE_PRODUCTION_ENV
+    const { code, out } = cli([], { ...rest, ...BAD_BLACKSTAR, ...nodeEnv })
+    expect(code).toBe(2)
+    expect(out).toContain("not production: nothing was checked")
+    expect(out).not.toContain("production env OK")
+  })
+
+  describe("the documented --env-file form", () => {
+    let dir: string
+    let envFile: string
+    beforeAll(() => {
+      dir = fs.mkdtempSync(path.join(os.tmpdir(), "assert-env-"))
+      envFile = path.join(dir, "probe.env")
+      fs.writeFileSync(
+        envFile,
+        Object.entries({ ...BASE_PRODUCTION_ENV, ...BAD_BLACKSTAR })
+          .map(([k, v]) => `${k}=${v}`)
+          .join("\n") + "\n"
+      )
+    })
+    afterAll(() => fs.rmSync(dir, { recursive: true, force: true }))
+
+    it("refuses instead of passing when the shell's NODE_ENV beats the file's", () => {
+      const { code, out } = cli([`--env-file=${envFile}`], { NODE_ENV: "development" })
+      expect(code).toBe(2)
+      expect(out).not.toContain("production env OK")
+    })
+
+    it("runs its checks from a path with a space in it, or through a symlink", () => {
+      // The entry-point test compared import.meta.url with `file://${argv[1]}`,
+      // so from either path the script did nothing and exited 0.
+      const spaced = path.join(dir, "with space")
+      fs.mkdirSync(spaced)
+      const copy = path.join(spaced, "assert-env.mjs")
+      fs.copyFileSync(SCRIPT, copy)
+      const link = path.join(dir, "link.mjs")
+      fs.symlinkSync(copy, link)
+      for (const entry of [copy, link]) {
+        const run = spawnSync(process.execPath, [`--env-file=${envFile}`, entry, "--app=backend"], {
+          env: { PATH: process.env.PATH ?? "" },
+          encoding: "utf8",
+        })
+        expect({ entry: path.basename(entry), code: run.status }).toEqual({ entry: path.basename(entry), code: 1 })
+        expect(`${run.stdout}${run.stderr}`).toContain("BLACKSTAR_WEBHOOK_SECRET matches a banned placeholder literal")
+      }
+    })
+
+    it("checks the file when run with an empty environment (env -i)", () => {
+      const { code, out } = cli([`--env-file=${envFile}`], {})
+      expect(code).toBe(1)
+      expect(out).toContain("BLACKSTAR_API_BASE must be an https:// URL with a host")
+      expect(out).toContain("BLACKSTAR_WEBHOOK_SECRET matches a banned placeholder literal")
+    })
   })
 })

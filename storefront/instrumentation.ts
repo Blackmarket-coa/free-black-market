@@ -1,5 +1,13 @@
 // Next.js server instrumentation entrypoint.
-// Runs once on server start (both Node.js and Edge runtimes).
+//
+// NOT LOADED TODAY (checked 2026-11-15): Next looks for instrumentation.* only
+// beside the app directory, and this app is src/app, so Next reads
+// src/instrumentation.ts and never builds this file. Nothing below runs: not
+// the env guard, not the Sentry server/edge init, not onRequestError. Moving
+// it into src/ (with its import paths fixed) is an open ledger item; prove the
+// move with a build that emits .next/server/instrumentation.js.
+//
+// Meant to run once on server start (both Node.js and Edge runtimes).
 // Responsibilities:
 //   1. Fail-closed on banned placeholder env values (production only).
 //   2. Initialise Sentry server/edge runtime when SENTRY_DSN is set.
