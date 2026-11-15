@@ -64,7 +64,9 @@ jobs:
           PERF_DURATION: ${{ inputs.duration || '1m' }}
           BASE_URL: http://localhost:3000
         run: |
-          docker run --rm --network host \
+          # Run as the runner's uid: the image's own user cannot write the
+          # summary into the checked-out tree (first run: "permission denied").
+          docker run --rm --network host --user "$(id -u):$(id -g)" \
             -e PERF_DURATION -e BASE_URL \
             -v "$PWD/perf/k6:/scripts" \
             grafana/k6:1.8.2@sha256:00fdcebafbc86cb0137d429529b1caa401a02e09025f02fc74866fa6e2b004d8 \
