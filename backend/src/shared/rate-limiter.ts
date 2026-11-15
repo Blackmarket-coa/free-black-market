@@ -39,7 +39,7 @@ class MemoryStore implements RateLimitStore {
 
   constructor() {
     // Clean up expired entries periodically (every 5 minutes)
-    setInterval(() => {
+    const sweep = setInterval(() => {
       const now = Date.now()
       for (const [key, record] of this.store.entries()) {
         if (now > record.resetAt) {
@@ -47,6 +47,7 @@ class MemoryStore implements RateLimitStore {
         }
       }
     }, 5 * 60 * 1000)
+    sweep.unref?.()
   }
 
   async get(key: string): Promise<RateLimitRecord | null> {
@@ -73,61 +74,78 @@ class MemoryStore implements RateLimitStore {
 
 /**
  * Redis rate limiting store (production)
- * Uses atomic INCR operations for distributed rate limiting
+ * Uses atomic INCR operations for distributed rate limiting.
+ *
+ * SEC-5: a request must never wait on Redis, and a Redis problem must never
+ * turn the limiter off. The previous version did both. `increment` returned
+ * `{ count: 1 }` whenever Redis was unreachable or a command failed, so every
+ * request was allowed (while the log said "using memory store"); and because
+ * node-redis keeps reconnecting, `connect()` never settles while Redis is
+ * down, so with REDIS_URL set and Redis unreachable at boot every rate-limited
+ * request awaited it forever — and the default offline queue held commands the
+ * same way during a later outage. Now the client connects in the background
+ * with capped reconnect backoff, commands fail fast while it is not ready
+ * (`disableOfflineQueue`), and whenever it is not ready or a command throws,
+ * the count comes from a real in-memory store: still limiting, per process
+ * rather than across instances, until Redis is back.
  */
 class RedisStore implements RateLimitStore {
   private client: RedisClientType | null = null
-  private connecting: Promise<void> | null = null
-  private connected = false
   private prefix: string
+  private fallback: MemoryStore | null = null
+  private warnedFallback = false
 
   constructor(prefix = "rl:") {
     this.prefix = prefix
   }
 
-  private async connect(): Promise<boolean> {
-    if (this.connected && this.client) return true
-    if (!process.env.REDIS_URL) return false
-
-    if (this.connecting) {
-      await this.connecting
-      return this.connected
-    }
-
-    this.connecting = (async () => {
-      try {
-        this.client = createClient({
-          url: process.env.REDIS_URL,
-          socket: { connectTimeout: 3000 },
-        })
-        this.client.on("error", () => {}) // Suppress error logs
-        await this.client.connect()
-        this.connected = true
+  /** Start connecting once, without ever awaiting it on a request path. */
+  private ready(): boolean {
+    if (!this.client && process.env.REDIS_URL) {
+      const client = createClient({
+        url: process.env.REDIS_URL,
+        disableOfflineQueue: true,
+        socket: {
+          connectTimeout: 3000,
+          reconnectStrategy: (retries: number) => Math.min(500 * 2 ** retries, 30_000),
+        },
+      }) as RedisClientType
+      client.on("error", () => {}) // connection errors surface as !isReady
+      client.on("ready", () => {
+        this.warnedFallback = false
         logger.info("Redis rate limiter connected")
-      } catch (_error) {
-        logger.warn("Redis rate limiter unavailable, using memory store")
-        this.connected = false
-      }
-    })()
+      })
+      client.connect().catch(() => {})
+      this.client = client
+    }
+    return Boolean(this.client?.isReady)
+  }
 
-    await this.connecting
-    this.connecting = null
-    return this.connected
+  private memory(): MemoryStore {
+    if (!this.warnedFallback) {
+      this.warnedFallback = true
+      logger.warn(
+        "Redis rate limiter unavailable; counting in memory until it reconnects " +
+          "(limits apply per process, not across instances)"
+      )
+    }
+    if (!this.fallback) this.fallback = new MemoryStore()
+    return this.fallback
   }
 
   async get(key: string): Promise<RateLimitRecord | null> {
-    if (!await this.connect()) return null
+    if (!this.ready()) return this.memory().get(key)
 
     try {
       const data = await this.client!.get(this.prefix + key)
       return data ? JSON.parse(data) : null
     } catch {
-      return null
+      return this.memory().get(key)
     }
   }
 
   async set(key: string, record: RateLimitRecord): Promise<void> {
-    if (!await this.connect()) return
+    if (!this.ready()) return this.memory().set(key, record)
 
     try {
       const ttl = Math.ceil((record.resetAt - Date.now()) / 1000)
@@ -135,15 +153,12 @@ class RedisStore implements RateLimitStore {
         await this.client!.setEx(this.prefix + key, ttl, JSON.stringify(record))
       }
     } catch {
-      // Ignore errors
+      await this.memory().set(key, record)
     }
   }
 
   async increment(key: string, windowMs: number): Promise<RateLimitRecord> {
-    if (!await this.connect()) {
-      // Fallback behavior - create new record
-      return { count: 1, resetAt: Date.now() + windowMs }
-    }
+    if (!this.ready()) return this.memory().increment(key, windowMs)
 
     const redisKey = this.prefix + key
     const now = Date.now()
@@ -153,7 +168,7 @@ class RedisStore implements RateLimitStore {
     try {
       // Use atomic increment with TTL
       const count = await this.client!.incr(redisKey)
-      
+
       // Set expiry on first increment
       if (count === 1) {
         await this.client!.expire(redisKey, ttlSeconds)
@@ -165,7 +180,7 @@ class RedisStore implements RateLimitStore {
 
       return { count, resetAt: actualResetAt }
     } catch {
-      return { count: 1, resetAt }
+      return this.memory().increment(key, windowMs)
     }
   }
 }
