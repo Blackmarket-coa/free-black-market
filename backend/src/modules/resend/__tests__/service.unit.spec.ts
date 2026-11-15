@@ -1,15 +1,9 @@
 // The email templates are .tsx and the unit jest config only transforms .ts;
-// these tests exercise the send/retry transport, not rendering, so the template
-// modules are virtually mocked to keep the service importable.
-jest.mock("../emails/order-placed", () => ({ orderPlacedEmail: () => null }), { virtual: true })
-jest.mock("../emails/user-invited", () => ({ userInvitedEmail: () => null }), { virtual: true })
-jest.mock("../emails/password-reset", () => ({ passwordResetEmail: () => null }), { virtual: true })
-jest.mock("../emails/vendor-accepted", () => ({ vendorAcceptedEmail: () => null }), { virtual: true })
-jest.mock("../emails/customer-accepted", () => ({ customerAcceptedEmail: () => null }), { virtual: true })
-jest.mock("../emails/booking-confirmation", () => ({ bookingConfirmationEmail: () => null }), { virtual: true })
-jest.mock("../emails/review-request", () => ({ reviewRequestEmail: () => null }), { virtual: true })
-jest.mock("../emails/embed-chat-message", () => ({ embedChatMessageEmail: () => null }), { virtual: true })
-jest.mock("../emails/seller-email-verification", () => ({ sellerEmailVerificationEmail: () => null }), { virtual: true })
+// these tests exercise the send/retry transport, not rendering, so the shared
+// renderer registry (which imports every template) is mocked to keep the
+// service importable. Template coverage across both providers is
+// ./email-template-coverage.unit.spec.ts.
+jest.mock("../emails/registry", () => ({ EMAIL_TEMPLATE_RENDERERS: {} }))
 
 import ResendNotificationProviderService from "../service"
 

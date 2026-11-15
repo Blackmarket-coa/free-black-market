@@ -1,12 +1,10 @@
 // Mirrors ../../resend/__tests__/service.unit.spec.ts: the email templates are
-// .tsx and the unit jest config only transforms .ts, so the five templates this
-// service imports from ../resend/emails are virtually mocked. These tests
-// exercise the transport contract and send/error paths, not rendering.
-jest.mock("../../resend/emails/order-placed", () => ({ orderPlacedEmail: () => null }), { virtual: true })
-jest.mock("../../resend/emails/user-invited", () => ({ userInvitedEmail: () => null }), { virtual: true })
-jest.mock("../../resend/emails/password-reset", () => ({ passwordResetEmail: () => null }), { virtual: true })
-jest.mock("../../resend/emails/vendor-accepted", () => ({ vendorAcceptedEmail: () => null }), { virtual: true })
-jest.mock("../../resend/emails/customer-accepted", () => ({ customerAcceptedEmail: () => null }), { virtual: true })
+// .tsx and the unit jest config only transforms .ts, so the shared renderer
+// registry this service imports from ../resend/emails is mocked. These tests
+// exercise the transport contract and send/error paths, not rendering;
+// template coverage across both providers is
+// ../../resend/__tests__/email-template-coverage.unit.spec.ts.
+jest.mock("../../resend/emails/registry", () => ({ EMAIL_TEMPLATE_RENDERERS: {} }))
 
 // The transport is mocked for the behavioural tests below. The mock fns are
 // created inside the factory and read back off the mocked module, which avoids

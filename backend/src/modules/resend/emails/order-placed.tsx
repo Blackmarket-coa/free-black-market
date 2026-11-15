@@ -13,12 +13,38 @@ import {
   Body, 
   Link 
 } from "@react-email/components"
-import { BigNumberValue, CustomerDTO, OrderDTO } from "@medusajs/framework/types"
+import { BigNumberValue } from "@medusajs/framework/types"
 
-type OrderPlacedEmailProps = {
-  order: OrderDTO & {
-    customer: CustomerDTO
-  }
+/**
+ * What `subscribers/order-placed.ts` sends: only the fields rendered below,
+ * not the whole order. The notification row stores `data` verbatim, and the
+ * order's addresses have no business being copied into it.
+ */
+export type OrderPlacedEmailOrder = {
+  id: string
+  display_id?: number | string | null
+  currency_code: string
+  total?: BigNumberValue | null
+  item_total?: BigNumberValue | null
+  tax_total?: BigNumberValue | null
+  items?: Array<{
+    id: string
+    thumbnail?: string | null
+    product_title?: string | null
+    variant_title?: string | null
+    total?: BigNumberValue | null
+  }> | null
+  shipping_methods?: Array<{
+    id: string
+    name?: string | null
+    total?: BigNumberValue | null
+  }> | null
+  customer?: { first_name?: string | null } | null
+  shipping_address?: { first_name?: string | null } | null
+}
+
+export type OrderPlacedEmailProps = {
+  order: OrderPlacedEmailOrder
   email_banner?: {
     body: string
     title: string
@@ -28,6 +54,7 @@ type OrderPlacedEmailProps = {
 
 function OrderPlacedEmailComponent({ order, email_banner }: OrderPlacedEmailProps) {
   const shouldDisplayBanner = email_banner && "title" in email_banner
+  const firstName = order.customer?.first_name || order.shipping_address?.first_name
 
   const formatter = new Intl.NumberFormat([], {
     style: "currency",
@@ -35,7 +62,7 @@ function OrderPlacedEmailComponent({ order, email_banner }: OrderPlacedEmailProp
     currency: order.currency_code,
   })
 
-  const formatPrice = (price: BigNumberValue) => {
+  const formatPrice = (price: BigNumberValue | null | undefined) => {
     if (typeof price === "number") {
       return formatter.format(price)
     }
@@ -51,7 +78,7 @@ function OrderPlacedEmailComponent({ order, email_banner }: OrderPlacedEmailProp
     <Tailwind>
       <Html className="font-sans bg-gray-100">
         <Head />
-        <Preview>Thank you for your order from Medusa</Preview>
+        <Preview>Thank you for your Free Black Market order</Preview>
         <Body className="bg-white my-10 mx-auto w-full max-w-2xl">
           {/* Header */}
           <Section className="bg-[#27272a] text-white px-6 py-4">
@@ -61,7 +88,7 @@ function OrderPlacedEmailComponent({ order, email_banner }: OrderPlacedEmailProp
           {/* Thank You Message */}
           <Container className="p-6">
             <Heading className="text-2xl font-bold text-center text-gray-800">
-              Thank you for your order, {order.customer?.first_name || order.shipping_address?.first_name}
+              {`Thank you for your order${firstName ? `, ${firstName}` : ""}`}
             </Heading>
             <Text className="text-center text-gray-600 mt-2">
               We're processing your order and will notify you when it ships.
@@ -175,13 +202,13 @@ function OrderPlacedEmailComponent({ order, email_banner }: OrderPlacedEmailProp
           {/* Footer */}
           <Section className="bg-gray-50 p-6 mt-10">
             <Text className="text-center text-gray-500 text-sm">
-              If you have any questions, reply to this email or contact our support team at support@medusajs.com.
+              If you have any questions, reply to this email.
             </Text>
             <Text className="text-center text-gray-500 text-sm">
               Order Token: {order.id}
             </Text>
             <Text className="text-center text-gray-400 text-xs mt-4">
-              © {new Date().getFullYear()} Medusajs, Inc. All rights reserved.
+              © {new Date().getFullYear()} Free Black Market
             </Text>
           </Section>
         </Body>
@@ -195,325 +222,27 @@ export const orderPlacedEmail = (props: OrderPlacedEmailProps) => (
 )
 
 
-const mockOrder = {
-  "order": {
-    "id": "order_01JSNXDH9BPJWWKVW03B9E9KW8",
-    "display_id": 1,
-    "email": "shahednasser@gmail.com",
-    "currency_code": "eur",
-    "total": 20,
-    "subtotal": 20,
-    "discount_total": 0,
-    "shipping_total": 10,
-    "tax_total": 0,
-    "item_subtotal": 10,
-    "item_total": 10,
-    "item_tax_total": 0,
-    "customer_id": "cus_01JSNXD6VQC1YH56E4TGC81NWX",
-    "items": [
+const mockOrder: OrderPlacedEmailProps = {
+  order: {
+    id: "order_01DEMO",
+    display_id: 1042,
+    currency_code: "usd",
+    total: 28,
+    item_total: 20,
+    tax_total: 0,
+    items: [
       {
-        "id": "ordli_01JSNXDH9C47KZ43WQ3TBFXZA9",
-        "title": "L",
-        "subtitle": "Medusa Sweatshirt",
-        "thumbnail": "https://medusa-public-images.s3.eu-west-1.amazonaws.com/sweatshirt-vintage-front.png",
-        "variant_id": "variant_01JSNXAQCZ5X81A3NRSVFJ3ZHQ",
-        "product_id": "prod_01JSNXAQBQ6MFV5VHKN420NXQW",
-        "product_title": "Medusa Sweatshirt",
-        "product_description": "Reimagine the feeling of a classic sweatshirt. With our cotton sweatshirt, everyday essentials no longer have to be ordinary.",
-        "product_subtitle": null,
-        "product_type": null,
-        "product_type_id": null,
-        "product_collection": null,
-        "product_handle": "sweatshirt",
-        "variant_sku": "SWEATSHIRT-L",
-        "variant_barcode": null,
-        "variant_title": "L",
-        "variant_option_values": null,
-        "requires_shipping": true,
-        "is_giftcard": false,
-        "is_discountable": true,
-        "is_tax_inclusive": false,
-        "is_custom_price": false,
-        "metadata": {},
-        "raw_compare_at_unit_price": null,
-        "raw_unit_price": {
-          "value": "10",
-          "precision": 20
-        },
-        "created_at": new Date(),
-        "updated_at": new Date(),
-        "deleted_at": null,
-        "tax_lines": [],
-        "adjustments": [],
-        "compare_at_unit_price": null,
-        "unit_price": 10,
-        "quantity": 1,
-        "raw_quantity": {
-          "value": "1",
-          "precision": 20
-        },
-        "detail": {
-          "id": "orditem_01JSNXDH9DK1XMESEZPADYFWKY",
-          "version": 1,
-          "metadata": null,
-          "order_id": "order_01JSNXDH9BPJWWKVW03B9E9KW8",
-          "raw_unit_price": null,
-          "raw_compare_at_unit_price": null,
-          "raw_quantity": {
-            "value": "1",
-            "precision": 20
-          },
-          "raw_fulfilled_quantity": {
-            "value": "0",
-            "precision": 20
-          },
-          "raw_delivered_quantity": {
-            "value": "0",
-            "precision": 20
-          },
-          "raw_shipped_quantity": {
-            "value": "0",
-            "precision": 20
-          },
-          "raw_return_requested_quantity": {
-            "value": "0",
-            "precision": 20
-          },
-          "raw_return_received_quantity": {
-            "value": "0",
-            "precision": 20
-          },
-          "raw_return_dismissed_quantity": {
-            "value": "0",
-            "precision": 20
-          },
-          "raw_written_off_quantity": {
-            "value": "0",
-            "precision": 20
-          },
-          "created_at": new Date(),
-          "updated_at": new Date(),
-          "deleted_at": null,
-          "item_id": "ordli_01JSNXDH9C47KZ43WQ3TBFXZA9",
-          "unit_price": null,
-          "compare_at_unit_price": null,
-          "quantity": 1,
-          "fulfilled_quantity": 0,
-          "delivered_quantity": 0,
-          "shipped_quantity": 0,
-          "return_requested_quantity": 0,
-          "return_received_quantity": 0,
-          "return_dismissed_quantity": 0,
-          "written_off_quantity": 0
-        },
-        "subtotal": 10,
-        "total": 10,
-        "original_total": 10,
-        "discount_total": 0,
-        "discount_subtotal": 0,
-        "discount_tax_total": 0,
-        "tax_total": 0,
-        "original_tax_total": 0,
-        "refundable_total_per_unit": 10,
-        "refundable_total": 10,
-        "fulfilled_total": 0,
-        "shipped_total": 0,
-        "return_requested_total": 0,
-        "return_received_total": 0,
-        "return_dismissed_total": 0,
-        "write_off_total": 0,
-        "raw_subtotal": {
-          "value": "10",
-          "precision": 20
-        },
-        "raw_total": {
-          "value": "10",
-          "precision": 20
-        },
-        "raw_original_total": {
-          "value": "10",
-          "precision": 20
-        },
-        "raw_discount_total": {
-          "value": "0",
-          "precision": 20
-        },
-        "raw_discount_subtotal": {
-          "value": "0",
-          "precision": 20
-        },
-        "raw_discount_tax_total": {
-          "value": "0",
-          "precision": 20
-        },
-        "raw_tax_total": {
-          "value": "0",
-          "precision": 20
-        },
-        "raw_original_tax_total": {
-          "value": "0",
-          "precision": 20
-        },
-        "raw_refundable_total_per_unit": {
-          "value": "10",
-          "precision": 20
-        },
-        "raw_refundable_total": {
-          "value": "10",
-          "precision": 20
-        },
-        "raw_fulfilled_total": {
-          "value": "0",
-          "precision": 20
-        },
-        "raw_shipped_total": {
-          "value": "0",
-          "precision": 20
-        },
-        "raw_return_requested_total": {
-          "value": "0",
-          "precision": 20
-        },
-        "raw_return_received_total": {
-          "value": "0",
-          "precision": 20
-        },
-        "raw_return_dismissed_total": {
-          "value": "0",
-          "precision": 20
-        },
-        "raw_write_off_total": {
-          "value": "0",
-          "precision": 20
-        }
-      }
+        id: "ordli_01DEMO",
+        thumbnail: null,
+        product_title: "Raw Wildflower Honey",
+        variant_title: "16 oz",
+        total: 20,
+      },
     ],
-    "shipping_address": {
-      "id": "caaddr_01JSNXD6W0TGPH2JQD18K97B25",
-      "customer_id": null,
-      "company": "",
-      "first_name": "shahed",
-      "last_name": "nasser",
-      "address_1": "asfasf",
-      "address_2": "",
-      "city": "asfasf",
-      "country_code": "dk",
-      "province": "",
-      "postal_code": "asfasf",
-      "phone": "",
-      "metadata": null,
-      "created_at": "2025-04-25T07:25:48.801Z",
-      "updated_at": "2025-04-25T07:25:48.801Z",
-      "deleted_at": null
-    },
-    "billing_address": {
-      "id": "caaddr_01JSNXD6W0V7RNZH63CPG26K5W",
-      "customer_id": null,
-      "company": "",
-      "first_name": "shahed",
-      "last_name": "nasser",
-      "address_1": "asfasf",
-      "address_2": "",
-      "city": "asfasf",
-      "country_code": "dk",
-      "province": "",
-      "postal_code": "asfasf",
-      "phone": "",
-      "metadata": null,
-      "created_at": "2025-04-25T07:25:48.801Z",
-      "updated_at": "2025-04-25T07:25:48.801Z",
-      "deleted_at": null
-    },
-    "shipping_methods": [
-      {
-        "id": "ordsm_01JSNXDH9B9DDRQXJT5J5AE5V1",
-        "name": "Standard Shipping",
-        "description": null,
-        "is_tax_inclusive": false,
-        "is_custom_amount": false,
-        "shipping_option_id": "so_01JSNXAQA64APG6BNHGCMCTN6V",
-        "data": {},
-        "metadata": null,
-        "raw_amount": {
-          "value": "10",
-          "precision": 20
-        },
-        "created_at": new Date(),
-        "updated_at": new Date(),
-        "deleted_at": null,
-        "tax_lines": [],
-        "adjustments": [],
-        "amount": 10,
-        "order_id": "order_01JSNXDH9BPJWWKVW03B9E9KW8",
-        "detail": {
-          "id": "ordspmv_01JSNXDH9B5RAF4FH3M1HH3TEA",
-          "version": 1,
-          "order_id": "order_01JSNXDH9BPJWWKVW03B9E9KW8",
-          "return_id": null,
-          "exchange_id": null,
-          "claim_id": null,
-          "created_at": new Date(),
-          "updated_at": new Date(),
-          "deleted_at": null,
-          "shipping_method_id": "ordsm_01JSNXDH9B9DDRQXJT5J5AE5V1"
-        },
-        "subtotal": 10,
-        "total": 10,
-        "original_total": 10,
-        "discount_total": 0,
-        "discount_subtotal": 0,
-        "discount_tax_total": 0,
-        "tax_total": 0,
-        "original_tax_total": 0,
-        "raw_subtotal": {
-          "value": "10",
-          "precision": 20
-        },
-        "raw_total": {
-          "value": "10",
-          "precision": 20
-        },
-        "raw_original_total": {
-          "value": "10",
-          "precision": 20
-        },
-        "raw_discount_total": {
-          "value": "0",
-          "precision": 20
-        },
-        "raw_discount_subtotal": {
-          "value": "0",
-          "precision": 20
-        },
-        "raw_discount_tax_total": {
-          "value": "0",
-          "precision": 20
-        },
-        "raw_tax_total": {
-          "value": "0",
-          "precision": 20
-        },
-        "raw_original_tax_total": {
-          "value": "0",
-          "precision": 20
-        }
-      }
-    ],
-    "customer": {
-      "id": "cus_01JSNXD6VQC1YH56E4TGC81NWX",
-      "company_name": null,
-      "first_name": null,
-      "last_name": null,
-      "email": "afsaf@gmail.com",
-      "phone": null,
-      "has_account": false,
-      "metadata": null,
-      "created_by": null,
-      "created_at": "2025-04-25T07:25:48.791Z",
-      "updated_at": "2025-04-25T07:25:48.791Z",
-      "deleted_at": null
-    }
-  }
+    shipping_methods: [{ id: "ordsm_01DEMO", name: "Standard Shipping", total: 8 }],
+    customer: { first_name: "Jordan" },
+    shipping_address: { first_name: "Jordan" },
+  },
 }
-// @ts-expect-error preview render uses partial mock order props
+
 export default () => <OrderPlacedEmailComponent {...mockOrder} />
