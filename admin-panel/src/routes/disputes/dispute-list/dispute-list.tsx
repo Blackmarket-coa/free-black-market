@@ -9,6 +9,7 @@ import {
   STATUS_LABELS,
   daysWaiting,
   formatMinor,
+  isLive,
   listQuery,
   parseFilter,
 } from "@routes/disputes/dispute-rules"
@@ -16,11 +17,12 @@ import {
 /**
  * Disputes: the queue a buyer's claim lands in.
  *
- * `/buyer-protection` tells buyers that a person reads every claim, looks at
- * the order and the seller's record, and does not close it silently. Claims
- * filed from the storefront (`POST /store/order-claims`) and from the order
- * page (`POST /store/orders/:id/dispute`) become order disputes; this is
- * where they are read and decided (`GET /admin/disputes`).
+ * `/buyer-protection` tells buyers their claim goes into a review queue with
+ * the order and the seller's record, and that every decision is recorded
+ * with a written reason. Claims filed from the storefront
+ * (`POST /store/order-claims`) and from the order page
+ * (`POST /store/orders/:id/dispute`) become order disputes; this is where
+ * they are read and decided (`GET /admin/disputes`).
  *
  * By default it shows what is waiting for a decision, open and under review,
  * oldest first: the claim that has waited longest is the one most likely to
@@ -92,7 +94,8 @@ export const DisputeList = () => {
           </Table.Header>
           <Table.Body>
             {rows.map((d) => {
-              const days = daysWaiting(d.created_at, now)
+              // A decided case is not waiting for anything.
+              const days = isLive(d.status) ? daysWaiting(d.created_at, now) : null
 
               return (
                 <Table.Row key={d.id}>
