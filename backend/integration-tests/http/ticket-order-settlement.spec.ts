@@ -346,9 +346,14 @@ medusaIntegrationTestRunner({
     /**
      * Captured FBM card payments, not refunded, on a live order holding a
      * ticket line and no live ticket purchase: a buyer charged for a seat
-     * they do not hold. What a failure after Stripe's capture leaves on a
-     * replay, where nothing refunds (SD-48 (i) second review). The query the
-     * ledger row gives, run here as written.
+     * they do not hold. What a failure in capturePaymentWorkflow's later
+     * steps after Stripe's capture leaves on a replay, where nothing refunds
+     * (SD-48 (i) second review). The query the ledger row gives, run here as
+     * written. It cannot find the other post-capture case: if the payment
+     * module's own `captured_at` write fails after Stripe captured, Medusa
+     * keeps no capture and `captured_at` stays NULL, so only a
+     * reconciliation against Stripe finds it (the flag's BEFORE SETTING IT
+     * list).
      */
     const CAPTURED_TICKET_ORDERS_WITHOUT_SEAT = `
       SELECT DISTINCT o.id AS order_id, p.id AS payment_id

@@ -94,12 +94,23 @@ export type CompleteCartWithTicketsWorkflowInput = {
  * compensation — best effort, so a refund Stripe refused left the card
  * charged with the order already deleted and no ledger record (SD-48 (b)).
  * The order's refetch, too, comes before the capture, so the capture is the
- * last step that can fail. Only `capturePaymentWorkflow`'s own steps after
- * Stripe's capture (its order read, the order transaction, the event) and the
- * lock's release follow it. A failure there undoes the seats and the seller
- * link and keeps the capture: a first checkout's order is deleted and the
- * capture refunded, best effort; a replay's order stays live, captured with no
- * seat, and nothing refunds (see the capture below).
+ * last step that can fail. What still follows Stripe's capture: the payment
+ * module's own write of `captured_at` and its payment-collection update,
+ * inside capturePaymentStep (Medusa 2.14.2 runs `capturePayment` under
+ * InjectManager, not one transaction: capture record, then Stripe, then
+ * `captured_at`),
+ * then `capturePaymentWorkflow`'s own later steps (its order read, the order
+ * transaction, the event) and the lock's release. A failure in the later
+ * steps undoes the seats and the seller link and keeps the capture: a first
+ * checkout's order is deleted and the capture refunded, best effort; a
+ * replay's order stays live, captured with no seat, and nothing refunds (see
+ * the capture below). A failure of the `captured_at` write is worse: the
+ * module deletes its capture record and rethrows, so Stripe holds the money
+ * while Medusa records no capture, no refund is attempted
+ * (`compensatePaymentIfNeededStep` refunds only when `captured_at` is set),
+ * every retry is refused by Stripe ("already captured", new idempotency key)
+ * and hands the seat back, and no query over Medusa's tables can see it —
+ * only a reconciliation against Stripe can.
  *
  * With the flag on, the seat check (`validateTicketOrderStep`) is handed
  * `cancel_order_on_rollback: false`, so its compensation does not run
@@ -345,10 +356,14 @@ export const completeCartWithTicketsWorkflow = createWorkflow(
     // completion left it uncaptured. A refused capture fails the checkout
     // here: the purchases and the seller link are undone, and on a first
     // checkout completeCartWorkflow's compensation deletes the order and
-    // cancels the authorization. What still follows Stripe's capture is
-    // capturePaymentWorkflow's own later steps (its read of the order, the
-    // order transaction, `payment.captured`) and the lock's release. A
-    // failure there undoes the seats and the seller link as well, and the
+    // cancels the authorization. What still follows Stripe's capture is the
+    // payment module's own write of `captured_at` and its collection update
+    // (inside capturePaymentStep; a failure of the first leaves Stripe
+    // captured with no Medusa capture, no refund attempt and nothing any SQL
+    // query can find — see the header), then capturePaymentWorkflow's own
+    // later steps (its read of the order, the order transaction,
+    // `payment.captured`) and the lock's release. A failure in those later
+    // steps undoes the seats and the seller link as well, and the
     // capture stays: on a first checkout completeCartWorkflow's compensation
     // deletes the order and tries a refund (`compensatePaymentIfNeededStep`),
     // best effort only (SD-48 open item (b)); on a replay nothing refunds and

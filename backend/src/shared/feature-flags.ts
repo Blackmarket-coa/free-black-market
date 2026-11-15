@@ -262,9 +262,13 @@ export const PHASE0_FEATURE_FLAGS = {
   // are deleted by their compensation (the seats are free again),
   // completeCartWorkflow's compensation deletes the order and cancels the
   // authorization, and the seller link is dismissed. The order's refetch
-  // comes before the capture too, so only capturePaymentWorkflow's own steps
-  // after Stripe's capture (its order read, the order transaction, the
-  // event) and the lock's release follow it. A failure there undoes the
+  // comes before the capture too. What still follows Stripe's capture: the
+  // payment module's own `captured_at` write and collection update (inside
+  // capturePaymentStep), then capturePaymentWorkflow's later steps (its order
+  // read, the order transaction, the event) and the lock's release. If the
+  // `captured_at` write fails, Stripe holds the money, Medusa records no
+  // capture and attempts no refund, every retry is refused by Stripe, and no
+  // SQL query can see it. A failure in the later steps undoes the
   // purchases and the seller link and keeps the capture: on a first checkout
   // the order is deleted and the capture refunded, best effort (SD-48 (b);
   // Stripe's fee on that capture is likely kept, not checked against FBM's
@@ -280,7 +284,14 @@ export const PHASE0_FEATURE_FLAGS = {
   // (SD-53). With the flag on the checkout holds the cart lock for up to
   // 120 s and a second checkout waits up to 30 s (Medusa's own completion
   // lock), so a double submit replays instead of failing. Settles only with
-  // CARD_ORDER_LEDGER_V1 also set. Backend only; no twin. BEFORE SETTING IT:
+  // CARD_ORDER_LEDGER_V1 also set. Backend only; no twin. BEFORE SETTING IT
+  // (in addition to the list below): a reconciliation against Stripe — FBM
+  // PaymentIntents in status succeeded whose Medusa payment has
+  // `captured_at` IS NULL, or whose order is gone or holds no live ticket
+  // purchase — because the `captured_at`-write failure above is invisible to
+  // Medusa's tables; the SQL query in ticket-order-settlement.spec.ts
+  // (`capturedTicketOrdersWithoutSeat`) covers only the later-step case.
+  // And:
   // every ticket product needs a Mercur seller link (vendor-created ones get
   // one; `POST /admin/ticket-products` without `seller_id` does not, and is
   // refused until linked), a cart holding two sellers' tickets is refused
