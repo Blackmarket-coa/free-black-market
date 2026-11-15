@@ -43,6 +43,13 @@ if (process.env.TEST_TYPE === "integration:http") {
   // beforeAll; the 5s Jest default trips on cold CI runners. Jest applies
   // testTimeout to hooks too.
   module.exports.testTimeout = 120000;
+  // The runner's wait between tests never ends on a workflow execution left
+  // unfinished (SD-53 (d)); bound it, under that hook timeout, before any
+  // spec loads it.
+  module.exports.setupFiles = [
+    ...module.exports.setupFiles,
+    "./integration-tests/http/helpers/install-runner-wait-bound.ts",
+  ];
 } else if (process.env.TEST_TYPE === "integration:modules") {
   // Require `.spec.` like the other two modes do. Matching every .ts under a
   // module's __tests__ dir also matched shared helper files, and Jest fails a
