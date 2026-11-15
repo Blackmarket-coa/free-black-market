@@ -233,6 +233,45 @@ export const PHASE0_FEATURE_FLAGS = {
   // reaches a total), and `membership_first_signup` is awarded on every
   // membership sale, not only a seller's first.
   WELLNESS_SALE_KARMA_V1: "FF_WELLNESS_SALE_KARMA_V1",
+  // A ticket sale reaches its seller and the ledger (SD-48 open item (i)).
+  // The storefront checks out every all-ticket cart through
+  // `POST /store/carts/:id/complete-tickets` (`placeTicketOrder`), whose
+  // `complete-cart-with-tickets` workflow completes the cart with Medusa's
+  // `completeCartWorkflow`, not Mercur's split: the order got no seller link
+  // and its FBM Stripe payment was authorized and never captured, exactly the
+  // two gaps SD-48 closed for digital products. Off (default): unchanged —
+  // every new step returns before any read, and the checkout keeps its old
+  // 2 s / 10 s cart lock. On: the same settlement as
+  // DIGITAL_ORDER_SETTLEMENT_V1, through the same shared steps
+  // (`workflows/subscription/steps/subscription-order-settlement.ts`, sale
+  // `ticket`): the cart's one seller is resolved before Medusa authorizes the
+  // payment session and a cart with none or several is refused (400; the
+  // storefront's Stripe button confirms the card before it calls the route,
+  // so that hold is left to lapse, as on Blackout's page under SD-48); the
+  // order is linked to that seller, the seats are validated, and the card is
+  // captured before any ticket purchase is created. A seat already sold is
+  // refused before the capture, so its authorization is cancelled, not
+  // refunded. A refused capture fails the checkout: completeCartWorkflow's
+  // compensation deletes the order and cancels the authorization, the seller
+  // link is dismissed, and no ticket purchase exists (the seat check's own
+  // compensation, Medusa's cancelOrderWorkflow, fails at its order read on
+  // this stack and the rest runs regardless; SD-48 (i) row). A
+  // replay — the checkout run again on a cart already completed — never
+  // re-enters `completeCartWorkflow` and so never registers its refund
+  // compensation: a finished sale is returned as it is, one its first
+  // completion left unlinked or uncaptured is linked and captured before its
+  // seats are created, and one that owes money with no payment is refused
+  // (SD-53). With the flag on the checkout holds the cart lock for up to
+  // 120 s and a second checkout waits up to 30 s (Medusa's own completion
+  // lock), so a double submit replays instead of failing. Settles only with
+  // CARD_ORDER_LEDGER_V1 also set. Backend only; no twin. BEFORE SETTING IT:
+  // every ticket product needs a Mercur seller link (vendor-created ones get
+  // one; `POST /admin/ticket-products` without `seller_id` does not, and is
+  // refused until linked), a cart holding two sellers' tickets is refused
+  // with the flag on, and neither of Stripe's
+  // payment_intent.amount_capturable_updated / payment_intent.succeeded events
+  // may be sent to Medusa's webhook while this is on (SD-48 (g)).
+  TICKET_ORDER_SETTLEMENT_V1: "FF_TICKET_ORDER_SETTLEMENT_V1",
 } as const
 
 export type Phase0FeatureFlag = keyof typeof PHASE0_FEATURE_FLAGS

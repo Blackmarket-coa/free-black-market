@@ -26,6 +26,12 @@ import {
   subscriptionCheckoutLockStep,
   subscriptionOrderPaidStep,
   subscriptionPaymentToCaptureStep,
+  linkTicketOrderSellerStep,
+  resolveTicketSellerStep,
+  ticketCheckoutLockStep,
+  ticketCompletedCartOrderStep,
+  ticketOrderPaidStep,
+  ticketPaymentToCaptureStep,
 } from "../steps/subscription-order-settlement"
 
 /**
@@ -62,8 +68,16 @@ const digitalLinkSeller = invokeOf(linkDigitalProductOrderSellerStep)
 const digitalToCapture = invokeOf(digitalProductPaymentToCaptureStep)
 const digitalOrderPaid = invokeOf(digitalProductOrderPaidStep)
 
+const ticketCompletedOrder = invokeOf(ticketCompletedCartOrderStep)
+const ticketResolveSeller = invokeOf(resolveTicketSellerStep)
+const ticketLinkSeller = invokeOf(linkTicketOrderSellerStep)
+const ticketToCapture = invokeOf(ticketPaymentToCaptureStep)
+const ticketOrderPaid = invokeOf(ticketOrderPaidStep)
+const ticketLock = invokeOf(ticketCheckoutLockStep)
+
 const DIGITAL = PHASE0_FEATURE_FLAGS.DIGITAL_ORDER_SETTLEMENT_V1
 const SUBS = PHASE0_FEATURE_FLAGS.CONSUMER_SUBSCRIPTIONS_V1
+const TICKETS = PHASE0_FEATURE_FLAGS.TICKET_ORDER_SETTLEMENT_V1
 
 /**
  * A container that records every resolve and serves a query over a two-seller
@@ -584,5 +598,143 @@ describe("a replay: the order a checkout run again on a completed cart found (SD
     const container = { resolve: (key: string) => (key === ContainerRegistrationKeys.QUERY ? { graph } : undefined) }
     const res = await capture({ order_id: "order_1", mode: "replay", linked_seller_id: "sel_a" }, { container })
     expect(res.output).toEqual({ payment_id: "pay_1" })
+  })
+})
+
+/**
+ * SD-48 (i): the ticket checkout (`workflows/complete-cart-with-tickets`) runs
+ * the same functions as its `*Ticket*` steps, sale fixed to `ticket`, under
+ * FF_TICKET_ORDER_SETTLEMENT_V1 alone. Unlike the other two sales its paid
+ * check is dark with its flag too: with the flag off every ticket checkout
+ * runs completeCartWorkflow and the SD-53 guard, which refuses the same
+ * orders, so the flag-off checkout reads nothing new.
+ */
+describe("the ticket sale (SD-48 (i), FF_TICKET_ORDER_SETTLEMENT_V1)", () => {
+  afterEach(() => {
+    delete process.env[DIGITAL]
+    delete process.env[SUBS]
+    delete process.env[TICKETS]
+  })
+
+  const ticketCalls: Array<[string, Invoke, Record<string, unknown>, unknown]> = [
+    ["completed cart's order", ticketCompletedOrder, { cart_id: "cart_1" }, { order_id: null }],
+    ["resolve seller", ticketResolveSeller, { cart_id: "cart_1" }, { seller_id: null }],
+    ["link seller", ticketLinkSeller, { order_id: "order_1", mode: "initial", expected_seller_id: null }, { linked: false, seller_id: null }],
+    ["payment to capture", ticketToCapture, { order_id: "order_1", mode: "initial" }, { payment_id: null }],
+    ["paid check", ticketOrderPaid, { cart_id: "cart_1", order_id: "order_1" }, { checked: false }],
+    ["cart lock", ticketLock, {}, { timeout: 2, ttl: 10 }],
+  ]
+
+  describe.each([
+    ["every flag off", {}],
+    ["the digital and subscription settlement flags on", { [DIGITAL]: "true", [SUBS]: "true" }],
+  ])("its flag off, %s", (_label, env: Record<string, string>) => {
+    it.each(ticketCalls)("%s returns before any read, with what it did before (the lock: 2 s / 10 s)", async (_name, invoke, input, nothing) => {
+      Object.assign(process.env, env)
+      const { container, resolve } = recordingContainer("order_done")
+      const res = await invoke(input, { container })
+      expect(resolve).not.toHaveBeenCalled()
+      expect(res.output).toEqual(nothing)
+    })
+  })
+
+  it.each([...digitalCalls, ...subscriptionCalls])(
+    "only FF_TICKET_ORDER_SETTLEMENT_V1 on: the digital and subscription %s still return before any read",
+    async (_name, invoke, input, nothing) => {
+      process.env[TICKETS] = "true"
+      const { container, resolve } = recordingContainer()
+      const res = await invoke(input, { container })
+      expect(resolve).not.toHaveBeenCalled()
+      expect(res.output).toEqual(nothing)
+    }
+  )
+
+  it("are the shared functions under the ticket checkout's own names, sharing F5's link compensation", () => {
+    expect(
+      [
+        ticketCheckoutLockStep,
+        ticketCompletedCartOrderStep,
+        resolveTicketSellerStep,
+        linkTicketOrderSellerStep,
+        ticketPaymentToCaptureStep,
+        ticketOrderPaidStep,
+      ].map((step) => stub(step).stepName)
+    ).toEqual([
+      "ticket-checkout-lock",
+      "ticket-completed-cart-order",
+      "resolve-ticket-seller",
+      "link-ticket-order-seller",
+      "ticket-payment-to-capture",
+      "ticket-order-paid",
+    ])
+    expect(stub(linkTicketOrderSellerStep).compensateFn).toBe(stub(linkSubscriptionOrderSellerStep).compensateFn)
+  })
+
+  describe("its flag on", () => {
+    beforeEach(() => {
+      process.env[TICKETS] = "true"
+    })
+
+    it("the cart lock is Medusa's own completion lock: a 30 s wait and a 120 s hold", async () => {
+      const { container, resolve } = recordingContainer()
+      const res = await ticketLock({}, { container })
+      expect(res.output).toEqual({ timeout: 30, ttl: 120 })
+      expect(resolve).not.toHaveBeenCalled()
+    })
+
+    it("a cart already completed is found by its order_cart link", async () => {
+      const { container, graph } = recordingContainer("order_done")
+      const res = await ticketCompletedOrder({ cart_id: "cart_1" }, { container })
+      expect(res.output).toEqual({ order_id: "order_done" })
+      expect(graph).toHaveBeenCalledWith({ entity: "order_cart", fields: ["cart_id", "order_id"], filters: { cart_id: "cart_1" } })
+    })
+
+    it("reads the cart and refuses two sellers in its own words", async () => {
+      const { container } = recordingContainer()
+      await expect(ticketResolveSeller({ cart_id: "cart_1" }, { container })).rejects.toThrow(
+        "A ticket order is sold by one seller, and this cart cannot be: its products belong to 2 sellers."
+      )
+    })
+
+    it.each([
+      ["link seller", ticketLinkSeller, { mode: "initial", expected_seller_id: "sel_a" }],
+      ["link seller on a replay", ticketLinkSeller, { mode: "replay" }],
+      ["payment to capture", ticketToCapture, { mode: "initial" }],
+      ["payment to capture on a replay", ticketToCapture, { mode: "replay", linked_seller_id: "sel_a" }],
+    ] as Array<[string, Invoke, Record<string, unknown>]>)("%s refuses an order it was not handed, before any read", async (_name, invoke, rest) => {
+      const { container, resolve } = recordingContainer()
+      for (const order_id of [undefined, null, ""]) {
+        await expect(invoke({ ...rest, order_id }, { container })).rejects.toThrow(
+          "Ticket checkout: the cart's completion returned no order; nothing linked, captured or delivered"
+        )
+      }
+      expect(resolve).not.toHaveBeenCalled()
+    })
+
+    function paidOrder(total: number, payments: Array<Record<string, unknown>>) {
+      const graph = jest.fn(async () => ({ data: [{ id: "order_1", total, payment_collections: [{ id: "paycol_1", payments }] }] }))
+      return { container: { resolve: (key: string) => (key === ContainerRegistrationKeys.QUERY ? { graph } : undefined) }, graph }
+    }
+
+    it("the paid check refuses an order that owes money and has no payment, with the shared refusal", async () => {
+      const { container, graph } = paidOrder(5, [])
+      await expect(ticketOrderPaid({ cart_id: "cart_1", order_id: "order_1" }, { container })).rejects.toMatchObject({
+        code: CART_COMPLETION_INCOMPLETE,
+        message: CART_COMPLETION_INCOMPLETE_MESSAGE,
+        reason: "order_unpaid",
+        detail: expect.stringMatching(/^Ticket checkout: cart cart_1: order order_1 owes 5 and has no payment/),
+      })
+      expect(graph).toHaveBeenCalledWith({
+        entity: "order",
+        fields: ["id", "total", "payment_collections.payments.id"],
+        filters: { id: "order_1" },
+      })
+    })
+
+    it("the paid check lets through an order with its authorized card payment", async () => {
+      const { container } = paidOrder(5, [{ id: "pay_1", provider_id: "pp_stripe_stripe" }])
+      const res = await ticketOrderPaid({ cart_id: "cart_1", order_id: "order_1" }, { container })
+      expect(res.output).toEqual({ checked: true })
+    })
   })
 })
