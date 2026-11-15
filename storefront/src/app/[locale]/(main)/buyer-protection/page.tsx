@@ -27,6 +27,12 @@ export const metadata: Metadata = {
  *   shows a claim's status. Step 3 therefore promises a review and a
  *   recorded reason, not a reply. Put "we'll come back to you" back when one
  *   of those exists.
+ * - Nothing tells an operator a claim arrived either: it lands in the admin
+ *   Disputes queue and waits to be opened. So step 3 says the claim goes
+ *   into a review queue, not that "a person reads it".
+ * - "Every decision is recorded with a written reason" holds because
+ *   `PATCH /admin/disputes/:id` refuses a closing decision without a note
+ *   (400); the spec fails if that check goes.
  */
 
 const COVERED = [
@@ -114,7 +120,7 @@ export default function BuyerProtectionPage() {
               step: "3",
               title: "We review it",
               detail:
-                "A person reads it and looks at the order and the seller's record. Claims are reviewed in the order they arrive, and every decision is recorded with a written reason. Updates on a claim aren't sent automatically yet.",
+                "Your claim goes into our review queue with the order and the seller's record. Claims are reviewed in the order they arrive, and every decision is recorded with a written reason. Updates on a claim aren't sent automatically yet.",
             },
             {
               step: "4",
