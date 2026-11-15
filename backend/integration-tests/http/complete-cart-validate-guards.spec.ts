@@ -5,6 +5,7 @@ import { CCR_RESERVATION_METADATA_KEY } from "../../src/lib/ccr-checkout"
 import { ORDER_CYCLE_MODULE } from "../../src/modules/order-cycle"
 import { trackSubscribers } from "./helpers/drain-subscribers"
 import { clearStalledWorkflows } from "./helpers/stalled-workflows"
+import { cartCompletionStallRetry } from "./helpers/cart-completion-stall"
 import { createPublishableKeyToken, pakHeaders } from "./_publishable-key"
 
 jest.setTimeout(240 * 1000)
@@ -40,6 +41,21 @@ medusaIntegrationTestRunner({
     })
     afterEach(() => {
       jest.restoreAllMocks()
+    })
+
+    /**
+     * The tests that complete a cart (the control and the re-runs) re-run on a
+     * fresh cart when Medusa's engine stalls the completion on its own
+     * (SD-53 (d), helpers/cart-completion-stall.ts). The refusal tests keep
+     * Jest's `it`: their guard refuses before order creation.
+     */
+    const stallRetry = cartCompletionStallRetry({
+      container,
+      reset: async () => {
+        await drainSubscribers()
+        jest.restoreAllMocks()
+        drainSubscribers = trackSubscribers(container)
+      },
     })
 
     /**
@@ -202,7 +218,7 @@ medusaIntegrationTestRunner({
     describe("completeCartWorkflow.hooks.validate on a real cart completion (SD-54)", () => {
       afterEach(settleBeforeTeardown)
 
-      it("a cart on an open cycle, inside capacity, with no credits reserved completes into an order: the fixture is a cart that completes", async () => {
+      stallRetry.it("a cart on an open cycle, inside capacity, with no credits reserved completes into an order: the fixture is a cart that completes", async () => {
         // The control for every refusal below: the same fixture, with nothing
         // a guard refuses, completes through the same workflow and is paid.
         const { cart, customer, collection } = await makeCart({ quantity: 2, cycle: { status: "open", available: 10, sold: 0 } })
@@ -276,7 +292,7 @@ medusaIntegrationTestRunner({
        * wrote a refund row (step state `failed`, no refunds), so it is the
        * refusal that shows the check is missing.
        */
-      it("a re-run on a completed cart whose own sale used up the cycle's stock hands back its order", async () => {
+      stallRetry.it("a re-run on a completed cart whose own sale used up the cycle's stock hands back its order", async () => {
         const { cart, customer, cycle } = await makeCart({ quantity: 2, cycle: { status: "open", available: 2, sold: 0 } })
         const first = await completeCart(cart.id)
         expectFirstCompletion(first)
@@ -294,7 +310,7 @@ medusaIntegrationTestRunner({
         expect((await ordersOf(customer.id)).map((o: { id: string }) => o.id)).toEqual([first.orderId])
       })
 
-      it("a re-run on a completed, captured cart whose cycle has since dispatched hands back its order and refunds nothing", async () => {
+      stallRetry.it("a re-run on a completed, captured cart whose cycle has since dispatched hands back its order and refunds nothing", async () => {
         const { cart, collection, cycle } = await makeCart({ quantity: 1, cycle: { status: "open", available: 10, sold: 0 } })
         const first = await completeCart(cart.id)
         expectFirstCompletion(first)
@@ -327,7 +343,7 @@ medusaIntegrationTestRunner({
        * run) refuse it and the refund compensation runs. The check only moves
        * that refusal; it does not protect that path (SD-72 (b)).
        */
-      it("a re-run on a completed, captured cart that carries a Coalition Credits reservation hands back its order and refunds nothing", async () => {
+      stallRetry.it("a re-run on a completed, captured cart that carries a Coalition Credits reservation hands back its order and refunds nothing", async () => {
         const { cart, collection } = await makeCart()
         const first = await completeCart(cart.id)
         expectFirstCompletion(first)
@@ -344,7 +360,7 @@ medusaIntegrationTestRunner({
         expect(await payments.listRefunds({ payment_id: payment.id })).toEqual([])
       })
 
-      it("the check covers the guards this change did not touch: a completed cart with a malformed sliding-scale tier hands back its order", async () => {
+      stallRetry.it("the check covers the guards this change did not touch: a completed cart with a malformed sliding-scale tier hands back its order", async () => {
         const { cart } = await makeCart()
         const first = await completeCart(cart.id)
         expectFirstCompletion(first)
