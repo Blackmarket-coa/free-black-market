@@ -11,9 +11,21 @@ module.exports = {
         },
       },
     ],
+    // The React Email templates (src/modules/resend/emails/*.tsx), so a spec
+    // can render the real thing (email-render.unit.spec.ts). Same runtime as
+    // tsconfig's "jsx": "react-jsx".
+    "^.+\\.tsx$": [
+      "@swc/jest",
+      {
+        jsc: {
+          parser: { syntax: "typescript", tsx: true, decorators: true },
+          transform: { react: { runtime: "automatic" } },
+        },
+      },
+    ],
   },
   testEnvironment: "node",
-  moduleFileExtensions: ["js", "ts", "json"],
+  moduleFileExtensions: ["js", "ts", "tsx", "json"],
   modulePathIgnorePatterns: [
     "dist/",
     "<rootDir>/.medusa/",
