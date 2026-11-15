@@ -23,18 +23,76 @@ export type GenerateSlotsInput = {
 
 const BLOCKING_STATUSES = [BookingStatus.PENDING, BookingStatus.CONFIRMED]
 
+/** Every value a booking config row holds besides its product and seller. */
+export type BookingConfigFields = {
+  duration_minutes: number
+  buffer_minutes: number
+  timezone: string
+  advance_days: number
+  min_notice_hours: number
+  is_active: boolean
+}
+
 class BookingService extends MedusaService({
   ProductBookingConfig,
   VendorAvailability,
   Booking,
 }) {
-  /** The active booking config for a product, or null when not bookable. */
-  async getConfigForProduct(product_id: string) {
+  /**
+   * The active booking config `seller_id` keeps for `product_id`, or null when
+   * the product is not bookable under that seller.
+   *
+   * Seller-scoped on purpose (SD-81 addendum). It used to take the product
+   * alone and return whatever config the product had, while the vendor routes
+   * wrote a config for any product id they were sent, so seller B could make
+   * seller A's product bookable under B: B's embed key booked A's product,
+   * A's own key was refused, and A's slots ran on B's settings. A seller-
+   * scoped read alone does not prove the product is that seller's: a row
+   * written before the routes checked still carries its writer's seller_id.
+   * A caller holding a product id from outside also checks Mercur's
+   * seller-product link (`shared/product-sellers.ts`), which this module
+   * cannot read.
+   */
+  async getConfigForProduct(product_id: string, seller_id: string) {
     const rows = await this.listProductBookingConfigs(
-      { product_id, is_active: true },
+      { product_id, seller_id, is_active: true },
       { take: 1 }
     )
     return rows?.[0] ?? null
+  }
+
+  /**
+   * Write `seller_id`'s booking config for `product_id`: create it, or replace
+   * every field of the row the product already has.
+   *
+   * The caller must already have checked that `seller_id` owns `product_id`
+   * (`sellerOwnsProduct`). `product_id` is unique on the table, so the row a
+   * product already has can be one another seller wrote before the vendor
+   * routes checked ownership; the owner's write takes it over, every field
+   * included, rather than failing on the constraint and leaving the product
+   * bookable only under the other seller (SD-81 addendum).
+   * `previous_seller_id` names that other seller, or is null.
+   */
+  async saveConfigAsProductOwner(
+    seller_id: string,
+    product_id: string,
+    fields: BookingConfigFields
+  ) {
+    const [existing] = await this.listProductBookingConfigs(
+      { product_id },
+      { take: 1 }
+    )
+    const values = { ...fields, seller_id, product_id }
+    if (!existing) {
+      return {
+        config: await this.createProductBookingConfigs(values),
+        previous_seller_id: null,
+      }
+    }
+    return {
+      config: await this.updateProductBookingConfigs({ id: existing.id, ...values }),
+      previous_seller_id: existing.seller_id === seller_id ? null : existing.seller_id,
+    }
   }
 
   /**
@@ -50,7 +108,7 @@ class BookingService extends MedusaService({
     if (!parsed) return []
     const [year, month, day] = parsed
 
-    const config = await this.getConfigForProduct(input.product_id)
+    const config = await this.getConfigForProduct(input.product_id, input.seller_id)
     if (!config) return []
 
     const tz = config.timezone || "America/New_York"
@@ -71,12 +129,16 @@ class BookingService extends MedusaService({
     })
     if (!windows?.length) return []
 
-    // Existing bookings that could collide, bounded to this calendar day.
+    // Existing bookings that could collide, bounded to this calendar day. The
+    // seller's own only: a booking another seller's embed key made on this
+    // product before the embed route checked ownership holds no slot of the
+    // product's seller (SD-81 addendum).
     const dayStart = zonedWallTimeToUtc(year, month, day, 0, 0, tz).getTime()
     const dayEnd = dayStart + 86_400_000
     let existing: { starts_at: Date; ends_at: Date }[] = []
     try {
       existing = (await this.listBookings({
+        seller_id: input.seller_id,
         product_id: input.product_id,
         status: BLOCKING_STATUSES,
         starts_at: { $gte: new Date(dayStart), $lt: new Date(dayEnd) },
@@ -84,6 +146,7 @@ class BookingService extends MedusaService({
     } catch {
       // If operator filtering isn't supported, fall back to all blocking rows.
       existing = (await this.listBookings({
+        seller_id: input.seller_id,
         product_id: input.product_id,
         status: BLOCKING_STATUSES,
       } as any)) as unknown as { starts_at: Date; ends_at: Date }[]
@@ -159,7 +222,7 @@ class BookingService extends MedusaService({
     const startMs = Date.parse(input.starts_at)
     if (Number.isNaN(startMs)) return null
 
-    const config = await this.getConfigForProduct(input.product_id)
+    const config = await this.getConfigForProduct(input.product_id, input.seller_id)
     if (!config) return null
 
     // The requested instant must be one of the currently-offered slots for its

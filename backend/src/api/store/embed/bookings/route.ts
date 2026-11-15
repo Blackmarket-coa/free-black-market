@@ -3,6 +3,7 @@ import { createLogger } from "../../../../shared/logger"
 import { BOOKING_MODULE } from "../../../../modules/booking"
 import type BookingService from "../../../../modules/booking/service"
 import type { EmbedRequest } from "../../../middlewares/embed-key"
+import { sellerOwnsProduct } from "../../../../shared/product-sellers"
 
 const log = createLogger("api/store/embed/bookings")
 
@@ -66,10 +67,17 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
   try {
     const booking = req.scope.resolve(BOOKING_MODULE) as BookingService
 
-    // The product must be bookable AND owned by the key's seller — a key can
-    // never create bookings against another vendor's product.
-    const config = await booking.getConfigForProduct(product_id)
-    if (!config || config.seller_id !== sellerId) {
+    // The product must be the key's seller's own, by Mercur's seller-product
+    // link, AND bookable under that seller — a key can never create bookings
+    // against another vendor's product. The config's own seller_id is not
+    // proof of ownership: the vendor config routes used to write one for any
+    // product id, so seller B's key could book seller A's product (and send
+    // its buyer to A's checkout) on a config B wrote, while A's key was
+    // refused for the same reason (SD-81 addendum). Such a row is ignored.
+    const config = (await sellerOwnsProduct(req.scope, sellerId, product_id))
+      ? await booking.getConfigForProduct(product_id, sellerId)
+      : null
+    if (!config) {
       return res.status(404).json({
         message: "Product is not bookable for this vendor",
         type: "not_found",

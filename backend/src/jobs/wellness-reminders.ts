@@ -68,17 +68,20 @@ export default async function wellnessRemindersJob(container: MedusaContainer) {
       starts_at: Date
     }>
 
-    // The booking's clock (its product's booking config) and the session's
-    // name (the booking seller's own session type for the product).
+    // The booking's clock (the booking seller's own config for the product:
+    // one another seller wrote on it before the vendor routes checked
+    // ownership is ignored, SD-81 addendum) and the session's name (the
+    // booking seller's own session type for the product).
     const zoneByProduct = new Map<string, string>()
     const sessionName = new Map<string, string>()
     if (upcoming.length) {
       const productIds = [...new Set(upcoming.map((b) => b.product_id))]
       const configs = (await booking.listProductBookingConfigs({ product_id: productIds } as never)) as Array<{
+        seller_id: string
         product_id: string
         timezone?: string | null
       }>
-      for (const c of configs) if (c.timezone) zoneByProduct.set(c.product_id, c.timezone)
+      for (const c of configs) if (c.timezone) zoneByProduct.set(`${c.seller_id}:${c.product_id}`, c.timezone)
       const sessionTypes = (await wellness.listSessionTypes({ product_id: productIds } as never)) as Array<{
         seller_id: string
         product_id: string | null
@@ -89,7 +92,7 @@ export default async function wellnessRemindersJob(container: MedusaContainer) {
 
     for (const b of upcoming) {
       try {
-        const { date, time } = formatWhen(b.starts_at, zoneByProduct.get(b.product_id))
+        const { date, time } = formatWhen(b.starts_at, zoneByProduct.get(`${b.seller_id}:${b.product_id}`))
         await automation.runTrigger({
           seller_id: b.seller_id,
           trigger: "booking_reminder_24h",

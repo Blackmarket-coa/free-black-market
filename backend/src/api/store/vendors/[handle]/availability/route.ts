@@ -2,6 +2,7 @@ import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { createLogger } from "../../../../../shared/logger"
 import { BOOKING_MODULE } from "../../../../../modules/booking"
 import type BookingService from "../../../../../modules/booking/service"
+import { sellerOwnsProduct } from "../../../../../shared/product-sellers"
 
 const log = createLogger("api/store/vendors/availability")
 
@@ -38,13 +39,20 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         .json({ message: `No vendor found for handle "${handle}"`, type: "not_found" })
     }
 
+    // Only the handle's seller's own product, on that seller's own config: a
+    // config another seller wrote on the product before the vendor routes
+    // checked ownership is ignored (SD-81 addendum). Otherwise not bookable.
     const booking = req.scope.resolve(BOOKING_MODULE) as BookingService
-    const config = await booking.getConfigForProduct(productId)
-    const slots = await booking.generateSlots({
-      seller_id: seller.id,
-      product_id: productId,
-      date,
-    })
+    const config = (await sellerOwnsProduct(req.scope, seller.id, productId))
+      ? await booking.getConfigForProduct(productId, seller.id)
+      : null
+    const slots = config
+      ? await booking.generateSlots({
+          seller_id: seller.id,
+          product_id: productId,
+          date,
+        })
+      : []
 
     res.setHeader(
       "Cache-Control",
