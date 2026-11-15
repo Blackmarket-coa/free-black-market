@@ -507,6 +507,44 @@ export function actorPathRateLimitKey(req: MedusaRequest): string {
   return `${actor}:${req.path}`
 }
 
+/**
+ * A signed-in customer's own account under `/store/customers/me/**`: 120 per
+ * minute per actor per endpoint.
+ *
+ * Issue #97. These reads used to sit under `authRateLimiter` (20 per minute,
+ * keyed by IP) because its `/store/customers` entry had no method, and Medusa
+ * registers a method-less middleware with `app.use`, which prefix-matches. The
+ * storefront fetches the customer server-side, so every shopper arrives from
+ * the storefront's own address and they all shared one 20-per-minute bucket:
+ * a few people clicking through account tabs exhausted it, and the account
+ * pages showed "We're refreshing your session" (a non-401 failure) for
+ * everyone until the window reset. Keyed by actor here, so one customer's
+ * navigation cannot spend another's budget. `router.js` runs the optional
+ * /store customer authenticate before project middleware, so the actor is
+ * resolved by the time this runs.
+ */
+export const storeCustomerAccountRateLimiter = createRateLimiter({
+  windowMs: 60_000,
+  max: 120,
+  keyPrefix: "store-customer-account",
+  keyGenerator: actorPathRateLimitKey,
+})
+
+/**
+ * The data-rights endpoints under `/store/customers/me`: 5 per 5 minutes per
+ * actor per endpoint. `data-export` assembles every registered customer table
+ * into one document and `deletion` anonymises the account and revokes its
+ * login, so neither is something a person needs more than a handful of times.
+ * Before #97 their only brake was the shared 20-per-minute IP bucket; moving
+ * the account surface to the generous budget above must not loosen these.
+ */
+export const storeCustomerDataRightsRateLimiter = createRateLimiter({
+  windowMs: 300_000,
+  max: 5,
+  keyPrefix: "store-customer-data-rights",
+  keyGenerator: actorPathRateLimitKey,
+})
+
 /** Store wallet deposit and withdraw (ACH pull / push): 5 per minute. */
 export const storeHawalaMoneyRateLimiter = createRateLimiter({
   windowMs: 60_000,

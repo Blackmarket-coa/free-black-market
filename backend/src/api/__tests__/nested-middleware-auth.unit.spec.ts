@@ -740,13 +740,17 @@ describe("rate limiters: present where declared, with the declared budgets", () 
     expect(budget("vendorHawalaReadRateLimiter")).toMatchObject({ windowMs: 60_000, max: 30 })
     expect(budget("vendorWellnessTestSendRateLimiter")).toMatchObject({ windowMs: 60_000, max: 5 })
     expect(budget("vendorWellnessReadRateLimiter")).toMatchObject({ windowMs: 60_000, max: 60 })
+    // Issue #97: the signed-in account surface and its data-rights endpoints
+    // (store-customer-rate-limits.unit.spec.ts proves them through the chain).
+    expect(budget("storeCustomerAccountRateLimiter")).toMatchObject({ windowMs: 60_000, max: 120 })
+    expect(budget("storeCustomerDataRightsRateLimiter")).toMatchObject({ windowMs: 300_000, max: 5 })
 
     // Every exported limiter's prefix (the @example in the file's docs is not one).
     const prefixes = src
       .split(/\nexport const /)
       .filter((chunk) => /^\w+ = createRateLimiter\(/.test(chunk))
       .map((chunk) => chunk.match(/keyPrefix: "([^"]+)"/)?.[1])
-    expect(prefixes.length).toBe(20)
+    expect(prefixes.length).toBe(22)
     expect(prefixes).not.toContain(undefined)
     expect(new Set(prefixes).size).toBe(prefixes.length)
   })

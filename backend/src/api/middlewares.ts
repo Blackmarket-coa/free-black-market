@@ -23,6 +23,8 @@ import {
   embedKeyRateLimiter,
   publicCatalogRateLimiter,
   standardRateLimiter,
+  storeCustomerAccountRateLimiter,
+  storeCustomerDataRightsRateLimiter,
   strictAuthRateLimiter,
   trustProxyMiddleware,
   vendorRegistrationRateLimiter,
@@ -938,10 +940,38 @@ export default defineMiddlewares({
       method: "POST",
       middlewares: [preventPasswordReuseMiddleware],
     },
-    // Store customer routes
+    // Store customer routes.
+    //
+    // Issue #97: the rate limiter here used to be method-less, and Medusa
+    // registers a method-less entry with `app.use`, which prefix-matches. So
+    // the 20-per-minute IP-keyed auth budget also covered every
+    // /store/customers/me/** read, and because the storefront calls those
+    // server-side, all shoppers shared it. Registration keeps the auth budget
+    // (POST, exact path); a signed-in customer's own account gets an
+    // actor-keyed budget, and the data-rights endpoints a strict one. Email
+    // normalisation stays method-less, as it was.
     {
       matcher: "/store/customers",
-      middlewares: [authRateLimiter, normalizeEmailMiddleware],
+      middlewares: [normalizeEmailMiddleware],
+    },
+    {
+      matcher: "/store/customers",
+      method: "POST",
+      middlewares: [authRateLimiter],
+    },
+    {
+      matcher: "/store/customers/me",
+      middlewares: [storeCustomerAccountRateLimiter],
+    },
+    {
+      matcher: "/store/customers/me/data-export",
+      method: "GET",
+      middlewares: [storeCustomerDataRightsRateLimiter],
+    },
+    {
+      matcher: "/store/customers/me/deletion",
+      method: "POST",
+      middlewares: [storeCustomerDataRightsRateLimiter],
     },
     // Identity keys in customer metadata (blackout_user_id, mxid,
     // mxid_source) are server-owned: Medusa's store validators accept any
