@@ -1,6 +1,7 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { z } from "zod"
 import {
+  PredictionMarketState,
   PredictionMode,
   VENDOR_HYPE_OPERATIONS_PREDICTION_MODULE,
 } from "../../../../modules/vendor-hype-operations-prediction"
@@ -27,13 +28,58 @@ const createMarketSchema = z.object({
   metadata: z.record(z.string(), z.unknown()).optional(),
 })
 
+/**
+ * States the public listing shows. A DRAFT is the owner's unpublished work:
+ * per the architecture (§4.2) a market is created in draft and needs operator
+ * approval to publish, so listing drafts here would publish them the moment
+ * they were created. This is an allow-list, so a state added later stays
+ * private until someone adds it here.
+ */
+const PUBLIC_MARKET_STATES: PredictionMarketState[] = [
+  PredictionMarketState.SCHEDULED,
+  PredictionMarketState.OPEN,
+  PredictionMarketState.LOCKED,
+  PredictionMarketState.IN_REVIEW,
+  PredictionMarketState.SETTLED,
+  PredictionMarketState.VOIDED,
+]
+
+type MarketRow = Awaited<
+  ReturnType<VendorHypeOperationsPredictionService["listPredictionMarkets"]>
+>[number]
+
+/**
+ * The fields an anonymous reader gets. `created_by` is left out: it holds the
+ * creating account's actor id (a customer or member id), which is not public.
+ * Also an allow-list, so a new column is not published by default.
+ */
+const toPublicMarket = (market: MarketRow) => ({
+  id: market.id,
+  profile_id: market.profile_id,
+  milestone_id: market.milestone_id,
+  title: market.title,
+  description: market.description,
+  mode: market.mode,
+  jurisdiction_code: market.jurisdiction_code,
+  policy_version: market.policy_version,
+  oracle_config_id: market.oracle_config_id,
+  starts_at: market.starts_at,
+  locks_at: market.locks_at,
+  settlement_deadline_at: market.settlement_deadline_at,
+  payout_cap_config: market.payout_cap_config,
+  state: market.state,
+  metadata: market.metadata,
+  created_at: market.created_at,
+  updated_at: market.updated_at,
+})
+
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
   const service = req.scope.resolve<VendorHypeOperationsPredictionService>(
     VENDOR_HYPE_OPERATIONS_PREDICTION_MODULE
   )
 
-  const markets = await service.listPredictionMarkets({})
-  res.json({ markets })
+  const markets = await service.listPredictionMarkets({ state: PUBLIC_MARKET_STATES })
+  res.json({ markets: markets.map(toPublicMarket) })
 }
 
 export async function POST(req: MedusaRequest, res: MedusaResponse) {

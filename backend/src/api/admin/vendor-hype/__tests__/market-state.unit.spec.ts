@@ -1,5 +1,6 @@
 import { existsSync } from "fs"
 import { join } from "path"
+import { MedusaError } from "@medusajs/framework/utils"
 import { POST } from "../markets/[id]/state/route"
 import {
   PredictionMarketState,
@@ -36,10 +37,12 @@ const createRes = (): TestRes => {
 
 const makeReq = (
   authContext: Record<string, unknown> | undefined,
-  transitionPredictionMarketState: jest.Mock
+  transitionPredictionMarketState: jest.Mock,
+  // `{ body: undefined }` sends no body; omitting the argument sends a valid one.
+  override?: { body: unknown }
 ) => ({
   params: { id: "pm_1" },
-  body: { state: PredictionMarketState.SCHEDULED },
+  body: override ? override.body : { state: PredictionMarketState.SCHEDULED },
   ...(authContext ? { auth_context: authContext } : {}),
   scope: {
     resolve: (key: string) => {
@@ -81,6 +84,39 @@ describe("POST /admin/vendor-hype/markets/:id/state", () => {
 
     expect(res.statusCode).toBe(200)
     expect(transitionPredictionMarketState).toHaveBeenCalledWith("pm_1", PredictionMarketState.SCHEDULED)
+  })
+
+  const admin = { actor_id: "user_1", actor_type: "user" }
+
+  it.each([
+    ["an unknown state", { state: "bogus" }],
+    ["no state", {}],
+    ["no body", undefined],
+  ])("answers %s with 400 rather than a thrown parse error (a 500)", async (_label, body) => {
+    const transitionPredictionMarketState = jest.fn()
+    const res = createRes()
+
+    await POST(makeReq(admin, transitionPredictionMarketState, { body }) as never, res as never)
+
+    expect(res.statusCode).toBe(400)
+    expect(res.body.type).toBe("invalid_data")
+    expect(transitionPredictionMarketState).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ["an unknown market", MedusaError.Types.NOT_FOUND],
+    ["an illegal transition", MedusaError.Types.NOT_ALLOWED],
+  ])("passes the service's typed error for %s through to the framework handler", async (_label, type) => {
+    // The framework maps NOT_FOUND to 404 and NOT_ALLOWED to 400; the
+    // integration spec checks those codes on the real stack. Here: the route
+    // neither swallows the error nor rewraps it as something untyped.
+    const error = new MedusaError(type, "refused")
+    const transitionPredictionMarketState = jest.fn().mockRejectedValue(error)
+    const res = createRes()
+
+    await expect(
+      POST(makeReq(admin, transitionPredictionMarketState) as never, res as never)
+    ).rejects.toBe(error)
   })
 
   it("is no longer served under /store", () => {

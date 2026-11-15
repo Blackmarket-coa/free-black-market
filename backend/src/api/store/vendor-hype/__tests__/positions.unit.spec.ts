@@ -154,4 +154,44 @@ describe("store vendor hype market positions route", () => {
     expect(metadata).not.toHaveProperty("age_verified")
     expect(metadata).not.toHaveProperty("self_excluded")
   })
+
+  it("does not let free-form metadata carry an eligibility claim onto the position", async () => {
+    // Removing `age_verified` from the schema is not enough if `metadata` is
+    // spread onto the row: the same claim then arrives one level down.
+    const placePredictionPosition = jest.fn().mockResolvedValue({ id: "pos_1" })
+    const service = {
+      listPredictionMarkets: jest.fn().mockResolvedValue([{ id: "m_1", mode: PredictionMode.SWEEPSTAKES }]),
+      isSupporterAgeVerified: jest.fn().mockResolvedValue(true),
+      placePredictionPosition,
+    }
+    const res = createRes()
+
+    await POST(
+      makeReq({
+        body: {
+          idempotency_key: "idem_meta",
+          disclosure_acknowledged: false,
+          metadata: {
+            age_verified: true,
+            self_excluded: false,
+            disclosure_acknowledged: true,
+            referrer: "newsletter",
+          },
+        },
+        service,
+      }) as never,
+      res as never
+    )
+
+    expect(res.statusCode).toBe(201)
+    const metadata = placePredictionPosition.mock.calls[0][0].metadata as Record<string, unknown>
+    // Nowhere on the row, at any depth.
+    expect(JSON.stringify(metadata)).not.toMatch(/age_verified|self_excluded/)
+    // The server's own field comes from the validated request field, not
+    // from the client's metadata.
+    expect(metadata.disclosure_acknowledged).toBe(false)
+    // The client's other data is kept, apart from the server's keys.
+    expect(metadata.client_metadata).toEqual({ referrer: "newsletter" })
+    expect(Object.keys(metadata).sort()).toEqual(["client_metadata", "disclosure_acknowledged"])
+  })
 })

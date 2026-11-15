@@ -17,8 +17,29 @@ const placePositionSchema = z.object({
   // No `age_verified` / `self_excluded` here, deliberately: both used to be
   // read from this body, so the caller attested its own eligibility. zod
   // strips unknown keys, so a client that still sends them is ignored.
+  // `metadata` is free-form, so it cannot be spread onto the row as is: see
+  // clientMetadata below.
   metadata: z.record(z.string(), z.unknown()).optional(),
 })
+
+/**
+ * Keys that state an eligibility or consent fact about the supporter. The
+ * platform decides these. The client never does, even inside free-form
+ * metadata.
+ */
+const ELIGIBILITY_CLAIM_KEYS = new Set(["age_verified", "self_excluded", "disclosure_acknowledged"])
+
+/**
+ * The caller's free-form metadata, nested under `client_metadata` so it can
+ * never sit beside the keys the server writes on the position, and with any
+ * eligibility claim dropped. Spreading `body.metadata` onto the row let a
+ * client store `age_verified: true` there one level down from the field the
+ * schema had removed.
+ */
+const clientMetadata = (metadata: Record<string, unknown> | undefined) =>
+  Object.fromEntries(
+    Object.entries(metadata ?? {}).filter(([key]) => !ELIGIBILITY_CLAIM_KEYS.has(key))
+  )
 
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
   const service = req.scope.resolve<VendorHypeOperationsPredictionService>(
@@ -91,8 +112,9 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     max_payout_amount: body.max_payout_amount,
     idempotency_key: idempotencyKey,
     metadata: {
-      ...body.metadata,
+      // The validated request field, checked above for non-cash markets.
       disclosure_acknowledged: body.disclosure_acknowledged,
+      client_metadata: clientMetadata(body.metadata),
     },
   })
 

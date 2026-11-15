@@ -1,4 +1,4 @@
-import { MedusaService } from "@medusajs/framework/utils"
+import { MedusaError, MedusaService } from "@medusajs/framework/utils"
 import {
   HypeProfile,
   HypeProfileStatus,
@@ -40,6 +40,23 @@ export const MAX_POSITIONS_PER_MARKET_PER_USER = Math.max(
   Number(process.env.VENDOR_HYPE_MAX_POSITIONS_PER_MARKET) || 1
 )
 
+/**
+ * The market lifecycle (docs/VENDOR_HYPE_OPERATIONS_PREDICTION_BACKEND_ARCHITECTURE.md
+ * §5.2). `transitionPredictionMarketState` enforces it, except that it never
+ * performs `in_review -> settled` itself: see that method.
+ */
+export const MARKET_STATE_TRANSITIONS: Readonly<
+  Record<PredictionMarketState, readonly PredictionMarketState[]>
+> = {
+  [PredictionMarketState.DRAFT]: [PredictionMarketState.SCHEDULED, PredictionMarketState.VOIDED],
+  [PredictionMarketState.SCHEDULED]: [PredictionMarketState.OPEN, PredictionMarketState.VOIDED],
+  [PredictionMarketState.OPEN]: [PredictionMarketState.LOCKED, PredictionMarketState.VOIDED],
+  [PredictionMarketState.LOCKED]: [PredictionMarketState.IN_REVIEW, PredictionMarketState.VOIDED],
+  [PredictionMarketState.IN_REVIEW]: [PredictionMarketState.SETTLED, PredictionMarketState.VOIDED],
+  [PredictionMarketState.SETTLED]: [],
+  [PredictionMarketState.VOIDED]: [],
+}
+
 class VendorHypeOperationsPredictionService extends MedusaService({
   HypeProfile,
   OpsFundingBucket,
@@ -53,15 +70,7 @@ class VendorHypeOperationsPredictionService extends MedusaService({
 }) {
   private readonly policyService = new PredictionPolicyService()
 
-  private readonly MARKET_STATE_TRANSITIONS: Record<PredictionMarketState, PredictionMarketState[]> = {
-    [PredictionMarketState.DRAFT]: [PredictionMarketState.SCHEDULED, PredictionMarketState.VOIDED],
-    [PredictionMarketState.SCHEDULED]: [PredictionMarketState.OPEN, PredictionMarketState.VOIDED],
-    [PredictionMarketState.OPEN]: [PredictionMarketState.LOCKED, PredictionMarketState.VOIDED],
-    [PredictionMarketState.LOCKED]: [PredictionMarketState.IN_REVIEW, PredictionMarketState.VOIDED],
-    [PredictionMarketState.IN_REVIEW]: [PredictionMarketState.SETTLED, PredictionMarketState.VOIDED],
-    [PredictionMarketState.SETTLED]: [],
-    [PredictionMarketState.VOIDED]: [],
-  }
+  private readonly MARKET_STATE_TRANSITIONS = MARKET_STATE_TRANSITIONS
 
   async createHypeProfile(input: {
     profile_type: HypeProfileType
@@ -157,17 +166,39 @@ class VendorHypeOperationsPredictionService extends MedusaService({
     return market
   }
 
+  /**
+   * Operator lifecycle command (POST /admin/vendor-hype/markets/:id/state).
+   *
+   * It refuses `settled` as a target. The lifecycle allows `in_review ->
+   * settled`, but §5.2 allows it "only after settlement validation passes",
+   * and the only code that does that is settlePredictionMarket: it requires
+   * the oracle evidence, writes the prediction_settlement row and the payout
+   * entries, and marks positions won or lost. Setting the state here would
+   * produce a settled market with none of those. Before this guard, the old
+   * store route let any signed-in account do exactly that, one legal step at
+   * a time from draft.
+   *
+   * Errors are typed so the HTTP layer answers 404/400, not 500.
+   */
   async transitionPredictionMarketState(id: string, nextState: PredictionMarketState) {
+    if (nextState === PredictionMarketState.SETTLED) {
+      throw new MedusaError(
+        MedusaError.Types.NOT_ALLOWED,
+        "A prediction market is settled only through settlement (POST /admin/vendor-hype/markets/:id/settle), which records the oracle outcome and payouts; it cannot be moved to settled directly."
+      )
+    }
+
     const [market] = await this.listPredictionMarkets({ id })
 
     if (!market) {
-      throw new Error(`Prediction market ${id} was not found`)
+      throw new MedusaError(MedusaError.Types.NOT_FOUND, `Prediction market ${id} was not found`)
     }
 
     const validTransitions = this.MARKET_STATE_TRANSITIONS[market.state as PredictionMarketState] || []
 
     if (!validTransitions.includes(nextState)) {
-      throw new Error(
+      throw new MedusaError(
+        MedusaError.Types.NOT_ALLOWED,
         `Invalid prediction market transition from ${market.state} to ${nextState}. Valid transitions: ${validTransitions.join(", ") || "none"}`
       )
     }
@@ -273,8 +304,6 @@ class VendorHypeOperationsPredictionService extends MedusaService({
     idempotency_key: string
     metadata?: Record<string, unknown>
   }) {
-    await this.ensureSupporterEligibility(input.supporter_id)
-
     const [market] = await this.listPredictionMarkets({ id: input.market_id })
     if (!market) {
       throw new Error(`Prediction market ${input.market_id} was not found`)
@@ -283,8 +312,9 @@ class VendorHypeOperationsPredictionService extends MedusaService({
       throw new Error("Positions can only be placed while a market is open")
     }
     // The age gate lives here as well as in the route so that no caller can
-    // place a position without it. Self-exclusion and cooldown are already
-    // enforced above by ensureSupporterEligibility, from user_prediction_safety.
+    // place a position without it. It runs before ensureSupporterEligibility,
+    // which inserts a user_prediction_safety row for a first-time supporter,
+    // so a refused call writes nothing.
     if (
       !(await this.isSupporterAgeVerified(
         input.supporter_id,
@@ -293,6 +323,8 @@ class VendorHypeOperationsPredictionService extends MedusaService({
     ) {
       throw new Error("age_verification_required")
     }
+    // Self-exclusion, cooldown and the daily limit, from user_prediction_safety.
+    await this.ensureSupporterEligibility(input.supporter_id)
 
     const [existing] = await this.listPredictionPositions({
       market_id: input.market_id,

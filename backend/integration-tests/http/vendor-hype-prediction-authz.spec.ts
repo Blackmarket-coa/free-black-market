@@ -17,9 +17,10 @@ jest.setTimeout(120 * 1000)
  * registered module, and Postgres.
  *
  * Before this: any signed-in account could create a market under any profile,
- * drive any market through its state machine at
- * POST /store/vendor-hype/markets/:id/state, and place a position by sending
- * `age_verified: true`.
+ * walk any market through its state machine to SETTLED (with no settlement
+ * record) at POST /store/vendor-hype/markets/:id/state, and place a position
+ * by sending `age_verified: true`. The public listing also showed drafts and
+ * the creating account's id.
  */
 
 // Tokens are minted with the server's JWT_SECRET, as helpers/seller-auth.ts
@@ -137,6 +138,14 @@ medusaIntegrationTestRunner({
       let [current] = await service().listPredictionMarkets({ id: market.id })
       expect(current.state).toBe(PredictionMarketState.DRAFT)
 
+      // A draft is not public until an operator publishes it.
+      const publicIds = async () => {
+        const list = await api.get("/store/vendor-hype/markets", pak)
+        expect(list.status).toBe(200)
+        return list.data.markets as Array<Record<string, unknown>>
+      }
+      expect((await publicIds()).map((m) => m.id)).not.toContain(market.id)
+
       const asAdmin = await api.post(
         `/admin/vendor-hype/markets/${market.id}/state`,
         { state: PredictionMarketState.SCHEDULED },
@@ -145,6 +154,48 @@ medusaIntegrationTestRunner({
       expect(asAdmin.status).toBe(200)
       ;[current] = await service().listPredictionMarkets({ id: market.id })
       expect(current.state).toBe(PredictionMarketState.SCHEDULED)
+
+      // Published now, and without the creating account's id.
+      const listed = (await publicIds()).find((m) => m.id === market.id)
+      expect(listed).toEqual(expect.objectContaining({ state: PredictionMarketState.SCHEDULED }))
+      expect(listed).not.toHaveProperty("created_by")
+    })
+
+    it("answers operator mistakes with 4xx and never settles a market through the state route", async () => {
+      const market = await service().createPredictionMarket({
+        ...marketBody(profileId),
+        starts_at: new Date(Date.now() + 60_000),
+        locks_at: new Date(Date.now() + 7 * 86_400_000),
+        created_by: ownerId,
+      })
+      const operator = withBearer({ headers: {} }, tokenFor("user", "user_hype_operator"))
+      const setState = (id: string, body: unknown) =>
+        api.post(`/admin/vendor-hype/markets/${id}/state`, body, operator).catch((e) => e.response)
+
+      for (const state of [
+        PredictionMarketState.SCHEDULED,
+        PredictionMarketState.OPEN,
+        PredictionMarketState.LOCKED,
+        PredictionMarketState.IN_REVIEW,
+      ]) {
+        expect((await setState(market.id, { state })).status).toBe(200)
+      }
+
+      // in_review -> settled is in the lifecycle, but only settlement may do
+      // it. Through the old store route any customer could, leaving a settled
+      // market with no settlement record and no payouts.
+      const settle = await setState(market.id, { state: PredictionMarketState.SETTLED })
+      expect(settle.status).toBe(400)
+      let [current] = await service().listPredictionMarkets({ id: market.id })
+      expect(current.state).toBe(PredictionMarketState.IN_REVIEW)
+      expect(await service().listPredictionSettlements({ market_id: market.id })).toHaveLength(0)
+
+      // Each of these used to be a 500 (and so a Sentry event).
+      expect((await setState(market.id, { state: PredictionMarketState.OPEN })).status).toBe(400)
+      expect((await setState(market.id, { state: "bogus" })).status).toBe(400)
+      expect((await setState("pm_does_not_exist", { state: PredictionMarketState.SCHEDULED })).status).toBe(404)
+      ;[current] = await service().listPredictionMarkets({ id: market.id })
+      expect(current.state).toBe(PredictionMarketState.IN_REVIEW)
     })
 
     it("refuses a position on an open market even when the body claims age_verified", async () => {
