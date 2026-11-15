@@ -49,9 +49,28 @@ const CONDITIONAL_RULES = {
       ],
     },
     {
+      // Blackstar parcel bridge. The rule used to require FBM_BLACKSTAR_API_KEY,
+      // which no code reads (it belonged to the retired static-key
+      // /v1/integrations/blackstar/shipments route), so it passed a deploy
+      // that set it and nothing the bridge actually needs. What the code reads:
+      //   - outbound (FBM -> Blackstar), marketplace-webhooks
+      //     blackstarEmitConfig(): BLACKSTAR_WEBHOOK_SECRET signs,
+      //     BLACKSTAR_API_BASE is the destination; either missing and nothing
+      //     is sent.
+      //   - inbound (Blackstar -> FBM), /v1/integrations/blackstar/events:
+      //     BLACKSTAR_OUTBOUND_SECRET verifies, unless BLACKSTAR_REQUIRE_KEY_ID=1
+      //     moves verification to per-partner credentials (next block).
       when: { key: "FBM_BLACKSTAR_INTEGRATION", equals: "1" },
       rules: [
-        { key: "FBM_BLACKSTAR_API_KEY", required: true, minLength: MIN_SECRET_LENGTH, banPrefixes: ["CHANGE_ME"] },
+        { key: "BLACKSTAR_API_BASE", required: true, banPrefixes: ["CHANGE_ME"] },
+        { key: "BLACKSTAR_WEBHOOK_SECRET", required: true, minLength: MIN_SECRET_LENGTH, banPrefixes: ["CHANGE_ME"] },
+      ],
+    },
+    {
+      when: { key: "FBM_BLACKSTAR_INTEGRATION", equals: "1" },
+      unless: { key: "BLACKSTAR_REQUIRE_KEY_ID", equals: "1" },
+      rules: [
+        { key: "BLACKSTAR_OUTBOUND_SECRET", required: true, minLength: MIN_SECRET_LENGTH, banPrefixes: ["CHANGE_ME"] },
       ],
     },
     {
@@ -135,14 +154,15 @@ export function assertProductionEnv(app, env = process.env) {
     throw new Error(`assertProductionEnv: unknown app "${app}"`)
   }
 
-  // Layer in any conditional rules whose gate matches.
+  // Layer in any conditional rules whose gate matches (and whose optional
+  // `unless` gate does not).
+  const gateMatches = (gate) =>
+    gate.present
+      ? String(env[gate.key] ?? "") !== ""
+      : String(env[gate.key] ?? "") === String(gate.equals)
   const conditional = CONDITIONAL_RULES[app] || []
   const activeConditional = conditional
-    .filter(({ when }) =>
-      when.present
-        ? String(env[when.key] ?? "") !== ""
-        : String(env[when.key] ?? "") === String(when.equals)
-    )
+    .filter(({ when, unless }) => gateMatches(when) && !(unless && gateMatches(unless)))
     .flatMap(({ rules }) => rules)
   const rules = [...baseRules, ...activeConditional]
 

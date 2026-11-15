@@ -25,8 +25,10 @@ integration hooks.
 | `BLACKOUT_CLIENT_ID` | — | `FBM_BLACKOUT_INTEGRATION=1` in production | Reused from the existing Blackout integration scaffold. OAuth client_credentials. |
 | `BLACKOUT_CLIENT_SECRET` | — | `FBM_BLACKOUT_INTEGRATION=1` in production | Same. Validated as a min-32-char secret with banned-prefix check. |
 | `FBM_BLACKOUT_TOKEN_TTL_SECONDS` | `3600` | optional | TTL of the JWT issued by the OAuth token endpoint. |
-| `FBM_BLACKSTAR_INTEGRATION` | `0` | always | `1` registers the `blackstar` fulfillment provider and enables the inbound shipment webhook. `0` keeps the provider unregistered. |
-| `FBM_BLACKSTAR_API_KEY` | — | `FBM_BLACKSTAR_INTEGRATION=1` in production | Shared secret expected on the `x-fbm-integration-key` header for Blackstar shipment webhooks. Min 32 chars. |
+| `FBM_BLACKSTAR_INTEGRATION` | `0` | always | `1` registers the `blackstar` fulfillment provider and enables the inbound events route (`/v1/integrations/blackstar/events`). `0` keeps the provider unregistered. `scripts/assert-env.mjs` checks the three `BLACKSTAR_*` values below when it is `1` (the old `FBM_BLACKSTAR_API_KEY` is read by nothing and no longer required). |
+| `BLACKSTAR_API_BASE` | — | `FBM_BLACKSTAR_INTEGRATION=1` in production | Blackstar's API base URL; the destination of FBM's outbound lifecycle events. |
+| `BLACKSTAR_WEBHOOK_SECRET` | — | `FBM_BLACKSTAR_INTEGRATION=1` in production | Signs FBM's outbound events (the value Blackstar reads as `FBM_WEBHOOK_SECRET`). Min 32 chars. Without it or `BLACKSTAR_API_BASE`, nothing is sent. |
+| `BLACKSTAR_OUTBOUND_SECRET` | — | `FBM_BLACKSTAR_INTEGRATION=1` in production, unless `BLACKSTAR_REQUIRE_KEY_ID=1` | Verifies Blackstar's inbound events on `/v1/integrations/blackstar/events` (the value Blackstar signs with as `FBM_OUTBOUND_SECRET`). Min 32 chars. With `BLACKSTAR_REQUIRE_KEY_ID=1`, per-partner credentials replace it. |
 | `FBM_DEFAULT_REFERRAL_PERCENT` | — | optional | Default referral commission (0-100) used when active `PayoutConfig` does not set one. |
 | `FBM_DEFAULT_PLUGIN_DEVELOPER_PERCENT` | — | optional | Default plugin / theme / emoji-pack developer share (0-100). |
 | `FBM_ENTITLEMENT_DEFAULT_DURATION_DAYS` | (perpetual) | optional | Default lifetime for entitlements granted without an explicit duration. |
