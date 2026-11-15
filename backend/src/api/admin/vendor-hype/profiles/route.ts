@@ -21,7 +21,9 @@ const createSchema = z.object({
 
 const ensureAdminActor = (req: MedusaRequest, res: MedusaResponse) => {
   const actorType = (req as any).auth_context?.actor_type
-  if (actorType && actorType !== "user" && actorType !== "admin") {
+  // A missing actor_type is refused too: the old `actorType && ...` guard let an
+  // empty auth context through (SEC-5 residual). Medusa admin sessions are "user".
+  if (actorType !== "user" && actorType !== "admin") {
     res.status(403).json({ error: "Forbidden" })
     return false
   }

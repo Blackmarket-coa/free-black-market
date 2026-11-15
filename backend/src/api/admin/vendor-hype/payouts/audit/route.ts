@@ -12,7 +12,9 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
   // Medusa issues admin sessions as actor_type "user"; accepting only
   // "admin" (as this did) refused every real admin. Same rule as the sibling
   // vendor-hype admin routes.
-  if (actorType && actorType !== "user" && actorType !== "admin") {
+  // A missing actor_type is refused too: the old `actorType && ...` guard let an
+  // empty auth context through (SEC-5 residual). Medusa admin sessions are "user".
+  if (actorType !== "user" && actorType !== "admin") {
     return res.status(403).json({ error: "Forbidden" })
   }
 
