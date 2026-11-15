@@ -58,6 +58,21 @@ import {
  * characters after each `model.define(` and credited the model with any
  * `customer_id` in them, which put `garden_role` and `hawala_investment_pool`
  * in the registry on the strength of the next model in their files.
+ *
+ * ## And once more, for the sign-in identity
+ *
+ * `password_history_entry` holds a customer's old password hashes, keyed by
+ * `auth_identity_id` and stamped `actor_type = 'customer'`, and the widened
+ * walk still passed it: `identity` was not a person word. Two rules now cover
+ * that shape. `identity` is a person word, so an `auth_identity_id` anywhere
+ * is read; and on a model that says which kind of actor its row is about (an
+ * `actor_type` column), every identifier column is read, whatever it is
+ * called (`ACTOR_TYPED`).
+ *
+ * The general form, any `<x>_id` beside an `<x>_type`, was probed on
+ * 2026-11-15 and not adopted: it found nine columns, every one a polymorphic
+ * reference to a record (an order, an event, a campaign, a ledger reference,
+ * a proof's context), none to a person.
  */
 
 const MODULES_DIR = path.join(__dirname, "..", "..", "modules")
@@ -167,7 +182,9 @@ const PERSON_ROLES = new Set(
     "organizer author actor user subject receiver recipient attester attestor participant offerer " +
     "helper creator contributor delegator delegate beneficiary assignee owner holder investor donor " +
     "sender payer payee claimant attendee volunteer client guest patron referrer referred invitee " +
-    "inviter follower sponsor signer borrower lender tenant renter admin person profile verifier"
+    "inviter follower sponsor signer borrower lender tenant renter admin person profile verifier " +
+    // An auth identity is a person's sign-in (`password_history_entry.auth_identity_id`).
+    "identity"
   ).split(" ")
 )
 
@@ -199,6 +216,27 @@ function namesAPerson(column: string, definition: string): boolean {
 function isReference(column: string): boolean {
   const name = snakeCase(column)
   return REFERENCE_SUFFIX.test(name) || /_by$/.test(name)
+}
+
+/**
+ * A model with an `actor_type` column says which kind of actor (customer,
+ * seller, user, driver) each row is about, so the identifier it keeps for
+ * that actor is a person reference whatever it is named. Every text or JSON
+ * identifier column on such a model is read, except one that names a seller
+ * or vendor, the same exception the name rule makes.
+ */
+const ACTOR_TYPED = /(^|_)actor_type$/
+
+function isActorTyped(model: ModelColumns): boolean {
+  return [...model.columns.keys()].some((column) => ACTOR_TYPED.test(snakeCase(column)))
+}
+
+/** Whether a column on `model` is about a person, by its name or by its model's `actor_type`. */
+function isPersonColumn(model: ModelColumns, column: string, definition: string): boolean {
+  if (namesAPerson(column, definition)) return true
+  if (!isActorTyped(model) || !/^model\s*\.\s*(text|json)\b/.test(definition) || !isReference(column)) return false
+  const words = snakeCase(column).split("_")
+  return !words.includes("seller") && !words.includes("vendor")
 }
 
 /**
@@ -288,7 +326,7 @@ describe("customer data registry", () => {
   /** Every person-named column other than `customer_id`, as `entity.column`. */
   const personColumns = models.flatMap((m) =>
     [...m.columns.entries()]
-      .filter(([column, definition]) => column !== "customer_id" && namesAPerson(column, definition))
+      .filter(([column, definition]) => column !== "customer_id" && isPersonColumn(m, column, definition))
       .map(([column]) => ({ ref: `${m.entity}.${column}`, file: m.file }))
   )
 
@@ -388,6 +426,31 @@ describe("customer data registry", () => {
     // An identifier always needs a decision; a description goes with its row.
     expect(isReference("customer_ref")).toBe(true)
     expect(isReference("customer_email")).toBe(false)
+    // The P1-13 review's second round: a sign-in identity names a person.
+    expect(namesAPerson("auth_identity_id", "model.text()")).toBe(true)
+    expect(personColumns.map((p) => p.ref)).toContain("password_history_entry.auth_identity_id")
+  })
+
+  it("reads every identifier on a model that says which kind of actor its row is about", () => {
+    // password_history_entry's shape, with names no person word covers: the
+    // `actor_type` column is what says the row is about a person.
+    const [typed, untyped] = parseModels(
+      `export const Typed = model.define("fx_credential", {
+         id: model.id().primaryKey(),
+         principal_ref: model.text(),
+         grant_ids: model.json().nullable(),
+         seller_principal_id: model.text().nullable(),
+         actor_type: model.text(),
+         secret_hash: model.text(),
+         expires_at: model.dateTime().nullable(),
+       })
+       export const Untyped = model.define("fx_token", { id: model.id().primaryKey(), principal_ref: model.text() })`,
+      "fixture.ts"
+    )
+    const read = (m: ModelColumns) =>
+      [...m.columns.entries()].filter(([column, definition]) => isPersonColumn(m, column, definition)).map(([column]) => column)
+    expect(read(typed)).toEqual(["principal_ref", "grant_ids"])
+    expect(read(untyped)).toEqual([])
   })
 
   it("finds the rows that hang off a parent, by belongsTo or by <table>_id, in the parent's module only", () => {
@@ -556,6 +619,43 @@ describe("customer data registry", () => {
     expect(backing?.framework).toBeUndefined()
     expect(backing?.basis).toMatch(/refund/)
     expect(backing?.inExport).not.toBe(false)
+  })
+
+  it("deletes a customer's old password hashes by the sign-in identity, and never exports them", () => {
+    // P1-13 review: password_history_entry keys each old hash by
+    // auth_identity_id, and nothing tied it to the customer, so a deletion
+    // revoked the identity and kept them.
+    expect(registryEntry("password_history_entry")).toMatchObject({
+      action: "delete",
+      customerColumn: "auth_identity_id",
+      keyedBy: "auth_identity",
+      inExport: false,
+    })
+  })
+
+  it("exports no entry keyed by the sign-in identity", () => {
+    // The export is read by customer id, and the one such table today holds
+    // credential material.
+    const exported = CUSTOMER_DATA_REGISTRY.filter((e) => e.keyedBy === "auth_identity" && e.inExport !== false).map(
+      (e) => e.entity
+    )
+    expect(exported).toEqual([])
+  })
+
+  it("clears the public name a deleted customer's review is shown under", () => {
+    // P1-13 review: unlinking customer_id left "Jordan R." on every review
+    // page. Cleared, the review routes show "Verified buyer".
+    expect(registryEntry("embed_product_review")).toMatchObject({
+      action: "anonymise",
+      anonymiseFields: ["customer_display_name"],
+    })
+  })
+
+  it("clears the customer's own words on the orders it keeps", () => {
+    expect(registryEntry("standing_order")?.anonymiseFields).toEqual(["customer_notes"])
+    expect(registryEntry("food_order")?.anonymiseFields).toEqual(
+      expect.arrayContaining(["customer_notes", "customer_review"])
+    )
   })
 
   it("states a basis for everything it keeps", () => {

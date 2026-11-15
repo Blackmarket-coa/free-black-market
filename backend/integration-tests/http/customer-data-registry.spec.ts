@@ -1,5 +1,6 @@
 import { medusaIntegrationTestRunner } from "@medusajs/test-utils"
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
+import { generateResetPasswordTokenWorkflow } from "@medusajs/medusa/core-flows"
 import { createPublishableKeyToken } from "./_publishable-key"
 import { safe } from "./helpers/seller-auth"
 import {
@@ -30,6 +31,11 @@ jest.setTimeout(240 * 1000)
  *
  * They found more than that, recorded below as ratchets and NOT fixed here:
  * each is a separate decision, and the lists must shrink as each is made.
+ *
+ * The P1-13 review found two more things a deletion left behind, both shown
+ * here through the real routes: the old password hashes the reuse check keeps
+ * per auth identity (written by a real password change), and the public name
+ * on the person's reviews (read back through the public review route).
  */
 
 // `food_order`'s anonymiseFields name four columns the table does not have
@@ -83,8 +89,16 @@ medusaIntegrationTestRunner({
         { headers: { authorization: `Bearer ${registered.data.token}`, "x-publishable-api-key": pak } }
       )
       const login = await api.post("/auth/customer/emailpass", { email, password })
+      // The identity the login signs in with, found the way the password
+      // reuse check finds it (middlewares/password-history.ts).
+      const { rows } = await pg().raw(
+        `SELECT "auth_identity_id" FROM "provider_identity" WHERE "entity_id" = ? AND "provider" = 'emailpass'`,
+        [email]
+      )
       return {
         id: created.data.customer.id as string,
+        email,
+        authIdentityId: rows[0]?.auth_identity_id as string,
         headers: { headers: { authorization: `Bearer ${login.data.token}`, "x-publishable-api-key": pak } },
       }
     }
@@ -177,6 +191,133 @@ medusaIntegrationTestRunner({
         expect(deleted.status).toBe(200)
         expect(await profileExists(mine)).toBe(false)
         expect(await profileExists(theirs)).toBe(true)
+      })
+    })
+
+    describe("what a deletion leaves of the person's old passwords, public name and notes (P1-13 review)", () => {
+      // A password change through the real route, so the reuse check writes
+      // its history row the way it does in production: the old hash, keyed
+      // by the auth identity, stamped with the path's actor type. The reset
+      // token is the one POST /auth/customer/emailpass/reset-password would
+      // email.
+      async function changePassword(email: string, password: string) {
+        const { http } = container().resolve(ContainerRegistrationKeys.CONFIG_MODULE).projectConfig
+        const { result: token } = await generateResetPasswordTokenWorkflow(container()).run({
+          input: { entityId: email, actorType: "customer", provider: "emailpass", secret: http.jwtSecret, jwtOptions: http.jwtOptions },
+        })
+        const updated = await safe(
+          api.post("/auth/customer/emailpass/update", { password }, { headers: { authorization: `Bearer ${token}` } })
+        )
+        expect(updated.status).toBe(200)
+      }
+
+      async function historyOf(authIdentityId: string) {
+        const { rows } = await pg().raw(
+          `SELECT "actor_type" FROM "password_history_entry" WHERE "auth_identity_id" = ?`,
+          [authIdentityId]
+        )
+        return rows as Array<{ actor_type: string }>
+      }
+
+      // The reuse check stores the old hash after the response is sent, so
+      // the row lands a moment later.
+      async function historyAfterWrite(authIdentityId: string) {
+        for (let i = 0; i < 50; i++) {
+          const rows = await historyOf(authIdentityId)
+          if (rows.length > 0) return rows
+          await new Promise((resolve) => setTimeout(resolve, 100))
+        }
+        return historyOf(authIdentityId)
+      }
+
+      async function insertReview(customerId: string, productId: string, name: string) {
+        const id = `rev_registry_${uid().replace(/-/g, "")}`
+        await pg().raw(
+          `INSERT INTO "embed_product_review" ("id", "product_id", "seller_id", "order_id", "customer_id", "rating", "body", "customer_display_name")
+           VALUES (?, ?, 'sel_registry_test', ?, ?, 5, 'Crisp and fresh.', ?)`,
+          [id, productId, `order_${id}`, customerId, name]
+        )
+        return id
+      }
+      async function reviewRow(id: string) {
+        const { rows } = await pg().raw(
+          `SELECT "customer_id", "customer_display_name", "body", "rating" FROM "embed_product_review" WHERE "id" = ?`,
+          [id]
+        )
+        return rows[0] as Record<string, unknown> | undefined
+      }
+
+      async function insertStandingOrder(customerId: string, notes: string) {
+        const id = `so_registry_${uid().replace(/-/g, "")}`
+        await pg().raw(
+          `INSERT INTO "standing_order" ("id", "seller_id", "customer_id", "name", "frequency", "start_date", "line_items", "order_value", "fulfillment_method", "customer_notes")
+           VALUES (?, 'sel_registry_test', ?, 'Weekly box', 'WEEKLY', now(), '[]'::jsonb, 1200, 'PICKUP', ?)`,
+          [id, customerId, notes]
+        )
+        return id
+      }
+      async function standingOrderRow(id: string) {
+        const { rows } = await pg().raw(
+          `SELECT "customer_id", "customer_notes", "order_value"::text AS "order_value" FROM "standing_order" WHERE "id" = ?`,
+          [id]
+        )
+        return rows[0] as Record<string, unknown> | undefined
+      }
+
+      it("deletes the customer's password history and nobody else's, and keeps their review without their name", async () => {
+        const pak = await createPublishableKeyToken(getContainer)
+        const leaving = await signedInCustomer(pak)
+        const staying = await signedInCustomer(pak)
+        expect(leaving.authIdentityId).toMatch(/^authid_/)
+        expect(staying.authIdentityId).toMatch(/^authid_/)
+
+        await changePassword(leaving.email, `${uid()}-new`)
+        await changePassword(staying.email, `${uid()}-new`)
+        expect(await historyAfterWrite(leaving.authIdentityId)).toEqual([{ actor_type: "customer" }])
+        expect(await historyAfterWrite(staying.authIdentityId)).toEqual([{ actor_type: "customer" }])
+
+        const product = `prod_registry_${uid().replace(/-/g, "")}`
+        const mine = await insertReview(leaving.id, product, "Jordan R.")
+        const theirs = await insertReview(staying.id, product, "Sam K.")
+        const myOrder = await insertStandingOrder(leaving.id, "Leave it with the neighbour at 14B")
+        const theirOrder = await insertStandingOrder(staying.id, "Ring twice")
+
+        const publicAuthors = async () => {
+          const res = await safe(api.get(`/store/products/${product}/reviews`, { headers: { "x-publishable-api-key": pak } }))
+          expect(res.status).toBe(200)
+          return (res.data.reviews as Array<{ id: string; author: string; body: string }>)
+            .map((r) => ({ id: r.id, author: r.author, body: r.body }))
+            .sort((a, b) => a.id.localeCompare(b.id))
+        }
+        type PublicReview = { id: string; author: string; body: string }
+        const sortedPair = (a: PublicReview, b: PublicReview) => [a, b].sort((x, y) => x.id.localeCompare(y.id))
+        expect(await publicAuthors()).toEqual(
+          sortedPair({ id: mine, author: "Jordan R.", body: "Crisp and fresh." }, { id: theirs, author: "Sam K.", body: "Crisp and fresh." })
+        )
+
+        const deleted = await safe(api.post("/store/customers/me/deletion", {}, leaving.headers))
+        expect(deleted.status).toBe(200)
+        expect(deleted.data.login_revoked).toBe(true)
+        // food_order is the KNOWN_MISSING_ANONYMISE_FIELDS failure, on every
+        // deletion. The password history and the standing order are not.
+        expect(deleted.data.entities_failed).toEqual(["food_order"])
+
+        // Old password hashes: the leaving customer's are gone with their
+        // identity; the other customer's are untouched.
+        expect(await historyOf(leaving.authIdentityId)).toEqual([])
+        expect(await historyOf(staying.authIdentityId)).toEqual([{ actor_type: "customer" }])
+
+        // The review survives for other shoppers, without the link or the name.
+        expect(await reviewRow(mine)).toEqual({ customer_id: null, customer_display_name: null, body: "Crisp and fresh.", rating: 5 })
+        expect(await reviewRow(theirs)).toEqual({ customer_id: staying.id, customer_display_name: "Sam K.", body: "Crisp and fresh.", rating: 5 })
+        expect(await publicAuthors()).toEqual(
+          sortedPair({ id: mine, author: "Verified buyer", body: "Crisp and fresh." }, { id: theirs, author: "Sam K.", body: "Crisp and fresh." })
+        )
+
+        // The standing order is kept under TAX with its link; the customer's
+        // own note to the seller is not.
+        expect(await standingOrderRow(myOrder)).toEqual({ customer_id: leaving.id, customer_notes: null, order_value: "1200" })
+        expect(await standingOrderRow(theirOrder)).toEqual({ customer_id: staying.id, customer_notes: "Ring twice", order_value: "1200" })
       })
     })
 

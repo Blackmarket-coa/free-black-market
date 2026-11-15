@@ -11,7 +11,8 @@ const log = createLogger("api/store/customers/me/deletion")
  * CCPA/CPRA "right to delete". Erases the customer's personal data:
  *  - removes saved addresses,
  *  - anonymises the customer record (email / name / phone / company),
- *  - revokes the auth identity so the account can no longer sign in.
+ *  - revokes the auth identity so the account can no longer sign in, and
+ *    deletes the old password hashes kept against it (through the registry).
  *
  * Completed-order records are retained in anonymised form (unlinked from live
  * PII) under the tax/accounting legal-basis exception both CCPA and GDPR allow.
@@ -79,7 +80,13 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
   // and wellness records all survived. `lib/customer-data-registry.ts` decides
   // what happens to each, and a test fails the build when a model gains a
   // `customer_id` without an entry, so this cannot silently fall behind again.
-  const registryResults = await eraseCustomerAcrossRegistry(req.scope, customerId)
+  //
+  // The sign-in identity is passed too: the old password hashes kept for the
+  // reuse check (`password_history_entry`) know the person only by it, and
+  // step 4 revokes that identity, so its history goes with it here.
+  const registryResults = await eraseCustomerAcrossRegistry(req.scope, customerId, {
+    authIdentityId,
+  })
   const registryFailures = registryResults.filter((r) => r.error)
   const registryRows = registryResults.reduce((sum, r) => sum + r.rows, 0)
 

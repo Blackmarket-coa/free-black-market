@@ -40,6 +40,15 @@ const log = createLogger("lib/customer-erasure")
  * on it.
  * Clearing the foreign key as well would orphan the accounting record from the
  * order it belongs to and buy nothing: the identity is already gone.
+ *
+ * ## Entries keyed by the sign-in identity
+ *
+ * A table that knows the person only by how they sign in
+ * (`keyedBy: "auth_identity"`: `password_history_entry`) is filtered on the
+ * auth identity the deletion route revokes, passed as `authIdentityId`, not on
+ * the customer id. Without one the entry is reported as failed rather than
+ * skipped: the person's old password hashes would otherwise survive behind a
+ * clean result.
  */
 
 export type EntityErasureResult = {
@@ -87,7 +96,11 @@ function quoteIdent(name: string): string {
 
 export async function eraseCustomerAcrossRegistry(
   container: MedusaContainer,
-  customerId: string
+  customerId: string,
+  opts: {
+    /** The sign-in identity being revoked: the key of `keyedBy: "auth_identity"` entries. */
+    authIdentityId?: string
+  } = {}
 ): Promise<EntityErasureResult[]> {
   const pg = resolvePgConnection(container)
   if (!pg) {
@@ -105,6 +118,18 @@ export async function eraseCustomerAcrossRegistry(
   const results: EntityErasureResult[] = []
 
   for (const entry of CUSTOMER_DATA_REGISTRY) {
+    // The id this entry's rows name the person by.
+    const personId = entry.keyedBy === "auth_identity" ? opts.authIdentityId : customerId
+    if (!personId) {
+      log.warn(`erasure: no sign-in identity given; ${entry.entity} left untouched for ${customerId}`)
+      results.push({
+        entity: entry.entity,
+        action: entry.action,
+        rows: 0,
+        error: "no sign-in identity to erase by",
+      })
+      continue
+    }
     try {
       const table = quoteIdent(entry.entity)
       const customer = quoteIdent(customerColumnOf(entry))
@@ -128,7 +153,7 @@ export async function eraseCustomerAcrossRegistry(
         sql = `UPDATE ${table} SET ${sets.join(", ")} WHERE ${customer} = ?`
       }
 
-      const result = await pg.raw(sql, [customerId])
+      const result = await pg.raw(sql, [personId])
       results.push({
         entity: entry.entity,
         action: entry.action,

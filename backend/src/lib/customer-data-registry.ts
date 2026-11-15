@@ -54,12 +54,20 @@
  *
  * `UNREGISTERED_CUSTOMER_REFERENCES`, below: the columns that hold a customer
  * id under another name (a voter, a proposer, a wallet owner), the
- * customer-named columns a retained row keeps (`customer_notes`), and the rows
- * with no customer column at all that hang off one that has (a food order's
- * delivery, with the recipient's address). None of them is in the export or
- * the erasure. They were found on 2026-11-15 when the drift walk was widened
- * past `customer_id` (P1-13 follow-up). Each carries a proposed disposition
- * for someone to decide; none is applied.
+ * customer-named columns a retained row keeps (`customer_external_id`), and
+ * the rows with no customer column at all that hang off one that has (a food
+ * order's delivery, with the recipient's address). None of them is in the
+ * export or the erasure. They were found on 2026-11-15 when the drift walk was
+ * widened past `customer_id` (P1-13 follow-up). Each carries a proposed
+ * disposition for someone to decide; none is applied.
+ *
+ * The follow-up to the P1-13 review applied four of the proposed `clear`s,
+ * where the column is plainly the customer's own words or public name on a
+ * row the registry already keeps: `embed_product_review.customer_display_name`,
+ * `standing_order.customer_notes`, and `food_order.customer_notes` and
+ * `customer_review` (which wait on food_order's own known failure, below). It
+ * also registered `password_history_entry`, which the widened walk still
+ * missed because it names its person `auth_identity_id`.
  *
  * Plugin tables the walk cannot see, because it reads only `src/modules`:
  * Mercur's `order_set` is registered below. Mercur's `review` (the buyer's
@@ -96,7 +104,10 @@ export type CustomerDataEntry = {
   anonymiseFields?: string[]
   /**
    * Whether the person's own copy is included in their data export.
-   * Default true — if we hold it about them, they can have it.
+   * Default true — if we hold it about them, they can have it. The one
+   * exception is credential material (`password_history_entry`): an old
+   * password hash says nothing a reader can use about the person, except as a
+   * target for offline cracking, so it is erased and never handed out.
    */
   inExport?: boolean
   /**
@@ -106,9 +117,20 @@ export type CustomerDataEntry = {
    * A framework table always names it, even `customer_id`, because the
    * registry spec cannot read its model to check; one of ours names it only
    * when it is not `customer_id` (`collective_backing.backer_id`), and the
-   * registry spec fails if the model has no such column.
+   * registry spec fails if the model has no such column. On an entry
+   * `keyedBy: "auth_identity"` it is the column holding that identity's id.
    */
   customerColumn?: string
+  /**
+   * Which of the person's ids `customerColumn` holds. Default `customer`: the
+   * customer id. `auth_identity`: the id of the sign-in identity the deletion
+   * revokes (`auth_context.auth_identity_id`), for a table that knows the
+   * person only by how they sign in. The erasure binds that id instead of the
+   * customer id, and reports the entry as failed when it is not given one.
+   * Never exported (the registry spec holds every such entry to
+   * `inExport: false`): the export is read by customer id.
+   */
+  keyedBy?: "customer" | "auth_identity"
   /**
    * How the export reads the table. Default `query`: `query.graph` on
    * `entity`. `sql`: one parameterised SELECT on the table and customer
@@ -167,7 +189,10 @@ export const CUSTOMER_DATA_REGISTRY: CustomerDataEntry[] = [
   { entity: "hawala_investment", module: "hawala-ledger", label: "Investments", action: "retain", basis: LEDGER, exportVia: "sql" },
   { entity: "blackout_checkout_session", module: "marketplace-listing", label: "Checkout sessions", action: "retain", basis: TAX },
   { entity: "rental", module: "rental", label: "Rentals", action: "retain", basis: TAX },
-  { entity: "standing_order", module: "vendor-rules", label: "Standing orders", action: "retain", basis: TAX },
+  // `customer_notes` is the customer's own note to the seller. Only
+  // vendor-rules/service.ts createStandingOrder writes it, and nothing reads
+  // it back, so clearing it changes no screen (P1-13 review).
+  { entity: "standing_order", module: "vendor-rules", label: "Standing orders", action: "retain", basis: TAX, anonymiseFields: ["customer_notes"] },
   { entity: "batch_reservation", module: "harvest-batches", label: "Harvest batch reservations", action: "retain", basis: TAX },
   { entity: "share_box_subscription", module: "order-cycle", label: "Share box subscriptions", action: "retain", basis: TAX },
   { entity: "share_box", module: "order-cycle", label: "Share boxes received", action: "retain", basis: TAX },
@@ -214,6 +239,21 @@ export const CUSTOMER_DATA_REGISTRY: CustomerDataEntry[] = [
   },
 
   // A transaction that also carries contact and location data.
+  //
+  // KNOWN BROKEN on Postgres, not fixed here: four of these fields are not
+  // columns of food_order (customer_name, customer_email and customer_phone:
+  // the table has recipient_*; safe_place_description is on food_delivery),
+  // so the UPDATE fails whole, clears nothing, and every deletion reports
+  // food_order in entities_failed. The fix needs a decision first:
+  // `recipient_name` is NOT NULL, so it takes a placeholder or a migration
+  // (integration-tests/http/customer-data-registry.spec.ts
+  // KNOWN_MISSING_ANONYMISE_FIELDS pins it).
+  //
+  // `customer_notes` and `customer_review` are the customer's own words
+  // (P1-13 review). No code writes either today, and none reads either by
+  // name (the food routes return whole rows), so clearing them takes nothing
+  // anyone relies on. They are listed so that they go once the UPDATE above
+  // can run; it does not clear them today.
   {
     entity: "food_order",
     module: "food-distribution",
@@ -230,6 +270,8 @@ export const CUSTOMER_DATA_REGISTRY: CustomerDataEntry[] = [
       "safe_place_description",
       "delivery_latitude",
       "delivery_longitude",
+      "customer_notes",
+      "customer_review",
     ],
   },
 
@@ -239,7 +281,14 @@ export const CUSTOMER_DATA_REGISTRY: CustomerDataEntry[] = [
   { entity: "quest_contribution", module: "collective-quest", label: "Collective quest contributions", action: "anonymise", basis: TALLY },
   { entity: "quest_reward_grant", module: "collective-quest", label: "Quest rewards granted", action: "anonymise", basis: TALLY },
   { entity: "buyer_impact", module: "impact-metrics", label: "Aggregate buyer impact", action: "anonymise", basis: TALLY },
-  { entity: "embed_product_review", module: "reviews", label: "Product reviews written", action: "anonymise", basis: "A review other shoppers rely on outlives the account that wrote it.", exportVia: "sql" },
+  // The review stays; who wrote it does not. `customer_display_name` is the
+  // public link to the person ("Jordan R.", derived from their first and last
+  // name by POST /store/reviews), shown on every product and vendor review
+  // page. Unlinking customer_id alone left it there (P1-13 review). The column
+  // is nullable, and the review routes show "Verified buyer" in its place.
+  // Nothing else on the row names the reviewer: `reviewer_seller_id` is a
+  // seller, and title and body are the review itself.
+  { entity: "embed_product_review", module: "reviews", label: "Product reviews written", action: "anonymise", basis: "A review other shoppers rely on outlives the account that wrote it.", exportVia: "sql", anonymiseFields: ["customer_display_name"] },
   { entity: "order_attribution", module: "creator-attribution", label: "Purchase attribution to a creator", action: "anonymise", basis: "A creator's earned attribution must not be revoked by someone else closing their account." },
   // A direct-charge donation's record (docs/POSTURE_A_COMPLIANCE.md rule 10).
   // The money sits on the recipient org's own Stripe account; this row is what
@@ -271,6 +320,30 @@ export const CUSTOMER_DATA_REGISTRY: CustomerDataEntry[] = [
   // A 15-minute bearer link to the Blackout subscription manage page: hashes
   // and timestamps only, nothing anyone else depends on, useless once expired.
   { entity: "blackout_manage_session", module: "marketplace-listing", label: "Blackout subscription manage links", action: "delete" },
+
+  // Old password hashes: one row per password change, written by the reuse
+  // check on /auth/*/emailpass/update (api/middlewares/password-history.ts),
+  // keyed by the auth identity and stamped with the path's actor type
+  // ("customer" on /auth/customer/...). Nothing tied them to the customer, so
+  // a deletion revoked the identity and kept every old hash (P1-13 review).
+  //
+  // Keyed by the identity the deletion revokes, and all of its rows go, not
+  // only actor_type 'customer': the hash is the identity's password, not the
+  // actor's, and the route deletes that identity whole whichever actors it
+  // signs in. A 'seller' row on the same identity is the same person's old
+  // password, guarding an identity that no longer exists. If the route ever
+  // unlinks a shared identity instead of deleting it, this entry must follow.
+  //
+  // Not exported: credential material (see `inExport`).
+  {
+    entity: "password_history_entry",
+    module: "password-history",
+    label: "Previous password hashes",
+    action: "delete",
+    customerColumn: "auth_identity_id",
+    keyedBy: "auth_identity",
+    inExport: false,
+  },
 
   // Health-adjacent. Deleted outright and never anonymised-and-kept: an
   // "anonymised" wellness record is still a health record about one person.
@@ -394,7 +467,6 @@ const SHARED = "A shared record other people relied on; the link to the person i
 const MONEY = "Moves or settles money; the row and its link are needed to reconcile or refund."
 const SECONDARY = "A second identifier on a row the registry already retains by customer_id; the retained row keeps a direct identifier the anonymised customer record no longer does."
 const VIA_PROFILE = "Reached only through a registered row that the deletion removes; the health record survives its parent and is still about one person."
-const KEPT_TEXT = "Free text the person wrote, on a row the registry keeps; the row survives for its reason, the words do not need to."
 
 export const UNREGISTERED_CUSTOMER_REFERENCES: Record<string, UnregisteredCustomerReference> = {
   // asset-graph: member ids are the /store actor id.
@@ -426,8 +498,6 @@ export const UNREGISTERED_CUSTOMER_REFERENCES: Record<string, UnregisteredCustom
   "food_courier.owner_id": { holds: "the /store actor that registered it (store/couriers)", proposed: "anonymise", why: SHARED },
   "food_delivery_batch.owner_id": { holds: "the creating actor (store/delivery-batches via createDeliveryBatch)", proposed: "anonymise", why: SHARED },
   "food_delivery_event.actor_id": { holds: "any actor, CUSTOMER among actor_type's values (food-distribution/service.ts)", proposed: "anonymise", why: SHARED },
-  "food_order.customer_notes": { holds: "dormant (the store order route sends no such field)", proposed: "clear", why: KEPT_TEXT },
-  "food_order.customer_review": { holds: "dormant", proposed: "clear", why: KEPT_TEXT },
   // A food order's delivery has no customer column: it is tied to the person
   // only through food_order.customer_id, and carries the address the order
   // entry clears plus more. Proposed retain with the person's details cleared:
@@ -524,11 +594,7 @@ export const UNREGISTERED_CUSTOMER_REFERENCES: Record<string, UnregisteredCustom
   "user_prediction_safety.supporter_id": { holds: "the supporter's own limits (vendor-hype service)", proposed: "delete", why: OWN },
   "hype_profile.owner_id": { holds: "an id an admin types (admin/vendor-hype/profiles); an ORGANIZER profile may name a customer. Unverified", proposed: "anonymise", why: SHARED },
 
-  // reviews.
-  "embed_product_review.customer_display_name": { holds: "the public name the review is shown under, e.g. \"Jordan R.\" (store/reviews)", proposed: "clear", why: "The review is anonymised but keeps the name it is shown under. Cleared, it shows as \"Verified buyer\" (store/vendors/[handle]/reviews)." },
-
   // vendor-rules.
-  "standing_order.customer_notes": { holds: "dormant (vendor-rules/service.ts createStandingOrder accepts it; nothing calls it)", proposed: "clear", why: KEPT_TEXT },
   "vendor_customer_tier.customer_ids": { holds: "customer ids in a seller's pricing tier, as a JSON array (vendor-rules/service.ts, vendor/customer-tiers)", proposed: "remove-from-array", why: "The tier is the seller's; the person's membership of it is theirs." },
 
   // wellness: reached through rows the registry deletes.
