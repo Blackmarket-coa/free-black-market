@@ -25,11 +25,12 @@ import type { OrderPlacedEmailOrder } from "../modules/resend/emails/order-place
 /**
  * `items.*` and `shipping_methods.*`, not `items.total` & co. Checked against
  * a real order (integration-tests/http/order-confirmation-email.spec.ts):
- * selecting `items.total` or `shipping_methods.total` by name throws inside
- * MikroORM ("Cannot read properties of undefined (reading 'kind')"), and
- * asking for `total` beside a hand-picked `items.<field>` list that omits
- * `unit_price`/`quantity` returns an order total that silently leaves the
- * items out. With the wildcards the order module computes every total.
+ * selecting `items.total` or `shipping_methods.total` by name returns totals
+ * of 0 (until SD-117 it threw inside MikroORM, "Cannot read properties of
+ * undefined (reading 'kind')"), and asking for `total` beside a hand-picked
+ * `items.<field>` list that omits `unit_price`/`quantity` returns an order
+ * total that silently leaves the items out. With the wildcards the order
+ * module computes every total.
  *
  * The root totals are the ones the summary adds up (modules/resend/
  * order-summary.ts): subtotals before tax and discount, the pre-tax discount

@@ -548,9 +548,11 @@ medusaIntegrationTestRunner({
 
         // An admin cancels the paid storefront order: Medusa refunds what was captured.
         const [user] = await container().resolve(Modules.USER).createUsers([{ email: `admin+${uid()}@example.com` }])
+        const secret = process.env.JWT_SECRET
+        if (!secret) throw new Error("JWT_SECRET is not set in the test env")
         const token = jwt.sign(
           { actor_id: user.id, actor_type: "user", auth_identity_id: "", app_metadata: { user_id: user.id } },
-          process.env.JWT_SECRET as string,
+          secret,
           { expiresIn: "1h" }
         )
         const cancelled = await call(
