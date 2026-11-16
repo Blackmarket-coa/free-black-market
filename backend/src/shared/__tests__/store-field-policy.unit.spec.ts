@@ -149,6 +149,11 @@ describe("store field policy", () => {
       ["/store/products", "*restaurant.admins"],
       ["/store/products", "*shipping_profile.shipping_options.fulfillments.delivery_address"],
       ["/store/product-variants", "*product.wishlist.customer"],
+      // A link's join rows are a second way to the far side under another name.
+      ["/store/products", "*sales_channels.products_link.product"],
+      ["/store/products", "*seller_link.seller"],
+      // An inventory item may be shared with another product's variants.
+      ["/store/products", "*variants.inventory.variants"],
       ["/store/collections", "*products.seller.orders"],
     ])("%s?fields=%s is dropped", async (route, spelling) => {
       expect(sanitizeStoreFields(await parsed(`id,${spelling}`), storeFieldProfile(route)).fields).toEqual(["id"])

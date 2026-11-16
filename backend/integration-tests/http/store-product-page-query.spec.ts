@@ -343,7 +343,7 @@ medusaIntegrationTestRunner({
         expect(reviewOf("Great tomatoes").customer).not.toHaveProperty("phone")
       })
 
-      run("the seller's product link returns drafts and other channels' products; only what the listing serves is shown", async () => {
+      run("the seller's product link returns only what the listing serves: no draft, no other channel's product", async () => {
         const { get, region, tomatoes } = await makeStorefront()
 
         const page = await get(storefront!.productPageQuery({ handle: "heirloom-tomatoes", regionId: region.id, countryCode: "us" }))
@@ -354,35 +354,40 @@ medusaIntegrationTestRunner({
         // `ProductDetailsPage/__tests__/fixtures/`. Run with
         // PRODUCT_PAGE_FIXTURE_OUT=<path of product-page-response.json> to
         // rewrite both; `more-from-seller-response.json` is written beside it.
+        // The recorded response predates SD-118 and still carries the draft
+        // and the wholesale-only product in `seller.products`, on purpose:
+        // the storefront's tests use those rows to show the page never
+        // renders from that list. Rewriting it drops them; update those
+        // tests in the same change.
         const fixtureOut = process.env.PRODUCT_PAGE_FIXTURE_OUT
         if (fixtureOut) {
           fs.writeFileSync(fixtureOut, `${JSON.stringify(page.data, null, 2)}\n`)
         }
 
-        // What the link returns: every product of the seller, the draft and
-        // the wholesale-only one among them, each with exactly the three
-        // fields the storefront asks for. This is why the storefront takes
-        // the list off the product before a component sees it.
+        // What the link returns. The seller has five products; until SD-118
+        // the link returned all five, the draft and the wholesale-only one
+        // among them, to anyone holding the publishable key. The backend now
+        // serves a product list reached through a relation as the listing
+        // would (`api/middlewares/store-public-fields.ts`): published, and in
+        // the key's sales channel. Each row carries exactly the three fields
+        // the storefront asks for.
         const linked = [...product.seller.products].sort((a: { handle: string }, b: { handle: string }) => a.handle.localeCompare(b.handle))
         expect(linked.map((p: { handle: string; status: string }) => [p.handle, p.status])).toEqual([
           ["basil", "published"],
           ["heirloom-tomatoes", "published"],
           ["sweet-corn", "published"],
-          ["unreleased-hot-sauce", "draft"],
-          ["wholesale-pallet", "published"],
         ])
         for (const stub of linked) {
           expect(Object.keys(stub).sort()).toEqual(["handle", "id", "status"])
         }
 
-        // The storefront's candidates: published and not this product. The
-        // status tells a draft apart; nothing on the link tells the
-        // wholesale-only product apart, so it is still a candidate.
+        // The storefront's candidates: published and not this product.
         const handles = storefront!.moreFromSellerHandles(product)
-        expect([...handles].sort()).toEqual(["basil", "sweet-corn", "wholesale-pallet"])
+        expect([...handles].sort()).toEqual(["basil", "sweet-corn"])
 
-        // The gate: the listing serves only published products in the
-        // publishable key's sales channel, whatever handles it is asked for.
+        // The listing is still the gate for what is shown: it serves only
+        // published products in the publishable key's sales channel, whatever
+        // handles it is asked for.
         const more = await get(listByHandle(region.id, handles))
         expect(more.status).toBe(200)
         if (fixtureOut) {
