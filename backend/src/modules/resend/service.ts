@@ -17,6 +17,7 @@ import {
   isEmailTemplateName,
 } from "./templates";
 import { EMAIL_TEMPLATE_RENDERERS } from "./emails/registry";
+import { isResendTestingDomain } from "../../lib/resend-sender"
 
 /**
  * Resend error names that indicate a transient failure worth retrying. Anything
@@ -88,6 +89,15 @@ class ResendNotificationProviderService extends AbstractNotificationProviderServ
     this.logger = logger
     this.retryMaxAttempts = Math.max(1, options.retry?.maxAttempts ?? 3)
     this.retryBaseDelayMs = Math.max(0, options.retry?.baseDelayMs ?? 250)
+
+    if (isResendTestingDomain(options.from)) {
+      this.logger.warn(
+        `Resend is configured to send from ${options.from}, on resend.dev, Resend's testing domain. ` +
+          `Resend's documentation requires a domain you own and have verified (resend.com/domains), ` +
+          `so password resets and order emails are not expected to reach customers. ` +
+          `Set RESEND_FROM_EMAIL to an address on your verified domain.`
+      )
+    }
   }
 
   private delay(ms: number): Promise<void> {

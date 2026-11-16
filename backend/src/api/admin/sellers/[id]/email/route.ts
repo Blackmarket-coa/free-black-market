@@ -3,6 +3,7 @@ import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 
 import { ResendService } from "../../../../../services/apprise/resend.service"
 import { requireAdminId } from "../../../../../shared/auth-helpers"
+import { resendSender } from "../../../../../lib/resend-sender"
 
 type RouteParams = {
   id: string
@@ -55,7 +56,7 @@ export const POST = async (
 
   const resendService = new ResendService({
     apiKey: process.env.RESEND_API_KEY || "",
-    fromEmail: process.env.RESEND_FROM_EMAIL,
+    fromEmail: resendSender(),
     fromName: process.env.RESEND_FROM_NAME || "Ground Up Liberation Admin",
   })
 
