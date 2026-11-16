@@ -23,7 +23,7 @@ import {
   BASE_CURRENCY_METADATA_KEY,
   BASE_UNIT_PRICE_METADATA_KEY,
 } from "../../../../lib/sliding-scale"
-import { CART_PAYMENT_REFRESH_FAILED_MESSAGE } from "../../../../lib/cart-payment-amount"
+import { CART_ALREADY_COMPLETED_MESSAGE, CART_PAYMENT_REFRESH_FAILED_MESSAGE } from "../../../../lib/cart-payment-amount"
 
 const createRes = () => {
   const res: any = { statusCode: 200, body: undefined }
@@ -371,6 +371,70 @@ describe("store cart tier route", () => {
     expect(res.body.line_items_repriced).toBe(0)
     expect(cartModule.updateLineItems).not.toHaveBeenCalled()
     expect(cartModule.updateCarts).not.toHaveBeenCalled()
+  })
+
+  it("refuses a cart that has already completed before it reads or writes anything else (SD-115 review)", async () => {
+    // The refresh this route ends in refuses a completed cart, so the lines
+    // were repriced and every call then answered 500 cart_payment_refresh_failed.
+    const { scope, cartModule, query, playbookService } = makeScope({
+      cart: baseCart({ completed_at: "2026-11-16T12:00:00.000Z" }),
+      products: sellerProducts,
+      variants: listedVariants,
+      assignments: slidingAssignments,
+    })
+    const res = await post(scope, "solidarity")
+
+    expect(res.statusCode).toBe(400)
+    expect(res.body).toEqual({ code: "cart_already_completed", type: "invalid_data", message: CART_ALREADY_COMPLETED_MESSAGE })
+    expect(query.graph).toHaveBeenCalledTimes(1)
+    expect(playbookService.listPlaybookAssignments).not.toHaveBeenCalled()
+    expect(cartModule.updateLineItems).not.toHaveBeenCalled()
+    expect(cartModule.updateCarts).not.toHaveBeenCalled()
+    expect(refreshCartAfterReprice).not.toHaveBeenCalled()
+  })
+
+  describe("the currency's minor unit (SD-115 review: the lookup was case-sensitive and every currency got two decimals)", () => {
+    const repriceIn = async (currency: string, listed: number) => {
+      const { scope, cartModule, query } = makeScope({
+        cart: baseCart({
+          currency_code: currency,
+          items: [{ id: "li_1", product_id: "prod_1", variant_id: "var_1", unit_price: listed, is_custom_price: false, metadata: {} }],
+        }),
+        products: sellerProducts,
+        variants: [{ id: "var_1", calculated_price: { calculated_amount: listed } }],
+        assignments: slidingAssignments,
+      })
+      const res = await post(scope, "solidarity")
+      expect(res.statusCode).toBe(200)
+      return { update: (cartModule.updateLineItems.mock.calls as unknown as Array<[Array<Record<string, any>>]>)[0][0][0], query }
+    }
+
+    it("prices a yen line in whole yen: 65% of 999 is 649, not 649.35", async () => {
+      const { update } = await repriceIn("jpy", 999)
+      expect(update.unit_price).toBe(649)
+      expect(update.metadata[BASE_UNIT_PRICE_METADATA_KEY]).toBe(999)
+      expect(update.metadata[BASE_CURRENCY_METADATA_KEY]).toBe("jpy")
+    })
+
+    it("keeps a dinar's third decimal: 65% of 1.999 is 1.299, not 1.30", async () => {
+      const { update } = await repriceIn("bhd", 1.999)
+      expect(update.unit_price).toBe(1.299)
+      expect(update.metadata[BASE_UNIT_PRICE_METADATA_KEY]).toBe(1999)
+    })
+
+    it("reads an upper-case code the same way, and asks for the variant's price in the cart's currency", async () => {
+      const { update, query } = await repriceIn("JPY", 999)
+      expect(update.unit_price).toBe(649)
+      expect(update.metadata[BASE_CURRENCY_METADATA_KEY]).toBe("jpy")
+      const variantRead = query.graph.mock.calls.map((c: unknown[]) => c[0] as Record<string, any>).find((a) => a.entity === "product_variant")
+      expect(variantRead?.context?.calculated_price).toMatchObject({ currency_code: "jpy" })
+    })
+
+    it("still treats a code Medusa's table does not have as two decimals", async () => {
+      const { update } = await repriceIn("zzz", 10)
+      expect(update.unit_price).toBe(6.5)
+      expect(update.metadata[BASE_UNIT_PRICE_METADATA_KEY]).toBe(1000)
+    })
   })
 
   describe("the cart refresh after the reprice (SD-115)", () => {

@@ -25,7 +25,7 @@ import {
   BASE_UNIT_PRICE_METADATA_KEY,
 } from "../../../../lib/sliding-scale"
 import { WHOLESALE_DISCOUNT_METADATA_KEY } from "../../../../lib/wholesale-pricing"
-import { CART_PAYMENT_REFRESH_FAILED_MESSAGE } from "../../../../lib/cart-payment-amount"
+import { CART_ALREADY_COMPLETED_MESSAGE, CART_PAYMENT_REFRESH_FAILED_MESSAGE } from "../../../../lib/cart-payment-amount"
 
 const createRes = () => {
   const res: any = { statusCode: 200, body: undefined }
@@ -574,6 +574,73 @@ describe("store cart wholesale route", () => {
         }),
       }),
     ])
+  })
+
+  it("refuses a cart that has already completed before it reads or writes anything else (SD-115 review)", async () => {
+    const { scope, cartModule, vendorRules, query } = makeScope({
+      cart: baseCart({ completed_at: "2026-11-16T12:00:00.000Z" }),
+      products: sellerProducts,
+      tiersBySeller: new Map([["seller_1", wholesaleTier()]]),
+    })
+    const res = createRes()
+    await POST({ params: { id: "cart_1" }, scope } as any, res)
+
+    expect(res.statusCode).toBe(400)
+    expect(res.body).toEqual({ code: "cart_already_completed", type: "invalid_data", message: CART_ALREADY_COMPLETED_MESSAGE })
+    expect(query.graph).toHaveBeenCalledTimes(1)
+    expect(vendorRules.getCustomerTiersForSellers).not.toHaveBeenCalled()
+    expect(cartModule.updateLineItems).not.toHaveBeenCalled()
+    expect(cartModule.updateCarts).not.toHaveBeenCalled()
+    expect(refreshCartAfterReprice).not.toHaveBeenCalled()
+  })
+
+  describe("the currency's minor unit (SD-115 review: the lookup was case-sensitive and every currency got two decimals)", () => {
+    const yenCart = (overrides: Record<string, unknown> = {}) =>
+      baseCart({
+        currency_code: "jpy",
+        items: [{ id: "li_1", product_id: "prod_1", variant_id: "var_1", quantity: 1, unit_price: 999, is_custom_price: false, metadata: {} }],
+        ...overrides,
+      })
+
+    it("prices a yen line in whole yen: 20% off 999 is 799, not 799.2", async () => {
+      const { scope, cartModule } = makeScope({
+        cart: yenCart(),
+        products: sellerProducts,
+        variants: [{ id: "var_1", calculated_price: { calculated_amount: 999 } }],
+        tiersBySeller: new Map([["seller_1", wholesaleTier({ discount_percent: 20, waive_order_minimum: true })]]),
+      })
+      const res = createRes()
+      await POST({ params: { id: "cart_1" }, scope } as any, res)
+
+      expect(res.statusCode).toBe(200)
+      expect(cartModule.updateLineItems).toHaveBeenCalledWith([
+        {
+          id: "li_1",
+          unit_price: 799,
+          is_custom_price: true,
+          metadata: { [BASE_UNIT_PRICE_METADATA_KEY]: 999, [BASE_CURRENCY_METADATA_KEY]: "jpy", [WHOLESALE_DISCOUNT_METADATA_KEY]: 20 },
+        },
+      ])
+    })
+
+    it("holds a yen order to a yen minimum: 799 does not meet 1000 (read at two decimals it was 79,920 and passed)", async () => {
+      const { scope, cartModule } = makeScope({
+        cart: yenCart(),
+        products: sellerProducts,
+        variants: [{ id: "var_1", calculated_price: { calculated_amount: 999 } }],
+        tiersBySeller: new Map([["seller_1", wholesaleTier({ discount_percent: 20 })]]),
+        minimumsBySeller: new Map([["seller_1", { min_order_value: 1000, min_order_items: 1 }]]),
+      })
+      const res = createRes()
+      await POST({ params: { id: "cart_1" }, scope } as any, res)
+
+      expect(res.statusCode).toBe(400)
+      expect(res.body).toEqual({
+        code: "moq_unmet",
+        unmet: [{ seller_id: "seller_1", unmet: [{ code: "min_order_value", required: 1000, actual: 799 }] }],
+      })
+      expect(cartModule.updateLineItems).not.toHaveBeenCalled()
+    })
   })
 
   describe("the cart refresh after the reprice (SD-115)", () => {

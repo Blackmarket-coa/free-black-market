@@ -3,7 +3,6 @@ import {
   ContainerRegistrationKeys,
   Modules,
   QueryContext,
-  defaultCurrencies,
 } from "@medusajs/framework/utils"
 import {
   BASE_UNIT_PRICE_METADATA_KEY,
@@ -18,7 +17,11 @@ import {
 import { VENDOR_RULES_MODULE } from "../../../../../modules/vendor-rules"
 import type VendorRulesService from "../../../../../modules/vendor-rules/service"
 import { CustomerTierType } from "../../../../../modules/vendor-rules/models/vendor-customer-tier"
-import { cartAlreadyCompletedResponse, cartPaymentRefreshFailedResponse } from "../../../../../lib/cart-payment-amount"
+import {
+  cartAlreadyCompletedResponse,
+  cartPaymentRefreshFailedResponse,
+  minorUnitDigits,
+} from "../../../../../lib/cart-payment-amount"
 import { refreshCartAfterReprice } from "../../../../../lib/cart-payment-refresh"
 import { createLogger } from "../../../../../shared/logger"
 
@@ -139,10 +142,14 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
   const currencyCode = String(
     (cart as { currency_code?: string }).currency_code || "usd"
   ).toLowerCase()
-  const decimalDigits =
-    (defaultCurrencies as Record<string, { decimal_digits?: number }>)[
-      currencyCode
-    ]?.decimal_digits ?? 2
+  // Medusa's currency table is keyed by the upper-case code, and this looked
+  // the lower-case one up, so every currency fell back to two decimals: a
+  // yen price came out in hundredths of a yen, a dinar's third decimal was
+  // rounded away, and an amount given in minor units (an absolute tier price,
+  // a seller's minimum order) was read at a hundredth of its size in yen and
+  // ten times its size in dinars (SD-115 review). `minorUnitDigits` reads the
+  // table as Medusa keys it; a code it does not have still gets two.
+  const decimalDigits = minorUnitDigits(currencyCode) ?? 2
   const minorFactor = 10 ** decimalDigits
   const toMinor = (major: number) => Math.round(major * minorFactor)
   const toMajor = (minor: number) => minor / minorFactor
