@@ -260,7 +260,7 @@ export type VendorDebitContext = {
   /**
    * Per vendor id: money that left that vendor's earnings after the order was
    * placed (payout requests PROCESSING, IN_TRANSIT or COMPLETED; completed
-   * WITHDRAWAL legs off their SELLER_EARNINGS).
+   * WITHDRAWAL or VENDOR_PAYMENT legs off their SELLER_EARNINGS).
    */
   vendor_withdrawals: Readonly<Record<string, ReadonlyArray<{ id: string; kind: string; status: string }>>>
 }
@@ -290,7 +290,8 @@ export function vendorsDebitedOnApproval(rows: readonly StoredAttributionAmounts
  *   a cart's other sellers' orders carry the link's vendor too), or the order
  *   has no seller to compare with;
  * - names a vendor who has been paid out since the order was placed: a
- *   payout request that moved money, or a withdrawal off their earnings. The
+ *   payout request that moved money, or a withdrawal or a payment to another
+ *   vendor off their earnings. The
  *   commission was never carved out of that money, so the debit would come
  *   out of later sales' proceeds;
  * - is on an order whose proceeds a Mercur payout already sent; or

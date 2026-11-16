@@ -543,6 +543,23 @@ medusaIntegrationTestRunner({
           },
         ])
 
+        // Paid another vendor out of their earnings after the order
+        // (createVendorToVendorPayment's leg type, outside the model's enum).
+        const payingVendor = await makeSeller("Paying")
+        const payingOrder = await order25(payingVendor.id)
+        const payingRow = await attributionRow(payingOrder.id, payingVendor.id)
+        const payingEarnings = await hawala().getOrCreateSellerEarnings(payingVendor.id, "USD")
+        const [vendorPayment] = await hawala().createLedgerEntries([
+          {
+            debit_account_id: payingEarnings.id,
+            credit_account_id: earnings.id,
+            amount: 5,
+            entry_type: "VENDOR_PAYMENT",
+            status: "COMPLETED",
+            reference_type: "VENDOR_PAYMENT",
+          },
+        ])
+
         // The creator's link named a vendor that did not sell this order.
         const seller = await makeSeller("Seller")
         const linkVendor = await makeSeller("LinkVendor")
@@ -563,10 +580,11 @@ medusaIntegrationTestRunner({
         expect(reasons[paidOrder.id]).toContain(`payout request ${request.id} COMPLETED`)
         expect(reasons[paidOrder.id]).toContain("from 2 to 250")
         expect(reasons[withdrawnOrder.id]).toContain(`withdrawal ${withdrawal.id} COMPLETED`)
+        expect(reasons[payingOrder.id]).toContain(`vendor payment ${vendorPayment.id} COMPLETED`)
         expect(reasons[splitOrder.id]).toContain(`the attributed vendor ${linkVendor.id} is not the order's seller ${seller.id}`)
         expect(summary.corrected.map((c) => c.order_id)).toEqual([earlyOrder.id])
 
-        for (const id of [paidRow.id, withdrawnRow.id, splitRow.id]) {
+        for (const id of [paidRow.id, withdrawnRow.id, payingRow.id, splitRow.id]) {
           expect(await read(id)).toMatchObject({ subtotal: 25, commission: 2, metadata: null })
         }
         expect(await read(earlyRow.id)).toMatchObject({ subtotal: 2500, commission: 250 })

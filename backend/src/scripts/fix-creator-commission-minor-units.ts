@@ -52,8 +52,9 @@ import { APPLY_OR_DRY_RUN, parseScriptArgs } from "../shared/exec-args"
  * `reviewVendorDebit` therefore lists, instead of correcting, any order
  * where that debit cannot be justified without a person: the attributed
  * vendor is not the order's seller, the vendor has been paid out since the
- * order was placed (a payout request that moved money or a withdrawal off
- * their earnings), or Mercur already paid the order's proceeds out. What is
+ * order was placed (a payout request that moved money, or a withdrawal or a
+ * payment to another vendor off their earnings), or Mercur already paid the
+ * order's proceeds out. What is
  * corrected is an order whose seller is the vendor debited and whose
  * proceeds have not left that vendor's balance since.
  *
@@ -83,6 +84,13 @@ type Row = StoredAttributionAmounts & { created_at?: Date | string }
 
 /** Payout request statuses whose legs have taken the money off the vendor's earnings. */
 const PAID_OUT_STATUSES = ["PROCESSING", "IN_TRANSIT", "COMPLETED"] as const
+
+/**
+ * Ledger legs by which money leaves a vendor's earnings at the vendor's own
+ * hand: a withdrawal (a payout request's leg, a Mercur-paid order booked out,
+ * an ACH withdrawal) or a payment to another vendor.
+ */
+const OUTFLOW_ENTRY_TYPES = ["WITHDRAWAL", "VENDOR_PAYMENT"] as const
 
 export type CommissionMinorUnitFixSummary = {
   /** Orders corrected, or on a dry run would be, with their figures. */
@@ -156,7 +164,7 @@ async function readVendorDebitContext(
         ? await hawala.listLedgerEntries(
             {
               debit_account_id: accounts.map((a) => a.id),
-              entry_type: "WITHDRAWAL",
+              entry_type: [...OUTFLOW_ENTRY_TYPES],
               status: "COMPLETED",
               created_at: { $gte: placedAt },
             },
@@ -165,7 +173,13 @@ async function readVendorDebitContext(
         : []
       vendor_withdrawals[vendorId] = [
         ...requests.map((r) => ({ id: r.id, kind: "payout request", status: String(r.status) })),
-        ...withdrawals.map((e) => ({ id: e.id, kind: "withdrawal", status: String(e.status) })),
+        ...withdrawals.map((e) => ({
+          id: e.id,
+          // Not in the model's entry_type enum: createTransfer takes any
+          // string and createVendorToVendorPayment posts this one.
+          kind: String(e.entry_type) === "VENDOR_PAYMENT" ? "vendor payment" : "withdrawal",
+          status: String(e.status),
+        })),
       ]
     }
   }

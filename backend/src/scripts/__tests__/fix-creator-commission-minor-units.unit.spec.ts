@@ -42,7 +42,7 @@ function makeContainer(
     written?: { written: true } | { written: false; stale_id: string }
     seller?: string | null
     payoutRequests?: Array<{ id: string; status: string }>
-    withdrawals?: Array<{ id: string; status: string }>
+    withdrawals?: Array<{ id: string; status: string; entry_type?: string }>
     orderPayouts?: Array<{ id: string }>
   } = {}
 ) {
@@ -142,20 +142,29 @@ describe("fix-creator-commission-minor-units", () => {
   it("looks for the vendor's payouts since the order was placed, and lists the order when there are any", async () => {
     const { container, correctAttributionAmountsIfUnchanged, listPayoutRequests, listLedgerEntries } = makeContainer({
       payoutRequests: [{ id: "pr_1", status: "COMPLETED" }],
-      withdrawals: [{ id: "hle_w1", status: "COMPLETED" }],
+      withdrawals: [
+        { id: "hle_w1", status: "COMPLETED", entry_type: "WITHDRAWAL" },
+        { id: "hle_vp1", status: "COMPLETED", entry_type: "VENDOR_PAYMENT" },
+      ],
     })
     const summary = await fixCreatorCommissionMinorUnits(container, { apply: true })
     expect(correctAttributionAmountsIfUnchanged).not.toHaveBeenCalled()
     expect(summary.corrected).toEqual([])
     expect(summary.review).toEqual([{ order_id: "order_1", reason: expect.stringContaining("payout request pr_1 COMPLETED") }])
     expect(summary.review[0].reason).toContain("withdrawal hle_w1 COMPLETED")
+    expect(summary.review[0].reason).toContain("vendor payment hle_vp1 COMPLETED")
     const placed = new Date("2026-10-01T12:00:00.000Z")
     expect(listPayoutRequests).toHaveBeenCalledWith(
       { vendor_id: "sel_vendor", status: ["PROCESSING", "IN_TRANSIT", "COMPLETED"], created_at: { $gte: placed } },
       expect.anything()
     )
     expect(listLedgerEntries).toHaveBeenCalledWith(
-      { debit_account_id: ["hla_vendor"], entry_type: "WITHDRAWAL", status: "COMPLETED", created_at: { $gte: placed } },
+      {
+        debit_account_id: ["hla_vendor"],
+        entry_type: ["WITHDRAWAL", "VENDOR_PAYMENT"],
+        status: "COMPLETED",
+        created_at: { $gte: placed },
+      },
       expect.anything()
     )
   })
