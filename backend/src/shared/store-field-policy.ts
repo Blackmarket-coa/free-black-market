@@ -42,7 +42,9 @@
  * - **The caller's own record is the exception**, by route: a cart, an order
  *   or `customers/me` may be read through the relations of that record
  *   (a profile's `own`), and no further. `region.orders` on a cart is still
- *   refused.
+ *   refused. A cart and an order are served to whoever holds the id, so the
+ *   buyer behind one, and the order set an order was placed in, are leaves
+ *   (`ownNodes`): no path from one order reaches another.
  * - **Nested products are flagged**, and the middleware then serves only
  *   those `GET /store/products` itself would: published, in the key's sales
  *   channel.
@@ -241,14 +243,17 @@ const DENIED_AFTER: Readonly<Record<string, ReadonlySet<string>>> = {
  * How a route's field list is read. By default the public rules apply from
  * the first segment. A route whose root record is the caller's own names the
  * relations of that record in `own`: a path may pass through them freely, and
- * the public rules apply from the first segment that is not one. `ownSeller`
- * is the allow-list for a seller reached straight from that record.
+ * the public rules apply from the first segment that is not one. `ownNodes`
+ * are relations of that record read as an allow-list that ends there (the
+ * buyer behind a cart or an order, the order set an order belongs to), and
+ * `ownSeller` is the allow-list for a seller reached from that record.
  */
 export type StoreFieldProfile = {
   readonly name: string
   /** The route's root record is itself an allow-list (the seller routes). */
   readonly root?: GuardedNode
   readonly own?: ReadonlySet<string>
+  readonly ownNodes?: Readonly<Record<string, GuardedNode>>
   readonly ownSeller?: GuardedNode
   /**
    * The route's handler fixes its own field list, so there is no request to
@@ -256,6 +261,50 @@ export type StoreFieldProfile = {
    */
   readonly projectSellers?: readonly string[]
 }
+
+/**
+ * The buyer of a cart or an order, as that record is read with them: their
+ * own columns and none of their other records.
+ *
+ * `GET /store/orders/:id` and `GET /store/carts/:id` answer whoever holds the
+ * id (Medusa's design for guest checkout; no customer token is asked for).
+ * With the buyer an ordinary part of the order, one order id opened the
+ * buyer's customer row, every other order of theirs with its address, and,
+ * through those orders and the buyer's reviews, the contact details of every
+ * seller they had bought from or reviewed (measured on Postgres with only the
+ * publishable key). The buyer is a leaf now: a path through them stops at
+ * these columns. `metadata` and `created_by` stay off.
+ */
+export const RECORD_CUSTOMER_FIELDS = [
+  "id",
+  "email",
+  "first_name",
+  "last_name",
+  "phone",
+  "company_name",
+  "has_account",
+  "created_at",
+  "updated_at",
+] as const
+
+/**
+ * The order set an order was placed in, as the storefront's order pages head
+ * it (`order_set.id`, `display_id`, `created_at`): never its other orders,
+ * its cart or its payment collection.
+ */
+export const ORDER_SET_HEADING_FIELDS = ["id", "display_id", "created_at", "updated_at"] as const
+
+/**
+ * Of the buyer's relations, only the ids of their customer groups, which
+ * Medusa's default cart fields ask for (`customer.groups.id`): a group is
+ * price-list configuration, but its name can say something about the person
+ * in it, and nothing first-party reads more than the id.
+ */
+const RECORD_CUSTOMER: GuardedNode = {
+  fields: RECORD_CUSTOMER_FIELDS,
+  relations: { groups: { fields: ["id"], relations: {} } },
+}
+const ORDER_SET_HEADING: GuardedNode = { fields: ORDER_SET_HEADING_FIELDS, relations: {} }
 
 /** The parts of a cart, an order and a payment that belong to whoever holds it. */
 const CART_PARTS = [
@@ -266,7 +315,6 @@ const CART_PARTS = [
   "shipping_address",
   "billing_address",
   "credit_lines",
-  "customer",
   "payment_collection",
   "payment_sessions",
   "payments",
@@ -274,6 +322,10 @@ const CART_PARTS = [
   "refunds",
 ]
 
+/**
+ * An order's own parts. Not `customer` (a leaf, above), not `order_set` (a
+ * heading), and not `orders`: nothing reached from one order is another.
+ */
 const ORDER_PARTS = [
   ...CART_PARTS,
   "detail",
@@ -286,8 +338,6 @@ const ORDER_PARTS = [
   "returns",
   "return_items",
   "order_change",
-  "order_set",
-  "orders",
   "reviews",
 ]
 
@@ -296,22 +346,47 @@ const PUBLIC_PROFILE: StoreFieldProfile = { name: "public" }
 const PROFILES: readonly { prefix: string; profile: StoreFieldProfile }[] = [
   // Mercur's seller list and page: the root record is a seller.
   { prefix: "/store/seller", profile: { name: "seller", root: PUBLIC_SELLER } },
-  { prefix: "/store/carts", profile: { name: "cart", own: new Set(CART_PARTS) } },
-  { prefix: "/store/payment-collections", profile: { name: "payment", own: new Set(CART_PARTS) } },
-  { prefix: "/store/orders", profile: { name: "order", own: new Set(ORDER_PARTS), ownSeller: BUYER_SELLER } },
+  {
+    prefix: "/store/carts",
+    profile: { name: "cart", own: new Set(CART_PARTS), ownNodes: { customer: RECORD_CUSTOMER } },
+  },
+  {
+    prefix: "/store/payment-collections",
+    profile: { name: "payment", own: new Set(CART_PARTS), ownNodes: { customer: RECORD_CUSTOMER } },
+  },
+  {
+    // `GET /store/orders/:id` authenticates nobody: a path from the order
+    // stays on that order.
+    prefix: "/store/orders",
+    profile: {
+      name: "order",
+      own: new Set(ORDER_PARTS),
+      ownNodes: { customer: RECORD_CUSTOMER, order_set: ORDER_SET_HEADING },
+      ownSeller: BUYER_SELLER,
+    },
+  },
   {
     prefix: "/store/order-set",
-    // Mercur's handlers ignore the request's list and ask for `orders.seller.*`.
+    // Mercur's handlers ignore the request's list and ask for `orders.seller.*`;
+    // `api/middlewares/store-order-set-owner.ts` lets only the buyer ask.
     profile: {
       name: "order-set",
-      own: new Set(ORDER_PARTS),
+      own: new Set([...ORDER_PARTS, "orders"]),
+      ownNodes: { customer: RECORD_CUSTOMER },
       ownSeller: BUYER_SELLER,
       projectSellers: BUYER_SELLER_FIELDS,
     },
   },
   {
+    // The signed-in customer's own records (Medusa authenticates
+    // `/store/customers/me`): their orders and order sets, addresses and
+    // reviews are theirs to walk.
     prefix: "/store/customers",
-    profile: { name: "customer", own: new Set([...ORDER_PARTS, "addresses"]), ownSeller: BUYER_SELLER },
+    profile: {
+      name: "customer",
+      own: new Set([...ORDER_PARTS, "customer", "orders", "order_set", "addresses"]),
+      ownSeller: BUYER_SELLER,
+    },
   },
   // A customer's own reviews: the reviewer is the caller.
   { prefix: "/store/reviews", profile: { name: "review", own: new Set(["customer"]) } },
@@ -398,6 +473,8 @@ export function sanitizeStoreFields(
     for (let i = 0; i < rest.length; i++) {
       const segment = rest[i]
       const after = rest.slice(i + 1)
+      const ownNode = inOwn ? profile.ownNodes?.[segment] : undefined
+      if (ownNode) return guarded([...path, segment], ownNode, after, star)
       if (inOwn && profile.own?.has(segment)) {
         path.push(segment)
         continue
@@ -406,8 +483,11 @@ export function sanitizeStoreFields(
         const node = inOwn && profile.ownSeller ? profile.ownSeller : PUBLIC_SELLER
         return guarded([...path, segment], node, after, star)
       }
-      if (inOwn && after.length === 0 && !star) {
-        // A column of the caller's own record.
+      if (inOwn && after.length === 0 && !star && !DENIED_RELATIONS.has(segment) && !isLinkRow(segment)) {
+        // A column of the caller's own record. A name refused at any depth is
+        // not taken for one: bare, it is refused like the rest (Medusa
+        // selects nothing for a bare relation today, measured, but that is
+        // its business, not this rule's).
         path.push(segment)
         continue
       }

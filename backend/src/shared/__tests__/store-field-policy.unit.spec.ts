@@ -1,8 +1,10 @@
 import { prepareListQuery } from "@medusajs/framework/http"
 import {
   BUYER_SELLER_FIELDS,
+  ORDER_SET_HEADING_FIELDS,
   PUBLIC_REVIEW_FIELDS,
   PUBLIC_SELLER_FIELDS,
+  RECORD_CUSTOMER_FIELDS,
   keepVisibleNestedProducts,
   nestedProductIds,
   normaliseStorePath,
@@ -259,7 +261,7 @@ describe("store field policy", () => {
     const order = async (fields: string) => sanitizeStoreFields(await parsed(fields), storeFieldProfile("/store/orders/order_1")).fields.sort()
     const me = async (fields: string) => sanitizeStoreFields(await parsed(fields), storeFieldProfile("/store/customers/me")).fields.sort()
 
-    it("a cart keeps its customer, its addresses and its payment", async () => {
+    it("a cart keeps its buyer, its addresses and its payment", async () => {
       const fields =
         "id,email,customer.id,customer.email,customer.groups.id,shipping_address.address_1,*payment_collection," +
         "*payment_collection.payment_sessions,*items,*items.product,*items.variant,*region,*promotions,items.total"
@@ -269,6 +271,27 @@ describe("store field policy", () => {
     it("a cart does not lead to anyone else's", async () => {
       expect(await cart("id,*region.orders,*region.carts,*items.variant.order_items,*customer.groups.customers")).toEqual(["id"])
       expect(await cart("id,*items.product.seller.orders,items.product.seller.email,*items.product.wishlist.customer")).toEqual(["id"])
+    })
+
+    it("the buyer behind a cart is a leaf: their columns, the ids of their groups, none of their other records", async () => {
+      // Medusa's own default cart fields keep what they ask for.
+      expect(await cart("id,customer.id,customer.email,customer.groups.id")).toEqual(["customer.email", "customer.groups.id", "customer.id", "id"])
+      expect(await cart("id,*customer")).toEqual(["id", ...RECORD_CUSTOMER_FIELDS.map((field) => `customer.${field}`)].sort())
+      expect(await cart("id,*customer.groups")).toEqual(["customer.groups.id", "id"])
+      for (const spelling of [
+        "*customer.orders",
+        "customer.orders",
+        "*customer.addresses",
+        "customer.addresses",
+        "*customer.reviews",
+        "*customer.reviews.seller",
+        "*customer.wishlist",
+        "*customer.account_holders",
+        "customer.metadata",
+        "customer.groups.name",
+      ]) {
+        expect([spelling, await cart(`id,${spelling}`)]).toEqual([spelling, ["id"]])
+      }
     })
 
     it("the seller of a cart line is the public seller", async () => {
@@ -282,17 +305,61 @@ describe("store field policy", () => {
       expect(await order("id,items.product.seller.email")).toEqual(["id"])
     })
 
-    it("an order keeps the storefront's own list", async () => {
-      const fields = "*payment_collections.payments,*items,*items.metadata,*items.variant,*items.product,*order_set,*reviews,shipping_total"
+    it("an order keeps the storefront's own list, its order set as a heading", async () => {
+      const fields = "*payment_collections.payments,*items,*items.metadata,*items.variant,*items.product,*reviews,shipping_total"
       expect(await order(fields)).toEqual((await parsed(fields)).sort())
+      // The storefront reads `order_set.id`, `display_id` and `created_at`.
+      expect(await order(`${fields},*order_set`)).toEqual(
+        [...(await parsed(fields)), ...ORDER_SET_HEADING_FIELDS.map((field) => `order_set.${field}`)].sort()
+      )
       // What the seller was paid for it is not the buyer's.
       expect(await order("id,*payouts,*split_order_payment")).toEqual(["id"])
+    })
+
+    it("a path from an order stays on that order: not the buyer's other orders, reviews or sellers", async () => {
+      // GET /store/orders/:id answers whoever holds the id.
+      for (const spelling of [
+        "*customer.orders",
+        "*customer.orders.shipping_address",
+        "*customer.orders.seller",
+        "customer.orders.seller.email",
+        "*customer.reviews",
+        "*customer.reviews.seller",
+        "*customer.addresses",
+        "customer.orders",
+        "customer.addresses",
+        "*order_set.orders",
+        "*order_set.orders.customer",
+        "*order_set.orders.shipping_address",
+        "order_set.orders",
+        "order_set.customer_id",
+        "order_set.cart_id",
+        "*order_set.cart",
+        "*order_set.payment_collection",
+        "*reviews.customer.orders",
+        "*reviews.customer.addresses",
+        "*reviews.order",
+        "*orders",
+        "orders",
+        "*cart",
+        "cart",
+      ]) {
+        expect([spelling, await order(`id,${spelling}`)]).toEqual([spelling, ["id"]])
+      }
+      // The buyer themselves, as columns.
+      expect(await order("id,*customer")).toEqual(["id", ...RECORD_CUSTOMER_FIELDS.map((field) => `customer.${field}`)].sort())
+      expect(await order("id,*reviews.customer")).toEqual(
+        ["id", ...RECORD_CUSTOMER_FIELDS.map((field) => `reviews.customer.${field}`)].sort()
+      )
     })
 
     it("customers/me keeps the caller's addresses and orders, and not the other members of their groups", async () => {
       expect(await me("id,email,*addresses,*orders,*orders.items")).toEqual((await parsed("id,email,*addresses,*orders,*orders.items")).sort())
       expect(await me("id,*groups.customers,*orders.seller.orders")).toEqual(["id"])
       expect(await me("id,*orders.seller")).toEqual(["id", ...sellerColumns("orders.seller", BUYER_SELLER_FIELDS)].sort())
+      // Signed in, the caller walks their own order sets and their orders' buyer (themselves).
+      const own = "id,*orders.order_set,*orders.order_set.orders,*orders.customer"
+      expect(await me(own)).toEqual((await parsed(own)).sort())
     })
   })
 
