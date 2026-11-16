@@ -33,7 +33,12 @@ const createCourierSchema = z.object({
   email: z.string().email(),
   first_name: z.string().min(1).max(100),
   last_name: z.string().min(1).max(100),
-  phone: z.string().max(20).optional(),
+  // Required, as the model has it (`phone: model.text()`, NOT NULL in the
+  // table, with its own index): a courier is someone a producer or a
+  // recipient has to be able to ring. It was optional here, so a create
+  // without it passed validation and failed at the insert with a 500
+  // (SD-119 (2)); it is now the 400 below, naming the field.
+  phone: z.string().min(1).max(20),
   
   courier_type: CourierTypeEnum,
   vehicle_type: VehicleTypeEnum,

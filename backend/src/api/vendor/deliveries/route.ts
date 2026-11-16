@@ -4,6 +4,7 @@ import { FOOD_DISTRIBUTION_MODULE } from "../../../modules/food-distribution"
 import type FoodDistributionService from "../../../modules/food-distribution/service"
 import { requireSellerId } from "../../../shared"
 import { redactDeliveries } from "../../../modules/food-distribution/public-view"
+import { withStatusHistoryList } from "../../../modules/food-distribution/status-history"
 
 // ===========================================
 // VALIDATION SCHEMAS
@@ -108,8 +109,11 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
     }
 
     res.json({
-      // Without the proof PIN, as every other delivery response.
-      deliveries: redactDeliveries(deliveries as unknown as Record<string, unknown>[]),
+      // Without the proof PIN, as every other delivery response, and with
+      // the status history as the list the vendor panel reads.
+      deliveries: redactDeliveries(deliveries as unknown as Record<string, unknown>[]).map(
+        withStatusHistoryList
+      ),
       count,
       summary,
       limit: query.limit,

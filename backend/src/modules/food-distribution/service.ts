@@ -16,6 +16,7 @@ import { CourierStatus } from "./models/courier"
 import { OperatingStatus } from "./models/food-producer"
 import { DeliveryStatus } from "./models/delivery"
 import { deliveryCompletedDescription, proofOfDeliveryError } from "./proof-of-delivery"
+import { statusHistoryEntries } from "./status-history"
 
 /**
  * FoodDistributionService
@@ -287,24 +288,36 @@ class FoodDistributionService extends MedusaService({
   
   /**
    * Update delivery status with location
+   *
+   * The one place a delivery's status changes: it appends to the history,
+   * stamps the time the status stands for and saves the event. `by` records
+   * who made the change, on the history entry (`actor`) and on the event
+   * (`actor_type`, `actor_id`); callers that do not say leave both as they
+   * were, the event as SYSTEM.
    */
   async updateDeliveryStatus(
     deliveryId: string,
     status: DeliveryStatus,
     location?: { latitude: number; longitude: number },
-    notes?: string
+    notes?: string,
+    by?: {
+      actor: string
+      actor_type: "COURIER" | "CUSTOMER" | "PRODUCER" | "ADMIN" | "SYSTEM"
+      actor_id?: string
+    }
   ) {
     const delivery = await this.retrieveFoodDelivery(deliveryId)
     if (!delivery) throw new Error("Delivery not found")
     
-    // Parse existing status history
-    const existingHistory = delivery.status_history as { entries?: any[] } | null
-    const statusEntries = existingHistory?.entries || []
+    // The history so far, whichever shape the row holds (status-history.ts:
+    // a bare list read as `{ entries }` used to make `.push` throw here).
+    const statusEntries = statusHistoryEntries(delivery.status_history)
     statusEntries.push({
       status,
       timestamp: new Date().toISOString(),
       ...(location && { location }),
       ...(notes && { note: notes }),
+      ...(by && { actor: by.actor }),
     })
     
     const updateData: Record<string, any> = {
@@ -347,6 +360,7 @@ class FoodDistributionService extends MedusaService({
         latitude: location.latitude,
         longitude: location.longitude,
       }),
+      ...(by && { actor_type: by.actor_type, actor_id: by.actor_id }),
       description: notes || `Status changed to ${status}`,
     })
     
