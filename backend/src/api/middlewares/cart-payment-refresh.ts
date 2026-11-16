@@ -407,9 +407,9 @@ export function settleCartPaymentAfterRefusedCompletion(cartOf: CartOf) {
  *    (`updateTaxLinesWorkflow` with `force_tax_calculation`), which writes
  *    the cart's tax lines and answers. In a region with `automatic_taxes` off
  *    that is the only thing that taxes a cart, so it raises the total after
- *    the session was opened (measured: a 15.00 cart with a 15.00 session,
- *    taxed to 16.50, collection and session left at 15.00). Nothing of FBM's
- *    calls it, but any client may, so it is here. Its write does not change
+ *    the session was opened (measured with this entry removed: a 15.00 cart
+ *    with a card session for 15.00, taxed to 16.50, and its collection left
+ *    at 15.00). Nothing of FBM's calls it, but any client may, so it is here. Its write does not change
  *    the cart's shipping methods, so an error answer after a write that went
  *    through is not noticed here and is left to the completion check below;
  *    on this tree the route answers 200 after its write (SD-117).
