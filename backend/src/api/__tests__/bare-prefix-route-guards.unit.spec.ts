@@ -1,3 +1,4 @@
+import { spawnSync } from "child_process"
 import fs from "fs"
 import http from "http"
 import os from "os"
@@ -82,12 +83,20 @@ const { RoutesSorter } = require(path.join(httpDir, "routes-sorter")) as {
 const { wrapHandler } = require(path.join(httpDir, "utils", "wrap-handler")) as {
   wrapHandler: (fn: Handler) => Handler
 }
-const { RoutesLoader } = require(path.join(httpDir, "routes-loader")) as {
-  RoutesLoader: new () => {
-    scanDir(dir: string): Promise<void>
-    getRoutes(): { matcher: string; method: RouteVerb }[]
-  }
-}
+/**
+ * Medusa's RoutesLoader, run by node's own CommonJS loader in a child process
+ * as `medusa start` runs the build: in this process @swc/jest would compile
+ * each fixture again, and it makes a top-level `this` undefined where node
+ * makes it module.exports. Prints the routes it registers for a directory.
+ */
+const SCAN_WITH_ROUTES_LOADER = `
+const [loaderPath, dir] = process.argv.slice(1)
+const { RoutesLoader } = require(loaderPath)
+const loader = new RoutesLoader()
+loader.scanDir(dir).then(
+  () => process.stdout.write("\\nROUTES " + JSON.stringify(loader.getRoutes().map(({ matcher, method }) => ({ matcher, method }))) + "\\n"),
+  (error) => { console.error(error); process.exit(1) }
+)`
 
 type Handler = (req: Request, res: Response, next: NextFunction) => unknown
 type LoadedMiddleware = { handler: Handler; matcher: string; methods?: string[] }
@@ -712,6 +721,49 @@ describe("routes outside /store, /admin, /vendor and /auth", () => {
       },
       "export-equals": { source: "export = { GET: async () => {} }", registers: ["GET"] },
       commonjs: { source: ["export async function GET() {}", "exports.POST = async () => {}"].join("\n"), registers: ["GET", "POST"] },
+      // CommonJS's own exports or module reached another way, or through
+      // `this` at the top level: each adds POST, and none says so by name.
+      "commonjs-cast": { source: ["export async function GET() {}", "(exports as any).POST = async () => {}"].join("\n"), registers: ["GET", "POST"] },
+      "commonjs-non-null": { source: ["export async function GET() {}", "exports!.POST = async () => {}"].join("\n"), registers: ["GET", "POST"] },
+      "commonjs-alias": {
+        source: ["export async function GET() {}", "const e: any = exports", "e.POST = async () => {}"].join("\n"),
+        registers: ["GET", "POST"],
+      },
+      "commonjs-module-cast": {
+        source: ["export async function GET() {}", "(module as any).exports.POST = async () => {}"].join("\n"),
+        registers: ["GET", "POST"],
+      },
+      "commonjs-passed": {
+        source: ["export async function GET() {}", "const mutate = (m: any) => { m.exports.POST = async () => {} }", "mutate(module)"].join("\n"),
+        registers: ["GET", "POST"],
+      },
+      "commonjs-assign": {
+        source: ["export async function GET() {}", "Object.assign(exports, { POST: async () => {} })"].join("\n"),
+        registers: ["GET", "POST"],
+      },
+      "top-level-this": { source: ["export async function GET() {}", ";(this as any).POST = async () => {}"].join("\n"), registers: ["GET", "POST"] },
+      // A local of that name ends where its block ends.
+      "block-scoped-local": {
+        source: ["export async function GET() {}", "{ const exports = {} }", "exports.POST = async () => {}"].join("\n"),
+        registers: ["GET", "POST"],
+      },
+      // Locals named exports and module, and `this` in a class member, are
+      // not CommonJS's: they add nothing, and the file reads as it is.
+      "shadowed-locals": {
+        source: [
+          "export async function GET() {}",
+          "function build(exports: Record<string, unknown>, module: { exports: Record<string, unknown> }) {",
+          "  exports.POST = async () => {}",
+          "  module.exports.PUT = async () => {}",
+          "}",
+          "build({}, { exports: {} })",
+          "class Holder { run() { (this as any).PATCH = async () => {} } }",
+          "new Holder().run()",
+          "const { exports: copied } = { exports: {} }",
+          "for (const module of [{ exports: {} }]) module.exports = { DELETE: async () => {} }",
+        ].join("\n"),
+        registers: ["GET"],
+      },
       "no-runtime-verb": {
         source: [
           "// export const GET = async () => {}",
@@ -788,6 +840,20 @@ describe("routes outside /store, /admin, /vendor and /auth", () => {
       expect(readRouteFileExports("route.js", "module.exports = { GET() {} }").unreadable).toEqual(["module.exports (line 1)"])
     })
 
+    it("CommonJS's own exports or module used as a value in any spelling, and a top-level this, are unreadable; a local of that name is not", () => {
+      expect(read("commonjs-cast").unreadable).toEqual(["(exports as any).POST (line 2)"])
+      expect(read("commonjs-non-null").unreadable).toEqual(["exports!.POST (line 2)"])
+      expect(read("commonjs-alias").unreadable).toEqual(["exports used as a value (line 2)"])
+      expect(read("commonjs-module-cast").unreadable).toEqual(["(module as any).exports (line 2)"])
+      expect(read("commonjs-passed").unreadable).toEqual(["module passed to mutate (line 3)"])
+      expect(read("commonjs-assign").unreadable).toEqual(["exports passed to Object.assign (line 2)"])
+      expect(read("top-level-this").unreadable).toEqual(["top-level (this as any).POST (line 2)"])
+      expect(read("block-scoped-local").unreadable).toEqual(["exports.POST (line 3)"])
+      expect(read("shadowed-locals")).toMatchObject({ verbs: ["GET"], unreadable: [] })
+      // Nor is a name in a type, which compiles to nothing.
+      expect(readRouteFileExports("route.ts", "export async function GET(m: typeof module, e: typeof exports): Promise<void> {}").unreadable).toEqual([])
+    })
+
     it("type-only and ambient exports, lower-case names, comments and strings register nothing", () => {
       expect(read("no-runtime-verb")).toMatchObject({ verbs: [], unreadable: [] })
     })
@@ -796,7 +862,7 @@ describe("routes outside /store, /admin, /vendor and /auth", () => {
       expect(readRouteFileExports("route.ts", 'export const GET = "not a handler"').verbs).toEqual(["GET"])
     })
 
-    it("Medusa's RoutesLoader registers exactly these verbs from each form, compiled as medusa build compiles it, and the walk reads them or refuses", async () => {
+    it("Medusa's RoutesLoader registers exactly these verbs from each form, compiled as medusa build compiles it and loaded as medusa start loads it, and the walk reads them or refuses", () => {
       const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fbm-route-exports-"))
       try {
         // tsc to CommonJS, as `medusa build` emits this package.
@@ -809,10 +875,17 @@ describe("routes outside /store, /admin, /vendor and /auth", () => {
           fs.writeFileSync(path.join(dir, form, "route.js"), compile(source))
           fs.writeFileSync(path.join(dir, form, "handlers.js"), compile(HANDLERS))
         }
-        const loader = new RoutesLoader()
-        await loader.scanDir(dir)
+        const scan = spawnSync(process.execPath, ["-e", SCAN_WITH_ROUTES_LOADER, path.join(httpDir, "routes-loader"), dir], {
+          encoding: "utf8",
+        })
+        expect([scan.status, scan.stderr]).toEqual([0, expect.any(String)])
+        const printed = /^ROUTES (.*)$/m.exec(scan.stdout)
+        if (!printed) throw new Error(`the loader printed no routes: ${scan.stdout}${scan.stderr}`)
         const registered: Record<string, RouteVerb[]> = {}
-        for (const route of loader.getRoutes()) (registered[route.matcher.slice(1)] ??= []).push(route.method)
+        for (const route of JSON.parse(printed[1]) as { matcher: string; method: RouteVerb }[]) {
+          const form = route.matcher.slice(1)
+          registered[form] = [...(registered[form] ?? []), route.method]
+        }
 
         for (const [form, { source, registers }] of Object.entries(FORMS)) {
           const loaded = HTTP_METHODS.filter((verb) => (registered[form] ?? []).includes(verb))
