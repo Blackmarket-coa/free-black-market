@@ -13,6 +13,7 @@ import AvatarBox from "../../components/common/logo-box/avatar-box"
 import { useSignUpForInvite } from "../../hooks/api/auth"
 import { useAcceptInvite } from "../../hooks/api/invites"
 import { isFetchError } from "../../lib/is-fetch-error"
+import { ExistingAccountError } from "../../lib/register-or-sign-in"
 
 const CreateAccountSchema = z
   .object({
@@ -216,6 +217,15 @@ const CreateView = ({
 
       onSuccess()
     } catch (error: any) {
+      // The address already has a login and the password typed is not its
+      // password: say so, rather than the raw sign-in error.
+      if (error instanceof ExistingAccountError) {
+        form.setError("root", {
+          type: "manual",
+          message: t("invite.existingAccount"),
+        })
+        return
+      }
       toast.error(error.message)
       if (isFetchError(error) && error.status === 400) {
         form.setError("root", {

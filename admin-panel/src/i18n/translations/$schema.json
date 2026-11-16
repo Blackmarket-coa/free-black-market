@@ -11765,6 +11765,9 @@
         "passwordMismatch": {
           "type": "string"
         },
+        "existingAccount": {
+          "type": "string"
+        },
         "toast": {
           "type": "object",
           "properties": {
@@ -11792,6 +11795,7 @@
         "invalidTokenTitle",
         "invalidTokenHint",
         "passwordMismatch",
+        "existingAccount",
         "toast"
       ],
       "additionalProperties": false

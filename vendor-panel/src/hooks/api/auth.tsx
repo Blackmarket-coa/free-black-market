@@ -11,6 +11,7 @@ import {
   setAuthToken,
 } from "../../lib/client"
 import { devLogger } from "../../lib/logger"
+import { isTakenEmailError, registerOrSignIn } from "../../lib/register-or-sign-in"
 
 const fetchRegistrationStatus = async (token: string) => {
   const response = await fetch(
@@ -135,14 +136,7 @@ export const useSignUpWithEmailPass = (
         if (typeof token === "string") setAuthToken(token)
         return token
       } catch (error) {
-        const message =
-          error instanceof Error ? error.message : "Registration failed"
-        const status = error instanceof FetchError ? error.status : undefined
-
-        if (
-          status === 409 ||
-          message.toLowerCase().includes("already exists")
-        ) {
+        if (isTakenEmailError(error)) {
           const result = await sdk.auth.login("seller", "emailpass", {
             ...authPayload,
             email: normalizedEmail,
@@ -200,7 +194,11 @@ export const useSignUpWithEmailPass = (
 }
 
 /**
- * Sign up for invite flow (no vendor type)
+ * Sign up for invite flow (no vendor type).
+ *
+ * When the address already has a login, signs in to it with the password
+ * typed instead, and a wrong password rejects with `ExistingAccountError`
+ * (see lib/register-or-sign-in.ts).
  */
 export const useSignUpForInvite = (
   options?: UseMutationOptions<
@@ -211,13 +209,12 @@ export const useSignUpForInvite = (
 ) => {
   return useMutation({
     mutationFn: async (payload) => {
-      const normalizedPassword = normalizePassword(payload.password)
-      const token = await publicAuthSdk.auth.register("seller", "emailpass", {
+      const token = await registerOrSignIn(publicAuthSdk.auth, "seller", {
         ...payload,
         email: payload.email.toLowerCase().trim(),
-        password: normalizedPassword,
+        password: normalizePassword(payload.password),
       })
-      if (typeof token === "string") setAuthToken(token)
+      setAuthToken(token)
       return token
     },
     ...options,

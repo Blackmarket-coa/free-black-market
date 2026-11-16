@@ -17,12 +17,13 @@ jest.setTimeout(240 * 1000)
  * until approval, a shopper whose sign-up stopped after the login was made)
  * could take it over. middlewares/refuse-taken-email-registration.ts now
  * answers every taken address the way Medusa answers one whose login has an
- * actor, and the two sign-ups that meet that answer sign in instead: the
- * storefront's (storefront/src/lib/data/customer.ts) and the vendor panel's
- * (vendor-panel/src/hooks/api/auth.tsx).
+ * actor, and the pages that meet that answer sign in instead: the storefront's
+ * sign-up (storefront/src/lib/data/customer.ts), the vendor panel's
+ * (vendor-panel/src/hooks/api/auth.tsx), and both panels' invite pages
+ * (lib/register-or-sign-in.ts in each).
  *
  * Budget: every POST under /auth, and POST /store/customers, spends the auth
- * limiter's 20 a minute per address (rate-limiter.ts). This file spends 14;
+ * limiter's 20 a minute per address (rate-limiter.ts). This file spends 17;
  * the logins it does not register through the route are built through the
  * auth module.
  */
@@ -153,6 +154,32 @@ medusaIntegrationTestRunner({
       expect(claims(refreshed.data.token).actor_id).toBe(created.data.customer.id)
       const me = await api.get("/store/customers/me", store(refreshed.data.token))
       expect(me.data.customer.email).toBe(owner.email)
+    })
+
+    it("the admin invite page for a login with no actor: register is refused, sign-in works, the invite is accepted", async () => {
+      const owner = await loginWithNoActor()
+      const [invite] = await container().resolve(Modules.USER).createInvites([{ email: owner.email }])
+
+      // What admin-panel/src/lib/register-or-sign-in.ts meets, then does.
+      const refused = await call(api.post("/auth/user/emailpass/register", { email: owner.email, password: owner.password }))
+      expect(refused.status).toBe(401)
+      expect(refused.data).toEqual(TAKEN)
+      const login = await api.post("/auth/user/emailpass", { email: owner.email, password: owner.password })
+      const token = login.data.token as string
+      expect(claims(token)).toMatchObject({ actor_type: "user", actor_id: "", auth_identity_id: owner.authIdentityId })
+
+      // Medusa's accept route takes a login token with no actor (allowUnregistered).
+      const accepted = await api.post(
+        `/admin/invites/accept?token=${invite.token}`,
+        { first_name: "Ola", last_name: "Staff" },
+        bearer(token)
+      )
+      expect(accepted.status).toBe(200)
+      expect(accepted.data.user).toMatchObject({ email: owner.email, first_name: "Ola" })
+
+      // The same login and password now sign in as that user.
+      const asUser = await api.post("/auth/user/emailpass", { email: owner.email, password: owner.password })
+      expect(claims(asUser.data.token).actor_id).toBe(accepted.data.user.id)
     })
   },
 })

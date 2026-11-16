@@ -2673,6 +2673,7 @@
     "invalidTokenTitle": "Your invite token is invalid",
     "invalidTokenHint": "Try requesting a new invite link.",
     "passwordMismatch": "Passwords do not match",
+    "existingAccount": "An account with this email already exists. Enter its password to accept the invite, or reset the password from the login page.",
     "toast": {
       "accepted": "Invite successfully accepted"
     }
