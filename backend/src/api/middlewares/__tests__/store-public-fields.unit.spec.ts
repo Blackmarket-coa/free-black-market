@@ -275,7 +275,7 @@ describe("mounted on /store", () => {
 
   /** A request line as written, absolute-form included: `fetch` would normalise it away. */
   const raw = (target: string) =>
-    new Promise<{ status: number; body: any }>((resolve, reject) => {
+    new Promise<{ status: number; body: { fields?: string[]; routed?: string } }>((resolve, reject) => {
       const { port } = new URL(base)
       const req = http.request({ host: "127.0.0.1", port, method: "GET", path: target }, (res) => {
         let text = ""
