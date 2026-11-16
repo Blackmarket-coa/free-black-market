@@ -365,7 +365,8 @@ medusaIntegrationTestRunner({
       // vendor reads serve all three entries as a list.
       const handedOver = await safe(api.put(`/store/food-deliveries/${deliveryId}`, { status: "ORDER_PICKED_UP" }, store))
       expect([handedOver.status, handedOver.data?.delivery?.status]).toEqual([200, "ORDER_PICKED_UP"])
-      const statuses = (history: unknown) => (history as Array<{ status: string }>).map((entry) => entry.status)
+      const statuses = (history: unknown) =>
+        Array.isArray(history) ? (history as Array<{ status: string }>).map((entry) => entry.status) : history
       const detail = await safe(api.get(`/vendor/deliveries/${deliveryId}`, panel))
       expect([detail.status, statuses(detail.data?.delivery?.status_history)]).toEqual([
         200,
