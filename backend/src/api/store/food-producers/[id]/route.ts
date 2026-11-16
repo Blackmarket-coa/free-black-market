@@ -111,9 +111,10 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 // account write a producer with no owner on record (grandfathered): an empty
 // PUT from such an account answered with the address the GET had just kept
 // from it (seen on Postgres, SD-110 follow-up). `hide_address` is not in the
-// update schema, so the echo was that account's only way to it. A write let
-// through on an unknown owner is acknowledged with what the GET serves, as
-// the courier PUT acknowledges one with the public projection.
+// update schema, so such an account cannot clear the flag and read the
+// address off the GET: the echo was its way to it. A write let through on an
+// unknown owner is acknowledged with what the GET serves, as the courier PUT
+// acknowledges one with the public projection.
 // ===========================================
 
 export async function PUT(req: MedusaRequest, res: MedusaResponse) {
