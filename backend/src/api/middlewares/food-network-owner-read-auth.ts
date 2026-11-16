@@ -1,5 +1,10 @@
 import { authenticate } from "@medusajs/framework/http"
-import type { MiddlewareRoute } from "@medusajs/framework/http"
+import type {
+  MedusaNextFunction,
+  MedusaRequest,
+  MedusaResponse,
+  MiddlewareRoute,
+} from "@medusajs/framework/http"
 
 /**
  * Food-network reads that are kept for a record's owner: know who is asking.
@@ -22,6 +27,13 @@ import type { MiddlewareRoute } from "@medusajs/framework/http"
  * token of an actor type not listed, leaves `auth_context` as the framework
  * left it and the request goes on: `authenticate` answers 401 only without
  * `allowUnauthenticated`.
+ *
+ * **And only a caller the framework identified as nobody.** A request it has
+ * already made a customer is passed on untouched, so nothing changes for a
+ * customer on these reads. Run unconditionally, `authenticate` looks at the
+ * session before the bearer token, and a request carrying a seller's session
+ * beside a customer's token would have turned from the customer into the
+ * seller: the recipient of a delivery refused their own tracking.
  *
  * What a handler does with the actor is the handler's: every GET under these
  * prefixes that reads `auth_context` compares the actor's id with an owner
@@ -52,15 +64,18 @@ export const FOOD_NETWORK_OWNER_READ_PREFIXES = [
 ] as const
 
 export function foodNetworkOwnerReadAuthMatchers(actorTypes: string[]): MiddlewareRoute[] {
+  const identify = authenticate(actorTypes, ["bearer", "session"], {
+    allowUnauthenticated: true,
+  })
+  const identifyIfNobody = (req: MedusaRequest, res: MedusaResponse, next: MedusaNextFunction) => {
+    const known = (req as MedusaRequest & { auth_context?: { actor_id?: string } }).auth_context
+    return known?.actor_id ? next() : identify(req, res, next)
+  }
   return FOOD_NETWORK_OWNER_READ_PREFIXES.flatMap((prefix) =>
     [prefix, `${prefix}/**`].map((matcher) => ({
       matcher,
       method: ["GET" as const],
-      middlewares: [
-        authenticate(actorTypes, ["bearer", "session"], {
-          allowUnauthenticated: true,
-        }),
-      ],
+      middlewares: [identifyIfNobody],
     }))
   )
 }

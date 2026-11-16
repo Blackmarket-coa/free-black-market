@@ -183,6 +183,12 @@ beforeAll(async () => {
   const app = express()
   app.use((req, _res, next) => {
     ;(req as unknown as { scope: unknown }).scope = scopeFor()
+    // Stands in for express-session: the signed-in actor a session cookie
+    // would have restored, when a case sends one.
+    const session = req.headers[SESSION_HEADER]
+    if (typeof session === "string") {
+      ;(req as unknown as { session: unknown }).session = { auth_context: JSON.parse(session) }
+    }
     next()
   })
   // router.js: `applyAuthMiddleware(routesFinder, "/store", "customer", ["bearer", "session"], { allowUnauthenticated: true })`
@@ -214,11 +220,17 @@ afterAll(async () => {
 })
 
 const urlOf = (matcher: string) => matcher.replace(":id", "rec_1").replace(":orderId", "fo_1")
+const SESSION_HEADER = "x-spec-session"
+const sessionOf = (actorId: string, actorType: string) =>
+  JSON.stringify({ actor_id: actorId, actor_type: actorType, auth_identity_id: `authid_${actorId}` })
 
-async function call(method: "GET" | "POST", matcher: string, authorization?: string) {
+async function call(method: "GET" | "POST", matcher: string, authorization?: string, session?: string) {
   const res = await fetch(`${baseUrl}${urlOf(matcher)}`, {
     method,
-    headers: authorization ? { authorization } : undefined,
+    headers: {
+      ...(authorization ? { authorization } : {}),
+      ...(session ? { [SESSION_HEADER]: session } : {}),
+    },
   })
   const text = await res.text()
   let body: Record<string, unknown> = {}
@@ -280,6 +292,23 @@ describe("GET on the food-network owner reads", () => {
       const answer = await call("GET", matcher, authorization)
       expect([matcher, answer.status, answer.actor]).toEqual([matcher, 200, null])
     }
+  })
+
+  it("leaves a caller the framework made a customer as that customer", async () => {
+    // A seller's session beside a customer's token. The framework takes the
+    // token (the session is not a customer's); `authenticate` run again for
+    // all three types would take the session first, and the customer reading
+    // their own delivery would be answered as the seller.
+    const both = await call(
+      "GET",
+      "/store/food-deliveries/:id",
+      bearer(token("cus_1", "customer")),
+      sessionOf("mem_seller_1", "seller")
+    )
+    expect([both.status, both.actor, both.type]).toEqual([200, "cus_1", "customer"])
+    // The session alone is the seller, as a token alone is.
+    const sessionOnly = await call("GET", "/store/food-deliveries/:id", undefined, sessionOf("mem_seller_1", "seller"))
+    expect([sessionOnly.status, sessionOnly.actor, sessionOnly.type]).toEqual([200, "mem_seller_1", "seller"])
   })
 
   it("is not widened beyond the food-network prefixes", async () => {
