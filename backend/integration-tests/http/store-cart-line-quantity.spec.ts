@@ -9,9 +9,10 @@ import { clearStalledWorkflows } from "./helpers/stalled-workflows"
 jest.setTimeout(300 * 1000)
 
 /**
- * The quantity a buyer asks for on a cart line, through the two store routes
- * that set it, on Postgres: `POST /store/carts/:id/line-items` (Medusa's
- * `addToCartWorkflow`) and `POST /store/carts/:id/line-items/:line_id`
+ * The quantity a buyer asks for on a cart line, through the three store routes
+ * that set it, on Postgres: `POST /store/carts` with `items` (Medusa's
+ * `createCartWorkflow`), `POST /store/carts/:id/line-items`
+ * (`addToCartWorkflow`) and `POST /store/carts/:id/line-items/:line_id`
  * (`updateLineItemInCartWorkflow`).
  *
  * FBM's validate hook on the add (`workflows/hooks/add-to-cart-validation.ts`)
@@ -21,9 +22,10 @@ jest.setTimeout(300 * 1000)
  * purchase one ticket for a seat." The product page got by because it adds one
  * and raises the line through the update route; an order-cycle add
  * (`storefront/src/lib/data/order-cycles.ts`) sends the buyer's quantity with
- * line metadata, which always creates a line, so any cycle add of 2 or more was
- * refused. And nothing held a seat to one ticket on the update route, which the
- * cart page's + button calls on every line.
+ * line metadata, which always goes through the add route, so any cycle add of
+ * 2 or more was refused. And nothing held a seat to one ticket on the update
+ * route, which the cart page's + button calls on every line, nor on the create
+ * route, nor on an add that Medusa puts into a line already in the cart.
  *
  * Every call is recorded and the whole record compared at once, so a tree
  * without the fix shows each call that answers wrongly, not just the first.
@@ -175,7 +177,7 @@ medusaIntegrationTestRunner({
 
         // addToCart with nothing in the cart: sdk.store.cart.createLineItem at the buyer's quantity.
         const two = await call("add tomatoes x2", add(s, cart.id, { variant_id: s.tomatoes, quantity: 2 }))
-        // addCycleProductToCart: the cycle on the line's metadata, which always creates a line.
+        // addCycleProductToCart: the cycle on the line's metadata, which always goes through the add route.
         await call(
           "add tomatoes x3 for an order cycle",
           add(s, cart.id, { variant_id: s.tomatoes, quantity: 3, metadata: { order_cycle_id: "ordcyc_test" } })
@@ -236,6 +238,8 @@ medusaIntegrationTestRunner({
         await call("add the show with no seat x2", add(s, cart.id, { variant_id: s.show, quantity: 2 }))
         const seatless = await call("add the show with no seat x1", add(s, cart.id, { variant_id: s.show, quantity: 1 }))
         const seatlessLine = (seatless?.cart?.items ?? []).find((i: any) => i.id !== seatLine)?.id as string | undefined
+        // The same again: Medusa would put it into the line above (same variant, metadata both empty).
+        await call("add the show with no seat x1 again", add(s, cart.id, { variant_id: s.show, quantity: 1 }))
         await call("raise the seatless ticket line to 2", update(s, cart.id, seatlessLine, { quantity: 2 }))
 
         // The cart page's delete sends quantity 0 through the same route: still open.
@@ -250,6 +254,7 @@ medusaIntegrationTestRunner({
           "drop the seat and raise to 2": { status: 400, message: ONE_TICKET_PER_SEAT },
           "add the show with no seat x2": { status: 400, message: ONE_TICKET_PER_SEAT },
           "add the show with no seat x1": { status: 200 },
+          "add the show with no seat x1 again": { status: 400, message: ONE_TICKET_PER_SEAT },
           "raise the seatless ticket line to 2": { status: 400, message: ONE_TICKET_PER_SEAT },
           "set the seat line to 0": { status: 200 },
         })
@@ -263,6 +268,88 @@ medusaIntegrationTestRunner({
         const after = await readCart(s, cart.id)
         expect(after.items).toEqual([expect.objectContaining({ id: seatlessLine, variant_id: s.show, quantity: 1 })])
         expect(after).toEqual(expect.objectContaining({ item_total: 5, total: 5 }))
+      })
+
+      it("left above one by an older cart, can be stepped down through the update route and not raised again", async () => {
+        const s = await makeStore()
+        const cart = await newCart(s)
+        const { answered, call } = recorder()
+
+        const one = await call("add seat 7 x1", add(s, cart.id, { variant_id: s.show, quantity: 1, metadata: s.seat("7") }))
+        const seatLine = one?.cart?.items?.[0]?.id as string
+        // A cart from before these hooks: the seat line at 3, written past every route.
+        await container().resolve(Modules.CART).updateLineItems([{ id: seatLine, quantity: 3 }])
+
+        // A step down that changes the metadata too is judged as any other update.
+        await call("step the seat line down to 2, renaming the seat", update(s, cart.id, seatLine, { quantity: 2, metadata: { seat_number: "8" } }))
+        // UpdateCartItemButton's -, which sends the quantity alone.
+        await call("step the seat line down to 2", update(s, cart.id, seatLine, { quantity: 2 }))
+        await call("raise it back to 3", update(s, cart.id, seatLine, { quantity: 3 }))
+
+        expect(answered).toEqual({
+          "add seat 7 x1": { status: 200 },
+          "step the seat line down to 2, renaming the seat": { status: 400, message: ONE_TICKET_PER_SEAT },
+          "step the seat line down to 2": { status: 200 },
+          "raise it back to 3": { status: 400, message: ONE_TICKET_PER_SEAT },
+        })
+        const after = await readCart(s, cart.id)
+        expect(after.items).toEqual([expect.objectContaining({ id: seatLine, quantity: 2, metadata: s.seat("7") })])
+      })
+    })
+
+    describe("a cart created with items", () => {
+      afterEach(settleBeforeTeardown)
+
+      it("holds a ticket line to one ticket and a seat to one line, creates any other line at the quantity asked, and leaves no cart when it refuses", async () => {
+        const s = await makeStore()
+        const carts = container().resolve(Modules.CART)
+        const cartsInRegion = async () => (await carts.listCarts({ region_id: s.region.id })).length
+        const create = (items: Array<Record<string, unknown>>) => api.post(`/store/carts`, { region_id: s.region.id, items }, s.pak)
+        const { answered, call } = recorder()
+
+        const before = await cartsInRegion()
+        await call("create with seat 7 x2", create([{ variant_id: s.show, quantity: 2, metadata: s.seat("7") }]))
+        await call(
+          "create with seat 7 twice",
+          create([
+            { variant_id: s.show, quantity: 1, metadata: s.seat("7") },
+            { variant_id: s.show, quantity: 1, metadata: s.seat("7") },
+          ])
+        )
+        await call("create with the show with no seat x2", create([{ variant_id: s.show, quantity: 2 }]))
+        await call("create with seat 8 with no show date", create([{ variant_id: s.show, quantity: 1, metadata: { seat_number: "8" } }]))
+        const afterRefusals = await cartsInRegion()
+
+        const made = await call(
+          "create with tomatoes x2, seat 7 and seat 8",
+          create([
+            { variant_id: s.tomatoes, quantity: 2 },
+            { variant_id: s.show, quantity: 1, metadata: s.seat("7") },
+            { variant_id: s.show, quantity: 1, metadata: s.seat("8") },
+          ])
+        )
+
+        expect(answered).toEqual({
+          "create with seat 7 x2": { status: 400, message: ONE_TICKET_PER_SEAT },
+          "create with seat 7 twice": { status: 400, message: `Seat 7 is already in your cart for show date ${SHOW_DATE}` },
+          "create with the show with no seat x2": { status: 400, message: ONE_TICKET_PER_SEAT },
+          "create with seat 8 with no show date": {
+            status: 400,
+            message: expect.stringMatching(/^Show date is required for seat 8 in product prod_/),
+          },
+          "create with tomatoes x2, seat 7 and seat 8": { status: 200 },
+        })
+
+        expect(afterRefusals).toBe(before)
+        expect(made.cart.items).toHaveLength(3)
+        expect(made.cart.items).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({ variant_id: s.tomatoes, quantity: 2, unit_price: 10 }),
+            expect.objectContaining({ variant_id: s.show, quantity: 1, unit_price: 5, metadata: s.seat("7") }),
+            expect.objectContaining({ variant_id: s.show, quantity: 1, unit_price: 5, metadata: s.seat("8") }),
+          ])
+        )
+        expect(made.cart).toEqual(expect.objectContaining({ item_total: 30, total: 30 }))
       })
     })
   },
