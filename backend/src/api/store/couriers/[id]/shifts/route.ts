@@ -49,6 +49,12 @@ const listShiftsQuerySchema = z.object({
  * record is not thereby everyone's to read. A courier id that does not exist
  * keeps its 404: couriers are a public catalogue (`GET /store/couriers`), so
  * that says nothing the list does not.
+ *
+ * The owner is whoever registered the courier: a customer, a seller or a
+ * driver. The framework identifies only customers on a /store GET, so a
+ * seller who had registered a courier and created its shifts was refused
+ * them here; `api/middlewares/food-network-owner-read-auth.ts` identifies
+ * the other two on this prefix (SD-110 (ii)).
  */
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
   const { id: courierId } = req.params

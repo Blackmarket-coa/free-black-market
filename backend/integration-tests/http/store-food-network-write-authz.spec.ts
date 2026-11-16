@@ -921,10 +921,9 @@ medusaIntegrationTestRunner({
         email: `store-b-${uid()}@example.com`,
         seller_id: sellerB.seller.id,
       })
-      // Created through the module with no status history. The vendor POST
-      // reads the history as a list and answers 500 for one written by
-      // `createDeliveryForOrder` (an `{ entries }` object): seen here, a
-      // separate defect, left as it is.
+      // Created through the module, with no status history. The vendor POST
+      // on a delivery made by `createDeliveryForOrder` (which answered 500,
+      // SD-119 (1)) is in store-food-network-owner-reads.spec.ts.
       const storeDelivery = await foodDistribution.createFoodDeliveries({
         delivery_number: `DEL-${uid()}`,
         order_id: (await homeOrder(storeA.id)).id,
