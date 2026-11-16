@@ -39,6 +39,7 @@ import { refuseServerOwnedCustomerMetadata } from "./middlewares/server-owned-cu
 import { refuseUnfinishedCartCompletion } from "./middlewares/cart-completion-finished";
 import { cartPaymentMiddlewareRoutes } from "./middlewares/cart-payment-refresh";
 import { refuseCoreStoreReturnCreate } from "./middlewares/refuse-core-store-return";
+import { refuseTakenEmailRegistration } from "./middlewares/refuse-taken-email-registration";
 import {
   refuseSharedPaymentOrderCancel,
   refuseSharedPaymentWorkflowRun,
@@ -946,6 +947,17 @@ export default defineMiddlewares({
       matcher: "/auth/*",
       method: "POST",
       middlewares: [authRateLimiter, normalizeEmailMiddleware],
+    },
+    // Registering an address that already has a login: refused the way Medusa
+    // refuses one whose login has an actor, because its emailpass provider
+    // re-passwords a login with no actor and hands over its token. The sorter
+    // runs the `/auth/*` entry above first (wildcard before param), so the
+    // address is normalised and the call counted before this looks it up.
+    // See middlewares/refuse-taken-email-registration.ts.
+    {
+      matcher: "/auth/:actor_type/emailpass/register",
+      method: "POST",
+      middlewares: [refuseTakenEmailRegistration],
     },
     // Auth read routes - session checks, status reads (generous rate limit)
     {
