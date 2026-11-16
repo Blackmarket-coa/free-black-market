@@ -5,8 +5,7 @@ import {
   StepResponse,
 } from "@medusajs/framework/workflows-sdk"
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
-
-const GOVERNANCE_MODULE = "governanceModuleService"
+import { GOVERNANCE_MODULE } from "../../modules/governance"
 
 interface GovernanceServiceType {
   updateGardenProposals: (data: Record<string, unknown>) => Promise<{ id: string }>
