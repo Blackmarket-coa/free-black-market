@@ -5,9 +5,26 @@ import type FoodDistributionService from "../../../../modules/food-distribution/
 import { CourierStatus } from "../../../../modules/food-distribution/models/courier"
 import { actorMayManage, actorOwnsResource } from "../../../../shared/actor-scope"
 import {
+  actorMayReadDelivery,
+  forbidden,
+} from "../../../../shared/community-read-access"
+import {
   publicCourierView,
   redactDeliveries,
+  redactDelivery,
 } from "../../../../modules/food-distribution/public-view"
+import { retrieveDeliveryOrNull } from "../../../../modules/food-distribution/proof-of-delivery"
+
+/** A delivery the courier is still carrying. */
+const ACTIVE_DELIVERY_STATUSES = [
+  "ASSIGNED",
+  "COURIER_EN_ROUTE_PICKUP",
+  "COURIER_ARRIVED_PICKUP",
+  "ORDER_PICKED_UP",
+  "EN_ROUTE_DELIVERY",
+  "ARRIVED_AT_DESTINATION",
+  "ATTEMPTING_DELIVERY",
+]
 
 // ===========================================
 // VALIDATION SCHEMAS
@@ -79,9 +96,21 @@ const claimDeliverySchema = z.object({
  * stamped must not therefore be readable in full by any signed-in account.
  * On this GET the safe default for an unknown owner is the public view.
  *
- * `active_deliveries` stays on both branches. It is already redacted of the
- * delivery's own secrets, and it is the operational fact a requester asks
- * this endpoint for — whether this courier is currently free.
+ * **The deliveries the courier is carrying are the owner's alone (SD-106).**
+ * `active_deliveries` used to sit outside the owner branch, under a comment
+ * here that called it "already redacted of the delivery's own secrets".
+ * `redactDeliveries` removes the proof PIN and nothing else: each row is the
+ * whole `food_delivery`, with the recipient's home address, name, phone and
+ * delivery instructions. With `GET /store/couriers` listing every courier id,
+ * anyone holding a publishable key could read the address of every delivery
+ * that had a courier, which is exactly what `GET /store/food-deliveries/:id`
+ * refuses them.
+ *
+ * Everyone else gets `active_delivery_count`. That is the operational fact a
+ * requester asks this endpoint for (is this courier free), and it names no
+ * delivery: not an id either, since an id is what the delivery reads and the
+ * claim below are keyed on. For a caller who is not the owner only ids are
+ * read from the table, so no address is in hand to serialize by mistake.
  */
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
   const { id } = req.params
@@ -95,19 +124,27 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     return
   }
   
-  // Get current active delivery if any
-  const activeDeliveries = await foodDistribution.listFoodDeliveries({
-    courier_id: id,
-    status: { $in: ["ASSIGNED", "COURIER_EN_ROUTE_PICKUP", "COURIER_ARRIVED_PICKUP", "ORDER_PICKED_UP", "EN_ROUTE_DELIVERY", "ARRIVED_AT_DESTINATION", "ATTEMPTING_DELIVERY"] },
-  })
-
   const row = courier as unknown as Record<string, unknown>
   const isOwner = actorOwnsResource(req, row.owner_id as string | null | undefined)
+
+  // The deliveries this courier is carrying: rows for the owner, a count for
+  // everyone else.
+  const activeDeliveries = await foodDistribution.listFoodDeliveries(
+    { courier_id: id, status: { $in: ACTIVE_DELIVERY_STATUSES } },
+    isOwner ? {} : { select: ["id"] }
+  )
 
   res.json({
     courier: {
       ...(isOwner ? row : publicCourierView(row)),
-      active_deliveries: redactDeliveries(activeDeliveries as unknown as Record<string, unknown>[]),
+      active_delivery_count: activeDeliveries.length,
+      ...(isOwner
+        ? {
+            active_deliveries: redactDeliveries(
+              activeDeliveries as unknown as Record<string, unknown>[]
+            ),
+          }
+        : {}),
     },
   })
 }
@@ -149,7 +186,18 @@ export async function PUT(req: MedusaRequest, res: MedusaResponse) {
       ...data,
     } as any)
     
-    res.json({ courier })
+    // The whole row is echoed to the courier's recorded owner only.
+    // `actorMayManage` above lets any signed-in account write a courier with
+    // no owner on record (grandfathered), and this response was that
+    // account's read of the row: email, phone, emergency contact. A write
+    // that is let through on an unknown owner is acknowledged with the same
+    // projection GET gives a stranger.
+    const updated = courier as unknown as Record<string, unknown>
+    res.json({
+      courier: actorOwnsResource(req, (existing as { owner_id?: string | null }).owner_id)
+        ? updated
+        : publicCourierView(updated),
+    })
   } catch (error) {
     if (error instanceof z.ZodError) {
       res.status(400).json({ message: "Validation failed", errors: error.issues })
@@ -162,6 +210,22 @@ export async function PUT(req: MedusaRequest, res: MedusaResponse) {
 // ===========================================
 // POST /couriers/:id/claim
 // Claim a delivery assignment
+//
+// A delivery that cannot be claimed is refused one way, whether it does not
+// exist or is no longer pending (SD-107). The bare `retrieveFoodDelivery`
+// throws for a missing id, so the pair was 404 against 400 "Delivery is not
+// available for claiming", and any account that had registered a courier
+// could tell which delivery ids are real. Only someone who may already read
+// the delivery (its courier claiming twice, say) is told it is not available.
+//
+// The 200 is redacted like every other delivery response. It carried
+// `proof_pin_code`: the PIN the recipient reads out to prove the hand-over,
+// handed to the courier at the moment of claiming.
+//
+// Not decided here: WHO may claim. Any signed-in account can register a
+// courier, mark it AVAILABLE and claim a pending delivery whose id it holds,
+// and from then on reads it as its courier. That is the operator's ruling
+// (verified couriers only, the producer's own, anyone), not a default.
 // ===========================================
 
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
@@ -192,14 +256,13 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     }
     
     // Check delivery is available
-    const delivery = await foodDistribution.retrieveFoodDelivery(data.delivery_id)
-    if (!delivery) {
-      res.status(404).json({ message: "Delivery not found" })
-      return
-    }
-    if (delivery.status !== "PENDING") {
-      res.status(400).json({ message: "Delivery is not available for claiming" })
-      return
+    const delivery = await retrieveDeliveryOrNull(foodDistribution, data.delivery_id)
+    if (!delivery || delivery.status !== "PENDING") {
+      if (delivery && (await actorMayReadDelivery(req, delivery))) {
+        res.status(400).json({ message: "Delivery is not available for claiming" })
+        return
+      }
+      return forbidden(res)
     }
     
     // Assign courier to delivery
@@ -208,7 +271,9 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       id
     )
     
-    res.json({ delivery: updatedDelivery })
+    res.json({
+      delivery: redactDelivery(updatedDelivery as unknown as Record<string, unknown>),
+    })
   } catch (error) {
     if (error instanceof z.ZodError) {
       res.status(400).json({ message: "Validation failed", errors: error.issues })

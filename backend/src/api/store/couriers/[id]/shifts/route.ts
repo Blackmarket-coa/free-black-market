@@ -2,7 +2,8 @@ import { z } from "zod"
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { FOOD_DISTRIBUTION_MODULE } from "../../../../../modules/food-distribution"
 import type FoodDistributionService from "../../../../../modules/food-distribution/service"
-import { actorMayManage } from "../../../../../shared/actor-scope"
+import { actorMayManage, actorOwnsResource } from "../../../../../shared/actor-scope"
+import { forbidden } from "../../../../../shared/community-read-access"
 
 // ===========================================
 // VALIDATION SCHEMAS
@@ -35,6 +36,20 @@ const listShiftsQuerySchema = z.object({
 // GET /couriers/:id/shifts
 // ===========================================
 
+/**
+ * The courier's owner only. `api/middlewares.ts` authenticates the write
+ * verbs on `/store/couriers`, not this GET, and it returned every shift of
+ * any courier to a caller holding only a publishable key: when a named person
+ * starts and stops work, in which zone, their notes, and what each shift
+ * earned. `publicCourierView` already keeps `weekly_schedule` ("when they are
+ * and are not out") and earnings out of what a stranger may see of a
+ * courier; this route published the same facts shift by shift.
+ *
+ * `actorOwnsResource`, not `actorMayManage`: a courier with no owner on
+ * record is not thereby everyone's to read. A courier id that does not exist
+ * keeps its 404: couriers are a public catalogue (`GET /store/couriers`), so
+ * that says nothing the list does not.
+ */
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
   const { id: courierId } = req.params
   
@@ -48,6 +63,9 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     if (!courier) {
       res.status(404).json({ message: "Courier not found" })
       return
+    }
+    if (!actorOwnsResource(req, (courier as { owner_id?: string | null }).owner_id)) {
+      return forbidden(res)
     }
     
     const filters: Record<string, any> = { courier: courierId }
