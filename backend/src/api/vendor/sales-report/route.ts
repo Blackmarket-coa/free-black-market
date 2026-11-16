@@ -34,9 +34,10 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 
   const { format } = req.query as { format?: string }
 
-  // The panel sends calendar dates, and a date-only end_date is the whole of
-  // that day: it used to be read as its first instant, so the default view
-  // (ending today) left out every order placed today. See date-range.ts.
+  // The panel sends the instants that bound the vendor's local days; a
+  // date-only end_date is the whole of that UTC day (it used to be read as its
+  // first instant, which left out every order placed on it). See
+  // date-range.ts.
   const parsed = parseReportDateRange(req.query)
   if (!parsed.ok) {
     return res.status(400).json({ type: "invalid_data", message: parsed.message })

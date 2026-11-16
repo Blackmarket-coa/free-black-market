@@ -90,17 +90,22 @@ medusaIntegrationTestRunner({
     }
 
     /**
-     * The query the panel sends, built exactly as
+     * The query the panel sends by default, built as
      * vendor-panel/src/routes/sales-report/sales-report.tsx getDefaultDateRange()
-     * builds it: calendar dates, ending today.
+     * and vendor-panel/src/hooks/api/sales-report.ts salesReportQuery() build
+     * it: the last 30 calendar days ending today in the browser's zone (here,
+     * this process's), each sent as the instant that bounds that local day.
+     * Until SD-89 (a) it sent the UTC calendar dates themselves.
      */
     function panelDefaultQuery() {
       const end = new Date()
       const start = new Date()
       start.setDate(start.getDate() - 30)
+      const localMidnight = (d: Date, addDays = 0) =>
+        new Date(d.getFullYear(), d.getMonth(), d.getDate() + addDays)
       return new URLSearchParams({
-        start_date: start.toISOString().split("T")[0],
-        end_date: end.toISOString().split("T")[0],
+        start_date: localMidnight(start).toISOString(),
+        end_date: new Date(localMidnight(end, 1).getTime() - 1).toISOString(),
       }).toString()
     }
 
@@ -175,7 +180,7 @@ medusaIntegrationTestRunner({
         expect(rows[1]).toMatch(/,"Linen Apron","Default","SKU-Linen Apron",2,12\.50,25\.00,"usd"$/)
       })
 
-      it("with the dates the panel sends: today's order is in the default range, a date-only end date is that whole day, and a bad date is a 400", async () => {
+      it("with the dates the panel sends: today's order is in the default range, a vendor's local evening is in their day, a date-only end date is that whole UTC day, and a bad date is a 400", async () => {
         const vendor = await createAuthenticatedSeller({ api, getContainer })
         const apron = await productFor(vendor.seller.id, "Linen Apron")
         const placed = await order([{ product: apron, quantity: 2, unit_price: 12.5 }])
@@ -188,8 +193,9 @@ medusaIntegrationTestRunner({
         expect(res.status).toBe(200)
         expect(res.data.summary).toMatchObject({ total_orders: 1, total_units_sold: 2, total_revenue: 25 })
         expect(res.data.line_items.map((l: { order_id: string }) => l.order_id)).toEqual([placed.id])
-        // The window ends at the last millisecond of the end date, not its first.
-        expect(res.data.date_range.end).toMatch(/T23:59:59\.999Z$/)
+        // The window ends at the instant the panel sent: the last millisecond
+        // of the end date, not its first.
+        expect(res.data.date_range.end).toBe(new URLSearchParams(query).get("end_date"))
         const csv = await get(`${query}&format=csv`)
         expect(csv.status).toBe(200)
         expect(String(csv.data).trim().split("\n")).toHaveLength(2)
@@ -209,6 +215,50 @@ medusaIntegrationTestRunner({
         const before = await get(`start_date=${dayBefore}&end_date=${dayBefore}`)
         expect(before.status).toBe(200)
         expect(before.data.summary.total_orders).toBe(0)
+
+        // SD-89 (a): a vendor in Los Angeles (UTC-8 in November) asks for
+        // 13 November. The panel sends the instants that bound that local day,
+        // as salesReportQuery builds them in their browser. One order was
+        // placed at 19:30 that evening, which is 03:30 UTC on the 14th; another
+        // at the next local midnight exactly. Dates in 2025, far from "now", so
+        // the orders above cannot fall in these windows.
+        const evening = await order([{ product: apron, quantity: 1, unit_price: 9 }])
+        await placedAt(evening.id, new Date("2025-11-13T19:30:00-08:00"))
+        const nextMidnight = await order([{ product: apron, quantity: 3, unit_price: 1 }])
+        await placedAt(nextMidnight.id, new Date("2025-11-14T00:00:00-08:00"))
+        const range = (start_date: string, end_date: string) =>
+          new URLSearchParams({ start_date, end_date }).toString()
+        const orderIds = (r: { data: { line_items: Array<{ order_id: string }> } }) =>
+          r.data.line_items.map((l) => l.order_id)
+
+        const nov13 = range("2025-11-13T08:00:00.000Z", "2025-11-14T07:59:59.999Z")
+        const local13 = await get(nov13)
+        expect(local13.status).toBe(200)
+        expect(orderIds(local13)).toEqual([evening.id])
+        expect(local13.data.summary).toMatchObject({ total_orders: 1, total_units_sold: 1, total_revenue: 9 })
+        expect(local13.data.date_range).toEqual({
+          start: "2025-11-13T08:00:00.000Z",
+          end: "2025-11-14T07:59:59.999Z",
+        })
+        // The same day written with its offset reads the same.
+        const withOffset = await get(range("2025-11-13T00:00:00-08:00", "2025-11-13T23:59:59.999-08:00"))
+        expect(withOffset.status).toBe(200)
+        expect(orderIds(withOffset)).toEqual([evening.id])
+        // The CSV export is sent the same instants and has the same row.
+        const local13Csv = await get(`${nov13}&format=csv`)
+        expect(local13Csv.status).toBe(200)
+        const csvRows = String(local13Csv.data).trim().split("\n")
+        expect(csvRows).toHaveLength(2)
+        expect(csvRows[1]).toMatch(/,1,9\.00,9\.00,"usd"$/)
+        // The next local day has the midnight order and not the evening one.
+        const local14 = await get(range("2025-11-14T08:00:00.000Z", "2025-11-15T07:59:59.999Z"))
+        expect(local14.status).toBe(200)
+        expect(orderIds(local14)).toEqual([nextMidnight.id])
+        // What the panel used to send for that day, the date-only 2025-11-13,
+        // is the UTC day, and the vendor's evening order is not in it.
+        const utc13 = await get("start_date=2025-11-13&end_date=2025-11-13")
+        expect(utc13.status).toBe(200)
+        expect(orderIds(utc13)).toEqual([])
 
         // A date it cannot read is the caller's error, not a 500.
         for (const q of ["end_date=garbage", "start_date=2026-02-31", "end_date=2026-13-01&format=csv"]) {
