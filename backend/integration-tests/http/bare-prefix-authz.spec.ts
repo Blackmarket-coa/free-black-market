@@ -8,6 +8,7 @@ import { TICKET_BOOKING_MODULE } from "../../src/modules/ticket-booking"
 import { VENDOR_BILLING_MODULE } from "../../src/modules/vendor-billing"
 import { CREATOR_PROGRAM_MODULE } from "../../src/modules/creator-program"
 import { CONTENT_PLATFORM_MODULE } from "../../src/modules/content-platform"
+import { createPublishableKeyToken } from "./_publishable-key"
 
 jest.setTimeout(240 * 1000)
 
@@ -26,6 +27,12 @@ jest.setTimeout(240 * 1000)
  *                                               cart's email and customer_id
  *   GET    /restaurants?admins[email]=…         200: a filter on any relation
  *   POST   /tickets/:id/verify                  200, the ticket was "scanned"
+ *   POST   /store/tickets/:id/verify            the same, with the publishable
+ *                                               key alone
+ *   DELETE /restaurants/<any id>/admins/:id     200, another restaurant's admin
+ *                                               was gone
+ *   POST   /v1/admin/... (admin cookie, sent    reached the handler; /admin/**
+ *           from another site's origin)         answers that 403
  *   POST   /webhooks/vendor-billing/stripe      200 "paid" for an event signed
  *                                               with an EMPTY key, while
  *                                               STRIPE_WEBHOOK_SECRET is unset
@@ -279,15 +286,17 @@ medusaIntegrationTestRunner({
         ])
         const ticketProduct = await tickets.createTicketProducts({ product_id: product.id, venue_id: venue.id, dates: ["2027-03-14"] })
         const variant = await tickets.createTicketProductVariants({ ticket_product_id: ticketProduct.id, product_variant_id: product.variants[0].id, row_type: "standard" })
-        const ticket = await tickets.createTicketPurchases({
-          order_id: "order_x",
-          ticket_product_id: ticketProduct.id,
-          ticket_variant_id: variant.id,
-          venue_row_id: row.id,
-          seat_number: "1",
-          show_date: new Date("2027-03-14"),
-        })
-        const status = async () => (await tickets.retrieveTicketPurchase(ticket.id)).status
+        const seat = (seatNumber: string) =>
+          tickets.createTicketPurchases({
+            order_id: "order_x",
+            ticket_product_id: ticketProduct.id,
+            ticket_variant_id: variant.id,
+            venue_row_id: row.id,
+            seat_number: seatNumber,
+            show_date: new Date("2027-03-14"),
+          })
+        const ticket = await seat("1")
+        const status = async (id: string = ticket.id) => (await tickets.retrieveTicketPurchase(id)).status
 
         for (const [who, headers] of Object.entries({ nobody: {}, ...strangers() })) {
           for (const path of [`/tickets/${ticket.id}/verify`, `/TICKETS/${ticket.id}/verify/`]) {
@@ -301,6 +310,24 @@ medusaIntegrationTestRunner({
         const scanned = await call(api.post(`/tickets/${ticket.id}/verify`, {}, admin.headers))
         expect([scanned.status, scanned.data]).toEqual([200, { success: true }])
         expect(await status()).toBe("scanned")
+
+        // The same workflow under /store. The publishable key gets a caller
+        // past the framework's /store check and is not a credential: it is on
+        // every page of the storefront, and /key-exchange hands it out.
+        const twin = await seat("2")
+        const pak = { "x-publishable-api-key": await createPublishableKeyToken(getContainer) }
+        const withoutKey = await call(api.post(`/store/tickets/${twin.id}/verify`, {}))
+        expect(withoutKey.status).toBe(400)
+        for (const [who, headers] of Object.entries({ "the key alone": { headers: {} }, ...strangers() })) {
+          for (const path of [`/store/tickets/${twin.id}/verify`, `/STORE/tickets/${twin.id}/VERIFY/`]) {
+            const res = await call(api.post(path, {}, { headers: { ...headers.headers, ...pak } }))
+            expect([who, path, res.status]).toEqual([who, path, 401])
+          }
+        }
+        expect(await status(twin.id)).toBe("pending")
+        const scannedTwin = await call(api.post(`/store/tickets/${twin.id}/verify`, {}, { headers: { ...admin.headers.headers, ...pak } }))
+        expect([scannedTwin.status, scannedTwin.data]).toEqual([200, { success: true }])
+        expect(await status(twin.id)).toBe("scanned")
       })
 
       it("POST /users is 401 for everyone: no middleware supplies the identity it asks for", async () => {
@@ -332,10 +359,16 @@ medusaIntegrationTestRunner({
         }
         expect((await container().resolve(DELIVERY_MODULE).retrieveDelivery(delivery.id)).delivery_status).toBe("pending")
 
-        for (const path of ["/health", "/health/ready", "/key-exchange", "/v1/marketplace/programs", "/v1/marketplace/services", "/v1/marketplace/listings"]) {
+        // (`/health` is not in this list: the test runner mounts its own
+        // "OK" ahead of the project's route, so a 200 there says nothing
+        // about ours.)
+        for (const path of ["/health/ready", "/key-exchange", "/product-feed", "/v1/marketplace/programs", "/v1/marketplace/services", "/v1/marketplace/listings"]) {
           const res = await call(api.get(path))
           expect([path, res.status]).toEqual([path, 200])
         }
+        // Nothing private in what the public ones say: no key of any kind
+        // exists here, so /key-exchange has nothing to hand out.
+        expect((await call(api.get("/key-exchange"))).data).toEqual({})
       })
     })
 
@@ -367,6 +400,29 @@ medusaIntegrationTestRunner({
         const res = await call(api.post("/webhooks/vendor-billing/stripe", forged.raw, forged.config))
         expect([res.status, res.data]).toEqual([400, { error: "Webhook verification failed" }])
         expect(await read()).toMatchObject({ status: "pending", stripe_payment_intent_id: null })
+      })
+
+      it("POST /webhooks/hawala/stripe refuses the same forgery", async () => {
+        // Two things stand in the way today: no matcher preserves this route's
+        // raw body, so it answers 400 to everything (Stripe included), and
+        // handleWebhook refuses an unset secret. Either alone keeps this 400;
+        // with both gone a verified event that matches no pending transaction
+        // answers 200 { received: true }.
+        process.env.STRIPE_SECRET_KEY = "sk_test_dummy"
+        delete process.env.STRIPE_WEBHOOK_SECRET
+        const raw = JSON.stringify({
+          id: "evt_spec_ach",
+          object: "event",
+          type: "payment_intent.succeeded",
+          data: { object: { id: "pi_spec_ach", object: "payment_intent", metadata: { type: "ach_deposit", ledger_account_id: "acct_spec" } } },
+        })
+        const t = Math.floor(Date.now() / 1000)
+        const v1 = createHmac("sha256", "").update(`${t}.${raw}`).digest("hex")
+        const res = await call(
+          api.post("/webhooks/hawala/stripe", raw, { headers: { "content-type": "application/json", "stripe-signature": `t=${t},v1=${v1}` } })
+        )
+        expect(res.status).toBe(400)
+        expect(res.data.received).toBeUndefined()
       })
 
       it("with the secret set, Stripe's signature settles the charge and the empty-key one still does not", async () => {

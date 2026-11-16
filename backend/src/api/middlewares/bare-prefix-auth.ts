@@ -38,11 +38,26 @@ import { enforceSameOriginForCookieAuth } from "../../shared/csrf-guard"
  * production, and without the check a page on another site could drive these
  * writes with a signed-in operator's cookie.
  *
+ * `/tickets/:id/verify` (marks a ticket scanned) was open the same way and is
+ * closed the same way: nothing says who scans at the door, and the recipe the
+ * route comes from gives it to an admin user.
+ *
  * `__tests__/bare-prefix-route-guards.unit.spec.ts` walks `src/api` and fails
  * when a route file outside the four trees is not in its reviewed list, or
  * when a route listed as middleware-guarded is reached without credentials.
  */
 export const ADMIN_ONLY_BARE_PREFIXES = ["/restaurants", "/tickets"] as const
+
+/**
+ * A route closed above that has a twin under /store. `/store/tickets/:id/verify`
+ * runs the same workflow as `/tickets/:id/verify` (it marks a ticket scanned),
+ * and all /store asks for is the publishable key, which is not a credential:
+ * every page of the storefront carries it and `/key-exchange` hands it to
+ * anyone. Closing one door and leaving the other open would close nothing, so
+ * the twin answers the same admin user. Seen on Postgres before this change:
+ * 200 and the ticket "scanned" with the publishable key alone.
+ */
+export const ADMIN_ONLY_STORE_TWINS = ["/store/tickets/:id/verify"] as const
 
 const adminOnly = () => [
   authenticate("user", ["bearer", "session"]),
@@ -50,7 +65,7 @@ const adminOnly = () => [
 ]
 
 export const barePrefixAuthMiddlewareRoutes: MiddlewareRoute[] = [
-  ...ADMIN_ONLY_BARE_PREFIXES.map((prefix) => ({
+  ...[...ADMIN_ONLY_BARE_PREFIXES, ...ADMIN_ONLY_STORE_TWINS].map((prefix) => ({
     matcher: prefix,
     middlewares: adminOnly(),
   })),

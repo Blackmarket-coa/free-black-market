@@ -31,10 +31,14 @@ import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
  *      (re-cased, trailing slash, percent-encoded id; SD-86 and SD-87 were
  *      both raw-path matching);
  *   3. a route REVIEWED says its handler guards itself no longer contains the
- *      call named as its guard;
+ *      call named as its guard, in THAT verb's handler (a file whose GET
+ *      checks and whose POST does not is the failure this is for);
  *   4. a middleware matcher appears outside the four trees that is not in
  *      BARE_MATCHERS: a terminating middleware serves content exactly like a
- *      route (the `/.well-known` alias does).
+ *      route (the `/.well-known` alias does);
+ *   5. a route closed out here still has an open twin under /store
+ *      (STORE_TWINS: `/store/tickets/:id/verify` ran the same workflow behind
+ *      nothing but the publishable key).
  *
  * What is real, as in `actor-path-rate-limit-key.unit.spec.ts`: Medusa's
  * MiddlewareFileLoader scanning `src/api`, its RoutesSorter, and every loaded
@@ -149,7 +153,10 @@ const REVIEWED: Record<string, Guard> = {
   "GET /well-known/freeblackmarket-publishing-keys.json": pub("Ed25519 PUBLIC keys the Blackout client pins"),
 
   // --- /webhooks: authenticated by signature, in the handler
-  "POST /webhooks/hawala/stripe": handler("Stripe signature (STRIPE_WEBHOOK_SECRET; refused while it is unset)", "achService.handleWebhook(rawBody, signature)"),
+  // No matcher preserves this route's raw body, so today it answers 400 to
+  // everything, Stripe included (seen on Postgres). The signature check is
+  // what guards it on the day the raw body is wired.
+  "POST /webhooks/hawala/stripe": handler("Stripe signature (STRIPE_WEBHOOK_SECRET; refused while it is unset). Dead today: 400 for want of the raw body", "achService.handleWebhook(rawBody, signature)"),
   "POST /webhooks/vendor-billing/stripe": handler("Stripe signature (STRIPE_WEBHOOK_SECRET; refused while it is unset)", ".handleWebhook("),
   "POST /webhooks/stripe-connect": handler("Stripe Connect signature (503 while STRIPE_CONNECT_WEBHOOK_SECRET is unset)", "verifyStripeConnectEvent(rawBody, signature, secret)"),
   "POST /webhooks/site-deploy": handler("HMAC-SHA256 with SITE_DEPLOY_SECRET (501 while it is unset)", "verifyDeploySignature(payload, signature)"),
@@ -323,6 +330,17 @@ const BARE_MATCHERS = [
   "/webhooks/vendor-billing/stripe",
 ]
 
+/**
+ * Routes under /store that run the same action as a route closed out here.
+ * /store asks for the publishable key and nothing else, and that key is public
+ * (`/key-exchange` hands it out), so the twin of an admin-only route is
+ * admin-only too. Probed with the routes above.
+ */
+const STORE_TWINS: Record<string, Guard> = {
+  "POST /store/tickets/:id/verify": ADMIN,
+}
+const GUARDS: Record<string, Guard> = { ...REVIEWED, ...STORE_TWINS }
+
 // ---------------------------------------------------------------------------
 // The walk
 // ---------------------------------------------------------------------------
@@ -343,31 +361,63 @@ function isOutsideGuardedTrees(rel: string): boolean {
   return !GUARDED_TREES.includes(rel.split(path.sep)[0])
 }
 
+const verbDeclaration = (verb: string) =>
+  new RegExp(`^export\\s+(?:const|let|var|async\\s+function|function)\\s+${verb}\\b`, "m")
+
+/** `[id]` in a route directory is `:id` in its matcher. */
+const matcherOf = (rel: string) =>
+  "/" +
+  path
+    .dirname(rel)
+    .split(path.sep)
+    .map((segment) => segment.replace(/^\[(.+)\]$/, ":$1"))
+    .join("/")
+
+function readRouteFile(apiDir: string, rel: string): WalkedRoute[] {
+  const source = fs.readFileSync(path.join(apiDir, rel), "utf8")
+  const matcher = matcherOf(rel)
+  // How Medusa's RoutesLoader reads a route file: one handler per exported verb.
+  const methods = VERBS.filter((verb) => verbDeclaration(verb).test(source))
+  const routes: WalkedRoute[] = methods.map((method) => ({ key: `${method} ${matcher}`, method, matcher, file: rel, source }))
+  // A route file that exports no verb is not a reviewed nothing: say so.
+  if (methods.length === 0) routes.push({ key: `(no verb) ${matcher}`, method: "", matcher, file: rel, source })
+  // `export { handler as POST }` and `export * from` export verbs this walk
+  // does not read. None exists; one that appears is unreviewed until the verb
+  // is declared in the file.
+  if (/^export\s*(\{|\*)/m.test(source)) routes.push({ key: `(re-export) ${matcher}`, method: "", matcher, file: rel, source })
+  return routes
+}
+
 function walkBareRoutes(apiDir: string): WalkedRoute[] {
-  const walked: WalkedRoute[] = []
-  for (const abs of routeFiles(apiDir).sort()) {
-    const rel = path.relative(apiDir, abs)
-    if (!isOutsideGuardedTrees(rel)) continue
-    const source = fs.readFileSync(abs, "utf8")
-    const matcher =
-      "/" +
-      path
-        .dirname(rel)
-        .split(path.sep)
-        .map((segment) => segment.replace(/^\[(.+)\]$/, ":$1"))
-        .join("/")
-    // How Medusa's RoutesLoader reads a route file: one handler per exported verb.
-    const methods = VERBS.filter((verb) =>
-      new RegExp(`export\\s+(?:const|let|var|async\\s+function|function)\\s+${verb}\\b`).test(source)
-    )
-    // A route file that exports no verb is not a reviewed nothing: say so.
-    if (methods.length === 0) walked.push({ key: `(no verb) ${matcher}`, method: "", matcher, file: rel, source })
-    for (const method of methods) walked.push({ key: `${method} ${matcher}`, method, matcher, file: rel, source })
-  }
-  return walked
+  return routeFiles(apiDir)
+    .sort()
+    .map((abs) => path.relative(apiDir, abs))
+    .filter(isOutsideGuardedTrees)
+    .flatMap((rel) => readRouteFile(apiDir, rel))
+}
+
+/**
+ * The text of one verb's handler: from its `export` to the next top-level
+ * `export`, or the end of the file. A guard named for a verb must be in here,
+ * not merely somewhere in the file.
+ */
+function handlerSource(source: string, verb: string): string {
+  const start = source.search(verbDeclaration(verb))
+  if (start < 0) return ""
+  const rest = source.slice(start + 1)
+  const next = rest.search(/^export\s/m)
+  return next < 0 ? source.slice(start) : source.slice(start, start + 1 + next)
 }
 
 const walked = walkBareRoutes(API_DIR)
+const twins: WalkedRoute[] = Object.keys(STORE_TWINS).flatMap((key) => {
+  const matcher = key.split(" ")[1]
+  const rel = path.join(...matcher.slice(1).split("/").map((segment) => segment.replace(/^:(.+)$/, "[$1]")), "route.ts")
+  return fs.existsSync(path.join(API_DIR, rel)) ? readRouteFile(API_DIR, rel) : []
+})
+/** Everything the harness below serves and probes. */
+const probed = [...walked, ...twins]
+const TWIN_MATCHERS = [...new Set(twins.map((r) => r.matcher))]
 
 // ---------------------------------------------------------------------------
 // The harness
@@ -430,9 +480,11 @@ beforeAll(async () => {
 
   const loader = new MiddlewareFileLoader()
   await loader.scanDir(API_DIR)
-  const loaded = loader.getMiddlewares().filter((m) => isBareMatcher(String(m.matcher)))
+  const loaded = loader
+    .getMiddlewares()
+    .filter((m) => isBareMatcher(String(m.matcher)) || TWIN_MATCHERS.includes(String(m.matcher)))
 
-  const sentinels: SentinelRoute[] = walked
+  const sentinels: SentinelRoute[] = probed
     .filter((r) => r.method)
     .map((r) => ({
       isRoute: true as const,
@@ -502,8 +554,8 @@ function isBareMatcher(matcher: string): boolean {
 }
 
 const guarded = (actors: Actor[]) =>
-  walked.filter((r) => {
-    const g = REVIEWED[r.key]
+  probed.filter((r) => {
+    const g = GUARDS[r.key]
     return g?.by === "middleware" && actors.includes(g.actor)
   })
 
@@ -538,10 +590,36 @@ describe("routes outside /store, /admin, /vendor and /auth", () => {
       if (g.by === "public" && g.why.trim().length < 20) missing.push(`${r.key}: no reason given`)
       if (g.by === "handler") {
         if (g.how.trim().length < 10) missing.push(`${r.key}: guard not described`)
-        if (!r.source.includes(g.calls)) missing.push(`${r.key}: ${r.file} no longer contains \`${g.calls}\``)
+        if (!handlerSource(r.source, r.method).includes(g.calls)) {
+          missing.push(`${r.key}: the ${r.method} handler in ${r.file} does not contain \`${g.calls}\``)
+        }
       }
     }
     expect(missing).toEqual([])
+  })
+
+  it("a guard is looked for in its own verb's handler, not anywhere in the file", () => {
+    const source = [
+      "export async function GET(req, res) {",
+      "  if (!requireCommerceApiKey(req, res)) return",
+      "}",
+      "",
+      "export const POST = async (req, res) => {",
+      "  res.json({})",
+      "}",
+    ].join("\n")
+    expect(handlerSource(source, "GET")).toContain("requireCommerceApiKey(req, res)")
+    expect(handlerSource(source, "POST")).not.toContain("requireCommerceApiKey(req, res)")
+    expect(handlerSource(source, "POST")).toContain("res.json({})")
+    expect(handlerSource(source, "DELETE")).toBe("")
+  })
+
+  it("every twin under /store of a route closed out here exists and is guarded the same way", () => {
+    expect(twins.map((r) => r.key).sort()).toEqual(Object.keys(STORE_TWINS).sort())
+    for (const twin of twins) {
+      const bare = `${twin.method} ${twin.matcher.replace(/^\/store/, "")}`
+      expect([twin.key, STORE_TWINS[twin.key]]).toEqual([twin.key, REVIEWED[bare]])
+    }
   })
 
   it("every middleware matcher out here is a reviewed one", async () => {
@@ -647,9 +725,9 @@ describe("an admin's session cookie cannot be driven from another site", () => {
   // routes out here accept the same cookie and had none.
   const writes = () => guarded(["admin"]).filter((r) => !["GET", "HEAD", "OPTIONS"].includes(r.method))
 
-  it("there are admin writes out here, under /restaurants, /tickets and /v1/admin", () => {
+  it("there are admin writes out here, under /restaurants, /tickets (and its /store twin) and /v1/admin", () => {
     const prefixes = new Set(writes().map((r) => r.matcher.split("/").slice(1, 3).join("/")))
-    expect([...prefixes].sort()).toEqual(["restaurants", "restaurants/:id", "tickets/:id", "v1/admin"])
+    expect([...prefixes].sort()).toEqual(["restaurants", "restaurants/:id", "store/tickets", "tickets/:id", "v1/admin"])
   })
 
   it("a cookie-authenticated write with a foreign Origin, or none, is refused", async () => {
