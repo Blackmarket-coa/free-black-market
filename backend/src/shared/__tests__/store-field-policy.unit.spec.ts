@@ -154,6 +154,15 @@ describe("store field policy", () => {
       ["/store/products", "*seller_link.seller"],
       // An inventory item may be shared with another product's variants.
       ["/store/products", "*variants.inventory.variants"],
+      ["/store/products", "*sales_channels.stock_locations"],
+      // By name, whatever it hangs off: a link added tomorrow is refused too.
+      ["/store/products", "*a_link_added_tomorrow.customer"],
+      ["/store/products", "*a_link_added_tomorrow.customers"],
+      ["/store/products", "*a_link_added_tomorrow.orders"],
+      ["/store/products", "*a_link_added_tomorrow.cart"],
+      ["/store/products", "*a_link_added_tomorrow.payment_collection"],
+      ["/store/products", "*a_link_added_tomorrow.payments"],
+      ["/store/products", "*a_link_added_tomorrow.addresses"],
       ["/store/collections", "*products.seller.orders"],
     ])("%s?fields=%s is dropped", async (route, spelling) => {
       expect(sanitizeStoreFields(await parsed(`id,${spelling}`), storeFieldProfile(route)).fields).toEqual(["id"])
