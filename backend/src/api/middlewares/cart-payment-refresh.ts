@@ -2,6 +2,7 @@ import type { MedusaNextFunction, MedusaRequest, MedusaResponse, MiddlewareRoute
 import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils"
 import { createLogger } from "../../shared/logger"
 import {
+  CART_PAYMENT_AMOUNT_MISMATCH,
   type CartPaymentAmounts,
   cartPaymentAmountMismatchResponse,
   cartPaymentRefreshFailedResponse,
@@ -12,10 +13,11 @@ import { refreshCartPaymentCollection } from "../../lib/cart-payment-refresh"
 const log = createLogger("api/middlewares/cart-payment-refresh")
 
 /**
- * SD-115: a cart's payment collection is kept at the cart's total around the
- * routes of `@mercurjs/b2c-core` that change that total and leave the
- * payment side behind, and a completion on a session for another amount is
- * refused. Why, and what each end guarantees: `lib/cart-payment-amount.ts`.
+ * SD-115: a cart's payment side is kept at the cart's total around the
+ * routes of `@mercurjs/b2c-core` that change that total and leave it behind,
+ * a completion on a session for another amount is refused, and a cart so
+ * refused is left ready to be paid at its total. Why, and what each end
+ * guarantees: `lib/cart-payment-amount.ts`.
  *
  * FBM cannot edit Mercur's routes and neither of its two workflows has a hook
  * that runs after its last write (`add-seller-shipping-method-to-cart`
@@ -120,8 +122,9 @@ async function withCartReadAgain(req: MedusaRequest, cartId: string, body: unkno
  * handler has answered and before the answer goes out.
  *
  * - The handler answered a success: its write is done. Each cart is
- *   refreshed (`refreshCartPaymentCollection`: a no-op when the collection
- *   already agrees, or there is none yet), then the answer is sent. When a
+ *   refreshed (`refreshCartPaymentCollection`: the collection takes the
+ *   total and a session for another amount is deleted; a no-op when both
+ *   already agree, or there is no collection yet), then the answer is sent. When a
  *   refresh fails the cart has changed and its payment has not, so the caller
  *   is not told it worked: the answer becomes 500
  *   `cart_payment_refresh_failed`, with a message that says to try again
@@ -242,26 +245,44 @@ const COMPLETION_FIELDS = [
   "payment_collection.payment_sessions.status",
 ]
 
+/** Put a refused cart's payment side right, so that the buyer's next step works. A failure is logged; the refusal stands. */
+async function settleAfterRefusal(scope: MedusaRequest["scope"], cartId: string): Promise<void> {
+  try {
+    await refreshCartPaymentCollection(scope, cartId)
+  } catch (error) {
+    log.error(
+      `[cart-payment] cart ${cartId}: refused, and its payment side could not be put right, so a session for another amount may still be on it: ${(error as Error)?.message ?? error}`,
+      { cart_id: cartId }
+    )
+  }
+}
+
 /**
  * `POST /store/carts/:id/complete`: a cart whose payment session is for an
  * amount that is not the cart's total is refused before Mercur's route runs,
  * so nothing is authorized and no order is created
  * (`judgeCartPaymentAmount`). This is what stops a page rendered before the
- * total changed, and any caller of the store API, neither of which the
- * storefront's own check can.
+ * total changed, a session opened while the total was changing, and any
+ * caller of the store API, none of which the storefront's own check can.
+ * Mercur's workflow has no hook to make the refusal from, which is why it is
+ * made here; everything that completes through Medusa's workflow is refused
+ * inside it (`workflows/hooks/validate-cart-payment-amount.ts`).
  *
- * The answer is 409 `cart_payment_amount_mismatch` with the buyer's message,
- * and the cart's payment collection is refreshed on the way out, so that the
- * message's instruction works: the session for the wrong amount is deleted
- * (its intent cancelled, releasing a hold the storefront's card confirmation
- * may have placed) and the next one is opened for the cart's total. A
- * refresh that fails is logged and the refusal stands.
+ * The answer is 409 `cart_payment_amount_mismatch` with the message that is
+ * true for the reason (`cartPaymentAmountMismatchResponse`), and the cart's
+ * payment side is put right on the way out, so that the message's
+ * instruction works: the collection takes the total and the session for the
+ * wrong amount is deleted, whichever of the two was behind (its intent is
+ * cancelled, releasing a hold the storefront's card confirmation may have
+ * placed), and the next session is opened for the cart's total. A captured
+ * session is the exception: it is left, and the buyer is sent to support.
  *
  * Closed on doubt: when the cart cannot be read, or the comparison cannot be
- * made, the completion is refused the same way. The read is a subset of the
- * one Mercur's completion makes next, so a cart this cannot read is one that
- * could not have completed. A cart that does not exist goes on to the route,
- * which answers for it.
+ * made, the completion is refused with the same status and code and a
+ * message that says only that (nothing is known then about the total having
+ * changed). The read is a subset of the one Mercur's completion makes next,
+ * so a cart this cannot read is one that could not have completed. A cart
+ * that does not exist goes on to the route, which answers for it.
  *
  * Read only as far as Coalition Credits go: it resolves the query and the
  * payment refresh, never the ledger (Posture A).
@@ -272,13 +293,13 @@ export async function refuseCompletionOnPaymentAmountMismatch(
   next: MedusaNextFunction
 ): Promise<void> {
   const cartId = String(req.params.id ?? "")
-  const refusal = cartPaymentAmountMismatchResponse()
 
   let cart: CartPaymentAmounts | undefined
   try {
     const { data } = await queryOf(req.scope).graph({ entity: "cart", fields: COMPLETION_FIELDS, filters: { id: cartId } })
     cart = data[0] as CartPaymentAmounts | undefined
   } catch (error) {
+    const refusal = cartPaymentAmountMismatchResponse("amount_unknown")
     log.error(
       `[cart-payment] cart ${cartId}: completion refused, its payment sessions could not be read to compare them with its total: ${(error as Error)?.message ?? error}`,
       { cart_id: cartId, reason: "amount_unknown" }
@@ -291,19 +312,64 @@ export async function refuseCompletionOnPaymentAmountMismatch(
   const verdict = judgeCartPaymentAmount(cart)
   if (verdict.ok) return next()
 
+  const refusal = cartPaymentAmountMismatchResponse(verdict.reason)
   log.error(`[cart-payment] completion refused: ${verdict.detail}; answered ${refusal.status} ${refusal.body.code}, nothing authorized`, {
     cart_id: cartId,
     reason: verdict.reason,
   })
-  try {
-    await refreshCartPaymentCollection(req.scope, cartId)
-  } catch (error) {
-    log.error(
-      `[cart-payment] cart ${cartId}: refused, and its payment collection could not be refreshed, so a new session would be opened for the old amount: ${(error as Error)?.message ?? error}`,
-      { cart_id: cartId }
-    )
-  }
+  await settleAfterRefusal(req.scope, cartId)
   res.status(refusal.status).json(refusal.body)
+}
+
+/** The cart a completion route was asked to complete. */
+type CartOf = (req: MedusaRequest) => unknown
+
+const cartParam =
+  (name: string): CartOf =>
+  (req) =>
+    req.params?.[name]
+/** `POST /store/subscriptions` names its cart in the body. */
+const cartInBody: CartOf = (req) => (req.body as { cart_id?: unknown } | null | undefined)?.cart_id
+
+/**
+ * The store routes that complete a cart through Medusa's
+ * `completeCartWorkflow`: when the guard inside that workflow refuses the
+ * completion for its session's amount, the cart's payment side is put right
+ * before the refusal goes out, as it is in front of Mercur's route.
+ *
+ * It acts after the handler, on that one answer and no other (the error
+ * handler's 409 `cart_payment_amount_mismatch`, `shared/error-sanitizer.ts`).
+ * By then the workflow has ended and released the cart, which the refresh
+ * needs; and the handler has run its own checks first, so a caller the route
+ * would have turned away (`POST /store/subscriptions` answers a cart that is
+ * not the caller's with 403) never reaches the refusal and cannot have this
+ * delete a session on someone else's cart. The answer itself is passed on
+ * unchanged.
+ */
+export function settleCartPaymentAfterRefusedCompletion(cartOf: CartOf) {
+  return function settleCartPaymentAfterRefusal(req: MedusaRequest, res: MedusaResponse, next: MedusaNextFunction): void {
+    const json = res.json.bind(res)
+    let held = false
+    res.json = ((body: unknown) => {
+      const cartId = cartOf(req)
+      const refused =
+        !held &&
+        statusOf(res) === cartPaymentAmountMismatchResponse().status &&
+        (body as { code?: unknown } | null | undefined)?.code === CART_PAYMENT_AMOUNT_MISMATCH &&
+        typeof cartId === "string" &&
+        cartId.length > 0
+      if (!refused) return json(body)
+      held = true
+      void settleAfterRefusal(req.scope, cartId as string)
+        .then(() => json(body))
+        .catch((error: unknown) => {
+          // The answer itself could not be sent (the connection is gone).
+          log.error(`[cart-payment] cart ${String(cartId)}: ${req.method} ${req.path}: the answer could not be sent: ${(error as Error)?.message ?? error}`)
+        })
+      return res
+    }) as MedusaResponse["json"]
+    next()
+  }
 }
 
 /**
@@ -337,6 +403,16 @@ export async function refuseCompletionOnPaymentAmountMismatch(
  *    (`lib/cart-payment-refresh.ts`). Its other cart routes (attribution,
  *    channel, group, booking, credits) write metadata only, and its
  *    rental add-to-cart runs Medusa's `addToCartWorkflow`.
+ *
+ * Which completions are here:
+ *  - Mercur's `POST /store/carts/:id/complete` is checked before it runs.
+ *  - FBM's four store routes that complete through Medusa's workflow are
+ *    refused inside it and settled after it: `complete-tickets`,
+ *    `complete-digital`, `POST /store/rentals/:cart_id` and `POST
+ *    /store/subscriptions`. The hosted checkout pages
+ *    (`/v1/checkout/sessions/:id/page` and Blackout's) answer the same
+ *    refusal as they answer any failed checkout and are not settled here;
+ *    renewals and Medusa's payment webhook have no caller to answer.
  */
 export const cartPaymentMiddlewareRoutes: MiddlewareRoute[] = [
   {
@@ -358,5 +434,25 @@ export const cartPaymentMiddlewareRoutes: MiddlewareRoute[] = [
     matcher: "/store/carts/:id/complete",
     method: "POST",
     middlewares: [refuseCompletionOnPaymentAmountMismatch],
+  },
+  {
+    matcher: "/store/carts/:id/complete-tickets",
+    method: "POST",
+    middlewares: [settleCartPaymentAfterRefusedCompletion(cartParam("id"))],
+  },
+  {
+    matcher: "/store/carts/:id/complete-digital",
+    method: "POST",
+    middlewares: [settleCartPaymentAfterRefusedCompletion(cartParam("id"))],
+  },
+  {
+    matcher: "/store/rentals/:cart_id",
+    method: "POST",
+    middlewares: [settleCartPaymentAfterRefusedCompletion(cartParam("cart_id"))],
+  },
+  {
+    matcher: "/store/subscriptions",
+    method: "POST",
+    middlewares: [settleCartPaymentAfterRefusedCompletion(cartInBody)],
   },
 ]

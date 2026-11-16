@@ -18,7 +18,7 @@ import {
 import { VENDOR_RULES_MODULE } from "../../../../../modules/vendor-rules"
 import type VendorRulesService from "../../../../../modules/vendor-rules/service"
 import { CustomerTierType } from "../../../../../modules/vendor-rules/models/vendor-customer-tier"
-import { cartPaymentRefreshFailedResponse } from "../../../../../lib/cart-payment-amount"
+import { cartAlreadyCompletedResponse, cartPaymentRefreshFailedResponse } from "../../../../../lib/cart-payment-amount"
 import { refreshCartAfterReprice } from "../../../../../lib/cart-payment-refresh"
 import { createLogger } from "../../../../../shared/logger"
 
@@ -64,6 +64,9 @@ const log = createLogger("api/store/carts/wholesale")
  *    `cart_payment_refresh_failed`, not a success. The no-op exits below
  *    write nothing and refresh nothing.
  *
+ * A cart that has already completed is refused before any of this, 400
+ * `cart_already_completed`: nothing is written to it.
+ *
  * No tier / no discount => 200 no-op with `{applied: false}`.
  *
  * Idempotency: re-POSTing with an unchanged tier is a no-op for line items
@@ -87,6 +90,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     entity: "cart",
     fields: [
       "id",
+      "completed_at",
       "metadata",
       "currency_code",
       "region_id",
@@ -103,6 +107,16 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
   })
   const cart = carts?.[0]
   if (!cart) return res.status(404).json({ message: "Cart not found" })
+
+  // A completed cart is refused before anything is written. Its order holds
+  // its own prices, so a reprice here changes nothing a buyer pays; and the
+  // refresh this route ends in refuses a completed cart (Medusa's
+  // `validateCartStep`), so the lines were being repriced and the call then
+  // answered 500 `cart_payment_refresh_failed` every time it was repeated.
+  if ((cart as { completed_at?: unknown }).completed_at) {
+    const refusal = cartAlreadyCompletedResponse()
+    return res.status(refusal.status).json(refusal.body)
+  }
 
   // Wholesale tiers are keyed by customer id, so an anonymous cart can never
   // qualify: without a customer this is a 200 no-op, not an auth error.

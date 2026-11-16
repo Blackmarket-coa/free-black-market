@@ -18,7 +18,7 @@ import {
   PLAYBOOK_RECIPES,
   type PlaybookId,
 } from "../../../../../modules/playbook"
-import { cartPaymentRefreshFailedResponse } from "../../../../../lib/cart-payment-amount"
+import { cartAlreadyCompletedResponse, cartPaymentRefreshFailedResponse } from "../../../../../lib/cart-payment-amount"
 import { refreshCartAfterReprice } from "../../../../../lib/cart-payment-refresh"
 import { createLogger } from "../../../../../shared/logger"
 
@@ -57,6 +57,9 @@ type Body = { tier?: unknown }
  *    When it fails the answer is 500 `cart_payment_refresh_failed`, not a
  *    success: the lines are repriced and the payment side is not.
  *
+ * A cart that has already completed is refused before any of this, 400
+ * `cart_already_completed`: nothing is written to it.
+ *
  * Line items from products on a Stall-playbook seller (or any seller
  * without a playbook assignment yet) are left untouched.
  *
@@ -83,6 +86,7 @@ export async function POST(req: MedusaRequest<Body>, res: MedusaResponse) {
     entity: "cart",
     fields: [
       "id",
+      "completed_at",
       "metadata",
       "currency_code",
       "region_id",
@@ -97,6 +101,16 @@ export async function POST(req: MedusaRequest<Body>, res: MedusaResponse) {
   })
   const cart = carts?.[0]
   if (!cart) return res.status(404).json({ message: "Cart not found" })
+
+  // A completed cart is refused before anything is written. Its order holds
+  // its own prices, so a reprice here changes nothing a buyer pays; and the
+  // refresh this route ends in refuses a completed cart (Medusa's
+  // `validateCartStep`), so the lines were being repriced and the call then
+  // answered 500 `cart_payment_refresh_failed` every time it was repeated.
+  if ((cart as { completed_at?: unknown }).completed_at) {
+    const refusal = cartAlreadyCompletedResponse()
+    return res.status(refusal.status).json(refusal.body)
+  }
 
   // Medusa line-item `unit_price` is a MAJOR-unit decimal (e.g. 19.99), but the
   // sliding-scale helper works in MINOR units (integer cents). Convert with the

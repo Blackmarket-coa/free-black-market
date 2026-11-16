@@ -21,6 +21,13 @@
  * message; it is answered 409 with its stable code and the buyer's message
  * instead, so every route that completes a cart refuses it the same way.
  *
+ * A second is answered the same way, for the same reason: a completion
+ * refused inside Medusa's `completeCartWorkflow` because the cart's payment
+ * session is not for the cart's total (SD-115, `lib/cart-payment-amount.ts`).
+ * Its type is `not_allowed`, which the framework would answer 400; it is
+ * answered 409 `cart_payment_amount_mismatch`, as the middleware in front of
+ * the main checkout answers the same refusal.
+ *
  * Wired as the `errorHandler` in `src/api/middlewares.ts`.
  */
 import { errorHandler as coreErrorHandler } from "@medusajs/framework/http"
@@ -30,6 +37,7 @@ import type {
   MedusaNextFunction,
 } from "@medusajs/framework/http"
 import { cartCompletionIncompleteResponse, isCartCompletionIncomplete } from "../lib/cart-completion"
+import { cartPaymentAmountRefusalResponse, isCartPaymentAmountRefusal } from "../lib/cart-payment-amount"
 import { createLogger } from "./logger"
 import { captureException } from "./sentry"
 
@@ -63,6 +71,16 @@ export function sanitizedErrorHandler() {
     // level; the response carries the buyer's message and the code only.
     if (isCartCompletionIncomplete(err)) {
       const refusal = cartCompletionIncompleteResponse(err)
+      res.status(refusal.status).json(refusal.body)
+      return
+    }
+
+    // SD-115: a completion refused for its payment session's amount, 409
+    // `cart_payment_amount_mismatch`. The guard that threw it has logged the
+    // cart and the two amounts; the response carries the buyer's message and
+    // the code only.
+    if (isCartPaymentAmountRefusal(err)) {
+      const refusal = cartPaymentAmountRefusalResponse(err)
       res.status(refusal.status).json(refusal.body)
       return
     }
