@@ -125,7 +125,7 @@ medusaIntegrationTestRunner({
         })
 
         const sock = `sock+${Date.now()}@attacker.example`
-        const reg = await safe(api.post("/auth/seller/emailpass/register", { email: sock, password: "supersecret123" }))
+        const reg = await safe(api.post("/auth/seller/emailpass/register", { email: sock, password: `${Date.now()}-sock-pw` }))
         expect(reg.status).toBe(200)
         const [identity] = await container()
           .resolve(Modules.AUTH)

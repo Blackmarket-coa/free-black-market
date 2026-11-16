@@ -211,7 +211,11 @@ describe("policy_version identifies the rules that decided", () => {
     expect(canonicalPolicyRules({ US: "US-RESTRICTED" })).toBe(
       '{"mapped":[["US","US-RESTRICTED",["non_cash"]]],"unmapped":["ROW-NONCASH",["non_cash"]]}'
     )
-    expect(version).toMatch(new RegExp(`^${MATRIX_POLICY_LABEL.replace(/[.@]/g, "\\$&")}\\+map:[0-9a-f]{12}$`))
+    // Compared as a prefix plus a hex suffix, not a regex built from the
+    // label, so no character in the label needs escaping.
+    const prefix = `${MATRIX_POLICY_LABEL}+map:`
+    expect(version.startsWith(prefix)).toBe(true)
+    expect(version.slice(prefix.length)).toMatch(/^[0-9a-f]{12}$/)
   })
 
   it("changes with the mapping, and only with what the mapping says", () => {
