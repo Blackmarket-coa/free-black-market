@@ -423,10 +423,16 @@ export function settleCartPaymentAfterRefusedCompletion(cartOf: CartOf) {
  *  - FBM's four store routes that complete through Medusa's workflow are
  *    refused inside it and settled after it: `complete-tickets`,
  *    `complete-digital`, `POST /store/rentals/:cart_id` and `POST
- *    /store/subscriptions`. The hosted checkout pages
- *    (`/v1/checkout/sessions/:id/page` and Blackout's) answer the same
- *    refusal as they answer any failed checkout and are not settled here;
- *    renewals and Medusa's payment webhook have no caller to answer.
+ *    /store/subscriptions` (each measured on Postgres).
+ *  - Refused inside Medusa's workflow and not settled: the hosted checkout
+ *    pages (`/v1/checkout/sessions/:id/page` and Blackout's), which answer
+ *    the refusal as they answer any failed checkout (not measured), and
+ *    subscription renewals and Medusa's payment webhook, which have no caller
+ *    to answer. There the session is left as it was (measured for the
+ *    webhook's workflow): the guard cannot settle it while the workflow holds
+ *    the cart, and every later completion on it is refused the same way
+ *    until a store route's refusal, or the pay button's "Update payment",
+ *    puts it right.
  */
 export const cartPaymentMiddlewareRoutes: MiddlewareRoute[] = [
   {
