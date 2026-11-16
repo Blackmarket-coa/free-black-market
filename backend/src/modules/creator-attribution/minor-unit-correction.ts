@@ -316,11 +316,149 @@ export type VendorDebitContext = {
    */
   order_refunds: ReadonlyArray<{ id: string; status: string; amount: number; from_vendor_id: string | null }>
   /**
+   * The order's payment records, or null when they could not be read (the
+   * read returned nothing, or threw: `order_payment_unread` says which). The
+   * ledger read above sees only refunds the ledger has posted, and it does
+   * not post every one: see {@link OrderPaymentSide}. A null, or a context
+   * with none, lists the order.
+   */
+  order_payment: OrderPaymentSide | null
+  /** Why `order_payment` is null, for the review line. */
+  order_payment_unread?: string | null
+  /**
    * Per vendor id: money that left that vendor's earnings after the order was
    * placed (payout requests PROCESSING, IN_TRANSIT or COMPLETED; WITHDRAWAL
    * or VENDOR_PAYMENT legs off their SELLER_EARNINGS that moved money).
    */
   vendor_withdrawals: Readonly<Record<string, ReadonlyArray<{ id: string; kind: string; status: string }>>>
+  /**
+   * Per vendor id: money taken from that vendor's earnings after the order
+   * was placed other than by a payout: ADJUSTMENT legs off their
+   * SELLER_EARNINGS that moved money (the ledger's recoveries of what a
+   * vendor owes — card processing, a refund made after a payout, a
+   * chargeback fee — taken from each later seller credit and before each
+   * payout; a manual adjustment posts the same type) and ADVANCE_REPAYMENT
+   * legs. A vendor missing here has none.
+   */
+  vendor_recoveries: Readonly<Record<string, ReadonlyArray<{ id: string; kind: string; status: string }>>>
+}
+
+/**
+ * What the order's payment records say was refunded, as the ledger's own
+ * settlement reads them (`readCardSettlementOrder` in
+ * `lib/card-order-settlement.ts`): the order's split payment row (every
+ * storefront order has one: Mercur's checkout writes one per seller's order
+ * on the cart's shared payment collection), that collection, and what Stripe
+ * reports for the charge. Amounts are MAJOR units, as Medusa stores them.
+ *
+ * Read because a refund can be made, and the customer paid back, with no
+ * REFUND leg in the ledger:
+ *
+ * - Medusa's own refund (the admin panel's Refund button) on a storefront
+ *   order refunds the shared collection and no split row. The ledger cannot
+ *   tell whose sale it was, posts nothing, and holds the sellers' payouts
+ *   until an admin assigns it (`lib/card-refund-attribution.ts`). That is
+ *   `unattributed_refund`, and it is reported for every order on the
+ *   collection, since any of them may be the one refunded. A refund made in
+ *   Stripe's dashboard on such an order shows the same way, once Stripe's
+ *   webhook has recorded it;
+ * - a refund on the split row (Mercur's refund) emits no event and is posted
+ *   only when the reconciler job next runs; and
+ * - once an order's legs are anchored SETTLED the reconciler posts no later
+ *   refund for it (SD-109 in docs/AUDIT_DEBT.md).
+ *
+ * The last two show as `refunded`.
+ */
+export type OrderPaymentSide = {
+  /**
+   * How the order was paid: `fbm_card` is FBM's own Stripe account, the only
+   * money the card ledger settles and the only kind whose refunds these
+   * records speak for. Anything else lists the order.
+   */
+  funding: string
+  /** The payment collection(s) the order's money moved through. */
+  payment_collection_ids: readonly string[]
+  /** Captured for this order; null when the records cannot put an amount on it. */
+  captured: number | null
+  /**
+   * Refunded for this order: its split row's figure, or its own collection's
+   * with Stripe's (a dashboard refund, a dispute lost). Null when the records
+   * cannot put an amount on this one order (no payment collection, or one
+   * shared with other orders with no split row).
+   */
+  refunded: number | null
+  /** Refunded on the order's shared collection and recorded on no order's split row; null when there is none. */
+  unattributed_refund: number | null
+  /** Held by a card dispute still open on the order's collection; 0 when none. */
+  dispute_open: number
+}
+
+/** The funding under which the payment records speak for the order's refunds. */
+const CARD_FUNDING = "fbm_card"
+
+const ATTRIBUTION_NOT_REVERSED =
+  "its attribution was not reversed (a refund does not reverse a held attribution; only a cancellation does)"
+
+/** A major-unit amount for a review line. */
+function describeAmount(amount: unknown): string {
+  return typeof amount === "number" && Number.isFinite(amount) ? String(amount) : "an unreadable amount"
+}
+
+/**
+ * The reasons the order's payment records give to list it: they could not be
+ * read, they are not a card payment's, they cannot say what was refunded for
+ * this order, or they show a refund or an open dispute. Every comparison is
+ * written so that a missing or unreadable figure lists the order.
+ */
+function reviewOrderPayment(ctx: VendorDebitContext): string[] {
+  const pay = ctx.order_payment
+  if (!pay) {
+    return [
+      `the order's payment records could not be read (${ctx.order_payment_unread || "the read returned nothing"}), ` +
+        `so it cannot be shown that the order was not refunded`,
+    ]
+  }
+  const reasons: string[] = []
+  const ids = pay.payment_collection_ids ?? []
+  const collection = ids.length ? `payment collection ${ids.join(", ")}` : "payment collection"
+  if (pay.funding !== CARD_FUNDING) {
+    reasons.push(
+      `the order was not paid through FBM's own card account (its payment reads as "${String(pay.funding)}"; ` +
+        `${ids.length ? collection : "it has no payment collection"}), ` +
+        `so its payment records cannot show that it was not refunded`
+    )
+  } else if (typeof pay.refunded !== "number" || !Number.isFinite(pay.refunded)) {
+    reasons.push(
+      `what was refunded for the order cannot be read from its payment records ` +
+        `(${ids.length ? `${collection} carries` : "they carry"} no amount that is this order's alone), ` +
+        `so it cannot be shown that it was not refunded`
+    )
+  }
+  if (typeof pay.refunded === "number" && pay.refunded > 0) {
+    const figure =
+      `the order's payment records show ${describeAmount(pay.refunded)} refunded` +
+      (pay.captured === null ? "" : ` of ${describeAmount(pay.captured)} captured`)
+    reasons.push(
+      ctx.order_refunds.length
+        ? figure
+        : `${figure} and the ledger has posted no refund leg for it ` +
+            `(the reconciler has not posted it yet, or does not post it), and ${ATTRIBUTION_NOT_REVERSED}`
+    )
+  }
+  if (pay.unattributed_refund !== null && !(pay.unattributed_refund <= 0)) {
+    reasons.push(
+      `${describeAmount(pay.unattributed_refund)} was refunded on the order's ${collection} and is recorded on no order ` +
+        `(Medusa's own refund on a storefront order, or a refund made in Stripe: the ledger posts nothing for it until ` +
+        `an admin assigns it to the sellers' orders), so some or all of it may be this order's, and ${ATTRIBUTION_NOT_REVERSED}`
+    )
+  }
+  if (!(pay.dispute_open <= 0)) {
+    reasons.push(
+      `a card dispute holding ${describeAmount(pay.dispute_open)} is open on the order's ${collection}: ` +
+        `the ledger posts no refund for it while it is open, and a dispute lost is a refund of the order`
+    )
+  }
+  return reasons
 }
 
 /** The vendors approve-held would debit for these rows: those of rows it will still credit. */
@@ -367,10 +505,30 @@ function describeAge(ms: number): string {
  *   attribution (only a cancellation does), and a card order refunded in
  *   part keeps its settlement leg, so without this the full commission would
  *   be debited for a sale the vendor gave most of back;
+ * - is on an order whose payment records ({@link OrderPaymentSide}) show a
+ *   refund for it, a refund on its payment collection that no order accounts
+ *   for, or a card dispute still open. The ledger does not post every
+ *   refund, and the one an operator makes from the admin panel on a
+ *   storefront order is among those it does not, so the ledger read above is
+ *   kept for what it adds to the line and this is what decides;
+ * - is on an order whose payment records cannot answer that: the read
+ *   returned nothing or failed, the order was not paid through FBM's own
+ *   card account, or the records put no amount on this one order. What
+ *   `readCardSettlementOrder` returns for an order not paid by card is a
+ *   record with funding `other` (or `connect_direct`) and, when the order
+ *   has its own payment collection, that collection's captured and refunded
+ *   amounts; with none, both are null. Neither is taken as "not refunded":
+ *   the ledger settles only FBM card money, and another provider's refund
+ *   need not be on Medusa's collection at all;
  * - names a vendor who has been paid out since the order was placed: a
  *   payout request that moved money, or a withdrawal or a payment to another
  *   vendor off their earnings. The commission was never carved out of that
  *   money, so the debit would come out of later sales' proceeds;
+ * - names a vendor whose earnings were drawn on since the order was placed
+ *   to recover what they owed (an ADJUSTMENT leg: card processing, a refund
+ *   after a payout, a chargeback fee; a manual adjustment is the same type)
+ *   or to repay an advance (ADVANCE_REPAYMENT). The same reasoning: what was
+ *   taken had no commission carved out of it;
  * - is on an order whose proceeds a Mercur payout already sent;
  * - is on an order placed, or settled to the vendor's earnings, less than
  *   {@link PAYOUT_WINDOW_MS} before the check with no Mercur payout yet: the
@@ -390,9 +548,12 @@ function describeAge(ms: number): string {
  * seller only later gets an active payout account, a payout request raised
  * the next day), or an order refunded in between, is debited the full
  * commission out of whatever the vendor holds by then. Nor does it read
- * every way money leaves a vendor's earnings: recoveries of what a vendor
- * owes (ADJUSTMENT legs taken from the seller credit at settlement) and
- * advance repayments are not looked at. Commission is not reserved from the
+ * every way money leaves a vendor's earnings: payout requests, and legs of
+ * type WITHDRAWAL, VENDOR_PAYMENT, ADJUSTMENT and ADVANCE_REPAYMENT off
+ * them, are read; a debit of any other entry type is not looked at. And
+ * "not refunded" is what the ledger and the payment records show at
+ * `checked_at`: a refund made in Stripe's dashboard is in neither until
+ * Stripe's webhook has recorded it. Commission is not reserved from the
  * vendor at settlement, for corrected rows or for any new attributed order;
  * until it is, or until approve-held makes these checks itself, this narrows
  * the cases and settles none of them. Hence: run the script immediately
@@ -447,6 +608,15 @@ export function reviewVendorDebit(
           `and the commission was never carved out of what they were paid`
       )
     }
+    const recovered = ctx.vendor_recoveries[vendor] ?? []
+    if (recovered.length) {
+      const shown = recovered.slice(0, 3).map((w) => `${w.kind} ${w.id} ${w.status}`)
+      reasons.push(
+        `vendor ${vendor}'s earnings were drawn on since the order was placed ` +
+          `(${shown.join(", ")}${recovered.length > 3 ? ", …" : ""}: a recovery of what they owed, or a manual adjustment), ` +
+          `and the commission was never carved out of what was taken`
+      )
+    }
   }
   if (ctx.order_refunds.length && !ctx.order_refunds.some((r) => r.from_vendor_id !== null && vendors.includes(r.from_vendor_id))) {
     // Refunded, but not out of the attributed vendor's earnings: they held
@@ -459,6 +629,7 @@ export function reviewVendorDebit(
         `(a refund does not reverse a held attribution; only a cancellation does)`
     )
   }
+  reasons.push(...reviewOrderPayment(ctx))
   if (ctx.order_payout_ids.length) {
     reasons.push(`the order's proceeds were already sent to the vendor by Mercur payout ${ctx.order_payout_ids.join(", ")}`)
   } else if (ctx.order_placed_at) {

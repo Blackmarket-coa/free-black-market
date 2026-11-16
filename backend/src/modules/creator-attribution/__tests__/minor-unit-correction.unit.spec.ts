@@ -6,6 +6,7 @@ import {
   reviewVendorDebit,
   vendorsDebitedOnApproval,
   type CommissionMinorUnitCorrection,
+  type OrderPaymentSide,
   type StoredAttributionAmounts,
   type VendorDebitContext,
 } from "../minor-unit-correction"
@@ -173,6 +174,15 @@ describe("reviewVendorDebit", () => {
   const row = (over: Partial<StoredAttributionAmounts> = {}) => legacyRow({ vendor_id: "sel_vendor", ...over })
   const PLACED = "2026-10-01T12:00:00.000Z"
   const after = (ms: number) => new Date(Date.parse(PLACED) + ms).toISOString()
+  /** A card order's payment records with nothing refunded: $25 captured on its own collection. */
+  const paidByCard: OrderPaymentSide = {
+    funding: "fbm_card",
+    payment_collection_ids: ["pay_col_1"],
+    captured: 25,
+    refunded: 0,
+    unattributed_refund: null,
+    dispute_open: 0,
+  }
   const clean: VendorDebitContext = {
     order_seller_id: "sel_vendor",
     order_placed_at: PLACED,
@@ -183,7 +193,9 @@ describe("reviewVendorDebit", () => {
     order_settled_at: { sel_vendor: PLACED },
     order_settlement_reversed: {},
     order_refunds: [],
+    order_payment: paidByCard,
     vendor_withdrawals: { sel_vendor: [] },
+    vendor_recoveries: { sel_vendor: [] },
   }
   const DAY = 24 * 60 * 60 * 1000
   const planFor = (rows: StoredAttributionAmounts[]) => {
@@ -275,6 +287,151 @@ describe("reviewVendorDebit", () => {
     // More than three are cut short.
     const many = reviewVendorDebit(planFor(rows), rows, { ...clean, order_refunds: ["a", "b", "c", "d"].map((id) => off(`hle_${id}`, 1)) })
     expect(many).toContain("(refund leg hle_a 1 COMPLETED, refund leg hle_b 1 COMPLETED, refund leg hle_c 1 COMPLETED, …)")
+  })
+
+  it("lists an order its payment records show refunded when the ledger has posted no refund leg for it", () => {
+    const rows = [row()]
+    const notReversed = "its attribution was not reversed (a refund does not reverse a held attribution; only a cancellation does)"
+    const pay = (over: Partial<OrderPaymentSide>): VendorDebitContext => ({ ...clean, order_payment: { ...paidByCard, ...over } })
+
+    // Refunded on the order's own record (its split row, or its own
+    // collection) and not in the ledger: a split-row refund the reconciler
+    // has not posted, or one it does not post once the legs are SETTLED.
+    const unposted = reviewVendorDebit(planFor(rows), rows, pay({ refunded: 20 }))
+    expect(unposted).toContain(
+      `the order's payment records show 20 refunded of 25 captured and the ledger has posted no refund leg for it ` +
+        `(the reconciler has not posted it yet, or does not post it), and ${notReversed}`
+    )
+    expect(unposted).toContain("from 2 to 250")
+    // The smallest refund lists it; none does not.
+    expect(reviewVendorDebit(planFor(rows), rows, pay({ refunded: 0.01 }))).toContain("show 0.01 refunded of 25 captured")
+    expect(reviewVendorDebit(planFor(rows), rows, pay({ refunded: 0 }))).toBeNull()
+    // No captured figure to set it against.
+    expect(reviewVendorDebit(planFor(rows), rows, pay({ refunded: 20, captured: null }))).toContain(
+      "the order's payment records show 20 refunded and the ledger has posted no refund leg for it"
+    )
+
+    // The ledger posted it too: both are said, and the payment line does
+    // not claim the ledger is missing it.
+    const posted = reviewVendorDebit(planFor(rows), rows, {
+      ...pay({ refunded: 20 }),
+      order_refunds: [{ id: "hle_r1", status: "COMPLETED", amount: 19.4, from_vendor_id: "sel_vendor" }],
+    })
+    expect(posted).toContain("the order was refunded out of vendor sel_vendor's earnings (refund leg hle_r1 19.4 COMPLETED)")
+    expect(posted).toContain("; the order's payment records show 20 refunded of 25 captured. Correcting would raise")
+    expect(posted).not.toContain("has posted no refund leg")
+  })
+
+  it("lists an order when a refund on its payment collection is recorded on no order, or a card dispute is open on it", () => {
+    const rows = [row()]
+    const pay = (over: Partial<OrderPaymentSide>): VendorDebitContext => ({ ...clean, order_payment: { ...paidByCard, ...over } })
+
+    // Medusa's own refund on a storefront order: on the shared collection,
+    // on no split row, and so not in the ledger and not this order's
+    // `refunded` either.
+    const unassigned = reviewVendorDebit(planFor(rows), rows, pay({ refunded: 0, unattributed_refund: 20 }))
+    expect(unassigned).toContain(
+      "20 was refunded on the order's payment collection pay_col_1 and is recorded on no order " +
+        "(Medusa's own refund on a storefront order, or a refund made in Stripe: the ledger posts nothing for it until " +
+        "an admin assigns it to the sellers' orders), so some or all of it may be this order's, and its attribution was not reversed"
+    )
+    expect(unassigned).toContain("from 2 to 250")
+    expect(reviewVendorDebit(planFor(rows), rows, pay({ unattributed_refund: 0.01 }))).toContain("0.01 was refunded on the order's payment collection")
+    expect(reviewVendorDebit(planFor(rows), rows, pay({ unattributed_refund: 0 }))).toBeNull()
+    expect(reviewVendorDebit(planFor(rows), rows, pay({ unattributed_refund: null }))).toBeNull()
+    // A figure that cannot be read is not "none".
+    expect(reviewVendorDebit(planFor(rows), rows, pay({ unattributed_refund: NaN }))).toContain(
+      "an unreadable amount was refunded on the order's payment collection pay_col_1"
+    )
+
+    const disputed = reviewVendorDebit(planFor(rows), rows, pay({ dispute_open: 25 }))
+    expect(disputed).toContain(
+      "a card dispute holding 25 is open on the order's payment collection pay_col_1: " +
+        "the ledger posts no refund for it while it is open, and a dispute lost is a refund of the order"
+    )
+    expect(reviewVendorDebit(planFor(rows), rows, pay({ dispute_open: 0.01 }))).toContain("a card dispute holding 0.01 is open")
+    for (const dispute_open of [NaN, undefined as unknown as number]) {
+      expect(reviewVendorDebit(planFor(rows), rows, pay({ dispute_open }))).toContain("a card dispute holding an unreadable amount is open")
+    }
+  })
+
+  it("lists an order whose payment records could not be read, are not a card payment's, or put no amount on the order", () => {
+    const rows = [row()]
+    const cannotShow = "so it cannot be shown that the order was not refunded"
+
+    // The read failed or returned nothing; a context built with no payment
+    // side at all is read the same way.
+    expect(
+      reviewVendorDebit(planFor(rows), rows, { ...clean, order_payment: null, order_payment_unread: "the read failed: boom" })
+    ).toContain(`the order's payment records could not be read (the read failed: boom), ${cannotShow}`)
+    expect(reviewVendorDebit(planFor(rows), rows, { ...clean, order_payment: null })).toContain(
+      `the order's payment records could not be read (the read returned nothing), ${cannotShow}`
+    )
+    const { order_payment: _none, ...withoutPaymentSide } = clean
+    expect(reviewVendorDebit(planFor(rows), rows, withoutPaymentSide as VendorDebitContext)).toContain("could not be read")
+
+    // Not paid through FBM's card account. With no payment collection the
+    // read gives no captured or refunded amount; with one of another
+    // provider it gives that collection's, and a 0 there is still not taken
+    // as "not refunded".
+    const unpaid = reviewVendorDebit(planFor(rows), rows, {
+      ...clean,
+      order_payment: { ...paidByCard, funding: "other", payment_collection_ids: [], captured: null, refunded: null },
+    })
+    expect(unpaid).toContain(
+      `the order was not paid through FBM's own card account (its payment reads as "other"; it has no payment collection), ` +
+        `so its payment records cannot show that it was not refunded`
+    )
+    for (const funding of ["other", "connect_direct"]) {
+      const reason = reviewVendorDebit(planFor(rows), rows, { ...clean, order_payment: { ...paidByCard, funding } })
+      expect(reason).toContain(`(its payment reads as "${funding}"; payment collection pay_col_1)`)
+    }
+
+    // A card payment whose collection is shared with other orders and has no
+    // per-order record: no amount is this order's.
+    const shared = reviewVendorDebit(planFor(rows), rows, { ...clean, order_payment: { ...paidByCard, captured: null, refunded: null } })
+    expect(shared).toContain(
+      "what was refunded for the order cannot be read from its payment records " +
+        "(payment collection pay_col_1 carries no amount that is this order's alone), so it cannot be shown that it was not refunded"
+    )
+    expect(
+      reviewVendorDebit(planFor(rows), rows, { ...clean, order_payment: { ...paidByCard, refunded: NaN } })
+    ).toContain("what was refunded for the order cannot be read")
+  })
+
+  it("lists an order whose vendor's earnings were drawn on since it was placed by a recovery or an advance repayment", () => {
+    const rows = [row()]
+    const reason = reviewVendorDebit(planFor(rows), rows, {
+      ...clean,
+      vendor_recoveries: {
+        sel_vendor: [
+          { id: "hle_adj", kind: "adjustment", status: "COMPLETED" },
+          { id: "hle_adv", kind: "advance repayment", status: "SETTLED" },
+        ],
+      },
+    })
+    expect(reason).toContain(
+      "vendor sel_vendor's earnings were drawn on since the order was placed " +
+        "(adjustment hle_adj COMPLETED, advance repayment hle_adv SETTLED: a recovery of what they owed, or a manual adjustment), " +
+        "and the commission was never carved out of what was taken"
+    )
+    expect(reason).toContain("from 2 to 250")
+    expect(reason).not.toContain("has been paid out")
+    // Another vendor's recoveries are not this vendor's; a vendor the script
+    // did not answer for has none.
+    expect(
+      reviewVendorDebit(planFor(rows), rows, {
+        ...clean,
+        vendor_recoveries: { sel_other: [{ id: "hle_adj", kind: "adjustment", status: "COMPLETED" }] },
+      })
+    ).toBeNull()
+    expect(reviewVendorDebit(planFor(rows), rows, { ...clean, vendor_recoveries: {} })).toBeNull()
+    // More than three are cut short.
+    const many = reviewVendorDebit(planFor(rows), rows, {
+      ...clean,
+      vendor_recoveries: { sel_vendor: ["a", "b", "c", "d"].map((id) => ({ id: `hle_${id}`, kind: "adjustment", status: "COMPLETED" })) },
+    })
+    expect(many).toContain("(adjustment hle_a COMPLETED, adjustment hle_b COMPLETED, adjustment hle_c COMPLETED, …: a recovery")
   })
 
   it("lists an order placed inside the payout window that Mercur has not paid yet; one exactly at the window's end passes", () => {
@@ -378,7 +535,10 @@ describe("reviewVendorDebit", () => {
       order_settled_to_vendor: {},
       order_settled_at: {},
       order_refunds: [{ id: "hle_r1", status: "COMPLETED", amount: 19.4, from_vendor_id: "sel_vendor" }],
+      // Refunded and disputed by the payment records, or not readable at all.
+      order_payment: { ...paidByCard, refunded: 20, unattributed_refund: 5, dispute_open: 25 },
       vendor_withdrawals: { sel_vendor: [{ id: "pr_1", kind: "payout request", status: "COMPLETED" }] },
+      vendor_recoveries: { sel_vendor: [{ id: "hle_adj", kind: "adjustment", status: "COMPLETED" }] },
     }
     for (const rows of [
       [row({ commission_status: CommissionStatus.REVERSED })],
@@ -387,6 +547,7 @@ describe("reviewVendorDebit", () => {
     ]) {
       expect(vendorsDebitedOnApproval(rows)).toEqual([])
       expect(reviewVendorDebit(planFor(rows), rows, paidOut)).toBeNull()
+      expect(reviewVendorDebit(planFor(rows), rows, { ...paidOut, order_payment: null })).toBeNull()
     }
   })
 

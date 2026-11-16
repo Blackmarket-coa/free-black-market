@@ -1,5 +1,6 @@
 import type { ExecArgs, MedusaContainer } from "@medusajs/framework/types"
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
+import { readCardSettlementOrder } from "../lib/card-order-settlement"
 import { CREATOR_ATTRIBUTION_MODULE } from "../modules/creator-attribution"
 import type CreatorAttributionService from "../modules/creator-attribution/service"
 import {
@@ -7,6 +8,7 @@ import {
   reviewVendorDebit,
   vendorsDebitedOnApproval,
   type MajorUnitOrderTotals,
+  type OrderPaymentSide,
   type StoredAttributionAmounts,
   type VendorDebitContext,
 } from "../modules/creator-attribution/minor-unit-correction"
@@ -59,13 +61,34 @@ import { APPLY_OR_DRY_RUN, parseScriptArgs } from "../shared/exec-args"
  *   money credits them: settlement with FF_CARD_ORDER_LEDGER_V1 off, a
  *   charge on a partner's connected account, a non-USD card order; or a
  *   refund reversed the leg);
- * - the order was refunded in the ledger, in part or in full (a REFUND leg
- *   of the order moved money). A refund does not reverse a held attribution:
- *   nothing emits the `order.refund_created` the reversal listens for, only
- *   `order.canceled` reaches it;
+ * - the order was refunded, in part or in full. A refund does not reverse a
+ *   held attribution: nothing emits the `order.refund_created` the reversal
+ *   listens for, only `order.canceled` reaches it. Two reads, because the
+ *   ledger does not post every refund:
+ *   - the ledger: a REFUND leg of the order moved money; and
+ *   - the order's payment records, read as the ledger's own settlement reads
+ *     them (`readCardSettlementOrder`: the order's split payment row, its
+ *     payment collection, Stripe's figures for the charge): an amount
+ *     refunded for the order; an amount refunded on its payment collection
+ *     that is recorded on no order; or a card dispute still open on it. A
+ *     storefront order shares its cart's payment collection, and a refund
+ *     made with Medusa's own refund (the admin panel's Refund button) is
+ *     recorded on the collection and on no order: the ledger posts nothing
+ *     for it until an admin assigns it. Nor is a refund in the ledger when
+ *     it was made on the split row and the reconciler job has not run
+ *     since, or when the order's legs were already anchored SETTLED, which
+ *     the reconciler does not post (SD-109). Reading the ledger alone
+ *     corrected all three;
+ * - the order's payment records cannot answer that: they could not be read,
+ *   the order was not paid through FBM's own card account (no payment
+ *   collection, another provider, a partner's connected account), or they
+ *   put no amount on this one order. Listed, not assumed unrefunded;
  * - the vendor has been paid out since the order was placed (a payout
  *   request that moved money, or a withdrawal or a payment to another vendor
  *   off their earnings);
+ * - the vendor's earnings were drawn on since the order was placed to
+ *   recover what they owed or by a manual adjustment (an ADJUSTMENT or
+ *   ADVANCE_REPAYMENT leg off their earnings);
  * - Mercur already paid the order's proceeds out (`order.payouts`); or
  * - the order was placed, or settled to the vendor's earnings, in the last
  *   2 days and Mercur has not paid it yet: the nightly payout
@@ -77,10 +100,17 @@ import { APPLY_OR_DRY_RUN, parseScriptArgs } from "../shared/exec-args"
  *
  * What is corrected is an order placed and settled at least 2 days ago whose
  * seller is the vendor debited, whose proceeds entered that vendor's
- * earnings, which has not been refunded, and which no payout has touched
- * since. With FF_CARD_ORDER_LEDGER_V1 off (the default) no order settles to
- * the ledger (the legacy settlement throws before any leg, SD-39), so no
- * held or pending row that names a vendor is corrected: every one is listed.
+ * earnings, which was paid by card, whose payment records show nothing
+ * refunded for it, nothing refunded on its collection that no order accounts
+ * for and no open dispute, which has no refund leg in the ledger, and whose
+ * vendor's earnings no payout or recovery has drawn on since. That is all
+ * "not refunded" means here: a refund made in Stripe's dashboard is seen
+ * only once Stripe's webhook has recorded it, and a debit of a vendor's
+ * earnings of any entry type other than WITHDRAWAL, VENDOR_PAYMENT,
+ * ADJUSTMENT and ADVANCE_REPAYMENT is not read. With
+ * FF_CARD_ORDER_LEDGER_V1 off (the default) no order settles to the ledger
+ * (the legacy settlement throws before any leg, SD-39), so no held or
+ * pending row that names a vendor is corrected: every one is listed.
  *
  * WHEN TO RUN IT: IMMEDIATELY BEFORE THE REPAIR THAT MAKES COMMISSION
  * CREDITING WORK DEPLOYS, NOT EARLIER. Those checks are made once, when
@@ -148,6 +178,18 @@ const SETTLEMENT_LEG_STATUSES = [...MOVED_ENTRY_STATUSES, "REVERSED"] as const
  * an ACH withdrawal) or a payment to another vendor.
  */
 const OUTFLOW_ENTRY_TYPES = ["WITHDRAWAL", "VENDOR_PAYMENT"] as const
+
+/**
+ * Ledger legs by which money is taken from a vendor's earnings other than by
+ * a payout. ADJUSTMENT: the ledger's recoveries of what a vendor owes (card
+ * processing they could not absorb, a refund made after they were paid out,
+ * a chargeback fee), taken from each later seller credit and before each
+ * payout (`recoverCardProcessingShortfall`); a manual adjustment posts the
+ * same type. ADVANCE_REPAYMENT: `processAdvanceRepayment`'s leg (nothing
+ * calls it today). Only legs that DEBIT the vendor's earnings are read, so
+ * an ADJUSTMENT that returns a failed payout to them is not one.
+ */
+const RECOVERY_ENTRY_TYPES = ["ADJUSTMENT", "ADVANCE_REPAYMENT"] as const
 
 /**
  * The idempotency keys of the legs by which settlement credits an order's
@@ -219,9 +261,40 @@ async function readOrderTotals(
 }
 
 /**
+ * What the order's payment records say was refunded for it, read the way the
+ * ledger's own settlement reads them, so the gate and the ledger cannot
+ * disagree about which order a collection's money belongs to. Null with the
+ * reason when the read returns nothing (no such order, or no totals) or
+ * throws: the gate lists an order it could not read.
+ */
+async function readOrderPayment(
+  container: MedusaContainer,
+  orderId: string
+): Promise<{ payment: OrderPaymentSide | null; unread: string | null }> {
+  try {
+    const paid = await readCardSettlementOrder(container, orderId)
+    if (!paid) return { payment: null, unread: "no order, or no order totals, were found" }
+    return {
+      payment: {
+        funding: paid.funding,
+        payment_collection_ids: paid.payment_collection_ids,
+        captured: paid.captured,
+        refunded: paid.refunded,
+        unattributed_refund: paid.unattributed_refund,
+        dispute_open: paid.dispute_open,
+      },
+      unread: null,
+    }
+  } catch (error) {
+    return { payment: null, unread: `the read failed: ${error instanceof Error ? error.message : String(error)}` }
+  }
+}
+
+/**
  * Who approve-held would debit for this order, whether and when the order's
- * proceeds reached them, whether the order was refunded, and whether they
- * have been paid since it was placed (`reviewVendorDebit`).
+ * proceeds reached them, whether the order was refunded (by the ledger and
+ * by its payment records), and whether they have been paid, or their
+ * earnings drawn on, since it was placed (`reviewVendorDebit`).
  * `placedAtFallback` is the L1 row's `created_at`: the subscriber writes it
  * at `order.placed`. `now` is when this is read; the answer speaks for that
  * moment only.
@@ -257,18 +330,21 @@ async function readVendorDebitContext(
   })
   // Every refund leg of the order that moved money, whoever it debited: a
   // card refund posts them through `payment.refunded` and leaves the
-  // attribution held.
+  // attribution held. Only the refunds the ledger has posted; the payment
+  // records below are what say whether the order was refunded.
   const refundLegs = await hawala.listLedgerEntries({
     order_id: orderId,
     entry_type: "REFUND",
     status: [...MOVED_ENTRY_STATUSES],
   })
+  const paymentSide = await readOrderPayment(container, orderId)
 
   const order_settled_to_vendor: Record<string, boolean> = {}
   const order_settled_at: Record<string, string | null> = {}
   const order_settlement_reversed: Record<string, boolean> = {}
   const vendorByEarningsAccount = new Map<string, string>()
   const vendor_withdrawals: Record<string, Array<{ id: string; kind: string; status: string }>> = {}
+  const vendor_recoveries: Record<string, Array<{ id: string; kind: string; status: string }>> = {}
   for (const vendorId of vendorIds) {
     const accounts = await hawala.listLedgerAccounts({ owner_id: vendorId, account_type: "SELLER_EARNINGS" })
     for (const account of accounts) vendorByEarningsAccount.set(account.id, vendorId)
@@ -304,6 +380,23 @@ async function readVendorDebitContext(
         status: String(e.status),
       })),
     ]
+    const recoveries = accounts.length
+      ? await hawala.listLedgerEntries(
+          {
+            debit_account_id: accounts.map((a) => a.id),
+            entry_type: [...RECOVERY_ENTRY_TYPES],
+            status: [...MOVED_ENTRY_STATUSES],
+            created_at: { $gte: placedAt },
+          },
+          { take: 5, order: { created_at: "ASC" } }
+        )
+      : []
+    vendor_recoveries[vendorId] = recoveries.map((e) => ({
+      id: e.id,
+      // Not in the model's entry_type enum either: createTransfer takes any string.
+      kind: String(e.entry_type) === "ADVANCE_REPAYMENT" ? "advance repayment" : "adjustment",
+      status: String(e.status),
+    }))
   }
 
   return {
@@ -320,7 +413,10 @@ async function readVendorDebitContext(
       amount: Number(e.amount),
       from_vendor_id: vendorByEarningsAccount.get(e.debit_account_id) ?? null,
     })),
+    order_payment: paymentSide.payment,
+    order_payment_unread: paymentSide.unread,
     vendor_withdrawals,
+    vendor_recoveries,
   }
 }
 
@@ -442,13 +538,17 @@ export default async function run({ container, args }: ExecArgs) {
       `${tag} ${apply ? "Corrected" : "Correcting"} held or pending rows raises what the approve-held job will debit ` +
         `from each vendor's current SELLER_EARNINGS to the full commission once commission crediting works ` +
         `(today every credit is refused: SD-99 in docs/AUDIT_DEBT.md). Orders whose vendor is not the order's seller, ` +
-        `whose proceeds are not in the vendor's earnings in the ledger, which were refunded, whose vendor was paid out ` +
-        `after the order, whose proceeds Mercur paid out, or which were placed or settled in the last 2 days are listed ` +
-        `for review instead.`
+        `whose proceeds are not in the vendor's earnings in the ledger, which have a refund leg in the ledger, whose ` +
+        `payment records (the order's split payment row, its payment collection, Stripe's figures for the charge) show ` +
+        `a refund for the order, a refund on its payment collection recorded on no order, or an open card dispute, ` +
+        `whose payment records could not be read or are not a card payment's, whose vendor was paid out or had their ` +
+        `earnings drawn on after the order, whose proceeds Mercur paid out, or which were placed or settled in the ` +
+        `last 2 days are listed for review instead.`
     )
     logger.warn(
       `${tag} Those checks were made once, just now. Nothing repeats them when approve-held debits the vendor: ` +
         `a vendor paid out after this run, or whose order is refunded after it, is still debited the full commission. ` +
+        `A refund made in Stripe's dashboard is seen only once Stripe's webhook has recorded it here. ` +
         `Run this with \`apply\` immediately before the repair that makes commission crediting work deploys, not earlier, ` +
         `and not in the minute approve-held runs (:00).`
     )
