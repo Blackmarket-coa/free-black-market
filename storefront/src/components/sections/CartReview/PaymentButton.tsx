@@ -122,8 +122,22 @@ const PaymentButtonForProvider: React.FC<PaymentButtonProps> = ({
   }
 }
 
+/**
+ * Shown when the card session on this page is for an amount that is not the
+ * cart's total. The backend refreshes a cart's payment collection after every
+ * write that changes its total (SD-115), which deletes a session opened for
+ * the old one, so a page rendered after such a write has no session and never
+ * gets here: this is what is left when that refresh did not happen.
+ *
+ * The instruction has to be one that works from this state. Choosing the
+ * payment method again does not: the radio group ignores a click on the
+ * method it already shows, and a new session would take the same stale
+ * amount. Choosing the delivery option again does: that request ends in the
+ * refresh, which deletes this session, and the payment step then opens one
+ * for the current total.
+ */
 const CARD_AMOUNT_CHANGED =
-  "Your order total changed after you chose how to pay, so your card has not been charged. Go back to Payment and choose your payment method again."
+  "Your order total changed after you chose how to pay, so your card has not been charged. Go back to Delivery and choose your delivery option again, then choose your payment method again to pay the current total."
 
 const StripePaymentButton = ({
   cart,

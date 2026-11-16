@@ -16,6 +16,10 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest"
  * - The session was opened for an amount that is no longer the cart's total.
  *   Stripe charges the session's amount, not the total on the page.
  *
+ * And the case that is not a refusal: the backend refreshed the cart's
+ * payment after the total changed (SD-115), so the page has no card session
+ * and the buyer chooses the payment method again.
+ *
  * Same harness as the other file: a server render of the real components, so
  * hooks run and effects do not. Two things are replaced here that are real
  * there, because nothing after the first paint can be seen otherwise:
@@ -201,7 +205,7 @@ function checkout(cart: ReturnType<typeof cartWith>, methods: string[]) {
 
 const NOT_OPENED = "We could not start the card payment. Choose the payment method again to retry."
 const AMOUNT_CHANGED =
-  "Your order total changed after you chose how to pay, so your card has not been charged. Go back to Payment and choose your payment method again."
+  "Your order total changed after you chose how to pay, so your card has not been charged. Go back to Delivery and choose your delivery option again, then choose your payment method again to pay the current total."
 
 describe("picking the card when its session cannot be opened", () => {
   const refuse = () => h.initiatePaymentSession.mockRejectedValueOnce(new Error("Stripe said no."))
@@ -254,6 +258,50 @@ describe("picking the card when its session cannot be opened", () => {
 
     expect(h.initiatePaymentSession).toHaveBeenCalledTimes(1)
     expect(h.stateUpdates).toEqual([null, CARD])
+  })
+})
+
+describe("after a delivery option changed and the backend refreshed the cart's payment", () => {
+  // What the backend leaves once a write has changed the total
+  // (backend/integration-tests/http/cart-payment-refresh.spec.ts): the
+  // collection at the new total, and no session.
+  const refreshed = () => cartWith(34, [])
+
+  it("holds no card session: no card form, no notice about a changed total, and the review step asks for a payment method", () => {
+    const html = checkout(refreshed(), [CARD])
+
+    // Nothing of the session that was deleted is on the page: PaymentWrapper
+    // mounts Stripe Elements, with a session's client secret, only around a
+    // pending card session.
+    expect(html).not.toContain("Enter your card details")
+    expect(html).not.toContain(AMOUNT_CHANGED)
+    expect(html).toContain("Select a payment method")
+    // No "Place order" button was drawn, so nothing can be confirmed.
+    expect(h.payButton.props).toBeUndefined()
+  })
+
+  it("opens a new card session for the cart as it now is when the buyer picks the card on the payment step", async () => {
+    const cart = refreshed()
+    checkout(cart, [CARD])
+
+    await expect(h.radioGroup.onChange?.(CARD)).resolves.toBeUndefined()
+
+    expect(h.initiatePaymentSession).toHaveBeenCalledTimes(1)
+    expect(h.initiatePaymentSession).toHaveBeenCalledWith(cart, { provider_id: CARD })
+    expect(h.stateUpdates).toEqual([null, CARD])
+  })
+
+  it("confirms the card with the new session's secret once that session is for the new total", async () => {
+    h.cardEntered = true
+    const html = checkout(cartWith(34, [{ provider_id: CARD, amount: 34 }]), [CARD])
+    expect(html).not.toContain(AMOUNT_CHANGED)
+    expect(h.payButton.props?.disabled).toBe(false)
+
+    await h.payButton.props?.onClick?.()
+
+    expect(h.confirmCardPayment).toHaveBeenCalledTimes(1)
+    expect(h.confirmCardPayment).toHaveBeenCalledWith("pi_0_secret_x", expect.anything())
+    expect(h.placeOrder).toHaveBeenCalledTimes(1)
   })
 })
 

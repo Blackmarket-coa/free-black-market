@@ -7,8 +7,24 @@
  * Medusa's own cart workflows keep the two together (a change of total
  * re-amounts the collection and deletes its sessions). A write that goes
  * round those workflows does not, and then the review step shows one total
- * while `confirmCardPayment` takes another. The backend's
- * `POST /store/carts/:id/tier` and `/wholesale` reprice line items that way.
+ * while `confirmCardPayment` takes another.
+ *
+ * That was reachable from this storefront, not only by a direct call to the
+ * API (SD-115). Mercur's shipping-method routes, which the delivery step
+ * calls, left the collection behind on any multi-seller cart whose buyer
+ * picked, changed or removed a delivery option after choosing the card; the
+ * backend's `POST /store/carts/:id/tier` and `/wholesale` did the same when
+ * they repriced a line. The backend now refreshes the collection after each
+ * of those writes and refuses to complete a cart on a session for another
+ * amount (`backend/src/api/middlewares/cart-payment-refresh.ts`). A page
+ * rendered after such a write therefore has no card session at all, and the
+ * buyer chooses the payment method again, for the new total.
+ *
+ * So this check is no longer what a buyer who edits delivery runs into. It
+ * stays as the storefront's own: the last thing between the card form and
+ * `confirmCardPayment` if that refresh fails or a writer was missed. It sees
+ * only the cart this page rendered; a page rendered before the total changed
+ * is stopped by the backend, not here.
  *
  * Compared in the currency's minor unit, because that is what both sides come
  * down to: Stripe is sent the session amount rounded to it, and the buyer
