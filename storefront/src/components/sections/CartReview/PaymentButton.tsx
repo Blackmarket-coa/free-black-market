@@ -9,6 +9,7 @@ import React, { useContext, useEffect, useState } from "react"
 import { Button } from "@/components/atoms"
 import { StripeContext } from "../../organisms/PaymentContainer/StripeWrapper"
 import { orderErrorFormatter } from "@/lib/helpers/order-error-formatter"
+import { cardChargeMatchesCartTotal } from "@/lib/helpers/card-charge"
 import { toast } from "@/lib/helpers/toast"
 import { phase1ModuleFlags } from "@/lib/feature-flags"
 import { completeSubscriptionCheckout } from "@/lib/data/subscriptions"
@@ -121,6 +122,9 @@ const PaymentButtonForProvider: React.FC<PaymentButtonProps> = ({
   }
 }
 
+const CARD_AMOUNT_CHANGED =
+  "Your order total changed after you chose how to pay, so your card has not been charged. Go back to Payment and choose your payment method again."
+
 const StripePaymentButton = ({
   cart,
   notReady,
@@ -171,6 +175,11 @@ const StripePaymentButton = ({
     (s) => s.status === "pending"
   )
 
+  // confirmCardPayment charges what the session was opened for, which is not
+  // necessarily the total on this page (lib/helpers/card-charge.ts). If the
+  // two differ, the card is not confirmed at all.
+  const chargeIsCartTotal = cardChargeMatchesCartTotal(session, cart)
+
   useEffect(() => {
     //@ts-ignore
     setDisabled(!card?._complete)
@@ -179,7 +188,7 @@ const StripePaymentButton = ({
   const handlePayment = async () => {
     setSubmitting(true)
 
-    if (!stripe || !elements || !card || !cart) {
+    if (!stripe || !elements || !card || !cart || !chargeIsCartTotal) {
       setSubmitting(false)
       return
     }
@@ -251,13 +260,17 @@ const StripePaymentButton = ({
   return (
     <>
       <Button
-        disabled={disabled || notReady}
+        disabled={disabled || notReady || !chargeIsCartTotal}
         onClick={handlePayment}
         loading={submitting}
         className="w-full"
       >
         Place order
       </Button>
+      <ErrorMessage
+        error={chargeIsCartTotal ? null : CARD_AMOUNT_CHANGED}
+        data-testid="stripe-payment-amount-changed"
+      />
       <ErrorMessage
         error={errorMessage}
         data-testid="stripe-payment-error-message"

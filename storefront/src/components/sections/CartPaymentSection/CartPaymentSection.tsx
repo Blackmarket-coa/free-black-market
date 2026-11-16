@@ -29,6 +29,9 @@ type StoreCardPaymentMethod = any & {
   }
 }
 
+const CARD_SESSION_NOT_OPENED =
+  "We could not start the card payment. Choose the payment method again to retry."
+
 const CartPaymentSection = ({
   cart,
   availablePaymentMethods,
@@ -65,11 +68,30 @@ const CartPaymentSection = ({
   const setPaymentMethod = async (method: string) => {
     setError(null)
     setSelectedPaymentMethod(method)
-    if (isStripeFunc(method)) {
+    if (!isStripeFunc(method)) {
+      return
+    }
+    try {
       await initiatePaymentSession(cart, {
         provider_id: method,
         ...(sessionData ? { data: sessionData } : {}),
       })
+    } catch {
+      // Picking the card is what opens its session, and without a session
+      // there is no card form. The radio group ignores a click on the method
+      // it already shows as picked, so the pick is taken back: the buyer can
+      // then choose the card again, which is the retry. A method picked while
+      // this one was still opening is left alone. The cause is in the server
+      // log (medusaError); a production build would hand the page a redacted
+      // message anyway.
+      const previous =
+        activeSession && activeSession.provider_id !== method
+          ? activeSession.provider_id
+          : ""
+      setError(CARD_SESSION_NOT_OPENED)
+      setSelectedPaymentMethod((current: string) =>
+        current === method ? previous : current
+      )
     }
   }
 

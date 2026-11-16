@@ -6,9 +6,9 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest"
 
 /**
  * What the checkout shows a buyer for each payment provider id the backend
- * can put on a cart — the real `PaymentWrapper`, `CartPaymentSection`,
- * `PaymentButton` and `OrderShipping`, with the real Stripe Elements provider
- * and the real radio group, rendered to markup.
+ * can put on a cart — the real `PaymentWrapper`, `CartPaymentSection` and
+ * `PaymentButton`, with the real Stripe Elements provider and the real radio
+ * group, rendered to markup.
  *
  * The storefront's vitest has no DOM library, so this is a server render:
  * hooks run, effects do not, and what is asserted is the first paint for a
@@ -20,6 +20,10 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest"
  * provider is called (see lib/constants/payment-providers.ts): a cart on
  * `pp_stripe_stripe`, the only card provider the backend registers, got no
  * card form and a disabled "Select a payment method".
+ *
+ * What the checkout does when the card payment cannot go ahead (the session
+ * will not open, or it was opened for another amount) is
+ * checkout-card-payment-refused.test.tsx, beside this file.
  */
 
 const { initiatePaymentSession, radioGroup } = vi.hoisted(() => {
@@ -110,12 +114,17 @@ const address = {
 
 type Session = { provider_id: string; status?: string }
 
-/** A cart through the address and shipping steps, with the given payment sessions. */
+const TOTAL = 500
+
+/**
+ * A cart through the address and shipping steps, with the given payment
+ * sessions, each opened for the cart's total as the backend opens them.
+ */
 function cartWith(sessions: Session[]) {
   return {
     id: "cart_1",
     email: "buyer@example.com",
-    total: 500,
+    total: TOTAL,
     currency_code: "usd",
     items: [],
     shipping_address: address,
@@ -126,6 +135,7 @@ function cartWith(sessions: Session[]) {
       payment_sessions: sessions.map((session, i) => ({
         id: `payses_${i}`,
         status: "pending",
+        amount: TOTAL,
         data: { id: `pi_${i}`, client_secret: `pi_${i}_secret_x` },
         ...session,
       })),
@@ -151,6 +161,7 @@ function checkout(cart: ReturnType<typeof cartWith>, methods: string[]) {
 const CARD_FORM = "Enter your card details:"
 const PLACE_ORDER = "Place order"
 const NO_METHOD = "Select a payment method"
+const AMOUNT_CHANGED = 'data-testid="stripe-payment-amount-changed"'
 
 describe("checkout with a card session on the backend's Stripe provider", () => {
   it("mounts Stripe Elements, draws the card form and offers Place order", () => {
@@ -160,6 +171,8 @@ describe("checkout with a card session on the backend's Stripe provider", () => 
     expect(html).toContain(CARD_FORM)
     expect(html).toContain(PLACE_ORDER)
     expect(html).not.toContain(NO_METHOD)
+    // The session is for the cart's total, so nothing stands in the way.
+    expect(html).not.toContain(AMOUNT_CHANGED)
     // The method reads as a card, not as a raw provider id.
     expect(html).toContain("Credit card")
     expect(html).not.toContain(`>${CARD}<`)
@@ -228,8 +241,12 @@ describe.each(NOT_CARDS)("checkout with %s (%s)", (_what, providerId) => {
   })
 })
 
-describe("order confirmation", () => {
-  it("names a card payment on the backend's Stripe provider", () => {
+// No page renders OrderShipping: the confirmation page has it inside a JSX
+// comment (OrderConfirmedSection.tsx) and shows only the thank-you text and
+// the email. This holds the component to the card provider's id for the day
+// it is mounted; it says nothing about what a buyer sees after paying.
+describe("OrderShipping, which no page mounts", () => {
+  it("would name a card payment on the backend's Stripe provider", () => {
     const order = {
       currency_code: "usd",
       email: "buyer@example.com",
