@@ -49,9 +49,17 @@ jest.setTimeout(300 * 1000)
 const STOREFRONT_DATA = path.resolve(__dirname, "../../../storefront/src/lib/data")
 
 /**
- * The `fields` string a storefront function sends: the string literals that
- * follow the first `fields:` after `declaration`, joined as the source joins
- * them. Null when the storefront is not checked out beside the backend.
+ * The `fields` string a storefront function sends: what follows the first
+ * `fields:` after `declaration`. Either string literals, joined as the source
+ * joins them, or a constant the file imports from a sibling module, loaded as
+ * the storefront builds it (`retrieveCart` sends `CART_FIELDS` from
+ * `cart-query.ts` since SD-118). Null when the storefront is not checked out
+ * beside the backend.
+ *
+ * Only that first `fields:`: a pattern searched from the declaration onward
+ * matched the next function's literal instead when `retrieveCart` stopped
+ * using one (`updateRegionWithValidation`'s `*items`), and tested a list the
+ * storefront does not send.
  */
 function storefrontFields(file: string, declaration: string): string | null {
   const source = path.join(STOREFRONT_DATA, file)
@@ -64,9 +72,18 @@ function storefrontFields(file: string, declaration: string): string | null {
   const text = fs.readFileSync(source, "utf8")
   const from = text.indexOf(declaration)
   if (from < 0) throw new Error(`${file}: "${declaration}" not found; the storefront's query moved`)
-  const literals = /fields:\s*((?:"(?:[^"\\]|\\.)*"\s*\+?\s*)+)/.exec(text.slice(from))
-  if (!literals) throw new Error(`${file}: no fields literal after "${declaration}"`)
-  return [...literals[1].matchAll(/"((?:[^"\\]|\\.)*)"/g)].map((m) => m[1]).join("")
+  const at = text.indexOf("fields:", from)
+  if (at < 0) throw new Error(`${file}: no fields after "${declaration}"`)
+  const own = text.slice(at)
+  const literals = /^fields:\s*((?:"(?:[^"\\]|\\.)*"\s*\+?\s*)+)/.exec(own)
+  if (literals) return [...literals[1].matchAll(/"((?:[^"\\]|\\.)*)"/g)].map((m) => m[1]).join("")
+  const constant = /^fields:\s*([A-Za-z_$][\w$]*)\s*[,}\n]/.exec(own)?.[1]
+  if (!constant) throw new Error(`${file}: the fields after "${declaration}" are neither literals nor a constant`)
+  const sibling = new RegExp(`import\\s*\\{[^}]*\\b${constant}\\b[^}]*\\}\\s*from\\s*"(\\./[^"]+)"`).exec(text)?.[1]
+  if (!sibling) throw new Error(`${file}: ${constant} is not imported from a sibling module`)
+  const value = (jest.requireActual(path.join(STOREFRONT_DATA, sibling)) as Record<string, unknown>)[constant]
+  if (typeof value !== "string" || !value) throw new Error(`${file}: ${sibling} exports no ${constant} string`)
+  return value
 }
 
 const CART_FIELDS = storefrontFields("cart.ts", "export async function retrieveCart(")
@@ -444,7 +461,13 @@ medusaIntegrationTestRunner({
         expect.objectContaining({ shipping_option_id: s.option.id, amount: 5, name: s.option.name }),
       ])
       expect(order.seller).toEqual(expect.objectContaining({ id: s.seller.id }))
-      expect(order.order_set).toEqual(expect.objectContaining({ id: placed.id, cart_id: cartId }))
+      // The order is in the set placed from this cart. GET /store/orders/:id
+      // answers whoever holds the order id, so it serves the set as the
+      // heading the storefront prints (id, display_id, dates) and not the
+      // cart's id (SD-118); the completion answer, which goes to whoever holds
+      // the cart, carries it.
+      expect(order.order_set).toEqual(expect.objectContaining({ id: placed.id, display_id: placed.display_id }))
+      expect(placed.cart_id).toBe(cartId)
       expect(order.payment_collections).toEqual([
         expect.objectContaining({
           id: collection.id,
