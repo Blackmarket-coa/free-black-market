@@ -12,9 +12,14 @@
  * not belong to this producer" for one that does (seen on Postgres,
  * `integration-tests/http/store-food-network-write-authz.spec.ts`), which
  * told them which order ids exist.
+ *
+ * PUT kept that pair after GET was closed (SD-107), and is covered below with
+ * the same cases. Its echo of the updated order was also a read: to the
+ * producer's recorded owner it still is; a caller let through on a producer
+ * with no owner on record gets the order's id and status.
  */
 import { MedusaError } from "@medusajs/framework/utils"
-import { GET } from "../route"
+import { GET, PUT } from "../route"
 import { FOOD_DISTRIBUTION_MODULE } from "../../../../../../../modules/food-distribution"
 
 type Res = { statusCode: number; body: unknown; status: (c: number) => Res; json: (p: unknown) => Res }
@@ -48,6 +53,7 @@ const makeReq = (opts: {
   orderProducer?: string
   orderMissing?: boolean
   orderLookupFails?: Error
+  body?: Record<string, unknown>
 }) => {
   const service = {
     retrieveFoodProducer: jest.fn(async () => ({
@@ -64,10 +70,19 @@ const makeReq = (opts: {
       return { ...ORDER, producer_id: opts.orderProducer ?? "fp_1" }
     }),
     listFoodOrderItems: jest.fn(async () => [{ id: "foi_1" }]),
-    listFoodDeliveries: jest.fn(async () => []),
+    listFoodDeliveries: jest.fn(async () => [
+      { id: "del_1", delivery_address: "12 Analytical Way", proof_pin_code: "4821" },
+    ]),
+    updateFoodOrders: jest.fn(async (data: Record<string, unknown>) => ({
+      ...ORDER,
+      status: "CONFIRMED",
+      ...data,
+    })),
+    updateDeliveryStatus: jest.fn(async () => ({})),
   }
   const req = {
     params: { id: "fp_1", orderId: "fo_1" },
+    body: opts.body ?? {},
     ...(opts.actorId ? { auth_context: { actor_id: opts.actorId } } : {}),
     scope: {
       resolve: (key: string) => {
@@ -111,6 +126,18 @@ describe("GET /store/food-producers/:id/orders/:orderId — authorization", () =
     expect((res.body as { order: { items: unknown[] } }).order.items).toHaveLength(1)
   })
 
+  it("serves the order's delivery without its proof PIN", async () => {
+    const { req } = makeReq({ actorId: "cus_owner" })
+    const res = createRes()
+
+    await GET(req, res as never)
+
+    const delivery = (res.body as { order: { delivery: Record<string, unknown> } }).order.delivery
+    expect(delivery).toMatchObject({ id: "del_1", delivery_address: "12 Analytical Way" })
+    expect(delivery).not.toHaveProperty("proof_pin_code")
+    expect(leaks(res.body)).not.toContain("4821")
+  })
+
   it("still refuses the owner an order that belongs to another producer", async () => {
     const { req } = makeReq({ actorId: "cus_owner", orderProducer: "fp_other" })
     const res = createRes()
@@ -142,5 +169,64 @@ describe("GET /store/food-producers/:id/orders/:orderId — authorization", () =
       )
     ).rejects.toThrow("connection terminated")
     expect(res.statusCode).toBe(200)
+  })
+})
+
+describe("PUT /store/food-producers/:id/orders/:orderId — authorization", () => {
+  const put = async (opts: Parameters<typeof makeReq>[0]) => {
+    const { req, service } = makeReq({ body: { producer_notes: "ready at six" }, ...opts })
+    const res = createRes()
+    await PUT(req, res as never)
+    return { res, service }
+  }
+
+  it("refuses the owner another producer's order and an order that does not exist alike", async () => {
+    // The pair GET used to give, left on this verb: 403 "Order does not
+    // belong to this producer" and 404 (seen on Postgres as the owner of a
+    // different producer). Any account can own a producer.
+    const anothers = await put({ actorId: "cus_owner", orderProducer: "fp_other" })
+    const missing = await put({ actorId: "cus_owner", orderMissing: true })
+
+    expect([anothers.res.statusCode, anothers.res.body]).toEqual([403, REFUSAL])
+    expect([missing.res.statusCode, missing.res.body]).toEqual([403, REFUSAL])
+    expect(anothers.service.updateFoodOrders).not.toHaveBeenCalled()
+    expect(missing.service.updateFoodOrders).not.toHaveBeenCalled()
+  })
+
+  it("still refuses a stranger before looking the order up", async () => {
+    const { res, service } = await put({ actorId: "cus_stranger" })
+
+    expect(res.statusCode).toBe(403)
+    expect(service.retrieveFoodOrder).not.toHaveBeenCalled()
+    expect(service.updateFoodOrders).not.toHaveBeenCalled()
+  })
+
+  it("lets the producer's owner update its order, and echoes the order to them", async () => {
+    const { res, service } = await put({ actorId: "cus_owner" })
+
+    expect(res.statusCode).toBe(200)
+    expect(service.updateFoodOrders).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "fo_1", producer_notes: "ready at six" })
+    )
+    expect(leaks(res.body)).toContain("Ada Lovelace")
+  })
+
+  it("acknowledges a write on a producer with no recorded owner without echoing the order", async () => {
+    // `actorMayManage` lets any signed-in account act on such a producer.
+    // The echo was that account's read of the recipient's name, phone, email
+    // and address, which GET refuses it.
+    const { res, service } = await put({ actorId: "cus_anyone", ownerId: null })
+
+    expect(res.statusCode).toBe(200)
+    expect(service.updateFoodOrders).toHaveBeenCalled()
+    expect(res.body).toEqual({ order: { id: "fo_1", status: "CONFIRMED" } })
+    expect(leaks(res.body)).not.toContain("Ada Lovelace")
+    expect(leaks(res.body)).not.toContain("Analytical Way")
+  })
+
+  it("does not turn a failed order lookup into a refusal", async () => {
+    await expect(
+      put({ actorId: "cus_owner", orderLookupFails: new Error("connection terminated") })
+    ).rejects.toThrow("connection terminated")
   })
 })

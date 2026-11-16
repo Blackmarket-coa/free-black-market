@@ -3,6 +3,9 @@ import { AuthenticatedMedusaRequest, MedusaResponse } from "@medusajs/framework/
 import { FOOD_DISTRIBUTION_MODULE } from "../../../../modules/food-distribution"
 import type FoodDistributionService from "../../../../modules/food-distribution/service"
 import { requireSellerId, type StatusHistoryEntry } from "../../../../shared"
+import { forbidden } from "../../../../shared/community-read-access"
+import { retrieveDeliveryOrNull } from "../../../../modules/food-distribution/proof-of-delivery"
+import { redactDelivery } from "../../../../modules/food-distribution/public-view"
 
 // ===========================================
 // VALIDATION SCHEMAS
@@ -21,6 +24,15 @@ const updateDeliveryStatusSchema = z.object({
 // ===========================================
 // GET /vendor/deliveries/:id
 // Get a single delivery detail
+//
+// A delivery that does not exist and another store's delivery are refused
+// alike, with `forbidden()`, on this GET and on the POST below (SD-107). Read
+// bare, the lookup threw for a missing id, so any seller with a producer
+// profile got 404 for a missing delivery and 403 "This delivery does not
+// belong to your store" for a real one.
+//
+// Both verbs, and the list next door, serve the delivery without its proof
+// PIN (`redactDelivery`), as every /store delivery response does.
 // ===========================================
 
 export async function GET(
@@ -47,21 +59,15 @@ export async function GET(
 
     const producerId = producers[0].id
 
-    // Get the delivery
-    const delivery = await foodDistribution.retrieveFoodDelivery(id)
-
-    if (!delivery) {
-      res.status(404).json({ message: "Delivery not found" })
+    // The delivery, when it is this vendor's producer's. Missing and another
+    // store's are refused alike.
+    const delivery = await retrieveDeliveryOrNull(foodDistribution, id)
+    if (!delivery || delivery.producer_id !== producerId) {
+      forbidden(res)
       return
     }
 
-    // Verify this delivery belongs to the vendor's producer
-    if (delivery.producer_id !== producerId) {
-      res.status(403).json({ message: "This delivery does not belong to your store" })
-      return
-    }
-
-    res.json({ delivery })
+    res.json({ delivery: redactDelivery(delivery as unknown as Record<string, unknown>) })
   } catch (error) {
     throw error
   }
@@ -98,17 +104,11 @@ export async function POST(
 
     const producerId = producers[0].id
 
-    // Get the delivery
-    const delivery = await foodDistribution.retrieveFoodDelivery(id)
-
-    if (!delivery) {
-      res.status(404).json({ message: "Delivery not found" })
-      return
-    }
-
-    // Verify this delivery belongs to the vendor's producer
-    if (delivery.producer_id !== producerId) {
-      res.status(403).json({ message: "This delivery does not belong to your store" })
+    // The delivery, when it is this vendor's producer's. Missing and another
+    // store's are refused alike.
+    const delivery = await retrieveDeliveryOrNull(foodDistribution, id)
+    if (!delivery || delivery.producer_id !== producerId) {
+      forbidden(res)
       return
     }
 
@@ -133,7 +133,14 @@ export async function POST(
       },
     })
 
-    res.json({ delivery: updatedDelivery })
+    // The selector form of the update answers with a list; the response keeps
+    // that shape and loses the PIN.
+    const updated = updatedDelivery as unknown as
+      | Record<string, unknown>
+      | Record<string, unknown>[]
+    res.json({
+      delivery: Array.isArray(updated) ? updated.map(redactDelivery) : redactDelivery(updated),
+    })
   } catch (error) {
     if (error instanceof z.ZodError) {
       res.status(400).json({ message: "Validation failed", errors: error.issues })
