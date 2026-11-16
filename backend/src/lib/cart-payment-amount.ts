@@ -18,7 +18,9 @@ import { MathBN, MedusaError, PaymentSessionStatus, defaultCurrencies } from "@m
  *  - every writer of a cart's total outside Medusa's own cart workflows
  *    settles the payment side afterwards (`lib/cart-payment-refresh.ts`,
  *    `api/middlewares/cart-payment-refresh.ts`): the collection takes the
- *    total, and a session opened for another amount is deleted;
+ *    total, a session opened for another amount is deleted, and a payment a
+ *    deleted session leaves on the collection is cancelled and taken off it
+ *    (`paymentsLeftWithoutSession`);
  *  - and, because that can fail, a writer can be missed, and a session can be
  *    opened while a write is still on its way, a cart whose session is for
  *    another amount is refused at completion, on every path that completes

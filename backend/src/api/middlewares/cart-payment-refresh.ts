@@ -466,6 +466,12 @@ export function settleCartPaymentAfterRefusedCompletion(cartOf: CartOf) {
  *    (`lib/cart-payment-refresh.ts`). Its other cart routes (attribution,
  *    channel, group, booking, credits) write metadata only, and its
  *    rental add-to-cart runs Medusa's `addToCartWorkflow`.
+ *  - FBM's `POST /store/quotes/:id/accept` creates a cart and reprices its
+ *    lines through the cart module before that cart has a payment
+ *    collection, so no session can be behind it: the collection, when the
+ *    buyer opens one, takes the total as it is then. (Whether a promotion
+ *    applied automatically when the cart was created follows that reprice
+ *    was not checked here.)
  *
  * Which completions are here:
  *  - Mercur's `POST /store/carts/:id/complete` is checked before it runs.
