@@ -23,8 +23,12 @@ import { MathBN, MedusaError, deepEqualObj, isPresent } from "@medusajs/framewor
  * 400 with this message, and so did every order-cycle add of 2 or more
  * (`storefront/src/lib/data/order-cycles.ts` sends the buyer's quantity with
  * line metadata, which always goes through the add route). The update and
- * create routes had no hook: the cart page's + raised a seat line to 2, and a
- * cart created with items held a seat at any quantity, or the same seat twice.
+ * create routes had no hook: the cart page's + raised a seat line to 2, the
+ * update route moved a line onto a seat another line held, and a cart created
+ * with items held a seat at any quantity, or the same seat twice. And the add
+ * judged only the quantity asked for, so a line naming no seat on a ticket
+ * variant, added twice, became one line of two (Medusa adds an equal variant
+ * and metadata to the existing line).
  *
  * The ticket checkout refuses such a line again before it takes the card
  * (`require-seated-ticket-cart.ts`, `validate-ticket-order.ts`). Mercur's
@@ -111,11 +115,13 @@ export function lineTheAddPutsItemInto<L extends CartLine>(cartLines: readonly L
 }
 
 /**
- * The rules every new line passes on the two routes that create lines: the
- * add (`cartLines` the cart's lines, `addsToMatchingLines` true) and the create
+ * The rules every new line passes, and every line given another seat: on the
+ * add (`cartLines` the cart's lines, `addsToMatchingLines` true), the create
  * (`cartLines` empty, `addsToMatchingLines` false, since a new cart has no
- * line to add to). The lines are judged one at a time, in order, each refusal
- * in the add route's own words:
+ * line to add to) and the update when it changes a line's seat (`items` the
+ * line as it will stand, `cartLines` the cart's other lines,
+ * `addsToMatchingLines` false). The lines are judged one at a time, in order,
+ * each refusal in the add route's own words:
  *
  * 1. A ticket line (`isTicketLine`) holds one ticket.
  * 2. A line naming a seat, on a variant that was found, names its show date.
