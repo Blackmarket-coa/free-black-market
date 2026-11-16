@@ -118,6 +118,7 @@ const variantId = (sku: string) => {
   return found.id
 }
 const PINT = variantId("TOM-PINT")
+const CRATE = variantId("TOM-CRATE")
 
 const walk = (node: ReactNode, out: ReactElement[] = []): ReactElement[] => {
   if (Array.isArray(node)) {
@@ -232,6 +233,23 @@ describe("the product page on a real /store/products response", () => {
     )
     expect(h.toast.success).toHaveBeenCalledTimes(1)
     expect(h.toast.error).not.toHaveBeenCalled()
+  })
+
+  it("sells a variant Medusa does not count: no quantity in the response is not zero in stock", async () => {
+    const { product } = await renderPage()
+    const crate = product.variants?.find((v) => v.id === CRATE)
+    expect(crate?.manage_inventory).toBe(false)
+    expect(crate).not.toHaveProperty("inventory_quantity")
+
+    const { html, addToCartButton } = renderHeader(product, { size: "Crate" })
+
+    expect(html).toContain("$40.00")
+    expect(html).toContain("ADD TO CART")
+    expect(html).not.toContain("OUT OF STOCK")
+    expect(addToCartButton.disabled).toBe(false)
+
+    await addToCartButton.onClick?.()
+    expect(h.addToCart).toHaveBeenCalledWith({ variantId: CRATE, quantity: 1, countryCode: "us" })
   })
 
   it("keeps a counted variant with none left out of stock", async () => {
