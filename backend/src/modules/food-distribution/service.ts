@@ -1,4 +1,4 @@
-import { MedusaService } from "@medusajs/framework/utils"
+import { MedusaError, MedusaService } from "@medusajs/framework/utils"
 import { distanceMiles } from "../../lib/geo-distance"
 import {
   FoodProducer,
@@ -15,7 +15,7 @@ import {
 import { CourierStatus } from "./models/courier"
 import { OperatingStatus } from "./models/food-producer"
 import { DeliveryStatus } from "./models/delivery"
-import { deliveryCompletedDescription } from "./proof-of-delivery"
+import { deliveryCompletedDescription, proofOfDeliveryError } from "./proof-of-delivery"
 
 /**
  * FoodDistributionService
@@ -354,7 +354,16 @@ class FoodDistributionService extends MedusaService({
   }
   
   /**
-   * Record proof of delivery
+   * Record proof of delivery: close the delivery under `proofType`, save the
+   * event that says how it was closed (`deliveryCompletedDescription`), and
+   * free the courier.
+   *
+   * Refuses (INVALID_DATA) a submission `proofOfDeliveryError` does not
+   * accept, before writing anything. The saved event calls a PIN_CODE close
+   * proof, so it must not be written unless the PIN matched; the `/proof`
+   * route checks first and answers 400, and this check holds for any other
+   * caller (the unwired `confirmDeliveryStep` passed its input straight
+   * through).
    */
   async recordProofOfDelivery(
     deliveryId: string,
@@ -367,6 +376,18 @@ class FoodDistributionService extends MedusaService({
       notes?: string
     }
   ) {
+    const existing = await this.retrieveFoodDelivery(deliveryId)
+    const refused = proofOfDeliveryError(existing, {
+      proof_type: proofType,
+      pin_code: proofData.pinCode,
+      photo_url: proofData.photoUrl,
+      signature_url: proofData.signatureUrl,
+      recipient_name: proofData.recipientName,
+    })
+    if (refused) {
+      throw new MedusaError(MedusaError.Types.INVALID_DATA, refused)
+    }
+
     const delivery = await this.updateFoodDeliveries({
       id: deliveryId,
       proof_type: proofType as any,
@@ -379,8 +400,9 @@ class FoodDistributionService extends MedusaService({
       delivered_at: new Date(),
     })
     
-    // Log event. Only PIN_CODE is called proof: PHOTO, SIGNATURE and
-    // RECIPIENT_CONFIRMATION are the courier's attestation (proof-of-delivery.ts).
+    // Log event. Only PIN_CODE is called proof, and only a matched PIN gets
+    // here: PHOTO, SIGNATURE and RECIPIENT_CONFIRMATION are the courier's
+    // attestation (proof-of-delivery.ts).
     await this.logDeliveryEvent(deliveryId, {
       event_type: "proof_of_delivery",
       new_status: DeliveryStatus.DELIVERED,

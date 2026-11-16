@@ -265,6 +265,56 @@ medusaIntegrationTestRunner({
         expect(String(text)).not.toMatch(/proof/i)
       }
 
+      // A delivery created with no requirement (NONE, the default) used to
+      // take any named type without its evidence: `{ proof_type: "PIN_CODE" }`
+      // with no PIN was answered and saved as "Delivery completed with
+      // PIN_CODE proof", with proof_type overwritten to PIN_CODE, and PHOTO
+      // with no photo as courier-attested. The type is what the 200 and the
+      // event say, so it needs its evidence on every delivery.
+      const openSale = await order(TransactionType.SALE)
+      const openMade = await safe(
+        api.post(
+          "/store/food-deliveries",
+          { ...deliveryBody, order_id: openSale.id, proof_type: undefined, proof_pin_code: undefined },
+          producerOwner.headers
+        )
+      )
+      expect([openMade.status, openMade.data.delivery?.proof_type]).toEqual([201, "NONE"])
+      const openId = openMade.data.delivery.id as string
+      await foodDistribution.updateFoodDeliveries({ id: openId, courier_id: courier.id })
+      expect(
+        (await safe(api.put(`/store/food-deliveries/${openId}`, { status: "ARRIVED_AT_DESTINATION" }, courierOwner.headers)))
+          .status
+      ).toBe(200)
+      const openProofUrl = `/store/food-deliveries/${openId}/proof`
+      const pinUnchecked = await safe(api.post(openProofUrl, { proof_type: "PIN_CODE" }, courierOwner.headers))
+      expect([pinUnchecked.status, pinUnchecked.data?.message]).toEqual([400, "Invalid PIN code"])
+      const pinNoneOnRecord = await safe(
+        api.post(openProofUrl, { proof_type: "PIN_CODE", pin_code: "4821" }, courierOwner.headers)
+      )
+      expect([pinNoneOnRecord.status, pinNoneOnRecord.data?.message]).toEqual([400, "Invalid PIN code"])
+      const photoMissing = await safe(api.post(openProofUrl, { proof_type: "PHOTO" }, courierOwner.headers))
+      expect([photoMissing.status, photoMissing.data?.message]).toEqual([
+        400,
+        "PHOTO requires photo_url (a file the courier uploaded; not verified)",
+      ])
+      // The service refuses it as well, for a caller that skips the route
+      // (the unwired confirmDeliveryStep), reading the delivery's real row.
+      await expect(foodDistribution.recordProofOfDelivery(openId, "PIN_CODE", {})).rejects.toThrow("Invalid PIN code")
+      const openStill = await foodDistribution.retrieveFoodDelivery(openId)
+      expect([openStill.status, openStill.proof_type]).toEqual(["ARRIVED_AT_DESTINATION", "NONE"])
+      expect(await completionEvents(openId)).toEqual([])
+      // With its evidence it closes, and is named for what it is.
+      const signed = await safe(
+        api.post(
+          openProofUrl,
+          { proof_type: "SIGNATURE", signature_url: `${PLATFORM_FILES}/proof/${openId}-sig.png` },
+          courierOwner.headers
+        )
+      )
+      expect([signed.status, signed.data?.message]).toEqual([200, "Delivery completed with SIGNATURE (courier-attested)"])
+      expect(await completionEvents(openId)).toEqual(["Delivery completed with SIGNATURE (courier-attested)"])
+
       // The PIN guess budget (5 per 15 minutes per courier per delivery) is
       // keyed on the delivery the handler looks up. It was keyed on the raw
       // path, and Express routes case-insensitively and decodes params, so a

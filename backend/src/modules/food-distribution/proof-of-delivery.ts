@@ -13,8 +13,10 @@ import { isPlatformFileUrl, platformFileUrlBases } from "../../shared/platform-f
  * `PUT /store/food-deliveries/:id` could set `DELIVERED` with no proof at all.
  *
  * The rule here: **a delivery that requires proof reaches a delivered state
- * only by meeting that requirement**. Only one of the four is proof in the
- * sense of something the courier cannot produce alone:
+ * only by meeting that requirement**, and **on any delivery, a submission is
+ * recorded under the type it names only with that type's evidence** (the
+ * type is saved and named in the delivery's event). Only one of the four is
+ * proof in the sense of something the courier cannot produce alone:
  *
  * - PIN_CODE is met only by the PIN on record, which the recipient holds and
  *   the courier is never shown (`DELIVERY_SECRETS`).
@@ -65,7 +67,9 @@ export function requiresProof(delivery: DeliveryProofRequirement): boolean {
  * How a requirement is named in a message to the caller. Only PIN_CODE is
  * called proof; the other three are named as what they are, the courier's
  * attestation, so no response tells anyone a typed name or a chosen file
- * proved a hand-over.
+ * proved a hand-over. On a closed delivery the label is only true because
+ * `proofOfDeliveryError` checks the named type's evidence on every delivery,
+ * not only on one that requires it.
  */
 export function proofRequirementLabel(proofType: string | null | undefined): string {
   if (proofType === "PIN_CODE") return "PIN_CODE proof"
@@ -84,6 +88,11 @@ export function proofRequirementLabel(proofType: string | null | undefined): str
  * proof" (and SIGNATURE, RECIPIENT_CONFIRMATION) beside a 200 of "Proof of
  * delivery recorded successfully", after the refusals had stopped calling
  * those proof.
+ *
+ * Write it only for a submission `proofOfDeliveryError` accepted:
+ * "PIN_CODE proof" is true only once a PIN matched the one on record, and
+ * "PHOTO (courier-attested)" only once there is a photo. `recordProofOfDelivery`
+ * runs that check itself before it saves this text.
  */
 export function deliveryCompletedDescription(proofType: string | null | undefined): string {
   return `Delivery completed with ${proofRequirementLabel(proofType)}`
@@ -96,14 +105,27 @@ function samePin(expected: string, submitted: string): boolean {
 }
 
 /**
- * Null when `submitted` satisfies the delivery's requirement, else the reason
- * to refuse. A PIN requirement with no PIN on record is refused rather than
- * waved through: the requirement cannot be met, so it is not met.
+ * Null when `submitted` satisfies the delivery's requirement and carries the
+ * evidence of the type it names, else the reason to refuse.
  *
- * A `photo_url` or `signature_url` is checked whatever the requirement, even
- * on a delivery that requires none: it is stored on the delivery and served
- * to its producer, courier and recipient, so a `javascript:` or foreign URL
- * is refused before it is written, not only when it is the evidence.
+ * - A `photo_url` or `signature_url` is checked whatever the requirement, even
+ *   on a delivery that requires none: it is stored on the delivery and served
+ *   to its producer, courier and recipient, so a `javascript:` or foreign URL
+ *   is refused before it is written, not only when it is the evidence.
+ * - A delivery that requires proof accepts only the type it requires.
+ * - The named type's evidence is required **whatever the requirement**: a
+ *   PIN_CODE submission only with the PIN on record (refused when there is
+ *   none: nothing to match is not a match), PHOTO only with `photo_url`,
+ *   SIGNATURE only with `signature_url`, RECIPIENT_CONFIRMATION only with a
+ *   non-blank `recipient_name`. The type is saved on the delivery and named
+ *   in the event its principals read (`deliveryCompletedDescription`). On a
+ *   delivery created with no requirement (`NONE`, the default) this used to
+ *   return null before any check, so `{ "proof_type": "PIN_CODE" }` with no
+ *   PIN closed it as "Delivery completed with PIN_CODE proof", and
+ *   `{ "proof_type": "PHOTO" }` as courier-attested to a photo that did not
+ *   exist. A courier closing such a delivery without evidence sets a
+ *   delivered status through `PUT /store/food-deliveries/:id`, which names no
+ *   proof.
  */
 export function proofOfDeliveryError(
   delivery: DeliveryProofRequirement,
@@ -123,13 +145,14 @@ export function proofOfDeliveryError(
     }
   }
 
-  if (!requiresProof(delivery)) return null
-
-  if (submitted.proof_type !== delivery.proof_type) {
+  const required = requiresProof(delivery)
+  if (required && submitted.proof_type !== delivery.proof_type) {
     return `This delivery requires ${proofRequirementLabel(delivery.proof_type)}`
   }
 
-  switch (delivery.proof_type) {
+  // From here the named type is the required one, or the delivery requires
+  // none: either way it is recorded, so its evidence must be there.
+  switch (submitted.proof_type) {
     case "PIN_CODE": {
       const expected = delivery.proof_pin_code
       const given = submitted.pin_code
@@ -152,8 +175,10 @@ export function proofOfDeliveryError(
         ? null
         : "RECIPIENT_CONFIRMATION requires recipient_name (the courier's attestation of who received it)"
     default:
-      // A requirement this code does not know how to check is not met.
-      return `This delivery requires ${delivery.proof_type}, which cannot be accepted here`
+      // A type this code does not know how to check is not met.
+      return required
+        ? `This delivery requires ${delivery.proof_type}, which cannot be accepted here`
+        : `${submitted.proof_type} cannot be accepted here`
   }
 }
 

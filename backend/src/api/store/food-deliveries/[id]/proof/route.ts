@@ -40,6 +40,9 @@ const proofOfDeliverySchema = z.object({
 // caller is not driving. A delivery created with a proof requirement accepts
 // only that proof, and a PIN requirement only the PIN on record
 // (`proofOfDeliveryError`); before this, submitting PHOTO skipped the PIN.
+// On any delivery, including one created with no requirement, the named
+// type needs its evidence: PIN_CODE the PIN on record, PHOTO a photo, and so
+// on, because the type is what the 200 and the saved event name.
 // Only the PIN is proof the courier cannot make up: PHOTO and SIGNATURE (a
 // file in this platform's storage) and RECIPIENT_CONFIRMATION (a typed name)
 // are the courier's attestation, accepted as such and not verified. The 200

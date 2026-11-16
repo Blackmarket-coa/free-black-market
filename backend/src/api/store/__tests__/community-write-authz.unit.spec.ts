@@ -974,7 +974,7 @@ describe("POST /store/food-deliveries/:id/proof — the courier, with the requir
     }
   })
 
-  it("accepts any proof type for a delivery created without a requirement", async () => {
+  it("accepts any proof type, with its evidence, for a delivery created without a requirement", async () => {
     const { service, req } = proof(
       COURIER,
       { proof_type: "PHOTO", photo_url: `${UPLOADS}/proof/p.jpg` },
@@ -983,6 +983,49 @@ describe("POST /store/food-deliveries/:id/proof — the courier, with the requir
     const res = await call(submitProof, req)
     expect(res.statusCode).toBe(200)
     expect(service.recordProofOfDelivery).toHaveBeenCalled()
+    expect(res.body.message).toBe("Delivery completed with PHOTO (courier-attested)")
+  })
+
+  // A delivery created with no requirement (NONE, the default) used to skip
+  // every check, so naming a type was enough to have it recorded: PIN_CODE
+  // with no PIN was answered and saved as "Delivery completed with PIN_CODE
+  // proof", and PHOTO with no photo as courier-attested to a file that did
+  // not exist. The named type is what the 200 and the saved event say, so it
+  // needs its evidence on every delivery.
+  describe("on a delivery created without a requirement (NONE)", () => {
+    const noRequirement = { ...pinDelivery, proof_type: "NONE", proof_pin_code: null }
+
+    it("refuses PIN_CODE without a PIN, and with one when none is on record: nothing was matched", async () => {
+      for (const body of [{ proof_type: "PIN_CODE" }, { proof_type: "PIN_CODE", pin_code: "4821" }]) {
+        const { service, req } = proof(COURIER, body, noRequirement)
+        const res = await call(submitProof, req)
+        expect([body, res.statusCode, res.body.message]).toEqual([body, 400, "Invalid PIN code"])
+        expect(service.recordProofOfDelivery).not.toHaveBeenCalled()
+      }
+    })
+
+    it("checks PIN_CODE against a PIN the producer put on record, and only then calls it proof", async () => {
+      const withPin = { ...noRequirement, proof_pin_code: "4821" }
+      const wrong = proof(COURIER, { proof_type: "PIN_CODE", pin_code: "0000" }, withPin)
+      expect([(await call(submitProof, wrong.req)).statusCode]).toEqual([400])
+      expect(wrong.service.recordProofOfDelivery).not.toHaveBeenCalled()
+
+      const right = proof(COURIER, { proof_type: "PIN_CODE", pin_code: "4821" }, withPin)
+      const res = await call(submitProof, right.req)
+      expect([res.statusCode, res.body.message]).toEqual([200, "Delivery completed with PIN_CODE proof"])
+      expect(right.service.recordProofOfDelivery).toHaveBeenCalledWith("fd_1", "PIN_CODE", expect.anything())
+    })
+
+    it.each([
+      ["PHOTO", "PHOTO requires photo_url (a file the courier uploaded; not verified)"],
+      ["SIGNATURE", "SIGNATURE requires signature_url (a file the courier uploaded; not verified)"],
+      ["RECIPIENT_CONFIRMATION", "RECIPIENT_CONFIRMATION requires recipient_name (the courier's attestation of who received it)"],
+    ])("refuses %s without its evidence", async (type, reason) => {
+      const { service, req } = proof(COURIER, { proof_type: type }, noRequirement)
+      const res = await call(submitProof, req)
+      expect([res.statusCode, res.body.message]).toEqual([400, reason])
+      expect(service.recordProofOfDelivery).not.toHaveBeenCalled()
+    })
   })
 
   it("the /:id?x=/proof twin applies the same rules", async () => {
