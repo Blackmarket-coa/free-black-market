@@ -54,6 +54,7 @@ import { deliveryMiddlewareRoutes } from "./deliveries/[id]/_middlewares";
 import { storeCollectiveMiddlewareRoutes } from "./store/collective/_middlewares";
 import { storeHawalaMiddlewareRoutes } from "./store/hawala/_middlewares";
 import { mutualAidMiddlewareRoutes } from "./store/mutual-aid/_middlewares";
+import { storePublicFieldsMiddlewares } from "./middlewares/store-public-fields";
 import { vendorHawalaMiddlewareRoutes } from "./vendor/hawala/_middlewares";
 import { vendorWellnessMiddlewareRoutes } from "./vendor/wellness/_middlewares";
 import { requireSellerContextV1 } from "./middlewares/seller-context-v1";
@@ -1255,6 +1256,7 @@ export default defineMiddlewares({
     ...vendorWellnessMiddlewareRoutes,
     ...storeCollectiveMiddlewareRoutes,
     ...mutualAidMiddlewareRoutes,
+    ...storePublicFieldsMiddlewares,
     ...deliveryMiddlewareRoutes,
     ...cartPaymentMiddlewareRoutes,
     {
