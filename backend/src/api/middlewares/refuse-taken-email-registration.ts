@@ -34,20 +34,33 @@ export const TAKEN_EMAIL_RESPONSE = {
  * has an actor. Whoever owns the login signs in with its password, or resets
  * it by email.
  *
- * Registered for POST on `/auth/:actor_type/emailpass/register` in
- * middlewares.ts. Medusa's RoutesSorter registers the `/auth/*` POST entry (a
- * wildcard under /auth) before this one (a param under /auth), so the auth
- * rate limiter has counted the call and normalizeEmailMiddleware has
- * lower-cased and checked the address: what is looked up here is what the
- * provider's `retrieve({ entity_id })` would look up, an emailpass provider
- * identity with exactly that entity_id. Without an address it lets the call
- * through for the provider to refuse.
+ * Registered for POST on Medusa's own route shape,
+ * `/auth/:actor_type/:auth_provider/register`, and decided on the decoded
+ * `auth_provider` param, as Medusa's handler decides which provider to call.
+ * Express matches a layer against the raw path and decodes only the params,
+ * so a literal `emailpass` segment let `/auth/seller/%65mailpass/register`
+ * past this check while Medusa's route still called the emailpass provider
+ * (measured: the takeover went through). Lower-cased, because Express route
+ * matching ignores case; Medusa's provider lookup does not, so `EMAILPASS`
+ * fails there anyway.
+ *
+ * Medusa's RoutesSorter registers the `/auth/*` POST entry (a wildcard under
+ * /auth) before this one (a param under /auth), and middlewares before the
+ * route of the same shape, so the auth rate limiter has counted the call and
+ * normalizeEmailMiddleware has lower-cased and checked the address: what is
+ * looked up here is what the provider's `retrieve({ entity_id })` would look
+ * up, an emailpass provider identity with exactly that entity_id. Without an
+ * address it lets the call through for the provider to refuse.
  */
 export async function refuseTakenEmailRegistration(
   req: MedusaRequest,
   res: MedusaResponse,
   next: MedusaNextFunction
 ) {
+  if (String(req.params?.auth_provider ?? "").toLowerCase() !== "emailpass") {
+    return next()
+  }
+
   const email = (req.body as { email?: unknown } | undefined)?.email
   if (typeof email !== "string" || !email) {
     return next()

@@ -950,12 +950,14 @@ export default defineMiddlewares({
     },
     // Registering an address that already has a login: refused the way Medusa
     // refuses one whose login has an actor, because its emailpass provider
-    // re-passwords a login with no actor and hands over its token. The sorter
-    // runs the `/auth/*` entry above first (wildcard before param), so the
-    // address is normalised and the call counted before this looks it up.
+    // re-passwords a login with no actor and hands over its token. Medusa's
+    // own route shape, deciding on the decoded provider param: a literal
+    // `emailpass` segment missed `%65mailpass`. The sorter runs the `/auth/*`
+    // entry above first (wildcard before param), so the address is normalised
+    // and the call counted before this looks it up.
     // See middlewares/refuse-taken-email-registration.ts.
     {
-      matcher: "/auth/:actor_type/emailpass/register",
+      matcher: "/auth/:actor_type/:auth_provider/register",
       method: "POST",
       middlewares: [refuseTakenEmailRegistration],
     },

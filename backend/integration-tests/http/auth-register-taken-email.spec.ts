@@ -1,3 +1,4 @@
+import http from "http"
 import jwt from "jsonwebtoken"
 import { medusaIntegrationTestRunner } from "@medusajs/test-utils"
 import { Modules } from "@medusajs/framework/utils"
@@ -22,10 +23,17 @@ jest.setTimeout(240 * 1000)
  * (vendor-panel/src/hooks/api/auth.tsx), and both panels' invite pages
  * (lib/register-or-sign-in.ts in each).
  *
+ * Every spelling of the register path that reaches Medusa's emailpass
+ * provider is refused the same way: the check matches Medusa's own route
+ * shape and reads the decoded provider param, because Express matches a
+ * route against the raw path, and `%65mailpass` once got past a literal
+ * `emailpass` segment and took the login over.
+ *
  * Budget: every POST under /auth, and POST /store/customers, spends the auth
- * limiter's 20 a minute per address (rate-limiter.ts). This file spends 17;
- * the logins it does not register through the route are built through the
- * auth module.
+ * limiter's 20 a minute per address (rate-limiter.ts; the 21st is refused).
+ * This file spends 19. The logins it does not register through the route are
+ * built through the auth module, and where a case only needs to know which
+ * password a login has, it asks the auth module rather than the sign-in route.
  */
 
 /** What Medusa's register route answers for a taken address (its error handler, read). */
@@ -55,15 +63,49 @@ medusaIntegrationTestRunner({
       return { email, password, authIdentityId: provider.auth_identity_id as string }
     }
 
+    /** Whether this is the login's password: the check the sign-in route makes, without spending the limiter. */
+    const passwordWorks = async (email: string, password: string) =>
+      (await container().resolve(Modules.AUTH).authenticate("emailpass", { body: { email, password } } as any))
+        .success === true
+
+    /** POST with the path exactly as written; the HTTP client normalises nothing. */
+    const rawPost = (path: string, body: unknown) =>
+      new Promise<{ status: number; body: any }>((resolve, reject) => {
+        const base = new URL(String((api as any).defaults.baseURL))
+        const payload = JSON.stringify(body)
+        const req = http.request(
+          {
+            host: base.hostname,
+            port: base.port,
+            path,
+            method: "POST",
+            headers: { "content-type": "application/json", "content-length": Buffer.byteLength(payload) },
+          },
+          (res) => {
+            let text = ""
+            res.on("data", (chunk) => (text += chunk))
+            res.on("end", () => {
+              let parsed: unknown = text
+              try {
+                parsed = JSON.parse(text)
+              } catch {
+                // not JSON: keep the text
+              }
+              resolve({ status: res.statusCode ?? 0, body: parsed })
+            })
+          }
+        )
+        req.on("error", reject)
+        req.end(payload)
+      })
+
     it("a login with no actor cannot be re-registered with another password, and its own password still signs in", async () => {
       const owner = await loginWithNoActor()
       const stranger = `Stranger-${uid()}!`
 
-      // Any actor type: the login is shared between them.
-      for (const actor of ["seller", "customer"]) {
-        const refused = await call(api.post(`/auth/${actor}/emailpass/register`, { email: owner.email, password: stranger }))
-        expect({ actor, status: refused.status, body: refused.data }).toEqual({ actor, status: 401, body: TAKEN })
-      }
+      const refused = await call(api.post("/auth/seller/emailpass/register", { email: owner.email, password: stranger }))
+      expect(refused.status).toBe(401)
+      expect(refused.data).toEqual(TAKEN)
 
       // The address as typed in another case is the same login: the `/auth/*`
       // entry lower-cases it before the check runs.
@@ -72,10 +114,36 @@ medusaIntegrationTestRunner({
       )
       expect(shouted.status).toBe(401)
 
-      const asStranger = await call(api.post("/auth/seller/emailpass", { email: owner.email, password: stranger }))
-      expect(asStranger.status).toBe(401)
-      const asOwner = await api.post("/auth/seller/emailpass", { email: owner.email, password: owner.password })
-      expect(claims(asOwner.data.token).auth_identity_id).toBe(owner.authIdentityId)
+      expect(await passwordWorks(owner.email, stranger)).toBe(false)
+      expect(await passwordWorks(owner.email, owner.password)).toBe(true)
+    })
+
+    describe("every spelling of the register path that reaches the emailpass provider", () => {
+      // Probed before the fix: the encoded spellings re-passworded the login
+      // (200, a token for it, the owner's password refused afterwards);
+      // `%45MAILPASS` was refused by Medusa's case-sensitive provider lookup;
+      // `EmailPass` and the trailing slash already met the check.
+      const spellings: Array<[string, string, (email: string) => string]> = [
+        ["percent-encoded", "/auth/seller/%65mailpass/register", (e) => e],
+        ["percent-encoded, as a customer", "/auth/customer/%65mailpass/register", (e) => e],
+        ["percent-encoded, upper-cased", "/auth/seller/%45MAILPASS/register", (e) => e],
+        ["mixed case", "/auth/seller/EmailPass/register", (e) => e],
+        ["trailing slash", "/auth/seller/emailpass/register/", (e) => e],
+        // normalizeEmailMiddleware runs on the encoded path too.
+        ["percent-encoded, with the address upper-cased", "/auth/seller/%65mailpass/register", (e) => e.toUpperCase()],
+      ]
+
+      for (const [name, path, typed] of spellings) {
+        it(`${name}: ${path}`, async () => {
+          const owner = await loginWithNoActor()
+          const stranger = `Stranger-${uid()}!`
+
+          const res = await rawPost(path, { email: typed(owner.email), password: stranger })
+          expect({ status: res.status, body: res.body }).toEqual({ status: 401, body: TAKEN })
+          expect(await passwordWorks(owner.email, owner.password)).toBe(true)
+          expect(await passwordWorks(owner.email, stranger)).toBe(false)
+        })
+      }
     })
 
     it("a login with an actor gets the same answer, as Medusa itself gives it", async () => {
@@ -177,9 +245,11 @@ medusaIntegrationTestRunner({
       expect(accepted.status).toBe(200)
       expect(accepted.data.user).toMatchObject({ email: owner.email, first_name: "Ola" })
 
-      // The same login and password now sign in as that user.
-      const asUser = await api.post("/auth/user/emailpass", { email: owner.email, password: owner.password })
-      expect(claims(asUser.data.token).actor_id).toBe(accepted.data.user.id)
+      // The login is now that user's: sign-in puts app_metadata.user_id in the
+      // token as actor_id, and the password is still the owner's.
+      const [identity] = await container().resolve(Modules.AUTH).listAuthIdentities({ id: [owner.authIdentityId] })
+      expect(identity.app_metadata).toMatchObject({ user_id: accepted.data.user.id })
+      expect(await passwordWorks(owner.email, owner.password)).toBe(true)
     })
   },
 })
