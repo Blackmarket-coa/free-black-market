@@ -5,8 +5,9 @@ import { isManual, isStripe } from "../../../lib/constants"
 import { placeOrder, placeTicketOrder } from "@/lib/data/cart"
 import { HttpTypes } from "@medusajs/types"
 import { useElements, useStripe } from "@stripe/react-stripe-js"
-import React, { useEffect, useState } from "react"
+import React, { useContext, useEffect, useState } from "react"
 import { Button } from "@/components/atoms"
+import { StripeContext } from "../../organisms/PaymentContainer/StripeWrapper"
 import { orderErrorFormatter } from "@/lib/helpers/order-error-formatter"
 import { toast } from "@/lib/helpers/toast"
 import { phase1ModuleFlags } from "@/lib/feature-flags"
@@ -86,8 +87,16 @@ const PaymentButtonForProvider: React.FC<PaymentButtonProps> = ({
 
   const paymentSession = cart.payment_collection?.payment_sessions?.[0]
 
+  // StripePaymentButton's hooks throw outside <Elements>, and PaymentWrapper
+  // mounts that only around a pending card session (and only with a Stripe
+  // key). A card session in any other state — one an unfinished attempt
+  // already authorized, say — gets the disabled button below rather than a
+  // crashed page; choosing the method again on the payment step opens a new
+  // session.
+  const stripeReady = useContext(StripeContext)
+
   switch (true) {
-    case isStripe(paymentSession?.provider_id):
+    case isStripe(paymentSession?.provider_id) && stripeReady:
       return (
         <StripePaymentButton
           notReady={notReady}
