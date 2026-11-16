@@ -15,6 +15,7 @@ import {
   sanitizeStoreSelectRelations,
   storeFieldProfile,
 } from "../../shared/store-field-policy"
+import { storeOrderSetOwnerMiddlewares } from "./store-order-set-owner"
 
 /**
  * Applies `shared/store-field-policy.ts` to every `/store` request (SD-118).
@@ -39,8 +40,9 @@ import {
  *
  * It does not cover a handler that writes its own field list. Mercur's order
  * set routes do (`orders.seller.*`), so their responses have the seller
- * objects cut to the buyer's allow-list on the way out. FBM's own store
- * routes build their projections by hand and are not touched.
+ * objects cut to the buyer's allow-list on the way out, and only the buyer
+ * may ask (`store-order-set-owner.ts`). FBM's own store routes build their
+ * projections by hand and are not touched.
  *
  * A product list reached through a relation (`seller.products`,
  * `collection.products`, the product tag and type routes' default
@@ -171,10 +173,13 @@ export async function visibleProductIds(req: MedusaRequest, ids: string[]): Prom
 }
 
 /**
- * No `method`: it must run for every verb (a `POST` to a cart returns the
- * cart with the caller's `fields`), and Medusa runs method-less middleware
- * before any route's own.
+ * The field guard has no `method`: it must run for every verb (a `POST` to a
+ * cart returns the cart with the caller's `fields`), and Medusa runs
+ * method-less middleware before any route's own. Beside it, the buyer-only
+ * rule for Mercur's order sets (`store-order-set-owner.ts`), so that
+ * `api/middlewares.ts` spreads one list for both.
  */
 export const storePublicFieldsMiddlewares: MiddlewareRoute[] = [
   { matcher: "/store", middlewares: [guardStoreFields] },
+  ...storeOrderSetOwnerMiddlewares,
 ]

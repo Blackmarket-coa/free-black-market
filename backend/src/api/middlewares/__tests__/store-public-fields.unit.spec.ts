@@ -206,7 +206,11 @@ describe("mounted on /store", () => {
     if (req.url.startsWith("/legacy-store/")) req.url = req.url.replace("/legacy-store/", "/store/")
     next()
   })
-  for (const route of storePublicFieldsMiddlewares) {
+  // The field guard, as the framework mounts a method-less middleware. (The
+  // order-set buyer rule beside it in the list has its own spec.)
+  const guards = storePublicFieldsMiddlewares.filter((route) => route.matcher === "/store")
+  expect(guards).toHaveLength(1)
+  for (const route of guards) {
     expect(route.methods ?? route.method).toBeUndefined()
     for (const middleware of route.middlewares ?? []) app.use(route.matcher as string, middleware as unknown as express.RequestHandler)
   }
