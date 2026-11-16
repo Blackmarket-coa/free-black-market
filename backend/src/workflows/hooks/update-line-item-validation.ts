@@ -1,10 +1,12 @@
 import { updateLineItemInCartWorkflow } from "@medusajs/medusa/core-flows"
-import { ContainerRegistrationKeys, MathBN, mergeMetadata } from "@medusajs/framework/utils"
+import type { BigNumberInput } from "@medusajs/framework/types"
+import { ContainerRegistrationKeys, MathBN, isDefined, mergeMetadata } from "@medusajs/framework/utils"
 import { isTicketLine, namesSeat, oneTicketPerSeatError } from "./ticket-line-rules"
 
 type CartLine = {
   id?: string | null
   variant_id?: string | null
+  quantity?: BigNumberInput | null
   metadata?: Record<string, unknown> | null
 }
 
@@ -23,6 +25,11 @@ type CartLine = {
  * and nor does dropping it first, since the variant is still a ticket. A line
  * that is not a ticket is not this rule's business, at any quantity.
  *
+ * Lowering a line's quantity, and changing nothing else, never adds a ticket,
+ * so it is let through: a ticket line left above one by an earlier cart (one
+ * built before these hooks) can be stepped down with the cart page's -, which
+ * sends the quantity alone.
+ *
  * Medusa runs the hook after it reads the cart and before it reads the
  * variant's price or writes anything, so a refusal answers 400 and leaves the
  * line as it was.
@@ -36,6 +43,8 @@ updateLineItemInCartWorkflow.hooks.validate(async ({ input, cart }, { container 
   const line = lines.find((item) => item?.id === input.item_id)
   // Not a line of this cart: Medusa's own step answers 404.
   if (!line) return
+
+  if (!input.update.metadata && isDefined(line.quantity) && line.quantity !== null && MathBN.lt(quantity, line.quantity)) return
 
   const before = line.metadata
   const after = input.update.metadata ? mergeMetadata(before ?? {}, input.update.metadata) : before
