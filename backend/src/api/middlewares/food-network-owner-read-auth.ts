@@ -35,6 +35,17 @@ import type {
  * beside a customer's token would have turned from the customer into the
  * seller: the recipient of a delivery refused their own tracking.
  *
+ * **Which leaves one caller two accounts.** The write matchers do run
+ * `authenticate` unconditionally (session first, `authenticate-middleware.js`),
+ * so a request carrying a seller's session cookie beside a customer's bearer
+ * token writes as the seller and reads, here, as the customer: it registers a
+ * courier owned by the seller and is refused that courier's shifts with the
+ * same two credentials (the review of this change saw exactly that on
+ * Postgres, and the session alone reading them; the unit spec records the
+ * pair). No first-party client sends both to these routes. Making the two
+ * agree means choosing which credential the write matchers take first, for
+ * every community prefix: the operator's call, not made here.
+ *
  * What a handler does with the actor is the handler's: every GET under these
  * prefixes that reads `auth_context` compares the actor's id with an owner
  * column (`food_producer.owner_id`, `food_courier.owner_id`,

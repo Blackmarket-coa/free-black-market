@@ -311,6 +311,24 @@ describe("GET on the food-network owner reads", () => {
     expect([sessionOnly.status, sessionOnly.actor, sessionOnly.type]).toEqual([200, "mem_seller_1", "seller"])
   })
 
+  it("as it stands, a seller's session beside a customer's token writes as the seller and reads as the customer", async () => {
+    // A record of what the two matchers do together, not a rule. The write
+    // matchers run `authenticate` unconditionally, which takes the session
+    // first; the read keeps the customer the framework identified (the case
+    // above). So one request pair with the same two credentials creates a
+    // record as the seller and is refused it, as the customer, on the way
+    // back. No first-party client sends both. Making them agree means
+    // choosing which credential the write verbs take first, on every
+    // community prefix: the operator's call. This case is where that change
+    // shows.
+    const credentials = [bearer(token("cus_1", "customer")), sessionOf("mem_seller_1", "seller")] as const
+    const write = await call("POST", "/store/couriers/:id/shifts", ...credentials)
+    const read = await call("GET", "/store/couriers/:id/shifts", ...credentials)
+
+    expect([write.status, write.actor, write.type]).toEqual([200, "mem_seller_1", "seller"])
+    expect([read.status, read.actor, read.type]).toEqual([200, "cus_1", "customer"])
+  })
+
   it("is not widened beyond the food-network prefixes", async () => {
     // Elsewhere under /store a seller's token is, as the framework leaves it,
     // no customer and therefore nobody.

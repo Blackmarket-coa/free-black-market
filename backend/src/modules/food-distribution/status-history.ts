@@ -18,9 +18,17 @@
  * So a row may hold either shape, or nothing. Everything that reads the
  * column goes through `statusHistoryEntries`, which accepts all three, and
  * the service writes the entries back as `{ entries }`: a row left as a bare
- * list is put right by its next status change. `docs/AUDIT_DEBT.md` (SD-119)
- * has the query that lists such rows and the update that rewrites them
- * without waiting for one.
+ * list is put right by its next status change. To list such rows, and to
+ * rewrite them without waiting for one (both run as written in
+ * `integration-tests/http/store-food-network-owner-reads.spec.ts`; also in
+ * `docs/AUDIT_DEBT.md`, SD-119):
+ *
+ *   SELECT id FROM food_delivery
+ *    WHERE deleted_at IS NULL AND jsonb_typeof(status_history) = 'array';
+ *
+ *   UPDATE food_delivery
+ *      SET status_history = jsonb_build_object('entries', status_history)
+ *    WHERE deleted_at IS NULL AND jsonb_typeof(status_history) = 'array';
  */
 export type DeliveryStatusEntry = {
   status: string
