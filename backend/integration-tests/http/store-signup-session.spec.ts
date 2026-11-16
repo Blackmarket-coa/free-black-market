@@ -1,6 +1,7 @@
 import jwt from "jsonwebtoken"
 import { medusaIntegrationTestRunner } from "@medusajs/test-utils"
 import { Modules } from "@medusajs/framework/utils"
+import { REQUEST_MODULE } from "../../src/modules/request"
 import { createPublishableKeyToken } from "./_publishable-key"
 
 jest.setTimeout(240 * 1000)
@@ -18,9 +19,15 @@ jest.setTimeout(240 * 1000)
  * "Identity with email already exists". Each case below is a step the
  * storefront now takes, or a refusal it now plans around.
  *
+ * The last three cases are the other half: once the storefront can attach a
+ * shopper profile to an existing login, the storefront's own "Delete my
+ * account" must not take that login away from a vendor, a staff member or a
+ * vendor applicant who signs in with the same email and password.
+ *
  * Budget: every POST under /auth and POST /store/customers spends the auth
  * limiter's 20 a minute per address (rate-limiter.ts), and a reset also the
- * strict limiter's 5 per five minutes. This file spends 12 and 2.
+ * strict limiter's 5 per five minutes. This file spends 16 and 2; the deletion
+ * cases build their profiles through the modules to stay inside it.
  */
 
 medusaIntegrationTestRunner({
@@ -44,6 +51,12 @@ medusaIntegrationTestRunner({
         .createRegions([{ name: `signup-${uid()}`, currency_code: "usd", countries: ["us"] }])
       regionId = region.id
     })
+
+    const sign = (claims: Record<string, unknown>) => {
+      const secret = process.env.JWT_SECRET
+      if (!secret) throw new Error("JWT_SECRET is not set in the test env")
+      return jwt.sign(claims, secret, { expiresIn: "1h" })
+    }
 
     const headers = (token?: string) => ({
       headers: {
@@ -132,9 +145,18 @@ medusaIntegrationTestRunner({
       expect(me.data.customer.email).toBe(email)
     })
 
-    it("a reset for a login with no profile is sent, whatever the case of the address typed", async () => {
+    it("a reset for a login with no profile reaches the mailer, whatever the case of the address typed", async () => {
       const email = `signup-${uid()}@example.com`
       await api.post("/auth/customer/emailpass/register", { email, password: `Pw-${uid()}!` })
+
+      // The subscriber (src/subscribers/password-reset.ts) builds the link from
+      // STOREFRONT_URL and drops the mail when it is unset; the notification
+      // module is stubbed so no provider is needed.
+      const savedStorefront = process.env.STOREFRONT_URL
+      process.env.STOREFRONT_URL = "https://shop.signup-spec.test"
+      const sent = jest
+        .spyOn(container().resolve(Modules.NOTIFICATION), "createNotifications")
+        .mockResolvedValue([] as any)
 
       const received: Array<Record<string, unknown>> = []
       container()
@@ -153,15 +175,106 @@ medusaIntegrationTestRunner({
       })
       expect(stranger.status).toBe(201)
 
-      const deadline = Date.now() + 10_000
-      while (received.length === 0 && Date.now() < deadline) {
-        await new Promise((resolve) => setTimeout(resolve, 100))
+      try {
+        const deadline = Date.now() + 10_000
+        while ((received.length === 0 || sent.mock.calls.length === 0) && Date.now() < deadline) {
+          await new Promise((resolve) => setTimeout(resolve, 100))
+        }
+        // Let a second (wrong) emission land if there were one.
+        await new Promise((resolve) => setTimeout(resolve, 500))
+        expect(received).toHaveLength(1)
+        expect(received[0]).toMatchObject({ entity_id: email, actor_type: "customer" })
+        expect(typeof received[0].token).toBe("string")
+
+        expect(sent).toHaveBeenCalledTimes(1)
+        expect(sent).toHaveBeenCalledWith(
+          expect.objectContaining({
+            to: email,
+            channel: "email",
+            template: "password-reset",
+            data: expect.objectContaining({
+              reset_url: `https://shop.signup-spec.test/reset-password?token=${received[0].token}`,
+            }),
+          })
+        )
+      } finally {
+        sent.mockRestore()
+        if (savedStorefront === undefined) delete process.env.STOREFRONT_URL
+        else process.env.STOREFRONT_URL = savedStorefront
       }
-      // Let a second (wrong) emission land if there were one.
-      await new Promise((resolve) => setTimeout(resolve, 500))
-      expect(received).toHaveLength(1)
-      expect(received[0]).toMatchObject({ entity_id: email, actor_type: "customer" })
-      expect(typeof received[0].token).toBe("string")
+    })
+
+    /**
+     * A login with a shopper profile attached, built through the modules (the
+     * routes would spend the auth limiter), and a customer token for it.
+     */
+    async function shopperOnLogin(extraAppMetadata: Record<string, unknown> = {}) {
+      const email = `deletion-${uid()}@example.com`
+      const password = `Pw-${uid()}!`
+      await api.post("/auth/customer/emailpass/register", { email, password })
+      const auth = container().resolve(Modules.AUTH)
+      const [provider] = await auth.listProviderIdentities({ entity_id: email, provider: "emailpass" })
+      const authIdentityId = provider.auth_identity_id as string
+      const [customer] = await container()
+        .resolve(Modules.CUSTOMER)
+        .createCustomers([{ email, first_name: "Del", has_account: true }])
+      const appMetadata = { ...extraAppMetadata, customer_id: customer.id }
+      await auth.updateAuthIdentities([{ id: authIdentityId, app_metadata: appMetadata }])
+      const token = sign({
+        actor_id: customer.id,
+        actor_type: "customer",
+        auth_identity_id: authIdentityId,
+        app_metadata: appMetadata,
+      })
+      return { email, password, authIdentityId, providerIdentityId: provider.id as string, customer, token }
+    }
+
+    const identityOf = async (id: string) => {
+      const found = await container().resolve(Modules.AUTH).listAuthIdentities({ id: [id] })
+      return found[0] ?? null
+    }
+
+    it("deleting the shopper account of a vendor's login keeps the login and unlinks the profile", async () => {
+      const shopper = await shopperOnLogin({ seller_id: "sel_signup_spec" })
+
+      const deleted = await api.post("/store/customers/me/deletion", {}, headers(shopper.token))
+      expect(deleted.data).toMatchObject({ deleted: true, login_revoked: false, login_kept: true, profile_unlinked: true })
+
+      const identity = await identityOf(shopper.authIdentityId)
+      expect(identity).not.toBeNull()
+      expect(identity.app_metadata).toMatchObject({ seller_id: "sel_signup_spec", customer_id: null })
+
+      // The vendor still signs in with the same email and password.
+      const vendorLogin = await api.post("/auth/seller/emailpass", {
+        email: shopper.email,
+        password: shopper.password,
+      })
+      expect(claims(vendorLogin.data.token).actor_id).toBe("sel_signup_spec")
+
+      // The profile itself is erased as before.
+      const [customer] = await container()
+        .resolve(Modules.CUSTOMER)
+        .listCustomers({ id: [shopper.customer.id] })
+      expect(customer.email).toBe(`deleted-${shopper.customer.id}@deleted.invalid`)
+    })
+
+    it("deleting the shopper account of a pending vendor applicant keeps the login", async () => {
+      const shopper = await shopperOnLogin()
+      await container()
+        .resolve(REQUEST_MODULE)
+        .createRequests([{ type: "seller", submitter_id: shopper.authIdentityId, data: {}, status: "pending" }])
+
+      const deleted = await api.post("/store/customers/me/deletion", {}, headers(shopper.token))
+      expect(deleted.data).toMatchObject({ login_revoked: false, login_kept: true, profile_unlinked: true })
+      expect(await identityOf(shopper.authIdentityId)).not.toBeNull()
+    })
+
+    it("deleting a shopper-only account still revokes the login", async () => {
+      const shopper = await shopperOnLogin()
+
+      const deleted = await api.post("/store/customers/me/deletion", {}, headers(shopper.token))
+      expect(deleted.data).toMatchObject({ login_revoked: true, login_kept: false, profile_unlinked: false })
+      expect(await identityOf(shopper.authIdentityId)).toBeNull()
     })
   },
 })
