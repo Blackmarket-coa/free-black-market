@@ -175,9 +175,15 @@ export function isCartPaymentAmountRefusal(error: unknown): error is CartPayment
 /**
  * The HTTP answer to that error. The message is one of ours or it is not
  * sent: the reason picks it, or else the error's own message when it is one
- * of the three, or else the one that claims least.
+ * of the three, or else the one that claims least. It reads only those two
+ * fields, so it takes the error as thrown (`CartPaymentAmountError`) or as it
+ * arrives after crossing a workflow boundary.
  */
-export function cartPaymentAmountRefusalResponse(error: CartPaymentAmountRefusalLike): ReturnType<typeof cartPaymentAmountMismatchResponse> {
+export function cartPaymentAmountRefusalResponse(error: {
+  code?: unknown
+  reason?: unknown
+  message?: unknown
+}): ReturnType<typeof cartPaymentAmountMismatchResponse> {
   if (isRefusalReason(error.reason)) return cartPaymentAmountMismatchResponse(error.reason)
   const known = (Object.keys(REFUSAL_MESSAGES) as CartPaymentAmountRefusalReason[]).find((reason) => REFUSAL_MESSAGES[reason] === error.message)
   return cartPaymentAmountMismatchResponse(known ?? "amount_unknown")
