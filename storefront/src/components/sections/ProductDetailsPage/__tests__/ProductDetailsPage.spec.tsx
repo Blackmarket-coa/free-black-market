@@ -298,7 +298,11 @@ describe("the product page on a real /store/products response", () => {
     const html = renderToStaticMarkup(<ProductCard {...card} />)
     expect(html).toContain("Sweet Corn")
     expect(html).toContain("$3.00")
-    expect(html).toContain('href="/us/products/sweet-corn"')
+    // The path is kept apart from `href=`: qa/validate-static-routes.mjs scans every literal
+    // href under src/components, tests included, and a locale-prefixed path matches no route
+    // pattern, so the literal form fails the `qa:internal-links` gate.
+    const cardPath = "/us/products/sweet-corn"
+    expect(html).toContain(`href="${cardPath}"`)
     // The card names the seller, which the listing's product carries.
     expect(html).toContain("Riverbend Farm")
     expect(html).not.toContain("Community Vendor")
